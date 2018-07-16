@@ -30,7 +30,7 @@ private:
   ExternalSemaSource &getFinalReader() const { return *FinalReader; }
 
   std::vector<CompilerInstance *> CIs;
-  llvm::OwningPtr<ExternalSemaSource> FinalReader;
+  OwningPtr<ExternalSemaSource> FinalReader;
 
   
 protected:
@@ -66,7 +66,7 @@ protected:
 
   virtual void InitializeSema(Sema &S);
   virtual void ForgetSema();
-  virtual std::pair<ObjCMethodList,ObjCMethodList> ReadMethodPool(Selector Sel);
+  virtual void ReadMethodPool(Selector Sel);
   virtual bool LookupUnqualified(LookupResult &R, Scope *S);
 };
 

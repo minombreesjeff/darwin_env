@@ -14,14 +14,20 @@ class ObjCPropertyTestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_objc_properties_with_dsym(self):
         """Test that expr uses the correct property getters and setters"""
+        if self.getArchitecture() == 'i386':
+            self.skipTest("requires modern objc runtime")
         self.buildDsym()
         self.do_test_properties()
 
     @python_api_test
+    @dwarf_test
     def test_objc_properties_with_dwarf(self):
         """Test that expr uses the correct property getters and setters"""
+        if self.getArchitecture() == 'i386':
+            self.skipTest("requires modern objc runtime")
         self.buildDwarf()
         self.do_test_properties()
 

@@ -16,6 +16,7 @@
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/Module.h"
+#include "lldb/Core/State.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/ClangASTContext.h"
@@ -425,7 +426,11 @@ Value::GetValueAsData (ExecutionContext *exe_ctx,
                     {
                         Address so_addr(address, objfile->GetSectionList());
                         addr_t load_address = so_addr.GetLoadAddress (exe_ctx->GetTargetPtr());
-                        if (load_address != LLDB_INVALID_ADDRESS)
+                        bool process_launched_and_stopped = exe_ctx->GetProcessPtr()
+                            ? StateIsStoppedState(exe_ctx->GetProcessPtr()->GetState(), true /* must_exist */)
+                            : false;
+                        // Don't use the load address if the process has exited.
+                        if (load_address != LLDB_INVALID_ADDRESS && process_launched_and_stopped)
                         {
                             resolved = true;
                             address = load_address;
@@ -487,9 +492,20 @@ Value::GetValueAsData (ExecutionContext *exe_ctx,
 
     case eValueTypeHostAddress:
         address = m_value.ULongLong(LLDB_INVALID_ADDRESS);
+        address_type = eAddressTypeHost;
+        if (exe_ctx)
+        {
+            Target *target = exe_ctx->GetTargetPtr();
+            if (target)
+            {
+                data.SetByteOrder(target->GetArchitecture().GetByteOrder());
+                data.SetAddressByteSize(target->GetArchitecture().GetAddressByteSize());
+                break;
+            }
+        }
+        // fallback to host settings
         data.SetByteOrder(lldb::endian::InlHostByteOrder());
         data.SetAddressByteSize(sizeof(void *));
-        address_type = eAddressTypeHost;
         break;
     }
 

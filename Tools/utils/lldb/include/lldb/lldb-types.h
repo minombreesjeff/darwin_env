@@ -12,7 +12,6 @@
 
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
-#include "lldb/Utility/SharingPtr.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -23,13 +22,13 @@
 
 //----------------------------------------------------------------------
 // All host systems must define:
-//  liblldb::condition_t       The native condition type (or a substitute class) for conditions on the host system.
-//  liblldb::mutex_t           The native mutex type for mutex objects on the host system.
-//  liblldb::thread_t          The native thread type for spawned threads on the system
-//  liblldb::thread_arg_t      The type of the one any only thread creation argument for the host system
-//  liblldb::thread_result_t   The return type that gets returned when a thread finishes.
-//  liblldb::thread_func_t     The function prototype used to spawn a thread on the host system.
-//  liblldb::SharedPtr         The template that wraps up the host version of a reference counted pointer (like boost::shared_ptr)
+//  lldb::condition_t       The native condition type (or a substitute class) for conditions on the host system.
+//  lldb::mutex_t           The native mutex type for mutex objects on the host system.
+//  lldb::thread_t          The native thread type for spawned threads on the system
+//  lldb::thread_arg_t      The type of the one any only thread creation argument for the host system
+//  lldb::thread_result_t   The return type that gets returned when a thread finishes.
+//  lldb::thread_func_t     The function prototype used to spawn a thread on the host system.
+//  lldb::SharedPtr         The template that wraps up the host version of a reference counted pointer (like boost::shared_ptr)
 //  #define LLDB_INVALID_PROCESS_ID ...
 //  #define LLDB_INVALID_THREAD_ID ...
 //  #define LLDB_INVALID_HOST_THREAD ...
@@ -50,32 +49,8 @@ namespace lldb {
         typedef void *              thread_arg_t;               // Host thread argument type
         typedef void *              thread_result_t;            // Host thread result type
         typedef void *              (*thread_func_t)(void *);   // Host thread function type
-
-        // The template below can be used in a few useful ways:
-        //
-        //      // Make a single shared pointer a class Foo
-        //      lldb::SharePtr<Foo>::Type foo_sp;
-        //
-        //      // Make a typedef to a Foo shared pointer
-        //      typedef lldb::SharePtr<Foo>::Type FooSP;
-        //
-        template<typename _Tp>
-        struct SharedPtr
-        {
-            typedef lldb_private::SharingPtr<_Tp> Type;
-        };
-        template<typename _Tp>
-        struct LoggingSharedPtr
-        {
-            typedef lldb_private::LoggingSharingPtr<_Tp> Type;
-        };
-    
-        template <typename _Tp>
-        struct IntrusiveSharedPtr 
-        {
-            typedef lldb_private::IntrusiveSharingPtr<_Tp> Type;
-        };
-
+        typedef void                (*LogOutputCallback) (const char *, void *baton);
+        typedef bool                (*CommandOverrideCallback)(void *baton, const char **argv);
 } // namespace lldb
 
 #if defined(__MINGW32__)

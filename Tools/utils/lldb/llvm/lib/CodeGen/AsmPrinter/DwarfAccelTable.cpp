@@ -24,7 +24,6 @@ using namespace llvm;
 
 const char *DwarfAccelTable::Atom::AtomTypeString(enum AtomType AT) {
   switch (AT) {
-  default: llvm_unreachable("invalid AtomType!");
   case eAtomTypeNULL: return "eAtomTypeNULL";
   case eAtomTypeDIEOffset: return "eAtomTypeDIEOffset";
   case eAtomTypeCUOffset: return "eAtomTypeCUOffset";
@@ -32,6 +31,7 @@ const char *DwarfAccelTable::Atom::AtomTypeString(enum AtomType AT) {
   case eAtomTypeNameFlags: return "eAtomTypeNameFlags";
   case eAtomTypeTypeFlags: return "eAtomTypeTypeFlags";
   } 
+  llvm_unreachable("invalid AtomType!");
 }
 
 // The general case would need to have a less hard coded size for the
@@ -42,16 +42,27 @@ DwarfAccelTable::DwarfAccelTable(DwarfAccelTable::Atom atom) :
   HeaderData(atom) {
 }
 
-DwarfAccelTable::~DwarfAccelTable() {
-  for (size_t i = 0, e = Data.size() ; i < e; ++i)
-    delete Data[i];
+// The length of the header data is always going to be 4 + 4 + 4*NumAtoms.
+DwarfAccelTable::DwarfAccelTable(std::vector<DwarfAccelTable::Atom> &atomList) :
+  Header(8 + (atomList.size() * 4)),
+  HeaderData(atomList) {
 }
 
-void DwarfAccelTable::AddName(StringRef Name, DIE* die) {
+DwarfAccelTable::~DwarfAccelTable() {
+  for (size_t i = 0, e = Data.size(); i < e; ++i)
+    delete Data[i];
+  for (StringMap<DataArray>::iterator
+         EI = Entries.begin(), EE = Entries.end(); EI != EE; ++EI)
+    for (DataArray::iterator DI = EI->second.begin(),
+           DE = EI->second.end(); DI != DE; ++DI)
+      delete (*DI);
+}
+
+void DwarfAccelTable::AddName(StringRef Name, DIE* die, char Flags) {
   // If the string is in the list already then add this die to the list
   // otherwise add a new one.
-  DIEArray &DIEs = Entries[Name];
-  DIEs.push_back(die);
+  DataArray &DIEs = Entries[Name];
+  DIEs.push_back(new HashDataContents(die, Flags));
 }
 
 void DwarfAccelTable::ComputeBucketCount(void) {
@@ -76,27 +87,28 @@ void DwarfAccelTable::ComputeBucketCount(void) {
 namespace {
   // DIESorter - comparison predicate that sorts DIEs by their offset.
   struct DIESorter {
-    bool operator()(DIE *A, DIE *B) const {
-      return A->getOffset() < B->getOffset();
+    bool operator()(const struct DwarfAccelTable::HashDataContents *A,
+                    const struct DwarfAccelTable::HashDataContents *B) const {
+      return A->Die->getOffset() < B->Die->getOffset();
     }
   };
 }
 
 void DwarfAccelTable::FinalizeTable(AsmPrinter *Asm, const char *Prefix) {
   // Create the individual hash data outputs.
-  for (StringMap<DIEArray>::iterator
+  for (StringMap<DataArray>::iterator
          EI = Entries.begin(), EE = Entries.end(); EI != EE; ++EI) {
     struct HashData *Entry = new HashData((*EI).getKeyData());
 
     // Unique the entries.
-    std::stable_sort((*EI).second.begin(), (*EI).second.end(), DIESorter());
-    (*EI).second.erase(std::unique((*EI).second.begin(), (*EI).second.end()),
-                       (*EI).second.end());
+    std::stable_sort(EI->second.begin(), EI->second.end(), DIESorter());
+    EI->second.erase(std::unique(EI->second.begin(), EI->second.end()),
+                       EI->second.end());
 
-    for (DIEArray::const_iterator DI = (*EI).second.begin(),
-           DE = (*EI).second.end();
+    for (DataArray::const_iterator DI = EI->second.begin(),
+           DE = EI->second.end();
          DI != DE; ++DI)
-      Entry->addOffset((*DI)->getOffset());
+      Entry->addData((*DI));
     Data.push_back(Entry);
   }
 
@@ -202,11 +214,18 @@ void DwarfAccelTable::EmitData(AsmPrinter *Asm, DwarfDebug *D) {
       Asm->EmitSectionOffset(D->getStringPoolEntry((*HI)->Str),
                              D->getStringPool());
       Asm->OutStreamer.AddComment("Num DIEs");
-      Asm->EmitInt32((*HI)->DIEOffsets.size());
-      for (std::vector<uint32_t>::const_iterator
-             DI = (*HI)->DIEOffsets.begin(), DE = (*HI)->DIEOffsets.end();
+      Asm->EmitInt32((*HI)->Data.size());
+      for (std::vector<struct HashDataContents*>::const_iterator
+             DI = (*HI)->Data.begin(), DE = (*HI)->Data.end();
            DI != DE; ++DI) {
-        Asm->EmitInt32((*DI));
+        // Emit the DIE offset
+        Asm->EmitInt32((*DI)->Die->getOffset());
+        // If we have multiple Atoms emit that info too.
+        // FIXME: A bit of a hack, we either emit only one atom or all info.
+        if (HeaderData.Atoms.size() > 1) {
+          Asm->EmitInt16((*DI)->Die->getTag());
+          Asm->EmitInt8((*DI)->Flags);
+        }
       }
       // Emit a 0 to terminate the data unless we have a hash collision.
       if (PrevHash != (*HI)->HashValue)
@@ -242,11 +261,11 @@ void DwarfAccelTable::print(raw_ostream &O) {
   HeaderData.print(O);
 
   O << "Entries: \n";
-  for (StringMap<DIEArray>::const_iterator
+  for (StringMap<DataArray>::const_iterator
          EI = Entries.begin(), EE = Entries.end(); EI != EE; ++EI) {
-    O << "Name: " << (*EI).getKeyData() << "\n";
-    for (DIEArray::const_iterator DI = (*EI).second.begin(),
-           DE = (*EI).second.end();
+    O << "Name: " << EI->getKeyData() << "\n";
+    for (DataArray::const_iterator DI = EI->second.begin(),
+           DE = EI->second.end();
          DI != DE; ++DI)
       (*DI)->print(O);
   }

@@ -152,7 +152,7 @@ WorkList* WorkList::makeBFSBlockDFSContents() {
 
 /// ExecuteWorkList - Run the worklist algorithm for a maximum number of steps.
 bool CoreEngine::ExecuteWorkList(const LocationContext *L, unsigned Steps,
-                                   const ProgramState *InitState) {
+                                   ProgramStateRef InitState) {
 
   if (G->num_roots() == 0) { // Initialize the analysis by constructing
     // the root if none exists.
@@ -215,12 +215,11 @@ bool CoreEngine::ExecuteWorkList(const LocationContext *L, unsigned Steps,
         break;
 
       case ProgramPoint::CallEnterKind:
-        HandleCallEnter(cast<CallEnter>(Node->getLocation()), WU.getBlock(), 
-                        WU.getIndex(), Node);
+        SubEng.processCallEnter(cast<CallEnter>(Node->getLocation()), Node);
         break;
 
       case ProgramPoint::CallExitKind:
-        HandleCallExit(cast<CallExit>(Node->getLocation()), Node);
+        SubEng.processCallExit(Node);
         break;
 
       default:
@@ -237,25 +236,13 @@ bool CoreEngine::ExecuteWorkList(const LocationContext *L, unsigned Steps,
 
 void CoreEngine::ExecuteWorkListWithInitialState(const LocationContext *L, 
                                                  unsigned Steps,
-                                                 const ProgramState *InitState, 
+                                                 ProgramStateRef InitState, 
                                                  ExplodedNodeSet &Dst) {
   ExecuteWorkList(L, Steps, InitState);
-  for (SmallVectorImpl<ExplodedNode*>::iterator I = G->EndNodes.begin(), 
-                                           E = G->EndNodes.end(); I != E; ++I) {
+  for (ExplodedGraph::eop_iterator I = G->eop_begin(), 
+                                   E = G->eop_end(); I != E; ++I) {
     Dst.Add(*I);
   }
-}
-
-void CoreEngine::HandleCallEnter(const CallEnter &L, const CFGBlock *Block,
-                                   unsigned Index, ExplodedNode *Pred) {
-  CallEnterNodeBuilder Builder(*this, Pred, L.getCallExpr(), 
-                                 L.getCalleeContext(), Block, Index);
-  SubEng.processCallEnter(Builder);
-}
-
-void CoreEngine::HandleCallExit(const CallExit &L, ExplodedNode *Pred) {
-  CallExitNodeBuilder Builder(*this, Pred);
-  SubEng.processCallExit(Builder);
 }
 
 void CoreEngine::HandleBlockEdge(const BlockEdge &L, ExplodedNode *Pred) {
@@ -437,7 +424,7 @@ void CoreEngine::HandlePostStmt(const CFGBlock *B, unsigned StmtIdx,
 /// generateNode - Utility method to generate nodes, hook up successors,
 ///  and add nodes to the worklist.
 void CoreEngine::generateNode(const ProgramPoint &Loc,
-                              const ProgramState *State,
+                              ProgramStateRef State,
                               ExplodedNode *Pred) {
 
   bool IsNew;
@@ -537,8 +524,10 @@ void CoreEngine::enqueueEndOfFunction(ExplodedNodeSet &Set) {
 }
 
 
+void NodeBuilder::anchor() { }
+
 ExplodedNode* NodeBuilder::generateNodeImpl(const ProgramPoint &Loc,
-                                            const ProgramState *State,
+                                            ProgramStateRef State,
                                             ExplodedNode *FromN,
                                             bool MarkAsSink) {
   HasGeneratedNodes = true;
@@ -556,6 +545,8 @@ ExplodedNode* NodeBuilder::generateNodeImpl(const ProgramPoint &Loc,
   return N;
 }
 
+void NodeBuilderWithSinks::anchor() { }
+
 StmtNodeBuilder::~StmtNodeBuilder() {
   if (EnclosingBldr)
     for (ExplodedNodeSet::iterator I = Frontier.begin(),
@@ -563,7 +554,9 @@ StmtNodeBuilder::~StmtNodeBuilder() {
       EnclosingBldr->addNodes(*I);
 }
 
-ExplodedNode *BranchNodeBuilder::generateNode(const ProgramState *State,
+void BranchNodeBuilder::anchor() { }
+
+ExplodedNode *BranchNodeBuilder::generateNode(ProgramStateRef State,
                                               bool branch,
                                               ExplodedNode *NodePred) {
   // If the branch has been marked infeasible we should not generate a node.
@@ -578,7 +571,7 @@ ExplodedNode *BranchNodeBuilder::generateNode(const ProgramState *State,
 
 ExplodedNode*
 IndirectGotoNodeBuilder::generateNode(const iterator &I,
-                                      const ProgramState *St,
+                                      ProgramStateRef St,
                                       bool IsSink) {
   bool IsNew;
   ExplodedNode *Succ = Eng.G->getNode(BlockEdge(Src, I.getBlock(),
@@ -598,7 +591,7 @@ IndirectGotoNodeBuilder::generateNode(const iterator &I,
 
 ExplodedNode*
 SwitchNodeBuilder::generateCaseStmtNode(const iterator &I,
-                                        const ProgramState *St) {
+                                        ProgramStateRef St) {
 
   bool IsNew;
   ExplodedNode *Succ = Eng.G->getNode(BlockEdge(Src, I.getBlock(),
@@ -614,7 +607,7 @@ SwitchNodeBuilder::generateCaseStmtNode(const iterator &I,
 
 
 ExplodedNode*
-SwitchNodeBuilder::generateDefaultCaseNode(const ProgramState *St,
+SwitchNodeBuilder::generateDefaultCaseNode(ProgramStateRef St,
                                            bool IsSink) {
   // Get the block for the default case.
   assert(Src->succ_rbegin() != Src->succ_rend());
@@ -638,81 +631,4 @@ SwitchNodeBuilder::generateDefaultCaseNode(const ProgramState *St,
     Eng.WList->enqueue(Succ);
 
   return Succ;
-}
-
-void CallEnterNodeBuilder::generateNode(const ProgramState *state) {
-  // Check if the callee is in the same translation unit.
-  if (CalleeCtx->getTranslationUnit() != 
-      Pred->getLocationContext()->getTranslationUnit()) {
-    // Create a new engine. We must be careful that the new engine should not
-    // reference data structures owned by the old engine.
-
-    AnalysisManager &OldMgr = Eng.SubEng.getAnalysisManager();
-    
-    // Get the callee's translation unit.
-    idx::TranslationUnit *TU = CalleeCtx->getTranslationUnit();
-
-    // Create a new AnalysisManager with components of the callee's
-    // TranslationUnit.
-    // The Diagnostic is  actually shared when we create ASTUnits from AST files.
-    AnalysisManager AMgr(TU->getASTContext(), TU->getDiagnostic(), OldMgr);
-
-    // Create the new engine.
-    // FIXME: This cast isn't really safe.
-    bool GCEnabled = static_cast<ExprEngine&>(Eng.SubEng).isObjCGCEnabled();
-    ExprEngine NewEng(AMgr, GCEnabled);
-
-    // Create the new LocationContext.
-    AnalysisDeclContext *NewAnaCtx =
-      AMgr.getAnalysisDeclContext(CalleeCtx->getDecl(), 
-                              CalleeCtx->getTranslationUnit());
-
-    const StackFrameContext *OldLocCtx = CalleeCtx;
-    const StackFrameContext *NewLocCtx =
-      NewAnaCtx->getStackFrame(OldLocCtx->getParent(),
-                               OldLocCtx->getCallSite(),
-                               OldLocCtx->getCallSiteBlock(), 
-                               OldLocCtx->getIndex());
-
-    // Now create an initial state for the new engine.
-    const ProgramState *NewState =
-      NewEng.getStateManager().MarshalState(state, NewLocCtx);
-    ExplodedNodeSet ReturnNodes;
-    NewEng.ExecuteWorkListWithInitialState(NewLocCtx, AMgr.getMaxNodes(), 
-                                           NewState, ReturnNodes);
-    return;
-  }
-
-  // Get the callee entry block.
-  const CFGBlock *Entry = &(CalleeCtx->getCFG()->getEntry());
-  assert(Entry->empty());
-  assert(Entry->succ_size() == 1);
-
-  // Get the solitary successor.
-  const CFGBlock *SuccB = *(Entry->succ_begin());
-
-  // Construct an edge representing the starting location in the callee.
-  BlockEdge Loc(Entry, SuccB, CalleeCtx);
-
-  bool isNew;
-  ExplodedNode *Node = Eng.G->getNode(Loc, state, false, &isNew);
-  Node->addPredecessor(const_cast<ExplodedNode*>(Pred), *Eng.G);
-
-  if (isNew)
-    Eng.WList->enqueue(Node);
-}
-
-void CallExitNodeBuilder::generateNode(const ProgramState *state) {
-  // Get the callee's location context.
-  const StackFrameContext *LocCtx 
-                         = cast<StackFrameContext>(Pred->getLocationContext());
-  // When exiting an implicit automatic obj dtor call, the callsite is the Stmt
-  // that triggers the dtor.
-  PostStmt Loc(LocCtx->getCallSite(), LocCtx->getParent());
-  bool isNew;
-  ExplodedNode *Node = Eng.G->getNode(Loc, state, false, &isNew);
-  Node->addPredecessor(const_cast<ExplodedNode*>(Pred), *Eng.G);
-  if (isNew)
-    Eng.WList->enqueue(Node, LocCtx->getCallSiteBlock(),
-                       LocCtx->getIndex() + 1);
 }

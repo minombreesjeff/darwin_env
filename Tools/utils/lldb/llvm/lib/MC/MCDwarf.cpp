@@ -209,7 +209,7 @@ static inline void EmitDwarfLineTable(MCStreamer *MCOS,
 //
 // This emits the Dwarf file and the line tables.
 //
-void MCDwarfFileTable::Emit(MCStreamer *MCOS) {
+const MCSymbol *MCDwarfFileTable::Emit(MCStreamer *MCOS) {
   MCContext &context = MCOS->getContext();
   // Switch to the section where the table will be emitted into.
   MCOS->SwitchSection(context.getObjectFileInfo()->getDwarfLineSection());
@@ -322,6 +322,8 @@ void MCDwarfFileTable::Emit(MCStreamer *MCOS) {
   // This is the end of the section, so set the value of the symbol at the end
   // of this section (that was used in a previous expression).
   MCOS->EmitLabel(LineEndSym);
+
+  return LineStartSym;
 }
 
 /// Utility function to write the encoding to an object writer.
@@ -454,15 +456,14 @@ static void EmitGenDwarfAbbrev(MCStreamer *MCOS) {
   EmitAbbrev(MCOS, dwarf::DW_AT_language, dwarf::DW_FORM_data2);
   EmitAbbrev(MCOS, 0, 0);
 
-  // DW_TAG_subprogram DIE abbrev (2).
+  // DW_TAG_label DIE abbrev (2).
   MCOS->EmitULEB128IntValue(2);
-  MCOS->EmitULEB128IntValue(dwarf::DW_TAG_subprogram);
+  MCOS->EmitULEB128IntValue(dwarf::DW_TAG_label);
   MCOS->EmitIntValue(dwarf::DW_CHILDREN_yes, 1);
   EmitAbbrev(MCOS, dwarf::DW_AT_name, dwarf::DW_FORM_string);
   EmitAbbrev(MCOS, dwarf::DW_AT_decl_file, dwarf::DW_FORM_data4);
   EmitAbbrev(MCOS, dwarf::DW_AT_decl_line, dwarf::DW_FORM_data4);
   EmitAbbrev(MCOS, dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr);
-  EmitAbbrev(MCOS, dwarf::DW_AT_high_pc, dwarf::DW_FORM_addr);
   EmitAbbrev(MCOS, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag);
   EmitAbbrev(MCOS, 0, 0);
 
@@ -545,8 +546,10 @@ static void EmitGenDwarfAranges(MCStreamer *MCOS) {
 
 // When generating dwarf for assembly source files this emits the data for
 // .debug_info section which contains three parts.  The header, the compile_unit
-// DIE and a list of subprogram DIEs.
-static void EmitGenDwarfInfo(MCStreamer *MCOS) {
+// DIE and a list of label DIEs.
+static void EmitGenDwarfInfo(MCStreamer *MCOS,
+                             const MCSymbol *AbbrevSectionSymbol,
+                             const MCSymbol *LineSectionSymbol) {
   MCContext &context = MCOS->getContext();
 
   MCOS->SwitchSection(context.getObjectFileInfo()->getDwarfInfoSection()); 
@@ -569,7 +572,11 @@ static void EmitGenDwarfInfo(MCStreamer *MCOS) {
 
   // The 4 byte offset to the debug abbrevs from the start of the .debug_abbrev,
   // it is at the start of that section so this is zero.
-  MCOS->EmitIntValue(0, 4);
+  if (AbbrevSectionSymbol) {
+    MCOS->EmitSymbolValue(AbbrevSectionSymbol, 4);
+  } else {
+    MCOS->EmitIntValue(0, 4);
+  }
 
   const MCAsmInfo &asmInfo = context.getAsmInfo();
   int AddrSize = asmInfo.getPointerSize();
@@ -583,7 +590,11 @@ static void EmitGenDwarfInfo(MCStreamer *MCOS) {
 
   // DW_AT_stmt_list, a 4 byte offset from the start of the .debug_line section,
   // which is at the start of that section so this is zero.
-  MCOS->EmitIntValue(0, 4);
+  if (LineSectionSymbol) {
+    MCOS->EmitSymbolValue(LineSectionSymbol, 4);
+  } else {
+    MCOS->EmitIntValue(0, 4);
+  }
 
   // AT_low_pc, the first address of the default .text section.
   const MCExpr *Start = MCSymbolRefExpr::Create(
@@ -630,17 +641,17 @@ static void EmitGenDwarfInfo(MCStreamer *MCOS) {
   // draft has no standard code for assembler.
   MCOS->EmitIntValue(dwarf::DW_LANG_Mips_Assembler, 2);
 
-  // Third part: the list of subprogram DIEs.
+  // Third part: the list of label DIEs.
 
-  // Loop on saved info for dwarf subprograms and create the DIEs for them.
-  const std::vector<const MCGenDwarfSubprogramEntry *> &Entries =
-    MCOS->getContext().getMCGenDwarfSubprogramEntries();
-  for (std::vector<const MCGenDwarfSubprogramEntry *>::const_iterator it =
+  // Loop on saved info for dwarf labels and create the DIEs for them.
+  const std::vector<const MCGenDwarfLabelEntry *> &Entries =
+    MCOS->getContext().getMCGenDwarfLabelEntries();
+  for (std::vector<const MCGenDwarfLabelEntry *>::const_iterator it =
        Entries.begin(), ie = Entries.end(); it != ie;
        ++it) {
-    const MCGenDwarfSubprogramEntry *Entry = *it;
+    const MCGenDwarfLabelEntry *Entry = *it;
 
-    // The DW_TAG_subprogram DIE abbrev (2).
+    // The DW_TAG_label DIE abbrev (2).
     MCOS->EmitULEB128IntValue(2);
 
     // AT_name, of the label without any leading underbar.
@@ -658,17 +669,6 @@ static void EmitGenDwarfInfo(MCStreamer *MCOS) {
                                              MCSymbolRefExpr::VK_None, context);
     MCOS->EmitAbsValue(AT_low_pc, AddrSize);
 
-    // AT_high_pc, end address which is the next label or end of the section.
-    std::vector<const MCGenDwarfSubprogramEntry *>::const_iterator next = it+1;
-    if (next != Entries.end()){
-      const MCGenDwarfSubprogramEntry *NextEntry = *next;
-      const MCExpr *AT_high_pc = MCSymbolRefExpr::Create(NextEntry->getLabel(),
-                                             MCSymbolRefExpr::VK_None, context);
-      MCOS->EmitAbsValue(AT_high_pc, AddrSize);
-    } else {
-      MCOS->EmitAbsValue(End, AddrSize);
-    }
-
     // DW_AT_prototyped, a one byte flag value of 0 saying we have no prototype.
     MCOS->EmitIntValue(0, 1);
 
@@ -678,12 +678,12 @@ static void EmitGenDwarfInfo(MCStreamer *MCOS) {
     // Add the NULL DIE terminating the DW_TAG_unspecified_parameters DIE's.
     MCOS->EmitIntValue(0, 1);
   }
-  // Deallocate the MCGenDwarfSubprogramEntry classes that saved away the info
-  // for the dwarf subprograms.
-  for (std::vector<const MCGenDwarfSubprogramEntry *>::const_iterator it =
+  // Deallocate the MCGenDwarfLabelEntry classes that saved away the info
+  // for the dwarf labels.
+  for (std::vector<const MCGenDwarfLabelEntry *>::const_iterator it =
        Entries.begin(), ie = Entries.end(); it != ie;
        ++it) {
-    const MCGenDwarfSubprogramEntry *Entry = *it;
+    const MCGenDwarfLabelEntry *Entry = *it;
     delete Entry;
   }
 
@@ -698,11 +698,20 @@ static void EmitGenDwarfInfo(MCStreamer *MCOS) {
 // When generating dwarf for assembly source files this emits the Dwarf
 // sections.
 //
-void MCGenDwarfInfo::Emit(MCStreamer *MCOS) {
+void MCGenDwarfInfo::Emit(MCStreamer *MCOS, const MCSymbol *LineSectionSymbol) {
   // Create the dwarf sections in this order (.debug_line already created).
   MCContext &context = MCOS->getContext();
+  const MCAsmInfo &AsmInfo = context.getAsmInfo();
   MCOS->SwitchSection(context.getObjectFileInfo()->getDwarfInfoSection());
   MCOS->SwitchSection(context.getObjectFileInfo()->getDwarfAbbrevSection());
+  MCSymbol *AbbrevSectionSymbol;
+  if (AsmInfo.doesDwarfRequireRelocationForSectionOffset()) {
+    AbbrevSectionSymbol = context.CreateTempSymbol();
+    MCOS->EmitLabel(AbbrevSectionSymbol);
+  } else {
+    AbbrevSectionSymbol = NULL;
+    LineSectionSymbol = NULL;
+  }
   MCOS->SwitchSection(context.getObjectFileInfo()->getDwarfARangesSection());
 
   // If there are no line table entries then do not emit any section contents.
@@ -716,18 +725,18 @@ void MCGenDwarfInfo::Emit(MCStreamer *MCOS) {
   EmitGenDwarfAbbrev(MCOS);
 
   // Output the data for .debug_info section.
-  EmitGenDwarfInfo(MCOS);
+  EmitGenDwarfInfo(MCOS, AbbrevSectionSymbol, LineSectionSymbol);
 }
 
 //
 // When generating dwarf for assembly source files this is called when symbol
 // for a label is created.  If this symbol is not a temporary and is in the
 // section that dwarf is being generated for, save the needed info to create
-// a dwarf subprogram.
+// a dwarf label.
 //
-void MCGenDwarfSubprogramEntry::Make(MCSymbol *Symbol, MCStreamer *MCOS,
+void MCGenDwarfLabelEntry::Make(MCSymbol *Symbol, MCStreamer *MCOS,
                                      SourceMgr &SrcMgr, SMLoc &Loc) {
-  // We won't create dwarf subprogram's for temporary symbols or symbols not in
+  // We won't create dwarf labels for temporary symbols or symbols not in
   // the default text.
   if (Symbol->isTemporary())
     return;
@@ -735,17 +744,17 @@ void MCGenDwarfSubprogramEntry::Make(MCSymbol *Symbol, MCStreamer *MCOS,
   if (context.getGenDwarfSection() != MCOS->getCurrentSection())
     return;
 
-  // The dwarf subprogram's name does not have the symbol name's leading
+  // The dwarf label's name does not have the symbol name's leading
   // underbar if any.
   StringRef Name = Symbol->getName();
   if (Name.startswith("_"))
     Name = Name.substr(1, Name.size()-1);
 
-  // Get the dwarf file number to be used for the dwarf subprogram.
+  // Get the dwarf file number to be used for the dwarf label.
   unsigned FileNumber = context.getGenDwarfFileNumber();
 
   // Finding the line number is the expensive part which is why we just don't
-  // pass it in as for some symbols we won't create a dwarf subprogram.
+  // pass it in as for some symbols we won't create a dwarf label.
   int CurBuffer = SrcMgr.FindBufferContainingLoc(Loc);
   unsigned LineNumber = SrcMgr.FindLineNumber(Loc, CurBuffer);
 
@@ -757,9 +766,9 @@ void MCGenDwarfSubprogramEntry::Make(MCSymbol *Symbol, MCStreamer *MCOS,
   MCOS->EmitLabel(Label);
 
   // Create and entry for the info and add it to the other entries.
-  MCGenDwarfSubprogramEntry *Entry = 
-    new MCGenDwarfSubprogramEntry(Name, FileNumber, LineNumber, Label);
-  MCOS->getContext().addMCGenDwarfSubprogramEntry(Entry);
+  MCGenDwarfLabelEntry *Entry = 
+    new MCGenDwarfLabelEntry(Name, FileNumber, LineNumber, Label);
+  MCOS->getContext().addMCGenDwarfLabelEntry(Entry);
 }
 
 static int getDataAlignmentFactor(MCStreamer &streamer) {
@@ -777,8 +786,7 @@ static unsigned getSizeForEncoding(MCStreamer &streamer,
   MCContext &context = streamer.getContext();
   unsigned format = symbolEncoding & 0x0f;
   switch (format) {
-  default:
-    assert(0 && "Unknown Encoding");
+  default: llvm_unreachable("Unknown Encoding");
   case dwarf::DW_EH_PE_absptr:
   case dwarf::DW_EH_PE_signed:
     return context.getAsmInfo().getPointerSize();
@@ -852,6 +860,7 @@ namespace {
                             const MCSymbol *personality,
                             unsigned personalityEncoding,
                             const MCSymbol *lsda,
+                            bool IsSignalFrame,
                             unsigned lsdaEncoding);
     MCSymbol *EmitFDE(MCStreamer &streamer,
                       const MCSymbol &cieStart,
@@ -868,28 +877,40 @@ namespace {
 static void EmitEncodingByte(MCStreamer &Streamer, unsigned Encoding,
                              StringRef Prefix) {
   if (Streamer.isVerboseAsm()) {
-    const char *EncStr = 0;
+    const char *EncStr;
     switch (Encoding) {
-    default: EncStr = "<unknown encoding>";
-    case dwarf::DW_EH_PE_absptr: EncStr = "absptr";
-    case dwarf::DW_EH_PE_omit:   EncStr = "omit";
-    case dwarf::DW_EH_PE_pcrel:  EncStr = "pcrel";
-    case dwarf::DW_EH_PE_udata4: EncStr = "udata4";
-    case dwarf::DW_EH_PE_udata8: EncStr = "udata8";
-    case dwarf::DW_EH_PE_sdata4: EncStr = "sdata4";
-    case dwarf::DW_EH_PE_sdata8: EncStr = "sdata8";
-    case dwarf::DW_EH_PE_pcrel |dwarf::DW_EH_PE_udata4: EncStr = "pcrel udata4";
-    case dwarf::DW_EH_PE_pcrel |dwarf::DW_EH_PE_sdata4: EncStr = "pcrel sdata4";
-    case dwarf::DW_EH_PE_pcrel |dwarf::DW_EH_PE_udata8: EncStr = "pcrel udata8";
-    case dwarf::DW_EH_PE_pcrel |dwarf::DW_EH_PE_sdata8: EncStr = "pcrel sdata8";
+    default: EncStr = "<unknown encoding>"; break;
+    case dwarf::DW_EH_PE_absptr: EncStr = "absptr"; break;
+    case dwarf::DW_EH_PE_omit:   EncStr = "omit"; break;
+    case dwarf::DW_EH_PE_pcrel:  EncStr = "pcrel"; break;
+    case dwarf::DW_EH_PE_udata4: EncStr = "udata4"; break;
+    case dwarf::DW_EH_PE_udata8: EncStr = "udata8"; break;
+    case dwarf::DW_EH_PE_sdata4: EncStr = "sdata4"; break;
+    case dwarf::DW_EH_PE_sdata8: EncStr = "sdata8"; break;
+    case dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_udata4:
+      EncStr = "pcrel udata4";
+      break;
+    case dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata4:
+      EncStr = "pcrel sdata4";
+      break;
+    case dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_udata8:
+      EncStr = "pcrel udata8";
+      break;
+    case dwarf::DW_EH_PE_pcrel | dwarf::DW_EH_PE_sdata8:
+      EncStr = "screl sdata8";
+      break;
     case dwarf::DW_EH_PE_indirect |dwarf::DW_EH_PE_pcrel|dwarf::DW_EH_PE_udata4:
       EncStr = "indirect pcrel udata4";
+      break;
     case dwarf::DW_EH_PE_indirect |dwarf::DW_EH_PE_pcrel|dwarf::DW_EH_PE_sdata4:
       EncStr = "indirect pcrel sdata4";
+      break;
     case dwarf::DW_EH_PE_indirect |dwarf::DW_EH_PE_pcrel|dwarf::DW_EH_PE_udata8:
       EncStr = "indirect pcrel udata8";
+      break;
     case dwarf::DW_EH_PE_indirect |dwarf::DW_EH_PE_pcrel|dwarf::DW_EH_PE_sdata8:
       EncStr = "indirect pcrel sdata8";
+      break;
     }
 
     Streamer.AddComment(Twine(Prefix) + " = " + EncStr);
@@ -971,11 +992,11 @@ void FrameEmitterImpl::EmitCFIInstruction(MCStreamer &Streamer,
     }
     return;
   }
-  case MCCFIInstruction::Remember:
+  case MCCFIInstruction::RememberState:
     if (VerboseAsm) Streamer.AddComment("DW_CFA_remember_state");
     Streamer.EmitIntValue(dwarf::DW_CFA_remember_state, 1);
     return;
-  case MCCFIInstruction::Restore:
+  case MCCFIInstruction::RestoreState:
     if (VerboseAsm) Streamer.AddComment("DW_CFA_restore_state");
     Streamer.EmitIntValue(dwarf::DW_CFA_restore_state, 1);
     return;
@@ -987,6 +1008,19 @@ void FrameEmitterImpl::EmitCFIInstruction(MCStreamer &Streamer,
     Streamer.EmitULEB128IntValue(Reg);
     return;
   }
+  case MCCFIInstruction::Restore: {
+    unsigned Reg = Instr.getDestination().getReg();
+    if (VerboseAsm) {
+      Streamer.AddComment("DW_CFA_restore");
+      Streamer.AddComment(Twine("Reg ") + Twine(Reg));
+    }
+    Streamer.EmitIntValue(dwarf::DW_CFA_restore | Reg, 1);
+    return;
+  }
+  case MCCFIInstruction::Escape:
+    if (VerboseAsm) Streamer.AddComment("Escape bytes");
+    Streamer.EmitBytes(Instr.getValues(), 0);
+    return;
   }
   llvm_unreachable("Unhandled case in switch");
 }
@@ -1098,6 +1132,7 @@ const MCSymbol &FrameEmitterImpl::EmitCIE(MCStreamer &streamer,
                                           const MCSymbol *personality,
                                           unsigned personalityEncoding,
                                           const MCSymbol *lsda,
+                                          bool IsSignalFrame,
                                           unsigned lsdaEncoding) {
   MCContext &context = streamer.getContext();
   const MCRegisterInfo &MRI = context.getRegisterInfo();
@@ -1140,6 +1175,8 @@ const MCSymbol &FrameEmitterImpl::EmitCIE(MCStreamer &streamer,
     if (lsda)
       Augmentation += "L";
     Augmentation += "R";
+    if (IsSignalFrame)
+      Augmentation += "S";
     streamer.EmitBytes(Augmentation.str(), 0);
   }
   streamer.EmitIntValue(0, 1);
@@ -1299,17 +1336,18 @@ MCSymbol *FrameEmitterImpl::EmitFDE(MCStreamer &streamer,
 
 namespace {
   struct CIEKey {
-    static const CIEKey getEmptyKey() { return CIEKey(0, 0, -1); }
-    static const CIEKey getTombstoneKey() { return CIEKey(0, -1, 0); }
+    static const CIEKey getEmptyKey() { return CIEKey(0, 0, -1, false); }
+    static const CIEKey getTombstoneKey() { return CIEKey(0, -1, 0, false); }
 
     CIEKey(const MCSymbol* Personality_, unsigned PersonalityEncoding_,
-           unsigned LsdaEncoding_) : Personality(Personality_),
-                                     PersonalityEncoding(PersonalityEncoding_),
-                                     LsdaEncoding(LsdaEncoding_) {
+           unsigned LsdaEncoding_, bool IsSignalFrame_) :
+      Personality(Personality_), PersonalityEncoding(PersonalityEncoding_),
+      LsdaEncoding(LsdaEncoding_), IsSignalFrame(IsSignalFrame_) {
     }
     const MCSymbol* Personality;
     unsigned PersonalityEncoding;
     unsigned LsdaEncoding;
+    bool IsSignalFrame;
   };
 }
 
@@ -1327,13 +1365,15 @@ namespace llvm {
       ID.AddPointer(Key.Personality);
       ID.AddInteger(Key.PersonalityEncoding);
       ID.AddInteger(Key.LsdaEncoding);
+      ID.AddBoolean(Key.IsSignalFrame);
       return ID.ComputeHash();
     }
     static bool isEqual(const CIEKey &LHS,
                         const CIEKey &RHS) {
       return LHS.Personality == RHS.Personality &&
         LHS.PersonalityEncoding == RHS.PersonalityEncoding &&
-        LHS.LsdaEncoding == RHS.LsdaEncoding;
+        LHS.LsdaEncoding == RHS.LsdaEncoding &&
+        LHS.IsSignalFrame == RHS.IsSignalFrame;
     }
   };
 }
@@ -1369,11 +1409,12 @@ void MCDwarfFrameEmitter::Emit(MCStreamer &Streamer,
   for (unsigned i = 0, n = FrameArray.size(); i < n; ++i) {
     const MCDwarfFrameInfo &Frame = FrameArray[i];
     CIEKey Key(Frame.Personality, Frame.PersonalityEncoding,
-               Frame.LsdaEncoding);
+               Frame.LsdaEncoding, Frame.IsSignalFrame);
     const MCSymbol *&CIEStart = IsEH ? CIEStarts[Key] : DummyDebugKey;
     if (!CIEStart)
       CIEStart = &Emitter.EmitCIE(Streamer, Frame.Personality,
                                   Frame.PersonalityEncoding, Frame.Lsda,
+                                  Frame.IsSignalFrame,
                                   Frame.LsdaEncoding);
 
     FDEEnd = Emitter.EmitFDE(Streamer, *CIEStart, Frame);

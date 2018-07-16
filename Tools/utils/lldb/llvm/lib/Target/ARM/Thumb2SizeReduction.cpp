@@ -597,7 +597,24 @@ Thumb2SizeReduce::ReduceTo2Addr(MachineBasicBlock &MBB, MachineInstr *MI,
 
   unsigned Reg0 = MI->getOperand(0).getReg();
   unsigned Reg1 = MI->getOperand(1).getReg();
-  if (Reg0 != Reg1) {
+  // t2MUL is "special". The tied source operand is second, not first.
+  if (MI->getOpcode() == ARM::t2MUL) {
+    unsigned Reg2 = MI->getOperand(2).getReg();
+    // Early exit if the regs aren't all low regs.
+    if (!isARMLowRegister(Reg0) || !isARMLowRegister(Reg1)
+        || !isARMLowRegister(Reg2))
+      return false;
+    if (Reg0 != Reg2) {
+      // If the other operand also isn't the same as the destination, we
+      // can't reduce.
+      if (Reg1 != Reg0)
+        return false;
+      // Try to commute the operands to make it a 2-address instruction.
+      MachineInstr *CommutedMI = TII->commuteInstruction(MI);
+      if (!CommutedMI)
+        return false;
+    }
+  } else if (Reg0 != Reg1) {
     // Try to commute the operands to make it a 2-address instruction.
     unsigned CommOpIdx1, CommOpIdx2;
     if (!TII->findCommutedOpIndices(MI, CommOpIdx1, CommOpIdx2) ||
@@ -880,14 +897,17 @@ bool Thumb2SizeReduce::ReduceMBB(MachineBasicBlock &MBB) {
     }
 
   ProcessNext:
-    if (LiveCPSR &&
-        NextMII != E && MI->isInsideBundle() && !NextMII->isInsideBundle() &&
-        BundleMI->killsRegister(ARM::CPSR))
+    if (NextMII != E && MI->isInsideBundle() && !NextMII->isInsideBundle()) {
       // FIXME: Since post-ra scheduler operates on bundles, the CPSR kill
       // marker is only on the BUNDLE instruction. Process the BUNDLE
       // instruction as we finish with the bundled instruction to work around
       // the inconsistency.
-      LiveCPSR = false;
+      if (BundleMI->killsRegister(ARM::CPSR))
+        LiveCPSR = false;
+      MachineOperand *MO = BundleMI->findRegisterDefOperand(ARM::CPSR);
+      if (MO && !MO->isDead())
+        LiveCPSR = true;
+    }
 
     bool DefCPSR = false;
     LiveCPSR = UpdateCPSRDef(*MI, LiveCPSR, DefCPSR);

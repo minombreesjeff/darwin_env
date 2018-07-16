@@ -1,4 +1,4 @@
-//===---- HexagonCFGOptimizer.cpp - CFG optimizations ---------------------===//
+//===-- HexagonCFGOptimizer.cpp - CFG optimizations -----------------------===//
 //                     The LLVM Compiler Infrastructure
 //
 // This file is distributed under the University of Illinois Open Source
@@ -6,27 +6,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #define DEBUG_TYPE "hexagon_cfg"
-#include "llvm/CodeGen/Passes.h"
+#include "HexagonTargetMachine.h"
+#include "HexagonSubtarget.h"
+#include "HexagonMachineFunctionInfo.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "HexagonTargetMachine.h"
-#include "HexagonSubtarget.h"
-#include "HexagonMachineFunctionInfo.h"
-#include <iostream>
-
-#include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
 
@@ -56,8 +51,8 @@ private:
 char HexagonCFGOptimizer::ID = 0;
 
 static bool IsConditionalBranch(int Opc) {
-  return (Opc == Hexagon::JMP_Pred) || (Opc == Hexagon::JMP_PredNot)
-    || (Opc == Hexagon::JMP_PredPt) || (Opc == Hexagon::JMP_PredNotPt);
+  return (Opc == Hexagon::JMP_c) || (Opc == Hexagon::JMP_cNot)
+    || (Opc == Hexagon::JMP_cdnPt) || (Opc == Hexagon::JMP_cdnNotPt);
 }
 
 
@@ -72,24 +67,24 @@ HexagonCFGOptimizer::InvertAndChangeJumpTarget(MachineInstr* MI,
   const HexagonInstrInfo *QII = QTM.getInstrInfo();
   int NewOpcode = 0;
   switch(MI->getOpcode()) {
-  case Hexagon::JMP_Pred:
-    NewOpcode = Hexagon::JMP_PredNot;
+  case Hexagon::JMP_c:
+    NewOpcode = Hexagon::JMP_cNot;
     break;
 
-  case Hexagon::JMP_PredNot:
-    NewOpcode = Hexagon::JMP_Pred;
+  case Hexagon::JMP_cNot:
+    NewOpcode = Hexagon::JMP_c;
     break;
 
-  case Hexagon::JMP_PredPt:
-    NewOpcode = Hexagon::JMP_PredNotPt;
+  case Hexagon::JMP_cdnPt:
+    NewOpcode = Hexagon::JMP_cdnNotPt;
     break;
 
-  case Hexagon::JMP_PredNotPt:
-    NewOpcode = Hexagon::JMP_PredPt;
+  case Hexagon::JMP_cdnNotPt:
+    NewOpcode = Hexagon::JMP_cdnPt;
     break;
 
   default:
-    assert(0 && "Cannot handle this case");
+    llvm_unreachable("Cannot handle this case");
   }
 
   MI->setDesc(QII->get(NewOpcode));
@@ -160,8 +155,8 @@ bool HexagonCFGOptimizer::runOnMachineFunction(MachineFunction &Fn) {
         // The target of the unconditional branch must be JumpAroundTarget.
         // TODO: If not, we should not invert the unconditional branch.
         MachineBasicBlock* CondBranchTarget = NULL;
-        if ((MI->getOpcode() == Hexagon::JMP_Pred) ||
-            (MI->getOpcode() == Hexagon::JMP_PredNot)) {
+        if ((MI->getOpcode() == Hexagon::JMP_c) ||
+            (MI->getOpcode() == Hexagon::JMP_cNot)) {
           CondBranchTarget = MI->getOperand(1).getMBB();
         }
 

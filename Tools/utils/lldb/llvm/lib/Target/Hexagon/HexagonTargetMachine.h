@@ -29,8 +29,8 @@ class Module;
 class HexagonTargetMachine : public LLVMTargetMachine {
   const TargetData DataLayout;       // Calculates type size & alignment.
   HexagonSubtarget Subtarget;
-  HexagonTargetLowering TLInfo;
   HexagonInstrInfo InstrInfo;
+  HexagonTargetLowering TLInfo;
   HexagonSelectionDAGInfo TSInfo;
   HexagonFrameLowering FrameLowering;
   const InstrItineraryData* InstrItins;
@@ -72,11 +72,7 @@ public:
 
   // Pass Pipeline Configuration.
   virtual bool addPassesForOptimizations(PassManagerBase &PM);
-  virtual bool addInstSelector(PassManagerBase &PM);
-  virtual bool addPreEmitPass(PassManagerBase &PM);
-  virtual bool addPreRegAlloc(llvm::PassManagerBase &PM);
-  virtual bool addPostRegAlloc(PassManagerBase &PM);
-  virtual bool addPreSched2(PassManagerBase &PM);
+  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
 };
 
 extern bool flag_aligned_memcpy;

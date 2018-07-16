@@ -22,7 +22,6 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Event.h"
 #include "lldb/Core/Log.h"
-#include "lldb/Core/StreamAsynchronousIO.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/ValueObject.h"
@@ -31,6 +30,7 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
+#include "lldb/Interpreter/OptionGroupWatchpoint.h"
 #include "lldb/lldb-private-log.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Process.h"
@@ -41,13 +41,20 @@
 using namespace lldb;
 using namespace lldb_private;
 
+ConstString &
+Target::GetStaticBroadcasterClass ()
+{
+    static ConstString class_name ("lldb.target");
+    return class_name;
+}
+
 //----------------------------------------------------------------------
 // Target constructor
 //----------------------------------------------------------------------
 Target::Target(Debugger &debugger, const ArchSpec &target_arch, const lldb::PlatformSP &platform_sp) :
-    Broadcaster ("lldb.target"),
+    Broadcaster (&debugger, "lldb.target"),
     ExecutionContextScope (),
-    TargetInstanceSettings (*GetSettingsController()),
+    TargetInstanceSettings (GetSettingsController()),
     m_debugger (debugger),
     m_platform_sp (platform_sp),
     m_mutex (Mutex::eMutexTypeRecursive), 
@@ -58,6 +65,7 @@ Target::Target(Debugger &debugger, const ArchSpec &target_arch, const lldb::Plat
     m_internal_breakpoint_list (true),
     m_watchpoint_list (),
     m_process_sp (),
+    m_valid (true),
     m_search_filter_sp (),
     m_image_search_paths (ImageSearchPathsChanged, this),
     m_scratch_ast_context_ap (NULL),
@@ -67,11 +75,14 @@ Target::Target(Debugger &debugger, const ArchSpec &target_arch, const lldb::Plat
     m_source_manager(*this),
     m_stop_hooks (),
     m_stop_hook_next_id (0),
-    m_suppress_stop_hooks (false)
+    m_suppress_stop_hooks (false),
+    m_suppress_synthetic_value(false)
 {
     SetEventName (eBroadcastBitBreakpointChanged, "breakpoint-changed");
     SetEventName (eBroadcastBitModulesLoaded, "modules-loaded");
     SetEventName (eBroadcastBitModulesUnloaded, "modules-unloaded");
+    
+    CheckInWithManager();
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
@@ -130,16 +141,19 @@ Target::DeleteCurrentProcess ()
         m_breakpoint_list.ClearAllBreakpointSites();
         m_internal_breakpoint_list.ClearAllBreakpointSites();
         // Disable watchpoints just on the debugger side.
+        Mutex::Locker locker;
+        this->GetWatchpointList().GetListMutex(locker);
         DisableAllWatchpoints(false);
+        ClearAllWatchpointHitCounts();
         m_process_sp.reset();
     }
 }
 
 const lldb::ProcessSP &
-Target::CreateProcess (Listener &listener, const char *plugin_name)
+Target::CreateProcess (Listener &listener, const char *plugin_name, const FileSpec *crash_file)
 {
     DeleteCurrentProcess ();
-    m_process_sp.reset(Process::FindPlugin(*this, plugin_name, listener));
+    m_process_sp = Process::FindPlugin(*this, plugin_name, listener, crash_file);
     return m_process_sp;
 }
 
@@ -149,18 +163,11 @@ Target::GetProcessSP () const
     return m_process_sp;
 }
 
-lldb::TargetSP
-Target::GetSP()
-{
-    // This object contains an instrusive ref count base class so we can
-    // easily make a shared pointer to this object
-    return TargetSP(this);
-}
-
 void
 Target::Destroy()
 {
     Mutex::Locker locker (m_mutex);
+    m_valid = false;
     DeleteCurrentProcess ();
     m_platform_sp.reset();
     m_arch.Clear();
@@ -180,6 +187,7 @@ Target::Destroy()
     m_stop_hooks.clear();
     m_stop_hook_next_id = 0;
     m_suppress_stop_hooks = false;
+    m_suppress_synthetic_value = false;
 }
 
 
@@ -227,10 +235,17 @@ Target::CreateSourceRegexBreakpoint (const FileSpecList *containingModules,
 
 
 BreakpointSP
-Target::CreateBreakpoint (const FileSpecList *containingModules, const FileSpec &file, uint32_t line_no, bool check_inlines, bool internal)
+Target::CreateBreakpoint (const FileSpecList *containingModules,
+                          const FileSpec &file,
+                          uint32_t line_no,
+                          bool check_inlines,
+                          LazyBool skip_prologue,
+                          bool internal)
 {
     SearchFilterSP filter_sp(GetSearchFilterForModuleList (containingModules));
-    BreakpointResolverSP resolver_sp(new BreakpointResolverFileLine (NULL, file, line_no, check_inlines));
+    
+    BreakpointResolverSP resolver_sp(new BreakpointResolverFileLine (NULL, file, line_no, check_inlines,
+                                                                     skip_prologue == eLazyBoolCalculate ? GetSkipPrologue() : skip_prologue));
     return CreateBreakpoint (filter_sp, resolver_sp, internal);
 }
 
@@ -256,8 +271,7 @@ Target::CreateBreakpoint (lldb::addr_t addr, bool internal)
 BreakpointSP
 Target::CreateBreakpoint (Address &addr, bool internal)
 {
-    TargetSP target_sp = this->GetSP();
-    SearchFilterSP filter_sp(new SearchFilterForNonModuleSpecificSearches (target_sp));
+    SearchFilterSP filter_sp(new SearchFilterForNonModuleSpecificSearches (shared_from_this()));
     BreakpointResolverSP resolver_sp (new BreakpointResolverAddress (NULL, addr));
     return CreateBreakpoint (filter_sp, resolver_sp, internal);
 }
@@ -267,8 +281,8 @@ Target::CreateBreakpoint (const FileSpecList *containingModules,
                           const FileSpecList *containingSourceFiles,
                           const char *func_name, 
                           uint32_t func_name_type_mask, 
-                          bool internal,
-                          LazyBool skip_prologue)
+                          LazyBool skip_prologue,
+                          bool internal)
 {
     BreakpointSP bp_sp;
     if (func_name)
@@ -285,22 +299,67 @@ Target::CreateBreakpoint (const FileSpecList *containingModules,
     return bp_sp;
 }
 
+lldb::BreakpointSP
+Target::CreateBreakpoint (const FileSpecList *containingModules,
+                          const FileSpecList *containingSourceFiles,
+                          const std::vector<std::string> &func_names,
+                          uint32_t func_name_type_mask,
+                          LazyBool skip_prologue,
+                          bool internal)
+{
+    BreakpointSP bp_sp;
+    size_t num_names = func_names.size();
+    if (num_names > 0)
+    {
+        SearchFilterSP filter_sp(GetSearchFilterForModuleAndCUList (containingModules, containingSourceFiles));
+        
+        BreakpointResolverSP resolver_sp (new BreakpointResolverName (NULL, 
+                                                                      func_names,
+                                                                      func_name_type_mask,
+                                                                      skip_prologue == eLazyBoolCalculate ? GetSkipPrologue() : skip_prologue));
+        bp_sp = CreateBreakpoint (filter_sp, resolver_sp, internal);
+    }
+    return bp_sp;
+}
+
+BreakpointSP
+Target::CreateBreakpoint (const FileSpecList *containingModules,
+                          const FileSpecList *containingSourceFiles,
+                          const char *func_names[],
+                          size_t num_names, 
+                          uint32_t func_name_type_mask, 
+                          LazyBool skip_prologue,
+                          bool internal)
+{
+    BreakpointSP bp_sp;
+    if (num_names > 0)
+    {
+        SearchFilterSP filter_sp(GetSearchFilterForModuleAndCUList (containingModules, containingSourceFiles));
+        
+        BreakpointResolverSP resolver_sp (new BreakpointResolverName (NULL, 
+                                                                      func_names,
+                                                                      num_names, 
+                                                                      func_name_type_mask,
+                                                                      skip_prologue == eLazyBoolCalculate ? GetSkipPrologue() : skip_prologue));
+        bp_sp = CreateBreakpoint (filter_sp, resolver_sp, internal);
+    }
+    return bp_sp;
+}
 
 SearchFilterSP
 Target::GetSearchFilterForModule (const FileSpec *containingModule)
 {
     SearchFilterSP filter_sp;
-    lldb::TargetSP target_sp = this->GetSP();
     if (containingModule != NULL)
     {
         // TODO: We should look into sharing module based search filters
         // across many breakpoints like we do for the simple target based one
-        filter_sp.reset (new SearchFilterByModule (target_sp, *containingModule));
+        filter_sp.reset (new SearchFilterByModule (shared_from_this(), *containingModule));
     }
     else
     {
         if (m_search_filter_sp.get() == NULL)
-            m_search_filter_sp.reset (new SearchFilterForNonModuleSpecificSearches (target_sp));
+            m_search_filter_sp.reset (new SearchFilterForNonModuleSpecificSearches (shared_from_this()));
         filter_sp = m_search_filter_sp;
     }
     return filter_sp;
@@ -310,50 +369,49 @@ SearchFilterSP
 Target::GetSearchFilterForModuleList (const FileSpecList *containingModules)
 {
     SearchFilterSP filter_sp;
-    lldb::TargetSP target_sp = this->GetSP();
     if (containingModules && containingModules->GetSize() != 0)
     {
         // TODO: We should look into sharing module based search filters
         // across many breakpoints like we do for the simple target based one
-        filter_sp.reset (new SearchFilterByModuleList (target_sp, *containingModules));
+        filter_sp.reset (new SearchFilterByModuleList (shared_from_this(), *containingModules));
     }
     else
     {
         if (m_search_filter_sp.get() == NULL)
-            m_search_filter_sp.reset (new SearchFilterForNonModuleSpecificSearches (target_sp));
+            m_search_filter_sp.reset (new SearchFilterForNonModuleSpecificSearches (shared_from_this()));
         filter_sp = m_search_filter_sp;
     }
     return filter_sp;
 }
 
 SearchFilterSP
-Target::GetSearchFilterForModuleAndCUList (const FileSpecList *containingModules, const FileSpecList *containingSourceFiles)
+Target::GetSearchFilterForModuleAndCUList (const FileSpecList *containingModules,
+                                           const FileSpecList *containingSourceFiles)
 {
     if (containingSourceFiles == NULL || containingSourceFiles->GetSize() == 0)
         return GetSearchFilterForModuleList(containingModules);
         
     SearchFilterSP filter_sp;
-    lldb::TargetSP target_sp = this->GetSP();
     if (containingModules == NULL)
     {
         // We could make a special "CU List only SearchFilter".  Better yet was if these could be composable, 
         // but that will take a little reworking.
         
-        filter_sp.reset (new SearchFilterByModuleListAndCU (target_sp, FileSpecList(), *containingSourceFiles));
+        filter_sp.reset (new SearchFilterByModuleListAndCU (shared_from_this(), FileSpecList(), *containingSourceFiles));
     }
     else
     {
-        filter_sp.reset (new SearchFilterByModuleListAndCU (target_sp, *containingModules, *containingSourceFiles));
+        filter_sp.reset (new SearchFilterByModuleListAndCU (shared_from_this(), *containingModules, *containingSourceFiles));
     }
     return filter_sp;
 }
 
 BreakpointSP
 Target::CreateFuncRegexBreakpoint (const FileSpecList *containingModules, 
-                          const FileSpecList *containingSourceFiles,
-                          RegularExpression &func_regex, 
-                          bool internal,
-                          LazyBool skip_prologue)
+                                   const FileSpecList *containingSourceFiles,
+                                   RegularExpression &func_regex, 
+                                   LazyBool skip_prologue,
+                                   bool internal)
 {
     SearchFilterSP filter_sp(GetSearchFilterForModuleAndCUList (containingModules, containingSourceFiles));
     BreakpointResolverSP resolver_sp(new BreakpointResolverName (NULL, 
@@ -363,6 +421,12 @@ Target::CreateFuncRegexBreakpoint (const FileSpecList *containingModules,
     return CreateBreakpoint (filter_sp, resolver_sp, internal);
 }
 
+lldb::BreakpointSP
+Target::CreateExceptionBreakpoint (enum lldb::LanguageType language, bool catch_bp, bool throw_bp, bool internal)
+{
+    return LanguageRuntime::CreateExceptionBreakpoint (*this, language, catch_bp, throw_bp, internal);
+}
+    
 BreakpointSP
 Target::CreateBreakpoint (SearchFilterSP &filter_sp, BreakpointResolverSP &resolver_sp, bool internal)
 {
@@ -402,10 +466,25 @@ Target::ProcessIsValid()
     return (m_process_sp && m_process_sp->IsAlive());
 }
 
+static bool
+CheckIfWatchpointsExhausted(Target *target, Error &error)
+{
+    uint32_t num_supported_hardware_watchpoints;
+    Error rc = target->GetProcessSP()->GetWatchpointSupportInfo(num_supported_hardware_watchpoints);
+    if (rc.Success())
+    {
+        uint32_t num_current_watchpoints = target->GetWatchpointList().GetSize();
+        if (num_current_watchpoints >= num_supported_hardware_watchpoints)
+            error.SetErrorStringWithFormat("number of supported hardware watchpoints (%u) has been reached",
+                                           num_supported_hardware_watchpoints);
+    }
+    return false;
+}
+
 // See also Watchpoint::SetWatchpointType(uint32_t type) and
 // the OptionGroupWatchpoint::WatchType enum type.
 WatchpointSP
-Target::CreateWatchpoint(lldb::addr_t addr, size_t size, uint32_t type)
+Target::CreateWatchpoint(lldb::addr_t addr, size_t size, uint32_t type, Error &error)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_WATCHPOINTS));
     if (log)
@@ -414,12 +493,25 @@ Target::CreateWatchpoint(lldb::addr_t addr, size_t size, uint32_t type)
 
     WatchpointSP wp_sp;
     if (!ProcessIsValid())
+    {
+        error.SetErrorString("process is not alive");
         return wp_sp;
+    }
     if (addr == LLDB_INVALID_ADDRESS || size == 0)
+    {
+        if (size == 0)
+            error.SetErrorString("cannot set a watchpoint with watch_size of 0");
+        else
+            error.SetErrorStringWithFormat("invalid watch address: %llu", addr);
         return wp_sp;
+    }
 
     // Currently we only support one watchpoint per address, with total number
     // of watchpoints limited by the hardware which the inferior is running on.
+
+    // Grab the list mutex while doing operations.
+    Mutex::Locker locker;
+    this->GetWatchpointList().GetListMutex(locker);
     WatchpointSP matched_sp = m_watchpoint_list.FindByAddress(addr);
     if (matched_sp)
     {
@@ -450,15 +542,25 @@ Target::CreateWatchpoint(lldb::addr_t addr, size_t size, uint32_t type)
         m_watchpoint_list.Add(wp_sp);
     }
 
-    Error rc = m_process_sp->EnableWatchpoint(wp_sp.get());
+    error = m_process_sp->EnableWatchpoint(wp_sp.get());
     if (log)
             log->Printf("Target::%s (creation of watchpoint %s with id = %u)\n",
                         __FUNCTION__,
-                        rc.Success() ? "succeeded" : "failed",
+                        error.Success() ? "succeeded" : "failed",
                         wp_sp->GetID());
 
-    if (rc.Fail())
+    if (error.Fail()) {
+        // Enabling the watchpoint on the device side failed.
+        // Remove the said watchpoint from the list maintained by the target instance.
+        m_watchpoint_list.Remove(wp_sp->GetID());
+        // See if we could provide more helpful error message.
+        if (!CheckIfWatchpointsExhausted(this, error))
+        {
+            if (!OptionGroupWatchpoint::IsWatchSizeSupported(size))
+                error.SetErrorStringWithFormat("watch size of %lu is not supported", size);
+        }
         wp_sp.reset();
+    }
     else
         m_last_created_watchpoint = wp_sp;
     return wp_sp;
@@ -676,6 +778,26 @@ Target::EnableAllWatchpoints (bool end_to_end)
     return true; // Success!
 }
 
+// Assumption: Caller holds the list mutex lock for m_watchpoint_list.
+bool
+Target::ClearAllWatchpointHitCounts ()
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_WATCHPOINTS));
+    if (log)
+        log->Printf ("Target::%s\n", __FUNCTION__);
+
+    size_t num_watchpoints = m_watchpoint_list.GetSize();
+    for (size_t i = 0; i < num_watchpoints; ++i)
+    {
+        WatchpointSP wp_sp = m_watchpoint_list.GetByIndex(i);
+        if (!wp_sp)
+            return false;
+
+        wp_sp->ResetHitCount();
+    }
+    return true; // Success!
+}
+
 // Assumption: Caller holds the list mutex lock for m_watchpoint_list
 // during these operations.
 bool
@@ -830,8 +952,8 @@ Target::SetExecutableModule (ModuleSP& executable_sp, bool get_dependent_files)
                 else
                     platform_dependent_file_spec = dependent_file_spec;
 
-                ModuleSP image_module_sp(GetSharedModule (platform_dependent_file_spec,
-                                                          m_arch));
+                ModuleSpec module_spec (platform_dependent_file_spec, m_arch);
+                ModuleSP image_module_sp(GetSharedModule (module_spec));
                 if (image_module_sp.get())
                 {
                     ObjectFile *objfile = image_module_sp->GetObjectFile();
@@ -849,15 +971,12 @@ Target::SetExecutableModule (ModuleSP& executable_sp, bool get_dependent_files)
 bool
 Target::SetArchitecture (const ArchSpec &arch_spec)
 {
-    if (m_arch == arch_spec)
+    if (m_arch == arch_spec || !m_arch.IsValid())
     {
-        // If we're setting the architecture to our current architecture, we
-        // don't need to do anything.
-        return true;
-    }
-    else if (!m_arch.IsValid())
-    {
-        // If we haven't got a valid arch spec, then we just need to set it.
+        // If we haven't got a valid arch spec, or the architectures are
+        // compatible, so just update the architecture. Architectures can be
+        // equal, yet the triple OS and vendor might change, so we need to do
+        // the assignment here just in case.
         m_arch = arch_spec;
         return true;
     }
@@ -874,31 +993,21 @@ Target::SetArchitecture (const ArchSpec &arch_spec)
         
         if (executable_sp)
         {
-            FileSpec exec_file_spec = executable_sp->GetFileSpec();
-            Error error = ModuleList::GetSharedModule(exec_file_spec, 
-                                                      arch_spec, 
-                                                      NULL, 
-                                                      NULL, 
-                                                      0, 
-                                                      executable_sp, 
-                                                      NULL, 
-                                                      NULL);
+            ModuleSpec module_spec (executable_sp->GetFileSpec(), arch_spec);
+            Error error = ModuleList::GetSharedModule (module_spec, 
+                                                       executable_sp, 
+                                                       &GetExecutableSearchPaths(),
+                                                       NULL, 
+                                                       NULL);
                                           
             if (!error.Fail() && executable_sp)
             {
                 SetExecutableModule (executable_sp, true);
                 return true;
             }
-            else
-            {
-                return false;
-            }
-        }
-        else
-        {
-            return false;
         }
     }
+    return false;
 }
 
 void
@@ -914,12 +1023,7 @@ void
 Target::ModuleUpdated (ModuleSP &old_module_sp, ModuleSP &new_module_sp)
 {
     // A module is replacing an already added module
-    ModuleList module_list;
-    module_list.Append (old_module_sp);
-    ModulesDidUnload (module_list);
-    module_list.Clear ();
-    module_list.Append (new_module_sp);
-    ModulesDidLoad (module_list);
+    m_breakpoint_list.UpdateBreakpointsWhenModuleIsReplaced(old_module_sp, new_module_sp);
 }
 
 void
@@ -944,7 +1048,7 @@ Target::ModulesDidUnload (ModuleList &module_list)
 
 
 bool
-Target::ModuleIsExcludedForNonModuleSpecificSearches (const FileSpec &module_spec)
+Target::ModuleIsExcludedForNonModuleSpecificSearches (const FileSpec &module_file_spec)
 {
 
     if (!m_breakpoints_use_platform_avoid)
@@ -952,10 +1056,8 @@ Target::ModuleIsExcludedForNonModuleSpecificSearches (const FileSpec &module_spe
     else
     {
         ModuleList matchingModules;
-        const ArchSpec *arch_ptr = NULL;
-        const lldb_private::UUID *uuid_ptr= NULL;
-        const ConstString *object_name = NULL;
-        size_t num_modules = GetImages().FindModules(&module_spec, arch_ptr, uuid_ptr, object_name, matchingModules);
+        ModuleSpec module_spec (module_file_spec);
+        size_t num_modules = GetImages().FindModules(module_spec, matchingModules);
         
         // If there is more than one module for this file spec, only return true if ALL the modules are on the
         // black list.
@@ -989,30 +1091,39 @@ Target::ModuleIsExcludedForNonModuleSpecificSearches (const lldb::ModuleSP &modu
 size_t
 Target::ReadMemoryFromFileCache (const Address& addr, void *dst, size_t dst_len, Error &error)
 {
-    const Section *section = addr.GetSection();
-    if (section && section->GetModule())
+    SectionSP section_sp (addr.GetSection());
+    if (section_sp)
     {
-        ObjectFile *objfile = section->GetModule()->GetObjectFile();
-        if (objfile)
+        // If the contents of this section are encrypted, the on-disk file is unusuable.  Read only from live memory.
+        if (section_sp->IsEncrypted())
         {
-            size_t bytes_read = section->ReadSectionDataFromObjectFile (objfile, 
-                                                                        addr.GetOffset(), 
-                                                                        dst, 
-                                                                        dst_len);
-            if (bytes_read > 0)
-                return bytes_read;
+            error.SetErrorString("section is encrypted");
+            return 0;
+        }
+        ModuleSP module_sp (section_sp->GetModule());
+        if (module_sp)
+        {
+            ObjectFile *objfile = section_sp->GetModule()->GetObjectFile();
+            if (objfile)
+            {
+                size_t bytes_read = objfile->ReadSectionData (section_sp.get(), 
+                                                              addr.GetOffset(), 
+                                                              dst, 
+                                                              dst_len);
+                if (bytes_read > 0)
+                    return bytes_read;
+                else
+                    error.SetErrorStringWithFormat("error reading data from section %s", section_sp->GetName().GetCString());
+            }
             else
-                error.SetErrorStringWithFormat("error reading data from section %s", section->GetName().GetCString());
+                error.SetErrorString("address isn't from a object file");
         }
         else
-        {
-            error.SetErrorString("address isn't from a object file");
-        }
+            error.SetErrorString("address isn't in a module");
     }
     else
-    {
         error.SetErrorString("address doesn't contain a section that points to a section in a object file");
-    }
+
     return 0;
 }
 
@@ -1073,11 +1184,12 @@ Target::ReadMemory (const Address& addr,
 
         if (load_addr == LLDB_INVALID_ADDRESS)
         {
-            if (resolved_addr.GetModule() && resolved_addr.GetModule()->GetFileSpec())
+            ModuleSP addr_module_sp (resolved_addr.GetModule());
+            if (addr_module_sp && addr_module_sp->GetFileSpec())
                 error.SetErrorStringWithFormat("%s[0x%llx] can't be resolved, %s in not currently loaded", 
-                                               resolved_addr.GetModule()->GetFileSpec().GetFilename().AsCString(), 
+                                               addr_module_sp->GetFileSpec().GetFilename().AsCString(), 
                                                resolved_addr.GetFileAddress(),
-                                               resolved_addr.GetModule()->GetFileSpec().GetFilename().AsCString());
+                                               addr_module_sp->GetFileSpec().GetFilename().AsCString());
             else
                 error.SetErrorStringWithFormat("0x%llx can't be resolved", resolved_addr.GetFileAddress());
         }
@@ -1214,61 +1326,114 @@ Target::ReadPointerFromMemory (const Address& addr,
 }
 
 ModuleSP
-Target::GetSharedModule
-(
-    const FileSpec& file_spec,
-    const ArchSpec& arch,
-    const lldb_private::UUID *uuid_ptr,
-    const ConstString *object_name,
-    off_t object_offset,
-    Error *error_ptr
-)
+Target::GetSharedModule (const ModuleSpec &module_spec, Error *error_ptr)
 {
-    // Don't pass in the UUID so we can tell if we have a stale value in our list
-    ModuleSP old_module_sp; // This will get filled in if we have a new version of the library
-    bool did_create_module = false;
     ModuleSP module_sp;
 
     Error error;
 
-    // If there are image search path entries, try to use them first to acquire a suitable image.
-    if (m_image_search_paths.GetSize())
+    // First see if we already have this module in our module list.  If we do, then we're done, we don't need
+    // to consult the shared modules list.  But only do this if we are passed a UUID.
+    
+    if (module_spec.GetUUID().IsValid())
+        module_sp = m_images.FindFirstModule(module_spec);
+        
+    if (!module_sp)
     {
-        FileSpec transformed_spec;        
-        if (m_image_search_paths.RemapPath (file_spec.GetDirectory(), transformed_spec.GetDirectory()))
+        ModuleSP old_module_sp; // This will get filled in if we have a new version of the library
+        bool did_create_module = false;
+    
+        // If there are image search path entries, try to use them first to acquire a suitable image.
+        if (m_image_search_paths.GetSize())
         {
-            transformed_spec.GetFilename() = file_spec.GetFilename();
-            error = ModuleList::GetSharedModule (transformed_spec, arch, uuid_ptr, object_name, object_offset, module_sp, &old_module_sp, &did_create_module);
+            ModuleSpec transformed_spec (module_spec);
+            if (m_image_search_paths.RemapPath (module_spec.GetFileSpec().GetDirectory(), transformed_spec.GetFileSpec().GetDirectory()))
+            {
+                transformed_spec.GetFileSpec().GetFilename() = module_spec.GetFileSpec().GetFilename();
+                error = ModuleList::GetSharedModule (transformed_spec, 
+                                                     module_sp, 
+                                                     &GetExecutableSearchPaths(),
+                                                     &old_module_sp, 
+                                                     &did_create_module);
+            }
         }
-    }
-
-    // The platform is responsible for finding and caching an appropriate
-    // module in the shared module cache.
-    if (m_platform_sp)
-    {
-        FileSpec platform_file_spec;        
-        error = m_platform_sp->GetSharedModule (file_spec, 
-                                                arch, 
-                                                uuid_ptr, 
-                                                object_name, 
-                                                object_offset, 
-                                                module_sp, 
-                                                &old_module_sp, 
-                                                &did_create_module);
-    }
-    else
-    {
-        error.SetErrorString("no platform is currently set");
-    }
-
-    // If a module hasn't been found yet, use the unmodified path.
-    if (module_sp)
-    {
-        m_images.Append (module_sp);
-        if (did_create_module)
+        
+        if (!module_sp)
         {
+            // If we have a UUID, we can check our global shared module list in case
+            // we already have it. If we don't have a valid UUID, then we can't since
+            // the path in "module_spec" will be a platform path, and we will need to
+            // let the platform find that file. For example, we could be asking for
+            // "/usr/lib/dyld" and if we do not have a UUID, we don't want to pick
+            // the local copy of "/usr/lib/dyld" since our platform could be a remote
+            // platform that has its own "/usr/lib/dyld" in an SDK or in a local file
+            // cache.
+            if (module_spec.GetUUID().IsValid())
+            {
+                // We have a UUID, it is OK to check the global module list...
+                error = ModuleList::GetSharedModule (module_spec,
+                                                     module_sp, 
+                                                     &GetExecutableSearchPaths(),
+                                                     &old_module_sp, 
+                                                     &did_create_module);
+            }
+
+            if (!module_sp)
+            {
+                // The platform is responsible for finding and caching an appropriate
+                // module in the shared module cache.
+                if (m_platform_sp)
+                {
+                    FileSpec platform_file_spec;        
+                    error = m_platform_sp->GetSharedModule (module_spec, 
+                                                            module_sp, 
+                                                            &GetExecutableSearchPaths(),
+                                                            &old_module_sp, 
+                                                            &did_create_module);
+                }
+                else
+                {
+                    error.SetErrorString("no platform is currently set");
+                }
+            }
+        }
+
+        // We found a module that wasn't in our target list.  Let's make sure that there wasn't an equivalent
+        // module in the list already, and if there was, let's remove it.
+        if (module_sp)
+        {
+            // GetSharedModule is not guaranteed to find the old shared module, for instance
+            // in the common case where you pass in the UUID, it is only going to find the one
+            // module matching the UUID.  In fact, it has no good way to know what the "old module"
+            // relevant to this target is, since there might be many copies of a module with this file spec
+            // in various running debug sessions, but only one of them will belong to this target.
+            // So let's remove the UUID from the module list, and look in the target's module list.
+            // Only do this if there is SOMETHING else in the module spec...
+            if (!old_module_sp)
+            {
+                if (module_spec.GetUUID().IsValid() && !module_spec.GetFileSpec().GetFilename().IsEmpty() && !module_spec.GetFileSpec().GetDirectory().IsEmpty())
+                {
+                    ModuleSpec module_spec_copy(module_spec.GetFileSpec());
+                    module_spec_copy.GetUUID().Clear();
+                    
+                    ModuleList found_modules;
+                    size_t num_found = m_images.FindModules (module_spec_copy, found_modules);
+                    if (num_found == 1)
+                    {
+                        old_module_sp = found_modules.GetModuleAtIndex(0);
+                    }
+                }
+            }
+            
+            m_images.Append (module_sp);
             if (old_module_sp && m_images.GetIndexForModule (old_module_sp.get()) != LLDB_INVALID_INDEX32)
+            {
                 ModuleUpdated(old_module_sp, module_sp);
+                m_images.Remove (old_module_sp);
+                Module *old_module_ptr = old_module_sp.get();
+                old_module_sp.reset();
+                ModuleList::RemoveSharedModuleIfOrphaned (old_module_ptr);
+            }
             else
                 ModuleAdded(module_sp);
         }
@@ -1279,28 +1444,28 @@ Target::GetSharedModule
 }
 
 
-Target *
+TargetSP
 Target::CalculateTarget ()
 {
-    return this;
+    return shared_from_this();
 }
 
-Process *
+ProcessSP
 Target::CalculateProcess ()
 {
-    return NULL;
+    return ProcessSP();
 }
 
-Thread *
+ThreadSP
 Target::CalculateThread ()
 {
-    return NULL;
+    return ThreadSP();
 }
 
-StackFrame *
+StackFrameSP
 Target::CalculateStackFrame ()
 {
-    return NULL;
+    return StackFrameSP();
 }
 
 void
@@ -1339,7 +1504,7 @@ Target::GetScratchClangASTContext(bool create_on_demand)
     if (m_scratch_ast_context_ap.get() == NULL && m_arch.IsValid() && create_on_demand)
     {
         m_scratch_ast_context_ap.reset (new ClangASTContext(m_arch.GetTriple().str().c_str()));
-        m_scratch_ast_source_ap.reset (new ClangASTSource(GetSP()));
+        m_scratch_ast_source_ap.reset (new ClangASTSource(shared_from_this()));
         m_scratch_ast_source_ap->InstallASTContext(m_scratch_ast_context_ap->getASTContext());
         llvm::OwningPtr<clang::ExternalASTSource> proxy_ast_source(m_scratch_ast_source_ap->CreateProxy());
         m_scratch_ast_context_ap->SetExternalSource(proxy_ast_source);
@@ -1364,9 +1529,7 @@ Target::GetClangASTImporter()
 void
 Target::SettingsInitialize ()
 {
-    UserSettingsControllerSP &usc = GetSettingsController();
-    usc.reset (new SettingsController);
-    UserSettingsController::InitializeSettingsController (usc,
+    UserSettingsController::InitializeSettingsController (GetSettingsController(),
                                                           SettingsController::global_settings_table,
                                                           SettingsController::instance_settings_table);
                                                           
@@ -1392,15 +1555,40 @@ Target::SettingsTerminate ()
 UserSettingsControllerSP &
 Target::GetSettingsController ()
 {
-    static UserSettingsControllerSP g_settings_controller;
-    return g_settings_controller;
+    static UserSettingsControllerSP g_settings_controller_sp;
+    if (!g_settings_controller_sp)
+    {
+        g_settings_controller_sp.reset (new Target::SettingsController);
+        // The first shared pointer to Target::SettingsController in
+        // g_settings_controller_sp must be fully created above so that 
+        // the TargetInstanceSettings can use a weak_ptr to refer back 
+        // to the master setttings controller
+        InstanceSettingsSP default_instance_settings_sp (new TargetInstanceSettings (g_settings_controller_sp, 
+                                                                                     false,
+                                                                                     InstanceSettings::GetDefaultName().AsCString()));
+        g_settings_controller_sp->SetDefaultInstanceSettings (default_instance_settings_sp);
+    }
+    return g_settings_controller_sp;
 }
+
+FileSpecList
+Target::GetDefaultExecutableSearchPaths ()
+{
+    lldb::UserSettingsControllerSP settings_controller_sp (GetSettingsController());
+    if (settings_controller_sp)
+    {
+        lldb::InstanceSettingsSP instance_settings_sp (settings_controller_sp->GetDefaultInstanceSettings ());
+        if (instance_settings_sp)
+            return static_cast<TargetInstanceSettings *>(instance_settings_sp.get())->GetExecutableSearchPaths ();
+    }
+    return FileSpecList();
+}
+
 
 ArchSpec
 Target::GetDefaultArchitecture ()
 {
     lldb::UserSettingsControllerSP settings_controller_sp (GetSettingsController());
-    
     if (settings_controller_sp)
         return static_cast<Target::SettingsController *>(settings_controller_sp.get())->GetArchitecture ();
     return ArchSpec();
@@ -1501,6 +1689,9 @@ Target::EvaluateExpression
                                                                          expr_path_options, 
                                                                          var_sp, 
                                                                          error);
+            // if this expression results in a bitfield, we give up and let the IR handle it
+            if (result_valobj_sp && result_valobj_sp->IsBitfield())
+                result_valobj_sp.reset();
         }
     }
     else if (m_process_sp)
@@ -1678,7 +1869,7 @@ lldb::user_id_t
 Target::AddStopHook (Target::StopHookSP &new_hook_sp)
 {
     lldb::user_id_t new_uid = ++m_stop_hook_next_id;
-    new_hook_sp.reset (new StopHook(GetSP(), new_uid));
+    new_hook_sp.reset (new StopHook(shared_from_this(), new_uid));
     m_stop_hooks[new_uid] = new_hook_sp;
     return new_uid;
 }
@@ -1815,7 +2006,7 @@ Target::RunStopHooks ()
             if ((cur_hook_sp->GetSpecifier () == NULL 
                   || cur_hook_sp->GetSpecifier()->SymbolContextMatches(sym_ctx_with_reasons[i]))
                 && (cur_hook_sp->GetThreadSpecifier() == NULL
-                    || cur_hook_sp->GetThreadSpecifier()->ThreadPassesBasicTests(exc_ctx_with_reasons[i].GetThreadPtr())))
+                    || cur_hook_sp->GetThreadSpecifier()->ThreadPassesBasicTests(exc_ctx_with_reasons[i].GetThreadRef())))
             {
                 if (!hooks_ran)
                 {
@@ -1845,7 +2036,8 @@ Target::RunStopHooks ()
                                                                       stop_on_continue, 
                                                                       stop_on_error, 
                                                                       echo_commands,
-                                                                      print_results, 
+                                                                      print_results,
+                                                                      eLazyBoolNo,
                                                                       result);
 
                 // If the command started the target going again, we should bag out of
@@ -1862,45 +2054,6 @@ Target::RunStopHooks ()
 
     result.GetImmediateOutputStream()->Flush();
     result.GetImmediateErrorStream()->Flush();
-}
-
-bool 
-Target::LoadModuleWithSlide (Module *module, lldb::addr_t slide)
-{
-    bool changed = false;
-    if (module)
-    {
-        ObjectFile *object_file = module->GetObjectFile();
-        if (object_file)
-        {
-            SectionList *section_list = object_file->GetSectionList ();
-            if (section_list)
-            {
-                // All sections listed in the dyld image info structure will all
-                // either be fixed up already, or they will all be off by a single
-                // slide amount that is determined by finding the first segment
-                // that is at file offset zero which also has bytes (a file size
-                // that is greater than zero) in the object file.
-                
-                // Determine the slide amount (if any)
-                const size_t num_sections = section_list->GetSize();
-                size_t sect_idx = 0;
-                for (sect_idx = 0; sect_idx < num_sections; ++sect_idx)
-                {
-                    // Iterate through the object file sections to find the
-                    // first section that starts of file offset zero and that
-                    // has bytes in the file...
-                    Section *section = section_list->GetSectionAtIndex (sect_idx).get();
-                    if (section)
-                    {
-                        if (m_section_load_list.SetSectionLoadAddress (section, section->GetFileAddress() + slide))
-                            changed = true;
-                    }
-                }
-            }
-        }
-    }
-    return changed;
 }
 
 
@@ -1996,8 +2149,6 @@ Target::SettingsController::SettingsController () :
     UserSettingsController ("target", Debugger::GetSettingsController()),
     m_default_architecture ()
 {
-    m_default_settings.reset (new TargetInstanceSettings (*this, false,
-                                                          InstanceSettings::GetDefaultName().AsCString()));
 }
 
 Target::SettingsController::~SettingsController ()
@@ -2007,10 +2158,9 @@ Target::SettingsController::~SettingsController ()
 lldb::InstanceSettingsSP
 Target::SettingsController::CreateInstanceSettings (const char *instance_name)
 {
-    TargetInstanceSettings *new_settings = new TargetInstanceSettings (*GetSettingsController(),
-                                                                       false, 
-                                                                       instance_name);
-    lldb::InstanceSettingsSP new_settings_sp (new_settings);
+    lldb::InstanceSettingsSP new_settings_sp (new TargetInstanceSettings (GetSettingsController(),
+                                                                          false, 
+                                                                          instance_name));
     return new_settings_sp;
 }
 
@@ -2018,8 +2168,10 @@ Target::SettingsController::CreateInstanceSettings (const char *instance_name)
 #define TSC_DEFAULT_ARCH        "default-arch"
 #define TSC_EXPR_PREFIX         "expr-prefix"
 #define TSC_PREFER_DYNAMIC      "prefer-dynamic-value"
+#define TSC_ENABLE_SYNTHETIC    "enable-synthetic-value"
 #define TSC_SKIP_PROLOGUE       "skip-prologue"
 #define TSC_SOURCE_MAP          "source-map"
+#define TSC_EXE_SEARCH_PATHS    "exec-search-paths"
 #define TSC_MAX_CHILDREN        "max-children-count"
 #define TSC_MAX_STRLENSUMMARY   "max-string-summary-length"
 #define TSC_PLATFORM_AVOID      "breakpoints-use-platform-avoid-list"
@@ -2055,9 +2207,23 @@ GetSettingNameForPreferDynamicValue ()
 }
 
 static const ConstString &
+GetSettingNameForEnableSyntheticValue ()
+{
+    static ConstString g_const_string (TSC_ENABLE_SYNTHETIC);
+    return g_const_string;
+}
+
+static const ConstString &
 GetSettingNameForSourcePathMap ()
 {
     static ConstString g_const_string (TSC_SOURCE_MAP);
+    return g_const_string;
+}
+
+static const ConstString &
+GetSettingNameForExecutableSearchPaths ()
+{
+    static ConstString g_const_string (TSC_EXE_SEARCH_PATHS);
     return g_const_string;
 }
 
@@ -2155,7 +2321,7 @@ Target::SettingsController::SetGlobalVariable (const ConstString &var_name,
 {
     if (var_name == GetSettingNameForDefaultArch())
     {
-        m_default_architecture.SetTriple (value, NULL);
+        m_default_architecture.SetTriple (value);
         if (!m_default_architecture.IsValid())
             err.SetErrorStringWithFormat ("'%s' is not a valid architecture or triple.", value);
     }
@@ -2187,16 +2353,18 @@ Target::SettingsController::GetGlobalVariable (const ConstString &var_name,
 
 TargetInstanceSettings::TargetInstanceSettings
 (
-    UserSettingsController &owner, 
+    const lldb::UserSettingsControllerSP &owner_sp, 
     bool live_instance, 
     const char *name
 ) :
-    InstanceSettings (owner, name ? name : InstanceSettings::InvalidName().AsCString(), live_instance),
+    InstanceSettings (owner_sp, name ? name : InstanceSettings::InvalidName().AsCString(), live_instance),
     m_expr_prefix_file (),
     m_expr_prefix_contents (),
     m_prefer_dynamic_value (2),
+    m_enable_synthetic_value(true, true),
     m_skip_prologue (true, true),
     m_source_map (NULL, NULL),
+    m_exe_search_paths (),
     m_max_children_display(256),
     m_max_strlen_length(1024),
     m_breakpoints_use_platform_avoid (true, true),
@@ -2218,23 +2386,25 @@ TargetInstanceSettings::TargetInstanceSettings
     if (GetInstanceName () == InstanceSettings::InvalidName())
     {
         ChangeInstanceName (std::string (CreateInstanceName().AsCString()));
-        m_owner.RegisterInstanceSettings (this);
+        owner_sp->RegisterInstanceSettings (this);
     }
 
     if (live_instance)
     {
-        const lldb::InstanceSettingsSP &pending_settings = m_owner.FindPendingSettings (m_instance_name);
+        const lldb::InstanceSettingsSP &pending_settings = owner_sp->FindPendingSettings (m_instance_name);
         CopyInstanceSettings (pending_settings,false);
     }
 }
 
 TargetInstanceSettings::TargetInstanceSettings (const TargetInstanceSettings &rhs) :
-    InstanceSettings (*Target::GetSettingsController(), CreateInstanceName().AsCString()),
+    InstanceSettings (Target::GetSettingsController(), CreateInstanceName().AsCString()),
     m_expr_prefix_file (rhs.m_expr_prefix_file),
     m_expr_prefix_contents (rhs.m_expr_prefix_contents),
     m_prefer_dynamic_value (rhs.m_prefer_dynamic_value),
+    m_enable_synthetic_value(rhs.m_enable_synthetic_value),
     m_skip_prologue (rhs.m_skip_prologue),
     m_source_map (rhs.m_source_map),
+    m_exe_search_paths (rhs.m_exe_search_paths),
     m_max_children_display (rhs.m_max_children_display),
     m_max_strlen_length (rhs.m_max_strlen_length),
     m_breakpoints_use_platform_avoid (rhs.m_breakpoints_use_platform_avoid),
@@ -2249,8 +2419,9 @@ TargetInstanceSettings::TargetInstanceSettings (const TargetInstanceSettings &rh
 {
     if (m_instance_name != InstanceSettings::GetDefaultName())
     {
-        const lldb::InstanceSettingsSP &pending_settings = m_owner.FindPendingSettings (m_instance_name);
-        CopyInstanceSettings (pending_settings,false);
+        UserSettingsControllerSP owner_sp (m_owner_wp.lock());
+        if (owner_sp)
+            CopyInstanceSettings (owner_sp->FindPendingSettings (m_instance_name),false);
     }
 }
 
@@ -2266,8 +2437,10 @@ TargetInstanceSettings::operator= (const TargetInstanceSettings &rhs)
         m_expr_prefix_file = rhs.m_expr_prefix_file;
         m_expr_prefix_contents = rhs.m_expr_prefix_contents;
         m_prefer_dynamic_value = rhs.m_prefer_dynamic_value;
+        m_enable_synthetic_value = rhs.m_enable_synthetic_value;
         m_skip_prologue = rhs.m_skip_prologue;
         m_source_map = rhs.m_source_map;
+        m_exe_search_paths = rhs.m_exe_search_paths;
         m_max_children_display = rhs.m_max_children_display;
         m_max_strlen_length = rhs.m_max_strlen_length;
         m_breakpoints_use_platform_avoid = rhs.m_breakpoints_use_platform_avoid;
@@ -2342,6 +2515,13 @@ TargetInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_n
         if (err.Success())
             m_prefer_dynamic_value = new_value;
     }
+    else if (var_name == GetSettingNameForEnableSyntheticValue())
+    {
+        bool ok;
+        bool new_value = Args::StringToBoolean(value, true, &ok);
+        if (ok)
+            m_enable_synthetic_value.SetCurrentValue(new_value);
+    }
     else if (var_name == GetSettingNameForSkipPrologue())
     {
         err = UserSettingsController::UpdateBooleanOptionValue (value, op, m_skip_prologue);
@@ -2359,6 +2539,49 @@ TargetInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_n
         uint32_t new_value = Args::StringToUInt32(value, 0, 10, &ok);
         if (ok)
             m_max_strlen_length = new_value;
+    }
+    else if (var_name == GetSettingNameForExecutableSearchPaths())
+    {
+        switch (op)
+        {
+            case eVarSetOperationReplace:
+            case eVarSetOperationInsertBefore:
+            case eVarSetOperationInsertAfter:
+            case eVarSetOperationRemove:
+            default:
+                break;
+            case eVarSetOperationAssign:
+                m_exe_search_paths.Clear();
+                // Fall through to append....
+            case eVarSetOperationAppend:
+            {   
+                Args args(value);
+                const uint32_t argc = args.GetArgumentCount();
+                if (argc > 0)
+                {
+                    const char *exe_search_path_dir;
+                    for (uint32_t idx = 0; (exe_search_path_dir = args.GetArgumentAtIndex(idx)) != NULL; ++idx)
+                    {
+                        FileSpec file_spec;
+                        file_spec.GetDirectory().SetCString(exe_search_path_dir);
+                        FileSpec::FileType file_type = file_spec.GetFileType();
+                        if (file_type == FileSpec::eFileTypeDirectory || file_type == FileSpec::eFileTypeInvalid)
+                        {
+                            m_exe_search_paths.Append(file_spec);
+                        }
+                        else
+                        {
+                            err.SetErrorStringWithFormat("executable search path '%s' exists, but it does not resolve to a directory", exe_search_path_dir);
+                        }
+                    }
+                }
+            }
+                break;
+                
+            case eVarSetOperationClear:
+                m_exe_search_paths.Clear();
+                break;
+        }
     }
     else if (var_name == GetSettingNameForSourcePathMap ())
     {
@@ -2483,12 +2706,29 @@ TargetInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
     {
         value.AppendString (g_dynamic_value_types[m_prefer_dynamic_value].string_value);
     }
+    else if (var_name == GetSettingNameForEnableSyntheticValue())
+    {
+        if (m_skip_prologue)
+            value.AppendString ("true");
+        else
+            value.AppendString ("false");
+    }
     else if (var_name == GetSettingNameForSkipPrologue())
     {
         if (m_skip_prologue)
             value.AppendString ("true");
         else
             value.AppendString ("false");
+    }
+    else if (var_name == GetSettingNameForExecutableSearchPaths())
+    {
+        if (m_exe_search_paths.GetSize())
+        {
+            for (size_t i = 0, n = m_exe_search_paths.GetSize(); i < n; ++i) 
+            {
+                value.AppendString(m_exe_search_paths.GetFileSpecAtIndex (i).GetDirectory().AsCString());
+            }
+        }
     }
     else if (var_name == GetSettingNameForSourcePathMap ())
     {
@@ -2671,8 +2911,10 @@ Target::SettingsController::instance_settings_table[] =
     // =================    ==================  =============== ======================= ====== ====== =========================================================================
     { TSC_EXPR_PREFIX       , eSetVarTypeString , NULL          , NULL,                  false, false, "Path to a file containing expressions to be prepended to all expressions." },
     { TSC_PREFER_DYNAMIC    , eSetVarTypeEnum   , NULL          , g_dynamic_value_types, false, false, "Should printed values be shown as their dynamic value." },
+    { TSC_ENABLE_SYNTHETIC  , eSetVarTypeBoolean, "true"        , NULL,                  false, false, "Should synthetic values be used by default whenever available." },
     { TSC_SKIP_PROLOGUE     , eSetVarTypeBoolean, "true"        , NULL,                  false, false, "Skip function prologues when setting breakpoints by name." },
     { TSC_SOURCE_MAP        , eSetVarTypeArray  , NULL          , NULL,                  false, false, "Source path remappings to use when locating source files from debug information." },
+    { TSC_EXE_SEARCH_PATHS  , eSetVarTypeArray  , NULL          , NULL,                  false, false, "Executable search paths to use when locating executable files whose paths don't match the local file system." },
     { TSC_MAX_CHILDREN      , eSetVarTypeInt    , "256"         , NULL,                  true,  false, "Maximum number of children to expand in any level of depth." },
     { TSC_MAX_STRLENSUMMARY , eSetVarTypeInt    , "1024"        , NULL,                  true,  false, "Maximum number of characters to show when using %s in summary strings." },
     { TSC_PLATFORM_AVOID    , eSetVarTypeBoolean, "true"        , NULL,                  false, false, "Consult the platform module avoid list when setting non-module specific breakpoints." },
@@ -2687,3 +2929,58 @@ Target::SettingsController::instance_settings_table[] =
     { TSC_DISABLE_STDIO     , eSetVarTypeBoolean, "false"       , NULL,                  false,  false,  "Disable stdin/stdout for process (e.g. for a GUI application)" },
     { NULL                  , eSetVarTypeNone   , NULL          , NULL,                  false, false, NULL }
 };
+
+const ConstString &
+Target::TargetEventData::GetFlavorString ()
+{
+    static ConstString g_flavor ("Target::TargetEventData");
+    return g_flavor;
+}
+
+const ConstString &
+Target::TargetEventData::GetFlavor () const
+{
+    return TargetEventData::GetFlavorString ();
+}
+
+Target::TargetEventData::TargetEventData (const lldb::TargetSP &new_target_sp) :
+    EventData(),
+    m_target_sp (new_target_sp)
+{
+}
+
+Target::TargetEventData::~TargetEventData()
+{
+
+}
+
+void
+Target::TargetEventData::Dump (Stream *s) const
+{
+
+}
+
+const TargetSP
+Target::TargetEventData::GetTargetFromEvent (const lldb::EventSP &event_sp)
+{
+    TargetSP target_sp;
+
+    const TargetEventData *data = GetEventDataFromEvent (event_sp.get());
+    if (data)
+        target_sp = data->m_target_sp;
+
+    return target_sp;
+}
+
+const Target::TargetEventData *
+Target::TargetEventData::GetEventDataFromEvent (const Event *event_ptr)
+{
+    if (event_ptr)
+    {
+        const EventData *event_data = event_ptr->GetData();
+        if (event_data && event_data->GetFlavor() == TargetEventData::GetFlavorString())
+            return static_cast <const TargetEventData *> (event_ptr->GetData());
+    }
+    return NULL;
+}
+

@@ -43,7 +43,7 @@ namespace llvm {
     //===------------------------------------------------------------------===//
     // Properties to be set by the target writer, used to configure asm printer.
     //
-    
+
     /// PointerSize - Pointer size in bytes.
     ///               Default is 4.
     unsigned PointerSize;
@@ -179,6 +179,11 @@ namespace llvm {
     const char *JT16Begin;                   // Defaults to "$a."
     const char *JT32Begin;                   // Defaults to "$a."
     bool SupportsDataRegions;
+
+    /// GPRel64Directive - if non-null, a directive that is used to emit a word
+    /// which should be relocated as a 64-bit GP-relative offset, e.g. .gpdword
+    /// on Mips.
+    const char *GPRel64Directive;            // Defaults to NULL.
 
     /// GPRel32Directive - if non-null, a directive that is used to emit a word
     /// which should be relocated as a 32-bit GP-relative offset, e.g. .gpword
@@ -376,6 +381,7 @@ namespace llvm {
     const char *getData64bitsDirective(unsigned AS = 0) const {
       return AS == 0 ? Data64bitsDirective : getDataASDirective(64, AS);
     }
+    const char *getGPRel64Directive() const { return GPRel64Directive; }
     const char *getGPRel32Directive() const { return GPRel32Directive; }
 
     /// [Code|Data]Begin label name accessors.
@@ -546,7 +552,7 @@ namespace llvm {
          ExceptionsType == ExceptionHandling::ARM ||
          ExceptionsType == ExceptionHandling::Win64);
     }
-    bool doesDwarfUsesInlineInfoSection() const {
+    bool doesDwarfUseInlineInfoSection() const {
       return DwarfUsesInlineInfoSection;
     }
     const char *getDwarfSectionOffsetDirective() const {
@@ -555,7 +561,7 @@ namespace llvm {
     bool doesDwarfRequireRelocationForSectionOffset() const {
       return DwarfRequiresRelocationForSectionOffset;
     }
-    bool doesDwarfUsesLabelOffsetForRanges() const {
+    bool doesDwarfUseLabelOffsetForRanges() const {
       return DwarfUsesLabelOffsetForRanges;
     }
     bool doesDwarfUseRelocationsForStringPool() const {

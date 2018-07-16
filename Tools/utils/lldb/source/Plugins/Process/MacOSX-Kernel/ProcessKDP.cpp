@@ -49,10 +49,15 @@ ProcessKDP::Terminate()
 }
 
 
-Process*
-ProcessKDP::CreateInstance (Target &target, Listener &listener)
+lldb::ProcessSP
+ProcessKDP::CreateInstance (Target &target, 
+                            Listener &listener,
+                            const FileSpec *crash_file_path)
 {
-    return new ProcessKDP (target, listener);
+    lldb::ProcessSP process_sp;
+    if (crash_file_path == NULL)
+        process_sp.reset(new ProcessKDP (target, listener));
+    return process_sp;
 }
 
 bool
@@ -66,13 +71,22 @@ ProcessKDP::CanDebug(Target &target, bool plugin_specified_by_name)
     if (exe_module)
     {
         const llvm::Triple &triple_ref = target.GetArchitecture().GetTriple();
-        if (triple_ref.getOS() == llvm::Triple::Darwin && 
-            triple_ref.getVendor() == llvm::Triple::Apple)
+        switch (triple_ref.getOS())
         {
-            ObjectFile *exe_objfile = exe_module->GetObjectFile();
-            if (exe_objfile->GetType() == ObjectFile::eTypeExecutable && 
-                exe_objfile->GetStrata() == ObjectFile::eStrataKernel)
-                return true;
+            case llvm::Triple::Darwin:  // Should use "macosx" for desktop and "ios" for iOS, but accept darwin just in case
+            case llvm::Triple::MacOSX:  // For desktop targets
+            case llvm::Triple::IOS:     // For arm targets
+                if (triple_ref.getVendor() == llvm::Triple::Apple)
+                {
+                    ObjectFile *exe_objfile = exe_module->GetObjectFile();
+                    if (exe_objfile->GetType() == ObjectFile::eTypeExecutable && 
+                        exe_objfile->GetStrata() == ObjectFile::eStrataKernel)
+                        return true;
+                }
+                break;
+
+            default:
+                break;
         }
     }
     return false;
@@ -84,7 +98,7 @@ ProcessKDP::CanDebug(Target &target, bool plugin_specified_by_name)
 ProcessKDP::ProcessKDP(Target& target, Listener &listener) :
     Process (target, listener),
     m_comm("lldb.process.kdp-remote.communication"),
-    m_async_broadcaster ("lldb.process.kdp-remote.async-broadcaster"),
+    m_async_broadcaster (NULL, "lldb.process.kdp-remote.async-broadcaster"),
     m_async_thread (LLDB_INVALID_HOST_THREAD)
 {
 //    m_async_broadcaster.SetEventName (eBroadcastBitAsyncThreadShouldExit,   "async thread should exit");
@@ -253,7 +267,15 @@ ProcessKDP::DoAttachToProcessWithID (lldb::pid_t attach_pid)
 }
 
 Error
-ProcessKDP::DoAttachToProcessWithName (const char *process_name, bool wait_for_launch)
+ProcessKDP::DoAttachToProcessWithID (lldb::pid_t attach_pid, const ProcessAttachInfo &attach_info)
+{
+    Error error;
+    error.SetErrorString ("attach to process by ID is not suppported in kdp remote debugging");
+    return error;
+}
+
+Error
+ProcessKDP::DoAttachToProcessWithName (const char *process_name, bool wait_for_launch, const ProcessAttachInfo &attach_info)
 {
     Error error;
     error.SetErrorString ("attach to process by name is not suppported in kdp remote debugging");
@@ -288,7 +310,7 @@ ProcessKDP::DoResume ()
     return error;
 }
 
-uint32_t
+bool
 ProcessKDP::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     // locker will keep a mutex locked until it goes out of scope
@@ -307,10 +329,10 @@ ProcessKDP::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_threa
         lldb::tid_t tid = cpu_mask_bit;
         ThreadSP thread_sp (old_thread_list.FindThreadByID (tid, false));
         if (!thread_sp)
-            thread_sp.reset(new ThreadKDP (*this, tid));
+            thread_sp.reset(new ThreadKDP (shared_from_this(), tid));
         new_thread_list.AddThread(thread_sp);
     }
-    return new_thread_list.GetSize(false);
+    return new_thread_list.GetSize(false) > 0;
 }
 
 

@@ -22,10 +22,6 @@ namespace llvm {
   class MCContext;
   class MCSection;
   class Triple;
-  
-  namespace Structors {
-    enum OutputOrder { None, PriorityOrder, ReversePriorityOrder };
-  }
 
 class MCObjectFileInfo {  
 protected:
@@ -51,6 +47,8 @@ protected:
   unsigned FDEEncoding;
   unsigned FDECFIEncoding;
   unsigned TTypeEncoding;
+  // Section flags for eh_frame
+  unsigned EHSectionFlags;
 
   /// TextSection - Section directive for standard text.
   ///
@@ -113,7 +111,7 @@ protected:
   const MCSection *TLSExtraDataSection;
   
   /// TLSDataSection - Section directive for Thread Local data.
-  /// ELF and MachO only.
+  /// ELF, MachO and COFF.
   const MCSection *TLSDataSection;        // Defaults to ".tdata".
 
   /// TLSBSSSection - Section directive for Thread Local uninitialized data.
@@ -167,11 +165,6 @@ protected:
   const MCSection *DrectveSection;
   const MCSection *PDataSection;
   const MCSection *XDataSection;
-  
-  /// StructorOutputOrder - Whether the static ctor/dtor list should be output
-  /// in no particular order, in order of increasing priority or the reverse:
-  /// in order of decreasing priority (the default).
-  Structors::OutputOrder StructorOutputOrder; // Default is reverse order.
 
 public:
   void InitMCObjectFileInfo(StringRef TT, Reloc::Model RM, CodeModel::Model CM,
@@ -197,8 +190,6 @@ public:
   const MCSection *getTextSection() const { return TextSection; }
   const MCSection *getDataSection() const { return DataSection; }
   const MCSection *getBSSSection() const { return BSSSection; }
-  const MCSection *getStaticCtorSection() const { return StaticCtorSection; }
-  const MCSection *getStaticDtorSection() const { return StaticDtorSection; }
   const MCSection *getLSDASection() const { return LSDASection; }
   const MCSection *getCompactUnwindSection() const{
     return CompactUnwindSection;
@@ -298,10 +289,6 @@ public:
     if (!EHFrameSection)
       InitEHFrameSection();
     return EHFrameSection;
-  }
-
-  Structors::OutputOrder getStructorOutputOrder() const {
-    return StructorOutputOrder;
   }
 
 private:

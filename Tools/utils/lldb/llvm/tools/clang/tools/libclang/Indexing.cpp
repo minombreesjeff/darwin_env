@@ -18,6 +18,7 @@
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/FrontendAction.h"
 #include "clang/Frontend/Utils.h"
 #include "clang/Sema/SemaConsumer.h"
 #include "clang/AST/ASTConsumer.h"
@@ -134,6 +135,21 @@ public:
   /// The default implementation forwards to HandleTopLevelDecl but we don't
   /// care about them when indexing, so have an empty definition.
   virtual void HandleInterestingDecl(DeclGroupRef D) {}
+
+  virtual void HandleTagDeclDefinition(TagDecl *D) {
+    if (!IndexCtx.shouldIndexImplicitTemplateInsts())
+      return;
+
+    if (IndexCtx.isTemplateImplicitInstantiation(D))
+      IndexCtx.indexDecl(D);
+  }
+
+  virtual void HandleCXXImplicitFunctionInstantiation(FunctionDecl *D) {
+    if (!IndexCtx.shouldIndexImplicitTemplateInsts())
+      return;
+
+    IndexCtx.indexDecl(D);
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -176,6 +192,7 @@ public:
     IndexCtx.setASTContext(CI.getASTContext());
     Preprocessor &PP = CI.getPreprocessor();
     PP.addPPCallbacks(new IndexPPCallbacks(PP, IndexCtx));
+    IndexCtx.setPreprocessor(PP);
     return new IndexingConsumer(IndexCtx);
   }
 
@@ -183,7 +200,12 @@ public:
     indexDiagnostics(CXTU, IndexCtx);
   }
 
-  virtual TranslationUnitKind getTranslationUnitKind() { return TU_Prefix; }
+  virtual TranslationUnitKind getTranslationUnitKind() {
+    if (IndexCtx.shouldIndexImplicitTemplateInsts())
+      return TU_Complete;
+    else
+      return TU_Prefix;
+  }
   virtual bool hasCodeCompletionSupport() const { return false; }
 };
 
@@ -257,7 +279,7 @@ static void clang_indexSourceFile_Impl(void *UserData) {
 
   // Configure the diagnostics.
   DiagnosticOptions DiagOpts;
-  llvm::IntrusiveRefCntPtr<DiagnosticsEngine>
+  IntrusiveRefCntPtr<DiagnosticsEngine>
     Diags(CompilerInstance::createDiagnostics(DiagOpts, num_command_line_args, 
                                                 command_line_args,
                                                 CaptureDiag,
@@ -269,7 +291,7 @@ static void clang_indexSourceFile_Impl(void *UserData) {
     llvm::CrashRecoveryContextReleaseRefCleanup<DiagnosticsEngine> >
     DiagCleanup(Diags.getPtr());
   
-  llvm::OwningPtr<std::vector<const char *> > 
+  OwningPtr<std::vector<const char *> >
     Args(new std::vector<const char*>());
 
   // Recover resources if we crash before exiting this method.
@@ -287,7 +309,7 @@ static void clang_indexSourceFile_Impl(void *UserData) {
   if (source_filename)
     Args->push_back(source_filename);
   
-  llvm::IntrusiveRefCntPtr<CompilerInvocation>
+  IntrusiveRefCntPtr<CompilerInvocation>
     CInvok(createInvocationFromCommandLine(*Args, Diags));
 
   if (!CInvok)
@@ -301,7 +323,7 @@ static void clang_indexSourceFile_Impl(void *UserData) {
   if (CInvok->getFrontendOpts().Inputs.empty())
     return;
 
-  llvm::OwningPtr<MemBufferOwner> BufOwner(new MemBufferOwner());
+  OwningPtr<MemBufferOwner> BufOwner(new MemBufferOwner());
 
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<MemBufferOwner>
@@ -326,13 +348,13 @@ static void clang_indexSourceFile_Impl(void *UserData) {
 
   ASTUnit *Unit = ASTUnit::create(CInvok.getPtr(), Diags,
                                   /*CaptureDiagnostics=*/true);
-  llvm::OwningPtr<CXTUOwner> CXTU(new CXTUOwner(MakeCXTranslationUnit(Unit)));
+  OwningPtr<CXTUOwner> CXTU(new CXTUOwner(MakeCXTranslationUnit(Unit)));
 
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<CXTUOwner>
     CXTUCleanup(CXTU.get());
 
-  llvm::OwningPtr<IndexingFrontendAction> IndexAction;
+  OwningPtr<IndexingFrontendAction> IndexAction;
   IndexAction.reset(new IndexingFrontendAction(client_data, CB,
                                                index_options, CXTU->getTU()));
 
@@ -347,7 +369,7 @@ static void clang_indexSourceFile_Impl(void *UserData) {
   bool CacheCodeCompletionResults = false;
   PreprocessorOptions &PPOpts = CInvok->getPreprocessorOpts(); 
   PPOpts.DetailedRecord = false;
-  PPOpts.DetailedRecordIncludesNestedMacroExpansions = false;
+  PPOpts.AllowPCHWithCompilerErrors = true;
 
   if (requestedToGetTU) {
     OnlyLocalDecls = CXXIdx->getOnlyLocalDecls();
@@ -357,8 +379,6 @@ static void clang_indexSourceFile_Impl(void *UserData) {
       = TU_options & CXTranslationUnit_CacheCompletionResults;
     if (TU_options & CXTranslationUnit_DetailedPreprocessingRecord) {
       PPOpts.DetailedRecord = true;
-      PPOpts.DetailedRecordIncludesNestedMacroExpansions
-          = (TU_options & CXTranslationUnit_NestedMacroExpansions);
     }
   }
 
@@ -485,14 +505,14 @@ static void clang_indexTranslationUnit_Impl(void *UserData) {
                                   ? index_callbacks_size : sizeof(CB);
   memcpy(&CB, client_index_callbacks, ClientCBSize);
 
-  llvm::OwningPtr<IndexingContext> IndexCtx;
+  OwningPtr<IndexingContext> IndexCtx;
   IndexCtx.reset(new IndexingContext(client_data, CB, index_options, TU));
 
   // Recover resources if we crash before exiting this method.
   llvm::CrashRecoveryContextCleanupRegistrar<IndexingContext>
     IndexCtxCleanup(IndexCtx.get());
 
-  llvm::OwningPtr<IndexingConsumer> IndexConsumer;
+  OwningPtr<IndexingConsumer> IndexConsumer;
   IndexConsumer.reset(new IndexingConsumer(*IndexCtx));
 
   // Recover resources if we crash before exiting this method.
@@ -585,6 +605,18 @@ clang_index_getObjCProtocolRefListInfo(const CXIdxDeclInfo *DInfo) {
 
   if (const ObjCCategoryDeclInfo *CatInfo = dyn_cast<ObjCCategoryDeclInfo>(DI))
     return CatInfo->ObjCCatDeclInfo.protocols;
+
+  return 0;
+}
+
+const CXIdxObjCPropertyDeclInfo *
+clang_index_getObjCPropertyDeclInfo(const CXIdxDeclInfo *DInfo) {
+  if (!DInfo)
+    return 0;
+
+  const DeclInfo *DI = static_cast<const DeclInfo *>(DInfo);
+  if (const ObjCPropertyDeclInfo *PropInfo = dyn_cast<ObjCPropertyDeclInfo>(DI))
+    return &PropInfo->ObjCPropDeclInfo;
 
   return 0;
 }

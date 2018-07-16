@@ -28,6 +28,29 @@
 using namespace lldb;
 using namespace lldb_private;
 
+PlatformRemoteiOS::SDKDirectoryInfo::SDKDirectoryInfo (const lldb_private::FileSpec &sdk_dir) :
+    directory(sdk_dir),
+    build(),
+    version_major(0),
+    version_minor(0),
+    version_update(0),
+    user_cached(false)
+{
+    const char *dirname_cstr = sdk_dir.GetFilename().GetCString();
+    const char *pos = Args::StringToVersion (dirname_cstr,
+                                             version_major,
+                                             version_minor,
+                                             version_update);
+    
+    if (pos && pos[0] == ' ' && pos[1] == '(')
+    {
+        const char *build_start = pos + 2;
+        const char *end_paren = strchr (build_start, ')');
+        if (end_paren && build_start < end_paren)
+            build.SetCStringWithLength(build_start, end_paren - build_start);
+    }
+}
+
 //------------------------------------------------------------------
 // Static Variables
 //------------------------------------------------------------------
@@ -60,9 +83,58 @@ PlatformRemoteiOS::Terminate ()
 }
 
 Platform* 
-PlatformRemoteiOS::CreateInstance ()
+PlatformRemoteiOS::CreateInstance (bool force, const ArchSpec *arch)
 {
-    return new PlatformRemoteiOS ();
+    bool create = force;
+    if (create == false && arch && arch->IsValid())
+    {
+        switch (arch->GetMachine())
+        {
+        case llvm::Triple::arm:
+        case llvm::Triple::thumb:
+            {
+                const llvm::Triple &triple = arch->GetTriple();
+                llvm::Triple::VendorType vendor = triple.getVendor();
+                switch (vendor)
+                {
+                    case llvm::Triple::Apple:
+                        create = true;
+
+                    case llvm::Triple::UnknownArch:
+                        create = !arch->TripleVendorWasSpecified();
+                        break;
+
+                    default:
+                        break;
+                }
+                
+                if (create)
+                {
+                    switch (triple.getOS())
+                    {
+                        case llvm::Triple::Darwin:  // Deprecated, but still support Darwin for historical reasons
+                        case llvm::Triple::IOS:     // This is the right triple value for iOS debugging
+                            break;
+
+                        case llvm::Triple::UnknownOS:
+                            create = !arch->TripleOSWasSpecified();
+                            break;
+                            
+                        default:
+                            create = false;
+                            break;
+                    }
+                }
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (create)
+        return new PlatformRemoteiOS ();
+    return NULL;
 }
 
 
@@ -90,8 +162,11 @@ PlatformRemoteiOS::GetDescriptionStatic()
 //------------------------------------------------------------------
 PlatformRemoteiOS::PlatformRemoteiOS () :
     PlatformDarwin (false),    // This is a remote platform
-    m_device_support_directory (),
-    m_device_support_directory_for_os_version ()
+    m_sdk_directory_infos(),
+    m_device_support_directory(),
+    m_device_support_directory_for_os_version (),
+    m_build_update(),
+    m_last_module_sdk_idx(UINT32_MAX)
 {
 }
 
@@ -115,13 +190,24 @@ PlatformRemoteiOS::GetStatus (Stream &strm)
         strm.Printf ("  SDK Path: \"%s\"\n", sdk_directory);
     else
         strm.PutCString ("  SDK Path: error: unable to locate SDK\n");
+    
+    const uint32_t num_sdk_infos = m_sdk_directory_infos.size();
+    for (uint32_t i=0; i<num_sdk_infos; ++i)
+    {
+        const SDKDirectoryInfo &sdk_dir_info = m_sdk_directory_infos[i];
+        strm.Printf (" SDK Roots: [%2u] \"%s/%s\"\n",
+                     i,
+                     sdk_dir_info.directory.GetDirectory().GetCString(),
+                     sdk_dir_info.directory.GetFilename().GetCString());
+    }
 }
 
 
 Error
 PlatformRemoteiOS::ResolveExecutable (const FileSpec &exe_file,
                                       const ArchSpec &exe_arch,
-                                      lldb::ModuleSP &exe_module_sp)
+                                      lldb::ModuleSP &exe_module_sp,
+                                      const FileSpecList *module_search_paths_ptr)
 {
     Error error;
     // Nothing special to do here, just use the actual file and architecture
@@ -142,16 +228,14 @@ PlatformRemoteiOS::ResolveExecutable (const FileSpec &exe_file,
     {
         if (exe_arch.IsValid())
         {
-            error = ModuleList::GetSharedModule (resolved_exe_file, 
-                                                 exe_arch, 
-                                                 NULL,
-                                                 NULL, 
-                                                 0, 
+            ModuleSpec module_spec (resolved_exe_file, exe_arch);
+            error = ModuleList::GetSharedModule (module_spec,
                                                  exe_module_sp, 
+                                                 NULL,
                                                  NULL, 
                                                  NULL);
         
-            if (exe_module_sp->GetObjectFile())
+            if (exe_module_sp && exe_module_sp->GetObjectFile())
                 return error;
             exe_module_sp.reset();
         }
@@ -162,12 +246,10 @@ PlatformRemoteiOS::ResolveExecutable (const FileSpec &exe_file,
         ArchSpec platform_arch;
         for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, platform_arch); ++idx)
         {
-            error = ModuleList::GetSharedModule (resolved_exe_file, 
-                                                 platform_arch, 
-                                                 NULL,
-                                                 NULL, 
-                                                 0, 
+            ModuleSpec module_spec (resolved_exe_file, platform_arch);
+            error = ModuleList::GetSharedModule (module_spec, 
                                                  exe_module_sp, 
+                                                 NULL,
                                                  NULL, 
                                                  NULL);
             // Did we find an executable using one of the 
@@ -205,60 +287,190 @@ PlatformRemoteiOS::ResolveExecutable (const FileSpec &exe_file,
     return error;
 }
 
+FileSpec::EnumerateDirectoryResult 
+PlatformRemoteiOS::GetContainedFilesIntoVectorOfStringsCallback (void *baton,
+                                                                 FileSpec::FileType file_type,
+                                                                 const FileSpec &file_spec)
+{
+    ((PlatformRemoteiOS::SDKDirectoryInfoCollection *)baton)->push_back(PlatformRemoteiOS::SDKDirectoryInfo(file_spec));
+    return FileSpec::eEnumerateDirectoryResultNext;
+}
+
+bool
+PlatformRemoteiOS::UpdateSDKDirectoryInfosInNeeded()
+{
+    if (m_sdk_directory_infos.empty())
+    {
+        const char *device_support_dir = GetDeviceSupportDirectory();
+        if (device_support_dir)
+        {
+            const bool find_directories = true;
+            const bool find_files = false;
+            const bool find_other = false;
+            FileSpec::EnumerateDirectory (m_device_support_directory.c_str(),
+                                          find_directories,
+                                          find_files,
+                                          find_other,
+                                          GetContainedFilesIntoVectorOfStringsCallback,
+                                          &m_sdk_directory_infos);
+            
+            const uint32_t num_installed = m_sdk_directory_infos.size();
+            FileSpec local_sdk_cache("~/Library/Developer/Xcode/iOS DeviceSupport", true);
+            if (local_sdk_cache.Exists())
+            {
+                char path[PATH_MAX];
+                if (local_sdk_cache.GetPath(path, sizeof(path)))
+                {
+                    FileSpec::EnumerateDirectory (path,
+                                                  find_directories,
+                                                  find_files,
+                                                  find_other,
+                                                  GetContainedFilesIntoVectorOfStringsCallback,
+                                                  &m_sdk_directory_infos);
+                    const uint32_t num_sdk_infos = m_sdk_directory_infos.size();
+                    // First try for an exact match of major, minor and update
+                    for (uint32_t i=num_installed; i<num_sdk_infos; ++i)
+                    {
+                        m_sdk_directory_infos[i].user_cached = true;
+                    }
+                }
+            }
+        }
+    }
+    return !m_sdk_directory_infos.empty();
+}
+
+const PlatformRemoteiOS::SDKDirectoryInfo *
+PlatformRemoteiOS::GetSDKDirectoryForCurrentOSVersion ()
+{
+    uint32_t i;
+    if (UpdateSDKDirectoryInfosInNeeded())
+    {
+        const uint32_t num_sdk_infos = m_sdk_directory_infos.size();
+
+        // Check to see if the user specified a build string. If they did, then
+        // be sure to match it.
+        std::vector<bool> check_sdk_info(num_sdk_infos, true);
+        ConstString build(m_sdk_build);
+        if (build)
+        {
+            for (i=0; i<num_sdk_infos; ++i)
+                check_sdk_info[i] = m_sdk_directory_infos[i].build == build;
+        }
+        
+        // If we are connected we can find the version of the OS the platform
+        // us running on and select the right SDK
+        uint32_t major, minor, update;
+        if (GetOSVersion(major, minor, update))
+        {
+            if (UpdateSDKDirectoryInfosInNeeded())
+            {
+                // First try for an exact match of major, minor and update
+                for (i=0; i<num_sdk_infos; ++i)
+                {
+                    if (check_sdk_info[i])
+                    {
+                        if (m_sdk_directory_infos[i].version_major == major &&
+                            m_sdk_directory_infos[i].version_minor == minor &&
+                            m_sdk_directory_infos[i].version_update == update)
+                        {
+                            return &m_sdk_directory_infos[i];
+                        }
+                    }
+                }
+                // First try for an exact match of major and minor
+                for (i=0; i<num_sdk_infos; ++i)
+                {
+                    if (check_sdk_info[i])
+                    {
+                        if (m_sdk_directory_infos[i].version_major == major &&
+                            m_sdk_directory_infos[i].version_minor == minor)
+                        {
+                            return &m_sdk_directory_infos[i];
+                        }
+                    }
+                }
+                // Lastly try to match of major version only..
+                for (i=0; i<num_sdk_infos; ++i)
+                {
+                    if (check_sdk_info[i])
+                    {
+                        if (m_sdk_directory_infos[i].version_major == major)
+                        {
+                            return &m_sdk_directory_infos[i];
+                        }
+                    }
+                }
+            }
+        }
+        else if (build)
+        {
+            // No version, just a build number, search for the first one that matches
+            for (i=0; i<num_sdk_infos; ++i)
+                if (check_sdk_info[i])
+                    return &m_sdk_directory_infos[i];
+        }
+    }
+    return NULL;
+}
+
+const PlatformRemoteiOS::SDKDirectoryInfo *
+PlatformRemoteiOS::GetSDKDirectoryForLatestOSVersion ()
+{
+    const PlatformRemoteiOS::SDKDirectoryInfo *result = NULL;
+    if (UpdateSDKDirectoryInfosInNeeded())
+    {
+        const uint32_t num_sdk_infos = m_sdk_directory_infos.size();
+        // First try for an exact match of major, minor and update
+        for (uint32_t i=0; i<num_sdk_infos; ++i)
+        {
+            const SDKDirectoryInfo &sdk_dir_info = m_sdk_directory_infos[i];
+            if (sdk_dir_info.version_major != UINT32_MAX)
+            {
+                if (result == NULL || sdk_dir_info.version_major > result->version_major)
+                {
+                    result = &sdk_dir_info;
+                }
+                else if (sdk_dir_info.version_major == result->version_major)
+                {
+                    if (sdk_dir_info.version_minor > result->version_minor)
+                    {
+                        result = &sdk_dir_info;
+                    }
+                    else if (sdk_dir_info.version_minor == result->version_minor)
+                    {
+                        if (sdk_dir_info.version_update > result->version_update)
+                        {
+                            result = &sdk_dir_info;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return result;
+}
+
+
+
 const char *
 PlatformRemoteiOS::GetDeviceSupportDirectory()
 {
     if (m_device_support_directory.empty())
     {
-        bool developer_dir_path_valid = false;
-        char developer_dir_path[PATH_MAX];
-        FileSpec temp_file_spec;
-        if (Host::GetLLDBPath (ePathTypeLLDBShlibDir, temp_file_spec))
+        const char *device_support_dir = GetDeveloperDirectory();
+        if (device_support_dir)
         {
-            if (temp_file_spec.GetPath (developer_dir_path, sizeof(developer_dir_path)))
-            {
-                char *lib_priv_frameworks = strstr (developer_dir_path, "/Library/PrivateFrameworks/LLDB.framework");
-                if (lib_priv_frameworks)
-                {
-                    *lib_priv_frameworks = '\0';
-                    developer_dir_path_valid = true;
-                }
-            }
+            m_device_support_directory.assign (device_support_dir);
+            m_device_support_directory.append ("/Platforms/iPhoneOS.platform/DeviceSupport");
         }
-        
-        if (!developer_dir_path_valid)
+        else
         {
-            std::string xcode_dir_path;
-            const char *xcode_select_prefix_dir = getenv ("XCODE_SELECT_PREFIX_DIR");
-            if (xcode_select_prefix_dir)
-                xcode_dir_path.append (xcode_select_prefix_dir);
-            xcode_dir_path.append ("/usr/share/xcode-select/xcode_dir_path");
-            temp_file_spec.SetFile(xcode_dir_path.c_str(), false);
-            size_t bytes_read = temp_file_spec.ReadFileContents(0, developer_dir_path, sizeof(developer_dir_path), NULL);
-            if (bytes_read > 0)
-            {
-                developer_dir_path[bytes_read] = '\0';
-                while (developer_dir_path[bytes_read-1] == '\r' ||
-                       developer_dir_path[bytes_read-1] == '\n')
-                    developer_dir_path[--bytes_read] = '\0';
-                developer_dir_path_valid = true;
-            }
+            // Assign a single NULL character so we know we tried to find the device
+            // support directory and we don't keep trying to find it over and over.
+            m_device_support_directory.assign (1, '\0');
         }
-        
-        if (developer_dir_path_valid)
-        {
-            temp_file_spec.SetFile (developer_dir_path, false);
-            if (temp_file_spec.Exists())
-            {
-                m_device_support_directory.assign (developer_dir_path);
-                return m_device_support_directory.c_str();
-            }
-        }
-        // Assign a single NULL character so we know we tried to find the device
-        // support directory and we don't keep trying to find it over and over.
-        m_device_support_directory.assign (1, '\0');
     }
-
     // We should have put a single NULL character into m_device_support_directory
     // or it should have a valid path if the code gets here
     assert (m_device_support_directory.empty() == false);
@@ -266,6 +478,7 @@ PlatformRemoteiOS::GetDeviceSupportDirectory()
         return m_device_support_directory.c_str();
     return NULL;
 }
+            
 
 const char *
 PlatformRemoteiOS::GetDeviceSupportDirectoryForOSVersion()
@@ -275,85 +488,24 @@ PlatformRemoteiOS::GetDeviceSupportDirectoryForOSVersion()
 
     if (m_device_support_directory_for_os_version.empty())
     {
-        const char *device_support_dir = GetDeviceSupportDirectory();
-        const bool resolve_path = true;
-        if (device_support_dir)
+        const PlatformRemoteiOS::SDKDirectoryInfo *sdk_dir_info = GetSDKDirectoryForCurrentOSVersion ();
+        if (sdk_dir_info == NULL)
+            sdk_dir_info = GetSDKDirectoryForLatestOSVersion ();
+        if (sdk_dir_info)
         {
-            m_device_support_directory_for_os_version.assign (device_support_dir);
-            m_device_support_directory_for_os_version.append ("/Platforms/iPhoneOS.platform/DeviceSupport");
-
-            uint32_t major = 0;
-            uint32_t minor = 0;
-            uint32_t update = 0;
-            FileSpec file_spec;
-            char resolved_path[PATH_MAX];
-            if (GetOSVersion(major, minor, update))
+            char path[PATH_MAX];
+            if (sdk_dir_info->directory.GetPath(path, sizeof(path)))
             {
-                if (major != UINT32_MAX && minor != UINT32_MAX && update != UINT32_MAX)
-                {
-                    ::snprintf (resolved_path, 
-                                sizeof(resolved_path), 
-                                "%s/%i.%i.%i", 
-                                m_device_support_directory_for_os_version.c_str(), 
-                                major, 
-                                minor, 
-                                update);
-                    
-                    file_spec.SetFile(resolved_path, resolve_path);
-                    if (file_spec.Exists() && file_spec.GetPath(resolved_path, sizeof(resolved_path)))
-                    {
-                        m_device_support_directory_for_os_version.assign (resolved_path);
-                        return m_device_support_directory_for_os_version.c_str();
-                    }
-                }
-
-                if (major != UINT32_MAX && minor != UINT32_MAX)
-                {
-                    ::snprintf (resolved_path, 
-                                sizeof(resolved_path), 
-                                "%s/%i.%i", 
-                                m_device_support_directory_for_os_version.c_str(), 
-                                major, 
-                                minor);
-                    
-                    file_spec.SetFile(resolved_path, resolve_path);
-                    if (file_spec.Exists() && file_spec.GetPath(resolved_path, sizeof(resolved_path)))
-                    {
-                        m_device_support_directory_for_os_version.assign (resolved_path);
-                        return m_device_support_directory_for_os_version.c_str();
-                    }
-                }
-            }
-            else
-            {
-                // Use the default as we have no OS version selected
-                m_device_support_directory_for_os_version.append ("/Latest");
-                file_spec.SetFile(m_device_support_directory_for_os_version.c_str(), resolve_path);
-                
-                if (file_spec.Exists() && file_spec.GetPath(resolved_path, sizeof(resolved_path)))
-                {
-                    if (m_major_os_version == UINT32_MAX)
-                    {
-                        const char *resolved_latest_dirname = file_spec.GetFilename().GetCString();
-                        const char *pos = Args::StringToVersion (resolved_latest_dirname, 
-                                                                 m_major_os_version,
-                                                                 m_minor_os_version,
-                                                                 m_update_os_version);
-
-                        if (m_build_update.empty() && pos[0] == ' ' && pos[1] == '(')
-                        {
-                            const char *end_paren = strchr (pos + 2, ')');
-                            m_build_update.assign (pos + 2, end_paren);
-                        }
-                    }
-                    m_device_support_directory_for_os_version.assign (resolved_path);
-                    return m_device_support_directory_for_os_version.c_str();
-                }
+                m_device_support_directory_for_os_version = path;
+                return m_device_support_directory_for_os_version.c_str();
             }
         }
-        // Assign a single NULL character so we know we tried to find the device
-        // support directory and we don't keep trying to find it over and over.
-        m_device_support_directory_for_os_version.assign (1, '\0');
+        else
+        {
+            // Assign a single NULL character so we know we tried to find the device
+            // support directory and we don't keep trying to find it over and over.
+            m_device_support_directory_for_os_version.assign (1, '\0');
+        }
     }
     // We should have put a single NULL character into m_device_support_directory_for_os_version
     // or it should have a valid path if the code gets here
@@ -363,10 +515,101 @@ PlatformRemoteiOS::GetDeviceSupportDirectoryForOSVersion()
     return NULL;
 }
 
+uint32_t
+PlatformRemoteiOS::FindFileInAllSDKs (const char *platform_file_path,
+                                      FileSpecList &file_list)
+{
+    if (platform_file_path && platform_file_path[0] && UpdateSDKDirectoryInfosInNeeded())
+    {
+        const uint32_t num_sdk_infos = m_sdk_directory_infos.size();
+        lldb_private::FileSpec local_file;
+        // First try for an exact match of major, minor and update
+        for (uint32_t sdk_idx=0; sdk_idx<num_sdk_infos; ++sdk_idx)
+        {
+            if (GetFileInSDK (platform_file_path,
+                              sdk_idx,
+                              local_file))
+            {
+                file_list.Append(local_file);
+            }
+        }
+    }
+    return file_list.GetSize();
+}
+
+bool
+PlatformRemoteiOS::GetFileInSDK (const char *platform_file_path,
+                                 uint32_t sdk_idx,
+                                 lldb_private::FileSpec &local_file)
+{
+    if (sdk_idx < m_sdk_directory_infos.size())
+    {
+        char sdkroot_path[PATH_MAX];
+        const SDKDirectoryInfo &sdk_dir_info = m_sdk_directory_infos[sdk_idx];
+        if (sdk_dir_info.directory.GetPath(sdkroot_path, sizeof(sdkroot_path)))
+        {
+            const bool symbols_dirs_only = true;
+
+            return GetFileInSDKRoot (platform_file_path,
+                                     sdkroot_path,
+                                     symbols_dirs_only,
+                                     local_file);
+        }
+    }
+    return false;
+}
+
+
+bool
+PlatformRemoteiOS::GetFileInSDKRoot (const char *platform_file_path,
+                                     const char *sdkroot_path,
+                                     bool symbols_dirs_only,
+                                     lldb_private::FileSpec &local_file)
+{
+    if (sdkroot_path && sdkroot_path[0] && platform_file_path && platform_file_path[0])
+    {
+        char resolved_path[PATH_MAX];
+        
+        if (!symbols_dirs_only)
+        {
+            ::snprintf (resolved_path, 
+                        sizeof(resolved_path), 
+                        "%s/%s", 
+                        sdkroot_path,
+                        platform_file_path);
+            
+            local_file.SetFile(resolved_path, true);
+            if (local_file.Exists())
+                return true;
+        }
+            
+        ::snprintf (resolved_path,
+                    sizeof(resolved_path), 
+                    "%s/Symbols.Internal/%s", 
+                    sdkroot_path,
+                    platform_file_path);
+        
+        local_file.SetFile(resolved_path, true);
+        if (local_file.Exists())
+            return true;
+        ::snprintf (resolved_path,
+                    sizeof(resolved_path), 
+                    "%s/Symbols/%s", 
+                    sdkroot_path, 
+                    platform_file_path);
+        
+        local_file.SetFile(resolved_path, true);
+        if (local_file.Exists())
+            return true;                
+    }
+    return false;
+}
+
+
 Error
-PlatformRemoteiOS::GetFile (const FileSpec &platform_file, 
-                            const UUID *uuid_ptr,
-                            FileSpec &local_file)
+PlatformRemoteiOS::GetSymbolFile (const FileSpec &platform_file, 
+                                  const UUID *uuid_ptr,
+                                  FileSpec &local_file)
 {
     Error error;
     char platform_file_path[PATH_MAX];
@@ -423,12 +666,9 @@ PlatformRemoteiOS::GetFile (const FileSpec &platform_file,
 }
 
 Error
-PlatformRemoteiOS::GetSharedModule (const FileSpec &platform_file, 
-                                    const ArchSpec &arch,
-                                    const UUID *uuid_ptr,
-                                    const ConstString *object_name_ptr,
-                                    off_t object_offset,
+PlatformRemoteiOS::GetSharedModule (const ModuleSpec &module_spec,
                                     ModuleSP &module_sp,
+                                    const FileSpecList *module_search_paths_ptr,
                                     ModuleSP *old_module_sp_ptr,
                                     bool *did_create_ptr)
 {
@@ -436,28 +676,88 @@ PlatformRemoteiOS::GetSharedModule (const FileSpec &platform_file,
     // system. So first we ask for the file in the cached SDK,
     // then we attempt to get a shared module for the right architecture
     // with the right UUID.
-    Error error;
+    const FileSpec &platform_file = module_spec.GetFileSpec();
+
     FileSpec local_file;
-    error = GetFile (platform_file, uuid_ptr, local_file);
+    const UUID *module_uuid_ptr = module_spec.GetUUIDPtr();
+    Error error (GetSymbolFile (platform_file, module_uuid_ptr, local_file));
     if (error.Success())
     {
-        
-        error = ResolveExecutable (local_file, arch, module_sp);
-    }
-    else
-    {
-        const bool always_create = false;
-        error = ModuleList::GetSharedModule (platform_file, 
-                                             arch, 
-                                             uuid_ptr, 
-                                             object_name_ptr, 
-                                             object_offset, 
-                                             module_sp,
-                                             old_module_sp_ptr,
-                                             did_create_ptr,
-                                             always_create);
+        error = ResolveExecutable (local_file, module_spec.GetArchitecture(), module_sp, NULL);
+        if (module_sp && ((module_uuid_ptr == NULL) || (module_sp->GetUUID() == *module_uuid_ptr)))
+        {
+            //printf ("found in user specified SDK\n");
+            error.Clear();
+            return error;
+        }
 
+        char platform_file_path[PATH_MAX];
+        if (platform_file.GetPath(platform_file_path, sizeof(platform_file_path)))
+        {
+            FileSpec local_file;
+            const uint32_t num_sdk_infos = m_sdk_directory_infos.size();
+            // Try the last SDK index if it is set as most files from an SDK
+            // will tend to be valid in that same SDK.
+            if (m_last_module_sdk_idx < num_sdk_infos)
+            {
+                if (GetFileInSDK (platform_file_path, m_last_module_sdk_idx, local_file))
+                {
+                    //printf ("sdk[%u] last: '%s/%s'\n", m_last_module_sdk_idx, local_file.GetDirectory().GetCString(), local_file.GetFilename().GetCString());
+                    module_sp.reset();
+                    error = ResolveExecutable (local_file,
+                                               module_spec.GetArchitecture(),
+                                               module_sp,
+                                               NULL);
+                    if (module_sp && ((module_uuid_ptr == NULL) || (module_sp->GetUUID() == *module_uuid_ptr)))
+                    {
+                        //printf ("sdk[%u] last found\n", m_last_module_sdk_idx);
+                        error.Clear();
+                        return error;
+                    }
+                }
+            }
+            
+            // First try for an exact match of major, minor and update
+            for (uint32_t sdk_idx=0; sdk_idx<num_sdk_infos; ++sdk_idx)
+            {
+                if (m_last_module_sdk_idx == sdk_idx)
+                {
+                    // Skip the last module SDK index if we already searched
+                    // it above
+                    continue;
+                }
+                if (GetFileInSDK (platform_file_path, sdk_idx, local_file))
+                {
+                    //printf ("sdk[%u]: '%s/%s'\n", sdk_idx, local_file.GetDirectory().GetCString(), local_file.GetFilename().GetCString());
+                    
+                    error = ResolveExecutable (local_file,
+                                               module_spec.GetArchitecture(),
+                                               module_sp,
+                                               NULL);
+                    if (module_sp && ((module_uuid_ptr == NULL) || (module_sp->GetUUID() == *module_uuid_ptr)))
+                    {
+                        // Remember the index of the last SDK that we found a file
+                        // in in case the wrong SDK was selected.
+                        m_last_module_sdk_idx = sdk_idx;
+                        //printf ("sdk[%u]: found (setting last to %u)\n", sdk_idx, m_last_module_sdk_idx);
+                        error.Clear();
+                        return error;
+                    }
+                }
+            }
+        }
+        // Not the module we are looking for... Nothing to see here...
+        module_sp.reset();
     }
+
+    const bool always_create = false;
+    error = ModuleList::GetSharedModule (module_spec, 
+                                         module_sp,
+                                         module_search_paths_ptr,
+                                         old_module_sp_ptr,
+                                         did_create_ptr,
+                                         always_create);
+
     if (module_sp)
         module_sp->SetPlatformFileSpec(platform_file);
 

@@ -21,7 +21,7 @@
 namespace lldb_private {
 
 class SymbolFileType :
-    public ReferenceCountedBaseVirtual<SymbolFileType>,
+    public STD_ENABLE_SHARED_FROM_THIS(SymbolFileType),
     public UserID
     {
     public:
@@ -50,7 +50,7 @@ class SymbolFileType :
     };
     
 class Type :
-    public ReferenceCountedBaseVirtual<Type>,
+    public STD_ENABLE_SHARED_FROM_THIS(Type),
     public UserID
 {
 public:
@@ -138,6 +138,15 @@ public:
         return m_encoding_uid_type != eEncodingInvalid;
     }
 
+    bool
+    IsTypedef ()
+    {
+        return m_encoding_uid_type == eEncodingIsTypedefUID;
+    }
+    
+    lldb::TypeSP
+    GetTypedefType();
+
     void
     SetByteSize(uint32_t byte_size);
 
@@ -146,6 +155,9 @@ public:
     {
         return m_name;
     }
+
+    ConstString
+    GetQualifiedName ();
 
     void
     DumpValue(ExecutionContext *exe_ctx,
@@ -240,6 +252,12 @@ public:
     static int
     Compare(const Type &a, const Type &b);
 
+    // From a fully qualified typename, split the type into the type basename
+    // and the remaining type scope (namespaces/classes).
+    static bool
+    GetTypeScopeAndBasename (const char* name_cstr,
+                             std::string &scope,
+                             std::string &basename);
     void
     SetEncodingType (Type *encoding_type)
     {
@@ -265,6 +283,18 @@ public:
     
     bool
     IsRealObjCClass();
+    
+    bool
+    IsCompleteObjCClass()
+    {
+        return m_flags.is_complete_objc_class;
+    }
+    
+    void
+    SetIsCompleteObjCClass(bool is_complete_objc_class)
+    {
+        m_flags.is_complete_objc_class = is_complete_objc_class;
+    }
 
 protected:
     ConstString m_name;
@@ -276,7 +306,11 @@ protected:
     uint32_t m_byte_size;
     Declaration m_decl;
     lldb::clang_type_t m_clang_type;
-    ResolveState m_clang_type_resolve_state;
+    
+    struct Flags {
+        ResolveState    clang_type_resolve_state : 2;
+        bool            is_complete_objc_class   : 1;
+    } m_flags;
 
     Type *
     GetEncodingType ();
@@ -386,10 +420,18 @@ public:
     lldb::clang_type_t
     GetOpaqueQualType();    
 
+    lldb::TypeSP
+    GetTypeSP ()
+    {
+        return m_type_sp;
+    }
+
     bool
     GetDescription (lldb_private::Stream &strm, 
                     lldb::DescriptionLevel description_level);
     
+    void
+    SetType (const lldb::TypeSP &type_sp);
 
 private:
     ClangASTType m_clang_ast_type;
@@ -467,7 +509,7 @@ public:
     {
         return m_name;
     }
-
+    
     uint64_t
     GetBitOffset () const
     {

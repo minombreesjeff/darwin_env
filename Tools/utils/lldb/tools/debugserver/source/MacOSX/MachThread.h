@@ -16,7 +16,6 @@
 
 #include <string>
 #include <vector>
-#include <tr1/memory> // for std::tr1::shared_ptr
 
 #include <libproc.h>
 #include <mach/mach.h>
@@ -66,6 +65,9 @@ public:
     uint32_t        EnableHardwareWatchpoint (const DNBBreakpoint *watchpoint);
     bool            DisableHardwareBreakpoint (const DNBBreakpoint *breakpoint);
     bool            DisableHardwareWatchpoint (const DNBBreakpoint *watchpoint);
+    uint32_t        NumSupportedHardwareWatchpoints () const;
+    bool            RollbackTransForHWP();
+    bool            FinishTransForHWP();
 
     nub_state_t     GetState();
     void            SetState(nub_state_t state);
@@ -137,6 +139,6 @@ private:
     void HardwareWatchpointStateChanged(); // Provide a chance to update the global view of the hardware watchpoint state
 };
 
-typedef std::tr1::shared_ptr<MachThread> MachThreadSP;
+typedef STD_SHARED_PTR(MachThread) MachThreadSP;
 
 #endif

@@ -143,7 +143,7 @@ error_code COFFObjectFile::getSymbolType(DataRefImpl Symb,
   Result = SymbolRef::ST_Other;
   if (symb->StorageClass == COFF::IMAGE_SYM_CLASS_EXTERNAL &&
       symb->SectionNumber == COFF::IMAGE_SYM_UNDEFINED) {
-    Result = SymbolRef::ST_External;
+    Result = SymbolRef::ST_Unknown;
   } else {
     if (symb->getComplexType() == COFF::IMAGE_SYM_DTYPE_FUNCTION) {
       Result = SymbolRef::ST_Function;
@@ -159,17 +159,27 @@ error_code COFFObjectFile::getSymbolType(DataRefImpl Symb,
   return object_error::success;
 }
 
-error_code COFFObjectFile::isSymbolGlobal(DataRefImpl Symb,
-                                          bool &Result) const {
+error_code COFFObjectFile::getSymbolFlags(DataRefImpl Symb,
+                                          uint32_t &Result) const {
   const coff_symbol *symb = toSymb(Symb);
-  Result = (symb->StorageClass == COFF::IMAGE_SYM_CLASS_EXTERNAL);
-  return object_error::success;
-}
+  Result = SymbolRef::SF_None;
 
-error_code COFFObjectFile::isSymbolWeak(DataRefImpl Symb,
-                                          bool &Result) const {
-  const coff_symbol *symb = toSymb(Symb);
-  Result = (symb->StorageClass == COFF::IMAGE_SYM_CLASS_WEAK_EXTERNAL);
+  // TODO: Correctly set SF_FormatSpecific, SF_ThreadLocal, SF_Common
+
+  if (symb->StorageClass == COFF::IMAGE_SYM_CLASS_EXTERNAL &&
+      symb->SectionNumber == COFF::IMAGE_SYM_UNDEFINED)
+    Result |= SymbolRef::SF_Undefined;
+
+  // TODO: This are certainly too restrictive.
+  if (symb->StorageClass == COFF::IMAGE_SYM_CLASS_EXTERNAL)
+    Result |= SymbolRef::SF_Global;
+
+  if (symb->StorageClass == COFF::IMAGE_SYM_CLASS_WEAK_EXTERNAL)
+    Result |= SymbolRef::SF_Weak;
+
+  if (symb->SectionNumber == COFF::IMAGE_SYM_ABSOLUTE)
+    Result |= SymbolRef::SF_Absolute;
+
   return object_error::success;
 }
 
@@ -259,19 +269,6 @@ error_code COFFObjectFile::getSymbolNMTypeChar(DataRefImpl Symb,
     ret = ::toupper(ret);
 
   Result = ret;
-  return object_error::success;
-}
-
-error_code COFFObjectFile::isSymbolInternal(DataRefImpl Symb,
-                                            bool &Result) const {
-  Result = false;
-  return object_error::success;
-}
-
-error_code COFFObjectFile::isSymbolAbsolute(DataRefImpl Symb,
-                                            bool &Result) const {
-  const coff_symbol *symb = toSymb(Symb);
-  Result = symb->SectionNumber == COFF::IMAGE_SYM_ABSOLUTE;
   return object_error::success;
 }
 
@@ -508,6 +505,32 @@ symbol_iterator COFFObjectFile::end_symbols() const {
   return symbol_iterator(SymbolRef(ret, this));
 }
 
+symbol_iterator COFFObjectFile::begin_dynamic_symbols() const {
+  // TODO: implement
+  report_fatal_error("Dynamic symbols unimplemented in COFFObjectFile");
+}
+
+symbol_iterator COFFObjectFile::end_dynamic_symbols() const {
+  // TODO: implement
+  report_fatal_error("Dynamic symbols unimplemented in COFFObjectFile");
+}
+
+library_iterator COFFObjectFile::begin_libraries_needed() const {
+  // TODO: implement
+  report_fatal_error("Libraries needed unimplemented in COFFObjectFile");
+}
+
+library_iterator COFFObjectFile::end_libraries_needed() const {
+  // TODO: implement
+  report_fatal_error("Libraries needed unimplemented in COFFObjectFile");
+}
+
+StringRef COFFObjectFile::getLoadName() const {
+  // COFF does not have this field.
+  return "";
+}
+
+
 section_iterator COFFObjectFile::begin_sections() const {
   DataRefImpl ret;
   std::memset(&ret, 0, sizeof(DataRefImpl));
@@ -717,6 +740,16 @@ error_code COFFObjectFile::getRelocationValueString(DataRefImpl Rel,
   if (error_code ec = getSymbolName(sym, symname)) return ec;
   Result.append(symname.begin(), symname.end());
   return object_error::success;
+}
+
+error_code COFFObjectFile::getLibraryNext(DataRefImpl LibData,
+                                          LibraryRef &Result) const {
+  report_fatal_error("getLibraryNext not implemented in COFFObjectFile");
+}
+
+error_code COFFObjectFile::getLibraryPath(DataRefImpl LibData,
+                                          StringRef &Result) const {
+  report_fatal_error("getLibraryPath not implemented in COFFObjectFile");
 }
 
 namespace llvm {

@@ -23,15 +23,15 @@ public:
 
     SBAddress (const lldb::SBAddress &rhs);
 
+    SBAddress (lldb::SBSection section, lldb::addr_t offset);
+
     // Create an address by resolving a load address using the supplied target
     SBAddress (lldb::addr_t load_addr, lldb::SBTarget &target);
 
     ~SBAddress ();
 
-#ifndef SWIG
     const lldb::SBAddress &
     operator = (const lldb::SBAddress &rhs);
-#endif
 
     bool
     IsValid () const;
@@ -44,6 +44,9 @@ public:
 
     addr_t
     GetLoadAddress (const lldb::SBTarget &target) const;
+
+    void
+    SetAddress (lldb::SBSection section, lldb::addr_t offset);
 
     void
     SetLoadAddress (lldb::addr_t load_addr, 
@@ -76,6 +79,9 @@ public:
     lldb::SBSection
     GetSection ();
 
+    lldb::addr_t
+    GetOffset ();
+
     lldb::SBModule
     GetModule ();
     
@@ -94,6 +100,8 @@ public:
     lldb::SBLineEntry
     GetLineEntry ();
     
+    lldb::AddressClass
+    GetAddressClass ();
 
 protected:
 
@@ -111,8 +119,6 @@ protected:
     friend class SBThread;
     friend class SBValue;
 
-#ifndef SWIG
-
     lldb_private::Address *
     operator->();
 
@@ -128,9 +134,6 @@ protected:
     const lldb_private::Address &
     ref() const;
 
-#endif
-
-
     SBAddress (const lldb_private::Address *lldb_object_ptr);
 
     void
@@ -138,7 +141,7 @@ protected:
 
 private:
 
-    std::auto_ptr<lldb_private::AddressImpl> m_opaque_ap;
+    std::auto_ptr<lldb_private::Address> m_opaque_ap;
 };
 
 

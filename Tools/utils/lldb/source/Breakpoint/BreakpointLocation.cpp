@@ -38,12 +38,14 @@ BreakpointLocation::BreakpointLocation
     bool hardware
 ) :
     StoppointLocation (loc_id, addr.GetOpcodeLoadAddress(&owner.GetTarget()), hardware),
+    m_being_created(true),
     m_address (addr),
     m_owner (owner),
     m_options_ap (),
     m_bp_site_sp ()
 {
     SetThreadID (tid);
+    m_being_created = false;
 }
 
 BreakpointLocation::~BreakpointLocation()
@@ -70,7 +72,7 @@ BreakpointLocation::GetBreakpoint ()
 }
 
 bool
-BreakpointLocation::IsEnabled ()
+BreakpointLocation::IsEnabled () const
 {
     if (!m_owner.IsEnabled())
         return false;
@@ -92,6 +94,7 @@ BreakpointLocation::SetEnabled (bool enabled)
     {
         ClearBreakpointSite();
     }
+    SendBreakpointLocationChangedEvent (enabled ? eBreakpointEventTypeEnabled : eBreakpointEventTypeDisabled);
 }
 
 void
@@ -106,6 +109,89 @@ BreakpointLocation::SetThreadID (lldb::tid_t thread_id)
         if (m_options_ap.get() != NULL)
             m_options_ap->SetThreadID (thread_id);
     }
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeThreadChanged);
+}
+
+lldb::tid_t
+BreakpointLocation::GetThreadID ()
+{
+    if (GetOptionsNoCreate()->GetThreadSpecNoCreate())
+        return GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetTID();
+    else
+        return LLDB_INVALID_THREAD_ID;
+}
+
+void
+BreakpointLocation::SetThreadIndex (uint32_t index)
+{
+    if (index != 0)
+        GetLocationOptions()->GetThreadSpec()->SetIndex(index);
+    else
+    {
+        // If we're resetting this to an invalid thread id, then
+        // don't make an options pointer just to do that.
+        if (m_options_ap.get() != NULL)
+            m_options_ap->GetThreadSpec()->SetIndex(index);
+    }
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeThreadChanged);
+                        
+}
+
+uint32_t
+BreakpointLocation::GetThreadIndex() const
+{
+    if (GetOptionsNoCreate()->GetThreadSpecNoCreate())
+        return GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetIndex();
+    else
+        return 0;
+}
+
+void
+BreakpointLocation::SetThreadName (const char *thread_name)
+{
+    if (thread_name != NULL)
+        GetLocationOptions()->GetThreadSpec()->SetName(thread_name);
+    else
+    {
+        // If we're resetting this to an invalid thread id, then
+        // don't make an options pointer just to do that.
+        if (m_options_ap.get() != NULL)
+            m_options_ap->GetThreadSpec()->SetName(thread_name);
+    }
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeThreadChanged);
+}
+
+const char *
+BreakpointLocation::GetThreadName () const
+{
+    if (GetOptionsNoCreate()->GetThreadSpecNoCreate())
+        return GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetName();
+    else
+        return NULL;
+}
+
+void 
+BreakpointLocation::SetQueueName (const char *queue_name)
+{
+    if (queue_name != NULL)
+        GetLocationOptions()->GetThreadSpec()->SetQueueName(queue_name);
+    else
+    {
+        // If we're resetting this to an invalid thread id, then
+        // don't make an options pointer just to do that.
+        if (m_options_ap.get() != NULL)
+            m_options_ap->GetThreadSpec()->SetQueueName(queue_name);
+    }
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeThreadChanged);
+}
+
+const char *
+BreakpointLocation::GetQueueName () const
+{
+    if (GetOptionsNoCreate()->GetThreadSpecNoCreate())
+        return GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetQueueName();
+    else
+        return NULL;
 }
 
 bool
@@ -124,6 +210,7 @@ BreakpointLocation::SetCallback (BreakpointHitCallback callback, void *baton,
     // The default "Baton" class will keep a copy of "baton" and won't free
     // or delete it when it goes goes out of scope.
     GetLocationOptions()->SetCallback(callback, BatonSP (new Baton(baton)), is_synchronous);
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeCommandChanged);
 }
 
 void
@@ -131,6 +218,7 @@ BreakpointLocation::SetCallback (BreakpointHitCallback callback, const BatonSP &
                  bool is_synchronous)
 {
     GetLocationOptions()->SetCallback (callback, baton_sp, is_synchronous);
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeCommandChanged);
 }
 
 
@@ -144,16 +232,7 @@ void
 BreakpointLocation::SetCondition (const char *condition)
 {
     GetLocationOptions()->SetCondition (condition);
-}
-
-ThreadPlan *
-BreakpointLocation::GetThreadPlanToTestCondition (ExecutionContext &exe_ctx, Stream &error)
-{
-    lldb::BreakpointLocationSP this_sp(this);
-    if (m_options_ap.get())
-        return m_options_ap->GetThreadPlanToTestCondition (exe_ctx, this_sp, error);
-    else
-        return m_owner.GetThreadPlanToTestCondition (exe_ctx, this_sp, error);
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeConditionChanged);
 }
 
 const char *
@@ -172,6 +251,7 @@ void
 BreakpointLocation::SetIgnoreCount (uint32_t n)
 {
     GetLocationOptions()->SetIgnoreCount(n);
+    SendBreakpointLocationChangedEvent (eBreakpointEventTypeIgnoreChanged);
 }
 
 const BreakpointOptions *
@@ -259,9 +339,7 @@ BreakpointLocation::ResolveBreakpointSite ()
     if (m_owner.GetTarget().GetSectionLoadList().IsEmpty())
         return false;
 
-    BreakpointLocationSP this_sp(this);
-
-    lldb::break_id_t new_id = process->CreateBreakpointSite (this_sp, false);
+    lldb::break_id_t new_id = process->CreateBreakpointSite (shared_from_this(), false);
 
     if (new_id == LLDB_INVALID_BREAK_ID)
     {
@@ -423,3 +501,18 @@ BreakpointLocation::Dump(Stream *s) const
               GetHitCount(),
               GetOptionsNoCreate()->GetIgnoreCount());
 }
+
+void
+BreakpointLocation::SendBreakpointLocationChangedEvent (lldb::BreakpointEventType eventKind)
+{
+    if (!m_being_created
+        && !m_owner.IsInternal() 
+        && m_owner.GetTarget().EventTypeHasListeners(Target::eBroadcastBitBreakpointChanged))
+    {
+        Breakpoint::BreakpointEventData *data = new Breakpoint::BreakpointEventData (eventKind, 
+                                                                                     m_owner.shared_from_this());
+        data->GetBreakpointLocationCollection().Add (shared_from_this());
+        m_owner.GetTarget().BroadcastEvent (Target::eBroadcastBitBreakpointChanged, data);
+    }
+}
+    

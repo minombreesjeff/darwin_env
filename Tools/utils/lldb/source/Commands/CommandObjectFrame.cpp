@@ -14,7 +14,6 @@
 #include <string>
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Breakpoint/Watchpoint.h"
 #include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
@@ -32,7 +31,6 @@
 #include "lldb/Interpreter/OptionGroupFormat.h"
 #include "lldb/Interpreter/OptionGroupValueObjectDisplay.h"
 #include "lldb/Interpreter/OptionGroupVariable.h"
-#include "lldb/Interpreter/OptionGroupWatchpoint.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -198,7 +196,6 @@ public:
         Thread *thread = exe_ctx.GetThreadPtr();
         if (thread)
         {
-            const uint32_t num_frames = thread->GetStackFrameCount();
             uint32_t frame_idx = UINT32_MAX;
             if (m_options.relative_frame_offset != INT32_MIN)
             {
@@ -226,6 +223,9 @@ public:
                 }
                 else if (m_options.relative_frame_offset > 0)
                 {
+                    // I don't want "up 20" where "20" takes you past the top of the stack to produce
+                    // an error, but rather to just go to the top.  So I have to count the stack here...
+                    const uint32_t num_frames = thread->GetStackFrameCount();
                     if (num_frames - frame_idx > m_options.relative_frame_offset)
                         frame_idx += m_options.relative_frame_offset;
                     else
@@ -264,9 +264,9 @@ public:
                 }
             }
                 
-            if (frame_idx < num_frames)
+            bool success = thread->SetSelectedFrameByIndex (frame_idx);
+            if (success)
             {
-                thread->SetSelectedFrameByIndex (frame_idx);
                 exe_ctx.SetFrameSP(thread->GetSelectedFrame ());
                 StackFrame *frame = exe_ctx.GetFramePtr();
                 if (frame)
@@ -280,8 +280,9 @@ public:
 
                     bool show_frame_info = true;
                     bool show_source = !already_shown;
-                    uint32_t source_lines_before = 3;
-                    uint32_t source_lines_after = 3;
+                    Debugger &debugger = m_interpreter.GetDebugger();
+                    const uint32_t source_lines_before = debugger.GetStopSourceLineCount(true);
+                    const uint32_t source_lines_after = debugger.GetStopSourceLineCount(false);
                     if (frame->GetStatus (result.GetOutputStream(),
                                           show_frame_info,
                                           show_source,
@@ -330,15 +331,12 @@ public:
                        "If any arguments are specified, they can be names of "
                        "argument, local, file static and file global variables. "
                        "Children of aggregate variables can be specified such as "
-                       "'var->child.x'. "
-                       "You can choose to watch a variable with the '-w' option. "
-                       "Note that hardware resources for watching are often limited.",
+                       "'var->child.x'.",
                        NULL,
                        eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
         m_option_group (interpreter),
         m_option_variable(true), // Include the frame specific options by passing "true"
         m_option_format (eFormatDefault),
-        m_option_watchpoint(),
         m_varobj_options()
     {
         CommandArgumentEntry arg;
@@ -356,7 +354,6 @@ public:
         
         m_option_group.Append (&m_option_variable, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_option_format, OptionGroupFormat::OPTION_GROUP_FORMAT | OptionGroupFormat::OPTION_GROUP_GDB_FMT, LLDB_OPT_SET_1);
-        m_option_group.Append (&m_option_watchpoint, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_varobj_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Finalize();
     }
@@ -405,46 +402,31 @@ public:
         const char *name_cstr = NULL;
         size_t idx;
         
-        SummaryFormatSP summary_format_sp;
+        TypeSummaryImplSP summary_format_sp;
         if (!m_option_variable.summary.empty())
             DataVisualization::NamedSummaryFormats::GetSummaryFormat(ConstString(m_option_variable.summary.c_str()), summary_format_sp);
         
         ValueObject::DumpValueObjectOptions options;
         
-        options.SetPointerDepth(m_varobj_options.ptr_depth)
+        options.SetMaximumPointerDepth(m_varobj_options.ptr_depth)
             .SetMaximumDepth(m_varobj_options.max_depth)
             .SetShowTypes(m_varobj_options.show_types)
             .SetShowLocation(m_varobj_options.show_location)
             .SetUseObjectiveC(m_varobj_options.use_objc)
             .SetUseDynamicType(m_varobj_options.use_dynamic)
-            .SetUseSyntheticValue((lldb::SyntheticValueType)m_varobj_options.use_synth)
+            .SetUseSyntheticValue(m_varobj_options.use_synth)
             .SetFlatOutput(m_varobj_options.flat_output)
             .SetOmitSummaryDepth(m_varobj_options.no_summary_depth)
-            .SetIgnoreCap(m_varobj_options.ignore_cap);
+            .SetIgnoreCap(m_varobj_options.ignore_cap)
+            .SetSummary(summary_format_sp);
 
         if (m_varobj_options.be_raw)
             options.SetRawDisplay(true);
         
         if (variable_list)
         {
-            // If watching a variable, there are certain restrictions to be followed.
-            if (m_option_watchpoint.watch_variable)
-            {
-                if (command.GetArgumentCount() != 1) {
-                    result.GetErrorStream().Printf("error: specify exactly one variable when using the '-w' option\n");
-                    result.SetStatus(eReturnStatusFailed);
-                    return false;
-                } else if (m_option_variable.use_regex) {
-                    result.GetErrorStream().Printf("error: specify your variable name exactly (no regex) when using the '-w' option\n");
-                    result.SetStatus(eReturnStatusFailed);
-                    return false;
-                }
-
-                // Things have checked out ok...
-                // m_option_watchpoint.watch_type specifies the type of watching.
-            }
-            
             const Format format = m_option_format.GetFormat();
+            options.SetFormat(format);
 
             if (command.GetArgumentCount() > 0)
             {
@@ -486,12 +468,9 @@ public:
                                                 if (var_sp->DumpDeclaration(&s, show_fullpaths, show_module))
                                                     s.PutCString (": ");
                                             }
-                                            if (summary_format_sp)
-                                                valobj_sp->SetCustomSummaryFormat(summary_format_sp);
                                             ValueObject::DumpValueObject (result.GetOutputStream(), 
                                                                           valobj_sp.get(),
-                                                                          options,
-                                                                          format);
+                                                                          options);
                                         }
                                     }
                                 }
@@ -529,58 +508,14 @@ public:
                                 var_sp->GetDeclaration ().DumpStopContext (&s, false);
                                 s.PutCString (": ");
                             }
-                            if (summary_format_sp)
-                                valobj_sp->SetCustomSummaryFormat(summary_format_sp);
+                            
+                            options.SetFormat(format);
 
                             Stream &output_stream = result.GetOutputStream();
+                            options.SetRootValueObjectName(valobj_sp->GetParent() ? name_cstr : NULL);
                             ValueObject::DumpValueObject (output_stream, 
                                                           valobj_sp.get(), 
-                                                          valobj_sp->GetParent() ? name_cstr : NULL,
-                                                          options,
-                                                          format);
-                            // Process watchpoint if necessary.
-                            if (m_option_watchpoint.watch_variable)
-                            {
-                                AddressType addr_type;
-                                lldb::addr_t addr = 0;
-                                size_t size = 0;
-                                if (m_option_watchpoint.watch_size == 0) {
-                                    addr = valobj_sp->GetAddressOf(false, &addr_type);
-                                    if (addr_type == eAddressTypeLoad) {
-                                        // We're in business.
-                                        // Find out the size of this variable.
-                                        size = valobj_sp->GetByteSize();
-                                    }
-                                } else {
-                                    // The '-xsize'/'-x' option means to treat the value object as
-                                    // a pointer and to watch the pointee with the specified size.
-                                    addr = valobj_sp->GetValueAsUnsigned(0);
-                                    size = m_option_watchpoint.watch_size;
-                                }
-                                uint32_t watch_type = m_option_watchpoint.watch_type;
-                                Watchpoint *wp = exe_ctx.GetTargetRef().CreateWatchpoint(addr, size, watch_type).get();
-                                if (wp)
-                                {
-                                    if (var_sp && var_sp->GetDeclaration().GetFile())
-                                    {
-                                        StreamString ss;
-                                        // True to show fullpath for declaration file.
-                                        var_sp->GetDeclaration().DumpStopContext(&ss, true);
-                                        wp->SetDeclInfo(ss.GetString());
-                                    }
-                                    StreamString ss;
-                                    output_stream.Printf("Watchpoint created: ");
-                                    wp->GetDescription(&output_stream, lldb::eDescriptionLevelFull);
-                                    output_stream.EOL();
-                                    result.SetStatus(eReturnStatusSuccessFinishResult);
-                                }
-                                else
-                                {
-                                    result.AppendErrorWithFormat("Watchpoint creation failed.\n");
-                                    result.SetStatus(eReturnStatusFailed);
-                                }
-                                return (wp != NULL);
-                            }
+                                                          options);
                         }
                         else
                         {
@@ -653,13 +588,12 @@ public:
                                         var_sp->GetDeclaration ().DumpStopContext (&s, false);
                                         s.PutCString (": ");
                                     }
-                                    if (summary_format_sp)
-                                        valobj_sp->SetCustomSummaryFormat(summary_format_sp);
+                                    
+                                    options.SetFormat(format);
+                                    options.SetRootValueObjectName(name_cstr);
                                     ValueObject::DumpValueObject (result.GetOutputStream(), 
                                                                   valobj_sp.get(), 
-                                                                  name_cstr,
-                                                                  options,
-                                                                  format);
+                                                                  options);
                                 }
                             }
                         }
@@ -683,7 +617,6 @@ protected:
     OptionGroupOptions m_option_group;
     OptionGroupVariable m_option_variable;
     OptionGroupFormat m_option_format;
-    OptionGroupWatchpoint m_option_watchpoint;
     OptionGroupValueObjectDisplay m_varobj_options;
 };
 

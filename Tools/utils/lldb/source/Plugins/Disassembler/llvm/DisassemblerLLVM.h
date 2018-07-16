@@ -20,20 +20,12 @@ class InstructionLLVM : public lldb_private::Instruction
 {
 public:
     InstructionLLVM (const lldb_private::Address &addr,
-                     lldb_private::AddressClass addr_class,
+                     lldb::AddressClass addr_class,
                      EDDisassemblerRef disassembler,
                      llvm::Triple::ArchType arch_type);
     
     virtual
     ~InstructionLLVM();
-    
-    virtual void
-    Dump (lldb_private::Stream *s,
-          uint32_t max_opcode_byte_size,
-          bool show_address,
-          bool show_bytes,
-          const lldb_private::ExecutionContext* exe_ctx,
-          bool raw);
     
     virtual bool
     DoesBranch () const;
@@ -44,7 +36,7 @@ public:
             uint32_t data_offset);
     
     virtual void
-    CalculateMnemonicOperandsAndComment (lldb_private::ExecutionContextScope *exe_scope);
+    CalculateMnemonicOperandsAndComment (const lldb_private::ExecutionContext* exe_ctx);
     
 protected:
     EDDisassemblerRef m_disassembler;

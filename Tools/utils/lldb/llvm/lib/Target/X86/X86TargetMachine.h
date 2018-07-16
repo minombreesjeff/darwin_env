@@ -27,17 +27,18 @@
 #include "llvm/Target/TargetFrameLowering.h"
 
 namespace llvm {
-  
+
 class formatted_raw_ostream;
 class StringRef;
 
 class X86TargetMachine : public LLVMTargetMachine {
-  X86Subtarget      Subtarget;
-  X86FrameLowering  FrameLowering;
-  X86ELFWriterInfo  ELFWriterInfo;
+  X86Subtarget       Subtarget;
+  X86FrameLowering   FrameLowering;
+  X86ELFWriterInfo   ELFWriterInfo;
+  InstrItineraryData InstrItins;
 
 public:
-  X86TargetMachine(const Target &T, StringRef TT, 
+  X86TargetMachine(const Target &T, StringRef TT,
                    StringRef CPU, StringRef FS, const TargetOptions &Options,
                    Reloc::Model RM, CodeModel::Model CM,
                    CodeGenOpt::Level OL,
@@ -56,7 +57,7 @@ public:
   virtual const X86TargetLowering *getTargetLowering() const {
     llvm_unreachable("getTargetLowering not implemented");
   }
-  virtual const X86SelectionDAGInfo *getSelectionDAGInfo() const { 
+  virtual const X86SelectionDAGInfo *getSelectionDAGInfo() const {
     llvm_unreachable("getSelectionDAGInfo not implemented");
   }
   virtual const X86RegisterInfo  *getRegisterInfo() const {
@@ -65,12 +66,13 @@ public:
   virtual const X86ELFWriterInfo *getELFWriterInfo() const {
     return Subtarget.isTargetELF() ? &ELFWriterInfo : 0;
   }
+  virtual const InstrItineraryData *getInstrItineraryData() const {
+    return &InstrItins;
+  }
 
   // Set up the pass pipeline.
-  virtual bool addInstSelector(PassManagerBase &PM);
-  virtual bool addPreRegAlloc(PassManagerBase &PM);
-  virtual bool addPostRegAlloc(PassManagerBase &PM);
-  virtual bool addPreEmitPass(PassManagerBase &PM);
+  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
+
   virtual bool addCodeEmitter(PassManagerBase &PM,
                               JITCodeEmitter &JCE);
 };
@@ -78,6 +80,7 @@ public:
 /// X86_32TargetMachine - X86 32-bit target machine.
 ///
 class X86_32TargetMachine : public X86TargetMachine {
+  virtual void anchor();
   const TargetData  DataLayout; // Calculates type size & alignment
   X86InstrInfo      InstrInfo;
   X86SelectionDAGInfo TSInfo;
@@ -92,7 +95,7 @@ public:
   virtual const X86TargetLowering *getTargetLowering() const {
     return &TLInfo;
   }
-  virtual const X86SelectionDAGInfo *getSelectionDAGInfo() const { 
+  virtual const X86SelectionDAGInfo *getSelectionDAGInfo() const {
     return &TSInfo;
   }
   virtual const X86InstrInfo     *getInstrInfo() const {
@@ -106,6 +109,7 @@ public:
 /// X86_64TargetMachine - X86 64-bit target machine.
 ///
 class X86_64TargetMachine : public X86TargetMachine {
+  virtual void anchor();
   const TargetData  DataLayout; // Calculates type size & alignment
   X86InstrInfo      InstrInfo;
   X86SelectionDAGInfo TSInfo;
@@ -120,7 +124,7 @@ public:
   virtual const X86TargetLowering *getTargetLowering() const {
     return &TLInfo;
   }
-  virtual const X86SelectionDAGInfo *getSelectionDAGInfo() const { 
+  virtual const X86SelectionDAGInfo *getSelectionDAGInfo() const {
     return &TSInfo;
   }
   virtual const X86InstrInfo     *getInstrInfo() const {

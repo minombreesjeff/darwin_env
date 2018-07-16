@@ -12,11 +12,13 @@ class CppDataFormatterTestCase(TestBase):
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-cpp")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_with_dsym_and_run_command(self):
         """Test data formatter commands."""
         self.buildDsym()
         self.data_formatter_commands()
 
+    @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()
@@ -127,8 +129,8 @@ class CppDataFormatterTestCase(TestBase):
         self.runCmd("type summary add -c Point")
             
         self.expect("frame variable iAmSomewhere",
-            substrs = ['x=4',
-                       'y=6'])
+            substrs = ['x = 4',
+                       'y = 6'])
         
         self.expect("type summary list",
             substrs = ['Point',
@@ -267,6 +269,10 @@ class CppDataFormatterTestCase(TestBase):
         self.expect("frame variable the_coolest_guy", matching=False,
                     substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
 
+        # check that formats are not sticking since that is the behavior we want
+        self.expect("frame variable iAmInt --format hex", substrs = ['(int) iAmInt = 0x00000001'])
+        self.expect("frame variable iAmInt", matching=False, substrs = ['(int) iAmInt = 0x00000001'])
+        self.expect("frame variable iAmInt", substrs = ['(int) iAmInt = 1'])
 
 if __name__ == '__main__':
     import atexit

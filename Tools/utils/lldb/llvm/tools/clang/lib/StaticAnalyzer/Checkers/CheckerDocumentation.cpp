@@ -173,7 +173,7 @@ public:
   /// performed on the symbols of interest and change the state accordingly.
   ///
   /// eval::Assume
-  const ProgramState *evalAssume(const ProgramState *State,
+  ProgramStateRef evalAssume(ProgramStateRef State,
                                  SVal Cond,
                                  bool Assumption) const { return State; }
 
@@ -182,15 +182,29 @@ public:
   /// dead and removed.
   ///
   /// check::LiveSymbols
-  void checkLiveSymbols(const ProgramState *State, SymbolReaper &SR) const {}
+  void checkLiveSymbols(ProgramStateRef State, SymbolReaper &SR) const {}
 
+
+  bool wantsRegionChangeUpdate(ProgramStateRef St) const { return true; }
+  
   /// check::RegionChanges
-  bool wantsRegionChangeUpdate(const ProgramState *St) const { return true; }
-  const ProgramState *
-    checkRegionChanges(const ProgramState *State,
+  /// Allows tracking regions which get invalidated.
+  /// \param state The current program state.
+  /// \param invalidated A set of all symbols potentially touched by the change.
+  /// \param ExplicitRegions The regions explicitly requested for invalidation.
+  ///   For example, in the case of a function call, these would be arguments.
+  /// \param Regions The transitive closure of accessible regions,
+  ///   i.e. all regions that may have been touched by this change.
+  /// \param The call expression wrapper if the regions are invalidated by a
+  ///   call, 0 otherwise.
+  /// Note, in order to be notified, the checker should also implement 
+  /// wantsRegionChangeUpdate callback.
+  ProgramStateRef 
+    checkRegionChanges(ProgramStateRef State,
                        const StoreManager::InvalidatedSymbols *,
                        ArrayRef<const MemRegion *> ExplicitRegions,
-                       ArrayRef<const MemRegion *> Regions) const {
+                       ArrayRef<const MemRegion *> Regions,
+                       const CallOrObjCMessage *Call) const {
     return State;
   }
 

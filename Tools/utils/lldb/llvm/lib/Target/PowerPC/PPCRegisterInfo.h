@@ -1,4 +1,4 @@
-//===- PPCRegisterInfo.h - PowerPC Register Information Impl -----*- C++ -*-==//
+//===-- PPCRegisterInfo.h - PowerPC Register Information Impl ---*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -41,7 +41,8 @@ public:
                                MachineFunction &MF) const;
 
   /// Code Generation virtual methods...
-  const unsigned *getCalleeSavedRegs(const MachineFunction* MF = 0) const;
+  const uint16_t *getCalleeSavedRegs(const MachineFunction* MF = 0) const;
+  const unsigned *getCallPreservedMask(CallingConv::ID CC) const;
 
   BitVector getReservedRegs(const MachineFunction &MF) const;
 

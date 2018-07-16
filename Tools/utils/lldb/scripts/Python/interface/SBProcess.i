@@ -52,6 +52,9 @@ public:
 
     ~SBProcess();
 
+    static const char *
+    GetBroadcasterClassName ();
+
     void
     Clear ();
 
@@ -269,6 +272,9 @@ public:
     static lldb::SBProcess
     GetProcessFromEvent (const lldb::SBEvent &event);
 
+    static bool
+    EventIsProcessEvent (const lldb::SBEvent &event);
+
     lldb::SBBroadcaster
     GetBroadcaster () const;
 
@@ -276,10 +282,108 @@ public:
     GetDescription (lldb::SBStream &description);
 
     uint32_t
+    GetNumSupportedHardwareWatchpoints (lldb::SBError &error) const;
+
+    uint32_t
     LoadImage (lldb::SBFileSpec &image_spec, lldb::SBError &error);
     
     lldb::SBError
     UnloadImage (uint32_t image_token);
+
+    %pythoncode %{
+        def __get_is_alive__(self):
+            '''Returns "True" if the process is currently alive, "False" otherwise'''
+            s = self.GetState()
+            if (s == eStateAttaching or 
+                s == eStateLaunching or 
+                s == eStateStopped or 
+                s == eStateRunning or 
+                s == eStateStepping or 
+                s == eStateCrashed or 
+                s == eStateSuspended):
+                return True
+            return False
+
+        def __get_is_running__(self):
+            '''Returns "True" if the process is currently running, "False" otherwise'''
+            state = self.GetState()
+            if state == eStateRunning or state == eStateStepping:
+                return True
+            return False
+
+        def __get_is_running__(self):
+            '''Returns "True" if the process is currently stopped, "False" otherwise'''
+            state = self.GetState()
+            if state == eStateStopped or state == eStateCrashed or state == eStateSuspended:
+                return True
+            return False
+
+        class threads_access(object):
+            '''A helper object that will lazily hand out thread for a process when supplied an index.'''
+            def __init__(self, sbprocess):
+                self.sbprocess = sbprocess
+        
+            def __len__(self):
+                if self.sbprocess:
+                    return int(self.sbprocess.GetNumThreads())
+                return 0
+        
+            def __getitem__(self, key):
+                if type(key) is int and key < len(self):
+                    return self.sbprocess.GetThreadAtIndex(key)
+                return None
+        
+        def get_threads_access_object(self):
+            '''An accessor function that returns a modules_access() object which allows lazy thread access from a lldb.SBProcess object.'''
+            return self.threads_access (self)
+        
+        def get_process_thread_list(self):
+            '''An accessor function that returns a list() that contains all threads in a lldb.SBProcess object.'''
+            threads = []
+            for idx in range(self.GetNumThreads()):
+                threads.append(GetThreadAtIndex(idx))
+            return threads
+        
+        __swig_getmethods__["threads"] = get_process_thread_list
+        if _newclass: x = property(get_process_thread_list, None)
+        
+        __swig_getmethods__["thread"] = get_threads_access_object
+        if _newclass: x = property(get_threads_access_object, None)
+
+        __swig_getmethods__["is_alive"] = __get_is_alive__
+        if _newclass: x = property(__get_is_alive__, None)
+
+        __swig_getmethods__["is_running"] = __get_is_running__
+        if _newclass: x = property(__get_is_running__, None)
+
+        __swig_getmethods__["is_stopped"] = __get_is_running__
+        if _newclass: x = property(__get_is_running__, None)
+
+        __swig_getmethods__["id"] = GetProcessID
+        if _newclass: x = property(GetProcessID, None)
+        
+        __swig_getmethods__["target"] = GetTarget
+        if _newclass: x = property(GetTarget, None)
+        
+        __swig_getmethods__["num_threads"] = GetNumThreads
+        if _newclass: x = property(GetNumThreads, None)
+        
+        __swig_getmethods__["selected_thread"] = GetSelectedThread
+        __swig_setmethods__["selected_thread"] = SetSelectedThread
+        if _newclass: x = property(GetSelectedThread, SetSelectedThread)
+        
+        __swig_getmethods__["state"] = GetState
+        if _newclass: x = property(GetState, None)
+        
+        __swig_getmethods__["exit_state"] = GetExitStatus
+        if _newclass: x = property(GetExitStatus, None)
+        
+        __swig_getmethods__["exit_description"] = GetExitDescription
+        if _newclass: x = property(GetExitDescription, None)
+        
+        __swig_getmethods__["broadcaster"] = GetBroadcaster
+        if _newclass: x = property(GetBroadcaster, None)
+    %}
 
 };
 

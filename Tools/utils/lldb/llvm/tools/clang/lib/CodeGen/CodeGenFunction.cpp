@@ -16,9 +16,7 @@
 #include "CGCUDARuntime.h"
 #include "CGCXXABI.h"
 #include "CGDebugInfo.h"
-#include "CGException.h"
 #include "clang/Basic/TargetInfo.h"
-#include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
@@ -31,15 +29,16 @@ using namespace CodeGen;
 
 CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
   : CodeGenTypeCache(cgm), CGM(cgm),
-    Target(CGM.getContext().getTargetInfo()), Builder(cgm.getModule().getContext()),
+    Target(CGM.getContext().getTargetInfo()),
+    Builder(cgm.getModule().getContext()),
     AutoreleaseResult(false), BlockInfo(0), BlockPointer(0),
-    NormalCleanupDest(0), NextCleanupDestIndex(1), FirstBlockInfo(0), 
-    EHResumeBlock(0), ExceptionSlot(0), EHSelectorSlot(0),
+    LambdaThisCaptureField(0), NormalCleanupDest(0), NextCleanupDestIndex(1),
+    FirstBlockInfo(0), EHResumeBlock(0), ExceptionSlot(0), EHSelectorSlot(0),
     DebugInfo(0), DisableDebugInfo(false), DidCallStackSave(false),
     IndirectBranch(0), SwitchInsn(0), CaseRangeBlock(0), UnreachableBlock(0),
-    CXXThisDecl(0), CXXThisValue(0), CXXVTTDecl(0), CXXVTTValue(0),
-    OutermostConditional(0), TerminateLandingPad(0), TerminateHandler(0),
-    TrapBB(0) {
+    CXXABIThisDecl(0), CXXABIThisValue(0), CXXThisValue(0), CXXVTTDecl(0),
+    CXXVTTValue(0), OutermostConditional(0), TerminateLandingPad(0),
+    TerminateHandler(0), TrapBB(0) {
 
   CatchUndefined = getContext().getLangOptions().CatchUndefined;
   CGM.getCXXABI().getMangleContext().startNewFunction();
@@ -230,8 +229,7 @@ void CodeGenFunction::EmitFunctionInstrumentation(const char *Fn) {
   llvm::PointerType *PointerTy = Int8PtrTy;
   llvm::Type *ProfileFuncArgs[] = { PointerTy, PointerTy };
   llvm::FunctionType *FunctionTy =
-    llvm::FunctionType::get(llvm::Type::getVoidTy(getLLVMContext()),
-                            ProfileFuncArgs, false);
+    llvm::FunctionType::get(VoidTy, ProfileFuncArgs, false);
 
   llvm::Constant *F = CGM.CreateRuntimeFunction(FunctionTy, Fn);
   llvm::CallInst *CallSite = Builder.CreateCall(
@@ -245,8 +243,7 @@ void CodeGenFunction::EmitFunctionInstrumentation(const char *Fn) {
 }
 
 void CodeGenFunction::EmitMCountInstrumentation() {
-  llvm::FunctionType *FTy =
-    llvm::FunctionType::get(llvm::Type::getVoidTy(getLLVMContext()), false);
+  llvm::FunctionType *FTy = llvm::FunctionType::get(VoidTy, false);
 
   llvm::Constant *MCountFn = CGM.CreateRuntimeFunction(FTy,
                                                        Target.getMCountName());
@@ -354,8 +351,27 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
   PrologueCleanupDepth = EHStack.stable_begin();
   EmitFunctionProlog(*CurFnInfo, CurFn, Args);
 
-  if (D && isa<CXXMethodDecl>(D) && cast<CXXMethodDecl>(D)->isInstance())
+  if (D && isa<CXXMethodDecl>(D) && cast<CXXMethodDecl>(D)->isInstance()) {
     CGM.getCXXABI().EmitInstanceFunctionProlog(*this);
+    const CXXMethodDecl *MD = cast<CXXMethodDecl>(D);
+    if (MD->getParent()->isLambda() &&
+        MD->getOverloadedOperator() == OO_Call) {
+      // We're in a lambda; figure out the captures.
+      MD->getParent()->getCaptureFields(LambdaCaptureFields,
+                                        LambdaThisCaptureField);
+      if (LambdaThisCaptureField) {
+        // If this lambda captures this, load it.
+        LValue ThisLValue = EmitLValueForField(CXXABIThisValue,
+                                               LambdaThisCaptureField, 0);
+        CXXThisValue = EmitLoadOfLValue(ThisLValue).getScalarVal();
+      }
+    } else {
+      // Not in a lambda; just use 'this' from the method.
+      // FIXME: Should we generate a new load for each use of 'this'?  The
+      // fast register allocator would be happier...
+      CXXThisValue = CXXABIThisValue;
+    }
+  }
 
   // If any of the arguments have a variably modified type, make sure to
   // emit the type size.
@@ -412,9 +428,8 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
   if (isa<CXXMethodDecl>(FD) && cast<CXXMethodDecl>(FD)->isInstance())
     CGM.getCXXABI().BuildInstanceFunctionParams(*this, ResTy, Args);
 
-  if (FD->getNumParams())
-    for (unsigned i = 0, e = FD->getNumParams(); i != e; ++i)
-      Args.push_back(FD->getParamDecl(i));
+  for (unsigned i = 0, e = FD->getNumParams(); i != e; ++i)
+    Args.push_back(FD->getParamDecl(i));
 
   SourceRange BodyRange;
   if (Stmt *Body = FD->getBody()) BodyRange = Body->getSourceRange();
@@ -431,6 +446,17 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
            !CGM.getCodeGenOpts().CUDAIsDevice &&
            FD->hasAttr<CUDAGlobalAttr>())
     CGM.getCUDARuntime().EmitDeviceStubBody(*this, Args);
+  else if (isa<CXXConversionDecl>(FD) &&
+           cast<CXXConversionDecl>(FD)->isLambdaToBlockPointerConversion()) {
+    // The lambda conversion to block pointer is special; the semantics can't be
+    // expressed in the AST, so IRGen needs to special-case it.
+    EmitLambdaToBlockPointerBody(Args);
+  } else if (isa<CXXMethodDecl>(FD) &&
+             cast<CXXMethodDecl>(FD)->isLambdaStaticInvoker()) {
+    // The lambda "__invoke" function is special, because it forwards or
+    // clones the body of the function call operator (but is actually static).
+    EmitLambdaStaticInvokeFunction(cast<CXXMethodDecl>(FD));
+  }
   else
     EmitFunctionBody(Args);
 
@@ -520,15 +546,14 @@ bool CodeGenFunction::
 ConstantFoldsToSimpleInteger(const Expr *Cond, llvm::APInt &ResultInt) {
   // FIXME: Rename and handle conversion of other evaluatable things
   // to bool.
-  Expr::EvalResult Result;
-  if (!Cond->EvaluateAsRValue(Result, getContext()) || !Result.Val.isInt() ||
-      Result.HasSideEffects)
+  llvm::APSInt Int;
+  if (!Cond->EvaluateAsInt(Int, getContext()))
     return false;  // Not foldable, not integer or not fully evaluatable.
-  
+
   if (CodeGenFunction::ContainsLabel(Cond))
     return false;  // Contains a label.
-  
-  ResultInt = Result.Val.getInt();
+
+  ResultInt = Int;
   return true;
 }
 
@@ -621,29 +646,24 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
   }
 
   if (const ConditionalOperator *CondOp = dyn_cast<ConditionalOperator>(Cond)) {
-    // Handle ?: operator.
+    // br(c ? x : y, t, f) -> br(c, br(x, t, f), br(y, t, f))
+    llvm::BasicBlock *LHSBlock = createBasicBlock("cond.true");
+    llvm::BasicBlock *RHSBlock = createBasicBlock("cond.false");
 
-    // Just ignore GNU ?: extension.
-    if (CondOp->getLHS()) {
-      // br(c ? x : y, t, f) -> br(c, br(x, t, f), br(y, t, f))
-      llvm::BasicBlock *LHSBlock = createBasicBlock("cond.true");
-      llvm::BasicBlock *RHSBlock = createBasicBlock("cond.false");
+    ConditionalEvaluation cond(*this);
+    EmitBranchOnBoolExpr(CondOp->getCond(), LHSBlock, RHSBlock);
 
-      ConditionalEvaluation cond(*this);
-      EmitBranchOnBoolExpr(CondOp->getCond(), LHSBlock, RHSBlock);
+    cond.begin(*this);
+    EmitBlock(LHSBlock);
+    EmitBranchOnBoolExpr(CondOp->getLHS(), TrueBlock, FalseBlock);
+    cond.end(*this);
 
-      cond.begin(*this);
-      EmitBlock(LHSBlock);
-      EmitBranchOnBoolExpr(CondOp->getLHS(), TrueBlock, FalseBlock);
-      cond.end(*this);
+    cond.begin(*this);
+    EmitBlock(RHSBlock);
+    EmitBranchOnBoolExpr(CondOp->getRHS(), TrueBlock, FalseBlock);
+    cond.end(*this);
 
-      cond.begin(*this);
-      EmitBlock(RHSBlock);
-      EmitBranchOnBoolExpr(CondOp->getRHS(), TrueBlock, FalseBlock);
-      cond.end(*this);
-
-      return;
-    }
+    return;
   }
 
   // Emit the code with the fully general case.
@@ -931,19 +951,19 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
 
   // We're going to walk down into the type and look for VLA
   // expressions.
-  type = type.getCanonicalType();
   do {
     assert(type->isVariablyModifiedType());
 
     const Type *ty = type.getTypePtr();
     switch (ty->getTypeClass()) {
+
 #define TYPE(Class, Base)
 #define ABSTRACT_TYPE(Class, Base)
-#define NON_CANONICAL_TYPE(Class, Base) case Type::Class:
+#define NON_CANONICAL_TYPE(Class, Base)
 #define DEPENDENT_TYPE(Class, Base) case Type::Class:
-#define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(Class, Base) case Type::Class:
+#define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(Class, Base)
 #include "clang/AST/TypeNodes.def"
-      llvm_unreachable("unexpected dependent or non-canonical type!");
+      llvm_unreachable("unexpected dependent type!");
 
     // These types are never variably-modified.
     case Type::Builtin:
@@ -952,6 +972,8 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
     case Type::ExtVector:
     case Type::Record:
     case Type::Enum:
+    case Type::Elaborated:
+    case Type::TemplateSpecialization:
     case Type::ObjCObject:
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
@@ -1001,10 +1023,30 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
       break;
     }
 
-    case Type::FunctionProto: 
+    case Type::FunctionProto:
     case Type::FunctionNoProto:
       type = cast<FunctionType>(ty)->getResultType();
       break;
+
+    case Type::Paren:
+    case Type::TypeOf:
+    case Type::UnaryTransform:
+    case Type::Attributed:
+    case Type::SubstTemplateTypeParm:
+      // Keep walking after single level desugaring.
+      type = type.getSingleStepDesugaredType(getContext());
+      break;
+
+    case Type::Typedef:
+    case Type::Decltype:
+    case Type::Auto:
+      // Stop walking: nothing to do.
+      return;
+
+    case Type::TypeOfExpr:
+      // Stop walking: emit typeof expression.
+      EmitIgnoredExpr(cast<TypeOfExprType>(ty)->getUnderlyingExpr());
+      return;
 
     case Type::Atomic:
       type = cast<AtomicType>(ty)->getValueType();

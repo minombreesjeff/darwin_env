@@ -84,12 +84,9 @@ public:
     }
     
     bool
-    IsValid ()
+    IsValid () const
     {
-        if (m_pc == LLDB_INVALID_ADDRESS && m_cfa == LLDB_INVALID_ADDRESS)
-            return false;
-        else
-            return true;
+        return m_pc != LLDB_INVALID_ADDRESS || m_cfa != LLDB_INVALID_ADDRESS;
     }
     
     void
@@ -143,6 +140,8 @@ protected:
 
 bool operator== (const StackID& lhs, const StackID& rhs);
 bool operator!= (const StackID& lhs, const StackID& rhs);
+
+// frame_id_1 < frame_id_2 means "frame_id_1 is YOUNGER than frame_id_2"
 bool operator<  (const StackID& lhs, const StackID& rhs);
 
 } // namespace lldb_private

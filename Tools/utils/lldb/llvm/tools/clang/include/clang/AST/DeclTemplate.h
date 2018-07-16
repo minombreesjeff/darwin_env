@@ -15,6 +15,7 @@
 #define LLVM_CLANG_AST_DECLTEMPLATE_H
 
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/Redeclarable.h"
 #include "clang/AST/TemplateBase.h"
 #include "llvm/ADT/PointerUnion.h"
 #include <limits>
@@ -198,6 +199,7 @@ public:
 /// parameters and a reference to the templated scoped declaration: the
 /// underlying AST node.
 class TemplateDecl : public NamedDecl {
+  virtual void anchor();
 protected:
   // This is probably never used.
   TemplateDecl(Kind DK, DeclContext *DC, SourceLocation L,
@@ -477,31 +479,26 @@ public:
 };
 
 /// Declaration of a redeclarable template.
-class RedeclarableTemplateDecl : public TemplateDecl {
-
-  RedeclarableTemplateDecl *getPreviousDeclarationImpl() {
-    return CommonOrPrev.dyn_cast<RedeclarableTemplateDecl*>();
+class RedeclarableTemplateDecl : public TemplateDecl, 
+                                 public Redeclarable<RedeclarableTemplateDecl> 
+{
+  typedef Redeclarable<RedeclarableTemplateDecl> redeclarable_base;
+  virtual RedeclarableTemplateDecl *getNextRedeclaration() {
+    return RedeclLink.getNext();
   }
-
-  RedeclarableTemplateDecl *getCanonicalDeclImpl();
-
-  void setPreviousDeclarationImpl(RedeclarableTemplateDecl *Prev);
-
-  RedeclarableTemplateDecl *getInstantiatedFromMemberTemplateImpl() {
-    return getCommonPtr()->InstantiatedFromMember.getPointer();
+  virtual RedeclarableTemplateDecl *getPreviousDeclImpl() {
+    return getPreviousDecl();
   }
-
-  void setInstantiatedFromMemberTemplateImpl(RedeclarableTemplateDecl *TD) {
-    assert(!getCommonPtr()->InstantiatedFromMember.getPointer());
-    getCommonPtr()->InstantiatedFromMember.setPointer(TD);
+  virtual RedeclarableTemplateDecl *getMostRecentDeclImpl() {
+    return getMostRecentDecl();
   }
 
 protected:
   template <typename EntryType> struct SpecEntryTraits {
     typedef EntryType DeclType;
 
-    static DeclType *getMostRecentDeclaration(EntryType *D) {
-      return D->getMostRecentDeclaration();
+    static DeclType *getMostRecentDecl(EntryType *D) {
+      return D->getMostRecentDecl();
     }
   };
 
@@ -523,7 +520,7 @@ protected:
     SpecIterator(SetIteratorType SetIter) : SetIter(SetIter) {}
 
     DeclType *operator*() const {
-      return SETraits::getMostRecentDeclaration(&*SetIter);
+      return SETraits::getMostRecentDecl(&*SetIter);
     }
     DeclType *operator->() const { return **this; }
 
@@ -563,15 +560,12 @@ protected:
     /// was explicitly specialized.
     llvm::PointerIntPair<RedeclarableTemplateDecl*, 1, bool>
       InstantiatedFromMember;
-
-    /// \brief The latest declaration of this template.
-    RedeclarableTemplateDecl *Latest;
   };
 
-  /// \brief A pointer to the previous declaration (if this is a redeclaration)
-  /// or to the data that is common to all declarations of this template.
-  llvm::PointerUnion<CommonBase*, RedeclarableTemplateDecl*> CommonOrPrev;
-
+  /// \brief Pointer to the common data shared by all declarations of this
+  /// template.
+  CommonBase *Common;
+  
   /// \brief Retrieves the "common" pointer shared by all (re-)declarations of
   /// the same template. Calling this routine may implicitly allocate memory
   /// for the common pointer.
@@ -583,53 +577,15 @@ protected:
   RedeclarableTemplateDecl(Kind DK, DeclContext *DC, SourceLocation L,
                            DeclarationName Name, TemplateParameterList *Params,
                            NamedDecl *Decl)
-    : TemplateDecl(DK, DC, L, Name, Params, Decl),
-      CommonOrPrev((CommonBase*)0) { }
+    : TemplateDecl(DK, DC, L, Name, Params, Decl), Common() { }
 
 public:
   template <class decl_type> friend class RedeclarableTemplate;
 
-  RedeclarableTemplateDecl *getCanonicalDecl() {
-    return getCanonicalDeclImpl();
-  }
-
-  /// \brief Retrieve the previous declaration of this template, or
-  /// NULL if no such declaration exists.
-  RedeclarableTemplateDecl *getPreviousDeclaration() {
-    return getPreviousDeclarationImpl();
-  }
-
-  /// \brief Retrieve the previous declaration of this template, or
-  /// NULL if no such declaration exists.
-  const RedeclarableTemplateDecl *getPreviousDeclaration() const {
-    return
-      const_cast<RedeclarableTemplateDecl*>(this)->getPreviousDeclaration();
-  }
-
-  /// \brief Retrieve the first declaration of this template, or itself
-  /// if this the first one.
-  RedeclarableTemplateDecl *getFirstDeclaration() {
-    return getCanonicalDecl();
-  }
-
-  /// \brief Retrieve the first declaration of this template, or itself
-  /// if this the first one.
-  const RedeclarableTemplateDecl *getFirstDeclaration() const {
-    return
-      const_cast<RedeclarableTemplateDecl*>(this)->getFirstDeclaration();
-  }
-
-  /// \brief Retrieve the most recent declaration of this template, or itself
-  /// if this the most recent one.
-  RedeclarableTemplateDecl *getMostRecentDeclaration() {
-    return getCommonPtr()->Latest;
-  }
-
-  /// \brief Retrieve the most recent declaration of this template, or itself
-  /// if this the most recent one.
-  const RedeclarableTemplateDecl *getMostRecentDeclaration() const {
-    return
-      const_cast<RedeclarableTemplateDecl*>(this)->getMostRecentDeclaration();
+  /// Retrieves the canonical declaration of this template.
+  RedeclarableTemplateDecl *getCanonicalDecl() { return getFirstDeclaration(); }
+  const RedeclarableTemplateDecl *getCanonicalDecl() const { 
+    return getFirstDeclaration(); 
   }
 
   /// \brief Determines whether this template was a specialization of a
@@ -664,10 +620,19 @@ public:
   /// \brief Retrieve the previous declaration of this template, or
   /// NULL if no such declaration exists.
   RedeclarableTemplateDecl *getInstantiatedFromMemberTemplate() {
-    return getInstantiatedFromMemberTemplateImpl();
+    return getCommonPtr()->InstantiatedFromMember.getPointer();
   }
 
-  virtual RedeclarableTemplateDecl *getNextRedeclaration();
+  void setInstantiatedFromMemberTemplate(RedeclarableTemplateDecl *TD) {
+    assert(!getCommonPtr()->InstantiatedFromMember.getPointer());
+    getCommonPtr()->InstantiatedFromMember.setPointer(TD);
+  }
+
+  typedef redeclarable_base::redecl_iterator redecl_iterator;
+  using redeclarable_base::redecls_begin;
+  using redeclarable_base::redecls_end;
+  using redeclarable_base::getPreviousDecl;
+  using redeclarable_base::getMostRecentDecl;
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -679,78 +644,9 @@ public:
     return K >= firstRedeclarableTemplate && K <= lastRedeclarableTemplate;
   }
 
+  friend class ASTReader;
   friend class ASTDeclReader;
   friend class ASTDeclWriter;
-};
-
-template <class decl_type>
-class RedeclarableTemplate {
-  RedeclarableTemplateDecl *thisDecl() {
-    return static_cast<decl_type*>(this);
-  }
-
-public:
-  /// \brief Retrieve the previous declaration of this function template, or
-  /// NULL if no such declaration exists.
-  decl_type *getPreviousDeclaration() {
-    return static_cast<decl_type*>(thisDecl()->getPreviousDeclarationImpl());
-  }
-
-  /// \brief Retrieve the previous declaration of this function template, or
-  /// NULL if no such declaration exists.
-  const decl_type *getPreviousDeclaration() const {
-    return const_cast<RedeclarableTemplate*>(this)->getPreviousDeclaration();
-  }
-
-  /// \brief Set the previous declaration of this function template.
-  void setPreviousDeclaration(decl_type *Prev) {
-    thisDecl()->setPreviousDeclarationImpl(Prev);
-  }
-
-  decl_type *getCanonicalDecl() {
-    return static_cast<decl_type*>(thisDecl()->getCanonicalDeclImpl());
-  }
-
-  const decl_type *getCanonicalDecl() const {
-    return const_cast<RedeclarableTemplate*>(this)->getCanonicalDecl();
-  }
-
-  /// \brief Retrieve the member template that this template was instantiated
-  /// from.
-  ///
-  /// This routine will return non-NULL for member templates of
-  /// class templates.  For example, given:
-  ///
-  /// \code
-  /// template <typename T>
-  /// struct X {
-  ///   template <typename U> void f();
-  ///   template <typename U> struct A {};
-  /// };
-  /// \endcode
-  ///
-  /// X<int>::f<float> is a CXXMethodDecl (whose parent is X<int>, a
-  /// ClassTemplateSpecializationDecl) for which getPrimaryTemplate() will
-  /// return X<int>::f, a FunctionTemplateDecl (whose parent is again
-  /// X<int>) for which getInstantiatedFromMemberTemplate() will return
-  /// X<T>::f, a FunctionTemplateDecl (whose parent is X<T>, a
-  /// ClassTemplateDecl).
-  ///
-  /// X<int>::A<float> is a ClassTemplateSpecializationDecl (whose parent
-  /// is X<int>, also a CTSD) for which getSpecializedTemplate() will
-  /// return X<int>::A<U>, a ClassTemplateDecl (whose parent is again
-  /// X<int>) for which getInstantiatedFromMemberTemplate() will return
-  /// X<T>::A<U>, a ClassTemplateDecl (whose parent is X<T>, also a CTD).
-  ///
-  /// \returns NULL if this is not an instantiation of a member template.
-  decl_type *getInstantiatedFromMemberTemplate() {
-    return static_cast<decl_type*>(
-             thisDecl()->getInstantiatedFromMemberTemplateImpl());
-  }
-
-  void setInstantiatedFromMemberTemplate(decl_type *TD) {
-    thisDecl()->setInstantiatedFromMemberTemplateImpl(TD);
-  }
 };
 
 template <> struct RedeclarableTemplateDecl::
@@ -758,19 +654,16 @@ SpecEntryTraits<FunctionTemplateSpecializationInfo> {
   typedef FunctionDecl DeclType;
 
   static DeclType *
-  getMostRecentDeclaration(FunctionTemplateSpecializationInfo *I) {
-    return I->Function->getMostRecentDeclaration();
+  getMostRecentDecl(FunctionTemplateSpecializationInfo *I) {
+    return I->Function->getMostRecentDecl();
   }
 };
 
 /// Declaration of a template function.
-class FunctionTemplateDecl : public RedeclarableTemplateDecl,
-                             public RedeclarableTemplate<FunctionTemplateDecl> {
+class FunctionTemplateDecl : public RedeclarableTemplateDecl {
   static void DeallocateCommon(void *Ptr);
 
 protected:
-  typedef RedeclarableTemplate<FunctionTemplateDecl> redeclarable_base;
-
   /// \brief Data that is common to all of the declarations of a given
   /// function template.
   struct Common : CommonBase {
@@ -833,26 +726,31 @@ public:
                                    unsigned NumArgs, void *&InsertPos);
 
   FunctionTemplateDecl *getCanonicalDecl() {
-    return redeclarable_base::getCanonicalDecl();
+    return cast<FunctionTemplateDecl>(
+             RedeclarableTemplateDecl::getCanonicalDecl());
   }
   const FunctionTemplateDecl *getCanonicalDecl() const {
-    return redeclarable_base::getCanonicalDecl();
+    return cast<FunctionTemplateDecl>(
+             RedeclarableTemplateDecl::getCanonicalDecl());
   }
 
   /// \brief Retrieve the previous declaration of this function template, or
   /// NULL if no such declaration exists.
-  FunctionTemplateDecl *getPreviousDeclaration() {
-    return redeclarable_base::getPreviousDeclaration();
+  FunctionTemplateDecl *getPreviousDecl() {
+    return cast_or_null<FunctionTemplateDecl>(
+             RedeclarableTemplateDecl::getPreviousDecl());
   }
 
   /// \brief Retrieve the previous declaration of this function template, or
   /// NULL if no such declaration exists.
-  const FunctionTemplateDecl *getPreviousDeclaration() const {
-    return redeclarable_base::getPreviousDeclaration();
+  const FunctionTemplateDecl *getPreviousDecl() const {
+    return cast_or_null<FunctionTemplateDecl>(
+             RedeclarableTemplateDecl::getPreviousDecl());
   }
 
   FunctionTemplateDecl *getInstantiatedFromMemberTemplate() {
-    return redeclarable_base::getInstantiatedFromMemberTemplate();
+    return cast_or_null<FunctionTemplateDecl>(
+             RedeclarableTemplateDecl::getInstantiatedFromMemberTemplate());
   }
 
   typedef SpecIterator<FunctionTemplateSpecializationInfo> spec_iterator;
@@ -882,7 +780,7 @@ public:
                                       NamedDecl *Decl);
 
   /// \brief Create an empty function template node.
-  static FunctionTemplateDecl *Create(ASTContext &C, EmptyShell);
+  static FunctionTemplateDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   // Implement isa/cast/dyncast support
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -967,7 +865,8 @@ public:
                                       unsigned D, unsigned P,
                                       IdentifierInfo *Id, bool Typename,
                                       bool ParameterPack);
-  static TemplateTypeParmDecl *Create(const ASTContext &C, EmptyShell Empty);
+  static TemplateTypeParmDecl *CreateDeserialized(const ASTContext &C, 
+                                                  unsigned ID);
 
   /// \brief Whether this template type parameter was declared with
   /// the 'typename' keyword. If not, it was declared with the 'class'
@@ -1084,6 +983,12 @@ public:
          const QualType *ExpandedTypes, unsigned NumExpandedTypes,
          TypeSourceInfo **ExpandedTInfos);
 
+  static NonTypeTemplateParmDecl *CreateDeserialized(ASTContext &C, 
+                                                     unsigned ID);
+  static NonTypeTemplateParmDecl *CreateDeserialized(ASTContext &C, 
+                                                     unsigned ID,
+                                                     unsigned NumExpandedTypes);
+    
   using TemplateParmPosition::getDepth;
   using TemplateParmPosition::setDepth;
   using TemplateParmPosition::getPosition;
@@ -1199,8 +1104,10 @@ public:
 /// @endcode
 /// A template template parameter is a TemplateDecl because it defines the
 /// name of a template and the template parameters allowable for substitution.
-class TemplateTemplateParmDecl
-  : public TemplateDecl, protected TemplateParmPosition {
+class TemplateTemplateParmDecl : public TemplateDecl, 
+                                 protected TemplateParmPosition 
+{
+  virtual void anchor();
 
   /// DefaultArgument - The default template argument, if any.
   TemplateArgumentLoc DefaultArgument;
@@ -1225,6 +1132,9 @@ public:
                                           IdentifierInfo *Id,
                                           TemplateParameterList *Params);
 
+  static TemplateTemplateParmDecl *CreateDeserialized(ASTContext &C, 
+                                                      unsigned ID);
+  
   using TemplateParmPosition::getDepth;
   using TemplateParmPosition::getPosition;
   using TemplateParmPosition::getIndex;
@@ -1367,19 +1277,19 @@ public:
          unsigned NumArgs,
          ClassTemplateSpecializationDecl *PrevDecl);
   static ClassTemplateSpecializationDecl *
-  Create(ASTContext &Context, EmptyShell Empty);
+  CreateDeserialized(ASTContext &C, unsigned ID);
 
   virtual void getNameForDiagnostic(std::string &S,
                                     const PrintingPolicy &Policy,
                                     bool Qualified) const;
 
-  ClassTemplateSpecializationDecl *getMostRecentDeclaration() {
+  ClassTemplateSpecializationDecl *getMostRecentDecl() {
     CXXRecordDecl *Recent
-        = cast<CXXRecordDecl>(CXXRecordDecl::getMostRecentDeclaration());
+        = cast<CXXRecordDecl>(CXXRecordDecl::getMostRecentDecl());
     if (!isa<ClassTemplateSpecializationDecl>(Recent)) {
       // FIXME: Does injected class name need to be in the redeclarations chain?
-      assert(Recent->isInjectedClassName() && Recent->getPreviousDeclaration());
-      Recent = Recent->getPreviousDeclaration();
+      assert(Recent->isInjectedClassName() && Recent->getPreviousDecl());
+      Recent = Recent->getPreviousDecl();
     }
     return cast<ClassTemplateSpecializationDecl>(Recent);
   }
@@ -1561,6 +1471,8 @@ public:
 
 class ClassTemplatePartialSpecializationDecl
   : public ClassTemplateSpecializationDecl {
+  virtual void anchor();
+
   /// \brief The list of template parameters
   TemplateParameterList* TemplateParams;
 
@@ -1603,7 +1515,7 @@ class ClassTemplatePartialSpecializationDecl
 
 public:
   static ClassTemplatePartialSpecializationDecl *
-  Create(ASTContext &Context, TagKind TK,DeclContext *DC,
+  Create(ASTContext &Context, TagKind TK, DeclContext *DC,
          SourceLocation StartLoc, SourceLocation IdLoc,
          TemplateParameterList *Params,
          ClassTemplateDecl *SpecializedTemplate,
@@ -1615,11 +1527,11 @@ public:
          unsigned SequenceNumber);
 
   static ClassTemplatePartialSpecializationDecl *
-  Create(ASTContext &Context, EmptyShell Empty);
+  CreateDeserialized(ASTContext &C, unsigned ID);
 
-  ClassTemplatePartialSpecializationDecl *getMostRecentDeclaration() {
+  ClassTemplatePartialSpecializationDecl *getMostRecentDecl() {
     return cast<ClassTemplatePartialSpecializationDecl>(
-                   ClassTemplateSpecializationDecl::getMostRecentDeclaration());
+                   ClassTemplateSpecializationDecl::getMostRecentDecl());
   }
 
   /// Get the list of template parameters
@@ -1730,13 +1642,10 @@ public:
 };
 
 /// Declaration of a class template.
-class ClassTemplateDecl : public RedeclarableTemplateDecl,
-                          public RedeclarableTemplate<ClassTemplateDecl> {
+class ClassTemplateDecl : public RedeclarableTemplateDecl {
   static void DeallocateCommon(void *Ptr);
 
 protected:
-  typedef RedeclarableTemplate<ClassTemplateDecl> redeclarable_base;
-
   /// \brief Data that is common to all of the declarations of a given
   /// class template.
   struct Common : CommonBase {
@@ -1808,7 +1717,7 @@ public:
                                    ClassTemplateDecl *PrevDecl);
 
   /// Create an empty class template node.
-  static ClassTemplateDecl *Create(ASTContext &C, EmptyShell);
+  static ClassTemplateDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   /// \brief Return the specialization with the provided arguments if it exists,
   /// otherwise return the insertion point.
@@ -1821,26 +1730,31 @@ public:
   void AddSpecialization(ClassTemplateSpecializationDecl *D, void *InsertPos);
 
   ClassTemplateDecl *getCanonicalDecl() {
-    return redeclarable_base::getCanonicalDecl();
+    return cast<ClassTemplateDecl>(
+             RedeclarableTemplateDecl::getCanonicalDecl());
   }
   const ClassTemplateDecl *getCanonicalDecl() const {
-    return redeclarable_base::getCanonicalDecl();
+    return cast<ClassTemplateDecl>(
+             RedeclarableTemplateDecl::getCanonicalDecl());
   }
 
   /// \brief Retrieve the previous declaration of this class template, or
   /// NULL if no such declaration exists.
-  ClassTemplateDecl *getPreviousDeclaration() {
-    return redeclarable_base::getPreviousDeclaration();
+  ClassTemplateDecl *getPreviousDecl() {
+    return cast_or_null<ClassTemplateDecl>(
+             RedeclarableTemplateDecl::getPreviousDecl());
   }
 
   /// \brief Retrieve the previous declaration of this class template, or
   /// NULL if no such declaration exists.
-  const ClassTemplateDecl *getPreviousDeclaration() const {
-    return redeclarable_base::getPreviousDeclaration();
+  const ClassTemplateDecl *getPreviousDecl() const {
+    return cast_or_null<ClassTemplateDecl>(
+             RedeclarableTemplateDecl::getPreviousDecl());
   }
 
   ClassTemplateDecl *getInstantiatedFromMemberTemplate() {
-    return redeclarable_base::getInstantiatedFromMemberTemplate();
+    return cast_or_null<ClassTemplateDecl>(
+             RedeclarableTemplateDecl::getInstantiatedFromMemberTemplate());
   }
 
   /// \brief Return the partial specialization with the provided arguments if it
@@ -1941,6 +1855,7 @@ public:
 /// NOTE: This class is not currently in use.  All of the above
 /// will yield a FriendDecl, not a FriendTemplateDecl.
 class FriendTemplateDecl : public Decl {
+  virtual void anchor();
 public:
   typedef llvm::PointerUnion<NamedDecl*,TypeSourceInfo*> FriendUnion;
 
@@ -1984,7 +1899,7 @@ public:
                                     FriendUnion Friend,
                                     SourceLocation FriendLoc);
 
-  static FriendTemplateDecl *Create(ASTContext &Context, EmptyShell Empty);
+  static FriendTemplateDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   /// If this friend declaration names a templated type (or
   /// a dependent member type of a templated type), return that
@@ -2025,13 +1940,10 @@ public:
 /// Declaration of an alias template.  For example:
 ///
 /// template <typename T> using V = std::map<T*, int, MyCompare<T>>;
-class TypeAliasTemplateDecl : public RedeclarableTemplateDecl,
-                            public RedeclarableTemplate<TypeAliasTemplateDecl> {
+class TypeAliasTemplateDecl : public RedeclarableTemplateDecl {
   static void DeallocateCommon(void *Ptr);
 
 protected:
-  typedef RedeclarableTemplate<TypeAliasTemplateDecl> redeclarable_base;
-
   typedef CommonBase Common;
 
   TypeAliasTemplateDecl(DeclContext *DC, SourceLocation L, DeclarationName Name,
@@ -2052,26 +1964,31 @@ public:
 
 
   TypeAliasTemplateDecl *getCanonicalDecl() {
-    return redeclarable_base::getCanonicalDecl();
+    return cast<TypeAliasTemplateDecl>(
+             RedeclarableTemplateDecl::getCanonicalDecl());
   }
   const TypeAliasTemplateDecl *getCanonicalDecl() const {
-    return redeclarable_base::getCanonicalDecl();
+    return cast<TypeAliasTemplateDecl>(
+             RedeclarableTemplateDecl::getCanonicalDecl());
   }
 
   /// \brief Retrieve the previous declaration of this function template, or
   /// NULL if no such declaration exists.
-  TypeAliasTemplateDecl *getPreviousDeclaration() {
-    return redeclarable_base::getPreviousDeclaration();
+  TypeAliasTemplateDecl *getPreviousDecl() {
+    return cast_or_null<TypeAliasTemplateDecl>(
+             RedeclarableTemplateDecl::getPreviousDecl());
   }
 
   /// \brief Retrieve the previous declaration of this function template, or
   /// NULL if no such declaration exists.
-  const TypeAliasTemplateDecl *getPreviousDeclaration() const {
-    return redeclarable_base::getPreviousDeclaration();
+  const TypeAliasTemplateDecl *getPreviousDecl() const {
+    return cast_or_null<TypeAliasTemplateDecl>(
+             RedeclarableTemplateDecl::getPreviousDecl());
   }
 
   TypeAliasTemplateDecl *getInstantiatedFromMemberTemplate() {
-    return redeclarable_base::getInstantiatedFromMemberTemplate();
+    return cast_or_null<TypeAliasTemplateDecl>(
+             RedeclarableTemplateDecl::getInstantiatedFromMemberTemplate());
   }
 
 
@@ -2083,7 +2000,7 @@ public:
                                        NamedDecl *Decl);
 
   /// \brief Create an empty alias template node.
-  static TypeAliasTemplateDecl *Create(ASTContext &C, EmptyShell);
+  static TypeAliasTemplateDecl *CreateDeserialized(ASTContext &C, unsigned ID);
 
   // Implement isa/cast/dyncast support
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
@@ -2107,7 +2024,8 @@ public:
 /// CXXMethodDecl. Then during an instantiation of class A, it will be
 /// transformed into an actual function specialization.
 class ClassScopeFunctionSpecializationDecl : public Decl {
-private:
+  virtual void anchor();
+
   ClassScopeFunctionSpecializationDecl(DeclContext *DC, SourceLocation Loc,
                                        CXXMethodDecl *FD)
     : Decl(Decl::ClassScopeFunctionSpecialization, DC, Loc),
@@ -2128,11 +2046,9 @@ public:
     return new (C) ClassScopeFunctionSpecializationDecl(DC , Loc, FD);
   }
 
-  static ClassScopeFunctionSpecializationDecl *Create(ASTContext &Context,
-                                                      EmptyShell Empty) {
-    return new (Context)ClassScopeFunctionSpecializationDecl(0,
-                                                         SourceLocation(), 0);
-  }
+  static ClassScopeFunctionSpecializationDecl *
+  CreateDeserialized(ASTContext &Context, unsigned ID);
+  
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
   static bool classofKind(Kind K) {

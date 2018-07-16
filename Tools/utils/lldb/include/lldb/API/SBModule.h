@@ -25,11 +25,12 @@ public:
     SBModule ();
 
     SBModule (const SBModule &rhs);
-    
-#ifndef SWIG
+
     const SBModule &
     operator = (const SBModule &rhs);
-#endif
+
+    SBModule (lldb::SBProcess &process, 
+              lldb::addr_t header_addr);
 
     ~SBModule ();
 
@@ -73,22 +74,27 @@ public:
     bool
     SetPlatformFileSpec (const lldb::SBFileSpec &platform_file);
 
-#ifndef SWIG
+    lldb::ByteOrder
+    GetByteOrder ();
+    
+    uint32_t
+    GetAddressByteSize();
+    
+    const char *
+    GetTriple ();
+
     const uint8_t *
     GetUUIDBytes () const;
-#endif
 
     const char *
     GetUUIDString () const;
 
-#ifndef SWIG
     bool
     operator == (const lldb::SBModule &rhs) const;
 
     bool
     operator != (const lldb::SBModule &rhs) const;
 
-#endif
     lldb::SBSection
     FindSection (const char *sect_name);
 
@@ -101,6 +107,12 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description);
+
+    uint32_t
+    GetNumCompileUnits();
+
+    lldb::SBCompileUnit
+    GetCompileUnitAtIndex (uint32_t);
 
     size_t
     GetNumSymbols ();
@@ -126,22 +138,13 @@ public:
     ///     C++ methods, or ObjC selectors. 
     ///     See FunctionNameType for more details.
     ///
-    /// @param[in] append
-    ///     If true, any matches will be appended to \a sc_list, else
-    ///     matches replace the contents of \a sc_list.
-    ///
-    /// @param[out] sc_list
-    ///     A symbol context list that gets filled in with all of the
-    ///     matches.
-    ///
     /// @return
-    ///     The number of matches added to \a sc_list.
+    ///     A lldb::SBSymbolContextList that gets filled in with all of 
+    ///     the symbol contexts for all the matches.
     //------------------------------------------------------------------
-    uint32_t
+    lldb::SBSymbolContextList
     FindFunctions (const char *name, 
-                   uint32_t name_type_mask, // Logical OR one or more FunctionNameType enum bits
-                   bool append, 
-                   lldb::SBSymbolContextList& sc_list);
+                   uint32_t name_type_mask = lldb::eFunctionNameTypeAny);
 
     //------------------------------------------------------------------
     /// Find global and static variables by name.
@@ -170,6 +173,51 @@ public:
     lldb::SBTypeList
     FindTypes (const char* type);
     
+    
+    //------------------------------------------------------------------
+    /// Get the module version numbers.
+    ///
+    /// Many object files have a set of version numbers that describe
+    /// the version of the executable or shared library. Typically there
+    /// are major, minor and build, but there may be more. This function
+    /// will extract the versions from object files if they are available.
+    ///
+    /// If \a versions is NULL, or if \a num_versions is 0, the return
+    /// value will indicate how many version numbers are available in
+    /// this object file. Then a subsequent call can be made to this 
+    /// function with a value of \a versions and \a num_versions that
+    /// has enough storage to store some or all version numbers.
+    ///
+    /// @param[out] versions
+    ///     A pointer to an array of uint32_t types that is \a num_versions
+    ///     long. If this value is NULL, the return value will indicate
+    ///     how many version numbers are required for a subsequent call
+    ///     to this function so that all versions can be retrieved. If
+    ///     the value is non-NULL, then at most \a num_versions of the
+    ///     existing versions numbers will be filled into \a versions.
+    ///     If there is no version information available, \a versions
+    ///     will be filled with \a num_versions UINT32_MAX values
+    ///     and zero will be returned.
+    ///
+    /// @param[in] num_versions
+    ///     The maximum number of entries to fill into \a versions. If
+    ///     this value is zero, then the return value will indicate
+    ///     how many version numbers there are in total so another call
+    ///     to this function can be make with adequate storage in
+    ///     \a versions to get all of the version numbers. If \a
+    ///     num_versions is less than the actual number of version 
+    ///     numbers in this object file, only \a num_versions will be
+    ///     filled into \a versions (if \a versions is non-NULL).
+    ///
+    /// @return
+    ///     This function always returns the number of version numbers
+    ///     that this object file has regardless of the number of
+    ///     version numbers that were copied into \a versions. 
+    //------------------------------------------------------------------
+    uint32_t
+    GetVersion (uint32_t *versions, 
+                uint32_t num_versions);
+
 private:
     friend class SBAddress;
     friend class SBFrame;
@@ -179,31 +227,11 @@ private:
 
     explicit SBModule (const lldb::ModuleSP& module_sp);
 
-    void
-    SetModule (const lldb::ModuleSP& module_sp);
-#ifndef SWIG
-
-    lldb::ModuleSP &
-    operator *();
-
-
-    lldb_private::Module *
-    operator ->();
-
-    const lldb_private::Module *
-    operator ->() const;
-
-    lldb_private::Module *
-    get();
-
-    const lldb_private::Module *
-    get() const;
-
-    const lldb::ModuleSP &
-    get_sp() const;
+    ModuleSP
+    GetSP () const;
     
-
-#endif
+    void
+    SetSP (const ModuleSP &module_sp);
 
     lldb::ModuleSP m_opaque_sp;
 };

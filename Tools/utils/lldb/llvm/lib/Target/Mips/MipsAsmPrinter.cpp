@@ -1,4 +1,4 @@
-//===-- MipsAsmPrinter.cpp - Mips LLVM assembly writer --------------------===//
+//===-- MipsAsmPrinter.cpp - Mips LLVM Assembly Printer -------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -34,6 +34,8 @@
 #include "llvm/Instructions.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -49,7 +51,14 @@ static bool isUnalignedLoadStore(unsigned Opc) {
   return Opc == Mips::ULW    || Opc == Mips::ULH    || Opc == Mips::ULHu ||
          Opc == Mips::USW    || Opc == Mips::USH    ||
          Opc == Mips::ULW_P8 || Opc == Mips::ULH_P8 || Opc == Mips::ULHu_P8 ||
-         Opc == Mips::USW_P8 || Opc == Mips::USH_P8;
+         Opc == Mips::USW_P8 || Opc == Mips::USH_P8 ||
+         Opc == Mips::ULD    || Opc == Mips::ULW64  || Opc == Mips::ULH64 ||
+         Opc == Mips::ULHu64 || Opc == Mips::USD    || Opc == Mips::USW64 ||
+         Opc == Mips::USH64  ||
+         Opc == Mips::ULD_P8    || Opc == Mips::ULW64_P8  ||
+         Opc == Mips::ULH64_P8  || Opc == Mips::ULHu64_P8 ||
+         Opc == Mips::USD_P8    || Opc == Mips::USW64_P8  ||
+         Opc == Mips::USH64_P8;
 }
 
 static bool isDirective(unsigned Opc) {
@@ -59,10 +68,10 @@ static bool isDirective(unsigned Opc) {
 }
 
 void MipsAsmPrinter::EmitInstruction(const MachineInstr *MI) {
-  SmallString<128> Str;
-  raw_svector_ostream OS(Str);
-
   if (MI->isDebugValue()) {
+    SmallString<128> Str;
+    raw_svector_ostream OS(Str);
+
     PrintDebugValueComment(MI, OS);
     return;
   }
@@ -100,13 +109,23 @@ void MipsAsmPrinter::EmitInstruction(const MachineInstr *MI) {
       MCInstLowering.LowerCPLOAD(MI, MCInsts);
     else if (Opc == Mips::CPRESTORE)
       MCInstLowering.LowerCPRESTORE(MI, MCInsts);
-    
+
     if (!MCInsts.empty()) {
       for (SmallVector<MCInst, 4>::iterator I = MCInsts.begin();
            I != MCInsts.end(); ++I)
         OutStreamer.EmitInstruction(*I);
       return;
     }
+  }
+
+  if (Opc == Mips::SETGP01) {
+    MCInstLowering.LowerSETGP01(MI, MCInsts);
+
+    for (SmallVector<MCInst, 4>::iterator I = MCInsts.begin();
+         I != MCInsts.end(); ++I)
+      OutStreamer.EmitInstruction(*I);
+
+    return;
   }
 
   OutStreamer.EmitInstruction(TmpInst0);
@@ -171,7 +190,7 @@ void MipsAsmPrinter::printSavedRegsBitmask(raw_ostream &O) {
     if (Mips::CPURegsRegisterClass->contains(Reg))
       break;
 
-    unsigned RegNum = MipsRegisterInfo::getRegisterNumbering(Reg);
+    unsigned RegNum = getMipsRegisterNumbering(Reg);
     if (Mips::AFGR64RegisterClass->contains(Reg)) {
       FPUBitmask |= (3 << RegNum);
       CSFPRegsSize += AFGR64RegSize;
@@ -186,7 +205,7 @@ void MipsAsmPrinter::printSavedRegsBitmask(raw_ostream &O) {
   // Set CPU Bitmask.
   for (; i != e; ++i) {
     unsigned Reg = CSI[i].getReg();
-    unsigned RegNum = MipsRegisterInfo::getRegisterNumbering(Reg);
+    unsigned RegNum = getMipsRegisterNumbering(Reg);
     CPUBitmask |= (1 << RegNum);
   }
 
@@ -225,7 +244,7 @@ void MipsAsmPrinter::emitFrameDirective() {
   unsigned returnReg = RI.getRARegister();
   unsigned stackSize = MF->getFrameInfo()->getStackSize();
 
-  if (OutStreamer.hasRawTextSupport()) 
+  if (OutStreamer.hasRawTextSupport())
     OutStreamer.EmitRawText("\t.frame\t$" +
            StringRef(MipsInstPrinter::getRegisterName(stackReg)).lower() +
            "," + Twine(stackSize) + ",$" +
@@ -239,15 +258,12 @@ const char *MipsAsmPrinter::getCurrentABIString() const {
   case MipsSubtarget::N32:  return "abiN32";
   case MipsSubtarget::N64:  return "abi64";
   case MipsSubtarget::EABI: return "eabi32"; // TODO: handle eabi64
-  default: break;
+  default: llvm_unreachable("Unknown Mips ABI");;
   }
-
-  llvm_unreachable("Unknown Mips ABI");
-  return NULL;
 }
 
 void MipsAsmPrinter::EmitFunctionEntryLabel() {
-  if (OutStreamer.hasRawTextSupport()) 
+  if (OutStreamer.hasRawTextSupport())
     OutStreamer.EmitRawText("\t.ent\t" + Twine(CurrentFnSym->getName()));
   OutStreamer.EmitLabel(CurrentFnSym);
 }
@@ -300,18 +316,18 @@ bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock*
   // If there isn't exactly one predecessor, it can't be a fall through.
   MachineBasicBlock::const_pred_iterator PI = MBB->pred_begin(), PI2 = PI;
   ++PI2;
- 
+
   if (PI2 != MBB->pred_end())
-    return false;  
+    return false;
 
   // The predecessor has to be immediately before this block.
   if (!Pred->isLayoutSuccessor(MBB))
     return false;
-   
+
   // If the block is completely empty, then it definitely does fall through.
   if (Pred->empty())
     return true;
-  
+
   // Otherwise, check the last instruction.
   // Check if the last terminator is an unconditional branch.
   MachineBasicBlock::const_iterator I = Pred->end();
@@ -338,7 +354,7 @@ bool MipsAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
                                            raw_ostream &O) {
   if (ExtraCode && ExtraCode[0])
      return true; // Unknown modifier.
-   
+
   const MachineOperand &MO = MI->getOperand(OpNum);
   assert(MO.isReg() && "unexpected inline asm memory operand");
   O << "0($" << MipsInstPrinter::getRegisterName(MO.getReg()) << ")";
@@ -459,7 +475,8 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
 
   // Tell the assembler which ABI we are using
   if (OutStreamer.hasRawTextSupport())
-    OutStreamer.EmitRawText("\t.section .mdebug." + Twine(getCurrentABIString()));
+    OutStreamer.EmitRawText("\t.section .mdebug." +
+                            Twine(getCurrentABIString()));
 
   // TODO: handle O64 ABI
   if (OutStreamer.hasRawTextSupport()) {

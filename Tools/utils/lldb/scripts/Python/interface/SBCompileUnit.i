@@ -77,8 +77,25 @@ public:
                         lldb::SBFileSpec *inline_file_spec,
 			bool exact) const;
 
+    SBFileSpec
+    GetSupportFileAtIndex (uint32_t idx) const;
+
+    uint32_t
+    GetNumSupportFiles () const;
+
+    uint32_t
+    FindSupportFileIndex (uint32_t start_idx, const SBFileSpec &sb_file, bool full);
+
     bool
     GetDescription (lldb::SBStream &description);
+    
+    %pythoncode %{
+        __swig_getmethods__["file"] = GetFileSpec
+        if _newclass: x = property(GetFileSpec, None)
+        
+        __swig_getmethods__["num_line_entries"] = GetNumLineEntries
+        if _newclass: x = property(GetNumLineEntries, None)
+    %}
 };
 
 } // namespace lldb

@@ -42,8 +42,8 @@ class LoadUnloadTestCase(TestBase):
 
         self.expect("target modules list",
             substrs = [old_dylib])
-        self.expect("target modules list -t 3",
-            patterns = ["%s-[^-]*-[^-]*" % self.getArchitecture()])
+        #self.expect("target modules list -t 3",
+        #    patterns = ["%s-[^-]*-[^-]*" % self.getArchitecture()])
         # Add an image search path substitution pair.
         self.runCmd("target modules search-paths add %s %s" % (os.getcwd(), new_dir))
         # Add teardown hook to clear image-search-paths after the test.
@@ -90,7 +90,8 @@ class LoadUnloadTestCase(TestBase):
             dylibPath = 'DYLD_LIBRARY_PATH'
 
         # The directory to relocate the dynamic library and its debugging info.
-        new_dir = os.path.join(os.getcwd(), "hidden")
+        special_dir = "hidden"
+        new_dir = os.path.join(os.getcwd(), special_dir)
 
         old_dylib = os.path.join(os.getcwd(), dylibName)
         new_dylib = os.path.join(new_dir, dylibName)
@@ -118,7 +119,7 @@ class LoadUnloadTestCase(TestBase):
         # For now we don't track DYLD_LIBRARY_PATH, so the old library will be in
         # the modules list.
         self.expect("target modules list",
-            substrs = [old_dylib],
+            substrs = [os.path.basename(old_dylib)],
             matching=True)
 
         self.runCmd("run")
@@ -128,10 +129,7 @@ class LoadUnloadTestCase(TestBase):
         # After run, make sure the hidden library is present, and the one we didn't 
         # load is not.
         self.expect("target modules list",
-            substrs = [new_dylib])
-        self.expect("target modules list",
-            substrs = [old_dylib],
-            matching=False)
+            substrs = [special_dir, os.path.basename(new_dylib)])
 
     def test_lldb_process_load_and_unload_commands(self):
         """Test that lldb process load/unload command work correctly."""
@@ -222,6 +220,33 @@ class LoadUnloadTestCase(TestBase):
         self.expect("breakpoint list -f", BREAKPOINT_HIT_ONCE,
             substrs = [' resolved, hit count = 2'])
 
+    def test_step_over_load (self):
+        """Test stepping over code that loads a shared library works correctly."""
+
+        # Invoke the default build rule.
+        self.buildDefault()
+
+        exe = os.path.join(os.getcwd(), "a.out")
+        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
+
+        # Break by function name a_function (not yet loaded).
+        self.expect("breakpoint set -f main.c -l %d"%(self.line), BREAKPOINT_CREATED,
+            substrs = ['Breakpoint created:',
+                      "file ='main.c', line = %d, locations = 1"%(self.line)])
+
+        self.runCmd("run", RUN_SUCCEEDED)
+
+        # The stop reason of the thread should be breakpoint and at a_function.
+        self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT,
+            substrs = ['stopped',
+                       'stop reason = breakpoint'])
+
+        self.runCmd("thread step-over", "Stepping over function that loads library")
+        
+        # The stop reason should be step end.
+        self.expect("thread list", "step over succeeded.", 
+            substrs = ['stopped',
+                      'stop reason = step over'])
 
 if __name__ == '__main__':
     import atexit

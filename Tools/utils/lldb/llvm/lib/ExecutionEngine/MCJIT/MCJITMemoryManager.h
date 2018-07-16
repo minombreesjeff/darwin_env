@@ -21,6 +21,7 @@ namespace llvm {
 // and the RuntimeDyld interface that maps objects, by name, onto their
 // matching LLVM IR counterparts in the module(s) being compiled.
 class MCJITMemoryManager : public RTDyldMemoryManager {
+  virtual void anchor();
   JITMemoryManager *JMM;
 
   // FIXME: Multiple modules.
@@ -29,6 +30,16 @@ public:
   MCJITMemoryManager(JITMemoryManager *jmm, Module *m) : JMM(jmm), M(m) {}
   // We own the JMM, so make sure to delete it.
   ~MCJITMemoryManager() { delete JMM; }
+
+  uint8_t *allocateDataSection(uintptr_t Size, unsigned Alignment,
+                               unsigned SectionID) {
+    return JMM->allocateDataSection(Size, Alignment, SectionID);
+  }
+
+  uint8_t *allocateCodeSection(uintptr_t Size, unsigned Alignment,
+                               unsigned SectionID) {
+    return JMM->allocateCodeSection(Size, Alignment, SectionID);
+  }
 
   // Allocate ActualSize bytes, or more, for the named function. Return
   // a pointer to the allocated memory and update Size to reflect how much

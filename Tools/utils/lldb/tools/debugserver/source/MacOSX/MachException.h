@@ -35,6 +35,7 @@ public:
 
     struct PortInfo
     {
+        exception_mask_t        mask; // the exception mask for this device which may be a subset of EXC_MASK_ALL...
         exception_mask_t        masks[EXC_TYPES_COUNT];
         mach_port_t             ports[EXC_TYPES_COUNT];
         exception_behavior_t    behaviors[EXC_TYPES_COUNT];
@@ -100,7 +101,7 @@ public:
             memset(&exc_msg,   0, sizeof(exc_msg));
             memset(&reply_msg, 0, sizeof(reply_msg));
         }
-        bool CatchExceptionRaise();
+        bool CatchExceptionRaise(task_t task);
         void Dump() const;
         kern_return_t Reply (MachProcess *process, int signal);
         kern_return_t Receive( mach_port_t receive_port,

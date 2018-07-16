@@ -128,6 +128,13 @@ public:
                      lldb::clang_type_t clang_type);
 
     bool
+    IsCompleteType (lldb::clang_type_t clang_type);
+    
+    static bool
+    IsCompleteType (clang::ASTContext *ast,
+                    lldb::clang_type_t clang_type);
+    
+    bool
     GetCompleteDecl (clang::Decl *decl)
     {
         return ClangASTContext::GetCompleteDecl(getASTContext(), decl);
@@ -136,6 +143,26 @@ public:
     static bool
     GetCompleteDecl (clang::ASTContext *ast,
                      clang::Decl *decl);
+
+    void SetMetadata (uintptr_t object,
+                      uint64_t metadata)
+    {
+        SetMetadata(getASTContext(), object, metadata);
+    }
+    
+    static void
+    SetMetadata (clang::ASTContext *ast,
+                 uintptr_t object,
+                 uint64_t metadata);
+    
+    uint64_t GetMetadata (uintptr_t object)
+    {
+        return GetMetadata(getASTContext(), object);
+    }
+    
+    static uint64_t
+    GetMetadata (clang::ASTContext *ast,
+                 uintptr_t object);
     
     //------------------------------------------------------------------
     // Basic Types
@@ -188,6 +215,12 @@ public:
 
     lldb::clang_type_t
     GetCStringType(bool is_const);
+    
+    lldb::clang_type_t
+    GetVoidType();
+    
+    lldb::clang_type_t
+    GetVoidType(clang::ASTContext *ast);
 
     lldb::clang_type_t
     GetVoidPtrType(bool is_const);
@@ -217,13 +250,15 @@ public:
     static bool
     AreTypesSame(clang::ASTContext *ast,
                  lldb::clang_type_t type1,
-                 lldb::clang_type_t type2);
+                 lldb::clang_type_t type2,
+                 bool ignore_qualifiers = false);
     
     bool
     AreTypesSame(lldb::clang_type_t type1,
-                 lldb::clang_type_t type2)
+                 lldb::clang_type_t type2,
+                 bool ignore_qualifiers = false)
     {
-        return ClangASTContext::AreTypesSame(getASTContext(), type1, type2);
+        return ClangASTContext::AreTypesSame(getASTContext(), type1, type2, ignore_qualifiers);
     }
     
     
@@ -255,7 +290,8 @@ public:
                       lldb::AccessType access_type,
                       const char *name,
                       int kind,
-                      lldb::LanguageType language);
+                      lldb::LanguageType language,
+                      uint64_t metadata = 0);
 
     static clang::FieldDecl *
     AddFieldToRecordType (clang::ASTContext *ast,
@@ -278,6 +314,17 @@ public:
                                                       field_type,
                                                       access,
                                                       bitfield_bit_size);
+    }
+    
+    static void
+    BuildIndirectFields (clang::ASTContext *ast,
+                         lldb::clang_type_t record_qual_type);
+    
+    void
+    BuildIndirectFields (lldb::clang_type_t record_qual_type)
+    {
+        ClangASTContext::BuildIndirectFields(getASTContext(),
+                                             record_qual_type);
     }
     
     static clang::CXXMethodDecl *
@@ -342,6 +389,17 @@ public:
         llvm::SmallVector<clang::TemplateArgument, 8> args;        
     };
 
+    clang::FunctionTemplateDecl *
+    CreateFunctionTemplateDecl (clang::DeclContext *decl_ctx,
+                                clang::FunctionDecl *func_decl,
+                                const char *name, 
+                                const TemplateParameterInfos &infos);
+    
+    void
+    CreateFunctionTemplateSpecializationInfo (clang::FunctionDecl *func_decl, 
+                                              clang::FunctionTemplateDecl *Template,
+                                              const TemplateParameterInfos &infos);
+
     clang::ClassTemplateDecl *
     CreateClassTemplateDecl (clang::DeclContext *decl_ctx,
                              lldb::AccessType access_type,
@@ -391,7 +449,8 @@ public:
     CreateObjCClass (const char *name, 
                      clang::DeclContext *decl_ctx, 
                      bool isForwardDecl, 
-                     bool isInternal);
+                     bool isInternal,
+                     uint64_t metadata = 0);
     
     static clang::FieldDecl *
     AddObjCClassIVar (clang::ASTContext *ast,
@@ -429,7 +488,8 @@ public:
         clang::ObjCIvarDecl *ivar_decl,   
         const char *property_setter_name,
         const char *property_getter_name,
-        uint32_t property_attributes
+        uint32_t property_attributes,
+        uint64_t metadata = 0
     );
 
     bool
@@ -441,7 +501,8 @@ public:
         clang::ObjCIvarDecl *ivar_decl,   
         const char *property_setter_name,
         const char *property_getter_name,
-        uint32_t property_attributes
+        uint32_t property_attributes,
+        uint64_t metadata = 0
     )
     {
         return ClangASTContext::AddObjCClassProperty (getASTContext(),
@@ -451,7 +512,8 @@ public:
                                                       ivar_decl,
                                                       property_setter_name,
                                                       property_getter_name,
-                                                      property_attributes);
+                                                      property_attributes,
+                                                      metadata);
     }
     
     bool
@@ -592,6 +654,30 @@ public:
                                    const char *name,
                                    bool omit_empty_base_classes,
                                    std::vector<uint32_t>& child_indexes);
+
+    size_t
+    GetNumTemplateArguments (lldb::clang_type_t clang_type)
+    {
+        return GetNumTemplateArguments(getASTContext(), clang_type);
+    }
+
+    lldb::clang_type_t
+    GetTemplateArgument (lldb::clang_type_t clang_type, 
+                         size_t idx, 
+                         lldb::TemplateArgumentKind &kind)
+    {
+        return GetTemplateArgument(getASTContext(), clang_type, idx, kind);
+    }
+
+    static size_t
+    GetNumTemplateArguments (clang::ASTContext *ast, 
+                             lldb::clang_type_t clang_type);
+    
+    static lldb::clang_type_t
+    GetTemplateArgument (clang::ASTContext *ast, 
+                         lldb::clang_type_t clang_type, 
+                         size_t idx, 
+                         lldb::TemplateArgumentKind &kind);
 
     //------------------------------------------------------------------
     // clang::TagType
@@ -774,7 +860,9 @@ public:
     static bool
     IsPossibleDynamicType (clang::ASTContext *ast, 
                            lldb::clang_type_t clang_type, 
-                           lldb::clang_type_t *dynamic_pointee_type = NULL);
+                           lldb::clang_type_t *dynamic_pointee_type = NULL,
+                           bool cplusplus = true,
+                           bool objc = true);
 
     static bool
     IsCStringType (lldb::clang_type_t clang_type, uint32_t &length);
@@ -832,6 +920,13 @@ public:
     
     static bool
     IsObjCClassType (lldb::clang_type_t clang_type);
+    
+    static bool
+    IsObjCObjectPointerType (lldb::clang_type_t clang_type, lldb::clang_type_t *target_type);
+    
+    static bool
+    GetObjCClassName (lldb::clang_type_t clang_type,
+                      std::string &class_name);
 
     static bool
     IsCharType (lldb::clang_type_t clang_type);
@@ -859,15 +954,6 @@ public:
     //------------------------------------------------------------------
     static unsigned
     GetTypeQualifiers(lldb::clang_type_t clang_type);
-    
-    //------------------------------------------------------------------
-    // Flags
-    //------------------------------------------------------------------
-    static uint64_t
-    GetTypeFlags(clang::ASTContext *ast, lldb::clang_type_t clang_type);
-    
-    static void
-    SetTypeFlags(clang::ASTContext *ast, lldb::clang_type_t clang_type, uint64_t flags);
 protected:
     //------------------------------------------------------------------
     // Classes that inherit from ClangASTContext can see and modify these

@@ -51,7 +51,7 @@ public:
   static void noteHead(SDNode*, SDNode*) {}
 
   static void deleteNode(SDNode *) {
-    assert(0 && "ilist_traits<SDNode> shouldn't see a deleteNode call!");
+    llvm_unreachable("ilist_traits<SDNode> shouldn't see a deleteNode call!");
   }
 private:
   static void createNode(const SDNode &);
@@ -139,6 +139,7 @@ class SelectionDAG {
   const TargetSelectionDAGInfo &TSI;
   MachineFunction *MF;
   LLVMContext *Context;
+  CodeGenOpt::Level OptLevel;
 
   /// EntryNode - The starting token.
   SDNode EntryNode;
@@ -187,7 +188,7 @@ class SelectionDAG {
   SelectionDAG(const SelectionDAG&);   // Do not implement.
 
 public:
-  explicit SelectionDAG(const TargetMachine &TM);
+  explicit SelectionDAG(const TargetMachine &TM, llvm::CodeGenOpt::Level);
   ~SelectionDAG();
 
   /// init - Prepare this SelectionDAG to process code in the given
@@ -393,6 +394,7 @@ public:
                                   unsigned char TargetFlags = 0);
   SDValue getValueType(EVT);
   SDValue getRegister(unsigned Reg, EVT VT);
+  SDValue getRegisterMask(const uint32_t *RegMask);
   SDValue getEHLabel(DebugLoc dl, SDValue Root, MCSymbol *Label);
   SDValue getBlockAddress(const BlockAddress *BA, EVT VT,
                           bool isTarget = false, unsigned char TargetFlags = 0);
@@ -1034,6 +1036,7 @@ private:
                                void *&InsertPos);
   SDNode *FindModifiedNodeSlot(SDNode *N, const SDValue *Ops, unsigned NumOps,
                                void *&InsertPos);
+  SDNode *UpdadeDebugLocOnMergedSDNode(SDNode *N, DebugLoc loc);
 
   void DeleteNodeNotInCSEMaps(SDNode *N);
   void DeallocateNode(SDNode *N);

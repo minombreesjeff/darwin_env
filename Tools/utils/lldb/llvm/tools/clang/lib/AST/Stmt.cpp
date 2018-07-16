@@ -78,11 +78,9 @@ void Stmt::addStmtClass(StmtClass s) {
   ++getStmtInfoTableEntry(s).Counter;
 }
 
-static bool StatSwitch = false;
-
-bool Stmt::CollectingStats(bool Enable) {
-  if (Enable) StatSwitch = true;
-  return StatSwitch;
+bool Stmt::StatisticsEnabled = false;
+void Stmt::EnableStatistics() {
+  StatisticsEnabled = true;
 }
 
 Stmt *Stmt::IgnoreImplicit() {
@@ -164,7 +162,6 @@ Stmt::child_range Stmt::children() {
 #include "clang/AST/StmtNodes.inc"
   }
   llvm_unreachable("unknown statement kind!");
-  return child_range();
 }
 
 SourceRange Stmt::getSourceRange() const {
@@ -177,7 +174,6 @@ SourceRange Stmt::getSourceRange() const {
 #include "clang/AST/StmtNodes.inc"
   }
   llvm_unreachable("unknown statement kind!");
-  return SourceRange();
 }
 
 void CompoundStmt::setStmts(ASTContext &C, Stmt **Stmts, unsigned NumStmts) {

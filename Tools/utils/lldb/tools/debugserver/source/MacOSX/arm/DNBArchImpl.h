@@ -35,7 +35,10 @@ public:
         m_sw_single_step_next_pc(INVALID_NUB_ADDRESS),
         m_sw_single_step_break_id(INVALID_NUB_BREAK_ID),
         m_sw_single_step_itblock_break_count(0),
-        m_last_decode_pc(INVALID_NUB_ADDRESS)
+        m_last_decode_pc(INVALID_NUB_ADDRESS),
+        m_watchpoint_hw_index(-1),
+        m_watchpoint_did_occur(false),
+        m_watchpoint_resume_single_step_enabled(false)
     {
         memset(&m_dbg_save, 0, sizeof(m_dbg_save));
 #if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
@@ -79,6 +82,8 @@ public:
     virtual uint32_t        EnableHardwareWatchpoint (nub_addr_t addr, nub_size_t size, bool read, bool write);
     virtual bool            DisableHardwareBreakpoint (uint32_t hw_break_index);
     virtual bool            DisableHardwareWatchpoint (uint32_t hw_break_index);
+    virtual bool            EnableHardwareWatchpoint0 (uint32_t hw_break_index, bool Delegate);
+    virtual bool            DisableHardwareWatchpoint0 (uint32_t hw_break_index, bool Delegate);
     virtual bool            StepNotComplete ();
     virtual void            HardwareWatchpointStateChanged ();
     virtual uint32_t        GetHardwareWatchpointHit(nub_addr_t &addr);
@@ -238,7 +243,8 @@ protected:
 
     // Helper functions for watchpoint implementaions.
     static void ClearWatchpointOccurred();
-    static bool IsWatchpointHit(const DBG &debug_state, uint32_t hw_index);
+    static bool HasWatchpointOccurred();
+    static bool IsWatchpointEnabled(const DBG &debug_state, uint32_t hw_index);
     static nub_addr_t GetWatchAddress(const DBG &debug_state, uint32_t hw_index);
 
 protected:
@@ -258,6 +264,10 @@ protected:
 #endif
     nub_addr_t      m_last_decode_pc;
 
+    // The following member variables should be updated atomically.
+    int32_t         m_watchpoint_hw_index;
+    bool            m_watchpoint_did_occur;
+    bool            m_watchpoint_resume_single_step_enabled;
 };
 
 #endif    // #if defined (__arm__)

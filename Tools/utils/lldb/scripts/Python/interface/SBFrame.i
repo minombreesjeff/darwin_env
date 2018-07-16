@@ -55,6 +55,9 @@ public:
    ~SBFrame();
 
     bool
+    IsEqual (const lldb::SBFrame &rhs) const;
+
+    bool
     IsValid() const;
 
     uint32_t
@@ -134,6 +137,9 @@ public:
     lldb::SBValue
     EvaluateExpression (const char *expr, lldb::DynamicValueType use_dynamic);
 
+    lldb::SBValue
+    EvaluateExpression (const char *expr, lldb::DynamicValueType use_dynamic, bool unwind_on_error);
+
     %feature("docstring", "
     /// Gets the lexical block that defines the stack frame. Another way to think
     /// of this is it will return the block that contains all of the variables
@@ -203,6 +209,34 @@ public:
     FindVariable (const char *var_name, lldb::DynamicValueType use_dynamic);
 
     %feature("docstring", "
+    /// Get a lldb.SBValue for a variable path. 
+    ///
+    /// Variable paths can include access to pointer or instance members:
+    ///     rect_ptr->origin.y
+    ///     pt.x
+    /// Pointer dereferences:
+    ///     *this->foo_ptr
+    ///     **argv
+    /// Address of:
+    ///     &pt
+    ///     &my_array[3].x
+    /// Array accesses and treating pointers as arrays:
+    ///     int_array[1]
+    ///     pt_ptr[22].x
+    ///
+    /// Unlike EvaluateExpression() which returns lldb.SBValue objects
+    /// with constant copies of the values at the time of evaluation,
+    /// the result of this function is a value that will continue to
+    /// track the current value of the value as execution progresses
+    /// in the current frame.
+    ") GetValueForVariablePath;
+    lldb::SBValue
+    GetValueForVariablePath (const char *var_path);
+             
+    lldb::SBValue
+    GetValueForVariablePath (const char *var_path, lldb::DynamicValueType use_dynamic);
+
+    %feature("docstring", "
     /// Find variables, register sets, registers, or persistent variables using
     /// the frame as the scope.
     ///
@@ -217,7 +251,96 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description);
+    
+    %pythoncode %{
+        def get_all_variables(self):
+            return self.GetVariables(True,True,True,True)
 
+        def get_arguments(self):
+            return self.GetVariables(True,False,False,False)
+
+        def get_locals(self):
+            return self.GetVariables(False,True,False,False)
+
+        def get_statics(self):
+            return self.GetVariables(False,False,True,False)
+
+        def var(self, var_expr_path):
+            '''Calls through to lldb.SBFrame.GetValueForVariablePath() and returns 
+            a value that represents the variable expression path'''
+            return self.GetValueForVariablePath(var_expr_path)
+
+        __swig_getmethods__["pc"] = GetPC
+        __swig_setmethods__["pc"] = SetPC
+        if _newclass: x = property(GetPC, SetPC)
+
+        __swig_getmethods__["addr"] = GetPCAddress
+        if _newclass: x = property(GetPCAddress, None)
+
+        __swig_getmethods__["fp"] = GetFP
+        if _newclass: x = property(GetFP, None)
+
+        __swig_getmethods__["sp"] = GetSP
+        if _newclass: x = property(GetSP, None)
+
+        __swig_getmethods__["module"] = GetModule
+        if _newclass: x = property(GetModule, None)
+
+        __swig_getmethods__["compile_unit"] = GetCompileUnit
+        if _newclass: x = property(GetCompileUnit, None)
+
+        __swig_getmethods__["function"] = GetFunction
+        if _newclass: x = property(GetFunction, None)
+
+        __swig_getmethods__["symbol"] = GetSymbol
+        if _newclass: x = property(GetSymbol, None)
+
+        __swig_getmethods__["block"] = GetBlock
+        if _newclass: x = property(GetBlock, None)
+
+        __swig_getmethods__["is_inlined"] = IsInlined
+        if _newclass: x = property(IsInlined, None)
+
+        __swig_getmethods__["name"] = GetFunctionName
+        if _newclass: x = property(GetFunctionName, None)
+
+        __swig_getmethods__["line_entry"] = GetLineEntry
+        if _newclass: x = property(GetLineEntry, None)
+
+        __swig_getmethods__["thread"] = GetThread
+        if _newclass: x = property(GetThread, None)
+
+        __swig_getmethods__["disassembly"] = Disassemble
+        if _newclass: x = property(Disassemble, None)
+
+        __swig_getmethods__["idx"] = GetFrameID
+        if _newclass: x = property(GetFrameID, None)
+
+        __swig_getmethods__["variables"] = get_all_variables
+        if _newclass: x = property(get_all_variables, None)
+
+        __swig_getmethods__["vars"] = get_all_variables
+        if _newclass: x = property(get_all_variables, None)
+
+        __swig_getmethods__["locals"] = get_locals
+        if _newclass: x = property(get_locals, None)
+
+        __swig_getmethods__["args"] = get_arguments
+        if _newclass: x = property(get_arguments, None)
+
+        __swig_getmethods__["arguments"] = get_arguments
+        if _newclass: x = property(get_arguments, None)
+
+        __swig_getmethods__["statics"] = get_statics
+        if _newclass: x = property(get_statics, None)
+
+        __swig_getmethods__["registers"] = GetRegisters
+        if _newclass: x = property(GetRegisters, None)
+
+        __swig_getmethods__["regs"] = GetRegisters
+        if _newclass: x = property(GetRegisters, None)
+
+    %}
 };
 
 } // namespace lldb

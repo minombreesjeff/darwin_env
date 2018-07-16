@@ -14,6 +14,7 @@
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Core/ThreadSafeSTLMap.h"
 #include "lldb/Host/Config.h"
 #include "lldb/Host/Endian.h"
 #include "lldb/Host/FileSpec.h"
@@ -370,12 +371,9 @@ Host::GetVendorString()
     if (!g_vendor)
     {
 #if defined (__APPLE__)
-        char ostype[64];
-        size_t len = sizeof(ostype);
-        if (::sysctlbyname("kern.ostype", &ostype, &len, NULL, 0) == 0)
-            g_vendor.SetCString (ostype);
-        else
-            g_vendor.SetCString("apple");
+        const ArchSpec &host_arch = GetArchitecture (eSystemDefaultArchitecture);
+        const llvm::StringRef &str_ref = host_arch.GetTriple().getVendorName();
+        g_vendor.SetCStringWithLength(str_ref.data(), str_ref.size());
 #elif defined (__linux__)
         g_vendor.SetCString("gnu");
 #elif defined (__FreeBSD__)
@@ -392,7 +390,9 @@ Host::GetOSString()
     if (!g_os_string)
     {
 #if defined (__APPLE__)
-        g_os_string.SetCString("darwin");
+        const ArchSpec &host_arch = GetArchitecture (eSystemDefaultArchitecture);
+        const llvm::StringRef &str_ref = host_arch.GetTriple().getOSName();
+        g_os_string.SetCStringWithLength(str_ref.data(), str_ref.size());
 #elif defined (__linux__)
         g_os_string.SetCString("linux");
 #elif defined (__FreeBSD__)
@@ -408,18 +408,8 @@ Host::GetTargetTriple()
     static ConstString g_host_triple;
     if (!(g_host_triple))
     {
-        StreamString triple;
-        triple.Printf("%s-%s-%s", 
-                      GetArchitecture().GetArchitectureName(),
-                      GetVendorString().AsCString(),
-                      GetOSString().AsCString());
-
-        std::transform (triple.GetString().begin(), 
-                        triple.GetString().end(), 
-                        triple.GetString().begin(), 
-                        ::tolower);
-
-        g_host_triple.SetCString(triple.GetString().c_str());
+        const ArchSpec &host_arch = GetArchitecture (eSystemDefaultArchitecture);
+        g_host_triple.SetCString(host_arch.GetTriple().getTriple().c_str());
     }
     return g_host_triple;
 }
@@ -440,6 +430,12 @@ Host::GetCurrentThreadID()
 #else
     return lldb::tid_t(pthread_self());
 #endif
+}
+
+lldb::thread_t
+Host::GetCurrentThread ()
+{
+    return lldb::thread_t(pthread_self());
 }
 
 const char *
@@ -604,6 +600,24 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
     return err == 0;
 }
 
+// rdar://problem/8153284
+// Fixed a crasher where during shutdown, loggings attempted to access the
+// thread name but the static map instance had already been destructed.
+// So we are using a ThreadSafeSTLMap POINTER, initializing it with a
+// pthread_once action.  That map will get leaked.
+//
+// Another approach is to introduce a static guard object which monitors its
+// own destruction and raises a flag, but this incurs more overhead.
+
+static pthread_once_t g_thread_map_once = PTHREAD_ONCE_INIT;
+static ThreadSafeSTLMap<uint64_t, std::string> *g_thread_names_map_ptr;
+
+static void
+InitThreadNamesMap()
+{
+    g_thread_names_map_ptr = new ThreadSafeSTLMap<uint64_t, std::string>();
+}
+
 //------------------------------------------------------------------
 // Control access to a static file thread name map using a single
 // static function to avoid a static constructor.
@@ -611,31 +625,26 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
 static const char *
 ThreadNameAccessor (bool get, lldb::pid_t pid, lldb::tid_t tid, const char *name)
 {
+    int success = ::pthread_once (&g_thread_map_once, InitThreadNamesMap);
+    if (success != 0)
+        return NULL;
+    
     uint64_t pid_tid = ((uint64_t)pid << 32) | (uint64_t)tid;
-
-    static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
-    Mutex::Locker locker(&g_mutex);
-
-    typedef std::map<uint64_t, std::string> thread_name_map;
-    // rdar://problem/8153284
-    // Fixed a crasher where during shutdown, loggings attempted to access the
-    // thread name but the static map instance had already been destructed.
-    // Another approach is to introduce a static guard object which monitors its
-    // own destruction and raises a flag, but this incurs more overhead.
-    static thread_name_map *g_thread_names_ptr = new thread_name_map();
-    thread_name_map &g_thread_names = *g_thread_names_ptr;
 
     if (get)
     {
         // See if the thread name exists in our thread name pool
-        thread_name_map::iterator pos = g_thread_names.find(pid_tid);
-        if (pos != g_thread_names.end())
-            return pos->second.c_str();
+        std::string value;
+        bool found_it = g_thread_names_map_ptr->GetValueForKey (pid_tid, value);
+        if (found_it)
+            return value.c_str();
+        else
+            return NULL;
     }
-    else
+    else if (name)
     {
         // Set the thread name
-        g_thread_names[pid_tid] = name;
+        g_thread_names_map_ptr->SetValueForKey (pid_tid, std::string(name));
     }
     return NULL;
 }
@@ -754,6 +763,14 @@ Host::GetModuleFileSpecForHostAddress (const void *host_addr)
 }
 
 #if !defined (__APPLE__) // see Host.mm
+
+bool
+Host::GetBundleDirectory (const FileSpec &file, FileSpec &bundle)
+{
+    bundle.Clear();
+    return false;
+}
+
 bool
 Host::ResolveExecutableInBundle (FileSpec &file)
 {
@@ -1165,7 +1182,31 @@ Host::GetOSKernelDescription (std::string &s)
 }
 #endif
 
-#if !defined(__APPLE__)
+uint32_t
+Host::GetUserID ()
+{
+    return getuid();
+}
+
+uint32_t
+Host::GetGroupID ()
+{
+    return getgid();
+}
+
+uint32_t
+Host::GetEffectiveUserID ()
+{
+    return geteuid();
+}
+
+uint32_t
+Host::GetEffectiveGroupID ()
+{
+    return getegid();
+}
+
+#if !defined (__APPLE__)
 uint32_t
 Host::FindProcesses (const ProcessInstanceInfoMatch &match_info, ProcessInstanceInfoList &process_infos)
 {
@@ -1186,20 +1227,182 @@ Host::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
 lldb::TargetSP
 Host::GetDummyTarget (lldb_private::Debugger &debugger)
 {
-    static TargetSP dummy_target;
-    
-    if (!dummy_target)
+    static TargetSP g_dummy_target_sp;
+
+    // FIXME: Maybe the dummy target should be per-Debugger
+    if (!g_dummy_target_sp || !g_dummy_target_sp->IsValid())
     {
+        ArchSpec arch(Target::GetDefaultArchitecture());
+        if (!arch.IsValid())
+            arch = Host::GetArchitecture ();
         Error err = debugger.GetTargetList().CreateTarget(debugger, 
                                                           FileSpec(), 
-                                                          Host::GetTargetTriple().AsCString(), 
+                                                          arch.GetTriple().getTriple().c_str(),
                                                           false, 
                                                           NULL, 
-                                                          dummy_target);
+                                                          g_dummy_target_sp);
+    }
+
+    return g_dummy_target_sp;
+}
+
+struct ShellInfo
+{
+    ShellInfo () :
+        process_reaped (false),
+        can_delete (false),
+        pid (LLDB_INVALID_PROCESS_ID),
+        signo(-1),
+        status(-1)
+    {
+    }
+
+    lldb_private::Predicate<bool> process_reaped;
+    lldb_private::Predicate<bool> can_delete;
+    lldb::pid_t pid;
+    int signo;
+    int status;
+};
+
+static bool
+MonitorShellCommand (void *callback_baton,
+                     lldb::pid_t pid,
+                     bool exited,       // True if the process did exit
+                     int signo,         // Zero for no signal
+                     int status)   // Exit value of process if signal is zero
+{
+    ShellInfo *shell_info = (ShellInfo *)callback_baton;
+    shell_info->pid = pid;
+    shell_info->signo = signo;
+    shell_info->status = status;
+    // Let the thread running Host::RunShellCommand() know that the process
+    // exited and that ShellInfo has been filled in by broadcasting to it
+    shell_info->process_reaped.SetValue(1, eBroadcastAlways);
+    // Now wait for a handshake back from that thread running Host::RunShellCommand
+    // so we know that we can delete shell_info_ptr
+    shell_info->can_delete.WaitForValueEqualTo(true);
+    // Sleep a bit to allow the shell_info->can_delete.SetValue() to complete...
+    usleep(1000);
+    // Now delete the shell info that was passed into this function
+    delete shell_info;
+    return true;
+}
+
+Error
+Host::RunShellCommand (const char *command,
+                       const char *working_dir,
+                       int *status_ptr,
+                       int *signo_ptr,
+                       std::string *command_output_ptr,
+                       uint32_t timeout_sec)
+{
+    Error error;
+    ProcessLaunchInfo launch_info;
+    launch_info.SetShell("/bin/bash");
+    launch_info.GetArguments().AppendArgument(command);
+    const bool localhost = true;
+    const bool will_debug = false;
+    const bool first_arg_is_full_shell_command = true;
+    launch_info.ConvertArgumentsForLaunchingInShell (error,
+                                                     localhost,
+                                                     will_debug,
+                                                     first_arg_is_full_shell_command);
+    
+    if (working_dir)
+        launch_info.SetWorkingDirectory(working_dir);
+    char output_file_path_buffer[L_tmpnam];
+    const char *output_file_path = NULL;
+    if (command_output_ptr)
+    {
+        // Create a temporary file to get the stdout/stderr and redirect the
+        // output of the command into this file. We will later read this file
+        // if all goes well and fill the data into "command_output_ptr"
+        output_file_path = ::tmpnam(output_file_path_buffer);
+        launch_info.AppendSuppressFileAction (STDIN_FILENO, true, false);
+        launch_info.AppendOpenFileAction(STDOUT_FILENO, output_file_path, false, true);
+        launch_info.AppendDuplicateFileAction(STDERR_FILENO, STDOUT_FILENO);
+    }
+    else
+    {
+        launch_info.AppendSuppressFileAction (STDIN_FILENO, true, false);
+        launch_info.AppendSuppressFileAction (STDOUT_FILENO, false, true);
+        launch_info.AppendSuppressFileAction (STDERR_FILENO, false, true);
     }
     
-    return dummy_target;
+    // The process monitor callback will delete the 'shell_info_ptr' below...
+    std::auto_ptr<ShellInfo> shell_info_ap (new ShellInfo());
+    
+    const bool monitor_signals = false;
+    launch_info.SetMonitorProcessCallback(MonitorShellCommand, shell_info_ap.get(), monitor_signals);
+    
+    error = LaunchProcess (launch_info);
+    const lldb::pid_t pid = launch_info.GetProcessID();
+    if (pid != LLDB_INVALID_PROCESS_ID)
+    {
+        // The process successfully launched, so we can defer ownership of
+        // "shell_info" to the MonitorShellCommand callback function that will
+        // get called when the process dies. We release the std::auto_ptr as it
+        // doesn't need to delete the ShellInfo anymore.
+        ShellInfo *shell_info = shell_info_ap.release();
+        TimeValue timeout_time(TimeValue::Now());
+        timeout_time.OffsetWithSeconds(timeout_sec);
+        bool timed_out = false;
+        shell_info->process_reaped.WaitForValueEqualTo(true, &timeout_time, &timed_out);
+        if (timed_out)
+        {
+            error.SetErrorString("timed out waiting for shell command to complete");
+            
+            // Kill the process since it didn't complete withint the timeout specified
+            ::kill (pid, SIGKILL);
+            // Wait for the monitor callback to get the message
+            timeout_time = TimeValue::Now();
+            timeout_time.OffsetWithSeconds(1);
+            timed_out = false;
+            shell_info->process_reaped.WaitForValueEqualTo(true, &timeout_time, &timed_out);
+        }
+        else
+        {
+            if (status_ptr)
+                *status_ptr = shell_info->status;
+
+            if (signo_ptr)
+                *signo_ptr = shell_info->signo;
+
+            if (command_output_ptr)
+            {
+                command_output_ptr->clear();
+                FileSpec file_spec(output_file_path, File::eOpenOptionRead);
+                uint64_t file_size = file_spec.GetByteSize();
+                if (file_size > 0)
+                {
+                    if (file_size > command_output_ptr->max_size())
+                    {
+                        error.SetErrorStringWithFormat("shell command output is too large to fit into a std::string");
+                    }
+                    else
+                    {
+                        command_output_ptr->resize(file_size);
+                        file_spec.ReadFileContents(0, &((*command_output_ptr)[0]), command_output_ptr->size(), &error);
+                    }
+                }
+            }
+        }
+        shell_info->can_delete.SetValue(true, eBroadcastAlways);
+    }
+    else
+    {
+        error.SetErrorString("failed to get process ID");
+    }
+
+    if (output_file_path)
+        ::unlink (output_file_path);
+    // Handshake with the monitor thread, or just let it know in advance that
+    // it can delete "shell_info" in case we timed out and were not able to kill
+    // the process...
+    return error;
 }
+
+
 
 #if !defined (__APPLE__)
 bool

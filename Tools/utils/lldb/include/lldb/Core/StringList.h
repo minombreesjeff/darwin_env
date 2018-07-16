@@ -52,6 +52,9 @@ public:
     GetStringAtIndex (size_t idx) const;
 
     void
+    Join (const char *separator, Stream &strm);
+
+    void
     Clear ();
 
     void

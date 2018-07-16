@@ -22,7 +22,6 @@ using namespace llvm;
 //
 
 namespace llvm {
-  bool StrongPHIElim;
   bool HasDivModLibcall;
   bool AsmVerbosityDefault(false);
 }
@@ -35,7 +34,7 @@ static cl::opt<bool>
 FunctionSections("ffunction-sections",
   cl::desc("Emit functions into separate sections"),
   cl::init(false));
-                         
+
 //---------------------------------------------------------------------------
 // TargetMachine Class
 //

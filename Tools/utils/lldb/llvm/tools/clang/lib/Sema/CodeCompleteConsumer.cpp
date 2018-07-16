@@ -18,6 +18,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang-c/Index.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
@@ -71,8 +72,8 @@ bool CodeCompletionContext::wantConstructorResults() const {
   case CCC_ObjCCategoryName:
     return false;
   }
-  
-  return false;
+
+  llvm_unreachable("Invalid CodeCompletionContext::Kind!");
 }
 
 //===----------------------------------------------------------------------===//
@@ -93,7 +94,6 @@ CodeCompletionString::Chunk::Chunk(ChunkKind Kind, const char *Text)
 
   case CK_Optional:
     llvm_unreachable("Optional strings cannot be created from text");
-    break;
       
   case CK_LeftParen:
     this->Text = "(";
@@ -260,7 +260,7 @@ const char *CodeCompletionAllocator::CopyString(Twine String) {
   // FIXME: It would be more efficient to teach Twine to tell us its size and
   // then add a routine there to fill in an allocated char* with the contents
   // of the string.
-  llvm::SmallString<128> Data;
+  SmallString<128> Data;
   return CopyString(String.toStringRef(Data));
 }
 
@@ -330,8 +330,8 @@ CodeCompleteConsumer::OverloadCandidate::getFunctionType() const {
   case CK_FunctionType:
     return Type;
   }
-  
-  return 0;
+
+  llvm_unreachable("Invalid CandidateKind!");
 }
 
 //===----------------------------------------------------------------------===//
@@ -424,8 +424,17 @@ void CodeCompletionResult::computeCursorKindAndAvailability(bool Accessible) {
         Availability = CXAvailability_NotAvailable;
       
     CursorKind = getCursorKindForDecl(Declaration);
-    if (CursorKind == CXCursor_UnexposedDecl)
-      CursorKind = CXCursor_NotImplemented;
+    if (CursorKind == CXCursor_UnexposedDecl) {
+      // FIXME: Forward declarations of Objective-C classes and protocols 
+      // are not directly exposed, but we want code completion to treat them 
+      // like a definition.
+      if (isa<ObjCInterfaceDecl>(Declaration))
+        CursorKind = CXCursor_ObjCInterfaceDecl;
+      else if (isa<ObjCProtocolDecl>(Declaration))
+        CursorKind = CXCursor_ObjCProtocolDecl;
+      else
+        CursorKind = CXCursor_NotImplemented;
+    }
     break;
 
   case RK_Macro:

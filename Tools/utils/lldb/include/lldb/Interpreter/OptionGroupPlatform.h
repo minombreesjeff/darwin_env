@@ -59,9 +59,11 @@ public:
     OptionParsingStarting (CommandInterpreter &interpreter);
     
     lldb::PlatformSP 
-    CreatePlatformWithOptions (CommandInterpreter &interpreter, 
+    CreatePlatformWithOptions (CommandInterpreter &interpreter,
+                               const ArchSpec &arch,
                                bool make_selected, 
-                               Error& error) const;
+                               Error& error,
+                               ArchSpec &platform_arch) const;
 
     bool
     PlatformWasSpecified () const

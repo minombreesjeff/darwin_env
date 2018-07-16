@@ -15,6 +15,7 @@
 #include "lldb/Symbol/UnwindPlan.h"
 #include "lldb/Symbol/UnwindTable.h"
 #include "lldb/Target/ABI.h"
+#include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/Target.h"
@@ -166,10 +167,10 @@ FuncUnwinders::GetUnwindPlanArchitectureDefault (Thread& thread)
     {
         m_tried_unwind_arch_default = true;
         Address current_pc;
-        Target *target = thread.CalculateTarget();
-        if (target)
+        ProcessSP process_sp (thread.CalculateProcess());
+        if (process_sp)
         {
-            ABI *abi = thread.GetProcess().GetABI().get();
+            ABI *abi = process_sp->GetABI().get();
             if (abi)
             {
                 m_unwind_plan_arch_default_sp.reset (new UnwindPlan (lldb::eRegisterKindGeneric));
@@ -202,10 +203,10 @@ FuncUnwinders::GetUnwindPlanArchitectureDefaultAtFunctionEntry (Thread& thread)
     {
         m_tried_unwind_arch_default_at_func_entry = true;
         Address current_pc;
-        Target *target = thread.CalculateTarget();
-        if (target)
+        ProcessSP process_sp (thread.CalculateProcess());
+        if (process_sp)
         {
-            ABI *abi = thread.GetProcess().GetABI().get();
+            ABI *abi = process_sp->GetABI().get();
             if (abi)
             {
                 m_unwind_plan_arch_default_at_func_entry_sp.reset (new UnwindPlan (lldb::eRegisterKindGeneric));
@@ -224,7 +225,8 @@ FuncUnwinders::GetFirstNonPrologueInsn (Target& target)
 {
     if (m_first_non_prologue_insn.IsValid())
         return m_first_non_prologue_insn;
-    m_assembly_profiler->FirstNonPrologueInsn (m_range, target, NULL, m_first_non_prologue_insn);
+    ExecutionContext exe_ctx (target.shared_from_this(), false);
+    m_assembly_profiler->FirstNonPrologueInsn (m_range, exe_ctx, m_first_non_prologue_insn);
     return m_first_non_prologue_insn;
 }
 

@@ -14,6 +14,7 @@
 #include "Mips.h"
 #include "MipsTargetMachine.h"
 #include "llvm/PassManager.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
@@ -52,12 +53,16 @@ MipsTargetMachine(const Target &T, StringRef TT,
     TLInfo(*this), TSInfo(*this), JITInfo() {
 }
 
+void MipsebTargetMachine::anchor() { }
+
 MipsebTargetMachine::
 MipsebTargetMachine(const Target &T, StringRef TT,
                     StringRef CPU, StringRef FS, const TargetOptions &Options,
                     Reloc::Model RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL)
   : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false) {}
+
+void MipselTargetMachine::anchor() { }
 
 MipselTargetMachine::
 MipselTargetMachine(const Target &T, StringRef TT,
@@ -66,12 +71,16 @@ MipselTargetMachine(const Target &T, StringRef TT,
                     CodeGenOpt::Level OL)
   : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {}
 
+void Mips64ebTargetMachine::anchor() { }
+
 Mips64ebTargetMachine::
 Mips64ebTargetMachine(const Target &T, StringRef TT,
                       StringRef CPU, StringRef FS, const TargetOptions &Options,
                       Reloc::Model RM, CodeModel::Model CM,
                       CodeGenOpt::Level OL)
   : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, false) {}
+
+void Mips64elTargetMachine::anchor() { }
 
 Mips64elTargetMachine::
 Mips64elTargetMachine(const Target &T, StringRef TT,
@@ -80,37 +89,59 @@ Mips64elTargetMachine(const Target &T, StringRef TT,
                       CodeGenOpt::Level OL)
   : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {}
 
+namespace {
+/// Mips Code Generator Pass Configuration Options.
+class MipsPassConfig : public TargetPassConfig {
+public:
+  MipsPassConfig(MipsTargetMachine *TM, PassManagerBase &PM)
+    : TargetPassConfig(TM, PM) {}
+
+  MipsTargetMachine &getMipsTargetMachine() const {
+    return getTM<MipsTargetMachine>();
+  }
+
+  const MipsSubtarget &getMipsSubtarget() const {
+    return *getMipsTargetMachine().getSubtargetImpl();
+  }
+
+  virtual bool addInstSelector();
+  virtual bool addPreRegAlloc();
+  virtual bool addPreSched2();
+  virtual bool addPreEmitPass();
+};
+} // namespace
+
+TargetPassConfig *MipsTargetMachine::createPassConfig(PassManagerBase &PM) {
+  return new MipsPassConfig(this, PM);
+}
+
 // Install an instruction selector pass using
 // the ISelDag to gen Mips code.
-bool MipsTargetMachine::
-addInstSelector(PassManagerBase &PM)
+bool MipsPassConfig::addInstSelector()
 {
-  PM.add(createMipsISelDag(*this));
+  PM.add(createMipsISelDag(getMipsTargetMachine()));
   return false;
 }
 
 // Implemented by targets that want to run passes immediately before
 // machine code is emitted. return true if -print-machineinstrs should
 // print out the code after the passes.
-bool MipsTargetMachine::
-addPreEmitPass(PassManagerBase &PM)
+bool MipsPassConfig::addPreEmitPass()
 {
-  PM.add(createMipsDelaySlotFillerPass(*this));
+  PM.add(createMipsDelaySlotFillerPass(getMipsTargetMachine()));
   return true;
 }
 
-bool MipsTargetMachine::
-addPreRegAlloc(PassManagerBase &PM) {
+bool MipsPassConfig::addPreRegAlloc() {
   // Do not restore $gp if target is Mips64.
   // In N32/64, $gp is a callee-saved register.
-  if (!Subtarget.hasMips64())
-    PM.add(createMipsEmitGPRestorePass(*this));
+  if (!getMipsSubtarget().hasMips64())
+    PM.add(createMipsEmitGPRestorePass(getMipsTargetMachine()));
   return true;
 }
 
-bool MipsTargetMachine::
-addPostRegAlloc(PassManagerBase &PM) {
-  PM.add(createMipsExpandPseudoPass(*this));
+bool MipsPassConfig::addPreSched2() {
+  PM.add(createMipsExpandPseudoPass(getMipsTargetMachine()));
   return true;
 }
 

@@ -20,8 +20,8 @@ using namespace clang;
 using namespace serialization;
 using namespace reader;
 
-ModuleFile::ModuleFile(ModuleKind Kind)
-  : Kind(Kind), DirectlyImported(false), SizeInBits(0), 
+ModuleFile::ModuleFile(ModuleKind Kind, unsigned Generation)
+  : Kind(Kind), DirectlyImported(false), Generation(Generation), SizeInBits(0), 
     LocalNumSLocEntries(0), SLocEntryBaseID(0),
     SLocEntryBaseOffset(0), SLocEntryOffsets(0),
     SLocFileOffsets(0), LocalNumIdentifiers(0), 
@@ -30,12 +30,13 @@ ModuleFile::ModuleFile(ModuleKind Kind)
     PreprocessedEntityOffsets(0), NumPreprocessedEntities(0),
     LocalNumHeaderFileInfos(0), 
     HeaderFileInfoTableData(0), HeaderFileInfoTable(0),
-    HeaderFileFrameworkStrings(0), LocalNumSubmodules(0),
+    HeaderFileFrameworkStrings(0), LocalNumSubmodules(0), BaseSubmoduleID(0),
     LocalNumSelectors(0), SelectorOffsets(0), BaseSelectorID(0),
     SelectorLookupTableData(0), SelectorLookupTable(0), LocalNumDecls(0),
     DeclOffsets(0), BaseDeclID(0),
     LocalNumCXXBaseSpecifiers(0), CXXBaseSpecifiersOffsets(0),
-    FileSortedDecls(0),
+    FileSortedDecls(0), RedeclarationsMap(0), LocalNumRedeclarationsInMap(0),
+    ObjCCategoriesMap(0), LocalNumObjCCategoriesInMap(0),
     LocalNumTypes(0), TypeOffsets(0), BaseTypeIndex(0), StatCache(0)
 {}
 

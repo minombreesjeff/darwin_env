@@ -1,4 +1,4 @@
-//===- SparcRegisterInfo.cpp - SPARC Register Information -------*- C++ -*-===//
+//===-- SparcRegisterInfo.cpp - SPARC Register Information ----------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -33,9 +33,9 @@ SparcRegisterInfo::SparcRegisterInfo(SparcSubtarget &st,
   : SparcGenRegisterInfo(SP::I7), Subtarget(st), TII(tii) {
 }
 
-const unsigned* SparcRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF)
+const uint16_t* SparcRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF)
                                                                          const {
-  static const unsigned CalleeSavedRegs[] = { 0 };
+  static const uint16_t CalleeSavedRegs[] = { 0 };
   return CalleeSavedRegs;
 }
 
@@ -118,10 +118,8 @@ unsigned SparcRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
 
 unsigned SparcRegisterInfo::getEHExceptionRegister() const {
   llvm_unreachable("What is the exception register");
-  return 0;
 }
 
 unsigned SparcRegisterInfo::getEHHandlerRegister() const {
   llvm_unreachable("What is the exception handler register");
-  return 0;
 }

@@ -117,7 +117,7 @@ static int x86_64_register_map_initialized = 0;
 class AssemblyParse_x86 {
 public:
 
-    AssemblyParse_x86 (Target &target, Thread *thread, int cpu, AddressRange func);
+    AssemblyParse_x86 (const ExecutionContext &exe_ctx, int cpu, AddressRange func);
 
     bool get_non_call_site_unwind_plan (UnwindPlan &unwind_plan);
 
@@ -140,8 +140,7 @@ private:
     bool machine_regno_to_lldb_regno (int machine_regno, uint32_t& lldb_regno);
     bool instruction_length (Address addr, int &length);
 
-    Target &m_target;
-    Thread* m_thread;
+    const ExecutionContext m_exe_ctx;
 
     AddressRange m_func_bounds;
 
@@ -162,14 +161,20 @@ private:
     DISALLOW_COPY_AND_ASSIGN (AssemblyParse_x86);
 };
 
-AssemblyParse_x86::AssemblyParse_x86 (Target& target, Thread* thread, int cpu, AddressRange func) :
-                         m_target (target), m_thread (thread), m_func_bounds(func), m_cur_insn (),
-                         m_machine_ip_regnum (-1), m_machine_sp_regnum (-1), m_machine_fp_regnum (-1),
-                         m_lldb_ip_regnum (-1), m_lldb_sp_regnum (-1), m_lldb_fp_regnum (-1),
-                         m_wordsize (-1), m_cpu(cpu)
+AssemblyParse_x86::AssemblyParse_x86 (const ExecutionContext &exe_ctx, int cpu, AddressRange func) :
+    m_exe_ctx (exe_ctx), 
+    m_func_bounds(func), 
+    m_cur_insn (),
+    m_machine_ip_regnum (LLDB_INVALID_REGNUM),
+    m_machine_sp_regnum (LLDB_INVALID_REGNUM),
+    m_machine_fp_regnum (LLDB_INVALID_REGNUM),
+    m_lldb_ip_regnum (LLDB_INVALID_REGNUM), 
+    m_lldb_sp_regnum (LLDB_INVALID_REGNUM),
+    m_lldb_fp_regnum (LLDB_INVALID_REGNUM),
+    m_wordsize (-1), 
+    m_cpu(cpu)
 {
     int *initialized_flag = NULL;
-    m_lldb_ip_regnum = m_lldb_sp_regnum = m_lldb_fp_regnum = -1;
     if (cpu == k_i386)
     {
         m_machine_ip_regnum = k_machine_eip;
@@ -191,9 +196,10 @@ AssemblyParse_x86::AssemblyParse_x86 (Target& target, Thread* thread, int cpu, A
     if (m_func_bounds.GetByteSize() == 0)
         m_func_bounds.SetByteSize(512);
 
-    if (m_thread && *initialized_flag == 0)
+    Thread *thread = m_exe_ctx.GetThreadPtr();
+    if (thread && *initialized_flag == 0)
     {
-        RegisterContext *reg_ctx = m_thread->GetRegisterContext().get();
+        RegisterContext *reg_ctx = thread->GetRegisterContext().get();
         if (reg_ctx)
         {
             struct regmap_ent *ent;
@@ -501,7 +507,7 @@ AssemblyParse_x86::instruction_length (Address addr, int &length)
     } InitializeLLVM;
 
     EDDisassemblerRef disasm;
-    EDInstRef         cur_insn;
+    EDInstRef cur_insn;
 
     if (EDGetDisassembler (&disasm, triple, kEDAssemblySyntaxX86ATT) != 0)
     {
@@ -511,7 +517,7 @@ AssemblyParse_x86::instruction_length (Address addr, int &length)
     uint64_t addr_offset = addr.GetOffset();
     struct edis_byte_read_token arg;
     arg.address = &addr;
-    arg.target = &m_target;
+    arg.target = m_exe_ctx.GetTargetPtr();
     if (EDCreateInsts (&cur_insn, 1, disasm, read_byte_for_edis, addr_offset, &arg) != 1)
     {
         return false;
@@ -558,6 +564,7 @@ AssemblyParse_x86::get_non_call_site_unwind_plan (UnwindPlan &unwind_plan)
     unwind_plan.AppendRow (row);
     const bool prefer_file_cache = true;
 
+    Target *target = m_exe_ctx.GetTargetPtr();
     while (m_func_bounds.ContainsFileAddress (m_cur_insn) && non_prologue_insn_count < 10)
     {
         int stack_offset, insn_len;
@@ -569,7 +576,7 @@ AssemblyParse_x86::get_non_call_site_unwind_plan (UnwindPlan &unwind_plan)
             // An unrecognized/junk instruction
             break;
         }
-        if (m_target.ReadMemory (m_cur_insn, prefer_file_cache, m_cur_insn_bytes, insn_len, error) == -1)
+        if (target->ReadMemory (m_cur_insn, prefer_file_cache, m_cur_insn_bytes, insn_len, error) == -1)
         {
            // Error reading the instruction out of the file, stop scanning
            break;
@@ -669,40 +676,69 @@ loopnext:
     }
     
     // Now look at the byte at the end of the AddressRange for a limited attempt at describing the
-    // epilogue.  If this function is built -fomit-frame-pointer (so the CFA is defined in terms of the
-    // stack pointer) we'd need to profile every instruction which causes rsp to change to backtrace
-    // all the time.  But assuming the CFA is in terms of rbp most of the time, this one additional Row
-    // will be sufficient.
+    // epilogue.  We're looking for the sequence
 
-    if (m_func_bounds.GetByteSize() > 2)
+    //  [ 0x5d ] mov %rbp, %rsp
+    //  [ 0xc3 ] ret
+    //  [ 0xe8 xx xx xx xx ] call __stack_chk_fail  (this is sometimes the final insn in the function)
+
+    // We want to add a Row describing how to unwind when we're stopped on the 'ret' instruction where the
+    // CFA is no longer defined in terms of rbp, but is now defined in terms of rsp like on function entry.
+
+    uint64_t ret_insn_offset = LLDB_INVALID_ADDRESS;
+    Address end_of_fun(m_func_bounds.GetBaseAddress());
+    end_of_fun.SetOffset (end_of_fun.GetOffset() + m_func_bounds.GetByteSize());
+    
+    if (m_func_bounds.GetByteSize() > 7)
     {
-        Address last_insn (m_func_bounds.GetBaseAddress());
-        last_insn.SetOffset (last_insn.GetOffset() + m_func_bounds.GetByteSize() - 1);
-        uint8_t bytebuf[1];
-        if (m_target.ReadMemory (last_insn, prefer_file_cache, bytebuf, 1, error) != -1)
+        uint8_t bytebuf[7];
+        Address last_seven_bytes(end_of_fun);
+        last_seven_bytes.SetOffset (last_seven_bytes.GetOffset() - 7);
+        if (target->ReadMemory (last_seven_bytes, prefer_file_cache, bytebuf, 7, error) != -1)
         {
-            if (bytebuf[0] == 0xc3)   // ret aka retq
+            if (bytebuf[5] == 0x5d && bytebuf[6] == 0xc3)  // mov, ret
             {
-                // Create a fresh, empty Row and RegisterLocation - don't mention any other registers
-                UnwindPlan::Row epi_row;
-                UnwindPlan::Row::RegisterLocation epi_regloc;
-
-                // When the ret instruction is about to be executed, here's our state
-                epi_row.SetOffset (m_func_bounds.GetByteSize() - 1);
-                epi_row.SetCFARegister (m_lldb_sp_regnum);
-                epi_row.SetCFAOffset (m_wordsize);
-               
-                // caller's stack pointer value before the call insn is the CFA address
-                epi_regloc.SetIsCFAPlusOffset (0);
-                epi_row.SetRegisterInfo (m_lldb_sp_regnum, epi_regloc);
-
-                // saved instruction pointer can be found at CFA - wordsize
-                epi_regloc.SetAtCFAPlusOffset (-m_wordsize);
-                epi_row.SetRegisterInfo (m_lldb_ip_regnum, epi_regloc);
-
-                unwind_plan.AppendRow (epi_row);
+                ret_insn_offset = m_func_bounds.GetByteSize() - 1;
+            }
+            else if (bytebuf[0] == 0x5d && bytebuf[1] == 0xc3 && bytebuf[2] == 0xe8) // mov, ret, call
+            {
+                ret_insn_offset = m_func_bounds.GetByteSize() - 6;
             }
         }
+    } else if (m_func_bounds.GetByteSize() > 2)
+    {
+        uint8_t bytebuf[2];
+        Address last_two_bytes(end_of_fun);
+        last_two_bytes.SetOffset (last_two_bytes.GetOffset() - 2);
+        if (target->ReadMemory (last_two_bytes, prefer_file_cache, bytebuf, 2, error) != -1)
+        {
+            if (bytebuf[0] == 0x5d && bytebuf[1] == 0xc3) // mov, ret
+            {
+                ret_insn_offset = m_func_bounds.GetByteSize() - 1;
+            }
+        }
+    }
+
+    if (ret_insn_offset != LLDB_INVALID_ADDRESS)
+    {
+        // Create a fresh, empty Row and RegisterLocation - don't mention any other registers
+        UnwindPlan::Row epi_row;
+        UnwindPlan::Row::RegisterLocation epi_regloc;
+
+        // When the ret instruction is about to be executed, here's our state
+        epi_row.SetOffset (ret_insn_offset);
+        epi_row.SetCFARegister (m_lldb_sp_regnum);
+        epi_row.SetCFAOffset (m_wordsize);
+       
+        // caller's stack pointer value before the call insn is the CFA address
+        epi_regloc.SetIsCFAPlusOffset (0);
+        epi_row.SetRegisterInfo (m_lldb_sp_regnum, epi_regloc);
+
+        // saved instruction pointer can be found at CFA - wordsize
+        epi_regloc.SetAtCFAPlusOffset (-m_wordsize);
+        epi_row.SetRegisterInfo (m_lldb_ip_regnum, epi_regloc);
+
+        unwind_plan.AppendRow (epi_row);
     }
     
     unwind_plan.SetSourceName ("assembly insn profiling");
@@ -728,10 +764,12 @@ AssemblyParse_x86::get_fast_unwind_plan (AddressRange& func, UnwindPlan &unwind_
     if (!func.GetBaseAddress().IsValid())
         return false;
 
+    Target *target = m_exe_ctx.GetTargetPtr();
+
     uint8_t bytebuf[4];
     Error error;
     const bool prefer_file_cache = true;
-    if (m_target.ReadMemory (func.GetBaseAddress(), prefer_file_cache, bytebuf, sizeof (bytebuf), error) == -1)
+    if (target->ReadMemory (func.GetBaseAddress(), prefer_file_cache, bytebuf, sizeof (bytebuf), error) == -1)
         return false;
 
     uint8_t i386_prologue[] = {0x55, 0x89, 0xe5};
@@ -790,6 +828,7 @@ AssemblyParse_x86::find_first_non_prologue_insn (Address &address)
     }
 
     const bool prefer_file_cache = true;
+    Target *target = m_exe_ctx.GetTargetPtr();
     while (m_func_bounds.ContainsFileAddress (m_cur_insn))
     {
         Error error;
@@ -799,7 +838,7 @@ AssemblyParse_x86::find_first_non_prologue_insn (Address &address)
             // An error parsing the instruction, i.e. probably data/garbage - stop scanning
             break;
         }
-        if (m_target.ReadMemory (m_cur_insn, prefer_file_cache, m_cur_insn_bytes, insn_len, error) == -1)
+        if (target->ReadMemory (m_cur_insn, prefer_file_cache, m_cur_insn_bytes, insn_len, error) == -1)
         {
            // Error reading the instruction out of the file, stop scanning
            break;
@@ -843,21 +882,23 @@ UnwindAssembly_x86::~UnwindAssembly_x86 ()
 bool
 UnwindAssembly_x86::GetNonCallSiteUnwindPlanFromAssembly (AddressRange& func, Thread& thread, UnwindPlan& unwind_plan)
 {
-    AssemblyParse_x86 asm_parse(thread.GetProcess().GetTarget(), &thread, m_cpu, func);
+    ExecutionContext exe_ctx (thread.shared_from_this());
+    AssemblyParse_x86 asm_parse(exe_ctx, m_cpu, func);
     return asm_parse.get_non_call_site_unwind_plan (unwind_plan);
 }
 
 bool
 UnwindAssembly_x86::GetFastUnwindPlan (AddressRange& func, Thread& thread, UnwindPlan &unwind_plan)
 {
-    AssemblyParse_x86 asm_parse(thread.GetProcess().GetTarget(), &thread, m_cpu, func);
+    ExecutionContext exe_ctx (thread.shared_from_this());
+    AssemblyParse_x86 asm_parse(exe_ctx, m_cpu, func);
     return asm_parse.get_fast_unwind_plan (func, unwind_plan);
 }
 
 bool
-UnwindAssembly_x86::FirstNonPrologueInsn (AddressRange& func, Target& target, Thread* thread, Address& first_non_prologue_insn)
+UnwindAssembly_x86::FirstNonPrologueInsn (AddressRange& func, const ExecutionContext &exe_ctx, Address& first_non_prologue_insn)
 {
-    AssemblyParse_x86 asm_parse(target, thread, m_cpu, func);
+    AssemblyParse_x86 asm_parse(exe_ctx, m_cpu, func);
     return asm_parse.find_first_non_prologue_insn (first_non_prologue_insn);
 }
 

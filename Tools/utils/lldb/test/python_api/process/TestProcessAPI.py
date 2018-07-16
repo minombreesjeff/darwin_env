@@ -14,12 +14,14 @@ class ProcessAPITestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_read_memory_with_dsym(self):
         """Test Python SBProcess.ReadMemory() API."""
         self.buildDsym()
         self.read_memory()
 
     @python_api_test
+    @dwarf_test
     def test_read_memory_with_dwarf(self):
         """Test Python SBProcess.ReadMemory() API."""
         self.buildDwarf()
@@ -27,12 +29,14 @@ class ProcessAPITestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_write_memory_with_dsym(self):
         """Test Python SBProcess.WriteMemory() API."""
         self.buildDsym()
         self.write_memory()
 
     @python_api_test
+    @dwarf_test
     def test_write_memory_with_dwarf(self):
         """Test Python SBProcess.WriteMemory() API."""
         self.buildDwarf()
@@ -40,12 +44,14 @@ class ProcessAPITestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_access_my_int_with_dsym(self):
         """Test access 'my_int' using Python SBProcess.GetByteOrder() and other APIs."""
         self.buildDsym()
         self.access_my_int()
 
     @python_api_test
+    @dwarf_test
     def test_access_my_int_with_dwarf(self):
         """Test access 'my_int' using Python SBProcess.GetByteOrder() and other APIs."""
         self.buildDwarf()
@@ -56,6 +62,12 @@ class ProcessAPITestCase(TestBase):
         """Test SBProcess.RemoteLaunch() API with a process not in eStateConnected, and it should fail."""
         self.buildDefault()
         self.remote_launch_should_fail()
+
+    @python_api_test
+    def test_get_num_supported_hardware_watchpoints(self):
+        """Test SBProcess.GetNumSupportedHardwareWatchpoints() API with a process."""
+        self.buildDefault()
+        self.get_num_supported_hardware_watchpoints()
 
     def setUp(self):
         # Call super's setUp().
@@ -303,6 +315,25 @@ class ProcessAPITestCase(TestBase):
         error = lldb.SBError()
         success = process.RemoteLaunch(None, None, None, None, None, None, 0, False, error)
         self.assertTrue(not success, "RemoteLaunch() should fail for process state != eStateConnected")
+
+    def get_num_supported_hardware_watchpoints(self):
+        """Test SBProcess.GetNumSupportedHardwareWatchpoints() API with a process."""
+        exe = os.path.join(os.getcwd(), "a.out")
+        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
+
+        target = self.dbg.CreateTarget(exe)
+        self.assertTrue(target, VALID_TARGET)
+
+        breakpoint = target.BreakpointCreateByLocation("main.cpp", self.line)
+        self.assertTrue(breakpoint, VALID_BREAKPOINT)
+
+        # Launch the process, and do not stop at the entry point.
+        process = target.LaunchSimple(None, None, os.getcwd())
+
+        error = lldb.SBError();
+        num = process.GetNumSupportedHardwareWatchpoints(error)
+        if self.TraceOn() and error.Success():
+            print "Number of supported hardware watchpoints: %d" % num
 
 
 if __name__ == '__main__':

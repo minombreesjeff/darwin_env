@@ -19,6 +19,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/ADT/OwningPtr.h"
 #include <vector>
 
 namespace clang {
@@ -154,6 +155,13 @@ class HeaderSearch {
   llvm::StringMap<const DirectoryEntry *, llvm::BumpPtrAllocator>
     FrameworkMap;
 
+  /// IncludeAliases - maps include file names (including the quotes or
+  /// angle brackets) to other include file names.  This is used to support the
+  /// include_alias pragma for Microsoft compatibility.
+  typedef llvm::StringMap<std::string, llvm::BumpPtrAllocator>
+    IncludeAliasMap;
+  OwningPtr<IncludeAliasMap> IncludeAliases;
+
   /// HeaderMaps - This is a mapping from FileEntry -> HeaderMap, uniquing
   /// headermaps.  This vector owns the headermap.
   std::vector<std::pair<const FileEntry*, const HeaderMap*> > HeaderMaps;
@@ -184,8 +192,12 @@ class HeaderSearch {
   explicit HeaderSearch();
   explicit HeaderSearch(const HeaderSearch&);
   void operator=(const HeaderSearch&);
+  
+  friend class DirectoryLookup;
+  
 public:
-  HeaderSearch(FileManager &FM, DiagnosticsEngine &Diags);
+  HeaderSearch(FileManager &FM, DiagnosticsEngine &Diags,
+               const LangOptions &LangOpts, const TargetInfo *Target);
   ~HeaderSearch();
 
   FileManager &getFileMgr() const { return FileMgr; }
@@ -213,6 +225,34 @@ public:
     SystemDirIdx++;
   }
 
+  /// HasIncludeAliasMap - Checks whether the map exists or not
+  bool HasIncludeAliasMap() const {
+    return IncludeAliases;
+  }
+
+  /// AddIncludeAlias - Map the source include name to the dest include name.
+  /// The Source should include the angle brackets or quotes, the dest 
+  /// should not.  This allows for distinction between <> and "" headers.
+  void AddIncludeAlias(StringRef Source, StringRef Dest) {
+    if (!IncludeAliases)
+      IncludeAliases.reset(new IncludeAliasMap);
+    (*IncludeAliases)[Source] = Dest;
+  }
+
+  /// MapHeaderToIncludeAlias - Maps one header file name to a different header
+  /// file name, for use with the include_alias pragma.  Note that the source
+  /// file name should include the angle brackets or quotes.  Returns StringRef
+  /// as null if the header cannot be mapped.
+  StringRef MapHeaderToIncludeAlias(StringRef Source) {
+    assert(IncludeAliases && "Trying to map headers when there's no map");
+
+    // Do any filename replacements before anything else
+    IncludeAliasMap::const_iterator Iter = IncludeAliases->find(Source);
+    if (Iter != IncludeAliases->end())
+      return Iter->second;
+    return StringRef();
+  }
+
   /// \brief Set the path to the module cache.
   void setModuleCachePath(StringRef CachePath) {
     ModuleCachePath = CachePath;
@@ -238,6 +278,10 @@ public:
   void SetExternalSource(ExternalHeaderFileInfoSource *ES) {
     ExternalSource = ES;
   }
+  
+  /// \brief Set the target information for the header search, if not
+  /// already known.
+  void setTarget(const TargetInfo &Target);
   
   /// LookupFile - Given a "foo" or <foo> reference, look up the indicated file,
   /// return null on failure.
@@ -342,20 +386,34 @@ public:
   /// FileEntry, uniquing them through the the 'HeaderMaps' datastructure.
   const HeaderMap *CreateHeaderMap(const FileEntry *FE);
 
-  /// \brief Search in the module cache path for a module with the given
-  /// name.
+  /// \brief Retrieve the name of the module file that should be used to 
+  /// load the given module.
   ///
-  /// \param Module The module that was found with the given name, which 
-  /// describes the module and how to build it.
+  /// \param Module The module whose module file name will be returned.
   ///
-  /// \param If non-NULL, will be set to the module file name we expected to
-  /// find (regardless of whether it was actually found or not).
+  /// \returns The name of the module file that corresponds to this module,
+  /// or an empty string if this module does not correspond to any module file.
+  std::string getModuleFileName(Module *Module);
+
+  /// \brief Retrieve the name of the module file that should be used to 
+  /// load a module with the given name.
   ///
-  /// \returns A file describing the named module, if already available in the
-  /// cases, or NULL to indicate that the module could not be found.
-  const FileEntry *lookupModule(StringRef ModuleName,
-                                Module *&Module,
-                                std::string *ModuleFileName = 0);
+  /// \param Module The module whose module file name will be returned.
+  ///
+  /// \returns The name of the module file that corresponds to this module,
+  /// or an empty string if this module does not correspond to any module file.
+  std::string getModuleFileName(StringRef ModuleName);
+
+  /// \brief Lookup a module Search for a module with the given name.
+  ///
+  /// \param ModuleName The name of the module we're looking for.
+  ///
+  /// \param AllowSearch Whether we are allowed to search in the various
+  /// search directories to produce a module definition. If not, this lookup
+  /// will only return an already-known module.
+  ///
+  /// \returns The module with the given name.
+  Module *lookupModule(StringRef ModuleName, bool AllowSearch = true);
   
   void IncrementFrameworkLookupCount() { ++NumFrameworkLookups; }
 
@@ -369,8 +427,9 @@ public:
   bool hasModuleMap(StringRef Filename, const DirectoryEntry *Root);
   
   /// \brief Retrieve the module that corresponds to the given file, if any.
+  ///
+  /// \param File The header that we wish to map to a module.
   Module *findModuleForHeader(const FileEntry *File);
-  
   
   /// \brief Read the contents of the given module map file.
   ///
@@ -380,17 +439,13 @@ public:
   ///
   /// \returns true if an error occurred, false otherwise.
   bool loadModuleMapFile(const FileEntry *File);
-  
-  /// \brief Retrieve a module with the given name.
-  ///
-  /// \param Name The name of the module to retrieve.
-  ///
-  /// \param AllowSearch If true, we're allowed to look for module maps within
-  /// the header search path. Otherwise, the module must already be known.
-  ///
-  /// \returns The module, if found; otherwise, null.
-  Module *getModule(StringRef Name, bool AllowSearch = true);
 
+  /// \brief Collect the set of all known, top-level modules.
+  ///
+  /// \param Modules Will be filled with the set of known, top-level modules.
+  void collectAllModules(llvm::SmallVectorImpl<Module *> &Modules);
+                         
+private:
   /// \brief Retrieve a module with the given name, which may be part of the
   /// given framework.
   ///
@@ -398,10 +453,15 @@ public:
   ///
   /// \param Dir The framework directory (e.g., ModuleName.framework).
   ///
+  /// \param IsSystem Whether the framework directory is part of the system
+  /// frameworks.
+  ///
   /// \returns The module, if found; otherwise, null.
-  Module *getFrameworkModule(StringRef Name, 
-                                        const DirectoryEntry *Dir);
-
+  Module *loadFrameworkModule(StringRef Name, 
+                              const DirectoryEntry *Dir,
+                              bool IsSystem);
+  
+public:
   /// \brief Retrieve the module map.
   ModuleMap &getModuleMap() { return ModMap; }
   

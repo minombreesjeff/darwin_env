@@ -31,11 +31,12 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/LangOptions.h"
-#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TinyPtrVector.h"
+#include "llvm/ADT/edit_distance.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <limits>
 #include <list>
@@ -1053,20 +1054,6 @@ bool Sema::CppLookupName(LookupResult &R, Scope *S) {
   return !R.empty();
 }
 
-/// \brief Retrieve the previous declaration of D.
-static NamedDecl *getPreviousDeclaration(NamedDecl *D) {
-  if (TagDecl *TD = dyn_cast<TagDecl>(D))
-    return TD->getPreviousDeclaration();
-  if (VarDecl *VD = dyn_cast<VarDecl>(D))
-    return VD->getPreviousDeclaration();
-  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
-    return FD->getPreviousDeclaration();
-  if (RedeclarableTemplateDecl *RTD = dyn_cast<RedeclarableTemplateDecl>(D))
-    return RTD->getPreviousDeclaration();
-  
-  return 0;
-}
-
 /// \brief Retrieve the visible declaration corresponding to D, if any.
 ///
 /// This routine determines whether the declaration D is visible in the current
@@ -1079,9 +1066,12 @@ static NamedDecl *getVisibleDecl(NamedDecl *D) {
   if (LookupResult::isVisible(D))
     return D;
   
-  while ((D = getPreviousDeclaration(D))) {
-    if (LookupResult::isVisible(D))
-      return D;
+  for (Decl::redecl_iterator RD = D->redecls_begin(), RDEnd = D->redecls_end();
+       RD != RDEnd; ++RD) {
+    if (NamedDecl *ND = dyn_cast<NamedDecl>(*RD)) {
+      if (LookupResult::isVisible(ND))
+        return ND;
+    }
   }
   
   return 0;
@@ -1165,36 +1155,56 @@ bool Sema::LookupName(LookupResult &R, Scope *S, bool AllowBuiltinCreation) {
         
         // If this declaration is module-private and it came from an AST
         // file, we can't see it.
-        NamedDecl *D = getVisibleDecl(*I);
+        NamedDecl *D = R.isHiddenDeclarationVisible()? *I : getVisibleDecl(*I);
         if (!D)
           continue;
                 
         R.addDecl(D);
 
-        if ((*I)->getAttr<OverloadableAttr>()) {
-          // If this declaration has the "overloadable" attribute, we
-          // might have a set of overloaded functions.
-
-          // Figure out what scope the identifier is in.
-          while (!(S->getFlags() & Scope::DeclScope) ||
-                 !S->isDeclScope(*I))
+        // Check whether there are any other declarations with the same name
+        // and in the same scope.
+        if (I != IEnd) {
+          // Find the scope in which this declaration was declared (if it
+          // actually exists in a Scope).
+          while (S && !S->isDeclScope(D))
             S = S->getParent();
+          
+          // If the scope containing the declaration is the translation unit,
+          // then we'll need to perform our checks based on the matching
+          // DeclContexts rather than matching scopes.
+          if (S && isNamespaceOrTranslationUnitScope(S))
+            S = 0;
 
-          // Find the last declaration in this scope (with the same
-          // name, naturally).
+          // Compute the DeclContext, if we need it.
+          DeclContext *DC = 0;
+          if (!S)
+            DC = (*I)->getDeclContext()->getRedeclContext();
+            
           IdentifierResolver::iterator LastI = I;
           for (++LastI; LastI != IEnd; ++LastI) {
-            if (!S->isDeclScope(*LastI))
-              break;
+            if (S) {
+              // Match based on scope.
+              if (!S->isDeclScope(*LastI))
+                break;
+            } else {
+              // Match based on DeclContext.
+              DeclContext *LastDC 
+                = (*LastI)->getDeclContext()->getRedeclContext();
+              if (!LastDC->Equals(DC))
+                break;
+            }
             
-            D = getVisibleDecl(*LastI);
+            // If the declaration isn't in the right namespace, skip it.
+            if (!(*LastI)->isInIdentifierNamespace(IDNS))
+              continue;
+                        
+            D = R.isHiddenDeclarationVisible()? *LastI : getVisibleDecl(*LastI);
             if (D)
               R.addDecl(D);
           }
+
+          R.resolveKind();
         }
-
-        R.resolveKind();
-
         return true;
       }
   } else {
@@ -1252,7 +1262,7 @@ static bool LookupQualifiedNameInUsingDirectives(Sema &S, LookupResult &R,
   if (I == E) return false;
 
   // We have at least added all these contexts to the queue.
-  llvm::DenseSet<DeclContext*> Visited;
+  llvm::SmallPtrSet<DeclContext*, 8> Visited;
   Visited.insert(StartDC);
 
   // We have not yet looked into these namespaces, much less added
@@ -1263,7 +1273,7 @@ static bool LookupQualifiedNameInUsingDirectives(Sema &S, LookupResult &R,
   // with its using-children.
   for (; I != E; ++I) {
     NamespaceDecl *ND = (*I)->getNominatedNamespace()->getOriginalNamespace();
-    if (Visited.insert(ND).second)
+    if (Visited.insert(ND))
       Queue.push_back(ND);
   }
 
@@ -1312,7 +1322,7 @@ static bool LookupQualifiedNameInUsingDirectives(Sema &S, LookupResult &R,
 
     for (llvm::tie(I,E) = ND->getUsingDirectives(); I != E; ++I) {
       NamespaceDecl *Nom = (*I)->getNominatedNamespace();
-      if (Visited.insert(Nom).second)
+      if (Visited.insert(Nom))
         Queue.push_back(Nom);
     }
   }
@@ -1723,7 +1733,6 @@ bool Sema::DiagnoseAmbiguousLookup(LookupResult &Result) {
   }
 
   llvm_unreachable("unknown ambiguity kind");
-  return true;
 }
 
 namespace {
@@ -2072,7 +2081,7 @@ addAssociatedClassesAndNamespaces(AssociatedLookup &Result, QualType Ty) {
 /// namespaces searched by argument-dependent lookup
 /// (C++ [basic.lookup.argdep]) for a given set of arguments.
 void
-Sema::FindAssociatedClassesAndNamespaces(Expr **Args, unsigned NumArgs,
+Sema::FindAssociatedClassesAndNamespaces(llvm::ArrayRef<Expr *> Args,
                                  AssociatedNamespaceSet &AssociatedNamespaces,
                                  AssociatedClassSet &AssociatedClasses) {
   AssociatedNamespaces.clear();
@@ -2087,7 +2096,7 @@ Sema::FindAssociatedClassesAndNamespaces(Expr **Args, unsigned NumArgs,
   //   classes is determined entirely by the types of the function
   //   arguments (and the namespace of any template template
   //   argument).
-  for (unsigned ArgIdx = 0; ArgIdx != NumArgs; ++ArgIdx) {
+  for (unsigned ArgIdx = 0; ArgIdx != Args.size(); ++ArgIdx) {
     Expr *Arg = Args[ArgIdx];
 
     if (Arg->getType() != Context.OverloadTy) {
@@ -2174,9 +2183,10 @@ NamedDecl *Sema::LookupSingleName(Scope *S, DeclarationName Name,
 
 /// \brief Find the protocol with the given name, if any.
 ObjCProtocolDecl *Sema::LookupProtocol(IdentifierInfo *II,
-                                       SourceLocation IdLoc) {
+                                       SourceLocation IdLoc,
+                                       RedeclarationKind Redecl) {
   Decl *D = LookupSingleName(TUScope, II, IdLoc,
-                             LookupObjCProtocolName);
+                             LookupObjCProtocolName, Redecl);
   return cast_or_null<ObjCProtocolDecl>(D);
 }
 
@@ -2265,7 +2275,7 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
     CXXDestructorDecl *DD = RD->getDestructor();
     assert(DD && "record without a destructor");
     Result->setMethod(DD);
-    Result->setSuccess(DD->isDeleted());
+    Result->setSuccess(!DD->isDeleted());
     Result->setConstParamMatch(false);
     return Result;
   }
@@ -2361,10 +2371,11 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
     if (CXXMethodDecl *M = dyn_cast<CXXMethodDecl>(Cand)) {
       if (SM == CXXCopyAssignment || SM == CXXMoveAssignment)
         AddMethodCandidate(M, DeclAccessPair::make(M, AS_public), RD, ThisTy,
-                           Classification, &Arg, NumArgs, OCS, true);
+                           Classification, llvm::makeArrayRef(&Arg, NumArgs),
+                           OCS, true);
       else
-        AddOverloadCandidate(M, DeclAccessPair::make(M, AS_public), &Arg,
-                             NumArgs, OCS, true);
+        AddOverloadCandidate(M, DeclAccessPair::make(M, AS_public),
+                             llvm::makeArrayRef(&Arg, NumArgs), OCS, true);
 
       // Here we're looking for a const parameter to speed up creation of
       // implicit copy methods.
@@ -2380,11 +2391,13 @@ Sema::SpecialMemberOverloadResult *Sema::LookupSpecialMember(CXXRecordDecl *RD,
                  dyn_cast<FunctionTemplateDecl>(Cand)) {
       if (SM == CXXCopyAssignment || SM == CXXMoveAssignment)
         AddMethodTemplateCandidate(Tmpl, DeclAccessPair::make(Tmpl, AS_public),
-                                   RD, 0, ThisTy, Classification, &Arg, NumArgs,
+                                   RD, 0, ThisTy, Classification,
+                                   llvm::makeArrayRef(&Arg, NumArgs),
                                    OCS, true);
       else
         AddTemplateOverloadCandidate(Tmpl, DeclAccessPair::make(Tmpl, AS_public),
-                                     0, &Arg, NumArgs, OCS, true);
+                                     0, llvm::makeArrayRef(&Arg, NumArgs),
+                                     OCS, true);
     } else {
       assert(isa<UsingDecl>(Cand) && "illegal Kind of operator = Decl");
     }
@@ -2532,7 +2545,7 @@ void ADLResult::insert(NamedDecl *New) {
 
   FunctionDecl *Cursor = NewFD;
   while (true) {
-    Cursor = Cursor->getPreviousDeclaration();
+    Cursor = Cursor->getPreviousDecl();
 
     // If we got to the end without finding OldFD, OldFD is the newer
     // declaration;  leave things as they are.
@@ -2548,14 +2561,15 @@ void ADLResult::insert(NamedDecl *New) {
 }
 
 void Sema::ArgumentDependentLookup(DeclarationName Name, bool Operator,
-                                   Expr **Args, unsigned NumArgs,
+                                   SourceLocation Loc,
+                                   llvm::ArrayRef<Expr *> Args,
                                    ADLResult &Result,
                                    bool StdNamespaceIsAssociated) {
   // Find all of the associated namespaces and classes based on the
   // arguments we have.
   AssociatedNamespaceSet AssociatedNamespaces;
   AssociatedClassSet AssociatedClasses;
-  FindAssociatedClassesAndNamespaces(Args, NumArgs,
+  FindAssociatedClassesAndNamespaces(Args,
                                      AssociatedNamespaces,
                                      AssociatedClasses);
   if (StdNamespaceIsAssociated && StdNamespace)
@@ -2564,9 +2578,16 @@ void Sema::ArgumentDependentLookup(DeclarationName Name, bool Operator,
   QualType T1, T2;
   if (Operator) {
     T1 = Args[0]->getType();
-    if (NumArgs >= 2)
+    if (Args.size() >= 2)
       T2 = Args[1]->getType();
   }
+
+  // Try to complete all associated classes, in case they contain a
+  // declaration of a friend function.
+  for (AssociatedClassSet::iterator C = AssociatedClasses.begin(),
+                                    CEnd = AssociatedClasses.end();
+       C != CEnd; ++C)
+    RequireCompleteType(Loc, Context.getRecordType(*C), 0);
 
   // C++ [basic.lookup.argdep]p3:
   //   Let X be the lookup set produced by unqualified lookup (3.4.1)
@@ -2750,8 +2771,10 @@ static void LookupVisibleDecls(DeclContext *Ctx, LookupResult &Result,
     Result.getSema().ForceDeclarationOfImplicitMembers(Class);
 
   // Enumerate all of the results in this context.
-  for (DeclContext *CurCtx = Ctx->getPrimaryContext(); CurCtx;
-       CurCtx = CurCtx->getNextContext()) {
+  llvm::SmallVector<DeclContext *, 2> Contexts;
+  Ctx->collectAllContexts(Contexts);
+  for (unsigned I = 0, N = Contexts.size(); I != N; ++I) {
+    DeclContext *CurCtx = Contexts[I];
     for (DeclContext::decl_iterator D = CurCtx->decls_begin(),
                                  DEnd = CurCtx->decls_end();
          D != DEnd; ++D) {
@@ -2760,24 +2783,6 @@ static void LookupVisibleDecls(DeclContext *Ctx, LookupResult &Result,
           Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
           Visited.add(ND);
         }
-      } else if (ObjCForwardProtocolDecl *ForwardProto
-                                      = dyn_cast<ObjCForwardProtocolDecl>(*D)) {
-        for (ObjCForwardProtocolDecl::protocol_iterator
-                  P = ForwardProto->protocol_begin(),
-               PEnd = ForwardProto->protocol_end();
-             P != PEnd;
-             ++P) {
-          if (NamedDecl *ND = Result.getAcceptableDecl(*P)) {
-            Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
-            Visited.add(ND);
-          }
-        }
-      } else if (ObjCClassDecl *Class = dyn_cast<ObjCClassDecl>(*D)) {
-          ObjCInterfaceDecl *IFace = Class->getForwardInterfaceDecl();
-          if (NamedDecl *ND = Result.getAcceptableDecl(IFace)) {
-            Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
-            Visited.add(ND);
-          }
       }
       
       // Visit transparent contexts and inline namespaces inside this context.
@@ -3080,15 +3085,11 @@ class TypoCorrectionConsumer : public VisibleDeclConsumer {
   /// whether there is a keyword with this name.
   TypoEditDistanceMap BestResults;
 
-  /// \brief The worst of the best N edit distances found so far.
-  unsigned MaxEditDistance;
-
   Sema &SemaRef;
 
 public:
   explicit TypoCorrectionConsumer(Sema &SemaRef, IdentifierInfo *Typo)
     : Typo(Typo->getName()),
-      MaxEditDistance((std::numeric_limits<unsigned>::max)()),
       SemaRef(SemaRef) { }
 
   ~TypoCorrectionConsumer() {
@@ -3119,12 +3120,12 @@ public:
     return (*BestResults.begin()->second)[Name];
   }
 
-  unsigned getMaxEditDistance() const {
-    return MaxEditDistance;
-  }
+  unsigned getBestEditDistance(bool Normalized) {
+    if (BestResults.empty())
+      return (std::numeric_limits<unsigned>::max)();
 
-  unsigned getBestEditDistance() {
-    return (BestResults.empty()) ? MaxEditDistance : BestResults.begin()->first;
+    unsigned BestED = BestResults.begin()->first;
+    return Normalized ? TypoCorrection::NormalizeEditDistance(BestED) : BestED;
   }
 };
 
@@ -3150,40 +3151,22 @@ void TypoCorrectionConsumer::FoundName(StringRef Name) {
   // Use a simple length-based heuristic to determine the minimum possible
   // edit distance. If the minimum isn't good enough, bail out early.
   unsigned MinED = abs((int)Name.size() - (int)Typo.size());
-  if (MinED > MaxEditDistance || (MinED && Typo.size() / MinED < 3))
+  if (MinED && Typo.size() / MinED < 3)
     return;
 
   // Compute an upper bound on the allowable edit distance, so that the
   // edit-distance algorithm can short-circuit.
-  unsigned UpperBound =
-    std::min(unsigned((Typo.size() + 2) / 3), MaxEditDistance);
+  unsigned UpperBound = (Typo.size() + 2) / 3;
 
   // Compute the edit distance between the typo and the name of this
-  // entity. If this edit distance is not worse than the best edit
-  // distance we've seen so far, add it to the list of results.
-  unsigned ED = Typo.edit_distance(Name, true, UpperBound);
-
-  if (ED > MaxEditDistance) {
-    // This result is worse than the best results we've seen so far;
-    // ignore it.
-    return;
-  }
-
-  addName(Name, NULL, ED);
+  // entity, and add the identifier to the list of results.
+  addName(Name, NULL, Typo.edit_distance(Name, true, UpperBound));
 }
 
 void TypoCorrectionConsumer::addKeywordResult(StringRef Keyword) {
-  // Compute the edit distance between the typo and this keyword.
-  // If this edit distance is not worse than the best edit
-  // distance we've seen so far, add it to the list of results.
-  unsigned ED = Typo.edit_distance(Keyword);
-  if (ED > MaxEditDistance) {
-    // This result is worse than the best results we've seen so far;
-    // ignore it.
-    return;
-  }
-
-  addName(Keyword, NULL, ED, NULL, true);
+  // Compute the edit distance between the typo and this keyword,
+  // and add the keyword to the list of results.
+  addName(Keyword, NULL, Typo.edit_distance(Keyword), NULL, true);
 }
 
 void TypoCorrectionConsumer::addName(StringRef Name,
@@ -3198,7 +3181,7 @@ void TypoCorrectionConsumer::addName(StringRef Name,
 
 void TypoCorrectionConsumer::addCorrection(TypoCorrection Correction) {
   StringRef Name = Correction.getCorrectionAsIdentifierInfo()->getName();
-  TypoResultsMap *& Map = BestResults[Correction.getEditDistance()];
+  TypoResultsMap *& Map = BestResults[Correction.getEditDistance(false)];
   if (!Map)
     Map = new TypoResultsMap;
 
@@ -3219,6 +3202,47 @@ void TypoCorrectionConsumer::addCorrection(TypoCorrection Correction) {
   }
 }
 
+// Fill the supplied vector with the IdentifierInfo pointers for each piece of
+// the given NestedNameSpecifier (i.e. given a NestedNameSpecifier "foo::bar::",
+// fill the vector with the IdentifierInfo pointers for "foo" and "bar").
+static void getNestedNameSpecifierIdentifiers(
+    NestedNameSpecifier *NNS,
+    SmallVectorImpl<const IdentifierInfo*> &Identifiers) {
+  if (NestedNameSpecifier *Prefix = NNS->getPrefix())
+    getNestedNameSpecifierIdentifiers(Prefix, Identifiers);
+  else
+    Identifiers.clear();
+
+  const IdentifierInfo *II = NULL;
+
+  switch (NNS->getKind()) {
+  case NestedNameSpecifier::Identifier:
+    II = NNS->getAsIdentifier();
+    break;
+
+  case NestedNameSpecifier::Namespace:
+    if (NNS->getAsNamespace()->isAnonymousNamespace())
+      return;
+    II = NNS->getAsNamespace()->getIdentifier();
+    break;
+
+  case NestedNameSpecifier::NamespaceAlias:
+    II = NNS->getAsNamespaceAlias()->getIdentifier();
+    break;
+
+  case NestedNameSpecifier::TypeSpecWithTemplate:
+  case NestedNameSpecifier::TypeSpec:
+    II = QualType(NNS->getAsType(), 0).getBaseTypeIdentifier();
+    break;
+
+  case NestedNameSpecifier::Global:
+    return;
+  }
+
+  if (II)
+    Identifiers.push_back(II);
+}
+
 namespace {
 
 class SpecifierInfo {
@@ -3237,6 +3261,8 @@ typedef SmallVector<SpecifierInfo, 16> SpecifierInfoList;
 class NamespaceSpecifierSet {
   ASTContext &Context;
   DeclContextList CurContextChain;
+  SmallVector<const IdentifierInfo*, 4> CurContextIdentifiers;
+  SmallVector<const IdentifierInfo*, 4> CurNameSpecifierIdentifiers;
   bool isSorted;
 
   SpecifierInfoList Specifiers;
@@ -3250,9 +3276,23 @@ class NamespaceSpecifierSet {
   void SortNamespaces();
 
  public:
-  explicit NamespaceSpecifierSet(ASTContext &Context, DeclContext *CurContext)
+  NamespaceSpecifierSet(ASTContext &Context, DeclContext *CurContext,
+                        CXXScopeSpec *CurScopeSpec)
       : Context(Context), CurContextChain(BuildContextChain(CurContext)),
-        isSorted(true) {}
+        isSorted(true) {
+    if (CurScopeSpec && CurScopeSpec->getScopeRep())
+      getNestedNameSpecifierIdentifiers(CurScopeSpec->getScopeRep(),
+                                        CurNameSpecifierIdentifiers);
+    // Build the list of identifiers that would be used for an absolute
+    // (from the global context) NestedNameSpecifier refering to the current
+    // context.
+    for (DeclContextList::reverse_iterator C = CurContextChain.rbegin(),
+                                        CEnd = CurContextChain.rend();
+         C != CEnd; ++C) {
+      if (NamespaceDecl *ND = dyn_cast_or_null<NamespaceDecl>(*C))
+        CurContextIdentifiers.push_back(ND->getIdentifier());
+    }
+  }
 
   /// \brief Add the namespace to the set, computing the corresponding
   /// NestedNameSpecifier and its distance in the process.
@@ -3290,7 +3330,7 @@ void NamespaceSpecifierSet::SortNamespaces() {
 
   Specifiers.clear();
   for (SmallVector<unsigned, 4>::iterator DI = sortedDistances.begin(),
-                                             DIEnd = sortedDistances.end();
+                                       DIEnd = sortedDistances.end();
        DI != DIEnd; ++DI) {
     SpecifierInfoList &SpecList = DistanceMap[*DI];
     Specifiers.append(SpecList.begin(), SpecList.end());
@@ -3304,13 +3344,29 @@ void NamespaceSpecifierSet::AddNamespace(NamespaceDecl *ND) {
   NestedNameSpecifier *NNS = NULL;
   unsigned NumSpecifiers = 0;
   DeclContextList NamespaceDeclChain(BuildContextChain(Ctx));
+  DeclContextList FullNamespaceDeclChain(NamespaceDeclChain);
 
-  // Eliminate common elements from the two DeclContext chains
+  // Eliminate common elements from the two DeclContext chains.
   for (DeclContextList::reverse_iterator C = CurContextChain.rbegin(),
                                       CEnd = CurContextChain.rend();
        C != CEnd && !NamespaceDeclChain.empty() &&
        NamespaceDeclChain.back() == *C; ++C) {
     NamespaceDeclChain.pop_back();
+  }
+
+  // Add an explicit leading '::' specifier if needed.
+  if (NamespaceDecl *ND =
+        NamespaceDeclChain.empty() ? NULL :
+          dyn_cast_or_null<NamespaceDecl>(NamespaceDeclChain.back())) {
+    IdentifierInfo *Name = ND->getIdentifier();
+    if (std::find(CurContextIdentifiers.begin(), CurContextIdentifiers.end(),
+                  Name) != CurContextIdentifiers.end() ||
+        std::find(CurNameSpecifierIdentifiers.begin(),
+                  CurNameSpecifierIdentifiers.end(),
+                  Name) != CurNameSpecifierIdentifiers.end()) {
+      NamespaceDeclChain = FullNamespaceDeclChain;
+      NNS = NestedNameSpecifier::GlobalSpecifier(Context);
+    }
   }
 
   // Build the NestedNameSpecifier from what is left of the NamespaceDeclChain
@@ -3322,6 +3378,18 @@ void NamespaceSpecifierSet::AddNamespace(NamespaceDecl *ND) {
       NNS = NestedNameSpecifier::Create(Context, NNS, ND);
       ++NumSpecifiers;
     }
+  }
+
+  // If the built NestedNameSpecifier would be replacing an existing
+  // NestedNameSpecifier, use the number of component identifiers that
+  // would need to be changed as the edit distance instead of the number
+  // of components in the built NestedNameSpecifier.
+  if (NNS && !CurNameSpecifierIdentifiers.empty()) {
+    SmallVector<const IdentifierInfo*, 4> NewNameSpecifierIdentifiers;
+    getNestedNameSpecifierIdentifiers(NNS, NewNameSpecifierIdentifiers);
+    NumSpecifiers = llvm::ComputeEditDistance(
+      llvm::ArrayRef<const IdentifierInfo*>(CurNameSpecifierIdentifiers),
+      llvm::ArrayRef<const IdentifierInfo*>(NewNameSpecifierIdentifiers));
   }
 
   isSorted = false;
@@ -3336,13 +3404,13 @@ static void LookupPotentialTypoResult(Sema &SemaRef,
                                       Scope *S, CXXScopeSpec *SS,
                                       DeclContext *MemberContext,
                                       bool EnteringContext,
-                                      Sema::CorrectTypoContext CTC) {
+                                      bool isObjCIvarLookup) {
   Res.suppressDiagnostics();
   Res.clear();
   Res.setLookupName(Name);
   if (MemberContext) {
     if (ObjCInterfaceDecl *Class = dyn_cast<ObjCInterfaceDecl>(MemberContext)) {
-      if (CTC == Sema::CTC_ObjCIvarLookup) {
+      if (isObjCIvarLookup) {
         if (ObjCIvarDecl *Ivar = Class->lookupInstanceVariable(Name)) {
           Res.addDecl(Ivar);
           Res.resolveKind();
@@ -3383,61 +3451,11 @@ static void LookupPotentialTypoResult(Sema &SemaRef,
 /// \brief Add keywords to the consumer as possible typo corrections.
 static void AddKeywordsToConsumer(Sema &SemaRef,
                                   TypoCorrectionConsumer &Consumer,
-                                  Scope *S, Sema::CorrectTypoContext CTC) {
-  // Add context-dependent keywords.
-  bool WantTypeSpecifiers = false;
-  bool WantExpressionKeywords = false;
-  bool WantCXXNamedCasts = false;
-  bool WantRemainingKeywords = false;
-  switch (CTC) {
-    case Sema::CTC_Unknown:
-      WantTypeSpecifiers = true;
-      WantExpressionKeywords = true;
-      WantCXXNamedCasts = true;
-      WantRemainingKeywords = true;
+                                  Scope *S, CorrectionCandidateCallback &CCC) {
+  if (CCC.WantObjCSuper)
+    Consumer.addKeywordResult("super");
 
-      if (ObjCMethodDecl *Method = SemaRef.getCurMethodDecl())
-        if (Method->getClassInterface() &&
-            Method->getClassInterface()->getSuperClass())
-          Consumer.addKeywordResult("super");
-
-      break;
-
-    case Sema::CTC_NoKeywords:
-      break;
-
-    case Sema::CTC_Type:
-      WantTypeSpecifiers = true;
-      break;
-
-    case Sema::CTC_ObjCMessageReceiver:
-      Consumer.addKeywordResult("super");
-      // Fall through to handle message receivers like expressions.
-
-    case Sema::CTC_Expression:
-      if (SemaRef.getLangOptions().CPlusPlus)
-        WantTypeSpecifiers = true;
-      WantExpressionKeywords = true;
-      // Fall through to get C++ named casts.
-
-    case Sema::CTC_CXXCasts:
-      WantCXXNamedCasts = true;
-      break;
-
-    case Sema::CTC_ObjCPropertyLookup:
-      // FIXME: Add "isa"?
-      break;
-
-    case Sema::CTC_MemberLookup:
-      if (SemaRef.getLangOptions().CPlusPlus)
-        Consumer.addKeywordResult("template");
-      break;
-
-    case Sema::CTC_ObjCIvarLookup:
-      break;
-  }
-
-  if (WantTypeSpecifiers) {
+  if (CCC.WantTypeSpecifiers) {
     // Add type-specifier keywords to the set of results.
     const char *CTypeSpecs[] = {
       "char", "const", "double", "enum", "float", "int", "long", "short",
@@ -3476,14 +3494,14 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
       Consumer.addKeywordResult("typeof");
   }
 
-  if (WantCXXNamedCasts && SemaRef.getLangOptions().CPlusPlus) {
+  if (CCC.WantCXXNamedCasts && SemaRef.getLangOptions().CPlusPlus) {
     Consumer.addKeywordResult("const_cast");
     Consumer.addKeywordResult("dynamic_cast");
     Consumer.addKeywordResult("reinterpret_cast");
     Consumer.addKeywordResult("static_cast");
   }
 
-  if (WantExpressionKeywords) {
+  if (CCC.WantExpressionKeywords) {
     Consumer.addKeywordResult("sizeof");
     if (SemaRef.getLangOptions().Bool || SemaRef.getLangOptions().CPlusPlus) {
       Consumer.addKeywordResult("false");
@@ -3509,7 +3527,7 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
     }
   }
 
-  if (WantRemainingKeywords) {
+  if (CCC.WantRemainingKeywords) {
     if (SemaRef.getCurFunctionOrMethodDecl() || SemaRef.getCurBlock()) {
       // Statements.
       const char *CStmts[] = {
@@ -3559,6 +3577,12 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
   }
 }
 
+static bool isCandidateViable(CorrectionCandidateCallback &CCC,
+                              TypoCorrection &Candidate) {
+  Candidate.setCallbackDistance(CCC.RankCandidate(Candidate));
+  return Candidate.getEditDistance(false) != TypoCorrection::InvalidDistance;
+}
+
 /// \brief Try to "correct" a typo in the source code by finding
 /// visible declarations whose names are similar to the name that was
 /// present in the source code.
@@ -3573,14 +3597,15 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
 /// \param SS the nested-name-specifier that precedes the name we're
 /// looking for, if present.
 ///
+/// \param CCC A CorrectionCandidateCallback object that provides further
+/// validation of typo correction candidates. It also provides flags for
+/// determining the set of keywords permitted.
+///
 /// \param MemberContext if non-NULL, the context in which to look for
 /// a member access expression.
 ///
 /// \param EnteringContext whether we're entering the context described by
 /// the nested-name-specifier SS.
-///
-/// \param CTC The context in which typo correction occurs, which impacts the
-/// set of keywords permitted.
 ///
 /// \param OPT when non-NULL, the search for visible declarations will
 /// also walk the protocols in the qualified interfaces of \p OPT.
@@ -3592,9 +3617,9 @@ static void AddKeywordsToConsumer(Sema &SemaRef,
 TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
                                  Sema::LookupNameKind LookupKind,
                                  Scope *S, CXXScopeSpec *SS,
+                                 CorrectionCandidateCallback &CCC,
                                  DeclContext *MemberContext,
                                  bool EnteringContext,
-                                 CorrectTypoContext CTC,
                                  const ObjCObjectPointerType *OPT) {
   if (Diags.hasFatalErrorOccurred() || !getLangOptions().SpellChecking)
     return TypoCorrection();
@@ -3621,12 +3646,18 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
   if (!ActiveTemplateInstantiations.empty())
     return TypoCorrection();
 
-  NamespaceSpecifierSet Namespaces(Context, CurContext);
+  NamespaceSpecifierSet Namespaces(Context, CurContext, SS);
 
   TypoCorrectionConsumer Consumer(*this, Typo);
 
+  // If a callback object considers an empty typo correction candidate to be
+  // viable, assume it does not do any actual validation of the candidates.
+  TypoCorrection EmptyCorrection;
+  bool ValidatingCallback = !isCandidateViable(CCC, EmptyCorrection);
+
   // Perform name lookup to find visible, similarly-named entities.
   bool IsUnqualifiedLookup = false;
+  DeclContext *QualifiedDC = MemberContext;
   if (MemberContext) {
     LookupVisibleDecls(MemberContext, LookupKind, Consumer);
 
@@ -3638,8 +3669,8 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
         LookupVisibleDecls(*I, LookupKind, Consumer);
     }
   } else if (SS && SS->isSet()) {
-    DeclContext *DC = computeDeclContext(*SS, EnteringContext);
-    if (!DC)
+    QualifiedDC = computeDeclContext(*SS, EnteringContext);
+    if (!QualifiedDC)
       return TypoCorrection();
 
     // Provide a stop gap for files that are just seriously broken.  Trying
@@ -3649,49 +3680,59 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
       return TypoCorrection();
     ++TyposCorrected;
 
-    LookupVisibleDecls(DC, LookupKind, Consumer);
+    LookupVisibleDecls(QualifiedDC, LookupKind, Consumer);
   } else {
     IsUnqualifiedLookup = true;
     UnqualifiedTyposCorrectedMap::iterator Cached
       = UnqualifiedTyposCorrected.find(Typo);
+    if (Cached != UnqualifiedTyposCorrected.end()) {
+      // Add the cached value, unless it's a keyword or fails validation. In the
+      // keyword case, we'll end up adding the keyword below.
+      if (Cached->second) {
+        if (!Cached->second.isKeyword() &&
+            isCandidateViable(CCC, Cached->second))
+          Consumer.addCorrection(Cached->second);
+      } else {
+        // Only honor no-correction cache hits when a callback that will validate
+        // correction candidates is not being used.
+        if (!ValidatingCallback)
+          return TypoCorrection();
+      }
+    }
     if (Cached == UnqualifiedTyposCorrected.end()) {
       // Provide a stop gap for files that are just seriously broken.  Trying
       // to correct all typos can turn into a HUGE performance penalty, causing
       // some files to take minutes to get rejected by the parser.
       if (TyposCorrected + UnqualifiedTyposCorrected.size() >= 20)
         return TypoCorrection();
-
-      // For unqualified lookup, look through all of the names that we have
-      // seen in this translation unit.
-      for (IdentifierTable::iterator I = Context.Idents.begin(),
-                                  IEnd = Context.Idents.end();
-           I != IEnd; ++I)
-        Consumer.FoundName(I->getKey());
-
-      // Walk through identifiers in external identifier sources.
-      if (IdentifierInfoLookup *External
-                              = Context.Idents.getExternalIdentifierLookup()) {
-        llvm::OwningPtr<IdentifierIterator> Iter(External->getIdentifiers());
-        do {
-          StringRef Name = Iter->Next();
-          if (Name.empty())
-            break;
-
-          Consumer.FoundName(Name);
-        } while (true);
-      }
-    } else {
-      // Use the cached value, unless it's a keyword. In the keyword case, we'll
-      // end up adding the keyword below.
-      if (!Cached->second)
-        return TypoCorrection();
-
-      if (!Cached->second.isKeyword())
-        Consumer.addCorrection(Cached->second);
     }
   }
 
-  AddKeywordsToConsumer(*this, Consumer, S,  CTC);
+  if (IsUnqualifiedLookup || (QualifiedDC && QualifiedDC->isNamespace())) {
+    // For unqualified lookup, look through all of the names that we have
+    // seen in this translation unit.
+    // FIXME: Re-add the ability to skip very unlikely potential corrections.
+    for (IdentifierTable::iterator I = Context.Idents.begin(),
+                                IEnd = Context.Idents.end();
+         I != IEnd; ++I)
+      Consumer.FoundName(I->getKey());
+
+    // Walk through identifiers in external identifier sources.
+    // FIXME: Re-add the ability to skip very unlikely potential corrections.
+    if (IdentifierInfoLookup *External
+                            = Context.Idents.getExternalIdentifierLookup()) {
+      OwningPtr<IdentifierIterator> Iter(External->getIdentifiers());
+      do {
+        StringRef Name = Iter->Next();
+        if (Name.empty())
+          break;
+
+        Consumer.FoundName(Name);
+      } while (true);
+    }
+  }
+
+  AddKeywordsToConsumer(*this, Consumer, S, CCC);
 
   // If we haven't found anything, we're done.
   if (Consumer.empty()) {
@@ -3704,7 +3745,7 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
 
   // Make sure that the user typed at least 3 characters for each correction
   // made. Otherwise, we don't even both looking at the results.
-  unsigned ED = Consumer.getBestEditDistance();
+  unsigned ED = Consumer.getBestEditDistance(true);
   if (ED > 0 && Typo->getName().size() / ED < 3) {
     // If this was an unqualified lookup, note that no correction was found.
     if (IsUnqualifiedLookup)
@@ -3731,8 +3772,9 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
       Namespaces.AddNamespace(KNI->first);
   }
 
-  // Weed out any names that could not be found by name lookup.
-  llvm::SmallPtrSet<IdentifierInfo*, 16> QualifiedResults;
+  // Weed out any names that could not be found by name lookup or, if a
+  // CorrectionCandidateCallback object was provided, failed validation.
+  llvm::SmallVector<TypoCorrection, 16> QualifiedResults;
   LookupResult TmpRes(*this, TypoName, LookupKind);
   TmpRes.suppressDiagnostics();
   while (!Consumer.empty()) {
@@ -3741,22 +3783,27 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     for (TypoCorrectionConsumer::result_iterator I = DI->second->begin(),
                                               IEnd = DI->second->end();
          I != IEnd; /* Increment in loop. */) {
-      // If the item already has been looked up or is a keyword, keep it
+      // If the item already has been looked up or is a keyword, keep it.
+      // If a validator callback object was given, drop the correction
+      // unless it passes validation.
       if (I->second.isResolved()) {
+        TypoCorrectionConsumer::result_iterator Prev = I;
         ++I;
+        if (!isCandidateViable(CCC, Prev->second))
+          DI->second->erase(Prev);
         continue;
       }
 
       // Perform name lookup on this name.
       IdentifierInfo *Name = I->second.getCorrectionAsIdentifierInfo();
       LookupPotentialTypoResult(*this, TmpRes, Name, S, SS, MemberContext,
-                                EnteringContext, CTC);
+                                EnteringContext, CCC.IsObjCIvarLookup);
 
       switch (TmpRes.getResultKind()) {
       case LookupResult::NotFound:
       case LookupResult::NotFoundInCurrentInstantiation:
       case LookupResult::FoundUnresolvedValue:
-        QualifiedResults.insert(Name);
+        QualifiedResults.push_back(I->second);
         // We didn't find this name in our scope, or didn't like what we found;
         // ignore it.
         {
@@ -3772,19 +3819,27 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
         return TypoCorrection();
 
       case LookupResult::FoundOverloaded: {
+        TypoCorrectionConsumer::result_iterator Prev = I;
         // Store all of the Decls for overloaded symbols
         for (LookupResult::iterator TRD = TmpRes.begin(),
                                  TRDEnd = TmpRes.end();
              TRD != TRDEnd; ++TRD)
           I->second.addCorrectionDecl(*TRD);
         ++I;
+        if (!isCandidateViable(CCC, Prev->second))
+          DI->second->erase(Prev);
         break;
       }
 
-      case LookupResult::Found:
+      case LookupResult::Found: {
+        TypoCorrectionConsumer::result_iterator Prev = I;
         I->second.setCorrectionDecl(TmpRes.getAsSingle<NamedDecl>());
         ++I;
+        if (!isCandidateViable(CCC, Prev->second))
+          DI->second->erase(Prev);
         break;
+      }
+
       }
     }
 
@@ -3797,7 +3852,7 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     // Only perform the qualified lookups for C++
     if (getLangOptions().CPlusPlus) {
       TmpRes.suppressDiagnostics();
-      for (llvm::SmallPtrSet<IdentifierInfo*,
+      for (llvm::SmallVector<TypoCorrection,
                              16>::iterator QRI = QualifiedResults.begin(),
                                         QRIEnd = QualifiedResults.end();
            QRI != QRIEnd; ++QRI) {
@@ -3805,30 +3860,35 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
                                           NIEnd = Namespaces.end();
              NI != NIEnd; ++NI) {
           DeclContext *Ctx = NI->DeclCtx;
-          unsigned QualifiedED = ED + NI->EditDistance;
 
-          // Stop searching once the namespaces are too far away to create
+          // FIXME: Stop searching once the namespaces are too far away to create
           // acceptable corrections for this identifier (since the namespaces
-          // are sorted in ascending order by edit distance)
-          if (QualifiedED > Consumer.getMaxEditDistance()) break;
+          // are sorted in ascending order by edit distance).
 
           TmpRes.clear();
-          TmpRes.setLookupName(*QRI);
+          TmpRes.setLookupName(QRI->getCorrectionAsIdentifierInfo());
           if (!LookupQualifiedName(TmpRes, Ctx)) continue;
 
+          // Any corrections added below will be validated in subsequent
+          // iterations of the main while() loop over the Consumer's contents.
           switch (TmpRes.getResultKind()) {
-          case LookupResult::Found:
-            Consumer.addName((*QRI)->getName(), TmpRes.getAsSingle<NamedDecl>(),
-                             QualifiedED, NI->NameSpecifier);
+          case LookupResult::Found: {
+            TypoCorrection TC(*QRI);
+            TC.setCorrectionDecl(TmpRes.getAsSingle<NamedDecl>());
+            TC.setCorrectionSpecifier(NI->NameSpecifier);
+            TC.setQualifierDistance(NI->EditDistance);
+            Consumer.addCorrection(TC);
             break;
+          }
           case LookupResult::FoundOverloaded: {
-            TypoCorrection corr(&Context.Idents.get((*QRI)->getName()), NULL,
-                                NI->NameSpecifier, QualifiedED);
+            TypoCorrection TC(*QRI);
+            TC.setCorrectionSpecifier(NI->NameSpecifier);
+            TC.setQualifierDistance(NI->EditDistance);
             for (LookupResult::iterator TRD = TmpRes.begin(),
                                      TRDEnd = TmpRes.end();
                  TRD != TRDEnd; ++TRD)
-              corr.addCorrectionDecl(*TRD);
-            Consumer.addCorrection(corr);
+              TC.addCorrectionDecl(*TRD);
+            Consumer.addCorrection(TC);
             break;
           }
           case LookupResult::NotFound:
@@ -3848,30 +3908,16 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
   if (Consumer.empty()) return TypoCorrection();
 
   TypoResultsMap &BestResults = *Consumer.begin()->second;
-  ED = Consumer.begin()->first;
+  ED = TypoCorrection::NormalizeEditDistance(Consumer.begin()->first);
 
   if (ED > 0 && Typo->getName().size() / ED < 3) {
-    // If this was an unqualified lookup, note that no correction was found.
-    if (IsUnqualifiedLookup)
+    // If this was an unqualified lookup and we believe the callback
+    // object wouldn't have filtered out possible corrections, note
+    // that no correction was found.
+    if (IsUnqualifiedLookup && !ValidatingCallback)
       (void)UnqualifiedTyposCorrected[Typo];
 
     return TypoCorrection();
-  }
-
-  // If we have multiple possible corrections, eliminate the ones where we
-  // added namespace qualifiers to try to resolve the ambiguity (and to favor
-  // corrections without additional namespace qualifiers)
-  if (getLangOptions().CPlusPlus && BestResults.size() > 1) {
-    TypoCorrectionConsumer::distance_iterator DI = Consumer.begin();
-    for (TypoCorrectionConsumer::result_iterator I = DI->second->begin(),
-                                              IEnd = DI->second->end();
-         I != IEnd; /* Increment in loop. */) {
-      if (I->second.getCorrectionSpecifier() != NULL) {
-        TypoCorrectionConsumer::result_iterator Cur = I;
-        ++I;
-        DI->second->erase(Cur);
-      } else ++I;
-    }
   }
 
   // If only a single name remains, return that result.
@@ -3889,7 +3935,12 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
 
     return Result;
   }
-  else if (BestResults.size() > 1 && CTC == CTC_ObjCMessageReceiver
+  else if (BestResults.size() > 1
+           // Ugly hack equivalent to CTC == CTC_ObjCMessageReceiver;
+           // WantObjCSuper is only true for CTC_ObjCMessageReceiver and for
+           // some instances of CTC_Unknown, while WantRemainingKeywords is true
+           // for CTC_Unknown but not for CTC_ObjCMessageReceiver.
+           && CCC.WantObjCSuper && !CCC.WantRemainingKeywords
            && BestResults["super"].isKeyword()) {
     // Prefer 'super' when we're completing in a message-receiver
     // context.
@@ -3905,7 +3956,9 @@ TypoCorrection Sema::CorrectTypo(const DeclarationNameInfo &TypoName,
     return BestResults["super"];
   }
 
-  if (IsUnqualifiedLookup)
+  // If this was an unqualified lookup and we believe the callback object did
+  // not filter out possible corrections, note that no correction was found.
+  if (IsUnqualifiedLookup && !ValidatingCallback)
     (void)UnqualifiedTyposCorrected[Typo];
 
   return TypoCorrection();

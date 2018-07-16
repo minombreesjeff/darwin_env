@@ -32,6 +32,9 @@ public:
     static lldb::SBDebugger
     Create(bool source_init_files);
 
+    static lldb::SBDebugger
+    Create(bool source_init_files, lldb::LogOutputCallback callback, void *baton);
+
     static void
     Destroy (lldb::SBDebugger &debugger);
 
@@ -42,12 +45,10 @@ public:
 
     SBDebugger(const lldb::SBDebugger &rhs);
 
-#ifndef SWIG
     SBDebugger(const lldb::DebuggerSP &debugger_sp);
     
     lldb::SBDebugger &
     operator = (const lldb::SBDebugger &rhs);
-#endif
     
     ~SBDebugger();
 
@@ -126,6 +127,9 @@ public:
 
     lldb::SBTarget
     GetTargetAtIndex (uint32_t idx);
+    
+    uint32_t
+    GetIndexOfTarget (lldb::SBTarget target);
 
     lldb::SBTarget
     FindTargetWithProcessID (pid_t pid);
@@ -182,7 +186,13 @@ public:
 
     static bool
     StateIsStoppedState (lldb::StateType state);
+    
+    bool
+    EnableLog (const char *channel, const char **categories);
 
+    void
+    SetLoggingCallback (lldb::LogOutputCallback log_callback, void *baton);
+    
     void
     DispatchInput (void *baton, const void *data, size_t data_len);
 
@@ -243,14 +253,47 @@ public:
     void
     SetCloseInputOnEOF (bool b);
 
-private:
+    SBTypeCategory
+    GetCategory (const char* category_name);
 
-#ifndef SWIG
+    SBTypeCategory
+    CreateCategory (const char* category_name);
+    
+    bool
+    DeleteCategory (const char* category_name);
+    
+    uint32_t
+    GetNumCategories ();
+    
+    SBTypeCategory
+    GetCategoryAtIndex (uint32_t);
+    
+    SBTypeCategory
+    GetDefaultCategory();
+    
+    SBTypeFormat
+    GetFormatForType (SBTypeNameSpecifier);
+
+#ifndef LLDB_DISABLE_PYTHON
+    SBTypeSummary
+    GetSummaryForType (SBTypeNameSpecifier);
+#endif
+
+    SBTypeFilter
+    GetFilterForType (SBTypeNameSpecifier);
+
+#ifndef LLDB_DISABLE_PYTHON
+    SBTypeSynthetic
+    GetSyntheticForType (SBTypeNameSpecifier);
+#endif
+
+private:
 
     friend class SBInputReader;
     friend class SBProcess;
     friend class SBSourceManager;
     friend class SBTarget;
+    friend class SBListener;
     
     lldb::SBTarget
     FindTargetWithLLDBProcess (const lldb::ProcessSP &processSP);
@@ -266,7 +309,6 @@ private:
 
     const lldb::DebuggerSP &
     get_sp () const;
-#endif
     
     lldb::DebuggerSP m_opaque_sp;
 

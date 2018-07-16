@@ -49,7 +49,8 @@ typedef struct
     std::vector<SettingEntry> instance_settings;
 } UserSettingDefinition;
 
-class UserSettingsController
+class UserSettingsController : 
+    public STD_ENABLE_SHARED_FROM_THIS(UserSettingsController)
 {
 public:
 
@@ -130,6 +131,11 @@ public:
     void
     RenameInstanceSettings (const char *old_name, const char *new_name);
 
+    void
+    SetDefaultInstanceSettings (const lldb::InstanceSettingsSP &instance_settings_sp)
+    {
+        m_default_settings = instance_settings_sp;
+    }
     // -------------------------------------------------------------------------
     // Public static methods
     // -------------------------------------------------------------------------
@@ -255,6 +261,12 @@ public:
     static void
     FinalizeSettingsController (lldb::UserSettingsControllerSP &controller_sp);
 
+
+    lldb::InstanceSettingsSP
+    GetDefaultInstanceSettings ()
+    {
+        return m_default_settings;
+    }
 
 protected:
 
@@ -387,7 +399,7 @@ class InstanceSettings
 {
 public:
 
-    InstanceSettings (UserSettingsController &owner, const char *instance_name, bool live_instance = true);
+    InstanceSettings (const lldb::UserSettingsControllerSP &owner_sp, const char *instance_name, bool live_instance = true);
 
     InstanceSettings (const InstanceSettings &rhs);
 
@@ -398,9 +410,6 @@ public:
     operator= (const InstanceSettings &rhs);
 
     // Begin Pure Virtual Functions
-
-    virtual void
-    NotifyOwnerIsShuttingDown ();
 
     virtual void
     UpdateInstanceSettingsVariable (const ConstString &var_name,
@@ -442,8 +451,7 @@ public:
 
 protected:
 
-    UserSettingsController &m_owner;
-    bool m_owner_is_live;
+    lldb::UserSettingsControllerWP m_owner_wp;
     ConstString m_instance_name;
 };
 

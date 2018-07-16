@@ -22,6 +22,7 @@
 #include <string>
 
 #include "IOChannel.h"
+#include "lldb/API/SBBreakpoint.h"
 #include "lldb/API/SBCommandInterpreter.h"
 #include "lldb/API/SBCommandReturnObject.h"
 #include "lldb/API/SBCommunication.h"
@@ -134,7 +135,7 @@ Driver::~Driver ()
 void
 Driver::CloseIOChannelFile ()
 {
-    // Write and End of File sequence to the file descriptor to ensure any
+    // Write an End of File sequence to the file descriptor to ensure any
     // read functions can exit.
     char eof_str[] = "\x04";
     ::write (m_editline_pty.GetMasterFileDescriptor(), eof_str, strlen(eof_str));
@@ -824,6 +825,47 @@ Driver::UpdateSelectedThread ()
     }
 }
 
+// This function handles events that were broadcast by the process.
+void
+Driver::HandleBreakpointEvent (const SBEvent &event)
+{
+    using namespace lldb;
+    const uint32_t event_type = SBBreakpoint::GetBreakpointEventTypeFromEvent (event);
+    
+    if (event_type & eBreakpointEventTypeAdded
+        || event_type & eBreakpointEventTypeRemoved
+        || event_type & eBreakpointEventTypeEnabled
+        || event_type & eBreakpointEventTypeDisabled
+        || event_type & eBreakpointEventTypeCommandChanged
+        || event_type & eBreakpointEventTypeConditionChanged
+        || event_type & eBreakpointEventTypeIgnoreChanged
+        || event_type & eBreakpointEventTypeLocationsResolved)
+    {
+        // Don't do anything about these events, since the breakpoint commands already echo these actions.
+    }              
+    else if (event_type & eBreakpointEventTypeLocationsAdded)
+    {
+        char message[256];
+        uint32_t num_new_locations = SBBreakpoint::GetNumBreakpointLocationsFromEvent(event);
+        if (num_new_locations > 0)
+        {
+            SBBreakpoint breakpoint = SBBreakpoint::GetBreakpointFromEvent(event);
+            int message_len = ::snprintf (message, sizeof(message), "%d location%s added to breakpoint %d\n", 
+                                          num_new_locations,
+                                          num_new_locations == 1 ? " " : "s ",
+                                          breakpoint.GetID());
+            m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+        }
+    }
+    else if (event_type & eBreakpointEventTypeLocationsRemoved)
+    {
+       // These locations just get disabled, not sure it is worth spamming folks about this on the command line.
+    }
+    else if (event_type & eBreakpointEventTypeLocationsResolved)
+    {
+       // This might be an interesting thing to note, but I'm going to leave it quiet for now, it just looked noisy.
+    }
+}
 
 // This function handles events that were broadcast by the process.
 void
@@ -903,11 +945,26 @@ Driver::HandleProcessEvent (const SBEvent &event)
             }
             else
             {
-                SBCommandReturnObject result;
-                UpdateSelectedThread ();
-                m_debugger.GetCommandInterpreter().HandleCommand("process status", result, false);
-                m_io_channel_ap->ErrWrite (result.GetError(), result.GetErrorSize(), ASYNC);
-                m_io_channel_ap->OutWrite (result.GetOutput(), result.GetOutputSize(), ASYNC);
+                if (GetDebugger().GetSelectedTarget() == process.GetTarget())
+                {
+                    SBCommandReturnObject result;
+                    UpdateSelectedThread ();
+                    m_debugger.GetCommandInterpreter().HandleCommand("process status", result, false);
+                    m_io_channel_ap->ErrWrite (result.GetError(), result.GetErrorSize(), ASYNC);
+                    m_io_channel_ap->OutWrite (result.GetOutput(), result.GetOutputSize(), ASYNC);
+                }
+                else
+                {
+                    SBStream out_stream;
+                    uint32_t target_idx = GetDebugger().GetIndexOfTarget(process.GetTarget());
+                    if (target_idx != UINT32_MAX)
+                        out_stream.Printf ("Target %d: (", target_idx);
+                    else
+                        out_stream.Printf ("Target <unknown index>: (");
+                    process.GetTarget().GetDescription (out_stream, eDescriptionLevelBrief);
+                    out_stream.Printf (") stopped.\n");
+                    m_io_channel_ap->OutWrite (out_stream.GetData(), out_stream.GetSize(), ASYNC);
+                }
             }
             break;
         }
@@ -1023,8 +1080,19 @@ Driver::EditLineInputReaderCallback
     case eInputReaderInterrupt:
         if (driver->m_io_channel_ap.get() != NULL)
         {
-            driver->m_io_channel_ap->OutWrite ("^C\n", 3, NO_ASYNC);
-            driver->m_io_channel_ap->RefreshPrompt();
+            SBProcess process = driver->GetDebugger().GetSelectedTarget().GetProcess();
+            if (!driver->m_io_channel_ap->EditLineHasCharacters()
+                &&  process.IsValid() && process.GetState() == lldb::eStateRunning)
+            {
+                process.Stop();
+            }
+            else
+            {
+                driver->m_io_channel_ap->OutWrite ("^C\n", 3, NO_ASYNC);
+                // I wish I could erase the entire input line, but there's no public API for that.
+                driver->m_io_channel_ap->EraseCharsBeforeCursor();
+                driver->m_io_channel_ap->RefreshPrompt();
+            }
         }
         break;
         
@@ -1192,6 +1260,9 @@ Driver::MainLoop ()
     m_debugger.PushInputReader (m_editline_reader);
 
     SBListener listener(m_debugger.GetListener());
+    listener.StartListeningForEventClass(m_debugger, 
+                                         SBTarget::GetBroadcasterClassName(), 
+                                         SBTarget::eBroadcastBitBreakpointChanged);
     if (listener.IsValid())
     {
 
@@ -1327,8 +1398,7 @@ Driver::MainLoop ()
                         
             ReadyForCommand ();
 
-            bool done = false;
-            while (!done)
+            while (!GetIsDone())
             {
                 listener.WaitForEvent (UINT32_MAX, event);
                 if (event.IsValid())
@@ -1341,22 +1411,32 @@ Driver::MainLoop ()
                             if ((event_type & IOChannel::eBroadcastBitThreadShouldExit) ||
                                 (event_type & IOChannel::eBroadcastBitThreadDidExit))
                             {
-                                done = true;
+                                SetIsDone();
                                 if (event_type & IOChannel::eBroadcastBitThreadDidExit)
                                     iochannel_thread_exited = true;
                             }
                             else
-                                done = HandleIOEvent (event);
+                            {
+                                if (HandleIOEvent (event))
+                                    SetIsDone();
+                            }
                         }
-                        else if (event.BroadcasterMatchesRef (m_debugger.GetSelectedTarget().GetProcess().GetBroadcaster()))
+                        else if (SBProcess::EventIsProcessEvent (event))
                         {
                             HandleProcessEvent (event);
                         }
+                        else if (SBBreakpoint::EventIsBreakpointEvent (event))
+                        {
+                            HandleBreakpointEvent (event);
+                        }
                         else if (event.BroadcasterMatchesRef (sb_interpreter.GetBroadcaster()))
                         {
+                            // TODO: deprecate the eBroadcastBitQuitCommandReceived event
+                            // now that we have SBCommandInterpreter::SetCommandOverrideCallback()
+                            // that can take over a command
                             if (event_type & SBCommandInterpreter::eBroadcastBitQuitCommandReceived)
                             {
-                                done = true;
+                                SetIsDone();
                             }
                             else if (event_type & SBCommandInterpreter::eBroadcastBitAsynchronousErrorData)
                             {
@@ -1418,11 +1498,9 @@ sigwinch_handler (int signo)
     if (isatty (STDIN_FILENO)
         && ::ioctl (STDIN_FILENO, TIOCGWINSZ, &window_size) == 0)
     {
-        if ((window_size.ws_col > 0) && (strlen (g_debugger_name) > 0))
+        if ((window_size.ws_col > 0) && g_driver != NULL)
         {
-            char width_str_buffer[25];
-            ::sprintf (width_str_buffer, "%d", window_size.ws_col);
-            SBDebugger::SetInternalVariable ("term-width", width_str_buffer, g_debugger_name);
+            g_driver->GetDebugger().SetTerminalWidth (window_size.ws_col);
         }
     }
 }

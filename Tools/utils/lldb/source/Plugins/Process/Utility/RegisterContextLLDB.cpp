@@ -85,26 +85,60 @@ RegisterContextLLDB::RegisterContextLLDB
 void
 RegisterContextLLDB::InitializeZerothFrame()
 {
-    StackFrameSP frame_sp (m_thread.GetStackFrameAtIndex (0));
+    ExecutionContext exe_ctx(m_thread.shared_from_this());
+    RegisterContextSP reg_ctx_sp = m_thread.GetRegisterContext();
 
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
-    if (m_thread.GetRegisterContext() == NULL)
+    if (reg_ctx_sp.get() == NULL)
     {
         m_frame_type = eNotAValidFrame;
         return;
     }
-    m_sym_ctx = frame_sp->GetSymbolContext (eSymbolContextFunction | eSymbolContextSymbol);
-    
+
+    addr_t current_pc = reg_ctx_sp->GetPC();
+
+    if (current_pc == LLDB_INVALID_ADDRESS)
+    {
+        m_frame_type = eNotAValidFrame;
+        return;
+    }
+
+    Process *process = exe_ctx.GetProcessPtr();
+
+    // Let ABIs fixup code addresses to make sure they are valid. In ARM ABIs
+    // this will strip bit zero in case we read a PC from memory or from the LR.
+    // (which would be a no-op in frame 0 where we get it from the register set,
+    // but still a good idea to make the call here for other ABIs that may exist.)
+    ABI *abi = process->GetABI().get();
+    if (abi)
+        current_pc = abi->FixCodeAddress(current_pc);
+
+    // Initialize m_current_pc, an Address object, based on current_pc, an addr_t.
+    process->GetTarget().GetSectionLoadList().ResolveLoadAddress (current_pc, m_current_pc);
+
+    // If we don't have a Module for some reason, we're not going to find symbol/function information - just
+    // stick in some reasonable defaults and hope we can unwind past this frame.
+    ModuleSP pc_module_sp (m_current_pc.GetModule());
+    if (!m_current_pc.IsValid() || !pc_module_sp)
+    {
+        if (log)
+        {
+            log->Printf("%*sFrame %u using architectural default unwind method",
+                        m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number);
+        }
+    }
+
     // We require that eSymbolContextSymbol be successfully filled in or this context is of no use to us.
-    if ((m_sym_ctx.GetResolvedMask() & eSymbolContextSymbol) == eSymbolContextSymbol)
+    if (pc_module_sp.get()
+        && (pc_module_sp->ResolveSymbolContextForAddress (m_current_pc, eSymbolContextFunction| eSymbolContextSymbol, m_sym_ctx) & eSymbolContextSymbol) == eSymbolContextSymbol)
+    {
         m_sym_ctx_valid = true;
+    }
 
     AddressRange addr_range;
     m_sym_ctx.GetAddressRange (eSymbolContextFunction | eSymbolContextSymbol, 0, false, addr_range);
     
-    m_current_pc = frame_sp->GetFrameCodeAddress();
-
     static ConstString g_sigtramp_name ("_sigtramp");
     if ((m_sym_ctx.function && m_sym_ctx.function->GetName() == g_sigtramp_name) ||
         (m_sym_ctx.symbol   && m_sym_ctx.symbol->GetName()   == g_sigtramp_name))
@@ -122,17 +156,17 @@ RegisterContextLLDB::InitializeZerothFrame()
     if (addr_range.GetBaseAddress().IsValid())
     {
         m_start_pc = addr_range.GetBaseAddress();
-        if (frame_sp->GetFrameCodeAddress().GetSection() == m_start_pc.GetSection())
+        if (m_current_pc.GetSection() == m_start_pc.GetSection())
         {
-            m_current_offset = frame_sp->GetFrameCodeAddress().GetOffset() - m_start_pc.GetOffset();
+            m_current_offset = m_current_pc.GetOffset() - m_start_pc.GetOffset();
         }
-        else if (frame_sp->GetFrameCodeAddress().GetModule() == m_start_pc.GetModule())
+        else if (m_current_pc.GetModule() == m_start_pc.GetModule())
         {
             // This means that whatever symbol we kicked up isn't really correct
-            // as no should cross section boundaries... We really should NULL out
+            // --- we should not cross section boundaries ... We really should NULL out
             // the function/symbol in this case unless there is a bad assumption
             // here due to inlined functions?
-            m_current_offset = frame_sp->GetFrameCodeAddress().GetFileAddress() - m_start_pc.GetFileAddress();
+            m_current_offset = m_current_pc.GetFileAddress() - m_start_pc.GetFileAddress();
         }
         m_current_offset_backed_up_one = m_current_offset;
     }
@@ -158,7 +192,7 @@ RegisterContextLLDB::InitializeZerothFrame()
         if (active_row && log)
         {
             StreamString active_row_strm;
-            active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(&m_thread.GetProcess().GetTarget()));
+            active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(exe_ctx.GetTargetPtr()));
             log->Printf("%*sFrame %u active row: %s",
                         m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, active_row_strm.GetString().c_str());
         }
@@ -191,26 +225,13 @@ RegisterContextLLDB::InitializeZerothFrame()
                     m_cfa, cfa_regval, cfa_offset);
     }
     
-
-    // A couple of sanity checks..
-    if (cfa_regval == LLDB_INVALID_ADDRESS || cfa_regval == 0 || cfa_regval == 1)
-    {
-        if (log)
-        {   
-            log->Printf("%*sFrame %u could not find a valid cfa address",
-                        m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number);
-        }
-        m_frame_type = eNotAValidFrame;
-        return;
-    }
-
     if (log)
     {
         log->Printf("%*sThread %d Frame %u initialized frame current pc is 0x%llx cfa is 0x%llx using %s UnwindPlan", 
                     m_frame_number < 100 ? m_frame_number : 100, "", 
                     m_thread.GetIndexID(), 
                     m_frame_number,
-                    (uint64_t) m_current_pc.GetLoadAddress (&m_thread.GetProcess().GetTarget()), 
+                    (uint64_t) m_current_pc.GetLoadAddress (exe_ctx.GetTargetPtr()), 
                     (uint64_t) m_cfa,
                     m_full_unwind_plan_sp->GetSourceName().GetCString());
     }
@@ -274,17 +295,20 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         return;
     }
     
+    ExecutionContext exe_ctx(m_thread.shared_from_this());
+    Process *process = exe_ctx.GetProcessPtr();
     // Let ABIs fixup code addresses to make sure they are valid. In ARM ABIs
     // this will strip bit zero in case we read a PC from memory or from the LR.   
-    ABI *abi = m_thread.GetProcess().GetABI().get();
+    ABI *abi = process->GetABI().get();
     if (abi)
         pc = abi->FixCodeAddress(pc);
 
-    m_thread.GetProcess().GetTarget().GetSectionLoadList().ResolveLoadAddress (pc, m_current_pc);
+    process->GetTarget().GetSectionLoadList().ResolveLoadAddress (pc, m_current_pc);
 
     // If we don't have a Module for some reason, we're not going to find symbol/function information - just
     // stick in some reasonable defaults and hope we can unwind past this frame.
-    if (!m_current_pc.IsValid() || m_current_pc.GetModule() == NULL)
+    ModuleSP pc_module_sp (m_current_pc.GetModule());
+    if (!m_current_pc.IsValid() || !pc_module_sp)
     {
         if (log)
         {
@@ -294,7 +318,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         
         // Test the pc value to see if we know it's in an unmapped/non-executable region of memory.
         uint32_t permissions;
-        if (m_thread.GetProcess().GetLoadAddressPermissions(pc, permissions)
+        if (process->GetLoadAddressPermissions(pc, permissions)
             && (permissions & ePermissionsExecutable) == 0)
         {
             // If this is the second frame off the stack, we may have unwound the first frame
@@ -366,7 +390,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
 
                 // cfa_regval should point into the stack memory; if we can query memory region permissions,
                 // see if the memory is allocated & readable.
-                if (m_thread.GetProcess().GetLoadAddressPermissions(cfa_regval, permissions)
+                if (process->GetLoadAddressPermissions(cfa_regval, permissions)
                     && (permissions & ePermissionsReadable) == 0)
                 {
                     m_frame_type = eNotAValidFrame;
@@ -397,7 +421,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     }
 
     // We require that eSymbolContextSymbol be successfully filled in or this context is of no use to us.
-    if ((m_current_pc.GetModule()->ResolveSymbolContextForAddress (m_current_pc, eSymbolContextFunction| eSymbolContextSymbol, m_sym_ctx) & eSymbolContextSymbol) == eSymbolContextSymbol)
+    if ((pc_module_sp->ResolveSymbolContextForAddress (m_current_pc, eSymbolContextFunction| eSymbolContextSymbol, m_sym_ctx) & eSymbolContextSymbol) == eSymbolContextSymbol)
     {
         m_sym_ctx_valid = true;
     }
@@ -436,7 +460,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         temporary_pc.SetOffset(m_current_pc.GetOffset() - 1);
         m_sym_ctx.Clear();
         m_sym_ctx_valid = false;
-        if ((m_current_pc.GetModule()->ResolveSymbolContextForAddress (temporary_pc, eSymbolContextFunction| eSymbolContextSymbol, m_sym_ctx) & eSymbolContextSymbol) == eSymbolContextSymbol)
+        if ((pc_module_sp->ResolveSymbolContextForAddress (temporary_pc, eSymbolContextFunction| eSymbolContextSymbol, m_sym_ctx) & eSymbolContextSymbol) == eSymbolContextSymbol)
         {
             m_sym_ctx_valid = true;
         }
@@ -495,7 +519,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         if (active_row && log)
         {
             StreamString active_row_strm;
-            active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(&m_thread.GetProcess().GetTarget()));
+            active_row->Dump(active_row_strm, m_fast_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(exe_ctx.GetTargetPtr()));
             log->Printf("%*sFrame %u active row: %s",
                         m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, active_row_strm.GetString().c_str());
         }
@@ -510,7 +534,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
             if (active_row && log)
             {
                 StreamString active_row_strm;
-                active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(&m_thread.GetProcess().GetTarget()));
+                active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(exe_ctx.GetTargetPtr()));
                 log->Printf("%*sFrame %u active row: %s",
                             m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, active_row_strm.GetString().c_str());
             }
@@ -594,7 +618,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     {
         log->Printf("%*sFrame %u initialized frame current pc is 0x%llx cfa is 0x%llx", 
                     m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
-                    (uint64_t) m_current_pc.GetLoadAddress (&m_thread.GetProcess().GetTarget()), (uint64_t) m_cfa);
+                    (uint64_t) m_current_pc.GetLoadAddress (exe_ctx.GetTargetPtr()), (uint64_t) m_cfa);
     }
 }
 
@@ -619,13 +643,15 @@ UnwindPlanSP
 RegisterContextLLDB::GetFastUnwindPlanForFrame ()
 {
     UnwindPlanSP unwind_plan_sp;
-    if (!m_current_pc.IsValid() || m_current_pc.GetModule() == NULL || m_current_pc.GetModule()->GetObjectFile() == NULL)
+    ModuleSP pc_module_sp (m_current_pc.GetModule());
+
+    if (!m_current_pc.IsValid() || !pc_module_sp || pc_module_sp->GetObjectFile() == NULL)
         return unwind_plan_sp;
 
     if (IsFrameZero ())
         return unwind_plan_sp;
 
-    FuncUnwindersSP func_unwinders_sp (m_current_pc.GetModule()->GetObjectFile()->GetUnwindTable().GetFuncUnwindersContainingAddress (m_current_pc, m_sym_ctx));
+    FuncUnwindersSP func_unwinders_sp (pc_module_sp->GetObjectFile()->GetUnwindTable().GetFuncUnwindersContainingAddress (m_current_pc, m_sym_ctx));
     if (!func_unwinders_sp)
         return unwind_plan_sp;
 
@@ -671,8 +697,9 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     UnwindPlanSP unwind_plan_sp;
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     UnwindPlanSP arch_default_unwind_plan_sp;
-
-    ABI *abi = m_thread.GetProcess().GetABI().get();
+    ExecutionContext exe_ctx(m_thread.shared_from_this());
+    Process *process = exe_ctx.GetProcessPtr();
+    ABI *abi = process ? process->GetABI().get() : NULL;
     if (abi)
     {
         arch_default_unwind_plan_sp.reset (new UnwindPlan (lldb::eRegisterKindGeneric));
@@ -699,9 +726,9 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     if ((!m_sym_ctx_valid  || m_sym_ctx.function == NULL) && behaves_like_zeroth_frame && m_current_pc.IsValid())
     {
         uint32_t permissions;
-        addr_t current_pc_addr = m_current_pc.GetLoadAddress (&m_thread.GetProcess().GetTarget());
+        addr_t current_pc_addr = m_current_pc.GetLoadAddress (exe_ctx.GetTargetPtr());
         if (current_pc_addr == 0
-            || (m_thread.GetProcess().GetLoadAddressPermissions(current_pc_addr, permissions)
+            || (process->GetLoadAddressPermissions(current_pc_addr, permissions)
                 && (permissions & ePermissionsExecutable) == 0))
         {
             unwind_plan_sp.reset (new UnwindPlan (lldb::eRegisterKindGeneric));
@@ -712,7 +739,8 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     }
 
     // No Module for the current pc, try using the architecture default unwind.
-    if (!m_current_pc.IsValid() || m_current_pc.GetModule() == NULL || m_current_pc.GetModule()->GetObjectFile() == NULL)
+    ModuleSP pc_module_sp (m_current_pc.GetModule());
+    if (!m_current_pc.IsValid() || !pc_module_sp || pc_module_sp->GetObjectFile() == NULL)
     {
         m_frame_type = eNormalFrame;
         return arch_default_unwind_plan_sp;
@@ -721,7 +749,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     FuncUnwindersSP func_unwinders_sp;
     if (m_sym_ctx_valid)
     {
-        func_unwinders_sp = m_current_pc.GetModule()->GetObjectFile()->GetUnwindTable().GetFuncUnwindersContainingAddress (m_current_pc, m_sym_ctx);
+        func_unwinders_sp = pc_module_sp->GetObjectFile()->GetUnwindTable().GetFuncUnwindersContainingAddress (m_current_pc, m_sym_ctx);
     }
 
     // No FuncUnwinders available for this pc, try using architectural default unwind.
@@ -749,8 +777,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     // right thing.  It'd be nice if there was a way to ask the eh_frame directly if it is asynchronous
     // (can be trusted at every instruction point) or synchronous (the normal case - only at call sites).
     // But there is not.
-    if (m_thread.GetProcess().GetDynamicLoader() 
-        && m_thread.GetProcess().GetDynamicLoader()->AlwaysRelyOnEHUnwindInfo (m_sym_ctx))
+    if (process->GetDynamicLoader() && process->GetDynamicLoader()->AlwaysRelyOnEHUnwindInfo (m_sym_ctx))
     {
         unwind_plan_sp = func_unwinders_sp->GetUnwindPlanAtCallSite (m_current_offset_backed_up_one);
         if (unwind_plan_sp && unwind_plan_sp->PlanValidAtAddress (m_current_pc))
@@ -1075,12 +1102,15 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
             }
         }
     }
-
+    
+    
+    ExecutionContext exe_ctx(m_thread.shared_from_this());
+    Process *process = exe_ctx.GetProcessPtr();
     if (have_unwindplan_regloc == false)
     {
         // If a volatile register is being requested, we don't want to forward the next frame's register contents 
         // up the stack -- the register is not retrievable at this frame.
-        ABI *abi = m_thread.GetProcess().GetABI().get();
+        ABI *abi = process ? process->GetABI().get() : NULL;
         if (abi)
         {
             const RegisterInfo *reg_info = GetRegisterInfoAtIndex(lldb_regnum);
@@ -1198,10 +1228,9 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
     {
         DataExtractor dwarfdata (unwindplan_regloc.GetDWARFExpressionBytes(), 
                                  unwindplan_regloc.GetDWARFExpressionLength(), 
-                                 m_thread.GetProcess().GetByteOrder(), m_thread.GetProcess().GetAddressByteSize());
+                                 process->GetByteOrder(), process->GetAddressByteSize());
         DWARFExpression dwarfexpr (dwarfdata, 0, unwindplan_regloc.GetDWARFExpressionLength());
         dwarfexpr.SetRegisterKind (unwindplan_registerkind);
-        ExecutionContext exe_ctx (&m_thread.GetProcess(), &m_thread, NULL);
         Value result;
         Error error;
         if (dwarfexpr.Evaluate (&exe_ctx, NULL, NULL, NULL, this, 0, NULL, result, &error))
@@ -1432,7 +1461,7 @@ RegisterContextLLDB::GetStartPC (addr_t& start_pc)
     {
         return ReadPC (start_pc); 
     }
-    start_pc = m_start_pc.GetLoadAddress (&m_thread.GetProcess().GetTarget());
+    start_pc = m_start_pc.GetLoadAddress (CalculateTarget().get());
     return true;
 }
 

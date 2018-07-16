@@ -179,8 +179,14 @@ def HasVFP2          : Predicate<"Subtarget->hasVFP2()">,
                                  AssemblerPredicate<"FeatureVFP2">;
 def HasVFP3          : Predicate<"Subtarget->hasVFP3()">,
                                  AssemblerPredicate<"FeatureVFP3">;
+def HasVFP4          : Predicate<"Subtarget->hasVFP4()">,
+                                 AssemblerPredicate<"FeatureVFP4">;
+def NoVFP4            : Predicate<"!Subtarget->hasVFP4()">;
 def HasNEON          : Predicate<"Subtarget->hasNEON()">,
                                  AssemblerPredicate<"FeatureNEON">;
+def HasNEON2         : Predicate<"Subtarget->hasNEON2()">,
+                                 AssemblerPredicate<"FeatureNEON2">;
+def NoNEON2          : Predicate<"!Subtarget->hasNEON2()">;
 def HasFP16          : Predicate<"Subtarget->hasFP16()">,
                                  AssemblerPredicate<"FeatureFP16">;
 def HasDivide        : Predicate<"Subtarget->hasDivide()">,
@@ -206,8 +212,8 @@ def IsARClass        : Predicate<"!Subtarget->isMClass()">,
                                  AssemblerPredicate<"!FeatureMClass">;
 def IsARM            : Predicate<"!Subtarget->isThumb()">,
                                  AssemblerPredicate<"!ModeThumb">;
-def IsDarwin         : Predicate<"Subtarget->isTargetDarwin()">;
-def IsNotDarwin      : Predicate<"!Subtarget->isTargetDarwin()">;
+def IsIOS            : Predicate<"Subtarget->isTargetIOS()">;
+def IsNotIOS         : Predicate<"!Subtarget->isTargetIOS()">;
 def IsNaCl           : Predicate<"Subtarget->isTargetNaCl()">;
 
 // FIXME: Eventually this will be just "hasV6T2Ops".
@@ -343,13 +349,11 @@ def bltarget : Operand<i32> {
 // Call target for ARM. Handles conditional/unconditional
 // FIXME: rename bl_target to t2_bltarget?
 def bl_target : Operand<i32> {
-  // Encoded the same as branch targets.
-  let EncoderMethod = "getARMBranchTargetOpValue";
+  let EncoderMethod = "getARMBLTargetOpValue";
   let OperandType = "OPERAND_PCREL";
 }
 
 def blx_target : Operand<i32> {
-  // Encoded the same as branch targets.
   let EncoderMethod = "getARMBLXTargetOpValue";
   let OperandType = "OPERAND_PCREL";
 }
@@ -760,7 +764,7 @@ def am2offset_reg : Operand<i32>,
   let PrintMethod = "printAddrMode2OffsetOperand";
   // When using this for assembly, it's always as a post-index offset.
   let ParserMatchClass = PostIdxRegShiftedAsmOperand;
-  let MIOperandInfo = (ops GPR, i32imm);
+  let MIOperandInfo = (ops GPRnopc, i32imm);
 }
 
 // FIXME: am2offset_imm should only need the immediate, not the GPR. Having
@@ -772,7 +776,7 @@ def am2offset_imm : Operand<i32>,
   let EncoderMethod = "getAddrMode2OffsetOpValue";
   let PrintMethod = "printAddrMode2OffsetOperand";
   let ParserMatchClass = AM2OffsetImmAsmOperand;
-  let MIOperandInfo = (ops GPR, i32imm);
+  let MIOperandInfo = (ops GPRnopc, i32imm);
 }
 
 
@@ -1892,20 +1896,17 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
   }
 }
 
-// All calls clobber the non-callee saved registers. SP is marked as
-// a use to prevent stack-pointer assignments that appear immediately
-// before calls from potentially appearing dead.
+// SP is marked as a use to prevent stack-pointer assignments that appear
+// immediately before calls from potentially appearing dead.
 let isCall = 1,
-  // On non-Darwin platforms R9 is callee-saved.
   // FIXME:  Do we really need a non-predicated version? If so, it should
   // at least be a pseudo instruction expanding to the predicated version
   // at MC lowering time.
-  Defs = [R0,  R1,  R2,  R3,  R12, LR, QQQQ0, QQQQ2, QQQQ3, CPSR, FPSCR],
-  Uses = [SP] in {
+  Defs = [LR], Uses = [SP] in {
   def BL  : ABXI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                 IIC_Br, "bl\t$func",
                 [(ARMcall tglobaladdr:$func)]>,
-            Requires<[IsARM, IsNotDarwin]> {
+            Requires<[IsARM, IsNotIOS]> {
     let Inst{31-28} = 0b1110;
     bits<24> func;
     let Inst{23-0} = func;
@@ -1915,7 +1916,7 @@ let isCall = 1,
   def BL_pred : ABI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                    IIC_Br, "bl", "\t$func",
                    [(ARMcall_pred tglobaladdr:$func)]>,
-                Requires<[IsARM, IsNotDarwin]> {
+                Requires<[IsARM, IsNotIOS]> {
     bits<24> func;
     let Inst{23-0} = func;
     let DecoderMethod = "DecodeBranchImmInstruction";
@@ -1925,7 +1926,7 @@ let isCall = 1,
   def BLX : AXI<(outs), (ins GPR:$func, variable_ops), BrMiscFrm,
                 IIC_Br, "blx\t$func",
                 [(ARMcall GPR:$func)]>,
-            Requires<[IsARM, HasV5T, IsNotDarwin]> {
+            Requires<[IsARM, HasV5T, IsNotIOS]> {
     bits<4> func;
     let Inst{31-4} = 0b1110000100101111111111110011;
     let Inst{3-0}  = func;
@@ -1934,7 +1935,7 @@ let isCall = 1,
   def BLX_pred : AI<(outs), (ins GPR:$func, variable_ops), BrMiscFrm,
                     IIC_Br, "blx", "\t$func",
                     [(ARMcall_pred GPR:$func)]>,
-                 Requires<[IsARM, HasV5T, IsNotDarwin]> {
+                 Requires<[IsARM, HasV5T, IsNotIOS]> {
     bits<4> func;
     let Inst{27-4} = 0b000100101111111111110011;
     let Inst{3-0}  = func;
@@ -1944,55 +1945,67 @@ let isCall = 1,
   // Note: Restrict $func to the tGPR regclass to prevent it being in LR.
   def BX_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
                    8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                   Requires<[IsARM, HasV4T, IsNotDarwin]>;
+                   Requires<[IsARM, HasV4T, IsNotIOS]>;
 
   // ARMv4
   def BMOVPCRX_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
                    8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                   Requires<[IsARM, NoV4T, IsNotDarwin]>;
+                   Requires<[IsARM, NoV4T, IsNotIOS]>;
+
+  // mov lr, pc; b if callee is marked noreturn to avoid confusing the
+  // return stack predictor.
+  def BMOVPCB_CALL : ARMPseudoInst<(outs),
+                                   (ins bl_target:$func, variable_ops),
+                               8, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
+                      Requires<[IsARM, IsNotIOS]>;
 }
 
 let isCall = 1,
-  // On Darwin R9 is call-clobbered.
+  // On IOS R9 is call-clobbered.
   // R7 is marked as a use to prevent frame-pointer assignments from being
   // moved above / below calls.
-  Defs = [R0,  R1,  R2,  R3,  R9,  R12, LR, QQQQ0, QQQQ2, QQQQ3, CPSR, FPSCR],
-  Uses = [R7, SP] in {
+  Defs = [LR], Uses = [R7, SP] in {
   def BLr9  : ARMPseudoExpand<(outs), (ins bl_target:$func, variable_ops),
                 4, IIC_Br,
                 [(ARMcall tglobaladdr:$func)], (BL bl_target:$func)>,
-              Requires<[IsARM, IsDarwin]>;
+              Requires<[IsARM, IsIOS]>;
 
   def BLr9_pred : ARMPseudoExpand<(outs),
                    (ins bl_target:$func, pred:$p, variable_ops),
                    4, IIC_Br,
                    [(ARMcall_pred tglobaladdr:$func)],
                    (BL_pred bl_target:$func, pred:$p)>,
-                  Requires<[IsARM, IsDarwin]>;
+                  Requires<[IsARM, IsIOS]>;
 
   // ARMv5T and above
   def BLXr9 : ARMPseudoExpand<(outs), (ins GPR:$func, variable_ops),
                 4, IIC_Br,
                 [(ARMcall GPR:$func)],
                 (BLX GPR:$func)>,
-               Requires<[IsARM, HasV5T, IsDarwin]>;
+               Requires<[IsARM, HasV5T, IsIOS]>;
 
   def BLXr9_pred: ARMPseudoExpand<(outs), (ins GPR:$func, pred:$p,variable_ops),
                 4, IIC_Br,
                 [(ARMcall_pred GPR:$func)],
                 (BLX_pred GPR:$func, pred:$p)>,
-                   Requires<[IsARM, HasV5T, IsDarwin]>;
+                   Requires<[IsARM, HasV5T, IsIOS]>;
 
   // ARMv4T
   // Note: Restrict $func to the tGPR regclass to prevent it being in LR.
   def BXr9_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
                   8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                  Requires<[IsARM, HasV4T, IsDarwin]>;
+                  Requires<[IsARM, HasV4T, IsIOS]>;
 
   // ARMv4
   def BMOVPCRXr9_CALL : ARMPseudoInst<(outs), (ins tGPR:$func, variable_ops),
                   8, IIC_Br, [(ARMcall_nolink tGPR:$func)]>,
-                  Requires<[IsARM, NoV4T, IsDarwin]>;
+                  Requires<[IsARM, NoV4T, IsIOS]>;
+
+  // mov lr, pc; b if callee is marked noreturn to avoid confusing the
+  // return stack predictor.
+  def BMOVPCBr9_CALL : ARMPseudoInst<(outs),(ins bl_target:$func, variable_ops),
+                               8, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
+                        Requires<[IsARM, IsIOS]>;
 }
 
 let isBranch = 1, isTerminator = 1 in {
@@ -2060,45 +2073,43 @@ def BXJ : ABI<0b0001, (outs), (ins GPR:$func), NoItinerary, "bxj", "\t$func",
 // Tail calls.
 
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
-  // Darwin versions.
-  let Defs = [R0, R1, R2, R3, R9, R12, QQQQ0, QQQQ2, QQQQ3, PC],
-      Uses = [SP] in {
+  // IOS versions.
+  let Uses = [SP] in {
     def TCRETURNdi : PseudoInst<(outs), (ins i32imm:$dst, variable_ops),
-                       IIC_Br, []>, Requires<[IsDarwin]>;
+                       IIC_Br, []>, Requires<[IsIOS]>;
 
     def TCRETURNri : PseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
-                       IIC_Br, []>, Requires<[IsDarwin]>;
+                       IIC_Br, []>, Requires<[IsIOS]>;
 
     def TAILJMPd : ARMPseudoExpand<(outs), (ins br_target:$dst, variable_ops),
                    4, IIC_Br, [],
                    (Bcc br_target:$dst, (ops 14, zero_reg))>,
-                   Requires<[IsARM, IsDarwin]>;
+                   Requires<[IsARM, IsIOS]>;
 
     def TAILJMPr : ARMPseudoExpand<(outs), (ins tcGPR:$dst, variable_ops),
                    4, IIC_Br, [],
                    (BX GPR:$dst)>,
-                   Requires<[IsARM, IsDarwin]>;
+                   Requires<[IsARM, IsIOS]>;
 
   }
 
-  // Non-Darwin versions (the difference is R9).
-  let Defs = [R0, R1, R2, R3, R12, QQQQ0, QQQQ2, QQQQ3, PC],
-      Uses = [SP] in {
+  // Non-IOS versions (the difference is R9).
+  let Uses = [SP] in {
     def TCRETURNdiND : PseudoInst<(outs), (ins i32imm:$dst, variable_ops),
-                       IIC_Br, []>, Requires<[IsNotDarwin]>;
+                       IIC_Br, []>, Requires<[IsNotIOS]>;
 
     def TCRETURNriND : PseudoInst<(outs), (ins tcGPR:$dst, variable_ops),
-                       IIC_Br, []>, Requires<[IsNotDarwin]>;
+                       IIC_Br, []>, Requires<[IsNotIOS]>;
 
     def TAILJMPdND : ARMPseudoExpand<(outs), (ins brtarget:$dst, variable_ops),
                    4, IIC_Br, [],
                    (Bcc br_target:$dst, (ops 14, zero_reg))>,
-                   Requires<[IsARM, IsNotDarwin]>;
+                   Requires<[IsARM, IsNotIOS]>;
 
     def TAILJMPrND : ARMPseudoExpand<(outs), (ins tcGPR:$dst, variable_ops),
                      4, IIC_Br, [],
                      (BX GPR:$dst)>,
-                     Requires<[IsARM, IsNotDarwin]>;
+                     Requires<[IsARM, IsNotIOS]>;
   }
 }
 
@@ -4072,6 +4083,73 @@ def MVNCCi : ARMPseudoInst<(outs GPR:$Rd),
                            4, IIC_iCMOVi,
  [/*(set GPR:$Rd, (ARMcmov GPR:$false, so_imm_not:$imm, imm:$cc, CCR:$ccr))*/]>,
                 RegConstraint<"$false = $Rd">;
+
+let isCodeGenOnly = 1 in {
+// Conditional instructions
+multiclass AsI1_bincc_irs<bits<4> opcod, string opc,
+                   InstrItinClass iii, InstrItinClass iir, InstrItinClass iis> {
+  def ri : AsI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, so_imm:$imm), DPFrm,
+               iii, opc, "\t$Rd, $Rn, $imm", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<12> imm;
+    let Inst{25} = 1;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-0} = imm;
+  }
+  def rr : AsI1<opcod, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), DPFrm,
+               iir, opc, "\t$Rd, $Rn, $Rm", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<4> Rm;
+    let Inst{25} = 0;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-4} = 0b00000000;
+    let Inst{3-0} = Rm;
+  }
+
+  def rsi : AsI1<opcod, (outs GPR:$Rd),
+               (ins GPR:$Rn, so_reg_imm:$shift), DPSoRegImmFrm,
+               iis, opc, "\t$Rd, $Rn, $shift", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<12> shift;
+    let Inst{25} = 0;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-5} = shift{11-5};
+    let Inst{4} = 0;
+    let Inst{3-0} = shift{3-0};
+  }
+
+  def rsr : AsI1<opcod, (outs GPR:$Rd),
+               (ins GPR:$Rn, so_reg_reg:$shift), DPSoRegRegFrm,
+               iis, opc, "\t$Rd, $Rn, $shift", []>,
+               RegConstraint<"$Rn = $Rd"> {
+    bits<4> Rd;
+    bits<4> Rn;
+    bits<12> shift;
+    let Inst{25} = 0;
+    let Inst{19-16} = Rn;
+    let Inst{15-12} = Rd;
+    let Inst{11-8} = shift{11-8};
+    let Inst{7} = 0;
+    let Inst{6-5} = shift{6-5};
+    let Inst{4} = 1;
+    let Inst{3-0} = shift{3-0};
+  }
+} // AsI1_bincc_irs
+
+defm ANDCC : AsI1_bincc_irs<0b0000, "and", IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+defm ORRCC : AsI1_bincc_irs<0b1100, "orr", IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+defm EORCC : AsI1_bincc_irs<0b0001, "eor", IIC_iBITi, IIC_iBITr, IIC_iBITsr>;
+
+} // isCodeGenOnly
 } // neverHasSideEffects
 
 //===----------------------------------------------------------------------===//
@@ -4152,10 +4230,10 @@ let usesCustomInserter = 1 in {
       [(set GPR:$dst, (atomic_load_max_8 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_UMIN_I8 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
-      [(set GPR:$dst, (atomic_load_min_8 GPR:$ptr, GPR:$val))]>;
+      [(set GPR:$dst, (atomic_load_umin_8 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_UMAX_I8 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
-      [(set GPR:$dst, (atomic_load_max_8 GPR:$ptr, GPR:$val))]>;
+      [(set GPR:$dst, (atomic_load_umax_8 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_ADD_I16 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_add_16 GPR:$ptr, GPR:$incr))]>;
@@ -4182,10 +4260,10 @@ let usesCustomInserter = 1 in {
       [(set GPR:$dst, (atomic_load_max_16 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_UMIN_I16 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
-      [(set GPR:$dst, (atomic_load_min_16 GPR:$ptr, GPR:$val))]>;
+      [(set GPR:$dst, (atomic_load_umin_16 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_UMAX_I16 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
-      [(set GPR:$dst, (atomic_load_max_16 GPR:$ptr, GPR:$val))]>;
+      [(set GPR:$dst, (atomic_load_umax_16 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_ADD_I32 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_add_32 GPR:$ptr, GPR:$incr))]>;
@@ -4212,10 +4290,10 @@ let usesCustomInserter = 1 in {
       [(set GPR:$dst, (atomic_load_max_32 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_UMIN_I32 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
-      [(set GPR:$dst, (atomic_load_min_32 GPR:$ptr, GPR:$val))]>;
+      [(set GPR:$dst, (atomic_load_umin_32 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_UMAX_I32 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
-      [(set GPR:$dst, (atomic_load_max_32 GPR:$ptr, GPR:$val))]>;
+      [(set GPR:$dst, (atomic_load_umax_32 GPR:$ptr, GPR:$val))]>;
 
     def ATOMIC_SWAP_I8 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$new), NoItinerary,
@@ -4261,14 +4339,14 @@ def STREXH: AIstrex<0b11, (outs GPR:$Rd), (ins GPR:$Rt, addr_offset_none:$addr),
                     NoItinerary, "strexh", "\t$Rd, $Rt, $addr", []>;
 def STREX : AIstrex<0b00, (outs GPR:$Rd), (ins GPR:$Rt, addr_offset_none:$addr),
                     NoItinerary, "strex", "\t$Rd, $Rt, $addr", []>;
-}
-
-let hasExtraSrcRegAllocReq = 1, Constraints = "@earlyclobber $Rd" in
+let hasExtraSrcRegAllocReq = 1 in
 def STREXD : AIstrex<0b01, (outs GPR:$Rd),
                     (ins GPR:$Rt, GPR:$Rt2, addr_offset_none:$addr),
                     NoItinerary, "strexd", "\t$Rd, $Rt, $Rt2, $addr", []> {
   let DecoderMethod = "DecodeDoubleRegStore";
 }
+}
+
 
 def CLREX : AXI<(outs), (ins), MiscFrm, NoItinerary, "clrex", []>,
             Requires<[IsARM, HasV7]>  {
@@ -4711,8 +4789,8 @@ let isCall = 1,
 // no encoding information is necessary.
 let Defs =
   [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR, CPSR,
-    QQQQ0, QQQQ1, QQQQ2, QQQQ3 ], hasSideEffects = 1, isBarrier = 1,
-  usesCustomInserter = 1 in {
+    Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15 ],
+  hasSideEffects = 1, isBarrier = 1, usesCustomInserter = 1 in {
   def Int_eh_sjlj_setjmp : PseudoInst<(outs), (ins GPR:$src, GPR:$val),
                                NoItinerary,
                          [(set R0, (ARMeh_sjlj_setjmp GPR:$src, GPR:$val))]>,
@@ -4721,28 +4799,37 @@ let Defs =
 
 let Defs =
   [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR, CPSR ],
-  hasSideEffects = 1, isBarrier = 1 in {
+  hasSideEffects = 1, isBarrier = 1, usesCustomInserter = 1 in {
   def Int_eh_sjlj_setjmp_nofp : PseudoInst<(outs), (ins GPR:$src, GPR:$val),
                                    NoItinerary,
                          [(set R0, (ARMeh_sjlj_setjmp GPR:$src, GPR:$val))]>,
                                 Requires<[IsARM, NoVFP]>;
 }
 
-// FIXME: Non-Darwin version(s)
+// FIXME: Non-IOS version(s)
 let isBarrier = 1, hasSideEffects = 1, isTerminator = 1,
     Defs = [ R7, LR, SP ] in {
 def Int_eh_sjlj_longjmp : PseudoInst<(outs), (ins GPR:$src, GPR:$scratch),
                              NoItinerary,
                          [(ARMeh_sjlj_longjmp GPR:$src, GPR:$scratch)]>,
-                                Requires<[IsARM, IsDarwin]>;
+                                Requires<[IsARM, IsIOS]>;
 }
 
-// eh.sjlj.dispatchsetup pseudo-instruction.
-// This pseudo is used for ARM, Thumb1 and Thumb2. Any differences are
+// eh.sjlj.dispatchsetup pseudo-instructions.
+// These pseudos are used for both ARM and Thumb2. Any differences are
 // handled when the pseudo is expanded (which happens before any passes
 // that need the instruction size).
-let isBarrier = 1 in
-def eh_sjlj_dispatchsetup : PseudoInst<(outs), (ins), NoItinerary, []>;
+let Defs =
+  [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR, CPSR,
+    Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15 ],
+  isBarrier = 1 in
+def Int_eh_sjlj_dispatchsetup : PseudoInst<(outs), (ins), NoItinerary, []>;
+
+let Defs =
+  [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR, CPSR ],
+  isBarrier = 1 in
+def Int_eh_sjlj_dispatchsetup_nofp : PseudoInst<(outs), (ins), NoItinerary, []>;
+
 
 //===----------------------------------------------------------------------===//
 // Non-Instruction Patterns
@@ -4801,28 +4888,34 @@ def : ARMPat<(ARMWrapperJT tjumptable:$dst, imm:$id),
 
 // Tail calls
 def : ARMPat<(ARMtcret tcGPR:$dst),
-          (TCRETURNri tcGPR:$dst)>, Requires<[IsDarwin]>;
+          (TCRETURNri tcGPR:$dst)>, Requires<[IsIOS]>;
 
 def : ARMPat<(ARMtcret (i32 tglobaladdr:$dst)),
-          (TCRETURNdi texternalsym:$dst)>, Requires<[IsDarwin]>;
+          (TCRETURNdi texternalsym:$dst)>, Requires<[IsIOS]>;
 
 def : ARMPat<(ARMtcret (i32 texternalsym:$dst)),
-          (TCRETURNdi texternalsym:$dst)>, Requires<[IsDarwin]>;
+          (TCRETURNdi texternalsym:$dst)>, Requires<[IsIOS]>;
 
 def : ARMPat<(ARMtcret tcGPR:$dst),
-          (TCRETURNriND tcGPR:$dst)>, Requires<[IsNotDarwin]>;
+          (TCRETURNriND tcGPR:$dst)>, Requires<[IsNotIOS]>;
 
 def : ARMPat<(ARMtcret (i32 tglobaladdr:$dst)),
-          (TCRETURNdiND texternalsym:$dst)>, Requires<[IsNotDarwin]>;
+          (TCRETURNdiND texternalsym:$dst)>, Requires<[IsNotIOS]>;
 
 def : ARMPat<(ARMtcret (i32 texternalsym:$dst)),
-          (TCRETURNdiND texternalsym:$dst)>, Requires<[IsNotDarwin]>;
+          (TCRETURNdiND texternalsym:$dst)>, Requires<[IsNotIOS]>;
 
 // Direct calls
 def : ARMPat<(ARMcall texternalsym:$func), (BL texternalsym:$func)>,
-      Requires<[IsARM, IsNotDarwin]>;
+      Requires<[IsARM, IsNotIOS]>;
 def : ARMPat<(ARMcall texternalsym:$func), (BLr9 texternalsym:$func)>,
-      Requires<[IsARM, IsDarwin]>;
+      Requires<[IsARM, IsIOS]>;
+def : ARMPat<(ARMcall_nolink texternalsym:$func),
+             (BMOVPCB_CALL texternalsym:$func)>,
+      Requires<[IsARM, IsNotIOS]>;
+def : ARMPat<(ARMcall_nolink texternalsym:$func),
+             (BMOVPCBr9_CALL texternalsym:$func)>,
+      Requires<[IsARM, IsIOS]>;
 
 // zextload i1 -> zextload i8
 def : ARMPat<(zextloadi1 addrmode_imm12:$addr), (LDRBi12 addrmode_imm12:$addr)>;
@@ -5158,3 +5251,21 @@ def : ARMInstAlias<"mul${s}${p} $Rn, $Rm",
 // "neg" is and alias for "rsb rd, rn, #0"
 def : ARMInstAlias<"neg${s}${p} $Rd, $Rm",
                    (RSBri GPR:$Rd, GPR:$Rm, 0, pred:$p, cc_out:$s)>;
+
+// Pre-v6, 'mov r0, r0' was used as a NOP encoding.
+def : InstAlias<"nop${p}", (MOVr R0, R0, pred:$p, zero_reg)>,
+         Requires<[IsARM, NoV6]>;
+
+// UMULL/SMULL are available on all arches, but the instruction definitions
+// need difference constraints pre-v6. Use these aliases for the assembly
+// parsing on pre-v6.
+def : InstAlias<"smull${s}${p} $RdLo, $RdHi, $Rn, $Rm",
+            (SMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+         Requires<[IsARM, NoV6]>;
+def : InstAlias<"umull${s}${p} $RdLo, $RdHi, $Rn, $Rm",
+            (UMULL GPR:$RdLo, GPR:$RdHi, GPR:$Rn, GPR:$Rm, pred:$p, cc_out:$s)>,
+         Requires<[IsARM, NoV6]>;
+
+// 'it' blocks in ARM mode just validate the predicates. The IT itself
+// is discarded.
+def ITasm : ARMAsmPseudo<"it$mask $cc", (ins it_pred:$cc, it_mask:$mask)>;

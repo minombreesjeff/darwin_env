@@ -21,6 +21,8 @@
 #include "llvm/ADT/PointerUnion.h"
 
 namespace clang {
+  class AddrLabelExpr;
+  class ASTContext;
   class CharUnits;
   class DiagnosticBuilder;
   class Expr;
@@ -28,6 +30,7 @@ namespace clang {
   class Decl;
   class ValueDecl;
   class CXXRecordDecl;
+  class QualType;
 
 /// APValue - This class implements a discriminated union of [uninitialized]
 /// [APSInt] [APFloat], [Complex APSInt] [Complex APFloat], [Expr + Offset],
@@ -47,7 +50,8 @@ public:
     Array,
     Struct,
     Union,
-    MemberPointer
+    MemberPointer,
+    AddrLabelDiff
   };
   typedef llvm::PointerUnion<const ValueDecl *, const Expr *> LValueBase;
   typedef llvm::PointerIntPair<const Decl *, 1, bool> BaseOrMemberType;
@@ -98,6 +102,10 @@ private:
     UnionData();
     ~UnionData();
   };
+  struct AddrLabelDiffData {
+    const AddrLabelExpr* LHSExpr;
+    const AddrLabelExpr* RHSExpr;
+  };
   struct MemberPointerData;
 
   enum {
@@ -130,14 +138,14 @@ public:
   APValue(const APValue &RHS) : Kind(Uninitialized) {
     *this = RHS;
   }
-  APValue(LValueBase B, const CharUnits &O, NoLValuePath N)
+  APValue(LValueBase B, const CharUnits &O, NoLValuePath N, unsigned CallIndex)
       : Kind(Uninitialized) {
-    MakeLValue(); setLValue(B, O, N);
+    MakeLValue(); setLValue(B, O, N, CallIndex);
   }
   APValue(LValueBase B, const CharUnits &O, ArrayRef<LValuePathEntry> Path,
-          bool OnePastTheEnd)
+          bool OnePastTheEnd, unsigned CallIndex)
       : Kind(Uninitialized) {
-    MakeLValue(); setLValue(B, O, Path, OnePastTheEnd);
+    MakeLValue(); setLValue(B, O, Path, OnePastTheEnd, CallIndex);
   }
   APValue(UninitArray, unsigned InitElts, unsigned Size) : Kind(Uninitialized) {
     MakeArray(InitElts, Size);
@@ -152,6 +160,10 @@ public:
   APValue(const ValueDecl *Member, bool IsDerivedMember,
           ArrayRef<const CXXRecordDecl*> Path) : Kind(Uninitialized) {
     MakeMemberPointer(Member, IsDerivedMember, Path);
+  }
+  APValue(const AddrLabelExpr* LHSExpr, const AddrLabelExpr* RHSExpr)
+      : Kind(Uninitialized) {
+    MakeAddrLabelDiff(); setAddrLabelDiff(LHSExpr, RHSExpr);
   }
 
   ~APValue() {
@@ -170,9 +182,13 @@ public:
   bool isStruct() const { return Kind == Struct; }
   bool isUnion() const { return Kind == Union; }
   bool isMemberPointer() const { return Kind == MemberPointer; }
+  bool isAddrLabelDiff() const { return Kind == AddrLabelDiff; }
 
-  void print(raw_ostream &OS) const;
   void dump() const;
+  void dump(raw_ostream &OS) const;
+
+  void printPretty(raw_ostream &OS, ASTContext &Ctx, QualType Ty) const;
+  std::string getAsString(ASTContext &Ctx, QualType Ty) const;
 
   APSInt &getInt() {
     assert(isInt() && "Invalid accessor");
@@ -230,6 +246,7 @@ public:
   bool isLValueOnePastTheEnd() const;
   bool hasLValuePath() const;
   ArrayRef<LValuePathEntry> getLValuePath() const;
+  unsigned getLValueCallIndex() const;
 
   APValue &getVectorElt(unsigned I) {
     assert(isVector() && "Invalid accessor");
@@ -311,6 +328,15 @@ public:
   bool isMemberPointerToDerivedMember() const;
   ArrayRef<const CXXRecordDecl*> getMemberPointerPath() const;
 
+  const AddrLabelExpr* getAddrLabelDiffLHS() const {
+    assert(isAddrLabelDiff() && "Invalid accessor");
+    return ((const AddrLabelDiffData*)(const char*)Data)->LHSExpr;
+  }
+  const AddrLabelExpr* getAddrLabelDiffRHS() const {
+    assert(isAddrLabelDiff() && "Invalid accessor");
+    return ((const AddrLabelDiffData*)(const char*)Data)->RHSExpr;
+  }
+
   void setInt(const APSInt &I) {
     assert(isInt() && "Invalid accessor");
     *(APSInt*)(char*)Data = I;
@@ -340,13 +366,20 @@ public:
     ((ComplexAPFloat*)(char*)Data)->Real = R;
     ((ComplexAPFloat*)(char*)Data)->Imag = I;
   }
-  void setLValue(LValueBase B, const CharUnits &O, NoLValuePath);
+  void setLValue(LValueBase B, const CharUnits &O, NoLValuePath,
+                 unsigned CallIndex);
   void setLValue(LValueBase B, const CharUnits &O,
-                 ArrayRef<LValuePathEntry> Path, bool OnePastTheEnd);
+                 ArrayRef<LValuePathEntry> Path, bool OnePastTheEnd,
+                 unsigned CallIndex);
   void setUnion(const FieldDecl *Field, const APValue &Value) {
     assert(isUnion() && "Invalid accessor");
     ((UnionData*)(char*)Data)->Field = Field;
     *((UnionData*)(char*)Data)->Value = Value;
+  }
+  void setAddrLabelDiff(const AddrLabelExpr* LHSExpr,
+                        const AddrLabelExpr* RHSExpr) {
+    ((AddrLabelDiffData*)(char*)Data)->LHSExpr = LHSExpr;
+    ((AddrLabelDiffData*)(char*)Data)->RHSExpr = RHSExpr;
   }
 
   const APValue &operator=(const APValue &RHS);
@@ -392,16 +425,12 @@ private:
   }
   void MakeMemberPointer(const ValueDecl *Member, bool IsDerivedMember,
                          ArrayRef<const CXXRecordDecl*> Path);
+  void MakeAddrLabelDiff() {
+    assert(isUninit() && "Bad state change");
+    new ((void*)(char*)Data) AddrLabelDiffData();
+    Kind = AddrLabelDiff;
+  }
 };
-
-inline raw_ostream &operator<<(raw_ostream &OS, const APValue &V) {
-  V.print(OS);
-  return OS;
-}
-
-// Writes a concise representation of V to DB, in a single << operation.
-const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
-                                    const APValue &V);
 
 } // end namespace clang.
 

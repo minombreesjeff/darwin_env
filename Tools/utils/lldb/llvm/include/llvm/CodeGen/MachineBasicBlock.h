@@ -77,6 +77,7 @@ class MachineBasicBlock : public ilist_node<MachineBasicBlock> {
   /// (disable optimization).
   std::vector<uint32_t> Weights;
   typedef std::vector<uint32_t>::iterator weight_iterator;
+  typedef std::vector<uint32_t>::const_iterator const_weight_iterator;
 
   /// LiveIns - Keep track of the physical registers that are livein of
   /// the basicblock.
@@ -115,6 +116,10 @@ public:
   /// getName - Return the name of the corresponding LLVM basic block, or
   /// "(null)".
   StringRef getName() const;
+
+  /// getFullName - Return a formatted string to identify this block and its
+  /// parent function.
+  std::string getFullName() const;
 
   /// hasAddressTaken - Test whether this block is potentially the target
   /// of an indirect branch.
@@ -165,7 +170,7 @@ public:
     bool operator!=(const bundle_iterator &x) const {
       return !operator==(x);
     }
-    
+
     // Increment and decrement operators...
     bundle_iterator &operator--() {      // predecrement - Back up
       do {
@@ -196,7 +201,7 @@ public:
 
     IterTy getInstrIterator() const {
       return MII;
-    }    
+    }
   };
 
   typedef Instructions::iterator                                 instr_iterator;
@@ -359,7 +364,7 @@ public:
   const MachineBasicBlock *getLandingPadSuccessor() const;
 
   // Code Layout methods.
-  
+
   /// moveBefore/moveAfter - move 'this' block before or after the specified
   /// block.  This only moves the block, it does not modify the CFG or adjust
   /// potential fall-throughs at the end of the block.
@@ -406,7 +411,7 @@ public:
   /// in transferSuccessors, and update PHI operands in the successor blocks
   /// which refer to fromMBB to refer to this.
   void transferSuccessorsAndUpdatePHIs(MachineBasicBlock *fromMBB);
-  
+
   /// isSuccessor - Return true if the specified MBB is a successor of this
   /// block.
   bool isSuccessor(const MachineBasicBlock *MBB) const;
@@ -424,7 +429,7 @@ public:
   /// branch to do so (e.g., a table jump).  True is a conservative answer.
   bool canFallThrough();
 
-  /// Returns a pointer to the first instructon in this block that is not a 
+  /// Returns a pointer to the first instructon in this block that is not a
   /// PHINode instruction. When adding instruction to the beginning of the
   /// basic block, they should be added before the returned value, not before
   /// the first instruction, which might be PHI.
@@ -470,8 +475,8 @@ public:
   instr_iterator insert(instr_iterator I, MachineInstr *M) {
     return Insts.insert(I, M);
   }
-  instr_iterator insertAfter(instr_iterator I, MachineInstr *M) { 
-    return Insts.insertAfter(I, M); 
+  instr_iterator insertAfter(instr_iterator I, MachineInstr *M) {
+    return Insts.insertAfter(I, M);
   }
 
   template<typename IT>
@@ -481,8 +486,8 @@ public:
   iterator insert(iterator I, MachineInstr *M) {
     return Insts.insert(I.getInstrIterator(), M);
   }
-  iterator insertAfter(iterator I, MachineInstr *M) { 
-    return Insts.insertAfter(I.getInstrIterator(), M); 
+  iterator insertAfter(iterator I, MachineInstr *M) {
+    return Insts.insertAfter(I.getInstrIterator(), M);
   }
 
   /// erase - Remove the specified element or range from the instruction list.
@@ -513,7 +518,7 @@ public:
   /// instruction is a bundle this function will remove all the bundled
   /// instructions as well. It is up to the caller to keep a list of the
   /// bundled instructions and re-insert them if desired. This function is
-  /// *not recommended* for manipulating instructions with bundled. Use
+  /// *not recommended* for manipulating instructions with bundles. Use
   /// splice instead.
   MachineInstr *remove(MachineInstr *I);
   void clear() {
@@ -543,7 +548,7 @@ public:
   /// removeFromParent - This method unlinks 'this' from the containing
   /// function, and returns it, but does not delete it.
   MachineBasicBlock *removeFromParent();
-  
+
   /// eraseFromParent - This method unlinks 'this' from the containing
   /// function and deletes it.
   void eraseFromParent();
@@ -589,13 +594,14 @@ private:
   /// getWeightIterator - Return weight iterator corresponding to the I
   /// successor iterator.
   weight_iterator getWeightIterator(succ_iterator I);
+  const_weight_iterator getWeightIterator(const_succ_iterator I) const;
 
   friend class MachineBranchProbabilityInfo;
 
   /// getSuccWeight - Return weight of the edge from this block to MBB. This
   /// method should NOT be called directly, but by using getEdgeWeight method
   /// from MachineBranchProbabilityInfo class.
-  uint32_t getSuccWeight(MachineBasicBlock *succ);
+  uint32_t getSuccWeight(const MachineBasicBlock *succ) const;
 
 
   // Methods used to maintain doubly linked list of blocks...

@@ -11,14 +11,15 @@ class HelloWatchpointTestCase(TestBase):
 
     mydir = os.path.join("functionalities", "watchpoint", "hello_watchpoint")
 
-    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
-    def test_hello_watchpoint_with_dsym(self):
+    @dsym_test
+    def test_hello_watchpoint_with_dsym_using_watchpoint_set(self):
         """Test a simple sequence of watchpoint creation and watchpoint hit."""
         self.buildDsym(dictionary=self.d)
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_watchpoint()
 
-    def test_hello_watchpoint_with_dwarf(self):
+    @dwarf_test
+    def test_hello_watchpoint_with_dwarf_using_watchpoint_set(self):
         """Test a simple sequence of watchpoint creation and watchpoint hit."""
         self.buildDwarf(dictionary=self.d)
         self.setTearDownCleanup(dictionary=self.d)
@@ -58,7 +59,7 @@ class HelloWatchpointTestCase(TestBase):
 
         # Now let's set a write-type watchpoint for 'global'.
         # There should be only one watchpoint hit (see main.c).
-        self.expect("frame variable -w write -g -L global", WATCHPOINT_CREATED,
+        self.expect("watchpoint set variable -w write global", WATCHPOINT_CREATED,
             substrs = ['Watchpoint created', 'size = 4', 'type = w',
                        '%s:%d' % (self.source, self.decl)])
 

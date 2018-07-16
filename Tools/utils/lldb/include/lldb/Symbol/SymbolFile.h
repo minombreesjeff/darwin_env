@@ -22,23 +22,24 @@ class SymbolFile :
     public PluginInterface
 {
 public:
+    //------------------------------------------------------------------
+    // Symbol file ability bits.
+    //
+    // Each symbol file can claim to support one or more symbol file
+    // abilities. These get returned from SymbolFile::GetAbilities().
+    // These help us to determine which plug-in will be best to load
+    // the debug information found in files.    
+    //------------------------------------------------------------------
     enum Abilities
     {
-        Labels                              = (1 << 0),
-        AddressAcceleratorTable             = (1 << 1),
-        FunctionAcceleratorTable            = (1 << 2),
-        TypeAcceleratorTable                = (1 << 3),
-        MacroInformation                    = (1 << 4),
-        CallFrameInformation                = (1 << 5),
-        RuntimeTypes                        = (1 << 6),
-        CompileUnits                        = (1 << 7),
-        LineTables                          = (1 << 8),
-        LineColumns                         = (1 << 9),
-        Functions                           = (1 << 10),
-        Blocks                              = (1 << 11),
-        GlobalVariables                     = (1 << 12),
-        LocalVariables                      = (1 << 13),
-        VariableTypes                       = (1 << 14)
+        CompileUnits                        = (1u << 0),
+        LineTables                          = (1u << 1),
+        Functions                           = (1u << 2),
+        Blocks                              = (1u << 3),
+        GlobalVariables                     = (1u << 4),
+        LocalVariables                      = (1u << 5),
+        VariableTypes                       = (1u << 6),
+        kAllAbilities                       =((1u << 7) - 1u)
     };
 
     static SymbolFile *
@@ -133,8 +134,8 @@ public:
     virtual uint32_t        ResolveSymbolContext (const FileSpec& file_spec, uint32_t line, bool check_inlines, uint32_t resolve_scope, SymbolContextList& sc_list) = 0;
     virtual uint32_t        FindGlobalVariables (const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, VariableList& variables) = 0;
     virtual uint32_t        FindGlobalVariables (const RegularExpression& regex, bool append, uint32_t max_matches, VariableList& variables) = 0;
-    virtual uint32_t        FindFunctions (const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, SymbolContextList& sc_list) = 0;
-    virtual uint32_t        FindFunctions (const RegularExpression& regex, bool append, SymbolContextList& sc_list) = 0;
+    virtual uint32_t        FindFunctions (const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool include_inlines, bool append, SymbolContextList& sc_list) = 0;
+    virtual uint32_t        FindFunctions (const RegularExpression& regex, bool include_inlines, bool append, SymbolContextList& sc_list) = 0;
     virtual uint32_t        FindTypes (const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, TypeList& types) = 0;
 //  virtual uint32_t        FindTypes (const SymbolContext& sc, const RegularExpression& regex, bool append, uint32_t max_matches, TypeList& types) = 0;
     virtual TypeList *      GetTypeList ();

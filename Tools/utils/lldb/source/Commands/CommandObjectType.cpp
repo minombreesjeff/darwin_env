@@ -37,45 +37,29 @@ class ScriptAddOptions
     
 public:
     
-    bool m_skip_pointers;
-    bool m_skip_references;
-    bool m_cascade;
+    TypeSummaryImpl::Flags m_flags;
+    
     StringList m_target_types;
     StringList m_user_source;
     
-    bool m_no_children;
-    bool m_no_value;
-    bool m_one_liner;
     bool m_regex;
-    
+        
     ConstString m_name;
     
     std::string m_category;
     
-    ScriptAddOptions(bool sptr,
-                     bool sref,
-                     bool casc,
-                     bool noch,
-                     bool novl,
-                     bool onel,
+    ScriptAddOptions(const TypeSummaryImpl::Flags& flags,
                      bool regx,
                      const ConstString& name,
                      std::string catg) :
-        m_skip_pointers(sptr),
-        m_skip_references(sref),
-        m_cascade(casc),
-        m_target_types(),
-        m_user_source(),
-        m_no_children(noch),
-        m_no_value(novl),
-        m_one_liner(onel),
+        m_flags(flags),
         m_regex(regx),
         m_name(name),
         m_category(catg)
     {
     }
     
-    typedef lldb::SharedPtr<ScriptAddOptions>::Type SharedPointer;
+    typedef STD_SHARED_PTR(ScriptAddOptions) SharedPointer;
     
 };
 
@@ -108,7 +92,7 @@ public:
     {
     }
     
-    typedef lldb::SharedPtr<SynthAddOptions>::Type SharedPointer;
+    typedef STD_SHARED_PTR(SynthAddOptions) SharedPointer;
     
 };
 
@@ -149,12 +133,7 @@ private:
         
         // Instance variables to hold the values for command options.
         
-        bool m_cascade;
-        bool m_no_children;
-        bool m_no_value;
-        bool m_one_liner;
-        bool m_skip_references;
-        bool m_skip_pointers;
+        TypeSummaryImpl::Flags m_flags;
         bool m_regex;
         std::string m_format_string;
         ConstString m_name;
@@ -202,7 +181,7 @@ public:
     
     static bool
     AddSummary(const ConstString& type_name,
-               lldb::SummaryFormatSP entry,
+               lldb::TypeSummaryImplSP entry,
                SummaryFormatType type,
                std::string category,
                Error* error = NULL);
@@ -517,12 +496,12 @@ public:
             return false;
         }
         
-        ValueFormatSP entry;
+        TypeFormatImplSP entry;
         
-        entry.reset(new ValueFormat(format,
-                                    m_command_options.m_cascade,
-                                    m_command_options.m_skip_pointers,
-                                    m_command_options.m_skip_references));
+        entry.reset(new TypeFormatImpl(format,
+                                    TypeFormatImpl::Flags().SetCascades(m_command_options.m_cascade).
+                                    SetSkipPointers(m_command_options.m_skip_pointers).
+                                    SetSkipReferences(m_command_options.m_skip_references)));
 
         // now I have a valid format, let's add it to every type
         
@@ -548,7 +527,7 @@ public:
 OptionDefinition
 CommandObjectTypeFormatAdd::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade to derived typedefs."},
+    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade through typedef chains."},
     { LLDB_OPT_SET_ALL, false, "skip-pointers", 'p', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for pointers-to-type objects."},
     { LLDB_OPT_SET_ALL, false, "skip-references", 'r', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for references-to-type objects."},
 };
@@ -662,7 +641,7 @@ public:
 // CommandObjectTypeFormatList
 //-------------------------------------------------------------------------
 
-bool CommandObjectTypeFormatList_LoopCallback(void* pt2self, ConstString type, const lldb::ValueFormatSP& entry);
+bool CommandObjectTypeFormatList_LoopCallback(void* pt2self, ConstString type, const lldb::TypeFormatImplSP& entry);
 
 class CommandObjectTypeFormatList;
 
@@ -723,22 +702,19 @@ private:
     
     bool
     LoopCallback (ConstString type,
-                  const lldb::ValueFormatSP& entry,
+                  const lldb::TypeFormatImplSP& entry,
                   RegularExpression* regex,
                   CommandReturnObject *result)
     {
         if (regex == NULL || regex->Execute(type.AsCString())) 
         {
-            result->GetOutputStream().Printf ("%s: %s%s%s%s\n", type.AsCString(), 
-                                              FormatManager::GetFormatAsCString (entry->m_format),
-                                              entry->m_cascades ? "" : " (not cascading)",
-                                              entry->m_skip_pointers ? " (skip pointers)" : "",
-                                              entry->m_skip_references ? " (skip references)" : "");
+            result->GetOutputStream().Printf ("%s: %s\n", type.AsCString(), 
+                                              entry->GetDescription().c_str());
         }
         return true;
     }
     
-    friend bool CommandObjectTypeFormatList_LoopCallback(void* pt2self, ConstString type, const lldb::ValueFormatSP& entry);
+    friend bool CommandObjectTypeFormatList_LoopCallback(void* pt2self, ConstString type, const lldb::TypeFormatImplSP& entry);
     
 };
 
@@ -746,7 +722,7 @@ bool
 CommandObjectTypeFormatList_LoopCallback (
                                     void* pt2self,
                                     ConstString type,
-                                    const lldb::ValueFormatSP& entry)
+                                    const lldb::TypeFormatImplSP& entry)
 {
     CommandObjectTypeFormatList_LoopCallbackParam* param = (CommandObjectTypeFormatList_LoopCallbackParam*)pt2self;
     return param->self->LoopCallback(type, entry, param->regex, param->result);
@@ -848,38 +824,26 @@ public:
             out_stream->Flush();
             return;
         }
-        StringList funct_name_sl;
+        std::string funct_name_str;
         if (!interpreter->GenerateTypeScriptFunction (options->m_user_source, 
-                                                      funct_name_sl))
+                                                      funct_name_str))
         {
             out_stream->Printf ("Internal error #3: no script attached.\n");
             out_stream->Flush();
             return;
         }
-        if (funct_name_sl.GetSize() == 0)
+        if (funct_name_str.empty())
         {
             out_stream->Printf ("Internal error #4: no script attached.\n");
             out_stream->Flush();
             return;
         }
-        const char *funct_name = funct_name_sl.GetStringAtIndex(0);
-        if (!funct_name || !funct_name[0])
-        {
-            out_stream->Printf ("Internal error #5: no script attached.\n");
-            out_stream->Flush();
-            return;
-        }
         // now I have a valid function name, let's add this as script for every type in the list
         
-        SummaryFormatSP script_format;
-        script_format.reset(new ScriptSummaryFormat(options->m_cascade,
-                                                    options->m_skip_pointers,
-                                                    options->m_skip_references,
-                                                    options->m_no_children,
-                                                    options->m_no_value,
-                                                    options->m_one_liner,
-                                                    std::string(funct_name),
-                                                    options->m_user_source.CopyList("     ")));
+        TypeSummaryImplSP script_format;
+        script_format.reset(new ScriptSummaryFormat(options->m_flags,
+                                                    funct_name_str.c_str(),
+                                                    options->m_user_source.CopyList("     ").c_str()));
         
         Error error;
         
@@ -929,8 +893,11 @@ public:
         }
         else
         {
-            out_stream->PutCString (error.AsCString());
-            out_stream->Flush();
+            if (error.AsCString())
+            {
+                out_stream->PutCString (error.AsCString());
+                out_stream->Flush();
+            }
             return;
         }
     }
@@ -948,27 +915,27 @@ CommandObjectTypeSummaryAdd::CommandOptions::SetOptionValue (uint32_t option_idx
     switch (short_option)
     {
         case 'C':
-            m_cascade = Args::StringToBoolean(option_arg, true, &success);
+            m_flags.SetCascades(Args::StringToBoolean(option_arg, true, &success));
             if (!success)
                 error.SetErrorStringWithFormat("invalid value for cascade: %s", option_arg);
             break;
         case 'e':
-            m_no_children = false;
+            m_flags.SetDontShowChildren(false);
             break;
         case 'v':
-            m_no_value = true;
+            m_flags.SetDontShowValue(true);
             break;
         case 'c':
-            m_one_liner = true;
+            m_flags.SetShowMembersOneLiner(true);
             break;
         case 's':
             m_format_string = std::string(option_arg);
             break;
         case 'p':
-            m_skip_pointers = true;
+            m_flags.SetSkipPointers(true);
             break;
         case 'r':
-            m_skip_references = true;
+            m_flags.SetSkipReferences(true);
             break;
         case 'x':
             m_regex = true;
@@ -990,6 +957,9 @@ CommandObjectTypeSummaryAdd::CommandOptions::SetOptionValue (uint32_t option_idx
         case 'w':
             m_category = std::string(option_arg);
             break;
+        case 'O':
+            m_flags.SetHideItemNames(true);
+            break;
         default:
             error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
@@ -1001,12 +971,9 @@ CommandObjectTypeSummaryAdd::CommandOptions::SetOptionValue (uint32_t option_idx
 void
 CommandObjectTypeSummaryAdd::CommandOptions::OptionParsingStarting ()
 {
-    m_cascade = true;
-    m_no_children = true;
-    m_no_value = false;
-    m_one_liner = false;
-    m_skip_references = false;
-    m_skip_pointers = false;
+    m_flags.Clear().SetCascades().SetDontShowChildren().SetDontShowValue(false);
+    m_flags.SetShowMembersOneLiner(false).SetSkipPointers(false).SetSkipReferences(false).SetHideItemNames(false);
+
     m_regex = false;
     m_name.Clear();
     m_python_script = "";
@@ -1058,7 +1025,7 @@ CommandObjectTypeSummaryAdd::Execute_ScriptSummary (Args& command, CommandReturn
         return false;
     }
     
-    SummaryFormatSP script_format;
+    TypeSummaryImplSP script_format;
     
     if (!m_options.m_python_function.empty()) // we have a Python function ready to use
     {
@@ -1077,14 +1044,11 @@ CommandObjectTypeSummaryAdd::Execute_ScriptSummary (Args& command, CommandReturn
             return false;
         }
         
-        script_format.reset(new ScriptSummaryFormat(m_options.m_cascade,
-                                                    m_options.m_skip_pointers,
-                                                    m_options.m_skip_references,
-                                                    m_options.m_no_children,
-                                                    m_options.m_no_value,
-                                                    m_options.m_one_liner,
-                                                    std::string(funct_name),
-                                                    "     " + m_options.m_python_function + "(valobj,dict)"));
+        std::string code = ("     " + m_options.m_python_function + "(valobj,dict)");
+        
+        script_format.reset(new ScriptSummaryFormat(m_options.m_flags,
+                                                    funct_name,
+                                                    code.c_str()));
     }
     else if (!m_options.m_python_script.empty()) // we have a quick 1-line script, just use it
     {
@@ -1097,45 +1061,30 @@ CommandObjectTypeSummaryAdd::Execute_ScriptSummary (Args& command, CommandReturn
         }
         StringList funct_sl;
         funct_sl << m_options.m_python_script.c_str();
-        StringList funct_name_sl;
+        std::string funct_name_str;
         if (!interpreter->GenerateTypeScriptFunction (funct_sl, 
-                                                      funct_name_sl))
+                                                      funct_name_str))
         {
             result.AppendError ("Internal error #2Q: no script attached.\n");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
-        if (funct_name_sl.GetSize() == 0)
+        if (funct_name_str.empty())
         {
             result.AppendError ("Internal error #3Q: no script attached.\n");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
-        const char *funct_name = funct_name_sl.GetStringAtIndex(0);
-        if (!funct_name || !funct_name[0])
-        {
-            result.AppendError ("Internal error #4Q: no script attached.\n");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
         
-        script_format.reset(new ScriptSummaryFormat(m_options.m_cascade,
-                                                    m_options.m_skip_pointers,
-                                                    m_options.m_skip_references,
-                                                    m_options.m_no_children,
-                                                    m_options.m_no_value,
-                                                    m_options.m_one_liner,
-                                                    std::string(funct_name),
-                                                    "     " + m_options.m_python_script));
+        std::string code = "     " + m_options.m_python_script;
+        
+        script_format.reset(new ScriptSummaryFormat(m_options.m_flags,
+                                                    funct_name_str.c_str(),
+                                                    code.c_str()));
     }
     else // use an InputReader to grab Python code from the user
     {        
-        ScriptAddOptions *options = new ScriptAddOptions(m_options.m_skip_pointers,
-                                                         m_options.m_skip_references,
-                                                         m_options.m_cascade,
-                                                         m_options.m_no_children,
-                                                         m_options.m_no_value,
-                                                         m_options.m_one_liner,
+        ScriptAddOptions *options = new ScriptAddOptions(m_options.m_flags,
                                                          m_options.m_regex,
                                                          m_options.m_name,
                                                          m_options.m_category);
@@ -1208,14 +1157,14 @@ CommandObjectTypeSummaryAdd::Execute_StringSummary (Args& command, CommandReturn
         return false;
     }
     
-    if (!m_options.m_one_liner && m_options.m_format_string.empty())
+    if (!m_options.m_flags.GetShowMembersOneLiner() && m_options.m_format_string.empty())
     {
         result.AppendError("empty summary strings not allowed");
         result.SetStatus(eReturnStatusFailed);
         return false;
     }
     
-    const char* format_cstr = (m_options.m_one_liner ? "" : m_options.m_format_string.c_str());
+    const char* format_cstr = (m_options.m_flags.GetShowMembersOneLiner() ? "" : m_options.m_format_string.c_str());
     
     // ${var%S} is an endless recursion, prevent it
     if (strcmp(format_cstr, "${var%S}") == 0)
@@ -1227,15 +1176,10 @@ CommandObjectTypeSummaryAdd::Execute_StringSummary (Args& command, CommandReturn
     
     Error error;
     
-    lldb::SummaryFormatSP entry(new StringSummaryFormat(m_options.m_cascade,
-                                                               m_options.m_skip_pointers,
-                                                               m_options.m_skip_references,
-                                                               m_options.m_no_children,
-                                                               m_options.m_no_value,
-                                                               m_options.m_one_liner,
-                                                               format_cstr));
+    lldb::TypeSummaryImplSP entry(new StringSummaryFormat(m_options.m_flags,
+                                                        format_cstr));
     
-    if (error.Fail()) 
+    if (error.Fail())
     {
         result.AppendError(error.AsCString());
         result.SetStatus(eReturnStatusFailed);
@@ -1386,12 +1330,12 @@ CommandObjectTypeSummaryAdd::Execute (Args& command, CommandReturnObject &result
 
 bool
 CommandObjectTypeSummaryAdd::AddSummary(const ConstString& type_name,
-                                        SummaryFormatSP entry,
+                                        TypeSummaryImplSP entry,
                                         SummaryFormatType type,
                                         std::string category_name,
                                         Error* error)
 {
-    lldb::FormatCategorySP category;
+    lldb::TypeCategoryImplSP category;
     DataVisualization::Categories::GetCategory(ConstString(category_name.c_str()), category);
     
     if (type == eRegexSummary)
@@ -1426,12 +1370,13 @@ OptionDefinition
 CommandObjectTypeSummaryAdd::CommandOptions::g_option_table[] =
 {
     { LLDB_OPT_SET_ALL, false, "category", 'w', required_argument, NULL, 0, eArgTypeName,    "Add this to the given category instead of the default one."},
-    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade to derived typedefs."},
+    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade through typedef chains."},
     { LLDB_OPT_SET_ALL, false, "no-value", 'v', no_argument, NULL, 0, eArgTypeNone,         "Don't show the value, just show the summary, for this type."},
     { LLDB_OPT_SET_ALL, false, "skip-pointers", 'p', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for pointers-to-type objects."},
     { LLDB_OPT_SET_ALL, false, "skip-references", 'r', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for references-to-type objects."},
     { LLDB_OPT_SET_ALL, false,  "regex", 'x', no_argument, NULL, 0, eArgTypeNone,    "Type names are actually regular expressions."},
     { LLDB_OPT_SET_1  , true, "inline-children", 'c', no_argument, NULL, 0, eArgTypeNone,    "If true, inline all child values into summary string."},
+    { LLDB_OPT_SET_1  , false, "omit-names", 'O', no_argument, NULL, 0, eArgTypeNone,    "If true, omit value names in the summary display."},
     { LLDB_OPT_SET_2  , true, "summary-string", 's', required_argument, NULL, 0, eArgTypeSummaryString,    "Summary string used to display text and object contents."},
     { LLDB_OPT_SET_3, false, "python-script", 'o', required_argument, NULL, 0, eArgTypePythonScript, "Give a one-liner Python script as part of the command."},
     { LLDB_OPT_SET_3, false, "python-function", 'F', required_argument, NULL, 0, eArgTypePythonFunction, "Give the name of a Python function to use for this type."},
@@ -1517,11 +1462,11 @@ private:
     
     static bool
     PerCategoryCallback(void* param,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& category_sp)
     {
-        ConstString *name = (ConstString*)param;
-        cate->Delete(*name, eFormatCategoryItemSummary | eFormatCategoryItemRegexSummary);
-        return true;
+		ConstString *name = (ConstString*)param;
+		category_sp->Delete(*name, eFormatCategoryItemSummary | eFormatCategoryItemRegexSummary);
+		return true;
     }
 
 public:
@@ -1571,12 +1516,12 @@ public:
         
         if (m_options.m_delete_all)
         {
-            DataVisualization::Categories::LoopThrough(PerCategoryCallback, (void*)typeCS.GetCString());
+            DataVisualization::Categories::LoopThrough(PerCategoryCallback, &typeCS);
             result.SetStatus(eReturnStatusSuccessFinishNoResult);
             return result.Succeeded();
         }
         
-        lldb::FormatCategorySP category;
+        lldb::TypeCategoryImplSP category;
         DataVisualization::Categories::GetCategory(ConstString(m_options.m_category.c_str()), category);
         
         bool delete_category = category->Delete(typeCS,
@@ -1673,7 +1618,7 @@ private:
     
     static bool
     PerCategoryCallback(void* param,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         cate->GetSummaryNavigator()->Clear();
         cate->GetRegexSummaryNavigator()->Clear();
@@ -1703,7 +1648,7 @@ public:
         
         else
         {        
-            lldb::FormatCategorySP category;
+            lldb::TypeCategoryImplSP category;
             if (command.GetArgumentCount() > 0)
             {
                 const char* cat_name = command.GetArgumentAtIndex(0);
@@ -1882,14 +1827,14 @@ private:
     
     static bool
     PerCategoryCallback(void* param_vp,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         
         CommandObjectTypeSummaryList_LoopCallbackParam* param = 
             (CommandObjectTypeSummaryList_LoopCallbackParam*)param_vp;
         CommandReturnObject* result = param->result;
         
-        const char* cate_name = cate->GetName().c_str();
+        const char* cate_name = cate->GetName();
         
         // if the category is disabled or empty and there is no regex, just skip it
         if ((cate->IsEnabled() == false || cate->GetCount(eFormatCategoryItemSummary | eFormatCategoryItemRegexSummary) == 0) && param->cate_regex == NULL)
@@ -1916,7 +1861,7 @@ private:
     
     bool
     LoopCallback (const char* type,
-                  const lldb::SummaryFormatSP& entry,
+                  const lldb::TypeSummaryImplSP& entry,
                   RegularExpression* regex,
                   CommandReturnObject *result)
     {
@@ -1925,15 +1870,15 @@ private:
         return true;
     }
     
-    friend bool CommandObjectTypeSummaryList_LoopCallback(void* pt2self, ConstString type, const lldb::SummaryFormatSP& entry);
-    friend bool CommandObjectTypeRXSummaryList_LoopCallback(void* pt2self, lldb::RegularExpressionSP regex, const lldb::SummaryFormatSP& entry);
+    friend bool CommandObjectTypeSummaryList_LoopCallback(void* pt2self, ConstString type, const lldb::TypeSummaryImplSP& entry);
+    friend bool CommandObjectTypeRXSummaryList_LoopCallback(void* pt2self, lldb::RegularExpressionSP regex, const lldb::TypeSummaryImplSP& entry);
 };
 
 bool
 CommandObjectTypeSummaryList_LoopCallback (
                                           void* pt2self,
                                           ConstString type,
-                                          const lldb::SummaryFormatSP& entry)
+                                          const lldb::TypeSummaryImplSP& entry)
 {
     CommandObjectTypeSummaryList_LoopCallbackParam* param = (CommandObjectTypeSummaryList_LoopCallbackParam*)pt2self;
     return param->self->LoopCallback(type.AsCString(), entry, param->regex, param->result);
@@ -1943,7 +1888,7 @@ bool
 CommandObjectTypeRXSummaryList_LoopCallback (
                                            void* pt2self,
                                            lldb::RegularExpressionSP regex,
-                                           const lldb::SummaryFormatSP& entry)
+                                           const lldb::TypeSummaryImplSP& entry)
 {
     CommandObjectTypeSummaryList_LoopCallbackParam* param = (CommandObjectTypeSummaryList_LoopCallbackParam*)pt2self;
     return param->self->LoopCallback(regex->GetText(), entry, param->regex, param->result);
@@ -2009,7 +1954,7 @@ public:
                 return false;
             }
             DataVisualization::Categories::Enable(typeCS);
-            lldb::FormatCategorySP cate;
+            lldb::TypeCategoryImplSP cate;
             if (DataVisualization::Categories::GetCategory(typeCS, cate) && cate.get())
             {
                 if (cate->GetCount() == 0)
@@ -2040,10 +1985,10 @@ public:
     {
         CommandArgumentEntry type_arg;
         CommandArgumentData type_style_arg;
-        
+          
         type_style_arg.arg_type = eArgTypeName;
         type_style_arg.arg_repetition = eArgRepeatPlus;
-        
+                
         type_arg.push_back (type_style_arg);
         
         m_arguments.push_back (type_arg);
@@ -2138,19 +2083,33 @@ public:
             return false;
         }
         
-        // the order is not relevant here
-        for (int i = argc - 1; i >= 0; i--)
+        if (argc == 1 && strcmp(command.GetArgumentAtIndex(0),"*") == 0)
         {
-            const char* typeA = command.GetArgumentAtIndex(i);
-            ConstString typeCS(typeA);
-            
-            if (!typeCS)
+            uint32_t num_categories = DataVisualization::Categories::GetCount();
+            for (uint32_t i = 0; i < num_categories; i++)
             {
-                result.AppendError("empty category name not allowed");
-                result.SetStatus(eReturnStatusFailed);
-                return false;
+                lldb::TypeCategoryImplSP category_sp = DataVisualization::Categories::GetCategoryAtIndex(i);
+                // no need to check if the category is enabled - disabling a disabled category has no effect
+                if (category_sp)
+                    DataVisualization::Categories::Disable(category_sp);
             }
-            DataVisualization::Categories::Disable(typeCS);
+        }
+        else
+        {
+            // the order is not relevant here
+            for (int i = argc - 1; i >= 0; i--)
+            {
+                const char* typeA = command.GetArgumentAtIndex(i);
+                ConstString typeCS(typeA);
+                
+                if (!typeCS)
+                {
+                    result.AppendError("empty category name not allowed");
+                    result.SetStatus(eReturnStatusFailed);
+                    return false;
+                }
+                DataVisualization::Categories::Disable(typeCS);
+            }
         }
 
         result.SetStatus(eReturnStatusSuccessFinishResult);
@@ -2183,14 +2142,14 @@ private:
     
     static bool
     PerCategoryCallback(void* param_vp,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         CommandObjectTypeCategoryList_CallbackParam* param =
             (CommandObjectTypeCategoryList_CallbackParam*)param_vp;
         CommandReturnObject* result = param->result;
         RegularExpression* regex = param->regex;
         
-        const char* cate_name = cate->GetName().c_str();
+        const char* cate_name = cate->GetName();
         
         if (regex == NULL || regex->Execute(cate_name))
             result->GetOutputStream().Printf("Category %s is%s enabled\n",
@@ -2388,10 +2347,10 @@ private:
     
     static bool
     PerCategoryCallback(void* param_vp,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         
-        const char* cate_name = cate->GetName().c_str();
+        const char* cate_name = cate->GetName();
         
         CommandObjectTypeFilterList_LoopCallbackParam* param = 
         (CommandObjectTypeFilterList_LoopCallbackParam*)param_vp;
@@ -2600,14 +2559,14 @@ private:
     
     static bool
     PerCategoryCallback(void* param_vp,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         
         CommandObjectTypeSynthList_LoopCallbackParam* param = 
         (CommandObjectTypeSynthList_LoopCallbackParam*)param_vp;
         CommandReturnObject* result = param->result;
         
-        const char* cate_name = cate->GetName().c_str();
+        const char* cate_name = cate->GetName();
         
         // if the category is disabled or empty and there is no regex, just skip it
         if ((cate->IsEnabled() == false || cate->GetCount(eFormatCategoryItemSynth | eFormatCategoryItemRegexSynth) == 0) && param->cate_regex == NULL)
@@ -2749,7 +2708,7 @@ private:
     
     static bool
     PerCategoryCallback(void* param,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         ConstString *name = (ConstString*)param;
         return cate->Delete(*name, eFormatCategoryItemFilter | eFormatCategoryItemRegexFilter);
@@ -2807,7 +2766,7 @@ public:
             return result.Succeeded();
         }
         
-        lldb::FormatCategorySP category;
+        lldb::TypeCategoryImplSP category;
         DataVisualization::Categories::GetCategory(ConstString(m_options.m_category.c_str()), category);
         
         bool delete_category = category->GetFilterNavigator()->Delete(typeCS);
@@ -2913,7 +2872,7 @@ private:
     
     static bool
     PerCategoryCallback(void* param,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         ConstString* name = (ConstString*)param;
         return cate->Delete(*name, eFormatCategoryItemSynth | eFormatCategoryItemRegexSynth);
@@ -2971,7 +2930,7 @@ public:
             return result.Succeeded();
         }
         
-        lldb::FormatCategorySP category;
+        lldb::TypeCategoryImplSP category;
         DataVisualization::Categories::GetCategory(ConstString(m_options.m_category.c_str()), category);
         
         bool delete_category = category->GetSyntheticNavigator()->Delete(typeCS);
@@ -3073,7 +3032,7 @@ private:
     
     static bool
     PerCategoryCallback(void* param,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         cate->Clear(eFormatCategoryItemFilter | eFormatCategoryItemRegexFilter);
         return true;
@@ -3102,7 +3061,7 @@ public:
         
         else
         {        
-            lldb::FormatCategorySP category;
+            lldb::TypeCategoryImplSP category;
             if (command.GetArgumentCount() > 0)
             {
                 const char* cat_name = command.GetArgumentAtIndex(0);
@@ -3200,7 +3159,7 @@ private:
     
     static bool
     PerCategoryCallback(void* param,
-                        const lldb::FormatCategorySP& cate)
+                        const lldb::TypeCategoryImplSP& cate)
     {
         cate->Clear(eFormatCategoryItemSynth | eFormatCategoryItemRegexSynth);
         return true;
@@ -3229,7 +3188,7 @@ public:
         
         else
         {        
-            lldb::FormatCategorySP category;
+            lldb::TypeCategoryImplSP category;
             if (command.GetArgumentCount() > 0)
             {
                 const char* cat_name = command.GetArgumentAtIndex(0);
@@ -3355,24 +3314,17 @@ public:
             out_stream->Flush();
             return;
         }
-        StringList class_name_sl;
+        std::string class_name_str;
         if (!interpreter->GenerateTypeSynthClass (options->m_user_source, 
-                                                  class_name_sl))
+                                                  class_name_str))
         {
             out_stream->Printf ("Internal error #3: no script attached.\n");
             out_stream->Flush();
             return;
         }
-        if (class_name_sl.GetSize() == 0)
+        if (class_name_str.empty())
         {
             out_stream->Printf ("Internal error #4: no script attached.\n");
-            out_stream->Flush();
-            return;
-        }
-        const char *class_name = class_name_sl.GetStringAtIndex(0);
-        if (!class_name || !class_name[0])
-        {
-            out_stream->Printf ("Internal error #5: no script attached.\n");
             out_stream->Flush();
             return;
         }
@@ -3380,13 +3332,13 @@ public:
         // everything should be fine now, let's add the synth provider class
         
         SyntheticChildrenSP synth_provider;
-        synth_provider.reset(new SyntheticScriptProvider(options->m_cascade,
-                                                         options->m_skip_pointers,
-                                                         options->m_skip_references,
-                                                         std::string(class_name)));
+        synth_provider.reset(new TypeSyntheticImpl(SyntheticChildren::Flags().SetCascades(options->m_cascade).
+                                                         SetSkipPointers(options->m_skip_pointers).
+                                                         SetSkipReferences(options->m_skip_references),
+                                                         class_name_str.c_str()));
         
         
-        lldb::FormatCategorySP category;
+        lldb::TypeCategoryImplSP category;
         DataVisualization::Categories::GetCategory(ConstString(options->m_category.c_str()), category);
         
         Error error;
@@ -3499,16 +3451,17 @@ CommandObjectTypeSynthAdd::Execute_PythonClass (Args& command, CommandReturnObje
     
     SyntheticChildrenSP entry;
     
-    SyntheticScriptProvider* impl = new SyntheticScriptProvider(m_options.m_cascade,
-                                                                m_options.m_skip_pointers,
-                                                                m_options.m_skip_references,
-                                                                m_options.m_class_name);
+    TypeSyntheticImpl* impl = new TypeSyntheticImpl(SyntheticChildren::Flags().
+                                                    SetCascades(m_options.m_cascade).
+                                                    SetSkipPointers(m_options.m_skip_pointers).
+                                                    SetSkipReferences(m_options.m_skip_references),
+                                                    m_options.m_class_name.c_str());
     
     entry.reset(impl);
     
     // now I have a valid provider, let's add it to every type
     
-    lldb::FormatCategorySP category;
+    lldb::TypeCategoryImplSP category;
     DataVisualization::Categories::GetCategory(ConstString(m_options.m_category.c_str()), category);
     
     Error error;
@@ -3567,7 +3520,7 @@ CommandObjectTypeSynthAdd::AddSynth(const ConstString& type_name,
          std::string category_name,
          Error* error)
 {
-    lldb::FormatCategorySP category;
+    lldb::TypeCategoryImplSP category;
     DataVisualization::Categories::GetCategory(ConstString(category_name.c_str()), category);
     
     if (category->AnyMatches(type_name,
@@ -3619,7 +3572,7 @@ CommandObjectTypeSynthAdd::Execute (Args& command, CommandReturnObject &result)
 OptionDefinition
 CommandObjectTypeSynthAdd::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade to derived typedefs."},
+    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade through typedef chains."},
     { LLDB_OPT_SET_ALL, false, "skip-pointers", 'p', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for pointers-to-type objects."},
     { LLDB_OPT_SET_ALL, false, "skip-references", 'r', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for references-to-type objects."},
     { LLDB_OPT_SET_ALL, false, "category", 'w', required_argument, NULL, 0, eArgTypeName,         "Add this to the given category instead of the default one."},
@@ -3746,7 +3699,7 @@ private:
               std::string category_name,
               Error* error)
     {
-        lldb::FormatCategorySP category;
+        lldb::TypeCategoryImplSP category;
         DataVisualization::Categories::GetCategory(ConstString(category_name.c_str()), category);
         
         if (category->AnyMatches(type_name,
@@ -3853,9 +3806,9 @@ public:
         
         SyntheticChildrenSP entry;
         
-        SyntheticFilter* impl = new SyntheticFilter(m_options.m_cascade,
-                                                    m_options.m_skip_pointers,
-                                                    m_options.m_skip_references);
+        TypeFilterImpl* impl = new TypeFilterImpl(SyntheticChildren::Flags().SetCascades(m_options.m_cascade).
+                                                    SetSkipPointers(m_options.m_skip_pointers).
+                                                    SetSkipReferences(m_options.m_skip_references));
         
         entry.reset(impl);
         
@@ -3868,7 +3821,7 @@ public:
         
         // now I have a valid provider, let's add it to every type
         
-        lldb::FormatCategorySP category;
+        lldb::TypeCategoryImplSP category;
         DataVisualization::Categories::GetCategory(ConstString(m_options.m_category.c_str()), category);
         
         Error error;
@@ -3907,7 +3860,7 @@ public:
 OptionDefinition
 CommandObjectTypeFilterAdd::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade to derived typedefs."},
+    { LLDB_OPT_SET_ALL, false, "cascade", 'C', required_argument, NULL, 0, eArgTypeBoolean,    "If true, cascade through typedef chains."},
     { LLDB_OPT_SET_ALL, false, "skip-pointers", 'p', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for pointers-to-type objects."},
     { LLDB_OPT_SET_ALL, false, "skip-references", 'r', no_argument, NULL, 0, eArgTypeNone,         "Don't use this format for references-to-type objects."},
     { LLDB_OPT_SET_ALL, false, "category", 'w', required_argument, NULL, 0, eArgTypeName,         "Add this to the given category instead of the default one."},

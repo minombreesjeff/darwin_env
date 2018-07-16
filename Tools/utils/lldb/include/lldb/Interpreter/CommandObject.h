@@ -60,6 +60,12 @@ public:
     {
         lldb::CommandArgumentType arg_type;
         ArgumentRepetitionType arg_repetition;
+        uint32_t arg_opt_set_association; // This arg might be associated only with some particular option set(s).
+        CommandArgumentData():
+            arg_type(lldb::eArgTypeNone),
+            arg_repetition(eArgRepeatPlain),
+            arg_opt_set_association(LLDB_OPT_SET_ALL) // By default, the arg associates to all option sets.
+        {}
     };
     
     typedef std::vector<CommandArgumentData> CommandArgumentEntry; // Used to build individual command argument lists
@@ -171,8 +177,13 @@ public:
     static const char *
     GetArgumentName (lldb::CommandArgumentType arg_type);
 
+    // Generates a nicely formatted command args string for help command output.
+    // By default, all possible args are taken into account, for example,
+    // '<expr | variable-name>'.  This can be refined by passing a second arg
+    // specifying which option set(s) we are interested, which could then, for
+    // example, produce either '<expr>' or '<variable-name>'.
     void
-    GetFormattedCommandArguments (Stream &str);
+    GetFormattedCommandArguments (Stream &str, uint32_t opt_set_mask = LLDB_OPT_SET_ALL);
     
     bool
     IsPairType (ArgumentRepetitionType arg_repeat_type);
@@ -182,11 +193,6 @@ public:
         eFlagProcessMustBeLaunched = (1 << 0),
         eFlagProcessMustBePaused = (1 << 1)
     };
-
-    // Do not override this
-    bool
-    ExecuteCommandString (const char *command,
-                          CommandReturnObject &result);
 
     bool
     ParseOptions (Args& args,
@@ -358,6 +364,25 @@ public:
         return NULL;
     }
 
+    CommandOverrideCallback
+    GetOverrideCallback () const
+    {
+        return m_command_override_callback;
+    }
+    
+    void *
+    GetOverrideCallbackBaton () const
+    {
+        return m_command_override_baton;
+    }
+
+    void
+    SetOverrideCallback (CommandOverrideCallback callback, void *baton)
+    {
+        m_command_override_callback = callback;
+        m_command_override_baton = baton;
+    }
+
 protected:
     CommandInterpreter &m_interpreter;
     std::string m_cmd_name;
@@ -365,9 +390,10 @@ protected:
     std::string m_cmd_help_long;
     std::string m_cmd_syntax;
     bool m_is_alias;
-    Flags       m_flags;
+    Flags m_flags;
     std::vector<CommandArgumentEntry> m_arguments;
-
+    CommandOverrideCallback m_command_override_callback;
+    void * m_command_override_baton;
     // Helper function to populate IDs or ID ranges as the command argument data
     // to the specified command argument entry.
     static void

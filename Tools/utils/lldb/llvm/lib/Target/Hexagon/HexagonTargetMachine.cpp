@@ -7,27 +7,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
+// Implements the info about Hexagon target spec.
 //
 //===----------------------------------------------------------------------===//
 
-#include "HexagonMCAsmInfo.h"
 #include "HexagonTargetMachine.h"
 #include "Hexagon.h"
 #include "HexagonISelLowering.h"
 #include "llvm/Module.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/PassManager.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Scalar.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetRegistry.h"
-#include <iostream>
-
-#define GET_REGINFO_MC_DESC
-#define GET_REGINFO_TARGET_DESC
-#include "HexagonGenRegisterInfo.inc"
-
-extern "C" void LLVMInitializeHexagonTargetMC() {}
 
 using namespace llvm;
 
@@ -47,9 +40,6 @@ int HexagonTargetMachineModule = 0;
 extern "C" void LLVMInitializeHexagonTarget() {
   // Register the target.
   RegisterTargetMachine<HexagonTargetMachine> X(TheHexagonTarget);
-
-  // Register the target asm info.
-  RegisterMCAsmInfo<HexagonMCAsmInfo> A(TheHexagonTarget);
 }
 
 
@@ -66,7 +56,7 @@ HexagonTargetMachine::HexagonTargetMachine(const Target &T, StringRef TT,
                                            CodeGenOpt::Level OL)
   : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     DataLayout("e-p:32:32:32-i64:64:64-i32:32:32-i16:16:16-i1:32:32-a0:0") ,
-    Subtarget(TT, CPU, FS), TLInfo(*this), InstrInfo(Subtarget),
+    Subtarget(TT, CPU, FS), InstrInfo(Subtarget), TLInfo(*this),
     TSInfo(*this),
     FrameLowering(Subtarget),
     InstrItins(&Subtarget.getInstrItineraryData()) {
@@ -86,14 +76,38 @@ bool HexagonTargetMachine::addPassesForOptimizations(PassManagerBase &PM) {
   return true;
 }
 
-bool HexagonTargetMachine::addInstSelector(PassManagerBase &PM) {
-  PM.add(createHexagonRemoveExtendOps(*this));
-  PM.add(createHexagonISelDag(*this));
+namespace {
+/// Hexagon Code Generator Pass Configuration Options.
+class HexagonPassConfig : public TargetPassConfig {
+public:
+  HexagonPassConfig(HexagonTargetMachine *TM, PassManagerBase &PM)
+    : TargetPassConfig(TM, PM) {}
+
+  HexagonTargetMachine &getHexagonTargetMachine() const {
+    return getTM<HexagonTargetMachine>();
+  }
+
+  virtual bool addInstSelector();
+  virtual bool addPreRegAlloc();
+  virtual bool addPostRegAlloc();
+  virtual bool addPreSched2();
+  virtual bool addPreEmitPass();
+};
+} // namespace
+
+TargetPassConfig *HexagonTargetMachine::createPassConfig(PassManagerBase &PM) {
+  return new HexagonPassConfig(this, PM);
+}
+
+bool HexagonPassConfig::addInstSelector() {
+  PM.add(createHexagonRemoveExtendOps(getHexagonTargetMachine()));
+  PM.add(createHexagonISelDag(getHexagonTargetMachine()));
+  PM.add(createHexagonPeephole());
   return false;
 }
 
 
-bool HexagonTargetMachine::addPreRegAlloc(PassManagerBase &PM) {
+bool HexagonPassConfig::addPreRegAlloc() {
   if (!DisableHardwareLoops) {
     PM.add(createHexagonHardwareLoops());
   }
@@ -101,28 +115,28 @@ bool HexagonTargetMachine::addPreRegAlloc(PassManagerBase &PM) {
   return false;
 }
 
-bool HexagonTargetMachine::addPostRegAlloc(PassManagerBase &PM) {
-  PM.add(createHexagonCFGOptimizer(*this));
+bool HexagonPassConfig::addPostRegAlloc() {
+  PM.add(createHexagonCFGOptimizer(getHexagonTargetMachine()));
   return true;
 }
 
 
-bool HexagonTargetMachine::addPreSched2(PassManagerBase &PM) {
-  PM.add(createIfConverterPass());
+bool HexagonPassConfig::addPreSched2() {
+  addPass(IfConverterID);
   return true;
 }
 
-bool HexagonTargetMachine::addPreEmitPass(PassManagerBase &PM) {
+bool HexagonPassConfig::addPreEmitPass() {
 
   if (!DisableHardwareLoops) {
     PM.add(createHexagonFixupHwLoops());
   }
 
   // Expand Spill code for predicate registers.
-  PM.add(createHexagonExpandPredSpillCode(*this));
+  PM.add(createHexagonExpandPredSpillCode(getHexagonTargetMachine()));
 
   // Split up TFRcondsets into conditional transfers.
-  PM.add(createHexagonSplitTFRCondSets(*this));
+  PM.add(createHexagonSplitTFRCondSets(getHexagonTargetMachine()));
 
   return false;
 }

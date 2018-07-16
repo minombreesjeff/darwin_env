@@ -26,6 +26,7 @@
 #include "Plugins/ABI/MacOSX-arm/ABIMacOSX_arm.h"
 #include "Plugins/ABI/SysV-x86_64/ABISysV_x86_64.h"
 #include "Plugins/Disassembler/llvm/DisassemblerLLVM.h"
+#include "Plugins/Disassembler/llvm/DisassemblerLLVMC.h"
 #include "Plugins/Instruction/ARM/EmulateInstructionARM.h"
 #include "Plugins/SymbolVendor/MacOSX/SymbolVendorMacOSX.h"
 #include "Plugins/ObjectContainer/BSD-Archive/ObjectContainerBSDArchive.h"
@@ -36,6 +37,9 @@
 #include "Plugins/UnwindAssembly/x86/UnwindAssembly-x86.h"
 #include "Plugins/UnwindAssembly/InstEmulation/UnwindAssemblyInstEmulation.h"
 #include "Plugins/ObjectFile/PECOFF/ObjectFilePECOFF.h"
+#include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
+#include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
+#include "Plugins/Platform/Linux/PlatformLinux.h"
 #if defined (__APPLE__)
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
 #include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
@@ -49,17 +53,17 @@
 #include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #include "Plugins/Platform/MacOSX/PlatformMacOSX.h"
 #include "Plugins/Platform/MacOSX/PlatformRemoteiOS.h"
+#include "Plugins/Platform/MacOSX/PlatformiOSSimulator.h"
 #endif
 
+#include "Plugins/Process/mach-core/ProcessMachCore.h"
+
 #if defined (__linux__)
-#include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
-#include "Plugins/Platform/Linux/PlatformLinux.h"
 #include "Plugins/Process/Linux/ProcessLinux.h"
 #endif
 
 #if defined (__FreeBSD__)
-#include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
-#include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
+#include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #include "Plugins/Process/POSIX/ProcessPOSIX.h"
 #include "Plugins/Process/FreeBSD/ProcessFreeBSD.h"
 #endif
@@ -69,7 +73,6 @@
 
 using namespace lldb;
 using namespace lldb_private;
-
 
 void
 lldb_private::Initialize ()
@@ -89,6 +92,7 @@ lldb_private::Initialize ()
         ABIMacOSX_i386::Initialize();
         ABIMacOSX_arm::Initialize();
         ABISysV_x86_64::Initialize();
+        DisassemblerLLVMC::Initialize();
         DisassemblerLLVM::Initialize();
         ObjectContainerBSDArchive::Initialize();
         ObjectFileELF::Initialize();
@@ -98,6 +102,9 @@ lldb_private::Initialize ()
         UnwindAssembly_x86::Initialize();
         EmulateInstructionARM::Initialize ();
         ObjectFilePECOFF::Initialize ();
+        DynamicLoaderPOSIXDYLD::Initialize ();
+        PlatformFreeBSD::Initialize();
+        PlatformLinux::Initialize();
 #if defined (__APPLE__)
         //----------------------------------------------------------------------
         // Apple/Darwin hosted plugins
@@ -111,24 +118,23 @@ lldb_private::Initialize ()
         AppleObjCRuntimeV1::Initialize();
         ObjectContainerUniversalMachO::Initialize();
         ObjectFileMachO::Initialize();
-        ProcessKDP::Initialize();
         ProcessGDBRemote::Initialize();
+        ProcessKDP::Initialize();
+        ProcessMachCore::Initialize();
         SymbolVendorMacOSX::Initialize();
-        PlatformMacOSX::Initialize();
         PlatformRemoteiOS::Initialize();
+        PlatformMacOSX::Initialize();
+        PlatformiOSSimulator::Initialize();
 #endif
 #if defined (__linux__)
         //----------------------------------------------------------------------
         // Linux hosted plugins
         //----------------------------------------------------------------------
-        PlatformLinux::Initialize();
         ProcessLinux::Initialize();
-        DynamicLoaderPOSIXDYLD::Initialize();
 #endif
 #if defined (__FreeBSD__)
-        PlatformFreeBSD::Initialize();
         ProcessFreeBSD::Initialize();
-        DynamicLoaderPOSIXDYLD::Initialize();
+        ProcessGDBRemote::Initialize();
 #endif
         //----------------------------------------------------------------------
         // Platform agnostic plugins
@@ -163,6 +169,7 @@ lldb_private::Terminate ()
     ABIMacOSX_i386::Terminate();
     ABIMacOSX_arm::Terminate();
     ABISysV_x86_64::Terminate();
+    DisassemblerLLVMC::Terminate();
     DisassemblerLLVM::Terminate();
     ObjectContainerBSDArchive::Terminate();
     ObjectFileELF::Terminate();
@@ -172,7 +179,9 @@ lldb_private::Terminate ()
     UnwindAssemblyInstEmulation::Terminate();
     EmulateInstructionARM::Terminate ();
     ObjectFilePECOFF::Terminate ();
-
+    DynamicLoaderPOSIXDYLD::Terminate ();
+    PlatformFreeBSD::Terminate();
+    PlatformLinux::Terminate();
 #if defined (__APPLE__)
     DynamicLoaderMacOSXDYLD::Terminate();
     DynamicLoaderDarwinKernel::Terminate();
@@ -183,25 +192,24 @@ lldb_private::Terminate ()
     AppleObjCRuntimeV1::Terminate();
     ObjectContainerUniversalMachO::Terminate();
     ObjectFileMachO::Terminate();
-    ProcessKDP::Terminate();
+    ProcessMachCore::Terminate();
     ProcessGDBRemote::Terminate();
+    ProcessKDP::Terminate();
     SymbolVendorMacOSX::Terminate();
     PlatformMacOSX::Terminate();
     PlatformRemoteiOS::Terminate();
+    PlatformiOSSimulator::Terminate();
 #endif
 
     Debugger::SettingsTerminate ();
 
 #if defined (__linux__)
-    PlatformLinux::Terminate();
     ProcessLinux::Terminate();
-    DynamicLoaderPOSIXDYLD::Terminate();
 #endif
 
 #if defined (__FreeBSD__)
-    PlatformFreeBSD::Terminate();
     ProcessFreeBSD::Terminate();
-    DynamicLoaderPOSIXDYLD::Terminate();
+    ProcessGDBRemote::Terminate();
 #endif
     
     DynamicLoaderStatic::Terminate();

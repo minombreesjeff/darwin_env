@@ -19,6 +19,7 @@ namespace llvm {
   template<typename T>
   class SmallVectorImpl;
   class APInt;
+  class hash_code;
 
   /// StringRef - Represent a constant reference to a string, i.e. a character
   /// array and a length, which need not be null terminated.
@@ -353,6 +354,20 @@ namespace llvm {
       Start = min(Start, Length);
       return StringRef(Data + Start, min(N, Length - Start));
     }
+    
+    /// drop_front - Return a StringRef equal to 'this' but with the first
+    /// elements dropped.
+    StringRef drop_front(unsigned N = 1) const {
+      assert(size() >= N && "Dropping more elements than exist");
+      return substr(N);
+    }
+
+    /// drop_back - Return a StringRef equal to 'this' but with the last
+    /// elements dropped.
+    StringRef drop_back(unsigned N = 1) const {
+      assert(size() >= N && "Dropping more elements than exist");
+      return substr(0, size()-N);
+    }
 
     /// slice - Return a reference to the substring from [Start, End).
     ///
@@ -475,6 +490,9 @@ namespace llvm {
   }
 
   /// @}
+
+  /// \brief Compute a hash_code for a StringRef.
+  hash_code hash_value(StringRef S);
 
   // StringRefs can be treated like a POD type.
   template <typename T> struct isPodLike;

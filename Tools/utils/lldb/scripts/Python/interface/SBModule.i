@@ -98,6 +98,9 @@ public:
 
     SBModule (const SBModule &rhs);
     
+    SBModule (lldb::SBProcess &process, 
+              lldb::addr_t header_addr);
+
     ~SBModule ();
 
     bool
@@ -162,6 +165,12 @@ public:
     bool
     GetDescription (lldb::SBStream &description);
 
+    uint32_t
+    GetNumCompileUnits();
+
+    lldb::SBCompileUnit
+    GetCompileUnitAtIndex (uint32_t);
+
     size_t
     GetNumSymbols ();
     
@@ -189,23 +198,14 @@ public:
     ///     C++ methods, or ObjC selectors. 
     ///     See FunctionNameType for more details.
     ///
-    /// @param[in] append
-    ///     If true, any matches will be appended to \a sc_list, else
-    ///     matches replace the contents of \a sc_list.
-    ///
-    /// @param[out] sc_list
+    /// @return
     ///     A symbol context list that gets filled in with all of the
     ///     matches.
-    ///
-    /// @return
-    ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
     ") FindFunctions;
-    uint32_t
+    lldb::SBSymbolContextList
     FindFunctions (const char *name, 
-                   uint32_t name_type_mask, // Logical OR one or more FunctionNameType enum bits
-                   bool append, 
-                   lldb::SBSymbolContextList& sc_list);
+                   uint32_t name_type_mask = lldb::eFunctionNameTypeAny);
     
     lldb::SBType
     FindFirstType (const char* name);
@@ -236,6 +236,165 @@ public:
     FindGlobalVariables (lldb::SBTarget &target, 
                          const char *name, 
                          uint32_t max_matches);
+    
+    lldb::ByteOrder
+    GetByteOrder ();
+    
+    uint32_t
+    GetAddressByteSize();
+    
+    const char *
+    GetTriple ();
+    
+    uint32_t
+    GetVersion (uint32_t *versions, 
+                uint32_t num_versions);
+
+    %pythoncode %{
+        class symbols_access(object):
+            re_compile_type = type(re.compile('.'))
+            '''A helper object that will lazily hand out lldb.SBModule objects for a target when supplied an index, or by full or partial path.'''
+            def __init__(self, sbmodule):
+                self.sbmodule = sbmodule
+        
+            def __len__(self):
+                if self.sbmodule:
+                    return int(self.sbmodule.GetNumSymbols())
+                return 0
+        
+            def __getitem__(self, key):
+                count = len(self)
+                if type(key) is int:
+                    if key < count:
+                        return self.sbmodule.GetSymbolAtIndex(key)
+                elif type(key) is str:
+                    matches = []
+                    for idx in range(count):
+                        symbol = self.sbmodule.GetSymbolAtIndex(idx)
+                        if symbol.name == key or symbol.mangled == key:
+                            matches.append(symbol)
+                    return matches
+                elif isinstance(key, self.re_compile_type):
+                    matches = []
+                    for idx in range(count):
+                        symbol = self.sbmodule.GetSymbolAtIndex(idx)
+                        added = False
+                        name = symbol.name
+                        if name:
+                            re_match = key.search(name)
+                            if re_match:
+                                matches.append(symbol)
+                                added = True
+                        if not added:
+                            mangled = symbol.mangled
+                            if mangled:
+                                re_match = key.search(mangled)
+                                if re_match:
+                                    matches.append(symbol)
+                    return matches
+                else:
+                    print "error: unsupported item type: %s" % type(key)
+                return None
+        
+        def get_symbols_access_object(self):
+            '''An accessor function that returns a symbols_access() object which allows lazy symbol access from a lldb.SBModule object.'''
+            return self.symbols_access (self)
+        
+        def get_symbols_array(self):
+            '''An accessor function that returns a list() that contains all symbols in a lldb.SBModule object.'''
+            symbols = []
+            for idx in range(self.num_symbols):
+                symbols.append(self.GetSymbolAtIndex(idx))
+            return symbols
+
+        class sections_access(object):
+            re_compile_type = type(re.compile('.'))
+            '''A helper object that will lazily hand out lldb.SBModule objects for a target when supplied an index, or by full or partial path.'''
+            def __init__(self, sbmodule):
+                self.sbmodule = sbmodule
+        
+            def __len__(self):
+                if self.sbmodule:
+                    return int(self.sbmodule.GetNumSections())
+                return 0
+        
+            def __getitem__(self, key):
+                count = len(self)
+                if type(key) is int:
+                    if key < count:
+                        return self.sbmodule.GetSectionAtIndex(key)
+                elif type(key) is str:
+                    for idx in range(count):
+                        section = self.sbmodule.GetSectionAtIndex(idx)
+                        if section.name == key:
+                            return section
+                elif isinstance(key, self.re_compile_type):
+                    matches = []
+                    for idx in range(count):
+                        section = self.sbmodule.GetSectionAtIndex(idx)
+                        name = section.name
+                        if name:
+                            re_match = key.search(name)
+                            if re_match:
+                                matches.append(section)
+                    return matches
+                else:
+                    print "error: unsupported item type: %s" % type(key)
+                return None
+        
+        def get_sections_access_object(self):
+            '''An accessor function that returns a sections_access() object which allows lazy section array access.'''
+            return self.sections_access (self)
+        
+        def get_sections_array(self):
+            '''An accessor function that returns an array object that contains all sections in this module object.'''
+            if not hasattr(self, 'sections'):
+                self.sections = []
+                for idx in range(self.num_sections):
+                    self.sections.append(self.GetSectionAtIndex(idx))
+            return self.sections
+
+        __swig_getmethods__["symbols"] = get_symbols_array
+        if _newclass: x = property(get_symbols_array, None)
+
+        __swig_getmethods__["symbol"] = get_symbols_access_object
+        if _newclass: x = property(get_symbols_access_object, None)
+
+        __swig_getmethods__["sections"] = get_sections_array
+        if _newclass: x = property(get_sections_array, None)
+        
+        __swig_getmethods__["section"] = get_sections_access_object
+        if _newclass: x = property(get_sections_access_object, None)
+
+        def get_uuid(self):
+            return uuid.UUID (self.GetUUIDString())
+        
+        __swig_getmethods__["uuid"] = get_uuid
+        if _newclass: x = property(get_uuid, None)
+        
+        __swig_getmethods__["file"] = GetFileSpec
+        if _newclass: x = property(GetFileSpec, None)
+        
+        __swig_getmethods__["platform_file"] = GetPlatformFileSpec
+        if _newclass: x = property(GetPlatformFileSpec, None)
+        
+        __swig_getmethods__["byte_order"] = GetByteOrder
+        if _newclass: x = property(GetByteOrder, None)
+        
+        __swig_getmethods__["addr_size"] = GetAddressByteSize
+        if _newclass: x = property(GetAddressByteSize, None)
+        
+        __swig_getmethods__["triple"] = GetTriple
+        if _newclass: x = property(GetTriple, None)
+
+        __swig_getmethods__["num_symbols"] = GetNumSymbols
+        if _newclass: x = property(GetNumSymbols, None)
+        
+        __swig_getmethods__["num_sections"] = GetNumSections
+        if _newclass: x = property(GetNumSections, None)
+        
+    %}
+
 };
 
 } // namespace lldb

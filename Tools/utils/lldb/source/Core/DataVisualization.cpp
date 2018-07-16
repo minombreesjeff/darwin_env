@@ -38,16 +38,24 @@ DataVisualization::GetCurrentRevision ()
     return GetFormatManager().GetCurrentRevision();
 }
 
-lldb::ValueFormatSP
+lldb::TypeFormatImplSP
 DataVisualization::ValueFormats::GetFormat (ValueObject& valobj, lldb::DynamicValueType use_dynamic)
 {
-    lldb::ValueFormatSP entry;
+    lldb::TypeFormatImplSP entry;
     GetFormatManager().GetValueNavigator().Get(valobj, entry, use_dynamic);
     return entry;
 }
 
+lldb::TypeFormatImplSP
+DataVisualization::ValueFormats::GetFormat (const ConstString &type)
+{
+    lldb::TypeFormatImplSP entry;
+    GetFormatManager().GetValueNavigator().Get(type, entry);
+    return entry;
+}
+
 void
-DataVisualization::ValueFormats::Add (const ConstString &type, const lldb::ValueFormatSP &entry)
+DataVisualization::ValueFormats::Add (const ConstString &type, const lldb::TypeFormatImplSP &entry)
 {
     GetFormatManager().GetValueNavigator().Add(FormatManager::GetValidTypeName(type),entry);
 }
@@ -65,7 +73,7 @@ DataVisualization::ValueFormats::Clear ()
 }
 
 void
-DataVisualization::ValueFormats::LoopThrough (ValueFormat::ValueCallback callback, void* callback_baton)
+DataVisualization::ValueFormats::LoopThrough (TypeFormatImpl::ValueCallback callback, void* callback_baton)
 {
     GetFormatManager().GetValueNavigator().LoopThrough(callback, callback_baton);
 }
@@ -76,26 +84,68 @@ DataVisualization::ValueFormats::GetCount ()
     return GetFormatManager().GetValueNavigator().GetCount();
 }
 
-lldb::SummaryFormatSP
+lldb::TypeNameSpecifierImplSP
+DataVisualization::ValueFormats::GetTypeNameSpecifierForFormatAtIndex (uint32_t index)
+{
+    return GetFormatManager().GetValueNavigator().GetTypeNameSpecifierAtIndex(index);
+}
+
+lldb::TypeFormatImplSP
+DataVisualization::ValueFormats::GetFormatAtIndex (uint32_t index)
+{
+    return GetFormatManager().GetValueNavigator().GetAtIndex(index);
+}
+
+lldb::TypeSummaryImplSP
 DataVisualization::GetSummaryFormat (ValueObject& valobj,
                                      lldb::DynamicValueType use_dynamic)
 {
     return GetFormatManager().GetSummaryFormat(valobj, use_dynamic);
 }
 
+lldb::TypeSummaryImplSP
+DataVisualization::GetSummaryForType (lldb::TypeNameSpecifierImplSP type_sp)
+{
+    return GetFormatManager().GetSummaryForType(type_sp);
+}
+
+#ifndef LLDB_DISABLE_PYTHON
 lldb::SyntheticChildrenSP
 DataVisualization::GetSyntheticChildren (ValueObject& valobj,
                                          lldb::DynamicValueType use_dynamic)
 {
     return GetFormatManager().GetSyntheticChildren(valobj, use_dynamic);
 }
+#endif
+
+#ifndef LLDB_DISABLE_PYTHON
+lldb::SyntheticChildrenSP
+DataVisualization::GetSyntheticChildrenForType (lldb::TypeNameSpecifierImplSP type_sp)
+{
+    return GetFormatManager().GetSyntheticChildrenForType(type_sp);
+}
+#endif
+
+lldb::TypeFilterImplSP
+DataVisualization::GetFilterForType (lldb::TypeNameSpecifierImplSP type_sp)
+{
+    return GetFormatManager().GetFilterForType(type_sp);
+}
+
+#ifndef LLDB_DISABLE_PYTHON
+lldb::TypeSyntheticImplSP
+DataVisualization::GetSyntheticForType (lldb::TypeNameSpecifierImplSP type_sp)
+{
+    return GetFormatManager().GetSyntheticForType(type_sp);
+}
+#endif
 
 bool
 DataVisualization::AnyMatches (ConstString type_name,
-                               FormatCategory::FormatCategoryItems items,
+                               TypeCategoryImpl::FormatCategoryItems items,
                                bool only_enabled,
                                const char** matching_category,
-                               FormatCategory::FormatCategoryItems* matching_type)
+                               TypeCategoryImpl::FormatCategoryItems* matching_type)
 {
     return GetFormatManager().AnyMatches(type_name,
                                          items,
@@ -105,10 +155,11 @@ DataVisualization::AnyMatches (ConstString type_name,
 }
 
 bool
-DataVisualization::Categories::GetCategory (const ConstString &category, lldb::FormatCategorySP &entry)
+DataVisualization::Categories::GetCategory (const ConstString &category, lldb::TypeCategoryImplSP &entry,
+                                            bool allow_create)
 {
-    entry = GetFormatManager().GetCategory(category);
-    return true;
+    entry = GetFormatManager().GetCategory(category, allow_create);
+    return (entry.get() != NULL);
 }
 
 void
@@ -131,27 +182,43 @@ DataVisualization::Categories::Clear ()
 }
 
 void
-DataVisualization::Categories::Clear (ConstString &category)
+DataVisualization::Categories::Clear (const ConstString &category)
 {
     GetFormatManager().GetCategory(category)->Clear(eFormatCategoryItemSummary | eFormatCategoryItemRegexSummary);
 }
 
 void
-DataVisualization::Categories::Enable (ConstString& category)
+DataVisualization::Categories::Enable (const ConstString& category,
+                                       CategoryMap::Position pos)
 {
-    if (GetFormatManager().GetCategory(category)->IsEnabled() == false)
-        GetFormatManager().EnableCategory(category);
-    else
-    {
+    if (GetFormatManager().GetCategory(category)->IsEnabled())
         GetFormatManager().DisableCategory(category);
-        GetFormatManager().EnableCategory(category);
+    GetFormatManager().EnableCategory(category, pos);
+}
+
+void
+DataVisualization::Categories::Disable (const ConstString& category)
+{
+    if (GetFormatManager().GetCategory(category)->IsEnabled() == true)
+        GetFormatManager().DisableCategory(category);
+}
+
+void
+DataVisualization::Categories::Enable (const lldb::TypeCategoryImplSP& category,
+                                       CategoryMap::Position pos)
+{
+    if (category.get())
+    {
+        if (category->IsEnabled())
+            GetFormatManager().DisableCategory(category);
+        GetFormatManager().EnableCategory(category, pos);
     }
 }
 
 void
-DataVisualization::Categories::Disable (ConstString& category)
+DataVisualization::Categories::Disable (const lldb::TypeCategoryImplSP& category)
 {
-    if (GetFormatManager().GetCategory(category)->IsEnabled() == true)
+    if (category.get() && category->IsEnabled() == true)
         GetFormatManager().DisableCategory(category);
 }
 
@@ -167,14 +234,20 @@ DataVisualization::Categories::GetCount ()
     return GetFormatManager().GetCategoriesCount();
 }
 
+lldb::TypeCategoryImplSP
+DataVisualization::Categories::GetCategoryAtIndex (uint32_t index)
+{
+    return GetFormatManager().GetCategoryAtIndex(index);
+}
+
 bool
-DataVisualization::NamedSummaryFormats::GetSummaryFormat (const ConstString &type, lldb::SummaryFormatSP &entry)
+DataVisualization::NamedSummaryFormats::GetSummaryFormat (const ConstString &type, lldb::TypeSummaryImplSP &entry)
 {
     return GetFormatManager().GetNamedSummaryNavigator().Get(type,entry);
 }
 
 void
-DataVisualization::NamedSummaryFormats::Add (const ConstString &type, const lldb::SummaryFormatSP &entry)
+DataVisualization::NamedSummaryFormats::Add (const ConstString &type, const lldb::TypeSummaryImplSP &entry)
 {
     GetFormatManager().GetNamedSummaryNavigator().Add(FormatManager::GetValidTypeName(type),entry);
 }
@@ -192,7 +265,7 @@ DataVisualization::NamedSummaryFormats::Clear ()
 }
 
 void
-DataVisualization::NamedSummaryFormats::LoopThrough (SummaryFormat::SummaryCallback callback, void* callback_baton)
+DataVisualization::NamedSummaryFormats::LoopThrough (TypeSummaryImpl::SummaryCallback callback, void* callback_baton)
 {
     GetFormatManager().GetNamedSummaryNavigator().LoopThrough(callback, callback_baton);
 }

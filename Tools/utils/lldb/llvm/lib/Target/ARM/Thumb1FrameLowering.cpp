@@ -1,4 +1,4 @@
-//======- Thumb1FrameLowering.cpp - Thumb1 Frame Information ---*- C++ -*-====//
+//===-- Thumb1FrameLowering.cpp - Thumb1 Frame Information ----------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -101,7 +101,7 @@ void Thumb1FrameLowering::emitPrologue(MachineFunction &MF) const {
     case ARM::R11:
       if (Reg == FramePtr)
         FramePtrSpillFI = FI;
-      if (STI.isTargetDarwin()) {
+      if (STI.isTargetIOS()) {
         AFI->addGPRCalleeSavedArea2Frame(FI);
         GPRCS2Size += 4;
       } else {
@@ -175,14 +175,14 @@ void Thumb1FrameLowering::emitPrologue(MachineFunction &MF) const {
     AFI->setShouldRestoreSPFromFP(true);
 }
 
-static bool isCalleeSavedRegister(unsigned Reg, const unsigned *CSRegs) {
+static bool isCalleeSavedRegister(unsigned Reg, const uint16_t *CSRegs) {
   for (unsigned i = 0; CSRegs[i]; ++i)
     if (Reg == CSRegs[i])
       return true;
   return false;
 }
 
-static bool isCSRestore(MachineInstr *MI, const unsigned *CSRegs) {
+static bool isCSRestore(MachineInstr *MI, const uint16_t *CSRegs) {
   if (MI->getOpcode() == ARM::tLDRspi &&
       MI->getOperand(1).isFI() &&
       isCalleeSavedRegister(MI->getOperand(0).getReg(), CSRegs))
@@ -214,7 +214,7 @@ void Thumb1FrameLowering::emitEpilogue(MachineFunction &MF,
 
   unsigned VARegSaveSize = AFI->getVarArgsRegSaveSize();
   int NumBytes = (int)MFI->getStackSize();
-  const unsigned *CSRegs = RegInfo->getCalleeSavedRegs();
+  const uint16_t *CSRegs = RegInfo->getCalleeSavedRegs();
   unsigned FramePtr = RegInfo->getFrameRegister(MF);
 
   if (!AFI->hasStackFrame()) {
@@ -278,8 +278,11 @@ void Thumb1FrameLowering::emitEpilogue(MachineFunction &MF,
 
     emitSPUpdate(MBB, MBBI, TII, dl, *RegInfo, VARegSaveSize);
 
-    AddDefaultPred(BuildMI(MBB, MBBI, dl, TII.get(ARM::tBX_RET_vararg))
-      .addReg(ARM::R3, RegState::Kill));
+    MachineInstrBuilder MIB =
+      BuildMI(MBB, MBBI, dl, TII.get(ARM::tBX_RET_vararg))
+      .addReg(ARM::R3, RegState::Kill);
+    AddDefaultPred(MIB);
+    MIB->copyImplicitOps(&*MBBI);
     // erase the old tBX_RET instruction
     MBB.erase(MBBI);
   }
@@ -350,6 +353,7 @@ restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
         continue;
       Reg = ARM::PC;
       (*MIB).setDesc(TII.get(ARM::tPOP_RET));
+      MIB->copyImplicitOps(&*MI);
       MI = MBB.erase(MI);
     }
     MIB.addReg(Reg, getDefRegState(true));

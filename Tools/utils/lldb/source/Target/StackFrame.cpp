@@ -39,18 +39,18 @@ using namespace lldb_private;
 #define RESOLVED_VARIABLES              (GOT_FRAME_BASE << 1)
 #define RESOLVED_GLOBAL_VARIABLES       (RESOLVED_VARIABLES << 1)
 
-StackFrame::StackFrame (user_id_t frame_idx, 
+StackFrame::StackFrame (const ThreadSP &thread_sp, 
+                        user_id_t frame_idx, 
                         user_id_t unwind_frame_index, 
-                        Thread &thread, 
                         addr_t cfa, 
                         addr_t pc, 
                         const SymbolContext *sc_ptr) :
-    m_thread (thread),
+    m_thread_wp (thread_sp),
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
     m_reg_context_sp (),
     m_id (pc, cfa, NULL),
-    m_frame_code_addr (NULL, pc),
+    m_frame_code_addr (pc),
     m_sc (),
     m_flags (),
     m_frame_base (),
@@ -66,19 +66,19 @@ StackFrame::StackFrame (user_id_t frame_idx,
     }
 }
 
-StackFrame::StackFrame (user_id_t frame_idx, 
+StackFrame::StackFrame (const ThreadSP &thread_sp, 
+                        user_id_t frame_idx, 
                         user_id_t unwind_frame_index, 
-                        Thread &thread, 
                         const RegisterContextSP &reg_context_sp, 
                         addr_t cfa, 
                         addr_t pc, 
                         const SymbolContext *sc_ptr) :
-    m_thread (thread),
+    m_thread_wp (thread_sp),
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
     m_reg_context_sp (reg_context_sp),
     m_id (pc, cfa, NULL),
-    m_frame_code_addr (NULL, pc),
+    m_frame_code_addr (pc),
     m_sc (),
     m_flags (),
     m_frame_base (),
@@ -95,23 +95,24 @@ StackFrame::StackFrame (user_id_t frame_idx,
     
     if (reg_context_sp && !m_sc.target_sp)
     {
-        m_sc.target_sp = reg_context_sp->GetThread().GetProcess().GetTarget().GetSP();
-        m_flags.Set (eSymbolContextTarget);
+        m_sc.target_sp = reg_context_sp->CalculateTarget();
+        if (m_sc.target_sp)
+            m_flags.Set (eSymbolContextTarget);
     }
 }
 
-StackFrame::StackFrame (user_id_t frame_idx, 
+StackFrame::StackFrame (const ThreadSP &thread_sp, 
+                        user_id_t frame_idx, 
                         user_id_t unwind_frame_index, 
-                        Thread &thread, 
                         const RegisterContextSP &reg_context_sp, 
                         addr_t cfa, 
                         const Address& pc_addr,
                         const SymbolContext *sc_ptr) :
-    m_thread (thread),
+    m_thread_wp (thread_sp),
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
     m_reg_context_sp (reg_context_sp),
-    m_id (pc_addr.GetLoadAddress (&thread.GetProcess().GetTarget()), cfa, NULL),
+    m_id (pc_addr.GetLoadAddress (thread_sp->CalculateTarget().get()), cfa, NULL),
     m_frame_code_addr (pc_addr),
     m_sc (),
     m_flags (),
@@ -129,23 +130,23 @@ StackFrame::StackFrame (user_id_t frame_idx,
     
     if (m_sc.target_sp.get() == NULL && reg_context_sp)
     {
-        m_sc.target_sp = reg_context_sp->GetThread().GetProcess().GetTarget().GetSP();
-        m_flags.Set (eSymbolContextTarget);
+        m_sc.target_sp = reg_context_sp->CalculateTarget();
+        if (m_sc.target_sp)
+            m_flags.Set (eSymbolContextTarget);
     }
     
-    Module *pc_module = pc_addr.GetModule();
-    if (m_sc.module_sp.get() == NULL || m_sc.module_sp.get() != pc_module)
+    ModuleSP pc_module_sp (pc_addr.GetModule());
+    if (!m_sc.module_sp || m_sc.module_sp != pc_module_sp)
     {
-        if (pc_module)
+        if (pc_module_sp)
         {
-            m_sc.module_sp = pc_module;
+            m_sc.module_sp = pc_module_sp;
             m_flags.Set (eSymbolContextModule);
         }
         else
         {
             m_sc.module_sp.reset();
         }
-
     }
 }
 
@@ -209,18 +210,20 @@ StackFrame::GetFrameCodeAddress()
 
         // Resolve the PC into a temporary address because if ResolveLoadAddress
         // fails to resolve the address, it will clear the address object...
-        
-        if (m_frame_code_addr.SetOpcodeLoadAddress (m_frame_code_addr.GetOffset(), &m_thread.GetProcess().GetTarget()))
+        ThreadSP thread_sp (GetThread());
+        if (thread_sp)
         {
-            const Section *section = m_frame_code_addr.GetSection();
-            if (section)
+            TargetSP target_sp (thread_sp->CalculateTarget());
+            if (target_sp)
             {
-                Module *module = section->GetModule();
-                if (module)
+                if (m_frame_code_addr.SetOpcodeLoadAddress (m_frame_code_addr.GetOffset(), target_sp.get()))
                 {
-                    m_sc.module_sp = module;
-                    if (m_sc.module_sp)
+                    ModuleSP module_sp (m_frame_code_addr.GetModule());
+                    if (module_sp)
+                    {
+                        m_sc.module_sp = module_sp;
                         m_flags.Set(eSymbolContextModule);
+                    }
                 }
             }
         }
@@ -231,11 +234,12 @@ StackFrame::GetFrameCodeAddress()
 void
 StackFrame::ChangePC (addr_t pc)
 {
-    m_frame_code_addr.SetOffset(pc);
-    m_frame_code_addr.SetSection(NULL);
+    m_frame_code_addr.SetRawAddress(pc);
     m_sc.Clear();
     m_flags.Reset(0);
-    m_thread.ClearStackFrames ();
+    ThreadSP thread_sp (GetThread());
+    if (thread_sp)
+        thread_sp->ClearStackFrames ();
 }
 
 const char *
@@ -243,17 +247,19 @@ StackFrame::Disassemble ()
 {
     if (m_disassembly.GetSize() == 0)
     {
-        ExecutionContext exe_ctx;
-        CalculateExecutionContext(exe_ctx);
-        Target &target = m_thread.GetProcess().GetTarget();
-        Disassembler::Disassemble (target.GetDebugger(),
-                                   target.GetArchitecture(),
-                                   NULL,
-                                   exe_ctx,
-                                   0,
-                                   0,
-                                   0,
-                                   m_disassembly);
+        ExecutionContext exe_ctx (shared_from_this());
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target)
+        {
+            Disassembler::Disassemble (target->GetDebugger(),
+                                       target->GetArchitecture(),
+                                       NULL,
+                                       exe_ctx,
+                                       0,
+                                       0,
+                                       0,
+                                       m_disassembly);
+        }
         if (m_disassembly.GetSize() == 0)
             return NULL;
     }
@@ -411,13 +417,15 @@ StackFrame::GetSymbolContext (uint32_t resolve_scope)
             // If we don't have a module, then we can't have the compile unit,
             // function, block, line entry or symbol, so we can safely call
             // ResolveSymbolContextForAddress with our symbol context member m_sc.
-            resolved |= m_thread.GetProcess().GetTarget().GetImages().ResolveSymbolContextForAddress (lookup_addr, resolve_scope, m_sc);
+            TargetSP target_sp (CalculateTarget());
+            if (target_sp)
+                resolved |= target_sp->GetImages().ResolveSymbolContextForAddress (lookup_addr, resolve_scope, m_sc);
         }
 
         // If the target was requested add that:
-        if (m_sc.target_sp.get() == NULL)
+        if (!m_sc.target_sp)
         {
-            m_sc.target_sp = CalculateProcess()->GetTarget().GetSP();
+            m_sc.target_sp = CalculateTarget();
             if (m_sc.target_sp)
                 resolved |= eSymbolContextTarget;
         }
@@ -634,7 +642,11 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             if (!child_valobj_sp)
                             {
                                 if (no_synth_child == false)
-                                    child_valobj_sp = valobj_sp->GetSyntheticValue(eUseSyntheticFilter)->GetChildMemberWithName (child_name, true);
+                                {
+                                    child_valobj_sp = valobj_sp->GetSyntheticValue();
+                                    if (child_valobj_sp)
+                                        child_valobj_sp = child_valobj_sp->GetChildMemberWithName (child_name, true);
+                                }
                                 
                                 if (no_synth_child || !child_valobj_sp)
                                 {
@@ -716,15 +728,25 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 
                                 if (valobj_sp->IsPointerType ())
                                 {
-                                    if (no_synth_child == false
-                                        && 
-                                        ClangASTType::GetMinimumLanguage(valobj_sp->GetClangAST(),
-                                                                         valobj_sp->GetClangType()) == eLanguageTypeObjC /* is ObjC pointer */
-                                        &&
-                                        ClangASTContext::IsPointerType(ClangASTType::GetPointeeType(valobj_sp->GetClangType())) == false /* is not double-ptr */)
+                                    bool is_objc_pointer = true;
+                                    
+                                    if (ClangASTType::GetMinimumLanguage(valobj_sp->GetClangAST(), valobj_sp->GetClangType()) != eLanguageTypeObjC)
+                                        is_objc_pointer = false;
+                                    else if (!ClangASTContext::IsPointerType(valobj_sp->GetClangType()))
+                                        is_objc_pointer = false;
+
+                                    if (no_synth_child && is_objc_pointer)
                                     {
+                                        error.SetErrorStringWithFormat("\"(%s) %s\" is an Objective-C pointer, and cannot be subscripted",
+                                                                       valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                       var_expr_path_strm.GetString().c_str());
+                                        
+                                        return ValueObjectSP();
+                                    }
+                                    else if (is_objc_pointer)
+                                    {                                            
                                         // dereferencing ObjC variables is not valid.. so let's try and recur to synthetic children
-                                        ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(eUseSyntheticFilter);
+                                        ValueObjectSP synthetic = valobj_sp->GetSyntheticValue();
                                         if (synthetic.get() == NULL /* no synthetic */
                                             || synthetic == valobj_sp) /* synthetic is the same as the original object */
                                         {
@@ -796,7 +818,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 }
                                 else
                                 {
-                                    ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(eUseSyntheticFilter);
+                                    ValueObjectSP synthetic = valobj_sp->GetSyntheticValue();
                                     if (no_synth_child /* synthetic is forbidden */ ||
                                         synthetic.get() == NULL /* no synthetic */
                                         || synthetic == valobj_sp) /* synthetic is the same as the original object */
@@ -1019,11 +1041,11 @@ StackFrame::GetFrameBaseValue (Scalar &frame_base, Error *error_ptr)
             m_frame_base_error.Clear();
 
             m_flags.Set(GOT_FRAME_BASE);
-            ExecutionContext exe_ctx (&m_thread.GetProcess(), &m_thread, this);
+            ExecutionContext exe_ctx (shared_from_this());
             Value expr_value;
             addr_t loclist_base_addr = LLDB_INVALID_ADDRESS;
             if (m_sc.function->GetFrameBaseExpression().IsLocationList())
-                loclist_base_addr = m_sc.function->GetAddressRange().GetBaseAddress().GetLoadAddress (&m_thread.GetProcess().GetTarget());
+                loclist_base_addr = m_sc.function->GetAddressRange().GetBaseAddress().GetLoadAddress (exe_ctx.GetTargetPtr());
 
             if (m_sc.function->GetFrameBaseExpression().Evaluate(&exe_ctx, NULL, NULL, NULL, NULL, loclist_base_addr, NULL, expr_value, &m_frame_base_error) == false)
             {
@@ -1055,7 +1077,11 @@ RegisterContextSP
 StackFrame::GetRegisterContext ()
 {
     if (!m_reg_context_sp)
-        m_reg_context_sp = m_thread.CreateRegisterContextForFrame (this);
+    {
+        ThreadSP thread_sp (GetThread());
+        if (thread_sp)
+            m_reg_context_sp = thread_sp->CreateRegisterContextForFrame (this);
+    }
     return m_reg_context_sp;
 }
 
@@ -1130,36 +1156,47 @@ StackFrame::IsInlined ()
     return false;
 }
 
-Target *
+TargetSP
 StackFrame::CalculateTarget ()
 {
-    return m_thread.CalculateTarget();
+    TargetSP target_sp;
+    ThreadSP thread_sp(GetThread());
+    if (thread_sp)
+    {
+        ProcessSP process_sp (thread_sp->CalculateProcess());
+        if (process_sp)
+            target_sp = process_sp->CalculateTarget();
+    }
+    return target_sp;
 }
 
-Process *
+ProcessSP
 StackFrame::CalculateProcess ()
 {
-    return m_thread.CalculateProcess();
+    ProcessSP process_sp;
+    ThreadSP thread_sp(GetThread());
+    if (thread_sp)
+        process_sp = thread_sp->CalculateProcess();
+    return process_sp;
 }
 
-Thread *
+ThreadSP
 StackFrame::CalculateThread ()
 {
-    return &m_thread;
+    return GetThread();
 }
 
-StackFrame *
+StackFrameSP
 StackFrame::CalculateStackFrame ()
 {
-    return this;
+    return shared_from_this();
 }
 
 
 void
 StackFrame::CalculateExecutionContext (ExecutionContext &exe_ctx)
 {
-    m_thread.CalculateExecutionContext (exe_ctx);
-    exe_ctx.SetFramePtr(this);
+    exe_ctx.SetContext (shared_from_this());
 }
 
 void
@@ -1169,11 +1206,13 @@ StackFrame::DumpUsingSettingsFormat (Stream *strm)
         return;
 
     GetSymbolContext(eSymbolContextEverything);
-    ExecutionContext exe_ctx;
-    CalculateExecutionContext(exe_ctx);
+    ExecutionContext exe_ctx (shared_from_this());
     const char *end = NULL;
     StreamString s;
-    const char *frame_format = m_thread.GetProcess().GetTarget().GetDebugger().GetFrameFormat();
+    const char *frame_format = NULL;
+    Target *target = exe_ctx.GetTargetPtr();
+    if (target)
+        frame_format = target->GetDebugger().GetFrameFormat();
     if (frame_format && Debugger::FormatPrompt (frame_format, &m_sc, &exe_ctx, NULL, s, &end))
     {
         strm->Write(s.GetData(), s.GetSize());
@@ -1193,11 +1232,20 @@ StackFrame::Dump (Stream *strm, bool show_frame_index, bool show_fullpaths)
 
     if (show_frame_index)
         strm->Printf("frame #%u: ", m_frame_index);
-    strm->Printf("0x%0*llx ", m_thread.GetProcess().GetTarget().GetArchitecture().GetAddressByteSize() * 2, GetFrameCodeAddress().GetLoadAddress(&m_thread.GetProcess().GetTarget()));
+    ExecutionContext exe_ctx (shared_from_this());
+    Target *target = exe_ctx.GetTargetPtr();
+    strm->Printf("0x%0*llx ", 
+                 target ? (target->GetArchitecture().GetAddressByteSize() * 2) : 16,
+                 GetFrameCodeAddress().GetLoadAddress(target));
     GetSymbolContext(eSymbolContextEverything);
     const bool show_module = true;
     const bool show_inline = true;
-    m_sc.DumpStopContext(strm, &m_thread.GetProcess(), GetFrameCodeAddress(), show_fullpaths, show_module, show_inline);
+    m_sc.DumpStopContext (strm, 
+                          exe_ctx.GetBestExecutionContextScope(), 
+                          GetFrameCodeAddress(), 
+                          show_fullpaths, 
+                          show_module, 
+                          show_inline);
 }
 
 void
@@ -1216,7 +1264,7 @@ StackFrame::UpdatePreviousFrameFromCurrentFrame (StackFrame &curr_frame)
 {
     assert (GetStackID() == curr_frame.GetStackID());        // TODO: remove this after some testing
     m_id.SetPC (curr_frame.m_id.GetPC());       // Update the Stack ID PC value
-    assert (&m_thread == &curr_frame.m_thread);
+    assert (GetThread() == curr_frame.GetThread());
     m_frame_index = curr_frame.m_frame_index;
     m_concrete_frame_index = curr_frame.m_concrete_frame_index;
     m_reg_context_sp = curr_frame.m_reg_context_sp;
@@ -1245,16 +1293,6 @@ StackFrame::HasCachedData () const
     return false;
 }
 
-StackFrameSP
-StackFrame::GetSP ()
-{
-    // This object contains an instrusive ref count base class so we can
-    // easily make a shared pointer to this object
-    return StackFrameSP (this);
-}
-
-
-
 bool
 StackFrame::GetStatus (Stream& strm,
                        bool show_frame_info,
@@ -1270,29 +1308,28 @@ StackFrame::GetStatus (Stream& strm,
     
     if (show_source)
     {
-        Target &target = GetThread().GetProcess().GetTarget();
-        Debugger &debugger = target.GetDebugger();
-        const uint32_t source_before = debugger.GetStopSourceLineCount(true);
-        const uint32_t source_after = debugger.GetStopSourceLineCount(false);
+        ExecutionContext exe_ctx (shared_from_this());
         bool have_source = false;
-        if (source_before || source_after)
+        DebuggerInstanceSettings::StopDisassemblyType disasm_display = DebuggerInstanceSettings::eStopDisassemblyTypeNever;
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target && (source_lines_before || source_lines_after))
         {
             GetSymbolContext(eSymbolContextCompUnit | eSymbolContextLineEntry);
 
             if (m_sc.comp_unit && m_sc.line_entry.IsValid())
             {
-                if (target.GetSourceManager().DisplaySourceLinesWithLineNumbers (m_sc.line_entry.file,
-                                                                                 m_sc.line_entry.line,
-                                                                                 source_before,
-                                                                                 source_after,
-                                                                                 "->",
-                                                                                 &strm))
+                if (target->GetSourceManager().DisplaySourceLinesWithLineNumbers (m_sc.line_entry.file,
+                                                                                  m_sc.line_entry.line,
+                                                                                  source_lines_before,
+                                                                                  source_lines_after,
+                                                                                  "->",
+                                                                                  &strm))
                 {
                     have_source = true;
                 }
             }
+            disasm_display = target->GetDebugger().GetStopDisassemblyDisplay ();
         }
-        DebuggerInstanceSettings::StopDisassemblyType disasm_display = debugger.GetStopDisassemblyDisplay ();
         
         switch (disasm_display)
         {
@@ -1304,17 +1341,16 @@ StackFrame::GetStatus (Stream& strm,
                 break;
             // Fall through to next case
         case DebuggerInstanceSettings::eStopDisassemblyTypeAlways:
+            if (target)
             {
-                const uint32_t disasm_lines = debugger.GetDisassemblyLineCount();
+                const uint32_t disasm_lines = target->GetDebugger().GetDisassemblyLineCount();
                 if (disasm_lines > 0)
                 {
-                    const ArchSpec &target_arch = target.GetArchitecture();
+                    const ArchSpec &target_arch = target->GetArchitecture();
                     AddressRange pc_range;
                     pc_range.GetBaseAddress() = GetFrameCodeAddress();
                     pc_range.SetByteSize(disasm_lines * target_arch.GetMaximumOpcodeByteSize());
-                    ExecutionContext exe_ctx;
-                    CalculateExecutionContext(exe_ctx);
-                    Disassembler::Disassemble (debugger,
+                    Disassembler::Disassemble (target->GetDebugger(),
                                                target_arch,
                                                NULL,
                                                exe_ctx,

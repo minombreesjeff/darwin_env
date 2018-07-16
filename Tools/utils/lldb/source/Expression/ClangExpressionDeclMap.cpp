@@ -75,7 +75,7 @@ bool
 ClangExpressionDeclMap::WillParse(ExecutionContext &exe_ctx)
 {    
     EnableParserVars();
-    m_parser_vars->m_exe_ctx = &exe_ctx;
+    m_parser_vars->m_exe_ctx = exe_ctx;
     
     Target *target = exe_ctx.GetTargetPtr();
     if (exe_ctx.GetFramePtr())
@@ -146,26 +146,24 @@ ClangExpressionDeclMap::GetTargetInfo()
     
     TargetInfo ret;
     
-    ExecutionContext *exe_ctx = m_parser_vars->m_exe_ctx;
-    if (exe_ctx)
+    ExecutionContext &exe_ctx = m_parser_vars->m_exe_ctx;
+
+    Process *process = exe_ctx.GetProcessPtr();
+    if (process)
     {
-        Process *process = exe_ctx->GetProcessPtr();
-        if (process)
+        ret.byte_order = process->GetByteOrder();
+        ret.address_byte_size = process->GetAddressByteSize();
+    }
+    else 
+    {
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target)
         {
-            ret.byte_order = process->GetByteOrder();
-            ret.address_byte_size = process->GetAddressByteSize();
-        }
-        else 
-        {
-            Target *target = exe_ctx->GetTargetPtr();
-            if (target)
-            {
-                ret.byte_order = target->GetArchitecture().GetByteOrder();
-                ret.address_byte_size = target->GetArchitecture().GetAddressByteSize();
-            }
+            ret.byte_order = target->GetArchitecture().GetByteOrder();
+            ret.address_byte_size = target->GetArchitecture().GetAddressByteSize();
         }
     }
-    
+
     return ret;
 }
 
@@ -190,10 +188,12 @@ ClangExpressionDeclMap::BuildIntegerVariable (const ConstString &name,
 {
     assert (m_parser_vars.get());
     
-    ExecutionContext *exe_ctx = m_parser_vars->m_exe_ctx;
-    if (exe_ctx == NULL)
-        return lldb::ClangExpressionVariableSP();
-    Target *target = exe_ctx->GetTargetPtr();
+    ExecutionContext &exe_ctx = m_parser_vars->m_exe_ctx;
+    
+    Target *target = exe_ctx.GetTargetPtr();
+    
+    if (!target)
+        return ClangExpressionVariableSP();
 
     ASTContext *context(target->GetScratchClangASTContext()->getASTContext());
     
@@ -212,7 +212,7 @@ ClangExpressionDeclMap::BuildIntegerVariable (const ConstString &name,
         return lldb::ClangExpressionVariableSP();
     }
     
-    if (!m_parser_vars->m_persistent_vars->CreatePersistentVariable (exe_ctx->GetBestExecutionContextScope (),
+    if (!m_parser_vars->m_persistent_vars->CreatePersistentVariable (exe_ctx.GetBestExecutionContextScope (),
                                                                      name, 
                                                                      user_type, 
                                                                      m_parser_vars->m_target_info.byte_order,
@@ -279,10 +279,8 @@ ClangExpressionDeclMap::BuildCastVariable (const ConstString &name,
     
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
-    ExecutionContext *exe_ctx = m_parser_vars->m_exe_ctx;
-    if (exe_ctx == NULL)
-        return lldb::ClangExpressionVariableSP();
-    Target *target = exe_ctx->GetTargetPtr();
+    ExecutionContext &exe_ctx = m_parser_vars->m_exe_ctx;
+    Target *target = exe_ctx.GetTargetPtr();
     if (target == NULL)
         return lldb::ClangExpressionVariableSP();
 
@@ -313,7 +311,7 @@ ClangExpressionDeclMap::BuildCastVariable (const ConstString &name,
     
     TypeFromUser var_type = var_sp->GetTypeFromUser();
     
-    StackFrame *frame = exe_ctx->GetFramePtr();
+    StackFrame *frame = exe_ctx.GetFramePtr();
     if (frame == NULL)
         return lldb::ClangExpressionVariableSP();
     
@@ -384,8 +382,7 @@ ClangExpressionDeclMap::CompleteResultVariable (lldb::ClangExpressionVariableSP 
         
     if (maybe_make_load && 
         value.GetValueType() == Value::eValueTypeFileAddress &&
-        m_parser_vars->m_exe_ctx && 
-        m_parser_vars->m_exe_ctx->GetProcessPtr())
+        m_parser_vars->m_exe_ctx.GetProcessPtr())
     {
         value.SetValueType(Value::eValueTypeLoadAddress);
     }
@@ -399,7 +396,7 @@ ClangExpressionDeclMap::CompleteResultVariable (lldb::ClangExpressionVariableSP 
         unsigned long long address = value.GetScalar().ULongLong();
         AddressType address_type = value.GetValueAddressType();
         
-        pvar_sp->m_live_sp = ValueObjectConstResult::Create(m_parser_vars->m_exe_ctx->GetBestExecutionContextScope(),
+        pvar_sp->m_live_sp = ValueObjectConstResult::Create(m_parser_vars->m_exe_ctx.GetBestExecutionContextScope(),
                                                             pvar_sp->GetTypeFromUser().GetASTContext(),
                                                             pvar_sp->GetTypeFromUser().GetOpaqueQualType(),
                                                             pvar_sp->GetName(),
@@ -415,7 +412,8 @@ ClangExpressionDeclMap::CompleteResultVariable (lldb::ClangExpressionVariableSP 
         const size_t pvar_byte_size = pvar_sp->GetByteSize();
         uint8_t *pvar_data = pvar_sp->GetValueBytes();
         
-        ReadTarget(pvar_data, value, pvar_byte_size);
+        if (!ReadTarget(pvar_data, value, pvar_byte_size))
+            return false;
         
         pvar_sp->m_flags &= ~(ClangExpressionVariable::EVNeedsFreezeDry);
     }
@@ -423,6 +421,16 @@ ClangExpressionDeclMap::CompleteResultVariable (lldb::ClangExpressionVariableSP 
     valobj = pvar_sp;
     
     return true;
+}
+
+void
+ClangExpressionDeclMap::RemoveResultVariable
+(
+    const ConstString &name
+)
+{
+    ClangExpressionVariableSP pvar_sp = m_parser_vars->m_persistent_vars->GetVariable(name);
+    m_parser_vars->m_persistent_vars->RemovePersistentVariable(pvar_sp);
 }
 
 bool 
@@ -438,10 +446,8 @@ ClangExpressionDeclMap::AddPersistentVariable
     assert (m_parser_vars.get());
     
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-    ExecutionContext *exe_ctx = m_parser_vars->m_exe_ctx;
-    if (exe_ctx == NULL)
-        return false;
-    Target *target = exe_ctx->GetTargetPtr();
+    ExecutionContext &exe_ctx = m_parser_vars->m_exe_ctx;
+    Target *target = exe_ctx.GetTargetPtr();
     if (target == NULL)
         return false;
 
@@ -462,7 +468,7 @@ ClangExpressionDeclMap::AddPersistentVariable
     if (!m_parser_vars->m_target_info.IsValid())
         return false;
     
-    if (!m_parser_vars->m_persistent_vars->CreatePersistentVariable (exe_ctx->GetBestExecutionContextScope (),
+    if (!m_parser_vars->m_persistent_vars->CreatePersistentVariable (exe_ctx.GetBestExecutionContextScope (),
                                                                      name, 
                                                                      user_type, 
                                                                      m_parser_vars->m_target_info.byte_order,
@@ -628,7 +634,8 @@ ClangExpressionDeclMap::GetStructElement
     
     if (!member_sp ||
         !member_sp->m_parser_vars.get() ||
-        !member_sp->m_jit_vars.get())
+        !member_sp->m_jit_vars.get() ||
+        !member_sp->GetValueObject())
         return false;
     
     decl = member_sp->m_parser_vars->m_named_decl;
@@ -684,10 +691,8 @@ ClangExpressionDeclMap::GetFunctionAddress
     assert (m_parser_vars.get());
     
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-    ExecutionContext *exe_ctx = m_parser_vars->m_exe_ctx;
-    if (exe_ctx == NULL)
-        return false;
-    Target *target = exe_ctx->GetTargetPtr();
+    ExecutionContext &exe_ctx = m_parser_vars->m_exe_ctx;
+    Target *target = exe_ctx.GetTargetPtr();
     // Back out in all cases where we're not fully initialized
     if (target == NULL)
         return false;
@@ -728,7 +733,7 @@ ClangExpressionDeclMap::GetFunctionAddress
     if (sym_ctx.function)
         func_so_addr = &sym_ctx.function->GetAddressRange().GetBaseAddress();
     else if (sym_ctx.symbol)
-        func_so_addr = &sym_ctx.symbol->GetAddressRangeRef().GetBaseAddress();
+        func_so_addr = &sym_ctx.symbol->GetAddress();
     else
         return false;
     
@@ -755,7 +760,7 @@ ClangExpressionDeclMap::GetSymbolAddress (Target &target, const ConstString &nam
         SymbolContext sym_ctx;
         sc_list.GetContextAtIndex(i, sym_ctx);
     
-        const Address *sym_address = &sym_ctx.symbol->GetAddressRangeRef().GetBaseAddress();
+        const Address *sym_address = &sym_ctx.symbol->GetAddress();
         
         if (!sym_address || !sym_address->IsValid())
             return LLDB_INVALID_ADDRESS;
@@ -808,11 +813,10 @@ ClangExpressionDeclMap::GetSymbolAddress (const ConstString &name, lldb::SymbolT
 {
     assert (m_parser_vars.get());
     
-    if (!m_parser_vars->m_exe_ctx ||
-        !m_parser_vars->m_exe_ctx->GetTargetPtr())
+    if (!m_parser_vars->m_exe_ctx.GetTargetPtr())
         return false;
     
-    return GetSymbolAddress(m_parser_vars->m_exe_ctx->GetTargetRef(), name, symbol_type);
+    return GetSymbolAddress(m_parser_vars->m_exe_ctx.GetTargetRef(), name, symbol_type);
 }
 
 // Interface for IRInterpreter
@@ -824,7 +828,7 @@ ClangExpressionDeclMap::WrapBareAddress (lldb::addr_t addr)
 
     ret.SetContext(Value::eContextTypeInvalid, NULL);
 
-    if (m_parser_vars->m_exe_ctx && m_parser_vars->m_exe_ctx->GetProcessPtr())
+    if (m_parser_vars->m_exe_ctx.GetProcessPtr())
         ret.SetValueType(Value::eValueTypeLoadAddress);
     else
         ret.SetValueType(Value::eValueTypeFileAddress);
@@ -841,15 +845,15 @@ ClangExpressionDeclMap::WriteTarget (lldb_private::Value &value,
 {
     assert (m_parser_vars.get());
     
-    ExecutionContext *exe_ctx = m_parser_vars->m_exe_ctx;
+    ExecutionContext &exe_ctx = m_parser_vars->m_exe_ctx;
     
-    Process *process = exe_ctx->GetProcessPtr();
+    Process *process = exe_ctx.GetProcessPtr();
     if (value.GetContextType() == Value::eContextTypeRegisterInfo)
     {
         if (!process)
             return false;
         
-        RegisterContext *reg_ctx = exe_ctx->GetRegisterContext();
+        RegisterContext *reg_ctx = exe_ctx.GetRegisterContext();
         RegisterInfo *reg_info = value.GetRegisterInfo();
         
         if (!reg_ctx)
@@ -874,7 +878,7 @@ ClangExpressionDeclMap::WriteTarget (lldb_private::Value &value,
                 if (!process)
                     return false;
                 
-                Target *target = exe_ctx->GetTargetPtr();
+                Target *target = exe_ctx.GetTargetPtr();
                 Address file_addr;
                 
                 if (!target->GetImages().ResolveFileAddress((lldb::addr_t)value.GetScalar().ULongLong(), file_addr))
@@ -917,16 +921,16 @@ ClangExpressionDeclMap::ReadTarget (uint8_t *data,
 {
     assert (m_parser_vars.get());
     
-    ExecutionContext *exe_ctx = m_parser_vars->m_exe_ctx;
+    ExecutionContext &exe_ctx = m_parser_vars->m_exe_ctx;
 
-    Process *process = exe_ctx->GetProcessPtr();
+    Process *process = exe_ctx.GetProcessPtr();
 
     if (value.GetContextType() == Value::eContextTypeRegisterInfo)
     {
         if (!process)
             return false;
         
-        RegisterContext *reg_ctx = exe_ctx->GetRegisterContext();
+        RegisterContext *reg_ctx = exe_ctx.GetRegisterContext();
         RegisterInfo *reg_info = value.GetRegisterInfo();
         
         if (!reg_ctx)
@@ -948,7 +952,7 @@ ClangExpressionDeclMap::ReadTarget (uint8_t *data,
                 return false;
             case Value::eValueTypeFileAddress:
             {
-                Target *target = exe_ctx->GetTargetPtr();
+                Target *target = exe_ctx.GetTargetPtr();
                 if (target == NULL)
                     return false;
                 
@@ -958,7 +962,7 @@ ClangExpressionDeclMap::ReadTarget (uint8_t *data,
                     return false;
                 
                 Error err;
-                target->ReadMemory(file_addr, true, data, length, err);
+                target->ReadMemory(file_addr, false, data, length, err);
                 
                 return err.Success();
             }
@@ -989,54 +993,113 @@ ClangExpressionDeclMap::ReadTarget (uint8_t *data,
 }
 
 lldb_private::Value
-ClangExpressionDeclMap::LookupDecl (clang::NamedDecl *decl)
+ClangExpressionDeclMap::LookupDecl (clang::NamedDecl *decl, ClangExpressionVariable::FlagType &flags)
 {
     assert (m_parser_vars.get());
-    
-    ExecutionContext exe_ctx = *m_parser_vars->m_exe_ctx;
-        
+            
     ClangExpressionVariableSP expr_var_sp (m_found_entities.GetVariable(decl));
     ClangExpressionVariableSP persistent_var_sp (m_parser_vars->m_persistent_vars->GetVariable(decl));
     
     if (expr_var_sp)
     {
-        if (!expr_var_sp->m_parser_vars.get() || !expr_var_sp->m_parser_vars->m_lldb_var)
+        flags = expr_var_sp->m_flags;
+
+        if (!expr_var_sp->m_parser_vars.get())
             return Value();
         
         bool is_reference = expr_var_sp->m_flags & ClangExpressionVariable::EVTypeIsReference;
-        
-        std::auto_ptr<Value> value(GetVariableValue(exe_ctx, expr_var_sp->m_parser_vars->m_lldb_var, NULL));
-        
-        if (is_reference && value.get() && value->GetValueType() == Value::eValueTypeLoadAddress)
+
+        if (expr_var_sp->m_parser_vars->m_lldb_var)
         {
-            Process *process = m_parser_vars->m_exe_ctx->GetProcessPtr();
+            std::auto_ptr<Value> value(GetVariableValue(expr_var_sp->m_parser_vars->m_lldb_var, NULL));
             
-            if (!process)
-                return Value();
-            
-            lldb::addr_t value_addr = value->GetScalar().ULongLong();
-            Error read_error;
-            addr_t ref_value = process->ReadPointerFromMemory (value_addr, read_error);
-            
-            if (!read_error.Success())
-                return Value();
-            
-            value->GetScalar() = (unsigned long long)ref_value;
-        }
+            if (is_reference && value.get() && value->GetValueType() == Value::eValueTypeLoadAddress)
+            {
+                Process *process = m_parser_vars->m_exe_ctx.GetProcessPtr();
+                
+                if (!process)
+                    return Value();
+                
+                lldb::addr_t value_addr = value->GetScalar().ULongLong();
+                Error read_error;
+                addr_t ref_value = process->ReadPointerFromMemory (value_addr, read_error);
+                
+                if (!read_error.Success())
+                    return Value();
+                
+                value->GetScalar() = (unsigned long long)ref_value;
+            }
         
-        if (value.get())
-            return *value;
+            if (value.get())
+                return *value;
+            else
+                return Value();
+        }
+        else if (expr_var_sp->m_parser_vars->m_lldb_sym)
+        {
+            const Address sym_address = expr_var_sp->m_parser_vars->m_lldb_sym->GetAddress();
+            
+            if (!sym_address.IsValid())
+                return Value();
+                        
+            Value ret;
+        
+            ProcessSP process_sp (m_parser_vars->m_exe_ctx.GetProcessSP());
+            
+            if (process_sp)
+            {
+                uint64_t symbol_load_addr = sym_address.GetLoadAddress(&process_sp->GetTarget());
+                
+                ret.GetScalar() = symbol_load_addr;
+                ret.SetValueType(Value::eValueTypeLoadAddress);
+            }
+            else 
+            {
+                uint64_t symbol_file_addr = sym_address.GetFileAddress();
+                
+                ret.GetScalar() = symbol_file_addr;
+                ret.SetValueType(Value::eValueTypeFileAddress);
+            }
+            
+            return ret;
+        }
+        else if (RegisterInfo *reg_info = expr_var_sp->GetRegisterInfo())
+        {
+            StackFrame *frame = m_parser_vars->m_exe_ctx.GetFramePtr();
+            
+            if (!frame)
+                return Value();
+            
+            RegisterContextSP reg_context_sp(frame->GetRegisterContextSP());
+            
+            RegisterValue reg_value;
+            
+            if (!reg_context_sp->ReadRegister(reg_info, reg_value))
+                return Value();
+            
+            Value ret;
+            
+            ret.SetContext(Value::eContextTypeRegisterInfo, reg_info);
+            if (!reg_value.GetScalarValue(ret.GetScalar()))
+                return Value();
+            
+            return ret;
+        }
         else
+        {
             return Value();
+        }
     }
     else if (persistent_var_sp)
     {
+        flags = persistent_var_sp->m_flags;
+        
         if ((persistent_var_sp->m_flags & ClangExpressionVariable::EVIsProgramReference ||
              persistent_var_sp->m_flags & ClangExpressionVariable::EVIsLLDBAllocated) &&
             persistent_var_sp->m_live_sp &&
             ((persistent_var_sp->m_live_sp->GetValue().GetValueType() == Value::eValueTypeLoadAddress &&
-              m_parser_vars->m_exe_ctx->GetProcessSP() &&
-              m_parser_vars->m_exe_ctx->GetProcessSP()->IsAlive()) ||
+              m_parser_vars->m_exe_ctx.GetProcessSP() &&
+              m_parser_vars->m_exe_ctx.GetProcessSP()->IsAlive()) ||
              (persistent_var_sp->m_live_sp->GetValue().GetValueType() == Value::eValueTypeFileAddress)))
         {
             return persistent_var_sp->m_live_sp->GetValue();
@@ -1061,10 +1124,7 @@ ClangExpressionDeclMap::GetSpecialValue (const ConstString &name)
 {
     assert(m_parser_vars.get());
     
-    if (!m_parser_vars->m_exe_ctx)
-        return Value();
-
-    StackFrame *frame = m_parser_vars->m_exe_ctx->GetFramePtr();
+    StackFrame *frame = m_parser_vars->m_exe_ctx.GetFramePtr();
     
     if (!frame)
         return Value();
@@ -1081,11 +1141,11 @@ ClangExpressionDeclMap::GetSpecialValue (const ConstString &name)
         !var->LocationIsValidForFrame (frame))
         return Value();
     
-    std::auto_ptr<Value> value(GetVariableValue(*m_parser_vars->m_exe_ctx, var, NULL));
+    std::auto_ptr<Value> value(GetVariableValue(var, NULL));
     
     if (value.get() && value->GetValueType() == Value::eValueTypeLoadAddress)
     {
-        Process *process = m_parser_vars->m_exe_ctx->GetProcessPtr();
+        Process *process = m_parser_vars->m_exe_ctx.GetProcessPtr();
         
         if (!process)
             return Value();
@@ -1111,17 +1171,18 @@ ClangExpressionDeclMap::GetSpecialValue (const ConstString &name)
 bool 
 ClangExpressionDeclMap::Materialize 
 (
-    ExecutionContext &exe_ctx, 
     lldb::addr_t &struct_address,
     Error &err
 )
 {
+    if (!m_parser_vars.get())
+        return false;
+    
     EnableMaterialVars();
     
-    m_material_vars->m_process = exe_ctx.GetProcessPtr();
+    m_material_vars->m_process = m_parser_vars->m_exe_ctx.GetProcessPtr();
     
     bool result = DoMaterialize(false /* dematerialize */, 
-                                exe_ctx, 
                                 LLDB_INVALID_ADDRESS /* top of stack frame */, 
                                 LLDB_INVALID_ADDRESS /* bottom of stack frame */, 
                                 NULL, /* result SP */
@@ -1138,16 +1199,15 @@ ClangExpressionDeclMap::GetObjectPointer
 (
     lldb::addr_t &object_ptr,
     ConstString &object_name,
-    ExecutionContext &exe_ctx,
     Error &err,
     bool suppress_type_check
 )
 {
     assert (m_struct_vars.get());
     
-    Target *target = exe_ctx.GetTargetPtr();
-    Process *process = exe_ctx.GetProcessPtr();
-    StackFrame *frame = exe_ctx.GetFramePtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
+    Process *process = m_parser_vars->m_exe_ctx.GetProcessPtr();
+    StackFrame *frame = m_parser_vars->m_exe_ctx.GetFramePtr();
 
     if (frame == NULL || process == NULL || target == NULL)
     {
@@ -1161,9 +1221,12 @@ ClangExpressionDeclMap::GetObjectPointer
         return false;
     }
     
+    const bool object_pointer = true;
+    
     VariableSP object_ptr_var = FindVariableInScope (*frame,
                                                      object_name, 
-                                                     (suppress_type_check ? NULL : &m_struct_vars->m_object_pointer_type));
+                                                     (suppress_type_check ? NULL : &m_struct_vars->m_object_pointer_type),
+                                                     object_pointer);
     
     if (!object_ptr_var)
     {
@@ -1171,8 +1234,7 @@ ClangExpressionDeclMap::GetObjectPointer
         return false;
     }
     
-    std::auto_ptr<lldb_private::Value> location_value(GetVariableValue(exe_ctx,
-                                                                       object_ptr_var,
+    std::auto_ptr<lldb_private::Value> location_value(GetVariableValue(object_ptr_var,
                                                                        NULL));
     
     if (!location_value.get())
@@ -1226,7 +1288,7 @@ ClangExpressionDeclMap::GetObjectPointer
                 return false;
             }
             
-            RegisterContext *reg_ctx = exe_ctx.GetRegisterContext();
+            RegisterContext *reg_ctx = m_parser_vars->m_exe_ctx.GetRegisterContext();
             
             if (!reg_ctx)
             {
@@ -1246,14 +1308,13 @@ ClangExpressionDeclMap::GetObjectPointer
 bool 
 ClangExpressionDeclMap::Dematerialize 
 (
-    ExecutionContext &exe_ctx,
     ClangExpressionVariableSP &result_sp,
     lldb::addr_t stack_frame_top,
     lldb::addr_t stack_frame_bottom,
     Error &err
 )
 {
-    return DoMaterialize(true, exe_ctx, stack_frame_top, stack_frame_bottom, &result_sp, err);
+    return DoMaterialize(true, stack_frame_top, stack_frame_bottom, &result_sp, err);
     
     DidDematerialize();
 }
@@ -1280,7 +1341,6 @@ ClangExpressionDeclMap::DidDematerialize()
 bool
 ClangExpressionDeclMap::DumpMaterializedStruct
 (
-    ExecutionContext &exe_ctx, 
     Stream &s,
     Error &err
 )
@@ -1293,7 +1353,7 @@ ClangExpressionDeclMap::DumpMaterializedStruct
         err.SetErrorString("Structure hasn't been laid out yet");
         return false;
     }
-    Process *process = exe_ctx.GetProcessPtr();
+    Process *process = m_parser_vars->m_exe_ctx.GetProcessPtr();
 
     if (!process)
     {
@@ -1301,7 +1361,7 @@ ClangExpressionDeclMap::DumpMaterializedStruct
         return false;
     }
     
-    Target *target = exe_ctx.GetTargetPtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
     if (!target)
     {
         err.SetErrorString("Couldn't find the target");
@@ -1361,7 +1421,6 @@ bool
 ClangExpressionDeclMap::DoMaterialize 
 (
     bool dematerialize,
-    ExecutionContext &exe_ctx,
     lldb::addr_t stack_frame_top,
     lldb::addr_t stack_frame_bottom,
     lldb::ClangExpressionVariableSP *result_sp_ptr,
@@ -1381,13 +1440,13 @@ ClangExpressionDeclMap::DoMaterialize
         return false;
     }
     
-    StackFrame *frame = exe_ctx.GetFramePtr();
+    StackFrame *frame = m_parser_vars->m_exe_ctx.GetFramePtr();
     if (!frame)
     {
         err.SetErrorString("Received null execution frame");
         return false;
     }
-    Target *target = exe_ctx.GetTargetPtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
     
     ClangPersistentVariables &persistent_vars = target->GetPersistentVariables();
         
@@ -1405,7 +1464,7 @@ ClangExpressionDeclMap::DoMaterialize
     
     if (!dematerialize)
     {
-        Process *process = exe_ctx.GetProcessPtr();
+        Process *process = m_parser_vars->m_exe_ctx.GetProcessPtr();
         if (m_material_vars->m_materialized_location)
         {
             process->DeallocateMemory(m_material_vars->m_materialized_location);
@@ -1447,7 +1506,7 @@ ClangExpressionDeclMap::DoMaterialize
             {
                 // This is a register variable
                 
-                RegisterContext *reg_ctx = exe_ctx.GetRegisterContext();
+                RegisterContext *reg_ctx = m_parser_vars->m_exe_ctx.GetRegisterContext();
                 
                 if (!reg_ctx)
                 {
@@ -1456,7 +1515,6 @@ ClangExpressionDeclMap::DoMaterialize
                 }
                     
                 if (!DoMaterializeOneRegister (dematerialize, 
-                                               exe_ctx, 
                                                *reg_ctx, 
                                                *reg_info, 
                                                m_material_vars->m_materialized_location + member_sp->m_jit_vars->m_offset, 
@@ -1472,7 +1530,6 @@ ClangExpressionDeclMap::DoMaterialize
                 }
                 
                 if (!DoMaterializeOneVariable (dematerialize, 
-                                               exe_ctx, 
                                                sym_ctx,
                                                member_sp,
                                                m_material_vars->m_materialized_location + member_sp->m_jit_vars->m_offset, 
@@ -1498,7 +1555,6 @@ ClangExpressionDeclMap::DoMaterialize
                 }
 
                 if (!DoMaterializeOnePersistentVariable (dematerialize, 
-                                                         exe_ctx,
                                                          member_sp, 
                                                          m_material_vars->m_materialized_location + member_sp->m_jit_vars->m_offset,
                                                          stack_frame_top,
@@ -1521,7 +1577,6 @@ bool
 ClangExpressionDeclMap::DoMaterializeOnePersistentVariable
 (
     bool dematerialize,
-    ExecutionContext &exe_ctx,
     ClangExpressionVariableSP &var_sp,
     lldb::addr_t addr,
     lldb::addr_t stack_frame_top,
@@ -1547,7 +1602,7 @@ ClangExpressionDeclMap::DoMaterializeOnePersistentVariable
     }
     
     Error error;
-    Process *process = exe_ctx.GetProcessPtr();
+    Process *process = m_parser_vars->m_exe_ctx.GetProcessPtr();
 
     lldb::addr_t mem; // The address of a spare memory area used to hold the persistent variable.
     
@@ -1576,7 +1631,7 @@ ClangExpressionDeclMap::DoMaterializeOnePersistentVariable
                 // If the reference comes from the program, then the ClangExpressionVariable's
                 // live variable data hasn't been set up yet.  Do this now.
                 
-                var_sp->m_live_sp = ValueObjectConstResult::Create (exe_ctx.GetBestExecutionContextScope (),
+                var_sp->m_live_sp = ValueObjectConstResult::Create (m_parser_vars->m_exe_ctx.GetBestExecutionContextScope (),
                                                                     var_sp->GetTypeFromUser().GetASTContext(),
                                                                     var_sp->GetTypeFromUser().GetOpaqueQualType(),
                                                                     var_sp->GetName(),
@@ -1682,7 +1737,7 @@ ClangExpressionDeclMap::DoMaterializeOnePersistentVariable
             
             // Put the location of the spare memory into the live data of the ValueObject.
             
-            var_sp->m_live_sp = ValueObjectConstResult::Create (exe_ctx.GetBestExecutionContextScope(),
+            var_sp->m_live_sp = ValueObjectConstResult::Create (m_parser_vars->m_exe_ctx.GetBestExecutionContextScope(),
                                                                 var_sp->GetTypeFromUser().GetASTContext(),
                                                                 var_sp->GetTypeFromUser().GetOpaqueQualType(),
                                                                 var_sp->GetName(),
@@ -1735,7 +1790,6 @@ bool
 ClangExpressionDeclMap::DoMaterializeOneVariable
 (
     bool dematerialize,
-    ExecutionContext &exe_ctx,
     const SymbolContext &sym_ctx,
     ClangExpressionVariableSP &expr_var,
     lldb::addr_t addr, 
@@ -1743,9 +1797,9 @@ ClangExpressionDeclMap::DoMaterializeOneVariable
 )
 {
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-    Target *target = exe_ctx.GetTargetPtr();
-    Process *process = exe_ctx.GetProcessPtr();
-    StackFrame *frame = exe_ctx.GetFramePtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
+    Process *process = m_parser_vars->m_exe_ctx.GetProcessPtr();
+    StackFrame *frame = m_parser_vars->m_exe_ctx.GetFramePtr();
 
     if (!frame || !process || !target || !m_parser_vars.get() || !expr_var->m_parser_vars.get())
     {
@@ -1767,8 +1821,7 @@ ClangExpressionDeclMap::DoMaterializeOneVariable
 
     if (var)
     {
-        location_value.reset(GetVariableValue(exe_ctx,
-                                              var,
+        location_value.reset(GetVariableValue(var,
                                               NULL));
     }
     else if (sym)
@@ -1905,7 +1958,7 @@ ClangExpressionDeclMap::DoMaterializeOneVariable
             
             RegisterValue reg_value;
 
-            RegisterContext *reg_ctx = exe_ctx.GetRegisterContext();
+            RegisterContext *reg_ctx = m_parser_vars->m_exe_ctx.GetRegisterContext();
             
             if (!reg_ctx)
             {
@@ -2019,7 +2072,7 @@ ClangExpressionDeclMap::DoMaterializeOneVariable
                 
                 // Put the location of the spare memory into the live data of the ValueObject.
                 
-                expr_var->m_live_sp = ValueObjectConstResult::Create (exe_ctx.GetBestExecutionContextScope(),
+                expr_var->m_live_sp = ValueObjectConstResult::Create (m_parser_vars->m_exe_ctx.GetBestExecutionContextScope(),
                                                                       type.GetASTContext(),
                                                                       type.GetOpaqueQualType(),
                                                                       name,
@@ -2073,7 +2126,6 @@ bool
 ClangExpressionDeclMap::DoMaterializeOneRegister
 (
     bool dematerialize,
-    ExecutionContext &exe_ctx,
     RegisterContext &reg_ctx,
     const RegisterInfo &reg_info,
     lldb::addr_t addr, 
@@ -2122,7 +2174,8 @@ ClangExpressionDeclMap::FindVariableInScope
 (
     StackFrame &frame,
     const ConstString &name,
-    TypeFromUser *type
+    TypeFromUser *type,
+    bool object_pointer
 )
 {    
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
@@ -2143,22 +2196,64 @@ ClangExpressionDeclMap::FindVariableInScope
         !var_sp->LocationIsValidForFrame (&frame))
         return lldb::VariableSP();
 
-    if (var_sp && type)
+    if (var_sp)
     {
-        if (type->GetASTContext() == var_sp->GetType()->GetClangAST())
-        {
-            if (!ClangASTContext::AreTypesSame(type->GetASTContext(), type->GetOpaqueQualType(), var_sp->GetType()->GetClangFullType()))
-                return lldb::VariableSP();
-        }
-        else
+        if (!type)
+            return var_sp;
+        
+        TypeFromUser candidate_type(var_sp->GetType()->GetClangFullType(),
+                                    var_sp->GetType()->GetClangAST());
+        
+        if (candidate_type.GetASTContext() != type->GetASTContext())
         {
             if (log)
                 log->PutCString("Skipping a candidate variable because of different AST contexts");
             return lldb::VariableSP();
         }
+        
+        if (object_pointer)
+        {
+            clang::QualType desired_qual_type = clang::QualType::getFromOpaquePtr(type->GetOpaqueQualType());
+            clang::QualType candidate_qual_type = clang::QualType::getFromOpaquePtr(candidate_type.GetOpaqueQualType());
+            
+            const clang::ObjCObjectPointerType *desired_objc_ptr_type = desired_qual_type->getAs<clang::ObjCObjectPointerType>();
+            const clang::ObjCObjectPointerType *candidate_objc_ptr_type = desired_qual_type->getAs<clang::ObjCObjectPointerType>();
+            
+            if (desired_objc_ptr_type && candidate_objc_ptr_type) {
+                clang::QualType desired_target_type = desired_objc_ptr_type->getPointeeType().getUnqualifiedType();
+                clang::QualType candidate_target_type = candidate_objc_ptr_type->getPointeeType().getUnqualifiedType();
+                
+                if (ClangASTContext::AreTypesSame(type->GetASTContext(),
+                                                  desired_target_type.getAsOpaquePtr(),
+                                                  candidate_target_type.getAsOpaquePtr()))
+                    return var_sp;
+            }
+            
+            const clang::PointerType *desired_ptr_type = desired_qual_type->getAs<clang::PointerType>();
+            const clang::PointerType *candidate_ptr_type = candidate_qual_type->getAs<clang::PointerType>();
+            
+            if (desired_ptr_type && candidate_ptr_type) {
+                clang::QualType desired_target_type = desired_ptr_type->getPointeeType().getUnqualifiedType();
+                clang::QualType candidate_target_type = candidate_ptr_type->getPointeeType().getUnqualifiedType();
+                
+                if (ClangASTContext::AreTypesSame(type->GetASTContext(),
+                                                  desired_target_type.getAsOpaquePtr(),
+                                                  candidate_target_type.getAsOpaquePtr()))
+                    return var_sp;
+            }
+            
+            return lldb::VariableSP();
+        }
+        else
+        {
+            if (ClangASTContext::AreTypesSame(type->GetASTContext(),
+                                               type->GetOpaqueQualType(), 
+                                               var_sp->GetType()->GetClangFullType()))
+                return var_sp;
+        }
     }
 
-    return var_sp;
+    return lldb::VariableSP();
 }
 
 Symbol *
@@ -2322,10 +2417,16 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
     if (name_unique_cstr == NULL)
         return;
     
+    static ConstString id_name("id");
+    static ConstString Class_name("Class");
+    
+    if (name == id_name || name == Class_name)
+        return;
+    
     // Only look for functions by name out in our symbols if the function 
     // doesn't start with our phony prefix of '$'
-    Target *target = m_parser_vars->m_exe_ctx->GetTargetPtr();
-    StackFrame *frame = m_parser_vars->m_exe_ctx->GetFramePtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
+    StackFrame *frame = m_parser_vars->m_exe_ctx.GetFramePtr();
     if (name_unique_cstr[0] == '$' && !namespace_decl)
     {
         static ConstString g_lldb_class_name ("$__lldb_class");
@@ -2333,61 +2434,56 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
         if (name == g_lldb_class_name)
         {
             // Clang is looking for the type of "this"
-            
-            if (!frame)
+                        
+            if (frame == NULL)
                 return;
             
-            VariableList *vars = frame->GetVariableList(false);
+            SymbolContext sym_ctx = frame->GetSymbolContext(lldb::eSymbolContextFunction);
             
-            if (!vars)
+            if (!sym_ctx.function)
                 return;
             
-            lldb::VariableSP this_var = vars->FindVariable(ConstString("this"));
+            clang::DeclContext *decl_context;
             
-            if (!this_var ||
-                !this_var->IsInScope(frame) || 
-                !this_var->LocationIsValidForFrame (frame))
+            if (sym_ctx.block && sym_ctx.block->GetInlinedFunctionInfo())
+                decl_context = sym_ctx.block->GetClangDeclContextForInlinedFunction();
+            else
+                decl_context = sym_ctx.function->GetClangDeclContext();
+            
+            if (!decl_context)
                 return;
             
-            Type *this_type = this_var->GetType();
+            clang::CXXMethodDecl *method_decl = llvm::dyn_cast<clang::CXXMethodDecl>(decl_context);
             
-            if (!this_type)
+            if (!method_decl)
                 return;
             
-            if (log && log->GetVerbose())
-            {
-                log->Printf ("  CEDM::FEVD[%u] Type for \"this\" is: ", current_id);
-                StreamString strm;
-                this_type->Dump(&strm, true);
-                log->PutCString (strm.GetData());
-            }
+            clang::CXXRecordDecl *class_decl = method_decl->getParent();
             
-            TypeFromUser this_user_type(this_type->GetClangFullType(),
-                                        this_type->GetClangAST());
+            QualType class_qual_type(class_decl->getTypeForDecl(), 0);
             
-            m_struct_vars->m_object_pointer_type = this_user_type;
-            
-            void *pointer_target_type = NULL;
-            
-            if (!ClangASTContext::IsPointerType(this_user_type.GetOpaqueQualType(),
-                                                &pointer_target_type))
-                return;
-            
-            clang::QualType pointer_target_qual_type = QualType::getFromOpaquePtr(pointer_target_type);
-            
-            if (pointer_target_qual_type.isConstQualified())
-                pointer_target_qual_type.removeLocalConst();
-            
-            TypeFromUser class_user_type(pointer_target_qual_type.getAsOpaquePtr(),
-                                         this_type->GetClangAST());
+            TypeFromUser class_user_type (class_qual_type.getAsOpaquePtr(),
+                                          &class_decl->getASTContext());
             
             if (log)
             {
-                ASTDumper ast_dumper(pointer_target_qual_type);
+                ASTDumper ast_dumper(class_qual_type);
                 log->Printf("  CEDM::FEVD[%u] Adding type for $__lldb_class: %s", current_id, ast_dumper.GetCString());
             }
             
             AddOneType(context, class_user_type, current_id, true);
+            
+            if (method_decl->isInstance())
+            {
+                // self is a pointer to the object
+                
+                QualType class_pointer_type = method_decl->getASTContext().getPointerType(class_qual_type);
+                
+                TypeFromUser self_user_type(class_pointer_type.getAsOpaquePtr(),
+                                            &method_decl->getASTContext());
+                
+                m_struct_vars->m_object_pointer_type = self_user_type;
+            }
             
             return;
         }
@@ -2438,24 +2534,46 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
                 
             AddOneType(context, class_user_type, current_id, false);
             
+#if 0
             VariableList *vars = frame->GetVariableList(false);
             
             lldb::VariableSP self_var = vars->FindVariable(ConstString("self"));
             
-            if (!self_var || 
-                !self_var->IsInScope(frame) || 
-                !self_var->LocationIsValidForFrame (frame))
-                return;
+            if (self_var &&
+                self_var->IsInScope(frame) && 
+                self_var->LocationIsValidForFrame (frame)) {
+                Type *self_type = self_var->GetType();
+                
+                if (!self_type)
+                    return;
+                
+                TypeFromUser self_user_type(self_type->GetClangFullType(),
+                                            self_type->GetClangAST());
+            }
+#endif
             
-            Type *self_type = self_var->GetType();
+            if (method_decl->isInstanceMethod())
+            {
+                // self is a pointer to the object
+                
+                QualType class_pointer_type = method_decl->getASTContext().getObjCObjectPointerType(QualType(interface_type, 0));
             
-            if (!self_type)
-                return;
+                TypeFromUser self_user_type(class_pointer_type.getAsOpaquePtr(),
+                                            &method_decl->getASTContext());
             
-            TypeFromUser self_user_type(self_type->GetClangFullType(),
-                                        self_type->GetClangAST());
-            
-            m_struct_vars->m_object_pointer_type = self_user_type;
+                m_struct_vars->m_object_pointer_type = self_user_type;
+            }
+            else
+            {
+                // self is a Class pointer
+                QualType class_type = method_decl->getASTContext().getObjCClassType();
+                
+                TypeFromUser self_user_type(class_type.getAsOpaquePtr(),
+                                            &method_decl->getASTContext());
+                
+                m_struct_vars->m_object_pointer_type = self_user_type;
+            }
+
             return;
         }
         
@@ -2509,9 +2627,9 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
         
         const char *reg_name(&name.GetCString()[1]);
         
-        if (m_parser_vars->m_exe_ctx->GetRegisterContext())
+        if (m_parser_vars->m_exe_ctx.GetRegisterContext())
         {
-            const RegisterInfo *reg_info(m_parser_vars->m_exe_ctx->GetRegisterContext()->GetRegisterInfoByName(reg_name));
+            const RegisterInfo *reg_info(m_parser_vars->m_exe_ctx.GetRegisterContext()->GetRegisterInfoByName(reg_name));
             
             if (reg_info)
             {
@@ -2564,23 +2682,29 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
         
         if (!context.m_found.variable)
         {
-            const bool include_symbols = true;
+            const bool include_inlines = false;
             const bool append = false;
             
             if (namespace_decl && module_sp)
             {
+                const bool include_symbols = false;
+
                 module_sp->FindFunctions(name,
                                          &namespace_decl,
                                          eFunctionNameTypeBase, 
                                          include_symbols,
+                                         include_inlines,
                                          append,
                                          sc_list);
             }
-            else
+            else if (!namespace_decl)
             {
+                const bool include_symbols = true;
+                
                 target->GetImages().FindFunctions(name,
                                                   eFunctionNameTypeBase,
                                                   include_symbols,
+                                                  include_inlines,
                                                   append, 
                                                   sc_list);
             }
@@ -2630,7 +2754,7 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
                 }
             }
             
-            if (!context.m_found.variable)
+            if (!context.m_found.variable && !namespace_decl)
             {
                 // We couldn't find a non-symbol variable for this.  Now we'll hunt for a generic 
                 // data symbol, and -- if it is found -- treat it as a variable.
@@ -2647,10 +2771,47 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
     }
 }
 
+static clang_type_t
+MaybePromoteToBlockPointerType
+(
+    ASTContext *ast_context,
+    clang_type_t candidate_type
+)
+{
+    if (!candidate_type)
+        return candidate_type;
+    
+    QualType candidate_qual_type = QualType::getFromOpaquePtr(candidate_type);
+    
+    const PointerType *candidate_pointer_type = dyn_cast<PointerType>(candidate_qual_type);
+    
+    if (!candidate_pointer_type)
+        return candidate_type;
+    
+    QualType pointee_qual_type = candidate_pointer_type->getPointeeType();
+    
+    const RecordType *pointee_record_type = dyn_cast<RecordType>(pointee_qual_type);
+    
+    if (!pointee_record_type)
+        return candidate_type;
+    
+    RecordDecl *pointee_record_decl = pointee_record_type->getDecl();
+    
+    if (!pointee_record_decl->isRecord())
+        return candidate_type;
+    
+    if (!pointee_record_decl->getName().startswith(llvm::StringRef("__block_literal_")))
+        return candidate_type;
+    
+    QualType generic_function_type = ast_context->getFunctionNoProtoType(ast_context->UnknownAnyTy);
+    QualType block_pointer_type = ast_context->getBlockPointerType(generic_function_type);
+    
+    return block_pointer_type.getAsOpaquePtr();
+}
+
 Value *
 ClangExpressionDeclMap::GetVariableValue
 (
-    ExecutionContext &exe_ctx,
     VariableSP &var,
     ASTContext *parser_ast_context,
     TypeFromUser *user_type,
@@ -2685,6 +2846,9 @@ ClangExpressionDeclMap::GetVariableValue
             log->PutCString("There is no AST context for the current execution context");
         return NULL;
     }
+
+    // commented out because of <rdar://problem/11024417>
+    //var_opaque_type = MaybePromoteToBlockPointerType (ast, var_opaque_type);
     
     DWARFExpression &var_location_expr = var->LocationExpression();
     
@@ -2692,7 +2856,7 @@ ClangExpressionDeclMap::GetVariableValue
     
     lldb::addr_t loclist_base_load_addr = LLDB_INVALID_ADDRESS;
     
-    Target *target = exe_ctx.GetTargetPtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
 
     if (var_location_expr.IsLocationList())
     {
@@ -2702,7 +2866,7 @@ ClangExpressionDeclMap::GetVariableValue
     }
     Error err;
     
-    if (!var_location_expr.Evaluate(&exe_ctx, ast, NULL, NULL, NULL, loclist_base_load_addr, NULL, *var_location.get(), &err))
+    if (!var_location_expr.Evaluate(&m_parser_vars->m_exe_ctx, ast, NULL, NULL, NULL, loclist_base_load_addr, NULL, *var_location.get(), &err))
     {
         if (log)
             log->Printf("Error evaluating location: %s", err.AsCString());
@@ -2772,11 +2936,21 @@ ClangExpressionDeclMap::AddOneVariable (NameSearchContext &context, VariableSP v
     TypeFromUser ut;
     TypeFromParser pt;
     
-    Value *var_location = GetVariableValue (*m_parser_vars->m_exe_ctx, 
-                                            var, 
+    Value *var_location = GetVariableValue (var, 
                                             m_ast_context,
                                             &ut,
                                             &pt);
+    
+    clang::QualType parser_opaque_type = QualType::getFromOpaquePtr(pt.GetOpaqueQualType());
+    
+    if (parser_opaque_type.isNull())
+        return;
+    
+    if (const clang::Type *parser_type = parser_opaque_type.getTypePtr())
+    {
+        if (const TagType *tag_type = dyn_cast<TagType>(parser_type))
+            CompleteType(tag_type->getDecl());
+    }
     
     if (!var_location)
         return;
@@ -2858,7 +3032,7 @@ ClangExpressionDeclMap::AddOneGenericVariable(NameSearchContext &context,
     
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
-    Target *target = m_parser_vars->m_exe_ctx->GetTargetPtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
 
     if (target == NULL)
         return;
@@ -2875,7 +3049,7 @@ ClangExpressionDeclMap::AddOneGenericVariable(NameSearchContext &context,
     
     std::string decl_name(context.m_decl_name.getAsString());
     ConstString entity_name(decl_name.c_str());
-    ClangExpressionVariableSP entity(m_found_entities.CreateVariable (m_parser_vars->m_exe_ctx->GetBestExecutionContextScope (),
+    ClangExpressionVariableSP entity(m_found_entities.CreateVariable (m_parser_vars->m_exe_ctx.GetBestExecutionContextScope (),
                                                                       entity_name, 
                                                                       user_type,
                                                                       m_parser_vars->m_target_info.byte_order,
@@ -2884,8 +3058,7 @@ ClangExpressionDeclMap::AddOneGenericVariable(NameSearchContext &context,
     
     std::auto_ptr<Value> symbol_location(new Value);
     
-    AddressRange &symbol_range = symbol.GetAddressRangeRef();
-    Address &symbol_address = symbol_range.GetBaseAddress();
+    Address &symbol_address = symbol.GetAddress();
     lldb::addr_t symbol_load_addr = symbol_address.GetLoadAddress(target);
     
     symbol_location->SetContext(Value::eContextTypeClangType, user_type.GetOpaqueQualType());
@@ -2911,7 +3084,7 @@ bool
 ClangExpressionDeclMap::ResolveUnknownTypes()
 {
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-    Target *target = m_parser_vars->m_exe_ctx->GetTargetPtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
 
     ASTContext *scratch_ast_context = target->GetScratchClangASTContext()->getASTContext();
 
@@ -2990,7 +3163,7 @@ ClangExpressionDeclMap::AddOneRegister (NameSearchContext &context,
     
     NamedDecl *var_decl = context.AddVarDecl(parser_type.GetOpaqueQualType());
     
-    ClangExpressionVariableSP entity(m_found_entities.CreateVariable (m_parser_vars->m_exe_ctx->GetBestExecutionContextScope(),
+    ClangExpressionVariableSP entity(m_found_entities.CreateVariable (m_parser_vars->m_exe_ctx.GetBestExecutionContextScope(),
                                                                       m_parser_vars->m_target_info.byte_order,
                                                                       m_parser_vars->m_target_info.address_byte_size));
     assert (entity.get());
@@ -3002,8 +3175,9 @@ ClangExpressionDeclMap::AddOneRegister (NameSearchContext &context,
     entity->m_parser_vars->m_named_decl  = var_decl;
     entity->m_parser_vars->m_llvm_value  = NULL;
     entity->m_parser_vars->m_lldb_value  = NULL;
+    entity->m_flags |= ClangExpressionVariable::EVBareRegister;
     
-    if (log && log->GetVerbose())
+    if (log)
     {
         ASTDumper ast_dumper(var_decl);
         log->Printf("  CEDM::FEVD[%d] Added register %s, returned %s", current_id, context.m_decl_name.getAsString().c_str(), ast_dumper.GetCString());
@@ -3071,8 +3245,7 @@ ClangExpressionDeclMap::AddOneFunction (NameSearchContext &context,
     }
     else if (symbol)
     {
-        fun_address = &symbol->GetAddressRangeRef().GetBaseAddress();
-        
+        fun_address = &symbol->GetAddress();
         fun_decl = context.AddGenericFunDecl();
     }
     else
@@ -3082,13 +3255,13 @@ ClangExpressionDeclMap::AddOneFunction (NameSearchContext &context,
         return;
     }
     
-    Target *target = m_parser_vars->m_exe_ctx->GetTargetPtr();
+    Target *target = m_parser_vars->m_exe_ctx.GetTargetPtr();
 
     lldb::addr_t load_addr = fun_address->GetCallableLoadAddress(target);
     fun_location->SetValueType(Value::eValueTypeLoadAddress);
     fun_location->GetScalar() = load_addr;
     
-    ClangExpressionVariableSP entity(m_found_entities.CreateVariable (m_parser_vars->m_exe_ctx->GetBestExecutionContextScope (),
+    ClangExpressionVariableSP entity(m_found_entities.CreateVariable (m_parser_vars->m_exe_ctx.GetBestExecutionContextScope (),
                                                                       m_parser_vars->m_target_info.byte_order,
                                                                       m_parser_vars->m_target_info.address_byte_size));
     assert (entity.get());
@@ -3135,7 +3308,7 @@ ClangExpressionDeclMap::AddOneType(NameSearchContext &context,
         return;
     }
      
-    if (add_method && ClangASTContext::IsAggregateType(copied_type))
+    if (add_method && ClangASTContext::IsAggregateType(copied_type) && ClangASTContext::GetCompleteType (parser_ast_context, copied_type))
     {
         void *args[1];
         

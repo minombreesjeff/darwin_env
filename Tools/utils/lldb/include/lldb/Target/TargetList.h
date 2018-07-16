@@ -34,7 +34,7 @@ private:
     ///
     /// @see static TargetList& lldb_private::Debugger::GetTargetList().
     //------------------------------------------------------------------
-    TargetList();
+    TargetList(Debugger &debugger);
 
 public:
 
@@ -47,7 +47,16 @@ public:
     };
 
 
-    ~TargetList();
+    // These two functions fill out the Broadcaster interface:
+    
+    static ConstString &GetStaticBroadcasterClass ();
+
+    virtual ConstString &GetBroadcasterClass() const
+    {
+        return GetStaticBroadcasterClass();
+    }
+
+    virtual ~TargetList();
 
     //------------------------------------------------------------------
     /// Create a new Target.
@@ -106,7 +115,7 @@ public:
                   const FileSpec& file_spec,
                   const ArchSpec& arch,
                   bool get_dependent_modules,
-                  const lldb::PlatformSP &platform_sp,
+                  lldb::PlatformSP &platform_sp,
                   lldb::TargetSP &target_sp);
 
     //------------------------------------------------------------------
@@ -133,6 +142,9 @@ public:
 
     lldb::TargetSP
     GetTargetAtIndex (uint32_t index) const;
+    
+    uint32_t
+    GetIndexOfTarget (lldb::TargetSP target_sp) const;
 
     //------------------------------------------------------------------
     /// Find the target that contains has an executable whose path

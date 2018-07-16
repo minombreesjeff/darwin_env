@@ -1,4 +1,4 @@
-//===-- MBlazeMCTargetDesc.cpp - MBlaze Target Descriptions -----*- C++ -*-===//
+//===-- MBlazeMCTargetDesc.cpp - MBlaze Target Descriptions ---------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -83,12 +83,10 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
 
   if (TheTriple.isOSDarwin()) {
     llvm_unreachable("MBlaze does not support Darwin MACH-O format");
-    return NULL;
   }
 
   if (TheTriple.isOSWindows()) {
     llvm_unreachable("MBlaze does not support Windows COFF format");
-    return NULL;
   }
 
   return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll, NoExecStack);
@@ -97,9 +95,10 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
 static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,
                                                 unsigned SyntaxVariant,
                                                 const MCAsmInfo &MAI,
+                                                const MCRegisterInfo &MRI,
                                                 const MCSubtargetInfo &STI) {
   if (SyntaxVariant == 0)
-    return new MBlazeInstPrinter(MAI);
+    return new MBlazeInstPrinter(MAI, MRI);
   return 0;
 }
 

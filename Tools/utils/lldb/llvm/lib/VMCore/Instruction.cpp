@@ -102,7 +102,6 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   case IndirectBr: return "indirectbr";
   case Invoke: return "invoke";
   case Resume: return "resume";
-  case Unwind: return "unwind";
   case Unreachable: return "unreachable";
 
   // Standard binary operators...
@@ -166,8 +165,6 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
 
   default: return "<Invalid operator> ";
   }
-
-  return 0;
 }
 
 /// isIdenticalTo - Return true if the specified instruction is exactly

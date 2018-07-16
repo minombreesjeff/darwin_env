@@ -52,7 +52,8 @@ public:
   FixedLenDecoderEmitter(RecordKeeper &R,
                          std::string PredicateNamespace,
                          std::string GPrefix  = "if (",
-                         std::string GPostfix = " == MCDisassembler::Fail) return MCDisassembler::Fail;",
+                         std::string GPostfix = " == MCDisassembler::Fail)"
+                         " return MCDisassembler::Fail;",
                          std::string ROK      = "MCDisassembler::Success",
                          std::string RFail    = "MCDisassembler::Fail",
                          std::string L        = "") :
@@ -69,8 +70,6 @@ private:
   RecordKeeper &Records;
   CodeGenTarget Target;
   std::vector<const CodeGenInstruction*> NumberedInstructions;
-  std::vector<unsigned> Opcodes;
-  std::map<unsigned, std::vector<OperandInfo> > Operands;
 public:
   std::string PredicateNamespace;
   std::string GuardPrefix, GuardPostfix;

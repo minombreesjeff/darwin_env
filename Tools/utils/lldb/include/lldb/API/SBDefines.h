@@ -18,7 +18,6 @@
 #include "lldb/lldb-defines.h"
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
-#include "lldb/lldb-forward-rtti.h"
 #include "lldb/lldb-types.h"
 
 // Forward Declarations
@@ -60,6 +59,14 @@ class SBSymbolContextList;
 class SBTarget;
 class SBThread;
 class SBType;
+class SBTypeCategory;
+class SBTypeFilter;
+class SBTypeFormat;
+class SBTypeNameSpecifier;
+class SBTypeSummary;
+#ifndef LLDB_DISABLE_PYTHON
+class SBTypeSynthetic;    
+#endif
 class SBTypeList;
 class SBValue;
 class SBValueList;

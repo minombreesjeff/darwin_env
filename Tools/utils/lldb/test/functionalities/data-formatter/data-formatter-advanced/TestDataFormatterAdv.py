@@ -12,11 +12,13 @@ class AdvDataFormatterTestCase(TestBase):
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-advanced")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_with_dsym_and_run_command(self):
         """Test data formatter commands."""
         self.buildDsym()
         self.data_formatter_commands()
 
+    @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()
@@ -102,6 +104,11 @@ class AdvDataFormatterTestCase(TestBase):
         self.expect("frame variable *pointer",
             substrs = ['0x',
                        '2'])
+
+        # check fix for <rdar://problem/11338654> LLDB crashes when using a "type summary" that uses bitfields with no format
+        self.runCmd("type summary add --summary-string \"${var[0-1]}\" int")
+        self.expect("frame variable iAmInt",
+            substrs = ['9 1'])
 
         self.expect("frame variable cool_array[3].floating",
             substrs = ['0x'])

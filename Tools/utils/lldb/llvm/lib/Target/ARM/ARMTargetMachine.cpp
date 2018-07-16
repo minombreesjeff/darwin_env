@@ -34,6 +34,7 @@ extern "C" void LLVMInitializeARMTarget() {
   RegisterTargetMachine<ThumbTargetMachine> Y(TheThumbTarget);
 }
 
+
 /// TargetMachine ctor - Create an ARM architecture model.
 ///
 ARMBaseTargetMachine::ARMBaseTargetMachine(const Target &T, StringRef TT,
@@ -49,6 +50,8 @@ ARMBaseTargetMachine::ARMBaseTargetMachine(const Target &T, StringRef TT,
   if (Options.FloatABIType == FloatABI::Default)
     this->Options.FloatABIType = FloatABI::Soft;
 }
+
+void ARMTargetMachine::anchor() { }
 
 ARMTargetMachine::ARMTargetMachine(const Target &T, StringRef TT,
                                    StringRef CPU, StringRef FS,
@@ -73,6 +76,8 @@ ARMTargetMachine::ARMTargetMachine(const Target &T, StringRef TT,
     report_fatal_error("CPU: '" + Subtarget.getCPUString() + "' does not "
                        "support ARM mode execution!");
 }
+
+void ThumbTargetMachine::anchor() { }
 
 ThumbTargetMachine::ThumbTargetMachine(const Target &T, StringRef TT,
                                        StringRef CPU, StringRef FS,
@@ -102,33 +107,60 @@ ThumbTargetMachine::ThumbTargetMachine(const Target &T, StringRef TT,
               : (ARMFrameLowering*)new Thumb1FrameLowering(Subtarget)) {
 }
 
-bool ARMBaseTargetMachine::addPreISel(PassManagerBase &PM) {
-  if (getOptLevel() != CodeGenOpt::None && EnableGlobalMerge)
-    PM.add(createGlobalMergePass(getTargetLowering()));
+namespace {
+/// ARM Code Generator Pass Configuration Options.
+class ARMPassConfig : public TargetPassConfig {
+public:
+  ARMPassConfig(ARMBaseTargetMachine *TM, PassManagerBase &PM)
+    : TargetPassConfig(TM, PM) {}
+
+  ARMBaseTargetMachine &getARMTargetMachine() const {
+    return getTM<ARMBaseTargetMachine>();
+  }
+
+  const ARMSubtarget &getARMSubtarget() const {
+    return *getARMTargetMachine().getSubtargetImpl();
+  }
+
+  virtual bool addPreISel();
+  virtual bool addInstSelector();
+  virtual bool addPreRegAlloc();
+  virtual bool addPreSched2();
+  virtual bool addPreEmitPass();
+};
+} // namespace
+
+TargetPassConfig *ARMBaseTargetMachine::createPassConfig(PassManagerBase &PM) {
+  return new ARMPassConfig(this, PM);
+}
+
+bool ARMPassConfig::addPreISel() {
+  if (TM->getOptLevel() != CodeGenOpt::None && EnableGlobalMerge)
+    PM.add(createGlobalMergePass(TM->getTargetLowering()));
 
   return false;
 }
 
-bool ARMBaseTargetMachine::addInstSelector(PassManagerBase &PM) {
-  PM.add(createARMISelDag(*this, getOptLevel()));
+bool ARMPassConfig::addInstSelector() {
+  PM.add(createARMISelDag(getARMTargetMachine(), getOptLevel()));
   return false;
 }
 
-bool ARMBaseTargetMachine::addPreRegAlloc(PassManagerBase &PM) {
+bool ARMPassConfig::addPreRegAlloc() {
   // FIXME: temporarily disabling load / store optimization pass for Thumb1.
-  if (getOptLevel() != CodeGenOpt::None && !Subtarget.isThumb1Only())
+  if (getOptLevel() != CodeGenOpt::None && !getARMSubtarget().isThumb1Only())
     PM.add(createARMLoadStoreOptimizationPass(true));
-  if (getOptLevel() != CodeGenOpt::None && Subtarget.isCortexA9())
+  if (getOptLevel() != CodeGenOpt::None && getARMSubtarget().isCortexA9())
     PM.add(createMLxExpansionPass());
   return true;
 }
 
-bool ARMBaseTargetMachine::addPreSched2(PassManagerBase &PM) {
+bool ARMPassConfig::addPreSched2() {
   // FIXME: temporarily disabling load / store optimization pass for Thumb1.
   if (getOptLevel() != CodeGenOpt::None) {
-    if (!Subtarget.isThumb1Only())
+    if (!getARMSubtarget().isThumb1Only())
       PM.add(createARMLoadStoreOptimizationPass());
-    if (Subtarget.hasNEON())
+    if (getARMSubtarget().hasNEON())
       PM.add(createExecutionDependencyFixPass(&ARM::DPRRegClass));
   }
 
@@ -137,22 +169,22 @@ bool ARMBaseTargetMachine::addPreSched2(PassManagerBase &PM) {
   PM.add(createARMExpandPseudoPass());
 
   if (getOptLevel() != CodeGenOpt::None) {
-    if (!Subtarget.isThumb1Only())
-      PM.add(createIfConverterPass());
+    if (!getARMSubtarget().isThumb1Only())
+      addPass(IfConverterID);
   }
-  if (Subtarget.isThumb2())
+  if (getARMSubtarget().isThumb2())
     PM.add(createThumb2ITBlockPass());
 
   return true;
 }
 
-bool ARMBaseTargetMachine::addPreEmitPass(PassManagerBase &PM) {
-  if (Subtarget.isThumb2()) {
-    if (!Subtarget.prefers32BitThumb())
+bool ARMPassConfig::addPreEmitPass() {
+  if (getARMSubtarget().isThumb2()) {
+    if (!getARMSubtarget().prefers32BitThumb())
       PM.add(createThumb2SizeReductionPass());
 
     // Constant island pass work on unbundled instructions.
-    PM.add(createUnpackMachineBundlesPass());
+    addPass(UnpackMachineBundlesID);
   }
 
   PM.add(createARMConstantIslandPass());
@@ -160,8 +192,7 @@ bool ARMBaseTargetMachine::addPreEmitPass(PassManagerBase &PM) {
   return true;
 }
 
-bool ARMBaseTargetMachine::addCodeEmitter(PassManagerBase &PM,
-                                          JITCodeEmitter &JCE) {
+bool ARMBaseTargetMachine::addCodeEmitter(PassManagerBase &PM, JITCodeEmitter &JCE) {
   // Machine code emitter pass for ARM.
   PM.add(createARMJITCodeEmitterPass(*this, JCE));
   return false;

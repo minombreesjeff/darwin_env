@@ -58,6 +58,7 @@ extern \"C\"                                                                    
     extern void *gdb_class_getClass (void *objc_class);                                           \n\
     extern void *class_getName(void *objc_class);                                                 \n\
     extern int printf(const char *format, ...);                                                   \n\
+    extern unsigned char class_isMetaClass (void *objc_class);                                    \n\
 }                                                                                                 \n\
                                                                                                   \n\
 struct __lldb_objc_object {                                                                       \n\
@@ -77,7 +78,17 @@ extern \"C\" void *__lldb_apple_objc_v2_find_class_name (                       
     {                                                                                             \n\
         void *actual_class = (void *) [(id) object_ptr class];                                    \n\
         if (actual_class != 0)                                                                    \n\
-            name = class_getName((void *) actual_class);                                          \n\
+        {                                                                                         \n\
+            if (class_isMetaClass(actual_class) == 1)                                             \n\
+            {                                                                                     \n\
+                if (debug)                                                                        \n\
+                    printf (\"\\n*** Found metaclass.\\n\");                                      \n\
+            }                                                                                     \n\
+            else                                                                                  \n\
+            {                                                                                     \n\
+                name = class_getName((void *) actual_class);                                      \n\
+            }                                                                                     \n\
+        }                                                                                         \n\
         if (debug)                                                                                \n\
             printf (\"\\n*** Found name: %s\\n\", name ? name : \"<NOT FOUND>\");                 \n\
     }                                                                                             \n\
@@ -110,7 +121,7 @@ AppleObjCRuntimeV2::RunFunctionToFindClassName(addr_t object_addr, Thread *threa
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));  // FIXME - a more appropriate log channel?
     
     int32_t debug;
-    if (log)
+    if (log && log->GetVerbose())
         debug = 1;
     else
         debug = 0;
@@ -206,7 +217,7 @@ AppleObjCRuntimeV2::RunFunctionToFindClassName(addr_t object_addr, Thread *threa
                                                      &m_get_class_name_args, 
                                                      errors, 
                                                      stop_others, 
-                                                     1000000, 
+                                                     100000, 
                                                      try_all_threads, 
                                                      unwind_on_error, 
                                                      void_ptr_value);
@@ -237,8 +248,9 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
                                               Address &address)
 {
     // The Runtime is attached to a particular process, you shouldn't pass in a value from another process.
-    assert (in_value.GetUpdatePoint().GetProcessSP().get() == m_process);
-    
+    assert (in_value.GetProcessSP().get() == m_process);
+    assert (m_process != NULL);
+
     // Make sure we can have a dynamic value before starting...
     if (CouldHaveDynamicValue (in_value))
     {
@@ -250,8 +262,7 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
         if (error.Fail())
             return false;
 
-        address.SetSection (NULL);
-        address.SetOffset(object_ptr);
+        address.SetRawAddress(object_ptr);
 
         // First check the cache...
         SymbolContext sc;
@@ -282,14 +293,14 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
             // If the ISA pointer points to one of the sections in the binary, then see if we can
             // get the class name from the symbols.
         
-            const Section *section = isa_address.GetSection();
+            SectionSP section_sp (isa_address.GetSection());
 
-            if (section)
+            if (section_sp)
             {
                 // If this points to a section that we know about, then this is
                 // some static class or nothing.  See if it is in the right section 
                 // and if its name is the right form.
-                ConstString section_name = section->GetName();
+                ConstString section_name = section_sp->GetName();
                 static ConstString g_objc_class_section_name ("__objc_data");
                 if (section_name == g_objc_class_section_name)
                 {
@@ -298,6 +309,11 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
                     {
                         if (sc.symbol->GetType() == eSymbolTypeObjCClass)
                             class_name = sc.symbol->GetName().GetCString();
+                        else if (sc.symbol->GetType() == eSymbolTypeObjCMetaClass)
+                        {
+                            // FIXME: Meta-classes can't have dynamic types...
+                            return false;
+                        }
                     }
                 }
             }
@@ -309,10 +325,10 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
             // If the class address didn't point into the binary, or
             // it points into the right section but there wasn't a symbol
             // there, try to look it up by calling the class method in the target.
-            ExecutionContextScope *exe_scope = in_value.GetExecutionContextScope();
-            Thread *thread_to_use;
-            if (exe_scope)
-                thread_to_use = exe_scope->CalculateThread();
+            
+            ExecutionContext exe_ctx (in_value.GetExecutionContextRef());
+            
+            Thread *thread_to_use = exe_ctx.GetThreadPtr();
             
             if (thread_to_use == NULL)
                 thread_to_use = m_process->GetThreadList().GetSelectedThread().get();
@@ -333,9 +349,10 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
             
             TypeList class_types;
             SymbolContext sc;
-            uint32_t num_matches = target.GetImages().FindTypes (sc, 
+            const bool exact_match = true;
+            uint32_t num_matches = target.GetImages().FindTypes (sc,
                                                                  class_type_or_name.GetName(),
-                                                                 true,
+                                                                 exact_match,
                                                                  UINT32_MAX,
                                                                  class_types);
             if (num_matches == 1)
@@ -444,22 +461,20 @@ AppleObjCRuntimeV2::GetPluginVersion()
     return 1;
 }
 
-void
-AppleObjCRuntimeV2::SetExceptionBreakpoints ()
+BreakpointResolverSP
+AppleObjCRuntimeV2::CreateExceptionResolver (Breakpoint *bkpt, bool catch_bp, bool throw_bp)
 {
-    if (!m_process)
-        return;
-        
-    if (!m_objc_exception_bp_sp)
-    {
-        m_objc_exception_bp_sp = m_process->GetTarget().CreateBreakpoint (NULL,
-                                                                          NULL,
-                                                                          "__cxa_throw",
-                                                                          eFunctionNameTypeBase, 
-                                                                          true);
-    }
-    else
-        m_objc_exception_bp_sp->SetEnabled (true);
+    BreakpointResolverSP resolver_sp;
+    
+    if (throw_bp)
+        resolver_sp.reset (new BreakpointResolverName (bkpt,
+                                                       "objc_exception_throw",
+                                                       eFunctionNameTypeBase,
+                                                       Breakpoint::Exact,
+                                                       eLazyBoolNo));
+    // FIXME: We don't do catch breakpoints for ObjC yet.
+    // Should there be some way for the runtime to specify what it can do in this regard?
+    return resolver_sp;
 }
 
 ClangUtilityFunction *
@@ -540,7 +555,7 @@ AppleObjCRuntimeV2::GetByteOffsetForIvar (ClangASTType &parent_ast_type, const c
     SymbolContextList sc_list;
     Target &target = m_process->GetTarget();
     
-    target.GetImages().FindSymbolsWithNameAndType(ivar_const_str, eSymbolTypeRuntime, sc_list);
+    target.GetImages().FindSymbolsWithNameAndType(ivar_const_str, eSymbolTypeObjCIVar, sc_list);
 
     SymbolContext ivar_offset_symbol;
     if (sc_list.GetSize() != 1 
@@ -548,7 +563,7 @@ AppleObjCRuntimeV2::GetByteOffsetForIvar (ClangASTType &parent_ast_type, const c
         || ivar_offset_symbol.symbol == NULL)
         return LLDB_INVALID_IVAR_OFFSET;
     
-    addr_t ivar_offset_address = ivar_offset_symbol.symbol->GetValue().GetLoadAddress (&target);
+    addr_t ivar_offset_address = ivar_offset_symbol.symbol->GetAddress().GetLoadAddress (&target);
     
     Error error;
     
@@ -592,15 +607,20 @@ AppleObjCRuntimeV2::GetISA(ValueObject& valobj)
     if (IsTaggedPointer(isa_pointer))
         return g_objc_Tagged_ISA;
 
-    uint8_t pointer_size = valobj.GetUpdatePoint().GetProcessSP()->GetAddressByteSize();
+    ExecutionContext exe_ctx (valobj.GetExecutionContextRef());
+
+    Process *process = exe_ctx.GetProcessPtr();
+    if (process)
+    {
+        uint8_t pointer_size = process->GetAddressByteSize();
     
-    Error error;
-    ObjCLanguageRuntime::ObjCISA isa = 
-    valobj.GetUpdatePoint().GetProcessSP()->ReadUnsignedIntegerFromMemory(isa_pointer,
-                                                                          pointer_size,
-                                                                          0,
-                                                                          error);
-    return isa;
+        Error error;
+        return process->ReadUnsignedIntegerFromMemory (isa_pointer,
+                                                       pointer_size,
+                                                       0,
+                                                       error);
+    }
+    return 0;
 }
 
 // TODO: should we have a transparent_kvo parameter here to say if we 

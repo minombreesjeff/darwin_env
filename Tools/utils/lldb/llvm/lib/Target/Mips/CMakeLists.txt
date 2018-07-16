@@ -11,6 +11,7 @@ tablegen(LLVM MipsGenSubtargetInfo.inc -gen-subtarget)
 add_public_tablegen_target(MipsCommonTableGen)
 
 add_llvm_target(MipsCodeGen
+  MipsAnalyzeImmediate.cpp
   MipsAsmPrinter.cpp
   MipsCodeEmitter.cpp
   MipsDelaySlotFiller.cpp
@@ -22,6 +23,7 @@ add_llvm_target(MipsCodeGen
   MipsISelLowering.cpp
   MipsFrameLowering.cpp
   MipsMCInstLower.cpp
+  MipsMachineFunction.cpp
   MipsRegisterInfo.cpp
   MipsSubtarget.cpp
   MipsTargetMachine.cpp
@@ -32,3 +34,4 @@ add_llvm_target(MipsCodeGen
 add_subdirectory(InstPrinter)
 add_subdirectory(TargetInfo)
 add_subdirectory(MCTargetDesc)
+add_subdirectory(AsmParser)

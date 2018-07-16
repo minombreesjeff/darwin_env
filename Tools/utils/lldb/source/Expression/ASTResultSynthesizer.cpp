@@ -16,6 +16,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/Stmt.h"
 #include "clang/Parse/Parser.h"
+#include "clang/Sema/SemaDiagnostic.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/raw_ostream.h"
 #include "lldb/Core/Log.h"
@@ -259,6 +260,21 @@ ASTResultSynthesizer::SynthesizeBodyResult (CompoundStmt *Body,
         // No auxiliary variable necessary; expression returns void
         return true;
     
+    // In C++11, last_expr can be a LValueToRvalue implicit cast.  Strip that off if that's the
+    // case.
+    
+    do {
+        ImplicitCastExpr *implicit_cast = dyn_cast<ImplicitCastExpr>(last_expr);
+        
+        if (!implicit_cast)
+            break;
+        
+        if (!implicit_cast->getCastKind() == CK_LValueToRValue)
+            break;
+        
+        last_expr = implicit_cast->getSubExpr();
+    } while (0);
+    
     // is_lvalue is used to record whether the expression returns an assignable Lvalue or an
     // Rvalue.  This is relevant because they are handled differently.
     //
@@ -329,8 +345,10 @@ ASTResultSynthesizer::SynthesizeBodyResult (CompoundStmt *Body,
         else
             result_ptr_id = &Ctx.Idents.get("$__lldb_expr_result_ptr");
         
-        QualType ptr_qual_type;
+        m_sema->RequireCompleteType(SourceLocation(), expr_qual_type, clang::diag::err_incomplete_type);
         
+        QualType ptr_qual_type;
+
         if (expr_qual_type->getAs<ObjCObjectType>() != NULL)
             ptr_qual_type = Ctx.getObjCObjectPointerType(expr_qual_type);
         else
@@ -351,7 +369,7 @@ ASTResultSynthesizer::SynthesizeBodyResult (CompoundStmt *Body,
                 
         ExprResult address_of_expr = m_sema->CreateBuiltinUnaryOp(SourceLocation(), UO_AddrOf, last_expr);
         
-        m_sema->AddInitializerToDecl(result_decl, address_of_expr.take(), true, true);
+        m_sema->AddInitializerToDecl(result_decl, address_of_expr.take(), true, false);
     }
     else
     {
@@ -370,7 +388,7 @@ ASTResultSynthesizer::SynthesizeBodyResult (CompoundStmt *Body,
         if (!result_decl)
             return false;
         
-        m_sema->AddInitializerToDecl(result_decl, last_expr, true, true);
+        m_sema->AddInitializerToDecl(result_decl, last_expr, true, false);
     }
     
     DC->addDecl(result_decl);

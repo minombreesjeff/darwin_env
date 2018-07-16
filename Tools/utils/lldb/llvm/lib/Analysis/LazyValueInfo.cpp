@@ -24,14 +24,15 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/ConstantRange.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/PatternMatch.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ValueHandle.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include <map>
 #include <stack>
 using namespace llvm;
+using namespace PatternMatch;
 
 char LazyValueInfo::ID = 0;
 INITIALIZE_PASS_BEGIN(LazyValueInfo, "lazy-value-info",
@@ -309,50 +310,6 @@ namespace {
   };
 }
 
-namespace llvm {
-  template<>
-  struct DenseMapInfo<LVIValueHandle> {
-    typedef DenseMapInfo<Value*> PointerInfo;
-    static inline LVIValueHandle getEmptyKey() {
-      return LVIValueHandle(PointerInfo::getEmptyKey(),
-                            static_cast<LazyValueInfoCache*>(0));
-    }
-    static inline LVIValueHandle getTombstoneKey() {
-      return LVIValueHandle(PointerInfo::getTombstoneKey(),
-                            static_cast<LazyValueInfoCache*>(0));
-    }
-    static unsigned getHashValue(const LVIValueHandle &Val) {
-      return PointerInfo::getHashValue(Val);
-    }
-    static bool isEqual(const LVIValueHandle &LHS, const LVIValueHandle &RHS) {
-      return LHS == RHS;
-    }
-  };
-  
-  template<>
-  struct DenseMapInfo<std::pair<AssertingVH<BasicBlock>, Value*> > {
-    typedef std::pair<AssertingVH<BasicBlock>, Value*> PairTy;
-    typedef DenseMapInfo<AssertingVH<BasicBlock> > APointerInfo;
-    typedef DenseMapInfo<Value*> BPointerInfo;
-    static inline PairTy getEmptyKey() {
-      return std::make_pair(APointerInfo::getEmptyKey(),
-                            BPointerInfo::getEmptyKey());
-    }
-    static inline PairTy getTombstoneKey() {
-      return std::make_pair(APointerInfo::getTombstoneKey(), 
-                            BPointerInfo::getTombstoneKey());
-    }
-    static unsigned getHashValue( const PairTy &Val) {
-      return APointerInfo::getHashValue(Val.first) ^ 
-             BPointerInfo::getHashValue(Val.second);
-    }
-    static bool isEqual(const PairTy &LHS, const PairTy &RHS) {
-      return APointerInfo::isEqual(LHS.first, RHS.first) &&
-             BPointerInfo::isEqual(LHS.second, RHS.second);
-    }
-  };
-}
-
 namespace { 
   /// LazyValueInfoCache - This is the cache kept by LazyValueInfo which
   /// maintains information about queries across the clients' queries.
@@ -364,7 +321,7 @@ namespace {
 
     /// ValueCache - This is all of the cached information for all values,
     /// mapped from Value* to key information.
-    DenseMap<LVIValueHandle, ValueCacheEntryTy> ValueCache;
+    std::map<LVIValueHandle, ValueCacheEntryTy> ValueCache;
     
     /// OverDefinedCache - This tracks, on a per-block basis, the set of 
     /// values that are over-defined at the end of that block.  This is required
@@ -492,7 +449,7 @@ void LazyValueInfoCache::eraseBlock(BasicBlock *BB) {
        E = ToErase.end(); I != E; ++I)
     OverDefinedCache.erase(*I);
 
-  for (DenseMap<LVIValueHandle, ValueCacheEntryTy>::iterator
+  for (std::map<LVIValueHandle, ValueCacheEntryTy>::iterator
        I = ValueCache.begin(), E = ValueCache.end(); I != E; ++I)
     I->second.erase(BB);
 }
@@ -840,9 +797,8 @@ bool LazyValueInfoCache::getEdgeValue(Value *Val, BasicBlock *BBFrom,
       // If the condition of the branch is an equality comparison, we may be
       // able to infer the value.
       ICmpInst *ICI = dyn_cast<ICmpInst>(BI->getCondition());
-      if (ICI && ICI->getOperand(0) == Val &&
-          isa<Constant>(ICI->getOperand(1))) {
-        if (ICI->isEquality()) {
+      if (ICI && isa<Constant>(ICI->getOperand(1))) {
+        if (ICI->isEquality() && ICI->getOperand(0) == Val) {
           // We know that V has the RHS constant if this is a true SETEQ or
           // false SETNE. 
           if (isTrueDest == (ICI->getPredicate() == ICmpInst::ICMP_EQ))
@@ -852,11 +808,22 @@ bool LazyValueInfoCache::getEdgeValue(Value *Val, BasicBlock *BBFrom,
           return true;
         }
 
-        if (ConstantInt *CI = dyn_cast<ConstantInt>(ICI->getOperand(1))) {
+        // Recognize the range checking idiom that InstCombine produces.
+        // (X-C1) u< C2 --> [C1, C1+C2)
+        ConstantInt *NegOffset = 0;
+        if (ICI->getPredicate() == ICmpInst::ICMP_ULT)
+          match(ICI->getOperand(0), m_Add(m_Specific(Val),
+                                          m_ConstantInt(NegOffset)));
+
+        ConstantInt *CI = dyn_cast<ConstantInt>(ICI->getOperand(1));
+        if (CI && (ICI->getOperand(0) == Val || NegOffset)) {
           // Calculate the range of values that would satisfy the comparison.
           ConstantRange CmpRange(CI->getValue(), CI->getValue()+1);
           ConstantRange TrueValues =
             ConstantRange::makeICmpRegion(ICI->getPredicate(), CmpRange);
+
+          if (NegOffset) // Apply the offset from above.
+            TrueValues = TrueValues.subtract(NegOffset->getValue());
 
           // If we're interested in the false dest, invert the condition.
           if (!isTrueDest) TrueValues = TrueValues.inverse();
@@ -899,8 +866,8 @@ bool LazyValueInfoCache::getEdgeValue(Value *Val, BasicBlock *BBFrom,
       // BBFrom to BBTo.
       unsigned NumEdges = 0;
       ConstantInt *EdgeVal = 0;
-      for (unsigned i = 1, e = SI->getNumSuccessors(); i != e; ++i) {
-        if (SI->getSuccessor(i) != BBTo) continue;
+      for (unsigned i = 0, e = SI->getNumCases(); i != e; ++i) {
+        if (SI->getCaseSuccessor(i) != BBTo) continue;
         if (NumEdges++) break;
         EdgeVal = SI->getCaseValue(i);
       }

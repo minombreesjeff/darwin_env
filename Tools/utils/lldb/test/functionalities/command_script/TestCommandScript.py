@@ -12,10 +12,12 @@ class CmdPythonTestCase(TestBase):
     mydir = os.path.join("functionalities", "command_script")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_with_dsym (self):
         self.buildDsym ()
         self.pycmd_tests ()
 
+    @dwarf_test
     def test_with_dwarf (self):
         self.buildDwarf ()
         self.pycmd_tests ()
@@ -82,7 +84,7 @@ class CmdPythonTestCase(TestBase):
 
         self.expect("help targetname",
                     substrs = ['Run Python function welcome.target_name_imp',
-                               'This command takes \'raw\' input',
+                               'This command takes','\'raw\' input',
                                'quote stuff'])
 
         self.expect("longwait",

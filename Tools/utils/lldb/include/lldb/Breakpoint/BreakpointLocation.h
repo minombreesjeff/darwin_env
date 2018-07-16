@@ -47,7 +47,7 @@ namespace lldb_private {
 //----------------------------------------------------------------------
 
 class BreakpointLocation : 
-    public ReferenceCountedBase<BreakpointLocation>,
+    public STD_ENABLE_SHARED_FROM_THIS(BreakpointLocation),
     public StoppointLocation
 {
 public:
@@ -111,7 +111,7 @@ public:
     ///     \b true if the breakpoint is enabled, \b false if disabled.
     //------------------------------------------------------------------
     bool
-    IsEnabled ();
+    IsEnabled () const;
 
     //------------------------------------------------------------------
     /// Return the current Ignore Count.
@@ -167,23 +167,7 @@ public:
     //------------------------------------------------------------------
     void 
     SetCondition (const char *condition);
-    
-    //------------------------------------------------------------------
-    /// Test the breakpoint location's condition in the Execution context passed in.
-    ///
-    /// @param[in] exe_ctx
-    ///    The execution context in which to evaluate this expression.
-    /// 
-    /// @param[in] error
-    ///    Error messages will be written to this stream.
-    ///
-    /// @return
-    ///     A thread plan to run to test the condition, or NULL if there is no condition.
-    //------------------------------------------------------------------
-    ThreadPlan *
-    GetThreadPlanToTestCondition (ExecutionContext &exe_ctx, 
-                                  Stream &error);
-    
+
     //------------------------------------------------------------------
     /// Return a pointer to the text of the condition expression.
     ///
@@ -203,6 +187,27 @@ public:
     //------------------------------------------------------------------
     void
     SetThreadID (lldb::tid_t thread_id);
+    
+    lldb::tid_t
+    GetThreadID ();
+
+    void
+    SetThreadIndex (uint32_t index);
+    
+    uint32_t
+    GetThreadIndex() const;
+    
+    void
+    SetThreadName (const char *thread_name);
+    
+    const char *
+    GetThreadName () const;
+    
+    void 
+    SetQueueName (const char *queue_name);
+    
+    const char *
+    GetQueueName () const;
 
     //------------------------------------------------------------------
     // The next section deals with this location's breakpoint sites.
@@ -366,11 +371,15 @@ private:
     //------------------------------------------------------------------
     // Data members:
     //------------------------------------------------------------------
+    bool m_being_created;
     Address m_address; ///< The address defining this location.
     Breakpoint &m_owner; ///< The breakpoint that produced this object.
     std::auto_ptr<BreakpointOptions> m_options_ap; ///< Breakpoint options pointer, NULL if we're using our breakpoint's options.
     lldb::BreakpointSiteSP m_bp_site_sp; ///< Our breakpoint site (it may be shared by more than one location.)
 
+    void
+    SendBreakpointLocationChangedEvent (lldb::BreakpointEventType eventKind);
+    
     DISALLOW_COPY_AND_ASSIGN (BreakpointLocation);
 };
 

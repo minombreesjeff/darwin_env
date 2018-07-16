@@ -40,10 +40,23 @@ static OptionEnumValueElement g_watch_size[] =
 static OptionDefinition
 g_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "watch", 'w', required_argument, g_watch_type, 0, eArgTypeWatchType, "Determine how to watch a variable; or, with -x option, its pointee."},
-    { LLDB_OPT_SET_1, false, "xsize", 'x', required_argument, g_watch_size, 0, eArgTypeByteSize, "Number of bytes to use to watch the pointee."}
+    { LLDB_OPT_SET_1, false, "watch", 'w', required_argument, g_watch_type, 0, eArgTypeWatchType, "Specify the type of watching to perform."},
+    { LLDB_OPT_SET_1, false, "xsize", 'x', required_argument, g_watch_size, 0, eArgTypeByteSize, "Number of bytes to use to watch a region."}
 };
 
+
+bool
+OptionGroupWatchpoint::IsWatchSizeSupported(uint32_t watch_size)
+{
+    for (uint32_t i = 0; i < llvm::array_lengthof(g_watch_size); ++i)
+    {
+        if (g_watch_size[i].value == 0)
+            break;
+        if (watch_size == g_watch_size[i].value)
+            return true;
+    }
+    return false;
+}
 
 OptionGroupWatchpoint::OptionGroupWatchpoint () :
     OptionGroup()
@@ -66,7 +79,7 @@ OptionGroupWatchpoint::SetOptionValue (CommandInterpreter &interpreter,
         case 'w':
             watch_type = (WatchType) Args::StringToOptionEnum(option_arg, g_option_table[option_idx].enum_values, 0, error);
             if (error.Success())
-                watch_variable = true;
+                watch_type_specified = true;
             break;
 
         case 'x':
@@ -84,7 +97,7 @@ OptionGroupWatchpoint::SetOptionValue (CommandInterpreter &interpreter,
 void
 OptionGroupWatchpoint::OptionParsingStarting (CommandInterpreter &interpreter)
 {
-    watch_variable = false;
+    watch_type_specified = false;
     watch_type = eWatchInvalid;
     watch_size = 0;
 }
@@ -99,5 +112,5 @@ OptionGroupWatchpoint::GetDefinitions ()
 uint32_t
 OptionGroupWatchpoint::GetNumDefinitions ()
 {
-    return arraysize(g_option_table);
+    return llvm::array_lengthof(g_option_table);
 }

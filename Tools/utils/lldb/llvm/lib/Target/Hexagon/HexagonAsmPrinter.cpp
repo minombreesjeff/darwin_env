@@ -1,4 +1,4 @@
-//===-- HexagonAsmPrinter.cpp - Print machine instrs to Hexagon assembly ----=//
+//===-- HexagonAsmPrinter.cpp - Print machine instrs to Hexagon assembly --===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -10,9 +10,6 @@
 // This file contains a printer that converts from our internal representation
 // of machine-dependent LLVM code to Hexagon assembly language. This printer is
 // the output mechanism used by `llc'.
-//
-// Documentation at http://developer.apple.com/documentation/DeveloperTools/
-// Reference/Assembler/ASMIntroduction/chapter_1_section_1.html
 //
 //===----------------------------------------------------------------------===//
 
@@ -125,6 +122,11 @@ namespace {
       O << -value;
     }
 
+    void printHexagonNOneImmOperand(const MachineInstr *MI, unsigned OpNo,
+                                    raw_ostream &O) const {
+      O << -1;
+    }
+
     void printHexagonMEMriOperand(const MachineInstr *MI, unsigned OpNo,
                                   raw_ostream &O) {
       const MachineOperand &MO1 = MI->getOperand(OpNo);
@@ -223,7 +225,6 @@ void HexagonAsmPrinter::printOp(const MachineOperand &MO, raw_ostream &O) {
   case MachineOperand::MO_Immediate:
     dbgs() << "printOp() does not handle immediate values\n";
     abort();
-    return;
 
   case MachineOperand::MO_MachineBasicBlock:
     O << *MO.getMBB()->getSymbol();
@@ -319,14 +320,14 @@ bool HexagonAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
   if (Base.isReg())
     printOperand(MI, OpNo, O);
   else
-    assert(0 && "Unimplemented");
+    llvm_unreachable("Unimplemented");
 
   if (Offset.isImm()) {
     if (Offset.getImm())
       O << " + #" << Offset.getImm();
   }
   else
-    assert(0 && "Unimplemented");
+    llvm_unreachable("Unimplemented");
 
   return false;
 }
@@ -334,7 +335,7 @@ bool HexagonAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
 void HexagonAsmPrinter::printPredicateOperand(const MachineInstr *MI,
                                               unsigned OpNo,
                                               raw_ostream &O) {
-  assert(0 && "Unimplemented");
+  llvm_unreachable("Unimplemented");
 }
 
 
@@ -370,19 +371,6 @@ void HexagonAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     O << "}";
     }
     printInstruction(MI, O);
-  } else if (MI->getOpcode() == Hexagon::STriwt) {
-    //
-    // Handle truncated store on Hexagon.
-    //
-    O << "\tmemw(";
-    printHexagonMEMriOperand(MI, 0, O);
-
-    O << ") = ";
-    unsigned SubRegNum =
-      TM.getRegisterInfo()->getSubReg(MI->getOperand(2)
-                                      .getReg(), Hexagon::subreg_loreg);
-    const char *SubRegName = getRegisterName(SubRegNum);
-    O << SubRegName << '\n';
   } else if (MI->getOpcode() == Hexagon::MPYI_rin) {
     // Handle multipy with -ve constant on Hexagon:
     // "$dst =- mpyi($src1, #$src2)"

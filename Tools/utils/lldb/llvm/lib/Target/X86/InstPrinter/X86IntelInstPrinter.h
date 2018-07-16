@@ -1,4 +1,4 @@
-//===-- X86IntelInstPrinter.h - Convert X86 MCInst to assembly syntax -----===//
+//= X86IntelInstPrinter.h - Convert X86 MCInst to assembly syntax -*- C++ -*-=//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -23,8 +23,8 @@ class MCOperand;
   
 class X86IntelInstPrinter : public MCInstPrinter {
 public:
-  X86IntelInstPrinter(const MCAsmInfo &MAI)
-    : MCInstPrinter(MAI) {}
+  X86IntelInstPrinter(const MCAsmInfo &MAI, const MCRegisterInfo &MRI)
+    : MCInstPrinter(MAI, MRI) {}
 
   virtual void printRegName(raw_ostream &OS, unsigned RegNo) const;
   virtual void printInst(const MCInst *MI, raw_ostream &OS, StringRef Annot);

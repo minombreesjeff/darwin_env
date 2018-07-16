@@ -31,10 +31,10 @@ using namespace lldb_private;
 //------------------------------------------------------------------------------
 // Static functions.
 
-Process*
-ProcessLinux::CreateInstance(Target& target, Listener &listener)
+ProcessSP
+ProcessLinux::CreateInstance(Target &target, Listener &listener, const FileSpec *)
 {
-    return new ProcessLinux(target, listener);
+    return ProcessSP(new ProcessLinux(target, listener));
 }
 
 void
@@ -94,7 +94,7 @@ ProcessLinux::GetPluginDescriptionStatic()
 }
 
 
-uint32_t
+bool
 ProcessLinux::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
@@ -105,14 +105,16 @@ ProcessLinux::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
     // FIXME: We should be using tid, not pid.
     assert(m_monitor);
     ThreadSP thread_sp (old_thread_list.FindThreadByID (GetID(), false));
-    if (!thread_sp)
-        thread_sp.reset(new POSIXThread(*this, GetID()));
+    if (!thread_sp) {
+        ProcessSP me = this->shared_from_this();
+        thread_sp.reset(new POSIXThread(me, GetID()));
+    }
 
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
         log->Printf ("ProcessLinux::%s() updated pid = %i", __FUNCTION__, GetID());
     new_thread_list.AddThread(thread_sp);
 
-    return new_thread_list.GetSize(false);
+    return new_thread_list.GetSize(false) > 0;
 }
 
 

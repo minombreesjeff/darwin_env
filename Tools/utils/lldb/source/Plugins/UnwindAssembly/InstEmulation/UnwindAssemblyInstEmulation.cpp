@@ -71,7 +71,6 @@ UnwindAssemblyInstEmulation::GetNonCallSiteUnwindPlanFromAssembly (AddressRange&
             const uint32_t addr_byte_size = m_arch.GetAddressByteSize();
             const bool show_address = true;
             const bool show_bytes = true;
-            const bool raw = false;
             // Initialize the CFA with a known value. In the 32 bit case
             // it will be 0x80000000, and in the 64 bit case 0x8000000000000000.
             // We use the address byte size to be safe for any future addresss sizes
@@ -107,7 +106,7 @@ UnwindAssemblyInstEmulation::GetNonCallSiteUnwindPlanFromAssembly (AddressRange&
                         if (log && log->GetVerbose ())
                         {
                             StreamString strm;
-                            inst->Dump(&strm, inst_list.GetMaxOpcocdeByteSize (), show_address, show_bytes, &exe_ctx, raw);
+                            inst->Dump(&strm, inst_list.GetMaxOpcocdeByteSize (), show_address, show_bytes, NULL);
                             log->PutCString (strm.GetData());
                         }
 
@@ -133,7 +132,7 @@ UnwindAssemblyInstEmulation::GetNonCallSiteUnwindPlanFromAssembly (AddressRange&
         if (log && log->GetVerbose ())
         {
             StreamString strm;
-            lldb::addr_t base_addr = range.GetBaseAddress().GetLoadAddress(&thread.GetProcess().GetTarget());
+            lldb::addr_t base_addr = range.GetBaseAddress().GetLoadAddress(thread.CalculateTarget().get());
             strm.Printf ("Resulting unwind rows for [0x%llx - 0x%llx):", base_addr, base_addr + range.GetByteSize());
             unwind_plan.Dump(strm, &thread, base_addr);
             log->PutCString (strm.GetData());
@@ -153,8 +152,7 @@ UnwindAssemblyInstEmulation::GetFastUnwindPlan (AddressRange& func,
 
 bool
 UnwindAssemblyInstEmulation::FirstNonPrologueInsn (AddressRange& func, 
-                                                   Target& target, 
-                                                   Thread* thread, 
+                                                   const ExecutionContext &exe_ctx, 
                                                    Address& first_non_prologue_insn)
 {
     return false;

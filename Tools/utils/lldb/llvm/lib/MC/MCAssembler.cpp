@@ -243,7 +243,7 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
   ++stats::evaluateFixup;
 
   if (!Fixup.getValue()->EvaluateAsRelocatable(Target, Layout))
-    report_fatal_error("expected relocatable expression");
+    getContext().FatalError(Fixup.getLoc(), "expected relocatable expression");
 
   bool IsPCRel = Backend.getFixupKindInfo(
     Fixup.getKind()).Flags & MCFixupKindInfo::FKF_IsPCRel;
@@ -273,13 +273,10 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
 
   Value = Target.getConstant();
 
-  bool IsThumb = false;
   if (const MCSymbolRefExpr *A = Target.getSymA()) {
     const MCSymbol &Sym = A->getSymbol().AliasedSymbol();
     if (Sym.isDefined())
       Value += Layout.getSymbolOffset(&getSymbolData(Sym));
-    if (isThumbFunc(&Sym))
-      IsThumb = true;
   }
   if (const MCSymbolRefExpr *B = Target.getSymB()) {
     const MCSymbol &Sym = B->getSymbol().AliasedSymbol();
@@ -302,12 +299,10 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
     Value -= Offset;
   }
 
-  // ARM fixups based from a thumb function address need to have the low
-  // bit set. The actual value is always at least 16-bit aligned, so the
-  // low bit is normally clear and available for use as an ISA flag for
-  // interworking.
-  if (IsThumb)
-    Value |= 1;
+  // Let the backend adjust the fixup value if necessary, including whether
+  // we need a relocation.
+  Backend.processFixupValue(*this, Layout, Fixup, DF, Target, Value,
+                            IsResolved);
 
   return IsResolved;
 }
@@ -355,8 +350,7 @@ uint64_t MCAssembler::computeFragmentSize(const MCAsmLayout &Layout,
     return cast<MCDwarfCallFrameFragment>(F).getContents().size();
   }
 
-  assert(0 && "invalid fragment kind");
-  return 0;
+  llvm_unreachable("invalid fragment kind");
 }
 
 void MCAsmLayout::LayoutFragment(MCFragment *F) {
@@ -412,7 +406,7 @@ static void WriteFragmentData(const MCAssembler &Asm, const MCAsmLayout &Layout,
     // bytes left to fill use the the Value and ValueSize to fill the rest.
     // If we are aligning with nops, ask that target to emit the right data.
     if (AF.hasEmitNops()) {
-      if (!Asm.getBackend().WriteNopData(Count, OW))
+      if (!Asm.getBackend().writeNopData(Count, OW))
         report_fatal_error("unable to write nop sequence of " +
                           Twine(Count) + " bytes");
       break;
@@ -421,8 +415,7 @@ static void WriteFragmentData(const MCAssembler &Asm, const MCAsmLayout &Layout,
     // Otherwise, write out in multiples of the value size.
     for (uint64_t i = 0; i != Count; ++i) {
       switch (AF.getValueSize()) {
-      default:
-        assert(0 && "Invalid size!");
+      default: llvm_unreachable("Invalid size!");
       case 1: OW->Write8 (uint8_t (AF.getValue())); break;
       case 2: OW->Write16(uint16_t(AF.getValue())); break;
       case 4: OW->Write32(uint32_t(AF.getValue())); break;
@@ -446,8 +439,7 @@ static void WriteFragmentData(const MCAssembler &Asm, const MCAsmLayout &Layout,
 
     for (uint64_t i = 0, e = FF.getSize() / FF.getValueSize(); i != e; ++i) {
       switch (FF.getValueSize()) {
-      default:
-        assert(0 && "Invalid size!");
+      default: llvm_unreachable("Invalid size!");
       case 1: OW->Write8 (uint8_t (FF.getValue())); break;
       case 2: OW->Write16(uint16_t(FF.getValue())); break;
       case 4: OW->Write32(uint32_t(FF.getValue())); break;
@@ -503,8 +495,7 @@ void MCAssembler::writeSectionData(const MCSectionData *SD,
     for (MCSectionData::const_iterator it = SD->begin(),
            ie = SD->end(); it != ie; ++it) {
       switch (it->getKind()) {
-      default:
-        assert(0 && "Invalid fragment in virtual section!");
+      default: llvm_unreachable("Invalid fragment in virtual section!");
       case MCFragment::FT_Data: {
         // Check that we aren't trying to write a non-zero contents (or fixups)
         // into a virtual section. This is to support clients which use standard
@@ -622,7 +613,7 @@ void MCAssembler::Finish() {
                ie3 = DF->fixup_end(); it3 != ie3; ++it3) {
           MCFixup &Fixup = *it3;
           uint64_t FixedValue = handleFixup(Layout, *DF, Fixup);
-          getBackend().ApplyFixup(Fixup, DF->getContents().data(),
+          getBackend().applyFixup(Fixup, DF->getContents().data(),
                                   DF->getContents().size(), FixedValue);
         }
       }
@@ -632,7 +623,7 @@ void MCAssembler::Finish() {
                ie3 = IF->fixup_end(); it3 != ie3; ++it3) {
           MCFixup &Fixup = *it3;
           uint64_t FixedValue = handleFixup(Layout, *IF, Fixup);
-          getBackend().ApplyFixup(Fixup, IF->getCode().data(),
+          getBackend().applyFixup(Fixup, IF->getCode().data(),
                                   IF->getCode().size(), FixedValue);
         }
       }
@@ -665,7 +656,7 @@ bool MCAssembler::fragmentNeedsRelaxation(const MCInstFragment *IF,
   // If this inst doesn't ever need relaxation, ignore it. This occurs when we
   // are intentionally pushing out inst fragments, or because we relaxed a
   // previous instruction to one that doesn't need relaxation.
-  if (!getBackend().MayNeedRelaxation(IF->getInst()))
+  if (!getBackend().mayNeedRelaxation(IF->getInst()))
     return false;
 
   for (MCInstFragment::const_fixup_iterator it = IF->fixup_begin(),
@@ -689,7 +680,7 @@ bool MCAssembler::relaxInstruction(MCAsmLayout &Layout,
   // Relax the fragment.
 
   MCInst Relaxed;
-  getBackend().RelaxInstruction(IF.getInst(), Relaxed);
+  getBackend().relaxInstruction(IF.getInst(), Relaxed);
 
   // Encode the new instruction.
   //
@@ -972,3 +963,13 @@ void MCAssembler::dump() {
   }
   OS << "]>\n";
 }
+
+// anchors for MC*Fragment vtables
+void MCDataFragment::anchor() { }
+void MCInstFragment::anchor() { }
+void MCAlignFragment::anchor() { }
+void MCFillFragment::anchor() { }
+void MCOrgFragment::anchor() { }
+void MCLEBFragment::anchor() { }
+void MCDwarfLineAddrFragment::anchor() { }
+void MCDwarfCallFrameFragment::anchor() { }

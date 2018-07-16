@@ -1,11 +1,11 @@
-//===--- HexagonExpandPredSpillCode.cpp - Expand Predicate Spill Code ----===//
+//===-- HexagonExpandPredSpillCode.cpp - Expand Predicate Spill Code ------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
-//===----------------------------------------------------------------------===////
+//===----------------------------------------------------------------------===//
 // The Hexagon processor has no instructions that load or store predicate
 // registers directly.  So, when these registers must be spilled a general 
 // purpose register must be found and the value copied to/from it from/to 
@@ -17,31 +17,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-
-#include "llvm/CodeGen/Passes.h"
+#include "HexagonTargetMachine.h"
+#include "HexagonSubtarget.h"
+#include "HexagonMachineFunctionInfo.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/LatencyPriorityQueue.h"
-#include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "HexagonTargetMachine.h"
-#include "HexagonSubtarget.h"
-#include "HexagonMachineFunctionInfo.h"
-#include <map>
-#include <iostream>
-
-#include "llvm/Support/CommandLine.h"
-
 
 using namespace llvm;
 
@@ -70,7 +64,6 @@ char HexagonExpandPredSpillCode::ID = 0;
 bool HexagonExpandPredSpillCode::runOnMachineFunction(MachineFunction &Fn) {
 
   const HexagonInstrInfo *TII = QTM.getInstrInfo();
-  const HexagonRegisterInfo *RegInfo = QTM.getRegisterInfo();
 
   // Loop over all of the basic blocks.
   for (MachineFunction::iterator MBBb = Fn.begin(), MBBe = Fn.end();
@@ -84,7 +77,7 @@ bool HexagonExpandPredSpillCode::runOnMachineFunction(MachineFunction &Fn) {
       if (Opc == Hexagon::STriw_pred) {
         // STriw_pred [R30], ofst, SrcReg;
         unsigned FP = MI->getOperand(0).getReg();
-        assert(FP == RegInfo->getFrameRegister() &&
+        assert(FP == QTM.getRegisterInfo()->getFrameRegister() &&
                "Not a Frame Pointer, Nor a Spill Slot");
         assert(MI->getOperand(1).isImm() && "Not an offset");
         int Offset = MI->getOperand(1).getImm();
@@ -129,7 +122,7 @@ bool HexagonExpandPredSpillCode::runOnMachineFunction(MachineFunction &Fn) {
         assert(Hexagon::PredRegsRegClass.contains(DstReg) &&
                "Not a predicate register");
         unsigned FP = MI->getOperand(1).getReg();
-        assert(FP == RegInfo->getFrameRegister() &&
+        assert(FP == QTM.getRegisterInfo()->getFrameRegister() &&
                "Not a Frame Pointer, Nor a Spill Slot");
         assert(MI->getOperand(2).isImm() && "Not an offset");
         int Offset = MI->getOperand(2).getImm();

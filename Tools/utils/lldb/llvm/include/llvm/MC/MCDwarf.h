@@ -212,7 +212,7 @@ namespace llvm {
     //
     // This emits the Dwarf file and the line tables.
     //
-    static void Emit(MCStreamer *MCOS);
+    static const MCSymbol *Emit(MCStreamer *MCOS);
   };
 
   class MCDwarfLineAddr {
@@ -235,12 +235,12 @@ namespace llvm {
     // When generating dwarf for assembly source files this emits the Dwarf
     // sections.
     //
-    static void Emit(MCStreamer *MCOS);
+    static void Emit(MCStreamer *MCOS, const MCSymbol *LineSectionSymbol);
   };
 
   // When generating dwarf for assembly source files this is the info that is
-  // needed to be gathered for each symbol that will have a dwarf2_subprogram.
-  class MCGenDwarfSubprogramEntry {
+  // needed to be gathered for each symbol that will have a dwarf label.
+  class MCGenDwarfLabelEntry {
   private:
     // Name of the symbol without a leading underbar, if any.
     StringRef Name;
@@ -248,14 +248,12 @@ namespace llvm {
     unsigned FileNumber;
     // The line number this symbol is at.
     unsigned LineNumber;
-    // The low_pc for the dwarf2_subprogram is taken from this symbol.  The
-    // high_pc is taken from the next symbol's value or the end of the section
-    // for the last symbol
+    // The low_pc for the dwarf label is taken from this symbol.
     MCSymbol *Label;
 
   public:
-    MCGenDwarfSubprogramEntry(StringRef name, unsigned fileNumber,
-                              unsigned lineNumber, MCSymbol *label) :
+    MCGenDwarfLabelEntry(StringRef name, unsigned fileNumber,
+                         unsigned lineNumber, MCSymbol *label) :
       Name(name), FileNumber(fileNumber), LineNumber(lineNumber), Label(label){}
 
     StringRef getName() const { return Name; }
@@ -271,21 +269,23 @@ namespace llvm {
 
   class MCCFIInstruction {
   public:
-    enum OpType { SameValue, Remember, Restore, Move, RelMove };
+    enum OpType { SameValue, RememberState, RestoreState, Move, RelMove, Escape,
+                  Restore};
   private:
     OpType Operation;
     MCSymbol *Label;
     // Move to & from location.
     MachineLocation Destination;
     MachineLocation Source;
+    std::vector<char> Values;
   public:
     MCCFIInstruction(OpType Op, MCSymbol *L)
       : Operation(Op), Label(L) {
-      assert(Op == Remember || Op == Restore);
+      assert(Op == RememberState || Op == RestoreState);
     }
     MCCFIInstruction(OpType Op, MCSymbol *L, unsigned Register)
       : Operation(Op), Label(L), Destination(Register) {
-      assert(Op == SameValue);
+      assert(Op == SameValue || Op == Restore);
     }
     MCCFIInstruction(MCSymbol *L, const MachineLocation &D,
                      const MachineLocation &S)
@@ -296,16 +296,24 @@ namespace llvm {
       : Operation(Op), Label(L), Destination(D), Source(S) {
       assert(Op == RelMove);
     }
+    MCCFIInstruction(OpType Op, MCSymbol *L, StringRef Vals)
+      : Operation(Op), Label(L), Values(Vals.begin(), Vals.end()) {
+      assert(Op == Escape);
+    }
     OpType getOperation() const { return Operation; }
     MCSymbol *getLabel() const { return Label; }
     const MachineLocation &getDestination() const { return Destination; }
     const MachineLocation &getSource() const { return Source; }
+    const StringRef getValues() const {
+      return StringRef(&Values[0], Values.size());
+    }
   };
 
   struct MCDwarfFrameInfo {
     MCDwarfFrameInfo() : Begin(0), End(0), Personality(0), Lsda(0),
                          Function(0), Instructions(), PersonalityEncoding(),
-                         LsdaEncoding(0), CompactUnwindEncoding(0) {}
+                         LsdaEncoding(0), CompactUnwindEncoding(0),
+                         IsSignalFrame(false) {}
     MCSymbol *Begin;
     MCSymbol *End;
     const MCSymbol *Personality;
@@ -315,6 +323,7 @@ namespace llvm {
     unsigned PersonalityEncoding;
     unsigned LsdaEncoding;
     uint32_t CompactUnwindEncoding;
+    bool IsSignalFrame;
   };
 
   class MCDwarfFrameEmitter {

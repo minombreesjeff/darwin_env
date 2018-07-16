@@ -34,14 +34,11 @@ public:
     virtual size_t
     GetByteSize();
 
-    virtual clang::ASTContext *
-    GetClangAST ();
-
-    virtual lldb::clang_type_t
-    GetClangType ();
-
     virtual ConstString
     GetTypeName();
+
+    virtual ConstString
+    GetQualifiedTypeName();
 
     virtual uint32_t
     CalculateNumChildren();
@@ -52,15 +49,24 @@ public:
     virtual bool
     IsInScope ();
 
-    virtual Module*
+    virtual lldb::ModuleSP
     GetModule();
     
     virtual SymbolContextScope *
     GetSymbolContextScope();
 
+    virtual bool
+    GetDeclaration (Declaration &decl);
+
 protected:
     virtual bool
     UpdateValue ();
+    
+    virtual clang::ASTContext *
+    GetClangASTImpl ();
+    
+    virtual lldb::clang_type_t
+    GetClangTypeImpl ();
 
     lldb::VariableSP  m_variable_sp;  ///< The variable that this value object is based upon
 

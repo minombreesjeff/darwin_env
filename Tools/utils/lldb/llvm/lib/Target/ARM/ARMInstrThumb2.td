@@ -1,4 +1,4 @@
-//===- ARMInstrThumb2.td - Thumb2 support for ARM -------------------------===//
+//===-- ARMInstrThumb2.td - Thumb2 support for ARM ---------*- tablegen -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -136,6 +136,12 @@ def t2ldrlabel : Operand<i32> {
   let PrintMethod = "printT2LdrLabelOperand";
 }
 
+def t2ldr_pcrel_imm12_asmoperand : AsmOperandClass {let Name = "MemPCRelImm12";}
+def t2ldr_pcrel_imm12 : Operand<i32> {
+  let ParserMatchClass = t2ldr_pcrel_imm12_asmoperand;
+  // used for assembler pseudo instruction and maps to t2ldrlabel, so
+  // doesn't need encoder or print methods of its own.
+}
 
 // ADR instruction labels.
 def t2adrlabel : Operand<i32> {
@@ -552,6 +558,11 @@ multiclass T2I_bin_w_irs<bits<4> opcod, string opc,
                      InstrItinClass iii, InstrItinClass iir, InstrItinClass iis,
                          PatFrag opnode, string baseOpc, bit Commutable = 0> :
     T2I_bin_irs<opcod, opc, iii, iir, iis, opnode, baseOpc, Commutable, ".w"> {
+  // Assembler aliases w/ the ".w" suffix.
+  def : t2InstAlias<!strconcat(opc, "${s}${p}.w", " $Rd, $Rn, $imm"),
+     (!cast<Instruction>(!strconcat(baseOpc, "ri")) rGPR:$Rd, rGPR:$Rn,
+                                                    t2_so_imm:$imm, pred:$p,
+                                                    cc_out:$s)>;
   // Assembler aliases w/o the ".w" suffix.
   def : t2InstAlias<!strconcat(opc, "${s}${p}", " $Rd, $Rn, $Rm"),
      (!cast<Instruction>(!strconcat(baseOpc, "rr")) rGPR:$Rd, rGPR:$Rn,
@@ -563,6 +574,10 @@ multiclass T2I_bin_w_irs<bits<4> opcod, string opc,
                                                     cc_out:$s)>;
 
   // and with the optional destination operand, too.
+  def : t2InstAlias<!strconcat(opc, "${s}${p}.ri", " $Rdn, $imm"),
+     (!cast<Instruction>(!strconcat(baseOpc, "ri")) rGPR:$Rdn, rGPR:$Rdn,
+                                                    t2_so_imm:$imm, pred:$p,
+                                                    cc_out:$s)>;
   def : t2InstAlias<!strconcat(opc, "${s}${p}", " $Rdn, $Rm"),
      (!cast<Instruction>(!strconcat(baseOpc, "rr")) rGPR:$Rdn, rGPR:$Rdn,
                                                     rGPR:$Rm, pred:$p,
@@ -940,7 +955,8 @@ multiclass T2I_ld<bit signed, bits<2> opcod, string opc,
     let DecoderMethod = "DecodeT2LoadShift";
   }
 
-  // FIXME: Is the pci variant actually needed?
+  // pci variant is very similar to i12, but supports negative offsets
+  // from the PC.
   def pci : T2Ipc <(outs target:$Rt), (ins t2ldrlabel:$addr), iii,
                    opc, ".w\t$Rt, $addr",
                    [(set target:$Rt, (opnode (ARMWrapper tconstpool:$addr)))]> {
@@ -2936,6 +2952,44 @@ def t2MOVCCror : T2I_movcc_sh<0b11, (outs rGPR:$Rd),
                              (ins rGPR:$false, rGPR:$Rm, i32imm:$imm),
                              IIC_iCMOVsi, "ror", ".w\t$Rd, $Rm, $imm", []>,
                  RegConstraint<"$false = $Rd">;
+
+multiclass T2I_bincc_irs<bits<4> opcod, string opc,
+                   InstrItinClass iii, InstrItinClass iir, InstrItinClass iis> {
+   // shifted imm
+   def ri : T2sTwoRegImm<(outs rGPR:$Rd), (ins rGPR:$Rn, t2_so_imm:$imm),
+                         iii, opc, ".w\t$Rd, $Rn, $imm", []>,
+                         RegConstraint<"$Rn = $Rd"> {
+     let Inst{31-27} = 0b11110;
+     let Inst{25} = 0;
+     let Inst{24-21} = opcod;
+     let Inst{15} = 0;
+   }
+   // register
+   def rr : T2sThreeReg<(outs rGPR:$Rd), (ins rGPR:$Rn, rGPR:$Rm),
+                        iir, opc, ".w\t$Rd, $Rn, $Rm", []>,
+                        RegConstraint<"$Rn = $Rd"> {
+     let Inst{31-27} = 0b11101;
+     let Inst{26-25} = 0b01;
+     let Inst{24-21} = opcod;
+     let Inst{14-12} = 0b000; // imm3
+     let Inst{7-6} = 0b00; // imm2
+     let Inst{5-4} = 0b00; // type
+   }
+   // shifted register
+   def rs : T2sTwoRegShiftedReg<(outs rGPR:$Rd),
+                                (ins rGPR:$Rn, t2_so_reg:$ShiftedRm),
+                                iis, opc, ".w\t$Rd, $Rn, $ShiftedRm", []>,
+                                RegConstraint<"$Rn = $Rd"> {
+     let Inst{31-27} = 0b11101;
+     let Inst{26-25} = 0b01;
+     let Inst{24-21} = opcod;
+   }
+} // T2I_bincc_irs
+
+defm t2ANDCC : T2I_bincc_irs<0b0000, "and", IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+defm t2ORRCC : T2I_bincc_irs<0b0010, "orr", IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+defm t2EORCC : T2I_bincc_irs<0b0100, "eor", IIC_iBITi, IIC_iBITr, IIC_iBITsi>;
+
 } // isCodeGenOnly = 1
 } // neverHasSideEffects
 
@@ -3058,9 +3112,7 @@ def t2STREX  : Thumb2I<(outs rGPR:$Rd), (ins rGPR:$Rt,
   let Inst{11-8}  = Rd;
   let Inst{7-0} = addr{7-0};
 }
-}
-
-let hasExtraSrcRegAllocReq = 1, Constraints = "@earlyclobber $Rd" in
+let hasExtraSrcRegAllocReq = 1 in
 def t2STREXD : T2I_strex<0b11, (outs rGPR:$Rd),
                          (ins rGPR:$Rt, rGPR:$Rt2, addr_offset_none:$addr),
                          AddrModeNone, 4, NoItinerary,
@@ -3068,6 +3120,7 @@ def t2STREXD : T2I_strex<0b11, (outs rGPR:$Rd),
                          {?, ?, ?, ?}> {
   bits<4> Rt2;
   let Inst{11-8} = Rt2;
+}
 }
 
 def t2CLREX : T2I<(outs), (ins), NoItinerary, "clrex", "", []>,
@@ -3096,7 +3149,7 @@ def t2CLREX : T2I<(outs), (ins), NoItinerary, "clrex", "", []>,
 //   $val is a scratch register for our use.
 let Defs =
   [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR, CPSR,
-    QQQQ0, QQQQ1, QQQQ2, QQQQ3 ],
+    Q0, Q1, Q2, Q3, Q8, Q9, Q10, Q11, Q12, Q13, Q14, Q15],
   hasSideEffects = 1, isBarrier = 1, isCodeGenOnly = 1,
   usesCustomInserter = 1 in {
   def t2Int_eh_sjlj_setjmp : Thumb2XI<(outs), (ins tGPR:$src, tGPR:$val),
@@ -3145,6 +3198,7 @@ def t2B   : T2I<(outs), (ins uncondbrtarget:$target), IIC_Br,
   let Inst{13} = target{17};
   let Inst{21-16} = target{16-11};
   let Inst{10-0} = target{10-0};
+  let DecoderMethod = "DecodeT2BInstruction";
 }
 
 let isNotDuplicable = 1, isIndirectBranch = 1 in {
@@ -3212,18 +3266,49 @@ def t2Bcc : T2I<(outs), (ins brtarget:$target), IIC_Br,
   let DecoderMethod = "DecodeThumb2BCCInstruction";
 }
 
-// Tail calls. The Darwin version of thumb tail calls uses a t2 branch, so
+// Tail calls. The IOS version of thumb tail calls uses a t2 branch, so
 // it goes here.
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
-  // Darwin version.
-  let Defs = [R0, R1, R2, R3, R9, R12, QQQQ0, QQQQ2, QQQQ3, PC],
-      Uses = [SP] in
+  // IOS version.
+  let Uses = [SP] in
   def tTAILJMPd: tPseudoExpand<(outs),
                    (ins uncondbrtarget:$dst, pred:$p, variable_ops),
                    4, IIC_Br, [],
                    (t2B uncondbrtarget:$dst, pred:$p)>,
-                 Requires<[IsThumb2, IsDarwin]>;
+                 Requires<[IsThumb2, IsIOS]>;
 }
+
+let isCall = 1,
+  // On non-IOS platforms R9 is callee-saved.
+  Defs = [LR], Uses = [SP] in {
+  // mov lr, pc; b if callee is marked noreturn to avoid confusing the
+  // return stack predictor.
+  def t2BMOVPCB_CALL : tPseudoInst<(outs),
+                                   (ins t_bltarget:$func, variable_ops),
+                               6, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
+                        Requires<[IsThumb, IsNotIOS]>;
+}
+
+let isCall = 1,
+  // On IOS R9 is call-clobbered.
+  // R7 is marked as a use to prevent frame-pointer assignments from being
+  // moved above / below calls.
+  Defs = [LR], Uses = [R7, SP] in {
+  // mov lr, pc; b if callee is marked noreturn to avoid confusing the
+  // return stack predictor.
+  def t2BMOVPCBr9_CALL : tPseudoInst<(outs),
+                                     (ins t_bltarget:$func, variable_ops),
+                               6, IIC_Br, [(ARMcall_nolink tglobaladdr:$func)]>,
+                        Requires<[IsThumb, IsIOS]>;
+}
+
+// Direct calls
+def : T2Pat<(ARMcall_nolink texternalsym:$func),
+            (t2BMOVPCB_CALL texternalsym:$func)>,
+      Requires<[IsThumb, IsNotIOS]>;
+def : T2Pat<(ARMcall_nolink texternalsym:$func),
+            (t2BMOVPCBr9_CALL texternalsym:$func)>,
+      Requires<[IsThumb, IsIOS]>;
 
 // IT block
 let Defs = [ITSTATE] in
@@ -4140,3 +4225,38 @@ def t2MOVsi: t2AsmPseudo<"mov${p} $Rd, $shift",
                          (ins rGPR:$Rd, t2_so_reg:$shift, pred:$p)>;
 def t2MOVSsi: t2AsmPseudo<"movs${p} $Rd, $shift",
                           (ins rGPR:$Rd, t2_so_reg:$shift, pred:$p)>;
+
+def t2MOVsr: t2AsmPseudo<"mov${p} $Rd, $shift",
+                         (ins rGPR:$Rd, so_reg_reg:$shift, pred:$p)>;
+def t2MOVSsr: t2AsmPseudo<"movs${p} $Rd, $shift",
+                          (ins rGPR:$Rd, so_reg_reg:$shift, pred:$p)>;
+
+// ADR w/o the .w suffix
+def : t2InstAlias<"adr${p} $Rd, $addr",
+                  (t2ADR rGPR:$Rd, t2adrlabel:$addr, pred:$p)>;
+
+// LDR(literal) w/ alternate [pc, #imm] syntax.
+def t2LDRpcrel   : t2AsmPseudo<"ldr${p} $Rt, $addr",
+                         (ins GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def t2LDRBpcrel  : t2AsmPseudo<"ldrb${p} $Rt, $addr",
+                         (ins GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def t2LDRHpcrel  : t2AsmPseudo<"ldrh${p} $Rt, $addr",
+                         (ins GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def t2LDRSBpcrel  : t2AsmPseudo<"ldrsb${p} $Rt, $addr",
+                         (ins GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def t2LDRSHpcrel  : t2AsmPseudo<"ldrsh${p} $Rt, $addr",
+                         (ins GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+    // Version w/ the .w suffix.
+def : t2InstAlias<"ldr${p}.w $Rt, $addr",
+                  (t2LDRpcrel GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def : t2InstAlias<"ldrb${p}.w $Rt, $addr",
+                  (t2LDRBpcrel GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def : t2InstAlias<"ldrh${p}.w $Rt, $addr",
+                  (t2LDRHpcrel GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def : t2InstAlias<"ldrsb${p}.w $Rt, $addr",
+                  (t2LDRSBpcrel GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+def : t2InstAlias<"ldrsh${p}.w $Rt, $addr",
+                  (t2LDRSHpcrel GPRnopc:$Rt, t2ldr_pcrel_imm12:$addr, pred:$p)>;
+
+def : t2InstAlias<"add${p} $Rd, pc, $imm",
+                  (t2ADR rGPR:$Rd, imm0_4095:$imm, pred:$p)>;

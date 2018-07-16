@@ -147,8 +147,6 @@ public:
     lldb::SBProcess
     GetProcess ();
 
-#ifndef SWIG
-
     const lldb::SBThread &
     operator = (const lldb::SBThread &rhs);
 
@@ -157,8 +155,6 @@ public:
 
     bool
     operator != (const lldb::SBThread &rhs) const;
-
-#endif
 
     bool
     GetDescription (lldb::SBStream &description) const;
@@ -171,38 +167,18 @@ protected:
     friend class SBDebugger;
     friend class SBValue;
 
-
-#ifndef SWIG
-
-    lldb_private::Thread *
-    get ();
-
-    const lldb_private::Thread *
-    operator->() const;
-
-    const lldb_private::Thread &
-    operator*() const;
-
-
-    lldb_private::Thread *
-    operator->();
-
-    lldb_private::Thread &
-    operator*();
-
-#endif
-
     SBThread (const lldb::ThreadSP& lldb_object_sp);
 
     void
     SetThread (const lldb::ThreadSP& lldb_object_sp);
 
-private:
-    //------------------------------------------------------------------
-    // Classes that inherit from Thread can see and modify these
-    //------------------------------------------------------------------
+#ifndef SWIG
+    SBError
+    ResumeNewPlan (lldb_private::ExecutionContext &exe_ctx, lldb_private::ThreadPlan *new_plan);
+#endif
 
-    lldb::ThreadSP m_opaque_sp;
+private:
+    lldb::ExecutionContextRefSP m_opaque_sp;
 };
 
 } // namespace lldb

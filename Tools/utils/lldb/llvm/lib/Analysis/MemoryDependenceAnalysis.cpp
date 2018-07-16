@@ -323,14 +323,20 @@ getLoadLoadClobberFullWidthSize(const Value *MemLocBase, int64_t MemLocOffs,
         !TD.fitsInLegalInteger(NewLoadByteSize*8))
       return 0;
 
+    if (LIOffs+NewLoadByteSize > MemLocEnd &&
+        LI->getParent()->getParent()->hasFnAttr(Attribute::AddressSafety)) {
+      // We will be reading past the location accessed by the original program.
+      // While this is safe in a regular build, Address Safety analysis tools
+      // may start reporting false warnings. So, don't do widening.
+      return 0;
+    }
+
     // If a load of this width would include all of MemLoc, then we succeed.
     if (LIOffs+NewLoadByteSize >= MemLocEnd)
       return NewLoadByteSize;
     
     NewLoadByteSize <<= 1;
   }
-  
-  return 0;
 }
 
 namespace {
@@ -344,13 +350,18 @@ namespace {
 
     bool shouldExplore(Use *U) {
       Instruction *I = cast<Instruction>(U->getUser());
-      if (BeforeHere != I && DT->dominates(BeforeHere, I))
+      BasicBlock *BB = I->getParent();
+      if (BeforeHere != I &&
+          (!DT->isReachableFromEntry(BB) || DT->dominates(BeforeHere, I)))
         return false;
       return true;
     }
 
-    bool captured(Instruction *I) {
-      if (BeforeHere != I && DT->dominates(BeforeHere, I))
+    bool captured(Use *U) {
+      Instruction *I = cast<Instruction>(U->getUser());
+      BasicBlock *BB = I->getParent();
+      if (BeforeHere != I &&
+          (!DT->isReachableFromEntry(BB) || DT->dominates(BeforeHere, I)))
         return false;
       Captured = true;
       return true;

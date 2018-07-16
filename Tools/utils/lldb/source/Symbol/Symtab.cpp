@@ -440,17 +440,35 @@ struct SymbolSortInfo
 namespace {
     struct SymbolIndexComparator {
         const std::vector<Symbol>& symbols;
-        SymbolIndexComparator(const std::vector<Symbol>& s) : symbols(s) { }
+        std::vector<lldb::addr_t>  &addr_cache;
+        
+        // Getting from the symbol to the Address to the File Address involves some work.
+        // Since there are potentially many symbols here, and we're using this for sorting so
+        // we're going to be computing the address many times, cache that in addr_cache.
+        // The array passed in has to be the same size as the symbols array passed into the
+        // member variable symbols, and should be initialized with LLDB_INVALID_ADDRESS.
+        // NOTE: You have to make addr_cache externally and pass it in because std::stable_sort
+        // makes copies of the comparator it is initially passed in, and you end up spending
+        // huge amounts of time copying this array...
+        
+        SymbolIndexComparator(const std::vector<Symbol>& s, std::vector<lldb::addr_t> &a) : symbols(s), addr_cache(a)  {
+            assert (symbols.size() == addr_cache.size());
+        }
         bool operator()(uint32_t index_a, uint32_t index_b) {
-            addr_t value_a;
-            addr_t value_b;
-            if (symbols[index_a].GetValue().GetSection() == symbols[index_b].GetValue().GetSection()) {
-                value_a = symbols[index_a].GetValue ().GetOffset();
-                value_b = symbols[index_b].GetValue ().GetOffset();
-            } else {
-                value_a = symbols[index_a].GetValue ().GetFileAddress();
-                value_b = symbols[index_b].GetValue ().GetFileAddress();
+            addr_t value_a = addr_cache[index_a];
+            if (value_a == LLDB_INVALID_ADDRESS)
+            {
+                value_a = symbols[index_a].GetAddress().GetFileAddress();
+                addr_cache[index_a] = value_a;
             }
+            
+            addr_t value_b = addr_cache[index_b];
+            if (value_b == LLDB_INVALID_ADDRESS)
+            {
+                value_b = symbols[index_b].GetAddress().GetFileAddress();
+                addr_cache[index_b] = value_b;
+            }
+            
 
             if (value_a == value_b) {
                 // The if the values are equal, use the original symbol user ID
@@ -483,7 +501,11 @@ Symtab::SortSymbolIndexesByValue (std::vector<uint32_t>& indexes, bool remove_du
     // NOTE: The use of std::stable_sort instead of std::sort here is strictly for performance,
     // not correctness.  The indexes vector tends to be "close" to sorted, which the
     // stable sort handles better.
-    std::stable_sort(indexes.begin(), indexes.end(), SymbolIndexComparator(m_symbols));
+    
+    std::vector<lldb::addr_t> addr_cache(m_symbols.size(), LLDB_INVALID_ADDRESS);
+    
+    SymbolIndexComparator comparator(m_symbols, addr_cache);
+    std::stable_sort(indexes.begin(), indexes.end(), comparator);
 
     // Remove any duplicates if requested
     if (remove_duplicates)
@@ -741,10 +763,9 @@ SymbolWithFileAddress (SymbolSearchInfo *info, const uint32_t *index_ptr)
 
     // lldb::Symbol::GetAddressRangePtr() will only return a non NULL address
     // range if the symbol has a section!
-    const AddressRange *curr_range = curr_symbol->GetAddressRangePtr();
-    if (curr_range)
+    if (curr_symbol->ValueIsAddress())
     {
-        const addr_t curr_file_addr = curr_range->GetBaseAddress().GetFileAddress();
+        const addr_t curr_file_addr = curr_symbol->GetAddress().GetFileAddress();
         if (info_file_addr < curr_file_addr)
             return -1;
         if (info_file_addr > curr_file_addr)
@@ -765,10 +786,9 @@ SymbolWithClosestFileAddress (SymbolSearchInfo *info, const uint32_t *index_ptr)
         return -1;
 
     const addr_t info_file_addr = info->file_addr;
-    const AddressRange *curr_range = symbol->GetAddressRangePtr();
-    if (curr_range)
+    if (symbol->ValueIsAddress())
     {
-        const addr_t curr_file_addr = curr_range->GetBaseAddress().GetFileAddress();
+        const addr_t curr_file_addr = symbol->GetAddress().GetFileAddress();
         if (info_file_addr < curr_file_addr)
             return -1;
 
@@ -819,7 +839,7 @@ Symtab::InitAddressIndexes()
         const_iterator end = m_symbols.end();
         for (const_iterator pos = m_symbols.begin(); pos != end; ++pos)
         {
-            if (pos->GetAddressRangePtr())
+            if (pos->ValueIsAddress())
                 m_addr_indexes.push_back (std::distance(begin, pos));
         }
 #endif
@@ -851,15 +871,18 @@ Symtab::CalculateSymbolSize (Symbol *symbol)
 
     // Else if this is an address based symbol, figure out the delta between
     // it and the next address based symbol
-    if (symbol->GetAddressRangePtr())
+    if (symbol->ValueIsAddress())
     {
         if (!m_addr_indexes_computed)
             InitAddressIndexes();
         const size_t num_addr_indexes = m_addr_indexes.size();
-        SymbolSearchInfo info = FindIndexPtrForSymbolContainingAddress(this, symbol->GetAddressRangePtr()->GetBaseAddress().GetFileAddress(), &m_addr_indexes.front(), num_addr_indexes);
+        SymbolSearchInfo info = FindIndexPtrForSymbolContainingAddress (this,
+                                                                        symbol->GetAddress().GetFileAddress(),
+                                                                        &m_addr_indexes.front(),
+                                                                        num_addr_indexes);
         if (info.match_index_ptr != NULL)
         {
-            const lldb::addr_t curr_file_addr = symbol->GetAddressRangePtr()->GetBaseAddress().GetFileAddress();
+            const lldb::addr_t curr_file_addr = symbol->GetAddress().GetFileAddress();
             // We can figure out the address range of all symbols except the
             // last one by taking the delta between the current symbol and
             // the next symbol
@@ -872,12 +895,11 @@ Symtab::CalculateSymbolSize (Symbol *symbol)
                 if (next_symbol == NULL)
                     break;
 
-                assert (next_symbol->GetAddressRangePtr());
-                const lldb::addr_t next_file_addr = next_symbol->GetAddressRangePtr()->GetBaseAddress().GetFileAddress();
+                const lldb::addr_t next_file_addr = next_symbol->GetAddress().GetFileAddress();
                 if (next_file_addr > curr_file_addr)
                 {
                     byte_size = next_file_addr - curr_file_addr;
-                    symbol->GetAddressRangePtr()->SetByteSize(byte_size);
+                    symbol->SetByteSize(byte_size);
                     symbol->SetSizeIsSynthesized(true);
                     break;
                 }
@@ -929,7 +951,7 @@ Symtab::FindSymbolContainingFileAddress (addr_t file_addr, const uint32_t* index
             return info.match_symbol;
         }
 
-        const size_t symbol_byte_size = CalculateSymbolSize(info.match_symbol);
+        const size_t symbol_byte_size = info.match_symbol->GetByteSize();
         
         if (symbol_byte_size == 0)
         {

@@ -160,12 +160,17 @@ CXType clang_getCursorType(CXCursor C) {
       
     case CXCursor_CXXBaseSpecifier:
       return cxtype::MakeCXType(getCursorCXXBaseSpecifier(C)->getType(), TU);
-      
-    case CXCursor_ObjCProtocolRef:        
+
+    case CXCursor_MemberRef:
+      return cxtype::MakeCXType(getCursorMemberRef(C).first->getType(), TU);
+
+    case CXCursor_VariableRef:
+      return cxtype::MakeCXType(getCursorVariableRef(C).first->getType(), TU);
+
+    case CXCursor_ObjCProtocolRef:
     case CXCursor_TemplateRef:
     case CXCursor_NamespaceRef:
-    case CXCursor_MemberRef:
-    case CXCursor_OverloadedDeclRef:      
+    case CXCursor_OverloadedDeclRef:
     default:
       break;
     }
@@ -443,8 +448,6 @@ CXCallingConv clang_getFunctionTypeCallingConv(CXType X) {
       TCALLINGCONV(X86Pascal);
       TCALLINGCONV(AAPCS);
       TCALLINGCONV(AAPCS_VFP);
-    default:
-      return CXCallingConv_Unexposed;
     }
 #undef TCALLINGCONV
   }

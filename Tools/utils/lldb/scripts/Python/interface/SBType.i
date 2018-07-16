@@ -37,6 +37,20 @@ public:
     uint64_t
     GetOffsetInBits();
     
+    %pythoncode %{
+        __swig_getmethods__["name"] = GetName
+        if _newclass: x = property(GetName, None)
+        
+        __swig_getmethods__["type"] = GetType
+        if _newclass: x = property(GetType, None)
+        
+        __swig_getmethods__["byte_offset"] = GetOffsetInBytes
+        if _newclass: x = property(GetOffsetInBytes, None)
+        
+        __swig_getmethods__["bit_offset"] = GetOffsetInBits
+        if _newclass: x = property(GetOffsetInBits, None)
+    %}    
+
 protected:
     std::auto_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
 };
@@ -117,6 +131,8 @@ find_type.py:
 class SBType
 {
 public:
+    SBType ();
+
     SBType (const lldb::SBType &rhs);
 
     ~SBType ();
@@ -174,6 +190,63 @@ public:
     
     lldb::TypeClass
     GetTypeClass ();
+    
+    uint32_t
+    GetNumberOfTemplateArguments ();
+    
+    lldb::SBType
+    GetTemplateArgumentType (uint32_t idx);
+    
+    lldb::TemplateArgumentKind
+    GetTemplateArgumentKind (uint32_t idx);
+    
+    bool
+    IsTypeComplete ();
+
+    %pythoncode %{
+        def template_arg_array(self):
+            num_args = self.num_template_args
+            if num_args:
+                template_args = []
+                for i in range(num_args):
+                    template_args.append(self.GetTemplateArgumentType(i))
+                return template_args
+            return None
+            
+        __swig_getmethods__["name"] = GetName
+        if _newclass: x = property(GetName, None)
+        
+        __swig_getmethods__["size"] = GetByteSize
+        if _newclass: x = property(GetByteSize, None)
+        
+        __swig_getmethods__["is_pointer"] = IsPointerType
+        if _newclass: x = property(IsPointerType, None)
+        
+        __swig_getmethods__["is_reference"] = IsReferenceType
+        if _newclass: x = property(IsReferenceType, None)
+
+        __swig_getmethods__["num_fields"] = GetNumberOfFields
+        if _newclass: x = property(GetNumberOfFields, None)
+        
+        __swig_getmethods__["num_bases"] = GetNumberOfDirectBaseClasses
+        if _newclass: x = property(GetNumberOfDirectBaseClasses, None)
+        
+        __swig_getmethods__["num_vbases"] = GetNumberOfVirtualBaseClasses
+        if _newclass: x = property(GetNumberOfVirtualBaseClasses, None)
+        
+        __swig_getmethods__["num_template_args"] = GetNumberOfTemplateArguments
+        if _newclass: x = property(GetNumberOfTemplateArguments, None)
+
+        __swig_getmethods__["template_args"] = template_arg_array
+        if _newclass: x = property(template_arg_array, None)
+
+        __swig_getmethods__["class"] = GetTypeClass
+        if _newclass: x = property(GetTypeClass, None)
+        
+        __swig_getmethods__["is_complete"] = IsTypeComplete
+        if _newclass: is_complete = property(IsTypeComplete, None)
+        %}
+
 };
 
 %feature("docstring",

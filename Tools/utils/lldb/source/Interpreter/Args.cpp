@@ -114,7 +114,7 @@ Args::Dump (Stream *s)
 }
 
 bool
-Args::GetCommandString (std::string &command)
+Args::GetCommandString (std::string &command) const
 {
     command.clear();
     int argc = GetArgumentCount();
@@ -128,7 +128,7 @@ Args::GetCommandString (std::string &command)
 }
 
 bool
-Args::GetQuotedCommandString (std::string &command)
+Args::GetQuotedCommandString (std::string &command) const
 {
     command.clear ();
     size_t argc = GetArgumentCount ();
@@ -225,6 +225,7 @@ Args::SetCommandString (const char *command)
                     {
                         case '\0':
                             arg.append (arg_piece_start);
+                            ++arg_end;
                             arg_complete = true;
                             break;
 
@@ -310,6 +311,13 @@ Args::SetCommandString (const char *command)
                                 arg_piece_start = arg_pos;
                             }
                             quote_char = '\0';
+                        }
+                        else
+                        {
+                            // Consume the rest of the string as there was no terminating quote
+                            arg.append(arg_piece_start);
+                            arg_end = arg_piece_start + strlen(arg_piece_start);
+                            arg_complete = true;
                         }
                     }
                     break;

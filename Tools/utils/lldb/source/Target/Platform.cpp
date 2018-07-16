@@ -13,6 +13,7 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Breakpoint/BreakpointIDList.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/PluginManager.h"
@@ -88,12 +89,9 @@ Platform::GetFile (const FileSpec &platform_file,
 }
 
 Error
-Platform::GetSharedModule (const FileSpec &platform_file, 
-                           const ArchSpec &arch,
-                           const UUID *uuid_ptr,
-                           const ConstString *object_name_ptr,
-                           off_t object_offset,
+Platform::GetSharedModule (const ModuleSpec &module_spec,
                            ModuleSP &module_sp,
+                           const FileSpecList *module_search_paths_ptr,
                            ModuleSP *old_module_sp_ptr,
                            bool *did_create_ptr)
 {
@@ -105,17 +103,13 @@ Platform::GetSharedModule (const FileSpec &platform_file,
     // remote target, or might implement a download and cache 
     // locally implementation.
     const bool always_create = false;
-    return ModuleList::GetSharedModule (platform_file, 
-                                        arch, 
-                                        uuid_ptr, 
-                                        object_name_ptr, 
-                                        object_offset, 
+    return ModuleList::GetSharedModule (module_spec, 
                                         module_sp,
+                                        module_search_paths_ptr,
                                         old_module_sp_ptr,
                                         did_create_ptr,
                                         always_create);
 }
-
 
 PlatformSP
 Platform::Create (const char *platform_name, Error &error)
@@ -126,12 +120,37 @@ Platform::Create (const char *platform_name, Error &error)
     {
         create_callback = PluginManager::GetPlatformCreateCallbackForPluginName (platform_name);
         if (create_callback)
-            platform_sp.reset(create_callback());
+            platform_sp.reset(create_callback(true, NULL));
         else
             error.SetErrorStringWithFormat ("unable to find a plug-in for the platform named \"%s\"", platform_name);
     }
     else
         error.SetErrorString ("invalid platform name");
+    return platform_sp;
+}
+
+
+PlatformSP
+Platform::Create (const ArchSpec &arch, ArchSpec *platform_arch_ptr, Error &error)
+{
+    lldb::PlatformSP platform_sp;
+    if (arch.IsValid())
+    {
+        uint32_t idx;
+        PlatformCreateInstance create_callback;
+        for (idx = 0; (create_callback = PluginManager::GetPlatformCreateCallbackAtIndex (idx)); ++idx)
+        {
+            if (create_callback)
+                platform_sp.reset(create_callback(false, &arch));
+            if (platform_sp && platform_sp->IsCompatibleArchitecture(arch, platform_arch_ptr))
+                return platform_sp;
+        }
+    }
+    else
+        error.SetErrorString ("invalid platform name");
+    if (platform_arch_ptr)
+        platform_arch_ptr->Clear();
+    platform_sp.reset();
     return platform_sp;
 }
 
@@ -403,19 +422,18 @@ Platform::SetOSVersion (uint32_t major,
 Error
 Platform::ResolveExecutable (const FileSpec &exe_file,
                              const ArchSpec &exe_arch,
-                             lldb::ModuleSP &exe_module_sp)
+                             lldb::ModuleSP &exe_module_sp,
+                             const FileSpecList *module_search_paths_ptr)
 {
     Error error;
     if (exe_file.Exists())
     {
-        if (exe_arch.IsValid())
+        ModuleSpec module_spec (exe_file, exe_arch);
+        if (module_spec.GetArchitecture().IsValid())
         {
-            error = ModuleList::GetSharedModule (exe_file, 
-                                                 exe_arch, 
-                                                 NULL,
-                                                 NULL, 
-                                                 0, 
+            error = ModuleList::GetSharedModule (module_spec, 
                                                  exe_module_sp, 
+                                                 module_search_paths_ptr,
                                                  NULL, 
                                                  NULL);
         }
@@ -424,15 +442,11 @@ Platform::ResolveExecutable (const FileSpec &exe_file,
             // No valid architecture was specified, ask the platform for
             // the architectures that we should be using (in the correct order)
             // and see if we can find a match that way
-            ArchSpec platform_arch;
-            for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, platform_arch); ++idx)
+            for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, module_spec.GetArchitecture()); ++idx)
             {
-                error = ModuleList::GetSharedModule (exe_file, 
-                                                     platform_arch, 
-                                                     NULL,
-                                                     NULL, 
-                                                     0, 
+                error = ModuleList::GetSharedModule (module_spec, 
                                                      exe_module_sp, 
+                                                     module_search_paths_ptr,
                                                      NULL, 
                                                      NULL);
                 // Did we find an executable using one of the 
@@ -558,7 +572,24 @@ Platform::LaunchProcess (ProcessLaunchInfo &launch_info)
     // Take care of the host case so that each subclass can just 
     // call this function to get the host functionality.
     if (IsHost())
+    {
+        if (::getenv ("LLDB_LAUNCH_FLAG_LAUNCH_IN_TTY"))
+            launch_info.GetFlags().Set (eLaunchFlagLaunchInTTY);
+        
+        if (launch_info.GetFlags().Test (eLaunchFlagLaunchInShell))
+        {
+            const bool is_localhost = true;
+            const bool will_debug = launch_info.GetFlags().Test(eLaunchFlagDebug);
+            const bool first_arg_is_full_shell_command = false;
+            if (!launch_info.ConvertArgumentsForLaunchingInShell (error,
+                                                                  is_localhost,
+                                                                  will_debug,
+                                                                  first_arg_is_full_shell_command))
+                return error;
+        }
+
         error = Host::LaunchProcess (launch_info);
+    }
     else
         error.SetErrorString ("base lldb_private::Platform class can't launch remote processes");
     return error;
@@ -574,6 +605,11 @@ Platform::DebugProcess (ProcessLaunchInfo &launch_info,
     ProcessSP process_sp;
     // Make sure we stop at the entry point
     launch_info.GetFlags ().Set (eLaunchFlagDebug);
+    // We always launch the process we are going to debug in a separate process
+    // group, since then we can handle ^C interrupts ourselves w/o having to worry
+    // about the target getting them as well.
+    launch_info.SetLaunchInSeparateProcessGroup(true);
+    
     error = LaunchProcess (launch_info);
     if (error.Success())
     {
@@ -603,3 +639,49 @@ Platform::DebugProcess (ProcessLaunchInfo &launch_info,
     }
     return process_sp;
 }
+
+
+lldb::PlatformSP
+Platform::GetPlatformForArchitecture (const ArchSpec &arch, ArchSpec *platform_arch_ptr)
+{
+    lldb::PlatformSP platform_sp;
+    Error error;
+    if (arch.IsValid())
+        platform_sp = Platform::Create (arch, platform_arch_ptr, error);
+    return platform_sp;
+}
+
+
+//------------------------------------------------------------------
+/// Lets a platform answer if it is compatible with a given
+/// architecture and the target triple contained within.
+//------------------------------------------------------------------
+bool
+Platform::IsCompatibleArchitecture (const ArchSpec &arch, ArchSpec *compatible_arch_ptr)
+{
+    // If the architecture is invalid, we must answer true...
+    if (arch.IsValid())
+    {
+        ArchSpec platform_arch;
+        for (uint32_t arch_idx=0; GetSupportedArchitectureAtIndex (arch_idx, platform_arch); ++arch_idx)
+        {
+            if (arch == platform_arch)
+            {
+                if (compatible_arch_ptr)
+                    *compatible_arch_ptr = platform_arch;
+                return true;
+            }
+        }
+    }
+    if (compatible_arch_ptr)
+        compatible_arch_ptr->Clear();
+    return false;
+    
+}
+
+lldb::BreakpointSP
+Platform::SetThreadCreationBreakpoint (lldb_private::Target &target)
+{
+    return lldb::BreakpointSP();
+}
+

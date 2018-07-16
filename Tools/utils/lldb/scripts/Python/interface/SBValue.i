@@ -127,6 +127,9 @@ public:
     lldb::SBValue
     GetStaticValue ();
     
+    lldb::SBValue
+    GetNonSyntheticValue ();
+    
     bool
     IsDynamic();
 
@@ -135,6 +138,21 @@ public:
 
     bool
     SetValueFromCString (const char *value_str);
+
+    bool
+    SetValueFromCString (const char *value_str, lldb::SBError& error);
+
+    lldb::SBTypeFormat
+    GetTypeFormat ();
+    
+    lldb::SBTypeSummary
+    GetTypeSummary ();
+    
+    lldb::SBTypeFilter
+    GetTypeFilter ();
+    
+    lldb::SBTypeSynthetic
+    GetTypeSynthetic ();
 
     lldb::SBValue
     GetChildAtIndex (uint32_t idx);
@@ -295,14 +313,14 @@ public:
     /// It returns an SBWatchpoint, which may be invalid.
     ") Watch;
     lldb::SBWatchpoint
-    Watch (bool resolve_location, bool read, bool write);
+    Watch (bool resolve_location, bool read, bool write, SBError &error);
 
     %feature("docstring", "
     /// Find and watch the location pointed to by a variable.
     /// It returns an SBWatchpoint, which may be invalid.
     ") WatchPointee;
     lldb::SBWatchpoint
-    WatchPointee (bool resolve_location, bool read, bool write);
+    WatchPointee (bool resolve_location, bool read, bool write, SBError &error);
 
     bool
     GetDescription (lldb::SBStream &description);
@@ -362,6 +380,98 @@ public:
     ) GetExpressionPath;
     bool
     GetExpressionPath (lldb::SBStream &description, bool qualify_cxx_base_classes);
+    
+    %pythoncode %{
+        def __get_dynamic__ (self):
+            '''Helper function for the "SBValue.dynamic" property.'''
+            return self.GetDynamicValue (eDynamicCanRunTarget)
+        
+        __swig_getmethods__["name"] = GetName
+        if _newclass: name = property(GetName, None, doc='Returns the name of this SBValue as a string')
+
+        __swig_getmethods__["type"] = GetType
+        if _newclass: type = property(GetType, None, doc='Returns an SBType that represents the type of this SBValue')
+
+        __swig_getmethods__["size"] = GetByteSize
+        if _newclass: size = property(GetByteSize, None, doc='Returns the size (in bytes) of the data contained in this SBValue')
+
+        __swig_getmethods__["is_in_scope"] = IsInScope
+        if _newclass: is_in_scope = property(IsInScope, None, doc='Returns True if this SBValue represents an item that is currently in lexical scope')
+
+        __swig_getmethods__["format"] = GetFormat
+        __swig_setmethods__["format"] = SetFormat
+        if _newclass: format = property(GetName, SetFormat, doc='Returns the format for this SBValue')
+
+        __swig_getmethods__["value"] = GetValue
+        __swig_setmethods__["value"] = SetValueFromCString
+        if _newclass: value = property(GetValue, SetValueFromCString, doc='Returns the value of this SBValue as a string')
+
+        __swig_getmethods__["value_type"] = GetValueType
+        if _newclass: value_type = property(GetValueType, None, doc='Returns the type of entry stored in this SBValue')
+
+        __swig_getmethods__["changed"] = GetValueDidChange
+        if _newclass: changed = property(GetValueDidChange, None, doc='Returns True if this SBValue represents an item that has changed')
+
+        __swig_getmethods__["data"] = GetData
+        if _newclass: data = property(GetData, None, doc='Returns an SBData wrapping the contents of this SBValue')
+
+        __swig_getmethods__["load_addr"] = GetLoadAddress
+        if _newclass: load_addr = property(GetLoadAddress, None, doc='Returns the load address (target address) of this SBValue as a number')
+
+        __swig_getmethods__["addr"] = GetAddress
+        if _newclass: addr = property(GetAddress, None, doc='Returns the address of this SBValue as an SBAddress')
+
+        __swig_getmethods__["deref"] = Dereference
+        if _newclass: deref = property(Dereference, None, doc='Returns an SBValue that is created by dereferencing this SBValue')
+
+        __swig_getmethods__["address_of"] = AddressOf
+        if _newclass: address_of = property(AddressOf, None, doc='Returns an SBValue that wraps the address-of this SBValue')
+
+        __swig_getmethods__["error"] = GetError
+        if _newclass: error = property(GetError, None, doc='Returns the SBError currently associated to this SBValue')
+    
+        __swig_getmethods__["summary"] = GetSummary
+        if _newclass: summary = property(GetSummary, None, doc='Returns the summary for this SBValue as a string')
+
+        __swig_getmethods__["description"] = GetObjectDescription
+        if _newclass: description = property(GetObjectDescription, None, doc='Returns the language-specific description of this SBValue as a string')
+        
+        __swig_getmethods__["dynamic"] = __get_dynamic__
+        if _newclass: description = property(__get_dynamic__, None, doc='Gets the dynamic type for a value')
+        
+        __swig_getmethods__["location"] = GetLocation
+        if _newclass: location = property(GetLocation, None, doc='Returns the location of this SBValue as a string')
+
+        __swig_getmethods__["target"] = GetTarget
+        if _newclass: target = property(GetTarget, None, doc='Returns an SBTarget for the target from which this SBValue comes')
+
+        __swig_getmethods__["process"] = GetProcess
+        if _newclass: process = property(GetProcess, None, doc='Returns an SBProcess for the process from which this SBValue comes')
+
+        __swig_getmethods__["thread"] = GetThread
+        if _newclass: thread = property(GetThread, None, doc='Returns an SBThread for the thread from which this SBValue comes')
+
+        __swig_getmethods__["frame"] = GetFrame
+        if _newclass: frame = property(GetFrame, None, doc='Returns an SBFrame for the stack frame from which this SBValue comes')
+
+        __swig_getmethods__["num_children"] = GetNumChildren
+        if _newclass: num_children = property(GetNumChildren, None, doc='Returns the number of child SBValues that this SBValue has')
+
+        __swig_getmethods__["unsigned"] = GetValueAsUnsigned
+        if _newclass: unsigned = property(GetValueAsUnsigned, None, doc='Returns the value of this SBValue as an unsigned number')
+
+        __swig_getmethods__["signed"] = GetValueAsSigned
+        if _newclass: signed = property(GetValueAsSigned, None, doc='Returns the value of this SBValue as a signed number')
+
+        def get_expr_path(self):
+            s = SBStream()
+            self.GetExpressionPath (s)
+            return s.GetData()
+        
+        __swig_getmethods__["path"] = get_expr_path
+        if _newclass: path = property(get_expr_path, None, doc='Returns the expression path that one can use to reach this SBValue')
+    %}
+
 };
 
 } // namespace lldb

@@ -1,4 +1,4 @@
-//===-- XCoreMCTargetDesc.cpp - XCore Target Descriptions -------*- C++ -*-===//
+//===-- XCoreMCTargetDesc.cpp - XCore Target Descriptions -----------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -17,6 +17,7 @@
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
 
 #define GET_INSTRINFO_MC_DESC

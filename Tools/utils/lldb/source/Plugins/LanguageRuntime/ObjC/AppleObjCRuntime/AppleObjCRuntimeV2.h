@@ -64,9 +64,6 @@ public:
     virtual uint32_t
     GetPluginVersion();
     
-    virtual void
-    SetExceptionBreakpoints ();
-
     virtual ObjCRuntimeVersions
     GetRuntimeVersion ()
     {
@@ -100,7 +97,9 @@ public:
     GetSymbolVendor();
     
 protected:
-    
+    virtual lldb::BreakpointResolverSP
+    CreateExceptionResolver (Breakpoint *bkpt, bool catch_bp, bool throw_bp);
+
 private:
     
     typedef std::map<ObjCLanguageRuntime::ObjCISA, ConstString> ISAToNameCache;

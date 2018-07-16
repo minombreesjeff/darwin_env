@@ -37,9 +37,19 @@ class ModuleMapParser;
   
 class ModuleMap {
   SourceManager *SourceMgr;
-  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
-  LangOptions LangOpts;
+  IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
+  const LangOptions &LangOpts;
+  const TargetInfo *Target;
   
+  /// \brief The directory used for Clang-supplied, builtin include headers,
+  /// such as "stdint.h".
+  const DirectoryEntry *BuiltinIncludeDir;
+  
+  /// \brief Language options used to parse the module map itself.
+  ///
+  /// These are always simple C language options.
+  LangOptions MMapLangOpts;
+
   /// \brief The top-level modules that are known.
   llvm::StringMap<Module *> Modules;
   
@@ -82,12 +92,26 @@ public:
   ///
   /// \param DC A diagnostic consumer that will be cloned for use in generating
   /// diagnostics.
-  ModuleMap(FileManager &FileMgr, const DiagnosticConsumer &DC);
+  ///
+  /// \param LangOpts Language options for this translation unit.
+  ///
+  /// \param Target The target for this translation unit.
+  ModuleMap(FileManager &FileMgr, const DiagnosticConsumer &DC,
+            const LangOptions &LangOpts, const TargetInfo *Target);
 
   /// \brief Destroy the module map.
   ///
   ~ModuleMap();
-  
+
+  /// \brief Set the target information.
+  void setTarget(const TargetInfo &Target);
+
+  /// \brief Set the directory that contains Clang-supplied include
+  /// files, such as our stdarg.h or tgmath.h.
+  void setBuiltinIncludeDir(const DirectoryEntry *Dir) {
+    BuiltinIncludeDir = Dir;
+  }
+
   /// \brief Retrieve the module that owns the given header file, if any.
   ///
   /// \param File The header file that is likely to be included.
@@ -95,6 +119,10 @@ public:
   /// \returns The module that owns the given header file, or null to indicate
   /// that no module owns this header file.
   Module *findModuleForHeader(const FileEntry *File);
+
+  /// \brief Determine whether the given header is part of a module
+  /// marked 'unavailable'.
+  bool isHeaderInUnavailableModule(const FileEntry *Header);
 
   /// \brief Retrieve a module with the given name.
   ///
@@ -147,7 +175,7 @@ public:
   /// framework directory.
   Module *inferFrameworkModule(StringRef ModuleName, 
                                const DirectoryEntry *FrameworkDir,
-                               Module *Parent);
+                               bool IsSystem, Module *Parent);
   
   /// \brief Retrieve the module map file containing the definition of the given
   /// module.
@@ -188,7 +216,7 @@ public:
 
   /// \brief Adds this header to the given module.
   void addHeader(Module *Mod, const FileEntry *Header);
-  
+
   /// \brief Parse the given module map file, and record any modules we 
   /// encounter.
   ///
@@ -199,6 +227,10 @@ public:
     
   /// \brief Dump the contents of the module map, for debugging purposes.
   void dump();
+  
+  typedef llvm::StringMap<Module *>::const_iterator module_iterator;
+  module_iterator module_begin() const { return Modules.begin(); }
+  module_iterator module_end()   const { return Modules.end(); }
 };
   
 }

@@ -16,7 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "virtregmap"
+#define DEBUG_TYPE "regalloc"
 #include "VirtRegMap.h"
 #include "llvm/Function.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -112,23 +112,32 @@ void VirtRegMap::rewrite(SlotIndexes *Indexes) {
   SmallVector<unsigned, 8> SuperDeads;
   SmallVector<unsigned, 8> SuperDefs;
   SmallVector<unsigned, 8> SuperKills;
+#ifndef NDEBUG
+  BitVector Reserved = TRI->getReservedRegs(*MF);
+#endif
 
   for (MachineFunction::iterator MBBI = MF->begin(), MBBE = MF->end();
        MBBI != MBBE; ++MBBI) {
     DEBUG(MBBI->print(dbgs(), Indexes));
-    for (MachineBasicBlock::iterator MII = MBBI->begin(), MIE = MBBI->end();
-         MII != MIE;) {
+    for (MachineBasicBlock::instr_iterator
+           MII = MBBI->instr_begin(), MIE = MBBI->instr_end(); MII != MIE;) {
       MachineInstr *MI = MII;
       ++MII;
 
       for (MachineInstr::mop_iterator MOI = MI->operands_begin(),
            MOE = MI->operands_end(); MOI != MOE; ++MOI) {
         MachineOperand &MO = *MOI;
+
+        // Make sure MRI knows about registers clobbered by regmasks.
+        if (MO.isRegMask())
+          MRI->addPhysRegsUsedFromRegMask(MO.getRegMask());
+
         if (!MO.isReg() || !TargetRegisterInfo::isVirtualRegister(MO.getReg()))
           continue;
         unsigned VirtReg = MO.getReg();
         unsigned PhysReg = getPhys(VirtReg);
         assert(PhysReg != NO_PHYS_REG && "Instruction uses unmapped VirtReg");
+        assert(!Reserved.test(PhysReg) && "Reserved register assignment");
 
         // Preserve semantics of sub-register operands.
         if (MO.getSubReg()) {

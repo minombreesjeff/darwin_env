@@ -22,8 +22,17 @@ swig_output_file=${SRC_ROOT}/source/LLDBWrapPython.cpp
 swig_input_file=${SRC_ROOT}/scripts/lldb.swig
 swig_python_extensions=${SRC_ROOT}/scripts/Python/python-extensions.swig
 swig_python_wrapper=${SRC_ROOT}/scripts/Python/python-wrapper.swig
+swig_python_typemaps=${SRC_ROOT}/scripts/Python/python-typemaps.swig
 
-if [ "x$SDKROOT" = "x" ] ; then
+if [ $LLDB_DISABLE_PYTHON = "1" ] ; then
+    # We don't want Python for this build, but touch the output file so we don't have to
+    # conditionalize the build on this as well.
+    # Note, at present iOS doesn't have Python, so if you're building for iOS be sure to
+    # set LLDB_DISABLE_PYTHON to 1.
+    rm -rf ${swig_output_file}
+    touch ${swig_output_file}
+
+else
 
 if [ -n "$debug_flag" -a "$debug_flag" == "-debug" ]
 then
@@ -32,6 +41,15 @@ else
     Debug=0
 fi
 
+# If this project is being built with LLDB_DISABLE_PYTHON defined,
+# don't bother generating Python swig bindings -- we don't have
+# Python available.
+
+if echo $GCC_PREPROCESSOR_DEFINITIONS | grep LLDB_DISABLE_PYTHON
+then
+  echo "" > "${swig_output_file}"
+  exit 0
+fi
 
 HEADER_FILES="${SRC_ROOT}/include/lldb/lldb.h"\
 " ${SRC_ROOT}/include/lldb/lldb-defines.h"\
@@ -72,6 +90,12 @@ HEADER_FILES="${SRC_ROOT}/include/lldb/lldb.h"\
 " ${SRC_ROOT}/include/lldb/API/SBTarget.h"\
 " ${SRC_ROOT}/include/lldb/API/SBThread.h"\
 " ${SRC_ROOT}/include/lldb/API/SBType.h"\
+" ${SRC_ROOT}/include/lldb/API/SBTypeCategory.h"\
+" ${SRC_ROOT}/include/lldb/API/SBTypeFilter.h"\
+" ${SRC_ROOT}/include/lldb/API/SBTypeFormat.h"\
+" ${SRC_ROOT}/include/lldb/API/SBTypeNameSpecifier.h"\
+" ${SRC_ROOT}/include/lldb/API/SBTypeSummary.h"\
+" ${SRC_ROOT}/include/lldb/API/SBTypeSynthetic.h"\
 " ${SRC_ROOT}/include/lldb/API/SBValue.h"\
 " ${SRC_ROOT}/include/lldb/API/SBValueList.h"\
 " ${SRC_ROOT}/include/lldb/API/SBWatchpoint.h"\
@@ -108,6 +132,12 @@ INTERFACE_FILES="${SRC_ROOT}/scripts/Python/interface/SBAddress.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBTarget.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBThread.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBType.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBTypeCategory.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBTypeFilter.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBTypeFormat.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBTypeNameSpecifier.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBTypeSummary.i"\
+" ${SRC_ROOT}/scripts/Python/interface/SBTypeSynthetic.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBValue.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBValueList.i"\
 " ${SRC_ROOT}/scripts/Python/interface/SBWatchpoint.i"
@@ -209,6 +239,19 @@ then
     fi
 fi
 
+if [ $NeedToUpdate == 0 ]
+then
+    if [ ${swig_python_typemaps} -nt ${swig_output_file} ]
+    then
+        NeedToUpdate=1
+        if [ $Debug == 1 ]
+        then
+            echo "${swig_python_typemaps} is newer than ${swig_output_file}"
+            echo "swig file will need to be re-built."
+        fi
+    fi
+fi
+
 os_name=`uname -s`
 python_version=`/usr/bin/python --version 2>&1 | sed -e 's,Python ,,' -e 's,[.][0-9],,2' -e 's,[a-z][a-z][0-9],,'`
 
@@ -268,8 +311,4 @@ then
     fi
 fi
 
-else
-    # SDKROOT was not empty, which currently means iOS cross build where python is disabled
-    rm -rf ${swig_output_file}
-    touch ${swig_output_file}
 fi

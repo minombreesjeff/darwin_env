@@ -50,13 +50,19 @@ public:
   /// insertion hint.
   CharSourceRange RemoveRange;
 
+  /// \brief Code in the specific range that should be inserted in the insertion
+  /// location.
+  CharSourceRange InsertFromRange;
+
   /// \brief The actual code to insert at the insertion location, as a
   /// string.
   std::string CodeToInsert;
 
+  bool BeforePreviousInsertions;
+
   /// \brief Empty code modification hint, indicating that no code
   /// modification is known.
-  FixItHint() : RemoveRange() { }
+  FixItHint() : BeforePreviousInsertions(false) { }
 
   bool isNull() const {
     return !RemoveRange.isValid();
@@ -65,11 +71,26 @@ public:
   /// \brief Create a code modification hint that inserts the given
   /// code string at a specific location.
   static FixItHint CreateInsertion(SourceLocation InsertionLoc,
-                                   StringRef Code) {
+                                   StringRef Code,
+                                   bool BeforePreviousInsertions = false) {
     FixItHint Hint;
     Hint.RemoveRange =
       CharSourceRange(SourceRange(InsertionLoc, InsertionLoc), false);
     Hint.CodeToInsert = Code;
+    Hint.BeforePreviousInsertions = BeforePreviousInsertions;
+    return Hint;
+  }
+  
+  /// \brief Create a code modification hint that inserts the given
+  /// code from \arg FromRange at a specific location.
+  static FixItHint CreateInsertionFromRange(SourceLocation InsertionLoc,
+                                            CharSourceRange FromRange,
+                                        bool BeforePreviousInsertions = false) {
+    FixItHint Hint;
+    Hint.RemoveRange =
+      CharSourceRange(SourceRange(InsertionLoc, InsertionLoc), false);
+    Hint.InsertFromRange = FromRange;
+    Hint.BeforePreviousInsertions = BeforePreviousInsertions;
     return Hint;
   }
 
@@ -105,7 +126,7 @@ public:
 /// "report warnings as errors" and passes them off to the DiagnosticConsumer
 /// for reporting to the user. DiagnosticsEngine is tied to one translation unit
 /// and one SourceManager.
-class DiagnosticsEngine : public llvm::RefCountedBase<DiagnosticsEngine> {
+class DiagnosticsEngine : public RefCountedBase<DiagnosticsEngine> {
 public:
   /// Level - The level of the diagnostic, after it has been through mapping.
   enum Level {
@@ -158,8 +179,10 @@ private:
   unsigned ErrorLimit;           // Cap of # errors emitted, 0 -> no limit.
   unsigned TemplateBacktraceLimit; // Cap on depth of template backtrace stack,
                                    // 0 -> no limit.
+  unsigned ConstexprBacktraceLimit; // Cap on depth of constexpr evaluation
+                                    // backtrace stack, 0 -> no limit.
   ExtensionHandling ExtBehavior; // Map extensions onto warnings or errors?
-  llvm::IntrusiveRefCntPtr<DiagnosticIDs> Diags;
+  IntrusiveRefCntPtr<DiagnosticIDs> Diags;
   DiagnosticConsumer *Client;
   bool OwnsDiagClient;
   SourceManager *SourceMgr;
@@ -287,7 +310,7 @@ private:
       unsigned NumPrevArgs,
       SmallVectorImpl<char> &Output,
       void *Cookie,
-      SmallVectorImpl<intptr_t> &QualTypeVals);
+      ArrayRef<intptr_t> QualTypeVals);
   void *ArgToStringCookie;
   ArgToStringFnTy ArgToStringFn;
 
@@ -304,12 +327,12 @@ private:
 
 public:
   explicit DiagnosticsEngine(
-                      const llvm::IntrusiveRefCntPtr<DiagnosticIDs> &Diags,
+                      const IntrusiveRefCntPtr<DiagnosticIDs> &Diags,
                       DiagnosticConsumer *client = 0,
                       bool ShouldOwnClient = true);
   ~DiagnosticsEngine();
 
-  const llvm::IntrusiveRefCntPtr<DiagnosticIDs> &getDiagnosticIDs() const {
+  const IntrusiveRefCntPtr<DiagnosticIDs> &getDiagnosticIDs() const {
     return Diags;
   }
 
@@ -363,13 +386,25 @@ public:
   void setTemplateBacktraceLimit(unsigned Limit) {
     TemplateBacktraceLimit = Limit;
   }
-  
+
   /// \brief Retrieve the maximum number of template instantiation
-  /// nodes to emit along with a given diagnostic.
+  /// notes to emit along with a given diagnostic.
   unsigned getTemplateBacktraceLimit() const {
     return TemplateBacktraceLimit;
   }
-  
+
+  /// \brief Specify the maximum number of constexpr evaluation
+  /// notes to emit along with a given diagnostic.
+  void setConstexprBacktraceLimit(unsigned Limit) {
+    ConstexprBacktraceLimit = Limit;
+  }
+
+  /// \brief Retrieve the maximum number of constexpr evaluation
+  /// notes to emit along with a given diagnostic.
+  unsigned getConstexprBacktraceLimit() const {
+    return ConstexprBacktraceLimit;
+  }
+
   /// setIgnoreAllWarnings - When set to true, any unmapped warnings are
   /// ignored.  If this and WarningsAsErrors are both set, then this one wins.
   void setIgnoreAllWarnings(bool Val) { IgnoreAllWarnings = Val; }
@@ -450,17 +485,31 @@ public:
   bool setDiagnosticGroupMapping(StringRef Group, diag::Mapping Map,
                                  SourceLocation Loc = SourceLocation());
 
+  /// \brief Set the warning-as-error flag for the given diagnostic. This
+  /// function always only operates on the current diagnostic state.
+  void setDiagnosticWarningAsError(diag::kind Diag, bool Enabled);
+
   /// \brief Set the warning-as-error flag for the given diagnostic group. This
   /// function always only operates on the current diagnostic state.
   ///
   /// \returns True if the given group is unknown, false otherwise.
   bool setDiagnosticGroupWarningAsError(StringRef Group, bool Enabled);
 
+  /// \brief Set the error-as-fatal flag for the given diagnostic. This function
+  /// always only operates on the current diagnostic state.
+  void setDiagnosticErrorAsFatal(diag::kind Diag, bool Enabled);
+
   /// \brief Set the error-as-fatal flag for the given diagnostic group. This
   /// function always only operates on the current diagnostic state.
   ///
   /// \returns True if the given group is unknown, false otherwise.
   bool setDiagnosticGroupErrorAsFatal(StringRef Group, bool Enabled);
+
+  /// \brief Add the specified mapping to all diagnostics. Mainly to be used
+  /// by -Wno-everything to disable all warnings but allow subsequent -W options
+  /// to enable specific warnings.
+  void setMappingToAllDiagnostics(diag::Mapping Map,
+                                  SourceLocation Loc = SourceLocation());
 
   bool hasErrorOccurred() const { return ErrorOccurred; }
   bool hasFatalErrorOccurred() const { return FatalErrorOccurred; }
@@ -594,9 +643,6 @@ private:
   signed char NumDiagArgs;
   /// NumRanges - This is the number of ranges in the DiagRanges array.
   unsigned char NumDiagRanges;
-  /// \brief The number of code modifications hints in the
-  /// FixItHints array.
-  unsigned char NumFixItHints;
 
   /// DiagArgumentsKind - This is an array of ArgumentKind::ArgumentKind enum
   /// values, with one for each argument.  This specifies whether the argument
@@ -618,11 +664,9 @@ private:
   /// only support 10 ranges, could easily be extended if needed.
   CharSourceRange DiagRanges[10];
 
-  enum { MaxFixItHints = 6 };
-
   /// FixItHints - If valid, provides a hint with some code
   /// to insert, remove, or modify at a particular position.
-  FixItHint FixItHints[MaxFixItHints];
+  SmallVector<FixItHint, 6> FixItHints;
 
   DiagnosticMappingInfo makeMappingInfo(diag::Mapping Map, SourceLocation L) {
     bool isPragma = L.isValid();
@@ -700,12 +744,14 @@ public:
 /// for example.
 class DiagnosticBuilder {
   mutable DiagnosticsEngine *DiagObj;
-  mutable unsigned NumArgs, NumRanges, NumFixItHints;
+  mutable unsigned NumArgs, NumRanges;
 
   void operator=(const DiagnosticBuilder&); // DO NOT IMPLEMENT
   friend class DiagnosticsEngine;
   explicit DiagnosticBuilder(DiagnosticsEngine *diagObj)
-    : DiagObj(diagObj), NumArgs(0), NumRanges(0), NumFixItHints(0) {}
+    : DiagObj(diagObj), NumArgs(0), NumRanges(0) {
+    DiagObj->FixItHints.clear();
+  }
 
   friend class PartialDiagnostic;
 
@@ -720,7 +766,6 @@ public:
     D.DiagObj = 0;
     NumArgs = D.NumArgs;
     NumRanges = D.NumRanges;
-    NumFixItHints = D.NumFixItHints;
   }
 
   /// \brief Simple enumeration value used to give a name to the
@@ -730,7 +775,7 @@ public:
   /// \brief Create an empty DiagnosticBuilder object that represents
   /// no actual diagnostic.
   explicit DiagnosticBuilder(SuppressKind)
-    : DiagObj(0), NumArgs(0), NumRanges(0), NumFixItHints(0) { }
+    : DiagObj(0), NumArgs(0), NumRanges(0) { }
 
   /// \brief Force the diagnostic builder to emit the diagnostic now.
   ///
@@ -796,12 +841,8 @@ public:
   }
 
   void AddFixItHint(const FixItHint &Hint) const {
-    assert(NumFixItHints < DiagnosticsEngine::MaxFixItHints &&
-           "Too many fix-it hints!");
-    if (NumFixItHints >= DiagnosticsEngine::MaxFixItHints)
-      return;  // Don't crash in release builds
     if (DiagObj)
-      DiagObj->FixItHints[NumFixItHints++] = Hint;
+      DiagObj->FixItHints.push_back(Hint);
   }
 };
 
@@ -977,7 +1018,7 @@ public:
   }
 
   unsigned getNumFixItHints() const {
-    return DiagObj->NumFixItHints;
+    return DiagObj->FixItHints.size();
   }
 
   const FixItHint &getFixItHint(unsigned Idx) const {
@@ -985,8 +1026,8 @@ public:
   }
 
   const FixItHint *getFixItHints() const {
-    return DiagObj->NumFixItHints?
-             &DiagObj->FixItHints[0] : 0;
+    return getNumFixItHints()?
+             DiagObj->FixItHints.data() : 0;
   }
 
   /// FormatDiagnostic - Format this diagnostic into a string, substituting the
@@ -1037,11 +1078,20 @@ public:
   range_iterator range_begin() const { return Ranges.begin(); }
   range_iterator range_end() const { return Ranges.end(); }
   unsigned range_size() const { return Ranges.size(); }
+  
+  ArrayRef<CharSourceRange> getRanges() const {
+    return llvm::makeArrayRef(Ranges);
+  }
+
 
   typedef std::vector<FixItHint>::const_iterator fixit_iterator;
   fixit_iterator fixit_begin() const { return FixIts.begin(); }
   fixit_iterator fixit_end() const { return FixIts.end(); }
   unsigned fixit_size() const { return FixIts.size(); }
+  
+  ArrayRef<FixItHint> getFixIts() const {
+    return llvm::makeArrayRef(FixIts);
+  }
 };
 
 /// DiagnosticConsumer - This is an abstract interface implemented by clients of
@@ -1056,6 +1106,7 @@ public:
 
   unsigned getNumErrors() const { return NumErrors; }
   unsigned getNumWarnings() const { return NumWarnings; }
+  virtual void clear() { NumWarnings = NumErrors = 0; }
 
   virtual ~DiagnosticConsumer();
 
@@ -1104,6 +1155,7 @@ public:
 /// IgnoringDiagConsumer - This is a diagnostic client that just ignores all
 /// diags.
 class IgnoringDiagConsumer : public DiagnosticConsumer {
+  virtual void anchor();
   void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
                         const Diagnostic &Info) {
     // Just ignore it.

@@ -38,14 +38,33 @@ MSP430TargetMachine::MSP430TargetMachine(const Target &T,
     InstrInfo(*this), TLInfo(*this), TSInfo(*this),
     FrameLowering(Subtarget) { }
 
+namespace {
+/// MSP430 Code Generator Pass Configuration Options.
+class MSP430PassConfig : public TargetPassConfig {
+public:
+  MSP430PassConfig(MSP430TargetMachine *TM, PassManagerBase &PM)
+    : TargetPassConfig(TM, PM) {}
 
-bool MSP430TargetMachine::addInstSelector(PassManagerBase &PM) {
+  MSP430TargetMachine &getMSP430TargetMachine() const {
+    return getTM<MSP430TargetMachine>();
+  }
+
+  virtual bool addInstSelector();
+  virtual bool addPreEmitPass();
+};
+} // namespace
+
+TargetPassConfig *MSP430TargetMachine::createPassConfig(PassManagerBase &PM) {
+  return new MSP430PassConfig(this, PM);
+}
+
+bool MSP430PassConfig::addInstSelector() {
   // Install an instruction selector.
-  PM.add(createMSP430ISelDag(*this, getOptLevel()));
+  PM.add(createMSP430ISelDag(getMSP430TargetMachine(), getOptLevel()));
   return false;
 }
 
-bool MSP430TargetMachine::addPreEmitPass(PassManagerBase &PM) {
+bool MSP430PassConfig::addPreEmitPass() {
   // Must run branch selection immediately preceding the asm printer.
   PM.add(createMSP430BranchSelectionPass());
   return false;

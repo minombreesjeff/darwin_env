@@ -17,6 +17,7 @@
 // Project includes
 #include "lldb/Interpreter/CommandObjectMultiword.h"
 #include "lldb/Interpreter/Options.h"
+#include "lldb/Interpreter/OptionGroupWatchpoint.h"
 
 namespace lldb_private {
 
@@ -240,6 +241,76 @@ public:
 
 private:
     CommandOptions m_options;
+};
+
+//-------------------------------------------------------------------------
+// CommandObjectWatchpointSet
+//-------------------------------------------------------------------------
+
+class CommandObjectWatchpointSet : public CommandObjectMultiword
+{
+public:
+
+    CommandObjectWatchpointSet (CommandInterpreter &interpreter);
+
+    virtual
+    ~CommandObjectWatchpointSet ();
+
+
+};
+
+class CommandObjectWatchpointSetVariable : public CommandObject
+{
+public:
+
+    CommandObjectWatchpointSetVariable (CommandInterpreter &interpreter);
+
+    virtual
+    ~CommandObjectWatchpointSetVariable ();
+
+    virtual bool
+    Execute (Args& command,
+             CommandReturnObject &result);
+
+    virtual Options *
+    GetOptions ();
+
+private:
+    OptionGroupOptions m_option_group;
+    OptionGroupWatchpoint m_option_watchpoint;
+};
+
+class CommandObjectWatchpointSetExpression : public CommandObject
+{
+public:
+
+    CommandObjectWatchpointSetExpression (CommandInterpreter &interpreter);
+
+    virtual
+    ~CommandObjectWatchpointSetExpression ();
+
+    virtual bool
+    Execute (Args& command,
+             CommandReturnObject &result)
+    { return false; }
+
+    virtual bool
+    WantsRawCommandString() { return true; }
+
+    // Overrides base class's behavior where WantsCompletion = !WantsRawCommandString.
+    virtual bool
+    WantsCompletion() { return true; }
+
+    virtual bool
+    ExecuteRawCommandString (const char *raw_command,
+                             CommandReturnObject &result);
+
+    virtual Options *
+    GetOptions ();
+
+private:
+    OptionGroupOptions m_option_group;
+    OptionGroupWatchpoint m_option_watchpoint;
 };
 
 } // namespace lldb_private

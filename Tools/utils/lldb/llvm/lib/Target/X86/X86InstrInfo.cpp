@@ -1,4 +1,4 @@
-//===- X86InstrInfo.cpp - X86 Instruction Information -----------*- C++ -*-===//
+//===-- X86InstrInfo.cpp - X86 Instruction Information --------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -274,7 +274,6 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::BT64ri8,     X86::BT64mi8,       TB_FOLDED_LOAD },
     { X86::CALL32r,     X86::CALL32m,       TB_FOLDED_LOAD },
     { X86::CALL64r,     X86::CALL64m,       TB_FOLDED_LOAD },
-    { X86::WINCALL64r,  X86::WINCALL64m,    TB_FOLDED_LOAD },
     { X86::CMP16ri,     X86::CMP16mi,       TB_FOLDED_LOAD },
     { X86::CMP16ri8,    X86::CMP16mi8,      TB_FOLDED_LOAD },
     { X86::CMP16rr,     X86::CMP16mr,       TB_FOLDED_LOAD },
@@ -351,6 +350,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VEXTRACTPSrr,X86::VEXTRACTPSmr,  TB_FOLDED_STORE | TB_ALIGN_16 },
     { X86::FsVMOVAPDrr, X86::VMOVSDmr,      TB_FOLDED_STORE | TB_NO_REVERSE },
     { X86::FsVMOVAPSrr, X86::VMOVSSmr,      TB_FOLDED_STORE | TB_NO_REVERSE },
+    { X86::VEXTRACTF128rr, X86::VEXTRACTF128mr, TB_FOLDED_STORE | TB_ALIGN_16 },
     { X86::VMOVAPDrr,   X86::VMOVAPDmr,     TB_FOLDED_STORE | TB_ALIGN_16 },
     { X86::VMOVAPSrr,   X86::VMOVAPSmr,     TB_FOLDED_STORE | TB_ALIGN_16 },
     { X86::VMOVDQArr,   X86::VMOVDQAmr,     TB_FOLDED_STORE | TB_ALIGN_16 },
@@ -361,6 +361,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VMOVUPDrr,   X86::VMOVUPDmr,     TB_FOLDED_STORE },
     { X86::VMOVUPSrr,   X86::VMOVUPSmr,     TB_FOLDED_STORE },
     // AVX 256-bit foldable instructions
+    { X86::VEXTRACTI128rr, X86::VEXTRACTI128mr, TB_FOLDED_STORE | TB_ALIGN_16 },
     { X86::VMOVAPDYrr,  X86::VMOVAPDYmr,    TB_FOLDED_STORE | TB_ALIGN_32 },
     { X86::VMOVAPSYrr,  X86::VMOVAPSYmr,    TB_FOLDED_STORE | TB_ALIGN_32 },
     { X86::VMOVDQAYrr,  X86::VMOVDQAYmr,    TB_FOLDED_STORE | TB_ALIGN_32 },
@@ -513,6 +514,8 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VPABSBrr128,     X86::VPABSBrm128,         TB_ALIGN_16 },
     { X86::VPABSDrr128,     X86::VPABSDrm128,         TB_ALIGN_16 },
     { X86::VPABSWrr128,     X86::VPABSWrm128,         TB_ALIGN_16 },
+    { X86::VPERMILPDri,     X86::VPERMILPDmi,         TB_ALIGN_16 },
+    { X86::VPERMILPSri,     X86::VPERMILPSmi,         TB_ALIGN_16 },
     { X86::VPSHUFDri,       X86::VPSHUFDmi,           TB_ALIGN_16 },
     { X86::VPSHUFHWri,      X86::VPSHUFHWmi,          TB_ALIGN_16 },
     { X86::VPSHUFLWri,      X86::VPSHUFLWmi,          TB_ALIGN_16 },
@@ -529,16 +532,26 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     // AVX 256-bit foldable instructions
     { X86::VMOVAPDYrr,      X86::VMOVAPDYrm,          TB_ALIGN_32 },
     { X86::VMOVAPSYrr,      X86::VMOVAPSYrm,          TB_ALIGN_32 },
-    { X86::VMOVDQAYrr,      X86::VMOVDQAYrm,          TB_ALIGN_16 },
+    { X86::VMOVDQAYrr,      X86::VMOVDQAYrm,          TB_ALIGN_32 },
     { X86::VMOVUPDYrr,      X86::VMOVUPDYrm,          0 },
     { X86::VMOVUPSYrr,      X86::VMOVUPSYrm,          0 },
+    { X86::VPERMILPDYri,    X86::VPERMILPDYmi,        TB_ALIGN_32 },
+    { X86::VPERMILPSYri,    X86::VPERMILPSYmi,        TB_ALIGN_32 },
     // AVX2 foldable instructions
-    { X86::VPABSBrr256,     X86::VPABSBrm256,         TB_ALIGN_16 },
-    { X86::VPABSDrr256,     X86::VPABSDrm256,         TB_ALIGN_16 },
-    { X86::VPABSWrr256,     X86::VPABSWrm256,         TB_ALIGN_16 },
-    { X86::VPSHUFDYri,      X86::VPSHUFDYmi,          TB_ALIGN_16 },
-    { X86::VPSHUFHWYri,     X86::VPSHUFHWYmi,         TB_ALIGN_16 },
-    { X86::VPSHUFLWYri,     X86::VPSHUFLWYmi,         TB_ALIGN_16 }
+    { X86::VPABSBrr256,     X86::VPABSBrm256,         TB_ALIGN_32 },
+    { X86::VPABSDrr256,     X86::VPABSDrm256,         TB_ALIGN_32 },
+    { X86::VPABSWrr256,     X86::VPABSWrm256,         TB_ALIGN_32 },
+    { X86::VPSHUFDYri,      X86::VPSHUFDYmi,          TB_ALIGN_32 },
+    { X86::VPSHUFHWYri,     X86::VPSHUFHWYmi,         TB_ALIGN_32 },
+    { X86::VPSHUFLWYri,     X86::VPSHUFLWYmi,         TB_ALIGN_32 },
+    { X86::VRCPPSYr,        X86::VRCPPSYm,            TB_ALIGN_32 },
+    { X86::VRCPPSYr_Int,    X86::VRCPPSYm_Int,        TB_ALIGN_32 },
+    { X86::VRSQRTPSYr,      X86::VRSQRTPSYm,          TB_ALIGN_32 },
+    { X86::VRSQRTPSYr_Int,  X86::VRSQRTPSYm_Int,      TB_ALIGN_32 },
+    { X86::VSQRTPDYr,       X86::VSQRTPDYm,           TB_ALIGN_32 },
+    { X86::VSQRTPDYr_Int,   X86::VSQRTPDYm_Int,       TB_ALIGN_32 },
+    { X86::VSQRTPSYr,       X86::VSQRTPSYm,           TB_ALIGN_32 },
+    { X86::VSQRTPSYr_Int,   X86::VSQRTPSYm_Int,       TB_ALIGN_32 },
   };
 
   for (unsigned i = 0, e = array_lengthof(OpTbl1); i != e; ++i) {
@@ -575,6 +588,10 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::ANDNPSrr,        X86::ANDNPSrm,      TB_ALIGN_16 },
     { X86::ANDPDrr,         X86::ANDPDrm,       TB_ALIGN_16 },
     { X86::ANDPSrr,         X86::ANDPSrm,       TB_ALIGN_16 },
+    { X86::BLENDPDrri,      X86::BLENDPDrmi,    TB_ALIGN_16 },
+    { X86::BLENDPSrri,      X86::BLENDPSrmi,    TB_ALIGN_16 },
+    { X86::BLENDVPDrr0,     X86::BLENDVPDrm0,   TB_ALIGN_16 },
+    { X86::BLENDVPSrr0,     X86::BLENDVPSrm0,   TB_ALIGN_16 },
     { X86::CMOVA16rr,       X86::CMOVA16rm,     0 },
     { X86::CMOVA32rr,       X86::CMOVA32rm,     0 },
     { X86::CMOVA64rr,       X86::CMOVA64rm,     0 },
@@ -692,6 +709,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::PANDrr,          X86::PANDrm,        TB_ALIGN_16 },
     { X86::PAVGBrr,         X86::PAVGBrm,       TB_ALIGN_16 },
     { X86::PAVGWrr,         X86::PAVGWrm,       TB_ALIGN_16 },
+    { X86::PBLENDWrri,      X86::PBLENDWrmi,    TB_ALIGN_16 },
     { X86::PCMPEQBrr,       X86::PCMPEQBrm,     TB_ALIGN_16 },
     { X86::PCMPEQDrr,       X86::PCMPEQDrm,     TB_ALIGN_16 },
     { X86::PCMPEQQrr,       X86::PCMPEQQrm,     TB_ALIGN_16 },
@@ -700,12 +718,12 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::PCMPGTDrr,       X86::PCMPGTDrm,     TB_ALIGN_16 },
     { X86::PCMPGTQrr,       X86::PCMPGTQrm,     TB_ALIGN_16 },
     { X86::PCMPGTWrr,       X86::PCMPGTWrm,     TB_ALIGN_16 },
-    { X86::PHADDDrr128,     X86::PHADDDrm128,   TB_ALIGN_16 },
-    { X86::PHADDWrr128,     X86::PHADDWrm128,   TB_ALIGN_16 },
+    { X86::PHADDDrr,        X86::PHADDDrm,      TB_ALIGN_16 },
+    { X86::PHADDWrr,        X86::PHADDWrm,      TB_ALIGN_16 },
     { X86::PHADDSWrr128,    X86::PHADDSWrm128,  TB_ALIGN_16 },
-    { X86::PHSUBDrr128,     X86::PHSUBDrm128,   TB_ALIGN_16 },
+    { X86::PHSUBDrr,        X86::PHSUBDrm,      TB_ALIGN_16 },
     { X86::PHSUBSWrr128,    X86::PHSUBSWrm128,  TB_ALIGN_16 },
-    { X86::PHSUBWrr128,     X86::PHSUBWrm128,   TB_ALIGN_16 },
+    { X86::PHSUBWrr,        X86::PHSUBWrm,      TB_ALIGN_16 },
     { X86::PINSRWrri,       X86::PINSRWrmi,     TB_ALIGN_16 },
     { X86::PMADDUBSWrr128,  X86::PMADDUBSWrm128, TB_ALIGN_16 },
     { X86::PMADDWDrr,       X86::PMADDWDrm,     TB_ALIGN_16 },
@@ -722,10 +740,10 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::PMULUDQrr,       X86::PMULUDQrm,     TB_ALIGN_16 },
     { X86::PORrr,           X86::PORrm,         TB_ALIGN_16 },
     { X86::PSADBWrr,        X86::PSADBWrm,      TB_ALIGN_16 },
-    { X86::PSHUFBrr128,     X86::PSHUFBrm128,   TB_ALIGN_16 },
-    { X86::PSIGNBrr128,     X86::PSIGNBrm128,   TB_ALIGN_16 },
-    { X86::PSIGNWrr128,     X86::PSIGNWrm128,   TB_ALIGN_16 },
-    { X86::PSIGNDrr128,     X86::PSIGNDrm128,   TB_ALIGN_16 },
+    { X86::PSHUFBrr,        X86::PSHUFBrm,      TB_ALIGN_16 },
+    { X86::PSIGNBrr,        X86::PSIGNBrm,      TB_ALIGN_16 },
+    { X86::PSIGNWrr,        X86::PSIGNWrm,      TB_ALIGN_16 },
+    { X86::PSIGNDrr,        X86::PSIGNDrm,      TB_ALIGN_16 },
     { X86::PSLLDrr,         X86::PSLLDrm,       TB_ALIGN_16 },
     { X86::PSLLQrr,         X86::PSLLQrm,       TB_ALIGN_16 },
     { X86::PSLLWrr,         X86::PSLLWrm,       TB_ALIGN_16 },
@@ -809,6 +827,10 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VANDNPSrr,         X86::VANDNPSrm,          TB_ALIGN_16 },
     { X86::VANDPDrr,          X86::VANDPDrm,           TB_ALIGN_16 },
     { X86::VANDPSrr,          X86::VANDPSrm,           TB_ALIGN_16 },
+    { X86::VBLENDPDrri,       X86::VBLENDPDrmi,        TB_ALIGN_16 },
+    { X86::VBLENDPSrri,       X86::VBLENDPSrmi,        TB_ALIGN_16 },
+    { X86::VBLENDVPDrr,       X86::VBLENDVPDrm,        TB_ALIGN_16 },
+    { X86::VBLENDVPSrr,       X86::VBLENDVPSrm,        TB_ALIGN_16 },
     { X86::VCMPPDrri,         X86::VCMPPDrmi,          TB_ALIGN_16 },
     { X86::VCMPPSrri,         X86::VCMPPSrmi,          TB_ALIGN_16 },
     { X86::VCMPSDrr,          X86::VCMPSDrm,           0 },
@@ -871,6 +893,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VPANDrr,           X86::VPANDrm,            TB_ALIGN_16 },
     { X86::VPAVGBrr,          X86::VPAVGBrm,           TB_ALIGN_16 },
     { X86::VPAVGWrr,          X86::VPAVGWrm,           TB_ALIGN_16 },
+    { X86::VPBLENDWrri,       X86::VPBLENDWrmi,        TB_ALIGN_16 },
     { X86::VPCMPEQBrr,        X86::VPCMPEQBrm,         TB_ALIGN_16 },
     { X86::VPCMPEQDrr,        X86::VPCMPEQDrm,         TB_ALIGN_16 },
     { X86::VPCMPEQQrr,        X86::VPCMPEQQrm,         TB_ALIGN_16 },
@@ -879,12 +902,14 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VPCMPGTDrr,        X86::VPCMPGTDrm,         TB_ALIGN_16 },
     { X86::VPCMPGTQrr,        X86::VPCMPGTQrm,         TB_ALIGN_16 },
     { X86::VPCMPGTWrr,        X86::VPCMPGTWrm,         TB_ALIGN_16 },
-    { X86::VPHADDDrr128,      X86::VPHADDDrm128,       TB_ALIGN_16 },
+    { X86::VPHADDDrr,         X86::VPHADDDrm,          TB_ALIGN_16 },
     { X86::VPHADDSWrr128,     X86::VPHADDSWrm128,      TB_ALIGN_16 },
-    { X86::VPHADDWrr128,      X86::VPHADDWrm128,       TB_ALIGN_16 },
-    { X86::VPHSUBDrr128,      X86::VPHSUBDrm128,       TB_ALIGN_16 },
+    { X86::VPHADDWrr,         X86::VPHADDWrm,          TB_ALIGN_16 },
+    { X86::VPHSUBDrr,         X86::VPHSUBDrm,          TB_ALIGN_16 },
     { X86::VPHSUBSWrr128,     X86::VPHSUBSWrm128,      TB_ALIGN_16 },
-    { X86::VPHSUBWrr128,      X86::VPHSUBWrm128,       TB_ALIGN_16 },
+    { X86::VPHSUBWrr,         X86::VPHSUBWrm,          TB_ALIGN_16 },
+    { X86::VPERMILPDrr,       X86::VPERMILPDrm,        TB_ALIGN_16 },
+    { X86::VPERMILPSrr,       X86::VPERMILPSrm,        TB_ALIGN_16 },
     { X86::VPINSRWrri,        X86::VPINSRWrmi,         TB_ALIGN_16 },
     { X86::VPMADDUBSWrr128,   X86::VPMADDUBSWrm128,    TB_ALIGN_16 },
     { X86::VPMADDWDrr,        X86::VPMADDWDrm,         TB_ALIGN_16 },
@@ -901,10 +926,10 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VPMULUDQrr,        X86::VPMULUDQrm,         TB_ALIGN_16 },
     { X86::VPORrr,            X86::VPORrm,             TB_ALIGN_16 },
     { X86::VPSADBWrr,         X86::VPSADBWrm,          TB_ALIGN_16 },
-    { X86::VPSHUFBrr128,      X86::VPSHUFBrm128,       TB_ALIGN_16 },
-    { X86::VPSIGNBrr128,      X86::VPSIGNBrm128,       TB_ALIGN_16 },
-    { X86::VPSIGNWrr128,      X86::VPSIGNWrm128,       TB_ALIGN_16 },
-    { X86::VPSIGNDrr128,      X86::VPSIGNDrm128,       TB_ALIGN_16 },
+    { X86::VPSHUFBrr,         X86::VPSHUFBrm,          TB_ALIGN_16 },
+    { X86::VPSIGNBrr,         X86::VPSIGNBrm,          TB_ALIGN_16 },
+    { X86::VPSIGNWrr,         X86::VPSIGNWrm,          TB_ALIGN_16 },
+    { X86::VPSIGNDrr,         X86::VPSIGNDrm,          TB_ALIGN_16 },
     { X86::VPSLLDrr,          X86::VPSLLDrm,           TB_ALIGN_16 },
     { X86::VPSLLQrr,          X86::VPSLLQrm,           TB_ALIGN_16 },
     { X86::VPSLLWrr,          X86::VPSLLWrm,           TB_ALIGN_16 },
@@ -939,90 +964,146 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::VUNPCKLPSrr,       X86::VUNPCKLPSrm,        TB_ALIGN_16 },
     { X86::VXORPDrr,          X86::VXORPDrm,           TB_ALIGN_16 },
     { X86::VXORPSrr,          X86::VXORPSrm,           TB_ALIGN_16 },
+    // AVX 256-bit foldable instructions
+    { X86::VADDPDYrr,         X86::VADDPDYrm,          TB_ALIGN_32 },
+    { X86::VADDPSYrr,         X86::VADDPSYrm,          TB_ALIGN_32 },
+    { X86::VADDSUBPDYrr,      X86::VADDSUBPDYrm,       TB_ALIGN_32 },
+    { X86::VADDSUBPSYrr,      X86::VADDSUBPSYrm,       TB_ALIGN_32 },
+    { X86::VANDNPDYrr,        X86::VANDNPDYrm,         TB_ALIGN_32 },
+    { X86::VANDNPSYrr,        X86::VANDNPSYrm,         TB_ALIGN_32 },
+    { X86::VANDPDYrr,         X86::VANDPDYrm,          TB_ALIGN_32 },
+    { X86::VANDPSYrr,         X86::VANDPSYrm,          TB_ALIGN_32 },
+    { X86::VBLENDPDYrri,      X86::VBLENDPDYrmi,       TB_ALIGN_32 },
+    { X86::VBLENDPSYrri,      X86::VBLENDPSYrmi,       TB_ALIGN_32 },
+    { X86::VBLENDVPDYrr,      X86::VBLENDVPDYrm,       TB_ALIGN_32 },
+    { X86::VBLENDVPSYrr,      X86::VBLENDVPSYrm,       TB_ALIGN_32 },
+    { X86::VCMPPDYrri,        X86::VCMPPDYrmi,         TB_ALIGN_32 },
+    { X86::VCMPPSYrri,        X86::VCMPPSYrmi,         TB_ALIGN_32 },
+    { X86::VDIVPDYrr,         X86::VDIVPDYrm,          TB_ALIGN_32 },
+    { X86::VDIVPSYrr,         X86::VDIVPSYrm,          TB_ALIGN_32 },
+    { X86::VHADDPDYrr,        X86::VHADDPDYrm,         TB_ALIGN_32 },
+    { X86::VHADDPSYrr,        X86::VHADDPSYrm,         TB_ALIGN_32 },
+    { X86::VHSUBPDYrr,        X86::VHSUBPDYrm,         TB_ALIGN_32 },
+    { X86::VHSUBPSYrr,        X86::VHSUBPSYrm,         TB_ALIGN_32 },
+    { X86::VINSERTF128rr,     X86::VINSERTF128rm,      TB_ALIGN_32 },
+    { X86::VMAXPDYrr,         X86::VMAXPDYrm,          TB_ALIGN_32 },
+    { X86::VMAXPDYrr_Int,     X86::VMAXPDYrm_Int,      TB_ALIGN_32 },
+    { X86::VMAXPSYrr,         X86::VMAXPSYrm,          TB_ALIGN_32 },
+    { X86::VMAXPSYrr_Int,     X86::VMAXPSYrm_Int,      TB_ALIGN_32 },
+    { X86::VMINPDYrr,         X86::VMINPDYrm,          TB_ALIGN_32 },
+    { X86::VMINPDYrr_Int,     X86::VMINPDYrm_Int,      TB_ALIGN_32 },
+    { X86::VMINPSYrr,         X86::VMINPSYrm,          TB_ALIGN_32 },
+    { X86::VMINPSYrr_Int,     X86::VMINPSYrm_Int,      TB_ALIGN_32 },
+    { X86::VMULPDYrr,         X86::VMULPDYrm,          TB_ALIGN_32 },
+    { X86::VMULPSYrr,         X86::VMULPSYrm,          TB_ALIGN_32 },
+    { X86::VORPDYrr,          X86::VORPDYrm,           TB_ALIGN_32 },
+    { X86::VORPSYrr,          X86::VORPSYrm,           TB_ALIGN_32 },
+    { X86::VPERM2F128rr,      X86::VPERM2F128rm,       TB_ALIGN_32 },
+    { X86::VPERMILPDYrr,      X86::VPERMILPDYrm,       TB_ALIGN_32 },
+    { X86::VPERMILPSYrr,      X86::VPERMILPSYrm,       TB_ALIGN_32 },
+    { X86::VSHUFPDYrri,       X86::VSHUFPDYrmi,        TB_ALIGN_32 },
+    { X86::VSHUFPSYrri,       X86::VSHUFPSYrmi,        TB_ALIGN_32 },
+    { X86::VSUBPDYrr,         X86::VSUBPDYrm,          TB_ALIGN_32 },
+    { X86::VSUBPSYrr,         X86::VSUBPSYrm,          TB_ALIGN_32 },
+    { X86::VUNPCKHPDYrr,      X86::VUNPCKHPDYrm,       TB_ALIGN_32 },
+    { X86::VUNPCKHPSYrr,      X86::VUNPCKHPSYrm,       TB_ALIGN_32 },
+    { X86::VUNPCKLPDYrr,      X86::VUNPCKLPDYrm,       TB_ALIGN_32 },
+    { X86::VUNPCKLPSYrr,      X86::VUNPCKLPSYrm,       TB_ALIGN_32 },
+    { X86::VXORPDYrr,         X86::VXORPDYrm,          TB_ALIGN_32 },
+    { X86::VXORPSYrr,         X86::VXORPSYrm,          TB_ALIGN_32 },
     // AVX2 foldable instructions
-    { X86::VPACKSSDWYrr,      X86::VPACKSSDWYrm,       TB_ALIGN_16 },
-    { X86::VPACKSSWBYrr,      X86::VPACKSSWBYrm,       TB_ALIGN_16 },
-    { X86::VPACKUSDWYrr,      X86::VPACKUSDWYrm,       TB_ALIGN_16 },
-    { X86::VPACKUSWBYrr,      X86::VPACKUSWBYrm,       TB_ALIGN_16 },
-    { X86::VPADDBYrr,         X86::VPADDBYrm,          TB_ALIGN_16 },
-    { X86::VPADDDYrr,         X86::VPADDDYrm,          TB_ALIGN_16 },
-    { X86::VPADDQYrr,         X86::VPADDQYrm,          TB_ALIGN_16 },
-    { X86::VPADDSBYrr,        X86::VPADDSBYrm,         TB_ALIGN_16 },
-    { X86::VPADDSWYrr,        X86::VPADDSWYrm,         TB_ALIGN_16 },
-    { X86::VPADDUSBYrr,       X86::VPADDUSBYrm,        TB_ALIGN_16 },
-    { X86::VPADDUSWYrr,       X86::VPADDUSWYrm,        TB_ALIGN_16 },
-    { X86::VPADDWYrr,         X86::VPADDWYrm,          TB_ALIGN_16 },
-    { X86::VPALIGNR256rr,     X86::VPALIGNR256rm,      TB_ALIGN_16 },
-    { X86::VPANDNYrr,         X86::VPANDNYrm,          TB_ALIGN_16 },
-    { X86::VPANDYrr,          X86::VPANDYrm,           TB_ALIGN_16 },
-    { X86::VPAVGBYrr,         X86::VPAVGBYrm,          TB_ALIGN_16 },
-    { X86::VPAVGWYrr,         X86::VPAVGWYrm,          TB_ALIGN_16 },
-    { X86::VPCMPEQBYrr,       X86::VPCMPEQBYrm,        TB_ALIGN_16 },
-    { X86::VPCMPEQDYrr,       X86::VPCMPEQDYrm,        TB_ALIGN_16 },
-    { X86::VPCMPEQQYrr,       X86::VPCMPEQQYrm,        TB_ALIGN_16 },
-    { X86::VPCMPEQWYrr,       X86::VPCMPEQWYrm,        TB_ALIGN_16 },
-    { X86::VPCMPGTBYrr,       X86::VPCMPGTBYrm,        TB_ALIGN_16 },
-    { X86::VPCMPGTDYrr,       X86::VPCMPGTDYrm,        TB_ALIGN_16 },
-    { X86::VPCMPGTQYrr,       X86::VPCMPGTQYrm,        TB_ALIGN_16 },
-    { X86::VPCMPGTWYrr,       X86::VPCMPGTWYrm,        TB_ALIGN_16 },
-    { X86::VPHADDDrr256,      X86::VPHADDDrm256,       TB_ALIGN_16 },
-    { X86::VPHADDSWrr256,     X86::VPHADDSWrm256,      TB_ALIGN_16 },
-    { X86::VPHADDWrr256,      X86::VPHADDWrm256,       TB_ALIGN_16 },
-    { X86::VPHSUBDrr256,      X86::VPHSUBDrm256,       TB_ALIGN_16 },
-    { X86::VPHSUBSWrr256,     X86::VPHSUBSWrm256,      TB_ALIGN_16 },
-    { X86::VPHSUBWrr256,      X86::VPHSUBWrm256,       TB_ALIGN_16 },
-    { X86::VPMADDUBSWrr256,   X86::VPMADDUBSWrm256,    TB_ALIGN_16 },
-    { X86::VPMADDWDYrr,       X86::VPMADDWDYrm,        TB_ALIGN_16 },
-    { X86::VPMAXSWYrr,        X86::VPMAXSWYrm,         TB_ALIGN_16 },
-    { X86::VPMAXUBYrr,        X86::VPMAXUBYrm,         TB_ALIGN_16 },
-    { X86::VPMINSWYrr,        X86::VPMINSWYrm,         TB_ALIGN_16 },
-    { X86::VPMINUBYrr,        X86::VPMINUBYrm,         TB_ALIGN_16 },
-    { X86::VMPSADBWYrri,      X86::VMPSADBWYrmi,       TB_ALIGN_16 },
-    { X86::VPMULDQYrr,        X86::VPMULDQYrm,         TB_ALIGN_16 },
-    { X86::VPMULHRSWrr256,    X86::VPMULHRSWrm256,     TB_ALIGN_16 },
-    { X86::VPMULHUWYrr,       X86::VPMULHUWYrm,        TB_ALIGN_16 },
-    { X86::VPMULHWYrr,        X86::VPMULHWYrm,         TB_ALIGN_16 },
-    { X86::VPMULLDYrr,        X86::VPMULLDYrm,         TB_ALIGN_16 },
-    { X86::VPMULLWYrr,        X86::VPMULLWYrm,         TB_ALIGN_16 },
-    { X86::VPMULUDQYrr,       X86::VPMULUDQYrm,        TB_ALIGN_16 },
-    { X86::VPORYrr,           X86::VPORYrm,            TB_ALIGN_16 },
-    { X86::VPSADBWYrr,        X86::VPSADBWYrm,         TB_ALIGN_16 },
-    { X86::VPSHUFBrr256,      X86::VPSHUFBrm256,       TB_ALIGN_16 },
-    { X86::VPSIGNBrr256,      X86::VPSIGNBrm256,       TB_ALIGN_16 },
-    { X86::VPSIGNWrr256,      X86::VPSIGNWrm256,       TB_ALIGN_16 },
-    { X86::VPSIGNDrr256,      X86::VPSIGNDrm256,       TB_ALIGN_16 },
+    { X86::VINSERTI128rr,     X86::VINSERTI128rm,      TB_ALIGN_16 },
+    { X86::VPACKSSDWYrr,      X86::VPACKSSDWYrm,       TB_ALIGN_32 },
+    { X86::VPACKSSWBYrr,      X86::VPACKSSWBYrm,       TB_ALIGN_32 },
+    { X86::VPACKUSDWYrr,      X86::VPACKUSDWYrm,       TB_ALIGN_32 },
+    { X86::VPACKUSWBYrr,      X86::VPACKUSWBYrm,       TB_ALIGN_32 },
+    { X86::VPADDBYrr,         X86::VPADDBYrm,          TB_ALIGN_32 },
+    { X86::VPADDDYrr,         X86::VPADDDYrm,          TB_ALIGN_32 },
+    { X86::VPADDQYrr,         X86::VPADDQYrm,          TB_ALIGN_32 },
+    { X86::VPADDSBYrr,        X86::VPADDSBYrm,         TB_ALIGN_32 },
+    { X86::VPADDSWYrr,        X86::VPADDSWYrm,         TB_ALIGN_32 },
+    { X86::VPADDUSBYrr,       X86::VPADDUSBYrm,        TB_ALIGN_32 },
+    { X86::VPADDUSWYrr,       X86::VPADDUSWYrm,        TB_ALIGN_32 },
+    { X86::VPADDWYrr,         X86::VPADDWYrm,          TB_ALIGN_32 },
+    { X86::VPALIGNR256rr,     X86::VPALIGNR256rm,      TB_ALIGN_32 },
+    { X86::VPANDNYrr,         X86::VPANDNYrm,          TB_ALIGN_32 },
+    { X86::VPANDYrr,          X86::VPANDYrm,           TB_ALIGN_32 },
+    { X86::VPAVGBYrr,         X86::VPAVGBYrm,          TB_ALIGN_32 },
+    { X86::VPAVGWYrr,         X86::VPAVGWYrm,          TB_ALIGN_32 },
+    { X86::VPBLENDDrri,       X86::VPBLENDDrmi,        TB_ALIGN_32 },
+    { X86::VPBLENDDYrri,      X86::VPBLENDDYrmi,       TB_ALIGN_32 },
+    { X86::VPBLENDWYrri,      X86::VPBLENDWYrmi,       TB_ALIGN_32 },
+    { X86::VPCMPEQBYrr,       X86::VPCMPEQBYrm,        TB_ALIGN_32 },
+    { X86::VPCMPEQDYrr,       X86::VPCMPEQDYrm,        TB_ALIGN_32 },
+    { X86::VPCMPEQQYrr,       X86::VPCMPEQQYrm,        TB_ALIGN_32 },
+    { X86::VPCMPEQWYrr,       X86::VPCMPEQWYrm,        TB_ALIGN_32 },
+    { X86::VPCMPGTBYrr,       X86::VPCMPGTBYrm,        TB_ALIGN_32 },
+    { X86::VPCMPGTDYrr,       X86::VPCMPGTDYrm,        TB_ALIGN_32 },
+    { X86::VPCMPGTQYrr,       X86::VPCMPGTQYrm,        TB_ALIGN_32 },
+    { X86::VPCMPGTWYrr,       X86::VPCMPGTWYrm,        TB_ALIGN_32 },
+    { X86::VPERM2I128rr,      X86::VPERM2I128rm,       TB_ALIGN_32 },
+    { X86::VPERMDYrr,         X86::VPERMDYrm,          TB_ALIGN_32 },
+    { X86::VPERMPDYrr,        X86::VPERMPDYrm,         TB_ALIGN_32 },
+    { X86::VPERMPSYrr,        X86::VPERMPSYrm,         TB_ALIGN_32 },
+    { X86::VPERMQYrr,         X86::VPERMQYrm,          TB_ALIGN_32 },
+    { X86::VPHADDDYrr,        X86::VPHADDDYrm,         TB_ALIGN_32 },
+    { X86::VPHADDSWrr256,     X86::VPHADDSWrm256,      TB_ALIGN_32 },
+    { X86::VPHADDWYrr,        X86::VPHADDWYrm,         TB_ALIGN_32 },
+    { X86::VPHSUBDYrr,        X86::VPHSUBDYrm,         TB_ALIGN_32 },
+    { X86::VPHSUBSWrr256,     X86::VPHSUBSWrm256,      TB_ALIGN_32 },
+    { X86::VPHSUBWYrr,        X86::VPHSUBWYrm,         TB_ALIGN_32 },
+    { X86::VPMADDUBSWrr256,   X86::VPMADDUBSWrm256,    TB_ALIGN_32 },
+    { X86::VPMADDWDYrr,       X86::VPMADDWDYrm,        TB_ALIGN_32 },
+    { X86::VPMAXSWYrr,        X86::VPMAXSWYrm,         TB_ALIGN_32 },
+    { X86::VPMAXUBYrr,        X86::VPMAXUBYrm,         TB_ALIGN_32 },
+    { X86::VPMINSWYrr,        X86::VPMINSWYrm,         TB_ALIGN_32 },
+    { X86::VPMINUBYrr,        X86::VPMINUBYrm,         TB_ALIGN_32 },
+    { X86::VMPSADBWYrri,      X86::VMPSADBWYrmi,       TB_ALIGN_32 },
+    { X86::VPMULDQYrr,        X86::VPMULDQYrm,         TB_ALIGN_32 },
+    { X86::VPMULHRSWrr256,    X86::VPMULHRSWrm256,     TB_ALIGN_32 },
+    { X86::VPMULHUWYrr,       X86::VPMULHUWYrm,        TB_ALIGN_32 },
+    { X86::VPMULHWYrr,        X86::VPMULHWYrm,         TB_ALIGN_32 },
+    { X86::VPMULLDYrr,        X86::VPMULLDYrm,         TB_ALIGN_32 },
+    { X86::VPMULLWYrr,        X86::VPMULLWYrm,         TB_ALIGN_32 },
+    { X86::VPMULUDQYrr,       X86::VPMULUDQYrm,        TB_ALIGN_32 },
+    { X86::VPORYrr,           X86::VPORYrm,            TB_ALIGN_32 },
+    { X86::VPSADBWYrr,        X86::VPSADBWYrm,         TB_ALIGN_32 },
+    { X86::VPSHUFBYrr,        X86::VPSHUFBYrm,         TB_ALIGN_32 },
+    { X86::VPSIGNBYrr,        X86::VPSIGNBYrm,         TB_ALIGN_32 },
+    { X86::VPSIGNWYrr,        X86::VPSIGNWYrm,         TB_ALIGN_32 },
+    { X86::VPSIGNDYrr,        X86::VPSIGNDYrm,         TB_ALIGN_32 },
     { X86::VPSLLDYrr,         X86::VPSLLDYrm,          TB_ALIGN_16 },
     { X86::VPSLLQYrr,         X86::VPSLLQYrm,          TB_ALIGN_16 },
     { X86::VPSLLWYrr,         X86::VPSLLWYrm,          TB_ALIGN_16 },
     { X86::VPSLLVDrr,         X86::VPSLLVDrm,          TB_ALIGN_16 },
-    { X86::VPSLLVDYrr,        X86::VPSLLVDYrm,         TB_ALIGN_16 },
+    { X86::VPSLLVDYrr,        X86::VPSLLVDYrm,         TB_ALIGN_32 },
     { X86::VPSLLVQrr,         X86::VPSLLVQrm,          TB_ALIGN_16 },
-    { X86::VPSLLVQYrr,        X86::VPSLLVQYrm,         TB_ALIGN_16 },
+    { X86::VPSLLVQYrr,        X86::VPSLLVQYrm,         TB_ALIGN_32 },
     { X86::VPSRADYrr,         X86::VPSRADYrm,          TB_ALIGN_16 },
     { X86::VPSRAWYrr,         X86::VPSRAWYrm,          TB_ALIGN_16 },
     { X86::VPSRAVDrr,         X86::VPSRAVDrm,          TB_ALIGN_16 },
-    { X86::VPSRAVDYrr,        X86::VPSRAVDYrm,         TB_ALIGN_16 },
+    { X86::VPSRAVDYrr,        X86::VPSRAVDYrm,         TB_ALIGN_32 },
     { X86::VPSRLDYrr,         X86::VPSRLDYrm,          TB_ALIGN_16 },
     { X86::VPSRLQYrr,         X86::VPSRLQYrm,          TB_ALIGN_16 },
     { X86::VPSRLWYrr,         X86::VPSRLWYrm,          TB_ALIGN_16 },
     { X86::VPSRLVDrr,         X86::VPSRLVDrm,          TB_ALIGN_16 },
-    { X86::VPSRLVDYrr,        X86::VPSRLVDYrm,         TB_ALIGN_16 },
+    { X86::VPSRLVDYrr,        X86::VPSRLVDYrm,         TB_ALIGN_32 },
     { X86::VPSRLVQrr,         X86::VPSRLVQrm,          TB_ALIGN_16 },
-    { X86::VPSRLVQYrr,        X86::VPSRLVQYrm,         TB_ALIGN_16 },
-    { X86::VPSUBBYrr,         X86::VPSUBBYrm,          TB_ALIGN_16 },
-    { X86::VPSUBDYrr,         X86::VPSUBDYrm,          TB_ALIGN_16 },
-    { X86::VPSUBSBYrr,        X86::VPSUBSBYrm,         TB_ALIGN_16 },
-    { X86::VPSUBSWYrr,        X86::VPSUBSWYrm,         TB_ALIGN_16 },
-    { X86::VPSUBWYrr,         X86::VPSUBWYrm,          TB_ALIGN_16 },
-    { X86::VPUNPCKHBWYrr,     X86::VPUNPCKHBWYrm,      TB_ALIGN_16 },
-    { X86::VPUNPCKHDQYrr,     X86::VPUNPCKHDQYrm,      TB_ALIGN_16 },
+    { X86::VPSRLVQYrr,        X86::VPSRLVQYrm,         TB_ALIGN_32 },
+    { X86::VPSUBBYrr,         X86::VPSUBBYrm,          TB_ALIGN_32 },
+    { X86::VPSUBDYrr,         X86::VPSUBDYrm,          TB_ALIGN_32 },
+    { X86::VPSUBSBYrr,        X86::VPSUBSBYrm,         TB_ALIGN_32 },
+    { X86::VPSUBSWYrr,        X86::VPSUBSWYrm,         TB_ALIGN_32 },
+    { X86::VPSUBWYrr,         X86::VPSUBWYrm,          TB_ALIGN_32 },
+    { X86::VPUNPCKHBWYrr,     X86::VPUNPCKHBWYrm,      TB_ALIGN_32 },
+    { X86::VPUNPCKHDQYrr,     X86::VPUNPCKHDQYrm,      TB_ALIGN_32 },
     { X86::VPUNPCKHQDQYrr,    X86::VPUNPCKHQDQYrm,     TB_ALIGN_16 },
-    { X86::VPUNPCKHWDYrr,     X86::VPUNPCKHWDYrm,      TB_ALIGN_16 },
-    { X86::VPUNPCKLBWYrr,     X86::VPUNPCKLBWYrm,      TB_ALIGN_16 },
-    { X86::VPUNPCKLDQYrr,     X86::VPUNPCKLDQYrm,      TB_ALIGN_16 },
-    { X86::VPUNPCKLQDQYrr,    X86::VPUNPCKLQDQYrm,     TB_ALIGN_16 },
-    { X86::VPUNPCKLWDYrr,     X86::VPUNPCKLWDYrm,      TB_ALIGN_16 },
-    { X86::VPXORYrr,          X86::VPXORYrm,           TB_ALIGN_16 },
+    { X86::VPUNPCKHWDYrr,     X86::VPUNPCKHWDYrm,      TB_ALIGN_32 },
+    { X86::VPUNPCKLBWYrr,     X86::VPUNPCKLBWYrm,      TB_ALIGN_32 },
+    { X86::VPUNPCKLDQYrr,     X86::VPUNPCKLDQYrm,      TB_ALIGN_32 },
+    { X86::VPUNPCKLQDQYrr,    X86::VPUNPCKLQDQYrm,     TB_ALIGN_32 },
+    { X86::VPUNPCKLWDYrr,     X86::VPUNPCKLWDYrm,      TB_ALIGN_32 },
+    { X86::VPXORYrr,          X86::VPXORYrm,           TB_ALIGN_32 },
     // FIXME: add AVX 256-bit foldable instructions
   };
 
@@ -1082,7 +1163,6 @@ X86InstrInfo::isCoalescableExtInstr(const MachineInstr &MI,
     switch (MI.getOpcode()) {
     default:
       llvm_unreachable(0);
-      break;
     case X86::MOVSX16rr8:
     case X86::MOVZX16rr8:
     case X86::MOVSX32rr8:
@@ -1125,7 +1205,8 @@ bool X86InstrInfo::isFrameOperand(const MachineInstr *MI, unsigned int Op,
 
 static bool isFrameLoadOpcode(int Opcode) {
   switch (Opcode) {
-  default: break;
+  default:
+    return false;
   case X86::MOV8rm:
   case X86::MOV16rm:
   case X86::MOV32rm:
@@ -1147,9 +1228,7 @@ static bool isFrameLoadOpcode(int Opcode) {
   case X86::MMX_MOVD64rm:
   case X86::MMX_MOVQ64rm:
     return true;
-    break;
   }
-  return false;
 }
 
 static bool isFrameStoreOpcode(int Opcode) {
@@ -1339,6 +1418,8 @@ static bool isSafeToClobberEFLAGS(MachineBasicBlock &MBB,
     bool SeenDef = false;
     for (unsigned j = 0, e = Iter->getNumOperands(); j != e; ++j) {
       MachineOperand &MO = Iter->getOperand(j);
+      if (MO.isRegMask() && MO.clobbersPhysReg(X86::EFLAGS))
+        SeenDef = true;
       if (!MO.isReg())
         continue;
       if (MO.getReg() == X86::EFLAGS) {
@@ -1383,6 +1464,10 @@ static bool isSafeToClobberEFLAGS(MachineBasicBlock &MBB,
     bool SawKill = false;
     for (unsigned j = 0, e = Iter->getNumOperands(); j != e; ++j) {
       MachineOperand &MO = Iter->getOperand(j);
+      // A register mask may clobber EFLAGS, but we should still look for a
+      // live EFLAGS def.
+      if (MO.isRegMask() && MO.clobbersPhysReg(X86::EFLAGS))
+        SawKill = true;
       if (MO.isReg() && MO.getReg() == X86::EFLAGS) {
         if (MO.isDef()) return MO.isDead();
         if (MO.isKill()) SawKill = true;
@@ -1493,7 +1578,6 @@ X86InstrInfo::convertToThreeAddressWithLEA(unsigned MIOpc,
   switch (MIOpc) {
   default:
     llvm_unreachable(0);
-    break;
   case X86::SHL16ri: {
     unsigned ShAmt = MI->getOperand(2).getImm();
     MIB.addReg(0).addImm(1 << ShAmt)
@@ -1600,6 +1684,24 @@ X86InstrInfo::convertToThreeAddress(MachineFunction::iterator &MFI,
     if (B != C) return 0;
     unsigned A = MI->getOperand(0).getReg();
     unsigned M = MI->getOperand(3).getImm();
+    NewMI = BuildMI(MF, MI->getDebugLoc(), get(X86::PSHUFDri))
+      .addReg(A, RegState::Define | getDeadRegState(isDead))
+      .addReg(B, getKillRegState(isKill)).addImm(M);
+    break;
+  }
+  case X86::SHUFPDrri: {
+    assert(MI->getNumOperands() == 4 && "Unknown shufpd instruction!");
+    if (!TM.getSubtarget<X86Subtarget>().hasSSE2()) return 0;
+
+    unsigned B = MI->getOperand(1).getReg();
+    unsigned C = MI->getOperand(2).getReg();
+    if (B != C) return 0;
+    unsigned A = MI->getOperand(0).getReg();
+    unsigned M = MI->getOperand(3).getImm();
+
+    // Convert to PSHUFD mask.
+    M = ((M & 1) << 1) | ((M & 1) << 3) | ((M & 2) << 4) | ((M & 2) << 6)| 0x44;
+
     NewMI = BuildMI(MF, MI->getDebugLoc(), get(X86::PSHUFDri))
       .addReg(A, RegState::Define | getDeadRegState(isDead))
       .addReg(B, getKillRegState(isKill)).addImm(M);
@@ -1733,7 +1835,7 @@ X86InstrInfo::convertToThreeAddress(MachineFunction::iterator &MFI,
     case X86::ADD32rr_DB: {
       assert(MI->getNumOperands() >= 3 && "Unknown add instruction!");
       unsigned Opc;
-      TargetRegisterClass *RC;
+      const TargetRegisterClass *RC;
       if (MIOpc == X86::ADD64rr || MIOpc == X86::ADD64rr_DB) {
         Opc = X86::LEA64r;
         RC = X86::GR64_NOSPRegisterClass;
@@ -2908,6 +3010,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     case X86::AVX_SET0PSY:
     case X86::AVX_SET0PDY:
     case X86::AVX2_SETALLONES:
+    case X86::AVX2_SET0:
       Alignment = 32;
       break;
     case X86::V_SET0:
@@ -2952,6 +3055,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   case X86::AVX_SET0PDY:
   case X86::AVX_SETALLONES:
   case X86::AVX2_SETALLONES:
+  case X86::AVX2_SET0:
   case X86::FsFLD0SD:
   case X86::FsFLD0SS: {
     // Folding a V_SET0 or V_SETALLONES as a load, to ease register pressure.
@@ -2985,6 +3089,8 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       Ty = Type::getDoubleTy(MF.getFunction()->getContext());
     else if (Opc == X86::AVX_SET0PSY || Opc == X86::AVX_SET0PDY)
       Ty = VectorType::get(Type::getFloatTy(MF.getFunction()->getContext()), 8);
+    else if (Opc == X86::AVX2_SETALLONES || Opc == X86::AVX2_SET0)
+      Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()), 8);
     else
       Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()), 4);
 

@@ -17,9 +17,12 @@
 #include "lldb/Core/RegisterValue.h"
 #include "lldb/Core/Scalar.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Target/ExecutionContext.h"
+#include "lldb/Utility/Utils.h"
 // Project includes
 #include "Utility/StringExtractorGDBRemote.h"
 #include "ProcessGDBRemote.h"
+#include "ProcessGDBRemoteLog.h"
 #include "ThreadGDBRemote.h"
 #include "Utility/ARM_GCC_Registers.h"
 #include "Utility/ARM_DWARF_Registers.h"
@@ -59,18 +62,6 @@ GDBRemoteRegisterContext::GDBRemoteRegisterContext
 //----------------------------------------------------------------------
 GDBRemoteRegisterContext::~GDBRemoteRegisterContext()
 {
-}
-
-ProcessGDBRemote &
-GDBRemoteRegisterContext::GetGDBProcess()
-{
-    return static_cast<ProcessGDBRemote &>(m_thread.GetProcess());
-}
-
-ThreadGDBRemote &
-GDBRemoteRegisterContext::GetGDBThread()
-{
-    return static_cast<ThreadGDBRemote &>(m_thread);
 }
 
 void
@@ -147,18 +138,43 @@ GDBRemoteRegisterContext::PrivateSetRegisterValue (uint32_t reg, StringExtractor
     }
     else if (bytes_copied > 0)
     {
-        // Only set register is valid to false if we copied some bytes, else 
+        // Only set register is valid to false if we copied some bytes, else
         // leave it as it was.
         m_reg_valid[reg] = false;
     }
     return success;
 }
 
+// Helper function for GDBRemoteRegisterContext::ReadRegisterBytes().
+bool
+GDBRemoteRegisterContext::GetPrimordialRegister(const lldb_private::RegisterInfo *reg_info,
+                                                GDBRemoteCommunicationClient &gdb_comm)
+{
+    char packet[64];
+    StringExtractorGDBRemote response;
+    int packet_len = 0;
+    const uint32_t reg = reg_info->kinds[eRegisterKindLLDB];
+    if (gdb_comm.GetThreadSuffixSupported())
+        packet_len = ::snprintf (packet, sizeof(packet), "p%x;thread:%4.4llx;", reg, m_thread.GetID());
+    else
+        packet_len = ::snprintf (packet, sizeof(packet), "p%x", reg);
+    assert (packet_len < (sizeof(packet) - 1));
+    if (gdb_comm.SendPacketAndWaitForResponse(packet, response, false))
+        return PrivateSetRegisterValue (reg, response);
 
+    return false;
+}
 bool
 GDBRemoteRegisterContext::ReadRegisterBytes (const RegisterInfo *reg_info, DataExtractor &data)
 {
-    GDBRemoteCommunicationClient &gdb_comm (GetGDBProcess().GetGDBRemote());
+    ExecutionContext exe_ctx (CalculateThread());
+
+    Process *process = exe_ctx.GetProcessPtr();
+    Thread *thread = exe_ctx.GetThreadPtr();
+    if (process == NULL || thread == NULL)
+        return false;
+
+    GDBRemoteCommunicationClient &gdb_comm (((ProcessGDBRemote *)process)->GetGDBRemote());
 
     InvalidateIfNeeded(false);
 
@@ -170,7 +186,8 @@ GDBRemoteRegisterContext::ReadRegisterBytes (const RegisterInfo *reg_info, DataE
         if (gdb_comm.GetSequenceMutex (locker))
         {
             const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
-            if (thread_suffix_supported || GetGDBProcess().GetGDBRemote().SetCurrentThread(m_thread.GetID()))
+            ProcessSP process_sp (m_thread.GetProcess());
+            if (thread_suffix_supported || static_cast<ProcessGDBRemote *>(process_sp.get())->GetGDBRemote().SetCurrentThread(m_thread.GetID()))
             {
                 char packet[64];
                 StringExtractorGDBRemote response;
@@ -190,19 +207,65 @@ GDBRemoteRegisterContext::ReadRegisterBytes (const RegisterInfo *reg_info, DataE
                                 SetAllRegisterValid (true);
                     }
                 }
-                else
+                else if (!reg_info->value_regs)
                 {
                     // Get each register individually
+                    GetPrimordialRegister(reg_info, gdb_comm);
+                }
+                else
+                {
+                    // Process this composite register request by delegating to the constituent
+                    // primordial registers.
 
-                    if (thread_suffix_supported)
-                        packet_len = ::snprintf (packet, sizeof(packet), "p%x;thread:%4.4llx;", reg, m_thread.GetID());
-                    else
-                        packet_len = ::snprintf (packet, sizeof(packet), "p%x", reg);
-                    assert (packet_len < (sizeof(packet) - 1));
-                    if (gdb_comm.SendPacketAndWaitForResponse(packet, response, false))
-                        PrivateSetRegisterValue (reg, response);
+                    // Index of the primordial register.
+                    uint32_t prim_reg_idx;
+                    bool success = true;
+                    for (uint32_t idx = 0;
+                         (prim_reg_idx = reg_info->value_regs[idx]) != LLDB_INVALID_REGNUM;
+                         ++idx)
+                    {
+                        // We have a valid primordial regsiter as our constituent.
+                        // Grab the corresponding register info.
+                        const RegisterInfo *prim_reg_info = GetRegisterInfoAtIndex(prim_reg_idx);
+                        if (!GetPrimordialRegister(prim_reg_info, gdb_comm))
+                        {
+                            success = false;
+                            // Some failure occurred.  Let's break out of the for loop.
+                            break;
+                        }
+                    }
+                    if (success)
+                    {
+                        // If we reach this point, all primordial register requests have succeeded.
+                        // Validate this composite register.
+                        m_reg_valid[reg_info->kinds[eRegisterKindLLDB]] = true;
+                    }
                 }
             }
+        }
+        else
+        {
+            LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_THREAD | GDBR_LOG_PACKETS));
+#if LLDB_CONFIGURATION_DEBUG
+            StreamString strm;
+            gdb_comm.DumpHistory(strm);
+            Host::SetCrashDescription (strm.GetData());
+            assert (!"Didn't get sequence mutex for read register.");
+#else
+            if (log)
+            {
+                if (log->GetVerbose())
+                {
+                    StreamString strm;
+                    gdb_comm.DumpHistory(strm);
+                    log->Printf("error: failed to get packet sequence mutex, not sending read register for \"%s\":\n%s", reg_info->name, strm.GetData());
+                }
+                else
+                {
+                    log->Printf("error: failed to get packet sequence mutex, not sending read register for \"%s\"", reg_info->name);
+                }
+            }
+#endif
         }
 
         // Make sure we got a valid register value after reading it
@@ -234,26 +297,59 @@ GDBRemoteRegisterContext::WriteRegister (const RegisterInfo *reg_info,
     return false;
 }
 
+// Helper function for GDBRemoteRegisterContext::WriteRegisterBytes().
+bool
+GDBRemoteRegisterContext::SetPrimordialRegister(const lldb_private::RegisterInfo *reg_info,
+                                                GDBRemoteCommunicationClient &gdb_comm)
+{
+    StreamString packet;
+    StringExtractorGDBRemote response;
+    const uint32_t reg = reg_info->kinds[eRegisterKindLLDB];
+    packet.Printf ("P%x=", reg);
+    packet.PutBytesAsRawHex8 (m_reg_data.PeekData(reg_info->byte_offset, reg_info->byte_size),
+                              reg_info->byte_size,
+                              lldb::endian::InlHostByteOrder(),
+                              lldb::endian::InlHostByteOrder());
 
+    if (gdb_comm.GetThreadSuffixSupported())
+        packet.Printf (";thread:%4.4llx;", m_thread.GetID());
+
+    // Invalidate just this register
+    m_reg_valid[reg] = false;
+    if (gdb_comm.SendPacketAndWaitForResponse(packet.GetString().c_str(),
+                                              packet.GetString().size(),
+                                              response,
+                                              false))
+    {
+        if (response.IsOKResponse())
+            return true;
+    }
+    return false;
+}
 bool
 GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *reg_info, DataExtractor &data, uint32_t data_offset)
 {
-    GDBRemoteCommunicationClient &gdb_comm (GetGDBProcess().GetGDBRemote());
+    ExecutionContext exe_ctx (CalculateThread());
+
+    Process *process = exe_ctx.GetProcessPtr();
+    Thread *thread = exe_ctx.GetThreadPtr();
+    if (process == NULL || thread == NULL)
+        return false;
+
+    GDBRemoteCommunicationClient &gdb_comm (((ProcessGDBRemote *)process)->GetGDBRemote());
 // FIXME: This check isn't right because IsRunning checks the Public state, but this
-// is work you need to do - for instance in ShouldStop & friends - before the public 
+// is work you need to do - for instance in ShouldStop & friends - before the public
 // state has been changed.
 //    if (gdb_comm.IsRunning())
 //        return false;
-
-    const uint32_t reg = reg_info->kinds[eRegisterKindLLDB];
 
     // Grab a pointer to where we are going to put this register
     uint8_t *dst = const_cast<uint8_t*>(m_reg_data.PeekData(reg_info->byte_offset, reg_info->byte_size));
 
     if (dst == NULL)
         return false;
-    
-    
+
+
     if (data.CopyByteOrderedData (data_offset,                  // src offset
                                   reg_info->byte_size,          // src length
                                   dst,                          // dst
@@ -264,23 +360,20 @@ GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *
         if (gdb_comm.GetSequenceMutex (locker))
         {
             const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
-            if (thread_suffix_supported || GetGDBProcess().GetGDBRemote().SetCurrentThread(m_thread.GetID()))
+            ProcessSP process_sp (m_thread.GetProcess());
+            if (thread_suffix_supported || static_cast<ProcessGDBRemote *>(process_sp.get())->GetGDBRemote().SetCurrentThread(m_thread.GetID()))
             {
-                uint32_t offset, end_offset;
                 StreamString packet;
                 StringExtractorGDBRemote response;
                 if (m_read_all_at_once)
                 {
-                    // Get all registers in one packet
+                    // Set all registers in one packet
                     packet.PutChar ('G');
-                    offset = 0;
-                    end_offset = m_reg_data.GetByteSize();
-
                     packet.PutBytesAsRawHex8 (m_reg_data.GetDataStart(),
                                               m_reg_data.GetByteSize(),
                                               lldb::endian::InlHostByteOrder(),
                                               lldb::endian::InlHostByteOrder());
-                    
+
                     if (thread_suffix_supported)
                         packet.Printf (";thread:%4.4llx;", m_thread.GetID());
 
@@ -299,32 +392,77 @@ GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *
                         }
                     }
                 }
+                else if (!reg_info->value_regs)
+                {
+                    // Set each register individually
+                    return SetPrimordialRegister(reg_info, gdb_comm);
+                }
                 else
                 {
-                    // Get each register individually
-                    packet.Printf ("P%x=", reg);
-                    packet.PutBytesAsRawHex8 (m_reg_data.PeekData(reg_info->byte_offset, reg_info->byte_size),
-                                              reg_info->byte_size,
-                                              lldb::endian::InlHostByteOrder(),
-                                              lldb::endian::InlHostByteOrder());
+                    // Process this composite register request by delegating to the constituent
+                    // primordial registers.
 
-                    if (thread_suffix_supported)
-                        packet.Printf (";thread:%4.4llx;", m_thread.GetID());
+                    // Invalidate this composite register first.
+                    m_reg_valid[reg_info->kinds[eRegisterKindLLDB]] = false;
 
-                    // Invalidate just this register
-                    m_reg_valid[reg] = false;
-                    if (gdb_comm.SendPacketAndWaitForResponse(packet.GetString().c_str(),
-                                                              packet.GetString().size(),
-                                                              response,
-                                                              false))
+                    // Index of the primordial register.
+                    uint32_t prim_reg_idx;
+                    // For loop index.
+                    uint32_t idx;
+
+                    // Invalidate the invalidate_regs, if present.
+                    if (reg_info->invalidate_regs)
                     {
-                        if (response.IsOKResponse())
+                        for (idx = 0;
+                             (prim_reg_idx = reg_info->invalidate_regs[idx]) != LLDB_INVALID_REGNUM;
+                             ++idx)
                         {
-                            return true;
+                            // Grab the invalidate register info.
+                            const RegisterInfo *prim_reg_info = GetRegisterInfoAtIndex(prim_reg_idx);
+                            m_reg_valid[prim_reg_info->kinds[eRegisterKindLLDB]] = false;
                         }
                     }
+
+                    bool success = true;
+                    for (idx = 0;
+                         (prim_reg_idx = reg_info->value_regs[idx]) != LLDB_INVALID_REGNUM;
+                         ++idx)
+                    {
+                        // We have a valid primordial regsiter as our constituent.
+                        // Grab the corresponding register info.
+                        const RegisterInfo *prim_reg_info = GetRegisterInfoAtIndex(prim_reg_idx);
+                        if (!SetPrimordialRegister(prim_reg_info, gdb_comm))
+                        {
+                            success = false;
+                            // Some failure occurred.  Let's break out of the for loop.
+                            break;
+                        }
+                    }
+                    return success;
                 }
             }
+        }
+        else
+        {
+            LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_THREAD | GDBR_LOG_PACKETS));
+#if LLDB_CONFIGURATION_DEBUG
+            StreamString strm;
+            gdb_comm.DumpHistory(strm);
+            Host::SetCrashDescription (strm.GetData());
+            assert (!"Didn't get sequence mutex for write register.");
+#else
+            if (log)
+            {
+                if (log->GetVerbose())
+                {
+                    StreamString strm;
+                    gdb_comm.DumpHistory(strm);
+                    log->Printf("error: failed to get packet sequence mutex, not sending write register for \"%s\":\n%s", reg_info->name, strm.GetData());
+                }
+                else
+                    log->Printf("error: failed to get packet sequence mutex, not sending write register for \"%s\"", reg_info->name);
+            }
+#endif
         }
     }
     return false;
@@ -334,15 +472,24 @@ GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *
 bool
 GDBRemoteRegisterContext::ReadAllRegisterValues (lldb::DataBufferSP &data_sp)
 {
-    GDBRemoteCommunicationClient &gdb_comm (GetGDBProcess().GetGDBRemote());
+    ExecutionContext exe_ctx (CalculateThread());
+
+    Process *process = exe_ctx.GetProcessPtr();
+    Thread *thread = exe_ctx.GetThreadPtr();
+    if (process == NULL || thread == NULL)
+        return false;
+
+    GDBRemoteCommunicationClient &gdb_comm (((ProcessGDBRemote *)process)->GetGDBRemote());
+
     StringExtractorGDBRemote response;
-    
+
     Mutex::Locker locker;
     if (gdb_comm.GetSequenceMutex (locker))
     {
         char packet[32];
         const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
-        if (thread_suffix_supported || GetGDBProcess().GetGDBRemote().SetCurrentThread(m_thread.GetID()))
+        ProcessSP process_sp (m_thread.GetProcess());
+        if (thread_suffix_supported || static_cast<ProcessGDBRemote *>(process_sp.get())->GetGDBRemote().SetCurrentThread(m_thread.GetID()))
         {
             int packet_len = 0;
             if (thread_suffix_supported)
@@ -355,7 +502,7 @@ GDBRemoteRegisterContext::ReadAllRegisterValues (lldb::DataBufferSP &data_sp)
             {
                 if (response.IsErrorResponse())
                     return false;
-                
+
                 std::string &response_str = response.GetStringRef();
                 if (isxdigit(response_str[0]))
                 {
@@ -372,6 +519,29 @@ GDBRemoteRegisterContext::ReadAllRegisterValues (lldb::DataBufferSP &data_sp)
             }
         }
     }
+    else
+    {
+        LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_THREAD | GDBR_LOG_PACKETS));
+#if LLDB_CONFIGURATION_DEBUG
+        StreamString strm;
+        gdb_comm.DumpHistory(strm);
+        Host::SetCrashDescription (strm.GetData());
+        assert (!"Didn't get sequence mutex for read all registers.");
+#else
+        if (log)
+        {
+            if (log->GetVerbose())
+            {
+                StreamString strm;
+                gdb_comm.DumpHistory(strm);
+                log->Printf("error: failed to get packet sequence mutex, not sending read all registers:\n%s", strm.GetData());
+            }
+            else
+                log->Printf("error: failed to get packet sequence mutex, not sending read all registers");
+        }
+#endif
+    }
+
     data_sp.reset();
     return false;
 }
@@ -382,22 +552,31 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
     if (!data_sp || data_sp->GetBytes() == NULL || data_sp->GetByteSize() == 0)
         return false;
 
-    GDBRemoteCommunicationClient &gdb_comm (GetGDBProcess().GetGDBRemote());
+    ExecutionContext exe_ctx (CalculateThread());
+
+    Process *process = exe_ctx.GetProcessPtr();
+    Thread *thread = exe_ctx.GetThreadPtr();
+    if (process == NULL || thread == NULL)
+        return false;
+
+    GDBRemoteCommunicationClient &gdb_comm (((ProcessGDBRemote *)process)->GetGDBRemote());
+
     StringExtractorGDBRemote response;
     Mutex::Locker locker;
     if (gdb_comm.GetSequenceMutex (locker))
     {
         const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
-        if (thread_suffix_supported || GetGDBProcess().GetGDBRemote().SetCurrentThread(m_thread.GetID()))
+        ProcessSP process_sp (m_thread.GetProcess());
+        if (thread_suffix_supported || static_cast<ProcessGDBRemote *>(process_sp.get())->GetGDBRemote().SetCurrentThread(m_thread.GetID()))
         {
             // The data_sp contains the entire G response packet including the
             // G, and if the thread suffix is supported, it has the thread suffix
             // as well.
             const char *G_packet = (const char *)data_sp->GetBytes();
             size_t G_packet_len = data_sp->GetByteSize();
-            if (gdb_comm.SendPacketAndWaitForResponse (G_packet, 
-                                                       G_packet_len, 
-                                                       response, 
+            if (gdb_comm.SendPacketAndWaitForResponse (G_packet,
+                                                       G_packet_len,
+                                                       response,
                                                        false))
             {
                 if (response.IsOKResponse())
@@ -407,17 +586,17 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
                     uint32_t num_restored = 0;
                     // We need to manually go through all of the registers and
                     // restore them manually
-                    
+
                     response.GetStringRef().assign (G_packet, G_packet_len);
                     response.SetFilePos(1); // Skip the leading 'G'
                     DataBufferHeap buffer (m_reg_data.GetByteSize(), 0);
-                    DataExtractor restore_data (buffer.GetBytes(), 
-                                                buffer.GetByteSize(), 
+                    DataExtractor restore_data (buffer.GetBytes(),
+                                                buffer.GetByteSize(),
                                                 m_reg_data.GetByteOrder(),
                                                 m_reg_data.GetAddressByteSize());
-                    
-                    const uint32_t bytes_extracted = response.GetHexBytes ((void *)restore_data.GetDataStart(), 
-                                                                           restore_data.GetByteSize(), 
+
+                    const uint32_t bytes_extracted = response.GetHexBytes ((void *)restore_data.GetDataStart(),
+                                                                           restore_data.GetByteSize(),
                                                                            '\xcc');
 
                     if (bytes_extracted < restore_data.GetByteSize())
@@ -431,8 +610,12 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
                     for (uint32_t reg_idx=0; (reg_info = GetRegisterInfoAtIndex (reg_idx)) != NULL; ++reg_idx, reg_byte_offset += reg_info->byte_size)
                     {
                         const uint32_t reg = reg_info->kinds[eRegisterKindLLDB];
-                        
-                        // Only write down the registers that need to be written 
+
+                        // Skip composite registers.
+                        if (reg_info->value_regs)
+                            continue;
+
+                        // Only write down the registers that need to be written
                         // if we are going to be doing registers individually.
                         bool write_reg = true;
                         const uint32_t reg_byte_size = reg_info->byte_size;
@@ -446,7 +629,7 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
                                 if (current_src)
                                     write_reg = memcmp (current_src, restore_src, reg_byte_size) != 0;
                             }
-                            
+
                             if (write_reg)
                             {
                                 StreamString packet;
@@ -476,6 +659,28 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
             }
         }
     }
+    else
+    {
+        LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_THREAD | GDBR_LOG_PACKETS));
+#if LLDB_CONFIGURATION_DEBUG
+        StreamString strm;
+        gdb_comm.DumpHistory(strm);
+        Host::SetCrashDescription (strm.GetData());
+        assert (!"Didn't get sequence mutex for write all registers.");
+#else
+        if (log)
+        {
+            if (log->GetVerbose())
+            {
+                StreamString strm;
+                gdb_comm.DumpHistory(strm);
+                log->Printf("error: failed to get packet sequence mutex, not sending write all registers:\n%s", strm.GetData());
+            }
+            else
+                log->Printf("error: failed to get packet sequence mutex, not sending write all registers");
+        }
+#endif
+    }
     return false;
 }
 
@@ -487,118 +692,329 @@ GDBRemoteRegisterContext::ConvertRegisterKindToRegisterNumber (uint32_t kind, ui
 }
 
 void
-GDBRemoteDynamicRegisterInfo::HardcodeARMRegisters()
+GDBRemoteDynamicRegisterInfo::HardcodeARMRegisters(bool from_scratch)
 {
-    static RegisterInfo g_register_infos[] = {
-//   NAME    ALT    SZ  OFF  ENCODING          FORMAT          COMPILER             DWARF                GENERIC                 GDB    LLDB
-//   ======  ====== === ===  =============     ============    ===================  ===================  ======================  ===    ====
-    { "r0", "arg1",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r0,              dwarf_r0,            LLDB_REGNUM_GENERIC_ARG1,0,      0 }},
-    { "r1", "arg2",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r1,              dwarf_r1,            LLDB_REGNUM_GENERIC_ARG2,1,      1 }},
-    { "r2", "arg3",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r2,              dwarf_r2,            LLDB_REGNUM_GENERIC_ARG3,2,      2 }},
-    { "r3", "arg4",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r3,              dwarf_r3,            LLDB_REGNUM_GENERIC_ARG4,3,      3 }},
-    { "r4",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r4,              dwarf_r4,            LLDB_INVALID_REGNUM,     4,      4 }},
-    { "r5",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r5,              dwarf_r5,            LLDB_INVALID_REGNUM,     5,      5 }},
-    { "r6",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r6,              dwarf_r6,            LLDB_INVALID_REGNUM,     6,      6 }},
-    { "r7",   "fp",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r7,              dwarf_r7,            LLDB_REGNUM_GENERIC_FP,  7,      7 }},
-    { "r8",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r8,              dwarf_r8,            LLDB_INVALID_REGNUM,     8,      8 }},
-    { "r9",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r9,              dwarf_r9,            LLDB_INVALID_REGNUM,     9,      9 }},
-    { "r10",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r10,             dwarf_r10,           LLDB_INVALID_REGNUM,    10,     10 }},
-    { "r11",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r11,             dwarf_r11,           LLDB_INVALID_REGNUM,    11,     11 }},
-    { "r12",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r12,             dwarf_r12,           LLDB_INVALID_REGNUM,    12,     12 }},
-    { "sp",   "r13",  4,   0, eEncodingUint,    eFormatHex,   { gcc_sp,              dwarf_sp,            LLDB_REGNUM_GENERIC_SP, 13,     13 }},
-    { "lr",   "r14",  4,   0, eEncodingUint,    eFormatHex,   { gcc_lr,              dwarf_lr,            LLDB_REGNUM_GENERIC_RA, 14,     14 }},
-    { "pc",   "r15",  4,   0, eEncodingUint,    eFormatHex,   { gcc_pc,              dwarf_pc,            LLDB_REGNUM_GENERIC_PC, 15,     15 }},
-    { "f0",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    16,     16 }},
-    { "f1",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    17,     17 }},
-    { "f2",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    18,     18 }},
-    { "f3",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    19,     19 }},
-    { "f4",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    20,     20 }},
-    { "f5",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    21,     21 }},
-    { "f6",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    22,     22 }},
-    { "f7",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    23,     23 }},
-    { "fps",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    24,     24 }},
-    { "cpsr","flags", 4,   0, eEncodingUint,    eFormatHex,   { gcc_cpsr,            dwarf_cpsr,          LLDB_INVALID_REGNUM,    25,     25 }},
-    { "s0",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s0,            LLDB_INVALID_REGNUM,    26,     26 }},
-    { "s1",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s1,            LLDB_INVALID_REGNUM,    27,     27 }},
-    { "s2",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s2,            LLDB_INVALID_REGNUM,    28,     28 }},
-    { "s3",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s3,            LLDB_INVALID_REGNUM,    29,     29 }},
-    { "s4",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s4,            LLDB_INVALID_REGNUM,    30,     30 }},
-    { "s5",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s5,            LLDB_INVALID_REGNUM,    31,     31 }},
-    { "s6",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s6,            LLDB_INVALID_REGNUM,    32,     32 }},
-    { "s7",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s7,            LLDB_INVALID_REGNUM,    33,     33 }},
-    { "s8",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s8,            LLDB_INVALID_REGNUM,    34,     34 }},
-    { "s9",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s9,            LLDB_INVALID_REGNUM,    35,     35 }},
-    { "s10",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s10,           LLDB_INVALID_REGNUM,    36,     36 }},
-    { "s11",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s11,           LLDB_INVALID_REGNUM,    37,     37 }},
-    { "s12",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s12,           LLDB_INVALID_REGNUM,    38,     38 }},
-    { "s13",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s13,           LLDB_INVALID_REGNUM,    39,     39 }},
-    { "s14",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s14,           LLDB_INVALID_REGNUM,    40,     40 }},
-    { "s15",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s15,           LLDB_INVALID_REGNUM,    41,     41 }},
-    { "s16",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s16,           LLDB_INVALID_REGNUM,    42,     42 }},
-    { "s17",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s17,           LLDB_INVALID_REGNUM,    43,     43 }},
-    { "s18",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s18,           LLDB_INVALID_REGNUM,    44,     44 }},
-    { "s19",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s19,           LLDB_INVALID_REGNUM,    45,     45 }},
-    { "s20",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s20,           LLDB_INVALID_REGNUM,    46,     46 }},
-    { "s21",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s21,           LLDB_INVALID_REGNUM,    47,     47 }},
-    { "s22",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s22,           LLDB_INVALID_REGNUM,    48,     48 }},
-    { "s23",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s23,           LLDB_INVALID_REGNUM,    49,     49 }},
-    { "s24",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s24,           LLDB_INVALID_REGNUM,    50,     50 }},
-    { "s25",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s25,           LLDB_INVALID_REGNUM,    51,     51 }},
-    { "s26",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s26,           LLDB_INVALID_REGNUM,    52,     52 }},
-    { "s27",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s27,           LLDB_INVALID_REGNUM,    53,     53 }},
-    { "s28",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s28,           LLDB_INVALID_REGNUM,    54,     54 }},
-    { "s29",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s29,           LLDB_INVALID_REGNUM,    55,     55 }},
-    { "s30",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s30,           LLDB_INVALID_REGNUM,    56,     56 }},
-    { "s31",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s31,           LLDB_INVALID_REGNUM,    57,     57 }},
-    { "fpscr",NULL,   4,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    58,     58 }},
-    { "d16",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d16,           LLDB_INVALID_REGNUM,    59,     59 }},
-    { "d17",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d17,           LLDB_INVALID_REGNUM,    60,     60 }},
-    { "d18",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d18,           LLDB_INVALID_REGNUM,    61,     61 }},
-    { "d19",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d19,           LLDB_INVALID_REGNUM,    62,     62 }},
-    { "d20",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d20,           LLDB_INVALID_REGNUM,    63,     63 }},
-    { "d21",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d21,           LLDB_INVALID_REGNUM,    64,     64 }},
-    { "d22",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d22,           LLDB_INVALID_REGNUM,    65,     65 }},
-    { "d23",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d23,           LLDB_INVALID_REGNUM,    66,     66 }},
-    { "d24",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d24,           LLDB_INVALID_REGNUM,    67,     67 }},
-    { "d25",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d25,           LLDB_INVALID_REGNUM,    68,     68 }},
-    { "d26",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d26,           LLDB_INVALID_REGNUM,    69,     69 }},
-    { "d27",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d27,           LLDB_INVALID_REGNUM,    70,     70 }},
-    { "d28",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d28,           LLDB_INVALID_REGNUM,    71,     71 }},
-    { "d29",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d29,           LLDB_INVALID_REGNUM,    72,     72 }},
-    { "d30",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d30,           LLDB_INVALID_REGNUM,    73,     73 }},
-    { "d31",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d31,           LLDB_INVALID_REGNUM,    74,     74 }},
+    // For Advanced SIMD and VFP register mapping.
+    static uint32_t g_d0_regs[] =  { 26, 27, LLDB_INVALID_REGNUM }; // (s0, s1)
+    static uint32_t g_d1_regs[] =  { 28, 29, LLDB_INVALID_REGNUM }; // (s2, s3)
+    static uint32_t g_d2_regs[] =  { 30, 31, LLDB_INVALID_REGNUM }; // (s4, s5)
+    static uint32_t g_d3_regs[] =  { 32, 33, LLDB_INVALID_REGNUM }; // (s6, s7)
+    static uint32_t g_d4_regs[] =  { 34, 35, LLDB_INVALID_REGNUM }; // (s8, s9)
+    static uint32_t g_d5_regs[] =  { 36, 37, LLDB_INVALID_REGNUM }; // (s10, s11)
+    static uint32_t g_d6_regs[] =  { 38, 39, LLDB_INVALID_REGNUM }; // (s12, s13)
+    static uint32_t g_d7_regs[] =  { 40, 41, LLDB_INVALID_REGNUM }; // (s14, s15)
+    static uint32_t g_d8_regs[] =  { 42, 43, LLDB_INVALID_REGNUM }; // (s16, s17)
+    static uint32_t g_d9_regs[] =  { 44, 45, LLDB_INVALID_REGNUM }; // (s18, s19)
+    static uint32_t g_d10_regs[] = { 46, 47, LLDB_INVALID_REGNUM }; // (s20, s21)
+    static uint32_t g_d11_regs[] = { 48, 49, LLDB_INVALID_REGNUM }; // (s22, s23)
+    static uint32_t g_d12_regs[] = { 50, 51, LLDB_INVALID_REGNUM }; // (s24, s25)
+    static uint32_t g_d13_regs[] = { 52, 53, LLDB_INVALID_REGNUM }; // (s26, s27)
+    static uint32_t g_d14_regs[] = { 54, 55, LLDB_INVALID_REGNUM }; // (s28, s29)
+    static uint32_t g_d15_regs[] = { 56, 57, LLDB_INVALID_REGNUM }; // (s30, s31)
+    static uint32_t g_q0_regs[] =  { 26, 27, 28, 29, LLDB_INVALID_REGNUM }; // (d0, d1) -> (s0, s1, s2, s3)
+    static uint32_t g_q1_regs[] =  { 30, 31, 32, 33, LLDB_INVALID_REGNUM }; // (d2, d3) -> (s4, s5, s6, s7)
+    static uint32_t g_q2_regs[] =  { 34, 35, 36, 37, LLDB_INVALID_REGNUM }; // (d4, d5) -> (s8, s9, s10, s11)
+    static uint32_t g_q3_regs[] =  { 38, 39, 40, 41, LLDB_INVALID_REGNUM }; // (d6, d7) -> (s12, s13, s14, s15)
+    static uint32_t g_q4_regs[] =  { 42, 43, 44, 45, LLDB_INVALID_REGNUM }; // (d8, d9) -> (s16, s17, s18, s19)
+    static uint32_t g_q5_regs[] =  { 46, 47, 48, 49, LLDB_INVALID_REGNUM }; // (d10, d11) -> (s20, s21, s22, s23)
+    static uint32_t g_q6_regs[] =  { 50, 51, 52, 53, LLDB_INVALID_REGNUM }; // (d12, d13) -> (s24, s25, s26, s27)
+    static uint32_t g_q7_regs[] =  { 54, 55, 56, 57, LLDB_INVALID_REGNUM }; // (d14, d15) -> (s28, s29, s30, s31)
+    static uint32_t g_q8_regs[] =  { 59, 60, LLDB_INVALID_REGNUM }; // (d16, d17)
+    static uint32_t g_q9_regs[] =  { 61, 62, LLDB_INVALID_REGNUM }; // (d18, d19)
+    static uint32_t g_q10_regs[] = { 63, 64, LLDB_INVALID_REGNUM }; // (d20, d21)
+    static uint32_t g_q11_regs[] = { 65, 66, LLDB_INVALID_REGNUM }; // (d22, d23)
+    static uint32_t g_q12_regs[] = { 67, 68, LLDB_INVALID_REGNUM }; // (d24, d25)
+    static uint32_t g_q13_regs[] = { 69, 70, LLDB_INVALID_REGNUM }; // (d26, d27)
+    static uint32_t g_q14_regs[] = { 71, 72, LLDB_INVALID_REGNUM }; // (d28, d29)
+    static uint32_t g_q15_regs[] = { 73, 74, LLDB_INVALID_REGNUM }; // (d30, d31)
+
+    // This is our array of composite registers, with each element coming from the above register mappings.
+    static uint32_t *g_composites[] = {
+        g_d0_regs, g_d1_regs,  g_d2_regs,  g_d3_regs,  g_d4_regs,  g_d5_regs,  g_d6_regs,  g_d7_regs,
+        g_d8_regs, g_d9_regs, g_d10_regs, g_d11_regs, g_d12_regs, g_d13_regs, g_d14_regs, g_d15_regs,
+        g_q0_regs, g_q1_regs,  g_q2_regs,  g_q3_regs,  g_q4_regs,  g_q5_regs,  g_q6_regs,  g_q7_regs,
+        g_q8_regs, g_q9_regs, g_q10_regs, g_q11_regs, g_q12_regs, g_q13_regs, g_q14_regs, g_q15_regs
     };
 
-    static const uint32_t num_registers = sizeof (g_register_infos)/sizeof (RegisterInfo);
+    static RegisterInfo g_register_infos[] = {
+//   NAME    ALT    SZ  OFF  ENCODING          FORMAT          COMPILER             DWARF                GENERIC                 GDB    LLDB      VALUE REGS    INVALIDATE REGS
+//   ======  ====== === ===  =============     ============    ===================  ===================  ======================  ===    ====      ==========    ===============
+    { "r0", "arg1",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r0,              dwarf_r0,            LLDB_REGNUM_GENERIC_ARG1,0,      0 },        NULL,              NULL},
+    { "r1", "arg2",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r1,              dwarf_r1,            LLDB_REGNUM_GENERIC_ARG2,1,      1 },        NULL,              NULL},
+    { "r2", "arg3",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r2,              dwarf_r2,            LLDB_REGNUM_GENERIC_ARG3,2,      2 },        NULL,              NULL},
+    { "r3", "arg4",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r3,              dwarf_r3,            LLDB_REGNUM_GENERIC_ARG4,3,      3 },        NULL,              NULL},
+    { "r4",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r4,              dwarf_r4,            LLDB_INVALID_REGNUM,     4,      4 },        NULL,              NULL},
+    { "r5",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r5,              dwarf_r5,            LLDB_INVALID_REGNUM,     5,      5 },        NULL,              NULL},
+    { "r6",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r6,              dwarf_r6,            LLDB_INVALID_REGNUM,     6,      6 },        NULL,              NULL},
+    { "r7",   "fp",   4,   0, eEncodingUint,    eFormatHex,   { gcc_r7,              dwarf_r7,            LLDB_REGNUM_GENERIC_FP,  7,      7 },        NULL,              NULL},
+    { "r8",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r8,              dwarf_r8,            LLDB_INVALID_REGNUM,     8,      8 },        NULL,              NULL},
+    { "r9",   NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r9,              dwarf_r9,            LLDB_INVALID_REGNUM,     9,      9 },        NULL,              NULL},
+    { "r10",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r10,             dwarf_r10,           LLDB_INVALID_REGNUM,    10,     10 },        NULL,              NULL},
+    { "r11",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r11,             dwarf_r11,           LLDB_INVALID_REGNUM,    11,     11 },        NULL,              NULL},
+    { "r12",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { gcc_r12,             dwarf_r12,           LLDB_INVALID_REGNUM,    12,     12 },        NULL,              NULL},
+    { "sp",   "r13",  4,   0, eEncodingUint,    eFormatHex,   { gcc_sp,              dwarf_sp,            LLDB_REGNUM_GENERIC_SP, 13,     13 },        NULL,              NULL},
+    { "lr",   "r14",  4,   0, eEncodingUint,    eFormatHex,   { gcc_lr,              dwarf_lr,            LLDB_REGNUM_GENERIC_RA, 14,     14 },        NULL,              NULL},
+    { "pc",   "r15",  4,   0, eEncodingUint,    eFormatHex,   { gcc_pc,              dwarf_pc,            LLDB_REGNUM_GENERIC_PC, 15,     15 },        NULL,              NULL},
+    { "f0",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    16,     16 },        NULL,              NULL},
+    { "f1",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    17,     17 },        NULL,              NULL},
+    { "f2",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    18,     18 },        NULL,              NULL},
+    { "f3",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    19,     19 },        NULL,              NULL},
+    { "f4",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    20,     20 },        NULL,              NULL},
+    { "f5",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    21,     21 },        NULL,              NULL},
+    { "f6",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    22,     22 },        NULL,              NULL},
+    { "f7",   NULL,  12,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    23,     23 },        NULL,              NULL},
+    { "fps",  NULL,   4,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    24,     24 },        NULL,              NULL},
+    { "cpsr","flags", 4,   0, eEncodingUint,    eFormatHex,   { gcc_cpsr,            dwarf_cpsr,          LLDB_INVALID_REGNUM,    25,     25 },        NULL,              NULL},
+    { "s0",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s0,            LLDB_INVALID_REGNUM,    26,     26 },        NULL,              NULL},
+    { "s1",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s1,            LLDB_INVALID_REGNUM,    27,     27 },        NULL,              NULL},
+    { "s2",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s2,            LLDB_INVALID_REGNUM,    28,     28 },        NULL,              NULL},
+    { "s3",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s3,            LLDB_INVALID_REGNUM,    29,     29 },        NULL,              NULL},
+    { "s4",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s4,            LLDB_INVALID_REGNUM,    30,     30 },        NULL,              NULL},
+    { "s5",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s5,            LLDB_INVALID_REGNUM,    31,     31 },        NULL,              NULL},
+    { "s6",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s6,            LLDB_INVALID_REGNUM,    32,     32 },        NULL,              NULL},
+    { "s7",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s7,            LLDB_INVALID_REGNUM,    33,     33 },        NULL,              NULL},
+    { "s8",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s8,            LLDB_INVALID_REGNUM,    34,     34 },        NULL,              NULL},
+    { "s9",   NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s9,            LLDB_INVALID_REGNUM,    35,     35 },        NULL,              NULL},
+    { "s10",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s10,           LLDB_INVALID_REGNUM,    36,     36 },        NULL,              NULL},
+    { "s11",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s11,           LLDB_INVALID_REGNUM,    37,     37 },        NULL,              NULL},
+    { "s12",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s12,           LLDB_INVALID_REGNUM,    38,     38 },        NULL,              NULL},
+    { "s13",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s13,           LLDB_INVALID_REGNUM,    39,     39 },        NULL,              NULL},
+    { "s14",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s14,           LLDB_INVALID_REGNUM,    40,     40 },        NULL,              NULL},
+    { "s15",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s15,           LLDB_INVALID_REGNUM,    41,     41 },        NULL,              NULL},
+    { "s16",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s16,           LLDB_INVALID_REGNUM,    42,     42 },        NULL,              NULL},
+    { "s17",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s17,           LLDB_INVALID_REGNUM,    43,     43 },        NULL,              NULL},
+    { "s18",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s18,           LLDB_INVALID_REGNUM,    44,     44 },        NULL,              NULL},
+    { "s19",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s19,           LLDB_INVALID_REGNUM,    45,     45 },        NULL,              NULL},
+    { "s20",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s20,           LLDB_INVALID_REGNUM,    46,     46 },        NULL,              NULL},
+    { "s21",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s21,           LLDB_INVALID_REGNUM,    47,     47 },        NULL,              NULL},
+    { "s22",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s22,           LLDB_INVALID_REGNUM,    48,     48 },        NULL,              NULL},
+    { "s23",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s23,           LLDB_INVALID_REGNUM,    49,     49 },        NULL,              NULL},
+    { "s24",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s24,           LLDB_INVALID_REGNUM,    50,     50 },        NULL,              NULL},
+    { "s25",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s25,           LLDB_INVALID_REGNUM,    51,     51 },        NULL,              NULL},
+    { "s26",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s26,           LLDB_INVALID_REGNUM,    52,     52 },        NULL,              NULL},
+    { "s27",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s27,           LLDB_INVALID_REGNUM,    53,     53 },        NULL,              NULL},
+    { "s28",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s28,           LLDB_INVALID_REGNUM,    54,     54 },        NULL,              NULL},
+    { "s29",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s29,           LLDB_INVALID_REGNUM,    55,     55 },        NULL,              NULL},
+    { "s30",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s30,           LLDB_INVALID_REGNUM,    56,     56 },        NULL,              NULL},
+    { "s31",  NULL,   4,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_s31,           LLDB_INVALID_REGNUM,    57,     57 },        NULL,              NULL},
+    { "fpscr",NULL,   4,   0, eEncodingUint,    eFormatHex,   { LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM, LLDB_INVALID_REGNUM,    58,     58 },        NULL,              NULL},
+    { "d16",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d16,           LLDB_INVALID_REGNUM,    59,     59 },        NULL,              NULL},
+    { "d17",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d17,           LLDB_INVALID_REGNUM,    60,     60 },        NULL,              NULL},
+    { "d18",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d18,           LLDB_INVALID_REGNUM,    61,     61 },        NULL,              NULL},
+    { "d19",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d19,           LLDB_INVALID_REGNUM,    62,     62 },        NULL,              NULL},
+    { "d20",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d20,           LLDB_INVALID_REGNUM,    63,     63 },        NULL,              NULL},
+    { "d21",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d21,           LLDB_INVALID_REGNUM,    64,     64 },        NULL,              NULL},
+    { "d22",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d22,           LLDB_INVALID_REGNUM,    65,     65 },        NULL,              NULL},
+    { "d23",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d23,           LLDB_INVALID_REGNUM,    66,     66 },        NULL,              NULL},
+    { "d24",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d24,           LLDB_INVALID_REGNUM,    67,     67 },        NULL,              NULL},
+    { "d25",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d25,           LLDB_INVALID_REGNUM,    68,     68 },        NULL,              NULL},
+    { "d26",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d26,           LLDB_INVALID_REGNUM,    69,     69 },        NULL,              NULL},
+    { "d27",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d27,           LLDB_INVALID_REGNUM,    70,     70 },        NULL,              NULL},
+    { "d28",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d28,           LLDB_INVALID_REGNUM,    71,     71 },        NULL,              NULL},
+    { "d29",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d29,           LLDB_INVALID_REGNUM,    72,     72 },        NULL,              NULL},
+    { "d30",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d30,           LLDB_INVALID_REGNUM,    73,     73 },        NULL,              NULL},
+    { "d31",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d31,           LLDB_INVALID_REGNUM,    74,     74 },        NULL,              NULL},
+    { "d0",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d0,            LLDB_INVALID_REGNUM,    75,     75 },   g_d0_regs,              NULL},
+    { "d1",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d1,            LLDB_INVALID_REGNUM,    76,     76 },   g_d1_regs,              NULL},
+    { "d2",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d2,            LLDB_INVALID_REGNUM,    77,     77 },   g_d2_regs,              NULL},
+    { "d3",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d3,            LLDB_INVALID_REGNUM,    78,     78 },   g_d3_regs,              NULL},
+    { "d4",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d4,            LLDB_INVALID_REGNUM,    79,     79 },   g_d4_regs,              NULL},
+    { "d5",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d5,            LLDB_INVALID_REGNUM,    80,     80 },   g_d5_regs,              NULL},
+    { "d6",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d6,            LLDB_INVALID_REGNUM,    81,     81 },   g_d6_regs,              NULL},
+    { "d7",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d7,            LLDB_INVALID_REGNUM,    82,     82 },   g_d7_regs,              NULL},
+    { "d8",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d8,            LLDB_INVALID_REGNUM,    83,     83 },   g_d8_regs,              NULL},
+    { "d9",   NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d9,            LLDB_INVALID_REGNUM,    84,     84 },   g_d9_regs,              NULL},
+    { "d10",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d10,           LLDB_INVALID_REGNUM,    85,     85 },  g_d10_regs,              NULL},
+    { "d11",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d11,           LLDB_INVALID_REGNUM,    86,     86 },  g_d11_regs,              NULL},
+    { "d12",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d12,           LLDB_INVALID_REGNUM,    87,     87 },  g_d12_regs,              NULL},
+    { "d13",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d13,           LLDB_INVALID_REGNUM,    88,     88 },  g_d13_regs,              NULL},
+    { "d14",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d14,           LLDB_INVALID_REGNUM,    89,     89 },  g_d14_regs,              NULL},
+    { "d15",  NULL,   8,   0, eEncodingIEEE754, eFormatFloat, { LLDB_INVALID_REGNUM, dwarf_d15,           LLDB_INVALID_REGNUM,    90,     90 },  g_d15_regs,              NULL},
+    { "q0",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q0,    LLDB_INVALID_REGNUM,    91,     91 },   g_q0_regs,              NULL},
+    { "q1",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q1,    LLDB_INVALID_REGNUM,    92,     92 },   g_q1_regs,              NULL},
+    { "q2",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q2,    LLDB_INVALID_REGNUM,    93,     93 },   g_q2_regs,              NULL},
+    { "q3",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q3,    LLDB_INVALID_REGNUM,    94,     94 },   g_q3_regs,              NULL},
+    { "q4",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q4,    LLDB_INVALID_REGNUM,    95,     95 },   g_q4_regs,              NULL},
+    { "q5",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q5,    LLDB_INVALID_REGNUM,    96,     96 },   g_q5_regs,              NULL},
+    { "q6",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q6,    LLDB_INVALID_REGNUM,    97,     97 },   g_q6_regs,              NULL},
+    { "q7",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q7,    LLDB_INVALID_REGNUM,    98,     98 },   g_q7_regs,              NULL},
+    { "q8",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q8,    LLDB_INVALID_REGNUM,    99,     99 },   g_q8_regs,              NULL},
+    { "q9",   NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q9,    LLDB_INVALID_REGNUM,   100,    100 },   g_q9_regs,              NULL},
+    { "q10",  NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q10,   LLDB_INVALID_REGNUM,   101,    101 },  g_q10_regs,              NULL},
+    { "q11",  NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q11,   LLDB_INVALID_REGNUM,   102,    102 },  g_q11_regs,              NULL},
+    { "q12",  NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q12,   LLDB_INVALID_REGNUM,   103,    103 },  g_q12_regs,              NULL},
+    { "q13",  NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q13,   LLDB_INVALID_REGNUM,   104,    104 },  g_q13_regs,              NULL},
+    { "q14",  NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q14,   LLDB_INVALID_REGNUM,   105,    105 },  g_q14_regs,              NULL},
+    { "q15",  NULL,   16,  0, eEncodingVector,  eFormatVectorOfUInt8, { LLDB_INVALID_REGNUM, dwarf_q15,   LLDB_INVALID_REGNUM,   106,    106 },  g_q15_regs,              NULL}
+    };
+
+    static const uint32_t num_registers = llvm::array_lengthof(g_register_infos);
     static ConstString gpr_reg_set ("General Purpose Registers");
     static ConstString sfp_reg_set ("Software Floating Point Registers");
     static ConstString vfp_reg_set ("Floating Point Registers");
     uint32_t i;
-    // Calculate the offsets of the registers
-    if (g_register_infos[2].byte_offset == 0)
+    if (from_scratch)
     {
-        uint32_t byte_offset = 0;
+        // Calculate the offsets of the registers
+        // Note that the layout of the "composite" registers (d0-d15 and q0-q15) which comes after the
+        // "primordial" registers is important.  This enables us to calculate the offset of the composite
+        // register by using the offset of its first primordial register.  For example, to calculate the
+        // offset of q0, use s0's offset.
+        if (g_register_infos[2].byte_offset == 0)
+        {
+            uint32_t byte_offset = 0;
+            for (i=0; i<num_registers; ++i)
+            {
+                // For primordial registers, increment the byte_offset by the byte_size to arrive at the
+                // byte_offset for the next register.  Otherwise, we have a composite register whose
+                // offset can be calculated by consulting the offset of its first primordial register.
+                if (!g_register_infos[i].value_regs)
+                {
+                    g_register_infos[i].byte_offset = byte_offset;
+                    byte_offset += g_register_infos[i].byte_size;
+                }
+                else
+                {
+                    const uint32_t first_primordial_reg = g_register_infos[i].value_regs[0];
+                    g_register_infos[i].byte_offset = g_register_infos[first_primordial_reg].byte_offset;
+                }
+            }
+        }
         for (i=0; i<num_registers; ++i)
         {
-            g_register_infos[i].byte_offset = byte_offset;
-            byte_offset += g_register_infos[i].byte_size;
+            ConstString name;
+            ConstString alt_name;
+            if (g_register_infos[i].name && g_register_infos[i].name[0])
+                name.SetCString(g_register_infos[i].name);
+            if (g_register_infos[i].alt_name && g_register_infos[i].alt_name[0])
+                alt_name.SetCString(g_register_infos[i].alt_name);
+
+            if (i <= 15 || i == 25)
+                AddRegister (g_register_infos[i], name, alt_name, gpr_reg_set);
+            else if (i <= 24)
+                AddRegister (g_register_infos[i], name, alt_name, sfp_reg_set);
+            else
+                AddRegister (g_register_infos[i], name, alt_name, vfp_reg_set);
         }
     }
-    for (i=0; i<num_registers; ++i)
+    else
+    {
+        // Add composite registers to our primordial registers, then.
+        const uint32_t num_composites = llvm::array_lengthof(g_composites);
+        const uint32_t num_primordials = GetNumRegisters();
+        RegisterInfo *g_comp_register_infos = g_register_infos + (num_registers - num_composites);
+        for (i=0; i<num_composites; ++i)
+        {
+            ConstString name;
+            ConstString alt_name;
+            const uint32_t first_primordial_reg = g_comp_register_infos[i].value_regs[0];
+            const char *reg_name = g_register_infos[first_primordial_reg].name;
+            if (reg_name && reg_name[0])
+            {
+                for (uint32_t j = 0; j < num_primordials; ++j)
+                {
+                    const RegisterInfo *reg_info = GetRegisterInfoAtIndex(j);
+                    // Find a matching primordial register info entry.
+                    if (reg_info && reg_info->name && ::strcasecmp(reg_info->name, reg_name) == 0)
+                    {
+                        // The name matches the existing primordial entry.
+                        // Find and assign the offset, and then add this composite register entry.
+                        g_comp_register_infos[i].byte_offset = reg_info->byte_offset;
+                        name.SetCString(g_comp_register_infos[i].name);
+                        AddRegister(g_comp_register_infos[i], name, alt_name, vfp_reg_set);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void
+GDBRemoteDynamicRegisterInfo::Addx86_64ConvenienceRegisters()
+{
+    // For eax, ebx, ecx, edx, esi, edi, ebp, esp register mapping.
+    static const char* g_mapped_names[] = {
+        "rax", "rbx", "rcx", "rdx", "rdi", "rsi", "rbp", "rsp",
+        "rax", "rbx", "rcx", "rdx", "rdi", "rsi", "rbp", "rsp",
+        "rax", "rbx", "rcx", "rdx",
+        "rax", "rbx", "rcx", "rdx", "rdi", "rsi", "rbp", "rsp"
+    };
+
+    // These value regs are to be populated with the corresponding primordial register index.
+    // For example,
+    static uint32_t g_eax_regs[] =  { 0, LLDB_INVALID_REGNUM }; // 0 is to be replaced with rax's index.
+    static uint32_t g_ebx_regs[] =  { 0, LLDB_INVALID_REGNUM };
+    static uint32_t g_ecx_regs[] =  { 0, LLDB_INVALID_REGNUM };
+    static uint32_t g_edx_regs[] =  { 0, LLDB_INVALID_REGNUM };
+    static uint32_t g_edi_regs[] =  { 0, LLDB_INVALID_REGNUM };
+    static uint32_t g_esi_regs[] =  { 0, LLDB_INVALID_REGNUM };
+    static uint32_t g_ebp_regs[] =  { 0, LLDB_INVALID_REGNUM };
+    static uint32_t g_esp_regs[] =  { 0, LLDB_INVALID_REGNUM };
+    
+    static RegisterInfo g_conv_register_infos[] = 
+    {
+//    NAME      ALT      SZ OFF ENCODING         FORMAT                COMPILER              DWARF                 GENERIC                      GDB                   LLDB NATIVE            VALUE REGS    INVALIDATE REGS
+//    ======    =======  == === =============    ============          ===================== ===================== ============================ ====================  ====================== ==========    ===============
+    { "eax"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_eax_regs,              NULL},
+    { "ebx"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ebx_regs,              NULL},
+    { "ecx"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ecx_regs,              NULL},
+    { "edx"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_edx_regs,              NULL},
+    { "edi"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_edi_regs,              NULL},
+    { "esi"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_esi_regs,              NULL},
+    { "ebp"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ebp_regs,              NULL},
+    { "esp"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_esp_regs,              NULL},
+    { "ax"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_eax_regs,              NULL},
+    { "bx"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ebx_regs,              NULL},
+    { "cx"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ecx_regs,              NULL},
+    { "dx"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_edx_regs,              NULL},
+    { "di"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_edi_regs,              NULL},
+    { "si"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_esi_regs,              NULL},
+    { "bp"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ebp_regs,              NULL},
+    { "sp"    , NULL,    2,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_esp_regs,              NULL},
+    { "ah"    , NULL,    1,  1, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_eax_regs,              NULL},
+    { "bh"    , NULL,    1,  1, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ebx_regs,              NULL},
+    { "ch"    , NULL,    1,  1, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ecx_regs,              NULL},
+    { "dh"    , NULL,    1,  1, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_edx_regs,              NULL},
+    { "al"    , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_eax_regs,              NULL},
+    { "bl"    , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ebx_regs,              NULL},
+    { "cl"    , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ecx_regs,              NULL},
+    { "dl"    , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_edx_regs,              NULL},
+    { "dil"   , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_edi_regs,              NULL},
+    { "sil"   , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_esi_regs,              NULL},
+    { "bpl"   , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_ebp_regs,              NULL},
+    { "spl"   , NULL,    1,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM      , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM }, g_esp_regs,              NULL}
+    };
+
+    static const uint32_t num_conv_regs = llvm::array_lengthof(g_mapped_names);
+    static ConstString gpr_reg_set ("General Purpose Registers");
+    
+    // Add convenience registers to our primordial registers.
+    const uint32_t num_primordials = GetNumRegisters();
+    uint32_t reg_kind = num_primordials;
+    for (uint32_t i=0; i<num_conv_regs; ++i)
     {
         ConstString name;
         ConstString alt_name;
-        if (g_register_infos[i].name && g_register_infos[i].name[0])
-            name.SetCString(g_register_infos[i].name);
-        if (g_register_infos[i].alt_name && g_register_infos[i].alt_name[0])
-            alt_name.SetCString(g_register_infos[i].alt_name);
-        
-        if (i <= 15 || i == 25)
-            AddRegister (g_register_infos[i], name, alt_name, gpr_reg_set);
-        else if (i <= 24)
-            AddRegister (g_register_infos[i], name, alt_name, sfp_reg_set);
-        else
-            AddRegister (g_register_infos[i], name, alt_name, vfp_reg_set);
+        const char *prim_reg_name = g_mapped_names[i];
+        if (prim_reg_name && prim_reg_name[0])
+        {
+            for (uint32_t j = 0; j < num_primordials; ++j)
+            {
+                const RegisterInfo *reg_info = GetRegisterInfoAtIndex(j);
+                // Find a matching primordial register info entry.
+                if (reg_info && reg_info->name && ::strcasecmp(reg_info->name, prim_reg_name) == 0)
+                {
+                    // The name matches the existing primordial entry.
+                    // Find and assign the offset, and then add this composite register entry.
+                    g_conv_register_infos[i].byte_offset = reg_info->byte_offset + g_conv_register_infos[i].byte_offset;
+                    // Update the value_regs and the kinds fields in order to delegate to the primordial register.
+                    g_conv_register_infos[i].value_regs[0] = j;
+                    g_conv_register_infos[i].kinds[eRegisterKindLLDB] = ++reg_kind;
+                    name.SetCString(g_conv_register_infos[i].name);
+                    AddRegister(g_conv_register_infos[i], name, alt_name, gpr_reg_set);
+                }
+            }
+        }
     }
 }
 

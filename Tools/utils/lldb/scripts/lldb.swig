@@ -37,6 +37,11 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 // Parameter types will be used in the autodoc string.
 %feature("autodoc", "1");
 
+%pythoncode%{
+import uuid
+import re
+import os
+%}
 %include "./Python/python-typemaps.swig"
 
 /* The liblldb header files to be included. */
@@ -77,6 +82,12 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 #include "lldb/API/SBTarget.h"
 #include "lldb/API/SBThread.h"
 #include "lldb/API/SBType.h"
+#include "lldb/API/SBTypeCategory.h"
+#include "lldb/API/SBTypeFilter.h"
+#include "lldb/API/SBTypeFormat.h"
+#include "lldb/API/SBTypeNameSpecifier.h"
+#include "lldb/API/SBTypeSummary.h"
+#include "lldb/API/SBTypeSynthetic.h"
 #include "lldb/API/SBValue.h"
 #include "lldb/API/SBValueList.h"
 #include "lldb/API/SBWatchpoint.h"
@@ -88,7 +99,6 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 %include "lldb/lldb-defines.h"
 %include "lldb/lldb-enumerations.h"
 %include "lldb/lldb-forward.h"
-%include "lldb/lldb-forward-rtti.h"
 %include "lldb/lldb-types.h"
 
 /* Forward declaration of SB classes. */
@@ -130,6 +140,12 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 %include "./Python/interface/SBTarget.i"
 %include "./Python/interface/SBThread.i"
 %include "./Python/interface/SBType.i"
+%include "./Python/interface/SBTypeCategory.i"
+%include "./Python/interface/SBTypeFilter.i"
+%include "./Python/interface/SBTypeFormat.i"
+%include "./Python/interface/SBTypeNameSpecifier.i"
+%include "./Python/interface/SBTypeSummary.i"
+%include "./Python/interface/SBTypeSynthetic.i"
 %include "./Python/interface/SBValue.i"
 %include "./Python/interface/SBValueList.i"
 %include "./Python/interface/SBWatchpoint.i"

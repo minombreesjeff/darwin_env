@@ -37,24 +37,13 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/LockFileManager.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/system_error.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Config/config.h"
-
-// Support for FileLockManager
-#include <fstream>
-#include <sys/types.h>
-#include <sys/stat.h>
-
-#if LLVM_ON_WIN32
-#include <windows.h>
-#endif
-#if LLVM_ON_UNIX
-#include <unistd.h>
-#endif
 
 using namespace clang;
 
@@ -106,7 +95,7 @@ static void SetUpBuildDumpLog(const DiagnosticOptions &DiagOpts,
                               unsigned argc, const char* const *argv,
                               DiagnosticsEngine &Diags) {
   std::string ErrorInfo;
-  llvm::OwningPtr<raw_ostream> OS(
+  OwningPtr<raw_ostream> OS(
     new llvm::raw_fd_ostream(DiagOpts.DumpBuildInformation.c_str(), ErrorInfo));
   if (!ErrorInfo.empty()) {
     Diags.Report(diag::err_fe_unable_to_open_logfile)
@@ -159,7 +148,7 @@ static void SetupSerializedDiagnostics(const DiagnosticOptions &DiagOpts,
                                        DiagnosticsEngine &Diags,
                                        StringRef OutputFile) {
   std::string ErrorInfo;
-  llvm::OwningPtr<llvm::raw_fd_ostream> OS;
+  OwningPtr<llvm::raw_fd_ostream> OS;
   OS.reset(new llvm::raw_fd_ostream(OutputFile.str().c_str(), ErrorInfo,
                                     llvm::raw_fd_ostream::F_Binary));
   
@@ -170,7 +159,7 @@ static void SetupSerializedDiagnostics(const DiagnosticOptions &DiagOpts,
   }
   
   DiagnosticConsumer *SerializedConsumer =
-    clang::serialized_diags::create(OS.take());
+    clang::serialized_diags::create(OS.take(), DiagOpts);
 
   
   Diags.setClient(new ChainedDiagnosticConsumer(Diags.takeClient(),
@@ -186,15 +175,15 @@ void CompilerInstance::createDiagnostics(int Argc, const char* const *Argv,
                                   &getCodeGenOpts());
 }
 
-llvm::IntrusiveRefCntPtr<DiagnosticsEngine>
+IntrusiveRefCntPtr<DiagnosticsEngine>
 CompilerInstance::createDiagnostics(const DiagnosticOptions &Opts,
                                     int Argc, const char* const *Argv,
                                     DiagnosticConsumer *Client,
                                     bool ShouldOwnClient,
                                     bool ShouldCloneClient,
                                     const CodeGenOptions *CodeGenOpts) {
-  llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  llvm::IntrusiveRefCntPtr<DiagnosticsEngine>
+  IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
+  IntrusiveRefCntPtr<DiagnosticsEngine>
       Diags(new DiagnosticsEngine(DiagID));
 
   // Create the diagnostic client for reporting errors or for
@@ -252,7 +241,9 @@ void CompilerInstance::createPreprocessor() {
 
   // Create the Preprocessor.
   HeaderSearch *HeaderInfo = new HeaderSearch(getFileManager(), 
-                                              getDiagnostics());
+                                              getDiagnostics(),
+                                              getLangOpts(),
+                                              &getTarget());
   PP = new Preprocessor(getDiagnostics(), getLangOpts(), &getTarget(),
                         getSourceManager(), *HeaderInfo, *this, PTHMgr,
                         /*OwnsHeaderSearch=*/true);
@@ -266,14 +257,13 @@ void CompilerInstance::createPreprocessor() {
   }
 
   if (PPOpts.DetailedRecord)
-    PP->createPreprocessingRecord(
-                                  PPOpts.DetailedRecordIncludesNestedMacroExpansions);
+    PP->createPreprocessingRecord(PPOpts.DetailedRecordConditionalDirectives);
 
   InitializePreprocessor(*PP, PPOpts, getHeaderSearchOpts(), getFrontendOpts());
 
   // Set up the module path, including the hash for the
   // module-creation options.
-  llvm::SmallString<256> SpecificModuleCache(
+  SmallString<256> SpecificModuleCache(
                            getHeaderSearchOpts().ModuleCachePath);
   if (!getHeaderSearchOpts().DisableModuleHash)
     llvm::sys::path::append(SpecificModuleCache,
@@ -284,7 +274,11 @@ void CompilerInstance::createPreprocessor() {
   const DependencyOutputOptions &DepOpts = getDependencyOutputOpts();
   if (!DepOpts.OutputFile.empty())
     AttachDependencyFileGen(*PP, DepOpts);
+  if (!DepOpts.DOTOutputFile.empty())
+    AttachDependencyGraphGen(*PP, DepOpts.DOTOutputFile,
+                             getHeaderSearchOpts().Sysroot);
 
+  
   // Handle generating header include information, if requested.
   if (DepOpts.ShowHeaderIncludes)
     AttachHeaderIncludeGen(*PP);
@@ -312,12 +306,14 @@ void CompilerInstance::createASTContext() {
 void CompilerInstance::createPCHExternalASTSource(StringRef Path,
                                                   bool DisablePCHValidation,
                                                   bool DisableStatCache,
+                                                bool AllowPCHWithCompilerErrors,
                                                  void *DeserializationListener){
-  llvm::OwningPtr<ExternalASTSource> Source;
+  OwningPtr<ExternalASTSource> Source;
   bool Preamble = getPreprocessorOpts().PrecompiledPreambleBytes.first != 0;
   Source.reset(createPCHExternalASTSource(Path, getHeaderSearchOpts().Sysroot,
                                           DisablePCHValidation,
                                           DisableStatCache,
+                                          AllowPCHWithCompilerErrors,
                                           getPreprocessor(), getASTContext(),
                                           DeserializationListener,
                                           Preamble));
@@ -330,14 +326,16 @@ CompilerInstance::createPCHExternalASTSource(StringRef Path,
                                              const std::string &Sysroot,
                                              bool DisablePCHValidation,
                                              bool DisableStatCache,
+                                             bool AllowPCHWithCompilerErrors,
                                              Preprocessor &PP,
                                              ASTContext &Context,
                                              void *DeserializationListener,
                                              bool Preamble) {
-  llvm::OwningPtr<ASTReader> Reader;
+  OwningPtr<ASTReader> Reader;
   Reader.reset(new ASTReader(PP, Context,
                              Sysroot.empty() ? "" : Sysroot.c_str(),
-                             DisablePCHValidation, DisableStatCache));
+                             DisablePCHValidation, DisableStatCache,
+                             AllowPCHWithCompilerErrors));
 
   Reader->setDeserializationListener(
             static_cast<ASTDeserializationListener *>(DeserializationListener));
@@ -450,7 +448,7 @@ void CompilerInstance::clearOutputFiles(bool EraseFiles) {
         bool existed;
         llvm::sys::fs::remove(it->TempFilename, existed);
       } else {
-        llvm::SmallString<128> NewOutFile(it->Filename);
+        SmallString<128> NewOutFile(it->Filename);
 
         // If '-working-directory' was passed, the output filename should be
         // relative to that.
@@ -476,7 +474,8 @@ CompilerInstance::createDefaultOutputFile(bool Binary,
                                           StringRef InFile,
                                           StringRef Extension) {
   return createOutputFile(getFrontendOpts().OutputFile, Binary,
-                          /*RemoveFileOnSignal=*/true, InFile, Extension);
+                          /*RemoveFileOnSignal=*/true, InFile, Extension,
+                          /*UseTemporary=*/true);
 }
 
 llvm::raw_fd_ostream *
@@ -484,12 +483,14 @@ CompilerInstance::createOutputFile(StringRef OutputPath,
                                    bool Binary, bool RemoveFileOnSignal,
                                    StringRef InFile,
                                    StringRef Extension,
-                                   bool UseTemporary) {
+                                   bool UseTemporary,
+                                   bool CreateMissingDirectories) {
   std::string Error, OutputPathName, TempPathName;
   llvm::raw_fd_ostream *OS = createOutputFile(OutputPath, Error, Binary,
                                               RemoveFileOnSignal,
                                               InFile, Extension,
                                               UseTemporary,
+                                              CreateMissingDirectories,
                                               &OutputPathName,
                                               &TempPathName);
   if (!OS) {
@@ -514,8 +515,12 @@ CompilerInstance::createOutputFile(StringRef OutputPath,
                                    StringRef InFile,
                                    StringRef Extension,
                                    bool UseTemporary,
+                                   bool CreateMissingDirectories,
                                    std::string *ResultPathName,
                                    std::string *TempPathName) {
+  assert((!CreateMissingDirectories || UseTemporary) &&
+         "CreateMissingDirectories is only allowed when using temporary files");
+
   std::string OutFile, TempFile;
   if (!OutputPath.empty()) {
     OutFile = OutputPath;
@@ -530,18 +535,26 @@ CompilerInstance::createOutputFile(StringRef OutputPath,
     OutFile = "-";
   }
 
-  llvm::OwningPtr<llvm::raw_fd_ostream> OS;
+  OwningPtr<llvm::raw_fd_ostream> OS;
   std::string OSFile;
 
   if (UseTemporary && OutFile != "-") {
-    llvm::sys::Path OutPath(OutFile);
-    // Only create the temporary if we can actually write to OutPath, otherwise
-    // we want to fail early.
+    // Only create the temporary if the parent directory exists (or create
+    // missing directories is true) and we can actually write to OutPath,
+    // otherwise we want to fail early.
+    SmallString<256> AbsPath(OutputPath);
+    llvm::sys::fs::make_absolute(AbsPath);
+    llvm::sys::Path OutPath(AbsPath);
+    bool ParentExists = false;
+    if (llvm::sys::fs::exists(llvm::sys::path::parent_path(AbsPath.str()),
+                              ParentExists))
+      ParentExists = false;
     bool Exists;
-    if ((llvm::sys::fs::exists(OutPath.str(), Exists) || !Exists) ||
-        (OutPath.isRegularFile() && OutPath.canWrite())) {
+    if ((CreateMissingDirectories || ParentExists) &&
+        ((llvm::sys::fs::exists(AbsPath.str(), Exists) || !Exists) ||
+         (OutPath.isRegularFile() && OutPath.canWrite()))) {
       // Create a temporary file.
-      llvm::SmallString<128> TempPath;
+      SmallString<128> TempPath;
       TempPath = OutFile;
       TempPath += "-%%%%%%%%";
       int fd;
@@ -576,12 +589,15 @@ CompilerInstance::createOutputFile(StringRef OutputPath,
 
 // Initialization Utilities
 
-bool CompilerInstance::InitializeSourceManager(StringRef InputFile) {
-  return InitializeSourceManager(InputFile, getDiagnostics(), getFileManager(),
-                                 getSourceManager(), getFrontendOpts());
+bool CompilerInstance::InitializeSourceManager(StringRef InputFile,
+                                               SrcMgr::CharacteristicKind Kind){
+  return InitializeSourceManager(InputFile, Kind, getDiagnostics(), 
+                                 getFileManager(), getSourceManager(), 
+                                 getFrontendOpts());
 }
 
 bool CompilerInstance::InitializeSourceManager(StringRef InputFile,
+                                               SrcMgr::CharacteristicKind Kind,
                                                DiagnosticsEngine &Diags,
                                                FileManager &FileMgr,
                                                SourceManager &SourceMgr,
@@ -593,9 +609,9 @@ bool CompilerInstance::InitializeSourceManager(StringRef InputFile,
       Diags.Report(diag::err_fe_error_reading) << InputFile;
       return false;
     }
-    SourceMgr.createMainFileID(File);
+    SourceMgr.createMainFileID(File, Kind);
   } else {
-    llvm::OwningPtr<llvm::MemoryBuffer> SB;
+    OwningPtr<llvm::MemoryBuffer> SB;
     if (llvm::MemoryBuffer::getSTDIN(SB)) {
       // FIXME: Give ec.message() in this diag.
       Diags.Report(diag::err_fe_error_reading_stdin);
@@ -603,7 +619,7 @@ bool CompilerInstance::InitializeSourceManager(StringRef InputFile,
     }
     const FileEntry *File = FileMgr.getVirtualFile(SB->getBufferIdentifier(),
                                                    SB->getBufferSize(), 0);
-    SourceMgr.createMainFileID(File);
+    SourceMgr.createMainFileID(File, Kind);
     SourceMgr.overrideFileContents(File, SB.take());
   }
 
@@ -647,13 +663,11 @@ bool CompilerInstance::ExecuteAction(FrontendAction &Act) {
     llvm::EnableStatistics();
 
   for (unsigned i = 0, e = getFrontendOpts().Inputs.size(); i != e; ++i) {
-    const std::string &InFile = getFrontendOpts().Inputs[i].second;
-
     // Reset the ID tables if we are reusing the SourceManager.
     if (hasSourceManager())
       getSourceManager().clearIDTables();
 
-    if (Act.BeginSourceFile(*this, InFile, getFrontendOpts().Inputs[i].first)) {
+    if (Act.BeginSourceFile(*this, getFrontendOpts().Inputs[i])) {
       Act.Execute();
       Act.EndSourceFile();
     }
@@ -713,270 +727,21 @@ static void doCompileMapModule(void *UserData) {
   Data.Instance.ExecuteAction(Data.CreateModuleAction);
 }
 
-namespace {
-  /// \brief Class that manages the creation of a lock file to aid
-  /// implicit coordination between different processes.
-  ///
-  /// The implicit coordination works by creating a ".lock" file alongside
-  /// the file that we're coordinating for, using the atomicity of the file
-  /// system to ensure that only a single process can create that ".lock" file.
-  /// When the lock file is removed, the owning process has finished the
-  /// operation.
-  class LockFileManager {
-  public:
-    /// \brief Describes the state of a lock file.
-    enum LockFileState {
-      /// \brief The lock file has been created and is owned by this instance
-      /// of the object.
-      LFS_Owned,
-      /// \brief The lock file already exists and is owned by some other
-      /// instance.
-      LFS_Shared,
-      /// \brief An error occurred while trying to create or find the lock
-      /// file.
-      LFS_Error
-    };
-
-  private:
-    llvm::SmallString<128> LockFileName;
-    llvm::SmallString<128> UniqueLockFileName;
-
-    llvm::Optional<std::pair<std::string, int> > Owner;
-    llvm::Optional<llvm::error_code> Error;
-
-    LockFileManager(const LockFileManager &);
-    LockFileManager &operator=(const LockFileManager &);
-
-    static llvm::Optional<std::pair<std::string, int> >
-    readLockFile(StringRef LockFileName);
-
-    static bool processStillExecuting(StringRef Hostname, int PID);
-
-  public:
-
-    LockFileManager(StringRef FileName);
-    ~LockFileManager();
-
-    /// \brief Determine the state of the lock file.
-    LockFileState getState() const;
-
-    operator LockFileState() const { return getState(); }
-
-    /// \brief For a shared lock, wait until the owner releases the lock.
-    void waitForUnlock();
-  };
-}
-
-/// \brief Attempt to read the lock file with the given name, if it exists.
-///
-/// \param LockFileName The name of the lock file to read.
-///
-/// \returns The process ID of the process that owns this lock file
-llvm::Optional<std::pair<std::string, int> >
-LockFileManager::readLockFile(StringRef LockFileName) {
-  // Check whether the lock file exists. If not, clearly there's nothing
-  // to read, so we just return.
-  bool Exists = false;
-  if (llvm::sys::fs::exists(LockFileName, Exists) || !Exists)
-    return llvm::Optional<std::pair<std::string, int> >();
-
-  // Read the owning host and PID out of the lock file. If it appears that the
-  // owning process is dead, the lock file is invalid.
-  int PID = 0;
-  std::string Hostname;
-  std::ifstream Input(LockFileName.str().c_str());
-  if (Input >> Hostname >> PID && PID > 0 &&
-      processStillExecuting(Hostname, PID))
-    return std::make_pair(Hostname, PID);
-
-  // Delete the lock file. It's invalid anyway.
-  bool Existed;
-  llvm::sys::fs::remove(LockFileName, Existed);
-  return llvm::Optional<std::pair<std::string, int> >();
-}
-
-bool LockFileManager::processStillExecuting(StringRef Hostname, int PID) {
-#if LLVM_ON_UNIX
-  char MyHostname[256];
-  MyHostname[255] = 0;
-  MyHostname[0] = 0;
-  gethostname(MyHostname, 255);
-  // Check whether the process is dead. If so, we're done.
-  if (MyHostname == Hostname && getsid(PID) == -1 && errno == ESRCH)
-    return false;
-#endif
-
-  return true;
-}
-
-LockFileManager::LockFileManager(StringRef FileName)
-{
-  LockFileName = FileName;
-  LockFileName += ".lock";
-
-  // If the lock file already exists, don't bother to try to create our own
-  // lock file; it won't work anyway. Just figure out who owns this lock file.
-  if ((Owner = readLockFile(LockFileName)))
-    return;
-
-  // Create a lock file that is unique to this instance.
-  UniqueLockFileName = LockFileName;
-  UniqueLockFileName += "-%%%%%%%%";
-  int UniqueLockFileID;
-  if (llvm::error_code EC
-        = llvm::sys::fs::unique_file(UniqueLockFileName.str(),
-                                     UniqueLockFileID,
-                                     UniqueLockFileName,
-                                     /*makeAbsolute=*/false)) {
-    Error = EC;
-    return;
-  }
-
-  // Write our process ID to our unique lock file.
-  {
-    llvm::raw_fd_ostream Out(UniqueLockFileID, /*shouldClose=*/true);
-
-#if LLVM_ON_UNIX
-    // FIXME: move getpid() call into LLVM
-    char hostname[256];
-    hostname[255] = 0;
-    hostname[0] = 0;
-    gethostname(hostname, 255);
-    Out << hostname << ' ' << getpid();
-#else
-    Out << "localhost 1";
-#endif
-    Out.close();
-
-    if (Out.has_error()) {
-      // We failed to write out PID, so make up an excuse, remove the
-      // unique lock file, and fail.
-      Error = llvm::make_error_code(llvm::errc::no_space_on_device);
-      bool Existed;
-      llvm::sys::fs::remove(UniqueLockFileName.c_str(), Existed);
-      return;
-    }
-  }
-
-  // Create a hard link from the lock file name. If this succeeds, we're done.
-  llvm::error_code EC
-    = llvm::sys::fs::create_hard_link(UniqueLockFileName.str(),
-                                      LockFileName.str());
-  if (EC == llvm::errc::success)
-    return;
-
-  // Creating the hard link failed.
-
-#ifdef LLVM_ON_UNIX
-  // The creation of the hard link may appear to fail, but if stat'ing the
-  // unique file returns a link count of 2, then we can still declare success.
-  struct stat StatBuf;
-  if (stat(UniqueLockFileName.c_str(), &StatBuf) == 0 &&
-      StatBuf.st_nlink == 2)
-    return;
-#endif
-
-  // Someone else managed to create the lock file first. Wipe out our unique
-  // lock file (it's useless now) and read the process ID from the lock file.
-  bool Existed;
-  llvm::sys::fs::remove(UniqueLockFileName.str(), Existed);
-  if ((Owner = readLockFile(LockFileName)))
-    return;
-
-  // There is a lock file that nobody owns; try to clean it up and report
-  // an error.
-  llvm::sys::fs::remove(LockFileName.str(), Existed);
-  Error = EC;
-}
-
-LockFileManager::LockFileState LockFileManager::getState() const {
-  if (Owner)
-    return LFS_Shared;
-
-  if (Error)
-    return LFS_Error;
-
-  return LFS_Owned;
-}
-
-LockFileManager::~LockFileManager() {
-  if (getState() != LFS_Owned)
-    return;
-
-  // Since we own the lock, remove the lock file and our own unique lock file.
-  bool Existed;
-  llvm::sys::fs::remove(LockFileName.str(), Existed);
-  llvm::sys::fs::remove(UniqueLockFileName.str(), Existed);
-}
-
-void LockFileManager::waitForUnlock() {
-  if (getState() != LFS_Shared)
-    return;
-
-#if LLVM_ON_WIN32
-  unsigned long Interval = 1;
-#else
-  struct timespec Interval;
-  Interval.tv_sec = 0;
-  Interval.tv_nsec = 1000000;
-#endif
-  // Don't wait more than an hour for the file to appear.
-  const unsigned MaxSeconds = 3600;
-  do {
-    // Sleep for the designated interval, to allow the owning process time to
-    // finish up and
-    // FIXME: Should we hook in to system APIs to get a notification when the
-    // lock file is deleted?
-#if LLVM_ON_WIN32
-    Sleep(Interval);
-#else
-    nanosleep(&Interval, NULL);
-#endif
-    // If the file no longer exists, we're done.
-    bool Exists = false;
-    if (!llvm::sys::fs::exists(LockFileName.str(), Exists) && !Exists)
-      return;
-
-    if (!processStillExecuting((*Owner).first, (*Owner).second))
-      return;
-
-    // Exponentially increase the time we wait for the lock to be removed.
-#if LLVM_ON_WIN32
-    Interval *= 2;
-#else
-    Interval.tv_sec *= 2;
-    Interval.tv_nsec *= 2;
-    if (Interval.tv_nsec >= 1000000000) {
-      ++Interval.tv_sec;
-      Interval.tv_nsec -= 1000000000;
-    }
-#endif
-  } while (
-#if LLVM_ON_WIN32
-           Interval < MaxSeconds * 1000
-#else
-           Interval.tv_sec < (time_t)MaxSeconds
-#endif
-           );
-
-  // Give up.
-}
-
 /// \brief Compile a module file for the given module, using the options 
 /// provided by the importing compiler instance.
 static void compileModule(CompilerInstance &ImportingInstance,
                           Module *Module,
                           StringRef ModuleFileName) {
-  LockFileManager Locked(ModuleFileName);
+  llvm::LockFileManager Locked(ModuleFileName);
   switch (Locked) {
-  case LockFileManager::LFS_Error:
+  case llvm::LockFileManager::LFS_Error:
     return;
 
-  case LockFileManager::LFS_Owned:
+  case llvm::LockFileManager::LFS_Owned:
     // We're responsible for building the module ourselves. Do so below.
     break;
 
-  case LockFileManager::LFS_Shared:
+  case llvm::LockFileManager::LFS_Shared:
     // Someone else is responsible for building the module. Wait for them to
     // finish.
     Locked.waitForUnlock();
@@ -987,7 +752,7 @@ static void compileModule(CompilerInstance &ImportingInstance,
     = ImportingInstance.getPreprocessor().getHeaderSearchInfo().getModuleMap();
     
   // Construct a compiler invocation for creating this module.
-  llvm::IntrusiveRefCntPtr<CompilerInvocation> Invocation
+  IntrusiveRefCntPtr<CompilerInvocation> Invocation
     (new CompilerInvocation(ImportingInstance.getInvocation()));
 
   PreprocessorOptions &PPOpts = Invocation->getPreprocessorOpts();
@@ -1014,11 +779,12 @@ static void compileModule(CompilerInstance &ImportingInstance,
   InputKind IK = getSourceInputKindFromOptions(*Invocation->getLangOpts());
 
   // Get or create the module map that we'll use to build this module.
-  llvm::SmallString<128> TempModuleMapFileName;
+  SmallString<128> TempModuleMapFileName;
   if (const FileEntry *ModuleMapFile
                                   = ModMap.getContainingModuleMapFile(Module)) {
     // Use the module map where this module resides.
-    FrontendOpts.Inputs.push_back(std::make_pair(IK, ModuleMapFile->getName()));
+    FrontendOpts.Inputs.push_back(FrontendInputFile(ModuleMapFile->getName(), 
+                                                    IK));
   } else {
     // Create a temporary module map file.
     TempModuleMapFileName = Module->Name;
@@ -1036,7 +802,7 @@ static void compileModule(CompilerInstance &ImportingInstance,
     llvm::raw_fd_ostream OS(FD, /*shouldClose=*/true);
     Module->print(OS);
     FrontendOpts.Inputs.push_back(
-      std::make_pair(IK, TempModuleMapFileName.str().str()));
+      FrontendInputFile(TempModuleMapFileName.str().str(), IK));
   }
 
   // Don't free the remapped file buffers; they are owned by our caller.
@@ -1099,7 +865,6 @@ Module *CompilerInstance::loadModule(SourceLocation ImportLoc,
   SourceLocation ModuleNameLoc = Path[0].second;
 
   clang::Module *Module = 0;
-  const FileEntry *ModuleFile = 0;
   
   // If we don't already have information on this module, load the module now.
   llvm::DenseMap<const IdentifierInfo *, clang::Module *>::iterator Known
@@ -1113,11 +878,25 @@ Module *CompilerInstance::loadModule(SourceLocation ImportLoc,
     Known = KnownModules.insert(std::make_pair(Path[0].first, Module)).first;
   } else {
     // Search for a module with the given name.
+    Module = PP->getHeaderSearchInfo().lookupModule(ModuleName);
     std::string ModuleFileName;
-    ModuleFile
-      = PP->getHeaderSearchInfo().lookupModule(ModuleName, Module,
-                                               &ModuleFileName);
-
+    if (Module)
+      ModuleFileName = PP->getHeaderSearchInfo().getModuleFileName(Module);
+    else
+      ModuleFileName = PP->getHeaderSearchInfo().getModuleFileName(ModuleName);
+    
+    if (ModuleFileName.empty()) {
+      getDiagnostics().Report(ModuleNameLoc, diag::err_module_not_found)
+        << ModuleName
+        << SourceRange(ImportLoc, ModuleNameLoc);
+      LastModuleImportLoc = ImportLoc;
+      LastModuleImportResult = 0;
+      return 0;
+    }
+    
+    const FileEntry *ModuleFile
+      = getFileManager().getFile(ModuleFileName, /*OpenFile=*/false,
+                                 /*CacheFailure=*/false);
     bool BuildingModule = false;
     if (!ModuleFile && Module) {
       // The module is not cached, but we have a module map from which we can
@@ -1129,7 +908,7 @@ Module *CompilerInstance::loadModule(SourceLocation ImportLoc,
       SmallVectorImpl<std::string>::iterator Pos
         = std::find(ModuleBuildPath.begin(), ModuleBuildPath.end(), ModuleName);
       if (Pos != ModuleBuildPath.end()) {
-        llvm::SmallString<256> CyclePath;
+        SmallString<256> CyclePath;
         for (; Pos != ModuleBuildPath.end(); ++Pos) {
           CyclePath += *Pos;
           CyclePath += " -> ";
@@ -1174,7 +953,7 @@ Module *CompilerInstance::loadModule(SourceLocation ImportLoc,
         getASTContext().setASTMutationListener(
           getASTConsumer().GetASTMutationListener());
       }
-      llvm::OwningPtr<ExternalASTSource> Source;
+      OwningPtr<ExternalASTSource> Source;
       Source.reset(ModuleManager);
       getASTContext().setExternalSource(Source);
       if (hasSema())
@@ -1221,25 +1000,26 @@ Module *CompilerInstance::loadModule(SourceLocation ImportLoc,
   if (Path.size() > 1) {
     for (unsigned I = 1, N = Path.size(); I != N; ++I) {
       StringRef Name = Path[I].first->getName();
-      llvm::StringMap<clang::Module *>::iterator Pos
-        = Module->SubModules.find(Name);
+      clang::Module *Sub = Module->findSubmodule(Name);
       
-      if (Pos == Module->SubModules.end()) {
+      if (!Sub) {
         // Attempt to perform typo correction to find a module name that works.
         llvm::SmallVector<StringRef, 2> Best;
         unsigned BestEditDistance = (std::numeric_limits<unsigned>::max)();
         
-        for (llvm::StringMap<clang::Module *>::iterator
-                  J = Module->SubModules.begin(), 
-               JEnd = Module->SubModules.end();
+        for (clang::Module::submodule_iterator J = Module->submodule_begin(), 
+                                            JEnd = Module->submodule_end();
              J != JEnd; ++J) {
-          unsigned ED = Name.edit_distance(J->getValue()->Name,
+          unsigned ED = Name.edit_distance((*J)->Name,
                                            /*AllowReplacements=*/true,
                                            BestEditDistance);
           if (ED <= BestEditDistance) {
-            if (ED < BestEditDistance)
+            if (ED < BestEditDistance) {
               Best.clear();
-            Best.push_back(J->getValue()->Name);
+              BestEditDistance = ED;
+            }
+            
+            Best.push_back((*J)->Name);
           }
         }
         
@@ -1251,11 +1031,12 @@ Module *CompilerInstance::loadModule(SourceLocation ImportLoc,
             << SourceRange(Path[0].second, Path[I-1].second)
             << FixItHint::CreateReplacement(SourceRange(Path[I].second),
                                             Best[0]);
-          Pos = Module->SubModules.find(Best[0]);
+          
+          Sub = Module->findSubmodule(Best[0]);
         }
       }
       
-      if (Pos == Module->SubModules.end()) {
+      if (!Sub) {
         // No submodule by this name. Complain, and don't look for further
         // submodules.
         getDiagnostics().Report(Path[I].second, diag::err_no_submodule)
@@ -1264,15 +1045,42 @@ Module *CompilerInstance::loadModule(SourceLocation ImportLoc,
         break;
       }
       
-      Module = Pos->getValue();
+      Module = Sub;
     }
   }
   
   // Make the named module visible, if it's not already part of the module
   // we are parsing.
-  if (ModuleName != getLangOpts().CurrentModule)
-    ModuleManager->makeModuleVisible(Module, Visibility);
+  if (ModuleName != getLangOpts().CurrentModule) {
+    if (!Module->IsFromModuleFile) {
+      // We have an umbrella header or directory that doesn't actually include
+      // all of the headers within the directory it covers. Complain about
+      // this missing submodule and recover by forgetting that we ever saw
+      // this submodule.
+      // FIXME: Should we detect this at module load time? It seems fairly
+      // expensive (and rare).
+      getDiagnostics().Report(ImportLoc, diag::warn_missing_submodule)
+        << Module->getFullModuleName()
+        << SourceRange(Path.front().second, Path.back().second);
+      
+      return 0;
+    }
 
+    // Check whether this module is available.
+    StringRef Feature;
+    if (!Module->isAvailable(getLangOpts(), getTarget(), Feature)) {
+      getDiagnostics().Report(ImportLoc, diag::err_module_unavailable)
+        << Module->getFullModuleName()
+        << Feature
+        << SourceRange(Path.front().second, Path.back().second);
+      LastModuleImportLoc = ImportLoc;
+      LastModuleImportResult = 0;
+      return 0;
+    }
+
+    ModuleManager->makeModuleVisible(Module, Visibility);
+  }
+  
   // If this module import was due to an inclusion directive, create an 
   // implicit import declaration to capture it in the AST.
   if (IsInclusionDirective && hasASTContext()) {

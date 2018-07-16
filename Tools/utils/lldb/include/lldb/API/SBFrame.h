@@ -23,12 +23,13 @@ public:
 
     SBFrame (const lldb::SBFrame &rhs);
     
-#ifndef SWIG
     const lldb::SBFrame &
     operator =(const lldb::SBFrame &rhs);
-#endif
 
    ~SBFrame();
+
+    bool
+    IsEqual (const lldb::SBFrame &that) const;
 
     bool
     IsValid() const;
@@ -102,6 +103,9 @@ public:
     lldb::SBValue
     EvaluateExpression (const char *expr, lldb::DynamicValueType use_dynamic);
 
+    lldb::SBValue
+    EvaluateExpression (const char *expr, lldb::DynamicValueType use_dynamic, bool unwind_on_error);
+
     /// Gets the lexical block that defines the stack frame. Another way to think
     /// of this is it will return the block that contains all of the variables
     /// for a stack frame. Inlined functions are represented as SBBlock objects
@@ -129,14 +133,11 @@ public:
     void
     Clear();
 
-#ifndef SWIG
     bool
     operator == (const lldb::SBFrame &rhs) const;
 
     bool
     operator != (const lldb::SBFrame &rhs) const;
-
-#endif
 
     /// The version that doesn't supply a 'use_dynamic' value will use the
     /// target's default.
@@ -163,6 +164,20 @@ public:
 
     lldb::SBValue
     FindVariable (const char *var_name, lldb::DynamicValueType use_dynamic);
+
+    // Find a value for a variable expression path like "rect.origin.x" or
+    // "pt_ptr->x", "*self", "*this->obj_ptr". The returned value is _not_
+    // and expression result and is not a constant object like 
+    // SBFrame::EvaluateExpression(...) returns, but a child object of 
+    // the variable value.
+    lldb::SBValue
+    GetValueForVariablePath (const char *var_expr_cstr, 
+                             DynamicValueType use_dynamic);
+
+    /// The version that doesn't supply a 'use_dynamic' value will use the
+    /// target's default.
+    lldb::SBValue
+    GetValueForVariablePath (const char *var_path);
 
     /// Find variables, register sets, registers, or persistent variables using
     /// the frame as the scope.
@@ -193,38 +208,25 @@ public:
     bool
     GetDescription (lldb::SBStream &description);
 
-#ifndef SWIG
     SBFrame (const lldb::StackFrameSP &lldb_object_sp);
-#endif
 
 protected:
-    friend class SBValue;
 
-private:
-    friend class SBThread;
+    friend class SBBlock;
     friend class SBInstruction;
+    friend class SBThread;
+    friend class SBValue;
 #ifndef LLDB_DISABLE_PYTHON
     friend class lldb_private::ScriptInterpreterPython;
 #endif
 
-#ifndef SWIG
-
-    lldb_private::StackFrame *
-    operator->() const;
-
-    // Mimic shared pointer...
-    lldb_private::StackFrame *
-    get() const;
-
-    lldb::StackFrameSP &
-    get_sp();
-    
-#endif
+    lldb::StackFrameSP
+    GetFrameSP() const;
 
     void
-    SetFrame (const lldb::StackFrameSP &lldb_object_sp);
+    SetFrameSP (const lldb::StackFrameSP &lldb_object_sp);
 
-    lldb::StackFrameSP m_opaque_sp;
+    lldb::ExecutionContextRefSP m_opaque_sp;
 };
 
 } // namespace lldb

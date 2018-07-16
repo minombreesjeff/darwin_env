@@ -8,10 +8,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/API/SBValue.h"
+
 #include "lldb/API/SBStream.h"
+#include "lldb/API/SBTypeFilter.h"
+#include "lldb/API/SBTypeFormat.h"
+#include "lldb/API/SBTypeSummary.h"
+#include "lldb/API/SBTypeSynthetic.h"
 
 #include "lldb/Breakpoint/Watchpoint.h"
 #include "lldb/Core/DataExtractor.h"
+#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Scalar.h"
@@ -22,6 +28,7 @@
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/ObjectFile.h"
+#include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/Variable.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -44,21 +51,23 @@ SBValue::SBValue () :
 {
 }
 
-SBValue::SBValue (const lldb::ValueObjectSP &value_sp) :
-    m_opaque_sp (value_sp)
+SBValue::SBValue (const lldb::ValueObjectSP &value_sp)
 {
+    SetSP(value_sp); // whenever setting the SP call SetSP() since it knows how to deal with synthetic values properly
 }
 
-SBValue::SBValue(const SBValue &rhs) :
-    m_opaque_sp (rhs.m_opaque_sp)
+SBValue::SBValue(const SBValue &rhs)
 {
+    SetSP(rhs.m_opaque_sp); // whenever setting the SP call SetSP() since it knows how to deal with synthetic values properly
 }
 
 SBValue &
 SBValue::operator = (const SBValue &rhs)
 {
     if (this != &rhs)
-        m_opaque_sp = rhs.m_opaque_sp;
+    {
+        SetSP(rhs.m_opaque_sp); // whenever setting the SP call SetSP() since it knows how to deal with synthetic values properly
+    }
     return *this;
 }
 
@@ -86,8 +95,11 @@ SBValue::GetError()
 {
     SBError sb_error;
     
-    if (m_opaque_sp.get())
-        sb_error.SetError(m_opaque_sp->GetError());
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        sb_error.SetError(value_sp->GetError());
+    else
+        sb_error.SetErrorString("error: invalid value");
     
     return sb_error;
 }
@@ -95,8 +107,9 @@ SBValue::GetError()
 user_id_t
 SBValue::GetID()
 {
-    if (m_opaque_sp)
-        return m_opaque_sp->GetID();
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        return value_sp->GetID();
     return LLDB_INVALID_UID;
 }
 
@@ -105,16 +118,17 @@ SBValue::GetName()
 {
 
     const char *name = NULL;
-    if (m_opaque_sp)
-        name = m_opaque_sp->GetName().GetCString();
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        name = value_sp->GetName().GetCString();
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (name)
-            log->Printf ("SBValue(%p)::GetName () => \"%s\"", m_opaque_sp.get(), name);
+            log->Printf ("SBValue(%p)::GetName () => \"%s\"", value_sp.get(), name);
         else
-            log->Printf ("SBValue(%p)::GetName () => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::GetName () => NULL", value_sp.get());
     }
 
     return name;
@@ -124,15 +138,16 @@ const char *
 SBValue::GetTypeName ()
 {
     const char *name = NULL;
-    if (m_opaque_sp)
-        name = m_opaque_sp->GetTypeName().GetCString();
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        name = value_sp->GetQualifiedTypeName().GetCString();
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (name)
-            log->Printf ("SBValue(%p)::GetTypeName () => \"%s\"", m_opaque_sp.get(), name);
+            log->Printf ("SBValue(%p)::GetTypeName () => \"%s\"", value_sp.get(), name);
         else
-            log->Printf ("SBValue(%p)::GetTypeName () => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::GetTypeName () => NULL", value_sp.get());
     }
 
     return name;
@@ -143,12 +158,13 @@ SBValue::GetByteSize ()
 {
     size_t result = 0;
 
-    if (m_opaque_sp)
-        result = m_opaque_sp->GetByteSize();
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        result = value_sp->GetByteSize();
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetByteSize () => %zu", m_opaque_sp.get(), result);
+        log->Printf ("SBValue(%p)::GetByteSize () => %zu", value_sp.get(), result);
 
     return result;
 }
@@ -158,18 +174,20 @@ SBValue::IsInScope ()
 {
     bool result = false;
 
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            result = m_opaque_sp->IsInScope ();
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
+            result = value_sp->IsInScope ();
         }
     }
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::IsInScope () => %i", m_opaque_sp.get(), result);
+        log->Printf ("SBValue(%p)::IsInScope () => %i", value_sp.get(), result);
 
     return result;
 }
@@ -177,22 +195,35 @@ SBValue::IsInScope ()
 const char *
 SBValue::GetValue ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
     const char *cstr = NULL;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            cstr = m_opaque_sp->GetValueAsCString ();
+            if (log)
+                log->Printf ("SBValue(%p)::GetValue() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                cstr = value_sp->GetValueAsCString ();
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (cstr)
-            log->Printf ("SBValue(%p)::GetValue => \"%s\"", m_opaque_sp.get(), cstr);
+            log->Printf ("SBValue(%p)::GetValue() => \"%s\"", value_sp.get(), cstr);
         else
-            log->Printf ("SBValue(%p)::GetValue => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::GetValue() => NULL", value_sp.get());
     }
 
     return cstr;
@@ -202,22 +233,23 @@ ValueType
 SBValue::GetValueType ()
 {
     ValueType result = eValueTypeInvalid;
-    if (m_opaque_sp)
-        result = m_opaque_sp->GetValueType();
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        result = value_sp->GetValueType();
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         switch (result)
         {
-        case eValueTypeInvalid:         log->Printf ("SBValue(%p)::GetValueType () => eValueTypeInvalid", m_opaque_sp.get()); break;
-        case eValueTypeVariableGlobal:  log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableGlobal", m_opaque_sp.get()); break;
-        case eValueTypeVariableStatic:  log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableStatic", m_opaque_sp.get()); break;
-        case eValueTypeVariableArgument:log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableArgument", m_opaque_sp.get()); break;
-        case eValueTypeVariableLocal:   log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableLocal", m_opaque_sp.get()); break;
-        case eValueTypeRegister:        log->Printf ("SBValue(%p)::GetValueType () => eValueTypeRegister", m_opaque_sp.get()); break;
-        case eValueTypeRegisterSet:     log->Printf ("SBValue(%p)::GetValueType () => eValueTypeRegisterSet", m_opaque_sp.get()); break;
-        case eValueTypeConstResult:     log->Printf ("SBValue(%p)::GetValueType () => eValueTypeConstResult", m_opaque_sp.get()); break;
-        default:     log->Printf ("SBValue(%p)::GetValueType () => %i ???", m_opaque_sp.get(), result); break;
+        case eValueTypeInvalid:         log->Printf ("SBValue(%p)::GetValueType () => eValueTypeInvalid", value_sp.get()); break;
+        case eValueTypeVariableGlobal:  log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableGlobal", value_sp.get()); break;
+        case eValueTypeVariableStatic:  log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableStatic", value_sp.get()); break;
+        case eValueTypeVariableArgument:log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableArgument", value_sp.get()); break;
+        case eValueTypeVariableLocal:   log->Printf ("SBValue(%p)::GetValueType () => eValueTypeVariableLocal", value_sp.get()); break;
+        case eValueTypeRegister:        log->Printf ("SBValue(%p)::GetValueType () => eValueTypeRegister", value_sp.get()); break;
+        case eValueTypeRegisterSet:     log->Printf ("SBValue(%p)::GetValueType () => eValueTypeRegisterSet", value_sp.get()); break;
+        case eValueTypeConstResult:     log->Printf ("SBValue(%p)::GetValueType () => eValueTypeConstResult", value_sp.get()); break;
+        default:     log->Printf ("SBValue(%p)::GetValueType () => %i ???", value_sp.get(), result); break;
         }
     }
     return result;
@@ -226,22 +258,34 @@ SBValue::GetValueType ()
 const char *
 SBValue::GetObjectDescription ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     const char *cstr = NULL;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            cstr = m_opaque_sp->GetObjectDescription ();
+            if (log)
+                log->Printf ("SBValue(%p)::GetObjectDescription() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                cstr = value_sp->GetObjectDescription ();
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (cstr)
-            log->Printf ("SBValue(%p)::GetObjectDescription => \"%s\"", m_opaque_sp.get(), cstr);
+            log->Printf ("SBValue(%p)::GetObjectDescription() => \"%s\"", value_sp.get(), cstr);
         else
-            log->Printf ("SBValue(%p)::GetObjectDescription => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::GetObjectDescription() => NULL", value_sp.get());
     }
     return cstr;
 }
@@ -249,239 +293,511 @@ SBValue::GetObjectDescription ()
 SBType
 SBValue::GetType()
 {
-    SBType result;
-    if (m_opaque_sp)
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    SBType sb_type;
+    lldb::ValueObjectSP value_sp(GetSP());
+    TypeImplSP type_sp;
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            result = SBType(ClangASTType (m_opaque_sp->GetClangAST(), m_opaque_sp->GetClangType()));
+            if (log)
+                log->Printf ("SBValue(%p)::GetType() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                type_sp.reset (new TypeImpl(ClangASTType (value_sp->GetClangAST(), value_sp->GetClangType())));
+                sb_type.SetSP(type_sp);
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.IsValid())
-            log->Printf ("SBValue(%p)::GetType => %p", m_opaque_sp.get(), &result);
+        if (type_sp)
+            log->Printf ("SBValue(%p)::GetType => SBType(%p)", value_sp.get(), type_sp.get());
         else
-            log->Printf ("SBValue(%p)::GetType => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::GetType => NULL", value_sp.get());
     }
-    return result;
+    return sb_type;
 }
 
 bool
 SBValue::GetValueDidChange ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     bool result = false;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            result = m_opaque_sp->GetValueDidChange ();
+            if (log)
+                log->Printf ("SBValue(%p)::GetValueDidChange() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                result = value_sp->GetValueDidChange ();
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetValueDidChange => %i", m_opaque_sp.get(), result);
+        log->Printf ("SBValue(%p)::GetValueDidChange() => %i", value_sp.get(), result);
 
     return result;
 }
 
+#ifndef LLDB_DISABLE_PYTHON
 const char *
 SBValue::GetSummary ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     const char *cstr = NULL;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            cstr = m_opaque_sp->GetSummaryAsCString();
+            if (log)
+                log->Printf ("SBValue(%p)::GetSummary() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                cstr = value_sp->GetSummaryAsCString();
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (cstr)
-            log->Printf ("SBValue(%p)::GetSummary => \"%s\"", m_opaque_sp.get(), cstr);
+            log->Printf ("SBValue(%p)::GetSummary() => \"%s\"", value_sp.get(), cstr);
         else
-            log->Printf ("SBValue(%p)::GetSummary => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::GetSummary() => NULL", value_sp.get());
     }
     return cstr;
 }
+#endif // LLDB_DISABLE_PYTHON
 
 const char *
 SBValue::GetLocation ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     const char *cstr = NULL;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            cstr = m_opaque_sp->GetLocationAsCString();
+            if (log)
+                log->Printf ("SBValue(%p)::GetLocation() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                cstr = value_sp->GetLocationAsCString();
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (cstr)
-            log->Printf ("SBValue(%p)::GetSummary => \"%s\"", m_opaque_sp.get(), cstr);
+            log->Printf ("SBValue(%p)::GetLocation() => \"%s\"", value_sp.get(), cstr);
         else
-            log->Printf ("SBValue(%p)::GetSummary => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::GetLocation() => NULL", value_sp.get());
     }
     return cstr;
 }
 
+// Deprecated - use the one that takes an lldb::SBError
 bool
 SBValue::SetValueFromCString (const char *value_str)
 {
+    lldb::SBError dummy;
+    return SetValueFromCString(value_str,dummy);
+}
+
+bool
+SBValue::SetValueFromCString (const char *value_str, lldb::SBError& error)
+{
     bool success = false;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            success = m_opaque_sp->SetValueFromCString (value_str);
+            if (log)
+                log->Printf ("SBValue(%p)::SetValueFromCString() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                success = value_sp->SetValueFromCString (value_str,error.ref());
+            }
         }
     }
+    if (log)
+        log->Printf ("SBValue(%p)::SetValueFromCString(\"%s\") => %i", value_sp.get(), value_str, success);
+
     return success;
 }
+
+lldb::SBTypeFormat
+SBValue::GetTypeFormat ()
+{
+    lldb::SBTypeFormat format;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+    {
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
+        {
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetTypeFormat() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                if (value_sp->UpdateValueIfNeeded(true))
+                {
+                    lldb::TypeFormatImplSP format_sp = value_sp->GetValueFormat();
+                    if (format_sp)
+                        format.SetSP(format_sp);
+                }
+            }
+        }
+    }
+    return format;
+}
+
+#ifndef LLDB_DISABLE_PYTHON
+lldb::SBTypeSummary
+SBValue::GetTypeSummary ()
+{
+    lldb::SBTypeSummary summary;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+    {
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
+        {
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetTypeSummary() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                if (value_sp->UpdateValueIfNeeded(true))
+                {
+                    lldb::TypeSummaryImplSP summary_sp = value_sp->GetSummaryFormat();
+                    if (summary_sp)
+                        summary.SetSP(summary_sp);
+                }
+            }
+        }
+    }
+    return summary;
+}
+#endif // LLDB_DISABLE_PYTHON
+
+lldb::SBTypeFilter
+SBValue::GetTypeFilter ()
+{
+    lldb::SBTypeFilter filter;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+    {
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
+        {
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetTypeFilter() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                if (value_sp->UpdateValueIfNeeded(true))
+                {
+                    lldb::SyntheticChildrenSP synthetic_sp = value_sp->GetSyntheticChildren();
+                    
+                    if (synthetic_sp && !synthetic_sp->IsScripted())
+                    {
+                        TypeFilterImplSP filter_sp = STD_STATIC_POINTER_CAST(TypeFilterImpl,synthetic_sp);
+                        filter.SetSP(filter_sp);
+                    }
+                }
+            }
+        }
+    }
+    return filter;
+}
+
+#ifndef LLDB_DISABLE_PYTHON
+lldb::SBTypeSynthetic
+SBValue::GetTypeSynthetic ()
+{
+    lldb::SBTypeSynthetic synthetic;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+    {
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
+        {
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetTypeSynthetic() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                if (value_sp->UpdateValueIfNeeded(true))
+                {
+                    lldb::SyntheticChildrenSP children_sp = value_sp->GetSyntheticChildren();
+                    
+                    if (children_sp && children_sp->IsScripted())
+                    {
+                        TypeSyntheticImplSP synth_sp = STD_STATIC_POINTER_CAST(TypeSyntheticImpl,children_sp);
+                        synthetic.SetSP(synth_sp);
+                    }
+                }
+            }
+        }
+    }
+    return synthetic;
+}
+#endif
 
 lldb::SBValue
 SBValue::CreateChildAtOffset (const char *name, uint32_t offset, SBType type)
 {
-    lldb::SBValue result;
-    if (m_opaque_sp)
+    lldb::SBValue sb_value;
+    lldb::ValueObjectSP value_sp(GetSP());
+    lldb::ValueObjectSP new_value_sp;
+    if (value_sp)
     {
-        if (type.IsValid())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            result = SBValue(m_opaque_sp->GetSyntheticChildAtOffset(offset, type.m_opaque_sp->GetClangASTType(), true));
-            result.m_opaque_sp->SetName(ConstString(name));
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::CreateChildAtOffset() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                TypeImplSP type_sp (type.GetSP());
+                if (type.IsValid())
+                {
+                    sb_value = SBValue(value_sp->GetSyntheticChildAtOffset(offset, type_sp->GetClangASTType(), true));
+                    new_value_sp = sb_value.GetSP();
+                    if (new_value_sp)
+                        new_value_sp->SetName(ConstString(name));
+                }
+            }
         }
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.IsValid())
-            log->Printf ("SBValue(%p)::GetChildAtOffset => \"%s\"", m_opaque_sp.get(), result.m_opaque_sp->GetName().AsCString());
+        if (new_value_sp)
+            log->Printf ("SBValue(%p)::CreateChildAtOffset => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
         else
-            log->Printf ("SBValue(%p)::GetChildAtOffset => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::CreateChildAtOffset => NULL", value_sp.get());
     }
-    return result;
+    return sb_value;
 }
 
 lldb::SBValue
 SBValue::Cast (SBType type)
 {
     lldb::SBValue sb_value;
-    if (m_opaque_sp)
-        sb_value = CreateChildAtOffset(m_opaque_sp->GetName().GetCString(), 0, type);
+    lldb::ValueObjectSP value_sp(GetSP());
+    TypeImplSP type_sp (type.GetSP());
+    if (value_sp && type_sp)
+        sb_value.SetSP(value_sp->Cast(type_sp->GetClangASTType()));
     return sb_value;
 }
 
 lldb::SBValue
 SBValue::CreateValueFromExpression (const char *name, const char* expression)
 {
-    lldb::SBValue result;
-    if (m_opaque_sp)
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    lldb::SBValue sb_value;
+    lldb::ValueObjectSP value_sp(GetSP());
+    lldb::ValueObjectSP new_value_sp;
+    if (value_sp)
     {
-        ValueObjectSP result_valobj_sp;
-        m_opaque_sp->GetUpdatePoint().GetTargetSP()->EvaluateExpression (expression,
-                                                                         m_opaque_sp->GetExecutionContextScope()->CalculateStackFrame(),
-                                                                         eExecutionPolicyOnlyWhenNeeded,
-                                                                         false, // coerce to id
-                                                                         true, // unwind on error
-                                                                         true, // keep in memory
-                                                                         eNoDynamicValues,
-                                                                         result_valobj_sp);
-        if (result_valobj_sp)
+        ExecutionContext exe_ctx (value_sp->GetExecutionContextRef());
+        ProcessSP process_sp(exe_ctx.GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            result_valobj_sp->SetName(ConstString(name));
-            result = SBValue(result_valobj_sp);
+            if (log)
+                log->Printf ("SBValue(%p)::CreateValueFromExpression() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            Target* target = exe_ctx.GetTargetPtr();
+            if (target)
+            {
+                target->EvaluateExpression (expression,
+                                            exe_ctx.GetFramePtr(),
+                                            eExecutionPolicyOnlyWhenNeeded,
+                                            false, // coerce to id
+                                            true, // unwind on error
+                                            true, // keep in memory
+                                            eNoDynamicValues,
+                                            new_value_sp);
+                if (new_value_sp)
+                {
+                    new_value_sp->SetName(ConstString(name));
+                    sb_value.SetSP(new_value_sp);
+                }
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.IsValid())
-            log->Printf ("SBValue(%p)::GetChildFromExpression => \"%s\"", m_opaque_sp.get(), result.m_opaque_sp->GetName().AsCString());
+        if (new_value_sp)
+            log->Printf ("SBValue(%p)::CreateValueFromExpression(name=\"%s\", expression=\"%s\") => SBValue (%p)",
+                         value_sp.get(),
+                         name,
+                         expression,
+                         new_value_sp.get());
         else
-            log->Printf ("SBValue(%p)::GetChildFromExpression => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::CreateValueFromExpression(name=\"%s\", expression=\"%s\") => NULL",
+                         value_sp.get(),
+                         name,
+                         expression);
     }
-    return result;
+    return sb_value;
 }
 
 lldb::SBValue
-SBValue::CreateValueFromAddress(const char* name, lldb::addr_t address, SBType type)
+SBValue::CreateValueFromAddress(const char* name, lldb::addr_t address, SBType sb_type)
 {
-    lldb::SBValue result;
-    if (m_opaque_sp && type.IsValid() && type.GetPointerType().IsValid())
+    lldb::SBValue sb_value;
+    lldb::ValueObjectSP value_sp(GetSP());
+    lldb::ValueObjectSP new_value_sp;
+    lldb::TypeImplSP type_impl_sp (sb_type.GetSP());
+    if (value_sp && type_impl_sp)
     {
-        SBType real_type(type.GetPointerType());
-        
-        lldb::DataBufferSP buffer(new lldb_private::DataBufferHeap(&address,sizeof(lldb::addr_t)));
-        
-        ValueObjectSP ptr_result_valobj_sp(ValueObjectConstResult::Create (m_opaque_sp->GetExecutionContextScope(),
-                                                                           real_type.m_opaque_sp->GetASTContext(),
-                                                                           real_type.m_opaque_sp->GetOpaqueQualType(),
-                                                                           ConstString(name),
-                                                                           buffer,
-                                                                           lldb::endian::InlHostByteOrder(), 
-                                                                           GetTarget().GetProcess().GetAddressByteSize()));
-        
-        ValueObjectSP result_valobj_sp;
-        
-        ptr_result_valobj_sp->GetValue().SetValueType(Value::eValueTypeLoadAddress);
-        if (ptr_result_valobj_sp)
+        ClangASTType pointee_ast_type(type_impl_sp->GetASTContext(), type_impl_sp->GetClangASTType().GetPointerType ());
+        lldb::TypeImplSP pointee_type_impl_sp (new TypeImpl(pointee_ast_type));
+        if (pointee_type_impl_sp)
         {
-            Error err;
-            result_valobj_sp = ptr_result_valobj_sp->Dereference(err);
-            if (result_valobj_sp)
-                result_valobj_sp->SetName(ConstString(name));
+        
+            lldb::DataBufferSP buffer(new lldb_private::DataBufferHeap(&address,sizeof(lldb::addr_t)));
+        
+            ExecutionContext exe_ctx (value_sp->GetExecutionContextRef());
+            ValueObjectSP ptr_result_valobj_sp(ValueObjectConstResult::Create (exe_ctx.GetBestExecutionContextScope(),
+                                                                               pointee_type_impl_sp->GetASTContext(),
+                                                                               pointee_type_impl_sp->GetOpaqueQualType(),
+                                                                               ConstString(name),
+                                                                               buffer,
+                                                                               lldb::endian::InlHostByteOrder(), 
+                                                                               exe_ctx.GetAddressByteSize()));
+        
+            if (ptr_result_valobj_sp)
+            {
+                ptr_result_valobj_sp->GetValue().SetValueType(Value::eValueTypeLoadAddress);
+                Error err;
+                new_value_sp = ptr_result_valobj_sp->Dereference(err);
+                if (new_value_sp)
+                    new_value_sp->SetName(ConstString(name));
+            }
+            sb_value.SetSP(new_value_sp);
         }
-        result = SBValue(result_valobj_sp);
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.IsValid())
-            log->Printf ("SBValue(%p)::GetChildFromAddress => \"%s\"", m_opaque_sp.get(), result.m_opaque_sp->GetName().AsCString());
+        if (new_value_sp)
+            log->Printf ("SBValue(%p)::CreateValueFromAddress => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
         else
-            log->Printf ("SBValue(%p)::GetChildFromAddress => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::CreateValueFromAddress => NULL", value_sp.get());
     }
-    return result;
+    return sb_value;
 }
 
 lldb::SBValue
 SBValue::CreateValueFromData (const char* name, SBData data, SBType type)
 {
-    SBValue result;
-    
-    AddressType addr_of_children_priv = eAddressTypeLoad;
-    
-    if (m_opaque_sp)
+    lldb::SBValue sb_value;
+    lldb::ValueObjectSP new_value_sp;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        ValueObjectSP valobj_sp;
-        valobj_sp = ValueObjectConstResult::Create (m_opaque_sp->GetExecutionContextScope(), 
-                                                    type.m_opaque_sp->GetASTContext() ,
-                                                    type.m_opaque_sp->GetOpaqueQualType(),
-                                                    ConstString(name),
-                                                    *data.m_opaque_sp,
-                                                    LLDB_INVALID_ADDRESS);
-        valobj_sp->SetAddressTypeOfChildren(addr_of_children_priv);
-        result = SBValue(valobj_sp);
+        ExecutionContext exe_ctx (value_sp->GetExecutionContextRef());
+
+        new_value_sp = ValueObjectConstResult::Create (exe_ctx.GetBestExecutionContextScope(),
+                                                       type.m_opaque_sp->GetASTContext() ,
+                                                       type.m_opaque_sp->GetOpaqueQualType(),
+                                                       ConstString(name),
+                                                       *data.m_opaque_sp,
+                                                       LLDB_INVALID_ADDRESS);
+        new_value_sp->SetAddressTypeOfChildren(eAddressTypeLoad);
+        sb_value.SetSP(new_value_sp);
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.IsValid())
-            log->Printf ("SBValue(%p)::GetChildFromExpression => \"%s\"", m_opaque_sp.get(), result.m_opaque_sp->GetName().AsCString());
+        if (new_value_sp)
+            log->Printf ("SBValue(%p)::CreateValueFromData => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
         else
-            log->Printf ("SBValue(%p)::GetChildFromExpression => NULL", m_opaque_sp.get());
+            log->Printf ("SBValue(%p)::CreateValueFromData => NULL", value_sp.get());
     }
-    return result;
+    return sb_value;
 }
 
 SBValue
@@ -489,8 +805,13 @@ SBValue::GetChildAtIndex (uint32_t idx)
 {
     const bool can_create_synthetic = false;
     lldb::DynamicValueType use_dynamic = eNoDynamicValues;
-    if (m_opaque_sp)
-        use_dynamic = m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetPreferDynamicValue();
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+    {
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
+            use_dynamic = target_sp->GetPreferDynamicValue();
+    }
     return GetChildAtIndex (idx, use_dynamic, can_create_synthetic);
 }
 
@@ -498,42 +819,54 @@ SBValue
 SBValue::GetChildAtIndex (uint32_t idx, lldb::DynamicValueType use_dynamic, bool can_create_synthetic)
 {
     lldb::ValueObjectSP child_sp;
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            const bool can_create = true;
-            child_sp = m_opaque_sp->GetChildAtIndex (idx, can_create);
-            if (can_create_synthetic && !child_sp)
+            if (log)
+                log->Printf ("SBValue(%p)::GetChildAtIndex() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
             {
-                if (m_opaque_sp->IsPointerType())
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                const bool can_create = true;
+                child_sp = value_sp->GetChildAtIndex (idx, can_create);
+                if (can_create_synthetic && !child_sp)
                 {
-                    child_sp = m_opaque_sp->GetSyntheticArrayMemberFromPointer(idx, can_create);
+                    if (value_sp->IsPointerType())
+                    {
+                        child_sp = value_sp->GetSyntheticArrayMemberFromPointer(idx, can_create);
+                    }
+                    else if (value_sp->IsArrayType())
+                    {
+                        child_sp = value_sp->GetSyntheticArrayMemberFromArray(idx, can_create);
+                    }
                 }
-                else if (m_opaque_sp->IsArrayType())
+                    
+                if (child_sp)
                 {
-                    child_sp = m_opaque_sp->GetSyntheticArrayMemberFromArray(idx, can_create);
-                }
-            }
-                
-            if (child_sp)
-            {
-                if (use_dynamic != lldb::eNoDynamicValues)
-                {
-                    lldb::ValueObjectSP dynamic_sp(child_sp->GetDynamicValue (use_dynamic));
-                    if (dynamic_sp)
-                        child_sp = dynamic_sp;
+                    if (use_dynamic != lldb::eNoDynamicValues)
+                    {
+                        lldb::ValueObjectSP dynamic_sp(child_sp->GetDynamicValue (use_dynamic));
+                        if (dynamic_sp)
+                            child_sp = dynamic_sp;
+                    }
                 }
             }
         }
     }
     
     SBValue sb_value (child_sp);
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetChildAtIndex (%u) => SBValue(%p)", m_opaque_sp.get(), idx, sb_value.get());
+        log->Printf ("SBValue(%p)::GetChildAtIndex (%u) => SBValue(%p)", value_sp.get(), idx, value_sp.get());
 
     return sb_value;
 }
@@ -542,22 +875,24 @@ uint32_t
 SBValue::GetIndexOfChildWithName (const char *name)
 {
     uint32_t idx = UINT32_MAX;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
         
-            idx = m_opaque_sp->GetIndexOfChildWithName (ConstString(name));
+            idx = value_sp->GetIndexOfChildWithName (ConstString(name));
         }
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (idx == UINT32_MAX)
-            log->Printf ("SBValue(%p)::GetIndexOfChildWithName (name=\"%s\") => NOT FOUND", m_opaque_sp.get(), name);
+            log->Printf ("SBValue(%p)::GetIndexOfChildWithName (name=\"%s\") => NOT FOUND", value_sp.get(), name);
         else
-            log->Printf ("SBValue(%p)::GetIndexOfChildWithName (name=\"%s\") => %u", m_opaque_sp.get(), name, idx);
+            log->Printf ("SBValue(%p)::GetIndexOfChildWithName (name=\"%s\") => %u", value_sp.get(), name, idx);
     }
     return idx;
 }
@@ -565,13 +900,19 @@ SBValue::GetIndexOfChildWithName (const char *name)
 SBValue
 SBValue::GetChildMemberWithName (const char *name)
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        lldb::DynamicValueType use_dynamic_value = m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetPreferDynamicValue();
+        lldb::DynamicValueType use_dynamic_value = eNoDynamicValues;
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
+        {
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
+            use_dynamic_value = target_sp->GetPreferDynamicValue();
+        }
         return GetChildMemberWithName (name, use_dynamic_value);
     }
-    else
-        return GetChildMemberWithName (name, eNoDynamicValues);
+    return SBValue();
 }
 
 SBValue
@@ -580,20 +921,33 @@ SBValue::GetChildMemberWithName (const char *name, lldb::DynamicValueType use_dy
     lldb::ValueObjectSP child_sp;
     const ConstString str_name (name);
 
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            child_sp = m_opaque_sp->GetChildMemberWithName (str_name, true);
-            if (use_dynamic_value != lldb::eNoDynamicValues)
+            if (log)
+                log->Printf ("SBValue(%p)::GetChildMemberWithName() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
             {
-                if (child_sp)
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                child_sp = value_sp->GetChildMemberWithName (str_name, true);
+                if (use_dynamic_value != lldb::eNoDynamicValues)
                 {
-                    lldb::ValueObjectSP dynamic_sp = child_sp->GetDynamicValue (use_dynamic_value);
-                    if (dynamic_sp)
-                        child_sp = dynamic_sp;
+                    if (child_sp)
+                    {
+                        lldb::ValueObjectSP dynamic_sp = child_sp->GetDynamicValue (use_dynamic_value);
+                        if (dynamic_sp)
+                            child_sp = dynamic_sp;
+                    }
                 }
             }
         }
@@ -601,9 +955,8 @@ SBValue::GetChildMemberWithName (const char *name, lldb::DynamicValueType use_dy
     
     SBValue sb_value (child_sp);
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetChildMemberWithName (name=\"%s\") => SBValue(%p)", m_opaque_sp.get(), name, sb_value.get());
+        log->Printf ("SBValue(%p)::GetChildMemberWithName (name=\"%s\") => SBValue(%p)", value_sp.get(), name, value_sp.get());
 
     return sb_value;
 }
@@ -611,12 +964,25 @@ SBValue::GetChildMemberWithName (const char *name, lldb::DynamicValueType use_dy
 lldb::SBValue
 SBValue::GetDynamicValue (lldb::DynamicValueType use_dynamic)
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            return SBValue (m_opaque_sp->GetDynamicValue(use_dynamic));
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetDynamicValue() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                return SBValue (value_sp->GetDynamicValue(use_dynamic));
+            }
         }
     }
     
@@ -626,27 +992,55 @@ SBValue::GetDynamicValue (lldb::DynamicValueType use_dynamic)
 lldb::SBValue
 SBValue::GetStaticValue ()
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            return SBValue(m_opaque_sp->GetStaticValue());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
+            return SBValue(value_sp->GetStaticValue());
         }
     }
     
     return SBValue();
 }
 
+lldb::SBValue
+SBValue::GetNonSyntheticValue ()
+{
+    SBValue sb_value;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+    {
+        if (value_sp->IsSynthetic())
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                // deliberately breaking the rules here to optimize the case where we DO NOT want
+                // the synthetic value to be returned to the user - if we did not do this, we would have to tell
+                // the target to suppress the synthetic value, and then return the flag to its original value
+                if (value_sp->GetNonSyntheticValue())
+                    sb_value.m_opaque_sp = value_sp->GetNonSyntheticValue();
+            }
+        }
+    }
+    return sb_value;
+}
+
 bool
 SBValue::IsDynamic()
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            return m_opaque_sp->IsDynamic();
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
+            return value_sp->IsDynamic();
         }
     }
     return false;
@@ -655,22 +1049,34 @@ SBValue::IsDynamic()
 lldb::SBValue
 SBValue::GetValueForExpressionPath(const char* expr_path)
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     lldb::ValueObjectSP child_sp;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            // using default values for all the fancy options, just do it if you can
-            child_sp = m_opaque_sp->GetValueForExpressionPath(expr_path);
+            if (log)
+                log->Printf ("SBValue(%p)::GetValueForExpressionPath() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                // using default values for all the fancy options, just do it if you can
+                child_sp = value_sp->GetValueForExpressionPath(expr_path);
+            }
         }
     }
     
     SBValue sb_value (child_sp);
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetValueForExpressionPath (expr_path=\"%s\") => SBValue(%p)", m_opaque_sp.get(), expr_path, sb_value.get());
+        log->Printf ("SBValue(%p)::GetValueForExpressionPath (expr_path=\"%s\") => SBValue(%p)", value_sp.get(), expr_path, value_sp.get());
     
     return sb_value;
 }
@@ -679,19 +1085,33 @@ int64_t
 SBValue::GetValueAsSigned(SBError& error, int64_t fail_value)
 {
     error.Clear();
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            Scalar scalar;
-            if (m_opaque_sp->ResolveValue (scalar))
-                return scalar.GetRawBits64(fail_value);
-            else
-                error.SetErrorString("could not get value");
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetValueAsSigned() => error: process is running", value_sp.get());
+            error.SetErrorString("process is running");
         }
         else
-            error.SetErrorString("could not get target");
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                Scalar scalar;
+                if (value_sp->ResolveValue (scalar))
+                    return scalar.GetRawBits64(fail_value);
+                else
+                    error.SetErrorString("could not get value");
+            }
+            else
+                error.SetErrorString("could not get target");
+        }
     }
     error.SetErrorString("invalid SBValue");
     return fail_value;
@@ -701,19 +1121,33 @@ uint64_t
 SBValue::GetValueAsUnsigned(SBError& error, uint64_t fail_value)
 {
     error.Clear();
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            Scalar scalar;
-            if (m_opaque_sp->ResolveValue (scalar))
-                return scalar.GetRawBits64(fail_value);
-            else
-                error.SetErrorString("could not get value");
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetValueAsUnsigned() => error: process is running", value_sp.get());
+            error.SetErrorString("process is running");
         }
         else
-            error.SetErrorString("could not get target");
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                Scalar scalar;
+                if (value_sp->ResolveValue (scalar))
+                    return scalar.GetRawBits64(fail_value);
+                else
+                    error.SetErrorString("could not get value");
+            }
+            else
+                error.SetErrorString("could not get target");
+        }
     }
     error.SetErrorString("invalid SBValue");
     return fail_value;
@@ -722,14 +1156,27 @@ SBValue::GetValueAsUnsigned(SBError& error, uint64_t fail_value)
 int64_t
 SBValue::GetValueAsSigned(int64_t fail_value)
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            Scalar scalar;
-            if (m_opaque_sp->ResolveValue (scalar))
-                return scalar.GetRawBits64(fail_value);
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetValueAsSigned() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                Scalar scalar;
+                if (value_sp->ResolveValue (scalar))
+                    return scalar.GetRawBits64(fail_value);
+            }
         }
     }
     return fail_value;
@@ -738,14 +1185,27 @@ SBValue::GetValueAsSigned(int64_t fail_value)
 uint64_t
 SBValue::GetValueAsUnsigned(uint64_t fail_value)
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
-            Scalar scalar;
-            if (m_opaque_sp->ResolveValue (scalar))
-                return scalar.GetRawBits64(fail_value);
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetValueAsUnsigned() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                Scalar scalar;
+                if (value_sp->ResolveValue (scalar))
+                    return scalar.GetRawBits64(fail_value);
+            }
         }
     }
     return fail_value;
@@ -756,19 +1216,31 @@ SBValue::GetNumChildren ()
 {
     uint32_t num_children = 0;
 
-    if (m_opaque_sp)
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
+            if (log)
+                log->Printf ("SBValue(%p)::GetNumChildren() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
 
-            num_children = m_opaque_sp->GetNumChildren();
+                num_children = value_sp->GetNumChildren();
+            }
         }
     }
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetNumChildren () => %u", m_opaque_sp.get(), num_children);
+        log->Printf ("SBValue(%p)::GetNumChildren () => %u", value_sp.get(), num_children);
 
     return num_children;
 }
@@ -778,19 +1250,21 @@ SBValue
 SBValue::Dereference ()
 {
     SBValue sb_value;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
 
             Error error;
-            sb_value = m_opaque_sp->Dereference (error);
+            sb_value = value_sp->Dereference (error);
         }
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::Dereference () => SBValue(%p)", m_opaque_sp.get(), sb_value.get());
+        log->Printf ("SBValue(%p)::Dereference () => SBValue(%p)", value_sp.get(), value_sp.get());
 
     return sb_value;
 }
@@ -800,19 +1274,21 @@ SBValue::TypeIsPointerType ()
 {
     bool is_ptr_type = false;
 
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
 
-            is_ptr_type = m_opaque_sp->IsPointerType();
+            is_ptr_type = value_sp->IsPointerType();
         }
     }
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::TypeIsPointerType () => %i", m_opaque_sp.get(), is_ptr_type);
+        log->Printf ("SBValue(%p)::TypeIsPointerType () => %i", value_sp.get(), is_ptr_type);
 
 
     return is_ptr_type;
@@ -821,13 +1297,15 @@ SBValue::TypeIsPointerType ()
 void *
 SBValue::GetOpaqueType()
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (m_opaque_sp->GetUpdatePoint().GetTargetSP()->GetAPIMutex());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
 
-            return m_opaque_sp->GetClangType();
+            return value_sp->GetClangType();
         }
     }
     return NULL;
@@ -836,124 +1314,115 @@ SBValue::GetOpaqueType()
 lldb::SBTarget
 SBValue::GetTarget()
 {
-    SBTarget result;
-    if (m_opaque_sp)
+    SBTarget sb_target;
+    TargetSP target_sp;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetUpdatePoint().GetTargetSP())
-        {
-            result = SBTarget(lldb::TargetSP(m_opaque_sp->GetUpdatePoint().GetTargetSP()));
-        }
+        target_sp = value_sp->GetTargetSP();
+        sb_target.SetSP (target_sp);
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.get() == NULL)
-            log->Printf ("SBValue(%p)::GetTarget () => NULL", m_opaque_sp.get());
+        if (target_sp.get() == NULL)
+            log->Printf ("SBValue(%p)::GetTarget () => NULL", value_sp.get());
         else
-            log->Printf ("SBValue(%p)::GetTarget () => %p", m_opaque_sp.get(), result.get());
+            log->Printf ("SBValue(%p)::GetTarget () => %p", value_sp.get(), target_sp.get());
     }
-    return result;
+    return sb_target;
 }
 
 lldb::SBProcess
 SBValue::GetProcess()
 {
-    SBProcess result;
-    if (m_opaque_sp)
+    SBProcess sb_process;
+    ProcessSP process_sp;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
-        {
-            result = SBProcess(lldb::ProcessSP(target->GetProcessSP()));
-        }
+        process_sp = value_sp->GetProcessSP();
+        if (process_sp)
+            sb_process.SetSP (process_sp);
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.get() == NULL)
-            log->Printf ("SBValue(%p)::GetProcess () => NULL", m_opaque_sp.get());
+        if (process_sp.get() == NULL)
+            log->Printf ("SBValue(%p)::GetProcess () => NULL", value_sp.get());
         else
-            log->Printf ("SBValue(%p)::GetProcess () => %p", m_opaque_sp.get(), result.get());
+            log->Printf ("SBValue(%p)::GetProcess () => %p", value_sp.get(), process_sp.get());
     }
-    return result;
+    return sb_process;
 }
 
 lldb::SBThread
 SBValue::GetThread()
 {
-    SBThread result;
-    if (m_opaque_sp)
+    SBThread sb_thread;
+    ThreadSP thread_sp;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetExecutionContextScope())
-        {
-            result = SBThread(m_opaque_sp->GetExecutionContextScope()->CalculateThread()->GetSP());
-        }
+        thread_sp = value_sp->GetThreadSP();
+        sb_thread.SetThread(thread_sp);
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.get() == NULL)
-            log->Printf ("SBValue(%p)::GetThread () => NULL", m_opaque_sp.get());
+        if (thread_sp.get() == NULL)
+            log->Printf ("SBValue(%p)::GetThread () => NULL", value_sp.get());
         else
-            log->Printf ("SBValue(%p)::GetThread () => %p", m_opaque_sp.get(), result.get());
+            log->Printf ("SBValue(%p)::GetThread () => %p", value_sp.get(), thread_sp.get());
     }
-    return result;
+    return sb_thread;
 }
 
 lldb::SBFrame
 SBValue::GetFrame()
 {
-    SBFrame result;
-    if (m_opaque_sp)
+    SBFrame sb_frame;
+    StackFrameSP frame_sp;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        if (m_opaque_sp->GetExecutionContextScope())
-        {
-            result.SetFrame (m_opaque_sp->GetExecutionContextScope()->CalculateStackFrame()->GetSP());
-        }
+        frame_sp = value_sp->GetFrameSP();
+        sb_frame.SetFrameSP (frame_sp);
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        if (result.get() == NULL)
-            log->Printf ("SBValue(%p)::GetFrame () => NULL", m_opaque_sp.get());
+        if (frame_sp.get() == NULL)
+            log->Printf ("SBValue(%p)::GetFrame () => NULL", value_sp.get());
         else
-            log->Printf ("SBValue(%p)::GetFrame () => %p", m_opaque_sp.get(), result.get());
+            log->Printf ("SBValue(%p)::GetFrame () => %p", value_sp.get(), frame_sp.get());
     }
-    return result;
+    return sb_frame;
 }
 
 
-// Mimic shared pointer...
-lldb_private::ValueObject *
-SBValue::get() const
-{
-    return m_opaque_sp.get();
-}
-
-lldb_private::ValueObject *
-SBValue::operator->() const
-{
-    return m_opaque_sp.get();
-}
-
-lldb::ValueObjectSP &
-SBValue::operator*()
+lldb::ValueObjectSP
+SBValue::GetSP () const
 {
     return m_opaque_sp;
 }
 
-const lldb::ValueObjectSP &
-SBValue::operator*() const
+void
+SBValue::SetSP (const lldb::ValueObjectSP &sp)
 {
-    return m_opaque_sp;
+    m_opaque_sp = sp;
+    if (IsValid() && m_opaque_sp->HasSyntheticValue())
+        m_opaque_sp = m_opaque_sp->GetSyntheticValue();
 }
+
 
 bool
 SBValue::GetExpressionPath (SBStream &description)
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        m_opaque_sp->GetExpressionPath (description.ref(), false);
+        value_sp->GetExpressionPath (description.ref(), false);
         return true;
     }
     return false;
@@ -962,9 +1431,10 @@ SBValue::GetExpressionPath (SBStream &description)
 bool
 SBValue::GetExpressionPath (SBStream &description, bool qualify_cxx_base_classes)
 {
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        m_opaque_sp->GetExpressionPath (description.ref(), qualify_cxx_base_classes);
+        value_sp->GetExpressionPath (description.ref(), qualify_cxx_base_classes);
         return true;
     }
     return false;
@@ -975,9 +1445,21 @@ SBValue::GetDescription (SBStream &description)
 {
     Stream &strm = description.ref();
 
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        ValueObject::DumpValueObject (strm, m_opaque_sp.get());
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
+        {
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::GetDescription() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            ValueObject::DumpValueObject (strm, value_sp.get());
+        }
     }
     else
         strm.PutCString ("No value");
@@ -988,35 +1470,38 @@ SBValue::GetDescription (SBStream &description)
 lldb::Format
 SBValue::GetFormat ()
 {
-    if (m_opaque_sp)
-        return m_opaque_sp->GetFormat();
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        return value_sp->GetFormat();
     return eFormatDefault;
 }
 
 void
 SBValue::SetFormat (lldb::Format format)
 {
-    if (m_opaque_sp)
-        m_opaque_sp->SetFormat(format);
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        value_sp->SetFormat(format);
 }
 
 lldb::SBValue
 SBValue::AddressOf()
 {
     SBValue sb_value;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
+        TargetSP target_sp (value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (target->GetAPIMutex());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
             Error error;
-            sb_value = m_opaque_sp->AddressOf (error);
+            sb_value = value_sp->AddressOf (error);
         }
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetPointerToObject () => SBValue(%p)", m_opaque_sp.get(), sb_value.get());
+        log->Printf ("SBValue(%p)::AddressOf () => SBValue(%p)", value_sp.get(), value_sp.get());
     
     return sb_value;
 }
@@ -1025,25 +1510,26 @@ lldb::addr_t
 SBValue::GetLoadAddress()
 {
     lldb::addr_t value = LLDB_INVALID_ADDRESS;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
+        TargetSP target_sp (value_sp->GetTargetSP());
+        if (target_sp)
         {
-            Mutex::Locker api_locker (target->GetAPIMutex());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
             const bool scalar_is_load_address = true;
             AddressType addr_type;
-            value = m_opaque_sp->GetAddressOf(scalar_is_load_address, &addr_type);
+            value = value_sp->GetAddressOf(scalar_is_load_address, &addr_type);
             if (addr_type == eAddressTypeFile)
             {
-                Module* module = m_opaque_sp->GetModule();
-                if (!module)
+                ModuleSP module_sp (value_sp->GetModule());
+                if (!module_sp)
                     value = LLDB_INVALID_ADDRESS;
                 else
                 {
                     Address addr;
-                    module->ResolveFileAddress(value, addr);
-                    value = addr.GetLoadAddress(m_opaque_sp->GetUpdatePoint().GetTargetSP().get());
+                    module_sp->ResolveFileAddress(value, addr);
+                    value = addr.GetLoadAddress(target_sp.get());
                 }
             }
             else if (addr_type == eAddressTypeHost || addr_type == eAddressTypeInvalid)
@@ -1052,7 +1538,7 @@ SBValue::GetLoadAddress()
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetLoadAddress () => (%llu)", m_opaque_sp.get(), value);
+        log->Printf ("SBValue(%p)::GetLoadAddress () => (%llu)", value_sp.get(), value);
     
     return value;
 }
@@ -1061,34 +1547,35 @@ lldb::SBAddress
 SBValue::GetAddress()
 {
     Address addr;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
+        TargetSP target_sp (value_sp->GetTargetSP());
+        if (target_sp)
         {
             lldb::addr_t value = LLDB_INVALID_ADDRESS;
-            Mutex::Locker api_locker (target->GetAPIMutex());
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
             const bool scalar_is_load_address = true;
             AddressType addr_type;
-            value = m_opaque_sp->GetAddressOf(scalar_is_load_address, &addr_type);
+            value = value_sp->GetAddressOf(scalar_is_load_address, &addr_type);
             if (addr_type == eAddressTypeFile)
             {
-                Module* module = m_opaque_sp->GetModule();
-                if (module)
-                    module->ResolveFileAddress(value, addr);
+                ModuleSP module_sp (value_sp->GetModule());
+                if (module_sp)
+                    module_sp->ResolveFileAddress(value, addr);
             }
             else if (addr_type == eAddressTypeLoad)
             {
                 // no need to check the return value on this.. if it can actually do the resolve
                 // addr will be in the form (section,offset), otherwise it will simply be returned
                 // as (NULL, value)
-                addr.SetLoadAddress(value, target);
+                addr.SetLoadAddress(value, target_sp.get());
             }
         }
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetAddress () => (%s,%llu)", m_opaque_sp.get(), (addr.GetSection() ? addr.GetSection()->GetName().GetCString() : "NULL"), addr.GetOffset());
+        log->Printf ("SBValue(%p)::GetAddress () => (%s,%llu)", value_sp.get(), (addr.GetSection() ? addr.GetSection()->GetName().GetCString() : "NULL"), addr.GetOffset());
     return SBAddress(new Address(addr));
 }
 
@@ -1096,23 +1583,34 @@ lldb::SBData
 SBValue::GetPointeeData (uint32_t item_idx,
                          uint32_t item_count)
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     lldb::SBData sb_data;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-			DataExtractorSP data_sp(new DataExtractor());
-            Mutex::Locker api_locker (target->GetAPIMutex());
-            m_opaque_sp->GetPointeeData(*data_sp, item_idx, item_count);
-            if (data_sp->GetByteSize() > 0)
-                *sb_data = data_sp;
+            if (log)
+                log->Printf ("SBValue(%p)::GetPointeeData() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp (value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                DataExtractorSP data_sp(new DataExtractor());
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                value_sp->GetPointeeData(*data_sp, item_idx, item_count);
+                if (data_sp->GetByteSize() > 0)
+                    *sb_data = data_sp;
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
         log->Printf ("SBValue(%p)::GetPointeeData (%d, %d) => SBData(%p)",
-                     m_opaque_sp.get(),
+                     value_sp.get(),
                      item_idx,
                      item_count,
                      sb_data.get());
@@ -1123,116 +1621,119 @@ SBValue::GetPointeeData (uint32_t item_idx,
 lldb::SBData
 SBValue::GetData ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     lldb::SBData sb_data;
-    if (m_opaque_sp)
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
     {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-			DataExtractorSP data_sp(new DataExtractor());
-            Mutex::Locker api_locker (target->GetAPIMutex());
-            m_opaque_sp->GetData(*data_sp);
-            if (data_sp->GetByteSize() > 0)
-                *sb_data = data_sp;
+            if (log)
+                log->Printf ("SBValue(%p)::GetData() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp (value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                DataExtractorSP data_sp(new DataExtractor());
+                value_sp->GetData(*data_sp);
+                if (data_sp->GetByteSize() > 0)
+                    *sb_data = data_sp;
+            }
         }
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
         log->Printf ("SBValue(%p)::GetData () => SBData(%p)",
-                     m_opaque_sp.get(),
+                     value_sp.get(),
                      sb_data.get());
     
     return sb_data;
 }
 
 lldb::SBWatchpoint
-SBValue::Watch (bool resolve_location, bool read, bool write)
+SBValue::Watch (bool resolve_location, bool read, bool write, SBError &error)
 {
-    lldb::SBWatchpoint sb_watchpoint;
-    if (m_opaque_sp)
+    SBWatchpoint sb_watchpoint;
+    
+    // If the SBValue is not valid, there's no point in even trying to watch it.
+    lldb::ValueObjectSP value_sp(GetSP());
+    TargetSP target_sp (GetTarget().GetSP());
+    if (value_sp && target_sp)
     {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
+        // Can't watch this if the process is running
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
         {
-            Mutex::Locker api_locker (target->GetAPIMutex());
-            sb_watchpoint = WatchValue(read, write, false);
+            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            if (log)
+                log->Printf ("SBValue(%p)::Watch() => error: process is running", value_sp.get());
+            return sb_watchpoint;
+        }
+
+        // Read and Write cannot both be false.
+        if (!read && !write)
+            return sb_watchpoint;
+        
+        // If the value is not in scope, don't try and watch and invalid value
+        if (!IsInScope())
+            return sb_watchpoint;
+        
+        addr_t addr = GetLoadAddress();
+        if (addr == LLDB_INVALID_ADDRESS)
+            return sb_watchpoint;
+        size_t byte_size = GetByteSize();
+        if (byte_size == 0)
+            return sb_watchpoint;
+                
+        uint32_t watch_type = 0;
+        if (read)
+            watch_type |= LLDB_WATCH_TYPE_READ;
+        if (write)
+            watch_type |= LLDB_WATCH_TYPE_WRITE;
+        
+        Error rc;
+        WatchpointSP watchpoint_sp = target_sp->CreateWatchpoint(addr, byte_size, watch_type, rc);
+        error.SetError(rc);
+                
+        if (watchpoint_sp) 
+        {
+            sb_watchpoint.SetSP (watchpoint_sp);
+            Declaration decl;
+            if (value_sp->GetDeclaration (decl))
+            {
+                if (decl.GetFile()) 
+                {
+                    StreamString ss;
+                    // True to show fullpath for declaration file.
+                    decl.DumpStopContext(&ss, true);
+                    watchpoint_sp->SetDeclInfo(ss.GetString());
+                }
+            }
         }
     }
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
-    if (log)
-        log->Printf ("SBValue(%p)::Watch (resolve_location=%i, read=%i, write=%i) => wp(%p)", 
-                     m_opaque_sp.get(), resolve_location, read, write, sb_watchpoint.get());
     return sb_watchpoint;
+}
+
+// FIXME: Remove this method impl (as well as the decl in .h) once it is no longer needed.
+// Backward compatibility fix in the interim.
+lldb::SBWatchpoint
+SBValue::Watch (bool resolve_location, bool read, bool write)
+{
+    SBError error;
+    return Watch(resolve_location, read, write, error);
 }
 
 lldb::SBWatchpoint
-SBValue::WatchPointee (bool resolve_location, bool read, bool write)
+SBValue::WatchPointee (bool resolve_location, bool read, bool write, SBError &error)
 {
-    lldb::SBWatchpoint sb_watchpoint;
-    if (m_opaque_sp)
-    {
-        Target* target = m_opaque_sp->GetUpdatePoint().GetTargetSP().get();
-        if (target)
-        {
-            Mutex::Locker api_locker (target->GetAPIMutex());
-            sb_watchpoint = WatchValue(read, write, true);
-        }
-    }
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
-    if (log)
-        log->Printf ("SBValue(%p)::WatchPointee (resolve_location=%i, read=%i, write=%i) => wp(%p)", 
-                     m_opaque_sp.get(), resolve_location, read, write, sb_watchpoint.get());
+    SBWatchpoint sb_watchpoint;
+    if (IsInScope() && GetType().IsPointerType())
+        sb_watchpoint = Dereference().Watch (resolve_location, read, write, error);
     return sb_watchpoint;
-}
-
-// Helper function for SBValue::Watch() and SBValue::WatchPointee().
-SBWatchpoint
-SBValue::WatchValue(bool read, bool write, bool watch_pointee)
-{
-    SBWatchpoint sb_wp_empty;
-
-    // If the SBValue is not valid, there's no point in even trying to watch it.
-    if (!IsValid() || !GetFrame().IsValid())
-        return sb_wp_empty;
-
-    // Read and Write cannot both be false.
-    if (!read && !write)
-        return sb_wp_empty;
-
-    // If we are watching the pointee, check that the SBValue is a pointer type.
-    if (watch_pointee && !GetType().IsPointerType())
-        return sb_wp_empty;
-
-    addr_t addr;
-    size_t size;
-    if (watch_pointee) {
-        addr = GetValueAsUnsigned(LLDB_INVALID_ADDRESS);
-        size = GetType().GetPointeeType().GetByteSize();
-    } else {
-        addr = GetLoadAddress();
-        size = GetByteSize();
-    }
-
-    // Sanity check the address and the size before calling Target::CreateWatchpoint().
-    if (addr == LLDB_INVALID_ADDRESS || size == 0)
-        return sb_wp_empty;
-
-    uint32_t watch_type = (read ? LLDB_WATCH_TYPE_READ : 0) |
-        (write ? LLDB_WATCH_TYPE_WRITE : 0);
-    WatchpointSP wp_sp = GetFrame().m_opaque_sp->GetThread().GetProcess().GetTarget().
-        CreateWatchpoint(addr, size, watch_type);
-
-    if (wp_sp) {
-        // StackFrame::GetInScopeVariableList(true) to get file globals as well.
-        VariableListSP var_list_sp(GetFrame().m_opaque_sp->GetInScopeVariableList(true));
-        VariableSP var_sp = var_list_sp->FindVariable(ConstString(GetName()));
-        if (var_sp && var_sp->GetDeclaration().GetFile()) {
-            StreamString ss;
-            // True to show fullpath for declaration file.
-            var_sp->GetDeclaration().DumpStopContext(&ss, true);
-            wp_sp->SetDeclInfo(ss.GetString());
-        }
-    }
-    return wp_sp;
 }
 

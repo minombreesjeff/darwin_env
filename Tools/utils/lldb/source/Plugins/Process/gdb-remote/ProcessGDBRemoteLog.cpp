@@ -42,21 +42,29 @@ ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (uint32_t mask)
     return log;
 }
 
+LogSP
+ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (uint32_t mask)
+{
+    LogSP log(GetLog ());
+    if (log && log->GetMask().Get() & mask)
+        return log;
+    return LogSP();
+}
+
 void
-ProcessGDBRemoteLog::DisableLog (Args &args, Stream *feedback_strm)
+ProcessGDBRemoteLog::DisableLog (const char **categories, Stream *feedback_strm)
 {
     LogSP log (GetLog ());
     if (log)
     {
         uint32_t flag_bits = 0;
         
-        const size_t argc = args.GetArgumentCount ();
-        if (argc > 0)
+        if (categories[0] != NULL)
         {
             flag_bits = log->GetMask().Get();
-            for (size_t i = 0; i < argc; ++i)
+            for (size_t i = 0; categories[i] != NULL; ++i)
             {
-                const char *arg = args.GetArgumentAtIndex (i);
+                const char *arg = categories[i];
                 
 
                 if      (::strcasecmp (arg, "all")        == 0 ) flag_bits &= ~GDBR_LOG_ALL;
@@ -92,7 +100,7 @@ ProcessGDBRemoteLog::DisableLog (Args &args, Stream *feedback_strm)
 }
 
 LogSP
-ProcessGDBRemoteLog::EnableLog (StreamSP &log_stream_sp, uint32_t log_options, Args &args, Stream *feedback_strm)
+ProcessGDBRemoteLog::EnableLog (StreamSP &log_stream_sp, uint32_t log_options, const char **categories, Stream *feedback_strm)
 {
     // Try see if there already is a log - that way we can reuse its settings.
     // We could reuse the log in toto, but we don't know that the stream is the same.
@@ -104,17 +112,16 @@ ProcessGDBRemoteLog::EnableLog (StreamSP &log_stream_sp, uint32_t log_options, A
     // Now make a new log with this stream if one was provided
     if (log_stream_sp)
     {
-        log = make_shared<Log>(log_stream_sp);
+        log.reset (new Log(log_stream_sp));
         GetLog () = log;
     }
 
     if (log)
     {
         bool got_unknown_category = false;
-        const size_t argc = args.GetArgumentCount();
-        for (size_t i=0; i<argc; ++i)
+        for (size_t i=0; categories[i] != NULL; ++i)
         {
-            const char *arg = args.GetArgumentAtIndex(i);
+            const char *arg = categories[i];
 
             if      (::strcasecmp (arg, "all")        == 0 ) flag_bits |= GDBR_LOG_ALL;
             else if (::strcasecmp (arg, "async")      == 0 ) flag_bits |= GDBR_LOG_ASYNC;

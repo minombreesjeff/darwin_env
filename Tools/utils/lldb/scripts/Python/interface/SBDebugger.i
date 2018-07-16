@@ -119,6 +119,9 @@ public:
     static lldb::SBDebugger
     Create();
 
+    static lldb::SBDebugger
+    Create(bool source_init_files);
+
     static void
     Destroy (lldb::SBDebugger &debugger);
 
@@ -206,6 +209,9 @@ public:
     lldb::SBTarget
     GetTargetAtIndex (uint32_t idx);
 
+    uint32_t
+    GetIndexOfTarget (lldb::SBTarget target);
+
     lldb::SBTarget
     FindTargetWithProcessID (pid_t pid);
 
@@ -261,6 +267,9 @@ public:
 
     static bool
     StateIsStoppedState (lldb::StateType state);
+
+    bool
+    EnableLog (const char *channel, const char ** types);
 
     void
     DispatchInput (void *baton, const void *data, size_t data_len);
@@ -321,6 +330,37 @@ public:
     
     void
     SetCloseInputOnEOF (bool b);
+    
+    lldb::SBTypeCategory
+    GetCategory (const char* category_name);
+    
+    lldb::SBTypeCategory
+    CreateCategory (const char* category_name);
+    
+    bool
+    DeleteCategory (const char* category_name);
+    
+    uint32_t
+    GetNumCategories ();
+    
+    lldb::SBTypeCategory
+    GetCategoryAtIndex (uint32_t);
+    
+    lldb::SBTypeCategory
+    GetDefaultCategory();
+    
+    lldb::SBTypeFormat
+    GetFormatForType (lldb::SBTypeNameSpecifier);
+
+    lldb::SBTypeSummary
+    GetSummaryForType (lldb::SBTypeNameSpecifier);
+
+    lldb::SBTypeFilter
+    GetFilterForType (lldb::SBTypeNameSpecifier);
+
+    lldb::SBTypeSynthetic
+    GetSyntheticForType (lldb::SBTypeNameSpecifier);
+                
 }; // class SBDebugger
 
 } // namespace lldb

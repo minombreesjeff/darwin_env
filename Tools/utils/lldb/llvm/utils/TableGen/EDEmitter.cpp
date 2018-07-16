@@ -519,6 +519,8 @@ static void X86ExtractSemantics(
       // ignore (doesn't go anywhere we know about)
     } else if (name.find("VMCALL") != name.npos) {
       // ignore (rather different semantics than a regular call)
+    } else if (name.find("VMMCALL") != name.npos) {
+      // ignore (rather different semantics than a regular call)
     } else if (name.find("FAR") != name.npos && name.find("i") != name.npos) {
       CALL("off");
     } else {
@@ -572,14 +574,17 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   REG("QQPR");
   REG("QQQQPR");
   REG("VecListOneD");
-  REG("VecListTwoD");
+  REG("VecListDPair");
+  REG("VecListDPairSpaced");
   REG("VecListThreeD");
   REG("VecListFourD");
-  REG("VecListTwoQ");
   REG("VecListOneDAllLanes");
-  REG("VecListTwoDAllLanes");
+  REG("VecListDPairAllLanes");
+  REG("VecListDPairSpacedAllLanes");
 
   IMM("i32imm");
+  IMM("fbits16");
+  IMM("fbits32");
   IMM("i32imm_hilo16");
   IMM("bf_inv_mask_imm");
   IMM("lsb_pos_imm");
@@ -977,11 +982,7 @@ void EDEmitter::run(raw_ostream &o) {
 
   emitCommonEnums(o, i);
 
-  o << "namespace {\n";
-
-  o << "llvm::EDInstInfo instInfo" << target.getName().c_str() << "[] = ";
+  o << "static const llvm::EDInstInfo instInfo" << target.getName() << "[] = ";
   infoArray.emit(o, i);
   o << ";" << "\n";
-
-  o << "}\n";
 }

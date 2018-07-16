@@ -32,7 +32,7 @@
 #include "DNBThreadResumeActions.h"
 #include "DNBTimer.h"
 
-typedef std::tr1::shared_ptr<MachProcess> MachProcessSP;
+typedef STD_SHARED_PTR(MachProcess) MachProcessSP;
 typedef std::map<nub_process_t, MachProcessSP> ProcessMap;
 typedef ProcessMap::iterator ProcessMapIter;
 typedef ProcessMap::const_iterator ProcessMapConstIter;
@@ -250,6 +250,10 @@ DNBProcessLaunch (const char *path,
             if (processSP->Task().TaskPortForProcessID (launch_err) == TASK_NULL)
             {
                 // We failed to get the task for our process ID which is bad.
+                // Kill our process otherwise it will be stopped at the entry
+                // point and get reparented to someone else and never go away.
+                kill (SIGKILL, pid);
+
                 if (err_str && err_len > 0)
                 {
                     if (launch_err.AsString())
@@ -264,7 +268,8 @@ DNBProcessLaunch (const char *path,
             }
             else
             {
-                assert(AddProcessToMap(pid, processSP));
+                bool res = AddProcessToMap(pid, processSP);
+                assert(res && "Couldn't add process to map!");
                 return pid;
             }
         }
@@ -311,7 +316,8 @@ DNBProcessAttach (nub_process_t attach_pid, struct timespec *timeout, char *err_
 
         if (pid != INVALID_NUB_PROCESS)
         {
-            assert(AddProcessToMap(pid, processSP));
+            bool res = AddProcessToMap(pid, processSP);
+            assert(res && "Couldn't add process to map!");
             spawn_waitpid_thread(pid);
         }
     }
@@ -1072,6 +1078,18 @@ DNBWatchpointPrint (nub_process_t pid, nub_watch_t watchID)
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
         procSP->DumpWatchpoint(watchID);
+}
+
+//----------------------------------------------------------------------
+// Return the number of supported hardware watchpoints.
+//----------------------------------------------------------------------
+uint32_t
+DNBWatchpointGetNumSupportedHWP (nub_process_t pid)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->GetNumSupportedHardwareWatchpoints();
+    return 0;
 }
 
 //----------------------------------------------------------------------

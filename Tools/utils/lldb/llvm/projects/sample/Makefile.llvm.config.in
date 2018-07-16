@@ -143,7 +143,6 @@ SED        := @SED@
 TAR        := @TAR@
 
 # Paths to miscellaneous programs we hope are present but might not be
-PERL       := @PERL@
 BZIP2      := @BZIP2@
 CAT        := @CAT@
 DOT        := @DOT@
@@ -162,7 +161,6 @@ RUNTEST    := @RUNTEST@
 TCLSH      := @TCLSH@
 ZIP        := @ZIP@
 
-HAVE_PERL    := @HAVE_PERL@
 HAVE_PTHREAD := @HAVE_PTHREAD@
 
 LIBS       := @LIBS@
@@ -301,6 +299,8 @@ BINUTILS_INCDIR := @BINUTILS_INCDIR@
 NO_MISSING_FIELD_INITIALIZERS = @NO_MISSING_FIELD_INITIALIZERS@
 # -Wno-variadic-macros
 NO_VARIADIC_MACROS = @NO_VARIADIC_MACROS@
+# -Wcovered-switch-default
+COVERED_SWITCH_DEFAULT = @COVERED_SWITCH_DEFAULT@
 
 # Was polly found in tools/polly?
 LLVM_HAS_POLLY = @LLVM_HAS_POLLY@

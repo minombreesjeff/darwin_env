@@ -20,6 +20,7 @@
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolContextScope.h"
 #include "lldb/Symbol/SymbolFile.h"
+#include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/TypeList.h"
 
@@ -34,7 +35,11 @@ Type *
 SymbolFileType::GetType ()
 {
     if (!m_type_sp)
-        m_type_sp = m_symbol_file.ResolveTypeUID (GetID());
+    {
+        Type *resolved_type = m_symbol_file.ResolveTypeUID (GetID());
+        if (resolved_type)
+            m_type_sp = resolved_type->shared_from_this();
+    }
     return m_type_sp.get();
 }
 
@@ -61,9 +66,10 @@ Type::Type
     m_encoding_uid_type (encoding_uid_type),
     m_byte_size (byte_size),
     m_decl (decl),
-    m_clang_type (clang_type),
-    m_clang_type_resolve_state (clang_type ? clang_type_resolve_state : eResolveStateUnresolved)
+    m_clang_type (clang_type)
 {
+    m_flags.clang_type_resolve_state = (clang_type ? clang_type_resolve_state : eResolveStateUnresolved);
+    m_flags.is_complete_objc_class = false;
 }
 
 Type::Type () :
@@ -76,9 +82,10 @@ Type::Type () :
     m_encoding_uid_type (eEncodingInvalid),
     m_byte_size (0),
     m_decl (),
-    m_clang_type (NULL),
-    m_clang_type_resolve_state (eResolveStateUnresolved)
+    m_clang_type (NULL)
 {
+    m_flags.clang_type_resolve_state = eResolveStateUnresolved;
+    m_flags.is_complete_objc_class = false;
 }
 
 
@@ -93,7 +100,7 @@ Type::Type (const Type &rhs) :
     m_byte_size (rhs.m_byte_size),
     m_decl (rhs.m_decl),
     m_clang_type (rhs.m_clang_type),
-    m_clang_type_resolve_state (rhs.m_clang_type_resolve_state)
+    m_flags (rhs.m_flags)
 {
 }
 
@@ -113,8 +120,19 @@ Type::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_name)
     *s << "id = " << (const UserID&)*this;
 
     // Call the name accessor to make sure we resolve the type name
-    if (show_name && GetName())
-        *s << ", name = \"" << m_name << '"';
+    if (show_name)
+    {
+        const ConstString &type_name = GetName();
+        if (type_name)
+        {
+            *s << ", name = \"" << type_name << '"';
+            ConstString qualified_type_name (GetQualifiedName());
+            if (qualified_type_name != type_name)
+            {
+                *s << ", qualified = \"" << qualified_type_name << '"';
+            }
+        }
+    }
 
     // Call the get byte size accesor so we resolve our byte size
     if (GetByteSize())
@@ -206,7 +224,7 @@ Type::GetName()
     if (!m_name)
     {
         if (ResolveClangType(eResolveStateForward))
-            m_name = ClangASTType::GetConstTypeName (m_clang_type);
+            m_name = ClangASTType::GetConstTypeName (GetClangASTContext ().getASTContext(), m_clang_type);
     }
     return m_name;
 }
@@ -327,6 +345,21 @@ Type::IsAggregateType ()
         return ClangASTContext::IsAggregateType (m_clang_type);
     return false;
 }
+
+lldb::TypeSP
+Type::GetTypedefType()
+{
+    lldb::TypeSP type_sp;
+    if (IsTypedef())
+    {
+        Type *typedef_type = m_symbol_file->ResolveTypeUID(m_encoding_uid);
+        if (typedef_type)
+            type_sp = typedef_type->shared_from_this();
+    }
+    return type_sp;
+}
+
+
 
 lldb::Format
 Type::GetFormat ()
@@ -458,7 +491,7 @@ Type::ResolveClangType (ResolveState clang_type_resolve_state)
                 if (encoding_type->ResolveClangType(clang_type_resolve_state))
                 {
                     m_clang_type = encoding_type->m_clang_type;
-                    m_clang_type_resolve_state = encoding_type->m_clang_type_resolve_state;
+                    m_flags.clang_type_resolve_state = encoding_type->m_flags.clang_type_resolve_state;
                 }
                 break;
 
@@ -544,9 +577,9 @@ Type::ResolveClangType (ResolveState clang_type_resolve_state)
     }
     
     // Check if we have a forward reference to a class/struct/union/enum?
-    if (m_clang_type && m_clang_type_resolve_state < clang_type_resolve_state)
+    if (m_clang_type && m_flags.clang_type_resolve_state < clang_type_resolve_state)
     {
-        m_clang_type_resolve_state = eResolveStateFull;
+        m_flags.clang_type_resolve_state = eResolveStateFull;
         if (!ClangASTType::IsDefined (m_clang_type))
         {
             // We have a forward declaration, we need to resolve it to a complete
@@ -686,6 +719,49 @@ Type::IsRealObjCClass()
         return false;
 }
 
+ConstString
+Type::GetQualifiedName ()
+{
+    ConstString qualified_name (ClangASTType::GetTypeNameForOpaqueQualType (GetClangASTContext ().getASTContext(), GetClangForwardType()).c_str());
+    return qualified_name;
+}
+
+
+bool
+Type::GetTypeScopeAndBasename (const char* name_cstr,
+                               std::string &scope,
+                               std::string &basename)
+{
+    // Protect against null c string.
+    
+    if (name_cstr && name_cstr[0])
+    {
+        const char *basename_cstr = name_cstr;
+        const char* namespace_separator = ::strstr (basename_cstr, "::");
+        if (namespace_separator)
+        {
+            const char* template_arg_char = ::strchr (basename_cstr, '<');
+            while (namespace_separator != NULL)
+            {
+                if (template_arg_char && namespace_separator > template_arg_char) // but namespace'd template arguments are still good to go
+                    break;
+                basename_cstr = namespace_separator + 2;
+                namespace_separator = strstr(basename_cstr, "::");
+            }
+            if (basename_cstr > name_cstr)
+            {
+                scope.assign (name_cstr, basename_cstr - name_cstr);
+                basename.assign (basename_cstr);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
+
+
 TypeAndOrName::TypeAndOrName () : m_type_sp(), m_type_name()
 {
 
@@ -768,6 +844,21 @@ TypeImpl::TypeImpl(const lldb::TypeSP& type) :
     m_clang_ast_type(type->GetClangAST(), type->GetClangFullType()),
     m_type_sp(type)
 {
+}
+
+void
+TypeImpl::SetType (const lldb::TypeSP &type_sp)
+{
+    if (type_sp)
+    {
+        m_clang_ast_type.SetClangType (type_sp->GetClangAST(), type_sp->GetClangFullType());
+        m_type_sp = type_sp;
+    }
+    else
+    {
+        m_clang_ast_type.Clear();
+        m_type_sp.reset();
+    }
 }
 
 TypeImpl&

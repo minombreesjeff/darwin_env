@@ -39,7 +39,7 @@ public:
     ~ScriptInterpreterPython ();
 
     bool
-    ExecuteOneLine (const char *command, CommandReturnObject *result);
+    ExecuteOneLine (const char *command, CommandReturnObject *result, bool enable_io);
 
     void
     ExecuteInterpreterLoop ();
@@ -47,42 +47,46 @@ public:
     bool
     ExecuteOneLineWithReturn (const char *in_string, 
                               ScriptInterpreter::ScriptReturnType return_type,
-                              void *ret_value);
+                              void *ret_value,
+                              bool enable_io);
 
     bool
-    ExecuteMultipleLines (const char *in_string);
+    ExecuteMultipleLines (const char *in_string, bool enable_io);
 
     bool
     ExportFunctionDefinitionToInterpreter (StringList &function_def);
 
     bool
-    GenerateTypeScriptFunction (StringList &input, StringList &output);
+    GenerateTypeScriptFunction (StringList &input, std::string& output, void* name_token = NULL);
     
     bool
-    GenerateTypeSynthClass (StringList &input, StringList &output);
+    GenerateTypeSynthClass (StringList &input, std::string& output, void* name_token = NULL);
+    
+    bool
+    GenerateTypeSynthClass (const char* oneliner, std::string& output, void* name_token = NULL);
     
     // use this if the function code is just a one-liner script
     bool
-    GenerateTypeScriptFunction (const char* oneliner, StringList &output);
+    GenerateTypeScriptFunction (const char* oneliner, std::string& output, void* name_token = NULL);
     
     virtual bool
-    GenerateScriptAliasFunction (StringList &input, StringList &output);
+    GenerateScriptAliasFunction (StringList &input, std::string& output);
     
-    void*
+    lldb::ScriptInterpreterObjectSP
     CreateSyntheticScriptedProvider (std::string class_name,
                                      lldb::ValueObjectSP valobj);
     
     virtual uint32_t
-    CalculateNumChildren (void *implementor);
+    CalculateNumChildren (const lldb::ScriptInterpreterObjectSP& implementor);
     
     virtual lldb::ValueObjectSP
-    GetChildAtIndex (void *implementor, uint32_t idx);
+    GetChildAtIndex (const lldb::ScriptInterpreterObjectSP& implementor, uint32_t idx);
     
     virtual int
-    GetIndexOfChildWithName (void *implementor, const char* child_name);
+    GetIndexOfChildWithName (const lldb::ScriptInterpreterObjectSP& implementor, const char* child_name);
     
-    virtual void
-    UpdateSynthProviderInstance (void* implementor);
+    virtual bool
+    UpdateSynthProviderInstance (const lldb::ScriptInterpreterObjectSP& implementor);
     
     virtual bool
     RunScriptBasedCommand(const char* impl_function,
@@ -92,10 +96,10 @@ public:
                           Error& error);
     
     bool
-    GenerateFunction(std::string& signature, StringList &input, StringList &output);
+    GenerateFunction(const char *signature, const StringList &input);
     
     bool
-    GenerateBreakpointCommandCallbackData (StringList &input, StringList &output);
+    GenerateBreakpointCommandCallbackData (StringList &input, std::string& output);
 
     static size_t
     GenerateBreakpointOptionsCommandCallback (void *baton, 
@@ -110,9 +114,11 @@ public:
                                 lldb::user_id_t break_id,
                                 lldb::user_id_t break_loc_id);
     
-    static std::string
-    CallPythonScriptFunction (const char *python_function_name,
-                              lldb::ValueObjectSP valobj);
+    virtual bool
+    GetScriptedSummary (const char *function_name,
+                        lldb::ValueObjectSP valobj,
+                        lldb::ScriptInterpreterObjectSP& callee_wrapper_sp,
+                        std::string& retval);
     
     virtual std::string
     GetDocumentationForItem (const char* item);
@@ -121,7 +127,10 @@ public:
     LoadScriptingModule (const char* filename,
                          bool can_reload,
                          lldb_private::Error& error);
-
+    
+    virtual lldb::ScriptInterpreterObjectSP
+    MakeScriptObject (void* object);
+    
     void
     CollectDataForBreakpointCommandCallback (BreakpointOptions *bp_options,
                                              CommandReturnObject &result);
@@ -144,17 +153,7 @@ public:
     InitializePrivate ();
 
     static void
-    InitializeInterpreter (SWIGInitCallback python_swig_init_callback,
-                           SWIGBreakpointCallbackFunction python_swig_breakpoint_callback,
-                           SWIGPythonTypeScriptCallbackFunction python_swig_typescript_callback,
-                           SWIGPythonCreateSyntheticProvider python_swig_synthetic_script,
-                           SWIGPythonCalculateNumChildren python_swig_calc_children,
-                           SWIGPythonGetChildAtIndex python_swig_get_child_index,
-                           SWIGPythonGetIndexOfChildWithName python_swig_get_index_child,
-                           SWIGPythonCastPyObjectToSBValue python_swig_cast_to_sbvalue,
-                           SWIGPythonUpdateSynthProviderInstance python_swig_update_provider,
-                           SWIGPythonCallCommand python_swig_call_command,
-                           SWIGPythonCallModuleInit python_swig_call_mod_init);
+    InitializeInterpreter (SWIGInitCallback python_swig_init_callback);
 
 protected:
 
@@ -182,6 +181,29 @@ private:
         SynchronicityHandler(lldb::DebuggerSP,
                              ScriptedCommandSynchronicity);
         ~SynchronicityHandler();
+    };
+    
+    class ScriptInterpreterPythonObject : public ScriptInterpreterObject
+    {
+    public:
+        ScriptInterpreterPythonObject() :
+        ScriptInterpreterObject()
+        {}
+        
+        ScriptInterpreterPythonObject(void* obj) :
+        ScriptInterpreterObject(obj)
+        {
+            Py_XINCREF(m_object);
+        }
+        
+        virtual
+        ~ScriptInterpreterPythonObject()
+        {
+            Py_XDECREF(m_object);
+            m_object = NULL;
+        }
+        private:
+            DISALLOW_COPY_AND_ASSIGN (ScriptInterpreterPythonObject);
     };
     
 	class Locker
@@ -236,6 +258,36 @@ private:
     	ScriptInterpreterPython *m_python_interpreter;
     	FILE*                    m_tmp_fh;
 	};
+    
+    class PythonInputReaderManager
+    {
+    public:
+        PythonInputReaderManager (ScriptInterpreterPython *interpreter);
+        
+        operator bool()
+        {
+            return m_error;
+        }
+        
+        ~PythonInputReaderManager();
+        
+    private:
+        
+        static size_t
+        InputReaderCallback (void *baton,
+                                           InputReader &reader,
+                                           lldb::InputReaderAction notification,
+                                           const char *bytes,
+                                           size_t bytes_len);
+        
+        static lldb::thread_result_t
+        RunPythonInputReader (lldb::thread_arg_t baton);
+        
+        ScriptInterpreterPython *m_interpreter;
+        lldb::DebuggerSP m_debugger_sp;
+        lldb::InputReaderSP m_reader_sp;
+        bool m_error;
+    };
 
     static size_t
     InputReaderCallback (void *baton, 
@@ -248,7 +300,10 @@ private:
     lldb_utility::PseudoTerminal m_embedded_python_pty;
     lldb::InputReaderSP m_embedded_thread_input_reader_sp;
     FILE *m_dbg_stdout;
-    void *m_new_sysout; // This is a PyObject.
+    PyObject *m_new_sysout;
+    PyObject *m_old_sysout;
+    PyObject *m_old_syserr;
+    PyObject *m_run_one_line;
     std::string m_dictionary_name;
     TerminalState m_terminal_state;
     bool m_session_is_active;

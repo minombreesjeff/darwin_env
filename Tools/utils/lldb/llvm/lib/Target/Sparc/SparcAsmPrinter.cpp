@@ -62,6 +62,8 @@ namespace {
     
     virtual bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB)
                        const;
+
+    virtual MachineLocation getDebugValueLocation(const MachineInstr *MI) const;
   };
 } // end of anonymous namespace
 
@@ -140,7 +142,7 @@ bool SparcAsmPrinter::printGetPCX(const MachineInstr *MI, unsigned opNum,
   std::string operand = "";
   const MachineOperand &MO = MI->getOperand(opNum);
   switch (MO.getType()) {
-  default: assert(0 && "Operand is not a register ");
+  default: llvm_unreachable("Operand is not a register");
   case MachineOperand::MO_Register:
     assert(TargetRegisterInfo::isPhysicalRegister(MO.getReg()) &&
            "Operand is not a physical register ");
@@ -241,7 +243,14 @@ isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const {
   return I == Pred->end() || !I->isBarrier();
 }
 
-
+MachineLocation SparcAsmPrinter::
+getDebugValueLocation(const MachineInstr *MI) const {
+  assert(MI->getNumOperands() == 4 && "Invalid number of operands!");
+  assert(MI->getOperand(0).isReg() && MI->getOperand(1).isImm() &&
+         "Unexpected MachineOperand types");
+  return MachineLocation(MI->getOperand(0).getReg(),
+                         MI->getOperand(1).getImm());
+}
 
 // Force static initialization.
 extern "C" void LLVMInitializeSparcAsmPrinter() { 

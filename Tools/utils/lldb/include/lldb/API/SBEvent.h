@@ -32,10 +32,8 @@ public:
 
     ~SBEvent();
 
-#ifndef SWIG
     const SBEvent &
     operator = (const lldb::SBEvent &rhs);
-#endif
 
     bool
     IsValid() const;
@@ -49,10 +47,11 @@ public:
     lldb::SBBroadcaster
     GetBroadcaster () const;
 
-#ifndef SWIG
+    const char *
+    GetBroadcasterClass () const;
+
     bool
     BroadcasterMatchesPtr (const lldb::SBBroadcaster *broadcaster);
-#endif
 
     bool
     BroadcasterMatchesRef (const lldb::SBBroadcaster &broadcaster);
@@ -63,10 +62,8 @@ public:
     static const char *
     GetCStringFromEvent (const lldb::SBEvent &event);
 
-#ifndef SWIG
     bool
     GetDescription (lldb::SBStream &description);
-#endif
 
     bool
     GetDescription (lldb::SBStream &description) const;
@@ -80,8 +77,6 @@ protected:
 
     SBEvent (lldb::EventSP &event_sp);
 
-#ifndef SWIG
-
     lldb::EventSP &
     GetSP () const;
 
@@ -93,8 +88,6 @@ protected:
 
     lldb_private::Event *
     get () const;
-
-#endif
 
 private:
 

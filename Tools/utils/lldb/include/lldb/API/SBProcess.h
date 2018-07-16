@@ -37,13 +37,14 @@ public:
 
     SBProcess (const lldb::SBProcess& rhs);
 
-#ifndef SWIG
     const lldb::SBProcess&
     operator = (const lldb::SBProcess& rhs);
-#endif
 
     ~SBProcess();
 
+    static const char *
+    GetBroadcasterClassName ();
+    
     void
     Clear ();
 
@@ -173,12 +174,21 @@ public:
 
     static lldb::SBProcess
     GetProcessFromEvent (const lldb::SBEvent &event);
+    
+    static bool
+    EventIsProcessEvent (const lldb::SBEvent &event);
 
     lldb::SBBroadcaster
     GetBroadcaster () const;
 
+    static const char *
+    GetBroadcasterClass ();
+
     bool
     GetDescription (lldb::SBStream &description);
+
+    uint32_t
+    GetNumSupportedHardwareWatchpoints (lldb::SBError &error) const;
 
     uint32_t
     LoadImage (lldb::SBFileSpec &image_spec, lldb::SBError &error);
@@ -193,26 +203,18 @@ protected:
     friend class SBCommandInterpreter;
     friend class SBDebugger;
     friend class SBFunction;
+    friend class SBModule;
     friend class SBTarget;
     friend class SBThread;
     friend class SBValue;
 
-#ifndef SWIG
-
-    lldb_private::Process *
-    operator->() const;
-
-    // Mimic shared pointer...
-    lldb_private::Process *
-    get() const;
-
-#endif
-
-
     SBProcess (const lldb::ProcessSP &process_sp);
 
+    lldb::ProcessSP
+    GetSP() const;
+    
     void
-    SetProcess (const lldb::ProcessSP &process_sp);
+    SetSP (const lldb::ProcessSP &process_sp);
 
     lldb::ProcessSP m_opaque_sp;
 };

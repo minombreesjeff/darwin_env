@@ -16,11 +16,13 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ConnectionFileDescriptor.h"
+#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReader.h"
 #include "lldb/Core/RegisterValue.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/StreamAsynchronousIO.h"
+#include "lldb/Core/StreamCallback.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/ValueObject.h"
@@ -156,8 +158,21 @@ DebuggerInstanceSettings::g_show_disassembly_enum_values[] =
 UserSettingsControllerSP &
 Debugger::GetSettingsController ()
 {
-    static UserSettingsControllerSP g_settings_controller;
-    return g_settings_controller;
+    static UserSettingsControllerSP g_settings_controller_sp;
+    if (!g_settings_controller_sp)
+    {
+        g_settings_controller_sp.reset (new Debugger::SettingsController);
+    
+        // The first shared pointer to Debugger::SettingsController in
+        // g_settings_controller_sp must be fully created above so that 
+        // the DebuggerInstanceSettings can use a weak_ptr to refer back 
+        // to the master setttings controller
+        InstanceSettingsSP default_instance_settings_sp (new DebuggerInstanceSettings (g_settings_controller_sp, 
+                                                                                       false, 
+                                                                                       InstanceSettings::GetDefaultName().AsCString()));
+        g_settings_controller_sp->SetDefaultInstanceSettings (default_instance_settings_sp);
+    }
+    return g_settings_controller_sp;
 }
 
 int
@@ -169,12 +184,8 @@ Debugger::TestDebuggerRefCount ()
 void
 Debugger::Initialize ()
 {
-    if (g_shared_debugger_refcount == 0)
-    {
+    if (g_shared_debugger_refcount++ == 0)
         lldb_private::Initialize();
-    }
-    g_shared_debugger_refcount++;
-
 }
 
 void
@@ -203,9 +214,7 @@ Debugger::SettingsInitialize ()
     if (!g_initialized)
     {
         g_initialized = true;
-        UserSettingsControllerSP &usc = GetSettingsController();
-        usc.reset (new SettingsController);
-        UserSettingsController::InitializeSettingsController (usc,
+        UserSettingsController::InitializeSettingsController (GetSettingsController(),
                                                               SettingsController::global_settings_table,
                                                               SettingsController::instance_settings_table);
         // Now call SettingsInitialize for each settings 'child' of Debugger
@@ -230,10 +239,10 @@ Debugger::SettingsTerminate ()
 }
 
 DebuggerSP
-Debugger::CreateInstance ()
+Debugger::CreateInstance (lldb::LogOutputCallback log_callback, void *baton)
 {
-    DebuggerSP debugger_sp (new Debugger);
-    // Scope for locker
+    DebuggerSP debugger_sp (new Debugger(log_callback, baton));
+    if (g_shared_debugger_refcount > 0)
     {
         Mutex::Locker locker (GetDebuggerListMutex ());
         GetDebuggerList().push_back(debugger_sp);
@@ -249,25 +258,20 @@ Debugger::Destroy (DebuggerSP &debugger_sp)
         
     debugger_sp->Clear();
 
-    Mutex::Locker locker (GetDebuggerListMutex ());
-    DebuggerList &debugger_list = GetDebuggerList ();
-    DebuggerList::iterator pos, end = debugger_list.end();
-    for (pos = debugger_list.begin (); pos != end; ++pos)
+    if (g_shared_debugger_refcount > 0)
     {
-        if ((*pos).get() == debugger_sp.get())
+        Mutex::Locker locker (GetDebuggerListMutex ());
+        DebuggerList &debugger_list = GetDebuggerList ();
+        DebuggerList::iterator pos, end = debugger_list.end();
+        for (pos = debugger_list.begin (); pos != end; ++pos)
         {
-            debugger_list.erase (pos);
-            return;
+            if ((*pos).get() == debugger_sp.get())
+            {
+                debugger_list.erase (pos);
+                return;
+            }
         }
     }
-}
-
-DebuggerSP
-Debugger::GetSP ()
-{
-    // This object contains an instrusive ref count base class so we can
-    // easily make a shared pointer to this object
-    return DebuggerSP (this);
 }
 
 DebuggerSP
@@ -275,16 +279,19 @@ Debugger::FindDebuggerWithInstanceName (const ConstString &instance_name)
 {
     DebuggerSP debugger_sp;
    
-    Mutex::Locker locker (GetDebuggerListMutex ());
-    DebuggerList &debugger_list = GetDebuggerList();
-    DebuggerList::iterator pos, end = debugger_list.end();
-
-    for (pos = debugger_list.begin(); pos != end; ++pos)
+    if (g_shared_debugger_refcount > 0)
     {
-        if ((*pos).get()->m_instance_name == instance_name)
+        Mutex::Locker locker (GetDebuggerListMutex ());
+        DebuggerList &debugger_list = GetDebuggerList();
+        DebuggerList::iterator pos, end = debugger_list.end();
+
+        for (pos = debugger_list.begin(); pos != end; ++pos)
         {
-            debugger_sp = *pos;
-            break;
+            if ((*pos).get()->m_instance_name == instance_name)
+            {
+                debugger_sp = *pos;
+                break;
+            }
         }
     }
     return debugger_sp;
@@ -294,14 +301,17 @@ TargetSP
 Debugger::FindTargetWithProcessID (lldb::pid_t pid)
 {
     TargetSP target_sp;
-    Mutex::Locker locker (GetDebuggerListMutex ());
-    DebuggerList &debugger_list = GetDebuggerList();
-    DebuggerList::iterator pos, end = debugger_list.end();
-    for (pos = debugger_list.begin(); pos != end; ++pos)
+    if (g_shared_debugger_refcount > 0)
     {
-        target_sp = (*pos)->GetTargetList().FindTargetWithProcessID (pid);
-        if (target_sp)
-            break;
+        Mutex::Locker locker (GetDebuggerListMutex ());
+        DebuggerList &debugger_list = GetDebuggerList();
+        DebuggerList::iterator pos, end = debugger_list.end();
+        for (pos = debugger_list.begin(); pos != end; ++pos)
+        {
+            target_sp = (*pos)->GetTargetList().FindTargetWithProcessID (pid);
+            if (target_sp)
+                break;
+        }
     }
     return target_sp;
 }
@@ -310,27 +320,30 @@ TargetSP
 Debugger::FindTargetWithProcess (Process *process)
 {
     TargetSP target_sp;
-    Mutex::Locker locker (GetDebuggerListMutex ());
-    DebuggerList &debugger_list = GetDebuggerList();
-    DebuggerList::iterator pos, end = debugger_list.end();
-    for (pos = debugger_list.begin(); pos != end; ++pos)
+    if (g_shared_debugger_refcount > 0)
     {
-        target_sp = (*pos)->GetTargetList().FindTargetWithProcess (process);
-        if (target_sp)
-            break;
+        Mutex::Locker locker (GetDebuggerListMutex ());
+        DebuggerList &debugger_list = GetDebuggerList();
+        DebuggerList::iterator pos, end = debugger_list.end();
+        for (pos = debugger_list.begin(); pos != end; ++pos)
+        {
+            target_sp = (*pos)->GetTargetList().FindTargetWithProcess (process);
+            if (target_sp)
+                break;
+        }
     }
     return target_sp;
 }
 
 
-Debugger::Debugger () :
+Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     UserID (g_unique_id++),
-    DebuggerInstanceSettings (*GetSettingsController()),
+    DebuggerInstanceSettings (GetSettingsController()),
     m_input_comm("debugger.input"),
     m_input_file (),
     m_output_file (),
     m_error_file (),
-    m_target_list (),
+    m_target_list (*this),
     m_platform_list (),
     m_listener ("lldb.Debugger"),
     m_source_manager(*this),
@@ -339,6 +352,8 @@ Debugger::Debugger () :
     m_input_reader_stack (),
     m_input_reader_data ()
 {
+    if (log_callback)
+        m_log_callback_stream_sp.reset (new StreamCallback (log_callback, baton));
     m_command_interpreter_ap->Initialize ();
     // Always add our default platform to the platform list
     PlatformSP default_platform_sp (Platform::GetDefaultPlatform());
@@ -371,8 +386,15 @@ Debugger::Clear()
             target_sp->Destroy();
         }
     }
-    DisconnectInput();
-
+    BroadcasterManager::Clear ();
+    
+    // Close the input file _before_ we close the input read communications class
+    // as it does NOT own the input file, our m_input_file does.
+    GetInputFile().Close ();
+    // Now that we have closed m_input_file, we can now tell our input communication
+    // class to close down. Its read thread should quickly exit after we close
+    // the input file handle above.
+    m_input_comm.Clear ();
 }
 
 bool
@@ -726,20 +748,51 @@ Debugger::GetAsyncErrorStream ()
                                                CommandInterpreter::eBroadcastBitAsynchronousErrorData));
 }    
 
+uint32_t
+Debugger::GetNumDebuggers()
+{
+    if (g_shared_debugger_refcount > 0)
+    {
+        Mutex::Locker locker (GetDebuggerListMutex ());
+        return GetDebuggerList().size();
+    }
+    return 0;
+}
+
+lldb::DebuggerSP
+Debugger::GetDebuggerAtIndex (uint32_t index)
+{
+    DebuggerSP debugger_sp;
+    
+    if (g_shared_debugger_refcount > 0)
+    {
+        Mutex::Locker locker (GetDebuggerListMutex ());
+        DebuggerList &debugger_list = GetDebuggerList();
+        
+        if (index < debugger_list.size())
+            debugger_sp = debugger_list[index];
+    }
+
+    return debugger_sp;
+}
+
 DebuggerSP
 Debugger::FindDebuggerWithID (lldb::user_id_t id)
 {
     DebuggerSP debugger_sp;
 
-    Mutex::Locker locker (GetDebuggerListMutex ());
-    DebuggerList &debugger_list = GetDebuggerList();
-    DebuggerList::iterator pos, end = debugger_list.end();
-    for (pos = debugger_list.begin(); pos != end; ++pos)
+    if (g_shared_debugger_refcount > 0)
     {
-        if ((*pos).get()->GetID() == id)
+        Mutex::Locker locker (GetDebuggerListMutex ());
+        DebuggerList &debugger_list = GetDebuggerList();
+        DebuggerList::iterator pos, end = debugger_list.end();
+        for (pos = debugger_list.begin(); pos != end; ++pos)
         {
-            debugger_sp = *pos;
-            break;
+            if ((*pos).get()->GetID() == id)
+            {
+                debugger_sp = *pos;
+                break;
+            }
         }
     }
     return debugger_sp;
@@ -839,20 +892,20 @@ ScanFormatDescriptor (const char* var_name_begin,
                 log->Printf("%s is an unknown format", format_name);
             // if this is an @ sign, print ObjC description
             if (*format_name == '@')
-                *val_obj_display = ValueObject::eDisplayLanguageSpecific;
+                *val_obj_display = ValueObject::eValueObjectRepresentationStyleLanguageSpecific;
             // if this is a V, print the value using the default format
             else if (*format_name == 'V')
-                *val_obj_display = ValueObject::eDisplayValue;
+                *val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
             // if this is an L, print the location of the value
             else if (*format_name == 'L')
-                *val_obj_display = ValueObject::eDisplayLocation;
+                *val_obj_display = ValueObject::eValueObjectRepresentationStyleLocation;
             // if this is an S, print the summary after all
             else if (*format_name == 'S')
-                *val_obj_display = ValueObject::eDisplaySummary;
+                *val_obj_display = ValueObject::eValueObjectRepresentationStyleSummary;
             else if (*format_name == '#')
-                *val_obj_display = ValueObject::eDisplayChildrenCount;
+                *val_obj_display = ValueObject::eValueObjectRepresentationStyleChildrenCount;
             else if (*format_name == 'T')
-                *val_obj_display = ValueObject::eDisplayType;
+                *val_obj_display = ValueObject::eValueObjectRepresentationStyleType;
             else if (log)
                 log->Printf("%s is an error, leaving the previous value alone", format_name);
         }
@@ -861,7 +914,7 @@ ScanFormatDescriptor (const char* var_name_begin,
         {
             if (log)
                 log->Printf("will display value for this VO");
-            *val_obj_display = ValueObject::eDisplayValue;
+            *val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
         }
         delete format_name;
     }
@@ -961,7 +1014,7 @@ ExpandExpressionPath (ValueObject* valobj,
         *do_deref_pointer = true;
     }
 
-    valobj->GetExpressionPath(sstring, true, ValueObject::eHonorPointers);
+    valobj->GetExpressionPath(sstring, true, ValueObject::eGetExpressionPathFormatHonorPointers);
     if (log)
         log->Printf("expression path to expand in phase 0: %s",sstring.GetData());
     sstring.PutRawBytes(var_name_begin+3, var_name_final-var_name_begin-3);
@@ -992,7 +1045,7 @@ ExpandIndexedExpression (ValueObject* valobj,
     ValueObject::GetValueForExpressionPathOptions options;
     ValueObject::ExpressionPathEndResultType final_value_type;
     ValueObject::ExpressionPathScanEndReason reason_to_stop;
-    ValueObject::ExpressionPathAftermath what_next = (deref_pointer ? ValueObject::eDereference : ValueObject::eNothing);
+    ValueObject::ExpressionPathAftermath what_next = (deref_pointer ? ValueObject::eExpressionPathAftermathDereference : ValueObject::eExpressionPathAftermathNothing);
     ValueObjectSP item = valobj->GetValueForExpressionPath (ptr_deref_buffer.get(),
                                                           &first_unparsed,
                                                           &reason_to_stop,
@@ -1107,8 +1160,8 @@ Debugger::FormatPrompt
                         const RegisterInfo *reg_info = NULL;
                         RegisterContext *reg_ctx = NULL;
                         bool do_deref_pointer = false;
-                        ValueObject::ExpressionPathScanEndReason reason_to_stop = ValueObject::eEndOfString;
-                        ValueObject::ExpressionPathEndResultType final_value_type = ValueObject::ePlain;
+                        ValueObject::ExpressionPathScanEndReason reason_to_stop = ValueObject::eExpressionPathScanEndReasonEndOfString;
+                        ValueObject::ExpressionPathEndResultType final_value_type = ValueObject::eExpressionPathEndResultTypePlain;
                         
                         // Each variable must set success to true below...
                         bool var_success = false;
@@ -1136,7 +1189,10 @@ Debugger::FormatPrompt
                                 
                                 if (*var_name_begin == 's')
                                 {
-                                    valobj = valobj->GetSyntheticValue(eUseSyntheticFilter).get();
+                                    if (!valobj->IsSynthetic())
+                                        valobj = valobj->GetSyntheticValue().get();
+                                    if (!valobj)
+                                        break;
                                     var_name_begin++;
                                 }
                                 
@@ -1151,10 +1207,10 @@ Debugger::FormatPrompt
                                     log->Printf("initial string: %s",var_name_begin);
                                                                 
                                 ValueObject::ExpressionPathAftermath what_next = (do_deref_pointer ?
-                                                                                  ValueObject::eDereference : ValueObject::eNothing);
+                                                                                  ValueObject::eExpressionPathAftermathDereference : ValueObject::eExpressionPathAftermathNothing);
                                 ValueObject::GetValueForExpressionPathOptions options;
                                 options.DontCheckDotVsArrowSyntax().DoAllowBitfieldSyntax().DoAllowFragileIVar().DoAllowSyntheticChildren();
-                                ValueObject::ValueObjectRepresentationStyle val_obj_display = ValueObject::eDisplaySummary;
+                                ValueObject::ValueObjectRepresentationStyle val_obj_display = ValueObject::eValueObjectRepresentationStyleSummary;
                                 ValueObject* target = NULL;
                                 Format custom_format = eFormatInvalid;
                                 const char* var_name_final = NULL;
@@ -1166,6 +1222,7 @@ Debugger::FormatPrompt
                                 const char* first_unparsed;
                                 bool was_plain_var = false;
                                 bool was_var_format = false;
+                                bool was_var_indexed = false;
 
                                 if (!valobj) break;
                                 // simplest case ${var}, just print valobj's value
@@ -1173,7 +1230,7 @@ Debugger::FormatPrompt
                                 {
                                     was_plain_var = true;
                                     target = valobj;
-                                    val_obj_display = ValueObject::eDisplayValue;
+                                    val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
                                 }
                                 else if (::strncmp(var_name_begin,"var%",strlen("var%")) == 0)
                                 {
@@ -1181,7 +1238,7 @@ Debugger::FormatPrompt
                                     // this is a variable with some custom format applied to it
                                     const char* percent_position;
                                     target = valobj;
-                                    val_obj_display = ValueObject::eDisplayValue;
+                                    val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
                                     ScanFormatDescriptor (var_name_begin,
                                                           var_name_end,
                                                           &var_name_final,
@@ -1192,7 +1249,8 @@ Debugger::FormatPrompt
                                     // this is ${var.something} or multiple .something nested
                                 else if (::strncmp (var_name_begin, "var", strlen("var")) == 0)
                                 {
-
+                                    if (::strncmp(var_name_begin, "var[", strlen("var[")) == 0)
+                                        was_var_indexed = true;
                                     const char* percent_position;
                                     ScanFormatDescriptor (var_name_begin,
                                                           var_name_end,
@@ -1248,10 +1306,10 @@ Debugger::FormatPrompt
                                 else
                                     break;
                                 
-                                is_array_range = (final_value_type == ValueObject::eBoundedRange ||
-                                                  final_value_type == ValueObject::eUnboundedRange);
+                                is_array_range = (final_value_type == ValueObject::eExpressionPathEndResultTypeBoundedRange ||
+                                                  final_value_type == ValueObject::eExpressionPathEndResultTypeUnboundedRange);
                                 
-                                do_deref_pointer = (what_next == ValueObject::eDereference);
+                                do_deref_pointer = (what_next == ValueObject::eExpressionPathAftermathDereference);
 
                                 if (do_deref_pointer && !is_array_range)
                                 {
@@ -1269,19 +1327,33 @@ Debugger::FormatPrompt
                                     do_deref_pointer = false;
                                 }
                                 
+                                // <rdar://problem/11338654>
+                                // we do not want to use the summary for a bitfield of type T:n
+                                // if we were originally dealing with just a T - that would get
+                                // us into an endless recursion
+                                if (target->IsBitfield() && was_var_indexed)
+                                {
+                                    // TODO: check for a (T:n)-specific summary - we should still obey that
+                                    StreamString bitfield_name;
+                                    bitfield_name.Printf("%s:%d", target->GetTypeName().AsCString(), target->GetBitfieldBitSize());
+                                    lldb::TypeNameSpecifierImplSP type_sp(new TypeNameSpecifierImpl(bitfield_name.GetData(),false));
+                                    if (!DataVisualization::GetSummaryForType(type_sp))
+                                        val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
+                                }
+                                
                                 // TODO use flags for these
                                 bool is_array = ClangASTContext::IsArrayType(target->GetClangType());
                                 bool is_pointer = ClangASTContext::IsPointerType(target->GetClangType());
                                 bool is_aggregate = ClangASTContext::IsAggregateType(target->GetClangType());
                                 
-                                if ((is_array || is_pointer) && (!is_array_range) && val_obj_display == ValueObject::eDisplayValue) // this should be wrong, but there are some exceptions
+                                if ((is_array || is_pointer) && (!is_array_range) && val_obj_display == ValueObject::eValueObjectRepresentationStyleValue) // this should be wrong, but there are some exceptions
                                 {
                                     StreamString str_temp;
                                     if (log)
                                         log->Printf("I am into array || pointer && !range");
                                     
-                                    if (target->HasSpecialCasesForPrintableRepresentation(val_obj_display,
-                                                                                          custom_format))
+                                    if (target->HasSpecialPrintableRepresentation(val_obj_display,
+                                                                                  custom_format))
                                     {
                                         // try to use the special cases
                                         var_success = target->DumpPrintableRepresentation(str_temp,
@@ -1306,9 +1378,10 @@ Debugger::FormatPrompt
                                         }
                                         else if (is_pointer) // if pointer, value is the address stored
                                         {
-                                            var_success = target->GetPrintableRepresentation(s,
+                                            var_success = target->DumpPrintableRepresentation(s,
                                                                                              val_obj_display,
-                                                                                             custom_format);
+                                                                                             custom_format,
+                                                                                             ValueObject::ePrintableRepresentationSpecialCasesDisable);
                                         }
                                         else
                                         {
@@ -1329,7 +1402,7 @@ Debugger::FormatPrompt
                                 }
                                 
                                 // if directly trying to print ${var%V}, and this is an aggregate, do not let the user do it
-                                if (is_aggregate && ((was_var_format && val_obj_display == ValueObject::eDisplayValue)))
+                                if (is_aggregate && ((was_var_format && val_obj_display == ValueObject::eValueObjectRepresentationStyleValue)))
                                 {
                                     s << "<invalid use of aggregate type>";
                                     var_success = true;
@@ -1369,7 +1442,7 @@ Debugger::FormatPrompt
                                     if (index_higher < 0)
                                         index_higher = valobj->GetNumChildren() - 1;
                                     
-                                    uint32_t max_num_children = target->GetUpdatePoint().GetTargetSP()->GetMaximumNumberOfChildrenToDisplay();
+                                    uint32_t max_num_children = target->GetTargetSP()->GetMaximumNumberOfChildrenToDisplay();
                                     
                                     for (;index_lower<=index_higher;index_lower++)
                                     {
@@ -2135,8 +2208,8 @@ Debugger::FormatPrompt
                                                     func_addr = inline_range.GetBaseAddress();
                                             }
                                         }
-                                        else if (sc->symbol && sc->symbol->GetAddressRangePtr())
-                                            func_addr = sc->symbol->GetAddressRangePtr()->GetBaseAddress();
+                                        else if (sc->symbol && sc->symbol->ValueIsAddress())
+                                            func_addr = sc->symbol->GetAddress();
                                     }
                                     
                                     if (func_addr.IsValid())
@@ -2281,6 +2354,76 @@ Debugger::FormatPrompt
     return success;
 }
 
+void
+Debugger::SetLoggingCallback (lldb::LogOutputCallback log_callback, void *baton)
+{
+    // For simplicity's sake, I am not going to deal with how to close down any
+    // open logging streams, I just redirect everything from here on out to the
+    // callback.
+    m_log_callback_stream_sp.reset (new StreamCallback (log_callback, baton));
+}
+
+bool
+Debugger::EnableLog (const char *channel, const char **categories, const char *log_file, uint32_t log_options, Stream &error_stream)
+{
+    Log::Callbacks log_callbacks;
+
+    StreamSP log_stream_sp;
+    if (m_log_callback_stream_sp != NULL)
+    {
+        log_stream_sp = m_log_callback_stream_sp;
+        // For now when using the callback mode you always get thread & timestamp.
+        log_options |= LLDB_LOG_OPTION_PREPEND_TIMESTAMP | LLDB_LOG_OPTION_PREPEND_THREAD_NAME;
+    }
+    else if (log_file == NULL || *log_file == '\0')
+    {
+        log_stream_sp.reset(new StreamFile(GetOutputFile().GetDescriptor(), false));
+    }
+    else
+    {
+        LogStreamMap::iterator pos = m_log_streams.find(log_file);
+        if (pos == m_log_streams.end())
+        {
+            log_stream_sp.reset (new StreamFile (log_file));
+            m_log_streams[log_file] = log_stream_sp;
+        }
+        else
+            log_stream_sp = pos->second;
+    }
+    assert (log_stream_sp.get());
+    
+    if (log_options == 0)
+        log_options = LLDB_LOG_OPTION_PREPEND_THREAD_NAME | LLDB_LOG_OPTION_THREADSAFE;
+        
+    if (Log::GetLogChannelCallbacks (channel, log_callbacks))
+    {
+        log_callbacks.enable (log_stream_sp, log_options, categories, &error_stream);
+        return true;
+    }
+    else
+    {
+        LogChannelSP log_channel_sp (LogChannel::FindPlugin (channel));
+        if (log_channel_sp)
+        {
+            if (log_channel_sp->Enable (log_stream_sp, log_options, &error_stream, categories))
+            {
+                return true;
+            }
+            else
+            {
+                error_stream.Printf ("Invalid log channel '%s'.\n", channel);
+                return false;
+            }
+        }
+        else
+        {
+            error_stream.Printf ("Invalid log channel '%s'.\n", channel);
+            return false;
+        }
+    }
+    return false;
+}
+
 #pragma mark Debugger::SettingsController
 
 //--------------------------------------------------
@@ -2290,8 +2433,6 @@ Debugger::FormatPrompt
 Debugger::SettingsController::SettingsController () :
     UserSettingsController ("", UserSettingsControllerSP())
 {
-    m_default_settings.reset (new DebuggerInstanceSettings (*this, false, 
-                                                            InstanceSettings::GetDefaultName().AsCString()));
 }
 
 Debugger::SettingsController::~SettingsController ()
@@ -2302,9 +2443,9 @@ Debugger::SettingsController::~SettingsController ()
 InstanceSettingsSP
 Debugger::SettingsController::CreateInstanceSettings (const char *instance_name)
 {
-    DebuggerInstanceSettings *new_settings = new DebuggerInstanceSettings (*GetSettingsController(),
-                                                                           false, instance_name);
-    InstanceSettingsSP new_settings_sp (new_settings);
+    InstanceSettingsSP new_settings_sp (new DebuggerInstanceSettings (GetSettingsController(),
+                                                                      false, 
+                                                                      instance_name));
     return new_settings_sp;
 }
 
@@ -2315,11 +2456,11 @@ Debugger::SettingsController::CreateInstanceSettings (const char *instance_name)
 
 DebuggerInstanceSettings::DebuggerInstanceSettings 
 (
-    UserSettingsController &owner, 
+    const UserSettingsControllerSP &m_owner_sp, 
     bool live_instance,
     const char *name
 ) :
-    InstanceSettings (owner, name ? name : InstanceSettings::InvalidName().AsCString(), live_instance),
+    InstanceSettings (m_owner_sp, name ? name : InstanceSettings::InvalidName().AsCString(), live_instance),
     m_term_width (80),
     m_stop_source_before_count (3),
     m_stop_source_after_count (3),
@@ -2340,18 +2481,18 @@ DebuggerInstanceSettings::DebuggerInstanceSettings
     if (GetInstanceName() == InstanceSettings::InvalidName())
     {
         ChangeInstanceName (std::string (CreateInstanceName().AsCString()));
-        m_owner.RegisterInstanceSettings (this);
+        m_owner_sp->RegisterInstanceSettings (this);
     }
 
     if (live_instance)
     {
-        const InstanceSettingsSP &pending_settings = m_owner.FindPendingSettings (m_instance_name);
+        const InstanceSettingsSP &pending_settings = m_owner_sp->FindPendingSettings (m_instance_name);
         CopyInstanceSettings (pending_settings, false);
     }
 }
 
 DebuggerInstanceSettings::DebuggerInstanceSettings (const DebuggerInstanceSettings &rhs) :
-    InstanceSettings (*Debugger::GetSettingsController(), CreateInstanceName ().AsCString()),
+    InstanceSettings (Debugger::GetSettingsController(), CreateInstanceName ().AsCString()),
     m_prompt (rhs.m_prompt),
     m_frame_format (rhs.m_frame_format),
     m_thread_format (rhs.m_thread_format),
@@ -2359,9 +2500,12 @@ DebuggerInstanceSettings::DebuggerInstanceSettings (const DebuggerInstanceSettin
     m_use_external_editor (rhs.m_use_external_editor),
     m_auto_confirm_on(rhs.m_auto_confirm_on)
 {
-    const InstanceSettingsSP &pending_settings = m_owner.FindPendingSettings (m_instance_name);
-    CopyInstanceSettings (pending_settings, false);
-    m_owner.RemovePendingSettings (m_instance_name);
+    UserSettingsControllerSP owner_sp (m_owner_wp.lock());
+    if (owner_sp)
+    {
+        CopyInstanceSettings (owner_sp->FindPendingSettings (m_instance_name), false);
+        owner_sp->RemovePendingSettings (m_instance_name);
+    }
 }
 
 DebuggerInstanceSettings::~DebuggerInstanceSettings ()
@@ -2402,10 +2546,7 @@ DebuggerInstanceSettings::ValidTermWidthValue (const char *value, Error err)
         
         if (end && end[0] == '\0')
         {
-            if (width >= 10 && width <= 1024)
-                valid = true;
-            else
-                err.SetErrorString ("invalid term-width value; value must be between 10 and 1024");
+            return ValidTermWidthValue (width, err);
         }
         else
             err.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string", value);
@@ -2414,6 +2555,17 @@ DebuggerInstanceSettings::ValidTermWidthValue (const char *value, Error err)
     return valid;
 }
 
+bool
+DebuggerInstanceSettings::ValidTermWidthValue (uint32_t value, Error err)
+{
+    if (value >= 10 && value <= 1024)
+        return true;
+    else
+    {
+        err.SetErrorString ("invalid term-width value; value must be between 10 and 1024");
+        return false;
+    }
+}
 
 void
 DebuggerInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_name,

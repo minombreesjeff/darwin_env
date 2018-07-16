@@ -81,11 +81,17 @@ def analyzer_viz_egraph_graphviz : Flag<"-analyzer-viz-egraph-graphviz">,
 def analyzer_viz_egraph_ubigraph : Flag<"-analyzer-viz-egraph-ubigraph">,
   HelpText<"Display exploded graph using Ubigraph">;
 def analyzer_inline_call : Flag<"-analyzer-inline-call">,
-  HelpText<"Experimental transfer function inlining callees when its definition is available.">;
+  HelpText<"Experimental: Inline callees when their definitions are available">;
+def analyzer_inline_max_stack_depth : Separate<"-analyzer-inline-max-stack-depth">,
+  HelpText<"Bound on stack depth while inlining (4 by default)">;
+def analyzer_inline_max_function_size : Separate<"-analyzer-inline-max-function-size">,
+  HelpText<"Bound on the number of basic blocks in an inlined function (200 by default)">;
 def analyzer_max_nodes : Separate<"-analyzer-max-nodes">,
   HelpText<"The maximum number of nodes the analyzer can generate (150000 default, 0 = no limit)">;
 def analyzer_max_loop : Separate<"-analyzer-max-loop">,
   HelpText<"The maximum number of times the analyzer will go through a loop">;
+def analyzer_stats : Flag<"-analyzer-stats">,
+  HelpText<"Print internal analyzer statistics.">;
 
 def analyzer_checker : Separate<"-analyzer-checker">,
   HelpText<"Choose analyzer checkers to enable">;
@@ -99,6 +105,15 @@ def analyzer_disable_checker_EQ : Joined<"-analyzer-disable-checker=">,
 
 def analyzer_checker_help : Flag<"-analyzer-checker-help">,
   HelpText<"Display the list of analyzer checkers that are available">;
+
+//===----------------------------------------------------------------------===//
+// Migrator Options
+//===----------------------------------------------------------------------===//
+def migrator_no_nsalloc_error : Flag<"-no-ns-alloc-error">,
+  HelpText<"Do not error on use of NSAllocateCollectable/NSReallocateCollectable">;
+
+def migrator_no_finalize_removal : Flag<"-no-finalize-removal">,
+  HelpText<"Do not remove finalize method in gc mode">;
 
 //===----------------------------------------------------------------------===//
 // CodeGen Options
@@ -116,6 +131,8 @@ def dwarf_debug_flags : Separate<"-dwarf-debug-flags">,
   HelpText<"The string to embed in the Dwarf debug flags record.">;
 def faddress_sanitizer: Flag<"-faddress-sanitizer">,
   HelpText<"Enable AddressSanitizer instrumentation (memory error detection)">;
+def fthread_sanitizer: Flag<"-fthread-sanitizer">,
+  HelpText<"Enable ThreadSanitizer instrumentation (race detection)">;
 def fforbid_guard_variables : Flag<"-fforbid-guard-variables">,
   HelpText<"Emit an error if a C++ static local initializer would need a guard variable">;
 def g : Flag<"-g">, HelpText<"Generate source level debug information">;
@@ -145,6 +162,8 @@ def ffunction_sections : Flag<"-ffunction-sections">,
   HelpText<"Place each function in its own section (ELF Only)">;
 def fdata_sections : Flag<"-fdata-sections">,
   HelpText<"Place each data in its own section (ELF Only)">;
+def ftrap_function_EQ : Joined<"-ftrap-function=">,
+  HelpText<"Issue call to specified function rather than a trap instruction">;
 def funroll_loops : Flag<"-funroll-loops">,
   HelpText<"Turn on loop unroller">;
 def femit_coverage_notes : Flag<"-femit-coverage-notes">,
@@ -166,10 +185,15 @@ def mdebug_pass : Separate<"-mdebug-pass">,
   HelpText<"Enable additional debug output">;
 def mdisable_fp_elim : Flag<"-mdisable-fp-elim">,
   HelpText<"Disable frame pointer elimination optimization">;
+def mdisable_tail_calls : Flag<"-mdisable-tail-calls">,
+  HelpText<"Disable tail call optimization, keeping the call stack accurate">;
 def menable_no_infinities : Flag<"-menable-no-infs">,
   HelpText<"Allow optimization to assume there are no infinities.">;
 def menable_no_nans : Flag<"-menable-no-nans">,
   HelpText<"Allow optimization to assume there are no NaNs.">;
+def menable_unsafe_fp_math : Flag<"-menable-unsafe-fp-math">,
+  HelpText<"Allow unsafe floating-point math optimizations which may decrease "
+           "precision">;
 def mfloat_abi : Separate<"-mfloat-abi">,
   HelpText<"The float ABI to use">;
 def mno_global_merge : Flag<"-mno-global-merge">,
@@ -219,6 +243,8 @@ def pg : Flag<"-pg">, HelpText<"Enable mcount instrumentation">;
 
 def dependency_file : Separate<"-dependency-file">,
   HelpText<"Filename (or -) to write dependency output to">;
+def dependency_dot : Separate<"-dependency-dot">,
+  HelpText<"Filename to write DOT-formatted header dependencies to">;
 def sys_header_deps : Flag<"-sys-header-deps">,
   HelpText<"Include system headers in dependency output">;
 def header_include_file : Separate<"-header-include-file">,
@@ -272,8 +298,6 @@ def fdiagnostics_print_source_range_info : Flag<"-fdiagnostics-print-source-rang
   HelpText<"Print source range spans in numeric form">;
 def fdiagnostics_parseable_fixits : Flag<"-fdiagnostics-parseable-fixits">,
   HelpText<"Print fix-its in machine parseable form">;
-def fdiagnostics_show_name : Flag<"-fdiagnostics-show-name">,
-  HelpText<"Print diagnostic name">;
 def fdiagnostics_show_option : Flag<"-fdiagnostics-show-option">,
   HelpText<"Print option name with mappable diagnostics">;
 def fdiagnostics_format : Separate<"-fdiagnostics-format">,
@@ -291,6 +315,8 @@ def fmacro_backtrace_limit : Separate<"-fmacro-backtrace-limit">, MetaVarName<"<
   HelpText<"Set the maximum number of entries to print in a macro expansion backtrace (0 = no limit).">;
 def ftemplate_backtrace_limit : Separate<"-ftemplate-backtrace-limit">, MetaVarName<"<N>">,
   HelpText<"Set the maximum number of entries to print in a template instantiation backtrace (0 = no limit).">;
+def fconstexpr_backtrace_limit : Separate<"-fconstexpr-backtrace-limit">, MetaVarName<"<N>">,
+  HelpText<"Set the maximum number of entries to print in a constexpr evaluation backtrace (0 = no limit).">;
 def fmessage_length : Separate<"-fmessage-length">, MetaVarName<"<N>">,
   HelpText<"Format message diagnostics so that they fit within N columns or fewer, when possible.">;
 def fcolor_diagnostics : Flag<"-fcolor-diagnostics">,
@@ -407,20 +433,27 @@ def rewrite_objc : Flag<"-rewrite-objc">,
   HelpText<"Rewrite ObjC into C (code rewriter example)">;
 def rewrite_macros : Flag<"-rewrite-macros">,
   HelpText<"Expand macros without full preprocessing">;
+def migrate : Flag<"-migrate">,
+  HelpText<"Migrate source code">;
 }
 
+def mt_migrate_directory : Separate<"-mt-migrate-directory">,
+  HelpText<"Directory for temporary files produced during ARC or ObjC migration">;
 def arcmt_check : Flag<"-arcmt-check">,
   HelpText<"Check for ARC migration issues that need manual handling">;
 def arcmt_modify : Flag<"-arcmt-modify">,
   HelpText<"Apply modifications to files to conform to ARC">;
 def arcmt_migrate : Flag<"-arcmt-migrate">,
   HelpText<"Apply modifications and produces temporary files that conform to ARC">;
-def arcmt_migrate_directory : Separate<"-arcmt-migrate-directory">,
-  HelpText<"Directory for temporary files produced during ARC migration">;
 def arcmt_migrate_report_output : Separate<"-arcmt-migrate-report-output">,
   HelpText<"Output path for the plist report">;
 def arcmt_migrate_emit_arc_errors : Flag<"-arcmt-migrate-emit-errors">,
   HelpText<"Emit ARC errors even if the migrator can fix them">;
+
+def objcmt_migrate_literals : Flag<"-objcmt-migrate-literals">,
+  HelpText<"Enable migration to modern ObjC literals">;
+def objcmt_migrate_subscripting : Flag<"-objcmt-migrate-subscripting">,
+  HelpText<"Enable migration to modern ObjC subscripting">;
 
 def working_directory : JoinedOrSeparate<"-working-directory">,
   HelpText<"Resolve file paths relative to the specified directory">;
@@ -435,14 +468,25 @@ def ftime_report : Flag<"-ftime-report">,
   HelpText<"Print the amount of time each phase of compilation takes">;
 def fdump_record_layouts : Flag<"-fdump-record-layouts">,
   HelpText<"Dump record layout information">;
+def fdump_record_layouts_simple : Flag<"-fdump-record-layouts-simple">,
+  HelpText<"Dump record layout information in a simple form used for testing">;
 def fix_what_you_can : Flag<"-fix-what-you-can">,
   HelpText<"Apply fix-it advice even in the presence of unfixable errors">;
+def fix_only_warnings : Flag<"-fix-only-warnings">,
+  HelpText<"Apply fix-it advice only for warnings, not errors">;
+def fixit_recompile : Flag<"-fixit-recompile">,
+  HelpText<"Apply fix-it changes and recompile">;
+def fixit_to_temp : Flag<"-fixit-to-temporary">,
+  HelpText<"Apply fix-it changes to temporary files">;
 
 // Generic forwarding to LLVM options. This should only be used for debugging
 // and experimental features.
 def mllvm : Separate<"-mllvm">,
   HelpText<"Additional arguments to forward to LLVM's option processing">;
 
+def foverride_record_layout_EQ : Joined<"-foverride-record-layout=">,
+  HelpText<"Override record layouts with those in the given file">;
+  
 //===----------------------------------------------------------------------===//
 // Language Options
 //===----------------------------------------------------------------------===//
@@ -459,6 +503,8 @@ def fgnu_keywords : Flag<"-fgnu-keywords">,
   HelpText<"Allow GNU-extension keywords regardless of language standard">;
 def fgnu89_inline : Flag<"-fgnu89-inline">,
   HelpText<"Use the gnu89 inline semantics">;
+def fno_inline_functions : Flag<"-fno-inline-functions">,
+  HelpText<"Disable automatic function inlining">;
 def fno_gnu_keywords : Flag<"-fno-gnu-keywords">,
   HelpText<"Disallow GNU-extension keywords regardless of language standard">;
 def fdollars_in_identifiers : Flag<"-fdollars-in-identifiers">,
@@ -480,6 +526,10 @@ def fcxx_exceptions : Flag<"-fcxx-exceptions">,
   HelpText<"Enable C++ exceptions">;
 def fsjlj_exceptions : Flag<"-fsjlj-exceptions">,
   HelpText<"Use SjLj style exceptions">;
+def ffast_math : Flag<"-ffast-math">,
+  HelpText<"Enable the *frontend*'s 'fast-math' mode. This has no effect on "
+           "optimizations, but provides a preprocessor macro __FAST_MATH__ the "
+           "same as GCC's -ffast-math flag.">;
 def ffreestanding : Flag<"-ffreestanding">,
   HelpText<"Assert that the compilation takes place in a freestanding environment">;
 def fgnu_runtime : Flag<"-fgnu-runtime">,
@@ -616,6 +666,10 @@ def funknown_anytype : Flag<"-funknown-anytype">,
   HelpText<"Enable parser support for the __unknown_anytype type; for testing purposes only">;
 def fdebugger_support : Flag<"-fdebugger-support">,
   HelpText<"Enable special debugger support behavior">;
+def fdebugger_cast_result_to_id : Flag<"-fdebugger-cast-result-to-id">,
+  HelpText<"Enable casting unknown expression results to id">;
+def fdebugger_objc_literal : Flag<"-fdebugger-objc-literal">,
+  HelpText<"Enable special debugger support for objective-C subscripting and literals">;
 def fdeprecated_macro : Flag<"-fdeprecated-macro">,
   HelpText<"Defines the __DEPRECATED macro">;
 def fno_deprecated_macro : Flag<"-fno-deprecated-macro">,
@@ -641,9 +695,8 @@ def fmodule_name : Joined<"-fmodule-name=">,
   HelpText<"Specify the name of the module to build">;           
 def fdisable_module_hash : Flag<"-fdisable-module-hash">,
   HelpText<"Disable the module hash">;
-def fauto_module_import : Flag<"-fauto-module-import">,
-  HelpText<"Automatically translate #include/#import into module imports "
-           "when possible">;
+def fmodules : Flag<"-fmodules">,
+  HelpText<"Enable the 'modules' language feature">;
            
 def F : JoinedOrSeparate<"-F">, MetaVarName<"<directory>">,
   HelpText<"Add directory to framework include search path">;

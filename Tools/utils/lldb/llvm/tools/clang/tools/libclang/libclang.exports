@@ -132,6 +132,7 @@ clang_getRange
 clang_getRangeEnd
 clang_getRangeStart
 clang_getRemappings
+clang_getRemappingsFromFileList
 clang_getResultType
 clang_getSpecializedCursorTemplate
 clang_getSpellingLocation
@@ -158,6 +159,7 @@ clang_index_getIBOutletCollectionAttrInfo
 clang_index_getObjCCategoryDeclInfo
 clang_index_getObjCContainerDeclInfo
 clang_index_getObjCInterfaceDeclInfo
+clang_index_getObjCPropertyDeclInfo
 clang_index_getObjCProtocolRefListInfo
 clang_index_isEntityObjCContainerKind
 clang_index_setClientContainer

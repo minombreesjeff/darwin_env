@@ -87,7 +87,7 @@
 		26C637DA0C71334A0024798E /* DNBBreakpoint.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DNBBreakpoint.h; sourceTree = "<group>"; };
 		26C637DB0C71334A0024798E /* DNBDataRef.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = DNBDataRef.cpp; sourceTree = "<group>"; };
 		26C637DC0C71334A0024798E /* DNBDataRef.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DNBDataRef.h; sourceTree = "<group>"; };
-		26C637DD0C71334A0024798E /* DNBDefs.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DNBDefs.h; sourceTree = "<group>"; };
+		26C637DD0C71334A0024798E /* DNBDefs.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; lineEnding = 0; path = DNBDefs.h; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
 		26C637DE0C71334A0024798E /* DNBError.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = DNBError.cpp; sourceTree = "<group>"; };
 		26C637DF0C71334A0024798E /* DNBError.h */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.h; path = DNBError.h; sourceTree = "<group>"; };
 		26C637E00C71334A0024798E /* DNBLog.cpp */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.cpp.cpp; path = DNBLog.cpp; sourceTree = "<group>"; };
@@ -131,6 +131,7 @@
 		49F530111331519C008956F6 /* MachRegisterStatesI386.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MachRegisterStatesI386.h; sourceTree = "<group>"; };
 		49F5301213316D7F008956F6 /* MachRegisterStatesX86_64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MachRegisterStatesX86_64.h; sourceTree = "<group>"; };
 		9457ECF61419864100DFE7D8 /* stack_logging.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = stack_logging.h; sourceTree = "<group>"; };
+		AF5B2E72150EB6020075D7FD /* com.apple.debugserver-secure.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "com.apple.debugserver-secure.plist"; sourceTree = "<group>"; };
 		AF67ABFF0D34604D0022D128 /* PseudoTerminal.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = PseudoTerminal.cpp; sourceTree = "<group>"; };
 		AF67AC000D34604D0022D128 /* PseudoTerminal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PseudoTerminal.h; sourceTree = "<group>"; };
 		EF88788B0D9C7558001831DA /* com.apple.debugserver.applist.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = com.apple.debugserver.applist.plist; sourceTree = "<group>"; };
@@ -184,6 +185,7 @@
 				260FC7320E5B290400043FC9 /* debugnub-exports */,
 				26242C390DDBD33C0054A4CC /* debugserver-entitlements.plist */,
 				26A4BAED0D498B7D00A9BEAB /* com.apple.debugserver.plist */,
+				AF5B2E72150EB6020075D7FD /* com.apple.debugserver-secure.plist */,
 				EF88788B0D9C7558001831DA /* com.apple.debugserver.applist.plist */,
 			);
 			name = Resources;
@@ -366,6 +368,7 @@
 				26CE05C7115C36870022F371 /* ShellScript */,
 				26CE0591115C31C20022F371 /* Sources */,
 				26CE0592115C31C20022F371 /* Frameworks */,
+				261CE9BE14D327CC006D8EFE /* Codesign */,
 			);
 			buildRules = (
 			);
@@ -382,7 +385,7 @@
 		08FB7793FE84155DC02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0420;
+				LastUpgradeCheck = 0430;
 			};
 			buildConfigurationList = 1DEB914E08733D8E0010E9CD /* Build configuration list for PBXProject "debugserver" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -404,6 +407,20 @@
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		261CE9BE14D327CC006D8EFE /* Codesign */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = Codesign;
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = "/bin/sh -x";
+			shellScript = "if [ $CONFIGURATION != BuildAndIntegration -a $PLATFORM_NAME = macosx ]; then /usr/bin/codesign -s lldb_codesign -f \"$TARGET_BUILD_DIR/$TARGET_NAME\"; fi";
+		};
 		26CE05C7115C36870022F371 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -469,18 +486,22 @@
 		1DEB914F08733D8E0010E9CD /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				"ARCHS[sdk=iphoneos*]" = armv6;
+				"ARCHS[sdk=iphoneos*]" = (
+					armv7,
+					armv7s,
+				);
 				"ARCHS[sdk=macosx*]" = (
 					x86_64,
 					i386,
 				);
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 192;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				SDKROOT = "";
 				STRIP_INSTALLED_PRODUCT = NO;
-				VALID_ARCHS = "armv4t armv5 armv6 armv7 i386 ppc ppc64 ppc7400 ppc970 x86_64";
+				VALID_ARCHS = "armv4t armv5 armv6 armv7 armv7s i386 ppc ppc64 ppc7400 ppc970 x86_64";
 				VERSIONING_SYSTEM = "apple-generic";
 				VERSION_INFO_BUILDER = "$(USER)";
 			};
@@ -489,19 +510,20 @@
 		1DEB915008733D8E0010E9CD /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				"ARCHS[sdk=iphoneos*]" = armv6;
-				"ARCHS[sdk=macosx*]" = (
-					x86_64,
-					i386,
+				"ARCHS[sdk=iphoneos*]" = (
+					armv7,
+					armv7s,
 				);
-				CURRENT_PROJECT_VERSION = 170;
+				"ARCHS[sdk=macosx*]" = "$(ARCHS_STANDARD_64_BIT)";
+				CURRENT_PROJECT_VERSION = 192;
 				DEAD_CODE_STRIPPING = YES;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				SDKROOT = "";
 				STRIPFLAGS = "-x";
 				STRIP_STYLE = debugging;
-				VALID_ARCHS = "armv4t armv5 armv6 armv7 i386 ppc ppc64 ppc7400 ppc970 x86_64";
+				VALID_ARCHS = "armv4t armv5 armv6 armv7 armv7s i386 ppc ppc64 ppc7400 ppc970 x86_64";
 				VERSIONING_SYSTEM = "apple-generic";
 				VERSION_INFO_BUILDER = "$(USER)";
 			};
@@ -510,19 +532,23 @@
 		262419A11198A93E00067686 /* BuildAndIntegration */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				"ARCHS[sdk=iphoneos*]" = armv6;
+				"ARCHS[sdk=iphoneos*]" = (
+					armv7,
+					armv7s,
+				);
 				"ARCHS[sdk=macosx*]" = (
 					x86_64,
 					i386,
 				);
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 192;
 				DEAD_CODE_STRIPPING = YES;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				SDKROOT = "";
 				STRIPFLAGS = "-x";
 				STRIP_STYLE = debugging;
-				VALID_ARCHS = "armv4t armv5 armv6 armv7 i386 ppc ppc64 ppc7400 ppc970 x86_64";
+				VALID_ARCHS = "armv4t armv5 armv6 armv7 armv7s i386 ppc ppc64 ppc7400 ppc970 x86_64";
 				VERSIONING_SYSTEM = "apple-generic";
 				VERSION_INFO_BUILDER = "$(USER)";
 			};
@@ -534,20 +560,29 @@
 				"ARCHS[sdk=iphoneos*]" = "$(ARCHS_STANDARD_32_BIT)";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 192;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
 					"$(SDKROOT)/System/Library/PrivateFrameworks",
-					"$(SDKROOT)$(DEVELOPER_LIBRARY_DIR)/PrivateFrameworks",
+					"$(SDKROOT)/Developer/Library/PrivateFrameworks",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*][arch=*]" = "$(SDKROOT)/System/Library/PrivateFrameworks";
 				GCC_PREPROCESSOR_DEFINITIONS = LLDB_DEBUGSERVER_BUILDANDINTEGRATION;
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				HEADER_SEARCH_PATHS = /System/Library/Frameworks/System.framework/PrivateHeaders;
 				INSTALL_PATH = /usr/bin;
+				"INSTALL_PATH[sdk=iphoneos*]" = /Developer/usr/bin/;
 				LLDB_DEBUGSERVER = 1;
 				OTHER_CFLAGS = "-Wparentheses";
+				"OTHER_CFLAGS[sdk=iphoneos*][arch=*]" = (
+					"-Wparentheses",
+					"-DWITH_LOCKDOWN",
+					"-DWITH_SPRINGBOARD",
+					"-DUSE_ARM_DISASSEMBLER_FRAMEWORK",
+					"-DOS_OBJECT_USE_OBJC=0",
+				);
+				"OTHER_CPLUSPLUSFLAGS[sdk=iphoneos*][arch=*]" = "$(OTHER_CFLAGS)";
 				OTHER_LDFLAGS = (
 					"-sectcreate",
 					__TEXT,
@@ -557,11 +592,14 @@
 				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
 					"-framework",
 					SpringBoardServices,
+					"-framework",
+					ARMDisassembler,
 					"-llockdown",
 				);
 				OTHER_MIGFLAGS = "-I$(DERIVED_FILE_DIR)";
 				PRODUCT_NAME = debugserver;
 				SKIP_INSTALL = YES;
+				"SKIP_INSTALL[sdk=iphoneos*]" = NO;
 				STRIP_INSTALLED_PRODUCT = YES;
 				USER_HEADER_SEARCH_PATHS = "./source ../../source $(DERIVED_SOURCES_DIR)";
 				ZERO_LINK = NO;
@@ -574,11 +612,11 @@
 				"ARCHS[sdk=iphoneos*]" = "$(ARCHS_STANDARD_32_BIT)";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 192;
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
 					"$(SDKROOT)/System/Library/PrivateFrameworks",
-					"$(SDKROOT)$(DEVELOPER_LIBRARY_DIR)/PrivateFrameworks",
+					"$(SDKROOT)/Developer/Library/PrivateFrameworks",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*][arch=*]" = "$(SDKROOT)/System/Library/PrivateFrameworks";
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -588,6 +626,14 @@
 				INSTALL_PATH = /usr/bin;
 				LLDB_DEBUGSERVER = 1;
 				OTHER_CFLAGS = "-Wparentheses";
+				"OTHER_CFLAGS[sdk=iphoneos*][arch=*]" = (
+					"-Wparentheses",
+					"-DWITH_LOCKDOWN",
+					"-DWITH_SPRINGBOARD",
+					"-DUSE_ARM_DISASSEMBLER_FRAMEWORK",
+					"-DOS_OBJECT_USE_OBJC=0",
+				);
+				"OTHER_CPLUSPLUSFLAGS[sdk=iphoneos*][arch=*]" = "$(OTHER_CFLAGS)";
 				OTHER_LDFLAGS = (
 					"-sectcreate",
 					__TEXT,
@@ -597,6 +643,8 @@
 				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
 					"-framework",
 					SpringBoardServices,
+					"-framework",
+					ARMDisassembler,
 					"-llockdown",
 				);
 				OTHER_MIGFLAGS = "-I$(DERIVED_FILE_DIR)";
@@ -613,12 +661,12 @@
 				"ARCHS[sdk=iphoneos*]" = "$(ARCHS_STANDARD_32_BIT)";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 170;
+				CURRENT_PROJECT_VERSION = 192;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
 					"$(SDKROOT)/System/Library/PrivateFrameworks",
-					"$(SDKROOT)$(DEVELOPER_LIBRARY_DIR)/PrivateFrameworks",
+					"$(SDKROOT)/Developer/Library/PrivateFrameworks",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*][arch=*]" = "$(SDKROOT)/System/Library/PrivateFrameworks";
 				GCC_PREPROCESSOR_DEFINITIONS = LLDB_DEBUGSERVER_RELEASE;
@@ -627,6 +675,14 @@
 				INSTALL_PATH = /usr/bin;
 				LLDB_DEBUGSERVER = 1;
 				OTHER_CFLAGS = "-Wparentheses";
+				"OTHER_CFLAGS[sdk=iphoneos*][arch=*]" = (
+					"-Wparentheses",
+					"-DWITH_LOCKDOWN",
+					"-DWITH_SPRINGBOARD",
+					"-DUSE_ARM_DISASSEMBLER_FRAMEWORK",
+					"-DOS_OBJECT_USE_OBJC=0",
+				);
+				"OTHER_CPLUSPLUSFLAGS[sdk=iphoneos*][arch=*]" = "$(OTHER_CFLAGS)";
 				OTHER_LDFLAGS = (
 					"-sectcreate",
 					__TEXT,
@@ -636,6 +692,8 @@
 				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
 					"-framework",
 					SpringBoardServices,
+					"-framework",
+					ARMDisassembler,
 					"-llockdown",
 				);
 				OTHER_MIGFLAGS = "-I$(DERIVED_FILE_DIR)";

@@ -64,7 +64,8 @@ ValueObjectMemory::ValueObjectMemory (ExecutionContextScope *exe_scope,
     assert (m_type_sp.get() != NULL);
     SetName (ConstString(name));
     m_value.SetContext(Value::eContextTypeLLDBType, m_type_sp.get());
-    lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTargetSP().get());
+    TargetSP target_sp (GetTargetSP());
+    lldb::addr_t load_address = m_address.GetLoadAddress(target_sp.get());
     if (load_address != LLDB_INVALID_ADDRESS)
     {
         m_value.SetValueType(Value::eValueTypeLoadAddress);
@@ -99,9 +100,11 @@ ValueObjectMemory::ValueObjectMemory (ExecutionContextScope *exe_scope,
     assert (m_clang_type.GetASTContext());
     assert (m_clang_type.GetOpaqueQualType());
     
+    TargetSP target_sp (GetTargetSP());
+
     SetName (ConstString(name));
     m_value.SetContext(Value::eContextTypeClangType, m_clang_type.GetOpaqueQualType());
-    lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTargetSP().get());
+    lldb::addr_t load_address = m_address.GetLoadAddress (target_sp.get());
     if (load_address != LLDB_INVALID_ADDRESS)
     {
         m_value.SetValueType(Value::eValueTypeLoadAddress);
@@ -128,7 +131,7 @@ ValueObjectMemory::~ValueObjectMemory()
 }
 
 lldb::clang_type_t
-ValueObjectMemory::GetClangType ()
+ValueObjectMemory::GetClangTypeImpl ()
 {
     if (m_type_sp)
         return m_type_sp->GetClangForwardType();
@@ -140,7 +143,7 @@ ValueObjectMemory::GetTypeName()
 {
     if (m_type_sp)
         return m_type_sp->GetName();
-    return ClangASTType::GetConstTypeName (m_clang_type.GetOpaqueQualType());
+    return ClangASTType::GetConstTypeName (GetClangAST(), m_clang_type.GetOpaqueQualType());
 }
 
 uint32_t
@@ -155,7 +158,7 @@ ValueObjectMemory::CalculateNumChildren()
 }
 
 clang::ASTContext *
-ValueObjectMemory::GetClangAST ()
+ValueObjectMemory::GetClangASTImpl ()
 {
     if (m_type_sp)
         return m_type_sp->GetClangAST();
@@ -183,7 +186,7 @@ ValueObjectMemory::UpdateValue ()
     SetValueIsValid (false);
     m_error.Clear();
 
-    ExecutionContext exe_ctx (GetExecutionContextScope());
+    ExecutionContext exe_ctx (GetExecutionContextRef());
     
     Target *target = exe_ctx.GetTargetPtr();
     if (target)
@@ -206,7 +209,7 @@ ValueObjectMemory::UpdateValue ()
         case Value::eValueTypeScalar:
             // The variable value is in the Scalar value inside the m_value.
             // We can point our m_data right to it.
-            m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule());
+            m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
             break;
 
         case Value::eValueTypeFileAddress:
@@ -248,7 +251,7 @@ ValueObjectMemory::UpdateValue ()
                 else
                     value.SetContext(Value::eContextTypeClangType, m_clang_type.GetOpaqueQualType());
 
-                m_error = value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0, GetModule());
+                m_error = value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
             }
             break;
         }
@@ -269,7 +272,7 @@ ValueObjectMemory::IsInScope ()
 }
 
 
-Module *
+lldb::ModuleSP
 ValueObjectMemory::GetModule()
 {
     return m_address.GetModule();

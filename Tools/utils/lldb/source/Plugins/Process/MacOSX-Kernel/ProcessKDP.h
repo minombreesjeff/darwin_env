@@ -38,8 +38,10 @@ public:
     //------------------------------------------------------------------
     // Constructors and Destructors
     //------------------------------------------------------------------
-    static Process*
-    CreateInstance (lldb_private::Target& target, lldb_private::Listener &listener);
+    static lldb::ProcessSP
+    CreateInstance (lldb_private::Target& target, 
+                    lldb_private::Listener &listener,
+                    const lldb_private::FileSpec *crash_file_path);
     
     static void
     Initialize();
@@ -94,7 +96,10 @@ public:
     DoAttachToProcessWithID (lldb::pid_t pid);
     
     virtual lldb_private::Error
-    DoAttachToProcessWithName (const char *process_name, bool wait_for_launch);
+    DoAttachToProcessWithID (lldb::pid_t pid, const lldb_private::ProcessAttachInfo &attach_info);
+    
+    virtual lldb_private::Error
+    DoAttachToProcessWithName (const char *process_name, bool wait_for_launch, const lldb_private::ProcessAttachInfo &attach_info);
     
     virtual void
     DidAttach ();
@@ -226,7 +231,7 @@ protected:
     void
     Clear ( );
     
-    uint32_t
+    virtual bool
     UpdateThreadList (lldb_private::ThreadList &old_thread_list, 
                       lldb_private::ThreadList &new_thread_list);
     

@@ -13,6 +13,7 @@
 
 #define DEBUG_TYPE "dwarfdebug"
 
+#include "DwarfAccelTable.h"
 #include "DwarfCompileUnit.h"
 #include "DwarfDebug.h"
 #include "llvm/Constants.h"
@@ -31,8 +32,9 @@
 using namespace llvm;
 
 /// CompileUnit - Compile unit constructor.
-CompileUnit::CompileUnit(unsigned I, DIE *D, AsmPrinter *A, DwarfDebug *DW)
-  : ID(I), CUDie(D), Asm(A), DD(DW), IndexTyDie(0) {
+CompileUnit::CompileUnit(unsigned I, unsigned L, DIE *D, AsmPrinter *A,
+			 DwarfDebug *DW)
+  : ID(I), Language(L), CUDie(D), Asm(A), DD(DW), IndexTyDie(0) {
   DIEIntegerOne = new (DIEValueAllocator) DIEInteger(1);
 }
 
@@ -608,8 +610,19 @@ DIE *CompileUnit::getOrCreateTypeDIE(const MDNode *TyNode) {
   }
   // If this is a named finished type then include it in the list of types
   // for the accelerator tables.
-  if (!Ty.getName().empty() && !Ty.isForwardDecl())
-    addAccelType(Ty.getName(), TyDIE);
+  if (!Ty.getName().empty() && !Ty.isForwardDecl()) {
+    bool IsImplementation = 0;
+    if (Ty.isCompositeType()) {
+      DICompositeType CT(Ty);
+      // A runtime language of 0 actually means C/C++ and that any
+      // non-negative value is some version of Objective-C/C++.
+      IsImplementation = (CT.getRunTimeLang() == 0) ||
+        CT.isObjcClassComplete();
+    }
+    unsigned Flags = IsImplementation ?
+                     DwarfAccelTable::eTypeFlagClassIsImplementation : 0;
+    addAccelType(Ty.getName(), std::make_pair(TyDIE, Flags));
+  }
   
   addToContextOwner(TyDIE, Ty.getContext());
   return TyDIE;
@@ -684,7 +697,7 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DIBasicType BTy) {
 
   Buffer.setTag(dwarf::DW_TAG_base_type);
   addUInt(&Buffer, dwarf::DW_AT_encoding, dwarf::DW_FORM_data1,
-	  BTy.getEncoding());
+          BTy.getEncoding());
 
   uint64_t Size = BTy.getSizeInBits() >> 3;
   addUInt(&Buffer, dwarf::DW_AT_byte_size, 0, Size);
@@ -711,7 +724,7 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DIDerivedType DTy) {
     addString(&Buffer, dwarf::DW_AT_name, Name);
 
   // Add size if non-zero (derived types might be zero-sized.)
-  if (Size)
+  if (Size && Tag != dwarf::DW_TAG_pointer_type)
     addUInt(&Buffer, dwarf::DW_AT_byte_size, 0, Size);
 
   // Add source line info if available and TyDesc is not a forward declaration.
@@ -767,8 +780,12 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
         Buffer.addChild(Arg);
       }
     }
-    // Add prototype flag.
-    if (isPrototyped)
+    // Add prototype flag if we're dealing with a C language and the
+    // function has been prototyped.
+    if (isPrototyped &&
+	(Language == dwarf::DW_LANG_C89 ||
+	 Language == dwarf::DW_LANG_C99 ||
+	 Language == dwarf::DW_LANG_ObjC))
       addUInt(&Buffer, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag, 1);
   }
     break;
@@ -812,18 +829,46 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
         addSourceLine(ElemDie, DV);
       } else if (Element.isDerivedType())
         ElemDie = createMemberDIE(DIDerivedType(Element));
-      else
+      else if (Element.isObjCProperty()) {
+        DIObjCProperty Property(Element);
+        ElemDie = new DIE(Property.getTag());
+        StringRef PropertyName = Property.getObjCPropertyName();
+        addString(ElemDie, dwarf::DW_AT_APPLE_property_name, PropertyName);
+        StringRef GetterName = Property.getObjCPropertyGetterName();
+        if (!GetterName.empty())
+          addString(ElemDie, dwarf::DW_AT_APPLE_property_getter, GetterName);
+        StringRef SetterName = Property.getObjCPropertySetterName();
+        if (!SetterName.empty())
+          addString(ElemDie, dwarf::DW_AT_APPLE_property_setter, SetterName);
+        unsigned PropertyAttributes = 0;
+        if (Property.isReadOnlyObjCProperty())
+          PropertyAttributes |= dwarf::DW_APPLE_PROPERTY_readonly;
+        if (Property.isReadWriteObjCProperty())
+          PropertyAttributes |= dwarf::DW_APPLE_PROPERTY_readwrite;
+        if (Property.isAssignObjCProperty())
+          PropertyAttributes |= dwarf::DW_APPLE_PROPERTY_assign;
+        if (Property.isRetainObjCProperty())
+          PropertyAttributes |= dwarf::DW_APPLE_PROPERTY_retain;
+        if (Property.isCopyObjCProperty())
+          PropertyAttributes |= dwarf::DW_APPLE_PROPERTY_copy;
+        if (Property.isNonAtomicObjCProperty())
+          PropertyAttributes |= dwarf::DW_APPLE_PROPERTY_nonatomic;
+        if (PropertyAttributes)
+          addUInt(ElemDie, dwarf::DW_AT_APPLE_property_attribute, 0, 
+                 PropertyAttributes);
+
+        DIEEntry *Entry = getDIEEntry(Element);
+        if (!Entry) {
+          Entry = createDIEEntry(ElemDie);
+          insertDIEEntry(Element, Entry);
+        }
+      } else
         continue;
       Buffer.addChild(ElemDie);
     }
 
     if (CTy.isAppleBlockExtension())
       addUInt(&Buffer, dwarf::DW_AT_APPLE_block, dwarf::DW_FORM_flag, 1);
-
-    unsigned RLang = CTy.getRunTimeLang();
-    if (RLang)
-      addUInt(&Buffer, dwarf::DW_AT_APPLE_runtime_class,
-              dwarf::DW_FORM_data1, RLang);
 
     DICompositeType ContainingType = CTy.getContainingType();
     if (DIDescriptor(ContainingType).isCompositeType())
@@ -838,7 +883,11 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
       addUInt(&Buffer, dwarf::DW_AT_APPLE_objc_complete_type,
               dwarf::DW_FORM_flag, 1);
 
-    if (Tag == dwarf::DW_TAG_class_type) 
+    // Add template parameters to a class, structure or union types.
+    // FIXME: The support isn't in the metadata for this yet.
+    if (Tag == dwarf::DW_TAG_class_type ||
+        Tag == dwarf::DW_TAG_structure_type ||
+        Tag == dwarf::DW_TAG_union_type)
       addTemplateParams(Buffer, CTy.getTemplateParams());
 
     break;
@@ -868,6 +917,12 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     // Add source line info if available.
     if (!CTy.isForwardDecl())
       addSourceLine(&Buffer, CTy);
+
+    // No harm in adding the runtime language to the declaration.
+    unsigned RLang = CTy.getRunTimeLang();
+    if (RLang)
+      addUInt(&Buffer, dwarf::DW_AT_APPLE_runtime_class,
+              dwarf::DW_FORM_data1, RLang);
   }
 }
 
@@ -973,7 +1028,12 @@ DIE *CompileUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
 
   addSourceLine(SPDie, SP);
 
-  if (SP.isPrototyped()) 
+  // Add the prototype if we have a prototype and we have a C like
+  // language.
+  if (SP.isPrototyped() &&
+      (Language == dwarf::DW_LANG_C89 ||
+       Language == dwarf::DW_LANG_C99 ||
+       Language == dwarf::DW_LANG_ObjC))
     addUInt(SPDie, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag, 1);
 
   // Add Return Type.
@@ -1412,6 +1472,12 @@ DIE *CompileUnit::createMemberDIE(DIDerivedType DT) {
             dwarf::DW_VIRTUALITY_virtual);
 
   // Objective-C properties.
+  if (MDNode *PNode = DT.getObjCProperty())
+    if (DIEEntry *PropertyDie = getDIEEntry(PNode))
+      MemberDie->addValue(dwarf::DW_AT_APPLE_property, dwarf::DW_FORM_ref4, 
+                          PropertyDie);
+
+  // This is only for backward compatibility.
   StringRef PropertyName = DT.getObjCPropertyName();
   if (!PropertyName.empty()) {
     addString(MemberDie, dwarf::DW_AT_APPLE_property_name, PropertyName);

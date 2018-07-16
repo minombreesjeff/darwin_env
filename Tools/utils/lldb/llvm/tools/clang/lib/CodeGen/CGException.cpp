@@ -11,17 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/AST/StmtCXX.h"
-
-#include "llvm/Intrinsics.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/Support/CallSite.h"
-
-#include "CGObjCRuntime.h"
 #include "CodeGenFunction.h"
-#include "CGException.h"
 #include "CGCleanup.h"
+#include "CGObjCRuntime.h"
 #include "TargetInfo.h"
+#include "clang/AST/StmtCXX.h"
+#include "llvm/Intrinsics.h"
+#include "llvm/Support/CallSite.h"
 
 using namespace clang;
 using namespace CodeGen;
@@ -145,14 +141,37 @@ static llvm::Constant *getCatchallRethrowFn(CodeGenFunction &CGF,
   return CGF.CGM.CreateRuntimeFunction(FTy, Name);
 }
 
-const EHPersonality EHPersonality::GNU_C("__gcc_personality_v0");
-const EHPersonality EHPersonality::GNU_C_SJLJ("__gcc_personality_sj0");
-const EHPersonality EHPersonality::NeXT_ObjC("__objc_personality_v0");
-const EHPersonality EHPersonality::GNU_CPlusPlus("__gxx_personality_v0");
-const EHPersonality EHPersonality::GNU_CPlusPlus_SJLJ("__gxx_personality_sj0");
-const EHPersonality EHPersonality::GNU_ObjC("__gnu_objc_personality_v0",
-                                            "objc_exception_throw");
-const EHPersonality EHPersonality::GNU_ObjCXX("__gnustep_objcxx_personality_v0");
+namespace {
+  /// The exceptions personality for a function.
+  struct EHPersonality {
+    const char *PersonalityFn;
+
+    // If this is non-null, this personality requires a non-standard
+    // function for rethrowing an exception after a catchall cleanup.
+    // This function must have prototype void(void*).
+    const char *CatchallRethrowFn;
+
+    static const EHPersonality &get(const LangOptions &Lang);
+    static const EHPersonality GNU_C;
+    static const EHPersonality GNU_C_SJLJ;
+    static const EHPersonality GNU_ObjC;
+    static const EHPersonality GNU_ObjCXX;
+    static const EHPersonality NeXT_ObjC;
+    static const EHPersonality GNU_CPlusPlus;
+    static const EHPersonality GNU_CPlusPlus_SJLJ;
+  };
+}
+
+const EHPersonality EHPersonality::GNU_C = { "__gcc_personality_v0", 0 };
+const EHPersonality EHPersonality::GNU_C_SJLJ = { "__gcc_personality_sj0", 0 };
+const EHPersonality EHPersonality::NeXT_ObjC = { "__objc_personality_v0", 0 };
+const EHPersonality EHPersonality::GNU_CPlusPlus = { "__gxx_personality_v0", 0};
+const EHPersonality
+EHPersonality::GNU_CPlusPlus_SJLJ = { "__gxx_personality_sj0", 0 };
+const EHPersonality
+EHPersonality::GNU_ObjC = {"__gnu_objc_personality_v0", "objc_exception_throw"};
+const EHPersonality
+EHPersonality::GNU_ObjCXX = { "__gnustep_objcxx_personality_v0", 0 };
 
 static const EHPersonality &getCPersonality(const LangOptions &L) {
   if (L.SjLjExceptions)
@@ -211,10 +230,8 @@ const EHPersonality &EHPersonality::get(const LangOptions &L) {
 static llvm::Constant *getPersonalityFn(CodeGenModule &CGM,
                                         const EHPersonality &Personality) {
   llvm::Constant *Fn =
-    CGM.CreateRuntimeFunction(llvm::FunctionType::get(
-                                llvm::Type::getInt32Ty(CGM.getLLVMContext()),
-                                true),
-                              Personality.getPersonalityFnName());
+    CGM.CreateRuntimeFunction(llvm::FunctionType::get(CGM.Int32Ty, true),
+                              Personality.PersonalityFn);
   return Fn;
 }
 
@@ -288,12 +305,13 @@ void CodeGenModule::SimplifyPersonality() {
 
   const EHPersonality &ObjCXX = EHPersonality::get(Features);
   const EHPersonality &CXX = getCXXPersonality(Features);
-  if (&ObjCXX == &CXX ||
-      ObjCXX.getPersonalityFnName() == CXX.getPersonalityFnName())
+  if (&ObjCXX == &CXX)
     return;
 
-  llvm::Function *Fn =
-    getModule().getFunction(ObjCXX.getPersonalityFnName());
+  assert(std::strcmp(ObjCXX.PersonalityFn, CXX.PersonalityFn) != 0 &&
+         "Different EHPersonalities using the same personality function.");
+
+  llvm::Function *Fn = getModule().getFunction(ObjCXX.PersonalityFn);
 
   // Nothing to do if it's unused.
   if (!Fn || Fn->use_empty()) return;
@@ -636,8 +654,7 @@ static bool isNonEHScope(const EHScope &S) {
     return false;
   }
 
-  // Suppress warning.
-  return false;
+  llvm_unreachable("Invalid EHScope Kind!");
 }
 
 llvm::BasicBlock *CodeGenFunction::getInvokeDestImpl() {
@@ -984,8 +1001,23 @@ static void InitCatchParam(CodeGenFunction &CGF,
     if (CatchType->hasPointerRepresentation()) {
       llvm::Value *CastExn =
         CGF.Builder.CreateBitCast(AdjustedExn, LLVMCatchTy, "exn.casted");
-      CGF.Builder.CreateStore(CastExn, ParamAddr);
-      return;
+
+      switch (CatchType.getQualifiers().getObjCLifetime()) {
+      case Qualifiers::OCL_Strong:
+        CastExn = CGF.EmitARCRetainNonBlock(CastExn);
+        // fallthrough
+
+      case Qualifiers::OCL_None:
+      case Qualifiers::OCL_ExplicitNone:
+      case Qualifiers::OCL_Autoreleasing:
+        CGF.Builder.CreateStore(CastExn, ParamAddr);
+        return;
+
+      case Qualifiers::OCL_Weak:
+        CGF.EmitARCInitWeak(ParamAddr, CastExn);
+        return;
+      }
+      llvm_unreachable("bad ownership qualifier!");
     }
 
     // Otherwise, it returns a pointer into the exception object.
@@ -1172,14 +1204,10 @@ static void emitCatchDispatchBlock(CodeGenFunction &CGF,
     if (nextIsEnd) {
       CGF.Builder.restoreIP(savedIP);
       return;
-
-    // Otherwise we need to emit and continue at that block.
-    } else {
-      CGF.EmitBlock(nextBlock);
     }
+    // Otherwise we need to emit and continue at that block.
+    CGF.EmitBlock(nextBlock);
   }
-
-  llvm_unreachable("fell out of loop!");
 }
 
 void CodeGenFunction::popCatchScope() {
@@ -1517,8 +1545,8 @@ llvm::BasicBlock *CodeGenFunction::getEHResumeBlock() {
 
   // This can always be a call because we necessarily didn't find
   // anything on the EH stack which needs our help.
-  StringRef RethrowName = Personality.getCatchallRethrowFnName();
-  if (!RethrowName.empty()) {
+  const char *RethrowName = Personality.CatchallRethrowFn;
+  if (RethrowName != 0) {
     Builder.CreateCall(getCatchallRethrowFn(*this, RethrowName),
                        getExceptionFromSlot())
       ->setDoesNotReturn();

@@ -214,6 +214,12 @@ public:
     return Redecl;
   }
 
+  /// \brief Determine whether this lookup is permitted to see hidden
+  /// declarations, such as those in modules that have not yet been imported.
+  bool isHiddenDeclarationVisible() const {
+    return Redecl || LookupKind == Sema::LookupTagName;
+  }
+  
   /// Sets whether tag declarations should be hidden by non-tag
   /// declarations during resolution.  The default is true.
   void setHideTags(bool Hide) {
@@ -269,9 +275,8 @@ public:
   /// \brief Determine whether the given declaration is visible to the
   /// program.
   static bool isVisible(NamedDecl *D) {
-    // So long as this declaration is not module-private or was parsed as
-    // part of this translation unit (i.e., in the module), it's visible.
-    if (!D->isModulePrivate() || !D->isFromASTFile())
+    // If this declaration is not hidden, it's visible.
+    if (!D->isHidden())
       return true;
     
     // FIXME: We should be allowed to refer to a module-private name from 
@@ -286,7 +291,7 @@ public:
     if (!D->isInIdentifierNamespace(IDNS))
       return 0;
     
-    if (isVisible(D))
+    if (isHiddenDeclarationVisible() || isVisible(D))
       return D;
     
     return getAcceptableDeclSlow(D);

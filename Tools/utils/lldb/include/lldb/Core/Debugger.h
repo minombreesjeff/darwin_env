@@ -18,6 +18,7 @@
 #include <stack>
 
 #include "lldb/lldb-public.h"
+#include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Communication.h"
 #include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReaderStack.h"
@@ -52,7 +53,7 @@ public:
     };
     
 
-    DebuggerInstanceSettings (UserSettingsController &owner, bool live_instance = true, const char *name = NULL);
+    DebuggerInstanceSettings (const lldb::UserSettingsControllerSP &m_owner_sp, bool live_instance = true, const char *name = NULL);
 
     DebuggerInstanceSettings (const DebuggerInstanceSettings &rhs);
 
@@ -87,7 +88,9 @@ public:
     void
     SetTerminalWidth (uint32_t term_width)
     {
-        m_term_width = term_width;
+        Error err;
+        if (ValidTermWidthValue(term_width, err))
+            m_term_width = term_width;
     }
 
     uint32_t
@@ -228,6 +231,9 @@ protected:
     bool
     ValidTermWidthValue (const char *value, Error err);
 
+    bool
+    ValidTermWidthValue (uint32_t value, Error err);
+
     const ConstString
     CreateInstanceName ();
 
@@ -251,9 +257,10 @@ private:
 
 
 class Debugger :
-    public ReferenceCountedBaseVirtual<Debugger>,
+    public STD_ENABLE_SHARED_FROM_THIS(Debugger),
     public UserID,
-    public DebuggerInstanceSettings
+    public DebuggerInstanceSettings,
+    public BroadcasterManager
 {
 friend class SourceManager;  // For GetSourceFileCache.
 
@@ -287,7 +294,7 @@ public:
     GetSettingsController ();
 
     static lldb::DebuggerSP
-    CreateInstance ();
+    CreateInstance (lldb::LogOutputCallback log_callback = NULL, void *baton = NULL);
 
     static lldb::TargetSP
     FindTargetWithProcessID (lldb::pid_t pid);
@@ -314,9 +321,6 @@ public:
     ~Debugger ();
     
     void Clear();
-
-    lldb::DebuggerSP
-    GetSP ();
 
     bool
     GetAsyncExecution ();
@@ -453,6 +457,12 @@ public:
     
     static lldb::DebuggerSP
     FindDebuggerWithInstanceName (const ConstString &instance_name);
+    
+    static uint32_t
+    GetNumDebuggers();
+    
+    static lldb::DebuggerSP
+    GetDebuggerAtIndex (uint32_t);
 
     static bool
     FormatPrompt (const char *format,
@@ -475,7 +485,13 @@ public:
     
     void
     SetCloseInputOnEOF (bool b);
+    
+    bool
+    EnableLog (const char *channel, const char **categories, const char *log_file, uint32_t log_options, Stream &error_stream);
 
+    void
+    SetLoggingCallback (lldb::LogOutputCallback log_callback, void *baton);
+    
 protected:
 
     static void
@@ -490,12 +506,6 @@ protected:
     bool
     CheckIfTopInputReaderIsDone ();
     
-    void
-    DisconnectInput()
-    {
-        m_input_comm.Clear ();
-    }
-
     SourceManager::SourceFileCache &
     GetSourceFileCache ()
     {
@@ -516,12 +526,15 @@ protected:
 
     InputReaderStack m_input_reader_stack;
     std::string m_input_reader_data;
+    typedef std::map<std::string, lldb::StreamSP> LogStreamMap;
+    LogStreamMap m_log_streams;
+    lldb::StreamSP m_log_callback_stream_sp;
 
 private:
 
     // Use Debugger::CreateInstance() to get a shared pointer to a new
     // debugger object
-    Debugger ();
+    Debugger (lldb::LogOutputCallback m_log_callback, void *baton);
 
     DISALLOW_COPY_AND_ASSIGN (Debugger);
     

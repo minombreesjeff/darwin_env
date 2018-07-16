@@ -41,11 +41,10 @@ ThreadPlanStepInstruction::ThreadPlanStepInstruction
     ThreadPlan (ThreadPlan::eKindStepInstruction, "Step over single instruction", thread, stop_vote, run_vote),
     m_instruction_addr (0),
     m_stop_other_threads (stop_other_threads),
-    m_step_over (step_over),
-    m_stack_depth (0)
+    m_step_over (step_over)
 {
     m_instruction_addr = m_thread.GetRegisterContext()->GetPC(0);
-    m_stack_depth = m_thread.GetStackFrameCount();
+    m_stack_id = m_thread.GetStackFrameAtIndex(0)->GetStackID();
 }
 
 ThreadPlanStepInstruction::~ThreadPlanStepInstruction ()
@@ -102,7 +101,10 @@ ThreadPlanStepInstruction::ShouldStop (Event *event_ptr)
     if (m_step_over)
     {
         LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
-        if (m_thread.GetStackFrameCount() <= m_stack_depth)
+        
+        StackID cur_frame_zero_id = m_thread.GetStackFrameAtIndex(0)->GetStackID();
+        
+        if (cur_frame_zero_id == m_stack_id || m_stack_id < cur_frame_zero_id)
         {
             if (m_thread.GetRegisterContext()->GetPC(0) != m_instruction_addr)
             {
@@ -123,13 +125,19 @@ ThreadPlanStepInstruction::ShouldStop (Event *event_ptr)
                     StreamString s;
                     s.PutCString ("Stepped in to: ");
                     addr_t stop_addr = m_thread.GetStackFrameAtIndex(0)->GetRegisterContext()->GetPC();
-                    s.Address (stop_addr, m_thread.GetProcess().GetTarget().GetArchitecture().GetAddressByteSize());
+                    s.Address (stop_addr, m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
                     s.PutCString (" stepping out to: ");
                     addr_t return_addr = return_frame->GetRegisterContext()->GetPC();
-                    s.Address (return_addr, m_thread.GetProcess().GetTarget().GetArchitecture().GetAddressByteSize());
+                    s.Address (return_addr, m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
                     log->Printf("%s.", s.GetData());
                 }
-                m_thread.QueueThreadPlanForStepOut(false, NULL, true, m_stop_other_threads, eVoteNo, eVoteNoOpinion, 0);
+                m_thread.QueueThreadPlanForStepOut(false,
+                                                   NULL,
+                                                   true,
+                                                   m_stop_other_threads,
+                                                   eVoteNo,
+                                                   eVoteNoOpinion,
+                                                   0);
                 return false;
             }
             else

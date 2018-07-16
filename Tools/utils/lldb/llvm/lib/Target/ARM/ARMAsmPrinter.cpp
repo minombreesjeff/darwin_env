@@ -84,6 +84,7 @@ namespace {
 
     void EmitTextAttribute(unsigned Attribute, StringRef String) {
       switch (Attribute) {
+      default: llvm_unreachable("Unsupported Text attribute in ASM Mode");
       case ARMBuildAttrs::CPU_name:
         Streamer.EmitRawText(StringRef("\t.cpu ") + String.lower());
         break;
@@ -92,7 +93,6 @@ namespace {
       case ARMBuildAttrs::VFP_arch:
         Streamer.EmitRawText(StringRef("\t.fpu ") + String.lower());
         break;
-      default: assert(0 && "Unsupported Text attribute in ASM Mode"); break;
       }
     }
     void Finish() { }
@@ -196,6 +196,7 @@ namespace {
         AttributeItemType item = Contents[i];
         Streamer.EmitULEB128IntValue(item.Tag, 0);
         switch (item.Type) {
+        default: llvm_unreachable("Invalid attribute type");
         case AttributeItemType::NumericAttribute:
           Streamer.EmitULEB128IntValue(item.IntValue, 0);
           break;
@@ -203,8 +204,6 @@ namespace {
           Streamer.EmitBytes(item.StringValue.upper(), 0);
           Streamer.EmitIntValue(0, 1); // '\0'
           break;
-        default:
-          assert(0 && "Invalid attribute type");
         }
       }
 
@@ -299,6 +298,22 @@ void ARMAsmPrinter::EmitFunctionEntryLabel() {
   OutStreamer.EmitLabel(CurrentFnSym);
 }
 
+void ARMAsmPrinter::EmitXXStructor(const Constant *CV) {
+  uint64_t Size = TM.getTargetData()->getTypeAllocSize(CV->getType());
+  assert(Size && "C++ constructor pointer had zero size!");
+
+  const GlobalValue *GV = dyn_cast<GlobalValue>(CV->stripPointerCasts());
+  assert(GV && "C++ constructor pointer was not a GlobalValue!");
+
+  const MCExpr *E = MCSymbolRefExpr::Create(Mang->getSymbol(GV),
+                                            (Subtarget->isTargetDarwin()
+                                             ? MCSymbolRefExpr::VK_None
+                                             : MCSymbolRefExpr::VK_ARM_TARGET1),
+                                            OutContext);
+  
+  OutStreamer.EmitValue(E, Size);
+}
+
 /// runOnMachineFunction - This uses the EmitInstruction()
 /// method to print assembly for each instruction.
 ///
@@ -315,8 +330,7 @@ void ARMAsmPrinter::printOperand(const MachineInstr *MI, int OpNum,
   unsigned TF = MO.getTargetFlags();
 
   switch (MO.getType()) {
-  default:
-    assert(0 && "<unknown operand type>");
+  default: llvm_unreachable("<unknown operand type>");
   case MachineOperand::MO_Register: {
     unsigned Reg = MO.getReg();
     assert(TargetRegisterInfo::isPhysicalRegister(Reg));
@@ -585,10 +599,8 @@ void ARMAsmPrinter::EmitStartOfAsmFile(Module &M) {
   OutStreamer.EmitAssemblerFlag(MCAF_SyntaxUnified);
 
   // Emit ARM Build Attributes
-  if (Subtarget->isTargetELF()) {
-
+  if (Subtarget->isTargetELF())
     emitAttributes();
-  }
 }
 
 
@@ -719,15 +731,25 @@ void ARMAsmPrinter::emitAttributes() {
 
   if (Subtarget->hasNEON() && emitFPU) {
     /* NEON is not exactly a VFP architecture, but GAS emit one of
-     * neon/vfpv3/vfpv2 for .fpu parameters */
-    AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon");
+     * neon/neon-vfpv4/vfpv3/vfpv2 for .fpu parameters */
+    if (Subtarget->hasNEON2())
+      AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon-vfpv4");
+    else
+      AttrEmitter->EmitTextAttribute(ARMBuildAttrs::Advanced_SIMD_arch, "neon");
     /* If emitted for NEON, omit from VFP below, since you can have both
      * NEON and VFP in build attributes but only one .fpu */
     emitFPU = false;
   }
 
+  /* VFPv4 + .fpu */
+  if (Subtarget->hasVFP4()) {
+    AttrEmitter->EmitAttribute(ARMBuildAttrs::VFP_arch,
+                               ARMBuildAttrs::AllowFPv4A);
+    if (emitFPU)
+      AttrEmitter->EmitTextAttribute(ARMBuildAttrs::VFP_arch, "vfpv4");
+
   /* VFPv3 + .fpu */
-  if (Subtarget->hasVFP3()) {
+  } else if (Subtarget->hasVFP3()) {
     AttrEmitter->EmitAttribute(ARMBuildAttrs::VFP_arch,
                                ARMBuildAttrs::AllowFPv3A);
     if (emitFPU)
@@ -817,7 +839,6 @@ static MCSymbol *getPICLabel(const char *Prefix, unsigned FunctionNumber,
 static MCSymbolRefExpr::VariantKind
 getModifierVariantKind(ARMCP::ARMCPModifier Modifier) {
   switch (Modifier) {
-  default: llvm_unreachable("Unknown modifier!");
   case ARMCP::no_modifier: return MCSymbolRefExpr::VK_None;
   case ARMCP::TLSGD:       return MCSymbolRefExpr::VK_ARM_TLSGD;
   case ARMCP::TPOFF:       return MCSymbolRefExpr::VK_ARM_TPOFF;
@@ -825,7 +846,7 @@ getModifierVariantKind(ARMCP::ARMCPModifier Modifier) {
   case ARMCP::GOT:         return MCSymbolRefExpr::VK_ARM_GOT;
   case ARMCP::GOTOFF:      return MCSymbolRefExpr::VK_ARM_GOTOFF;
   }
-  return MCSymbolRefExpr::VK_None;
+  llvm_unreachable("Invalid ARMCPModifier!");
 }
 
 MCSymbol *ARMAsmPrinter::GetARMGVSymbol(const GlobalValue *GV) {
@@ -1093,7 +1114,7 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
     switch (Opc) {
     default:
       MI->dump();
-      assert(0 && "Unsupported opcode for unwinding information");
+      llvm_unreachable("Unsupported opcode for unwinding information");
     case ARM::tPUSH:
       // Special case here: no src & dst reg, but two extra imp ops.
       StartOp = 2; NumOffset = 2;
@@ -1108,6 +1129,7 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
       break;
     case ARM::STR_PRE_IMM:
     case ARM::STR_PRE_REG:
+    case ARM::t2STR_PRE:
       assert(MI->getOperand(2).getReg() == ARM::SP &&
              "Only stack pointer as a source reg is supported");
       RegList.push_back(SrcReg);
@@ -1121,14 +1143,16 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
       switch (Opc) {
       default:
         MI->dump();
-        assert(0 && "Unsupported opcode for unwinding information");
+        llvm_unreachable("Unsupported opcode for unwinding information");
       case ARM::MOVr:
+      case ARM::tMOVr:
         Offset = 0;
         break;
       case ARM::ADDri:
         Offset = -MI->getOperand(2).getImm();
         break;
       case ARM::SUBri:
+      case ARM::t2SUBri:
         Offset = MI->getOperand(2).getImm();
         break;
       case ARM::tSUBspi:
@@ -1166,16 +1190,16 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
         OutStreamer.EmitPad(Offset);
       } else {
         MI->dump();
-        assert(0 && "Unsupported opcode for unwinding information");
+        llvm_unreachable("Unsupported opcode for unwinding information");
       }
     } else if (DstReg == ARM::SP) {
       // FIXME: .movsp goes here
       MI->dump();
-      assert(0 && "Unsupported opcode for unwinding information");
+      llvm_unreachable("Unsupported opcode for unwinding information");
     }
     else {
       MI->dump();
-      assert(0 && "Unsupported opcode for unwinding information");
+      llvm_unreachable("Unsupported opcode for unwinding information");
     }
   }
 }
@@ -1204,7 +1228,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   // Check for manual lowerings.
   unsigned Opc = MI->getOpcode();
   switch (Opc) {
-  case ARM::t2MOVi32imm: assert(0 && "Should be lowered by thumb2it pass");
+  case ARM::t2MOVi32imm: llvm_unreachable("Should be lowered by thumb2it pass");
   case ARM::DBG_VALUE: {
     if (isVerbose() && OutStreamer.hasRawTextSupport()) {
       SmallString<128> TmpStr;
@@ -1314,6 +1338,60 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
       TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
       TmpInst.addOperand(MCOperand::CreateReg(0));
       // Add 's' bit operand (always reg0 for this)
+      TmpInst.addOperand(MCOperand::CreateReg(0));
+      OutStreamer.EmitInstruction(TmpInst);
+    }
+    return;
+  }
+  case ARM::BMOVPCBr9_CALL:
+  case ARM::BMOVPCB_CALL: {
+    {
+      MCInst TmpInst;
+      TmpInst.setOpcode(ARM::MOVr);
+      TmpInst.addOperand(MCOperand::CreateReg(ARM::LR));
+      TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
+      // Add predicate operands.
+      TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
+      TmpInst.addOperand(MCOperand::CreateReg(0));
+      // Add 's' bit operand (always reg0 for this)
+      TmpInst.addOperand(MCOperand::CreateReg(0));
+      OutStreamer.EmitInstruction(TmpInst);
+    }
+    {
+      MCInst TmpInst;
+      TmpInst.setOpcode(ARM::Bcc);
+      const GlobalValue *GV = MI->getOperand(0).getGlobal();
+      MCSymbol *GVSym = Mang->getSymbol(GV);
+      const MCExpr *GVSymExpr = MCSymbolRefExpr::Create(GVSym, OutContext);
+      TmpInst.addOperand(MCOperand::CreateExpr(GVSymExpr));
+      // Add predicate operands.
+      TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
+      TmpInst.addOperand(MCOperand::CreateReg(0));
+      OutStreamer.EmitInstruction(TmpInst);
+    }
+    return;
+  }
+  case ARM::t2BMOVPCBr9_CALL:
+  case ARM::t2BMOVPCB_CALL: {
+    {
+      MCInst TmpInst;
+      TmpInst.setOpcode(ARM::tMOVr);
+      TmpInst.addOperand(MCOperand::CreateReg(ARM::LR));
+      TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
+      // Add predicate operands.
+      TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
+      TmpInst.addOperand(MCOperand::CreateReg(0));
+      OutStreamer.EmitInstruction(TmpInst);
+    }
+    {
+      MCInst TmpInst;
+      TmpInst.setOpcode(ARM::t2B);
+      const GlobalValue *GV = MI->getOperand(0).getGlobal();
+      MCSymbol *GVSym = Mang->getSymbol(GV);
+      const MCExpr *GVSymExpr = MCSymbolRefExpr::Create(GVSym, OutContext);
+      TmpInst.addOperand(MCOperand::CreateExpr(GVSymExpr));
+      // Add predicate operands.
+      TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
       TmpInst.addOperand(MCOperand::CreateReg(0));
       OutStreamer.EmitInstruction(TmpInst);
     }

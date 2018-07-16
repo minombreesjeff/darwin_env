@@ -29,7 +29,6 @@ public:
 
     ~SBBreakpoint();
 
-#ifndef SWIG
     const lldb::SBBreakpoint &
     operator = (const lldb::SBBreakpoint& rhs);
     
@@ -37,8 +36,6 @@ public:
     // opaque breakpoint object in "rhs".
     bool
     operator == (const lldb::SBBreakpoint& rhs);
-
-#endif
 
     break_id_t
     GetID () const;
@@ -118,6 +115,9 @@ public:
     bool
     GetDescription (lldb::SBStream &description);
 
+    static bool
+    EventIsBreakpointEvent (const lldb::SBEvent &event);
+    
     static lldb::BreakpointEventType
     GetBreakpointEventTypeFromEvent (const lldb::SBEvent& event);
 
@@ -126,14 +126,16 @@ public:
     
     static lldb::SBBreakpointLocation
     GetBreakpointLocationAtIndexFromEvent (const lldb::SBEvent& event, uint32_t loc_idx);
+    
+    static uint32_t
+    GetNumBreakpointLocationsFromEvent (const lldb::SBEvent &event_sp);
+
 
 private:
     friend class SBBreakpointLocation;
     friend class SBTarget;
 
     SBBreakpoint (const lldb::BreakpointSP &bp_sp);
-
-#ifndef SWIG
 
     lldb_private::Breakpoint *
     operator->() const;
@@ -146,8 +148,6 @@ private:
 
     const lldb::BreakpointSP &
     operator *() const;
-
-#endif
 
     static bool
     PrivateBreakpointHitCallback (void *baton, 

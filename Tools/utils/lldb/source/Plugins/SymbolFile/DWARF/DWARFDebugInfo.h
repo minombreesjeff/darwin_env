@@ -21,7 +21,7 @@ typedef std::multimap<const char*, dw_offset_t, CStringCompareFunctionObject> CS
 typedef CStringToDIEMap::iterator CStringToDIEMapIter;
 typedef CStringToDIEMap::const_iterator CStringToDIEMapConstIter;
 
-typedef lldb::SharedPtr<DWARFCompileUnit>::Type DWARFCompileUnitSP;
+typedef STD_SHARED_PTR(DWARFCompileUnit) DWARFCompileUnitSP;
 
 class DWARFDebugInfo
 {
@@ -46,6 +46,7 @@ public:
 
     void AddCompileUnit(DWARFCompileUnitSP& cu);
     uint32_t GetNumCompileUnits();
+    bool ContainsCompileUnit (const DWARFCompileUnit *cu) const;
     DWARFCompileUnit* GetCompileUnitAtIndex(uint32_t idx);
     DWARFCompileUnitSP GetCompileUnit(dw_offset_t cu_offset, uint32_t* idx_ptr = NULL);
     DWARFCompileUnitSP GetCompileUnitContainingDIE(dw_offset_t die_offset);

@@ -92,10 +92,14 @@ STATISTIC(NumCriticalEdgesSplit, "Number of critical edges split");
 STATISTIC(NumReused, "Number of reused lowered phis");
 
 char PHIElimination::ID = 0;
-INITIALIZE_PASS(PHIElimination, "phi-node-elimination",
-                "Eliminate PHI nodes for register allocation", false, false)
-
 char& llvm::PHIEliminationID = PHIElimination::ID;
+
+INITIALIZE_PASS_BEGIN(PHIElimination, "phi-node-elimination",
+                      "Eliminate PHI nodes for register allocation",
+                      false, false)
+INITIALIZE_PASS_DEPENDENCY(LiveVariables)
+INITIALIZE_PASS_END(PHIElimination, "phi-node-elimination",
+                    "Eliminate PHI nodes for register allocation", false, false)
 
 void PHIElimination::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<LiveVariables>();
@@ -241,7 +245,6 @@ void PHIElimination::LowerAtomicPHINode(
       LiveVariables::VarInfo &VI = LV->getVarInfo(IncomingReg);
 
       // Increment use count of the newly created virtual register.
-      VI.NumUses++;
       LV->setPHIJoin(IncomingReg);
 
       // When we are reusing the incoming register, it may already have been

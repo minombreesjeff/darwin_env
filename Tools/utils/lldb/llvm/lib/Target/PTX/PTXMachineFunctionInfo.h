@@ -1,4 +1,4 @@
-//===- PTXMachineFuctionInfo.h - PTX machine function info -------*- C++ -*-==//
+//===-- PTXMachineFuctionInfo.h - PTX machine function info ------*- C++ -*-==//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -30,7 +30,7 @@ namespace llvm {
 /// contains private PTX target-specific information for each MachineFunction.
 ///
 class PTXMachineFunctionInfo : public MachineFunctionInfo {
-private:
+  virtual void anchor();
   bool IsKernel;
   DenseSet<unsigned> RegArgs;
   DenseSet<unsigned> RegRets;

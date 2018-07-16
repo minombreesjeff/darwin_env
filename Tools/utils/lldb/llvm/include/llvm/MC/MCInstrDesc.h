@@ -137,7 +137,6 @@ public:
   unsigned short  NumDefs;       // Num of args that are definitions
   unsigned short  SchedClass;    // enum identifying instr sched class
   unsigned short  Size;          // Number of bytes in encoding.
-  const char *    Name;          // Name of the instruction record in td file
   unsigned        Flags;         // Flags identifying machine instr class
   uint64_t        TSFlags;       // Target Specific Flag values
   const unsigned *ImplicitUses;  // Registers implicitly read by this instr
@@ -159,12 +158,6 @@ public:
   /// getOpcode - Return the opcode number for this descriptor.
   unsigned getOpcode() const {
     return Opcode;
-  }
-
-  /// getName - Return the name of the record in the .td file for this
-  /// instruction, for example "ADD8ri".
-  const char *getName() const {
-    return Name;
   }
 
   /// getNumOperands - Return the number of declared MachineOperands for this

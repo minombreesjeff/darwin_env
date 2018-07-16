@@ -1,4 +1,4 @@
-//==-- HexagonISelDAGToDAG.cpp - A dag to dag inst selector for Hexagon ----==//
+//===-- HexagonISelDAGToDAG.cpp - A dag to dag inst selector for Hexagon --===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -238,7 +238,7 @@ static unsigned doesIntrinsicContainPredicate(unsigned ID)
     case Intrinsic::hexagon_C2_or:
       return Hexagon::OR_pp;
     case Intrinsic::hexagon_C2_not:
-      return Hexagon::NOT_pp;
+      return Hexagon::NOT_p;
     case Intrinsic::hexagon_C2_any8:
       return Hexagon::ANY_pp;
     case Intrinsic::hexagon_C2_all8:
@@ -295,7 +295,6 @@ static bool OffsetFitsS11(EVT MemType, int64_t Offset) {
 // CONST32.
 //
 SDNode *HexagonDAGToDAGISel::SelectBaseOffsetLoad(LoadSDNode *LD, DebugLoc dl) {
-  EVT LoadedVT = LD->getMemoryVT();
   SDValue Chain = LD->getChain();
   SDNode* Const32 = LD->getBasePtr().getNode();
   unsigned Opcode = 0;
@@ -572,8 +571,6 @@ SDNode *HexagonDAGToDAGISel::SelectIndexedLoad(LoadSDNode *LD, DebugLoc dl) {
     ReplaceUses(Froms, Tos, 3);
     return Result_1;
   }
-
-  return SelectCode(LD);
 }
 
 
@@ -767,7 +764,6 @@ SDNode *HexagonDAGToDAGISel::SelectMul(SDNode *N) {
         SelectCode(N);
       }
 
-      SDValue Base = LD->getBasePtr();
       SDValue Chain = LD->getChain();
       SDValue TargetConst0 = CurDAG->getTargetConstant(0, MVT::i32);
       OP0 = SDValue (CurDAG->getMachineNode(Hexagon::LDriw, dl, MVT::i32,
@@ -794,7 +790,6 @@ SDNode *HexagonDAGToDAGISel::SelectMul(SDNode *N) {
         return SelectCode(N);
       }
 
-      SDValue Base = LD->getBasePtr();
       SDValue Chain = LD->getChain();
       SDValue TargetConst0 = CurDAG->getTargetConstant(0, MVT::i32);
       OP1 = SDValue (CurDAG->getMachineNode(Hexagon::LDriw, dl, MVT::i32,
@@ -949,7 +944,6 @@ SDNode *HexagonDAGToDAGISel::SelectTruncate(SDNode *N) {
           return SelectCode(N);
         }
 
-        SDValue Base = LD->getBasePtr();
         SDValue Chain = LD->getChain();
         SDValue TargetConst0 = CurDAG->getTargetConstant(0, MVT::i32);
         OP0 = SDValue (CurDAG->getMachineNode(Hexagon::LDriw, dl, MVT::i32,
@@ -975,7 +969,6 @@ SDNode *HexagonDAGToDAGISel::SelectTruncate(SDNode *N) {
           return SelectCode(N);
         }
 
-        SDValue Base = LD->getBasePtr();
         SDValue Chain = LD->getChain();
         SDValue TargetConst0 = CurDAG->getTargetConstant(0, MVT::i32);
         OP1 = SDValue (CurDAG->getMachineNode(Hexagon::LDriw, dl, MVT::i32,
@@ -1106,7 +1099,7 @@ SDNode *HexagonDAGToDAGISel::SelectZeroExtend(SDNode *N) {
         ReplaceUses(N, RsPd);
         return RsPd;
       }
-      assert(0 && "Unexpected value type");
+      llvm_unreachable("Unexpected value type");
     }
   }
   return SelectCode(N);
@@ -1152,7 +1145,7 @@ SDNode *HexagonDAGToDAGISel::SelectIntrinsicWOChain(SDNode *N) {
         SDValue SDVal = CurDAG->getTargetConstant(Val, MVT::i32);
         Ops.push_back(SDVal);
       } else {
-        assert(0 && "Unimplemented");
+        llvm_unreachable("Unimplemented");
       }
     }
     EVT ReturnValueVT = N->getValueType(0);
@@ -1175,9 +1168,6 @@ SDNode *HexagonDAGToDAGISel::SelectConstant(SDNode *N) {
     SDNode* Result;
     int32_t Val = cast<ConstantSDNode>(N)->getSExtValue();
     if (Val == -1) {
-      unsigned NewIntReg = TM.getInstrInfo()->createVR(MF, MVT(MVT::i32));
-      SDValue Reg = CurDAG->getRegister(NewIntReg, MVT::i32);
-
       // Create the IntReg = 1 node.
       SDNode* IntRegTFR =
         CurDAG->getMachineNode(Hexagon::TFRI, dl, MVT::i32,
@@ -1188,7 +1178,7 @@ SDNode *HexagonDAGToDAGISel::SelectConstant(SDNode *N) {
                                           SDValue(IntRegTFR, 0));
 
       // not(Pd)
-      SDNode* NotPd = CurDAG->getMachineNode(Hexagon::NOT_pp, dl, MVT::i1,
+      SDNode* NotPd = CurDAG->getMachineNode(Hexagon::NOT_p, dl, MVT::i1,
                                              SDValue(Pd, 0));
 
       // xor(not(Pd))

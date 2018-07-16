@@ -9,6 +9,181 @@
 
 namespace lldb {
 
+class SBLaunchInfo
+{
+public:
+    SBLaunchInfo (const char **argv);
+    
+    uint32_t
+    GetUserID();
+    
+    uint32_t
+    GetGroupID();
+    
+    bool
+    UserIDIsValid ();
+    
+    bool
+    GroupIDIsValid ();
+    
+    void
+    SetUserID (uint32_t uid);
+    
+    void
+    SetGroupID (uint32_t gid);
+    
+    uint32_t
+    GetNumArguments ();
+    
+    const char *
+    GetArgumentAtIndex (uint32_t idx);
+    
+    void
+    SetArguments (const char **argv, bool append);
+    
+    uint32_t
+    GetNumEnvironmentEntries ();
+    
+    const char *
+    GetEnvironmentEntryAtIndex (uint32_t idx);
+    
+    void
+    SetEnvironmentEntries (const char **envp, bool append);
+    
+    void
+    Clear ();
+    
+    const char *
+    GetWorkingDirectory () const;
+    
+    void
+    SetWorkingDirectory (const char *working_dir);
+    
+    uint32_t
+    GetLaunchFlags ();
+    
+    void
+    SetLaunchFlags (uint32_t flags);
+    
+    const char *
+    GetProcessPluginName ();
+    
+    void
+    SetProcessPluginName (const char *plugin_name);
+    
+    const char *
+    GetShell ();
+    
+    void
+    SetShell (const char * path);
+    
+    uint32_t
+    GetResumeCount ();
+    
+    void
+    SetResumeCount (uint32_t c);
+    
+    bool
+    AddCloseFileAction (int fd);
+    
+    bool
+    AddDuplicateFileAction (int fd, int dup_fd);
+    
+    bool
+    AddOpenFileAction (int fd, const char *path, bool read, bool write);
+    
+    bool
+    AddSuppressFileAction (int fd, bool read, bool write);
+};
+
+class SBAttachInfo
+{
+public:
+    SBAttachInfo ();
+    
+    SBAttachInfo (lldb::pid_t pid);
+    
+    SBAttachInfo (const char *path, bool wait_for);
+    
+    SBAttachInfo (const lldb::SBAttachInfo &rhs);
+    
+    lldb::pid_t
+    GetProcessID ();
+    
+    void
+    SetProcessID (lldb::pid_t pid);
+    
+    void
+    SetExecutable (const char *path);
+    
+    void
+    SetExecutable (lldb::SBFileSpec exe_file);
+    
+    bool
+    GetWaitForLaunch ();
+    
+    void
+    SetWaitForLaunch (bool b);
+    
+    uint32_t
+    GetResumeCount ();
+    
+    void
+    SetResumeCount (uint32_t c);
+    
+    const char *
+    GetProcessPluginName ();
+    
+    void
+    SetProcessPluginName (const char *plugin_name);
+    
+    uint32_t
+    GetUserID();
+    
+    uint32_t
+    GetGroupID();
+    
+    bool
+    UserIDIsValid ();
+    
+    bool
+    GroupIDIsValid ();
+    
+    void
+    SetUserID (uint32_t uid);
+    
+    void
+    SetGroupID (uint32_t gid);
+
+    uint32_t
+    GetEffectiveUserID();
+    
+    uint32_t
+    GetEffectiveGroupID();
+    
+    bool
+    EffectiveUserIDIsValid ();
+    
+    bool
+    EffectiveGroupIDIsValid ();
+    
+    void
+    SetEffectiveUserID (uint32_t uid);
+    
+    void
+    SetEffectiveGroupID (uint32_t gid);
+    
+    lldb::pid_t
+    GetParentProcessID ();
+    
+    void
+    SetParentProcessID (lldb::pid_t pid);
+    
+    bool
+    ParentProcessIDIsValid();
+};
+    
+    
 %feature("docstring",
 "Represents the target program running under the debugger.
 
@@ -72,6 +247,9 @@ public:
     //------------------------------------------------------------------
     ~SBTarget();
 
+    static const char *
+    GetBroadcasterClassName ();
+    
     bool
     IsValid() const;
 
@@ -202,6 +380,13 @@ public:
                   const char **envp,
                   const char *working_directory);
     
+    lldb::SBProcess
+    Launch (lldb::SBLaunchInfo &launch_info, lldb::SBError& error);
+    
+    lldb::SBProcess
+    Attach (lldb::SBAttachInfo &attach_info, lldb::SBError& error);
+    
+
     %feature("docstring", "
     //------------------------------------------------------------------
     /// Attach to process with pid.
@@ -296,6 +481,12 @@ public:
                const char *triple,
                const char *uuid);
 
+    lldb::SBModule
+    AddModule (const char *path,
+               const char *triple,
+               const char *uuid_cstr,
+               const char *symfile);
+
     uint32_t
     GetNumModules () const;
 
@@ -310,6 +501,15 @@ public:
 
     lldb::SBModule
     FindModule (const lldb::SBFileSpec &file_spec);
+
+    lldb::ByteOrder
+    GetByteOrder ();
+    
+    uint32_t
+    GetAddressByteSize();
+    
+    const char *
+    GetTriple ();
 
     lldb::SBError
     SetSectionLoadAddress (lldb::SBSection section,
@@ -339,23 +539,14 @@ public:
     ///     C++ methods, or ObjC selectors. 
     ///     See FunctionNameType for more details.
     ///
-    /// @param[in] append
-    ///     If true, any matches will be appended to \a sc_list, else
-    ///     matches replace the contents of \a sc_list.
-    ///
-    /// @param[out] sc_list
-    ///     A symbol context list that gets filled in with all of the
-    ///     matches.
-    ///
     /// @return
-    ///     The number of matches added to \a sc_list.
+    ///     A lldb::SBSymbolContextList that gets filled in with all of 
+    ///     the symbol contexts for all the matches.
     //------------------------------------------------------------------
     ") FindFunctions;
-    uint32_t
+    lldb::SBSymbolContextList
     FindFunctions (const char *name, 
-                   uint32_t name_type_mask, // Logical OR one or more FunctionNameType enum bits
-                   bool append, 
-                   lldb::SBSymbolContextList& sc_list);
+                   uint32_t name_type_mask = lldb::eFunctionNameTypeAny);
     
     lldb::SBType
     FindFirstType (const char* type);
@@ -411,10 +602,22 @@ public:
                             const SBFileSpecList &comp_unit_list);
 
     lldb::SBBreakpoint
+    BreakpointCreateByNames (const char *symbol_name[],
+                             uint32_t num_names,
+                             uint32_t name_type_mask,           // Logical OR one or more FunctionNameType enum bits
+                             const SBFileSpecList &module_list,
+                             const SBFileSpecList &comp_unit_list);
+
+    lldb::SBBreakpoint
     BreakpointCreateByRegex (const char *symbol_name_regex, const char *module_name = NULL);
 
     lldb::SBBreakpoint
     BreakpointCreateBySourceRegex (const char *source_regex, const lldb::SBFileSpec &source_file, const char *module_name = NULL);
+
+    lldb::SBBreakpoint
+    BreakpointCreateForException  (lldb::LanguageType language,
+                                   bool catch_bp,
+                                   bool throw_bp);
 
     lldb::SBBreakpoint
     BreakpointCreateByAddress (addr_t address);
@@ -465,17 +668,118 @@ public:
     WatchAddress (lldb::addr_t addr, 
                   size_t size, 
                   bool read, 
-                  bool write);
+                  bool write,
+                  SBError &error);
              
 
     lldb::SBBroadcaster
     GetBroadcaster () const;
     
     lldb::SBInstructionList
+    ReadInstructions (lldb::SBAddress base_addr, uint32_t count);    
+
+    lldb::SBInstructionList
     GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
     
     bool
     GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
+    
+    %pythoncode %{
+        class modules_access(object):
+            '''A helper object that will lazily hand out lldb.SBModule objects for a target when supplied an index, or by full or partial path.'''
+            def __init__(self, sbtarget):
+                self.sbtarget = sbtarget
+        
+            def __len__(self):
+                if self.sbtarget:
+                    return int(self.sbtarget.GetNumModules())
+                return 0
+        
+            def __getitem__(self, key):
+                num_modules = self.sbtarget.GetNumModules()
+                if type(key) is int:
+                    if key < num_modules:
+                        return self.sbtarget.GetModuleAtIndex(key)
+                elif type(key) is str:
+                    if key.find('/') == -1:
+                        for idx in range(num_modules):
+                            module = self.sbtarget.GetModuleAtIndex(idx)
+                            if module.file.basename == key:
+                                return module
+                    else:
+                        for idx in range(num_modules):
+                            module = self.sbtarget.GetModuleAtIndex(idx)
+                            if module.file.fullpath == key:
+                                return module
+                    # See if the string is a UUID
+                    the_uuid = uuid.UUID(key)
+                    if the_uuid:
+                        for idx in range(num_modules):
+                            module = self.sbtarget.GetModuleAtIndex(idx)
+                            if module.uuid == the_uuid:
+                                return module
+                elif type(key) is uuid.UUID:
+                    for idx in range(num_modules):
+                        module = self.sbtarget.GetModuleAtIndex(idx)
+                        if module.uuid == key:
+                            return module
+                elif type(key) is re.SRE_Pattern:
+                    matching_modules = []
+                    for idx in range(num_modules):
+                        module = self.sbtarget.GetModuleAtIndex(idx)
+                        re_match = key.search(module.path.fullpath)
+                        if re_match:
+                            matching_modules.append(module)
+                    return matching_modules
+                else:
+                    print "error: unsupported item type: %s" % type(key)
+                return None
+        
+        def get_modules_access_object(self):
+            '''An accessor function that returns a modules_access() object which allows lazy module access from a lldb.SBTarget object.'''
+            return self.modules_access (self)
+        
+        def get_modules_array(self):
+            '''An accessor function that returns a list() that contains all modules in a lldb.SBTarget object.'''
+            modules = []
+            for idx in range(self.GetNumModules()):
+                modules.append(self.GetModuleAtIndex(idx))
+            return modules
+
+        __swig_getmethods__["modules"] = get_modules_array
+        if _newclass: x = property(get_modules_array, None)
+
+        __swig_getmethods__["module"] = get_modules_access_object
+        if _newclass: x = property(get_modules_access_object, None)
+
+        __swig_getmethods__["process"] = GetProcess
+        if _newclass: x = property(GetProcess, None)
+
+        __swig_getmethods__["executable"] = GetExecutable
+        if _newclass: x = property(GetExecutable, None)
+
+        __swig_getmethods__["debugger"] = GetDebugger
+        if _newclass: x = property(GetDebugger, None)
+
+        __swig_getmethods__["num_breakpoints"] = GetNumBreakpoints
+        if _newclass: x = property(GetNumBreakpoints, None)
+
+        __swig_getmethods__["num_watchpoints"] = GetNumWatchpoints
+        if _newclass: x = property(GetNumWatchpoints, None)
+
+        __swig_getmethods__["broadcaster"] = GetBroadcaster
+        if _newclass: x = property(GetBroadcaster, None)
+        
+        __swig_getmethods__["byte_order"] = GetByteOrder
+        if _newclass: x = property(GetByteOrder, None)
+        
+        __swig_getmethods__["addr_size"] = GetAddressByteSize
+        if _newclass: x = property(GetAddressByteSize, None)
+        
+        __swig_getmethods__["triple"] = GetTriple
+        if _newclass: x = property(GetTriple, None)
+    %}
+
 };
 
 } // namespace lldb

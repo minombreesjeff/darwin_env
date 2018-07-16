@@ -96,6 +96,22 @@ StringList::GetStringAtIndex (size_t idx) const
 }
 
 void
+StringList::Join (const char *separator, Stream &strm)
+{
+    uint32_t size = GetSize();
+    
+    if (size == 0)
+        return;
+    
+    for (uint32_t i = 0; i < size; ++i)
+    {
+        if (i > 0)
+            strm.PutCString(separator);
+        strm.PutCString(GetStringAtIndex(i));
+    }
+}
+
+void
 StringList::Clear ()
 {
     m_strings.clear();

@@ -15,7 +15,6 @@
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ModuleChild.h"
 #include "lldb/Core/PluginInterface.h"
-#include "lldb/Host/Mutex.h"
 #include "lldb/Symbol/ClangNamespaceDecl.h"
 #include "lldb/Symbol/TypeList.h"
 
@@ -47,12 +46,12 @@ public:
 
 
     static SymbolVendor*
-    FindPlugin (Module* module);
+    FindPlugin (const lldb::ModuleSP &module_sp);
 
     //------------------------------------------------------------------
     // Constructors and Destructors
     //------------------------------------------------------------------
-    SymbolVendor(Module *module);
+    SymbolVendor(const lldb::ModuleSP &module_sp);
 
     virtual
     ~SymbolVendor();
@@ -113,12 +112,14 @@ public:
     virtual uint32_t
     FindFunctions (const ConstString &name,
                    const ClangNamespaceDecl *namespace_decl,
-                   uint32_t name_type_mask, 
+                   uint32_t name_type_mask,
+                   bool include_inlines,
                    bool append,
                    SymbolContextList& sc_list);
 
     virtual uint32_t
     FindFunctions (const RegularExpression& regex,
+                   bool include_inlines,
                    bool append,
                    SymbolContextList& sc_list);
 
@@ -139,8 +140,8 @@ public:
     GetNumCompileUnits();
 
     virtual bool
-    SetCompileUnitAtIndex (lldb::CompUnitSP& cu,
-                           uint32_t index);
+    SetCompileUnitAtIndex (uint32_t cu_idx,
+                           const lldb::CompUnitSP &cu_sp);
 
     virtual lldb::CompUnitSP
     GetCompileUnitAtIndex(uint32_t idx);
@@ -183,7 +184,6 @@ protected:
     typedef CompileUnits::iterator CompileUnitIter;
     typedef CompileUnits::const_iterator CompileUnitConstIter;
 
-    mutable Mutex m_mutex;
     TypeList m_type_list; // Uniqued types for all parsers owned by this module
     CompileUnits m_compile_units; // The current compile units
     lldb::ObjectFileSP m_objfile_sp;    // Keep a reference to the object file in case it isn't the same as the module object file (debug symbols in a separate file)

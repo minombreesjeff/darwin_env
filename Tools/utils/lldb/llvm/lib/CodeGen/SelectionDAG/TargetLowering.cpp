@@ -572,21 +572,22 @@ TargetLowering::TargetLowering(const TargetMachine &tm,
   // ConstantFP nodes default to expand.  Targets can either change this to
   // Legal, in which case all fp constants are legal, or use isFPImmLegal()
   // to optimize expansions for certain constants.
+  setOperationAction(ISD::ConstantFP, MVT::f16, Expand);
   setOperationAction(ISD::ConstantFP, MVT::f32, Expand);
   setOperationAction(ISD::ConstantFP, MVT::f64, Expand);
   setOperationAction(ISD::ConstantFP, MVT::f80, Expand);
 
   // These library functions default to expand.
-  setOperationAction(ISD::FLOG ,  MVT::f64, Expand);
-  setOperationAction(ISD::FLOG2,  MVT::f64, Expand);
-  setOperationAction(ISD::FLOG10, MVT::f64, Expand);
-  setOperationAction(ISD::FEXP ,  MVT::f64, Expand);
-  setOperationAction(ISD::FEXP2,  MVT::f64, Expand);
-  setOperationAction(ISD::FFLOOR, MVT::f64, Expand);
-  setOperationAction(ISD::FNEARBYINT, MVT::f64, Expand);
-  setOperationAction(ISD::FCEIL,  MVT::f64, Expand);
-  setOperationAction(ISD::FRINT,  MVT::f64, Expand);
-  setOperationAction(ISD::FTRUNC, MVT::f64, Expand);
+  setOperationAction(ISD::FLOG ,  MVT::f16, Expand);
+  setOperationAction(ISD::FLOG2,  MVT::f16, Expand);
+  setOperationAction(ISD::FLOG10, MVT::f16, Expand);
+  setOperationAction(ISD::FEXP ,  MVT::f16, Expand);
+  setOperationAction(ISD::FEXP2,  MVT::f16, Expand);
+  setOperationAction(ISD::FFLOOR, MVT::f16, Expand);
+  setOperationAction(ISD::FNEARBYINT, MVT::f16, Expand);
+  setOperationAction(ISD::FCEIL,  MVT::f16, Expand);
+  setOperationAction(ISD::FRINT,  MVT::f16, Expand);
+  setOperationAction(ISD::FTRUNC, MVT::f16, Expand);
   setOperationAction(ISD::FLOG ,  MVT::f32, Expand);
   setOperationAction(ISD::FLOG2,  MVT::f32, Expand);
   setOperationAction(ISD::FLOG10, MVT::f32, Expand);
@@ -597,6 +598,16 @@ TargetLowering::TargetLowering(const TargetMachine &tm,
   setOperationAction(ISD::FCEIL,  MVT::f32, Expand);
   setOperationAction(ISD::FRINT,  MVT::f32, Expand);
   setOperationAction(ISD::FTRUNC, MVT::f32, Expand);
+  setOperationAction(ISD::FLOG ,  MVT::f64, Expand);
+  setOperationAction(ISD::FLOG2,  MVT::f64, Expand);
+  setOperationAction(ISD::FLOG10, MVT::f64, Expand);
+  setOperationAction(ISD::FEXP ,  MVT::f64, Expand);
+  setOperationAction(ISD::FEXP2,  MVT::f64, Expand);
+  setOperationAction(ISD::FFLOOR, MVT::f64, Expand);
+  setOperationAction(ISD::FNEARBYINT, MVT::f64, Expand);
+  setOperationAction(ISD::FCEIL,  MVT::f64, Expand);
+  setOperationAction(ISD::FRINT,  MVT::f64, Expand);
+  setOperationAction(ISD::FTRUNC, MVT::f64, Expand);
 
   // Default ISD::TRAP to expand (which turns it into abort).
   setOperationAction(ISD::TRAP, MVT::Other, Expand);
@@ -1597,23 +1608,40 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
     }
     break;
   case ISD::SIGN_EXTEND_INREG: {
-    EVT EVT = cast<VTSDNode>(Op.getOperand(1))->getVT();
+    EVT ExVT = cast<VTSDNode>(Op.getOperand(1))->getVT();
+
+    APInt MsbMask = APInt::getHighBitsSet(BitWidth, 1);
+    // If we only care about the highest bit, don't bother shifting right.
+    if (MsbMask == DemandedMask) {
+      unsigned ShAmt = ExVT.getScalarType().getSizeInBits();
+      SDValue InOp = Op.getOperand(0);
+
+      // Compute the correct shift amount type, which must be getShiftAmountTy
+      // for scalar types after legalization.
+      EVT ShiftAmtTy = Op.getValueType();
+      if (TLO.LegalTypes() && !ShiftAmtTy.isVector())
+        ShiftAmtTy = getShiftAmountTy(ShiftAmtTy);
+
+      SDValue ShiftAmt = TLO.DAG.getConstant(BitWidth - ShAmt, ShiftAmtTy);
+      return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::SHL, dl,
+                                            Op.getValueType(), InOp, ShiftAmt));
+    }
 
     // Sign extension.  Compute the demanded bits in the result that are not
     // present in the input.
     APInt NewBits =
       APInt::getHighBitsSet(BitWidth,
-                            BitWidth - EVT.getScalarType().getSizeInBits());
+                            BitWidth - ExVT.getScalarType().getSizeInBits());
 
     // If none of the extended bits are demanded, eliminate the sextinreg.
     if ((NewBits & NewMask) == 0)
       return TLO.CombineTo(Op, Op.getOperand(0));
 
     APInt InSignBit =
-      APInt::getSignBit(EVT.getScalarType().getSizeInBits()).zext(BitWidth);
+      APInt::getSignBit(ExVT.getScalarType().getSizeInBits()).zext(BitWidth);
     APInt InputDemandedBits =
       APInt::getLowBitsSet(BitWidth,
-                           EVT.getScalarType().getSizeInBits()) &
+                           ExVT.getScalarType().getSizeInBits()) &
       NewMask;
 
     // Since the sign extended bits are demanded, we know that the sign
@@ -1631,7 +1659,7 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
     // If the input sign bit is known zero, convert this into a zero extension.
     if (KnownZero.intersects(InSignBit))
       return TLO.CombineTo(Op,
-                           TLO.DAG.getZeroExtendInReg(Op.getOperand(0),dl,EVT));
+                          TLO.DAG.getZeroExtendInReg(Op.getOperand(0),dl,ExVT));
 
     if (KnownOne.intersects(InSignBit)) {    // Input sign bit known set
       KnownOne |= NewBits;
@@ -1792,7 +1820,8 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
   case ISD::BITCAST:
     // If this is an FP->Int bitcast and if the sign bit is the only
     // thing demanded, turn this into a FGETSIGN.
-    if (!Op.getValueType().isVector() &&
+    if (!TLO.LegalOperations() &&
+        !Op.getValueType().isVector() &&
         !Op.getOperand(0).getValueType().isVector() &&
         NewMask == APInt::getSignBit(Op.getValueType().getSizeInBits()) &&
         Op.getOperand(0).getValueType().isFloatingPoint()) {
@@ -2994,7 +3023,6 @@ TargetLowering::AsmOperandInfoVector TargetLowering::ParseConstraints(
 /// is.
 static unsigned getConstraintGenerality(TargetLowering::ConstraintType CT) {
   switch (CT) {
-  default: llvm_unreachable("Unknown constraint type!");
   case TargetLowering::C_Other:
   case TargetLowering::C_Unknown:
     return 0;
@@ -3005,6 +3033,7 @@ static unsigned getConstraintGenerality(TargetLowering::ConstraintType CT) {
   case TargetLowering::C_Memory:
     return 3;
   }
+  llvm_unreachable("Invalid constraint type");
 }
 
 /// Examine constraint type and operand type and determine a weight value.

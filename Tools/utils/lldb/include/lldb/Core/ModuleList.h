@@ -115,7 +115,13 @@ public:
     void
     LogUUIDAndPaths (lldb::LogSP &log_sp, 
                      const char *prefix_cstr);
-
+                     
+    Mutex &
+    GetMutex ()
+    {
+        return m_modules_mutex;
+    }
+    
     uint32_t
     GetIndexForModule (const Module *module) const;
 
@@ -135,6 +141,23 @@ public:
     GetModuleAtIndex (uint32_t idx);
 
     //------------------------------------------------------------------
+    /// Get the module shared pointer for the module at index \a idx without
+    /// acquiring the ModuleList mutex.  This MUST already have been 
+    /// acquired with ModuleList::GetMutex and locked for this call to be safe.
+    ///
+    /// @param[in] idx
+    ///     An index into this module collection.
+    ///
+    /// @return
+    ///     A shared pointer to a Module which can contain NULL if
+    ///     \a idx is out of range.
+    ///
+    /// @see ModuleList::GetSize()
+    //------------------------------------------------------------------
+    lldb::ModuleSP
+    GetModuleAtIndexUnlocked (uint32_t idx);
+
+    //------------------------------------------------------------------
     /// Get the module pointer for the module at index \a idx.
     ///
     /// @param[in] idx
@@ -148,6 +171,23 @@ public:
     //------------------------------------------------------------------
     Module*
     GetModulePointerAtIndex (uint32_t idx) const;
+
+    //------------------------------------------------------------------
+    /// Get the module pointer for the module at index \a idx without
+    /// acquiring the ModuleList mutex.  This MUST already have been 
+    /// acquired with ModuleList::GetMutex and locked for this call to be safe.
+    ///
+    /// @param[in] idx
+    ///     An index into this module collection.
+    ///
+    /// @return
+    ///     A pointer to a Module which can by NULL if \a idx is out
+    ///     of range.
+    ///
+    /// @see ModuleList::GetSize()
+    //------------------------------------------------------------------
+    Module*
+    GetModulePointerAtIndexUnlocked (uint32_t idx) const;
 
     //------------------------------------------------------------------
     /// Find compile units by partial or full path.
@@ -182,6 +222,7 @@ public:
     FindFunctions (const ConstString &name,
                    uint32_t name_type_mask,
                    bool include_symbols,
+                   bool include_inlines,
                    bool append,
                    SymbolContextList &sc_list);
 
@@ -274,10 +315,7 @@ public:
     ///     The number of matching modules found by the search.
     //------------------------------------------------------------------
     size_t
-    FindModules (const FileSpec *file_spec_ptr,
-                 const ArchSpec *arch_ptr,
-                 const lldb_private::UUID *uuid_ptr,
-                 const ConstString *object_name,
+    FindModules (const ModuleSpec &module_spec,
                  ModuleList& matching_module_list) const;
 
     lldb::ModuleSP
@@ -294,14 +332,7 @@ public:
     FindModule (const UUID &uuid);
     
     lldb::ModuleSP
-    FindFirstModuleForFileSpec (const FileSpec &file_spec,
-                                const ArchSpec *arch_ptr,
-                                const ConstString *object_name);
-
-    lldb::ModuleSP
-    FindFirstModuleForPlatormFileSpec (const FileSpec &platform_file_spec, 
-                                       const ArchSpec *arch_ptr,
-                                       const ConstString *object_name);
+    FindFirstModule (const ModuleSpec &module_spec);
 
     size_t
     FindSymbolsWithNameAndType (const ConstString &name,
@@ -349,11 +380,14 @@ public:
     ///     The number of matches added to \a type_list.
     //------------------------------------------------------------------
     uint32_t
-    FindTypes (const SymbolContext& sc, 
-               const ConstString &name, 
-               bool append, 
-               uint32_t max_matches, 
+    FindTypes (const SymbolContext& sc,
+               const ConstString &name,
+               bool name_is_fully_qualified,
+               uint32_t max_matches,
                TypeList& types);
+    
+    bool
+    FindSourceFile (const FileSpec &orig_spec, FileSpec &new_spec) const;
     
     bool
     Remove (const lldb::ModuleSP &module_sp);
@@ -361,8 +395,11 @@ public:
     size_t
     Remove (ModuleList &module_list);
     
+    bool
+    RemoveIfOrphaned (const Module *module_ptr);
+    
     size_t
-    RemoveOrphans ();
+    RemoveOrphans (bool mandatory);
 
     bool
     ResolveFileAddress (lldb::addr_t vm_addr,
@@ -409,12 +446,9 @@ public:
     ModuleIsInCache (const Module *module_ptr);
 
     static Error
-    GetSharedModule (const FileSpec& file_spec,
-                     const ArchSpec& arch,
-                     const lldb_private::UUID *uuid_ptr,
-                     const ConstString *object_name,
-                     off_t object_offset,
+    GetSharedModule (const ModuleSpec &module_spec,
                      lldb::ModuleSP &module_sp,
+                     const FileSpecList *module_search_paths_ptr,
                      lldb::ModuleSP *old_module_sp_ptr,
                      bool *did_create_ptr,
                      bool always_create = false);
@@ -423,14 +457,14 @@ public:
     RemoveSharedModule (lldb::ModuleSP &module_sp);
 
     static size_t
-    FindSharedModules (const FileSpec& in_file_spec,
-                       const ArchSpec& arch,
-                       const lldb_private::UUID *uuid_ptr,
-                       const ConstString *object_name_ptr,
+    FindSharedModules (const ModuleSpec &module_spec,
                        ModuleList &matching_module_list);
 
     static uint32_t
-    RemoveOrphanSharedModules ();
+    RemoveOrphanSharedModules (bool mandatory);
+    
+    static bool
+    RemoveSharedModuleIfOrphaned (const Module *module_ptr);
 
 protected:
     //------------------------------------------------------------------

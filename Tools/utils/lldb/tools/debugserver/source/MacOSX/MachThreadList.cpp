@@ -345,7 +345,7 @@ MachThreadList::ProcessWillResume(MachProcess *process, const DNBThreadResumeAct
 
     UpdateThreadList(process, true, &new_threads);
 
-    DNBThreadResumeAction resume_new_threads = { -1, eStateRunning, 0, INVALID_NUB_ADDRESS };
+    DNBThreadResumeAction resume_new_threads = { -1U, eStateRunning, 0, INVALID_NUB_ADDRESS };
     // If we are planning to run only one thread, any new threads should be suspended.
     if (run_one_thread)
         resume_new_threads.state = eStateSuspended;
@@ -478,8 +478,17 @@ MachThreadList::EnableHardwareWatchpoint (const DNBBreakpoint* wp) const
         for (uint32_t idx = 0; idx < num_threads; ++idx)
         {
             if ((hw_index = m_threads[idx]->EnableHardwareWatchpoint(wp)) == INVALID_NUB_HW_INDEX)
+            {
+                // We know that idx failed for some reason.  Let's rollback the transaction for [0, idx).
+                for (uint32_t i = 0; i < idx; ++i)
+                    m_threads[i]->RollbackTransForHWP();
                 return INVALID_NUB_HW_INDEX;
+            }
         }
+        // Notify each thread to commit the pending transaction.
+        for (uint32_t idx = 0; idx < num_threads; ++idx)
+            m_threads[idx]->FinishTransForHWP();
+
         // Use an arbitrary thread to signal the completion of our transaction.
         if (num_threads)
             m_threads[0]->HardwareWatchpointStateChanged();
@@ -498,14 +507,34 @@ MachThreadList::DisableHardwareWatchpoint (const DNBBreakpoint* wp) const
         for (uint32_t idx = 0; idx < num_threads; ++idx)
         {
             if (!m_threads[idx]->DisableHardwareWatchpoint(wp))
+            {
+                // We know that idx failed for some reason.  Let's rollback the transaction for [0, idx).
+                for (uint32_t i = 0; i < idx; ++i)
+                    m_threads[i]->RollbackTransForHWP();
                 return false;
+            }
         }
+        // Notify each thread to commit the pending transaction.
+        for (uint32_t idx = 0; idx < num_threads; ++idx)
+            m_threads[idx]->FinishTransForHWP();
+
         // Use an arbitrary thread to signal the completion of our transaction.
         if (num_threads)
             m_threads[0]->HardwareWatchpointStateChanged();
         return true;
     }
     return false;
+}
+
+uint32_t
+MachThreadList::NumSupportedHardwareWatchpoints () const
+{
+    PTHREAD_MUTEX_LOCKER (locker, m_threads_mutex);
+    const uint32_t num_threads = m_threads.size();
+    // Use an arbitrary thread to retrieve the number of supported hardware watchpoints.
+    if (num_threads)
+        return m_threads[0]->NumSupportedHardwareWatchpoints();
+    return 0;
 }
 
 uint32_t

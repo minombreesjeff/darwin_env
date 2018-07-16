@@ -165,6 +165,7 @@ Disassembler::Disassemble
     if (name)
     {
         const bool include_symbols = true;
+        const bool include_inlines = true;
         if (module)
         {
             module->FindFunctions (name,
@@ -174,6 +175,7 @@ Disassembler::Disassemble
                                    eFunctionNameTypeMethod | 
                                    eFunctionNameTypeSelector, 
                                    include_symbols,
+                                   include_inlines,
                                    true,
                                    sc_list);
         }
@@ -184,7 +186,8 @@ Disassembler::Disassemble
                                                                eFunctionNameTypeFull | 
                                                                eFunctionNameTypeMethod | 
                                                                eFunctionNameTypeSelector,
-                                                               include_symbols, 
+                                                               include_symbols,
+                                                               include_inlines,
                                                                false,
                                                                sc_list);
         }
@@ -222,7 +225,7 @@ Disassembler::DisassembleRange
 
         if (disasm_sp)
         {
-            size_t bytes_disassembled = disasm_sp->ParseInstructions (&exe_ctx, range);
+            size_t bytes_disassembled = disasm_sp->ParseInstructions (&exe_ctx, range, NULL);
             if (bytes_disassembled == 0)
                 disasm_sp.reset();
         }
@@ -237,7 +240,8 @@ Disassembler::DisassembleBytes
     const char *plugin_name,
     const Address &start,
     const void *bytes,
-    size_t length
+    size_t length,
+    uint32_t num_instructions
 )
 {
     lldb::DisassemblerSP disasm_sp;
@@ -253,7 +257,7 @@ Disassembler::DisassembleBytes
             (void)disasm_sp->DecodeInstructions (start,
                                                  data,
                                                  0,
-                                                 UINT32_MAX,
+                                                 num_instructions,
                                                  false);
         }
     }
@@ -286,7 +290,7 @@ Disassembler::Disassemble
             ResolveAddress (exe_ctx, disasm_range.GetBaseAddress(), range.GetBaseAddress());
             range.SetByteSize (disasm_range.GetByteSize());
             
-            size_t bytes_disassembled = disasm_ap->ParseInstructions (&exe_ctx, range);
+            size_t bytes_disassembled = disasm_ap->ParseInstructions (&exe_ctx, range, &strm);
             if (bytes_disassembled == 0)
                 return false;
 
@@ -383,10 +387,10 @@ Disassembler::PrintInstructions
 
             prev_sc = sc;
 
-            Module *module = addr.GetModule();
-            if (module)
+            ModuleSP module_sp (addr.GetModule());
+            if (module_sp)
             {
-                uint32_t resolved_mask = module->ResolveSymbolContextForAddress(addr, eSymbolContextEverything, sc);
+                uint32_t resolved_mask = module_sp->ResolveSymbolContextForAddress(addr, eSymbolContextEverything, sc);
                 if (resolved_mask)
                 {
                     if (num_mixed_context_lines)
@@ -444,8 +448,7 @@ Disassembler::PrintInstructions
                 strm.PutCString(inst_is_at_pc ? "-> " : "   ");
             }
             const bool show_bytes = (options & eOptionShowBytes) != 0;
-            const bool raw = (options & eOptionRawOuput) != 0;
-            inst->Dump(&strm, max_opcode_byte_size, true, show_bytes, &exe_ctx, raw);
+            inst->Dump(&strm, max_opcode_byte_size, true, show_bytes, &exe_ctx);
             strm.EOL();            
         }
         else
@@ -480,9 +483,10 @@ Disassembler::Disassemble
         {
             range = sc.function->GetAddressRange();
         }
-        else if (sc.symbol && sc.symbol->GetAddressRangePtr())
+        else if (sc.symbol && sc.symbol->ValueIsAddress())
         {
-            range = *sc.symbol->GetAddressRangePtr();
+            range.GetBaseAddress() = sc.symbol->GetAddress();
+            range.SetByteSize (sc.symbol->GetByteSize());
         }
         else
         {
@@ -507,7 +511,8 @@ Disassembler::Disassemble
 Instruction::Instruction(const Address &address, AddressClass addr_class) :
     m_address (address),
     m_address_class (addr_class),
-    m_opcode()
+    m_opcode(),
+    m_calculated_strings(false)
 {
 }
 
@@ -521,6 +526,69 @@ Instruction::GetAddressClass ()
     if (m_address_class == eAddressClassInvalid)
         m_address_class = m_address.GetAddressClass();
     return m_address_class;
+}
+
+void
+Instruction::Dump (lldb_private::Stream *s,
+                   uint32_t max_opcode_byte_size,
+                   bool show_address,
+                   bool show_bytes,
+                   const ExecutionContext* exe_ctx)
+{
+    const size_t opcode_column_width = 7;
+    const size_t operand_column_width = 25;
+    
+    CalculateMnemonicOperandsAndCommentIfNeeded (exe_ctx);
+
+    StreamString ss;
+    
+    if (show_address)
+    {
+        m_address.Dump(&ss,
+                       exe_ctx ? exe_ctx->GetBestExecutionContextScope() : NULL,
+                       Address::DumpStyleLoadAddress,
+                       Address::DumpStyleModuleWithFileAddress,
+                       0);
+        
+        ss.PutCString(":  ");
+    }
+    
+    if (show_bytes)
+    {
+        if (m_opcode.GetType() == Opcode::eTypeBytes)
+        {
+            // x86_64 and i386 are the only ones that use bytes right now so
+            // pad out the byte dump to be able to always show 15 bytes (3 chars each) 
+            // plus a space
+            if (max_opcode_byte_size > 0)
+                m_opcode.Dump (&ss, max_opcode_byte_size * 3 + 1);
+            else
+                m_opcode.Dump (&ss, 15 * 3 + 1);
+        }
+        else
+        {
+            // Else, we have ARM which can show up to a uint32_t 0x00000000 (10 spaces)
+            // plus two for padding...
+            if (max_opcode_byte_size > 0)
+                m_opcode.Dump (&ss, max_opcode_byte_size * 3 + 1);
+            else
+                m_opcode.Dump (&ss, 12);
+        }        
+    }
+    
+    const size_t opcode_pos = ss.GetSize();
+    
+    ss.PutCString (m_opcode_name.c_str());
+    ss.FillLastLineToColumn (opcode_pos + opcode_column_width, ' ');
+    ss.PutCString (m_mnemocics.c_str());
+    
+    if (!m_comment.empty())
+    {
+        ss.FillLastLineToColumn (opcode_pos + opcode_column_width + operand_column_width, ' ');        
+        ss.PutCString (" ; ");
+        ss.PutCString (m_comment.c_str());
+    }
+    s->Write (ss.GetData(), ss.GetSize());
 }
 
 bool
@@ -822,6 +890,13 @@ Instruction::Emulate (const ArchSpec &arch,
     return false;
 }
 
+
+uint32_t
+Instruction::GetData (DataExtractor &data)
+{
+    return m_opcode.GetData(data, GetAddressClass ());
+}
+
 InstructionList::InstructionList() :
     m_instructions()
 {
@@ -878,7 +953,7 @@ InstructionList::Dump (Stream *s,
     {
         if (pos != begin)
             s->EOL();
-        (*pos)->Dump(s, max_opcode_byte_size, show_address, show_bytes, exe_ctx, false);
+        (*pos)->Dump(s, max_opcode_byte_size, show_address, show_bytes, exe_ctx);
     }
 }
 
@@ -896,12 +971,47 @@ InstructionList::Append (lldb::InstructionSP &inst_sp)
         m_instructions.push_back(inst_sp);
 }
 
+uint32_t
+InstructionList::GetIndexOfNextBranchInstruction(uint32_t start) const
+{
+    size_t num_instructions = m_instructions.size();
+    
+    uint32_t next_branch = UINT32_MAX;
+    for (size_t i = start; i < num_instructions; i++)
+    {
+        if (m_instructions[i]->DoesBranch())
+        {
+            next_branch = i;
+            break;
+        }
+    }
+    return next_branch;
+}
+
+uint32_t
+InstructionList::GetIndexOfInstructionAtLoadAddress (lldb::addr_t load_addr, Target &target)
+{
+    Address address;
+    address.SetLoadAddress(load_addr, &target);
+    uint32_t num_instructions = m_instructions.size();
+    uint32_t index = UINT32_MAX;
+    for (int i = 0; i < num_instructions; i++)
+    {
+        if (m_instructions[i]->GetAddress() == address)
+        {
+            index = i;
+            break;
+        }
+    }
+    return index;
+}
 
 size_t
 Disassembler::ParseInstructions
 (
     const ExecutionContext *exe_ctx,
-    const AddressRange &range
+    const AddressRange &range,
+    Stream *error_strm_ptr
 )
 {
     if (exe_ctx)
@@ -931,6 +1041,18 @@ Disassembler::ParseInstructions
                                 m_arch.GetAddressByteSize());
             return DecodeInstructions (range.GetBaseAddress(), data, 0, UINT32_MAX, false);
         }
+        else if (error_strm_ptr)
+        {
+            const char *error_cstr = error.AsCString();
+            if (error_cstr)
+            {
+                error_strm_ptr->Printf("error: %s\n", error_cstr);
+            }
+        }
+    }
+    else if (error_strm_ptr)
+    {
+        error_strm_ptr->PutCString("error: invalid execution context\n");
     }
     return 0;
 }
@@ -1025,27 +1147,6 @@ PseudoInstruction::~PseudoInstruction ()
 {
 }
      
-void
-PseudoInstruction::Dump (lldb_private::Stream *s,
-                        uint32_t max_opcode_byte_size,
-                        bool show_address,
-                        bool show_bytes,
-                        const lldb_private::ExecutionContext* exe_ctx,
-                        bool raw)
-{
-    if (!s)
-        return;
-        
-    if (show_bytes)
-        m_opcode.Dump (s, max_opcode_byte_size);
-    
-    if (m_description.size() > 0)
-        s->Printf ("%s", m_description.c_str());
-    else
-        s->Printf ("<unknown>");
-        
-}
-    
 bool
 PseudoInstruction::DoesBranch () const
 {

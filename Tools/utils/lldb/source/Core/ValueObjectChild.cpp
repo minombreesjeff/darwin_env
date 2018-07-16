@@ -65,7 +65,7 @@ ValueObjectChild::GetValueType() const
 uint32_t
 ValueObjectChild::CalculateNumChildren()
 {
-    return ClangASTContext::GetNumChildren (GetClangAST (), m_clang_type, true);
+    return ClangASTContext::GetNumChildren (GetClangAST (), GetClangType(), true);
 }
 
 ConstString
@@ -73,7 +73,7 @@ ValueObjectChild::GetTypeName()
 {
     if (m_type_name.IsEmpty())
     {
-        m_type_name = ClangASTType::GetConstTypeName (GetClangType());
+        m_type_name = ClangASTType::GetConstTypeName (GetClangAST(), GetClangType());
         if (m_type_name)
         {
             if (m_bitfield_bit_size > 0)
@@ -91,6 +91,26 @@ ValueObjectChild::GetTypeName()
     return m_type_name;
 }
 
+ConstString
+ValueObjectChild::GetQualifiedTypeName()
+{
+    ConstString qualified_name = ClangASTType::GetConstQualifiedTypeName (GetClangAST(), GetClangType());
+    if (qualified_name)
+    {
+        if (m_bitfield_bit_size > 0)
+        {
+            const char *clang_type_name = qualified_name.AsCString();
+            if (clang_type_name)
+            {
+                std::vector<char> bitfield_type_name (strlen(clang_type_name) + 32, 0);
+                ::snprintf (&bitfield_type_name.front(), bitfield_type_name.size(), "%s:%u", clang_type_name, m_bitfield_bit_size);
+                qualified_name.SetCString(&bitfield_type_name.front());
+            }
+        }
+    }
+    return qualified_name;
+}
+
 bool
 ValueObjectChild::UpdateValue ()
 {
@@ -101,7 +121,7 @@ ValueObjectChild::UpdateValue ()
     {
         if (parent->UpdateValueIfNeeded(false))
         {
-            m_value.SetContext(Value::eContextTypeClangType, m_clang_type);
+            m_value.SetContext(Value::eContextTypeClangType, GetClangType());
 
             // Copy the parent scalar value and the scalar value type
             m_value.GetScalar() = parent->GetValue().GetScalar();
@@ -129,10 +149,13 @@ ValueObjectChild::UpdateValue ()
                     switch (addr_type)
                     {
                         case eAddressTypeFile:
-                            if (m_update_point.GetProcessSP().get() != NULL && m_update_point.GetProcessSP()->IsAlive() == true)
-                                m_value.SetValueType (Value::eValueTypeLoadAddress);
-                            else
-                                m_value.SetValueType(Value::eValueTypeFileAddress);
+                            {
+                                lldb::ProcessSP process_sp (GetProcessSP());
+                                if (process_sp && process_sp->IsAlive() == true)
+                                    m_value.SetValueType (Value::eValueTypeLoadAddress);
+                                else
+                                    m_value.SetValueType(Value::eValueTypeFileAddress);
+                            }
                             break;
                         case eAddressTypeLoad:
                             m_value.SetValueType (Value::eValueTypeLoadAddress);
@@ -186,8 +209,8 @@ ValueObjectChild::UpdateValue ()
 
             if (m_error.Success())
             {
-                ExecutionContext exe_ctx (GetExecutionContextScope());
-                m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST (), m_data, 0, GetModule());
+                ExecutionContext exe_ctx (GetExecutionContextRef().Lock());
+                m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST (), m_data, 0, GetModule().get());
             }
         }
         else

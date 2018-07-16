@@ -150,14 +150,13 @@ DeclContext *Sema::computeDeclContext(const CXXScopeSpec &SS,
     const TagType *Tag = NNS->getAsType()->getAs<TagType>();
     assert(Tag && "Non-tag type in nested-name-specifier");
     return Tag->getDecl();
-  } break;
+  }
 
   case NestedNameSpecifier::Global:
     return Context.getTranslationUnitDecl();
   }
 
-  // Required to silence a GCC warning.
-  return 0;
+  llvm_unreachable("Invalid NestedNameSpecifier::Kind!");
 }
 
 bool Sema::isDependentScopeSpecifier(const CXXScopeSpec &SS) {
@@ -363,6 +362,25 @@ bool Sema::isNonTypeNestedNameSpecifier(Scope *S, CXXScopeSpec &SS,
   return false;
 }
 
+namespace {
+
+// Callback to only accept typo corrections that can be a valid C++ member
+// intializer: either a non-static field member or a base class.
+class NestedNameSpecifierValidatorCCC : public CorrectionCandidateCallback {
+ public:
+  explicit NestedNameSpecifierValidatorCCC(Sema &SRef)
+      : SRef(SRef) {}
+
+  virtual bool ValidateCandidate(const TypoCorrection &candidate) {
+    return SRef.isAcceptableNestedNameSpecifier(candidate.getCorrectionDecl());
+  }
+
+ private:
+  Sema &SRef;
+};
+
+}
+
 /// \brief Build a new nested-name-specifier for "identifier::", as described
 /// by ActOnCXXNestedNameSpecifier.
 ///
@@ -478,12 +496,12 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
     // We haven't found anything, and we're not recovering from a
     // different kind of error, so look for typos.
     DeclarationName Name = Found.getLookupName();
+    NestedNameSpecifierValidatorCCC Validator(*this);
     TypoCorrection Corrected;
     Found.clear();
     if ((Corrected = CorrectTypo(Found.getLookupNameInfo(),
-                                 Found.getLookupKind(), S, &SS, LookupCtx,
-                                 EnteringContext, CTC_NoKeywords)) &&
-        isAcceptableNestedNameSpecifier(Corrected.getCorrectionDecl())) {
+                                 Found.getLookupKind(), S, &SS, Validator,
+                                 LookupCtx, EnteringContext))) {
       std::string CorrectedStr(Corrected.getAsString(getLangOptions()));
       std::string CorrectedQuotedStr(Corrected.getQuoted(getLangOptions()));
       if (LookupCtx)
@@ -721,8 +739,8 @@ bool Sema::IsInvalidUnlessNestedName(Scope *S, CXXScopeSpec &SS,
 }
 
 bool Sema::ActOnCXXNestedNameSpecifier(Scope *S,
-                                       SourceLocation TemplateLoc, 
-                                       CXXScopeSpec &SS, 
+                                       CXXScopeSpec &SS,
+                                       SourceLocation TemplateKWLoc,
                                        TemplateTy Template,
                                        SourceLocation TemplateNameLoc,
                                        SourceLocation LAngleLoc,
@@ -749,17 +767,18 @@ bool Sema::ActOnCXXNestedNameSpecifier(Scope *S,
     
     // Create source-location information for this type.
     TypeLocBuilder Builder;
-    DependentTemplateSpecializationTypeLoc SpecTL 
+    DependentTemplateSpecializationTypeLoc SpecTL
       = Builder.push<DependentTemplateSpecializationTypeLoc>(T);
+    SpecTL.setElaboratedKeywordLoc(SourceLocation());
+    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
+    SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
+    SpecTL.setTemplateNameLoc(TemplateNameLoc);
     SpecTL.setLAngleLoc(LAngleLoc);
     SpecTL.setRAngleLoc(RAngleLoc);
-    SpecTL.setKeywordLoc(SourceLocation());
-    SpecTL.setNameLoc(TemplateNameLoc);
-    SpecTL.setQualifierLoc(SS.getWithLocInContext(Context));
     for (unsigned I = 0, N = TemplateArgs.size(); I != N; ++I)
       SpecTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
     
-    SS.Extend(Context, TemplateLoc, Builder.getTypeLocInContext(Context, T), 
+    SS.Extend(Context, TemplateKWLoc, Builder.getTypeLocInContext(Context, T),
               CCLoc);
     return false;
   }
@@ -792,20 +811,19 @@ bool Sema::ActOnCXXNestedNameSpecifier(Scope *S,
     return true;
   }
 
-  // Provide source-location information for the template specialization 
-  // type.
+  // Provide source-location information for the template specialization type.
   TypeLocBuilder Builder;
-  TemplateSpecializationTypeLoc SpecTL 
+  TemplateSpecializationTypeLoc SpecTL
     = Builder.push<TemplateSpecializationTypeLoc>(T);
-  
+  SpecTL.setTemplateKeywordLoc(TemplateKWLoc);
+  SpecTL.setTemplateNameLoc(TemplateNameLoc);
   SpecTL.setLAngleLoc(LAngleLoc);
   SpecTL.setRAngleLoc(RAngleLoc);
-  SpecTL.setTemplateNameLoc(TemplateNameLoc);
   for (unsigned I = 0, N = TemplateArgs.size(); I != N; ++I)
     SpecTL.setArgLocInfo(I, TemplateArgs[I].getLocInfo());
 
 
-  SS.Extend(Context, TemplateLoc, Builder.getTypeLocInContext(Context, T), 
+  SS.Extend(Context, TemplateKWLoc, Builder.getTypeLocInContext(Context, T),
             CCLoc);
   return false;
 }
@@ -880,8 +898,7 @@ bool Sema::ShouldEnterDeclaratorScope(Scope *S, const CXXScopeSpec &SS) {
     return true;
   }
 
-  // Silence bogus warning.
-  return false;
+  llvm_unreachable("Invalid NestedNameSpecifier::Kind!");
 }
 
 /// ActOnCXXEnterDeclaratorScope - Called when a C++ scope specifier (global

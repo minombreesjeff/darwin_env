@@ -20,6 +20,8 @@ INITIALIZE_PASS(TargetLibraryInfo, "targetlibinfo",
                 "Target Library Information", false, true)
 char TargetLibraryInfo::ID = 0;
 
+void TargetLibraryInfo::anchor() { }
+
 const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
   {
     "acos",
@@ -111,7 +113,11 @@ const char* TargetLibraryInfo::StandardNames[LibFunc::NumLibFuncs] =
     "tanhf",
     "trunc",
     "truncf",
-    "truncl"
+    "truncl",
+    "__cxa_atexit",
+    "__cxa_guard_abort",
+    "__cxa_guard_acquire",
+    "__cxa_guard_release"
   };
 
 /// initialize - Initialize the set of available library functions based on the

@@ -50,7 +50,7 @@ namespace lldb_private {
 /// this abstract class.
 //----------------------------------------------------------------------
 class ObjectFile:
-    public ReferenceCountedBaseVirtual<ObjectFile>,
+    public STD_ENABLE_SHARED_FROM_THIS(ObjectFile),
     public PluginInterface,
     public ModuleChild
 {
@@ -75,7 +75,8 @@ public:
         eStrataInvalid = 0,
         eStrataUnknown,
         eStrataUser,
-        eStrataKernel
+        eStrataKernel,
+        eStrataRawImage
     } Strata;
         
     //------------------------------------------------------------------
@@ -85,10 +86,15 @@ public:
     /// supplied upon construction. The at an offset within a file for
     /// objects that contain more than one architecture or object.
     //------------------------------------------------------------------
-    ObjectFile (Module* module, 
+    ObjectFile (const lldb::ModuleSP &module_sp, 
                 const FileSpec *file_spec_ptr, 
                 lldb::addr_t offset, 
                 lldb::addr_t length, 
+                lldb::DataBufferSP& headerDataSP);
+
+    ObjectFile (const lldb::ModuleSP &module_sp, 
+                const lldb::ProcessSP &process_sp,
+                lldb::addr_t header_addr, 
                 lldb::DataBufferSP& headerDataSP);
 
     //------------------------------------------------------------------
@@ -100,9 +106,6 @@ public:
     virtual
     ~ObjectFile();
     
-    lldb::ObjectFileSP
-    GetSP ();
-
     //------------------------------------------------------------------
     /// Dump a description of this object to a Stream.
     ///
@@ -143,11 +146,34 @@ public:
     /// @see ObjectFile::ParseHeader()
     //------------------------------------------------------------------
     static lldb::ObjectFileSP
-    FindPlugin (Module* module,
+    FindPlugin (const lldb::ModuleSP &module_sp,
                 const FileSpec* file_spec,
                 lldb::addr_t file_offset,
                 lldb::addr_t file_size,
                 lldb::DataBufferSP &data_sp);
+
+    //------------------------------------------------------------------
+    /// Find a ObjectFile plug-in that can parse a file in memory.
+    ///
+    /// Scans all loaded plug-in interfaces that implement versions of
+    /// the ObjectFile plug-in interface and returns the first
+    /// instance that can parse the file.
+    ///
+    /// @param[in] module
+    ///     The parent module that owns this object file.
+    ///
+    /// @param[in] process_sp
+    ///     A shared pointer to the process whose memory space contains
+    ///     an object file. This will be stored as a std::weak_ptr.
+    ///
+    /// @param[in] header_addr
+    ///     The address of the header for the object file in memory.
+    //------------------------------------------------------------------
+    static lldb::ObjectFileSP
+    FindPlugin (const lldb::ModuleSP &module_sp, 
+                const lldb::ProcessSP &process_sp,
+                lldb::addr_t header_addr,
+                lldb::DataBufferSP &file_data_sp);
 
     //------------------------------------------------------------------
     /// Gets the address size in bytes for the current object file.
@@ -174,7 +200,7 @@ public:
     ///     architecture (and object for archives). Returns zero if no
     ///     architecture or object has been selected.
     //------------------------------------------------------------------
-    virtual AddressClass
+    virtual lldb::AddressClass
     GetAddressClass (lldb::addr_t file_addr);
 
     //------------------------------------------------------------------
@@ -375,6 +401,34 @@ public:
     GetEntryPointAddress () { return Address();}
 
     //------------------------------------------------------------------
+    /// Returns the address that represents the header of this object
+    /// file.
+    ///
+    /// The header address is defined as where the header for the object
+    /// file is that describes the content of the file. If the header
+    /// doesn't appear in a section that is defined in the object file,
+    /// an address with no section is returned that has the file offset
+    /// set in the m_offset member of the lldb_private::Address object.
+    ///
+    /// @return
+    ///     Returns the entry address for this module.
+    //------------------------------------------------------------------
+    virtual lldb_private::Address
+    GetHeaderAddress () { return Address();}
+
+    
+    virtual uint32_t
+    GetNumThreadContexts ()
+    {
+        return 0;
+    }
+
+    virtual lldb::RegisterContextSP
+    GetThreadContextAtIndex (uint32_t idx, lldb_private::Thread &thread)
+    {
+        return lldb::RegisterContextSP();
+    }
+    //------------------------------------------------------------------
     /// The object file should be able to calculate its type by looking
     /// at its file header and possibly the sections or other data in
     /// the object file. The file type is used in the debugger to help
@@ -406,6 +460,57 @@ public:
     CalculateStrata() = 0;
     
     //------------------------------------------------------------------
+    /// Get the object file version numbers.
+    ///
+    /// Many object files have a set of version numbers that describe
+    /// the version of the executable or shared library. Typically there
+    /// are major, minor and build, but there may be more. This function
+    /// will extract the versions from object files if they are available.
+    ///
+    /// If \a versions is NULL, or if \a num_versions is 0, the return
+    /// value will indicate how many version numbers are available in
+    /// this object file. Then a subsequent call can be made to this 
+    /// function with a value of \a versions and \a num_versions that
+    /// has enough storage to store some or all version numbers.
+    ///
+    /// @param[out] versions
+    ///     A pointer to an array of uint32_t types that is \a num_versions
+    ///     long. If this value is NULL, the return value will indicate
+    ///     how many version numbers are required for a subsequent call
+    ///     to this function so that all versions can be retrieved. If
+    ///     the value is non-NULL, then at most \a num_versions of the
+    ///     existing versions numbers will be filled into \a versions.
+    ///     If there is no version information available, \a versions
+    ///     will be filled with \a num_versions UINT32_MAX values
+    ///     and zero will be returned.
+    ///
+    /// @param[in] num_versions
+    ///     The maximum number of entries to fill into \a versions. If
+    ///     this value is zero, then the return value will indicate
+    ///     how many version numbers there are in total so another call
+    ///     to this function can be make with adequate storage in
+    ///     \a versions to get all of the version numbers. If \a
+    ///     num_versions is less than the actual number of version 
+    ///     numbers in this object file, only \a num_versions will be
+    ///     filled into \a versions (if \a versions is non-NULL).
+    ///
+    /// @return
+    ///     This function always returns the number of version numbers
+    ///     that this object file has regardless of the number of
+    ///     version numbers that were copied into \a versions. 
+    //------------------------------------------------------------------
+    virtual uint32_t
+    GetVersion (uint32_t *versions, uint32_t num_versions)
+    {
+        if (versions && num_versions)
+        {
+            for (uint32_t i=0; i<num_versions; ++i)
+                versions[i] = UINT32_MAX;
+        }
+        return 0;
+    }
+
+    //------------------------------------------------------------------
     // Member Functions
     //------------------------------------------------------------------
     Type
@@ -424,11 +529,39 @@ public:
         return m_strata;
     }
     
+    // When an object file is in memory, subclasses should try and lock
+    // the process weak pointer. If the process weak pointer produces a
+    // valid ProcessSP, then subclasses can call this function to read
+    // memory.
+    static lldb::DataBufferSP
+    ReadMemory (const lldb::ProcessSP &process_sp, 
+                lldb::addr_t addr, 
+                size_t byte_size);
+
     size_t
     GetData (off_t offset, size_t length, DataExtractor &data) const;
     
     size_t
     CopyData (off_t offset, size_t length, void *dst) const;
+    
+    size_t
+    ReadSectionData (const Section *section, 
+                     off_t section_offset, 
+                     void *dst, 
+                     size_t dst_len) const;
+    size_t
+    ReadSectionData (const Section *section, 
+                     DataExtractor& section_data) const;
+    
+    size_t
+    MemoryMapSectionData (const Section *section, 
+                          DataExtractor& section_data) const;
+    
+    bool
+    IsInMemory () const
+    {
+        return m_memory_addr != LLDB_INVALID_ADDRESS;
+    }
     
 protected:
     //------------------------------------------------------------------
@@ -441,6 +574,8 @@ protected:
     lldb::addr_t m_length; ///< The length of this object file if it is known (can be zero if length is unknown or can't be determined).
     DataExtractor m_data; ///< The data for this object file so things can be parsed lazily.
     lldb_private::UnwindTable m_unwind_table; /// < Table of FuncUnwinders objects created for this ObjectFile's functions
+    lldb::ProcessWP m_process_wp;
+    const lldb::addr_t m_memory_addr;
     
     //------------------------------------------------------------------
     /// Sets the architecture for a module.  At present the architecture

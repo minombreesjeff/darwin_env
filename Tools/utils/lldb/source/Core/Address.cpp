@@ -28,12 +28,12 @@ ReadBytes (ExecutionContextScope *exe_scope, const Address &address, void *dst, 
     if (exe_scope == NULL)
         return 0;
 
-    Target *target = exe_scope->CalculateTarget();
-    if (target)
+    TargetSP target_sp (exe_scope->CalculateTarget());
+    if (target_sp)
     {
         Error error;
         bool prefer_file_cache = false;
-        return target->ReadMemory (address, prefer_file_cache, dst, dst_len, error);
+        return target_sp->ReadMemory (address, prefer_file_cache, dst, dst_len, error);
     }
     return 0;
 }
@@ -46,20 +46,20 @@ GetByteOrderAndAddressSize (ExecutionContextScope *exe_scope, const Address &add
     if (exe_scope == NULL)
         return false;
 
-    Target *target = exe_scope->CalculateTarget();
-    if (target)
+    TargetSP target_sp (exe_scope->CalculateTarget());
+    if (target_sp)
     {
-        byte_order = target->GetArchitecture().GetByteOrder();
-        addr_size = target->GetArchitecture().GetAddressByteSize();
+        byte_order = target_sp->GetArchitecture().GetByteOrder();
+        addr_size = target_sp->GetArchitecture().GetAddressByteSize();
     }
 
     if (byte_order == eByteOrderInvalid || addr_size == 0)
     {
-        Module *module = address.GetModule();
-        if (module)
+        ModuleSP module_sp (address.GetModule());
+        if (module_sp)
         {
-            byte_order = module->GetArchitecture().GetByteOrder();
-            addr_size = module->GetArchitecture().GetAddressByteSize();
+            byte_order = module_sp->GetArchitecture().GetByteOrder();
+            addr_size = module_sp->GetArchitecture().GetAddressByteSize();
         }
     }
     return byte_order != eByteOrderInvalid && addr_size != 0;
@@ -118,17 +118,17 @@ ReadAddress (ExecutionContextScope *exe_scope, const Address &address, uint32_t 
         {
             // If we were not running, yet able to read an integer, we must
             // have a module
-            Module *module = address.GetModule();
-            assert (module);
-            if (module->ResolveFileAddress(deref_addr, deref_so_addr))
+            ModuleSP module_sp (address.GetModule());
+
+            assert (module_sp);
+            if (module_sp->ResolveFileAddress(deref_addr, deref_so_addr))
                 return true;
         }
 
         // We couldn't make "deref_addr" into a section offset value, but we were
         // able to read the address, so we return a section offset address with
         // no section and "deref_addr" as the offset (address).
-        deref_so_addr.SetSection(NULL);
-        deref_so_addr.SetOffset(deref_addr);
+        deref_so_addr.SetRawAddress(deref_addr);
         return true;
     }
     return false;
@@ -210,11 +210,17 @@ ReadCStringFromMemory (ExecutionContextScope *exe_scope, const Address &address,
     return total_len;
 }
 
-Address::Address (addr_t address, const SectionList * sections) :
-    m_section (NULL),
+Address::Address (lldb::addr_t abs_addr) :
+    m_section_wp (),
+    m_offset (abs_addr)
+{
+}
+
+Address::Address (addr_t address, const SectionList *section_list) :
+    m_section_wp (),
     m_offset (LLDB_INVALID_ADDRESS)
 {
-    ResolveAddressUsingFileSections(address, sections);
+    ResolveAddressUsingFileSections(address, section_list);
 }
 
 const Address&
@@ -222,45 +228,47 @@ Address::operator= (const Address& rhs)
 {
     if (this != &rhs)
     {
-        m_section = rhs.m_section;
+        m_section_wp = rhs.m_section_wp;
         m_offset = rhs.m_offset;
     }
     return *this;
 }
 
 bool
-Address::ResolveAddressUsingFileSections (addr_t addr, const SectionList *sections)
+Address::ResolveAddressUsingFileSections (addr_t file_addr, const SectionList *section_list)
 {
-    if (sections)
-        m_section = sections->FindSectionContainingFileAddress(addr).get();
-    else
-        m_section = NULL;
-
-    if (m_section != NULL)
+    if (section_list)
     {
-        assert( m_section->ContainsFileAddress(addr) );
-        m_offset = addr - m_section->GetFileAddress();
-        return true;    // Successfully transformed addr into a section offset address
+        SectionSP section_sp (section_list->FindSectionContainingFileAddress(file_addr));
+        m_section_wp = section_sp;
+        if (section_sp)
+        {
+            assert( section_sp->ContainsFileAddress(file_addr) );
+            m_offset = file_addr - section_sp->GetFileAddress();
+            return true;    // Successfully transformed addr into a section offset address
+        }
     }
-
-    m_offset = addr;
+    m_offset = file_addr;
     return false;       // Failed to resolve this address to a section offset value
 }
 
-Module *
+ModuleSP
 Address::GetModule () const
 {
-    if (m_section)
-        return m_section->GetModule();
-    return NULL;
+    lldb::ModuleSP module_sp;
+    SectionSP section_sp (GetSection());
+    if (section_sp)
+        module_sp = section_sp->GetModule();
+    return module_sp;
 }
 
 addr_t
 Address::GetFileAddress () const
 {
-    if (m_section != NULL)
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
-        addr_t sect_file_addr = m_section->GetFileAddress();
+        addr_t sect_file_addr = section_sp->GetFileAddress();
         if (sect_file_addr == LLDB_INVALID_ADDRESS)
         {
             // Section isn't resolved, we can't return a valid file address
@@ -277,7 +285,8 @@ Address::GetFileAddress () const
 addr_t
 Address::GetLoadAddress (Target *target) const
 {
-    if (m_section == NULL)
+    SectionSP section_sp (GetSection());
+    if (!section_sp)
     {
         // No section, we just return the offset since it is the value in this case
         return m_offset;
@@ -285,7 +294,7 @@ Address::GetLoadAddress (Target *target) const
     
     if (target)
     {
-        addr_t sect_load_addr = m_section->GetLoadBaseAddress (target);
+        addr_t sect_load_addr = section_sp->GetLoadBaseAddress (target);
 
         if (sect_load_addr != LLDB_INVALID_ADDRESS)
         {
@@ -346,21 +355,17 @@ bool
 Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, DumpStyle fallback_style, uint32_t addr_size) const
 {
     // If the section was NULL, only load address is going to work.
-    if (m_section == NULL)
+    SectionSP section_sp (GetSection());
+    if (!section_sp)
         style = DumpStyleLoadAddress;
 
-    Target *target = NULL;
-    Process *process = NULL;
-    if (exe_scope)
-    {
-        target = exe_scope->CalculateTarget();
-        process = exe_scope->CalculateProcess();
-    }
+    ExecutionContext exe_ctx (exe_scope);
+    Target *target = exe_ctx.GetTargetPtr();
     // If addr_byte_size is UINT32_MAX, then determine the correct address
     // byte size for the process or default to the size of addr_t
     if (addr_size == UINT32_MAX)
     {
-        if (process)
+        if (target)
             addr_size = target->GetArchitecture().GetAddressByteSize ();
         else
             addr_size = sizeof(addr_t);
@@ -373,9 +378,9 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
         return false;
 
     case DumpStyleSectionNameOffset:
-        if (m_section != NULL)
+        if (section_sp)
         {
-            m_section->DumpName(s);
+            section_sp->DumpName(s);
             s->Printf (" + %llu", m_offset);
         }
         else
@@ -385,13 +390,13 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
         break;
 
     case DumpStyleSectionPointerOffset:
-        s->Printf("(Section *)%p + ", m_section);
+        s->Printf("(Section *)%p + ", section_sp.get());
         s->Address(m_offset, addr_size);
         break;
 
     case DumpStyleModuleWithFileAddress:
-        if (m_section)
-            s->Printf("%s[", m_section->GetModule()->GetFileSpec().GetFilename().AsCString());
+        if (section_sp)
+            s->Printf("%s[", section_sp->GetModule()->GetFileSpec().GetFilename().AsCString());
         // Fall through
     case DumpStyleFileAddress:
         {
@@ -403,7 +408,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                 return false;
             }
             s->Address (file_addr, addr_size);
-            if (style == DumpStyleModuleWithFileAddress && m_section)
+            if (style == DumpStyleModuleWithFileAddress && section_sp)
                 s->PutChar(']');
         }
         break;
@@ -434,23 +439,22 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
             }
 
             uint32_t pointer_size = 4;
-            Module *module = GetModule();
+            ModuleSP module_sp (GetModule());
             if (target)
                 pointer_size = target->GetArchitecture().GetAddressByteSize();
-            else if (module)
-                pointer_size = module->GetArchitecture().GetAddressByteSize();
+            else if (module_sp)
+                pointer_size = module_sp->GetArchitecture().GetAddressByteSize();
 
             bool showed_info = false;
-            const Section *section = GetSection();
-            if (section)
+            if (section_sp)
             {
-                SectionType sect_type = section->GetType();
+                SectionType sect_type = section_sp->GetType();
                 switch (sect_type)
                 {
                 case eSectionTypeData:
-                    if (module)
+                    if (module_sp)
                     {
-                        ObjectFile *objfile = module->GetObjectFile();
+                        ObjectFile *objfile = module_sp->GetObjectFile();
                         if (objfile)
                         {
                             Symtab *symtab = objfile->GetSymtab();
@@ -464,7 +468,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                                     if (symbol_name)
                                     {
                                         s->PutCString(symbol_name);
-                                        addr_t delta = file_Addr - symbol->GetAddressRangePtr()->GetBaseAddress().GetFileAddress();
+                                        addr_t delta = file_Addr - symbol->GetAddress().GetFileAddress();
                                         if (delta)
                                             s->Printf(" + %llu", delta);
                                         showed_info = true;
@@ -504,8 +508,8 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                             {
                                 SymbolContext func_sc;
                                 target->GetImages().ResolveSymbolContextForAddress (so_addr,
-                                                                                    eSymbolContextEverything,
-                                                                                    func_sc);
+                                                                                             eSymbolContextEverything,
+                                                                                             func_sc);
                                 if (func_sc.function || func_sc.symbol)
                                 {
                                     showed_info = true;
@@ -595,8 +599,8 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                                 if (target)
                                 {
                                     target->GetImages().ResolveSymbolContextForAddress (so_addr,
-                                                                                        eSymbolContextEverything,
-                                                                                        pointer_sc);
+                                                                                                 eSymbolContextEverything,
+                                                                                                 pointer_sc);
                                     if (pointer_sc.function || pointer_sc.symbol)
                                     {
                                         s->PutCString(": ");
@@ -615,10 +619,10 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
 
             if (!showed_info)
             {
-                if (module)
+                if (module_sp)
                 {
                     SymbolContext sc;
-                    module->ResolveSymbolContextForAddress(*this, eSymbolContextEverything, sc);
+                    module_sp->ResolveSymbolContextForAddress(*this, eSymbolContextEverything, sc);
                     if (sc.function || sc.symbol)
                     {
                         bool show_stop_context = true;
@@ -628,9 +632,9 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                         if (sc.function == NULL && sc.symbol != NULL)
                         {
                             // If we have just a symbol make sure it is in the right section
-                            if (sc.symbol->GetAddressRangePtr())
+                            if (sc.symbol->ValueIsAddress())
                             {
-                                if (sc.symbol->GetAddressRangePtr()->GetBaseAddress().GetSection() != GetSection())
+                                if (sc.symbol->GetAddress().GetSection() != GetSection())
                                 {
                                     // don't show the module if the symbol is a trampoline symbol
                                     show_stop_context = false;
@@ -670,18 +674,18 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
     case DumpStyleDetailedSymbolContext:
         if (IsSectionOffset())
         {
-            Module *module = GetModule();
-            if (module)
+            ModuleSP module_sp (GetModule());
+            if (module_sp)
             {
                 SymbolContext sc;
-                module->ResolveSymbolContextForAddress(*this, eSymbolContextEverything, sc);
+                module_sp->ResolveSymbolContextForAddress(*this, eSymbolContextEverything, sc);
                 if (sc.symbol)
                 {
                     // If we have just a symbol make sure it is in the same section
                     // as our address. If it isn't, then we might have just found
                     // the last symbol that came before the address that we are 
                     // looking up that has nothing to do with our address lookup.
-                    if (sc.symbol->GetAddressRangePtr() && sc.symbol->GetAddressRangePtr()->GetBaseAddress().GetSection() != GetSection())
+                    if (sc.symbol->ValueIsAddress() && sc.symbol->GetAddress().GetSection() != GetSection())
                         sc.symbol = NULL;
                 }
                 sc.GetDescription(s, eDescriptionLevelBrief, target);
@@ -703,7 +707,8 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                         Variable *var = variable_list.GetVariableAtIndex (var_idx).get();
                         if (var && var->LocationIsValidForAddress (*this))
                         {
-                            s->Printf ("     Variable: id = {0x%8.8llx}, name = \"%s\", type= \"%s\", location =",
+                            s->Indent();
+                            s->Printf ("   Variable: id = {0x%8.8llx}, name = \"%s\", type= \"%s\", location =",
                                        var->GetID(),
                                        var->GetName().GetCString(),
                                        var->GetType()->GetName().GetCString());
@@ -733,12 +738,14 @@ Address::CalculateSymbolContext (SymbolContext *sc, uint32_t resolve_scope) cons
 {
     sc->Clear();
     // Absolute addresses don't have enough information to reconstruct even their target.
-    if (m_section)
+
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
-        Module *address_module = m_section->GetModule();
-        if (address_module)
+        ModuleSP module_sp (section_sp->GetModule());
+        if (module_sp)
         {
-            sc->module_sp = address_module;
+            sc->module_sp = module_sp;
             if (sc->module_sp)
                 return sc->module_sp->ResolveSymbolContextForAddress (*this, resolve_scope, *sc);
         }
@@ -746,21 +753,23 @@ Address::CalculateSymbolContext (SymbolContext *sc, uint32_t resolve_scope) cons
     return 0;
 }
 
-Module *
+ModuleSP
 Address::CalculateSymbolContextModule () const
 {
-    if (m_section)
-        return m_section->GetModule();
-    return NULL;
+    SectionSP section_sp (GetSection());
+    if (section_sp)
+        return section_sp->GetModule();
+    return ModuleSP();
 }
 
 CompileUnit *
 Address::CalculateSymbolContextCompileUnit () const
 {
-    if (m_section)
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule();
+        sc.module_sp = section_sp->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextCompUnit, sc);
@@ -773,10 +782,11 @@ Address::CalculateSymbolContextCompileUnit () const
 Function *
 Address::CalculateSymbolContextFunction () const
 {
-    if (m_section)
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule();
+        sc.module_sp = section_sp->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextFunction, sc);
@@ -789,10 +799,11 @@ Address::CalculateSymbolContextFunction () const
 Block *
 Address::CalculateSymbolContextBlock () const
 {
-    if (m_section)
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule();
+        sc.module_sp = section_sp->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextBlock, sc);
@@ -805,10 +816,11 @@ Address::CalculateSymbolContextBlock () const
 Symbol *
 Address::CalculateSymbolContextSymbol () const
 {
-    if (m_section)
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule();
+        sc.module_sp = section_sp->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextSymbol, sc);
@@ -821,10 +833,11 @@ Address::CalculateSymbolContextSymbol () const
 bool
 Address::CalculateSymbolContextLineEntry (LineEntry &line_entry) const
 {
-    if (m_section)
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule();
+        sc.module_sp = section_sp->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextLineEntry, sc);
@@ -868,8 +881,10 @@ Address::CompareLoadAddress (const Address& a, const Address& b, Target *target)
 int
 Address::CompareModulePointerAndOffset (const Address& a, const Address& b)
 {
-    Module *a_module = a.GetModule ();
-    Module *b_module = b.GetModule ();
+    ModuleSP a_module_sp (a.GetModule());
+    ModuleSP b_module_sp (b.GetModule());
+    Module *a_module = a_module_sp.get();
+    Module *b_module = b_module_sp.get();
     if (a_module < b_module)
         return -1;
     if (a_module > b_module)
@@ -913,8 +928,10 @@ Address::MemorySize () const
 bool
 lldb_private::operator< (const Address& lhs, const Address& rhs)
 {
-    Module *lhs_module = lhs.GetModule();
-    Module *rhs_module = rhs.GetModule();    
+    ModuleSP lhs_module_sp (lhs.GetModule());
+    ModuleSP rhs_module_sp (rhs.GetModule());
+    Module *lhs_module = lhs_module_sp.get();
+    Module *rhs_module = rhs_module_sp.get();   
     if (lhs_module == rhs_module)
     {
         // Addresses are in the same module, just compare the file addresses
@@ -931,8 +948,10 @@ lldb_private::operator< (const Address& lhs, const Address& rhs)
 bool
 lldb_private::operator> (const Address& lhs, const Address& rhs)
 {
-    Module *lhs_module = lhs.GetModule();
-    Module *rhs_module = rhs.GetModule();    
+    ModuleSP lhs_module_sp (lhs.GetModule());
+    ModuleSP rhs_module_sp (rhs.GetModule());
+    Module *lhs_module = lhs_module_sp.get();
+    Module *rhs_module = rhs_module_sp.get();   
     if (lhs_module == rhs_module)
     {
         // Addresses are in the same module, just compare the file addresses
@@ -966,20 +985,22 @@ lldb_private::operator!= (const Address& a, const Address& rhs)
 bool
 Address::IsLinkedAddress () const
 {
-    return m_section && m_section->GetLinkedSection();
+    SectionSP section_sp (GetSection());
+    return section_sp && section_sp->GetLinkedSection();
 }
 
 
 void
 Address::ResolveLinkedAddress ()
 {
-    if (m_section)
+    SectionSP section_sp (GetSection());
+    if (section_sp)
     {
-        const Section *linked_section = m_section->GetLinkedSection();
-        if (linked_section)
+        SectionSP linked_section_sp (section_sp->GetLinkedSection());
+        if (linked_section_sp)
         {
-            m_offset += m_section->GetLinkedOffset();
-            m_section = linked_section;
+            m_offset += section_sp->GetLinkedOffset();
+            m_section_wp = linked_section_sp;
         }
     }
 }
@@ -987,10 +1008,10 @@ Address::ResolveLinkedAddress ()
 AddressClass
 Address::GetAddressClass () const
 {
-    Module *module = GetModule();
-    if (module)
+    ModuleSP module_sp (GetModule());
+    if (module_sp)
     {
-        ObjectFile *obj_file = module->GetObjectFile();
+        ObjectFile *obj_file = module_sp->GetObjectFile();
         if (obj_file)
             return obj_file->GetAddressClass (GetFileAddress());
     }
@@ -1002,7 +1023,7 @@ Address::SetLoadAddress (lldb::addr_t load_addr, Target *target)
 {
     if (target && target->GetSectionLoadList().ResolveLoadAddress(load_addr, *this))
         return true;
-    m_section = NULL;
+    m_section_wp.reset();
     m_offset = load_addr;
     return false;
 }

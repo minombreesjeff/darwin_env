@@ -16,8 +16,6 @@
 
 #include "DNBDefs.h"
 
-#include <tr1/memory> // for std::tr1::shared_ptr
-
 extern "C" const unsigned char debugserverVersionString[];
 extern "C" const double debugserverVersionNumber;
 #define DEBUGSERVER_PROGRAM_NAME "debugserver"
@@ -42,7 +40,7 @@ extern "C" const double debugserverVersionNumber;
 
 #elif defined (__arm__)
 
-#define RNB_ARCH    "armv6"
+#define RNB_ARCH    "armv7"
 
 #else
 
@@ -51,7 +49,7 @@ extern "C" const double debugserverVersionNumber;
 #endif
 
 class RNBRemote;
-typedef std::tr1::shared_ptr<RNBRemote> RNBRemoteSP;
+typedef STD_SHARED_PTR(RNBRemote) RNBRemoteSP;
 
 typedef enum
 {

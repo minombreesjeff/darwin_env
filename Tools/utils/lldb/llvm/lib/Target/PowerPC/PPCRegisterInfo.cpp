@@ -1,4 +1,4 @@
-//===- PPCRegisterInfo.cpp - PowerPC Register Information -------*- C++ -*-===//
+//===-- PPCRegisterInfo.cpp - PowerPC Register Information ----------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -98,106 +98,22 @@ PPCRegisterInfo::getPointerRegClass(unsigned Kind) const {
   return &PPC::GPRCRegClass;
 }
 
-const unsigned*
+const uint16_t*
 PPCRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
-  // 32-bit Darwin calling convention. 
-  static const unsigned Darwin32_CalleeSavedRegs[] = {
-              PPC::R13, PPC::R14, PPC::R15,
-    PPC::R16, PPC::R17, PPC::R18, PPC::R19,
-    PPC::R20, PPC::R21, PPC::R22, PPC::R23,
-    PPC::R24, PPC::R25, PPC::R26, PPC::R27,
-    PPC::R28, PPC::R29, PPC::R30, PPC::R31,
-
-    PPC::F14, PPC::F15, PPC::F16, PPC::F17,
-    PPC::F18, PPC::F19, PPC::F20, PPC::F21,
-    PPC::F22, PPC::F23, PPC::F24, PPC::F25,
-    PPC::F26, PPC::F27, PPC::F28, PPC::F29,
-    PPC::F30, PPC::F31,
-    
-    PPC::CR2, PPC::CR3, PPC::CR4,
-    PPC::V20, PPC::V21, PPC::V22, PPC::V23,
-    PPC::V24, PPC::V25, PPC::V26, PPC::V27,
-    PPC::V28, PPC::V29, PPC::V30, PPC::V31,
-    
-    PPC::LR,  0
-  };
-
-  // 32-bit SVR4 calling convention.
-  static const unsigned SVR4_CalleeSavedRegs[] = {
-                        PPC::R14, PPC::R15,
-    PPC::R16, PPC::R17, PPC::R18, PPC::R19,
-    PPC::R20, PPC::R21, PPC::R22, PPC::R23,
-    PPC::R24, PPC::R25, PPC::R26, PPC::R27,
-    PPC::R28, PPC::R29, PPC::R30, PPC::R31,
-
-    PPC::F14, PPC::F15, PPC::F16, PPC::F17,
-    PPC::F18, PPC::F19, PPC::F20, PPC::F21,
-    PPC::F22, PPC::F23, PPC::F24, PPC::F25,
-    PPC::F26, PPC::F27, PPC::F28, PPC::F29,
-    PPC::F30, PPC::F31,
-    
-    PPC::CR2, PPC::CR3, PPC::CR4,
-    
-    PPC::VRSAVE,
-    
-    PPC::V20, PPC::V21, PPC::V22, PPC::V23,
-    PPC::V24, PPC::V25, PPC::V26, PPC::V27,
-    PPC::V28, PPC::V29, PPC::V30, PPC::V31,
-    
-    0
-  };
-  // 64-bit Darwin calling convention. 
-  static const unsigned Darwin64_CalleeSavedRegs[] = {
-    PPC::X14, PPC::X15,
-    PPC::X16, PPC::X17, PPC::X18, PPC::X19,
-    PPC::X20, PPC::X21, PPC::X22, PPC::X23,
-    PPC::X24, PPC::X25, PPC::X26, PPC::X27,
-    PPC::X28, PPC::X29, PPC::X30, PPC::X31,
-    
-    PPC::F14, PPC::F15, PPC::F16, PPC::F17,
-    PPC::F18, PPC::F19, PPC::F20, PPC::F21,
-    PPC::F22, PPC::F23, PPC::F24, PPC::F25,
-    PPC::F26, PPC::F27, PPC::F28, PPC::F29,
-    PPC::F30, PPC::F31,
-    
-    PPC::CR2, PPC::CR3, PPC::CR4,
-    PPC::V20, PPC::V21, PPC::V22, PPC::V23,
-    PPC::V24, PPC::V25, PPC::V26, PPC::V27,
-    PPC::V28, PPC::V29, PPC::V30, PPC::V31,
-    
-    PPC::LR8,  0
-  };
-
-  // 64-bit SVR4 calling convention.
-  static const unsigned SVR4_64_CalleeSavedRegs[] = {
-    PPC::X14, PPC::X15,
-    PPC::X16, PPC::X17, PPC::X18, PPC::X19,
-    PPC::X20, PPC::X21, PPC::X22, PPC::X23,
-    PPC::X24, PPC::X25, PPC::X26, PPC::X27,
-    PPC::X28, PPC::X29, PPC::X30, PPC::X31,
-
-    PPC::F14, PPC::F15, PPC::F16, PPC::F17,
-    PPC::F18, PPC::F19, PPC::F20, PPC::F21,
-    PPC::F22, PPC::F23, PPC::F24, PPC::F25,
-    PPC::F26, PPC::F27, PPC::F28, PPC::F29,
-    PPC::F30, PPC::F31,
-
-    PPC::CR2, PPC::CR3, PPC::CR4,
-
-    PPC::VRSAVE,
-
-    PPC::V20, PPC::V21, PPC::V22, PPC::V23,
-    PPC::V24, PPC::V25, PPC::V26, PPC::V27,
-    PPC::V28, PPC::V29, PPC::V30, PPC::V31,
-
-    0
-  };
-  
   if (Subtarget.isDarwinABI())
-    return Subtarget.isPPC64() ? Darwin64_CalleeSavedRegs :
-                                 Darwin32_CalleeSavedRegs;
+    return Subtarget.isPPC64() ? CSR_Darwin64_SaveList :
+                                 CSR_Darwin32_SaveList;
 
-  return Subtarget.isPPC64() ? SVR4_64_CalleeSavedRegs : SVR4_CalleeSavedRegs;
+  return Subtarget.isPPC64() ? CSR_SVR464_SaveList : CSR_SVR432_SaveList;
+}
+
+const unsigned*
+PPCRegisterInfo::getCallPreservedMask(CallingConv::ID CC) const {
+  if (Subtarget.isDarwinABI())
+    return Subtarget.isPPC64() ? CSR_Darwin64_RegMask :
+                                 CSR_Darwin32_RegMask;
+
+  return Subtarget.isPPC64() ? CSR_SVR464_RegMask : CSR_SVR432_RegMask;
 }
 
 BitVector PPCRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
@@ -299,8 +215,9 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
       DebugLoc dl = MI->getDebugLoc();
 
       if (isInt<16>(CalleeAmt)) {
-        BuildMI(MBB, I, dl, TII.get(ADDIInstr), StackReg).addReg(StackReg).
-          addImm(CalleeAmt);
+        BuildMI(MBB, I, dl, TII.get(ADDIInstr), StackReg)
+          .addReg(StackReg, RegState::Kill)
+          .addImm(CalleeAmt);
       } else {
         MachineBasicBlock::iterator MBBI = I;
         BuildMI(MBB, MBBI, dl, TII.get(LISInstr), TmpReg)
@@ -308,9 +225,8 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
         BuildMI(MBB, MBBI, dl, TII.get(ORIInstr), TmpReg)
           .addReg(TmpReg, RegState::Kill)
           .addImm(CalleeAmt & 0xFFFF);
-        BuildMI(MBB, MBBI, dl, TII.get(ADDInstr))
-          .addReg(StackReg)
-          .addReg(StackReg)
+        BuildMI(MBB, MBBI, dl, TII.get(ADDInstr), StackReg)
+          .addReg(StackReg, RegState::Kill)
           .addReg(TmpReg);
       }
     }
@@ -407,12 +323,12 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
     if (requiresRegisterScavenging(MF)) // FIXME (64-bit): Use "true" part.
       BuildMI(MBB, II, dl, TII.get(PPC::STDUX))
         .addReg(Reg, RegState::Kill)
-        .addReg(PPC::X1)
+        .addReg(PPC::X1, RegState::Define)
         .addReg(MI.getOperand(1).getReg());
     else
       BuildMI(MBB, II, dl, TII.get(PPC::STDUX))
         .addReg(PPC::X0, RegState::Kill)
-        .addReg(PPC::X1)
+        .addReg(PPC::X1, RegState::Define)
         .addReg(MI.getOperand(1).getReg());
 
     if (!MI.getOperand(1).isKill())
@@ -428,7 +344,7 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
   } else {
     BuildMI(MBB, II, dl, TII.get(PPC::STWUX))
       .addReg(Reg, RegState::Kill)
-      .addReg(PPC::R1)
+      .addReg(PPC::R1, RegState::Define)
       .addReg(MI.getOperand(1).getReg());
 
     if (!MI.getOperand(1).isKill())
@@ -528,7 +444,7 @@ void PPCRegisterInfo::lowerCRRestore(MachineBasicBlock::iterator II,
   if (DestReg != PPC::CR0) {
     unsigned ShiftBits = getPPCRegisterNumbering(DestReg)*4;
     // rlwinm r11, r11, 32-ShiftBits, 0, 31.
-    BuildMI(MBB, II, dl, TII.get(PPC::RLWINM), Reg)
+    BuildMI(MBB, II, dl, TII.get(LP64 ? PPC::RLWINM8 : PPC::RLWINM), Reg)
              .addReg(Reg).addImm(32-ShiftBits).addImm(0)
              .addImm(31);
   }
@@ -681,7 +597,7 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   unsigned StackReg = MI.getOperand(FIOperandNo).getReg();
   MI.getOperand(OperandBase).ChangeToRegister(StackReg, false);
-  MI.getOperand(OperandBase + 1).ChangeToRegister(SReg, false);
+  MI.getOperand(OperandBase + 1).ChangeToRegister(SReg, false, false, true);
 }
 
 unsigned PPCRegisterInfo::getFrameRegister(const MachineFunction &MF) const {

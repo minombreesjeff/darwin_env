@@ -22,12 +22,14 @@ class WatchpointIteratorTestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_watch_iter_with_dsym(self):
         """Exercise SBTarget.watchpoint_iter() API to iterate on the available watchpoints."""
         self.buildDsym()
         self.do_watchpoint_iter()
 
     @python_api_test
+    @dwarf_test
     def test_watch_iter_with_dwarf(self):
         """Exercise SBTarget.watchpoint_iter() API to iterate on the available watchpoints."""
         self.buildDwarf()
@@ -59,7 +61,8 @@ class WatchpointIteratorTestCase(TestBase):
 
         # Watch 'global' for read and write.
         value = frame0.FindValue('global', lldb.eValueTypeVariableGlobal)
-        watchpoint = value.Watch(True, True, True)
+        error = lldb.SBError();
+        watchpoint = value.Watch(True, True, True, error)
         self.assertTrue(value and watchpoint,
                         "Successfully found the variable and set a watchpoint")
         self.DebugSBValue(value)

@@ -23,6 +23,7 @@
 #include "DWARFDebugAbbrev.h"
 #include "DWARFDebugAranges.h"
 #include "DWARFDebugInfo.h"
+#include "DWARFDeclContext.h"
 #include "DWARFDIECollection.h"
 #include "DWARFFormValue.h"
 #include "DWARFLocationDescription.h"
@@ -1726,6 +1727,48 @@ DWARFDebugInfoEntry::BuildFunctionAddressRangeTable
     }
 }
 
+void
+DWARFDebugInfoEntry::GetDeclContextDIEs (SymbolFileDWARF* dwarf2Data, 
+                                         DWARFCompileUnit* cu,
+                                         DWARFDIECollection &decl_context_dies) const
+{
+    const DWARFDebugInfoEntry *parent_decl_ctx_die = GetParentDeclContextDIE (dwarf2Data, cu);
+    if (parent_decl_ctx_die && parent_decl_ctx_die != this)
+    {
+        decl_context_dies.Append(parent_decl_ctx_die);
+        parent_decl_ctx_die->GetDeclContextDIEs (dwarf2Data, cu, decl_context_dies);
+    }
+}
+
+void
+DWARFDebugInfoEntry::GetDWARFDeclContext (SymbolFileDWARF* dwarf2Data,
+                                          DWARFCompileUnit* cu,
+                                          DWARFDeclContext &dwarf_decl_ctx) const
+{
+    const dw_tag_t tag = Tag();
+    if (tag != DW_TAG_compile_unit)
+    {
+        dwarf_decl_ctx.AppendDeclContext(tag, GetName(dwarf2Data, cu));
+        const DWARFDebugInfoEntry *parent_decl_ctx_die = GetParentDeclContextDIE (dwarf2Data, cu);
+        if (parent_decl_ctx_die && parent_decl_ctx_die != this)
+        {
+            if (parent_decl_ctx_die->Tag() != DW_TAG_compile_unit)
+                parent_decl_ctx_die->GetDWARFDeclContext (dwarf2Data, cu, dwarf_decl_ctx);
+        }
+    }
+}
+
+
+bool
+DWARFDebugInfoEntry::MatchesDWARFDeclContext (SymbolFileDWARF* dwarf2Data,
+                                              DWARFCompileUnit* cu,
+                                              const DWARFDeclContext &dwarf_decl_ctx) const
+{
+    
+    DWARFDeclContext this_dwarf_decl_ctx;
+    GetDWARFDeclContext (dwarf2Data, cu, this_dwarf_decl_ctx);
+    return this_dwarf_decl_ctx == dwarf_decl_ctx;
+}
 
 const DWARFDebugInfoEntry *
 DWARFDebugInfoEntry::GetParentDeclContextDIE (SymbolFileDWARF* dwarf2Data, 

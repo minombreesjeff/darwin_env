@@ -34,6 +34,109 @@
 
 using namespace lldb_private;
 
+lldb::ValueObjectSP
+ValueObjectCast::Create (ValueObject &parent, 
+                         const ConstString &name, 
+                         const ClangASTType &cast_type)
+{
+    ValueObjectCast *cast_valobj_ptr = new ValueObjectCast (parent, name, cast_type);
+    return cast_valobj_ptr->GetSP();
+}
+
+ValueObjectCast::ValueObjectCast
+(
+    ValueObject &parent, 
+    const ConstString &name, 
+    const ClangASTType &cast_type
+) :
+    ValueObject(parent),
+    m_cast_type (cast_type)
+{
+    SetName (name);
+    m_value.SetContext (Value::eContextTypeClangType, cast_type.GetOpaqueQualType());
+}
+
+ValueObjectCast::~ValueObjectCast()
+{
+}
+
+lldb::clang_type_t
+ValueObjectCast::GetClangTypeImpl ()
+{
+    return m_cast_type.GetOpaqueQualType();
+}
+
+uint32_t
+ValueObjectCast::CalculateNumChildren()
+{
+    return ClangASTContext::GetNumChildren (GetClangAST (), GetClangType(), true);
+}
+
+clang::ASTContext *
+ValueObjectCast::GetClangASTImpl ()
+{
+    return m_cast_type.GetASTContext();
+}
+
+size_t
+ValueObjectCast::GetByteSize()
+{
+    return m_value.GetValueByteSize(GetClangAST(), NULL);
+}
+
+lldb::ValueType
+ValueObjectCast::GetValueType() const
+{
+    // Let our parent answer global, local, argument, etc...
+    return m_parent->GetValueType();
+}
+
+bool
+ValueObjectCast::UpdateValue ()
+{
+    SetValueIsValid (false);
+    m_error.Clear();
+    
+    if (m_parent->UpdateValueIfNeeded(false))
+    {
+        Value old_value(m_value);
+        m_update_point.SetUpdated();
+        m_value = m_parent->GetValue();
+        m_value.SetContext (Value::eContextTypeClangType, GetClangType());
+        SetAddressTypeOfChildren(m_parent->GetAddressTypeOfChildren());
+        if (ClangASTContext::IsAggregateType (GetClangType()))
+        {
+            // this value object represents an aggregate type whose
+            // children have values, but this object does not. So we
+            // say we are changed if our location has changed.
+            SetValueDidChange (m_value.GetValueType() != old_value.GetValueType() || m_value.GetScalar() != old_value.GetScalar());
+        } 
+        ExecutionContext exe_ctx (GetExecutionContextRef());
+        m_error = m_value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
+        SetValueDidChange (m_parent->GetValueDidChange());
+        return true;
+    }
+    
+    // The dynamic value failed to get an error, pass the error along
+    if (m_error.Success() && m_parent->GetError().Fail())
+        m_error = m_parent->GetError();
+    SetValueIsValid (false);
+    return false;
+}
+
+
+
+bool
+ValueObjectCast::IsInScope ()
+{
+    return m_parent->IsInScope();
+}
+
+//----------------------------------------------------------------------
+
+
+
+
 ValueObjectDynamicValue::ValueObjectDynamicValue (ValueObject &parent, lldb::DynamicValueType use_dynamic) :
     ValueObject(parent),
     m_address (),
@@ -50,7 +153,7 @@ ValueObjectDynamicValue::~ValueObjectDynamicValue()
 }
 
 lldb::clang_type_t
-ValueObjectDynamicValue::GetClangType ()
+ValueObjectDynamicValue::GetClangTypeImpl ()
 {
     if (m_type_sp)
         return m_value.GetClangType();
@@ -63,7 +166,7 @@ ValueObjectDynamicValue::GetTypeName()
 {
     const bool success = UpdateValueIfNeeded(false);
     if (success && m_type_sp)
-        return ClangASTType::GetConstTypeName (GetClangType());
+        return ClangASTType::GetConstTypeName (GetClangAST(), GetClangType());
     else
         return m_parent->GetTypeName();
 }
@@ -79,7 +182,7 @@ ValueObjectDynamicValue::CalculateNumChildren()
 }
 
 clang::ASTContext *
-ValueObjectDynamicValue::GetClangAST ()
+ValueObjectDynamicValue::GetClangASTImpl ()
 {
     const bool success = UpdateValueIfNeeded(false);
     if (success && m_type_sp)
@@ -126,7 +229,7 @@ ValueObjectDynamicValue::UpdateValue ()
         return true;
     }
     
-    ExecutionContext exe_ctx (GetExecutionContextScope());
+    ExecutionContext exe_ctx (GetExecutionContextRef());
     Target *target = exe_ctx.GetTargetPtr();
     if (target)
     {
@@ -135,7 +238,7 @@ ValueObjectDynamicValue::UpdateValue ()
     }
     
     // First make sure our Type and/or Address haven't changed:
-    Process *process = m_update_point.GetProcessSP().get();
+    Process *process = exe_ctx.GetProcessPtr();
     if (!process)
         return false;
     
@@ -178,7 +281,7 @@ ValueObjectDynamicValue::UpdateValue ()
         if (m_type_sp)
             SetValueDidChange(true);
         m_value = m_parent->GetValue();
-        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule());
+        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
         return m_error.Success();
     }
     
@@ -202,7 +305,8 @@ ValueObjectDynamicValue::UpdateValue ()
             
         // We've moved, so we should be fine...
         m_address = dynamic_address;
-        lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTargetSP().get());
+        lldb::TargetSP target_sp (GetTargetSP());
+        lldb::addr_t load_address = m_address.GetLoadAddress(target_sp.get());
         m_value.GetScalar() = load_address;
     }
     
@@ -226,7 +330,7 @@ ValueObjectDynamicValue::UpdateValue ()
     {
         // The variable value is in the Scalar value inside the m_value.
         // We can point our m_data right to it.
-        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule());
+        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
         if (m_error.Success())
         {
             if (ClangASTContext::IsAggregateType (GetClangType()))
@@ -255,3 +359,39 @@ ValueObjectDynamicValue::IsInScope ()
     return m_parent->IsInScope();
 }
 
+bool
+ValueObjectDynamicValue::SetValueFromCString (const char *value_str, Error& error)
+{
+    if (!UpdateValueIfNeeded(false))
+    {
+        error.SetErrorString("unable to read value");
+        return false;
+    }
+    
+    uint64_t my_value = GetValueAsUnsigned(UINT64_MAX);
+    uint64_t parent_value = m_parent->GetValueAsUnsigned(UINT64_MAX);
+    
+    if (my_value == UINT64_MAX || parent_value == UINT64_MAX)
+    {
+        error.SetErrorString("unable to read value");
+        return false;
+    }
+    
+    // if we are at an offset from our parent, in order to set ourselves correctly we would need
+    // to change the new value so that it refers to the correct dynamic type. we choose not to deal
+    // with that - if anything more than a value overwrite is required, you should be using the
+    // expression parser instead of the value editing facility
+    if (my_value != parent_value)
+    {
+        // but NULL'ing out a value should always be allowed
+        if (strcmp(value_str,"0"))
+        {
+            error.SetErrorString("unable to modify dynamic value, use 'expression' command");
+            return false;
+        }
+    }
+    
+    bool ret_val = m_parent->SetValueFromCString(value_str,error);
+    SetNeedsUpdate();
+    return ret_val;
+}

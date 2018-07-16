@@ -30,7 +30,7 @@ namespace lldb_private {
 typedef std::pair<int, std::string> OptionArgValue;
 typedef std::pair<std::string, OptionArgValue> OptionArgPair;
 typedef std::vector<OptionArgPair> OptionArgVector;
-typedef lldb::SharedPtr<OptionArgVector>::Type OptionArgVectorSP;
+typedef STD_SHARED_PTR(OptionArgVector) OptionArgVectorSP;
 
 struct OptionArgElement
 {
@@ -125,10 +125,10 @@ public:
     SetCommandString (const char *command, size_t len);
 
     bool
-    GetCommandString (std::string &command);
+    GetCommandString (std::string &command) const;
 
     bool
-    GetQuotedCommandString (std::string &command);
+    GetQuotedCommandString (std::string &command) const;
 
     //------------------------------------------------------------------
     /// Gets the number of arguments left in this command object.

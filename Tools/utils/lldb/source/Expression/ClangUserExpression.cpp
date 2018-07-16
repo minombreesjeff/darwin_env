@@ -53,15 +53,15 @@ ClangUserExpression::ClangUserExpression (const char *expr,
     m_language (language),
     m_transformed_text (),
     m_desired_type (desired_type),
+    m_enforce_valid_object (false),
     m_cplusplus (false),
     m_objectivec (false),
+    m_static_method(false),
     m_needs_object_ptr (false),
     m_const_object (false),
-    m_static_method(false),
     m_target (NULL),
     m_evaluated_statically (false),
-    m_const_result (),
-    m_enforce_valid_object (false)
+    m_const_result ()
 {
     switch (m_language)
     {
@@ -156,17 +156,6 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx, Error &err)
             
             m_cplusplus = true;
             m_needs_object_ptr = true;
-            
-            do {
-                clang::QualType this_type = method_decl->getThisType(decl_context->getParentASTContext());
-
-                const clang::PointerType *this_pointer_type = this_type->getAs<clang::PointerType>();
-
-                if (!this_pointer_type)
-                    break;
-                
-                clang::QualType this_pointee_type = this_pointer_type->getPointeeType();
-            } while (0);
         }
     }
     else if (clang::ObjCMethodDecl *method_decl = llvm::dyn_cast<clang::ObjCMethodDecl>(decl_context))
@@ -255,6 +244,8 @@ ClangUserExpression::Parse (Stream &error_stream,
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     Error err;
+ 
+    InstallContext(exe_ctx);
     
     ScanContext(exe_ctx, err);
     
@@ -317,7 +308,12 @@ ClangUserExpression::Parse (Stream &error_stream,
     }
     
     Process *process = exe_ctx.GetProcessPtr();
-    ClangExpressionParser parser(process, *this);
+    ExecutionContextScope *exe_scope = process;
+    
+    if (!exe_scope)
+        exe_scope = exe_ctx.GetTargetPtr();
+    
+    ClangExpressionParser parser(exe_scope, *this);
     
     unsigned num_errors = parser.Parse (error_stream);
     
@@ -357,7 +353,7 @@ ClangUserExpression::Parse (Stream &error_stream,
     if (jit_error.Success())
     {
         if (process && m_jit_alloc != LLDB_INVALID_ADDRESS)
-            m_jit_process_sp = process->GetSP();        
+            m_jit_process_sp = process->shared_from_this();        
         return true;
     }
     else
@@ -380,6 +376,19 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
 {
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
+    lldb::TargetSP target;
+    lldb::ProcessSP process;
+    lldb::StackFrameSP frame;
+    
+    if (!LockAndCheckContext(exe_ctx,
+                             target,
+                             process, 
+                             frame))
+    {
+        error_stream.Printf("The context has changed before we could JIT the expression!");
+        return false;
+    }
+    
     if (m_jit_start_addr != LLDB_INVALID_ADDRESS)
     {
         Error materialize_error;
@@ -402,7 +411,7 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
                 return false;
             }
             
-            if (!(m_expr_decl_map->GetObjectPointer(object_ptr, object_name, exe_ctx, materialize_error)))
+            if (!(m_expr_decl_map->GetObjectPointer(object_ptr, object_name, materialize_error)))
             {
                 error_stream.Printf("warning: couldn't get required object pointer (substituting NULL): %s\n", materialize_error.AsCString());
                 object_ptr = 0;
@@ -412,7 +421,7 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
             {
                 ConstString cmd_name("_cmd");
                 
-                if (!(m_expr_decl_map->GetObjectPointer(cmd_ptr, cmd_name, exe_ctx, materialize_error, true)))
+                if (!(m_expr_decl_map->GetObjectPointer(cmd_ptr, cmd_name, materialize_error, true)))
                 {
                     error_stream.Printf("warning: couldn't get object pointer (substituting NULL): %s\n", materialize_error.AsCString());
                     cmd_ptr = 0;
@@ -420,7 +429,7 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
             }
         }
                 
-        if (!m_expr_decl_map->Materialize(exe_ctx, struct_address, materialize_error))
+        if (!m_expr_decl_map->Materialize(struct_address, materialize_error))
         {
             error_stream.Printf("Couldn't materialize struct: %s\n", materialize_error.AsCString());
             return false;
@@ -449,7 +458,7 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
             
             if (struct_address)
             {
-                if (!m_expr_decl_map->DumpMaterializedStruct(exe_ctx, args, dump_error))
+                if (!m_expr_decl_map->DumpMaterializedStruct(args, dump_error))
                 {
                     log->Printf("  Couldn't extract variable values : %s", dump_error.AsCString("unknown error"));
                 }
@@ -506,7 +515,7 @@ ClangUserExpression::FinalizeJITExecution (Stream &error_stream,
         
         Error dump_error;
         
-        if (!m_expr_decl_map->DumpMaterializedStruct(exe_ctx, args, dump_error))
+        if (!m_expr_decl_map->DumpMaterializedStruct(args, dump_error))
         {
             log->Printf("  Couldn't extract variable values : %s", dump_error.AsCString("unknown error"));
         }
@@ -519,7 +528,7 @@ ClangUserExpression::FinalizeJITExecution (Stream &error_stream,
     lldb::addr_t function_stack_bottom = function_stack_pointer - Host::GetPageSize();
     
         
-    if (!m_expr_decl_map->Dematerialize(exe_ctx, result, function_stack_pointer, function_stack_bottom, expr_error))
+    if (!m_expr_decl_map->Dematerialize(result, function_stack_pointer, function_stack_bottom, expr_error))
     {
         error_stream.Printf ("Couldn't dematerialize struct : %s\n", expr_error.AsCString("unknown error"));
         return false;
@@ -555,7 +564,7 @@ ClangUserExpression::Execute (Stream &error_stream,
         const bool stop_others = true;
         const bool try_all_threads = true;
         
-        Address wrapper_address (NULL, m_jit_start_addr);
+        Address wrapper_address (m_jit_start_addr);
         lldb::ThreadPlanSP call_plan_sp(new ThreadPlanCallUserExpression (exe_ctx.GetThreadRef(), 
                                                                           wrapper_address, 
                                                                           struct_address, 

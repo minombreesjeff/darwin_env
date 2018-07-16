@@ -40,6 +40,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/Hashing.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -192,7 +193,6 @@ bool MachineOperand::isIdenticalTo(const MachineOperand &Other) const {
     return false;
 
   switch (getType()) {
-  default: llvm_unreachable("Unrecognized operand type");
   case MachineOperand::MO_Register:
     return getReg() == Other.getReg() && isDef() == Other.isDef() &&
            getSubReg() == Other.getSubReg();
@@ -217,11 +217,14 @@ bool MachineOperand::isIdenticalTo(const MachineOperand &Other) const {
            getOffset() == Other.getOffset();
   case MachineOperand::MO_BlockAddress:
     return getBlockAddress() == Other.getBlockAddress();
+  case MO_RegisterMask:
+    return getRegMask() == Other.getRegMask();
   case MachineOperand::MO_MCSymbol:
     return getMCSymbol() == Other.getMCSymbol();
   case MachineOperand::MO_Metadata:
     return getMetadata() == Other.getMetadata();
   }
+  llvm_unreachable("Invalid machine operand type");
 }
 
 /// print - Print the specified machine operand.
@@ -324,6 +327,9 @@ void MachineOperand::print(raw_ostream &OS, const TargetMachine *TM) const {
     WriteAsOperand(OS, getBlockAddress(), /*PrintType=*/false);
     OS << '>';
     break;
+  case MachineOperand::MO_RegisterMask:
+    OS << "<regmask>";
+    break;
   case MachineOperand::MO_Metadata:
     OS << '<';
     WriteAsOperand(OS, getMetadata(), /*PrintType=*/false);
@@ -332,8 +338,6 @@ void MachineOperand::print(raw_ostream &OS, const TargetMachine *TM) const {
   case MachineOperand::MO_MCSymbol:
     OS << "<MCSym=" << *getMCSymbol() << '>';
     break;
-  default:
-    llvm_unreachable("Unrecognized operand type");
   }
 
   if (unsigned TF = getTargetFlags())
@@ -887,6 +891,16 @@ unsigned MachineInstr::getNumExplicitOperands() const {
   return NumOperands;
 }
 
+/// isBundled - Return true if this instruction part of a bundle. This is true
+/// if either itself or its following instruction is marked "InsideBundle".
+bool MachineInstr::isBundled() const {
+  if (isInsideBundle())
+    return true;
+  MachineBasicBlock::const_instr_iterator nextMI = this;
+  ++nextMI;
+  return nextMI != Parent->instr_end() && nextMI->isInsideBundle();
+}
+
 bool MachineInstr::isStackAligningInlineAsm() const {
   if (isInlineAsm()) {
     unsigned ExtraInfo = getOperand(InlineAsm::MIOp_ExtraInfo).getImm();
@@ -1032,6 +1046,10 @@ MachineInstr::findRegisterDefOperandIdx(unsigned Reg, bool isDead, bool Overlap,
   bool isPhys = TargetRegisterInfo::isPhysicalRegister(Reg);
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = getOperand(i);
+    // Accept regmask operands when Overlap is set.
+    // Ignore them when looking for a specific def operand (Overlap == false).
+    if (isPhys && Overlap && MO.isRegMask() && MO.clobbersPhysReg(Reg))
+      return i;
     if (!MO.isReg() || !MO.isDef())
       continue;
     unsigned MOReg = MO.getReg();
@@ -1471,7 +1489,10 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
     OS << " = ";
 
   // Print the opcode name.
-  OS << getDesc().getName();
+  if (TM && TM->getInstrInfo())
+    OS << TM->getInstrInfo()->getName(getOpcode());
+  else
+    OS << "UNKNOWN";
 
   // Print the rest of the operands.
   bool OmittedAnyCallClobbers = false;
@@ -1513,7 +1534,7 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
         const MachineRegisterInfo &MRI = MF->getRegInfo();
         if (MRI.use_empty(Reg) && !MRI.isLiveOut(Reg)) {
           bool HasAliasLive = false;
-          for (const unsigned *Alias = TM->getRegisterInfo()->getAliasSet(Reg);
+          for (const uint16_t *Alias = TM->getRegisterInfo()->getAliasSet(Reg);
                unsigned AliasReg = *Alias; ++Alias)
             if (!MRI.use_empty(AliasReg) || MRI.isLiveOut(AliasReg)) {
               HasAliasLive = true;
@@ -1704,6 +1725,20 @@ bool MachineInstr::addRegisterKilled(unsigned IncomingReg,
   return Found;
 }
 
+void MachineInstr::clearRegisterKills(unsigned Reg,
+                                      const TargetRegisterInfo *RegInfo) {
+  if (!TargetRegisterInfo::isPhysicalRegister(Reg))
+    RegInfo = 0;
+  for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
+    MachineOperand &MO = getOperand(i);
+    if (!MO.isReg() || !MO.isUse() || !MO.isKill())
+      continue;
+    unsigned OpReg = MO.getReg();
+    if (OpReg == Reg || (RegInfo && RegInfo->isSuperRegister(Reg, OpReg)))
+      MO.setIsKill(false);
+  }
+}
+
 bool MachineInstr::addRegisterDead(unsigned IncomingReg,
                                    const TargetRegisterInfo *RegInfo,
                                    bool AddIfNotFound) {
@@ -1776,16 +1811,21 @@ void MachineInstr::addRegisterDefined(unsigned IncomingReg,
                                        true  /*IsImp*/));
 }
 
-void MachineInstr::setPhysRegsDeadExcept(const SmallVectorImpl<unsigned> &UsedRegs,
+void MachineInstr::setPhysRegsDeadExcept(ArrayRef<unsigned> UsedRegs,
                                          const TargetRegisterInfo &TRI) {
+  bool HasRegMask = false;
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
     MachineOperand &MO = getOperand(i);
+    if (MO.isRegMask()) {
+      HasRegMask = true;
+      continue;
+    }
     if (!MO.isReg() || !MO.isDef()) continue;
     unsigned Reg = MO.getReg();
-    if (Reg == 0) continue;
+    if (!TargetRegisterInfo::isPhysicalRegister(Reg)) continue;
     bool Dead = true;
-    for (SmallVectorImpl<unsigned>::const_iterator I = UsedRegs.begin(),
-         E = UsedRegs.end(); I != E; ++I)
+    for (ArrayRef<unsigned>::iterator I = UsedRegs.begin(), E = UsedRegs.end();
+         I != E; ++I)
       if (TRI.regsOverlap(*I, Reg)) {
         Dead = false;
         break;
@@ -1793,53 +1833,66 @@ void MachineInstr::setPhysRegsDeadExcept(const SmallVectorImpl<unsigned> &UsedRe
     // If there are no uses, including partial uses, the def is dead.
     if (Dead) MO.setIsDead();
   }
+
+  // This is a call with a register mask operand.
+  // Mask clobbers are always dead, so add defs for the non-dead defines.
+  if (HasRegMask)
+    for (ArrayRef<unsigned>::iterator I = UsedRegs.begin(), E = UsedRegs.end();
+         I != E; ++I)
+      addRegisterDefined(*I, &TRI);
 }
 
 unsigned
 MachineInstrExpressionTrait::getHashValue(const MachineInstr* const &MI) {
-  unsigned Hash = MI->getOpcode() * 37;
+  // Build up a buffer of hash code components.
+  //
+  // FIXME: This is a total hack. We should have a hash_value overload for
+  // MachineOperand, but currently that doesn't work because there are many
+  // different ideas of "equality" and thus different sets of information that
+  // contribute to the hash code. This one happens to want to take a specific
+  // subset. And it's still not clear that this routine uses the *correct*
+  // subset of information when computing the hash code. The goal is to use the
+  // same inputs for the hash code here that MachineInstr::isIdenticalTo uses to
+  // test for equality when passed the 'IgnoreVRegDefs' filter flag. It would
+  // be very useful to factor the selection of relevant inputs out of the two
+  // functions and into a common routine, but it's not clear how that can be
+  // done.
+  SmallVector<size_t, 8> HashComponents;
+  HashComponents.reserve(MI->getNumOperands() + 1);
+  HashComponents.push_back(MI->getOpcode());
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
-    uint64_t Key = (uint64_t)MO.getType() << 32;
     switch (MO.getType()) {
     default: break;
     case MachineOperand::MO_Register:
       if (MO.isDef() && TargetRegisterInfo::isVirtualRegister(MO.getReg()))
         continue;  // Skip virtual register defs.
-      Key |= MO.getReg();
+      HashComponents.push_back(hash_combine(MO.getType(), MO.getReg()));
       break;
     case MachineOperand::MO_Immediate:
-      Key |= MO.getImm();
+      HashComponents.push_back(hash_combine(MO.getType(), MO.getImm()));
       break;
     case MachineOperand::MO_FrameIndex:
     case MachineOperand::MO_ConstantPoolIndex:
     case MachineOperand::MO_JumpTableIndex:
-      Key |= MO.getIndex();
+      HashComponents.push_back(hash_combine(MO.getType(), MO.getIndex()));
       break;
     case MachineOperand::MO_MachineBasicBlock:
-      Key |= DenseMapInfo<void*>::getHashValue(MO.getMBB());
+      HashComponents.push_back(hash_combine(MO.getType(), MO.getMBB()));
       break;
     case MachineOperand::MO_GlobalAddress:
-      Key |= DenseMapInfo<void*>::getHashValue(MO.getGlobal());
+      HashComponents.push_back(hash_combine(MO.getType(), MO.getGlobal()));
       break;
     case MachineOperand::MO_BlockAddress:
-      Key |= DenseMapInfo<void*>::getHashValue(MO.getBlockAddress());
+      HashComponents.push_back(hash_combine(MO.getType(),
+                                            MO.getBlockAddress()));
       break;
     case MachineOperand::MO_MCSymbol:
-      Key |= DenseMapInfo<void*>::getHashValue(MO.getMCSymbol());
+      HashComponents.push_back(hash_combine(MO.getType(), MO.getMCSymbol()));
       break;
     }
-    Key += ~(Key << 32);
-    Key ^= (Key >> 22);
-    Key += ~(Key << 13);
-    Key ^= (Key >> 8);
-    Key += (Key << 3);
-    Key ^= (Key >> 15);
-    Key += ~(Key << 27);
-    Key ^= (Key >> 31);
-    Hash = (unsigned)Key + Hash * 37;
   }
-  return Hash;
+  return hash_combine_range(HashComponents.begin(), HashComponents.end());
 }
 
 void MachineInstr::emitError(StringRef Msg) const {

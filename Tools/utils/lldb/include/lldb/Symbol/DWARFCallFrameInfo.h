@@ -78,7 +78,7 @@ private:
                                   inst_length (0), ptr_encoding (0), initial_row() {}
     };
 
-    typedef lldb::SharedPtr<CIE>::Type CIESP;
+    typedef STD_SHARED_PTR(CIE) CIESP;
 
     struct FDEEntry
     {
@@ -118,7 +118,7 @@ private:
     GetCFIData();
 
     ObjectFile&                 m_objfile;
-    lldb::SectionSP             m_section;
+    lldb::SectionSP             m_section_sp;
     lldb::RegisterKind          m_reg_kind;
     Flags                       m_flags;
     cie_map_t                   m_cie_map;

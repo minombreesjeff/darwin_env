@@ -172,8 +172,7 @@ static FrontendAction *CreateFrontendAction(CompilerInstance &CI) {
     // If there are any AST files to merge, create a frontend action
     // adaptor to perform the merge.
     if (!CI.getFrontendOpts().ASTMergeFiles.empty())
-        Act = new ASTMergeAction(Act, &CI.getFrontendOpts().ASTMergeFiles[0],
-                                 CI.getFrontendOpts().ASTMergeFiles.size());
+        Act = new ASTMergeAction(Act, CI.getFrontendOpts().ASTMergeFiles);
     
     return Act;
 }
@@ -216,27 +215,44 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
         break;
     case lldb::eLanguageTypeC_plus_plus:
         m_compiler->getLangOpts().CPlusPlus = true;
+        m_compiler->getLangOpts().CPlusPlus0x = true;
         break;
     case lldb::eLanguageTypeObjC_plus_plus:
     default:
         m_compiler->getLangOpts().ObjC1 = true;
         m_compiler->getLangOpts().ObjC2 = true;
         m_compiler->getLangOpts().CPlusPlus = true;
+        m_compiler->getLangOpts().CPlusPlus0x = true;
         break;
     }
     
-    Process *process = NULL;
+    m_compiler->getLangOpts().DebuggerSupport = true; // Features specifically for debugger clients
+    if (expr.DesiredResultType() == ClangExpression::eResultTypeId)
+        m_compiler->getLangOpts().DebuggerCastResultToId = true;
+    
+    // Spell checking is a nice feature, but it ends up completing a
+    // lot of types that we didn't strictly speaking need to complete.
+    // As a result, we spend a long time parsing and importing debug
+    // information.
+    m_compiler->getLangOpts().SpellChecking = false; 
+    
+    lldb::ProcessSP process_sp;
     if (exe_scope)
-        process = exe_scope->CalculateProcess();
+        process_sp = exe_scope->CalculateProcess();
 
-    if (process && m_compiler->getLangOpts().ObjC1)
+    if (process_sp && m_compiler->getLangOpts().ObjC1)
     {
-        if (process->GetObjCLanguageRuntime())
+        if (process_sp->GetObjCLanguageRuntime())
         {
-            if (process->GetObjCLanguageRuntime()->GetRuntimeVersion() == eAppleObjC_V2)
+            if (process_sp->GetObjCLanguageRuntime()->GetRuntimeVersion() == eAppleObjC_V2)
             {
                 m_compiler->getLangOpts().ObjCNonFragileABI = true;     // NOT i386
                 m_compiler->getLangOpts().ObjCNonFragileABI2 = true;    // NOT i386
+            }
+            
+            if (process_sp->GetObjCLanguageRuntime()->HasNewLiteralsAndIndexing())
+            {
+                m_compiler->getLangOpts().DebuggerObjCLiteral = true;
             }
         }
     }
@@ -244,10 +260,6 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     m_compiler->getLangOpts().ThreadsafeStatics = false;
     m_compiler->getLangOpts().AccessControl = false; // Debuggers get universal access
     m_compiler->getLangOpts().DollarIdents = true; // $ indicates a persistent variable name
-    
-    m_compiler->getLangOpts().DebuggerSupport = true; // Features specifically for debugger clients
-    if (expr.DesiredResultType() == ClangExpression::eResultTypeId)
-        m_compiler->getLangOpts().DebuggerCastResultToId = true;
     
     // Set CodeGen options
     m_compiler->getCodeGenOpts().EmitDeclMetadata = true;
@@ -257,18 +269,18 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     m_compiler->getDiagnosticOpts().Warnings.push_back("no-unused-value");
     
     // Set the target triple.
-    Target *target = NULL;
+    lldb::TargetSP target_sp;
     if (exe_scope)
-        target = exe_scope->CalculateTarget();
+        target_sp = exe_scope->CalculateTarget();
 
     // TODO: figure out what to really do when we don't have a valid target.
     // Sometimes this will be ok to just use the host target triple (when we
     // evaluate say "2+3", but other expressions like breakpoint conditions
     // and other things that _are_ target specific really shouldn't just be 
     // using the host triple. This needs to be fixed in a better way.
-    if (target && target->GetArchitecture().IsValid())
+    if (target_sp && target_sp->GetArchitecture().IsValid())
     {
-        std::string triple = target->GetArchitecture().GetTriple().str();
+        std::string triple = target_sp->GetArchitecture().GetTriple().str();
         
         int dash_count = 0;
         for (size_t i = 0; i < triple.size(); ++i)
@@ -288,6 +300,9 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     {
         m_compiler->getTargetOpts().Triple = llvm::sys::getDefaultTargetTriple();
     }
+    
+    if (m_compiler->getTargetOpts().Triple.find("ios") != std::string::npos)
+        m_compiler->getTargetOpts().ABI = "apcs-gnu";
         
     // 3. Set up various important bits of infrastructure.
     m_compiler->createDiagnostics(0, 0);
@@ -364,7 +379,7 @@ ClangExpressionParser::Parse (Stream &stream)
     diag_buf->FlushDiagnostics (m_compiler->getDiagnostics());
     
     MemoryBuffer *memory_buffer = MemoryBuffer::getMemBufferCopy(m_expr.Text(), __FUNCTION__);
-    FileID memory_buffer_file_id = m_compiler->getSourceManager().createMainFileIDForMemBuffer (memory_buffer);
+    m_compiler->getSourceManager().createMainFileIDForMemBuffer (memory_buffer);
     
     diag_buf->BeginSourceFile(m_compiler->getLangOpts(), &m_compiler->getPreprocessor());
     
@@ -492,12 +507,7 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
                                   error_stream,
                                   function_name.c_str());
         
-        if (!ir_for_target.runOnModule(*module))
-        {
-            err.SetErrorToGenericError();
-            err.SetErrorString("Couldn't prepare the expression for execution in the target");
-            return err;
-        }
+        ir_for_target.runOnModule(*module);
         
         Error &interpreter_error(ir_for_target.getInterpreterError());
         
@@ -519,6 +529,7 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
                 err.SetErrorString("Execution needed to run in the target, but the target can't be run");
             else
                 err.SetErrorStringWithFormat("Interpreting the expression locally failed: %s", interpreter_error.AsCString());
+
             return err;
         }
         
@@ -629,58 +640,10 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
         err.SetErrorString("Couldn't write the JIT compiled code into the target because there is no target");
         return err;
     }
-    
-    // Look over the regions allocated for the function compiled.  The JIT
-    // tries to allocate the functions & stubs close together, so we should try to
-    // write them that way too...
-    // For now I only write functions with no stubs, globals, exception tables,
-    // etc.  So I only need to write the functions.
-    
-    size_t alloc_size = 0;
-    
-    std::map<uint8_t *, uint8_t *>::iterator fun_pos = jit_memory_manager->m_functions.begin();
-    std::map<uint8_t *, uint8_t *>::iterator fun_end = jit_memory_manager->m_functions.end();
-
-    for (; fun_pos != fun_end; ++fun_pos)
-    {
-        size_t mem_size = fun_pos->second - fun_pos->first;
-        if (log)
-            log->Printf ("JIT memory: [%p - %p) size = %zu", fun_pos->first, fun_pos->second, mem_size);
-        alloc_size += mem_size;
-    }
-    
-    Error alloc_error;
-    func_allocation_addr = process->AllocateMemory (alloc_size, 
-                                                                lldb::ePermissionsReadable|lldb::ePermissionsExecutable, 
-                                                                alloc_error);
-    
-    if (func_allocation_addr == LLDB_INVALID_ADDRESS)
-    {
-        err.SetErrorToGenericError();
-        err.SetErrorStringWithFormat("Couldn't allocate memory for the JITted function: %s", alloc_error.AsCString("unknown error"));
-        return err;
-    }
-    
-    lldb::addr_t cursor = func_allocation_addr;
         
-    for (fun_pos = jit_memory_manager->m_functions.begin(); fun_pos != fun_end; fun_pos++)
-    {
-        lldb::addr_t lstart = (lldb::addr_t) (*fun_pos).first;
-        lldb::addr_t lend = (lldb::addr_t) (*fun_pos).second;
-        size_t size = lend - lstart;
-        
-        Error write_error;
-        
-        if (process->WriteMemory(cursor, (void *) lstart, size, write_error) != size)
-        {
-            err.SetErrorToGenericError();
-            err.SetErrorStringWithFormat("Couldn't copy JIT code for function into the target: %s", write_error.AsCString("unknown error"));
-            return err;
-        }
-            
-        jit_memory_manager->AddToLocalToRemoteMap (lstart, size, cursor);
-        cursor += size;
-    }
+    jit_memory_manager->CommitAllocations(*process);
+    jit_memory_manager->ReportAllocations(*execution_engine);
+    jit_memory_manager->WriteData(*process);
     
     std::vector<JittedFunction>::iterator pos, end = m_jitted_functions.end();
     
@@ -690,7 +653,8 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
     
         if (!(*pos).m_name.compare(function_name.c_str()))
         {
-            func_end = jit_memory_manager->GetRemoteRangeForLocal ((*pos).m_local_addr).second;
+            RecordingMemoryManager::AddrRange func_range = jit_memory_manager->GetRemoteRangeForLocal((*pos).m_local_addr);
+            func_end = func_range.first + func_range.second;
             func_addr = (*pos).m_remote_addr;
         }
     }
@@ -766,7 +730,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     }
     
     if (log)
-        log->Printf("Function's code range is [0x%llx-0x%llx]", func_range.first, func_range.second);
+        log->Printf("Function's code range is [0x%llx+0x%llx]", func_range.first, func_range.second);
     
     Target *target = exe_ctx.GetTargetPtr();
     if (!target)
@@ -775,7 +739,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
         ret.SetErrorString("Couldn't find the target");
     }
     
-    lldb::DataBufferSP buffer_sp(new DataBufferHeap(func_range.second - func_remote_addr, 0));
+    lldb::DataBufferSP buffer_sp(new DataBufferHeap(func_range.second, 0));
     
     Process *process = exe_ctx.GetProcessPtr();
     Error err;
@@ -821,7 +785,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
                             DataExtractor::TypeUInt8);
     }
     
-    disassembler->DecodeInstructions (Address (NULL, func_remote_addr), extractor, 0, UINT32_MAX, false);
+    disassembler->DecodeInstructions (Address (func_remote_addr), extractor, 0, UINT32_MAX, false);
     
     InstructionList &instruction_list = disassembler->GetInstructionList();
     const uint32_t max_opcode_byte_size = instruction_list.GetMaxOpcocdeByteSize();
@@ -834,8 +798,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
                            max_opcode_byte_size,
                            true,
                            true,
-                           &exe_ctx, 
-                           true);
+                           &exe_ctx);
         stream.PutChar('\n');
     }
     

@@ -33,6 +33,10 @@
 #include "llvm/Support/Allocator.h"
 #include <vector>
 
+namespace llvm {
+  template<unsigned InternalLen> class SmallString;
+}
+
 namespace clang {
 
 class SourceManager;
@@ -56,7 +60,7 @@ class ModuleLoader;
 /// single source file, and don't know anything about preprocessor-level issues
 /// like the #include stack, token expansion, etc.
 ///
-class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
+class Preprocessor : public RefCountedBase<Preprocessor> {
   DiagnosticsEngine        *Diags;
   LangOptions       &Features;
   const TargetInfo  *Target;
@@ -72,7 +76,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
 
   /// PTH - An optional PTHManager object used for getting tokens from
   ///  a token cache rather than lexing the original source file.
-  llvm::OwningPtr<PTHManager> PTH;
+  OwningPtr<PTHManager> PTH;
 
   /// BP - A BumpPtrAllocator object used to quickly allocate and release
   ///  objects internal to the Preprocessor.
@@ -107,7 +111,6 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   bool KeepComments : 1;
   bool KeepMacroComments : 1;
   bool SuppressIncludeNotFoundError : 1;
-  bool AutoModuleImport : 1;
 
   // State that changes while the preprocessor runs:
   bool InMacroArgs : 1;            // True if parsing fn macro invocation args.
@@ -163,7 +166,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   /// for preprocessing.
   SourceLocation CodeCompletionFileLoc;
 
-  /// \brief The source location of the __import_module__ keyword we just
+  /// \brief The source location of the 'import' contextual keyword we just 
   /// lexed, if any.
   SourceLocation ModuleImportLoc;
 
@@ -191,12 +194,12 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   /// CurLexer - This is the current top of the stack that we're lexing from if
   /// not expanding a macro and we are lexing directly from source code.
   ///  Only one of CurLexer, CurPTHLexer, or CurTokenLexer will be non-null.
-  llvm::OwningPtr<Lexer> CurLexer;
+  OwningPtr<Lexer> CurLexer;
 
   /// CurPTHLexer - This is the current top of stack that we're lexing from if
   ///  not expanding from a macro and we are lexing from a PTH cache.
   ///  Only one of CurLexer, CurPTHLexer, or CurTokenLexer will be non-null.
-  llvm::OwningPtr<PTHLexer> CurPTHLexer;
+  OwningPtr<PTHLexer> CurPTHLexer;
 
   /// CurPPLexer - This is the current top of the stack what we're lexing from
   ///  if not expanding a macro.  This is an alias for either CurLexer or
@@ -210,7 +213,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
 
   /// CurTokenLexer - This is the current macro we are expanding, if we are
   /// expanding a macro.  One of CurLexer and CurTokenLexer must be null.
-  llvm::OwningPtr<TokenLexer> CurTokenLexer;
+  OwningPtr<TokenLexer> CurTokenLexer;
 
   /// \brief The kind of lexer we're currently working with.
   enum CurLexerKind {
@@ -397,11 +400,6 @@ public:
     return SuppressIncludeNotFoundError;
   }
 
-  /// \brief Specify whether automatic module imports are enabled.
-  void setAutoModuleImport(bool AutoModuleImport = true) {
-    this->AutoModuleImport = AutoModuleImport;
-  }
-
   /// isCurrentLexer - Return true if we are lexing directly from the specified
   /// lexer.
   bool isCurrentLexer(const PreprocessorLexer *L) const {
@@ -439,7 +437,8 @@ public:
 
   /// setMacroInfo - Specify a macro for this identifier.
   ///
-  void setMacroInfo(IdentifierInfo *II, MacroInfo *MI);
+  void setMacroInfo(IdentifierInfo *II, MacroInfo *MI,
+                    bool LoadedFromAST = false);
 
   /// macro_iterator/macro_begin/macro_end - This allows you to walk the current
   /// state of the macro table.  This visits every currently-defined macro.
@@ -513,7 +512,7 @@ public:
 
   /// \brief Create a new preprocessing record, which will keep track of
   /// all macro expansions, macro definitions, etc.
-  void createPreprocessingRecord(bool IncludeNestedMacroExpansions);
+  void createPreprocessingRecord(bool RecordConditionalDirectives);
 
   /// EnterMainSourceFile - Enter the specified FileID as the main source file,
   /// which implicitly adds the builtin defines etc.
@@ -689,6 +688,10 @@ public:
       CachedTokens[CachedLexPos-1] = Tok;
   }
 
+  /// \brief Recompute the current lexer kind based on the CurLexer/CurPTHLexer/
+  /// CurTokenLexer pointers.
+  void recomputeCurLexerKind();
+  
   /// \brief Specify the point at which code-completion will be performed.
   ///
   /// \param File the file in which code completion should occur. If
@@ -812,8 +815,8 @@ public:
   /// SmallVector. Note that the returned StringRef may not point to the
   /// supplied buffer if a copy can be avoided.
   StringRef getSpelling(const Token &Tok,
-                              SmallVectorImpl<char> &Buffer,
-                              bool *Invalid = 0) const;
+                        SmallVectorImpl<char> &Buffer,
+                        bool *Invalid = 0) const;
 
   /// getSpellingOfSingleCharacterNumericConstant - Tok is a numeric constant
   /// with length 1, return the character.
@@ -830,6 +833,17 @@ public:
     // Otherwise, fall back on getCharacterData, which is slower, but always
     // works.
     return *SourceMgr.getCharacterData(Tok.getLocation(), Invalid);
+  }
+
+  /// \brief Retrieve the name of the immediate macro expansion.
+  ///
+  /// This routine starts from a source location, and finds the name of the macro
+  /// responsible for its immediate expansion. It looks through any intervening
+  /// macro argument expansions to compute this. It returns a StringRef which
+  /// refers to the SourceManager-owned buffer of the source where that macro
+  /// name is spelled. Thus, the result shouldn't out-live the SourceManager.
+  StringRef getImmediateMacroName(SourceLocation Loc) {
+    return Lexer::getImmediateMacroName(Loc, SourceMgr, getLangOptions());
   }
 
   /// CreateString - Plop the specified string into a scratch buffer and set the
@@ -860,14 +874,23 @@ public:
 
   /// \brief Returns true if the given MacroID location points at the first
   /// token of the macro expansion.
-  bool isAtStartOfMacroExpansion(SourceLocation loc) const {
-    return Lexer::isAtStartOfMacroExpansion(loc, SourceMgr, Features);
+  ///
+  /// \param MacroBegin If non-null and function returns true, it is set to
+  /// begin location of the macro.
+  bool isAtStartOfMacroExpansion(SourceLocation loc,
+                                 SourceLocation *MacroBegin = 0) const {
+    return Lexer::isAtStartOfMacroExpansion(loc, SourceMgr, Features,
+                                            MacroBegin);
   }
 
   /// \brief Returns true if the given MacroID location points at the last
   /// token of the macro expansion.
-  bool isAtEndOfMacroExpansion(SourceLocation loc) const {
-    return Lexer::isAtEndOfMacroExpansion(loc, SourceMgr, Features);
+  ///
+  /// \param MacroBegin If non-null and function returns true, it is set to
+  /// end location of the macro.
+  bool isAtEndOfMacroExpansion(SourceLocation loc,
+                               SourceLocation *MacroEnd = 0) const {
+    return Lexer::isAtEndOfMacroExpansion(loc, SourceMgr, Features, MacroEnd);
   }
 
   /// DumpToken - Print the token to stderr, used for debugging.
@@ -1041,7 +1064,7 @@ public:
   /// This code concatenates and consumes tokens up to the '>' token.  It
   /// returns false if the > was found, otherwise it returns true if it finds
   /// and consumes the EOD marker.
-  bool ConcatenateIncludeName(llvm::SmallString<128> &FilenameBuffer,
+  bool ConcatenateIncludeName(SmallString<128> &FilenameBuffer,
                               SourceLocation &End);
 
   /// LexOnOffSwitch - Lex an on-off-switch (C99 6.10.6p2) and verify that it is
@@ -1203,7 +1226,7 @@ private:
   void HandleDigitDirective(Token &Tok);
   void HandleUserDiagnosticDirective(Token &Tok, bool isWarning);
   void HandleIdentSCCSDirective(Token &Tok);
-  void HandleMacroExportDirective(Token &Tok);
+  void HandleMacroPublicDirective(Token &Tok);
   void HandleMacroPrivateDirective(Token &Tok);
 
   // File inclusion.
@@ -1239,6 +1262,7 @@ public:
   void HandlePragmaMessage(Token &MessageTok);
   void HandlePragmaPushMacro(Token &Tok);
   void HandlePragmaPopMacro(Token &Tok);
+  void HandlePragmaIncludeAlias(Token &Tok);
   IdentifierInfo *ParsePragmaPushOrPopMacro(Token &Tok);
 
   // Return true and store the first token only if any CommentHandler

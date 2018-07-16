@@ -22,6 +22,7 @@
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/Diagnostic.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/SmallString.h"
 #include <algorithm>
 #include <cctype>
 
@@ -40,10 +41,9 @@ static void printIntegral(const TemplateArgument &TemplArg,
   if (T->isBooleanType()) {
     Out << (Val->getBoolValue() ? "true" : "false");
   } else if (T->isCharType()) {
-    const unsigned char Ch = Val->getZExtValue();
-    const std::string Str(1, Ch);
+    const char Ch = Val->getZExtValue();
     Out << ((Ch == '\'') ? "'\\" : "'");
-    Out.write_escaped(Str, /*UseHexEscapes=*/ true);
+    Out.write_escaped(StringRef(&Ch, 1), /*UseHexEscapes=*/ true);
     Out << "'";
   } else {
     Out << Val->toString(10);
@@ -100,7 +100,7 @@ bool TemplateArgument::isDependent() const {
     return false;
   }
 
-  return false;
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 bool TemplateArgument::isInstantiationDependent() const {
@@ -137,8 +137,8 @@ bool TemplateArgument::isInstantiationDependent() const {
     
     return false;
   }
-  
-  return false;
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 bool TemplateArgument::isPackExpansion() const {
@@ -159,8 +159,8 @@ bool TemplateArgument::isPackExpansion() const {
   case Expression:
     return isa<PackExpansionExpr>(getAsExpr());
   }
-  
-  return false;
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 bool TemplateArgument::containsUnexpandedParameterPack() const {
@@ -278,8 +278,7 @@ bool TemplateArgument::structurallyEquals(const TemplateArgument &Other) const {
     return true;
   }
 
-  // Suppress warnings.
-  return false;
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 TemplateArgument TemplateArgument::getPackExpansionPattern() const {
@@ -302,8 +301,8 @@ TemplateArgument TemplateArgument::getPackExpansionPattern() const {
   case Template:
     return TemplateArgument();
   }
-  
-  return TemplateArgument();
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 void TemplateArgument::print(const PrintingPolicy &Policy, 
@@ -327,7 +326,7 @@ void TemplateArgument::print(const PrintingPolicy &Policy,
     if (NamedDecl *ND = dyn_cast_or_null<NamedDecl>(getAsDecl())) {
       if (ND->getDeclName()) {
         Unnamed = false;
-        Out << ND->getNameAsString();
+        Out << *ND;
       }
     }
     
@@ -412,8 +411,7 @@ SourceRange TemplateArgumentLoc::getSourceRange() const {
     return SourceRange();
   }
 
-  // Silence bonus gcc warning.
-  return SourceRange();
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 TemplateArgumentLoc 
@@ -474,8 +472,8 @@ TemplateArgumentLoc::getPackExpansionPattern(SourceLocation &Ellipsis,
   case TemplateArgument::Null:
     return TemplateArgumentLoc();
   }
-  
-  return TemplateArgumentLoc();
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
@@ -505,7 +503,7 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
     // This shouldn't actually ever happen, so it's okay that we're
     // regurgitating an expression here.
     // FIXME: We're guessing at LangOptions!
-    llvm::SmallString<32> Str;
+    SmallString<32> Str;
     llvm::raw_svector_ostream OS(Str);
     LangOptions LangOpts;
     LangOpts.CPlusPlus = true;
@@ -516,7 +514,7 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
       
   case TemplateArgument::Pack: {
     // FIXME: We're guessing at LangOptions!
-    llvm::SmallString<32> Str;
+    SmallString<32> Str;
     llvm::raw_svector_ostream OS(Str);
     LangOptions LangOpts;
     LangOpts.CPlusPlus = true;
@@ -525,15 +523,15 @@ const DiagnosticBuilder &clang::operator<<(const DiagnosticBuilder &DB,
     return DB << OS.str();
   }
   }
-  
-  return DB;
+
+  llvm_unreachable("Invalid TemplateArgument Kind!");
 }
 
 const ASTTemplateArgumentListInfo *
 ASTTemplateArgumentListInfo::Create(ASTContext &C,
                                     const TemplateArgumentListInfo &List) {
   std::size_t size = sizeof(CXXDependentScopeMemberExpr) +
-                     ASTTemplateArgumentListInfo::sizeFor(List);
+                     ASTTemplateArgumentListInfo::sizeFor(List.size());
   void *Mem = C.Allocate(size, llvm::alignOf<ASTTemplateArgumentListInfo>());
   ASTTemplateArgumentListInfo *TAI = new (Mem) ASTTemplateArgumentListInfo();
   TAI->initializeFrom(List);
@@ -586,7 +584,38 @@ std::size_t ASTTemplateArgumentListInfo::sizeFor(unsigned NumTemplateArgs) {
          sizeof(TemplateArgumentLoc) * NumTemplateArgs;
 }
 
-std::size_t ASTTemplateArgumentListInfo::sizeFor(
-                                      const TemplateArgumentListInfo &Info) {
-  return sizeFor(Info.size());
+void
+ASTTemplateKWAndArgsInfo::initializeFrom(SourceLocation TemplateKWLoc,
+                                         const TemplateArgumentListInfo &Info) {
+  Base::initializeFrom(Info);
+  setTemplateKeywordLoc(TemplateKWLoc);
 }
+
+void
+ASTTemplateKWAndArgsInfo
+::initializeFrom(SourceLocation TemplateKWLoc,
+                 const TemplateArgumentListInfo &Info,
+                 bool &Dependent,
+                 bool &InstantiationDependent,
+                 bool &ContainsUnexpandedParameterPack) {
+  Base::initializeFrom(Info, Dependent, InstantiationDependent,
+                       ContainsUnexpandedParameterPack);
+  setTemplateKeywordLoc(TemplateKWLoc);
+}
+
+void
+ASTTemplateKWAndArgsInfo::initializeFrom(SourceLocation TemplateKWLoc) {
+  // No explicit template arguments, but template keyword loc is valid.
+  assert(TemplateKWLoc.isValid());
+  LAngleLoc = SourceLocation();
+  RAngleLoc = SourceLocation();
+  NumTemplateArgs = 0;
+  setTemplateKeywordLoc(TemplateKWLoc);
+}
+
+std::size_t
+ASTTemplateKWAndArgsInfo::sizeFor(unsigned NumTemplateArgs) {
+  // Add space for the template keyword location.
+  return Base::sizeFor(NumTemplateArgs) + sizeof(SourceLocation);
+}
+

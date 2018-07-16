@@ -22,6 +22,7 @@
 #include "llvm/ADT/StringRef.h"
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace llvm {
   class raw_ostream;
@@ -29,8 +30,10 @@ namespace llvm {
 
 namespace clang {
   
-class FileEntry;
 class DirectoryEntry;
+class FileEntry;
+class LangOptions;
+class TargetInfo;
   
 /// \brief Describes the name of a module.
 typedef llvm::SmallVector<std::pair<std::string, SourceLocation>, 2>
@@ -52,17 +55,41 @@ public:
   /// \brief The umbrella header or directory.
   llvm::PointerUnion<const DirectoryEntry *, const FileEntry *> Umbrella;
   
+private:
   /// \brief The submodules of this module, indexed by name.
-  llvm::StringMap<Module *> SubModules;
+  std::vector<Module *> SubModules;
   
+  /// \brief A mapping from the submodule name to the index into the 
+  /// \c SubModules vector at which that submodule resides.
+  llvm::StringMap<unsigned> SubModuleIndex;
+  
+public:
   /// \brief The headers that are part of this module.
   llvm::SmallVector<const FileEntry *, 2> Headers;
+
+  /// \brief The set of language features required to use this module.
+  ///
+  /// If any of these features is not present, the \c IsAvailable bit
+  /// will be false to indicate that this (sub)module is not
+  /// available.
+  llvm::SmallVector<std::string, 2> Requires;
+
+  /// \brief Whether this module is available in the current
+  /// translation unit.
+  unsigned IsAvailable : 1;
+
+  /// \brief Whether this module was loaded from a module file.
+  unsigned IsFromModuleFile : 1;
   
   /// \brief Whether this is a framework module.
   unsigned IsFramework : 1;
   
   /// \brief Whether this is an explicit submodule.
   unsigned IsExplicit : 1;
+  
+  /// \brief Whether this is a "system" module (which assumes that all
+  /// headers in it are system headers).
+  unsigned IsSystem : 1;
   
   /// \brief Whether we should infer submodules for this module based on 
   /// the headers.
@@ -131,20 +158,36 @@ public:
   explicit Module(StringRef Name, SourceLocation DefinitionLoc,
                   bool IsFramework)
     : Name(Name), DefinitionLoc(DefinitionLoc), Parent(0), Umbrella(),
-      IsFramework(IsFramework), IsExplicit(false), InferSubmodules(false),
-      InferExplicitSubmodules(false), InferExportWildcard(false),
-      NameVisibility(Hidden) { }
+      IsAvailable(true), IsFromModuleFile(false), IsFramework(IsFramework), 
+      IsExplicit(false), IsSystem(false),
+      InferSubmodules(false), InferExplicitSubmodules(false),
+      InferExportWildcard(false), NameVisibility(Hidden) { }
   
-  /// \brief Construct  a new module or submodule.
+  /// \brief Construct a new module or submodule.
   Module(StringRef Name, SourceLocation DefinitionLoc, Module *Parent, 
-         bool IsFramework, bool IsExplicit)
-    : Name(Name), DefinitionLoc(DefinitionLoc), Parent(Parent), 
-      Umbrella(), IsFramework(IsFramework), IsExplicit(IsExplicit), 
-      InferSubmodules(false), InferExplicitSubmodules(false), 
-      InferExportWildcard(false),NameVisibility(Hidden) { }
+         bool IsFramework, bool IsExplicit);
   
   ~Module();
   
+  /// \brief Determine whether this module is available for use within the
+  /// current translation unit.
+  bool isAvailable() const { return IsAvailable; }
+
+  /// \brief Determine whether this module is available for use within the
+  /// current translation unit.
+  ///
+  /// \param LangOpts The language options used for the current
+  /// translation unit.
+  ///
+  /// \param Target The target options used for the current translation unit.
+  ///
+  /// \param Feature If this module is unavailable, this parameter
+  /// will be set to one of the features that is required for use of
+  /// this module (but is not available).
+  bool isAvailable(const LangOptions &LangOpts, 
+                   const TargetInfo &Target,
+                   StringRef &Feature) const;
+
   /// \brief Determine whether this module is a submodule.
   bool isSubModule() const { return Parent != 0; }
   
@@ -199,6 +242,33 @@ public:
   bool hasUmbrellaDir() const {
     return Umbrella && Umbrella.is<const DirectoryEntry *>();
   }
+
+  /// \briaf Add the given feature requirement to the list of features
+  /// required by this module.
+  ///
+  /// \param Feature The feature that is required by this module (and
+  /// its submodules).
+  ///
+  /// \param LangOpts The set of language options that will be used to
+  /// evaluate the availability of this feature.
+  ///
+  /// \param Target The target options that will be used to evaluate the
+  /// availability of this feature.
+  void addRequirement(StringRef Feature, const LangOptions &LangOpts,
+                      const TargetInfo &Target);
+
+  /// \brief Find the submodule with the given name.
+  ///
+  /// \returns The submodule if found, or NULL otherwise.
+  Module *findSubmodule(StringRef Name) const;
+  
+  typedef std::vector<Module *>::iterator submodule_iterator;
+  typedef std::vector<Module *>::const_iterator submodule_const_iterator;
+  
+  submodule_iterator submodule_begin() { return SubModules.begin(); }
+  submodule_const_iterator submodule_begin() const {return SubModules.begin();}
+  submodule_iterator submodule_end()   { return SubModules.end(); }
+  submodule_const_iterator submodule_end() const { return SubModules.end(); }
   
   /// \brief Print the module map for this module to the given stream. 
   ///

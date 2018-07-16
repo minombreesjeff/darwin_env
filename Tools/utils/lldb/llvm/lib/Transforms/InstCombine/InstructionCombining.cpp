@@ -495,7 +495,7 @@ Value *InstCombiner::dyn_castNegVal(Value *V) const {
   if (ConstantInt *C = dyn_cast<ConstantInt>(V))
     return ConstantExpr::getNeg(C);
 
-  if (ConstantVector *C = dyn_cast<ConstantVector>(V))
+  if (ConstantDataVector *C = dyn_cast<ConstantDataVector>(V))
     if (C->getType()->getElementType()->isIntegerTy())
       return ConstantExpr::getNeg(C);
 
@@ -514,7 +514,7 @@ Value *InstCombiner::dyn_castFNegVal(Value *V) const {
   if (ConstantFP *C = dyn_cast<ConstantFP>(V))
     return ConstantExpr::getFNeg(C);
 
-  if (ConstantVector *C = dyn_cast<ConstantVector>(V))
+  if (ConstantDataVector *C = dyn_cast<ConstantDataVector>(V))
     if (C->getType()->getElementType()->isFloatingPointTy())
       return ConstantExpr::getFNeg(C);
 
@@ -1247,13 +1247,13 @@ Instruction *InstCombiner::visitSwitchInst(SwitchInst &SI) {
         // change 'switch (X+4) case 1:' into 'switch (X) case -3'
         unsigned NumCases = SI.getNumCases();
         // Skip the first item since that's the default case.
-        for (unsigned i = 1; i < NumCases; ++i) {
+        for (unsigned i = 0; i < NumCases; ++i) {
           ConstantInt* CaseVal = SI.getCaseValue(i);
           Constant* NewCaseVal = ConstantExpr::getSub(cast<Constant>(CaseVal),
                                                       AddRHS);
           assert(isa<ConstantInt>(NewCaseVal) &&
                  "Result of expression should be constant");
-          SI.setSuccessorValue(i, cast<ConstantInt>(NewCaseVal));
+          SI.setCaseValue(i, cast<ConstantInt>(NewCaseVal));
         }
         SI.setCondition(I->getOperand(0));
         Worklist.Add(I);
@@ -1270,24 +1270,16 @@ Instruction *InstCombiner::visitExtractValueInst(ExtractValueInst &EV) {
     return ReplaceInstUsesWith(EV, Agg);
 
   if (Constant *C = dyn_cast<Constant>(Agg)) {
-    if (isa<UndefValue>(C))
-      return ReplaceInstUsesWith(EV, UndefValue::get(EV.getType()));
-      
-    if (isa<ConstantAggregateZero>(C))
-      return ReplaceInstUsesWith(EV, Constant::getNullValue(EV.getType()));
-
-    if (isa<ConstantArray>(C) || isa<ConstantStruct>(C)) {
-      // Extract the element indexed by the first index out of the constant
-      Value *V = C->getOperand(*EV.idx_begin());
-      if (EV.getNumIndices() > 1)
-        // Extract the remaining indices out of the constant indexed by the
-        // first index
-        return ExtractValueInst::Create(V, EV.getIndices().slice(1));
-      else
-        return ReplaceInstUsesWith(EV, V);
+    if (Constant *C2 = C->getAggregateElement(*EV.idx_begin())) {
+      if (EV.getNumIndices() == 0)
+        return ReplaceInstUsesWith(EV, C2);
+      // Extract the remaining indices out of the constant indexed by the
+      // first index
+      return ExtractValueInst::Create(C2, EV.getIndices().slice(1));
     }
     return 0; // Can't handle other constants
-  } 
+  }
+  
   if (InsertValueInst *IV = dyn_cast<InsertValueInst>(Agg)) {
     // We're extracting from an insertvalue instruction, compare the indices
     const unsigned *exti, *exte, *insi, *inse;
@@ -1881,15 +1873,15 @@ static bool AddReachableCodeToWorklist(BasicBlock *BB,
     } else if (SwitchInst *SI = dyn_cast<SwitchInst>(TI)) {
       if (ConstantInt *Cond = dyn_cast<ConstantInt>(SI->getCondition())) {
         // See if this is an explicit destination.
-        for (unsigned i = 1, e = SI->getNumSuccessors(); i != e; ++i)
+        for (unsigned i = 0, e = SI->getNumCases(); i != e; ++i)
           if (SI->getCaseValue(i) == Cond) {
-            BasicBlock *ReachableBB = SI->getSuccessor(i);
+            BasicBlock *ReachableBB = SI->getCaseSuccessor(i);
             Worklist.push_back(ReachableBB);
             continue;
           }
         
         // Otherwise it is the default destination.
-        Worklist.push_back(SI->getSuccessor(0));
+        Worklist.push_back(SI->getDefaultDest());
         continue;
       }
     }

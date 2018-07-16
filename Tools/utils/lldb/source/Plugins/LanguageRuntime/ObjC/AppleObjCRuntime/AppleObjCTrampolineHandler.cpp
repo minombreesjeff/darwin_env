@@ -334,15 +334,16 @@ AppleObjCTrampolineHandler::AppleObjCVTables::InitializeVTableSymbols ()
         return true;
     Target &target = m_process_sp->GetTarget();
     
-    ModuleList &modules = target.GetImages();
-    size_t num_modules = modules.GetSize();
+    ModuleList &target_modules = target.GetImages();
+    Mutex::Locker modules_locker(target_modules.GetMutex());
+    size_t num_modules = target_modules.GetSize();
     if (!m_objc_module_sp)
     {
         for (size_t i = 0; i < num_modules; i++)
         {
-            if (m_process_sp->GetObjCLanguageRuntime()->IsModuleObjCLibrary (modules.GetModuleAtIndex(i)))
+            if (m_process_sp->GetObjCLanguageRuntime()->IsModuleObjCLibrary (target_modules.GetModuleAtIndexUnlocked(i)))
             {
-                m_objc_module_sp = modules.GetModuleAtIndex(i);
+                m_objc_module_sp = target_modules.GetModuleAtIndexUnlocked(i);
                 break;
             }
         }
@@ -355,10 +356,10 @@ AppleObjCTrampolineHandler::AppleObjCVTables::InitializeVTableSymbols ()
                                                                                             eSymbolTypeData);
         if (trampoline_symbol != NULL)
         {
-            if (!trampoline_symbol->GetValue().IsValid())
+            if (!trampoline_symbol->GetAddress().IsValid())
                 return false;
                 
-            m_trampoline_header = trampoline_symbol->GetValue().GetLoadAddress(&target);
+            m_trampoline_header = trampoline_symbol->GetAddress().GetLoadAddress(&target);
             if (m_trampoline_header == LLDB_INVALID_ADDRESS)
                 return false;
             
@@ -368,10 +369,10 @@ AppleObjCTrampolineHandler::AppleObjCVTables::InitializeVTableSymbols ()
                                                                                              eSymbolTypeCode);
             if (changed_symbol != NULL)
             {
-                if (!changed_symbol->GetValue().IsValid())
+                if (!changed_symbol->GetAddress().IsValid())
                     return false;
                     
-                lldb::addr_t changed_addr = changed_symbol->GetValue().GetOpcodeLoadAddress (&target);
+                lldb::addr_t changed_addr = changed_symbol->GetAddress().GetOpcodeLoadAddress (&target);
                 if (changed_addr != LLDB_INVALID_ADDRESS)
                 {
                     BreakpointSP trampolines_changed_bp_sp = target.CreateBreakpoint (changed_addr, true);
@@ -400,7 +401,8 @@ AppleObjCTrampolineHandler::AppleObjCVTables::RefreshTrampolines (void *baton,
     {
         // The Update function is called with the address of an added region.  So we grab that address, and
         // feed it into ReadRegions.  Of course, our friend the ABI will get the values for us.
-        Process *process = context->exe_ctx.GetProcessPtr();
+        ExecutionContext exe_ctx (context->exe_ctx_ref);
+        Process *process = exe_ctx.GetProcessPtr();
         const ABI *abi = process->GetABI().get();
         
         ClangASTContext *clang_ast_context = process->GetTarget().GetScratchClangASTContext();
@@ -411,14 +413,14 @@ AppleObjCTrampolineHandler::AppleObjCVTables::RefreshTrampolines (void *baton,
         input_value.SetContext (Value::eContextTypeClangType, clang_void_ptr_type);
         argument_values.PushValue(input_value);
         
-        bool success = abi->GetArgumentValues (context->exe_ctx.GetThreadRef(), argument_values);
+        bool success = abi->GetArgumentValues (exe_ctx.GetThreadRef(), argument_values);
         if (!success)
             return false;
             
         // Now get a pointer value from the zeroth argument.
         Error error;
         DataExtractor data;
-        error = argument_values.GetValueAtIndex(0)->GetValueAsData (&(context->exe_ctx), 
+        error = argument_values.GetValueAtIndex(0)->GetValueAsData (&exe_ctx, 
                                                                     clang_ast_context->getASTContext(), 
                                                                     data, 
                                                                     0,
@@ -542,13 +544,13 @@ AppleObjCTrampolineHandler::AppleObjCTrampolineHandler (const ProcessSP &process
     const Symbol *msg_forward_stret = m_objc_module_sp->FindFirstSymbolWithNameAndType (msg_forward_stret_name, eSymbolTypeCode);
     
     if (class_getMethodImplementation)
-        m_impl_fn_addr = class_getMethodImplementation->GetValue().GetOpcodeLoadAddress (target);
+        m_impl_fn_addr = class_getMethodImplementation->GetAddress().GetOpcodeLoadAddress (target);
     if  (class_getMethodImplementation_stret)
-        m_impl_stret_fn_addr = class_getMethodImplementation_stret->GetValue().GetOpcodeLoadAddress (target);
+        m_impl_stret_fn_addr = class_getMethodImplementation_stret->GetAddress().GetOpcodeLoadAddress (target);
     if (msg_forward)
-        m_msg_forward_addr = msg_forward->GetValue().GetOpcodeLoadAddress(target);
+        m_msg_forward_addr = msg_forward->GetAddress().GetOpcodeLoadAddress(target);
     if  (msg_forward_stret)
-        m_msg_forward_stret_addr = msg_forward_stret->GetValue().GetOpcodeLoadAddress(target);
+        m_msg_forward_stret_addr = msg_forward_stret->GetAddress().GetOpcodeLoadAddress(target);
     
     // FIXME: Do some kind of logging here.
     if (m_impl_fn_addr == LLDB_INVALID_ADDRESS || m_impl_stret_fn_addr == LLDB_INVALID_ADDRESS)
@@ -569,7 +571,7 @@ AppleObjCTrampolineHandler::AppleObjCTrampolineHandler (const ProcessSP &process
             // Problem is we also need to lookup the dispatch function.  For now we could have a side table of stret & non-stret
             // dispatch functions.  If that's as complex as it gets, we're fine.
             
-            lldb::addr_t sym_addr = msgSend_symbol->GetValue().GetOpcodeLoadAddress(target);
+            lldb::addr_t sym_addr = msgSend_symbol->GetAddress().GetOpcodeLoadAddress(target);
             
             m_msgSend_map.insert(std::pair<lldb::addr_t, int>(sym_addr, i));
         }
@@ -579,6 +581,113 @@ AppleObjCTrampolineHandler::AppleObjCTrampolineHandler (const ProcessSP &process
     m_vtables_ap.reset(new AppleObjCVTables(process_sp, m_objc_module_sp));
     if (m_vtables_ap.get())
         m_vtables_ap->ReadRegions();        
+}
+
+lldb::addr_t
+AppleObjCTrampolineHandler::SetupDispatchFunction (Thread &thread, ValueList &dispatch_values)
+{
+    ExecutionContext exe_ctx (thread.shared_from_this());
+    Address impl_code_address;
+    StreamString errors;
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    lldb::addr_t args_addr = LLDB_INVALID_ADDRESS;
+
+    // Scope for mutex locker:
+    {
+        Mutex::Locker locker(m_impl_function_mutex);
+        
+        // First stage is to make the ClangUtility to hold our injected function:
+
+    #define USE_BUILTIN_FUNCTION 0  // Define this to 1 and we will use the get_implementation function found in the target.
+                        // This is useful for debugging additions to the get_impl function 'cause you don't have
+                        // to bother with string-ifying the code into g_lookup_implementation_function_code.
+        
+        if (USE_BUILTIN_FUNCTION)
+        {
+            ConstString our_utility_function_name("__lldb_objc_find_implementation_for_selector");
+            SymbolContextList sc_list;
+            
+            exe_ctx.GetTargetRef().GetImages().FindSymbolsWithNameAndType (our_utility_function_name, eSymbolTypeCode, sc_list);
+            if (sc_list.GetSize() == 1)
+            {
+                SymbolContext sc;
+                sc_list.GetContextAtIndex(0, sc);
+                if (sc.symbol != NULL)
+                    impl_code_address = sc.symbol->GetAddress();
+                    
+                //lldb::addr_t addr = impl_code_address.GetOpcodeLoadAddress (exe_ctx.GetTargetPtr());
+                //printf ("Getting address for our_utility_function: 0x%llx.\n", addr);
+            }
+            else
+            {
+                //printf ("Could not find implementation function address.\n");
+                return args_addr;
+            }
+        }
+        else if (!m_impl_code.get())
+        {
+            m_impl_code.reset (new ClangUtilityFunction (g_lookup_implementation_function_code,
+                                                         g_lookup_implementation_function_name));
+            if (!m_impl_code->Install(errors, exe_ctx))
+            {
+                if (log)
+                    log->Printf ("Failed to install implementation lookup: %s.", errors.GetData());
+                m_impl_code.reset();
+                return args_addr;
+            }
+            impl_code_address.Clear();
+            impl_code_address.SetOffset(m_impl_code->StartAddress());
+        }
+        else
+        {
+            impl_code_address.Clear();
+            impl_code_address.SetOffset(m_impl_code->StartAddress());
+        }
+
+        // Next make the runner function for our implementation utility function.
+        if (!m_impl_function.get())
+        {
+             ClangASTContext *clang_ast_context = thread.GetProcess()->GetTarget().GetScratchClangASTContext();
+            lldb::clang_type_t clang_void_ptr_type = clang_ast_context->GetVoidPtrType(false);
+             m_impl_function.reset(new ClangFunction (thread,
+                                                      clang_ast_context, 
+                                                      clang_void_ptr_type, 
+                                                      impl_code_address, 
+                                                      dispatch_values));
+            
+            errors.Clear();        
+            unsigned num_errors = m_impl_function->CompileFunction(errors);
+            if (num_errors)
+            {
+                if (log)
+                    log->Printf ("Error compiling function: \"%s\".", errors.GetData());
+                return args_addr;
+            }
+            
+            errors.Clear();
+            if (!m_impl_function->WriteFunctionWrapper(exe_ctx, errors))
+            {
+                if (log)
+                    log->Printf ("Error Inserting function: \"%s\".", errors.GetData());
+                return args_addr;
+            }
+        }
+    }
+    
+    errors.Clear();
+    
+    // Now write down the argument values for this particular call.  This looks like it might be a race condition
+    // if other threads were calling into here, but actually it isn't because we allocate a new args structure for
+    // this call by passing args_addr = LLDB_INVALID_ADDRESS...
+
+    if (!m_impl_function->WriteFunctionArguments (exe_ctx, args_addr, impl_code_address, dispatch_values, errors))
+    {
+        if (log)
+            log->Printf ("Error writing function arguments: \"%s\".", errors.GetData());
+        return args_addr;
+    }
+        
+    return args_addr;
 }
 
 ThreadPlanSP
@@ -630,14 +739,16 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
         
         lldb::StackFrameSP thread_cur_frame = thread.GetStackFrameAtIndex(0);
         
-        Process *process = thread.CalculateProcess();
-        const ABI *abi = process->GetABI().get();
+        const ABI *abi = NULL;
+        ProcessSP process_sp (thread.CalculateProcess());
+        if (process_sp)
+            abi = process_sp->GetABI().get();
         if (abi == NULL)
             return ret_plan_sp;
             
-        Target *target = thread.CalculateTarget();
+        TargetSP target_sp (thread.CalculateTarget());
         
-        ClangASTContext *clang_ast_context = target->GetScratchClangASTContext();
+        ClangASTContext *clang_ast_context = target_sp->GetScratchClangASTContext();
         ValueList argument_values;
         Value void_ptr_value;
         lldb::clang_type_t clang_void_ptr_type = clang_ast_context->GetVoidPtrType(false);
@@ -671,9 +782,8 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
         if (!success)
             return ret_plan_sp;
             
-        ExecutionContext exe_ctx;
-        thread.CalculateExecutionContext (exe_ctx);
-
+        ExecutionContext exe_ctx (thread.shared_from_this());
+        Process *process = exe_ctx.GetProcessPtr();
         // isa_addr will store the class pointer that the method is being dispatched to - so either the class
         // directly or the super class if this is one of the objc_msgSendSuper flavors.  That's mostly used to
         // look up the class/selector pair in our cache.
@@ -857,109 +967,18 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
                  dispatch_values.PushValue (flag_value);
                  break;
             }
-            if (log) 
+            if (log && log->GetVerbose())
                 flag_value.GetScalar() = 1;
             else
                 flag_value.GetScalar() = 0;  // FIXME - Set to 0 when debugging is done.
             dispatch_values.PushValue (flag_value);
-
-            // Now, if we haven't already, make and insert the function as a ClangUtilityFunction, and make and insert 
-            // it's runner ClangFunction.
-            { 
-                // Scope for mutex locker:
-                Mutex::Locker locker(m_impl_function_mutex);
-                
-                // First stage is to make the ClangUtility to hold our injected function:
-
-#define USE_BUILTIN_FUNCTION 0  // Define this to 1 and we will use the get_implementation function found in the target.
-                                // This is useful for debugging additions to the get_impl function 'cause you don't have
-                                // to bother with string-ifying the code into g_lookup_implementation_function_code.
-                
-                if (USE_BUILTIN_FUNCTION)
-                {
-                    ConstString our_utility_function_name("__lldb_objc_find_implementation_for_selector");
-                    SymbolContextList sc_list;
-                    
-                    exe_ctx.GetTargetRef().GetImages().FindSymbolsWithNameAndType (our_utility_function_name, eSymbolTypeCode, sc_list);
-                    if (sc_list.GetSize() == 1)
-                    {
-                        SymbolContext sc;
-                        sc_list.GetContextAtIndex(0, sc);
-                        if (sc.symbol != NULL)
-                            impl_code_address = sc.symbol->GetValue();
-                            
-                        //lldb::addr_t addr = impl_code_address.GetOpcodeLoadAddress (exe_ctx.GetTargetPtr());
-                        //printf ("Getting address for our_utility_function: 0x%llx.\n", addr);
-                    }
-                    else
-                    {
-                        //printf ("Could not find implementation function address.\n");
-                        return ret_plan_sp;
-                    }
-                }
-                else if (!m_impl_code.get())
-                {
-                    m_impl_code.reset (new ClangUtilityFunction (g_lookup_implementation_function_code,
-                                                                 g_lookup_implementation_function_name));
-                    if (!m_impl_code->Install(errors, exe_ctx))
-                    {
-                        if (log)
-                            log->Printf ("Failed to install implementation lookup: %s.", errors.GetData());
-                        m_impl_code.reset();
-                        return ret_plan_sp;
-                    }
-                    impl_code_address.Clear();
-                    impl_code_address.SetOffset(m_impl_code->StartAddress());
-                }
-                else
-                {
-                    impl_code_address.Clear();
-                    impl_code_address.SetOffset(m_impl_code->StartAddress());
-                }
-
-                // Next make the runner function for our implementation utility function.
-                if (!m_impl_function.get())
-                {
-                     m_impl_function.reset(new ClangFunction (thread,
-                                                              clang_ast_context, 
-                                                              clang_void_ptr_type, 
-                                                              impl_code_address, 
-                                                              dispatch_values));
-                    
-                    errors.Clear();        
-                    unsigned num_errors = m_impl_function->CompileFunction(errors);
-                    if (num_errors)
-                    {
-                        if (log)
-                            log->Printf ("Error compiling function: \"%s\".", errors.GetData());
-                        return ret_plan_sp;
-                    }
-                    
-                    errors.Clear();
-                    if (!m_impl_function->WriteFunctionWrapper(exe_ctx, errors))
-                    {
-                        if (log)
-                            log->Printf ("Error Inserting function: \"%s\".", errors.GetData());
-                        return ret_plan_sp;
-                    }
-                }
-                
-            } 
             
-            errors.Clear();
-            
-            // Now write down the argument values for this particular call.  This looks like it might be a race condition
-            // if other threads were calling into here, but actually it isn't because we allocate a new args structure for
-            // this call by passing args_addr = LLDB_INVALID_ADDRESS...
-
-            lldb::addr_t args_addr = LLDB_INVALID_ADDRESS;
-            if (!m_impl_function->WriteFunctionArguments (exe_ctx, args_addr, impl_code_address, dispatch_values, errors))
-                return ret_plan_sp;
-        
-            ret_plan_sp.reset (new AppleThreadPlanStepThroughObjCTrampoline (thread, this, args_addr,
-                                                                        dispatch_values.GetValueAtIndex(0)->GetScalar().ULongLong(),
-                                                                        isa_addr, sel_addr,
-                                                                        stop_others));
+            ret_plan_sp.reset (new AppleThreadPlanStepThroughObjCTrampoline (thread,
+                                                                             this,
+                                                                             dispatch_values,
+                                                                             isa_addr,
+                                                                             sel_addr,
+                                                                             stop_others));
             if (log)
             {
                 StreamString s;

@@ -40,12 +40,11 @@
 
 static CFStringRef CopyBundleIDForPath (const char *app_buncle_path, DNBError &err_str);
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <SpringBoardServices/SpringBoardServer.h>
 #include <SpringBoardServices/SBSWatchdogAssertion.h>
-
 
 static bool
 IsSBProcess (nub_process_t pid)
@@ -73,7 +72,6 @@ IsSBProcess (nub_process_t pid)
     }
     return false;
 }
-
 
 #endif
 
@@ -337,7 +335,7 @@ bool
 MachProcess::Kill (const struct timespec *timeout_abstime)
 {
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Kill ()");
-    nub_state_t state = DoSIGSTOP(true);
+    nub_state_t state = DoSIGSTOP(true, false, NULL);
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Kill() DoSIGSTOP() state = %s", DNBStateAsString(state));
     errno = 0;
     ::ptrace (PT_KILL, m_pid, 0, 0);
@@ -375,7 +373,7 @@ MachProcess::Signal (int signal, const struct timespec *timeout_abstime)
 }
 
 nub_state_t
-MachProcess::DoSIGSTOP (bool clear_bps_and_wps, uint32_t *thread_idx_ptr)
+MachProcess::DoSIGSTOP (bool clear_bps_and_wps, bool allow_running, uint32_t *thread_idx_ptr)
 {
     nub_state_t state = GetState();
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::DoSIGSTOP() state = %s", DNBStateAsString (state));
@@ -400,7 +398,11 @@ MachProcess::DoSIGSTOP (bool clear_bps_and_wps, uint32_t *thread_idx_ptr)
         // No threads were stopped with a SIGSTOP, we need to run and halt the
         // process with a signal
         DNBLogThreadedIf(LOG_PROCESS, "MachProcess::DoSIGSTOP() state = %s -- resuming process", DNBStateAsString (state));
-        m_thread_actions = DNBThreadResumeActions (eStateRunning, 0);
+        if (allow_running)
+            m_thread_actions = DNBThreadResumeActions (eStateRunning, 0);
+        else
+            m_thread_actions = DNBThreadResumeActions (eStateSuspended, 0);
+            
         PrivateResume ();
 
         // Reset the event that says we were indeed running
@@ -434,7 +436,7 @@ MachProcess::Detach()
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Detach()");
 
     uint32_t thread_idx = UINT32_MAX;
-    nub_state_t state = DoSIGSTOP(true, &thread_idx);
+    nub_state_t state = DoSIGSTOP(true, true, &thread_idx);
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::Detach() DoSIGSTOP() returned %s", DNBStateAsString(state));
 
     {
@@ -942,6 +944,12 @@ MachProcess::DumpWatchpoint(nub_watch_t watchID) const
     }
 }
 
+uint32_t
+MachProcess::GetNumSupportedHardwareWatchpoints () const
+{
+    return m_thread_list.NumSupportedHardwareWatchpoints();
+}
+
 bool
 MachProcess::EnableBreakpoint(nub_break_t breakID)
 {
@@ -1328,7 +1336,7 @@ MachProcess::AttachForDebug (pid_t pid, char *err_str, size_t err_len)
         SetState(eStateAttaching);
         m_pid = pid;
         // Let ourselves know we are going to be using SBS if the correct flag bit is set...
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
         if (IsSBProcess(pid))
             m_flags |= eMachProcessFlagsUsingSBS;
 #endif
@@ -1377,7 +1385,7 @@ MachProcess::AttachForDebug (pid_t pid, char *err_str, size_t err_len)
 const void *
 MachProcess::PrepareForAttach (const char *path, nub_launch_flavor_t launch_flavor, bool waitfor, DNBError &err_str)
 {
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     // Tell SpringBoard to halt the next launch of this application on startup.
 
     if (!waitfor)
@@ -1444,7 +1452,7 @@ MachProcess::CheckForProcess (const void *attach_token)
     if (attach_token == NULL)
         return INVALID_NUB_PROCESS;
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     CFStringRef bundleIDCFStr = (CFStringRef) attach_token;
     Boolean got_it;
     nub_process_t attach_pid;
@@ -1465,7 +1473,7 @@ MachProcess::CheckForProcess (const void *attach_token)
 void
 MachProcess::CleanupAfterAttach (const void *attach_token, bool success, DNBError &err_str)
 {
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     if (attach_token == NULL)
         return;
 
@@ -1540,7 +1548,7 @@ MachProcess::LaunchForDebug
                                                                 launch_err);
         break;
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
 
     case eLaunchFlavorSpringBoard:
         {
@@ -1711,46 +1719,40 @@ MachProcess::PosixSpawnChildForPTraceDebugging
             }
         }
 
-		// if no_stdio, then do open file actions, opening /dev/null.
-        if (no_stdio)
-        {
-            err.SetError( ::posix_spawn_file_actions_addopen (&file_actions, STDIN_FILENO, "/dev/null", 
-                                                              O_RDONLY | O_NOCTTY, 0), DNBError::POSIX);
-            if (err.Fail() || DNBLogCheckLogBit (LOG_PROCESS))
-                err.LogThreaded ("::posix_spawn_file_actions_addopen (&file_actions, filedes=STDIN_FILENO, path=/dev/null)");
-            
-            err.SetError( ::posix_spawn_file_actions_addopen (&file_actions, STDOUT_FILENO, "/dev/null", 
-                                                              O_WRONLY | O_NOCTTY, 0), DNBError::POSIX);
-            if (err.Fail() || DNBLogCheckLogBit (LOG_PROCESS))
-                err.LogThreaded ("::posix_spawn_file_actions_addopen (&file_actions, filedes=STDOUT_FILENO, path=/dev/null)");
-            
-            err.SetError( ::posix_spawn_file_actions_addopen (&file_actions, STDERR_FILENO, "/dev/null", 
-                                                              O_RDWR | O_NOCTTY, 0), DNBError::POSIX);
-            if (err.Fail() || DNBLogCheckLogBit (LOG_PROCESS))
-                err.LogThreaded ("::posix_spawn_file_actions_addopen (&file_actions, filedes=STDERR_FILENO, path=/dev/null)");
-        }
-        else
-        {
-            if ( stdin_path == NULL)  stdin_path = "/dev/null";
-            if (stdout_path == NULL) stdout_path = "/dev/null";
-            if (stderr_path == NULL) stderr_path = "/dev/null";
-            
-            int slave_fd_err = open (stderr_path, O_NOCTTY | O_CREAT | O_RDWR   , 0640);
-            int slave_fd_in  = open (stdin_path , O_NOCTTY | O_RDONLY);
-            int slave_fd_out = open (stdout_path, O_NOCTTY | O_CREAT | O_WRONLY , 0640);
+		// if no_stdio or std paths not supplied, then route to "/dev/null".
+        if (no_stdio || stdin_path == NULL || stdin_path[0] == '\0')
+            stdin_path = "/dev/null";
+        if (no_stdio || stdout_path == NULL || stdout_path[0] == '\0')
+            stdout_path = "/dev/null";
+        if (no_stdio || stderr_path == NULL || stderr_path[0] == '\0')
+            stderr_path = "/dev/null";
 
-            err.SetError( ::posix_spawn_file_actions_adddup2(&file_actions, slave_fd_err, STDERR_FILENO), DNBError::POSIX);
-            if (err.Fail() || DNBLogCheckLogBit(LOG_PROCESS))
-                err.LogThreaded("::posix_spawn_file_actions_adddup2 ( &file_actions, filedes = %d (\"%s\"), newfiledes = STDERR_FILENO )", slave_fd_err, stderr_path);
-
-            err.SetError( ::posix_spawn_file_actions_adddup2(&file_actions, slave_fd_in, STDIN_FILENO), DNBError::POSIX);
-            if (err.Fail() || DNBLogCheckLogBit(LOG_PROCESS))
-                err.LogThreaded("::posix_spawn_file_actions_adddup2 ( &file_actions, filedes = %d (\"%s\"), newfiledes = STDIN_FILENO )", slave_fd_in, stdin_path);
-
-            err.SetError( ::posix_spawn_file_actions_adddup2(&file_actions, slave_fd_out, STDOUT_FILENO), DNBError::POSIX);
-            if (err.Fail() || DNBLogCheckLogBit(LOG_PROCESS))
-                err.LogThreaded("::posix_spawn_file_actions_adddup2 ( &file_actions, filedes = %d (\"%s\"), newfiledes = STDOUT_FILENO )", slave_fd_out, stdout_path);
-        }
+        err.SetError( ::posix_spawn_file_actions_addopen (&file_actions,
+                                                          STDIN_FILENO,
+                                                          stdin_path,
+                                                          O_RDONLY | O_NOCTTY,
+                                                          0),
+                     DNBError::POSIX);
+        if (err.Fail() || DNBLogCheckLogBit (LOG_PROCESS))
+            err.LogThreaded ("::posix_spawn_file_actions_addopen (&file_actions, filedes=STDIN_FILENO, path='%s')", stdin_path);
+        
+        err.SetError( ::posix_spawn_file_actions_addopen (&file_actions,
+                                                          STDOUT_FILENO,
+                                                          stdout_path,
+                                                          O_WRONLY | O_NOCTTY | O_CREAT,
+                                                          0640),
+                     DNBError::POSIX);
+        if (err.Fail() || DNBLogCheckLogBit (LOG_PROCESS))
+            err.LogThreaded ("::posix_spawn_file_actions_addopen (&file_actions, filedes=STDOUT_FILENO, path='%s')", stdout_path);
+        
+        err.SetError( ::posix_spawn_file_actions_addopen (&file_actions,
+                                                          STDERR_FILENO,
+                                                          stderr_path,
+                                                          O_WRONLY | O_NOCTTY | O_CREAT,
+                                                          0640),
+                     DNBError::POSIX);
+        if (err.Fail() || DNBLogCheckLogBit (LOG_PROCESS))
+            err.LogThreaded ("::posix_spawn_file_actions_addopen (&file_actions, filedes=STDERR_FILENO, path='%s')", stderr_path);
 
         // TODO: Verify if we can set the working directory back immediately
         // after the posix_spawnp call without creating a race condition???
@@ -1898,7 +1900,7 @@ MachProcess::ForkChildForPTraceDebugging
     return pid;
 }
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
 
 pid_t
 MachProcess::SBLaunchForDebug (const char *path, char const *argv[], char const *envp[], bool no_stdio, DNBError &launch_err)
@@ -2151,6 +2153,6 @@ MachProcess::SBForkChildForPTraceDebugging (const char *app_bundle_path, char co
     return INVALID_NUB_PROCESS;
 }
 
-#endif // #if defined (__arm__)
+#endif // #ifdef WITH_SPRINGBOARD
 
 

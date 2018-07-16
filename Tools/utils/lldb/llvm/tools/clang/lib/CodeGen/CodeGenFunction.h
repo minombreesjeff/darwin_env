@@ -43,7 +43,6 @@ namespace llvm {
 }
 
 namespace clang {
-  class APValue;
   class ASTContext;
   class BlockDecl;
   class CXXDestructorDecl;
@@ -600,6 +599,9 @@ public:
   const CodeGen::CGBlockInfo *BlockInfo;
   llvm::Value *BlockPointer;
 
+  llvm::DenseMap<const VarDecl *, FieldDecl *> LambdaCaptureFields;
+  FieldDecl *LambdaThisCaptureField;
+
   /// \brief A mapping from NRVO variables to the flags used to indicate
   /// when the NRVO has been applied to this variable.
   llvm::DenseMap<const VarDecl *, llvm::Value *> NRVOFlags;
@@ -1138,7 +1140,7 @@ private:
   };
   SmallVector<BreakContinue, 8> BreakContinueStack;
 
-  /// SwitchInsn - This is nearest current switch instruction. It is null if if
+  /// SwitchInsn - This is nearest current switch instruction. It is null if
   /// current context is not in a switch.
   llvm::SwitchInst *SwitchInsn;
 
@@ -1165,7 +1167,8 @@ private:
 
   /// CXXThisDecl - When generating code for a C++ member function,
   /// this will hold the implicit 'this' declaration.
-  ImplicitParamDecl *CXXThisDecl;
+  ImplicitParamDecl *CXXABIThisDecl;
+  llvm::Value *CXXABIThisValue;
   llvm::Value *CXXThisValue;
 
   /// CXXVTTDecl - When generating code for a base object constructor or
@@ -1245,27 +1248,27 @@ public:
   void pushIrregularPartialArrayCleanup(llvm::Value *arrayBegin,
                                         llvm::Value *arrayEndPointer,
                                         QualType elementType,
-                                        Destroyer &destroyer);
+                                        Destroyer *destroyer);
   void pushRegularPartialArrayCleanup(llvm::Value *arrayBegin,
                                       llvm::Value *arrayEnd,
                                       QualType elementType,
-                                      Destroyer &destroyer);
+                                      Destroyer *destroyer);
 
   void pushDestroy(QualType::DestructionKind dtorKind,
                    llvm::Value *addr, QualType type);
   void pushDestroy(CleanupKind kind, llvm::Value *addr, QualType type,
-                   Destroyer &destroyer, bool useEHCleanupForArray);
-  void emitDestroy(llvm::Value *addr, QualType type, Destroyer &destroyer,
+                   Destroyer *destroyer, bool useEHCleanupForArray);
+  void emitDestroy(llvm::Value *addr, QualType type, Destroyer *destroyer,
                    bool useEHCleanupForArray);
   llvm::Function *generateDestroyHelper(llvm::Constant *addr,
                                         QualType type,
-                                        Destroyer &destroyer,
+                                        Destroyer *destroyer,
                                         bool useEHCleanupForArray);
   void emitArrayDestroy(llvm::Value *begin, llvm::Value *end,
-                        QualType type, Destroyer &destroyer,
+                        QualType type, Destroyer *destroyer,
                         bool checkZeroLength, bool useEHCleanup);
 
-  Destroyer &getDestroyer(QualType::DestructionKind destructionKind);
+  Destroyer *getDestroyer(QualType::DestructionKind destructionKind);
 
   /// Determines whether an EH cleanup is required to destroy a type
   /// with the given destruction kind.
@@ -1301,7 +1304,8 @@ public:
   void GenerateObjCGetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
   void generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
-                              const ObjCPropertyImplDecl *propImpl);
+                              const ObjCPropertyImplDecl *propImpl,
+                              llvm::Constant *AtomicHelperFn);
 
   void GenerateObjCCtorDtorMethod(ObjCImplementationDecl *IMP,
                                   ObjCMethodDecl *MD, bool ctor);
@@ -1311,7 +1315,8 @@ public:
   void GenerateObjCSetter(ObjCImplementationDecl *IMP,
                           const ObjCPropertyImplDecl *PID);
   void generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
-                              const ObjCPropertyImplDecl *propImpl);
+                              const ObjCPropertyImplDecl *propImpl,
+                              llvm::Constant *AtomicHelperFn);
   bool IndirectObjCSetterArg(const CGFunctionInfo &FI);
   bool IvarTypeWithAggrGCObjects(QualType Ty);
 
@@ -1330,10 +1335,16 @@ public:
   llvm::Function *GenerateBlockFunction(GlobalDecl GD,
                                         const CGBlockInfo &Info,
                                         const Decl *OuterFuncDecl,
-                                        const DeclMapTy &ldm);
+                                        const DeclMapTy &ldm,
+                                        bool IsLambdaConversionToBlock);
 
   llvm::Constant *GenerateCopyHelperFunction(const CGBlockInfo &blockInfo);
   llvm::Constant *GenerateDestroyHelperFunction(const CGBlockInfo &blockInfo);
+  llvm::Constant *GenerateObjCAtomicSetterCopyHelperFunction(
+                                             const ObjCPropertyImplDecl *PID);
+  llvm::Constant *GenerateObjCAtomicGetterCopyHelperFunction(
+                                             const ObjCPropertyImplDecl *PID);
+  llvm::Value *EmitBlockCopyAndAutorelease(llvm::Value *Block, QualType Ty);
 
   void BuildBlockRelease(llvm::Value *DeclPtr, BlockFieldFlags flags);
 
@@ -1367,6 +1378,13 @@ public:
   void EmitDestructorBody(FunctionArgList &Args);
   void EmitFunctionBody(FunctionArgList &Args);
 
+  void EmitForwardingCallToLambda(const CXXRecordDecl *Lambda,
+                                  CallArgList &CallArgs);
+  void EmitLambdaToBlockPointerBody(FunctionArgList &Args);
+  void EmitLambdaBlockInvokeBody();
+  void EmitLambdaDelegatingInvokeBody(const CXXMethodDecl *MD);
+  void EmitLambdaStaticInvokeFunction(const CXXMethodDecl *MD);
+
   /// EmitReturnBlock - Emit the unified return block, trying to avoid its
   /// emission when possible.
   void EmitReturnBlock();
@@ -1384,6 +1402,9 @@ public:
 
   void EmitCtorPrologue(const CXXConstructorDecl *CD, CXXCtorType Type,
                         FunctionArgList &Args);
+
+  void EmitInitializerForField(FieldDecl *Field, LValue LHS, Expr *Init,
+                               ArrayRef<VarDecl *> ArrayIndexes);
 
   /// InitializeVTablePointer - Initialize the vtable pointer of the given
   /// subobject.
@@ -1795,6 +1816,10 @@ public:
   llvm::Value* EmitCXXTypeidExpr(const CXXTypeidExpr *E);
   llvm::Value *EmitDynamicCast(llvm::Value *V, const CXXDynamicCastExpr *DCE);
 
+  void MaybeEmitStdInitializerListCleanup(llvm::Value *loc, const Expr *init);
+  void EmitStdInitializerListCleanup(llvm::Value *loc,
+                                     const InitListExpr *init);
+
   void EmitCheck(llvm::Value *, unsigned Size);
 
   llvm::Value *EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
@@ -2024,13 +2049,14 @@ public:
   /// the LLVM value representation.
   void EmitStoreOfScalar(llvm::Value *Value, llvm::Value *Addr,
                          bool Volatile, unsigned Alignment, QualType Ty,
-                         llvm::MDNode *TBAAInfo = 0);
+                         llvm::MDNode *TBAAInfo = 0, bool isInit=false);
 
   /// EmitStoreOfScalar - Store a scalar value to an address, taking
   /// care to appropriately convert from the memory representation to
   /// the LLVM value representation.  The l-value must be a simple
-  /// l-value.
-  void EmitStoreOfScalar(llvm::Value *value, LValue lvalue);
+  /// l-value.  The isInit flag indicates whether this is an initialization.
+  /// If so, atomic qualifiers are ignored and the store is always non-atomic.
+  void EmitStoreOfScalar(llvm::Value *value, LValue lvalue, bool isInit=false);
 
   /// EmitLoadOfLValue - Given an expression that represents a value lvalue,
   /// this method emits the address of the lvalue, then loads the result as an
@@ -2042,7 +2068,7 @@ public:
   /// EmitStoreThroughLValue - Store the specified rvalue into the specified
   /// lvalue, where both are guaranteed to the have the same type, and that type
   /// is 'Ty'.
-  void EmitStoreThroughLValue(RValue Src, LValue Dst);
+  void EmitStoreThroughLValue(RValue Src, LValue Dst, bool isInit=false);
   void EmitStoreThroughExtVectorComponentLValue(RValue Src, LValue Dst);
 
   /// EmitStoreThroughLValue - Store Src into Dst with same constraints as
@@ -2111,6 +2137,7 @@ public:
 
   LValue EmitCXXConstructLValue(const CXXConstructExpr *E);
   LValue EmitCXXBindTemporaryLValue(const CXXBindTemporaryExpr *E);
+  LValue EmitLambdaLValue(const LambdaExpr *E);
   LValue EmitCXXTypeidLValue(const CXXTypeidExpr *E);
 
   LValue EmitObjCMessageExprLValue(const ObjCMessageExpr *E);
@@ -2204,13 +2231,18 @@ public:
   llvm::Value *EmitNeonShiftVector(llvm::Value *V, llvm::Type *Ty,
                                    bool negateForRightShift);
 
-  llvm::Value *BuildVector(const SmallVectorImpl<llvm::Value*> &Ops);
+  llvm::Value *BuildVector(ArrayRef<llvm::Value*> Ops);
   llvm::Value *EmitX86BuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitHexagonBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitPPCBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
 
   llvm::Value *EmitObjCProtocolExpr(const ObjCProtocolExpr *E);
   llvm::Value *EmitObjCStringLiteral(const ObjCStringLiteral *E);
+  llvm::Value *EmitObjCBoxedExpr(const ObjCBoxedExpr *E);
+  llvm::Value *EmitObjCArrayLiteral(const ObjCArrayLiteral *E);
+  llvm::Value *EmitObjCDictionaryLiteral(const ObjCDictionaryLiteral *E);
+  llvm::Value *EmitObjCCollectionLiteral(const Expr *E,
+                                const ObjCMethodDecl *MethodWithObjects);
   llvm::Value *EmitObjCSelectorExpr(const ObjCSelectorExpr *E);
   RValue EmitObjCMessageExpr(const ObjCMessageExpr *E,
                              ReturnValueSlot Return = ReturnValueSlot());
@@ -2350,7 +2382,8 @@ public:
 
   /// EmitCXXGlobalVarDeclInit - Create the initializer for a C++
   /// variable with global storage.
-  void EmitCXXGlobalVarDeclInit(const VarDecl &D, llvm::Constant *DeclPtr);
+  void EmitCXXGlobalVarDeclInit(const VarDecl &D, llvm::Constant *DeclPtr,
+                                bool PerformInit);
 
   /// EmitCXXGlobalDtorRegistration - Emits a call to register the global ptr
   /// with the C++ runtime so that its destructor will be called at exit.
@@ -2362,7 +2395,8 @@ public:
   /// possible to prove that an initialization will be done exactly
   /// once, e.g. with a static local variable or a static data member
   /// of a class template.
-  void EmitCXXGuardedInit(const VarDecl &D, llvm::GlobalVariable *DeclPtr);
+  void EmitCXXGuardedInit(const VarDecl &D, llvm::GlobalVariable *DeclPtr,
+                          bool PerformInit);
 
   /// GenerateCXXGlobalInitFunc - Generates code for initializing global
   /// variables.
@@ -2378,7 +2412,8 @@ public:
 
   void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
                                         const VarDecl *D,
-                                        llvm::GlobalVariable *Addr);
+                                        llvm::GlobalVariable *Addr,
+                                        bool PerformInit);
 
   void EmitCXXConstructExpr(const CXXConstructExpr *E, AggValueSlot Dest);
   
@@ -2392,6 +2427,8 @@ public:
   void enterNonTrivialFullExpression(const ExprWithCleanups *E);
 
   void EmitCXXThrowExpr(const CXXThrowExpr *E);
+
+  void EmitLambdaExpr(const LambdaExpr *E, AggValueSlot Dest);
 
   RValue EmitAtomicExpr(AtomicExpr *E, llvm::Value *Dest = 0);
 
@@ -2547,6 +2584,18 @@ private:
   CodeGenModule::ByrefHelpers *
   buildByrefHelpers(llvm::StructType &byrefType,
                     const AutoVarEmission &emission);
+
+  void AddObjCARCExceptionMetadata(llvm::Instruction *Inst);
+
+  /// GetPointeeAlignment - Given an expression with a pointer type, find the
+  /// alignment of the type referenced by the pointer.  Skip over implicit
+  /// casts.
+  unsigned GetPointeeAlignment(const Expr *Addr);
+
+  /// GetPointeeAlignmentValue - Given an expression with a pointer type, find
+  /// the alignment of the type referenced by the pointer.  Skip over implicit
+  /// casts.  Return the alignment as an llvm::Value.
+  llvm::Value *GetPointeeAlignmentValue(const Expr *Addr);
 };
 
 /// Helper class with most of the code for saving a value for a

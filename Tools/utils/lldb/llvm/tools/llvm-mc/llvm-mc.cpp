@@ -70,9 +70,6 @@ RelaxAll("mc-relax-all", cl::desc("Relax all fixups"));
 static cl::opt<bool>
 NoExecStack("mc-no-exec-stack", cl::desc("File doesn't need an exec stack"));
 
-static cl::opt<bool>
-EnableLogging("enable-api-logging", cl::desc("Enable MC API logging"));
-
 enum OutputFileType {
   OFT_Null,
   OFT_AssemblyFile,
@@ -386,7 +383,7 @@ static int AssembleInput(const char *ProgName) {
   // FIXME: This is not pretty. MCContext has a ptr to MCObjectFileInfo and
   // MCObjectFileInfo needs a MCContext reference in order to initialize itself.
   OwningPtr<MCObjectFileInfo> MOFI(new MCObjectFileInfo());
-  MCContext Ctx(*MAI, *MRI, MOFI.get());
+  MCContext Ctx(*MAI, *MRI, MOFI.get(), &SrcMgr);
   MOFI->InitMCObjectFileInfo(TripleName, RelocModel, CMModel, Ctx);
 
   if (SaveTempLabels)
@@ -419,7 +416,7 @@ static int AssembleInput(const char *ProgName) {
   // FIXME: There is a bit of code duplication with addPassesToEmitFile.
   if (FileType == OFT_AssemblyFile) {
     MCInstPrinter *IP =
-      TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI, *STI);
+      TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI, *MRI, *STI);
     MCCodeEmitter *CE = 0;
     MCAsmBackend *MAB = 0;
     if (ShowEncoding) {
@@ -441,10 +438,6 @@ static int AssembleInput(const char *ProgName) {
     Str.reset(TheTarget->createMCObjectStreamer(TripleName, Ctx, *MAB,
                                                 FOS, CE, RelaxAll,
                                                 NoExecStack));
-  }
-
-  if (EnableLogging) {
-    Str.reset(createLoggingStreamer(Str.take(), errs()));
   }
 
   OwningPtr<MCAsmParser> Parser(createMCAsmParser(SrcMgr, Ctx,
@@ -524,7 +517,6 @@ int main(int argc, char **argv) {
   setDwarfDebugFlags(argc, argv);
 
   switch (Action) {
-  default:
   case AC_AsLex:
     return AsLexInput(argv[0]);
   case AC_Assemble:
@@ -534,6 +526,4 @@ int main(int argc, char **argv) {
   case AC_EDisassemble:
     return DisassembleInput(argv[0], true);
   }
-
-  return 0;
 }

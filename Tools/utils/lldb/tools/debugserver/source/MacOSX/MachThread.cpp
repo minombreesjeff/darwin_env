@@ -700,6 +700,18 @@ MachThread::HardwareWatchpointStateChanged ()
 }
 
 bool
+MachThread::RollbackTransForHWP()
+{
+    return m_arch_ap->RollbackTransForHWP();
+}
+
+bool
+MachThread::FinishTransForHWP()
+{
+    return m_arch_ap->FinishTransForHWP();
+}
+
+bool
 MachThread::DisableHardwareBreakpoint (const DNBBreakpoint *bp)
 {
     if (bp != NULL && bp->IsHardware())
@@ -713,6 +725,12 @@ MachThread::DisableHardwareWatchpoint (const DNBBreakpoint *wp)
     if (wp != NULL && wp->IsHardware())
         return m_arch_ap->DisableHardwareWatchpoint(wp->GetHardwareIndex());
     return false;
+}
+
+uint32_t
+MachThread::NumSupportedHardwareWatchpoints () const
+{
+    return m_arch_ap->NumSupportedHardwareWatchpoints();
 }
 
 bool

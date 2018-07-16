@@ -55,10 +55,12 @@ void FunctionScopeInfo::Clear() {
 }
 
 BlockScopeInfo::~BlockScopeInfo() { }
+LambdaScopeInfo::~LambdaScopeInfo() { }
 
-PrintingPolicy Sema::getPrintingPolicy() const {
+PrintingPolicy Sema::getPrintingPolicy(const ASTContext &Context,
+                                       const Preprocessor &PP) {
   PrintingPolicy Policy = Context.getPrintingPolicy();
-  Policy.Bool = getLangOptions().Bool;
+  Policy.Bool = Context.getLangOptions().Bool;
   if (!Policy.Bool) {
     if (MacroInfo *BoolMacro = PP.getMacroInfo(&Context.Idents.get("bool"))) {
       Policy.Bool = BoolMacro->isObjectLike() && 
@@ -75,18 +77,6 @@ void Sema::ActOnTranslationUnitScope(Scope *S) {
   PushDeclContext(S, Context.getTranslationUnitDecl());
 
   VAListTagName = PP.getIdentifierInfo("__va_list_tag");
-
-  if (PP.getLangOptions().ObjC1) {
-    // Synthesize "@class Protocol;
-    if (Context.getObjCProtoType().isNull()) {
-      ObjCInterfaceDecl *ProtocolDecl =
-        ObjCInterfaceDecl::Create(Context, CurContext, SourceLocation(),
-                                  &Context.Idents.get("Protocol"),
-                                  SourceLocation(), true);
-      Context.setObjCProtoType(Context.getObjCInterfaceType(ProtocolDecl));
-      PushOnScopeChains(ProtocolDecl, TUScope, false);
-    }  
-  }
 }
 
 Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
@@ -99,12 +89,16 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
     CurContext(0), OriginalLexicalContext(0),
     PackContext(0), MSStructPragmaOn(false), VisContext(0),
     ExprNeedsCleanups(false), LateTemplateParser(0), OpaqueParser(0),
-    IdResolver(pp), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
+    IdResolver(pp), StdInitializerList(0), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
+    NSNumberDecl(0),
+    NSStringDecl(0), StringWithUTF8StringMethod(0),
+    NSArrayDecl(0), ArrayWithObjectsMethod(0), 
+    NSDictionaryDecl(0), DictionaryWithObjectsMethod(0),
     GlobalNewDeleteDeclared(false), 
     ObjCShouldCallSuperDealloc(false),
     ObjCShouldCallSuperFinalize(false),
     TUKind(TUKind),
-    NumSFINAEErrors(0), SuppressAccessChecking(false), 
+    NumSFINAEErrors(0), InFunctionDeclarator(0), SuppressAccessChecking(false), 
     AccessCheckingSFINAE(false), InNonInstantiationSFINAEContext(false),
     NonInstantiationEntries(0), ArgumentPackSubstitutionIndex(-1),
     CurrentInstantiationScope(0), TyposCorrected(0),
@@ -112,7 +106,12 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
 {
   TUScope = 0;
   LoadedExternalKnownNamespaces = false;
-  
+  for (unsigned I = 0; I != NSAPI::NumNSNumberLiteralMethods; ++I)
+    NSNumberLiteralMethods[I] = 0;
+
+  if (getLangOptions().ObjC1)
+    NSAPIObj.reset(new NSAPI(Context));
+
   if (getLangOptions().CPlusPlus)
     FieldCollector.reset(new CXXFieldCollector());
 
@@ -121,7 +120,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
                                        &Context);
 
   ExprEvalContexts.push_back(
-        ExpressionEvaluationContextRecord(PotentiallyEvaluated, 0, false));
+        ExpressionEvaluationContextRecord(PotentiallyEvaluated, 0,
+                                          false, 0, false));
 
   FunctionScopes.push_back(new FunctionScopeInfo(Diags));
 }
@@ -171,6 +171,11 @@ void Sema::Initialize() {
     DeclarationName Class = &Context.Idents.get("Class");
     if (IdResolver.begin(Class) == IdResolver.end())
       PushOnScopeChains(Context.getObjCClassDecl(), TUScope);
+
+    // Create the built-in forward declaratino for 'Protocol'.
+    DeclarationName Protocol = &Context.Idents.get("Protocol");
+    if (IdResolver.begin(Protocol) == IdResolver.end())
+      PushOnScopeChains(Context.getObjCProtocolDecl(), TUScope);
   }
 }
 
@@ -319,7 +324,7 @@ static bool ShouldRemoveFromUnused(Sema *SemaRef, const DeclaratorDecl *D) {
 
     // Later redecls may add new information resulting in not having to warn,
     // so check again.
-    DeclToCheck = FD->getMostRecentDeclaration();
+    DeclToCheck = FD->getMostRecentDecl();
     if (DeclToCheck != FD)
       return !SemaRef->ShouldWarnIfUnusedFileScopedDecl(DeclToCheck);
   }
@@ -333,7 +338,7 @@ static bool ShouldRemoveFromUnused(Sema *SemaRef, const DeclaratorDecl *D) {
 
     // Later redecls may add new information resulting in not having to warn,
     // so check again.
-    DeclToCheck = VD->getMostRecentDeclaration();
+    DeclToCheck = VD->getMostRecentDecl();
     if (DeclToCheck != VD)
       return !SemaRef->ShouldWarnIfUnusedFileScopedDecl(DeclToCheck);
   }
@@ -423,6 +428,8 @@ void Sema::ActOnEndOfTranslationUnit() {
   // Only complete translation units define vtables and perform implicit
   // instantiations.
   if (TUKind == TU_Complete) {
+    DiagnoseUseOfUnimplementedSelectors();
+
     // If any dynamic classes have their key function defined within
     // this translation unit, then those vtables are considered "used" and must
     // be emitted.
@@ -502,10 +509,10 @@ void Sema::ActOnEndOfTranslationUnit() {
         ModMap.resolveExports(Mod, /*Complain=*/false);
         
         // Queue the submodules, so their exports will also be resolved.
-        for (llvm::StringMap<Module *>::iterator Sub = Mod->SubModules.begin(),
-             SubEnd = Mod->SubModules.end();
+        for (Module::submodule_iterator Sub = Mod->submodule_begin(),
+                                     SubEnd = Mod->submodule_end();
              Sub != SubEnd; ++Sub) {
-          Stack.push_back(Sub->getValue());
+          Stack.push_back(*Sub);
         }
       }
     }
@@ -634,8 +641,16 @@ void Sema::ActOnEndOfTranslationUnit() {
 DeclContext *Sema::getFunctionLevelDeclContext() {
   DeclContext *DC = CurContext;
 
-  while (isa<BlockDecl>(DC) || isa<EnumDecl>(DC))
-    DC = DC->getParent();
+  while (true) {
+    if (isa<BlockDecl>(DC) || isa<EnumDecl>(DC)) {
+      DC = DC->getParent();
+    } else if (isa<CXXMethodDecl>(DC) &&
+               cast<CXXMethodDecl>(DC)->getOverloadedOperator() == OO_Call &&
+               cast<CXXRecordDecl>(DC->getParent())->isLambda()) {
+      DC = DC->getParent()->getParent();
+    }
+    else break;
+  }
 
   return DC;
 }
@@ -827,8 +842,14 @@ void Sema::PushBlockScope(Scope *BlockScope, BlockDecl *Block) {
                                               BlockScope, Block));
 }
 
-void Sema::PopFunctionOrBlockScope(const AnalysisBasedWarnings::Policy *WP,
-                                   const Decl *D, const BlockExpr *blkExpr) {
+void Sema::PushLambdaScope(CXXRecordDecl *Lambda, 
+                           CXXMethodDecl *CallOperator) {
+  FunctionScopes.push_back(new LambdaScopeInfo(getDiagnostics(), Lambda,
+                                               CallOperator));
+}
+
+void Sema::PopFunctionScopeInfo(const AnalysisBasedWarnings::Policy *WP,
+                                const Decl *D, const BlockExpr *blkExpr) {
   FunctionScopeInfo *Scope = FunctionScopes.pop_back_val();  
   assert(!FunctionScopes.empty() && "mismatched push/pop!");
   
@@ -850,6 +871,17 @@ void Sema::PopFunctionOrBlockScope(const AnalysisBasedWarnings::Policy *WP,
   }
 }
 
+void Sema::PushCompoundScope() {
+  getCurFunction()->CompoundScopes.push_back(CompoundScopeInfo());
+}
+
+void Sema::PopCompoundScope() {
+  FunctionScopeInfo *CurFunction = getCurFunction();
+  assert(!CurFunction->CompoundScopes.empty() && "mismatched push/pop");
+
+  CurFunction->CompoundScopes.pop_back();
+}
+
 /// \brief Determine whether any errors occurred within this function/method/
 /// block.
 bool Sema::hasAnyUnrecoverableErrorsInThisFunction() const {
@@ -863,13 +895,17 @@ BlockScopeInfo *Sema::getCurBlock() {
   return dyn_cast<BlockScopeInfo>(FunctionScopes.back());  
 }
 
+LambdaScopeInfo *Sema::getCurLambda() {
+  if (FunctionScopes.empty())
+    return 0;
+  
+  return dyn_cast<LambdaScopeInfo>(FunctionScopes.back());  
+}
+
 // Pin this vtable to this file.
 ExternalSemaSource::~ExternalSemaSource() {}
 
-std::pair<ObjCMethodList, ObjCMethodList>
-ExternalSemaSource::ReadMethodPool(Selector Sel) {
-  return std::pair<ObjCMethodList, ObjCMethodList>();
-}
+void ExternalSemaSource::ReadMethodPool(Selector Sel) { }
 
 void ExternalSemaSource::ReadKnownNamespaces(
                            SmallVectorImpl<NamespaceDecl *> &Namespaces) {  

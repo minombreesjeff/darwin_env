@@ -58,7 +58,8 @@ public:
         eSetTypeAddress,
         eSetTypeFunctionName,
         eSetTypeFunctionRegexp,
-        eSetTypeSourceRegexp
+        eSetTypeSourceRegexp,
+        eSetTypeException
     } BreakpointSetType;
 
     CommandObjectBreakpointSet (CommandInterpreter &interpreter);
@@ -97,11 +98,12 @@ public:
 
         // Instance variables to hold the values for command options.
 
+        std::string m_condition;
         FileSpecList m_filenames;
         uint32_t m_line_num;
         uint32_t m_column;
         bool m_check_inlines;
-        std::string m_func_name;
+        std::vector<std::string> m_func_names;
         uint32_t m_func_name_type_mask;
         std::string m_func_regexp;
         std::string m_source_text_regexp;
@@ -112,6 +114,10 @@ public:
         uint32_t m_thread_index;
         std::string m_thread_name;
         std::string m_queue_name;
+        bool m_catch_bp;
+        bool m_throw_bp;
+        lldb::LanguageType m_language;
+        LazyBool m_skip_prologue;
 
     };
 

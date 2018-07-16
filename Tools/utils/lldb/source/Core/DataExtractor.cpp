@@ -1354,20 +1354,19 @@ DataExtractor::Dump (Stream *s,
 
     if (item_format == eFormatInstruction)
     {
-        Target *target = NULL;
+        TargetSP target_sp;
         if (exe_scope)
-            target = exe_scope->CalculateTarget();
-        if (target)
+            target_sp = exe_scope->CalculateTarget();
+        if (target_sp)
         {
-            DisassemblerSP disassembler_sp (Disassembler::FindPlugin(target->GetArchitecture(), NULL));
+            DisassemblerSP disassembler_sp (Disassembler::FindPlugin(target_sp->GetArchitecture(), NULL));
             if (disassembler_sp)
             {
                 lldb::addr_t addr = base_addr + start_offset;
                 lldb_private::Address so_addr;
-                if (!target->GetSectionLoadList().ResolveLoadAddress(addr, so_addr))
+                if (!target_sp->GetSectionLoadList().ResolveLoadAddress(addr, so_addr))
                 {
-                    so_addr.SetOffset(addr);
-                    so_addr.SetSection(NULL);
+                    so_addr.SetRawAddress(addr);
                 }
 
                 size_t bytes_consumed = disassembler_sp->DecodeInstructions (so_addr, *this, start_offset, item_count, false);
@@ -1423,7 +1422,13 @@ DataExtractor::Dump (Stream *s,
         switch (item_format)
         {
         case eFormatBoolean:
-            s->Printf ("%s", GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset) ? "true" : "false");
+            if (item_byte_size <= 8)
+                s->Printf ("%s", GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset) ? "true" : "false");
+            else
+            {
+                s->Printf("error: unsupported byte size (%u) for boolean format", item_byte_size);
+                return offset;
+            }
             break;
 
         case eFormatBinary:
@@ -1506,6 +1511,7 @@ DataExtractor::Dump (Stream *s,
             }
             break;
 
+        case eFormatEnum:       // Print enum value as a signed integer when we don't get the enum type
         case eFormatDecimal:
             if (item_byte_size <= 8)
                 s->Printf ("%lld", GetMaxS64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
@@ -1569,11 +1575,6 @@ DataExtractor::Dump (Stream *s,
             }
             break;
             
-        case eFormatEnum:
-            // Print enum value as a signed integer when we don't get the enum type
-            s->Printf ("%lld", GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
-            break;
-
         case eFormatCString:
             {
                 const char *cstr = GetCStr(&offset);
@@ -1632,6 +1633,11 @@ DataExtractor::Dump (Stream *s,
                     s->Printf("%llu", GetMaxU64Bitfield(&offset, complex_int_byte_size, 0, 0));
                     s->Printf(" + %llui", GetMaxU64Bitfield(&offset, complex_int_byte_size, 0, 0));
                 }
+                else
+                {
+                    s->Printf("error: unsupported byte size (%u) for complex integer format", item_byte_size);
+                    return offset;
+                }
             }
             break;
 
@@ -1661,8 +1667,8 @@ DataExtractor::Dump (Stream *s,
             }
             else
             {
-                s->Printf ("unsupported complex float byte size %u", item_byte_size);
-                return start_offset;
+                s->Printf("error: unsupported byte size (%u) for complex float format", item_byte_size);
+                return offset;
             }
             break;
 
@@ -1708,14 +1714,19 @@ DataExtractor::Dump (Stream *s,
             {
                 s->Printf ("%Lg", GetLongDouble(&offset));
             }
+            else
+            {
+                s->Printf("error: unsupported byte size (%u) for float format", item_byte_size);
+                return offset;
+            }
             break;
 
         case eFormatUnicode16:
-            s->Printf("0x%4.4x", GetU16 (&offset));
+            s->Printf("U+%4.4x", GetU16 (&offset));
             break;
 
         case eFormatUnicode32:
-            s->Printf("0x%8.8x", GetU32 (&offset));
+            s->Printf("U+0x%8.8x", GetU32 (&offset));
             break;
 
         case eFormatAddressInfo:
@@ -1724,9 +1735,9 @@ DataExtractor::Dump (Stream *s,
                 s->Printf("0x%*.*llx", 2 * item_byte_size, 2 * item_byte_size, addr);
                 if (exe_scope)
                 {
-                    Target *target = exe_scope->CalculateTarget();
+                    TargetSP target_sp (exe_scope->CalculateTarget());
                     lldb_private::Address so_addr;
-                    if (target && target->GetSectionLoadList().ResolveLoadAddress(addr, so_addr))
+                    if (target_sp && target_sp->GetSectionLoadList().ResolveLoadAddress(addr, so_addr))
                     {
                         s->PutChar(' ');
                         so_addr.Dump (s, 
@@ -1756,10 +1767,10 @@ DataExtractor::Dump (Stream *s,
                 s->Printf ("%s", float_cstr);
                 break;
             }
-            else if (sizeof(long double) * 2 == item_byte_size)
+            else
             {
-                s->Printf ("unsupported hex float byte size %u", item_byte_size);
-                return start_offset;
+                s->Printf("error: unsupported byte size (%u) for hex float format", item_byte_size);
+                return offset;
             }
             break;
 
@@ -1768,73 +1779,73 @@ DataExtractor::Dump (Stream *s,
 // implementation details they should not care about ||
         case eFormatVectorOfChar:               //   ||
             s->PutChar('{');                    //   \/   
-            offset = Dump (s, start_offset, eFormatCharArray, 1, item_byte_size, item_byte_size, LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatCharArray, 1, item_byte_size, item_byte_size, LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfSInt8:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatDecimal, 1, item_byte_size, item_byte_size, LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatDecimal, 1, item_byte_size, item_byte_size, LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfUInt8:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatHex, 1, item_byte_size, item_byte_size, LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatHex, 1, item_byte_size, item_byte_size, LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfSInt16:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatDecimal, sizeof(uint16_t), item_byte_size / sizeof(uint16_t), item_byte_size / sizeof(uint16_t), LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatDecimal, sizeof(uint16_t), item_byte_size / sizeof(uint16_t), item_byte_size / sizeof(uint16_t), LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfUInt16:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatHex,     sizeof(uint16_t), item_byte_size / sizeof(uint16_t), item_byte_size / sizeof(uint16_t), LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatHex,     sizeof(uint16_t), item_byte_size / sizeof(uint16_t), item_byte_size / sizeof(uint16_t), LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfSInt32:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatDecimal, sizeof(uint32_t), item_byte_size / sizeof(uint32_t), item_byte_size / sizeof(uint32_t), LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatDecimal, sizeof(uint32_t), item_byte_size / sizeof(uint32_t), item_byte_size / sizeof(uint32_t), LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfUInt32:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatHex,     sizeof(uint32_t), item_byte_size / sizeof(uint32_t), item_byte_size / sizeof(uint32_t), LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatHex,     sizeof(uint32_t), item_byte_size / sizeof(uint32_t), item_byte_size / sizeof(uint32_t), LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfSInt64:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatDecimal, sizeof(uint64_t), item_byte_size / sizeof(uint64_t), item_byte_size / sizeof(uint64_t), LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatDecimal, sizeof(uint64_t), item_byte_size / sizeof(uint64_t), item_byte_size / sizeof(uint64_t), LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfUInt64:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatHex,     sizeof(uint32_t), item_byte_size / sizeof(uint32_t), item_byte_size / sizeof(uint32_t), LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatHex,     sizeof(uint32_t), item_byte_size / sizeof(uint32_t), item_byte_size / sizeof(uint32_t), LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfFloat32:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatFloat,       4, item_byte_size / 4, item_byte_size / 4, LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatFloat,       4, item_byte_size / 4, item_byte_size / 4, LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfFloat64:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatFloat,       8, item_byte_size / 8, item_byte_size / 8, LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatFloat,       8, item_byte_size / 8, item_byte_size / 8, LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
 
         case eFormatVectorOfUInt128:
             s->PutChar('{');
-            offset = Dump (s, start_offset, eFormatHex, 16, item_byte_size / 16, item_byte_size / 16, LLDB_INVALID_ADDRESS, 0, 0);
+            offset = Dump (s, offset, eFormatHex, 16, item_byte_size / 16, item_byte_size / 16, LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
         }

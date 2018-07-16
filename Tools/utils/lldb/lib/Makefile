@@ -12,14 +12,14 @@ LLDB_LEVEL := ..
 
 LIBRARYNAME = lldb
 
-#EXPORTED_SYMBOL_FILE = $(PROJ_SRC_DIR)/../resources/lldb-framework-exports
+#EXPORTED_SYMBOL_FILE = $(PROJ_SRC_DIR)/$(LLDB_LEVEL)/resources/lldb-framework-exports
 NO_BUILD_ARCHIVE = 1
 LINK_LIBS_IN_SHARED = 1
 SHARED_LIBRARY = 1
 
 PYTHON_BUILD_FLAGS = $(shell python-config --ldflags)
 
-# Include all archives in liblldb.a files
+# Include all archives in liblldb.so file
 USEDLIBS = lldbAPI.a \
 	lldbBreakpoint.a \
 	lldbCommands.a \
@@ -33,6 +33,7 @@ USEDLIBS = lldbAPI.a \
 	lldbPluginABISysV_x86_64.a \
 	lldbPluginDisassemblerLLVM.a \
 	lldbPluginDynamicLoaderStatic.a \
+	lldbPluginDynamicLoaderPOSIX.a \
 	lldbPluginEmulateInstructionARM.a \
 	lldbPluginLanguageRuntimeCPlusPlusItaniumABI.a \
 	lldbPluginLanguageRuntimeObjCAppleObjCRuntime.a \
@@ -55,13 +56,17 @@ USEDLIBS = lldbAPI.a \
 	clangCodeGen.a \
 	clangFrontend.a \
 	clangDriver.a \
+	clangEdit.a \
 	clangIndex.a \
 	clangLex.a \
 	clangRewrite.a \
 	clangParse.a \
 	clangSema.a \
 	clangSerialization.a \
-	LLVMMCDisassembler.a
+	LLVMMCDisassembler.a \
+	lldbPluginPlatformMacOSX.a \
+	lldbPluginPlatformLinux.a \
+	lldbPluginPlatformFreeBSD.a
 
 include $(LLDB_LEVEL)/../../Makefile.config
 
@@ -76,24 +81,20 @@ ifeq ($(HOST_OS),Darwin)
               lldbPluginObjectFileMachO.a \
               lldbPluginOperatingSystemDarwinKernel.a \
               lldbPluginSymbolVendorMacOSX.a \
-              lldbPluginPlatformMacOSX.a \
-              lldbPluginProcessDarwin.a
+              lldbPluginProcessDarwin.a \
+              lldbPluginProcessMachCore.a
 endif
 
 ifeq ($(HOST_OS),Linux)
   USEDLIBS += lldbPluginProcessPOSIX.a \
               lldbPluginProcessLinux.a \
-              lldbPluginDynamicLoaderPOSIX.a \
-              lldbPluginPlatformLinux.a \
               lldbHostLinux.a
 endif
 
 ifeq ($(HOST_OS),FreeBSD)
   USEDLIBS += lldbHostFreeBSD.a \
-              lldbPluginDynamicLoaderPOSIX.a \
               lldbPluginProcessPOSIX.a \
-              lldbPluginProcessFreeBSD.a \
-              lldbPluginPlatformFreeBSD.a
+              lldbPluginProcessFreeBSD.a
 endif
 
 include $(LEVEL)/Makefile.common
@@ -109,9 +110,11 @@ ifeq ($(HOST_OS),Darwin)
     # extra options to override libtool defaults 
 	LLVMLibsOptions += -F/System/Library/Frameworks -F/System/Library/PrivateFrameworks
 	LLVMLibsOptions += -framework Foundation -framework CoreFoundation
-	LLVMLibsOptions += -framework CoreServices -framework Carbon
+	LLVMLibsOptions += -framework CoreServices -framework Carbon -framework Security
 	LLVMLibsOptions += -framework DebugSymbols $(PYTHON_BUILD_FLAGS) -lobjc
-	LLVMLibsOptions += -Wl,-exported_symbols_list -Wl,"$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/resources/lldb-framework-exports" 
+	ifneq ($(EXPORTED_SYMBOL_FILE),)
+		LLVMLibsOptions += -Wl,-exported_symbols_list -Wl,"$(EXPORTED_SYMBOL_FILE)"
+	endif
     # Mac OS X 10.4 and earlier tools do not allow a second -install_name on command line
     DARWIN_VERS := $(shell echo $(TARGET_TRIPLE) | sed 's/.*darwin\([0-9]*\).*/\1/')
     ifneq ($(DARWIN_VERS),8)
@@ -127,7 +130,7 @@ ifeq ($(HOST_OS),Linux)
     # Don't allow unresolved symbols.
     LLVMLibsOptions += -Wl,--no-undefined
     # Link in python
-    LD.Flags += $(PYTHON_BUILD_FLAGS) -lrt
+    LLVMLibsOptions += $(PYTHON_BUILD_FLAGS) -lrt
 endif
 
 ifeq ($(HOST_OS),FreeBSD)
@@ -137,5 +140,5 @@ ifeq ($(HOST_OS),FreeBSD)
     # Allow unresolved symbols.
     LLVMLibsOptions += -Wl,--allow-shlib-undefined
     # Link in python
-    LD.Flags += $(PYTHON_BUILD_FLAGS) -lrt -L/usr/local/lib -lexecinfo
+    LLVMLibsOptions += $(PYTHON_BUILD_FLAGS) -lrt -L/usr/local/lib -lexecinfo
 endif

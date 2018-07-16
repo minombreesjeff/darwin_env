@@ -1,4 +1,4 @@
-//===- ARMInstrFormats.td - ARM Instruction Formats ----------*- tablegen -*-=//
+//===-- ARMInstrFormats.td - ARM Instruction Formats -------*- tablegen -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -290,6 +290,14 @@ class InstTemplate<AddrMode am, int sz, IndexMode im,
 
 class Encoding {
   field bits<32> Inst;
+  // Mask of bits that cause an encoding to be UNPREDICTABLE.
+  // If a bit is set, then if the corresponding bit in the
+  // target encoding differs from its value in the "Inst" field,
+  // the instruction is UNPREDICTABLE (SoftFail in abstract parlance).
+  field bits<32> Unpredictable = 0;
+  // SoftFail is the generic name for this field, but we alias it so
+  // as to make it more obvious what it means in ARM-land.
+  field bits<32> SoftFail = Unpredictable;
 }
 
 class InstARM<AddrMode am, int sz, IndexMode im,
@@ -1594,8 +1602,11 @@ class AVConv1XI<bits<5> op1, bits<2> op2, bits<4> op3, bits<4> op4, bit op5,
                 dag oops, dag iops, InstrItinClass itin, string opc, string asm,
                 list<dag> pattern>
   : AVConv1I<op1, op2, op3, op4, oops, iops, itin, opc, asm, pattern> {
+  bits<5> fbits;
   // size (fixed-point number): sx == 0 ? 16 : 32
   let Inst{7} = op5; // sx
+  let Inst{5} = fbits{0};
+  let Inst{3-0} = fbits{4-1};
 }
 
 // VFP conversion instructions, if no NEON
@@ -2019,6 +2030,15 @@ multiclass VFPDTAnyInstAlias<string opc, string asm, dag Result> {
   def : VFPDataTypeInstAlias<opc, ".64", asm, Result>;
 }
 
+multiclass NEONDTAnyInstAlias<string opc, string asm, dag Result> {
+  let Predicates = [HasNEON] in {
+  def : VFPDataTypeInstAlias<opc, ".8", asm, Result>;
+  def : VFPDataTypeInstAlias<opc, ".16", asm, Result>;
+  def : VFPDataTypeInstAlias<opc, ".32", asm, Result>;
+  def : VFPDataTypeInstAlias<opc, ".64", asm, Result>;
+}
+}
+
 // The same alias classes using AsmPseudo instead, for the more complex
 // stuff in NEON that InstAlias can't quite handle.
 // Note that we can't use anonymous defm references here like we can
@@ -2026,75 +2046,6 @@ multiclass VFPDTAnyInstAlias<string opc, string asm, dag Result> {
 // for instalias defs.
 class NEONDataTypeAsmPseudoInst<string opc, string dt, string asm, dag iops> :
   AsmPseudoInst<!strconcat(opc, dt, "\t", asm), iops>, Requires<[HasNEON]>;
-multiclass NEONDT8ReqAsmPseudoInst<string opc, string asm, dag iops> {
-  def I8 : NEONDataTypeAsmPseudoInst<opc, ".i8", asm, iops>;
-  def S8 : NEONDataTypeAsmPseudoInst<opc, ".s8", asm, iops>;
-  def U8 : NEONDataTypeAsmPseudoInst<opc, ".u8", asm, iops>;
-  def P8 : NEONDataTypeAsmPseudoInst<opc, ".p8", asm, iops>;
-}
-// NEONDT8ReqAsmPseudoInst plus plain ".8"
-multiclass NEONDT8AsmPseudoInst<string opc, string asm, dag iops> {
-  def _8 : NEONDataTypeAsmPseudoInst<opc, ".8", asm, iops>;
-  defm _ : NEONDT8ReqAsmPseudoInst<opc, asm, iops>;
-}
-multiclass NEONDT16ReqAsmPseudoInst<string opc, string asm, dag iops> {
-  def I16 : NEONDataTypeAsmPseudoInst<opc, ".i16", asm, iops>;
-  def S16 : NEONDataTypeAsmPseudoInst<opc, ".s16", asm, iops>;
-  def U16 : NEONDataTypeAsmPseudoInst<opc, ".u16", asm, iops>;
-  def P16 : NEONDataTypeAsmPseudoInst<opc, ".p16", asm, iops>;
-}
-// NEONDT16ReqAsmPseudoInst plus plain ".16"
-multiclass NEONDT16AsmPseudoInst<string opc, string asm, dag iops> {
-  def _16 : NEONDataTypeAsmPseudoInst<opc, ".16", asm, iops>;
-  defm _ : NEONDT16ReqAsmPseudoInst<opc, asm, iops>;
-}
-multiclass NEONDT32ReqAsmPseudoInst<string opc, string asm, dag iops> {
-  def I32 : NEONDataTypeAsmPseudoInst<opc, ".i32", asm, iops>;
-  def S32 : NEONDataTypeAsmPseudoInst<opc, ".s32", asm, iops>;
-  def U32 : NEONDataTypeAsmPseudoInst<opc, ".u32", asm, iops>;
-  def F32 : NEONDataTypeAsmPseudoInst<opc, ".f32", asm, iops>;
-  def F   : NEONDataTypeAsmPseudoInst<opc, ".f",   asm, iops>;
-}
-// NEONDT32ReqAsmPseudoInst plus plain ".32"
-multiclass NEONDT32AsmPseudoInst<string opc, string asm, dag iops> {
-  def _32 : NEONDataTypeAsmPseudoInst<opc, ".32", asm, iops>;
-  defm _ : NEONDT32ReqAsmPseudoInst<opc, asm, iops>;
-}
-multiclass NEONDT64ReqAsmPseudoInst<string opc, string asm, dag iops> {
-  def I64 : NEONDataTypeAsmPseudoInst<opc, ".i64", asm, iops>;
-  def S64 : NEONDataTypeAsmPseudoInst<opc, ".s64", asm, iops>;
-  def U64 : NEONDataTypeAsmPseudoInst<opc, ".u64", asm, iops>;
-  def F64 : NEONDataTypeAsmPseudoInst<opc, ".f64", asm, iops>;
-  def D   : NEONDataTypeAsmPseudoInst<opc, ".d",   asm, iops>;
-}
-// NEONDT64ReqAsmPseudoInst plus plain ".64"
-multiclass NEONDT64AsmPseudoInst<string opc, string asm, dag iops> {
-  def _64 : NEONDataTypeAsmPseudoInst<opc, ".64", asm, iops>;
-  defm _ : NEONDT64ReqAsmPseudoInst<opc, asm, iops>;
-}
-multiclass NEONDT64NoF64ReqAsmPseudoInst<string opc, string asm, dag iops> {
-  def I64 : NEONDataTypeAsmPseudoInst<opc, ".i64", asm, iops>;
-  def S64 : NEONDataTypeAsmPseudoInst<opc, ".s64", asm, iops>;
-  def U64 : NEONDataTypeAsmPseudoInst<opc, ".u64", asm, iops>;
-  def D   : NEONDataTypeAsmPseudoInst<opc, ".d",   asm, iops>;
-}
-// NEONDT64ReqAsmPseudoInst plus plain ".64"
-multiclass NEONDT64NoF64AsmPseudoInst<string opc, string asm, dag iops> {
-  def _64 : NEONDataTypeAsmPseudoInst<opc, ".64", asm, iops>;
-  defm _ : NEONDT64ReqAsmPseudoInst<opc, asm, iops>;
-}
-multiclass NEONDTAnyAsmPseudoInst<string opc, string asm, dag iops> {
-  defm _ : NEONDT8AsmPseudoInst<opc, asm, iops>;
-  defm _ : NEONDT16AsmPseudoInst<opc, asm, iops>;
-  defm _ : NEONDT32AsmPseudoInst<opc, asm, iops>;
-  defm _ : NEONDT64AsmPseudoInst<opc, asm, iops>;
-}
-multiclass NEONDTAnyNoF64AsmPseudoInst<string opc, string asm, dag iops> {
-  defm _ : NEONDT8AsmPseudoInst<opc, asm, iops>;
-  defm _ : NEONDT16AsmPseudoInst<opc, asm, iops>;
-  defm _ : NEONDT32AsmPseudoInst<opc, asm, iops>;
-  defm _ : NEONDT64NoF64AsmPseudoInst<opc, asm, iops>;
-}
 
 // Data type suffix token aliases. Implements Table A7-3 in the ARM ARM.
 def : TokenAlias<".s8", ".i8">;

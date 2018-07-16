@@ -56,6 +56,7 @@ protected:
     DoClear()
     {
         m_frames.clear();
+        m_unwind_complete = false;
     }
 
     virtual uint32_t
@@ -69,11 +70,11 @@ protected:
     lldb::RegisterContextSP
     DoCreateRegisterContextForFrame (lldb_private::StackFrame *frame);
 
-    typedef lldb::SharedPtr<lldb_private::RegisterContextLLDB>::Type RegisterContextLLDBSharedPtr;
+    typedef STD_SHARED_PTR(RegisterContextLLDB) RegisterContextLLDBSP;
 
     // Needed to retrieve the "next" frame (e.g. frame 2 needs to retrieve frame 1's RegisterContextLLDB)
     // The RegisterContext for frame_num must already exist or this returns an empty shared pointer.
-    RegisterContextLLDBSharedPtr
+    RegisterContextLLDBSP
     GetRegisterContextForFrameNum (uint32_t frame_num);
 
     // Iterate over the RegisterContextLLDB's in our m_frames vector, look for the first one that
@@ -89,15 +90,19 @@ private:
         lldb::addr_t start_pc;  // The start address of the function/symbol for this frame - current pc if unknown
         lldb::addr_t cfa;       // The canonical frame address for this stack frame
         lldb_private::SymbolContext sctx;  // A symbol context we'll contribute to & provide to the StackFrame creation
-        RegisterContextLLDBSharedPtr reg_ctx; // These are all RegisterContextLLDB's
+        RegisterContextLLDBSP reg_ctx_lldb_sp; // These are all RegisterContextLLDB's
 
-        Cursor () : start_pc (LLDB_INVALID_ADDRESS), cfa (LLDB_INVALID_ADDRESS), sctx(), reg_ctx() { }
+        Cursor () : start_pc (LLDB_INVALID_ADDRESS), cfa (LLDB_INVALID_ADDRESS), sctx(), reg_ctx_lldb_sp() { }
     private:
         DISALLOW_COPY_AND_ASSIGN (Cursor);
     };
 
-    typedef lldb::SharedPtr<Cursor>::Type CursorSP;
+    typedef STD_SHARED_PTR(Cursor) CursorSP;
     std::vector<CursorSP> m_frames;
+    bool m_unwind_complete; // If this is true, we've enumerated all the frames in the stack, and m_frames.size() is the 
+                            // number of frames, etc.  Otherwise we've only gone as far as directly asked, and m_frames.size()
+                            // is how far we've currently gone.
+ 
 
     bool AddOneMoreFrame (ABI *abi);
     bool AddFirstFrame ();

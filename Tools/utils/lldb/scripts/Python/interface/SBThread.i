@@ -173,6 +173,68 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description) const;
+    
+    %pythoncode %{
+        class frames_access(object):
+            '''A helper object that will lazily hand out frames for a thread when supplied an index.'''
+            def __init__(self, sbthread):
+                self.sbthread = sbthread
+
+            def __len__(self):
+                if self.sbthread:
+                    return int(self.sbthread.GetNumFrames())
+                return 0
+            
+            def __getitem__(self, key):
+                if type(key) is int and key < self.sbthread.GetNumFrames():
+                    return self.sbthread.GetFrameAtIndex(key)
+                return None
+        
+        def get_frames_access_object(self):
+            '''An accessor function that returns a frames_access() object which allows lazy frame access from a lldb.SBThread object.'''
+            return self.frames_access (self)
+
+        def get_thread_frames(self):
+            '''An accessor function that returns a list() that contains all frames in a lldb.SBThread object.'''
+            frames = []
+            for frame in self:
+                frames.append(frame)
+            return frames
+        
+        __swig_getmethods__["id"] = GetThreadID
+        if _newclass: x = property(GetThreadID, None)
+
+        __swig_getmethods__["idx"] = GetIndexID
+        if _newclass: x = property(GetIndexID, None)
+
+        __swig_getmethods__["return_value"] = GetStopReturnValue
+        if _newclass: x = property(GetStopReturnValue, None)
+
+        __swig_getmethods__["process"] = GetProcess
+        if _newclass: x = property(GetProcess, None)
+
+        __swig_getmethods__["num_frames"] = GetNumFrames
+        if _newclass: x = property(GetNumFrames, None)
+
+        __swig_getmethods__["frames"] = get_thread_frames
+        if _newclass: x = property(get_thread_frames, None)
+
+        __swig_getmethods__["frame"] = get_frames_access_object
+        if _newclass: x = property(get_frames_access_object, None)
+
+        __swig_getmethods__["name"] = GetName
+        if _newclass: x = property(GetName, None)
+
+        __swig_getmethods__["queue"] = GetQueueName
+        if _newclass: x = property(GetQueueName, None)
+
+        __swig_getmethods__["stop_reason"] = GetStopReason
+        if _newclass: x = property(GetStopReason, None)
+
+        __swig_getmethods__["is_suspended"] = IsSuspended
+        if _newclass: x = property(IsSuspended, None)
+    %}
+
 };
 
 } // namespace lldb

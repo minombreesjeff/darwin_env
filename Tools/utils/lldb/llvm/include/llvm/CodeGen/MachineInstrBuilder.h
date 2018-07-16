@@ -34,6 +34,7 @@ namespace RegState {
     Undef          = 0x20,
     EarlyClobber   = 0x40,
     Debug          = 0x80,
+    DefineNoRead   = Define | Undef,
     ImplicitDefine = Implicit | Define,
     ImplicitKill   = Implicit | Kill
   };
@@ -121,6 +122,11 @@ public:
   const MachineInstrBuilder &addExternalSymbol(const char *FnName,
                                           unsigned char TargetFlags = 0) const {
     MI->addOperand(MachineOperand::CreateES(FnName, TargetFlags));
+    return *this;
+  }
+
+  const MachineInstrBuilder &addRegMask(const uint32_t *Mask) const {
+    MI->addOperand(MachineOperand::CreateRegMask(Mask));
     return *this;
   }
 

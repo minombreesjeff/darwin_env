@@ -228,7 +228,6 @@ static MachineOperand *findLastUse(MachineBasicBlock *MBB, unsigned Reg) {
         return &MO;
     }
   }
-  return NULL;
 }
 
 bool StrongPHIElimination::runOnMachineFunction(MachineFunction &MF) {
@@ -393,8 +392,6 @@ bool StrongPHIElimination::runOnMachineFunction(MachineFunction &MF) {
     SrcLI.removeRange(LastUseIndex.getRegSlot(), LI->getMBBEndIdx(MBB));
     LastUse->setIsKill(true);
   }
-
-  LI->renumber();
 
   Allocator.Reset();
   RegNodeMap.clear();
@@ -779,7 +776,6 @@ void StrongPHIElimination::InsertCopiesForPHI(MachineInstr *PHI,
   SlotIndex MBBStartIndex = LI->getMBBStartIdx(MBB);
   SlotIndex DestCopyIndex = LI->getInstructionIndex(CopyInstr);
   VNInfo *CopyVNI = CopyLI.getNextValue(MBBStartIndex,
-                                        CopyInstr,
                                         LI->getVNInfoAllocator());
   CopyVNI->setIsPHIDef(true);
   CopyLI.addRange(LiveRange(MBBStartIndex,

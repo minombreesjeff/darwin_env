@@ -59,13 +59,20 @@
 using namespace lldb;
 using namespace lldb_private;
 
+ConstString &
+CommandInterpreter::GetStaticBroadcasterClass ()
+{
+    static ConstString class_name ("lldb.commandInterpreter");
+    return class_name;
+}
+
 CommandInterpreter::CommandInterpreter
 (
     Debugger &debugger,
     ScriptLanguage script_language,
     bool synchronous_execution
 ) :
-    Broadcaster ("lldb.command-interpreter"),
+    Broadcaster (&debugger, "lldb.command-interpreter"),
     m_debugger (debugger),
     m_synchronous_execution (synchronous_execution),
     m_skip_lldbinit_files (false),
@@ -73,8 +80,8 @@ CommandInterpreter::CommandInterpreter
     m_script_interpreter_ap (),
     m_comment_char ('#'),
     m_repeat_char ('!'),
-    m_batch_command_mode (false),
-    m_truncation_warning(eNoTruncation)
+    m_truncation_warning(eNoTruncation),
+    m_command_source_depth (0)
 {
     const char *dbg_name = debugger.GetInstanceName().AsCString();
     std::string lang_name = ScriptInterpreter::LanguageToString (script_language);
@@ -86,6 +93,8 @@ CommandInterpreter::CommandInterpreter
     SetEventName (eBroadcastBitThreadShouldExit, "thread-should-exit");
     SetEventName (eBroadcastBitResetPrompt, "reset-prompt");
     SetEventName (eBroadcastBitQuitCommandReceived, "quit");
+    
+    CheckInWithManager ();
 }
 
 void
@@ -103,6 +112,12 @@ CommandInterpreter::Initialize ()
     {
         AddAlias ("q", cmd_obj_sp);
         AddAlias ("exit", cmd_obj_sp);
+    }
+    
+    cmd_obj_sp = GetCommandSPExact ("process attach", false);
+    if (cmd_obj_sp)
+    {
+        AddAlias ("attach", cmd_obj_sp);
     }
 
     cmd_obj_sp = GetCommandSPExact ("process continue", false);
@@ -225,15 +240,34 @@ CommandInterpreter::Initialize ()
         AddOrReplaceAliasOptions ("po", alias_arguments_vector_sp);
     }
     
+    cmd_obj_sp = GetCommandSPExact ("process kill", false);
+    if (cmd_obj_sp)
+        AddAlias ("kill", cmd_obj_sp);
+    
     cmd_obj_sp = GetCommandSPExact ("process launch", false);
     if (cmd_obj_sp)
     {
         alias_arguments_vector_sp.reset (new OptionArgVector);
-        ProcessAliasOptionsArgs (cmd_obj_sp, "--", alias_arguments_vector_sp);
+        ProcessAliasOptionsArgs (cmd_obj_sp, "--shell=/bin/bash --", alias_arguments_vector_sp);
         AddAlias ("r", cmd_obj_sp);
         AddAlias ("run", cmd_obj_sp);
         AddOrReplaceAliasOptions ("r", alias_arguments_vector_sp);
         AddOrReplaceAliasOptions ("run", alias_arguments_vector_sp);
+    }
+    
+    cmd_obj_sp = GetCommandSPExact ("target symbols add", false);
+    if (cmd_obj_sp)
+    {
+        AddAlias ("add-dsym", cmd_obj_sp);
+    }
+    
+    cmd_obj_sp = GetCommandSPExact ("breakpoint set", false);
+    if (cmd_obj_sp)
+    {
+        alias_arguments_vector_sp.reset (new OptionArgVector);
+        ProcessAliasOptionsArgs (cmd_obj_sp, "--func-regex %1", alias_arguments_vector_sp);
+        AddAlias ("rb", cmd_obj_sp);
+        AddOrReplaceAliasOptions("rb", alias_arguments_vector_sp);
     }
 }
 
@@ -1188,7 +1222,7 @@ CommandInterpreter::PreprocessCommand (std::string &command)
 
 bool
 CommandInterpreter::HandleCommand (const char *command_line, 
-                                   bool add_to_history,
+                                   LazyBool lazy_add_to_history,
                                    CommandReturnObject &result,
                                    ExecutionContext *override_context,
                                    bool repeat_on_empty_command,
@@ -1216,7 +1250,14 @@ CommandInterpreter::HandleCommand (const char *command_line,
     
     if (!no_context_switching)
         UpdateExecutionContext (override_context);
-
+    
+    // <rdar://problem/11328896>
+    bool add_to_history;
+    if (lazy_add_to_history == eLazyBoolCalculate)
+        add_to_history = (m_command_source_depth == 0);
+    else
+        add_to_history = (lazy_add_to_history == eLazyBoolYes);
+    
     bool empty_command = false;
     bool comment_command = false;
     if (command_string.empty())
@@ -1305,6 +1346,7 @@ CommandInterpreter::HandleCommand (const char *command_line,
     StreamString revised_command_line;
     size_t actual_cmd_name_len = 0;
     std::string next_word;
+    StringList matches;
     while (!done)
     {
         char quote_char = '\0';
@@ -1325,7 +1367,7 @@ CommandInterpreter::HandleCommand (const char *command_line,
             }
             else
             {
-                cmd_obj = GetCommandObject (next_word.c_str());
+                cmd_obj = GetCommandObject (next_word.c_str(), &matches);
                 if (cmd_obj)
                 {
                     actual_cmd_name_len += next_word.length();
@@ -1371,7 +1413,26 @@ CommandInterpreter::HandleCommand (const char *command_line,
 
         if (cmd_obj == NULL)
         {
-            result.AppendErrorWithFormat ("'%s' is not a valid command.\n", next_word.c_str());
+            uint32_t num_matches = matches.GetSize();
+            if (matches.GetSize() > 1) {
+                std::string error_msg;
+                error_msg.assign ("Ambiguous command '");
+                error_msg.append(next_word.c_str());
+                error_msg.append ("'.");
+
+                error_msg.append (" Possible matches:");
+
+                for (uint32_t i = 0; i < num_matches; ++i) {
+                    error_msg.append ("\n\t");
+                    error_msg.append (matches.GetStringAtIndex(i));
+                }
+                error_msg.append ("\n");
+                result.AppendRawError (error_msg.c_str(), error_msg.size());
+            } else {
+                // We didn't have only one match, otherwise we wouldn't get here.
+                assert(num_matches == 0);
+                result.AppendErrorWithFormat ("'%s' is not a valid command.\n", next_word.c_str());
+            }
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
@@ -1502,12 +1563,33 @@ CommandInterpreter::HandleCommand (const char *command_line,
             log->Printf ("HandleCommand, command line after removing command name(s): '%s'", remainder.c_str());
     
 
+        CommandOverrideCallback command_callback = cmd_obj->GetOverrideCallback();
+        bool handled = false;
         if (wants_raw_input)
-            cmd_obj->ExecuteRawCommandString (remainder.c_str(), result);
+        {
+            if (command_callback)
+            {
+                std::string full_command (cmd_obj->GetCommandName ());
+                full_command += ' ';
+                full_command += remainder;
+                const char *argv[2] = { NULL, NULL };
+                argv[0] = full_command.c_str();
+                handled = command_callback (cmd_obj->GetOverrideCallbackBaton(), argv);
+            }
+            if (!handled)
+                cmd_obj->ExecuteRawCommandString (remainder.c_str(), result);
+        }
         else
         {
             Args cmd_args (remainder.c_str());
-            cmd_obj->ExecuteWithOptions (cmd_args, result);
+            if (command_callback)
+            {
+                Args full_args (cmd_obj->GetCommandName ());
+                full_args.AppendArguments(cmd_args);
+                handled = command_callback (cmd_obj->GetOverrideCallbackBaton(), full_args.GetConstArgumentVector());
+            }
+            if (!handled)
+                cmd_obj->ExecuteWithOptions (cmd_args, result);
         }
     }
     else
@@ -2155,7 +2237,7 @@ CommandInterpreter::SourceInitFile (bool in_cwd, CommandReturnObject &result)
         bool echo_commands    = false;
         bool print_results    = false;
         
-        HandleCommandsFromFile (init_file, exe_ctx, stop_on_continue, stop_on_error, echo_commands, print_results, result);
+        HandleCommandsFromFile (init_file, exe_ctx, stop_on_continue, stop_on_error, echo_commands, print_results, eLazyBoolNo, result);
     }
     else
     {
@@ -2187,6 +2269,7 @@ CommandInterpreter::HandleCommands (const StringList &commands,
                                     bool stop_on_error,
                                     bool echo_commands,
                                     bool print_results,
+                                    LazyBool add_to_history,
                                     CommandReturnObject &result)
 {
     size_t num_lines = commands.GetSize();
@@ -2223,7 +2306,7 @@ CommandInterpreter::HandleCommands (const StringList &commands,
         CommandReturnObject tmp_result;
         // If override_context is not NULL, pass no_context_switching = true for
         // HandleCommand() since we updated our context already.
-        bool success = HandleCommand(cmd, false, tmp_result,
+        bool success = HandleCommand(cmd, add_to_history, tmp_result,
                                      NULL, /* override_context */
                                      true, /* repeat_on_empty_command */
                                      override_context != NULL /* no_context_switching */);
@@ -2236,20 +2319,23 @@ CommandInterpreter::HandleCommands (const StringList &commands,
                 
         if (!success || !tmp_result.Succeeded())
         {
+            const char *error_msg = tmp_result.GetErrorData();
+            if (error_msg == NULL || error_msg[0] == '\0')
+                error_msg = "<unknown error>.\n";
             if (stop_on_error)
             {
-                result.AppendErrorWithFormat("Aborting reading of commands after command #%d: '%s' failed.\n", 
-                                         idx, cmd);
+                result.AppendErrorWithFormat("Aborting reading of commands after command #%d: '%s' failed with %s",
+                                         idx, cmd, error_msg);
                 result.SetStatus (eReturnStatusFailed);
                 m_debugger.SetAsyncExecution (old_async_execution);
                 return;
             }
             else if (print_results)
             {
-                result.AppendMessageWithFormat ("Command #%d '%s' failed with error: %s.\n", 
+                result.AppendMessageWithFormat ("Command #%d '%s' failed with %s",
                                                 idx + 1, 
                                                 cmd, 
-                                                tmp_result.GetErrorData());
+                                                error_msg);
             }
         }
         
@@ -2298,6 +2384,7 @@ CommandInterpreter::HandleCommandsFromFile (FileSpec &cmd_file,
                                             bool stop_on_error,
                                             bool echo_command,
                                             bool print_result,
+                                            LazyBool add_to_history,
                                             CommandReturnObject &result)
 {
     if (cmd_file.Exists())
@@ -2311,7 +2398,9 @@ CommandInterpreter::HandleCommandsFromFile (FileSpec &cmd_file,
             result.SetStatus (eReturnStatusFailed);
             return;
         }
-        HandleCommands (commands, context, stop_on_continue, stop_on_error, echo_command, print_result, result);
+        m_command_source_depth++;
+        HandleCommands (commands, context, stop_on_continue, stop_on_error, echo_command, print_result, add_to_history, result);
+        m_command_source_depth--;
     }
     else
     {
@@ -2559,7 +2648,7 @@ CommandInterpreter::UpdateExecutionContext (ExecutionContext *override_context)
             m_exe_ctx.SetProcessSP (process_sp);
             if (process_sp && process_sp->IsAlive() && !process_sp->IsRunning())
             {
-                ThreadSP thread_sp (process_sp->GetThreadList().GetSelectedThread().get());
+                ThreadSP thread_sp (process_sp->GetThreadList().GetSelectedThread());
                 if (thread_sp)
                 {
                     m_exe_ctx.SetThreadSP (thread_sp);

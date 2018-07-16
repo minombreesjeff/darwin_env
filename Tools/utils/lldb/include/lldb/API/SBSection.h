@@ -25,10 +25,9 @@ public:
 
     ~SBSection ();
 
-#ifndef SWIG
     const lldb::SBSection &
     operator = (const lldb::SBSection &rhs);
-#endif
+
     bool
     IsValid () const;
 
@@ -66,35 +65,30 @@ public:
     SectionType
     GetSectionType ();
 
-#ifndef SWIG
     bool
     operator == (const lldb::SBSection &rhs);
 
     bool
     operator != (const lldb::SBSection &rhs);
 
-#endif
-
     bool
     GetDescription (lldb::SBStream &description);
     
 private:
 
-#ifndef SWIG
     friend class SBAddress;
     friend class SBModule;
     friend class SBTarget;
     
-    SBSection (const lldb_private::Section *section);
+    SBSection (const lldb::SectionSP &section_sp);
 
-    const lldb_private::Section *
-    GetSection();
+    lldb::SectionSP
+    GetSP() const;
     
     void
-    SetSection (const lldb_private::Section *section);
-#endif
+    SetSP(const lldb::SectionSP &section_sp);
     
-    std::auto_ptr<lldb_private::SectionImpl> m_opaque_ap;
+    lldb::SectionWP m_opaque_wp;
 };
 
 

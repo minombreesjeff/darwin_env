@@ -52,8 +52,9 @@ static cl::opt<bool>
 AdjustJumpTableBlocks("arm-adjust-jump-tables", cl::Hidden, cl::init(true),
           cl::desc("Adjust basic block layout to better use TB[BH]"));
 
+// FIXME: This option should be removed once it has received sufficient testing.
 static cl::opt<bool>
-AlignConstantIslands("arm-align-constant-islands", cl::Hidden,
+AlignConstantIslands("arm-align-constant-islands", cl::Hidden, cl::init(true),
           cl::desc("Align constant islands in code"));
 
 /// UnknownPadding - Return the worst case padding that could result from
@@ -194,13 +195,22 @@ namespace {
       MachineInstr *MI;
       MachineInstr *CPEMI;
       MachineBasicBlock *HighWaterMark;
+    private:
       unsigned MaxDisp;
+    public:
       bool NegOk;
       bool IsSoImm;
+      bool KnownAlignment;
       CPUser(MachineInstr *mi, MachineInstr *cpemi, unsigned maxdisp,
              bool neg, bool soimm)
-        : MI(mi), CPEMI(cpemi), MaxDisp(maxdisp), NegOk(neg), IsSoImm(soimm) {
+        : MI(mi), CPEMI(cpemi), MaxDisp(maxdisp), NegOk(neg), IsSoImm(soimm),
+          KnownAlignment(false) {
         HighWaterMark = CPEMI->getParent();
+      }
+      /// getMaxDisp - Returns the maximum displacement supported by MI.
+      /// Correct for unknown alignment.
+      unsigned getMaxDisp() const {
+        return KnownAlignment ? MaxDisp : MaxDisp - 2;
       }
     };
 
@@ -299,6 +309,7 @@ namespace {
     bool FixUpConditionalBr(ImmBranch &Br);
     bool FixUpUnconditionalBr(ImmBranch &Br);
     bool UndoLRSpillRestore();
+    bool mayOptimizeThumb2Instruction(const MachineInstr *MI) const;
     bool OptimizeThumb2Instructions();
     bool OptimizeThumb2Branches();
     bool ReorderThumb2JumpTables();
@@ -308,6 +319,7 @@ namespace {
 
     void ComputeBlockSize(MachineBasicBlock *MBB);
     unsigned GetOffsetOf(MachineInstr *MI) const;
+    unsigned GetUserOffset(CPUser&) const;
     void dumpBBs();
     void verify();
 
@@ -316,7 +328,7 @@ namespace {
     bool OffsetIsInRange(unsigned UserOffset, unsigned TrialOffset,
                          const CPUser &U) {
       return OffsetIsInRange(UserOffset, TrialOffset,
-                             U.MaxDisp, U.NegOk, U.IsSoImm);
+                             U.getMaxDisp(), U.NegOk, U.IsSoImm);
     }
   };
   char ARMConstantIslands::ID = 0;
@@ -335,11 +347,9 @@ void ARMConstantIslands::verify() {
   }
   for (unsigned i = 0, e = CPUsers.size(); i != e; ++i) {
     CPUser &U = CPUsers[i];
-    unsigned UserOffset = GetOffsetOf(U.MI) + (isThumb ? 4 : 8);
-    unsigned CPEOffset  = GetOffsetOf(U.CPEMI);
-    unsigned Disp = UserOffset < CPEOffset ? CPEOffset - UserOffset :
-      UserOffset - CPEOffset;
-    assert(Disp <= U.MaxDisp || "Constant pool entry out of range!");
+    unsigned UserOffset = GetUserOffset(U);
+    assert(CPEIsInRange(U.MI, UserOffset, U.CPEMI, U.getMaxDisp(), U.NegOk) &&
+           "Constant pool entry out of range!");
   }
 #endif
 }
@@ -434,7 +444,7 @@ bool ARMConstantIslands::runOnMachineFunction(MachineFunction &mf) {
     for (unsigned i = 0, e = CPUsers.size(); i != e; ++i)
       CPChange |= HandleConstantPoolUser(i);
     if (CPChange && ++NoCPIters > 30)
-      llvm_unreachable("Constant Island pass failed to converge!");
+      report_fatal_error("Constant Island pass failed to converge!");
     DEBUG(dumpBBs());
 
     // Clear NewWaterList now.  If we split a block for branches, it should
@@ -446,7 +456,7 @@ bool ARMConstantIslands::runOnMachineFunction(MachineFunction &mf) {
     for (unsigned i = 0, e = ImmBranches.size(); i != e; ++i)
       BRChange |= FixUpImmediateBr(ImmBranches[i]);
     if (BRChange && ++NoBRIters > 30)
-      llvm_unreachable("Branch Fix Up pass failed to converge!");
+      report_fatal_error("Branch Fix Up pass failed to converge!");
     DEBUG(dumpBBs());
 
     if (!CPChange && !BRChange)
@@ -536,7 +546,7 @@ ARMConstantIslands::DoInitialPlacement(std::vector<MachineInstr*> &CPEMIs) {
 
     // Ensure that future entries with higher alignment get inserted before
     // CPEMI. This is bucket sort with iterators.
-    for (unsigned a = LogAlign + 1; a < MaxAlign; ++a)
+    for (unsigned a = LogAlign + 1; a <= MaxAlign; ++a)
       if (InsPoint[a] == InsAt)
         InsPoint[a] = CPEMI;
 
@@ -545,7 +555,8 @@ ARMConstantIslands::DoInitialPlacement(std::vector<MachineInstr*> &CPEMIs) {
     CPEs.push_back(CPEntry(CPEMI, i));
     CPEntries.push_back(CPEs);
     ++NumCPEs;
-    DEBUG(dbgs() << "Moved CPI#" << i << " to end of function\n");
+    DEBUG(dbgs() << "Moved CPI#" << i << " to end of function, size = "
+                 << Size << ", align = " << Align <<'\n');
   }
   DEBUG(BB->dump());
 }
@@ -719,7 +730,6 @@ InitialFunctionScan(const std::vector<MachineInstr*> &CPEMIs) {
           switch (Opc) {
           default:
             llvm_unreachable("Unknown addressing mode for CP reference!");
-            break;
 
           // Taking the address of a CP entry.
           case ARM::LEApcrel:
@@ -795,6 +805,9 @@ void ARMConstantIslands::ComputeBlockSize(MachineBasicBlock *MBB) {
     // The actual size may be smaller, but still a multiple of the instr size.
     if (I->isInlineAsm())
       BBI.Unalign = isThumb ? 1 : 2;
+    // Also consider instructions that may be shrunk later.
+    else if (isThumb && mayOptimizeThumb2Instruction(I))
+      BBI.Unalign = 1;
   }
 
   // tBR_JTr contains a .align 2 directive.
@@ -816,11 +829,11 @@ unsigned ARMConstantIslands::GetOffsetOf(MachineInstr *MI) const {
   unsigned Offset = BBInfo[MBB->getNumber()].Offset;
 
   // Sum instructions before MI in MBB.
-  for (MachineBasicBlock::iterator I = MBB->begin(); ; ++I) {
+  for (MachineBasicBlock::iterator I = MBB->begin(); &*I != MI; ++I) {
     assert(I != MBB->end() && "Didn't find MI in its own basic block?");
-    if (&*I == MI) return Offset;
     Offset += TII->GetInstSizeInBytes(I);
   }
+  return Offset;
 }
 
 /// CompareMBBNumbers - Little predicate function to sort the WaterList by MBB
@@ -923,34 +936,39 @@ MachineBasicBlock *ARMConstantIslands::SplitBlockBeforeInstr(MachineInstr *MI) {
   return NewBB;
 }
 
+/// GetUserOffset - Compute the offset of U.MI as seen by the hardware
+/// displacement computation.  Update U.KnownAlignment to match its current
+/// basic block location.
+unsigned ARMConstantIslands::GetUserOffset(CPUser &U) const {
+  unsigned UserOffset = GetOffsetOf(U.MI);
+  const BasicBlockInfo &BBI = BBInfo[U.MI->getParent()->getNumber()];
+  unsigned KnownBits = BBI.internalKnownBits();
+
+  // The value read from PC is offset from the actual instruction address.
+  UserOffset += (isThumb ? 4 : 8);
+
+  // Because of inline assembly, we may not know the alignment (mod 4) of U.MI.
+  // Make sure U.getMaxDisp() returns a constrained range.
+  U.KnownAlignment = (KnownBits >= 2);
+
+  // On Thumb, offsets==2 mod 4 are rounded down by the hardware for
+  // purposes of the displacement computation; compensate for that here.
+  // For unknown alignments, getMaxDisp() constrains the range instead.
+  if (isThumb && U.KnownAlignment)
+    UserOffset &= ~3u;
+
+  return UserOffset;
+}
+
 /// OffsetIsInRange - Checks whether UserOffset (the location of a constant pool
 /// reference) is within MaxDisp of TrialOffset (a proposed location of a
 /// constant pool entry).
+/// UserOffset is computed by GetUserOffset above to include PC adjustments. If
+/// the mod 4 alignment of UserOffset is not known, the uncertainty must be
+/// subtracted from MaxDisp instead. CPUser::getMaxDisp() does that.
 bool ARMConstantIslands::OffsetIsInRange(unsigned UserOffset,
                                          unsigned TrialOffset, unsigned MaxDisp,
                                          bool NegativeOK, bool IsSoImm) {
-  // On Thumb offsets==2 mod 4 are rounded down by the hardware for
-  // purposes of the displacement computation; compensate for that here.
-  // Effectively, the valid range of displacements is 2 bytes smaller for such
-  // references.
-  unsigned TotalAdj = 0;
-  if (isThumb && UserOffset%4 !=0) {
-    UserOffset -= 2;
-    TotalAdj = 2;
-  }
-  // CPEs will be rounded up to a multiple of 4.
-  if (isThumb && TrialOffset%4 != 0) {
-    TrialOffset += 2;
-    TotalAdj += 2;
-  }
-
-  // In Thumb2 mode, later branch adjustments can shift instructions up and
-  // cause alignment change. In the worst case scenario this can cause the
-  // user's effective address to be subtracted by 2 and the CPE's address to
-  // be plus 2.
-  if (isThumb2 && TotalAdj != 4)
-    MaxDisp -= (4 - TotalAdj);
-
   if (UserOffset <= TrialOffset) {
     // User before the Trial.
     if (TrialOffset - UserOffset <= MaxDisp)
@@ -1049,14 +1067,22 @@ static bool BBIsJumpedOver(MachineBasicBlock *MBB) {
 #endif // NDEBUG
 
 void ARMConstantIslands::AdjustBBOffsetsAfter(MachineBasicBlock *BB) {
-  for(unsigned i = BB->getNumber() + 1, e = MF->getNumBlockIDs(); i < e; ++i) {
+  unsigned BBNum = BB->getNumber();
+  for(unsigned i = BBNum + 1, e = MF->getNumBlockIDs(); i < e; ++i) {
     // Get the offset and known bits at the end of the layout predecessor.
     // Include the alignment of the current block.
     unsigned LogAlign = MF->getBlockNumbered(i)->getAlignment();
     unsigned Offset = BBInfo[i - 1].postOffset(LogAlign);
     unsigned KnownBits = BBInfo[i - 1].postKnownBits(LogAlign);
 
-    // This is where block i begins.
+    // This is where block i begins.  Stop if the offset is already correct,
+    // and we have updated 2 blocks.  This is the maximum number of blocks
+    // changed before calling this function.
+    if (i > BBNum + 2 &&
+        BBInfo[i].Offset == Offset &&
+        BBInfo[i].KnownBits == KnownBits)
+      break;
+
     BBInfo[i].Offset = Offset;
     BBInfo[i].KnownBits = KnownBits;
   }
@@ -1092,7 +1118,7 @@ int ARMConstantIslands::LookForExistingCPEntry(CPUser& U, unsigned UserOffset)
   MachineInstr *CPEMI  = U.CPEMI;
 
   // Check to see if the CPE is already in-range.
-  if (CPEIsInRange(UserMI, UserOffset, CPEMI, U.MaxDisp, U.NegOk, true)) {
+  if (CPEIsInRange(UserMI, UserOffset, CPEMI, U.getMaxDisp(), U.NegOk, true)) {
     DEBUG(dbgs() << "In range\n");
     return 1;
   }
@@ -1107,7 +1133,8 @@ int ARMConstantIslands::LookForExistingCPEntry(CPUser& U, unsigned UserOffset)
     // Removing CPEs can leave empty entries, skip
     if (CPEs[i].CPEMI == NULL)
       continue;
-    if (CPEIsInRange(UserMI, UserOffset, CPEs[i].CPEMI, U.MaxDisp, U.NegOk)) {
+    if (CPEIsInRange(UserMI, UserOffset, CPEs[i].CPEMI, U.getMaxDisp(),
+                     U.NegOk)) {
       DEBUG(dbgs() << "Replacing CPE#" << CPI << " with CPE#"
                    << CPEs[i].CPI << "\n");
       // Point the CPUser node to the replacement
@@ -1208,8 +1235,7 @@ void ARMConstantIslands::CreateNewWater(unsigned CPUserIndex,
   // If the block does not end in an unconditional branch already, and if the
   // end of the block is within range, make new water there.  (The addition
   // below is for the unconditional branch we will be adding: 4 bytes on ARM +
-  // Thumb2, 2 on Thumb1.  Possible Thumb1 alignment padding is allowed for
-  // inside OffsetIsInRange.
+  // Thumb2, 2 on Thumb1.
   if (BBHasFallthrough(UserMBB)) {
     // Size of branch to insert.
     unsigned Delta = isThumb1 ? 2 : 4;
@@ -1262,7 +1288,7 @@ void ARMConstantIslands::CreateNewWater(unsigned CPUserIndex,
   assert(LogAlign >= CPELogAlign && "Over-aligned constant pool entry");
   unsigned KnownBits = UserBBI.internalKnownBits();
   unsigned UPad = UnknownPadding(LogAlign, KnownBits);
-  unsigned BaseInsertOffset = UserOffset + U.MaxDisp;
+  unsigned BaseInsertOffset = UserOffset + U.getMaxDisp();
   DEBUG(dbgs() << format("Split in middle of big block before %#x",
                          BaseInsertOffset));
 
@@ -1343,9 +1369,8 @@ bool ARMConstantIslands::HandleConstantPoolUser(unsigned CPUserIndex) {
   MachineInstr *CPEMI  = U.CPEMI;
   unsigned CPI = CPEMI->getOperand(1).getIndex();
   unsigned Size = CPEMI->getOperand(2).getImm();
-  // Compute this only once, it's expensive.  The 4 or 8 is the value the
-  // hardware keeps in the PC.
-  unsigned UserOffset = GetOffsetOf(UserMI) + (isThumb ? 4 : 8);
+  // Compute this only once, it's expensive.
+  unsigned UserOffset = GetUserOffset(U);
 
   // See if the current entry is within range, or there is a clone of it
   // in range.
@@ -1652,6 +1677,25 @@ bool ARMConstantIslands::UndoLRSpillRestore() {
   return MadeChange;
 }
 
+// mayOptimizeThumb2Instruction - Returns true if OptimizeThumb2Instructions
+// below may shrink MI.
+bool
+ARMConstantIslands::mayOptimizeThumb2Instruction(const MachineInstr *MI) const {
+  switch(MI->getOpcode()) {
+    // OptimizeThumb2Instructions.
+    case ARM::t2LEApcrel:
+    case ARM::t2LDRpci:
+    // OptimizeThumb2Branches.
+    case ARM::t2B:
+    case ARM::t2Bcc:
+    case ARM::tBcc:
+    // OptimizeThumb2JumpTables.
+    case ARM::t2BR_JT:
+      return true;
+  }
+  return false;
+}
+
 bool ARMConstantIslands::OptimizeThumb2Instructions() {
   bool MadeChange = false;
 
@@ -1683,8 +1727,13 @@ bool ARMConstantIslands::OptimizeThumb2Instructions() {
     if (!NewOpc)
       continue;
 
-    unsigned UserOffset = GetOffsetOf(U.MI) + 4;
+    unsigned UserOffset = GetUserOffset(U);
     unsigned MaxOffs = ((1 << Bits) - 1) * Scale;
+
+    // Be conservative with inline asm.
+    if (!U.KnownAlignment)
+      MaxOffs -= 2;
+
     // FIXME: Check if offset is multiple of scale if scale is not 4.
     if (CPEIsInRange(U.MI, UserOffset, U.CPEMI, MaxOffs, false, true)) {
       U.MI->setDesc(TII->get(NewOpc));
@@ -1739,6 +1788,11 @@ bool ARMConstantIslands::OptimizeThumb2Branches() {
 
     Opcode = Br.MI->getOpcode();
     if (Opcode != ARM::tBcc)
+      continue;
+
+    // If the conditional branch doesn't kill CPSR, then CPSR can be liveout
+    // so this transformation is not safe.
+    if (!Br.MI->killsRegister(ARM::CPSR))
       continue;
 
     NewOpc = 0;

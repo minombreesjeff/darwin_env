@@ -312,7 +312,7 @@ IRForTarget::RegisterFunctionMetadata(LLVMContext &context,
                 
         if (Instruction *user_inst = dyn_cast<Instruction>(user))
         {
-            Constant *name_array = ConstantArray::get(context, StringRef(name));
+            Constant *name_array = ConstantDataArray::getString(context, StringRef(name));
             
             ArrayRef<Value *> md_values(name_array);
             
@@ -891,14 +891,14 @@ IRForTarget::RewriteObjCConstString (llvm::GlobalVariable *ns_str,
         m_CFStringCreateWithBytes = ConstantExpr::getIntToPtr(CFSCWB_addr_int, CFSCWB_ptr_ty);
     }
     
-    ConstantArray *string_array = NULL;
+    ConstantDataSequential *string_array = NULL;
     
     if (cstr)
-        string_array = dyn_cast<ConstantArray>(cstr->getInitializer());
+        string_array = dyn_cast<ConstantDataSequential>(cstr->getInitializer());
                             
     Constant *alloc_arg         = Constant::getNullValue(i8_ptr_ty);
     Constant *bytes_arg         = cstr ? ConstantExpr::getBitCast(cstr, i8_ptr_ty) : Constant::getNullValue(i8_ptr_ty);
-    Constant *numBytes_arg      = ConstantInt::get(intptr_ty, cstr ? string_array->getType()->getNumElements() - 1 : 0, false);
+    Constant *numBytes_arg      = ConstantInt::get(intptr_ty, cstr ? string_array->getNumElements() - 1 : 0, false);
     Constant *encoding_arg      = ConstantInt::get(i32_ty, 0x0600, false); /* 0x0600 is kCFStringEncodingASCII */
     Constant *isExternal_arg    = ConstantInt::get(i8_ty, 0x0, false); /* 0x0 is false */
     
@@ -1109,12 +1109,12 @@ IRForTarget::RewriteObjCConstStrings(Function &llvm_function)
             }
             */
             
-            ConstantArray *cstr_array = dyn_cast<ConstantArray>(cstr_global->getInitializer());
+            ConstantDataArray *cstr_array = dyn_cast<ConstantDataArray>(cstr_global->getInitializer());
             
             if (log)
             {
                 if (cstr_array)
-                    log->Printf("Found NSString constant %s, which contains \"%s\"", value_name_cstr, cstr_array->getAsString().c_str());
+                    log->Printf("Found NSString constant %s, which contains \"%s\"", value_name_cstr, cstr_array->getAsString().str().c_str());
                 else
                     log->Printf("Found NSString constant %s, which contains \"\"", value_name_cstr);
             }
@@ -1224,7 +1224,7 @@ IRForTarget::RewriteObjCSelector (Instruction* selector_load)
     
     Constant *omvn_initializer = _objc_meth_var_name_->getInitializer();
 
-    ConstantArray *omvn_initializer_array = dyn_cast<ConstantArray>(omvn_initializer);
+    ConstantDataArray *omvn_initializer_array = dyn_cast<ConstantDataArray>(omvn_initializer);
     
     if (!omvn_initializer_array->isString())
         return false;
@@ -1488,7 +1488,7 @@ IRForTarget::MaterializeInitializer (uint8_t *data, Constant *initializer)
         memcpy (data, int_initializer->getValue().getRawData(), m_target_data->getTypeStoreSize(initializer_type));
         return true;
     }
-    else if (ConstantArray *array_initializer = dyn_cast<ConstantArray>(initializer))
+    else if (ConstantDataArray *array_initializer = dyn_cast<ConstantDataArray>(initializer))
     {
         if (array_initializer->isString())
         {
@@ -1504,7 +1504,13 @@ IRForTarget::MaterializeInitializer (uint8_t *data, Constant *initializer)
             
             for (int i = 0; i < array_initializer->getNumOperands(); ++i)
             {
-                if (!MaterializeInitializer(data + (i * element_size), array_initializer->getOperand(i)))
+                Value *operand_value = array_initializer->getOperand(i);
+                Constant *operand_constant = dyn_cast<Constant>(operand_value);
+                
+                if (!operand_constant)
+                    return false;
+                
+                if (!MaterializeInitializer(data + (i * element_size), operand_constant))
                     return false;
             }
         }
@@ -1545,6 +1551,12 @@ IRForTarget::MaterializeInternalVariable (GlobalVariable *global_variable)
     llvm::Type *initializer_type = initializer->getType();
     
     size_t size = m_target_data->getTypeAllocSize(initializer_type);
+    size_t align = m_target_data->getPrefTypeAlignment(initializer_type);
+    
+    const size_t mask = (align - 1);
+    uint64_t aligned_offset = (offset + mask) & ~mask;
+    m_data_allocator->GetStream().PutNHex8(aligned_offset - offset, 0);
+    offset = aligned_offset;
     
     lldb_private::DataBufferHeap data(size, '\0');
     
@@ -1926,7 +1938,7 @@ IRForTarget::ReplaceStrings ()
         }
         else
         {
-            ConstantArray *gc_array = dyn_cast<ConstantArray>(gc);
+            ConstantDataArray *gc_array = dyn_cast<ConstantDataArray>(gc);
 
             if (!gc_array)
                 continue;
@@ -2035,7 +2047,7 @@ IRForTarget::ReplaceStaticLiterals (llvm::BasicBlock &basic_block)
             
             ConstantFP *operand_constant_fp = dyn_cast<ConstantFP>(operand_val);
             
-            if (operand_constant_fp && operand_constant_fp->getType()->isX86_FP80Ty())
+            if (operand_constant_fp/* && operand_constant_fp->getType()->isX86_FP80Ty()*/)
             {
                 static_constants.push_back(operand_val);
                 static_users.push_back(ii);
@@ -2054,6 +2066,7 @@ IRForTarget::ReplaceStaticLiterals (llvm::BasicBlock &basic_block)
         llvm::Instruction *inst = *user_iter;
 
         ConstantFP *operand_constant_fp = dyn_cast<ConstantFP>(operand_val);
+        Type *operand_type = operand_constant_fp->getType();
         
         if (operand_constant_fp)
         {
@@ -2098,6 +2111,13 @@ IRForTarget::ReplaceStaticLiterals (llvm::BasicBlock &basic_block)
             }
             
             uint64_t offset = m_data_allocator->GetStream().GetSize();
+            
+            size_t align = m_target_data->getPrefTypeAlignment(operand_type);
+            
+            const size_t mask = (align - 1);
+            uint64_t aligned_offset = (offset + mask) & ~mask;
+            m_data_allocator->GetStream().PutNHex8(aligned_offset - offset, 0);
+            offset = aligned_offset;
             
             m_data_allocator->GetStream().Write(data.GetBytes(), operand_data_size);
             
@@ -2667,6 +2687,12 @@ IRForTarget::runOnModule (Module &llvm_module)
         
         if (m_interpreter_error.Success())
             return true;
+    }
+    
+    if (m_execution_policy == lldb_private::eExecutionPolicyNever) {
+        if (m_result_name)
+            m_decl_map->RemoveResultVariable(m_result_name);
+        return false;
     }
     
     if (log && log->GetVerbose())

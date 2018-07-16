@@ -1,4 +1,4 @@
-//===-- SPUTargetMachine.h - Define TargetMachine for Cell SPU ----*- C++ -*-=//
+//===-- SPUTargetMachine.h - Define TargetMachine for Cell SPU --*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -61,7 +61,7 @@ public:
     return NULL;
   }
 
-  virtual const SPUTargetLowering *getTargetLowering() const { 
+  virtual const SPUTargetLowering *getTargetLowering() const {
    return &TLInfo;
   }
 
@@ -72,7 +72,7 @@ public:
   virtual const SPURegisterInfo *getRegisterInfo() const {
     return &InstrInfo.getRegisterInfo();
   }
-  
+
   virtual const TargetData *getTargetData() const {
     return &DataLayout;
   }
@@ -80,10 +80,9 @@ public:
   virtual const InstrItineraryData *getInstrItineraryData() const {
     return &InstrItins;
   }
-  
+
   // Pass Pipeline Configuration
-  virtual bool addInstSelector(PassManagerBase &PM);
-  virtual bool addPreEmitPass(PassManagerBase &);	
+  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
 };
 
 } // end namespace llvm

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Analysis/Support/SaveAndRestore.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/StmtVisitor.h"
@@ -250,7 +250,7 @@ class CFGBuilder {
   typedef BlockScopePosPair JumpSource;
 
   ASTContext *Context;
-  llvm::OwningPtr<CFG> cfg;
+  OwningPtr<CFG> cfg;
 
   CFGBlock *Block;
   CFGBlock *Succ;
@@ -339,6 +339,7 @@ private:
   CFGBlock *VisitLabelStmt(LabelStmt *L);
   CFGBlock *VisitMemberExpr(MemberExpr *M, AddStmtChoice asc);
   CFGBlock *VisitObjCAtCatchStmt(ObjCAtCatchStmt *S);
+  CFGBlock *VisitObjCAutoreleasePoolStmt(ObjCAutoreleasePoolStmt *S);
   CFGBlock *VisitObjCAtSynchronizedStmt(ObjCAtSynchronizedStmt *S);
   CFGBlock *VisitObjCAtThrowStmt(ObjCAtThrowStmt *S);
   CFGBlock *VisitObjCAtTryStmt(ObjCAtTryStmt *S);
@@ -696,8 +697,6 @@ void CFGBuilder::addAutomaticObjDtors(LocalScope::const_iterator B,
   if (B == E)
     return;
 
-  CFGBlock::iterator InsertPos;
-
   // We need to append the destructors in reverse order, but any one of them
   // may be a no-return destructor which changes the CFG. As a result, buffer
   // this sequence up and replay them in reverse order when appending onto the
@@ -936,6 +935,7 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc) {
     case Stmt::CallExprClass:
     case Stmt::CXXOperatorCallExprClass:
     case Stmt::CXXMemberCallExprClass:
+    case Stmt::UserDefinedLiteralClass:
       return VisitCallExpr(cast<CallExpr>(S), asc);
 
     case Stmt::CaseStmtClass:
@@ -1015,6 +1015,9 @@ CFGBlock *CFGBuilder::Visit(Stmt * S, AddStmtChoice asc) {
 
     case Stmt::ObjCAtCatchStmtClass:
       return VisitObjCAtCatchStmt(cast<ObjCAtCatchStmt>(S));
+
+    case Stmt::ObjCAutoreleasePoolStmtClass:
+    return VisitObjCAutoreleasePoolStmt(cast<ObjCAutoreleasePoolStmt>(S));
 
     case Stmt::ObjCAtSynchronizedStmtClass:
       return VisitObjCAtSynchronizedStmt(cast<ObjCAtSynchronizedStmt>(S));
@@ -1931,6 +1934,12 @@ CFGBlock *CFGBuilder::VisitObjCForCollectionStmt(ObjCForCollectionStmt *S) {
   return addStmt(S->getCollection());
 }
 
+CFGBlock *CFGBuilder::VisitObjCAutoreleasePoolStmt(ObjCAutoreleasePoolStmt *S) {
+  // Inline the body.
+  return addStmt(S->getSubStmt());
+  // TODO: consider adding cleanups for the end of @autoreleasepool scope.
+}
+
 CFGBlock *CFGBuilder::VisitObjCAtSynchronizedStmt(ObjCAtSynchronizedStmt *S) {
   // FIXME: Add locking 'primitives' to CFG for @synchronized.
 
@@ -2768,8 +2777,7 @@ CFGBlock *CFGBuilder::VisitCXXBindTemporaryExpr(CXXBindTemporaryExpr *E,
 CFGBlock *CFGBuilder::VisitCXXConstructExpr(CXXConstructExpr *C,
                                             AddStmtChoice asc) {
   autoCreateBlock();
-  if (!C->isElidable())
-    appendStmt(Block, C);
+  appendStmt(Block, C);
 
   return VisitChildren(C);
 }
@@ -3091,7 +3099,6 @@ CFGImplicitDtor::getDestructorDecl(ASTContext &astContext) const {
       return 0;
   }
   llvm_unreachable("getKind() returned bogus value");
-  return 0;
 }
 
 bool CFGImplicitDtor::isNoReturn(ASTContext &astContext) const {
@@ -3483,8 +3490,18 @@ static void print_elem(raw_ostream &OS, StmtPrinterHelper* Helper,
 
     if (isa<CXXOperatorCallExpr>(S)) {
       OS << " (OperatorCall)";
-    } else if (isa<CXXBindTemporaryExpr>(S)) {
+    }
+    else if (isa<CXXBindTemporaryExpr>(S)) {
       OS << " (BindTemporary)";
+    }
+    else if (const CXXConstructExpr *CCE = dyn_cast<CXXConstructExpr>(S)) {
+      OS << " (CXXConstructExpr, " << CCE->getType().getAsString() << ")";
+    }
+    else if (const CastExpr *CE = dyn_cast<CastExpr>(S)) {
+      OS << " (" << CE->getStmtClassName() << ", "
+         << CE->getCastKindName()
+         << ", " << CE->getType().getAsString()
+         << ")";
     }
 
     // Expressions need a newline.
@@ -3544,27 +3561,35 @@ static void print_elem(raw_ostream &OS, StmtPrinterHelper* Helper,
 
 static void print_block(raw_ostream &OS, const CFG* cfg,
                         const CFGBlock &B,
-                        StmtPrinterHelper* Helper, bool print_edges) {
+                        StmtPrinterHelper* Helper, bool print_edges,
+                        bool ShowColors) {
 
-  if (Helper) Helper->setBlockID(B.getBlockID());
+  if (Helper)
+    Helper->setBlockID(B.getBlockID());
 
   // Print the header.
-  OS << "\n [ B" << B.getBlockID();
+  if (ShowColors)
+    OS.changeColor(raw_ostream::YELLOW, true);
+  
+  OS << "\n [B" << B.getBlockID();
 
   if (&B == &cfg->getEntry())
-    OS << " (ENTRY) ]\n";
+    OS << " (ENTRY)]\n";
   else if (&B == &cfg->getExit())
-    OS << " (EXIT) ]\n";
+    OS << " (EXIT)]\n";
   else if (&B == cfg->getIndirectGotoBlock())
-    OS << " (INDIRECT GOTO DISPATCH) ]\n";
+    OS << " (INDIRECT GOTO DISPATCH)]\n";
   else
-    OS << " ]\n";
+    OS << "]\n";
+  
+  if (ShowColors)
+    OS.resetColor();
 
   // Print the label of this block.
   if (Stmt *Label = const_cast<Stmt*>(B.getLabel())) {
 
     if (print_edges)
-      OS << "    ";
+      OS << "  ";
 
     if (LabelStmt *L = dyn_cast<LabelStmt>(Label))
       OS << L->getName();
@@ -3602,22 +3627,22 @@ static void print_block(raw_ostream &OS, const CFG* cfg,
 
     // Print the statement # in the basic block and the statement itself.
     if (print_edges)
-      OS << "    ";
+      OS << " ";
 
     OS << llvm::format("%3d", j) << ": ";
 
     if (Helper)
       Helper->setStmtID(j);
 
-    print_elem(OS,Helper,*I);
+    print_elem(OS, Helper, *I);
   }
 
   // Print the terminator of this block.
   if (B.getTerminator()) {
-    if (print_edges)
-      OS << "    ";
+    if (ShowColors)
+      OS.changeColor(raw_ostream::GREEN);
 
-    OS << "  T: ";
+    OS << "   T: ";
 
     if (Helper) Helper->setBlockID(-1);
 
@@ -3625,54 +3650,86 @@ static void print_block(raw_ostream &OS, const CFG* cfg,
                                      PrintingPolicy(Helper->getLangOpts()));
     TPrinter.Visit(const_cast<Stmt*>(B.getTerminator().getStmt()));
     OS << '\n';
+    
+    if (ShowColors)
+      OS.resetColor();
   }
 
   if (print_edges) {
     // Print the predecessors of this block.
-    OS << "    Predecessors (" << B.pred_size() << "):";
-    unsigned i = 0;
+    if (!B.pred_empty()) {
+      const raw_ostream::Colors Color = raw_ostream::BLUE;
+      if (ShowColors)
+        OS.changeColor(Color);
+      OS << "   Preds " ;
+      if (ShowColors)
+        OS.resetColor();
+      OS << '(' << B.pred_size() << "):";
+      unsigned i = 0;
 
-    for (CFGBlock::const_pred_iterator I = B.pred_begin(), E = B.pred_end();
-         I != E; ++I, ++i) {
+      if (ShowColors)
+        OS.changeColor(Color);
+      
+      for (CFGBlock::const_pred_iterator I = B.pred_begin(), E = B.pred_end();
+           I != E; ++I, ++i) {
 
-      if (i == 8 || (i-8) == 0)
-        OS << "\n     ";
+        if (i == 8 || (i-8) == 0)
+          OS << "\n     ";
 
-      OS << " B" << (*I)->getBlockID();
+        OS << " B" << (*I)->getBlockID();
+      }
+      
+      if (ShowColors)
+        OS.resetColor();
+
+      OS << '\n';
     }
-
-    OS << '\n';
 
     // Print the successors of this block.
-    OS << "    Successors (" << B.succ_size() << "):";
-    i = 0;
+    if (!B.succ_empty()) {
+      const raw_ostream::Colors Color = raw_ostream::MAGENTA;
+      if (ShowColors)
+        OS.changeColor(Color);
+      OS << "   Succs ";
+      if (ShowColors)
+        OS.resetColor();
+      OS << '(' << B.succ_size() << "):";
+      unsigned i = 0;
 
-    for (CFGBlock::const_succ_iterator I = B.succ_begin(), E = B.succ_end();
-         I != E; ++I, ++i) {
+      if (ShowColors)
+        OS.changeColor(Color);
 
-      if (i == 8 || (i-8) % 10 == 0)
-        OS << "\n    ";
+      for (CFGBlock::const_succ_iterator I = B.succ_begin(), E = B.succ_end();
+           I != E; ++I, ++i) {
 
-      if (*I)
-        OS << " B" << (*I)->getBlockID();
-      else
-        OS  << " NULL";
+        if (i == 8 || (i-8) % 10 == 0)
+          OS << "\n    ";
+
+        if (*I)
+          OS << " B" << (*I)->getBlockID();
+        else
+          OS  << " NULL";
+      }
+      
+      if (ShowColors)
+        OS.resetColor();
+      OS << '\n';
     }
-
-    OS << '\n';
   }
 }
 
 
 /// dump - A simple pretty printer of a CFG that outputs to stderr.
-void CFG::dump(const LangOptions &LO) const { print(llvm::errs(), LO); }
+void CFG::dump(const LangOptions &LO, bool ShowColors) const {
+  print(llvm::errs(), LO, ShowColors);
+}
 
 /// print - A simple pretty printer of a CFG that outputs to an ostream.
-void CFG::print(raw_ostream &OS, const LangOptions &LO) const {
+void CFG::print(raw_ostream &OS, const LangOptions &LO, bool ShowColors) const {
   StmtPrinterHelper Helper(this, LO);
 
   // Print the entry block.
-  print_block(OS, this, getEntry(), &Helper, true);
+  print_block(OS, this, getEntry(), &Helper, true, ShowColors);
 
   // Iterate through the CFGBlocks and print them one by one.
   for (const_iterator I = Blocks.begin(), E = Blocks.end() ; I != E ; ++I) {
@@ -3680,25 +3737,28 @@ void CFG::print(raw_ostream &OS, const LangOptions &LO) const {
     if (&(**I) == &getEntry() || &(**I) == &getExit())
       continue;
 
-    print_block(OS, this, **I, &Helper, true);
+    print_block(OS, this, **I, &Helper, true, ShowColors);
   }
 
   // Print the exit block.
-  print_block(OS, this, getExit(), &Helper, true);
+  print_block(OS, this, getExit(), &Helper, true, ShowColors);
+  OS << '\n';
   OS.flush();
 }
 
 /// dump - A simply pretty printer of a CFGBlock that outputs to stderr.
-void CFGBlock::dump(const CFG* cfg, const LangOptions &LO) const {
-  print(llvm::errs(), cfg, LO);
+void CFGBlock::dump(const CFG* cfg, const LangOptions &LO,
+                    bool ShowColors) const {
+  print(llvm::errs(), cfg, LO, ShowColors);
 }
 
 /// print - A simple pretty printer of a CFGBlock that outputs to an ostream.
 ///   Generally this will only be called from CFG::print.
 void CFGBlock::print(raw_ostream &OS, const CFG* cfg,
-                     const LangOptions &LO) const {
+                     const LangOptions &LO, bool ShowColors) const {
   StmtPrinterHelper Helper(cfg, LO);
-  print_block(OS, cfg, *this, &Helper, true);
+  print_block(OS, cfg, *this, &Helper, true, ShowColors);
+  OS << '\n';
 }
 
 /// printTerminator - A simple pretty printer of the terminator of a CFGBlock.
@@ -3795,7 +3855,7 @@ struct DOTGraphTraits<const CFG*> : public DefaultDOTGraphTraits {
 #ifndef NDEBUG
     std::string OutSStr;
     llvm::raw_string_ostream Out(OutSStr);
-    print_block(Out,Graph, *Node, GraphHelper, false);
+    print_block(Out,Graph, *Node, GraphHelper, false, false);
     std::string& OutStr = Out.str();
 
     if (OutStr[0] == '\n') OutStr.erase(OutStr.begin());

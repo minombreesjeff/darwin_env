@@ -1,4 +1,4 @@
-//===-- MipsTargetMachine.h - Define TargetMachine for Mips -00--*- C++ -*-===//
+//===-- MipsTargetMachine.h - Define TargetMachine for Mips -----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -68,10 +68,7 @@ namespace llvm {
     }
 
     // Pass Pipeline Configuration
-    virtual bool addInstSelector(PassManagerBase &PM);
-    virtual bool addPreEmitPass(PassManagerBase &PM);
-    virtual bool addPreRegAlloc(PassManagerBase &PM);
-    virtual bool addPostRegAlloc(PassManagerBase &);
+    virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
     virtual bool addCodeEmitter(PassManagerBase &PM,
 				 JITCodeEmitter &JCE);
 
@@ -80,6 +77,7 @@ namespace llvm {
 /// MipsebTargetMachine - Mips32 big endian target machine.
 ///
 class MipsebTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   MipsebTargetMachine(const Target &T, StringRef TT,
                       StringRef CPU, StringRef FS, const TargetOptions &Options,
@@ -90,6 +88,7 @@ public:
 /// MipselTargetMachine - Mips32 little endian target machine.
 ///
 class MipselTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   MipselTargetMachine(const Target &T, StringRef TT,
                       StringRef CPU, StringRef FS, const TargetOptions &Options,
@@ -100,6 +99,7 @@ public:
 /// Mips64ebTargetMachine - Mips64 big endian target machine.
 ///
 class Mips64ebTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   Mips64ebTargetMachine(const Target &T, StringRef TT,
                         StringRef CPU, StringRef FS,
@@ -111,6 +111,7 @@ public:
 /// Mips64elTargetMachine - Mips64 little endian target machine.
 ///
 class Mips64elTargetMachine : public MipsTargetMachine {
+  virtual void anchor();
 public:
   Mips64elTargetMachine(const Target &T, StringRef TT,
                         StringRef CPU, StringRef FS,

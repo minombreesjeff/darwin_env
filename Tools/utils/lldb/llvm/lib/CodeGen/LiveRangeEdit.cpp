@@ -1,4 +1,4 @@
-//===--- LiveRangeEdit.cpp - Basic tools for editing a register live range --===//
+//===-- LiveRangeEdit.cpp - Basic tools for editing a register live range -===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -28,6 +28,8 @@ using namespace llvm;
 STATISTIC(NumDCEDeleted,     "Number of instructions deleted by DCE");
 STATISTIC(NumDCEFoldedLoads, "Number of single use loads folded after DCE");
 STATISTIC(NumFracRanges,     "Number of live ranges fractured by DCE");
+
+void LiveRangeEdit::Delegate::anchor() { }
 
 LiveInterval &LiveRangeEdit::createFrom(unsigned OldReg,
                                         LiveIntervals &LIS,
@@ -92,11 +94,6 @@ bool LiveRangeEdit::allUsesAvailableAt(const MachineInstr *OrigMI,
     // Reserved registers are OK.
     if (MO.isUndef() || !lis.hasInterval(MO.getReg()))
       continue;
-    // We cannot depend on virtual registers in uselessRegs_.
-    if (uselessRegs_)
-      for (unsigned ui = 0, ue = uselessRegs_->size(); ui != ue; ++ui)
-        if ((*uselessRegs_)[ui]->reg == MO.getReg())
-          return false;
 
     LiveInterval &li = lis.getInterval(MO.getReg());
     const VNInfo *OVNI = li.getVNInfoAt(OrigIdx);

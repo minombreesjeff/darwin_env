@@ -26,7 +26,9 @@ class DNBArchImplX86_64 : public DNBArchProtocol
 public:
     DNBArchImplX86_64(MachThread *thread) :
         m_thread(thread),
-        m_state()
+        m_state(),
+        m_2pc_dbg_checkpoint(),
+        m_2pc_trans_state(Trans_Done)
     {
     }
     virtual ~DNBArchImplX86_64()
@@ -238,8 +240,15 @@ protected:
     static bool IsWatchpointHit(const DBG &debug_state, uint32_t hw_index);
     static nub_addr_t GetWatchAddress(const DBG &debug_state, uint32_t hw_index);
 
+    virtual bool StartTransForHWP();
+    virtual bool RollbackTransForHWP();
+    virtual bool FinishTransForHWP();
+    DBG GetDBGCheckpoint();
+
     MachThread *m_thread;
-    State        m_state;    
+    State       m_state;
+    DBG         m_2pc_dbg_checkpoint;
+    uint32_t    m_2pc_trans_state; // Is transaction of DBG state change: Pedning (0), Done (1), or Rolled Back (2)?
 };
 
 #endif    // #if defined (__i386__) || defined (__x86_64__)

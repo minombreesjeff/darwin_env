@@ -23,7 +23,6 @@ namespace driver {
   class Compilation;
   class DerivedArgList;
   class Driver;
-  class HostInfo;
   class InputArgList;
   class JobAction;
   class ObjCRuntime;
@@ -45,7 +44,7 @@ public:
   };
 
 private:
-  const HostInfo &Host;
+  const Driver &D;
   const llvm::Triple Triple;
 
   /// The list of toolchain specific path prefixes to search for
@@ -57,7 +56,20 @@ private:
   path_list ProgramPaths;
 
 protected:
-  ToolChain(const HostInfo &Host, const llvm::Triple &_Triple);
+  ToolChain(const Driver &D, const llvm::Triple &T);
+
+  /// \name Utilities for implementing subclasses.
+  ///@{
+  static void addSystemInclude(const ArgList &DriverArgs,
+                               ArgStringList &CC1Args,
+                               const Twine &Path);
+  static void addExternCSystemInclude(const ArgList &DriverArgs,
+                                      ArgStringList &CC1Args,
+                                      const Twine &Path);
+  static void addSystemIncludes(const ArgList &DriverArgs,
+                                ArgStringList &CC1Args,
+                                ArrayRef<StringRef> Paths);
+  ///@}
 
 public:
   virtual ~ToolChain();
@@ -171,6 +183,9 @@ public:
 
   /// Does this tool chain support Objective-C garbage collection.
   virtual bool SupportsObjCGC() const { return true; }
+
+  /// Does this tool chain support Objective-C ARC.
+  virtual bool SupportsObjCARC() const { return true; }
 
   /// UseDwarfDebugFlags - Embed the compile options to clang into the Dwarf
   /// compile unit information.

@@ -389,8 +389,7 @@ DIE *DwarfDebug::constructInlinedScopeDIE(CompileUnit *TheCU,
   const MCSymbol *EndLabel = getLabelAfterInsn(RI->second);
 
   if (StartLabel == 0 || EndLabel == 0) {
-    assert(0 && "Unexpected Start and End labels for a inlined scope!");
-    return 0;
+    llvm_unreachable("Unexpected Start and End labels for a inlined scope!");
   }
   assert(StartLabel->isDefined() &&
          "Invalid starting label for an inlined scope!");
@@ -448,8 +447,6 @@ DIE *DwarfDebug::constructInlinedScopeDIE(CompileUnit *TheCU,
   
   return ScopeDIE;
 }
-
-
 
 /// constructScopeDIE - Construct a DIE for this scope.
 DIE *DwarfDebug::constructScopeDIE(CompileUnit *TheCU, LexicalScope *Scope) {
@@ -533,7 +530,7 @@ unsigned DwarfDebug::GetOrCreateSourceID(StringRef FileName,
 
   std::map<std::pair<std::string, std::string>, unsigned>::iterator I;
   bool NewlyInserted;
-  tie(I, NewlyInserted) = SourceIdMap.insert(Entry);
+  llvm::tie(I, NewlyInserted) = SourceIdMap.insert(Entry);
   if (!NewlyInserted)
     return I->second;
 
@@ -553,7 +550,7 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   unsigned ID = GetOrCreateSourceID(FN, CompilationDir);
 
   DIE *Die = new DIE(dwarf::DW_TAG_compile_unit);
-  CompileUnit *NewCU = new CompileUnit(ID, Die, Asm, this);
+  CompileUnit *NewCU = new CompileUnit(ID, DIUnit.getLanguage(), Die, Asm, this);
   NewCU->addString(Die, dwarf::DW_AT_producer, DIUnit.getProducer());
   NewCU->addUInt(Die, dwarf::DW_AT_language, dwarf::DW_FORM_data2,
                  DIUnit.getLanguage());
@@ -958,8 +955,7 @@ static DotDebugLocEntry getDebugLocEntry(AsmPrinter *Asm,
   if (MI->getOperand(0).isCImm())
     return DotDebugLocEntry(FLabel, SLabel, MI->getOperand(0).getCImm());
 
-  assert(0 && "Unexpected 3 operand DBG_VALUE instruction!");
-  return DotDebugLocEntry();
+  llvm_unreachable("Unexpected 3 operand DBG_VALUE instruction!");
 }
 
 /// collectVariableInfo - Find variables for each lexical scope.
@@ -1055,7 +1051,8 @@ DwarfDebug::collectVariableInfo(const MachineFunction *MF,
       }
 
       // The value is valid until the next DBG_VALUE or clobber.
-      DotDebugLocEntries.push_back(getDebugLocEntry(Asm, FLabel, SLabel, Begin));
+      DotDebugLocEntries.push_back(getDebugLocEntry(Asm, FLabel, SLabel,
+                                                    Begin));
     }
     DotDebugLocEntries.push_back(DotDebugLocEntry());
   }
@@ -1297,7 +1294,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
                MOE = MI->operands_end(); MOI != MOE; ++MOI) {
           if (!MOI->isReg() || !MOI->isDef() || !MOI->getReg())
             continue;
-          for (const unsigned *AI = TRI->getOverlaps(MOI->getReg());
+          for (const uint16_t *AI = TRI->getOverlaps(MOI->getReg());
                unsigned Reg = *AI; ++AI) {
             const MDNode *Var = LiveUserVar[Reg];
             if (!Var)
@@ -1471,7 +1468,7 @@ void DwarfDebug::recordSourceLine(unsigned Line, unsigned Col, const MDNode *S,
       Fn = DB.getFilename();
       Dir = DB.getDirectory();
     } else
-      assert(0 && "Unexpected scope info");
+      llvm_unreachable("Unexpected scope info");
 
     Src = GetOrCreateSourceID(Fn, Dir);
   }
@@ -1488,10 +1485,6 @@ unsigned
 DwarfDebug::computeSizeAndOffset(DIE *Die, unsigned Offset, bool Last) {
   // Get the children.
   const std::vector<DIE *> &Children = Die->getChildren();
-
-  // If not last sibling and has children then add sibling offset attribute.
-  if (!Last && !Children.empty())
-    Die->addSiblingOffset(DIEValueAllocator);
 
   // Record the abbreviation.
   assignAbbrevNumber(Die->getAbbrev());
@@ -1603,9 +1596,6 @@ void DwarfDebug::emitDIE(DIE *Die) {
       Asm->OutStreamer.AddComment(dwarf::AttributeString(Attr));
 
     switch (Attr) {
-    case dwarf::DW_AT_sibling:
-      Asm->EmitInt32(Die->getSiblingOffset());
-      break;
     case dwarf::DW_AT_abstract_origin: {
       DIEEntry *E = cast<DIEEntry>(Values[i]);
       DIE *Origin = E->getEntry();
@@ -1617,7 +1607,7 @@ void DwarfDebug::emitDIE(DIE *Die) {
       // DW_AT_range Value encodes offset in debug_range section.
       DIEInteger *V = cast<DIEInteger>(Values[i]);
 
-      if (Asm->MAI->doesDwarfUsesLabelOffsetForRanges()) {
+      if (Asm->MAI->doesDwarfUseLabelOffsetForRanges()) {
         Asm->EmitLabelPlusOffset(DwarfDebugRangeSectionSym,
                                  V->getValue(),
                                  4);
@@ -1768,7 +1758,7 @@ void DwarfDebug::emitAccelNames() {
     for (StringMap<std::vector<DIE*> >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
       const char *Name = GI->getKeyData();
-      std::vector<DIE *> Entities = GI->second;
+      const std::vector<DIE *> &Entities = GI->second;
       for (std::vector<DIE *>::const_iterator DI = Entities.begin(),
              DE = Entities.end(); DI != DE; ++DI)
         AT.AddName(Name, (*DI));
@@ -1797,7 +1787,7 @@ void DwarfDebug::emitAccelObjC() {
     for (StringMap<std::vector<DIE*> >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
       const char *Name = GI->getKeyData();
-      std::vector<DIE *> Entities = GI->second;
+      const std::vector<DIE *> &Entities = GI->second;
       for (std::vector<DIE *>::const_iterator DI = Entities.begin(),
              DE = Entities.end(); DI != DE; ++DI)
         AT.AddName(Name, (*DI));
@@ -1826,7 +1816,7 @@ void DwarfDebug::emitAccelNamespaces() {
     for (StringMap<std::vector<DIE*> >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
       const char *Name = GI->getKeyData();
-      std::vector<DIE *> Entities = GI->second;
+      const std::vector<DIE *> &Entities = GI->second;
       for (std::vector<DIE *>::const_iterator DI = Entities.begin(),
              DE = Entities.end(); DI != DE; ++DI)
         AT.AddName(Name, (*DI));
@@ -1845,19 +1835,26 @@ void DwarfDebug::emitAccelNamespaces() {
 
 /// emitAccelTypes() - Emit type dies into a hashed accelerator table.
 void DwarfDebug::emitAccelTypes() {
-  DwarfAccelTable AT(DwarfAccelTable::Atom(DwarfAccelTable::eAtomTypeDIEOffset,
-                                           dwarf::DW_FORM_data4));
+  std::vector<DwarfAccelTable::Atom> Atoms;
+  Atoms.push_back(DwarfAccelTable::Atom(DwarfAccelTable::eAtomTypeDIEOffset,
+                                        dwarf::DW_FORM_data4));
+  Atoms.push_back(DwarfAccelTable::Atom(DwarfAccelTable::eAtomTypeTag,
+                                        dwarf::DW_FORM_data2));
+  Atoms.push_back(DwarfAccelTable::Atom(DwarfAccelTable::eAtomTypeTypeFlags,
+                                        dwarf::DW_FORM_data1));
+  DwarfAccelTable AT(Atoms);
   for (DenseMap<const MDNode *, CompileUnit *>::iterator I = CUMap.begin(),
          E = CUMap.end(); I != E; ++I) {
     CompileUnit *TheCU = I->second;
-    const StringMap<std::vector<DIE*> > &Names = TheCU->getAccelTypes();
-    for (StringMap<std::vector<DIE*> >::const_iterator
+    const StringMap<std::vector<std::pair<DIE*, unsigned > > > &Names
+      = TheCU->getAccelTypes();
+    for (StringMap<std::vector<std::pair<DIE*, unsigned> > >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
       const char *Name = GI->getKeyData();
-      std::vector<DIE *> Entities = GI->second;
-      for (std::vector<DIE *>::const_iterator DI = Entities.begin(),
-             DE= Entities.end(); DI !=DE; ++DI)
-        AT.AddName(Name, (*DI));
+      const std::vector<std::pair<DIE *, unsigned> > &Entities = GI->second;
+      for (std::vector<std::pair<DIE *, unsigned> >::const_iterator DI
+             = Entities.begin(), DE = Entities.end(); DI !=DE; ++DI)
+        AT.AddName(Name, (*DI).first, (*DI).second);
     }
   }
 
@@ -2103,7 +2100,7 @@ void DwarfDebug::emitDebugMacInfo() {
 /// __debug_info section, and the low_pc is the starting address for the
 /// inlining instance.
 void DwarfDebug::emitDebugInlineInfo() {
-  if (!Asm->MAI->doesDwarfUsesInlineInfoSection())
+  if (!Asm->MAI->doesDwarfUseInlineInfoSection())
     return;
 
   if (!FirstCU)
@@ -2135,10 +2132,9 @@ void DwarfDebug::emitDebugInlineInfo() {
     StringRef Name = SP.getName();
 
     Asm->OutStreamer.AddComment("MIPS linkage name");
-    if (LName.empty()) {
-      Asm->OutStreamer.EmitBytes(Name, 0);
-      Asm->OutStreamer.EmitIntValue(0, 1, 0); // nul terminator.
-    } else
+    if (LName.empty())
+      Asm->EmitSectionOffset(getStringPoolEntry(Name), DwarfStrSectionSym);
+    else
       Asm->EmitSectionOffset(getStringPoolEntry(getRealLinkageName(LName)),
                              DwarfStrSectionSym);
 

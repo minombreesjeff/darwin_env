@@ -77,7 +77,7 @@ public:
     static const void *     PrepareForAttach (const char *path, nub_launch_flavor_t launch_flavor, bool waitfor, DNBError &err_str);
     static void             CleanupAfterAttach (const void *attach_token, bool success, DNBError &err_str);
     static nub_process_t    CheckForProcess (const void *attach_token);
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     pid_t                   SBLaunchForDebug (const char *app_bundle_path, char const *argv[], char const *envp[], bool no_stdio, DNBError &launch_err);
     static pid_t            SBForkChildForPTraceDebugging (const char *path, char const *argv[], char const *envp[], bool no_stdio, MachProcess* process, DNBError &launch_err);
 #endif
@@ -131,6 +131,7 @@ public:
     nub_size_t              DisableAllWatchpoints (bool remove);
     bool                    EnableWatchpoint (nub_watch_t watchID);
     void                    DumpWatchpoint(nub_watch_t watchID) const;
+    uint32_t                GetNumSupportedHardwareWatchpoints () const;
     DNBBreakpointList&      Watchpoints() { return m_watchpoints; }
     const DNBBreakpointList& Watchpoints() const { return m_watchpoints; }
 
@@ -248,7 +249,7 @@ private:
     nub_size_t              RemoveTrapsFromBuffer (nub_addr_t addr, nub_size_t size, uint8_t *buf) const;
 
     uint32_t                Flags () const { return m_flags; }
-    nub_state_t             DoSIGSTOP (bool clear_bps_and_wps, uint32_t *thread_idx_ptr = NULL);
+    nub_state_t             DoSIGSTOP (bool clear_bps_and_wps, bool allow_running, uint32_t *thread_idx_ptr);
 
     pid_t                       m_pid;                      // Process ID of child process
     cpu_type_t                  m_cpu_type;                 // The CPU type of this process

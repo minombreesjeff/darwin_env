@@ -141,6 +141,8 @@ protected:
     friend class CallExpr; // ctor
     friend class OffsetOfExpr; // ctor
     friend class ObjCMessageExpr; // ctor
+    friend class ObjCArrayLiteral; // ctor
+    friend class ObjCDictionaryLiteral; // ctor
     friend class ShuffleVectorExpr; // ctor
     friend class ParenListExpr; // ctor
     friend class CXXUnresolvedConstructExpr; // ctor
@@ -159,13 +161,36 @@ protected:
   };
   enum { NumExprBits = 16 };
 
+  class CharacterLiteralBitfields {
+    friend class CharacterLiteral;
+    unsigned : NumExprBits;
+
+    unsigned Kind : 2;
+  };
+
+  class FloatingLiteralBitfields {
+    friend class FloatingLiteral;
+    unsigned : NumExprBits;
+
+    unsigned IsIEEE : 1; // Distinguishes between PPC128 and IEEE128.
+    unsigned IsExact : 1;
+  };
+
+  class UnaryExprOrTypeTraitExprBitfields {
+    friend class UnaryExprOrTypeTraitExpr;
+    unsigned : NumExprBits;
+
+    unsigned Kind : 2;
+    unsigned IsType : 1; // true if operand is a type, false if an expression.
+  };
+
   class DeclRefExprBitfields {
     friend class DeclRefExpr;
     friend class ASTStmtReader; // deserialization
     unsigned : NumExprBits;
 
     unsigned HasQualifier : 1;
-    unsigned HasExplicitTemplateArgs : 1;
+    unsigned HasTemplateKWAndArgsInfo : 1;
     unsigned HasFoundDecl : 1;
     unsigned HadMultipleCandidates : 1;
   };
@@ -213,6 +238,38 @@ protected:
     unsigned ShouldCopy : 1;
   };
 
+  class InitListExprBitfields {
+    friend class InitListExpr;
+
+    unsigned : NumExprBits;
+
+    /// Whether this initializer list originally had a GNU array-range
+    /// designator in it. This is a temporary marker used by CodeGen.
+    unsigned HadArrayRangeDesignator : 1;
+
+    /// Whether this initializer list initializes a std::initializer_list
+    /// object.
+    unsigned InitializesStdInitializerList : 1;
+  };
+
+  class TypeTraitExprBitfields {
+    friend class TypeTraitExpr;
+    friend class ASTStmtReader;
+    friend class ASTStmtWriter;
+    
+    unsigned : NumExprBits;
+    
+    /// \brief The kind of type trait, which is a value of a TypeTrait enumerator.
+    unsigned Kind : 8;
+    
+    /// \brief If this expression is not value-dependent, this indicates whether
+    /// the trait evaluated true or false.
+    unsigned Value : 1;
+
+    /// \brief The number of arguments to this type trait.
+    unsigned NumArgs : 32 - 8 - 1 - NumExprBits;
+  };
+  
   union {
     // FIXME: this is wasteful on 64-bit platforms.
     void *Aligner;
@@ -220,15 +277,21 @@ protected:
     StmtBitfields StmtBits;
     CompoundStmtBitfields CompoundStmtBits;
     ExprBitfields ExprBits;
+    CharacterLiteralBitfields CharacterLiteralBits;
+    FloatingLiteralBitfields FloatingLiteralBits;
+    UnaryExprOrTypeTraitExprBitfields UnaryExprOrTypeTraitExprBits;
     DeclRefExprBitfields DeclRefExprBits;
     CastExprBitfields CastExprBits;
     CallExprBitfields CallExprBits;
     ExprWithCleanupsBitfields ExprWithCleanupsBits;
     PseudoObjectExprBitfields PseudoObjectExprBits;
     ObjCIndirectCopyRestoreExprBitfields ObjCIndirectCopyRestoreExprBits;
+    InitListExprBitfields InitListExprBits;
+    TypeTraitExprBitfields TypeTraitExprBits;
   };
 
   friend class ASTStmtReader;
+  friend class ASTStmtWriter;
 
 public:
   // Only allow allocation of Stmts using the allocator in ASTContext
@@ -258,17 +321,21 @@ public:
   /// de-serialization).
   struct EmptyShell { };
 
+private:
+  /// \brief Whether statistic collection is enabled.
+  static bool StatisticsEnabled;
+
 protected:
   /// \brief Construct an empty statement.
   explicit Stmt(StmtClass SC, EmptyShell) {
     StmtBits.sClass = SC;
-    if (Stmt::CollectingStats()) Stmt::addStmtClass(SC);
+    if (StatisticsEnabled) Stmt::addStmtClass(SC);
   }
 
 public:
   Stmt(StmtClass SC) {
     StmtBits.sClass = SC;
-    if (Stmt::CollectingStats()) Stmt::addStmtClass(SC);
+    if (StatisticsEnabled) Stmt::addStmtClass(SC);
   }
 
   StmtClass getStmtClass() const {
@@ -286,14 +353,14 @@ public:
 
   // global temp stats (until we have a per-module visitor)
   static void addStmtClass(const StmtClass s);
-  static bool CollectingStats(bool Enable = false);
+  static void EnableStatistics();
   static void PrintStats();
 
   /// dump - This does a local dump of the specified AST fragment.  It dumps the
   /// specified node and a few nodes underneath it, but not the whole subtree.
   /// This is useful in a debugger.
-  void dump() const;
-  void dump(SourceManager &SM) const;
+  LLVM_ATTRIBUTE_USED void dump() const;
+  LLVM_ATTRIBUTE_USED void dump(SourceManager &SM) const;
   void dump(raw_ostream &OS, SourceManager &SM) const;
 
   /// dumpAll - This does a dump of the specified AST fragment and all subtrees.

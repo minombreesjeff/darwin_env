@@ -18,6 +18,7 @@
 #include "llvm/Support/Format.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
@@ -28,6 +29,8 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 //    std::string wrapper for DenseMap purposes
 //===----------------------------------------------------------------------===//
+
+namespace llvm {
 
 /// TableGenStringKey - This is a wrapper for std::string suitable for
 /// using as a key to a DenseMap.  Because there isn't a particularly
@@ -43,14 +46,16 @@ public:
   TableGenStringKey(const char *str) : data(str) {}
 
   const std::string &str() const { return data; }
-  
+
+  friend hash_code hash_value(const TableGenStringKey &Value) {
+    using llvm::hash_value;
+    return hash_value(Value.str());
+  }
 private:
   std::string data;
 };
 
 /// Specialize DenseMapInfo for TableGenStringKey.
-namespace llvm {
-
 template<> struct DenseMapInfo<TableGenStringKey> {
   static inline TableGenStringKey getEmptyKey() {
     TableGenStringKey Empty("<<<EMPTY KEY>>>");
@@ -61,7 +66,8 @@ template<> struct DenseMapInfo<TableGenStringKey> {
     return Tombstone;
   }
   static unsigned getHashValue(const TableGenStringKey& Val) {
-    return HashString(Val.str());
+    using llvm::hash_value;
+    return hash_value(Val);
   }
   static bool isEqual(const TableGenStringKey& LHS,
                       const TableGenStringKey& RHS) {
@@ -69,7 +75,7 @@ template<> struct DenseMapInfo<TableGenStringKey> {
   }
 };
 
-}
+} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 //    Type implementations
@@ -78,9 +84,9 @@ template<> struct DenseMapInfo<TableGenStringKey> {
 BitRecTy BitRecTy::Shared;
 IntRecTy IntRecTy::Shared;
 StringRecTy StringRecTy::Shared;
-CodeRecTy CodeRecTy::Shared;
 DagRecTy DagRecTy::Shared;
 
+void RecTy::anchor() { }
 void RecTy::dump() const { print(errs()); }
 
 ListRecTy *RecTy::getListTy() {
@@ -315,12 +321,6 @@ Init *ListRecTy::convertValue(TypedInit *TI) {
   return 0;
 }
 
-Init *CodeRecTy::convertValue(TypedInit *TI) {
-  if (TI->getType()->typeIsConvertibleTo(this))
-    return TI;
-  return 0;
-}
-
 Init *DagRecTy::convertValue(TypedInit *TI) {
   if (TI->getType()->typeIsConvertibleTo(this))
     return TI;
@@ -444,12 +444,17 @@ RecTy *llvm::resolveTypes(RecTy *T1, RecTy *T2) {
 //    Initializer implementations
 //===----------------------------------------------------------------------===//
 
+void Init::anchor() { }
 void Init::dump() const { return print(errs()); }
+
+void UnsetInit::anchor() { }
 
 UnsetInit *UnsetInit::get() {
   static UnsetInit TheInit;
   return &TheInit;
 }
+
+void BitInit::anchor() { }
 
 BitInit *BitInit::get(bool V) {
   static BitInit True(true);
@@ -565,21 +570,14 @@ IntInit::convertInitializerBitRange(const std::vector<unsigned> &Bits) const {
   return BitsInit::get(NewBits);
 }
 
-StringInit *StringInit::get(const std::string &V) {
+void StringInit::anchor() { }
+
+StringInit *StringInit::get(StringRef V) {
   typedef StringMap<StringInit *> Pool;
   static Pool ThePool;
 
   StringInit *&I = ThePool[V];
   if (!I) I = new StringInit(V);
-  return I;
-}
-
-CodeInit *CodeInit::get(const std::string &V) {
-  typedef StringMap<CodeInit *> Pool;
-  static Pool ThePool;
-
-  CodeInit *&I = ThePool[V];
-  if (!I) I = new CodeInit(V);
   return I;
 }
 
@@ -735,7 +733,6 @@ UnOpInit *UnOpInit::get(UnaryOp opc, Init *lhs, RecTy *Type) {
 
 Init *UnOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
   switch (getOpcode()) {
-  default: assert(0 && "Unknown unop");
   case CAST: {
     if (getType()->getAsString() == "string") {
       StringInit *LHSs = dynamic_cast<StringInit*>(LHS);
@@ -746,6 +743,11 @@ Init *UnOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
       DefInit *LHSd = dynamic_cast<DefInit*>(LHS);
       if (LHSd) {
         return StringInit::get(LHSd->getDef()->getName());
+      }
+
+      IntInit *LHSi = dynamic_cast<IntInit*>(LHS);
+      if (LHSi) {
+        return StringInit::get(LHSi->getAsString());
       }
     } else {
       StringInit *LHSs = dynamic_cast<StringInit*>(LHS);
@@ -888,7 +890,6 @@ BinOpInit *BinOpInit::get(BinaryOp opc, Init *lhs,
 
 Init *BinOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
   switch (getOpcode()) {
-  default: assert(0 && "Unknown binop");
   case CONCAT: {
     DagInit *LHSs = dynamic_cast<DagInit*>(LHS);
     DagInit *RHSs = dynamic_cast<DagInit*>(RHS);
@@ -947,7 +948,7 @@ Init *BinOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
       int64_t LHSv = LHSi->getValue(), RHSv = RHSi->getValue();
       int64_t Result;
       switch (getOpcode()) {
-      default: assert(0 && "Bad opcode!");
+      default: llvm_unreachable("Bad opcode!");
       case SHL: Result = LHSv << RHSv; break;
       case SRA: Result = LHSv >> RHSv; break;
       case SRL: Result = (uint64_t)LHSv >> (uint64_t)RHSv; break;
@@ -1137,7 +1138,6 @@ static Init *ForeachHelper(Init *LHS, Init *MHS, Init *RHS, RecTy *Type,
 
 Init *TernOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
   switch (getOpcode()) {
-  default: assert(0 && "Unknown binop");
   case SUBST: {
     DefInit *LHSd = dynamic_cast<DefInit*>(LHS);
     VarInit *LHSv = dynamic_cast<VarInit*>(LHS);
@@ -1326,10 +1326,10 @@ const std::string &VarInit::getName() const {
 
 Init *VarInit::resolveBitReference(Record &R, const RecordVal *IRV,
                                    unsigned Bit) const {
-  if (R.isTemplateArg(getName())) return 0;
-  if (IRV && IRV->getName() != getName()) return 0;
+  if (R.isTemplateArg(getNameInit())) return 0;
+  if (IRV && IRV->getNameInit() != getNameInit()) return 0;
 
-  RecordVal *RV = R.getValue(getName());
+  RecordVal *RV = R.getValue(getNameInit());
   assert(RV && "Reference to a non-existent variable?");
   assert(dynamic_cast<BitsInit*>(RV->getValue()));
   BitsInit *BI = (BitsInit*)RV->getValue();
@@ -1348,10 +1348,10 @@ Init *VarInit::resolveBitReference(Record &R, const RecordVal *IRV,
 Init *VarInit::resolveListElementReference(Record &R,
                                            const RecordVal *IRV,
                                            unsigned Elt) const {
-  if (R.isTemplateArg(getName())) return 0;
-  if (IRV && IRV->getName() != getName()) return 0;
+  if (R.isTemplateArg(getNameInit())) return 0;
+  if (IRV && IRV->getNameInit() != getNameInit()) return 0;
 
-  RecordVal *RV = R.getValue(getName());
+  RecordVal *RV = R.getValue(getNameInit());
   assert(RV && "Reference to a non-existent variable?");
   ListInit *LI = dynamic_cast<ListInit*>(RV->getValue());
   if (!LI) {
@@ -1726,12 +1726,6 @@ void Record::setName(Init *NewName) {
   }  // Otherwise this isn't yet registered.
   Name = NewName;
   checkName();
-  // Since the Init for the name was changed, see if we can resolve
-  // any of it using members of the Record.
-  Init *ComputedName = Name->resolveReferences(*this, 0);
-  if (ComputedName != Name) {
-    setName(ComputedName);
-  }
   // DO NOT resolve record values to the name at this point because
   // there might be default values for arguments of this def.  Those
   // arguments might not have been resolved yet so we don't want to
@@ -1749,23 +1743,13 @@ void Record::setName(const std::string &Name) {
   setName(StringInit::get(Name));
 }
 
-const RecordVal *Record::getValue(Init *Name) const {
-  for (unsigned i = 0, e = Values.size(); i != e; ++i)
-    if (Values[i].getNameInit() == Name) return &Values[i];
-  return 0;
-}
-
-RecordVal *Record::getValue(Init *Name) {
-  for (unsigned i = 0, e = Values.size(); i != e; ++i)
-    if (Values[i].getNameInit() == Name) return &Values[i];
-  return 0;
-}
-
 /// resolveReferencesTo - If anything in this record refers to RV, replace the
 /// reference to RV with the RHS of RV.  If RV is null, we resolve all possible
 /// references.
 void Record::resolveReferencesTo(const RecordVal *RV) {
   for (unsigned i = 0, e = Values.size(); i != e; ++i) {
+    if (RV == &Values[i]) // Skip resolve the same field as the given one
+      continue;
     if (Init *V = Values[i].getValue())
       Values[i].setValue(V->resolveReferences(*this, RV));
   }
@@ -1993,18 +1977,6 @@ DagInit *Record::getValueAsDag(StringRef FieldName) const {
     return DI;
   throw "Record `" + getName() + "', field `" + FieldName.str() +
         "' does not have a dag initializer!";
-}
-
-std::string Record::getValueAsCode(StringRef FieldName) const {
-  const RecordVal *R = getValue(FieldName);
-  if (R == 0 || R->getValue() == 0)
-    throw "Record `" + getName() + "' does not have a field named `" +
-      FieldName.str() + "'!\n";
-
-  if (CodeInit *CI = dynamic_cast<CodeInit*>(R->getValue()))
-    return CI->getValue();
-  throw "Record `" + getName() + "', field `" + FieldName.str() +
-    "' does not have a code initializer!";
 }
 
 

@@ -60,6 +60,10 @@ public:
     /// out of the frontend.
     EP_EarlyAsPossible,
 
+    /// EP_ModuleOptimizerEarly - This extension point allows adding passes
+    /// just before the main module-level optimization passes.
+    EP_ModuleOptimizerEarly,
+
     /// EP_LoopOptimizerEnd - This extension point allows adding loop passes to
     /// the end of the loop optimizer.
     EP_LoopOptimizerEnd,
@@ -95,6 +99,7 @@ public:
   bool DisableSimplifyLibCalls;
   bool DisableUnitAtATime;
   bool DisableUnrollLoops;
+  bool Vectorize;
 
 private:
   /// ExtensionList - This is list of all of the extensions that are registered.

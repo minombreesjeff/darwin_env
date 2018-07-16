@@ -22,12 +22,14 @@ class WatchpointIgnoreCountTestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_set_watch_ignore_count_with_dsym(self):
         """Test SBWatchpoint.SetIgnoreCount() API."""
         self.buildDsym()
         self.do_watchpoint_ignore_count()
 
     @python_api_test
+    @dwarf_test
     def test_set_watch_ignore_count_with_dwarf(self):
         """Test SBWatchpoint.SetIgnoreCount() API."""
         self.buildDwarf()
@@ -59,7 +61,8 @@ class WatchpointIgnoreCountTestCase(TestBase):
 
         # Watch 'global' for read and write.
         value = frame0.FindValue('global', lldb.eValueTypeVariableGlobal)
-        watchpoint = value.Watch(True, True, True)
+        error = lldb.SBError();
+        watchpoint = value.Watch(True, True, True, error)
         self.assertTrue(value and watchpoint,
                         "Successfully found the variable and set a watchpoint")
         self.DebugSBValue(value)

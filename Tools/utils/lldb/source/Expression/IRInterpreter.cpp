@@ -11,6 +11,7 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/ClangExpressionDeclMap.h"
+#include "lldb/Expression/ClangExpressionVariable.h"
 #include "lldb/Expression/IRForTarget.h"
 #include "lldb/Expression/IRInterpreter.h"
 
@@ -69,8 +70,8 @@ PrintType(const Type *type, bool truncate = false)
     return s;
 }
 
-typedef lldb::SharedPtr <lldb_private::DataEncoder>::Type DataEncoderSP;
-typedef lldb::SharedPtr <lldb_private::DataExtractor>::Type DataExtractorSP;
+typedef STD_SHARED_PTR(lldb_private::DataEncoder) DataEncoderSP;
+typedef STD_SHARED_PTR(lldb_private::DataExtractor) DataExtractorSP;
 
 class Memory
 {
@@ -127,7 +128,7 @@ public:
         }
     };
     
-    typedef lldb::SharedPtr <Allocation>::Type  AllocationSP;
+    typedef STD_SHARED_PTR(Allocation)  AllocationSP;
     
     struct Region
     {
@@ -538,35 +539,73 @@ public:
         return true;
     }
     
-    bool ResolveConstant (Memory::Region &region, const Constant *constant)
+    bool ResolveConstantValue (APInt &value, const Constant *constant)
     {
-        size_t constant_size = m_target_data.getTypeStoreSize(constant->getType());
-        
         if (const ConstantInt *constant_int = dyn_cast<ConstantInt>(constant))
         {
-            const uint64_t *raw_data = constant_int->getValue().getRawData();
-            return m_memory.Write(region.m_base, (const uint8_t*)raw_data, constant_size);
+            value = constant_int->getValue();
+            return true;
         }
         else if (const ConstantFP *constant_fp = dyn_cast<ConstantFP>(constant))
         {
-            const uint64_t *raw_data = constant_fp->getValueAPF().bitcastToAPInt().getRawData();
-            return m_memory.Write(region.m_base, (const uint8_t*)raw_data, constant_size);
+            value = constant_fp->getValueAPF().bitcastToAPInt();
+            return true;
         }
         else if (const ConstantExpr *constant_expr = dyn_cast<ConstantExpr>(constant))
         {
             switch (constant_expr->getOpcode())
             {
-            default:
-                return false;
-            case Instruction::IntToPtr:
-            case Instruction::BitCast:
-                return ResolveConstant(region, constant_expr->getOperand(0));
+                default:
+                    return false;
+                case Instruction::IntToPtr:
+                case Instruction::BitCast:
+                    return ResolveConstantValue(value, constant_expr->getOperand(0));
+                case Instruction::GetElementPtr:
+                {
+                    ConstantExpr::const_op_iterator op_cursor = constant_expr->op_begin();
+                    ConstantExpr::const_op_iterator op_end = constant_expr->op_end();
+                                    
+                    Constant *base = dyn_cast<Constant>(*op_cursor);
+                    
+                    if (!base)
+                        return false;
+                    
+                    if (!ResolveConstantValue(value, base))
+                        return false;
+                    
+                    op_cursor++;
+                    
+                    if (op_cursor == op_end)
+                        return true; // no offset to apply!
+                    
+                    SmallVector <Value *, 8> indices (op_cursor, op_end);
+                    
+                    uint64_t offset = m_target_data.getIndexedOffset(base->getType(), indices);
+                    
+                    const bool is_signed = true;
+                    value += APInt(value.getBitWidth(), offset, is_signed);
+                    
+                    return true;
+                }
             }
         }
         
         return false;
     }
     
+    bool ResolveConstant (Memory::Region &region, const Constant *constant)
+    {
+        APInt resolved_value;
+        
+        if (!ResolveConstantValue(resolved_value, constant))
+            return false;
+        
+        const uint64_t *raw_data = resolved_value.getRawData();
+            
+        size_t constant_size = m_target_data.getTypeStoreSize(constant->getType());
+        return m_memory.Write(region.m_base, (const uint8_t*)raw_data, constant_size);
+    }
+        
     Memory::Region ResolveValue (const Value *value, Module &module)
     {
         ValueMap::iterator i = m_values.find(value);
@@ -595,6 +634,7 @@ public:
             lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
             lldb_private::Value resolved_value;
+            lldb_private::ClangExpressionVariable::FlagType flags;
             
             if (global_value)
             {            
@@ -611,7 +651,7 @@ public:
                     return Memory::Region();
                 }
                 
-                resolved_value = m_decl_map.LookupDecl(decl);
+                resolved_value = m_decl_map.LookupDecl(decl, flags);
             }
             else
             {
@@ -631,6 +671,11 @@ public:
             {
                 if (resolved_value.GetContextType() == lldb_private::Value::eContextTypeRegisterInfo)
                 {
+                    bool bare_register = (flags & lldb_private::ClangExpressionVariable::EVBareRegister);
+
+                    if (bare_register)
+                        indirect_variable = false;
+                    
                     Memory::Region data_region = m_memory.Malloc(value->getType());
                     data_region.m_allocation->m_origin = resolved_value;
                     Memory::Region ref_region = m_memory.Malloc(value->getType());
@@ -873,6 +918,7 @@ static const char *memory_allocation_error          = "Interpreter couldn't allo
 static const char *memory_write_error               = "Interpreter couldn't write to memory";
 static const char *memory_read_error                = "Interpreter couldn't read from memory";
 static const char *infinite_loop_error              = "Interpreter ran for too many cycles";
+static const char *bad_result_error                 = "Result of expression is in bad memory";
 
 bool
 IRInterpreter::supportsFunction (Function &llvm_function, 
@@ -948,6 +994,7 @@ IRInterpreter::supportsFunction (Function &llvm_function,
             case Instruction::Store:
             case Instruction::Sub:
             case Instruction::UDiv:
+            case Instruction::ZExt:
                 break;
             }
         }
@@ -1175,19 +1222,20 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
             }
             break;
         case Instruction::BitCast:
+        case Instruction::ZExt:
             {
-                const BitCastInst *bit_cast_inst = dyn_cast<BitCastInst>(inst);
+                const CastInst *cast_inst = dyn_cast<CastInst>(inst);
                 
-                if (!bit_cast_inst)
+                if (!cast_inst)
                 {
                     if (log)
-                        log->Printf("getOpcode() returns BitCast, but instruction is not a BitCastInst");
+                        log->Printf("getOpcode() returns %s, but instruction is not a BitCastInst", cast_inst->getOpcodeName());
                     err.SetErrorToGenericError();
                     err.SetErrorString(interpreter_internal_error);
                     return false;
                 }
                 
-                Value *source = bit_cast_inst->getOperand(0);
+                Value *source = cast_inst->getOperand(0);
                 
                 lldb_private::Scalar S;
                 
@@ -1280,10 +1328,43 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                     return false;
                 }
                     
+                typedef SmallVector <Value *, 8> IndexVector;
+                typedef IndexVector::iterator IndexIterator;
+                
                 SmallVector <Value *, 8> indices (gep_inst->idx_begin(),
                                                   gep_inst->idx_end());
                 
-                uint64_t offset = target_data.getIndexedOffset(pointer_type, indices);
+                SmallVector <Value *, 8> const_indices;
+                
+                for (IndexIterator ii = indices.begin(), ie = indices.end();
+                     ii != ie;
+                     ++ii)
+                {
+                    ConstantInt *constant_index = dyn_cast<ConstantInt>(*ii);
+                    
+                    if (!constant_index)
+                    {
+                        lldb_private::Scalar I;
+                        
+                        if (!frame.EvaluateValue(I, *ii, llvm_module))
+                        {
+                            if (log)
+                                log->Printf("Couldn't evaluate %s", PrintValue(*ii).c_str());
+                            err.SetErrorToGenericError();
+                            err.SetErrorString(bad_value_error);
+                            return false;
+                        }
+                        
+                        if (log)
+                            log->Printf("Evaluated constant index %s as %llu", PrintValue(*ii).c_str(), I.ULongLong(LLDB_INVALID_ADDRESS));
+                        
+                        constant_index = cast<ConstantInt>(ConstantInt::get((*ii)->getType(), I.ULongLong(LLDB_INVALID_ADDRESS)));
+                    }
+                    
+                    const_indices.push_back(constant_index);
+                }
+                
+                uint64_t offset = target_data.getIndexedOffset(pointer_type, const_indices);
                 
                 lldb_private::Scalar Poffset = P + offset;
                 
@@ -1524,7 +1605,17 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                     return true;
                 
                 GlobalValue *result_value = llvm_module.getNamedValue(result_name.GetCString());
-                return frame.ConstructResult(result, result_value, result_name, result_type, llvm_module);
+                
+                if (!frame.ConstructResult(result, result_value, result_name, result_type, llvm_module))
+                {
+                    if (log)
+                        log->Printf("Couldn't construct the expression's result");
+                    err.SetErrorToGenericError();
+                    err.SetErrorString(bad_result_error);
+                    return false;
+                }
+                
+                return true;
             }
         case Instruction::Store:
             {

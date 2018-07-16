@@ -30,7 +30,7 @@ class Instruction
 {
 public:
     Instruction (const Address &address, 
-                 AddressClass addr_class = eAddressClassInvalid);
+                 lldb::AddressClass addr_class = lldb::eAddressClassInvalid);
 
     virtual
    ~Instruction();
@@ -42,29 +42,29 @@ public:
     }
     
     const char *
-    GetMnemonic (ExecutionContextScope *exe_scope)
+    GetMnemonic (const ExecutionContext* exe_ctx)
     {
-        CalculateMnemonicOperandsAndCommentIfNeeded (exe_scope);
+        CalculateMnemonicOperandsAndCommentIfNeeded (exe_ctx);
         return m_opcode_name.c_str();
     }
     const char *
-    GetOperands (ExecutionContextScope *exe_scope)
+    GetOperands (const ExecutionContext* exe_ctx)
     {
-        CalculateMnemonicOperandsAndCommentIfNeeded (exe_scope);
+        CalculateMnemonicOperandsAndCommentIfNeeded (exe_ctx);
         return m_mnemocics.c_str();
     }
     
     const char *
-    GetComment (ExecutionContextScope *exe_scope)
+    GetComment (const ExecutionContext* exe_ctx)
     {
-        CalculateMnemonicOperandsAndCommentIfNeeded (exe_scope);
+        CalculateMnemonicOperandsAndCommentIfNeeded (exe_ctx);
         return m_comment.c_str();
     }
 
     virtual void
-    CalculateMnemonicOperandsAndComment (ExecutionContextScope *exe_scope) = 0;
+    CalculateMnemonicOperandsAndComment (const ExecutionContext* exe_ctx) = 0;
     
-    AddressClass
+    lldb::AddressClass
     GetAddressClass ();
 
     void
@@ -72,7 +72,7 @@ public:
     {
         // Invalidate the address class to lazily discover
         // it if we need to.
-        m_address_class = eAddressClassInvalid; 
+        m_address_class = lldb::eAddressClassInvalid; 
         m_address = addr;
     }
 
@@ -81,8 +81,7 @@ public:
           uint32_t max_opcode_byte_size,
           bool show_address,
           bool show_bytes,
-          const ExecutionContext *exe_ctx, 
-          bool raw) = 0;
+          const ExecutionContext* exe_ctx);
     
     virtual bool
     DoesBranch () const = 0;
@@ -93,7 +92,7 @@ public:
             uint32_t data_offset) = 0;
             
     virtual void
-    SetDescription (const char *) {};  // May be overridden in sub-classes that have descriptions.
+    SetDescription (const char *) {}  // May be overridden in sub-classes that have descriptions.
     
     lldb::OptionValueSP
     ReadArray (FILE *in_file, Stream *out_stream, OptionValue::Type data_type);
@@ -121,6 +120,9 @@ public:
     {
         return m_opcode;
     }
+    
+    uint32_t
+    GetData (DataExtractor &data);
 
 protected:
     Address m_address; // The section offset address of this instruction
@@ -130,7 +132,9 @@ protected:
     // The usual value will be eAddressClassCode, but often when
     // disassembling memory, you might run into data. This can
     // help us to disassemble appropriately.
-    AddressClass m_address_class; 
+private:
+    lldb::AddressClass m_address_class; // Use GetAddressClass () accessor function!
+protected:
     Opcode m_opcode; // The opcode for this instruction
     std::string m_opcode_name;
     std::string m_mnemocics;
@@ -138,12 +142,12 @@ protected:
     bool m_calculated_strings;
 
     void
-    CalculateMnemonicOperandsAndCommentIfNeeded (ExecutionContextScope *exe_scope)
+    CalculateMnemonicOperandsAndCommentIfNeeded (const ExecutionContext* exe_ctx)
     {
         if (!m_calculated_strings)
         {
             m_calculated_strings = true;
-            CalculateMnemonicOperandsAndComment(exe_scope);
+            CalculateMnemonicOperandsAndComment(exe_ctx);
         }
     }
 };
@@ -163,6 +167,12 @@ public:
 
     lldb::InstructionSP
     GetInstructionAtIndex (uint32_t idx) const;
+    
+    uint32_t
+    GetIndexOfNextBranchInstruction(uint32_t start) const;
+    
+    uint32_t
+    GetIndexOfInstructionAtLoadAddress (lldb::addr_t load_addr, Target &target);
 
     void
     Clear();
@@ -194,19 +204,11 @@ public:
      virtual
      ~PseudoInstruction ();
      
-    virtual void
-    Dump (Stream *s,
-          uint32_t max_opcode_byte_size,
-          bool show_address,
-          bool show_bytes,
-          const ExecutionContext* exe_ctx,
-          bool raw);
-    
     virtual bool
     DoesBranch () const;
 
     virtual void
-    CalculateMnemonicOperandsAndComment (ExecutionContextScope *exe_scope)
+    CalculateMnemonicOperandsAndComment (const ExecutionContext* exe_ctx)
     {
         // TODO: fill this in and put opcode name into Instruction::m_opcode_name,
         // mnemonic into Instruction::m_mnemonics, and any comment into 
@@ -258,7 +260,8 @@ public:
                       const char *plugin_name,
                       const Address &start,
                       const void *bytes,
-                      size_t length);
+                      size_t length,
+                      uint32_t num_instructions = UINT32_MAX);
 
     static bool
     Disassemble (Debugger &debugger,
@@ -335,7 +338,8 @@ public:
     
     size_t
     ParseInstructions (const ExecutionContext *exe_ctx,
-                       const AddressRange &range);
+                       const AddressRange &range,
+                       Stream *error_strm_ptr);
 
     size_t
     ParseInstructions (const ExecutionContext *exe_ctx,

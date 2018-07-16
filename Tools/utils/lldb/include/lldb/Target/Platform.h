@@ -57,6 +57,10 @@ namespace lldb_private {
         static lldb::PlatformSP
         GetDefaultPlatform ();
 
+        static lldb::PlatformSP
+        GetPlatformForArchitecture (const ArchSpec &arch,
+                                    ArchSpec *platform_arch_ptr);
+
         static const char *
         GetHostPlatformName ();
 
@@ -66,6 +70,9 @@ namespace lldb_private {
         static lldb::PlatformSP
         Create (const char *platform_name, Error &error);
 
+        static lldb::PlatformSP
+        Create (const ArchSpec &arch, ArchSpec *platform_arch_ptr, Error &error);
+        
         static uint32_t
         GetNumConnectedRemotePlatforms ();
         
@@ -108,7 +115,8 @@ namespace lldb_private {
         virtual Error
         ResolveExecutable (const FileSpec &exe_file,
                            const ArchSpec &arch,
-                           lldb::ModuleSP &module_sp);
+                           lldb::ModuleSP &module_sp,
+                           const FileSpecList *module_search_paths_ptr);
 
         //------------------------------------------------------------------
         /// Resolves the FileSpec to a (possibly) remote path. Remote
@@ -231,12 +239,9 @@ namespace lldb_private {
                  FileSpec &local_file);
 
         virtual Error
-        GetSharedModule (const FileSpec &platform_file, 
-                         const ArchSpec &arch,
-                         const UUID *uuid_ptr,
-                         const ConstString *object_name_ptr,
-                         off_t object_offset,
+        GetSharedModule (const ModuleSpec &module_spec, 
                          lldb::ModuleSP &module_sp,
+                         const FileSpecList *module_search_paths_ptr,
                          lldb::ModuleSP *old_module_sp_ptr,
                          bool *did_create_ptr);
 
@@ -274,6 +279,13 @@ namespace lldb_private {
         //------------------------------------------------------------------
         virtual Error
         LaunchProcess (ProcessLaunchInfo &launch_info);
+
+        //------------------------------------------------------------------
+        /// Lets a platform answer if it is compatible with a given
+        /// architecture and the target triple contained within.
+        //------------------------------------------------------------------
+        virtual bool
+        IsCompatibleArchitecture (const ArchSpec &arch, ArchSpec *compatible_arch_ptr = NULL);
 
         //------------------------------------------------------------------
         /// Not all platforms will support debugging a process by spawning
@@ -356,6 +368,15 @@ namespace lldb_private {
 
         virtual bool
         GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &proc_info);
+        
+        //------------------------------------------------------------------
+        // Set a breakpoint on all functions that can end up creating a thread
+        // for this platform. This is needed when running expressions and
+        // also for process control.
+        //------------------------------------------------------------------
+        virtual lldb::BreakpointSP
+        SetThreadCreationBreakpoint (Target &target);
+        
 
         const std::string &
         GetRemoteURL () const

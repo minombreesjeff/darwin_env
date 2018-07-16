@@ -297,14 +297,8 @@ GenericValue Interpreter::callExternalFunction(Function *F,
 //  Functions "exported" to the running application...
 //
 
-// Visual Studio warns about returning GenericValue in extern "C" linkage
-#ifdef _MSC_VER
-    #pragma warning(disable : 4190)
-#endif
-
-extern "C" {  // Don't add C++ manglings to llvm mangling :)
-
 // void atexit(Function*)
+static
 GenericValue lle_X_atexit(FunctionType *FT,
                           const std::vector<GenericValue> &Args) {
   assert(Args.size() == 1);
@@ -315,6 +309,7 @@ GenericValue lle_X_atexit(FunctionType *FT,
 }
 
 // void exit(int)
+static
 GenericValue lle_X_exit(FunctionType *FT,
                         const std::vector<GenericValue> &Args) {
   TheInterpreter->exitCalled(Args[0]);
@@ -322,6 +317,7 @@ GenericValue lle_X_exit(FunctionType *FT,
 }
 
 // void abort(void)
+static
 GenericValue lle_X_abort(FunctionType *FT,
                          const std::vector<GenericValue> &Args) {
   //FIXME: should we report or raise here?
@@ -332,6 +328,7 @@ GenericValue lle_X_abort(FunctionType *FT,
 
 // int sprintf(char *, const char *, ...) - a very rough implementation to make
 // output useful.
+static
 GenericValue lle_X_sprintf(FunctionType *FT,
                            const std::vector<GenericValue> &Args) {
   char *OutputBuffer = (char *)GVTOP(Args[0]);
@@ -409,11 +406,11 @@ GenericValue lle_X_sprintf(FunctionType *FT,
       break;
     }
   }
-  return GV;
 }
 
 // int printf(const char *, ...) - a very rough implementation to make output
 // useful.
+static
 GenericValue lle_X_printf(FunctionType *FT,
                           const std::vector<GenericValue> &Args) {
   char Buffer[10000];
@@ -426,6 +423,7 @@ GenericValue lle_X_printf(FunctionType *FT,
 }
 
 // int sscanf(const char *format, ...);
+static
 GenericValue lle_X_sscanf(FunctionType *FT,
                           const std::vector<GenericValue> &args) {
   assert(args.size() < 10 && "Only handle up to 10 args to sscanf right now!");
@@ -441,6 +439,7 @@ GenericValue lle_X_sscanf(FunctionType *FT,
 }
 
 // int scanf(const char *format, ...);
+static
 GenericValue lle_X_scanf(FunctionType *FT,
                          const std::vector<GenericValue> &args) {
   assert(args.size() < 10 && "Only handle up to 10 args to scanf right now!");
@@ -457,6 +456,7 @@ GenericValue lle_X_scanf(FunctionType *FT,
 
 // int fprintf(FILE *, const char *, ...) - a very rough implementation to make
 // output useful.
+static
 GenericValue lle_X_fprintf(FunctionType *FT,
                            const std::vector<GenericValue> &Args) {
   assert(Args.size() >= 2);
@@ -469,14 +469,6 @@ GenericValue lle_X_fprintf(FunctionType *FT,
   fputs(Buffer, (FILE *) GVTOP(Args[0]));
   return GV;
 }
-
-} // End extern "C"
-
-// Done with externals; turn the warning back on
-#ifdef _MSC_VER
-    #pragma warning(default: 4190)
-#endif
-
 
 void Interpreter::initializeExternalFunctions() {
   sys::ScopedLock Writer(*FunctionsLock);

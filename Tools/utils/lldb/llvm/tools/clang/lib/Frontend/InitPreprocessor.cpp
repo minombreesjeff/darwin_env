@@ -127,7 +127,7 @@ static void DefineFloatMacros(MacroBuilder &Builder, StringRef Prefix,
                "1.79769313486231580793728971405301e+308L",
                "1.18973149535723176508575932662800702e+4932L");
 
-  llvm::SmallString<32> DefPrefix;
+  SmallString<32> DefPrefix;
   DefPrefix = "__";
   DefPrefix += Prefix;
   DefPrefix += "_";
@@ -267,11 +267,8 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__STDC_HOSTED__");
 
   if (!LangOpts.CPlusPlus) {
-    // FIXME: C1x doesn't have a defined version number yet, so pick something
-    // that is the minimum possible according to their placeholder scheme
-    // 201ymmL.
-    if (LangOpts.C1X)
-      Builder.defineMacro("__STDC_VERSION__", "201001L");
+    if (LangOpts.C11)
+      Builder.defineMacro("__STDC_VERSION__", "201112L");
     else if (LangOpts.C99)
       Builder.defineMacro("__STDC_VERSION__", "199901L");
     else if (!LangOpts.GNUMode && LangOpts.Digraphs)
@@ -327,6 +324,17 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   Builder.defineMacro("__GNUC_PATCHLEVEL__", "1");
   Builder.defineMacro("__GNUC__", "4");
   Builder.defineMacro("__GXX_ABI_VERSION", "1002");
+
+  // Define macros for the C11 / C++11 memory orderings
+  Builder.defineMacro("__ATOMIC_RELAXED", "0");
+  Builder.defineMacro("__ATOMIC_CONSUME", "1");
+  Builder.defineMacro("__ATOMIC_ACQUIRE", "2");
+  Builder.defineMacro("__ATOMIC_RELEASE", "3");
+  Builder.defineMacro("__ATOMIC_ACQ_REL", "4");
+  Builder.defineMacro("__ATOMIC_SEQ_CST", "5");
+
+  // Support for #pragma redefine_extname (Sun compatibility)
+  Builder.defineMacro("__PRAGMA_REDEFINE_EXTNAME", "1");
 
   // As sad as it is, enough software depends on the __VERSION__ for version
   // checks that it is necessary to report 4.2.1 (the base GCC version we claim
@@ -413,6 +421,9 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__OPTIMIZE__");
   if (LangOpts.OptimizeSize)
     Builder.defineMacro("__OPTIMIZE_SIZE__");
+
+  if (LangOpts.FastMath)
+    Builder.defineMacro("__FAST_MATH__");
 
   // Initialize target-specific preprocessor defines.
 
@@ -516,7 +527,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   }
 
   // Macros to control C99 numerics and <float.h>
-  Builder.defineMacro("__FLT_EVAL_METHOD__", "0");
+  Builder.defineMacro("__FLT_EVAL_METHOD__", Twine(TI.getFloatEvalMethod()));
   Builder.defineMacro("__FLT_RADIX__", "2");
   int Dig = PickFP(&TI.getLongDoubleFormat(), -1/*FIXME*/, 17, 21, 33, 36);
   Builder.defineMacro("__DECIMAL_DIG__", Twine(Dig));
@@ -626,10 +637,6 @@ void clang::InitializePreprocessor(Preprocessor &PP,
 
   InitializeFileRemapping(PP.getDiagnostics(), PP.getSourceManager(),
                           PP.getFileManager(), InitOpts);
-
-  // Specify whether the preprocessor should replace #include/#import with
-  // module imports when plausible.
-  PP.setAutoModuleImport(InitOpts.AutoModuleImport);
 
   // Emit line markers for various builtin sections of the file.  We don't do
   // this in asm preprocessor mode, because "# 4" is not a line marker directive

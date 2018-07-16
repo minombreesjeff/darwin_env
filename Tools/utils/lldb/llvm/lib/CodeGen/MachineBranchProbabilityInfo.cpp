@@ -26,8 +26,10 @@ INITIALIZE_PASS_END(MachineBranchProbabilityInfo, "machine-branch-prob",
 
 char MachineBranchProbabilityInfo::ID = 0;
 
+void MachineBranchProbabilityInfo::anchor() { }
+
 uint32_t MachineBranchProbabilityInfo::
-getSumForBlock(MachineBasicBlock *MBB, uint32_t &Scale) const {
+getSumForBlock(const MachineBasicBlock *MBB, uint32_t &Scale) const {
   // First we compute the sum with 64-bits of precision, ensuring that cannot
   // overflow by bounding the number of weights considered. Hopefully no one
   // actually needs 2^32 successors.
@@ -59,8 +61,8 @@ getSumForBlock(MachineBasicBlock *MBB, uint32_t &Scale) const {
 }
 
 uint32_t
-MachineBranchProbabilityInfo::getEdgeWeight(MachineBasicBlock *Src,
-                                            MachineBasicBlock *Dst) const {
+MachineBranchProbabilityInfo::getEdgeWeight(const MachineBasicBlock *Src,
+                                            const MachineBasicBlock *Dst) const {
   uint32_t Weight = Src->getSuccWeight(Dst);
   if (!Weight)
     return DEFAULT_WEIGHT;

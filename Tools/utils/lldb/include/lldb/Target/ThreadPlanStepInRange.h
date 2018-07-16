@@ -43,14 +43,14 @@ public:
 
     void SetAvoidRegexp(const char *name);
     
-    virtual bool
-    PlanExplainsStop ();
-
     static ThreadPlan *
     DefaultShouldStopHereCallback (ThreadPlan *current_plan, Flags &flags, void *baton);
 
     static void
     SetDefaultFlagValue (uint32_t new_value);
+
+    virtual bool
+    PlanExplainsStop ();
 
 protected:
 

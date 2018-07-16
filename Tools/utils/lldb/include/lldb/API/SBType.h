@@ -24,11 +24,9 @@ public:
     SBTypeMember (const lldb::SBTypeMember& rhs);
     
     ~SBTypeMember();
-    
-#ifndef SWIG
+
     lldb::SBTypeMember&
     operator = (const lldb::SBTypeMember& rhs);
-#endif
 
     bool
     IsValid() const;
@@ -52,7 +50,6 @@ public:
 protected:
     friend class SBType;
 
-#ifndef SWIG
     void
     reset (lldb_private::TypeMemberImpl *);
 
@@ -61,7 +58,6 @@ protected:
 
     const lldb_private::TypeMemberImpl &
     ref () const;
-#endif
 
     std::auto_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
 };
@@ -124,11 +120,23 @@ public:
     lldb::SBTypeMember
     GetVirtualBaseClassAtIndex (uint32_t idx);
 
+    uint32_t
+    GetNumberOfTemplateArguments ();
+    
+    lldb::SBType
+    GetTemplateArgumentType (uint32_t idx);
+
+    lldb::TemplateArgumentKind
+    GetTemplateArgumentKind (uint32_t idx);
+
     const char*
     GetName();
     
     lldb::TypeClass
     GetTypeClass ();
+    
+    bool
+    IsTypeComplete ();
 
     // DEPRECATED: but needed for Xcode right now
     static bool
@@ -138,9 +146,6 @@ public:
     GetDescription (lldb::SBStream &description, 
                     lldb::DescriptionLevel description_level);
 
-protected:
-    
-#ifndef SWIG
     lldb::SBType &
     operator = (const lldb::SBType &rhs);
     
@@ -150,24 +155,29 @@ protected:
     bool
     operator != (lldb::SBType &rhs);
     
+protected:
+
     lldb_private::TypeImpl &
     ref ();
     
     const lldb_private::TypeImpl &
     ref () const;
     
+    lldb::TypeImplSP
+    GetSP ();
+
     void
-    reset(const lldb::TypeImplSP &type_impl_sp);
-#endif
-    
+    SetSP (const lldb::TypeImplSP &type_impl_sp);    
 
     lldb::TypeImplSP m_opaque_sp;
     
+    friend class SBFunction;
     friend class SBModule;
     friend class SBTarget;
-    friend class SBValue;
+    friend class SBTypeNameSpecifier;
     friend class SBTypeMember;
     friend class SBTypeList;
+    friend class SBValue;
         
     SBType (const lldb_private::ClangASTType &);
     SBType (const lldb::TypeSP &);

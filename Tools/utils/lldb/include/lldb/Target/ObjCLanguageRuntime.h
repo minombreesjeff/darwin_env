@@ -18,6 +18,7 @@
 // Project includes
 #include "lldb/lldb-private.h"
 #include "lldb/Core/PluginInterface.h"
+#include "lldb/Symbol/Type.h"
 #include "lldb/Target/LanguageRuntime.h"
 
 namespace lldb_private {
@@ -63,6 +64,9 @@ public:
     
     void
     AddToClassNameCache (lldb::addr_t class_addr, const TypeAndOrName &class_or_type_name);
+    
+    lldb::TypeSP
+    LookupInCompleteClassCache (ConstString &name);
     
     virtual ClangUtilityFunction *
     CreateObjectChecker (const char *) = 0;
@@ -187,11 +191,30 @@ public:
             return false;
     }
     
+    bool
+    HasNewLiteralsAndIndexing ()
+    {
+        if (m_has_new_literals_and_indexing == eLazyBoolCalculate)
+        {
+            if (CalculateHasNewLiteralsAndIndexing())
+                m_has_new_literals_and_indexing = eLazyBoolYes;
+            else
+                m_has_new_literals_and_indexing = eLazyBoolNo;
+        }
+        
+        return (m_has_new_literals_and_indexing == eLazyBoolYes);
+    }
+    
 protected:
     //------------------------------------------------------------------
     // Classes that inherit from ObjCLanguageRuntime can see and modify these
     //------------------------------------------------------------------
     ObjCLanguageRuntime(Process *process);
+    
+    virtual bool CalculateHasNewLiteralsAndIndexing()
+    {
+        return false;
+    }
 private:
     // We keep a map of <Class,Selector>->Implementation so we don't have to call the resolver
     // function over and over.
@@ -242,10 +265,14 @@ private:
     typedef std::map<ClassAndSel,lldb::addr_t> MsgImplMap;
     MsgImplMap m_impl_cache;
     
+    LazyBool m_has_new_literals_and_indexing;
 protected:
     typedef std::map<lldb::addr_t,TypeAndOrName> ClassNameMap;
     typedef ClassNameMap::iterator ClassNameIterator;
     ClassNameMap m_class_name_cache;
+    
+    typedef std::map<ConstString, lldb::TypeWP> CompleteClassMap;
+    CompleteClassMap m_complete_class_cache;
 
     DISALLOW_COPY_AND_ASSIGN (ObjCLanguageRuntime);
 };

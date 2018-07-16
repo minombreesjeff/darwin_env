@@ -47,8 +47,7 @@ static struct TripleMap triplemap[] = {
   { Triple::x86,          "i386-unknown-unknown"    },
   { Triple::x86_64,       "x86_64-unknown-unknown"  },
   { Triple::arm,          "arm-unknown-unknown"     },
-  { Triple::thumb,        "thumb-unknown-unknown"   },
-  { Triple::InvalidArch,  NULL,                     }
+  { Triple::thumb,        "thumb-unknown-unknown"   }
 };
 
 /// infoFromArch - Returns the TripleMap corresponding to a given architecture,
@@ -75,25 +74,22 @@ static const char *tripleFromArch(Triple::ArchType arch) {
 static int getLLVMSyntaxVariant(Triple::ArchType arch,
                                 EDDisassembler::AssemblySyntax syntax) {
   switch (syntax) {
-  default:
-    return -1;
   // Mappings below from X86AsmPrinter.cpp
   case EDDisassembler::kEDAssemblySyntaxX86ATT:
     if (arch == Triple::x86 || arch == Triple::x86_64)
       return 0;
-    else
-      return -1;
+    break;
   case EDDisassembler::kEDAssemblySyntaxX86Intel:
     if (arch == Triple::x86 || arch == Triple::x86_64)
       return 1;
-    else
-      return -1;
+    break;
   case EDDisassembler::kEDAssemblySyntaxARMUAL:
     if (arch == Triple::arm || arch == Triple::thumb)
       return 0;
-    else
-      return -1;
+    break;
   }
+
+  return -1;
 }
 
 EDDisassembler *EDDisassembler::getDisassembler(Triple::ArchType arch,
@@ -107,27 +103,22 @@ EDDisassembler *EDDisassembler::getDisassembler(StringRef str,
   CPUKey key;
   key.Triple = str.str();
   key.Syntax = syntax;
-  
+
   EDDisassembler::DisassemblerMap_t::iterator i = sDisassemblers.find(key);
-    
+
   if (i != sDisassemblers.end()) {
     return i->second;  
   }
-  else {
-    EDDisassembler *sdd = new EDDisassembler(key);
-    if (!sdd->valid()) {
-      delete sdd;
-      return NULL;
-    }
-    
-    sDisassemblers[key] = sdd;
-    
-    return sdd;
+
+  EDDisassembler *sdd = new EDDisassembler(key);
+  if (!sdd->valid()) {
+    delete sdd;
+    return NULL;
   }
-  
-  return NULL;
-    
-  return getDisassembler(Triple(str).getArch(), syntax);
+
+  sDisassemblers[key] = sdd;
+
+  return sdd;
 }
 
 EDDisassembler::EDDisassembler(CPUKey &key) : 
@@ -136,8 +127,6 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   ErrorStream(nulls()), 
   Key(key),
   TgtTriple(key.Triple.c_str()) {        
-  if (TgtTriple.getArch() == Triple::InvalidArch)
-    return;
   
   LLVMSyntaxVariant = getLLVMSyntaxVariant(TgtTriple.getArch(), key.Syntax);
   
@@ -179,7 +168,8 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   
   InstString.reset(new std::string);
   InstStream.reset(new raw_string_ostream(*InstString));
-  InstPrinter.reset(Tgt->createMCInstPrinter(LLVMSyntaxVariant, *AsmInfo, *STI));
+  InstPrinter.reset(Tgt->createMCInstPrinter(LLVMSyntaxVariant, *AsmInfo,
+                                             *MRI, *STI));
   
   if (!InstPrinter)
     return;

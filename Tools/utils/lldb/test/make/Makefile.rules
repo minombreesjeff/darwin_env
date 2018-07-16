@@ -70,7 +70,7 @@ endif
 CXXFLAGS +=$(CFLAGS)
 LD = $(CC)
 LDFLAGS ?= $(CFLAGS)
-LDFLAGS += $(LD_EXTRAS)
+LDFLAGS += $(LD_EXTRAS) -arch $(ARCH)
 OBJECTS =
 EXE ?= a.out
 
@@ -93,6 +93,10 @@ cxx_linker = $(if $(findstring clang,$(1)), $(subst clang,clang++,$(1)), $(if $(
 #----------------------------------------------------------------------
 ifneq "$(strip $(DYLIB_C_SOURCES))" ""
 	DYLIB_OBJECTS +=$(strip $(DYLIB_C_SOURCES:.c=.o))
+endif
+
+ifneq "$(strip $(DYLIB_OBJC_SOURCES))" ""
+	DYLIB_OBJECTS +=$(strip $(DYLIB_OBJC_SOURCES:.m=.o))
 endif
 
 ifneq "$(strip $(DYLIB_CXX_SOURCES))" ""
@@ -132,7 +136,7 @@ ifneq "$(strip $(OBJCXX_SOURCES))" ""
 	OBJECTS +=$(strip $(OBJCXX_SOURCES:.mm=.o))
 	CXX = $(call cxx_compiler,$(CC))
 	LD = $(call cxx_linker,$(CC))
-	ifeq $(findstring lobjc,$(LDFLAGS)) ""
+	ifeq "$(findstring lobjc,$(LDFLAGS))" ""
 		LDFLAGS +=-lobjc
 	endif
 endif
@@ -168,7 +172,7 @@ ifneq "$(strip $(ARCHIVE_OBJCXX_SOURCES))" ""
 	ARCHIVE_OBJECTS +=$(strip $(ARCHIVE_OBJCXX_SOURCES:.mm=.o))
 	CXX = $(call cxx_compiler,$(CC))
 	LD = $(call cxx_linker,$(CC))
-	ifeq $(findstring lobjc,$(LDFLAGS)) ""
+	ifeq "$(findstring lobjc,$(LDFLAGS))" ""
 		LDFLAGS +=-lobjc
 	endif
 endif
@@ -278,6 +282,11 @@ sinclude $(PREREQS)
 ifneq "$(DYLIB_NAME)" ""
 	sinclude $(DYLIB_PREREQS)
 endif
+
+# Define a suffix rule for .mm -> .o
+.SUFFIXES: .mm .o
+.mm.o:
+	$(CXX) $(CXXFLAGS) -c $<
 
 .PHONY: clean
 dsym:	$(DSYM)

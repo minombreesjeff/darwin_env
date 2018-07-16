@@ -42,6 +42,7 @@ class ClangExternalASTSourceCommon : public clang::ExternalASTSource
 {
 public:
     ClangExternalASTSourceCommon();
+    ~ClangExternalASTSourceCommon();
     
     virtual uint64_t GetMetadata(uintptr_t object);
     virtual void SetMetadata(uintptr_t object, uint64_t metadata);
@@ -56,7 +57,7 @@ private:
                                 ///< from ClangExternalASTSourceCommon.  This magic
                                 ///< number exists to enforce that.
 };
-    
-};
+
+}
 
 #endif

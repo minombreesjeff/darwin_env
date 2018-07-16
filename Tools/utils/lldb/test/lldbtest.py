@@ -9,88 +9,23 @@ to locate the individual test cases when running as part of a large test suite
 or when running each test case as a separate python invocation.
 
 ./dotest.py provides a test driver which sets up the environment to run the
-entire test suite.  Users who want to run a test case on its own can specify the
-LLDB_TEST and PYTHONPATH environment variables, for example:
+entire of part of the test suite .  Example:
 
-$ export LLDB_TEST=$PWD
-$ export PYTHONPATH=/Volumes/data/lldb/svn/trunk/build/Debug/LLDB.framework/Resources/Python:$LLDB_TEST:$LLDB_TEST/plugins:$LLDB_TEST/pexpect-2.4
-$ echo $LLDB_TEST
-/Volumes/data/lldb/svn/trunk/test
-$ echo $PYTHONPATH
-/Volumes/data/lldb/svn/trunk/build/Debug/LLDB.framework/Resources/Python:/Volumes/data/lldb/svn/trunk/test:/Volumes/data/lldb/svn/trunk/test/plugins
-$ python function_types/TestFunctionTypes.py
-.
-----------------------------------------------------------------------
-Ran 1 test in 0.363s
-
-OK
-$ LLDB_COMMAND_TRACE=YES python array_types/TestArrayTypes.py
-
+# Exercises the test suite in the types directory....
+/Volumes/data/lldb/svn/ToT/test $ ./dotest.py -A x86_64 types
 ...
 
-runCmd: breakpoint set -f main.c -l 42
-output: Breakpoint created: 1: file ='main.c', line = 42, locations = 1
+Session logs for test failures/errors/unexpected successes will go into directory '2012-05-16-13_35_42'
+Command invoked: python ./dotest.py -A x86_64 types
+compilers=['clang']
 
-runCmd: run
-output: Launching '/Volumes/data/lldb/svn/trunk/test/array_types/a.out'  (x86_64)
-
-...
-
-runCmd: frame variable strings
-output: (char *[4]) strings = {
-  (char *) strings[0] = 0x0000000100000f0c "Hello",
-  (char *) strings[1] = 0x0000000100000f12 "Hola",
-  (char *) strings[2] = 0x0000000100000f17 "Bonjour",
-  (char *) strings[3] = 0x0000000100000f1f "Guten Tag"
-}
-
-runCmd: frame variable char_16
-output: (char [16]) char_16 = {
-  (char) char_16[0] = 'H',
-  (char) char_16[1] = 'e',
-  (char) char_16[2] = 'l',
-  (char) char_16[3] = 'l',
-  (char) char_16[4] = 'o',
-  (char) char_16[5] = ' ',
-  (char) char_16[6] = 'W',
-  (char) char_16[7] = 'o',
-  (char) char_16[8] = 'r',
-  (char) char_16[9] = 'l',
-  (char) char_16[10] = 'd',
-  (char) char_16[11] = '\n',
-  (char) char_16[12] = '\0',
-  (char) char_16[13] = '\0',
-  (char) char_16[14] = '\0',
-  (char) char_16[15] = '\0'
-}
-
-runCmd: frame variable ushort_matrix
-output: (unsigned short [2][3]) ushort_matrix = {
-  (unsigned short [3]) ushort_matrix[0] = {
-    (unsigned short) ushort_matrix[0][0] = 0x0001,
-    (unsigned short) ushort_matrix[0][1] = 0x0002,
-    (unsigned short) ushort_matrix[0][2] = 0x0003
-  },
-  (unsigned short [3]) ushort_matrix[1] = {
-    (unsigned short) ushort_matrix[1][0] = 0x000b,
-    (unsigned short) ushort_matrix[1][1] = 0x0016,
-    (unsigned short) ushort_matrix[1][2] = 0x0021
-  }
-}
-
-runCmd: frame variable long_6
-output: (long [6]) long_6 = {
-  (long) long_6[0] = 1,
-  (long) long_6[1] = 2,
-  (long) long_6[2] = 3,
-  (long) long_6[3] = 4,
-  (long) long_6[4] = 5,
-  (long) long_6[5] = 6
-}
-
-.
+Configuration: arch=x86_64 compiler=clang
 ----------------------------------------------------------------------
-Ran 1 test in 0.349s
+Collected 72 tests
+
+........................................................................
+----------------------------------------------------------------------
+Ran 72 tests in 135.468s
 
 OK
 $ 
@@ -196,6 +131,8 @@ VALID_SYMBOL = "Got a valid symbol"
 
 VALID_TARGET = "Got a valid target"
 
+VALID_TYPE = "Got a valid type"
+
 VALID_VARIABLE = "Got a valid variable"
 
 VARIABLES_DISPLAYED_CORRECTLY = "Variable(s) displayed correctly"
@@ -206,7 +143,7 @@ def CMD_MSG(str):
     '''A generic "Command '%s' returns successfully" message generator.'''
     return "Command '%s' returns successfully" % str
 
-def COMPLETIOND_MSG(str_before, str_after):
+def COMPLETION_MSG(str_before, str_after):
     '''A generic message generator for the completion mechanism.'''
     return "'%s' successfully completes to '%s'" % (str_before, str_after)
 
@@ -237,6 +174,23 @@ def pointer_size():
     import ctypes
     a_pointer = ctypes.c_void_p(0xffff)
     return 8 * ctypes.sizeof(a_pointer)
+
+def is_exe(fpath):
+    """Returns true if fpath is an executable."""
+    return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+def which(program):
+    """Returns the full path to a program; None otherwise."""
+    fpath, fname = os.path.split(program)
+    if fpath:
+        if is_exe(program):
+            return program
+    else:
+        for path in os.environ["PATH"].split(os.pathsep):
+            exe_file = os.path.join(path, program)
+            if is_exe(exe_file):
+                return exe_file
+    return None
 
 class recording(StringIO.StringIO):
     """
@@ -375,6 +329,40 @@ def benchmarks_test(func):
 
     # Mark this function as such to separate them from the regular tests.
     wrapper.__benchmarks_test__ = True
+    return wrapper
+
+def dsym_test(func):
+    """Decorate the item as a dsym test."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@dsym_test can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            if lldb.dont_do_dsym_test:
+                self.skipTest("dsym tests")
+        except AttributeError:
+            pass
+        return func(self, *args, **kwargs)
+
+    # Mark this function as such to separate them from the regular tests.
+    wrapper.__dsym_test__ = True
+    return wrapper
+
+def dwarf_test(func):
+    """Decorate the item as a dwarf test."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@dwarf_test can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            if lldb.dont_do_dwarf_test:
+                self.skipTest("dwarf tests")
+        except AttributeError:
+            pass
+        return func(self, *args, **kwargs)
+
+    # Mark this function as such to separate them from the regular tests.
+    wrapper.__dwarf_test__ = True
     return wrapper
 
 def expectedFailureClang(func):
@@ -687,6 +675,8 @@ class Base(unittest2.TestCase):
                 self.child.expect(pexpect.EOF)
             except:
                 pass
+            # Give it one final blow to make sure the child is terminated.
+            self.child.close()
 
         # Check and run any hook functions.
         for hook in reversed(self.hooks):
@@ -811,7 +801,7 @@ class Base(unittest2.TestCase):
                              os.environ["LLDB_SESSION_DIRNAME"])
         if not os.path.isdir(dname):
             os.mkdir(dname)
-        fname = os.path.join(dname, "%s-%s.log" % (prefix, self.id()))
+        fname = os.path.join(dname, "%s-%s-%s-%s.log" % (prefix, self.getArchitecture(), self.getCompiler(), self.id()))
         with open(fname, "w") as f:
             import datetime
             print >> f, "Session info generated @", datetime.datetime.now().ctime()
@@ -847,35 +837,35 @@ class Base(unittest2.TestCase):
         else:
             option_str = ""
         if comp:
-            option_str += "-C " + comp
+            option_str += " -C " + comp
         return option_str
 
     # ==================================================
     # Build methods supported through a plugin interface
     # ==================================================
 
-    def buildDefault(self, architecture=None, compiler=None, dictionary=None):
+    def buildDefault(self, architecture=None, compiler=None, dictionary=None, clean=True):
         """Platform specific way to build the default binaries."""
         if lldb.skip_build_and_cleanup:
             return
         module = builder_module()
-        if not module.buildDefault(self, architecture, compiler, dictionary):
+        if not module.buildDefault(self, architecture, compiler, dictionary, clean):
             raise Exception("Don't know how to build default binary")
 
-    def buildDsym(self, architecture=None, compiler=None, dictionary=None):
+    def buildDsym(self, architecture=None, compiler=None, dictionary=None, clean=True):
         """Platform specific way to build binaries with dsym info."""
         if lldb.skip_build_and_cleanup:
             return
         module = builder_module()
-        if not module.buildDsym(self, architecture, compiler, dictionary):
+        if not module.buildDsym(self, architecture, compiler, dictionary, clean):
             raise Exception("Don't know how to build binary with dsym")
 
-    def buildDwarf(self, architecture=None, compiler=None, dictionary=None):
+    def buildDwarf(self, architecture=None, compiler=None, dictionary=None, clean=True):
         """Platform specific way to build binaries with dwarf maps."""
         if lldb.skip_build_and_cleanup:
             return
         module = builder_module()
-        if not module.buildDwarf(self, architecture, compiler, dictionary):
+        if not module.buildDwarf(self, architecture, compiler, dictionary, clean):
             raise Exception("Don't know how to build binary with dwarf")
 
     def cleanup(self, dictionary=None):
@@ -1003,6 +993,10 @@ class TestBase(Base):
         # And the result object.
         self.res = lldb.SBCommandReturnObject()
 
+        # Run global pre-flight code, if defined via the config file.
+        if lldb.pre_flight:
+            lldb.pre_flight(self)
+
     def tearDown(self):
         #import traceback
         #traceback.print_stack()
@@ -1023,6 +1017,10 @@ class TestBase(Base):
                     self.assertTrue(rc.Success(), PROCESS_KILLED)
         for target in targets:
             self.dbg.DeleteTarget(target)
+
+        # Run global post-flight code, if defined via the config file.
+        if lldb.post_flight:
+            lldb.post_flight(self)
 
         del self.dbg
 

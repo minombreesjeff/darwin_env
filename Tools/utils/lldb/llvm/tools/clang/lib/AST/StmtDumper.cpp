@@ -112,6 +112,7 @@ namespace  {
       case OK_Ordinary: break;
       case OK_BitField: OS << " bitfield"; break;
       case OK_ObjCProperty: OS << " objcproperty"; break;
+      case OK_ObjCSubscript: OS << " objcsubscript"; break;
       case OK_VectorComponent: OS << " vectorcomponent"; break;
       }
     }
@@ -168,7 +169,9 @@ namespace  {
     void VisitObjCSelectorExpr(ObjCSelectorExpr *Node);
     void VisitObjCProtocolExpr(ObjCProtocolExpr *Node);
     void VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node);
+    void VisitObjCSubscriptRefExpr(ObjCSubscriptRefExpr *Node);
     void VisitObjCIvarRefExpr(ObjCIvarRefExpr *Node);
+    void VisitObjCBoolLiteralExpr(ObjCBoolLiteralExpr *Node);
   };
 }
 
@@ -287,7 +290,7 @@ void StmtDumper::DumpDeclarator(Decl *D) {
                         PrintingPolicy(UD->getASTContext().getLangOptions()));
     OS << ";\"";
   } else if (LabelDecl *LD = dyn_cast<LabelDecl>(D)) {
-    OS << "label " << LD->getNameAsString();
+    OS << "label " << *LD;
   } else if (StaticAssertDecl *SAD = dyn_cast<StaticAssertDecl>(D)) {
     OS << "\"static_assert(\n";
     DumpSubTree(SAD->getAssertExpr());
@@ -516,7 +519,8 @@ void StmtDumper::VisitBlockExpr(BlockExpr *Node) {
     OS << "(capture ";
     if (i->isByRef()) OS << "byref ";
     if (i->isNested()) OS << "nested ";
-    DumpDeclRef(i->getVariable());
+    if (i->getVariable())
+      DumpDeclRef(i->getVariable());
     if (i->hasCopyExpr()) DumpSubTree(i->getCopyExpr());
     OS << ")";
   }
@@ -679,6 +683,32 @@ void StmtDumper::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
 
   if (Node->isSuperReceiver())
     OS << " super";
+}
+
+void StmtDumper::VisitObjCSubscriptRefExpr(ObjCSubscriptRefExpr *Node) {
+  DumpExpr(Node);
+  if (Node->isArraySubscriptRefExpr())
+    OS << " Kind=ArraySubscript GetterForArray=\"";
+  else
+    OS << " Kind=DictionarySubscript GetterForDictionary=\"";
+  if (Node->getAtIndexMethodDecl())
+    OS << Node->getAtIndexMethodDecl()->getSelector().getAsString();
+  else
+    OS << "(null)";
+  
+  if (Node->isArraySubscriptRefExpr())
+    OS << "\" SetterForArray=\"";
+  else
+    OS << "\" SetterForDictionary=\"";
+  if (Node->setAtIndexMethodDecl())
+    OS << Node->setAtIndexMethodDecl()->getSelector().getAsString();
+  else
+    OS << "(null)";
+}
+
+void StmtDumper::VisitObjCBoolLiteralExpr(ObjCBoolLiteralExpr *Node) {
+  DumpExpr(Node);
+  OS << " " << (Node->getValue() ? "__objc_yes" : "__objc_no");
 }
 
 //===----------------------------------------------------------------------===//

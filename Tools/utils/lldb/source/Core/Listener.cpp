@@ -40,6 +40,13 @@ Listener::Listener(const char *name) :
 Listener::~Listener()
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    Mutex::Locker locker (m_broadcasters_mutex);
+    
+    size_t num_managers = m_broadcaster_managers.size();
+    
+    for (int i = 0; i < num_managers; i++)
+        m_broadcaster_managers[i]->RemoveListener(*this);
+        
     if (log)
         log->Printf ("%p Listener::~Listener('%s')", this, m_name.c_str());
     Clear();
@@ -161,6 +168,16 @@ Listener::BroadcasterWillDestruct (Broadcaster *broadcaster)
             m_cond_wait.SetValue (false, eBroadcastNever);
 
     }
+}
+
+void
+Listener::BroadcasterManagerWillDestruct (BroadcasterManager *manager)
+{
+    // Just need to remove this broadcast manager from the list of managers:
+    broadcaster_manager_collection::iterator iter, end_iter = m_broadcaster_managers.end();
+    iter = find(m_broadcaster_managers.begin(), end_iter, manager);
+    if (iter != end_iter)
+        m_broadcaster_managers.erase (iter);
 }
 
 void
@@ -286,7 +303,7 @@ Listener::FindNextEventInternal
         // Unlock the event queue here.  We've removed this event and are about to return
         // it so it should be okay to get the next event off the queue here - and it might
         // be useful to do that in the "DoOnRemoval".
-        lock.Reset();
+        lock.Unlock();
         event_sp->DoOnRemoval();
         return true;
     }
@@ -483,3 +500,27 @@ Listener::HandleBroadcastEvent (EventSP &event_sp)
     }
     return num_handled;
 }
+
+uint32_t
+Listener::StartListeningForEventSpec (BroadcasterManager &manager, 
+                             const BroadcastEventSpec &event_spec)
+{
+    Mutex::Locker locker(m_broadcasters_mutex);
+
+    uint32_t bits_acquired = manager.RegisterListenerForEvents(*this, event_spec);
+    if (bits_acquired)
+        m_broadcaster_managers.push_back(&manager);
+        
+    return bits_acquired;
+}
+    
+bool
+Listener::StopListeningForEventSpec (BroadcasterManager &manager, 
+                             const BroadcastEventSpec &event_spec)
+{
+    Mutex::Locker locker(m_broadcasters_mutex);
+    return manager.UnregisterListenerForEvents (*this, event_spec);
+
+}
+    
+

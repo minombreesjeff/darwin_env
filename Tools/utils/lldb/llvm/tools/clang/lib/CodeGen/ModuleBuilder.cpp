@@ -28,12 +28,12 @@ using namespace clang;
 namespace {
   class CodeGeneratorImpl : public CodeGenerator {
     DiagnosticsEngine &Diags;
-    llvm::OwningPtr<const llvm::TargetData> TD;
+    OwningPtr<const llvm::TargetData> TD;
     ASTContext *Ctx;
     const CodeGenOptions CodeGenOpts;  // Intentionally copied in.
   protected:
-    llvm::OwningPtr<llvm::Module> M;
-    llvm::OwningPtr<CodeGen::CodeGenModule> Builder;
+    OwningPtr<llvm::Module> M;
+    OwningPtr<CodeGen::CodeGenModule> Builder;
   public:
     CodeGeneratorImpl(DiagnosticsEngine &diags, const std::string& ModuleName,
                       const CodeGenOptions &CGO, llvm::LLVMContext& C)
@@ -57,6 +57,10 @@ namespace {
       TD.reset(new llvm::TargetData(Ctx->getTargetInfo().getTargetDescription()));
       Builder.reset(new CodeGen::CodeGenModule(Context, CodeGenOpts,
                                                *M, *TD, Diags));
+    }
+
+    virtual void MarkVarRequired(VarDecl *VD) {
+      Builder->MarkVarRequired(VD);
     }
 
     virtual bool HandleTopLevelDecl(DeclGroupRef DG) {
@@ -112,6 +116,8 @@ namespace {
     }
   };
 }
+
+void CodeGenerator::anchor() { }
 
 CodeGenerator *clang::CreateLLVMCodeGen(DiagnosticsEngine &Diags,
                                         const std::string& ModuleName,

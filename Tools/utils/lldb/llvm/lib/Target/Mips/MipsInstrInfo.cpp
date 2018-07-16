@@ -1,4 +1,4 @@
-//===- MipsInstrInfo.cpp - Mips Instruction Information ---------*- C++ -*-===//
+//===-- MipsInstrInfo.cpp - Mips Instruction Information ------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -32,7 +32,7 @@ MipsInstrInfo::MipsInstrInfo(MipsTargetMachine &tm)
     RI(*TM.getSubtargetImpl(), *this),
     UncondBrOpc(TM.getRelocationModel() == Reloc::PIC_ ? Mips::B : Mips::J) {}
 
-const MipsRegisterInfo &MipsInstrInfo::getRegisterInfo() const { 
+const MipsRegisterInfo &MipsInstrInfo::getRegisterInfo() const {
   return RI;
 }
 
@@ -157,7 +157,7 @@ copyPhysReg(MachineBasicBlock &MBB,
   assert(Opc && "Cannot copy registers");
 
   MachineInstrBuilder MIB = BuildMI(MBB, I, DL, get(Opc));
-  
+
   if (DestReg)
     MIB.addReg(DestReg, RegState::Define);
 
@@ -168,6 +168,16 @@ copyPhysReg(MachineBasicBlock &MBB,
     MIB.addReg(SrcReg, getKillRegState(KillSrc));
 }
 
+static MachineMemOperand* GetMemOperand(MachineBasicBlock &MBB, int FI,
+                                        unsigned Flag) {
+  MachineFunction &MF = *MBB.getParent();
+  MachineFrameInfo &MFI = *MF.getFrameInfo();
+  unsigned Align = MFI.getObjectAlignment(FI);
+
+  return MF.getMachineMemOperand(MachinePointerInfo::getFixedStack(FI), Flag,
+                                 MFI.getObjectSize(FI), Align);
+}
+
 void MipsInstrInfo::
 storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
                     unsigned SrcReg, bool isKill, int FI,
@@ -175,6 +185,8 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
                     const TargetRegisterInfo *TRI) const {
   DebugLoc DL;
   if (I != MBB.end()) DL = I->getDebugLoc();
+  MachineMemOperand *MMO = GetMemOperand(MBB, FI, MachineMemOperand::MOStore);
+
   unsigned Opc = 0;
 
   if (RC == Mips::CPURegsRegisterClass)
@@ -190,7 +202,7 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
 
   assert(Opc && "Register class not handled!");
   BuildMI(MBB, I, DL, get(Opc)).addReg(SrcReg, getKillRegState(isKill))
-    .addFrameIndex(FI).addImm(0);
+    .addFrameIndex(FI).addImm(0).addMemOperand(MMO);
 }
 
 void MipsInstrInfo::
@@ -201,6 +213,7 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
 {
   DebugLoc DL;
   if (I != MBB.end()) DL = I->getDebugLoc();
+  MachineMemOperand *MMO = GetMemOperand(MBB, FI, MachineMemOperand::MOLoad);
   unsigned Opc = 0;
 
   if (RC == Mips::CPURegsRegisterClass)
@@ -215,7 +228,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
     Opc = IsN64 ? Mips::LDC164_P8 : Mips::LDC164;
 
   assert(Opc && "Register class not handled!");
-  BuildMI(MBB, I, DL, get(Opc), DestReg).addFrameIndex(FI).addImm(0);
+  BuildMI(MBB, I, DL, get(Opc), DestReg).addFrameIndex(FI).addImm(0)
+    .addMemOperand(MMO);
 }
 
 MachineInstr*
@@ -246,21 +260,21 @@ static unsigned GetAnalyzableBrOpc(unsigned Opc) {
 unsigned Mips::GetOppositeBranchOpc(unsigned Opc)
 {
   switch (Opc) {
-  default: llvm_unreachable("Illegal opcode!");
-  case Mips::BEQ    : return Mips::BNE;
-  case Mips::BNE    : return Mips::BEQ;
-  case Mips::BGTZ   : return Mips::BLEZ;
-  case Mips::BGEZ   : return Mips::BLTZ;
-  case Mips::BLTZ   : return Mips::BGEZ;
-  case Mips::BLEZ   : return Mips::BGTZ;
-  case Mips::BEQ64  : return Mips::BNE64;
-  case Mips::BNE64  : return Mips::BEQ64;
-  case Mips::BGTZ64 : return Mips::BLEZ64;
-  case Mips::BGEZ64 : return Mips::BLTZ64;
-  case Mips::BLTZ64 : return Mips::BGEZ64;
-  case Mips::BLEZ64 : return Mips::BGTZ64;
-  case Mips::BC1T   : return Mips::BC1F;
-  case Mips::BC1F   : return Mips::BC1T;
+  default:           llvm_unreachable("Illegal opcode!");
+  case Mips::BEQ:    return Mips::BNE;
+  case Mips::BNE:    return Mips::BEQ;
+  case Mips::BGTZ:   return Mips::BLEZ;
+  case Mips::BGEZ:   return Mips::BLTZ;
+  case Mips::BLTZ:   return Mips::BGEZ;
+  case Mips::BLEZ:   return Mips::BGTZ;
+  case Mips::BEQ64:  return Mips::BNE64;
+  case Mips::BNE64:  return Mips::BEQ64;
+  case Mips::BGTZ64: return Mips::BLEZ64;
+  case Mips::BGEZ64: return Mips::BLTZ64;
+  case Mips::BLTZ64: return Mips::BGEZ64;
+  case Mips::BLEZ64: return Mips::BGTZ64;
+  case Mips::BC1T:   return Mips::BC1F;
+  case Mips::BC1F:   return Mips::BC1T;
   }
 }
 
@@ -269,7 +283,7 @@ static void AnalyzeCondBr(const MachineInstr* Inst, unsigned Opc,
                           SmallVectorImpl<MachineOperand>& Cond) {
   assert(GetAnalyzableBrOpc(Opc) && "Not an analyzable branch");
   int NumOp = Inst->getNumExplicitOperands();
-  
+
   // for both int and fp branches, the last explicit operand is the
   // MBB.
   BB = Inst->getOperand(NumOp-1).getMBB();
@@ -357,8 +371,8 @@ bool MipsInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
   FBB = LastInst->getOperand(0).getMBB();
 
   return false;
-} 
-  
+}
+
 void MipsInstrInfo::BuildCondBr(MachineBasicBlock &MBB,
                                 MachineBasicBlock *TBB, DebugLoc DL,
                                 const SmallVectorImpl<MachineOperand>& Cond)
@@ -440,27 +454,3 @@ ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const
   return false;
 }
 
-/// getGlobalBaseReg - Return a virtual register initialized with the
-/// the global base register value. Output instructions required to
-/// initialize the register in the function entry block, if necessary.
-///
-unsigned MipsInstrInfo::getGlobalBaseReg(MachineFunction *MF) const {
-  MipsFunctionInfo *MipsFI = MF->getInfo<MipsFunctionInfo>();
-  unsigned GlobalBaseReg = MipsFI->getGlobalBaseReg();
-  if (GlobalBaseReg != 0)
-    return GlobalBaseReg;
-
-  // Insert the set of GlobalBaseReg into the first MBB of the function
-  MachineBasicBlock &FirstMBB = MF->front();
-  MachineBasicBlock::iterator MBBI = FirstMBB.begin();
-  MachineRegisterInfo &RegInfo = MF->getRegInfo();
-  const TargetInstrInfo *TII = MF->getTarget().getInstrInfo();
-
-  GlobalBaseReg = RegInfo.createVirtualRegister(Mips::CPURegsRegisterClass);
-  BuildMI(FirstMBB, MBBI, DebugLoc(), TII->get(TargetOpcode::COPY),
-          GlobalBaseReg).addReg(Mips::GP);
-  RegInfo.addLiveIn(Mips::GP);
-
-  MipsFI->setGlobalBaseReg(GlobalBaseReg);
-  return GlobalBaseReg;
-}

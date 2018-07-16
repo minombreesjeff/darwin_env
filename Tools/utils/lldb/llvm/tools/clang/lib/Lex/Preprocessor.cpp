@@ -40,7 +40,7 @@
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/APFloat.h"
-#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Capacity.h"
@@ -130,7 +130,6 @@ void Preprocessor::Initialize(const TargetInfo &Target) {
   KeepComments = false;
   KeepMacroComments = false;
   SuppressIncludeNotFoundError = false;
-  AutoModuleImport = false;
   
   // Macro expansion is enabled.
   DisableMacroExpansion = false;
@@ -168,7 +167,9 @@ void Preprocessor::Initialize(const TargetInfo &Target) {
     Ident__exception_info = Ident__exception_code = Ident__abnormal_termination = 0;
     Ident___exception_info = Ident___exception_code = Ident___abnormal_termination = 0;
     Ident_GetExceptionInfo = Ident_GetExceptionCode = Ident_AbnormalTermination = 0;
-  } 
+  }
+  
+  HeaderInfo.setTarget(Target);
 }
 
 void Preprocessor::setPTHManager(PTHManager* pm) {
@@ -265,6 +266,17 @@ Preprocessor::macro_end(bool IncludeExternalMacros) const {
   }
 
   return Macros.end();
+}
+
+void Preprocessor::recomputeCurLexerKind() {
+  if (CurLexer)
+    CurLexerKind = CLK_Lexer;
+  else if (CurPTHLexer)
+    CurLexerKind = CLK_PTHLexer;
+  else if (CurTokenLexer)
+    CurLexerKind = CLK_TokenLexer;
+  else 
+    CurLexerKind = CLK_CachingLexer;
 }
 
 bool Preprocessor::SetCodeCompletionPoint(const FileEntry *File,
@@ -373,7 +385,7 @@ Module *Preprocessor::getCurrentModule() {
   if (getLangOptions().CurrentModule.empty())
     return 0;
   
-  return getHeaderSearchInfo().getModule(getLangOptions().CurrentModule);
+  return getHeaderSearchInfo().lookupModule(getLangOptions().CurrentModule);
 }
 
 //===----------------------------------------------------------------------===//
@@ -390,19 +402,23 @@ void Preprocessor::EnterMainSourceFile() {
   assert(NumEnteredSourceFiles == 0 && "Cannot reenter the main file!");
   FileID MainFileID = SourceMgr.getMainFileID();
 
-  // Enter the main file source buffer.
-  EnterSourceFile(MainFileID, 0, SourceLocation());
-
-  // If we've been asked to skip bytes in the main file (e.g., as part of a
-  // precompiled preamble), do so now.
-  if (SkipMainFilePreamble.first > 0)
-    CurLexer->SkipBytes(SkipMainFilePreamble.first, 
-                        SkipMainFilePreamble.second);
+  // If MainFileID is loaded it means we loaded an AST file, no need to enter
+  // a main file.
+  if (!SourceMgr.isLoadedFileID(MainFileID)) {
+    // Enter the main file source buffer.
+    EnterSourceFile(MainFileID, 0, SourceLocation());
   
-  // Tell the header info that the main file was entered.  If the file is later
-  // #imported, it won't be re-entered.
-  if (const FileEntry *FE = SourceMgr.getFileEntryForID(MainFileID))
-    HeaderInfo.IncrementIncludeCount(FE);
+    // If we've been asked to skip bytes in the main file (e.g., as part of a
+    // precompiled preamble), do so now.
+    if (SkipMainFilePreamble.first > 0)
+      CurLexer->SkipBytes(SkipMainFilePreamble.first, 
+                          SkipMainFilePreamble.second);
+    
+    // Tell the header info that the main file was entered.  If the file is later
+    // #imported, it won't be re-entered.
+    if (const FileEntry *FE = SourceMgr.getFileEntryForID(MainFileID))
+      HeaderInfo.IncrementIncludeCount(FE);
+  }
 
   // Preprocess Predefines to populate the initial preprocessor state.
   llvm::MemoryBuffer *SB =
@@ -439,7 +455,7 @@ IdentifierInfo *Preprocessor::LookUpIdentifierInfo(Token &Identifier) const {
                                            Identifier.getLength()));
   } else {
     // Cleaning needed, alloca a buffer, clean into it, then use the buffer.
-    llvm::SmallString<64> IdentifierBuffer;
+    SmallString<64> IdentifierBuffer;
     StringRef CleanedStr = getSpelling(Identifier, IdentifierBuffer);
     II = getIdentifierInfo(CleanedStr);
   }
@@ -509,8 +525,10 @@ void Preprocessor::HandleIdentifier(Token &Identifier) {
 
   // If this is a macro to be expanded, do it.
   if (MacroInfo *MI = getMacroInfo(&II)) {
-    if (!DisableMacroExpansion && !Identifier.isExpandDisabled()) {
-      if (MI->isEnabled()) {
+    if (!DisableMacroExpansion) {
+      if (Identifier.isExpandDisabled()) {
+        Diag(Identifier, diag::pp_disabled_macro_expansion);
+      } else if (MI->isEnabled()) {
         if (!HandleMacroExpandedIdentifier(Identifier, MI))
           return;
       } else {
@@ -518,6 +536,7 @@ void Preprocessor::HandleIdentifier(Token &Identifier) {
         // expanded, even if it's in a context where it could be expanded in the
         // future.
         Identifier.setFlag(Token::DisableExpand);
+        Diag(Identifier, diag::pp_disabled_macro_expansion);
       }
     }
   }
@@ -546,10 +565,14 @@ void Preprocessor::HandleIdentifier(Token &Identifier) {
   if (II.isExtensionToken() && !DisableMacroExpansion)
     Diag(Identifier, diag::ext_token_used);
   
-  // If this is the '__import_module__' keyword, note that the next token
-  // indicates a module name.
-  if (II.getTokenID() == tok::kw___import_module__ &&
-      !InMacroArgs && !DisableMacroExpansion) {
+  // If this is the '__experimental_modules_import' contextual keyword, note
+  // that the next token indicates a module name.
+  //
+  // Note that we do not treat '__experimental_modules_import' as a contextual
+  // keyword when we're in a caching lexer, because caching lexers only get
+  // used in contexts where import declarations are disallowed.
+  if (II.isModulesImport() && !InMacroArgs && !DisableMacroExpansion &&
+      getLangOptions().Modules && CurLexerKind != CLK_CachingLexer) {
     ModuleImportLoc = Identifier.getLocation();
     ModuleImportPath.clear();
     ModuleImportExpectsIdentifier = true;
@@ -557,27 +580,21 @@ void Preprocessor::HandleIdentifier(Token &Identifier) {
   }
 }
 
-/// \brief Lex a token following the __import_module__ keyword.
+/// \brief Lex a token following the 'import' contextual keyword.
+///
 void Preprocessor::LexAfterModuleImport(Token &Result) {
   // Figure out what kind of lexer we actually have.
-  if (CurLexer)
-    CurLexerKind = CLK_Lexer;
-  else if (CurPTHLexer)
-    CurLexerKind = CLK_PTHLexer;
-  else if (CurTokenLexer)
-    CurLexerKind = CLK_TokenLexer;
-  else 
-    CurLexerKind = CLK_CachingLexer;
+  recomputeCurLexerKind();
   
   // Lex the next token.
   Lex(Result);
 
   // The token sequence 
   //
-  //   __import_module__ identifier (. identifier)*
+  //   import identifier (. identifier)*
   //
-  // indicates a module import directive. We already saw the __import_module__
-  // keyword, so now we're looking for the identifiers.
+  // indicates a module import directive. We already saw the 'import' 
+  // contextual keyword, so now we're looking for the identifiers.
   if (ModuleImportExpectsIdentifier && Result.getKind() == tok::identifier) {
     // We expected to see an identifier here, and we did; continue handling
     // identifiers.
@@ -637,12 +654,11 @@ CommentHandler::~CommentHandler() { }
 
 CodeCompletionHandler::~CodeCompletionHandler() { }
 
-void Preprocessor::createPreprocessingRecord(
-                                      bool IncludeNestedMacroExpansions) {
+void Preprocessor::createPreprocessingRecord(bool RecordConditionalDirectives) {
   if (Record)
     return;
   
   Record = new PreprocessingRecord(getSourceManager(),
-                                   IncludeNestedMacroExpansions);
+                                   RecordConditionalDirectives);
   addPPCallbacks(Record);
 }

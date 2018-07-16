@@ -211,7 +211,6 @@ SDValue PTXTargetLowering::
   switch (CallConv) {
     default:
       llvm_unreachable("Unsupported calling convention");
-      break;
     case CallingConv::PTX_Kernel:
       MFI->setKernel(true);
       break;
@@ -241,32 +240,25 @@ SDValue PTXTargetLowering::
   }
   else {
     for (unsigned i = 0, e = Ins.size(); i != e; ++i) {
-      EVT                  RegVT = Ins[i].VT;
-      TargetRegisterClass* TRC   = getRegClassFor(RegVT);
-      unsigned             RegType;
+      EVT                        RegVT = Ins[i].VT;
+      const TargetRegisterClass* TRC   = getRegClassFor(RegVT);
+      unsigned                   RegType;
 
       // Determine which register class we need
-      if (RegVT == MVT::i1) {
+      if (RegVT == MVT::i1)
         RegType = PTXRegisterType::Pred;
-      }
-      else if (RegVT == MVT::i16) {
+      else if (RegVT == MVT::i16)
         RegType = PTXRegisterType::B16;
-      }
-      else if (RegVT == MVT::i32) {
+      else if (RegVT == MVT::i32)
         RegType = PTXRegisterType::B32;
-      }
-      else if (RegVT == MVT::i64) {
+      else if (RegVT == MVT::i64)
         RegType = PTXRegisterType::B64;
-      }
-      else if (RegVT == MVT::f32) {
+      else if (RegVT == MVT::f32)
         RegType = PTXRegisterType::F32;
-      }
-      else if (RegVT == MVT::f64) {
+      else if (RegVT == MVT::f64)
         RegType = PTXRegisterType::F64;
-      }
-      else {
+      else
         llvm_unreachable("Unknown parameter type");
-      }
 
       // Use a unique index in the instruction to prevent instruction folding.
       // Yes, this is a hack.
@@ -327,7 +319,7 @@ SDValue PTXTargetLowering::
   } else {
     for (unsigned i = 0, e = Outs.size(); i != e; ++i) {
       EVT                  RegVT = Outs[i].VT;
-      TargetRegisterClass* TRC = 0;
+      const TargetRegisterClass* TRC;
       unsigned             RegType;
 
       // Determine which register class we need
@@ -381,7 +373,7 @@ SDValue PTXTargetLowering::
 SDValue
 PTXTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                              CallingConv::ID CallConv, bool isVarArg,
-                             bool &isTailCall,
+                             bool doesNotRet, bool &isTailCall,
                              const SmallVectorImpl<ISD::OutputArg> &Outs,
                              const SmallVectorImpl<SDValue> &OutVals,
                              const SmallVectorImpl<ISD::InputArg> &Ins,

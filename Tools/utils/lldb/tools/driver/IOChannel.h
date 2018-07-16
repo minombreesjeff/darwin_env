@@ -96,6 +96,12 @@ public:
     const char *
     GetPrompt ();
 
+    bool
+    EditLineHasCharacters ();
+    
+    void
+    EraseCharsBeforeCursor ();
+
     static unsigned char 
     ElCompletionFn (EditLine *e, int ch);
 

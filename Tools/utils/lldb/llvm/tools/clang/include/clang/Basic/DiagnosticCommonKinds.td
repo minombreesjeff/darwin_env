@@ -41,6 +41,8 @@ def err_expected_colon : Error<"expected ':'">;
 def err_expected_colon_after_setter_name : Error<
   "method name referenced in property setter attribute "
   "must end with ':'">;
+def err_invalid_string_udl : Error<
+  "string literal with user-defined suffix cannot be used here">;
 
 // Parse && Sema
 def ext_no_declarators : ExtWarn<"declaration does not declare anything">,
@@ -59,8 +61,6 @@ def warn_cxx98_compat_variadic_templates :
   InGroup<CXX98Compat>, DefaultIgnore;
 def err_default_special_members : Error<
   "only special member functions may be defaulted">;
-def err_friends_define_only_namespace_scope : Error<
-  "cannot define a function with non-namespace scope in a friend declaration">;
 def err_deleted_non_function : Error<
   "only functions can have deleted definitions">;
 def err_module_not_found : Error<"module '%0' not found">, DefaultFatal;

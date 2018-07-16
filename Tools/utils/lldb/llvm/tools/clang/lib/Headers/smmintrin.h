@@ -245,7 +245,7 @@ _mm_testnzc_si128(__m128i __M, __m128i __V)
 static __inline__ __m128i __attribute__((__always_inline__, __nodebug__))
 _mm_cmpeq_epi64(__m128i __V1, __m128i __V2)
 {
-  return (__m128i) __builtin_ia32_pcmpeqq((__v2di)__V1, (__v2di)__V2);
+  return (__m128i)((__v2di)__V1 == (__v2di)__V2);
 }
 
 /* SSE4 Packed Integer Sign-Extension.  */
@@ -398,7 +398,7 @@ _mm_packus_epi32(__m128i __V1, __m128i __V2)
 static __inline__ __m128i __attribute__((__always_inline__, __nodebug__))
 _mm_cmpgt_epi64(__m128i __V1, __m128i __V2)
 {
-  return __builtin_ia32_pcmpgtq((__v2di)__V1, (__v2di)__V2);
+  return (__m128i)((__v2di)__V1 > (__v2di)__V2);
 }
 
 /* SSE4.2 Accumulate CRC32.  */
@@ -428,20 +428,9 @@ _mm_crc32_u64(unsigned long long __C, unsigned long long __D)
 }
 #endif /* __x86_64__ */
 
-/* SSE4.2 Population Count.  */
-static __inline__ int __attribute__((__always_inline__, __nodebug__))
-_mm_popcnt_u32(unsigned int __A)
-{
-  return __builtin_popcount(__A);
-}
-
-#ifdef __x86_64__
-static __inline__ long long __attribute__((__always_inline__, __nodebug__))
-_mm_popcnt_u64(unsigned long long __A)
-{
-  return __builtin_popcountll(__A);
-}
-#endif /* __x86_64__ */
+#ifdef __POPCNT__
+#include <popcntintrin.h>
+#endif
 
 #endif /* __SSE4_2__ */
 #endif /* __SSE4_1__ */

@@ -232,7 +232,7 @@ private:
   /// Updates the topological ordering if required.
   SUnit *CreateNewSUnit(SDNode *N) {
     unsigned NumSUnits = SUnits.size();
-    SUnit *NewNode = NewSUnit(N);
+    SUnit *NewNode = newSUnit(N);
     // Update the topological ordering.
     if (NewNode->NodeNum >= NumSUnits)
       Topo.InitDAGTopologicalSorting();
@@ -250,9 +250,9 @@ private:
     return NewNode;
   }
 
-  /// ForceUnitLatencies - Register-pressure-reducing scheduling doesn't
+  /// forceUnitLatencies - Register-pressure-reducing scheduling doesn't
   /// need actual latency information but the hybrid scheduler does.
-  bool ForceUnitLatencies() const {
+  bool forceUnitLatencies() const {
     return !NeedLatency;
   }
 };
@@ -327,6 +327,12 @@ void ScheduleDAGRRList::Schedule() {
   ListScheduleBottomUp();
 
   AvailableQueue->releaseState();
+
+  DEBUG({
+      dbgs() << "*** Final schedule ***\n";
+      dumpSchedule();
+      dbgs() << '\n';
+    });
 }
 
 //===----------------------------------------------------------------------===//
@@ -348,7 +354,7 @@ void ScheduleDAGRRList::ReleasePred(SUnit *SU, const SDep *PredEdge) {
 #endif
   --PredSU->NumSuccsLeft;
 
-  if (!ForceUnitLatencies()) {
+  if (!forceUnitLatencies()) {
     // Updating predecessor's height. This is now the cycle when the
     // predecessor can be scheduled without causing a pipeline stall.
     PredSU->setHeightToAtLeast(SU->getHeight() + PredEdge->getLatency());
@@ -695,7 +701,7 @@ void ScheduleDAGRRList::ScheduleNodeBottomUp(SUnit *SU) {
 
   Sequence.push_back(SU);
 
-  AvailableQueue->ScheduledNode(SU);
+  AvailableQueue->scheduledNode(SU);
 
   // If HazardRec is disabled, and each inst counts as one cycle, then
   // advance CurCycle before ReleasePredecessors to avoid useless pushes to
@@ -842,7 +848,7 @@ void ScheduleDAGRRList::UnscheduleNodeBottomUp(SUnit *SU) {
   else {
     AvailableQueue->push(SU);
   }
-  AvailableQueue->UnscheduledNode(SU);
+  AvailableQueue->unscheduledNode(SU);
 }
 
 /// After backtracking, the hazard checker needs to be restored to a state
@@ -963,7 +969,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
       LoadNode->setNodeId(LoadSU->NodeNum);
 
       InitNumRegDefsLeft(LoadSU);
-      ComputeLatency(LoadSU);
+      computeLatency(LoadSU);
     }
 
     SUnit *NewSU = CreateNewSUnit(N);
@@ -981,7 +987,7 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
       NewSU->isCommutable = true;
 
     InitNumRegDefsLeft(NewSU);
-    ComputeLatency(NewSU);
+    computeLatency(NewSU);
 
     // Record all the edges to and from the old SU, by category.
     SmallVector<SDep, 4> ChainPreds;
@@ -1175,7 +1181,7 @@ static void CheckForLiveRegDef(SUnit *SU, unsigned Reg,
                                SmallSet<unsigned, 4> &RegAdded,
                                SmallVector<unsigned, 4> &LRegs,
                                const TargetRegisterInfo *TRI) {
-  for (const unsigned *AliasI = TRI->getOverlaps(Reg); *AliasI; ++AliasI) {
+  for (const uint16_t *AliasI = TRI->getOverlaps(Reg); *AliasI; ++AliasI) {
 
     // Check if Ref is live.
     if (!LiveRegDefs[*AliasI]) continue;
@@ -1188,6 +1194,31 @@ static void CheckForLiveRegDef(SUnit *SU, unsigned Reg,
       LRegs.push_back(*AliasI);
     }
   }
+}
+
+/// CheckForLiveRegDefMasked - Check for any live physregs that are clobbered
+/// by RegMask, and add them to LRegs.
+static void CheckForLiveRegDefMasked(SUnit *SU, const uint32_t *RegMask,
+                                     std::vector<SUnit*> &LiveRegDefs,
+                                     SmallSet<unsigned, 4> &RegAdded,
+                                     SmallVector<unsigned, 4> &LRegs) {
+  // Look at all live registers. Skip Reg0 and the special CallResource.
+  for (unsigned i = 1, e = LiveRegDefs.size()-1; i != e; ++i) {
+    if (!LiveRegDefs[i]) continue;
+    if (LiveRegDefs[i] == SU) continue;
+    if (!MachineOperand::clobbersPhysReg(RegMask, i)) continue;
+    if (RegAdded.insert(i))
+      LRegs.push_back(i);
+  }
+}
+
+/// getNodeRegMask - Returns the register mask attached to an SDNode, if any.
+static const uint32_t *getNodeRegMask(const SDNode *N) {
+  for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i)
+    if (const RegisterMaskSDNode *Op =
+        dyn_cast<RegisterMaskSDNode>(N->getOperand(i).getNode()))
+      return Op->getRegMask();
+  return NULL;
 }
 
 /// DelayForLiveRegsBottomUp - Returns true if it is necessary to delay
@@ -1255,6 +1286,9 @@ DelayForLiveRegsBottomUp(SUnit *SU, SmallVector<unsigned, 4> &LRegs) {
           LRegs.push_back(CallResource);
       }
     }
+    if (const uint32_t *RegMask = getNodeRegMask(Node))
+      CheckForLiveRegDefMasked(SU, RegMask, LiveRegDefs, RegAdded, LRegs);
+
     const MCInstrDesc &MCID = TII->get(Node->getMachineOpcode());
     if (!MCID.ImplicitDefs)
       continue;
@@ -1447,7 +1481,7 @@ void ScheduleDAGRRList::ListScheduleBottomUp() {
   std::reverse(Sequence.begin(), Sequence.end());
 
 #ifndef NDEBUG
-  VerifySchedule(/*isBottomUp=*/true);
+  VerifyScheduledSequence(/*isBottomUp=*/true);
 #endif
 }
 
@@ -1653,9 +1687,9 @@ public:
 
   int RegPressureDiff(SUnit *SU, unsigned &LiveUses) const;
 
-  void ScheduledNode(SUnit *SU);
+  void scheduledNode(SUnit *SU);
 
-  void UnscheduledNode(SUnit *SU);
+  void unscheduledNode(SUnit *SU);
 
 protected:
   bool canClobber(const SUnit *SU, const SUnit *Op);
@@ -1956,7 +1990,7 @@ int RegReductionPQBase::RegPressureDiff(SUnit *SU, unsigned &LiveUses) const {
   return PDiff;
 }
 
-void RegReductionPQBase::ScheduledNode(SUnit *SU) {
+void RegReductionPQBase::scheduledNode(SUnit *SU) {
   if (!TracksRegPressure)
     return;
 
@@ -2025,7 +2059,7 @@ void RegReductionPQBase::ScheduledNode(SUnit *SU) {
   dumpRegPressure();
 }
 
-void RegReductionPQBase::UnscheduledNode(SUnit *SU) {
+void RegReductionPQBase::unscheduledNode(SUnit *SU) {
   if (!TracksRegPressure)
     return;
 
@@ -2635,7 +2669,8 @@ static bool canClobberReachingPhysRegUse(const SUnit *DepSU, const SUnit *SU,
                                          const TargetRegisterInfo *TRI) {
   const unsigned *ImpDefs
     = TII->get(SU->getNode()->getMachineOpcode()).getImplicitDefs();
-  if(!ImpDefs)
+  const uint32_t *RegMask = getNodeRegMask(SU->getNode());
+  if(!ImpDefs && !RegMask)
     return false;
 
   for (SUnit::const_succ_iterator SI = SU->Succs.begin(), SE = SU->Succs.end();
@@ -2646,14 +2681,18 @@ static bool canClobberReachingPhysRegUse(const SUnit *DepSU, const SUnit *SU,
       if (!PI->isAssignedRegDep())
         continue;
 
-      for (const unsigned *ImpDef = ImpDefs; *ImpDef; ++ImpDef) {
-        // Return true if SU clobbers this physical register use and the
-        // definition of the register reaches from DepSU. IsReachable queries a
-        // topological forward sort of the DAG (following the successors).
-        if (TRI->regsOverlap(*ImpDef, PI->getReg()) &&
-            scheduleDAG->IsReachable(DepSU, PI->getSUnit()))
-          return true;
-      }
+      if (RegMask && MachineOperand::clobbersPhysReg(RegMask, PI->getReg()) &&
+          scheduleDAG->IsReachable(DepSU, PI->getSUnit()))
+        return true;
+
+      if (ImpDefs)
+        for (const unsigned *ImpDef = ImpDefs; *ImpDef; ++ImpDef)
+          // Return true if SU clobbers this physical register use and the
+          // definition of the register reaches from DepSU. IsReachable queries
+          // a topological forward sort of the DAG (following the successors).
+          if (TRI->regsOverlap(*ImpDef, PI->getReg()) &&
+              scheduleDAG->IsReachable(DepSU, PI->getSUnit()))
+            return true;
     }
   }
   return false;
@@ -2674,8 +2713,9 @@ static bool canClobberPhysRegDefs(const SUnit *SuccSU, const SUnit *SU,
       continue;
     const unsigned *SUImpDefs =
       TII->get(SUNode->getMachineOpcode()).getImplicitDefs();
-    if (!SUImpDefs)
-      return false;
+    const uint32_t *SURegMask = getNodeRegMask(SUNode);
+    if (!SUImpDefs && !SURegMask)
+      continue;
     for (unsigned i = NumDefs, e = N->getNumValues(); i != e; ++i) {
       EVT VT = N->getValueType(i);
       if (VT == MVT::Glue || VT == MVT::Other)
@@ -2683,6 +2723,10 @@ static bool canClobberPhysRegDefs(const SUnit *SuccSU, const SUnit *SU,
       if (!N->hasAnyUseOfValue(i))
         continue;
       unsigned Reg = ImpDefs[i - NumDefs];
+      if (SURegMask && MachineOperand::clobbersPhysReg(SURegMask, Reg))
+        return true;
+      if (!SUImpDefs)
+        continue;
       for (;*SUImpDefs; ++SUImpDefs) {
         unsigned SUReg = *SUImpDefs;
         if (TRI->regsOverlap(Reg, SUReg))

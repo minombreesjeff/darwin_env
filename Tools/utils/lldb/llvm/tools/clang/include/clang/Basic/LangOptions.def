@@ -42,7 +42,7 @@
 #endif
 
 LANGOPT(C99               , 1, 0, "C99")
-LANGOPT(C1X               , 1, 0, "C1X")
+LANGOPT(C11               , 1, 0, "C11")
 LANGOPT(MicrosoftExt      , 1, 0, "Microsoft extensions")
 LANGOPT(MicrosoftMode     , 1, 0, "Microsoft compatibility mode")
 LANGOPT(Borland           , 1, 0, "Borland extensions")
@@ -90,7 +90,7 @@ LANGOPT(Blocks            , 1, 0, "blocks extension to C")
 BENIGN_LANGOPT(EmitAllDecls      , 1, 0, "support for emitting all declarations")
 LANGOPT(MathErrno         , 1, 1, "errno support for math functions")
 BENIGN_LANGOPT(HeinousExtensions , 1, 0, "Extensions that we really don't like and may be ripped out at any time")
-
+LANGOPT(Modules           , 1, 0, "modules extension to C")
 LANGOPT(Optimize          , 1, 0, "__OPTIMIZE__ predefined macro")
 LANGOPT(OptimizeSize      , 1, 0, "__OPTIMIZE_SIZE__ predefined macro")
 LANGOPT(Static            , 1, 0, "__STATIC__ predefined macro (as opposed to __DYNAMIC__)")
@@ -100,6 +100,7 @@ VALUE_LANGOPT(PICLevel          , 2, 0, "__PIC__ level")
 LANGOPT(GNUInline         , 1, 0, "GNU inline semantics")
 LANGOPT(NoInline          , 1, 0, "__NO_INLINE__ predefined macro")
 LANGOPT(Deprecated        , 1, 0, "__DEPRECATED predefined macro")
+LANGOPT(FastMath          , 1, 0, "__FAST_MATH__ predefined macro")
 
 BENIGN_LANGOPT(ObjCGCBitmapPrint , 1, 0, "printing of GC's bitmap layout for __weak/__strong ivars")
 
@@ -116,13 +117,16 @@ LANGOPT(AssumeSaneOperatorNew , 1, 1, "implicit __attribute__((malloc)) for C++'
 BENIGN_LANGOPT(ElideConstructors , 1, 1, "C++ copy constructor elision")
 BENIGN_LANGOPT(CatchUndefined    , 1, 0, "catching undefined behavior at run time")
 BENIGN_LANGOPT(DumpRecordLayouts , 1, 0, "dumping the layout of IRgen'd records")
+BENIGN_LANGOPT(DumpRecordLayoutsSimple , 1, 0, "dumping the layout of IRgen'd records in a simple form")
 BENIGN_LANGOPT(DumpVTableLayouts , 1, 0, "dumping the layouts of emitted vtables")
 LANGOPT(NoConstantCFStrings , 1, 0, "no constant CoreFoundation strings")
 BENIGN_LANGOPT(InlineVisibilityHidden , 1, 0, "hidden default visibility for inline C++ methods")
 BENIGN_LANGOPT(ParseUnknownAnytype, 1, 0, "__unknown_anytype")
 BENIGN_LANGOPT(DebuggerSupport , 1, 0, "debugger support")
 BENIGN_LANGOPT(DebuggerCastResultToId, 1, 0, "for 'po' in the debugger, cast the result to id if it is of unknown type")
+BENIGN_LANGOPT(DebuggerObjCLiteral , 1, 0, "debugger objective-C literals and subscripting support")
 BENIGN_LANGOPT(AddressSanitizer , 1, 0, "AddressSanitizer enabled")
+BENIGN_LANGOPT(ThreadSanitizer , 1, 0, "ThreadSanitizer enabled")
 
 BENIGN_LANGOPT(SpellChecking , 1, 1, "spell-checking")
 LANGOPT(SinglePrecisionConstants , 1, 0, "treating double-precision floating point constants as single precision constants")

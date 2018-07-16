@@ -434,11 +434,15 @@ public:
     /// @param[in] decl
     ///     The Decl whose value is to be found.
     ///
+    /// @param[out] flags
+    ///     The flags for the found variable.
+    ///
     /// @return
     ///     The value, or NULL.
     //------------------------------------------------------------------
     lldb_private::Value
-    LookupDecl (clang::NamedDecl *decl);
+    LookupDecl (clang::NamedDecl *decl,
+                ClangExpressionVariable::FlagType &flags);
     
     //------------------------------------------------------------------
     /// [Used by IRInterpreter] Get the Value for "this", "self", or
@@ -503,13 +507,14 @@ public:
                             bool transient,
                             bool maybe_make_load);
     
+    
+    void
+    RemoveResultVariable (const ConstString &name);
+    
     //------------------------------------------------------------------
     /// [Used by CommandObjectExpression] Materialize the entire struct
     /// at a given address, which should be aligned as specified by 
     /// GetStructInfo().
-    ///
-    /// @param[in] exe_ctx
-    ///     The execution context at which to dump the struct.
     ///
     /// @param[in] struct_address
     ///     The address at which the struct should be written.
@@ -522,8 +527,7 @@ public:
     ///     True on success; false otherwise.
     //------------------------------------------------------------------
     bool 
-    Materialize (ExecutionContext &exe_ctx,
-                 lldb::addr_t &struct_address,
+    Materialize (lldb::addr_t &struct_address,
                  Error &error);
     
     //------------------------------------------------------------------
@@ -536,9 +540,6 @@ public:
     /// @param[in] object_name
     ///     The name of the object pointer -- "this," "self," or similar
     ///     depending on language
-    ///
-    /// @param[in] exe_ctx
-    ///     The execution context at which to dump the struct.
     ///
     /// @param[in] error
     ///     An Error to populate with any messages related to
@@ -553,7 +554,6 @@ public:
     bool
     GetObjectPointer (lldb::addr_t &object_ptr,
                       ConstString &object_name,
-                      ExecutionContext &exe_ctx,
                       Error &error,
                       bool suppress_type_check = false);
     
@@ -576,8 +576,7 @@ public:
     ///     True on success; false otherwise.
     //------------------------------------------------------------------
     bool 
-    DumpMaterializedStruct (ExecutionContext &exe_ctx,
-                            Stream &s,
+    DumpMaterializedStruct (Stream &s,
                             Error &error);
     
     //------------------------------------------------------------------
@@ -604,8 +603,7 @@ public:
     ///     True on success; false otherwise.
     //------------------------------------------------------------------
     bool 
-    Dematerialize (ExecutionContext &exe_ctx,
-                   lldb::ClangExpressionVariableSP &result_sp,
+    Dematerialize (lldb::ClangExpressionVariableSP &result_sp,
                    lldb::addr_t stack_frame_top,
                    lldb::addr_t stack_frame_bottom,
                    Error &error);
@@ -666,7 +664,7 @@ private:
     {
     public:
         ParserVars(ClangExpressionDeclMap &decl_map) :
-            m_exe_ctx(NULL),
+            m_exe_ctx(),
             m_sym_ctx(),
             m_persistent_vars(NULL),
             m_enable_lookups(false),
@@ -677,14 +675,14 @@ private:
         Target *
         GetTarget()
         {
-            if (m_exe_ctx && m_exe_ctx->GetTargetPtr())
-                return m_exe_ctx->GetTargetPtr();
+            if (m_exe_ctx.GetTargetPtr())
+                return m_exe_ctx.GetTargetPtr();
             else if (m_sym_ctx.target_sp)
                 m_sym_ctx.target_sp.get();
             return NULL;
         }
         
-        ExecutionContext           *m_exe_ctx;          ///< The execution context to use when parsing.
+        ExecutionContext            m_exe_ctx;          ///< The execution context to use when parsing.
         SymbolContext               m_sym_ctx;          ///< The symbol context to use in finding variables and types.
         ClangPersistentVariables   *m_persistent_vars;  ///< The persistent variables for the process.
         bool                        m_enable_lookups;   ///< Set to true during parsing if we have found the first "$__lldb" name.
@@ -811,13 +809,18 @@ private:
     ///     during parsing, in which case we don't know its type; hence the
     ///     default.
     ///
+    /// @param[in] object_pointer
+    ///     The type expected is an object type.  This means we will ignore
+    ///     constness of the pointer target.
+    ///
     /// @return
     ///     The LLDB Variable found, or NULL if none was found.
     //------------------------------------------------------------------
     lldb::VariableSP
     FindVariableInScope (StackFrame &frame,
                          const ConstString &name,
-                         TypeFromUser *type = NULL);
+                         TypeFromUser *type = NULL,
+                         bool object_pointer = false);
     
     //------------------------------------------------------------------
     /// Given a target, find a data symbol that has the given name.
@@ -870,9 +873,6 @@ private:
     /// Get the value of a variable in a given execution context and return
     /// the associated Types if needed.
     ///
-    /// @param[in] exe_ctx
-    ///     The execution context to look for the variable in.
-    ///
     /// @param[in] var
     ///     The variable to evaluate.
     ///
@@ -896,8 +896,7 @@ private:
     ///     The LLDB Value for the variable.
     //------------------------------------------------------------------
     Value *
-    GetVariableValue (ExecutionContext &exe_ctx,
-                      lldb::VariableSP &var,
+    GetVariableValue (lldb::VariableSP &var,
                       clang::ASTContext *parser_ast_context,
                       TypeFromUser *found_type = NULL,
                       TypeFromParser *parser_type = NULL);
@@ -1022,9 +1021,6 @@ private:
     ///     True if the struct is to be dematerialized; false if it is to
     ///     be materialized.
     ///
-    /// @param[in] exe_ctx
-    ///     The execution context to use.
-    ///
     /// @param[in] stack_frame_top, stack_frame_bottom
     ///     If not LLDB_INVALID_ADDRESS, the bounds for the stack frame
     ///     in which the expression ran.  A result whose address falls
@@ -1045,7 +1041,6 @@ private:
     //------------------------------------------------------------------
     bool 
     DoMaterialize (bool dematerialize,
-                   ExecutionContext &exe_ctx,
                    lldb::addr_t stack_frame_top,
                    lldb::addr_t stack_frame_bottom,
                    lldb::ClangExpressionVariableSP *result_sp_ptr,
@@ -1064,9 +1059,6 @@ private:
     /// @param[in] dematerialize
     ///     True if the variable is to be dematerialized; false if it is to
     ///     be materialized.
-    ///
-    /// @param[in] exe_ctx
-    ///     The execution context to use.
     ///
     /// @param[in] var_sp
     ///     The persistent variable to materialize
@@ -1089,7 +1081,6 @@ private:
     //------------------------------------------------------------------
     bool 
     DoMaterializeOnePersistentVariable (bool dematerialize,
-                                        ExecutionContext &exe_ctx,
                                         lldb::ClangExpressionVariableSP &var_sp,
                                         lldb::addr_t addr,
                                         lldb::addr_t stack_frame_top,
@@ -1103,9 +1094,6 @@ private:
     /// @param[in] dematerialize
     ///     True if the variable is to be dematerialized; false if it is to
     ///     be materialized.
-    ///
-    /// @param[in] exe_ctx
-    ///     The execution context to use.
     ///
     /// @param[in] sym_ctx
     ///     The symbol context to use (for looking the variable up).
@@ -1128,7 +1116,6 @@ private:
     //------------------------------------------------------------------
     bool 
     DoMaterializeOneVariable (bool dematerialize,
-                              ExecutionContext &exe_ctx,
                               const SymbolContext &sym_ctx,
                               lldb::ClangExpressionVariableSP &expr_var,
                               lldb::addr_t addr, 
@@ -1141,9 +1128,6 @@ private:
     /// @param[in] dematerialize
     ///     True if the variable is to be dematerialized; false if it is to
     ///     be materialized.
-    ///
-    /// @param[in] exe_ctx
-    ///     The execution context to use.
     ///
     /// @param[in] reg_ctx
     ///     The register context to use.
@@ -1163,7 +1147,6 @@ private:
     //------------------------------------------------------------------
     bool 
     DoMaterializeOneRegister (bool dematerialize,
-                              ExecutionContext &exe_ctx,
                               RegisterContext &reg_ctx,
                               const RegisterInfo &reg_info,
                               lldb::addr_t addr, 

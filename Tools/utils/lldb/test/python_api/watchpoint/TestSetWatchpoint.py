@@ -22,12 +22,14 @@ class SetWatchpointAPITestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_watch_val_with_dsym(self):
         """Exercise SBValue.Watch() API to set a watchpoint."""
         self.buildDsym()
         self.do_set_watchpoint()
 
     @python_api_test
+    @dwarf_test
     def test_watch_val_with_dwarf(self):
         """Exercise SBValue.Watch() API to set a watchpoint."""
         self.buildDwarf()
@@ -59,7 +61,8 @@ class SetWatchpointAPITestCase(TestBase):
 
         # Watch 'global' for read and write.
         value = frame0.FindValue('global', lldb.eValueTypeVariableGlobal)
-        watchpoint = value.Watch(True, True, True)
+        error = lldb.SBError();
+        watchpoint = value.Watch(True, True, True, error)
         self.assertTrue(value and watchpoint,
                         "Successfully found the variable and set a watchpoint")
         self.DebugSBValue(value)

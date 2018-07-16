@@ -35,6 +35,10 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
             break;
         case lldb::eLanguageTypeC:
             wrap_stream.Printf("%s                             \n"
+                               "#undef NULL                    \n"
+                               "#define NULL 0                 \n"
+                               "#undef nil                     \n"
+                               "#define nil (id)0              \n"
                                "typedef unsigned short unichar;\n"
                                "void                           \n"
                                "%s(void *$__lldb_arg)          \n"
@@ -47,6 +51,10 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
             break;
         case lldb::eLanguageTypeC_plus_plus:
             wrap_stream.Printf("%s                                     \n"
+                               "#undef NULL                            \n"
+                               "#define NULL 0                         \n"
+                               "#undef nil                             \n"
+                               "#define nil (id)0                      \n"
                                "typedef unsigned short unichar;        \n"
                                "void                                   \n"
                                "$__lldb_class::%s(void *$__lldb_arg) %s\n"
@@ -62,6 +70,10 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
             if (static_method)
             {
                 wrap_stream.Printf("%s                                                      \n"
+                                    "#undef NULL                                            \n"
+                                    "#define NULL 0                                         \n"
+                                    "#undef nil                                             \n"
+                                    "#define nil (id)0                                      \n"
                                     "typedef unsigned short unichar;                        \n"
                                     "@interface $__lldb_objc_class ($__lldb_category)       \n"
                                     "+(void)%s:(void *)$__lldb_arg;                         \n"
@@ -79,7 +91,11 @@ bool ExpressionSourceCode::GetText (std::string &text, lldb::LanguageType wrappi
             }
             else
             {
-                wrap_stream.Printf("%s                                                      \n"
+                wrap_stream.Printf("%s                                                     \n"
+                                   "#undef NULL                                            \n"
+                                   "#define NULL 0                                         \n"
+                                   "#undef nil                                             \n"
+                                   "#define nil (id)0                                      \n"
                                    "typedef unsigned short unichar;                        \n"
                                    "@interface $__lldb_objc_class ($__lldb_category)       \n"
                                    "-(void)%s:(void *)$__lldb_arg;                         \n"

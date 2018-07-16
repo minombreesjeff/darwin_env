@@ -1,4 +1,4 @@
-//===-- XCoreISelLowering.cpp - XCore DAG Lowering Implementation   ------===//
+//===-- XCoreISelLowering.cpp - XCore DAG Lowering Implementation ---------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -36,7 +36,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/VectorExtras.h"
 using namespace llvm;
 
 const char *XCoreTargetLowering::
@@ -188,7 +187,6 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::ADJUST_TRAMPOLINE: return LowerADJUST_TRAMPOLINE(Op, DAG);
   default:
     llvm_unreachable("unimplemented operand");
-    return SDValue();
   }
 }
 
@@ -200,7 +198,6 @@ void XCoreTargetLowering::ReplaceNodeResults(SDNode *N,
   switch (N->getOpcode()) {
   default:
     llvm_unreachable("Don't know how to custom expand this!");
-    return;
   case ISD::ADD:
   case ISD::SUB:
     Results.push_back(ExpandADDSUB(N, DAG));
@@ -276,9 +273,8 @@ LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const
     if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
       GVar = dyn_cast_or_null<GlobalVariable>(GA->resolveAliasedGlobal());
   }
-  if (! GVar) {
+  if (!GVar) {
     llvm_unreachable("Thread local object not a GlobalVariable?");
-    return SDValue();
   }
   Type *Ty = cast<PointerType>(GV->getType())->getElementType();
   if (!Ty->isSized() || isZeroLengthArray(Ty)) {
@@ -491,8 +487,8 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
 
   std::pair<SDValue, SDValue> CallResult =
         LowerCallTo(Chain, IntPtrTy, false, false,
-                    false, false, 0, CallingConv::C, false,
-                    /*isReturnValueUsed=*/true,
+                    false, false, 0, CallingConv::C, /*isTailCall=*/false,
+                    /*doesNotRet=*/false, /*isReturnValueUsed=*/true,
                     DAG.getExternalSymbol("__misaligned_load", getPointerTy()),
                     Args, DAG, DL);
 
@@ -553,8 +549,8 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG) const
 
   std::pair<SDValue, SDValue> CallResult =
         LowerCallTo(Chain, Type::getVoidTy(*DAG.getContext()), false, false,
-                    false, false, 0, CallingConv::C, false,
-                    /*isReturnValueUsed=*/true,
+                    false, false, 0, CallingConv::C, /*isTailCall=*/false,
+                    /*doesNotRet=*/false, /*isReturnValueUsed=*/true,
                     DAG.getExternalSymbol("__misaligned_store", getPointerTy()),
                     Args, DAG, dl);
 
@@ -758,7 +754,7 @@ SDValue XCoreTargetLowering::
 LowerVAARG(SDValue Op, SelectionDAG &DAG) const
 {
   llvm_unreachable("unimplemented");
-  // FIX Arguments passed by reference need a extra dereference.
+  // FIXME Arguments passed by reference need a extra dereference.
   SDNode *Node = Op.getNode();
   DebugLoc dl = Node->getDebugLoc();
   const Value *V = cast<SrcValueSDNode>(Node->getOperand(2))->getValue();
@@ -879,7 +875,7 @@ LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const {
 SDValue
 XCoreTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                                CallingConv::ID CallConv, bool isVarArg,
-                               bool &isTailCall,
+                               bool doesNotRet, bool &isTailCall,
                                const SmallVectorImpl<ISD::OutputArg> &Outs,
                                const SmallVectorImpl<SDValue> &OutVals,
                                const SmallVectorImpl<ISD::InputArg> &Ins,
@@ -1603,8 +1599,6 @@ XCoreTargetLowering::isLegalAddressingMode(const AddrMode &AM,
     // reg + reg<<2
     return AM.Scale == 4 && AM.BaseOffs == 0;
   }
-
-  return false;
 }
 
 //===----------------------------------------------------------------------===//

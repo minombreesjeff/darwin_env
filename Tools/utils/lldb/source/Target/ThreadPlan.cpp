@@ -36,7 +36,9 @@ ThreadPlan::ThreadPlan(ThreadPlanKind kind, const char *name, Thread &thread, Vo
     m_plan_complete_mutex (Mutex::eMutexTypeRecursive),
     m_plan_complete (false),
     m_plan_private (false),
-    m_okay_to_discard (false)
+    m_okay_to_discard (true),
+    m_is_master_plan (false),
+    m_plan_succeeded(true)
 {
     SetID (GetNextID());
 }
@@ -48,25 +50,6 @@ ThreadPlan::~ThreadPlan()
 {
 }
 
-const char *
-ThreadPlan::GetName () const
-{
-    return m_name.c_str();
-}
-
-Thread &
-ThreadPlan::GetThread()
-{
-    return m_thread;
-}
-
-
-const Thread &
-ThreadPlan::GetThread() const
-{
-    return m_thread;
-}
-
 bool
 ThreadPlan::IsPlanComplete ()
 {
@@ -75,16 +58,18 @@ ThreadPlan::IsPlanComplete ()
 }
 
 void
-ThreadPlan::SetPlanComplete ()
+ThreadPlan::SetPlanComplete (bool success)
 {
     Mutex::Locker locker(m_plan_complete_mutex);
     m_plan_complete = true;
+    m_plan_succeeded = success;
 }
 
 bool
 ThreadPlan::MischiefManaged ()
 {
     Mutex::Locker locker(m_plan_complete_mutex);
+    // Mark the plan is complete, but don't override the success flag.
     m_plan_complete = true;
     return true;
 }
@@ -101,7 +86,8 @@ ThreadPlan::ShouldReportStop (Event *event_ptr)
         {
             Vote prev_vote = prev_plan->ShouldReportStop (event_ptr);
             if (log)
-                log->Printf ("ThreadPlan::ShouldReportStop() returning previous thread plan vote: %s", GetVoteAsCString (prev_vote));
+                log->Printf ("ThreadPlan::ShouldReportStop() returning previous thread plan vote: %s", 
+                             GetVoteAsCString (prev_vote));
             return prev_vote;
         }
     }
@@ -153,7 +139,8 @@ ThreadPlan::WillResume (StateType resume_state, bool current_plan)
             addr_t pc = reg_ctx->GetPC();
             addr_t sp = reg_ctx->GetSP();
             addr_t fp = reg_ctx->GetFP();
-            log->Printf("%s Thread #%u: tid = 0x%4.4llx, pc = 0x%8.8llx, sp = 0x%8.8llx, fp = 0x%8.8llx, plan = '%s', state = %s, stop others = %d", 
+            log->Printf("%s Thread #%u: tid = 0x%4.4llx, pc = 0x%8.8llx, sp = 0x%8.8llx, fp = 0x%8.8llx, "
+                        "plan = '%s', state = %s, stop others = %d", 
                         __FUNCTION__,
                         m_thread.GetIndexID(), 
                         m_thread.GetID(),  
@@ -183,30 +170,6 @@ ThreadPlan::DidPush()
 void
 ThreadPlan::WillPop()
 {
-}
-
-void
-ThreadPlan::PushPlan (ThreadPlanSP &thread_plan_sp)
-{
-    m_thread.PushPlan (thread_plan_sp);
-}
-
-ThreadPlan *
-ThreadPlan::GetPreviousPlan ()
-{
-    return m_thread.GetPreviousPlan (this);
-}
-
-void
-ThreadPlan::SetPrivate (bool input)
-{
-    m_plan_private = input;
-}
-
-bool
-ThreadPlan::GetPrivate (void)
-{
-    return m_plan_private;
 }
 
 bool

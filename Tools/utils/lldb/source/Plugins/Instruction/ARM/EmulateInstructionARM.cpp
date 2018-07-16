@@ -130,16 +130,17 @@ uint32_t ITSession::GetCond()
 #define ARMv6K    (1u << 6)
 #define ARMv6T2   (1u << 7)
 #define ARMv7     (1u << 8)
-#define ARMv8     (1u << 9)
+#define ARMv7S    (1u << 9)
+#define ARMv8     (1u << 10)
 #define ARMvAll   (0xffffffffu)
 
-#define ARMV4T_ABOVE  (ARMv4T|ARMv5T|ARMv5TE|ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv8)
-#define ARMV5_ABOVE   (ARMv5T|ARMv5TE|ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv8)
-#define ARMV5TE_ABOVE (ARMv5TE|ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv8)
-#define ARMV5J_ABOVE  (ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv8)
-#define ARMV6_ABOVE   (ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv8) 
-#define ARMV6T2_ABOVE (ARMv6T2|ARMv7|ARMv8)
-#define ARMV7_ABOVE   (ARMv7|ARMv8)
+#define ARMV4T_ABOVE  (ARMv4T|ARMv5T|ARMv5TE|ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv7S|ARMv8)
+#define ARMV5_ABOVE   (ARMv5T|ARMv5TE|ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv7S|ARMv8)
+#define ARMV5TE_ABOVE (ARMv5TE|ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv7S|ARMv8)
+#define ARMV5J_ABOVE  (ARMv5TEJ|ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv7S|ARMv8)
+#define ARMV6_ABOVE   (ARMv6|ARMv6K|ARMv6T2|ARMv7|ARMv7S|ARMv8) 
+#define ARMV6T2_ABOVE (ARMv6T2|ARMv7|ARMv7S|ARMv8)
+#define ARMV7_ABOVE   (ARMv7|ARMv7S|ARMv8)
 
 #define No_VFP  0
 #define VFPv1   (1u << 1)
@@ -279,19 +280,37 @@ EmulateInstructionARM::GetRegisterInfo (uint32_t reg_kind, uint32_t reg_num, Reg
 uint32_t
 EmulateInstructionARM::GetFramePointerRegisterNumber () const
 {
-    if (m_opcode_mode == eModeThumb || m_arch.GetTriple().getOS() == llvm::Triple::Darwin)
-        return 7;
-    else
-        return 11;
+    if (m_opcode_mode == eModeThumb)
+    {
+        switch (m_arch.GetTriple().getOS())
+        {
+            case llvm::Triple::Darwin:
+            case llvm::Triple::MacOSX:
+            case llvm::Triple::IOS:
+                return 7;
+            default:
+                break;
+        }
+    }
+    return 11;
 }
 
 uint32_t
 EmulateInstructionARM::GetFramePointerDWARFRegisterNumber () const
 {
-    if (m_opcode_mode == eModeThumb || m_arch.GetTriple().getOS() == llvm::Triple::Darwin)
-        return dwarf_r7;
-    else
-        return dwarf_r11;
+    if (m_opcode_mode == eModeThumb)
+    {
+        switch (m_arch.GetTriple().getOS())
+        {
+            case llvm::Triple::Darwin:
+            case llvm::Triple::MacOSX:
+            case llvm::Triple::IOS:
+                return dwarf_r7;
+            default:
+                break;
+        }
+    }
+    return dwarf_r11;
 }
 
 // Push Multiple Registers stores multiple registers to the stack, storing to
@@ -407,7 +426,7 @@ EmulateInstructionARM::EmulatePUSH (const uint32_t opcode, const ARMEncoding enc
         if (BitIsSet (registers, 15))
         {
             GetRegisterInfo (eRegisterKindDWARF, dwarf_pc, reg_info);
-            context.SetRegisterPlusOffset (reg_info, addr - sp);
+            context.SetRegisterToRegisterPlusOffset (reg_info, sp_reg, addr - sp);
             const uint32_t pc = ReadCoreReg(PC_REG, &success);
             if (!success)
                 return false;
@@ -12779,17 +12798,18 @@ EmulateInstructionARM::SetArchitecture (const ArchSpec &arch)
     if (arch_cstr)
     {
         if      (0 == ::strcasecmp(arch_cstr, "armv4t"))    m_arm_isa = ARMv4T;
-        else if (0 == ::strcasecmp(arch_cstr, "armv4"))     m_arm_isa = ARMv4;
         else if (0 == ::strcasecmp(arch_cstr, "armv5tej"))  m_arm_isa = ARMv5TEJ;
         else if (0 == ::strcasecmp(arch_cstr, "armv5te"))   m_arm_isa = ARMv5TE;
         else if (0 == ::strcasecmp(arch_cstr, "armv5t"))    m_arm_isa = ARMv5T;
         else if (0 == ::strcasecmp(arch_cstr, "armv6k"))    m_arm_isa = ARMv6K;
-        else if (0 == ::strcasecmp(arch_cstr, "armv6"))     m_arm_isa = ARMv6;
         else if (0 == ::strcasecmp(arch_cstr, "armv6t2"))   m_arm_isa = ARMv6T2;
-        else if (0 == ::strcasecmp(arch_cstr, "armv7"))     m_arm_isa = ARMv7;
-        else if (0 == ::strcasecmp(arch_cstr, "armv8"))     m_arm_isa = ARMv8;
+        else if (0 == ::strcasecmp(arch_cstr, "armv7s"))    m_arm_isa = ARMv7S;
         else if (0 == ::strcasecmp(arch_cstr, "arm"))       m_arm_isa = ARMvAll;
         else if (0 == ::strcasecmp(arch_cstr, "thumb"))     m_arm_isa = ARMvAll;
+        else if (0 == ::strncasecmp(arch_cstr,"armv4", 5))  m_arm_isa = ARMv4;
+        else if (0 == ::strncasecmp(arch_cstr,"armv6", 5))  m_arm_isa = ARMv6;
+        else if (0 == ::strncasecmp(arch_cstr,"armv7", 5))  m_arm_isa = ARMv7;
+        else if (0 == ::strncasecmp(arch_cstr,"armv8", 5))  m_arm_isa = ARMv8;
     }
     return m_arm_isa != 0;
 }

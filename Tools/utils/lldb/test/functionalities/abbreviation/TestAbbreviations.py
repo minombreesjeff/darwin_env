@@ -30,9 +30,15 @@ class AbbreviationsTestCase(TestBase):
                     COMMAND_FAILED_AS_EXPECTED, error = True,
                     substrs = ["error: 'gurp' is not a valid command."])
 
+        # Only one matching command: execute it.
         self.expect("h",
                     startstr = "The following is a list of built-in, permanent debugger commands:")
 
+        # Several matching commands: list them and error out.
+        self.expect("t",
+                    COMMAND_FAILED_AS_EXPECTED, error = True,
+                    substrs = ["Ambiguous command 't'. Possible matches:",
+                               "target", "thread", "type"])
 
         self.expect("com sou ./change_prompt.lldb",
                     patterns = ["Executing commands in '.*change_prompt.lldb'"])
@@ -65,10 +71,12 @@ class AbbreviationsTestCase(TestBase):
 
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_with_dsym (self):
         self.buildDsym ()
         self.running_abbreviations ()
 
+    @dwarf_test
     def test_with_dwarf (self):
         self.buildDwarf ()
         self.running_abbreviations ()
@@ -156,8 +164,7 @@ class AbbreviationsTestCase(TestBase):
                         substrs = [ 'a.out',
                                     '/usr/lib/dyld',
                                     '/usr/lib/libstdc++',
-                                    '/usr/lib/libSystem.B.dylib',
-                                    '/usr/lib/system/libmathCommon.A.dylib'])
+                                    '/usr/lib/libSystem.B.dylib'])
 
 
 if __name__ == '__main__':

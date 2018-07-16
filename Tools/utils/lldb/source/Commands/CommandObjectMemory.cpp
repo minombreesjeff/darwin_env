@@ -37,7 +37,8 @@ g_option_table[] =
 {
     { LLDB_OPT_SET_1, false, "num-per-line" ,'l', required_argument, NULL, 0, eArgTypeNumberPerLine ,"The number of items per line to display."},
     { LLDB_OPT_SET_2, false, "binary"       ,'b', no_argument      , NULL, 0, eArgTypeNone          ,"If true, memory will be saved as binary. If false, the memory is saved save as an ASCII dump that uses the format, size, count and number per line settings."},
-    { LLDB_OPT_SET_3, true , "view-as"      ,'t', required_argument, NULL, 0, eArgTypeNone          ,"The name of a type to view memory as."},
+    { LLDB_OPT_SET_3, true , "view-as"      ,'t', required_argument, NULL, 0, eArgTypeNone          ,"The name of a type to view memory as."}, 
+    { LLDB_OPT_SET_4, false, "force"        ,'r', no_argument,       NULL, 0, eArgTypeNone          ,"Necessary if reading over 1024 bytes of memory."},
 };
 
 
@@ -93,6 +94,10 @@ public:
                 
             case 't':
                 error = m_view_as_type.SetValueFromCString (option_arg);
+                break;
+            
+            case 'r':
+                m_force = true;
                 break;
                 
             default:
@@ -181,7 +186,9 @@ public:
                 if (byte_size_option_set)
                 {
                     if (byte_size_value > 1)
-                        error.SetErrorString ("use --count option to specify an end address to display a number of bytes");
+                        error.SetErrorStringWithFormat ("display format (bytes/bytes with ascii) conflicts with the specified byte size %llu\n"
+                                                        "\tconsider using a different display format or don't specify the byte size",
+                                                        byte_size_value.GetCurrentValue());
                 }
                 else
                     byte_size_value = 1;
@@ -268,6 +275,7 @@ public:
     OptionValueUInt64 m_num_per_line;
     bool m_output_as_binary;
     OptionValueString m_view_as_type;
+    bool m_force;
 };
 
 
@@ -384,7 +392,7 @@ public:
         {
             // We are viewing memory as a type
             SymbolContext sc;
-            const bool append = true;
+            const bool exact_match = false;
             TypeList type_list;
             uint32_t reference_count = 0;
             uint32_t pointer_count = 0;
@@ -456,8 +464,7 @@ public:
                 {
                     sc.module_sp->FindTypes (sc,
                                              lookup_type_name,
-                                             NULL,
-                                             append, 
+                                             exact_match,
                                              1, 
                                              type_list);
                 }
@@ -466,7 +473,7 @@ public:
             {
                 target->GetImages().FindTypes (sc, 
                                                lookup_type_name, 
-                                               append, 
+                                               exact_match, 
                                                1, 
                                                type_list);
             }
@@ -590,17 +597,31 @@ public:
             item_count = total_byte_size / item_byte_size;
         }
         
+        if (total_byte_size > 1024 && !m_memory_options.m_force)
+        {
+            result.AppendErrorWithFormat("Normally, \'memory read\' will not read over 1Kbyte of data.\n");
+            result.AppendErrorWithFormat("Please use --force to override this restriction.\n");
+            return false;
+        }
+        
         DataBufferSP data_sp;
         size_t bytes_read = 0;
         if (!clang_ast_type.GetOpaqueQualType())
         {
             data_sp.reset (new DataBufferHeap (total_byte_size, '\0'));
-            Address address(NULL, addr);
+            Address address(addr, NULL);
             bytes_read = target->ReadMemory(address, false, data_sp->GetBytes (), data_sp->GetByteSize(), error);
             if (bytes_read == 0)
             {
-                result.AppendWarningWithFormat("Read from 0x%llx failed.\n", addr);
-                result.AppendError(error.AsCString());
+                const char *error_cstr = error.AsCString();
+                if (error_cstr && error_cstr[0])
+                {
+                    result.AppendError(error_cstr);
+                }
+                else
+                {
+                    result.AppendErrorWithFormat("failed to read memory from 0x%llx.\n", addr);
+                }
                 result.SetStatus(eReturnStatusFailed);
                 return false;
             }
@@ -677,7 +698,7 @@ public:
             for (uint32_t i = 0; i<item_count; ++i)
             {
                 addr_t item_addr = addr + (i * item_byte_size);
-                Address address (NULL, item_addr);
+                Address address (item_addr);
                 StreamString name_strm;
                 name_strm.Printf ("0x%llx", item_addr);
                 ValueObjectSP valobj_sp (ValueObjectMemory::Create (exe_scope, 
@@ -691,22 +712,22 @@ public:
 
                     bool scope_already_checked = true;
                     
+                    ValueObject::DumpValueObjectOptions options;
+                    options.SetMaximumPointerDepth(m_varobj_options.ptr_depth)
+                    .SetMaximumDepth(m_varobj_options.max_depth)
+                    .SetShowLocation(m_varobj_options.show_location)
+                    .SetShowTypes(m_varobj_options.show_types)
+                    .SetUseObjectiveC(m_varobj_options.use_objc)
+                    .SetScopeChecked(scope_already_checked)
+                    .SetFlatOutput(m_varobj_options.flat_output)
+                    .SetUseSyntheticValue(m_varobj_options.be_raw ? false : m_varobj_options.use_synth)
+                    .SetOmitSummaryDepth(m_varobj_options.be_raw ? UINT32_MAX : m_varobj_options.no_summary_depth)
+                    .SetIgnoreCap(m_varobj_options.be_raw ? true : m_varobj_options.ignore_cap)
+                    .SetFormat(format)
+                    .SetSummary();
                     ValueObject::DumpValueObject (*output_stream,
                                                   valobj_sp.get(),
-                                                  NULL,
-                                                  m_varobj_options.ptr_depth,
-                                                  0,
-                                                  m_varobj_options.max_depth,
-                                                  m_varobj_options.show_types,
-                                                  m_varobj_options.show_location,
-                                                  m_varobj_options.use_objc,
-                                                  m_varobj_options.use_dynamic,
-                                                  m_varobj_options.be_raw ? false : m_varobj_options.use_synth,
-                                                  scope_already_checked,
-                                                  m_varobj_options.flat_output,
-                                                  m_varobj_options.be_raw ? UINT32_MAX : m_varobj_options.no_summary_depth,
-                                                  m_varobj_options.be_raw ? true : m_varobj_options.ignore_cap,
-                                                  format);
+                                                  options);
                 }
                 else
                 {

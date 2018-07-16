@@ -50,6 +50,9 @@ public:
 
     SBAddress (const lldb::SBAddress &rhs);
 
+    SBAddress (lldb::SBSection section,
+               lldb::addr_t offset);
+    
     %feature("docstring", "
     Create an address by resolving a load address using the supplied target.
     ") SBAddress;
@@ -81,6 +84,17 @@ public:
 
     lldb::SBSection
     GetSection ();
+
+    lldb::addr_t
+    SBAddress::GetOffset ();
+
+    void
+    SetAddress (lldb::SBSection section, 
+                lldb::addr_t offset);
+             
+
+    lldb::AddressClass
+    GetAddressClass ();
 
     %feature("docstring", "
     //------------------------------------------------------------------
@@ -124,6 +138,63 @@ public:
 
     lldb::SBLineEntry
     GetLineEntry ();
+    
+    %pythoncode %{
+        def __get_load_addr_property__ (self):
+            '''Get the load address for a lldb.SBAddress using the current target.'''
+            return self.GetLoadAddress (target)
+
+        def __set_load_addr_property__ (self, load_addr):
+            '''Set the load address for a lldb.SBAddress using the current target.'''
+            return self.SetLoadAddress (load_addr, target)
+
+        def __int__(self):
+            '''Convert an address to a load address if there is a process and that
+            process is alive, or to a file address otherwise.'''
+            if process.is_alive:
+                return self.GetLoadAddress (target)
+            else:
+                return self.GetFileAddress ()
+
+        def __oct__(self):
+            return '%o' % int(self)
+
+        def __hex__(self):
+            return '0x%x' % int(self)
+
+        __swig_getmethods__["module"] = GetModule
+        if _newclass: module = property(GetModule, None, doc='Returns the same result as GetModule()')
+
+        __swig_getmethods__["compile_unit"] = GetCompileUnit
+        if _newclass: compile_unit = property(GetCompileUnit, None, doc='Returns the same result as GetCompileUnit()')
+
+        __swig_getmethods__["line_entry"] = GetLineEntry
+        if _newclass: line_entry = property(GetLineEntry, None, doc='Returns the same result as GetLineEntry()')
+
+        __swig_getmethods__["function"] = GetFunction
+        if _newclass: function = property(GetFunction, None, doc='Returns the same result as GetFunction()')
+
+        __swig_getmethods__["block"] = GetBlock
+        if _newclass: block = property(GetBlock, None, doc='Returns the same result as GetBlock()')
+
+        __swig_getmethods__["symbol"] = GetSymbol
+        if _newclass: symbol = property(GetSymbol, None, doc='Returns the same result as GetSymbol()')
+
+        __swig_getmethods__["offset"] = GetOffset
+        if _newclass: offset = property(GetOffset, None, doc='Returns the same result as GetOffset()')
+
+        __swig_getmethods__["section"] = GetSection
+        if _newclass: section = property(GetSection, None, doc='Returns the same result as GetSection()')
+
+        __swig_getmethods__["file_addr"] = GetFileAddress
+        if _newclass: file_addr = property(GetFileAddress, None, doc='Returns the same result as GetFileAddress()')
+
+        __swig_getmethods__["load_addr"] = __get_load_addr_property__
+        __swig_setmethods__["load_addr"] = __set_load_addr_property__
+        if _newclass: load_addr = property(__get_load_addr_property__, __set_load_addr_property__, doc='Returns a corresponding load address, resolving this SBAddress via lldb.target')
+
+    %}
+
 };
 
 } // namespace lldb

@@ -94,7 +94,8 @@ endif
 #
 # We include a dependency on this Makefile to ensure that changes to the
 # generation command get picked up.
-$(LLVMBuildMakeFrag): $(PROJ_SRC_ROOT)/Makefile.rules
+$(LLVMBuildMakeFrag): $(PROJ_SRC_ROOT)/Makefile.rules \
+		      $(PROJ_OBJ_ROOT)/Makefile.config
 	$(Echo) Constructing LLVMBuild project information.
 	$(Verb) $(LLVMBuildTool) \
 	  --native-target "$(TARGET_NATIVE_ARCH)" \
@@ -115,6 +116,10 @@ $(LLVMConfigLibraryDependenciesInc): $(LLVMBuildMakeFrag)
 # building from a subdirectory, but that is always somewhat unreliable.
 ifeq ($(LEVEL),.)
 LLVMBUILD_INCLUDE_DEPENDENCIES := 1
+
+# Clean the generated makefile fragment at the top-level.
+clean-local::
+	-$(Verb) $(RM) -f $(LLVMBuildMakeFrag)
 endif
 -include $(LLVMBuildMakeFrag)
 
@@ -319,9 +324,9 @@ ifeq ($(ENABLE_PROFILING),1)
   KEEP_SYMBOLS := 1
 endif
 
-#ifeq ($(ENABLE_VISIBILITY_INLINES_HIDDEN),1)
-#    CXX.Flags += -fvisibility-inlines-hidden
-#endif
+ifeq ($(ENABLE_VISIBILITY_INLINES_HIDDEN),1)
+    CXX.Flags += -fvisibility-inlines-hidden
+endif
 
 ifdef ENABLE_EXPENSIVE_CHECKS
   # GNU libstdc++ uses RTTI if you define _GLIBCXX_DEBUG, which we did above.
@@ -645,7 +650,7 @@ ifndef NO_PEDANTIC
 CompileCommonOpts += -pedantic -Wno-long-long
 endif
 CompileCommonOpts += -Wall -W -Wno-unused-parameter -Wwrite-strings \
-                     $(EXTRA_OPTIONS)
+                     $(EXTRA_OPTIONS) $(COVERED_SWITCH_DEFAULT)
 # Enable cast-qual for C++; the workaround is to use const_cast.
 CXX.Flags += -Wcast-qual
 
@@ -696,7 +701,13 @@ ifeq ($(HOST_OS),AuroraUX)
 CPP.BaseFlags += -include llvm/Support/Solaris.h
 endif # !HOST_OS - AuroraUX.
 
-LD.Flags      += -L$(LibDir) -L$(LLVMLibDir)
+# On Windows, SharedLibDir != LibDir. The order is important.
+ifeq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
+  LD.Flags    += -L$(SharedLibDir) -L$(LibDir) -L$(LLVMToolDir) -L$(LLVMLibDir)
+else
+  LD.Flags    += -L$(LibDir) -L$(LLVMLibDir)
+endif
+
 CPP.BaseFlags += -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS
 # All -I flags should go here, so that they don't confuse llvm-config.
 CPP.Flags     += $(sort -I$(PROJ_OBJ_DIR) -I$(PROJ_SRC_DIR) \
@@ -1481,12 +1492,23 @@ else
 $(ToolBuildPath): $(ToolDir)/.dir
 endif
 
+ifdef CODESIGN_TOOLS
 $(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
 	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
 	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
 	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
 	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
           $(StripWarnMsg)
+	$(Echo) ======= Code-Signing $(BuildMode) Executable $(TOOLNAME)
+	$(Verb) codesign -s - $@
+else
+$(ToolBuildPath): $(ObjectsO) $(ProjLibsPaths) $(LLVMLibsPaths)
+	$(Echo) Linking $(BuildMode) executable $(TOOLNAME) $(StripWarnMsg)
+	$(Verb) $(Link) -o $@ $(TOOLLINKOPTS) $(ObjectsO) $(ProjLibsOptions) \
+	$(LLVMLibsOptions) $(ExtraLibs) $(TOOLLINKOPTSB) $(LIBS)
+	$(Echo) ======= Finished Linking $(BuildMode) Executable $(TOOLNAME) \
+          $(StripWarnMsg)
+endif
 
 ifneq ($(strip $(ToolAliasBuildPath)),)
 $(ToolAliasBuildPath): $(ToolBuildPath)

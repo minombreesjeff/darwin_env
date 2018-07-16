@@ -13,10 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClangSACheckers.h"
+#include "clang/AST/ExprObjC.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
+#include "llvm/ADT/SmallString.h"
 
 using namespace clang;
 using namespace ento;
@@ -25,8 +27,8 @@ namespace {
 class DereferenceChecker
     : public Checker< check::Location,
                         EventDispatcher<ImplicitNullDerefEvent> > {
-  mutable llvm::OwningPtr<BuiltinBug> BT_null;
-  mutable llvm::OwningPtr<BuiltinBug> BT_undef;
+  mutable OwningPtr<BuiltinBug> BT_null;
+  mutable OwningPtr<BuiltinBug> BT_undef;
 
 public:
   void checkLocation(SVal location, bool isLoad, const Stmt* S,
@@ -89,8 +91,8 @@ void DereferenceChecker::checkLocation(SVal l, bool isLoad, const Stmt* S,
   if (!isa<Loc>(location))
     return;
 
-  const ProgramState *state = C.getState();
-  const ProgramState *notNullState, *nullState;
+  ProgramStateRef state = C.getState();
+  ProgramStateRef notNullState, nullState;
   llvm::tie(notNullState, nullState) = state->assume(location);
 
   // The explicit NULL case.
@@ -106,7 +108,7 @@ void DereferenceChecker::checkLocation(SVal l, bool isLoad, const Stmt* S,
       if (!BT_null)
         BT_null.reset(new BuiltinBug("Dereference of null pointer"));
 
-      llvm::SmallString<100> buf;
+      SmallString<100> buf;
       SmallVector<SourceRange, 2> Ranges;
       
       // Walk through lvalue casts to get the original expression

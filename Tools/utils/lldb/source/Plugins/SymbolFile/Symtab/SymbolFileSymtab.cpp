@@ -106,7 +106,6 @@ SymbolFileSymtab::CalculateAbilities ()
             if (symtab->AppendSymbolIndexesWithType(eSymbolTypeCode, Symtab::eDebugNo, Symtab::eVisibilityAny, m_code_indexes))
             {
                 symtab->SortSymbolIndexesByValue(m_code_indexes, true);
-                abilities |= Labels;
             }
 
             if (symtab->AppendSymbolIndexesWithType(eSymbolTypeData, m_data_indexes))
@@ -118,7 +117,6 @@ SymbolFileSymtab::CalculateAbilities ()
             lldb_private::Symtab::IndexCollection objc_class_indexes;
             if (symtab->AppendSymbolIndexesWithType (eSymbolTypeObjCClass, objc_class_indexes))
             {
-                abilities |= RuntimeTypes;
                 symtab->AppendSymbolNamesToMap (objc_class_indexes,
                                                 true,
                                                 true,
@@ -150,18 +148,11 @@ SymbolFileSymtab::ParseCompileUnitAtIndex(uint32_t idx)
 
     // If we don't have any source file symbols we will just have one compile unit for
     // the entire object file
-//    if (m_source_indexes.empty())
-//    {
-//        const FileSpec &obj_file_spec = m_obj_file->GetFileSpec();
-//        if (obj_file_spec)
-//            cu_sp.reset(new CompileUnit(m_obj_file->GetModule(), NULL, obj_file_spec, 0, eLanguageTypeUnknown));
-//
-//    }
-    /* else */ if (idx < m_source_indexes.size())
+    if (idx < m_source_indexes.size())
     {
         const Symbol *cu_symbol = m_obj_file->GetSymtab()->SymbolAtIndex(m_source_indexes[idx]);
         if (cu_symbol)
-            cu_sp.reset(new CompileUnit(m_obj_file->GetModule(), NULL, cu_symbol->GetMangled().GetName().AsCString(), 0, eLanguageTypeUnknown));
+            cu_sp.reset(new CompileUnit (m_obj_file->GetModule(), NULL, cu_symbol->GetMangled().GetName().AsCString(), 0, eLanguageTypeUnknown));
     }
     return cu_sp;
 }
@@ -207,7 +198,7 @@ SymbolFileSymtab::ParseCompileUnitFunctions (const SymbolContext &sc)
                 if (curr_symbol)
                 {
                     // Union of all ranges in the function DIE (if the function is discontiguous)
-                    AddressRange func_range(curr_symbol->GetValue(), 0);
+                    AddressRange func_range(curr_symbol->GetAddress(), 0);
                     if (func_range.GetBaseAddress().IsSectionOffset())
                     {
                         uint32_t symbol_size = curr_symbol->GetByteSize();
@@ -218,7 +209,7 @@ SymbolFileSymtab::ParseCompileUnitFunctions (const SymbolContext &sc)
                             next_symbol = symtab->SymbolAtIndex(m_code_indexes[idx + 1]);
                             if (next_symbol)
                             {
-                                func_range.SetByteSize(next_symbol->GetValue().GetOffset() - curr_symbol->GetValue().GetOffset());
+                                func_range.SetByteSize(next_symbol->GetAddress().GetOffset() - curr_symbol->GetAddress().GetOffset());
                             }
                         }
 
@@ -332,7 +323,7 @@ SymbolFileSymtab::FindGlobalVariables(const RegularExpression& regex, bool appen
 }
 
 uint32_t
-SymbolFileSymtab::FindFunctions(const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, SymbolContextList& sc_list)
+SymbolFileSymtab::FindFunctions(const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool include_inlines,  bool append, SymbolContextList& sc_list)
 {
     Timer scoped_timer (__PRETTY_FUNCTION__,
                         "SymbolFileSymtab::FindFunctions (name = '%s')",
@@ -346,7 +337,7 @@ SymbolFileSymtab::FindFunctions(const ConstString &name, const ClangNamespaceDec
 }
 
 uint32_t
-SymbolFileSymtab::FindFunctions(const RegularExpression& regex, bool append, SymbolContextList& sc_list)
+SymbolFileSymtab::FindFunctions(const RegularExpression& regex, bool include_inlines, bool append, SymbolContextList& sc_list)
 {
     Timer scoped_timer (__PRETTY_FUNCTION__,
                         "SymbolFileSymtab::FindFunctions (regex = '%s')",
@@ -407,11 +398,12 @@ SymbolFileSymtab::FindTypes (const lldb_private::SymbolContext& sc,
         lldb::clang_type_t objc_object_type = ast.CreateObjCClass (name.AsCString(), 
                                                                    ast.GetTranslationUnitDecl(), 
                                                                    isForwardDecl, 
-                                                                   isInternal);
+                                                                   isInternal,
+                                                                   0xffaaffaaffaaffaall);
         
         Declaration decl;
         
-        lldb::TypeSP type(new Type (iter->second,
+        lldb::TypeSP type(new Type (match->value,
                                     this,
                                     name,
                                     0,      // byte_size - don't change this from 0, we currently use that to identify these "synthetic" ObjC class types.

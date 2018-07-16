@@ -53,9 +53,6 @@
 
 namespace lldb_private {
 
-uint32_t
-GetLogMask ();
-
 void
 LogIfAllCategoriesSet (uint32_t mask, const char *format, ...);
 
@@ -75,10 +72,10 @@ bool
 IsLogVerbose ();
 
 void
-DisableLog (Args &args, Stream *feedback_strm);
+DisableLog (const char **categories, Stream *feedback_strm);
 
 lldb::LogSP
-EnableLog (lldb::StreamSP &log_stream_sp, uint32_t log_options, Args &args, Stream *feedback_strm);
+EnableLog (lldb::StreamSP &log_stream_sp, uint32_t log_options, const char **categories, Stream *feedback_strm);
 
 void
 ListLogCategories (Stream *strm);

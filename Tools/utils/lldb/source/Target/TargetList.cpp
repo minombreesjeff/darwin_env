@@ -17,6 +17,7 @@
 #include "lldb/Core/State.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/OptionGroupPlatform.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/Process.h"
@@ -25,16 +26,23 @@
 using namespace lldb;
 using namespace lldb_private;
 
+ConstString &
+TargetList::GetStaticBroadcasterClass ()
+{
+    static ConstString class_name ("lldb.targetList");
+    return class_name;
+}
 
 //----------------------------------------------------------------------
 // TargetList constructor
 //----------------------------------------------------------------------
-TargetList::TargetList() :
-    Broadcaster("TargetList"),
+TargetList::TargetList(Debugger &debugger) :
+    Broadcaster(&debugger, "TargetList"),
     m_target_list(),
     m_target_list_mutex (Mutex::eMutexTypeRecursive),
     m_selected_target_idx (0)
 {
+    CheckInWithManager();
 }
 
 //----------------------------------------------------------------------
@@ -56,42 +64,68 @@ TargetList::CreateTarget (Debugger &debugger,
 {
     Error error;
     PlatformSP platform_sp;
-    if (platform_options)
-    {
-        if (platform_options->PlatformWasSpecified ())
-        {
-            const bool select_platform = true;
-            platform_sp = platform_options->CreatePlatformWithOptions (debugger.GetCommandInterpreter(), 
-                                                                       select_platform, 
-                                                                       error);
-            if (!platform_sp)
-                return error;
-        }
-    }
     
-    if (!platform_sp)
-        platform_sp = debugger.GetPlatformList().GetSelectedPlatform ();
-
     // This is purposely left empty unless it is specified by triple_cstr.
     // If not initialized via triple_cstr, then the currently selected platform
     // will set the architecture correctly.
-    ArchSpec arch;
-    
-    if (triple_cstr)
+    const ArchSpec arch(triple_cstr);
+    if (triple_cstr && triple_cstr[0])
     {
-        arch.SetTriple(triple_cstr, platform_sp.get());
         if (!arch.IsValid())
         {
             error.SetErrorStringWithFormat("invalid triple '%s'", triple_cstr);
             return error;
         }
     }
+
+    ArchSpec platform_arch(arch);
+    CommandInterpreter &interpreter = debugger.GetCommandInterpreter();
+    if (platform_options)
+    {
+        if (platform_options->PlatformWasSpecified ())
+        {
+            const bool select_platform = true;
+            platform_sp = platform_options->CreatePlatformWithOptions (interpreter,
+                                                                       arch,
+                                                                       select_platform, 
+                                                                       error,
+                                                                       platform_arch);
+            if (!platform_sp)
+                return error;
+        }
+    }
+    
+    if (!platform_sp)
+    {
+        // Get the current platform and make sure it is compatible with the
+        // current architecture if we have a valid architecture.
+        platform_sp = debugger.GetPlatformList().GetSelectedPlatform ();
+        
+        if (arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, &platform_arch))
+        {
+            platform_sp = Platform::GetPlatformForArchitecture(arch, &platform_arch);
+        }
+    }
+    
+    if (!platform_arch.IsValid())
+        platform_arch = arch;
+
     error = TargetList::CreateTarget (debugger,
                                       file,
-                                      arch,
+                                      platform_arch,
                                       get_dependent_files,
                                       platform_sp,
                                       target_sp);
+
+    if (target_sp)
+    {
+        if (file.GetDirectory())
+        {
+            FileSpec file_dir;
+            file_dir.GetDirectory() = file.GetDirectory();
+            target_sp->GetExecutableSearchPaths ().Append (file_dir);
+        }
+    }
     return error;
 }
 
@@ -100,9 +134,9 @@ TargetList::CreateTarget
 (
     Debugger &debugger,
     const FileSpec& file,
-    const ArchSpec& arch,
+    const ArchSpec& specified_arch,
     bool get_dependent_files,
-    const PlatformSP &platform_sp,
+    PlatformSP &platform_sp,
     TargetSP &target_sp
 )
 {
@@ -110,17 +144,43 @@ TargetList::CreateTarget
                         "TargetList::CreateTarget (file = '%s/%s', arch = '%s')",
                         file.GetDirectory().AsCString(),
                         file.GetFilename().AsCString(),
-                        arch.GetArchitectureName());
+                        specified_arch.GetArchitectureName());
     Error error;
 
+    ArchSpec arch(specified_arch);
+
+    if (platform_sp)
+    {
+        if (arch.IsValid())
+        {
+            if (!platform_sp->IsCompatibleArchitecture(arch))
+                platform_sp = Platform::GetPlatformForArchitecture(specified_arch, &arch);
+        }
+    }
+    else if (arch.IsValid())
+    {
+        platform_sp = Platform::GetPlatformForArchitecture(specified_arch, &arch);
+    }
     
+    if (!platform_sp)
+        platform_sp = debugger.GetPlatformList().GetSelectedPlatform();
+
+    if (!arch.IsValid())
+        arch = specified_arch;
+    
+
     if (file)
     {
         ModuleSP exe_module_sp;
         FileSpec resolved_file(file);
-        
         if (platform_sp)
-            error = platform_sp->ResolveExecutable (file, arch, exe_module_sp);
+        {
+            FileSpecList executable_search_paths (Target::GetDefaultExecutableSearchPaths());
+            error = platform_sp->ResolveExecutable (file,
+                                                    arch,
+                                                    exe_module_sp, 
+                                                    executable_search_paths.GetSize() ? &executable_search_paths : NULL);
+        }
 
         if (error.Success() && exe_module_sp)
         {
@@ -362,6 +422,19 @@ TargetList::GetTargetAtIndex (uint32_t idx) const
     if (idx < m_target_list.size())
         target_sp = m_target_list[idx];
     return target_sp;
+}
+
+uint32_t
+TargetList::GetIndexOfTarget (lldb::TargetSP target_sp) const
+{
+    Mutex::Locker locker (m_target_list_mutex);
+    size_t num_targets = m_target_list.size();
+    for (size_t idx = 0; idx < num_targets; idx++)
+    {
+        if (target_sp == m_target_list[idx])
+            return idx;
+    }
+    return UINT32_MAX;
 }
 
 uint32_t

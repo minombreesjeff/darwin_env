@@ -28,7 +28,6 @@
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackID.h"
-#include "lldb/Utility/PriorityPointerPair.h"
 #include "lldb/Utility/SharedCluster.h"
 
 namespace lldb_private {
@@ -69,54 +68,67 @@ public:
     
     enum GetExpressionPathFormat
     {
-        eDereferencePointers = 1,
-        eHonorPointers
+        eGetExpressionPathFormatDereferencePointers = 1,
+        eGetExpressionPathFormatHonorPointers
     };
     
     enum ValueObjectRepresentationStyle
     {
-        eDisplayValue = 1,
-        eDisplaySummary,
-        eDisplayLanguageSpecific,
-        eDisplayLocation,
-        eDisplayChildrenCount,
-        eDisplayType
+        eValueObjectRepresentationStyleValue = 1,
+        eValueObjectRepresentationStyleSummary,
+        eValueObjectRepresentationStyleLanguageSpecific,
+        eValueObjectRepresentationStyleLocation,
+        eValueObjectRepresentationStyleChildrenCount,
+        eValueObjectRepresentationStyleType
     };
     
     enum ExpressionPathScanEndReason
     {
-        eEndOfString = 1,           // out of data to parse
-        eNoSuchChild,               // child element not found
-        eEmptyRangeNotAllowed,      // [] only allowed for arrays
-        eDotInsteadOfArrow,         // . used when -> should be used
-        eArrowInsteadOfDot,         // -> used when . should be used
-        eFragileIVarNotAllowed,     // ObjC ivar expansion not allowed
-        eRangeOperatorNotAllowed,   // [] not allowed by options
-        eRangeOperatorInvalid,      // [] not valid on objects other than scalars, pointers or arrays
-        eArrayRangeOperatorMet,     // [] is good for arrays, but I cannot parse it
-        eBitfieldRangeOperatorMet,  // [] is good for bitfields, but I cannot parse after it
-        eUnexpectedSymbol,          // something is malformed in the expression
-        eTakingAddressFailed,       // impossible to apply & operator
-        eDereferencingFailed,       // impossible to apply * operator
-        eRangeOperatorExpanded,     // [] was expanded into a VOList
-        eUnknown = 0xFFFF
+        eExpressionPathScanEndReasonEndOfString = 1,           // out of data to parse
+        eExpressionPathScanEndReasonNoSuchChild,               // child element not found
+        eExpressionPathScanEndReasonEmptyRangeNotAllowed,      // [] only allowed for arrays
+        eExpressionPathScanEndReasonDotInsteadOfArrow,         // . used when -> should be used
+        eExpressionPathScanEndReasonArrowInsteadOfDot,         // -> used when . should be used
+        eExpressionPathScanEndReasonFragileIVarNotAllowed,     // ObjC ivar expansion not allowed
+        eExpressionPathScanEndReasonRangeOperatorNotAllowed,   // [] not allowed by options
+        eExpressionPathScanEndReasonRangeOperatorInvalid,      // [] not valid on objects other than scalars, pointers or arrays
+        eExpressionPathScanEndReasonArrayRangeOperatorMet,     // [] is good for arrays, but I cannot parse it
+        eExpressionPathScanEndReasonBitfieldRangeOperatorMet,  // [] is good for bitfields, but I cannot parse after it
+        eExpressionPathScanEndReasonUnexpectedSymbol,          // something is malformed in the expression
+        eExpressionPathScanEndReasonTakingAddressFailed,       // impossible to apply & operator
+        eExpressionPathScanEndReasonDereferencingFailed,       // impossible to apply * operator
+        eExpressionPathScanEndReasonRangeOperatorExpanded,     // [] was expanded into a VOList
+        eExpressionPathScanEndReasonSyntheticValueMissing,     // getting the synthetic children failed
+        eExpressionPathScanEndReasonUnknown = 0xFFFF
     };
     
     enum ExpressionPathEndResultType
     {
-        ePlain = 1,                 // anything but...
-        eBitfield,                  // a bitfield
-        eBoundedRange,              // a range [low-high]
-        eUnboundedRange,            // a range []
-        eValueObjectList,           // several items in a VOList
-        eInvalid = 0xFFFF
+        eExpressionPathEndResultTypePlain = 1,                 // anything but...
+        eExpressionPathEndResultTypeBitfield,                  // a bitfield
+        eExpressionPathEndResultTypeBoundedRange,              // a range [low-high]
+        eExpressionPathEndResultTypeUnboundedRange,            // a range []
+        eExpressionPathEndResultTypeValueObjectList,           // several items in a VOList
+        eExpressionPathEndResultTypeInvalid = 0xFFFF
     };
     
     enum ExpressionPathAftermath
     {
-        eNothing = 1,               // just return it
-        eDereference,               // dereference the target
-        eTakeAddress                // take target's address
+        eExpressionPathAftermathNothing = 1,               // just return it
+        eExpressionPathAftermathDereference,               // dereference the target
+        eExpressionPathAftermathTakeAddress                // take target's address
+    };
+    
+    enum ClearUserVisibleDataItems
+    {
+        eClearUserVisibleDataItemsNothing = 1u << 0,
+        eClearUserVisibleDataItemsValue = 1u << 1,
+        eClearUserVisibleDataItemsSummary = 1u << 2,
+        eClearUserVisibleDataItemsLocation = 1u << 3,
+        eClearUserVisibleDataItemsDescription = 1u << 4,
+        eClearUserVisibleDataItemsSyntheticChildren = 1u << 5,
+        eClearUserVisibleDataItemsAllStrings = eClearUserVisibleDataItemsValue | eClearUserVisibleDataItemsSummary | eClearUserVisibleDataItemsLocation | eClearUserVisibleDataItemsDescription,
+        eClearUserVisibleDataItemsAll = 0xFFFF
     };
     
     struct GetValueForExpressionPathOptions
@@ -205,32 +217,36 @@ public:
     
     struct DumpValueObjectOptions
     {
-        uint32_t m_ptr_depth;
+        uint32_t m_max_ptr_depth;
         uint32_t m_max_depth;
         bool m_show_types;
         bool m_show_location;
         bool m_use_objc;
         lldb::DynamicValueType m_use_dynamic;
-        lldb::SyntheticValueType m_use_synthetic;
+        bool m_use_synthetic;
         bool m_scope_already_checked;
         bool m_flat_output;
         uint32_t m_omit_summary_depth;
         bool m_ignore_cap;
-        lldb::Format m_override_format;
+        lldb::Format m_format;
+        lldb::TypeSummaryImplSP m_summary_sp;
+        std::string m_root_valobj_name;
         
         DumpValueObjectOptions() :
-            m_ptr_depth(0),
+            m_max_ptr_depth(0),
             m_max_depth(UINT32_MAX),
             m_show_types(false),
             m_show_location(false),
             m_use_objc(false),
             m_use_dynamic(lldb::eNoDynamicValues),
-            m_use_synthetic(lldb::eUseSyntheticFilter),
+            m_use_synthetic(true),
             m_scope_already_checked(false),
             m_flat_output(false),
             m_omit_summary_depth(0),
             m_ignore_cap(false), 
-            m_override_format (lldb::eFormatDefault)
+            m_format (lldb::eFormatDefault),
+            m_summary_sp(),
+            m_root_valobj_name()
         {}
         
         static const DumpValueObjectOptions
@@ -241,10 +257,27 @@ public:
             return g_default_options;
         }
         
+        DumpValueObjectOptions (const DumpValueObjectOptions& rhs) :
+            m_max_ptr_depth(rhs.m_max_ptr_depth),
+            m_max_depth(rhs.m_max_depth),
+            m_show_types(rhs.m_show_types),
+            m_show_location(rhs.m_show_location),
+            m_use_objc(rhs.m_use_objc),
+            m_use_dynamic(rhs.m_use_dynamic),
+            m_use_synthetic(rhs.m_use_synthetic),
+            m_scope_already_checked(rhs.m_scope_already_checked),
+            m_flat_output(rhs.m_flat_output),
+            m_omit_summary_depth(rhs.m_omit_summary_depth),
+            m_ignore_cap(rhs.m_ignore_cap),
+            m_format(rhs.m_format),
+            m_summary_sp(rhs.m_summary_sp),
+            m_root_valobj_name(rhs.m_root_valobj_name)
+        {}
+        
         DumpValueObjectOptions&
-        SetPointerDepth(uint32_t depth = 0)
+        SetMaximumPointerDepth(uint32_t depth = 0)
         {
-            m_ptr_depth = depth;
+            m_max_ptr_depth = depth;
             return *this;
         }
         
@@ -275,6 +308,16 @@ public:
             m_use_objc = use;
             return *this;
         }
+    
+        DumpValueObjectOptions&
+        SetShowSummary(bool show = true)
+        {
+            if (show == false)
+                SetOmitSummaryDepth(UINT32_MAX);
+            else
+                SetOmitSummaryDepth(0);
+            return *this;
+        }
         
         DumpValueObjectOptions&
         SetUseDynamicType(lldb::DynamicValueType dyn = lldb::eNoDynamicValues)
@@ -284,9 +327,9 @@ public:
         }
         
         DumpValueObjectOptions&
-        SetUseSyntheticValue(lldb::SyntheticValueType syn = lldb::eUseSyntheticFilter)
+        SetUseSyntheticValue(bool use_synthetic = true)
         {
-            m_use_synthetic = syn;
+            m_use_synthetic = use_synthetic;
             return *this;
         }
 
@@ -323,22 +366,46 @@ public:
         {
             if (raw)
             {
-                SetUseSyntheticValue(lldb::eNoSyntheticFilter);
+                SetUseSyntheticValue(false);
                 SetOmitSummaryDepth(UINT32_MAX);
                 SetIgnoreCap(true);
             }
             else
             {
-                SetUseSyntheticValue(lldb::eUseSyntheticFilter);
+                SetUseSyntheticValue(true);
                 SetOmitSummaryDepth(0);
                 SetIgnoreCap(false);
             }
             return *this;
         }
 
+        DumpValueObjectOptions&
+        SetFormat (lldb::Format format = lldb::eFormatDefault)
+        {
+            m_format = format;
+            return *this;
+        }
+        
+        DumpValueObjectOptions&
+        SetSummary (lldb::TypeSummaryImplSP summary = lldb::TypeSummaryImplSP())
+        {
+            m_summary_sp = summary;
+            return *this;
+        }
+        
+        DumpValueObjectOptions&
+        SetRootValueObjectName (const char* name = NULL)
+        {
+            if (name)
+                m_root_valobj_name.assign(name);
+            else
+                m_root_valobj_name.clear();
+            return *this;
+        }
+
     };
 
-    class EvaluationPoint : public ExecutionContextScope
+    class EvaluationPoint
     {
     public:
         
@@ -350,25 +417,19 @@ public:
         
         ~EvaluationPoint ();
         
-        const lldb::TargetSP &
-        GetTargetSP () const
+        const ExecutionContextRef &
+        GetExecutionContextRef() const
         {
-            return m_target_sp;
+            return m_exe_ctx_ref;
         }
-        
-        const lldb::ProcessSP &
-        GetProcessSP () const
-        {
-            return m_process_sp;
-        }
-                
+
         // Set the EvaluationPoint to the values in exe_scope,
         // Return true if the Evaluation Point changed.
         // Since the ExecutionContextScope is always going to be valid currently, 
         // the Updated Context will also always be valid.
         
-        bool
-        SetContext (ExecutionContextScope *exe_scope);
+//        bool
+//        SetContext (ExecutionContextScope *exe_scope);
         
         void
         SetIsConstant ()
@@ -442,39 +503,14 @@ public:
             
         }
         
-        // If this EvaluationPoint is created without a target, then we could have it
-        // hand out a NULL ExecutionContextScope.  But then everybody would have to check that before
-        // calling through it, which is annoying.  So instead, we make the EvaluationPoint BE an
-        // ExecutionContextScope, and it hands out the right things.
-        virtual Target *CalculateTarget ();
-        
-        virtual Process *CalculateProcess ();
-        
-        virtual Thread *CalculateThread ();
-        
-        virtual StackFrame *CalculateStackFrame ();
-        
-        virtual void CalculateExecutionContext (ExecutionContext &exe_ctx);
-        
     private:
         bool
-        SyncWithProcessState ()
-        {
-            ExecutionContextScope *exe_scope;
-            return SyncWithProcessState(exe_scope);
-        }
-        
-        bool
-        SyncWithProcessState (ExecutionContextScope *&exe_scope);
+        SyncWithProcessState ();
                 
-        bool             m_needs_update;
-        bool             m_first_update;
-
-        lldb::TargetSP   m_target_sp;
-        lldb::ProcessSP  m_process_sp;
-        lldb::user_id_t  m_thread_id;
-        StackID          m_stack_id;
-        ProcessModID     m_mod_id; // This is the stop id when this ValueObject was last evaluated.
+        ProcessModID m_mod_id; // This is the stop id when this ValueObject was last evaluated.
+        ExecutionContextRef m_exe_ctx_ref;
+        bool m_needs_update;
+        bool m_first_update;
     };
 
     const EvaluationPoint &
@@ -489,16 +525,46 @@ public:
         return m_update_point;
     }
     
-    ExecutionContextScope *
-    GetExecutionContextScope ()
+    const ExecutionContextRef &
+    GetExecutionContextRef() const
     {
-        return &m_update_point;
+        return m_update_point.GetExecutionContextRef();
     }
-    
+
+    lldb::TargetSP
+    GetTargetSP() const
+    {
+        return m_update_point.GetExecutionContextRef().GetTargetSP();
+    }
+
+    lldb::ProcessSP
+    GetProcessSP() const
+    {
+        return m_update_point.GetExecutionContextRef().GetProcessSP();
+    }
+
+    lldb::ThreadSP
+    GetThreadSP() const
+    {
+        return m_update_point.GetExecutionContextRef().GetThreadSP();
+    }
+
+    lldb::StackFrameSP
+    GetFrameSP() const
+    {
+        return m_update_point.GetExecutionContextRef().GetFrameSP();
+    }
+
     void
     SetNeedsUpdate ();
     
     virtual ~ValueObject();
+    
+    clang::ASTContext *
+    GetClangAST ();
+    
+    lldb::clang_type_t
+    GetClangType ();
 
     //------------------------------------------------------------------
     // Sublasses must implement the functions below.
@@ -506,17 +572,17 @@ public:
     virtual size_t
     GetByteSize() = 0;
 
-    virtual clang::ASTContext *
-    GetClangAST () = 0;
-
-    virtual lldb::clang_type_t
-    GetClangType () = 0;
-
     virtual lldb::ValueType
     GetValueType() const = 0;
 
+    //------------------------------------------------------------------
+    // Sublasses can implement the functions below.
+    //------------------------------------------------------------------
     virtual ConstString
-    GetTypeName() = 0;
+    GetTypeName();
+    
+    virtual ConstString
+    GetQualifiedTypeName();
 
     virtual lldb::LanguageType
     GetObjectRuntimeLanguage();
@@ -532,9 +598,6 @@ public:
 
     virtual bool
     IsPointerOrReferenceType ();
-    
-    virtual bool
-    IsPossibleCPlusPlusDynamicType ();
     
     virtual bool
     IsPossibleDynamicType ();
@@ -558,7 +621,7 @@ public:
     GetBaseClassPath (Stream &s);
 
     virtual void
-    GetExpressionPath (Stream &s, bool qualify_cxx_base_classes, GetExpressionPathFormat = eDereferencePointers);
+    GetExpressionPath (Stream &s, bool qualify_cxx_base_classes, GetExpressionPathFormat = eGetExpressionPathFormatDereferencePointers);
     
     lldb::ValueObjectSP
     GetValueForExpressionPath(const char* expression,
@@ -590,15 +653,21 @@ public:
     }
 
     virtual uint32_t
-    GetBitfieldBitSize()
+    GetBitfieldBitSize ()
     {
         return 0;
     }
 
     virtual uint32_t
-    GetBitfieldBitOffset()
+    GetBitfieldBitOffset ()
     {
         return 0;
+    }
+    
+    bool
+    IsBitfield ()
+    {
+        return (GetBitfieldBitSize() != 0) || (GetBitfieldBitOffset() != 0);
     }
     
     virtual bool
@@ -616,22 +685,30 @@ public:
     virtual const char *
     GetValueAsCString ();
     
+    virtual bool
+    GetValueAsCString (lldb::Format format,
+                       std::string& destination);
+    
     virtual uint64_t
-    GetValueAsUnsigned (uint64_t fail_value);
+    GetValueAsUnsigned (uint64_t fail_value, bool *success = NULL);
 
     virtual bool
-    SetValueFromCString (const char *value_str);
-
+    SetValueFromCString (const char *value_str, Error& error);
+    
     // Return the module associated with this value object in case the
     // value is from an executable file and might have its data in
     // sections of the file. This can be used for variables.
-    virtual Module *
+    virtual lldb::ModuleSP
     GetModule()
     {
         if (m_parent)
             return m_parent->GetModule();
-        return NULL;
+        return lldb::ModuleSP();
     }
+    
+    virtual bool
+    GetDeclaration (Declaration &decl);
+
     //------------------------------------------------------------------
     // The functions below should NOT be modified by sublasses
     //------------------------------------------------------------------
@@ -668,23 +745,29 @@ public:
     const char *
     GetSummaryAsCString ();
     
+    bool
+    GetSummaryAsCString (TypeSummaryImpl* summary_ptr,
+                         std::string& destination);
+    
     const char *
     GetObjectDescription ();
     
     bool
-    GetPrintableRepresentation(Stream& s,
-                               ValueObjectRepresentationStyle val_obj_display = eDisplaySummary,
-                               lldb::Format custom_format = lldb::eFormatInvalid);
-
-    bool
-    HasSpecialCasesForPrintableRepresentation(ValueObjectRepresentationStyle val_obj_display,
-                                              lldb::Format custom_format);
+    HasSpecialPrintableRepresentation (ValueObjectRepresentationStyle val_obj_display,
+                                       lldb::Format custom_format);
+    
+    enum PrintableRepresentationSpecialCases
+    {
+        ePrintableRepresentationSpecialCasesDisable = 0,
+        ePrintableRepresentationSpecialCasesAllow = 1,
+        ePrintableRepresentationSpecialCasesOnly = 3
+    };
     
     bool
-    DumpPrintableRepresentation(Stream& s,
-                                ValueObjectRepresentationStyle val_obj_display = eDisplaySummary,
-                                lldb::Format custom_format = lldb::eFormatInvalid,
-                                bool only_special = false);
+    DumpPrintableRepresentation (Stream& s,
+                                 ValueObjectRepresentationStyle val_obj_display = eValueObjectRepresentationStyleSummary,
+                                 lldb::Format custom_format = lldb::eFormatInvalid,
+                                 PrintableRepresentationSpecialCases special = ePrintableRepresentationSpecialCasesAllow);
     bool
     GetValueIsValid () const;
 
@@ -746,11 +829,17 @@ public:
     virtual lldb::ValueObjectSP
     GetStaticValue ();
     
+    virtual lldb::ValueObjectSP
+    GetNonSyntheticValue ();
+    
     lldb::ValueObjectSP
-    GetSyntheticValue (lldb::SyntheticValueType use_synthetic);
+    GetSyntheticValue (bool use_synthetic = true);
     
     virtual bool
     HasSyntheticValue();
+    
+    virtual bool
+    IsSynthetic() { return false; }
     
     virtual lldb::ValueObjectSP
     CreateConstantValue (const ConstString &name);
@@ -774,6 +863,9 @@ public:
     }
 
     virtual lldb::ValueObjectSP
+    Cast (const ClangASTType &clang_ast_type);
+    
+    virtual lldb::ValueObjectSP
     CastPointerType (const char *name,
                      ClangASTType &ast_type);
 
@@ -786,9 +878,9 @@ public:
     virtual void
     ValueUpdated ()
     {
-        m_value_str.clear();
-        m_summary_str.clear();
-        m_object_desc_str.clear();
+        ClearUserVisibleData(eClearUserVisibleDataItemsValue |
+                             eClearUserVisibleDataItemsSummary |
+                             eClearUserVisibleDataItemsDescription);
     }
 
     virtual bool
@@ -802,107 +894,22 @@ public:
     
     static void
     DumpValueObject (Stream &s,
-                     ValueObject *valobj)
-    {
-        
-        if (!valobj)
-            return;
-        
-        ValueObject::DumpValueObject(s,
-                                     valobj,
-                                     DumpValueObjectOptions::DefaultOptions());
-    }
-    
+                     ValueObject *valobj);    
     static void
     DumpValueObject (Stream &s,
                      ValueObject *valobj,
-                     const char *root_valobj_name)
-    {
-        
-        if (!valobj)
-            return;
-        
-        ValueObject::DumpValueObject(s,
-                                     valobj,
-                                     root_valobj_name,
-                                     DumpValueObjectOptions::DefaultOptions());
-    }
+                     const DumpValueObjectOptions& options);
 
     static void
-    DumpValueObject (Stream &s,
-                     ValueObject *valobj,
-                     const DumpValueObjectOptions& options,
-                     lldb::Format format = lldb::eFormatDefault)
-    {
-        
-        if (!valobj)
-            return;
-        
-        ValueObject::DumpValueObject(s,
-                                     valobj,
-                                     valobj->GetName().AsCString(),
-                                     options.m_ptr_depth,
-                                     0,
-                                     options.m_max_depth,
-                                     options.m_show_types,
-                                     options.m_show_location,
-                                     options.m_use_objc,
-                                     options.m_use_dynamic,
-                                     options.m_use_synthetic,
-                                     options.m_scope_already_checked,
-                                     options.m_flat_output,
-                                     options.m_omit_summary_depth,
-                                     options.m_ignore_cap,
-                                     format);
-    }
-                     
+    LogValueObject (Log *log,
+                    ValueObject *valobj);
+
     static void
-    DumpValueObject (Stream &s,
-                     ValueObject *valobj,
-                     const char *root_valobj_name,
-                     const DumpValueObjectOptions& options,
-                     lldb::Format format = lldb::eFormatDefault)
-    {
-        
-        if (!valobj)
-            return;
-        
-        ValueObject::DumpValueObject(s,
-                                     valobj,
-                                     root_valobj_name,
-                                     options.m_ptr_depth,
-                                     0,
-                                     options.m_max_depth,
-                                     options.m_show_types,
-                                     options.m_show_location,
-                                     options.m_use_objc,
-                                     options.m_use_dynamic,
-                                     options.m_use_synthetic,
-                                     options.m_scope_already_checked,
-                                     options.m_flat_output,
-                                     options.m_omit_summary_depth,
-                                     options.m_ignore_cap,
-                                     format);
-    }
-    
-    static void
-    DumpValueObject (Stream &s,
-                     ValueObject *valobj,
-                     const char *root_valobj_name,
-                     uint32_t ptr_depth,
-                     uint32_t curr_depth,
-                     uint32_t max_depth,
-                     bool show_types,
-                     bool show_location,
-                     bool use_objc,
-                     lldb::DynamicValueType use_dynamic,
-                     bool use_synthetic,
-                     bool scope_already_checked,
-                     bool flat_output,
-                     uint32_t omit_summary_depth,
-                     bool ignore_cap,
-                     lldb::Format format = lldb::eFormatDefault);
-    
+    LogValueObject (Log *log,
+                    ValueObject *valobj,
+                    const DumpValueObjectOptions& options);
+
+
     // returns true if this is a char* or a char[]
     // if it is a char* and check_pointer is true,
     // it also checks that the pointer is valid
@@ -948,81 +955,52 @@ public:
     SetFormat (lldb::Format format)
     {
         if (format != m_format)
-            m_value_str.clear();
+            ClearUserVisibleData(eClearUserVisibleDataItemsValue);
         m_format = format;
     }
     
-    void
-    SetCustomSummaryFormat(lldb::SummaryFormatSP format)
-    {
-        m_forced_summary_format = format;
-        m_user_id_of_forced_summary = m_update_point.GetModID();
-        m_summary_str.clear();
-        m_is_getting_summary = false;
-    }
-    
-    lldb::SummaryFormatSP
-    GetCustomSummaryFormat()
-    {
-        return m_forced_summary_format;
-    }
-    
-    void
-    ClearCustomSummaryFormat()
-    {
-        m_forced_summary_format.reset();
-        m_summary_str.clear();
-    }
-    
-    bool
-    HasCustomSummaryFormat()
-    {
-        return (m_forced_summary_format.get());
-    }
-    
-    lldb::SummaryFormatSP
+    lldb::TypeSummaryImplSP
     GetSummaryFormat()
     {
         UpdateFormatsIfNeeded(m_last_format_mgr_dynamic);
-        if (HasCustomSummaryFormat())
-            return m_forced_summary_format;
-        return m_last_summary_format;
+        return m_type_summary_sp;
     }
     
     void
-    SetSummaryFormat(lldb::SummaryFormatSP format)
+    SetSummaryFormat(lldb::TypeSummaryImplSP format)
     {
-        m_last_summary_format = format;
-        m_summary_str.clear();
-        m_is_getting_summary = false;
+        m_type_summary_sp = format;
+        ClearUserVisibleData(eClearUserVisibleDataItemsSummary);
     }
     
     void
-    SetValueFormat(lldb::ValueFormatSP format)
+    SetValueFormat(lldb::TypeFormatImplSP format)
     {
-        m_last_value_format = format;
-        m_value_str.clear();
+        m_type_format_sp = format;
+        ClearUserVisibleData(eClearUserVisibleDataItemsValue);
     }
     
-    lldb::ValueFormatSP
+    lldb::TypeFormatImplSP
     GetValueFormat()
     {
         UpdateFormatsIfNeeded(m_last_format_mgr_dynamic);
-        return m_last_value_format;
+        return m_type_format_sp;
     }
     
     void
-    SetSyntheticChildren(lldb::SyntheticChildrenSP synth)
+    SetSyntheticChildren(const lldb::SyntheticChildrenSP &synth_sp)
     {
-        m_last_synthetic_filter = synth;
-        m_synthetic_value = NULL;
+        if (synth_sp.get() == m_synthetic_children_sp.get())
+            return;
+        ClearUserVisibleData(eClearUserVisibleDataItemsSyntheticChildren);
+        m_synthetic_children_sp = synth_sp;
     }
     
     lldb::SyntheticChildrenSP
     GetSyntheticChildren()
     {
         UpdateFormatsIfNeeded(m_last_format_mgr_dynamic);
-        return m_last_synthetic_filter;
+        return m_synthetic_children_sp;
     }
 
     // Use GetParent for display purposes, but if you want to tell the parent to update itself
@@ -1062,6 +1040,73 @@ public:
     
 protected:
     typedef ClusterManager<ValueObject> ValueObjectManager;
+    
+    class ChildrenManager
+    {
+    public:
+        ChildrenManager() :
+        m_mutex(Mutex::eMutexTypeRecursive),
+        m_children(),
+        m_children_count(0)
+        {}
+        
+        bool
+        HasChildAtIndex (uint32_t idx)
+        {
+            Mutex::Locker(m_mutex);
+            ChildrenIterator iter = m_children.find(idx);
+            ChildrenIterator end = m_children.end();
+            return (iter != end);
+        }
+        
+        ValueObject*
+        GetChildAtIndex (uint32_t idx)
+        {
+            Mutex::Locker(m_mutex);
+            ChildrenIterator iter = m_children.find(idx);
+            ChildrenIterator end = m_children.end();
+            if (iter == end)
+                return NULL;
+            else
+                return iter->second;
+        }
+        
+        void
+        SetChildAtIndex (uint32_t idx, ValueObject* valobj)
+        {
+            ChildrenPair pair(idx,valobj); // we do not need to be mutex-protected to make a pair
+            Mutex::Locker(m_mutex);
+            m_children.insert(pair);
+        }
+        
+        void
+        SetChildrenCount (uint32_t count)
+        {
+            m_children_count = count;
+        }
+        
+        uint32_t
+        GetChildrenCount ()
+        {
+            return m_children_count;
+        }
+        
+        void
+        Clear()
+        {
+            m_children_count = 0;
+            Mutex::Locker(m_mutex);
+            m_children.clear();
+        }
+        
+    private:
+        typedef std::map<uint32_t, ValueObject*> ChildrenMap;
+        typedef ChildrenMap::iterator ChildrenIterator;
+        typedef ChildrenMap::value_type ChildrenPair;
+        Mutex m_mutex;
+        ChildrenMap m_children;
+        uint32_t m_children_count;
+    };
 
     //------------------------------------------------------------------
     // Classes that inherit from ValueObject can see and modify these
@@ -1081,13 +1126,15 @@ protected:
     std::string         m_object_desc_str; // Cached result of the "object printer".  This differs from the summary
                                               // in that the summary is consed up by us, the object_desc_string is builtin.
 
+    ClangASTType        m_override_type;// If the type of the value object should be overridden, the type to impose.
+    
     ValueObjectManager *m_manager;      // This object is managed by the root object (any ValueObject that gets created
                                         // without a parent.)  The manager gets passed through all the generations of
                                         // dependent objects, and will keep the whole cluster of objects alive as long
                                         // as a shared pointer to any of them has been handed out.  Shared pointers to
                                         // value objects must always be made with the GetSP method.
 
-    std::vector<ValueObject *>           m_children;
+    ChildrenManager                      m_children;
     std::map<ConstString, ValueObject *> m_synthetic_children;
     
     ValueObject*                         m_dynamic_value;
@@ -1100,10 +1147,9 @@ protected:
     lldb::Format                m_format;
     uint32_t                    m_last_format_mgr_revision;
     lldb::DynamicValueType      m_last_format_mgr_dynamic;
-    lldb::SummaryFormatSP       m_last_summary_format;
-    lldb::SummaryFormatSP       m_forced_summary_format;
-    lldb::ValueFormatSP         m_last_value_format;
-    lldb::SyntheticChildrenSP   m_last_synthetic_filter;
+    lldb::TypeSummaryImplSP     m_type_summary_sp;
+    lldb::TypeFormatImplSP      m_type_format_sp;
+    lldb::SyntheticChildrenSP   m_synthetic_children_sp;
     ProcessModID                m_user_id_of_forced_summary;
     AddressType                 m_address_type_of_ptr_or_ref_children;
     
@@ -1116,7 +1162,8 @@ protected:
                         m_is_bitfield_for_scalar:1,
                         m_is_expression_path_child:1,
                         m_is_child_at_offset:1,
-                        m_is_getting_summary:1;
+                        m_is_getting_summary:1,
+                        m_did_calculate_complete_objc_class_type:1;
     
     friend class ClangExpressionDeclMap;  // For GetValue
     friend class ClangExpressionVariable; // For SetName
@@ -1155,7 +1202,7 @@ protected:
     CalculateDynamicValue (lldb::DynamicValueType use_dynamic);
     
     virtual void
-    CalculateSyntheticValue (lldb::SyntheticValueType use_synthetic);
+    CalculateSyntheticValue (bool use_synthetic = true);
     
     // Should only be called by ValueObject::GetChildAtIndex()
     // Returns a ValueObject managed by this ValueObject's manager.
@@ -1176,7 +1223,7 @@ protected:
     SetValueIsValid (bool valid);
     
     void
-    ClearUserVisibleData();
+    ClearUserVisibleData(uint32_t items = ValueObject::eClearUserVisibleDataItemsAllStrings);
     
     void
     AddSyntheticChild (const ConstString &key,
@@ -1185,10 +1232,23 @@ protected:
     DataExtractor &
     GetDataExtractor ();
     
+    //------------------------------------------------------------------
+    // Sublasses must implement the functions below.
+    //------------------------------------------------------------------
+    
+    virtual clang::ASTContext *
+    GetClangASTImpl () = 0;
+    
+    virtual lldb::clang_type_t
+    GetClangTypeImpl () = 0;
+    
 private:
     //------------------------------------------------------------------
     // For ValueObject only
     //------------------------------------------------------------------
+    
+    virtual ClangASTType
+    MaybeCalculateCompleteType ();
     
     lldb::ValueObjectSP
     GetValueForExpressionPath_Impl(const char* expression_cstr,

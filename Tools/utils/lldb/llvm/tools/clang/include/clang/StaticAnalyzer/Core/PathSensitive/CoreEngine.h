@@ -16,6 +16,7 @@
 #define LLVM_CLANG_GR_COREENGINE
 
 #include "clang/AST/Expr.h"
+#include "clang/Analysis/AnalysisContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/WorkList.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/BlockCounter.h"
@@ -45,9 +46,6 @@ class CoreEngine {
   friend class IndirectGotoNodeBuilder;
   friend class SwitchNodeBuilder;
   friend class EndOfFunctionNodeBuilder;
-  friend class CallEnterNodeBuilder;
-  friend class CallExitNodeBuilder;
-
 public:
   typedef std::vector<std::pair<BlockEdge, const ExplodedNode*> >
             BlocksExhausted;
@@ -60,7 +58,7 @@ private:
   SubEngine& SubEng;
 
   /// G - The simulation graph.  Each node is a (location,state) pair.
-  llvm::OwningPtr<ExplodedGraph> G;
+  OwningPtr<ExplodedGraph> G;
 
   /// WList - A set of queued nodes that need to be processed by the
   ///  worklist algorithm.  It is up to the implementation of WList to decide
@@ -81,7 +79,7 @@ private:
   BlocksAborted blocksAborted;
 
   void generateNode(const ProgramPoint &Loc,
-                    const ProgramState *State,
+                    ProgramStateRef State,
                     ExplodedNode *Pred);
 
   void HandleBlockEdge(const BlockEdge &E, ExplodedNode *Pred);
@@ -91,9 +89,6 @@ private:
 
   void HandleBranch(const Stmt *Cond, const Stmt *Term, const CFGBlock *B,
                     ExplodedNode *Pred);
-  void HandleCallEnter(const CallEnter &L, const CFGBlock *Block,
-                       unsigned Index, ExplodedNode *Pred);
-  void HandleCallExit(const CallExit &L, ExplodedNode *Pred);
 
 private:
   CoreEngine(const CoreEngine&); // Do not implement.
@@ -133,10 +128,10 @@ public:
   /// ExecuteWorkList - Run the worklist algorithm for a maximum number of
   ///  steps.  Returns true if there is still simulation state on the worklist.
   bool ExecuteWorkList(const LocationContext *L, unsigned Steps,
-                       const ProgramState *InitState);
+                       ProgramStateRef InitState);
   void ExecuteWorkListWithInitialState(const LocationContext *L,
                                        unsigned Steps,
-                                       const ProgramState *InitState, 
+                                       ProgramStateRef InitState, 
                                        ExplodedNodeSet &Dst);
 
   // Functions for external checking of whether we have unfinished work
@@ -211,6 +206,7 @@ struct NodeBuilderContext {
 /// added to the builder (either as the input node set or as the newly
 /// constructed nodes) but did not have any outgoing transitions added.
 class NodeBuilder {
+  virtual void anchor();
 protected:
   const NodeBuilderContext &C;
 
@@ -241,7 +237,7 @@ protected:
   virtual void finalizeResults() {}
   
   ExplodedNode *generateNodeImpl(const ProgramPoint &PP,
-                                 const ProgramState *State,
+                                 ProgramStateRef State,
                                  ExplodedNode *Pred,
                                  bool MarkAsSink = false);
 
@@ -266,7 +262,7 @@ public:
   /// When a node is marked as sink, the exploration from the node is stopped -
   /// the node becomes the last node on the path.
   ExplodedNode *generateNode(const ProgramPoint &PP,
-                             const ProgramState *State,
+                             ProgramStateRef State,
                              ExplodedNode *Pred,
                              bool MarkAsSink = false) {
     return generateNodeImpl(PP, State, Pred, MarkAsSink);
@@ -305,6 +301,7 @@ public:
 /// \class NodeBuilderWithSinks
 /// \brief This node builder keeps track of the generated sink nodes.
 class NodeBuilderWithSinks: public NodeBuilder {
+  virtual void anchor();
 protected:
   SmallVector<ExplodedNode*, 2> sinksGenerated;
   ProgramPoint &Location;
@@ -313,7 +310,7 @@ public:
   NodeBuilderWithSinks(ExplodedNode *Pred, ExplodedNodeSet &DstSet,
                        const NodeBuilderContext &Ctx, ProgramPoint &L)
     : NodeBuilder(Pred, DstSet, Ctx), Location(L) {}
-  ExplodedNode *generateNode(const ProgramState *State,
+  ExplodedNode *generateNode(ProgramStateRef State,
                              ExplodedNode *Pred,
                              const ProgramPointTag *Tag = 0,
                              bool MarkAsSink = false) {
@@ -361,7 +358,7 @@ public:
 
   ExplodedNode *generateNode(const Stmt *S,
                              ExplodedNode *Pred,
-                             const ProgramState *St,
+                             ProgramStateRef St,
                              bool MarkAsSink = false,
                              const ProgramPointTag *tag = 0,
                              ProgramPoint::Kind K = ProgramPoint::PostStmtKind){
@@ -372,7 +369,7 @@ public:
 
   ExplodedNode *generateNode(const ProgramPoint &PP,
                              ExplodedNode *Pred,
-                             const ProgramState *State,
+                             ProgramStateRef State,
                              bool MarkAsSink = false) {
     return generateNodeImpl(PP, State, Pred, MarkAsSink);
   }
@@ -381,6 +378,7 @@ public:
 /// \brief BranchNodeBuilder is responsible for constructing the nodes
 /// corresponding to the two branches of the if statement - true and false.
 class BranchNodeBuilder: public NodeBuilder {
+  virtual void anchor();
   const CFGBlock *DstT;
   const CFGBlock *DstF;
 
@@ -406,7 +404,7 @@ public:
     takeNodes(SrcSet);
   }
 
-  ExplodedNode *generateNode(const ProgramState *State, bool branch,
+  ExplodedNode *generateNode(ProgramStateRef State, bool branch,
                              ExplodedNode *Pred);
 
   const CFGBlock *getTargetBlock(bool branch) const {
@@ -460,12 +458,16 @@ public:
   iterator end() { return iterator(DispatchBlock.succ_end()); }
 
   ExplodedNode *generateNode(const iterator &I,
-                             const ProgramState *State,
+                             ProgramStateRef State,
                              bool isSink = false);
 
   const Expr *getTarget() const { return E; }
 
-  const ProgramState *getState() const { return Pred->State; }
+  ProgramStateRef getState() const { return Pred->State; }
+  
+  const LocationContext *getLocationContext() const {
+    return Pred->getLocationContext();
+  }
 };
 
 class SwitchNodeBuilder {
@@ -507,74 +509,21 @@ public:
   }
 
   ExplodedNode *generateCaseStmtNode(const iterator &I,
-                                     const ProgramState *State);
+                                     ProgramStateRef State);
 
-  ExplodedNode *generateDefaultCaseNode(const ProgramState *State,
+  ExplodedNode *generateDefaultCaseNode(ProgramStateRef State,
                                         bool isSink = false);
 
   const Expr *getCondition() const { return Condition; }
 
-  const ProgramState *getState() const { return Pred->State; }
-};
-
-class CallEnterNodeBuilder {
-  CoreEngine &Eng;
-
-  const ExplodedNode *Pred;
-
-  // The call site. For implicit automatic object dtor, this is the trigger 
-  // statement.
-  const Stmt *CE;
-
-  // The context of the callee.
-  const StackFrameContext *CalleeCtx;
-
-  // The parent block of the CallExpr.
-  const CFGBlock *Block;
-
-  // The CFGBlock index of the CallExpr.
-  unsigned Index;
-
-public:
-  CallEnterNodeBuilder(CoreEngine &eng, const ExplodedNode *pred, 
-                         const Stmt *s, const StackFrameContext *callee, 
-                         const CFGBlock *blk, unsigned idx)
-    : Eng(eng), Pred(pred), CE(s), CalleeCtx(callee), Block(blk), Index(idx) {}
-
-  const ProgramState *getState() const { return Pred->getState(); }
-
-  const LocationContext *getLocationContext() const { 
+  ProgramStateRef getState() const { return Pred->State; }
+  
+  const LocationContext *getLocationContext() const {
     return Pred->getLocationContext();
   }
-
-  const Stmt *getCallExpr() const { return CE; }
-
-  const StackFrameContext *getCalleeContext() const { return CalleeCtx; }
-
-  const CFGBlock *getBlock() const { return Block; }
-
-  unsigned getIndex() const { return Index; }
-
-  void generateNode(const ProgramState *state);
 };
 
-class CallExitNodeBuilder {
-  CoreEngine &Eng;
-  const ExplodedNode *Pred;
-
-public:
-  CallExitNodeBuilder(CoreEngine &eng, const ExplodedNode *pred)
-    : Eng(eng), Pred(pred) {}
-
-  const ExplodedNode *getPredecessor() const { return Pred; }
-
-  const ProgramState *getState() const { return Pred->getState(); }
-
-  void generateNode(const ProgramState *state);
-}; 
-
-} // end GR namespace
-
+} // end ento namespace
 } // end clang namespace
 
 #endif

@@ -31,8 +31,6 @@ void MCObjectFileInfo::InitMachOMCObjectFileInfo(Triple T) {
   if (T.isMacOSX() && T.isMacOSXVersionLT(10, 5))
     CommDirectiveSupportsAlignment = false;
 
-  StructorOutputOrder = Structors::PriorityOrder;
-
   TextSection // .text
     = Ctx->getMachOSection("__TEXT", "__text",
                            MCSectionMachO::S_ATTR_PURE_INSTRUCTIONS,
@@ -260,12 +258,17 @@ void MCObjectFileInfo::InitELFMCObjectFileInfo(Triple T) {
     }
   }
 
-  StructorOutputOrder = Structors::ReversePriorityOrder;
+  // Solaris requires different flags for .eh_frame to seemingly every other
+  // platform.
+  EHSectionFlags = ELF::SHF_ALLOC;
+  if (T.getOS() == Triple::Solaris)
+    EHSectionFlags |= ELF::SHF_WRITE;
+
 
   // ELF
   BSSSection =
     Ctx->getELFSection(".bss", ELF::SHT_NOBITS,
-                       ELF::SHF_WRITE |ELF::SHF_ALLOC,
+                       ELF::SHF_WRITE | ELF::SHF_ALLOC,
                        SectionKind::getBSS());
 
   TextSection =
@@ -389,8 +392,6 @@ void MCObjectFileInfo::InitELFMCObjectFileInfo(Triple T) {
 
 void MCObjectFileInfo::InitCOFFMCObjectFileInfo(Triple T) {
   // COFF
-  StructorOutputOrder = Structors::ReversePriorityOrder;
-
   TextSection =
     Ctx->getCOFFSection(".text",
                         COFF::IMAGE_SCN_CNT_CODE |
@@ -408,12 +409,22 @@ void MCObjectFileInfo::InitCOFFMCObjectFileInfo(Triple T) {
                         COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
                         COFF::IMAGE_SCN_MEM_READ,
                         SectionKind::getReadOnly());
-  StaticCtorSection =
-    Ctx->getCOFFSection(".ctors",
-                        COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
-                        COFF::IMAGE_SCN_MEM_READ |
-                        COFF::IMAGE_SCN_MEM_WRITE,
-                        SectionKind::getDataRel());
+  if (T.getOS() == Triple::Win32) {
+    StaticCtorSection =
+      Ctx->getCOFFSection(".CRT$XCU",
+                          COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                          COFF::IMAGE_SCN_MEM_READ,
+                          SectionKind::getReadOnly());
+  } else {
+    StaticCtorSection =
+      Ctx->getCOFFSection(".ctors",
+                          COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                          COFF::IMAGE_SCN_MEM_READ |
+                          COFF::IMAGE_SCN_MEM_WRITE,
+                          SectionKind::getDataRel());
+  }
+
+
   StaticDtorSection =
     Ctx->getCOFFSection(".dtors",
                         COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
@@ -501,6 +512,12 @@ void MCObjectFileInfo::InitCOFFMCObjectFileInfo(Triple T) {
                         COFF::IMAGE_SCN_MEM_READ |
                         COFF::IMAGE_SCN_MEM_WRITE,
                         SectionKind::getDataRel());
+  TLSDataSection =
+    Ctx->getCOFFSection(".tls$",
+                        COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                        COFF::IMAGE_SCN_MEM_READ |
+                        COFF::IMAGE_SCN_MEM_WRITE,
+                        SectionKind::getDataRel());
 }
 
 void MCObjectFileInfo::InitMCObjectFileInfo(StringRef TT, Reloc::Model relocm,
@@ -559,7 +576,7 @@ void MCObjectFileInfo::InitEHFrameSection() {
   else if (Env == IsELF)
     EHFrameSection =
       Ctx->getELFSection(".eh_frame", ELF::SHT_PROGBITS,
-                         ELF::SHF_ALLOC,
+                         EHSectionFlags,
                          SectionKind::getDataRel());
   else
     EHFrameSection =

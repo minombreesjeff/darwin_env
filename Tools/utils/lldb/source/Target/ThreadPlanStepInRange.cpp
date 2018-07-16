@@ -68,37 +68,6 @@ ThreadPlanStepInRange::GetDescription (Stream *s, lldb::DescriptionLevel level)
 }
 
 bool
-ThreadPlanStepInRange::PlanExplainsStop ()
-{
-    // We always explain a stop.  Either we've just done a single step, in which
-    // case we'll do our ordinary processing, or we stopped for some
-    // reason that isn't handled by our sub-plans, in which case we want to just stop right
-    // away.
-    
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
-    if (stop_info_sp)
-    {
-        StopReason reason = stop_info_sp->GetStopReason();
-
-        switch (reason)
-        {
-        case eStopReasonBreakpoint:
-        case eStopReasonWatchpoint:
-        case eStopReasonSignal:
-        case eStopReasonException:
-            if (log)
-                log->PutCString ("ThreadPlanStepInRange got asked if it explains the stop for some reason other than step.");
-            SetPlanComplete();
-            break;
-        default:
-            break;
-        }
-    }
-    return true;
-}
-
-bool
 ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
@@ -108,17 +77,13 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
     {
         StreamString s;
         s.Address (m_thread.GetRegisterContext()->GetPC(), 
-                   m_thread.GetProcess().GetTarget().GetArchitecture().GetAddressByteSize());
+                   m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
         log->Printf("ThreadPlanStepInRange reached %s.", s.GetData());
     }
 
     if (IsPlanComplete())
         return true;
         
-    // If we're still in the range, keep going.
-    if (InRange())
-        return false;
-
     ThreadPlan* new_plan = NULL;
 
     // Stepping through should be done stopping other threads in general, since we're setting a breakpoint and
@@ -130,14 +95,16 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
     else
         stop_others = false;
         
-    if (FrameIsOlder())
+    FrameComparison frame_order = CompareCurrentFrameToStartFrame();
+    
+    if (frame_order == eFrameCompareOlder)
     {
         // If we're in an older frame then we should stop.
         //
         // A caveat to this is if we think the frame is older but we're actually in a trampoline.
         // I'm going to make the assumption that you wouldn't RETURN to a trampoline.  So if we are
         // in a trampoline we think the frame is older because the trampoline confused the backtracer.
-        new_plan = m_thread.QueueThreadPlanForStepThrough (false, stop_others);
+        new_plan = m_thread.QueueThreadPlanForStepThrough (m_stack_id, false, stop_others);
         if (new_plan == NULL)
             return true;
         else if (log)
@@ -146,7 +113,7 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
         }
 
     }
-    else if (!FrameIsYounger() && InSymbol())
+    else if (frame_order == eFrameCompareEqual && InSymbol())
     {
         // If we are not in a place we should step through, we're done.
         // One tricky bit here is that some stubs don't push a frame, so we have to check
@@ -154,15 +121,26 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
         // However, if the frame is the same, and we are still in the symbol we started
         // in, the we don't need to do this.  This first check isn't strictly necessary,
         // but it is more efficient.
+        
+        // If we're still in the range, keep going, either by running to the next branch breakpoint, or by
+        // stepping.
+        if (InRange())
+        {
+            SetNextBranchBreakpoint();
+            return false;
+        }
     
         SetPlanComplete();
         return true;
     }
     
+    // If we get to this point, we're not going to use a previously set "next branch" breakpoint, so delete it:
+    ClearNextBranchBreakpoint();
+    
     // We may have set the plan up above in the FrameIsOlder section:
     
     if (new_plan == NULL)
-        new_plan = m_thread.QueueThreadPlanForStepThrough (false, stop_others);
+        new_plan = m_thread.QueueThreadPlanForStepThrough (m_stack_id, false, stop_others);
     
     if (log)
     {
@@ -174,13 +152,13 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
     
     // If not, give the "should_stop" callback a chance to push a plan to get us out of here.
     // But only do that if we actually have stepped in.
-    if (!new_plan && FrameIsYounger())
+    if (!new_plan && frame_order == eFrameCompareYounger)
         new_plan = InvokeShouldStopHereCallback();
 
     // If we've stepped in and we are going to stop here, check to see if we were asked to
     // run past the prologue, and if so do that.
     
-    if (new_plan == NULL && FrameIsYounger() && m_step_past_prologue)
+    if (new_plan == NULL && frame_order == eFrameCompareYounger && m_step_past_prologue)
     {
         lldb::StackFrameSP curr_frame = m_thread.GetStackFrameAtIndex(0);
         if (curr_frame)
@@ -194,13 +172,13 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
             if (sc.function)
             {
                 func_start_address = sc.function->GetAddressRange().GetBaseAddress();
-                if (curr_addr == func_start_address.GetLoadAddress(m_thread.CalculateTarget()))
+                if (curr_addr == func_start_address.GetLoadAddress(m_thread.CalculateTarget().get()))
                     bytes_to_skip = sc.function->GetPrologueByteSize();
             }
             else if (sc.symbol)
             {
-                func_start_address = sc.symbol->GetValue();
-                if (curr_addr == func_start_address.GetLoadAddress(m_thread.CalculateTarget()))
+                func_start_address = sc.symbol->GetAddress();
+                if (curr_addr == func_start_address.GetLoadAddress(m_thread.CalculateTarget().get()))
                     bytes_to_skip = sc.symbol->GetPrologueByteSize();
             }
             
@@ -316,4 +294,42 @@ ThreadPlanStepInRange::DefaultShouldStopHereCallback (ThreadPlan *current_plan, 
     }
 
     return NULL;
+}
+
+bool
+ThreadPlanStepInRange::PlanExplainsStop ()
+{
+    // We always explain a stop.  Either we've just done a single step, in which
+    // case we'll do our ordinary processing, or we stopped for some
+    // reason that isn't handled by our sub-plans, in which case we want to just stop right
+    // away.
+    // We also set ourselves complete when we stop for this sort of unintended reason, but mark
+    // success as false so we don't end up being the reason for the stop.
+    //
+    // The only variation is that if we are doing "step by running to next branch" in which case
+    // if we hit our branch breakpoint we don't set the plan to complete.
+    
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    if (stop_info_sp)
+    {
+        StopReason reason = stop_info_sp->GetStopReason();
+
+        switch (reason)
+        {
+        case eStopReasonBreakpoint:
+            if (NextRangeBreakpointExplainsStop(stop_info_sp))
+                return true;
+        case eStopReasonWatchpoint:
+        case eStopReasonSignal:
+        case eStopReasonException:
+            if (log)
+                log->PutCString ("ThreadPlanStepInRange got asked if it explains the stop for some reason other than step.");
+            SetPlanComplete(false);
+            break;
+        default:
+            break;
+        }
+    }
+    return true;
 }

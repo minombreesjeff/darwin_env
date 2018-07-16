@@ -20,6 +20,7 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallString.h"
 
 namespace clang {
 
@@ -186,7 +187,7 @@ bool Sema::CheckEquivalentExceptionSpec(FunctionDecl *Old, FunctionDecl *New) {
     } 
 
     // Warn about the lack of exception specification.
-    llvm::SmallString<128> ExceptionSpecString;
+    SmallString<128> ExceptionSpecString;
     llvm::raw_svector_ostream OS(ExceptionSpecString);
     switch (OldProto->getExceptionSpecType()) {
     case EST_DynamicNone:
@@ -611,10 +612,8 @@ bool Sema::CheckExceptionSpecSubset(
       case AR_inaccessible: continue;
       case AR_dependent:
         llvm_unreachable("access check dependent for unprivileged context");
-        break;
       case AR_delayed:
         llvm_unreachable("access check delayed in non-declaration");
-        break;
       }
 
       Contained = true;
@@ -727,4 +726,4 @@ bool Sema::CheckOverridingFunctionExceptionSpec(const CXXMethodDecl *New,
                                   New->getLocation());
 }
 
-} // end namespace clang
+}

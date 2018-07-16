@@ -84,7 +84,6 @@ RValue DominatingValue<RValue>::saved_type::restore(CodeGenFunction &CGF) {
   }
 
   llvm_unreachable("bad saved r-value kind");
-  return RValue();
 }
 
 /// Push an entry of the given size onto this protected-scope stack.
@@ -503,9 +502,9 @@ static void destroyOptimisticNormalEntry(CodeGenFunction &CGF,
     
     // The only uses should be fixup switches.
     llvm::SwitchInst *si = cast<llvm::SwitchInst>(use.getUser());
-    if (si->getNumCases() == 2 && si->getDefaultDest() == unreachableBB) {
+    if (si->getNumCases() == 1 && si->getDefaultDest() == unreachableBB) {
       // Replace the switch with a branch.
-      llvm::BranchInst::Create(si->getSuccessor(1), si);
+      llvm::BranchInst::Create(si->getCaseSuccessor(0), si);
 
       // The switch operand is a load from the cleanup-dest alloca.
       llvm::LoadInst *condition = cast<llvm::LoadInst>(si->getCondition());
@@ -1099,8 +1098,6 @@ llvm::Value *CodeGenFunction::getNormalCleanupDestSlot() {
 void CodeGenFunction::EmitCXXTemporary(const CXXTemporary *Temporary,
                                        QualType TempType,
                                        llvm::Value *Ptr) {
-  // This local is a GCC and MSVC compiler workaround.
-  Destroyer *destroyer = &destroyCXXObject;
-  pushDestroy(NormalAndEHCleanup, Ptr, TempType, *destroyer,
+  pushDestroy(NormalAndEHCleanup, Ptr, TempType, destroyCXXObject,
               /*useEHCleanup*/ true);
 }

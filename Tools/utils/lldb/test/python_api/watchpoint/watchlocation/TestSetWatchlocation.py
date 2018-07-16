@@ -24,12 +24,14 @@ class SetWatchlocationAPITestCase(TestBase):
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
+    @dsym_test
     def test_watch_location_with_dsym(self):
         """Exercise SBValue.WatchPointee() API to set a watchpoint."""
         self.buildDsym()
         self.do_set_watchlocation()
 
     @python_api_test
+    @dwarf_test
     def test_watch_location_with_dwarf(self):
         """Exercise SBValue.WatchPointee() API to set a watchpoint."""
         self.buildDwarf()
@@ -65,7 +67,8 @@ class SetWatchlocationAPITestCase(TestBase):
                                                value.GetValueAsUnsigned(0),
                                                value.GetType().GetPointeeType())
         # Watch for write to *g_char_ptr.
-        watchpoint = value.WatchPointee(True, False, True)
+        error = lldb.SBError();
+        watchpoint = value.WatchPointee(True, False, True, error)
         self.assertTrue(value and watchpoint,
                         "Successfully found the pointer and set a watchpoint")
         self.DebugSBValue(value)

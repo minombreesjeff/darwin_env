@@ -21,7 +21,7 @@
                 <div class="post">
 
                     <p>Below is a table of LLDB commands with the GDB counterparts.
-                        The built in GDB compatability aliases in GDB are also
+                        The built in GDB-compatibility aliases in LLDB are also
                         listed.</p>
                 </div>
                 <div class="postfooter"></div>
@@ -255,6 +255,17 @@
                         </td>
                     </tr>
 
+                    <tr><td class="header" colspan="2">Set a breakpoint at and object C function: <b>-[NSString stringWithFormat:]</b>.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> breakpoint set --name "-[NSString stringWithFormat:]"<br>
+                            <b>(lldb)</b> b -[NSString stringWithFormat:]<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> break -[NSString stringWithFormat:]<br>
+                        </td>
+                    </tr>
+
                     <tr><td class="header" colspan="2">Set a breakpoint at all Objective C methods whose selector is <b>count</b>.</td></tr>
                     <tr>
                         <td class="content">
@@ -292,9 +303,86 @@
                     </table>
                     <p>
                 </div>
+                <div class="postfooter"></div>
+
+                <h1 class ="postheader">Watchpoint Commands</h1>
+                <div class="post">
+
+                    <p>
+
+                    <table class="stats" width="620" cellspacing="0">
+                    <tr>
+                        <td class="hed" width="50%">LLDB</td>
+                        <td class="hed" width="50%">GDB</td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Set a watchpoint on a variable when it is written to.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> watchpoint set variable -w write global_var<br>
+                            <b>(lldb)</b> watch set var -w write global_var<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> watch global_var
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Set a watchpoint on a memory location when it is written into. The size of the region to watch for defaults to the pointer size if no '-x byte_size' is specified.
+                        This command takes raw input, evaluated as an expression returning an unsigned integer pointing to the start of the region, after the '--' option terminator.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> watchpoint set expression -w write -- my_ptr<br>
+                            <b>(lldb)</b> watch set exp -w write -- my_ptr<br>
+                      </td>
+                        <td class="content">
+                            <b>(gdb)</b> watch -location g_char_ptr
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Set a condition on a watchpoint</b>.</td></tr>
+                    <tr>
+                        <td class="content" colspan="2">
+                            <b>(lldb)</b> watch set var -w write global<br>
+                            <b>(lldb)</b> watchpoint modify -c '(global==5)'<br>
+                            <b>(lldb)</b> c<br>
+                            ...<br>
+                            <b>(lldb)</b> bt<br>
+                            * thread #1: tid = 0x1c03, 0x0000000100000ef5 a.out`modify + 21 at main.cpp:16, stop reason = watchpoint 1<br>
+                              frame #0: 0x0000000100000ef5 a.out`modify + 21 at main.cpp:16<br>
+                              frame #1: 0x0000000100000eac a.out`main + 108 at main.cpp:25<br>
+                              frame #2: 0x00007fff8ac9c7e1 libdyld.dylib`start + 1<br>
+                            <b>(lldb)</b> frame var global<br>
+                            (int32_t) global = 5<br>
+                        </td>
+                   </tr>
+
+                   <tr><td class="header" colspan="2">List all watchpoints.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> watchpoint list<br>
+                            <b>(lldb)</b> watch l<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> info break<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Delete a watchpoint.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> watchpoint delete 1<br>
+                            <b>(lldb)</b> watch del 1<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> delete 1<br>
+                        </td>
+                    </tr>
+
+                    </table>
+                    <p>
+                </div>
 
             <div class="postfooter"></div>
-
             <h1 class ="postheader">Examining Variables</h1>
                 <div class="post">
                     <p>
@@ -448,6 +536,15 @@
                         </td>
                     </tr>
 
+                    <tr><td class="header" colspan="2">List information about the currently selected frame in the current thread.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> frame info<br>
+                        </td>
+                        <td class="content">
+                        </td>
+                   </tr>
+
                     <tr><td class="header" colspan="2">Select the stack frame that called the current stack frame.</td></tr>
                     <tr>
                         <td class="content">
@@ -502,6 +599,9 @@
                         <td class="content">
                             <b>(lldb)</b> register read --format i<br>
                             <b>(lldb)</b> re r -f i<br>
+							<br>
+							<i>LLDB now supports the GDB shorthand format syntax but there can't be space after the command:</i><br>
+                            <b>(lldb)</b> register read/d<br>
                         </td>
                         <td class="content">
                         </td>
@@ -533,6 +633,10 @@
                         <td class="content">
                             <b>(lldb)</b> register read --format binary rax<br>
                             <b>(lldb)</b> re r -f b rax<br>
+							<br>
+							<i>LLDB now supports the GDB shorthand format syntax but there can't be space after the command:</i><br>
+							<b>(lldb)</b> register read/t rax<br>
+							<b>(lldb)</b> p/t $rax<br>
                         </td>
                         <td class="content">
                             <b>(gdb)</b> p/t $rax<br>
@@ -545,9 +649,26 @@
                             <b>(lldb)</b> memory read --size 4 --format x --count 4 0xbffff3c0<br>
                             <b>(lldb)</b> me r -s4 -fx -c4 0xbffff3c0<br>
                             <b>(lldb)</b> x -s4 -fx -c4 0xbffff3c0<br>
+							<br>
+							<i>LLDB now supports the GDB shorthand format syntax but there can't be space after the command:</i><br>
+                            <b>(lldb)</b> memory read/4xw 0xbffff3c0<br>
+                            <b>(lldb)</b> x/4xw 0xbffff3c0<br>
+                            <b>(lldb)</b> memory read --gdb-format 4xw 0xbffff3c0<br>
                         </td>
                         <td class="content">
                             <b>(gdb)</b> x/4xw 0xbffff3c0<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Read memory starting at the expression "argv[0]".</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> memory read `argv[0]`<br>
+							<i><b>NOTE:</b> any command can inline a scalar expression result (as long as the target is stopped) using backticks around any expression:</i><br>
+                            <b>(lldb)</b> memory read --size `sizeof(int)` `argv[0]`<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> x argv[0]<br>
                         </td>
                     </tr>
 
@@ -556,6 +677,7 @@
                         <td class="content">
                             <b>(lldb)</b> memory read --outfile /tmp/mem.txt --count 512 0xbffff3c0<br>
                             <b>(lldb)</b> me r -o/tmp/mem.txt -c512 0xbffff3c0<br>
+                            <b>(lldb)</b> x/512bx -o/tmp/mem.txt 0xbffff3c0<br>
                         </td>
                         <td class="content">
                           <b>(gdb)</b> set logging on<br>
@@ -572,7 +694,11 @@
                             <b>(lldb)</b> me r -o /tmp/mem.bin -b 0x1000 0x1200<br>
                         </td>
                     </tr>
-
+                    <tr>
+                        <td class="content" colspan="2">
+                            <b>(gdb)</b> dump memory /tmp/mem.bin 0x1000 0x2000
+                        </td>
+                    </tr>
                     <tr><td class="header" colspan="2">Disassemble the current function for the current frame.</td></tr>
                     <tr>
                         <td class="content">
@@ -749,6 +875,30 @@
                     </table>
                     <p>
                 </div>
+            <div class="postfooter"></div>
+            <h1 class ="postheader">Miscellaneous</h1>
+                <div class="post">
+                    <p>
+                    <table class="stats" width="620" cellspacing="0">
+                    <tr>
+                        <td class="hed" width="50%">LLDB</td>
+                        <td class="hed" width="50%">GDB</td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Echo text to the screen.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> script print &quot;Here is some text&quot;<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> echo Here is some text\n<br>
+                        </td>
+                    </tr>
+
+                    </table>
+                    <p>
+                </div>
+
                 <div class="postfooter"></div>
 
                 <p>

@@ -17,11 +17,7 @@
 #include "clang/AST/ASTImporter.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemOptions.h"
-#if defined(__GNUC__) && !defined(__clang__)
-// Gcc complains about ClangNamespaceDecl being an incomplete type
-// without this.
 #include "lldb/Symbol/ClangNamespaceDecl.h"
-#endif
 
 namespace lldb_private {
 
@@ -57,6 +53,9 @@ public:
     DeportDecl (clang::ASTContext *dst_ctx,
                 clang::ASTContext *src_ctx,
                 clang::Decl *decl);
+    
+    void
+    CompleteDecl (clang::Decl *decl);
         
     bool
     CompleteTagDecl (clang::TagDecl *decl);
@@ -81,12 +80,15 @@ public:
         return origin.Valid();
     }
     
+    uint64_t
+    GetDeclMetadata (const clang::Decl *decl);
+    
     //
     // Namespace maps
     //
     
     typedef std::vector < std::pair<lldb::ModuleSP, ClangNamespaceDecl> > NamespaceMap;
-    typedef lldb::SharedPtr<NamespaceMap>::Type NamespaceMapSP;
+    typedef STD_SHARED_PTR(NamespaceMap) NamespaceMapSP;
     
     void RegisterNamespaceMap (const clang::NamespaceDecl *decl, 
                                NamespaceMapSP &namespace_map);
@@ -193,9 +195,9 @@ private:
         clang::ASTContext  *m_source_ctx;
     };
     
-    typedef lldb::SharedPtr<Minion>::Type                                   MinionSP;
-    typedef std::map<clang::ASTContext *, MinionSP>                         MinionMap;
-    typedef std::map<const clang::NamespaceDecl *, NamespaceMapSP>          NamespaceMetaMap;
+    typedef STD_SHARED_PTR(Minion) MinionSP;
+    typedef std::map<clang::ASTContext *, MinionSP> MinionMap;
+    typedef std::map<const clang::NamespaceDecl *, NamespaceMapSP> NamespaceMetaMap;
     
     struct ASTContextMetadata
     {
@@ -216,11 +218,10 @@ private:
         MapCompleter           *m_map_completer;
     };
     
-    typedef lldb::SharedPtr<ASTContextMetadata>::Type               ASTContextMetadataSP;
-    
+    typedef STD_SHARED_PTR(ASTContextMetadata) ASTContextMetadataSP;    
     typedef std::map<const clang::ASTContext *, ASTContextMetadataSP> ContextMetadataMap;
     
-    ContextMetadataMap      m_metadata_map;
+    ContextMetadataMap m_metadata_map;
     
     ASTContextMetadataSP
     GetContextMetadata (clang::ASTContext *dst_ctx)

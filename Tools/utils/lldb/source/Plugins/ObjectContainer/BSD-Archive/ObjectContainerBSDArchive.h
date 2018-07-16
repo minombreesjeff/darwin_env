@@ -39,7 +39,7 @@ public:
     GetPluginDescriptionStatic();
 
     static lldb_private::ObjectContainer *
-    CreateInstance (lldb_private::Module* module,
+    CreateInstance (const lldb::ModuleSP &module_sp,
                     lldb::DataBufferSP& dataSP,
                     const lldb_private::FileSpec *file,
                     lldb::addr_t offset,
@@ -51,7 +51,7 @@ public:
     //------------------------------------------------------------------
     // Member Functions
     //------------------------------------------------------------------
-    ObjectContainerBSDArchive (lldb_private::Module* module,
+    ObjectContainerBSDArchive (const lldb::ModuleSP &module_sp,
                                lldb::DataBufferSP& dataSP,
                                const lldb_private::FileSpec *file,
                                lldb::addr_t offset,
@@ -118,7 +118,7 @@ protected:
     class Archive
     {
     public:
-        typedef lldb::SharedPtr<Archive>::Type shared_ptr;
+        typedef STD_SHARED_PTR(Archive) shared_ptr;
         typedef std::multimap<lldb_private::FileSpec, shared_ptr> Map;
 
         static Map &

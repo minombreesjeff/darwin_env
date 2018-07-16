@@ -98,20 +98,19 @@ lldb_private::GetLogIfAnyCategoriesSet (uint32_t mask)
 }
 
 void
-lldb_private::DisableLog (Args &args, Stream *feedback_strm)
+lldb_private::DisableLog (const char **categories, Stream *feedback_strm)
 {
     LogSP log(GetLog ());
 
     if (log)
     {
         uint32_t flag_bits = 0;
-        const size_t argc = args.GetArgumentCount ();
-        if (argc > 0)
+        if (categories[0] != NULL)
         {
             flag_bits = log->GetMask().Get();
-            for (size_t i = 0; i < argc; ++i)
+            for (size_t i = 0; categories[i] != NULL; ++i)
             {
-                const char *arg = args.GetArgumentAtIndex (i);
+                const char *arg = categories[i];
 
                 if      (0 == ::strcasecmp(arg, "all"))         flag_bits &= ~LIBLLDB_LOG_ALL;
                 else if (0 == ::strcasecmp(arg, "api"))         flag_bits &= ~LIBLLDB_LOG_API;
@@ -155,7 +154,7 @@ lldb_private::DisableLog (Args &args, Stream *feedback_strm)
 }
 
 LogSP
-lldb_private::EnableLog (StreamSP &log_stream_sp, uint32_t log_options, Args &args, Stream *feedback_strm)
+lldb_private::EnableLog (StreamSP &log_stream_sp, uint32_t log_options, const char **categories, Stream *feedback_strm)
 {
     // Try see if there already is a log - that way we can reuse its settings.
     // We could reuse the log in toto, but we don't know that the stream is the same.
@@ -169,17 +168,15 @@ lldb_private::EnableLog (StreamSP &log_stream_sp, uint32_t log_options, Args &ar
     // Now make a new log with this stream if one was provided
     if (log_stream_sp)
     {
-        log = make_shared<Log>(log_stream_sp);
+        log.reset (new Log(log_stream_sp));
         GetLog () = log;
     }
 
     if (log)
     {
-        bool got_unknown_category = false;
-        const size_t argc = args.GetArgumentCount();
-        for (size_t i=0; i<argc; ++i)
+        for (size_t i=0; categories[i] != NULL; ++i)
         {
-            const char *arg = args.GetArgumentAtIndex(i);
+            const char *arg = categories[i];
 
             if      (0 == ::strcasecmp(arg, "all"))         flag_bits |= LIBLLDB_LOG_ALL;
             else if (0 == ::strcasecmp(arg, "api"))         flag_bits |= LIBLLDB_LOG_API;
@@ -207,12 +204,8 @@ lldb_private::EnableLog (StreamSP &log_stream_sp, uint32_t log_options, Args &ar
             else
             {
                 feedback_strm->Printf("error: unrecognized log category '%s'\n", arg);
-                if (got_unknown_category == false)
-                {
-                    got_unknown_category = true;
-                    ListLogCategories (feedback_strm);
-                    return log;
-                }
+                ListLogCategories (feedback_strm);
+                return log;
             }
         }
 

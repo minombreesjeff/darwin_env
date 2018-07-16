@@ -28,10 +28,8 @@ public:
 
     SBCommandInterpreter (const lldb::SBCommandInterpreter &rhs);
     
-#ifndef SWIG
     const lldb::SBCommandInterpreter &
     operator = (const lldb::SBCommandInterpreter &rhs);
-#endif
 
     ~SBCommandInterpreter ();
 
@@ -52,6 +50,9 @@ public:
 
     lldb::SBBroadcaster
     GetBroadcaster ();
+    
+    static const char *
+    GetBroadcasterClass ();
 
     bool
     HasCommands ();
@@ -74,7 +75,6 @@ public:
     lldb::ReturnStatus
     HandleCommand (const char *command_line, lldb::SBCommandReturnObject &result, bool add_to_history = false);
 
-#ifndef SWIG
     // This interface is not useful in SWIG, since the cursor & last_char arguments are string pointers INTO current_line
     // and you can't do that in a scripting language interface in general... 
     int
@@ -84,7 +84,7 @@ public:
                       int match_start_point,
                       int max_return_elements,
                       lldb::SBStringList &matches);
-#endif                      
+
     int
     HandleCompletion (const char *current_line,
                       uint32_t cursor_pos,
@@ -92,6 +92,13 @@ public:
                       int max_return_elements,
                       lldb::SBStringList &matches);
 
+    // Catch commands before they execute by registering a callback that will
+    // get called when the command gets executed. This allows GUI or command
+    // line interfaces to intercept a command and stop it from happening
+    bool
+    SetCommandOverrideCallback (const char *command_name,
+                                lldb::CommandOverrideCallback callback,
+                                void *baton);
 protected:
 
     lldb_private::CommandInterpreter &

@@ -1,4 +1,4 @@
-//===-- ARMMCTargetDesc.cpp - ARM Target Descriptions -----------*- C++ -*-===//
+//===-- ARMMCTargetDesc.cpp - ARM Target Descriptions ---------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -155,7 +155,6 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
 
   if (TheTriple.isOSWindows()) {
     llvm_unreachable("ARM does not support Windows COFF format");
-    return NULL;
   }
 
   return createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll, NoExecStack);
@@ -164,9 +163,10 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
 static MCInstPrinter *createARMMCInstPrinter(const Target &T,
                                              unsigned SyntaxVariant,
                                              const MCAsmInfo &MAI,
+                                             const MCRegisterInfo &MRI,
                                              const MCSubtargetInfo &STI) {
   if (SyntaxVariant == 0)
-    return new ARMInstPrinter(MAI, STI);
+    return new ARMInstPrinter(MAI, MRI, STI);
   return 0;
 }
 

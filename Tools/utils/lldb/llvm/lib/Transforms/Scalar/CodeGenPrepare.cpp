@@ -65,6 +65,11 @@ static cl::opt<bool> DisableBranchOpts(
   "disable-cgp-branch-opts", cl::Hidden, cl::init(false),
   cl::desc("Disable branch optimizations in CodeGenPrepare"));
 
+// FIXME: Remove this abomination once all of the tests pass without it!
+static cl::opt<bool> DisableDeleteDeadBlocks(
+  "disable-cgp-delete-dead-blocks", cl::Hidden, cl::init(false),
+  cl::desc("Disable deleting dead blocks in CodeGenPrepare"));
+
 namespace {
   class CodeGenPrepare : public FunctionPass {
     /// TLI - Keep a pointer of a TargetLowering to consult for determining
@@ -160,8 +165,22 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
 
   if (!DisableBranchOpts) {
     MadeChange = false;
-    for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
+    SmallPtrSet<BasicBlock*, 8> WorkList;
+    for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB) {
+      SmallVector<BasicBlock*, 2> Successors(succ_begin(BB), succ_end(BB));
       MadeChange |= ConstantFoldTerminator(BB, true);
+      if (!MadeChange) continue;
+
+      for (SmallVectorImpl<BasicBlock*>::iterator
+             II = Successors.begin(), IE = Successors.end(); II != IE; ++II)
+        if (pred_begin(*II) == pred_end(*II))
+          WorkList.insert(*II);
+    }
+
+    if (!DisableDeleteDeadBlocks)
+      for (SmallPtrSet<BasicBlock*, 8>::iterator
+             I = WorkList.begin(), E = WorkList.end(); I != E; ++I)
+        DeleteDeadBlock(*I);
 
     if (MadeChange)
       ModifiedDT = true;
@@ -619,7 +638,7 @@ bool CodeGenPrepare::DupRetToEnableTailCallOpts(ReturnInst *RI) {
   // It's not safe to eliminate the sign / zero extension of the return value.
   // See llvm::isInTailCallPosition().
   const Function *F = BB->getParent();
-  unsigned CallerRetAttr = F->getAttributes().getRetAttributes();
+  Attributes CallerRetAttr = F->getAttributes().getRetAttributes();
   if ((CallerRetAttr & Attribute::ZExt) || (CallerRetAttr & Attribute::SExt))
     return false;
 
@@ -674,7 +693,7 @@ bool CodeGenPrepare::DupRetToEnableTailCallOpts(ReturnInst *RI) {
 
     // Conservatively require the attributes of the call to match those of the
     // return. Ignore noalias because it doesn't affect the call sequence.
-    unsigned CalleeRetAttr = CS.getAttributes().getRetAttributes();
+    Attributes CalleeRetAttr = CS.getAttributes().getRetAttributes();
     if ((CalleeRetAttr ^ CallerRetAttr) & ~Attribute::NoAlias)
       continue;
 

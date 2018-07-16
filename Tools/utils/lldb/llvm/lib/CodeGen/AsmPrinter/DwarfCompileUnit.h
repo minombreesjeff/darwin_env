@@ -36,6 +36,10 @@ class CompileUnit {
   ///
   unsigned ID;
 
+  /// Language - The DW_AT_language of the compile unit
+  ///
+  unsigned Language;
+
   /// Die - Compile unit debug information entry.
   ///
   const OwningPtr<DIE> CUDie;
@@ -65,7 +69,7 @@ class CompileUnit {
   StringMap<std::vector<DIE*> > AccelNames;
   StringMap<std::vector<DIE*> > AccelObjC;
   StringMap<std::vector<DIE*> > AccelNamespace;
-  StringMap<std::vector<DIE*> > AccelTypes;
+  StringMap<std::vector<std::pair<DIE*, unsigned> > > AccelTypes;
 
   /// DIEBlocks - A list of all the DIEBlocks in use.
   std::vector<DIEBlock *> DIEBlocks;
@@ -76,11 +80,12 @@ class CompileUnit {
   DenseMap<DIE *, const MDNode *> ContainingTypeMap;
 
 public:
-  CompileUnit(unsigned I, DIE *D, AsmPrinter *A, DwarfDebug *DW);
+  CompileUnit(unsigned I, unsigned L, DIE *D, AsmPrinter *A, DwarfDebug *DW);
   ~CompileUnit();
 
   // Accessors.
   unsigned getID()                  const { return ID; }
+  unsigned getLanguage()            const { return Language; }
   DIE* getCUDie()                   const { return CUDie.get(); }
   const StringMap<DIE*> &getGlobalTypes() const { return GlobalTypes; }
 
@@ -93,7 +98,8 @@ public:
   const StringMap<std::vector<DIE*> > &getAccelNamespace() const {
     return AccelNamespace;
   }
-  const StringMap<std::vector<DIE*> > &getAccelTypes() const {
+  const StringMap<std::vector<std::pair<DIE*, unsigned > > >
+  &getAccelTypes() const {
     return AccelTypes;
   }
   
@@ -119,8 +125,8 @@ public:
     std::vector<DIE*> &DIEs = AccelNamespace[Name];
     DIEs.push_back(Die);
   }
-  void addAccelType(StringRef Name, DIE *Die) {
-    std::vector<DIE*> &DIEs = AccelTypes[Name];
+  void addAccelType(StringRef Name, std::pair<DIE *, unsigned> Die) {
+    std::vector<std::pair<DIE*, unsigned > > &DIEs = AccelTypes[Name];
     DIEs.push_back(Die);
   }
   

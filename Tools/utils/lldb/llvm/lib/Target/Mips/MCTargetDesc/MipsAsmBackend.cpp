@@ -1,4 +1,4 @@
-//===-- MipsASMBackend.cpp -  ---------===//
+//===-- MipsASMBackend.cpp - Mips Asm Backend  ----------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -69,23 +69,22 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
 }
 
 namespace {
-
-class MipsELFObjectWriter : public MCELFObjectTargetWriter {
-public:
-  MipsELFObjectWriter(bool is64Bit, Triple::OSType OSType, uint16_t EMachine,
-                      bool HasRelocationAddend)
-    : MCELFObjectTargetWriter(is64Bit, OSType, EMachine,
-                              HasRelocationAddend) {}
-};
-
 class MipsAsmBackend : public MCAsmBackend {
+  Triple::OSType OSType;
+  bool IsLittle; // Big or little endian
+
 public:
-  MipsAsmBackend(const Target &T) : MCAsmBackend() {}
+  MipsAsmBackend(const Target &T,  Triple::OSType _OSType, bool _isLittle) :
+    MCAsmBackend(), OSType(_OSType), IsLittle(_isLittle) {}
+
+  MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
+    return createMipsELFObjectWriter(OS, OSType, IsLittle);
+  }
 
   /// ApplyFixup - Apply the \arg Value for given \arg Fixup into the provided
   /// data fragment, at the offset specified by the fixup and following the
   /// fixup kind as appropriate.
-  void ApplyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
+  void applyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
                   uint64_t Value) const {
     MCFixupKind Kind = Fixup.getKind();
     Value = adjustFixupValue((unsigned)Kind, Value);
@@ -141,6 +140,9 @@ public:
       { "fixup_Mips_GOTTPREL",     0,     16,   0 },
       { "fixup_Mips_TPREL_HI",     0,     16,   0 },
       { "fixup_Mips_TPREL_LO",     0,     16,   0 },
+      { "fixup_Mips_TLSLDM",       0,     16,   0 },
+      { "fixup_Mips_DTPREL_HI",    0,     16,   0 },
+      { "fixup_Mips_DTPREL_LO",    0,     16,   0 },
       { "fixup_Mips_Branch_PCRel", 0,     16,  MCFixupKindInfo::FKF_IsPCRel }
     };
 
@@ -159,7 +161,7 @@ public:
   /// relaxation.
   ///
   /// \param Inst - The instruction to test.
-  bool MayNeedRelaxation(const MCInst &Inst) const {
+  bool mayNeedRelaxation(const MCInst &Inst) const {
     return false;
   }
 
@@ -180,9 +182,9 @@ public:
   /// \param Inst - The instruction to relax, which may be the same
   /// as the output.
   /// \parm Res [output] - On return, the relaxed instruction.
-  void RelaxInstruction(const MCInst &Inst, MCInst &Res) const {
+  void relaxInstruction(const MCInst &Inst, MCInst &Res) const {
   }
-  
+
   /// @}
 
   /// WriteNopData - Write an (optimal) nop sequence of Count bytes
@@ -190,50 +192,20 @@ public:
   /// it should return an error.
   ///
   /// \return - True on success.
-  bool WriteNopData(uint64_t Count, MCObjectWriter *OW) const {
+  bool writeNopData(uint64_t Count, MCObjectWriter *OW) const {
     return true;
   }
 };
 
-class MipsEB_AsmBackend : public MipsAsmBackend {
-public:
-  Triple::OSType OSType;
-
-  MipsEB_AsmBackend(const Target &T, Triple::OSType _OSType)
-    : MipsAsmBackend(T), OSType(_OSType) {}
-
-  MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return createELFObjectWriter(createELFObjectTargetWriter(),
-                                 OS, /*IsLittleEndian*/ false);
-  }
-
-  MCELFObjectTargetWriter *createELFObjectTargetWriter() const {
-    return new MipsELFObjectWriter(false, OSType, ELF::EM_MIPS, false);
-  }
-};
-
-class MipsEL_AsmBackend : public MipsAsmBackend {
-public:
-  Triple::OSType OSType;
-
-  MipsEL_AsmBackend(const Target &T, Triple::OSType _OSType)
-    : MipsAsmBackend(T), OSType(_OSType) {}
-
-  MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return createELFObjectWriter(createELFObjectTargetWriter(),
-                                 OS, /*IsLittleEndian*/ true);
-  }
-
-  MCELFObjectTargetWriter *createELFObjectTargetWriter() const {
-    return new MipsELFObjectWriter(false, OSType, ELF::EM_MIPS, false);
-  }
-};
 } // namespace
 
-MCAsmBackend *llvm::createMipsAsmBackend(const Target &T, StringRef TT) {
-  Triple TheTriple(TT);
+// MCAsmBackend
+MCAsmBackend *llvm::createMipsAsmBackendEL(const Target &T, StringRef TT) {
+  return new MipsAsmBackend(T, Triple(TT).getOS(),
+                            /*IsLittle*/true);
+}
 
-  // just return little endian for now
-  //
-  return new MipsEL_AsmBackend(T, Triple(TT).getOS());
+MCAsmBackend *llvm::createMipsAsmBackendEB(const Target &T, StringRef TT) {
+  return new MipsAsmBackend(T, Triple(TT).getOS(),
+                            /*IsLittle*/false);
 }

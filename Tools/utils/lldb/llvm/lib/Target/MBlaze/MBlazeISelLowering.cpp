@@ -216,7 +216,7 @@ MBlazeTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
                                                   MachineBasicBlock *MBB)
                                                   const {
   switch (MI->getOpcode()) {
-  default: assert(false && "Unexpected instr type to insert");
+  default: llvm_unreachable("Unexpected instr type to insert");
 
   case MBlaze::ShiftRL:
   case MBlaze::ShiftRA:
@@ -602,7 +602,6 @@ LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const {
 SDValue MBlazeTargetLowering::
 LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const {
   llvm_unreachable("TLS not implemented for MicroBlaze.");
-  return SDValue(); // Not reached
 }
 
 SDValue MBlazeTargetLowering::
@@ -683,7 +682,7 @@ static bool CC_MBlaze_AssignReg(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
 /// TODO: isVarArg, isTailCall.
 SDValue MBlazeTargetLowering::
 LowerCall(SDValue Chain, SDValue Callee, CallingConv::ID CallConv,
-          bool isVarArg, bool &isTailCall,
+          bool isVarArg, bool doesNotRet, bool &isTailCall,
           const SmallVectorImpl<ISD::OutputArg> &Outs,
           const SmallVectorImpl<SDValue> &OutVals,
           const SmallVectorImpl<ISD::InputArg> &Ins,
@@ -897,7 +896,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
     if (VA.isRegLoc()) {
       MVT RegVT = VA.getLocVT();
       ArgRegEnd = VA.getLocReg();
-      TargetRegisterClass *RC = 0;
+      const TargetRegisterClass *RC;
 
       if (RegVT == MVT::i32)
         RC = MBlaze::GPRRegisterClass;
@@ -965,7 +964,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
       StackPtr = DAG.getRegister(StackReg, getPointerTy());
 
     // The last register argument that must be saved is MBlaze::R10
-    TargetRegisterClass *RC = MBlaze::GPRRegisterClass;
+    const TargetRegisterClass *RC = MBlaze::GPRRegisterClass;
 
     unsigned Begin = getMBlazeRegisterNumbering(MBlaze::R5);
     unsigned Start = getMBlazeRegisterNumbering(ArgRegEnd+1);
@@ -1081,7 +1080,6 @@ getConstraintType(const std::string &Constraint) const
       case 'y':
       case 'f':
         return C_RegisterClass;
-        break;
     }
   }
   return TargetLowering::getConstraintType(Constraint);

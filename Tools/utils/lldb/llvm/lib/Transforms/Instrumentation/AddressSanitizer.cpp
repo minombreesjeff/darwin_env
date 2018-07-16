@@ -22,7 +22,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Function.h"
-#include "llvm/InlineAsm.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
@@ -55,9 +54,13 @@ static const uintptr_t kCurrentStackFrameMagic = 0x41B58AB3;
 static const uintptr_t kRetiredStackFrameMagic = 0x45E0360E;
 
 static const char *kAsanModuleCtorName = "asan.module_ctor";
+static const char *kAsanModuleDtorName = "asan.module_dtor";
+static const int   kAsanCtorAndCtorPriority = 1;
 static const char *kAsanReportErrorTemplate = "__asan_report_";
 static const char *kAsanRegisterGlobalsName = "__asan_register_globals";
+static const char *kAsanUnregisterGlobalsName = "__asan_unregister_globals";
 static const char *kAsanInitName = "__asan_init";
+static const char *kAsanHandleNoReturnName = "__asan_handle_no_return";
 static const char *kAsanMappingOffsetName = "__asan_mapping_offset";
 static const char *kAsanMappingScaleName = "__asan_mapping_scale";
 static const char *kAsanStackMallocName = "__asan_stack_malloc";
@@ -90,9 +93,6 @@ static cl::opt<bool> ClMemIntrin("asan-memintrin",
 static cl::opt<std::string>  ClBlackListFile("asan-blacklist",
        cl::desc("File containing the list of functions to ignore "
                 "during instrumentation"), cl::Hidden);
-static cl::opt<bool> ClUseCall("asan-use-call",
-       cl::desc("Use function call to generate a crash"), cl::Hidden,
-       cl::init(true));
 
 // These flags allow to change the shadow mapping.
 // The shadow mapping looks like
@@ -144,6 +144,7 @@ class BlackList {
 /// AddressSanitizer: instrument the code in module to find memory bugs.
 struct AddressSanitizer : public ModulePass {
   AddressSanitizer();
+  virtual const char *getPassName() const;
   void instrumentMop(Instruction *I);
   void instrumentAddress(Instruction *OrigIns, IRBuilder<> &IRB,
                          Value *Addr, uint32_t TypeSize, bool IsWrite);
@@ -155,6 +156,7 @@ struct AddressSanitizer : public ModulePass {
                                    Instruction *InsertBefore, bool IsWrite);
   Value *memToShadow(Value *Shadow, IRBuilder<> &IRB);
   bool handleFunction(Module &M, Function &F);
+  bool maybeInsertAsanInitAtFunctionEntry(Function &F);
   bool poisonStackInFunction(Module &M, Function &F);
   virtual bool runOnModule(Module &M);
   bool insertGlobalRedzones(Module &M);
@@ -165,7 +167,7 @@ struct AddressSanitizer : public ModulePass {
 
   uint64_t getAllocaSizeInBytes(AllocaInst *AI) {
     Type *Ty = AI->getAllocatedType();
-    uint64_t SizeInBytes = TD->getTypeStoreSizeInBits(Ty) / 8;
+    uint64_t SizeInBytes = TD->getTypeAllocSize(Ty);
     return SizeInBytes;
   }
   uint64_t getAlignedSize(uint64_t SizeInBytes) {
@@ -206,9 +208,13 @@ ModulePass *llvm::createAddressSanitizerPass() {
   return new AddressSanitizer();
 }
 
+const char *AddressSanitizer::getPassName() const {
+  return "AddressSanitizer";
+}
+
 // Create a constant for Str so that we can pass it to the run-time lib.
 static GlobalVariable *createPrivateGlobalForString(Module &M, StringRef Str) {
-  Constant *StrConst = ConstantArray::get(M.getContext(), Str);
+  Constant *StrConst = ConstantDataArray::getString(M.getContext(), Str);
   return new GlobalVariable(M, StrConst->getType(), true,
                             GlobalValue::PrivateLinkage, StrConst, "");
 }
@@ -329,70 +335,14 @@ void AddressSanitizer::instrumentMop(Instruction *I) {
 
 Instruction *AddressSanitizer::generateCrashCode(
     IRBuilder<> &IRB, Value *Addr, bool IsWrite, uint32_t TypeSize) {
-
-  if (ClUseCall) {
-    // Here we use a call instead of arch-specific asm to report an error.
-    // This is almost always slower (because the codegen needs to generate
-    // prologue/epilogue for otherwise leaf functions) and generates more code.
-    // This mode could be useful if we can not use SIGILL for some reason.
-    //
-    // IsWrite and TypeSize are encoded in the function name.
-    std::string FunctionName = std::string(kAsanReportErrorTemplate) +
-        (IsWrite ? "store" : "load") + itostr(TypeSize / 8);
-    Value *ReportWarningFunc = CurrentModule->getOrInsertFunction(
-        FunctionName, IRB.getVoidTy(), IntptrTy, NULL);
-    CallInst *Call = IRB.CreateCall(ReportWarningFunc, Addr);
-    Call->setDoesNotReturn();
-    return Call;
-  }
-
-  uint32_t LogOfSizeInBytes = CountTrailingZeros_32(TypeSize / 8);
-  assert(8U * (1 << LogOfSizeInBytes) == TypeSize);
-  uint8_t TelltaleValue = IsWrite * 8 + LogOfSizeInBytes;
-  assert(TelltaleValue < 16);
-
-  // Move the failing address to %rax/%eax
-  FunctionType *Fn1Ty = FunctionType::get(
-      IRB.getVoidTy(), ArrayRef<Type*>(IntptrTy), false);
-  const char *MovStr = LongSize == 32
-      ? "mov $0, %eax" : "mov $0, %rax";
-  Value *AsmMov = InlineAsm::get(
-      Fn1Ty, StringRef(MovStr), StringRef("r"), true);
-  IRB.CreateCall(AsmMov, Addr);
-
-  // crash with ud2; could use int3, but it is less friendly to gdb.
-  // after ud2 put a 1-byte instruction that encodes the access type and size.
-
-  const char *TelltaleInsns[16] = {
-    "push   %eax",  // 0x50
-    "push   %ecx",  // 0x51
-    "push   %edx",  // 0x52
-    "push   %ebx",  // 0x53
-    "push   %esp",  // 0x54
-    "push   %ebp",  // 0x55
-    "push   %esi",  // 0x56
-    "push   %edi",  // 0x57
-    "pop    %eax",  // 0x58
-    "pop    %ecx",  // 0x59
-    "pop    %edx",  // 0x5a
-    "pop    %ebx",  // 0x5b
-    "pop    %esp",  // 0x5c
-    "pop    %ebp",  // 0x5d
-    "pop    %esi",  // 0x5e
-    "pop    %edi"   // 0x5f
-  };
-
-  std::string AsmStr = "ud2;";
-  AsmStr += TelltaleInsns[TelltaleValue];
-  Value *MyAsm = InlineAsm::get(FunctionType::get(Type::getVoidTy(*C), false),
-                                StringRef(AsmStr), StringRef(""), true);
-  CallInst *AsmCall = IRB.CreateCall(MyAsm);
-
-  // This saves us one jump, but triggers a bug in RA (or somewhere else):
-  // while building 483.xalancbmk the compiler goes into infinite loop in
-  // llvm::SpillPlacement::iterate() / RAGreedy::growRegion
-  // AsmCall->setDoesNotReturn();
-  return AsmCall;
+  // IsWrite and TypeSize are encoded in the function name.
+  std::string FunctionName = std::string(kAsanReportErrorTemplate) +
+      (IsWrite ? "store" : "load") + itostr(TypeSize / 8);
+  Value *ReportWarningFunc = CurrentModule->getOrInsertFunction(
+      FunctionName, IRB.getVoidTy(), IntptrTy, NULL);
+  CallInst *Call = IRB.CreateCall(ReportWarningFunc, Addr);
+  Call->setDoesNotReturn();
+  return Call;
 }
 
 void AddressSanitizer::instrumentAddress(Instruction *OrigIns,
@@ -474,14 +424,26 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
       continue;
     }
 
-    // Ignore the globals from the __OBJC section. The ObjC runtime assumes
-    // those conform to /usr/lib/objc/runtime.h, so we can't add redzones to
-    // them.
     if (G->hasSection()) {
       StringRef Section(G->getSection());
+      // Ignore the globals from the __OBJC section. The ObjC runtime assumes
+      // those conform to /usr/lib/objc/runtime.h, so we can't add redzones to
+      // them.
       if ((Section.find("__OBJC,") == 0) ||
           (Section.find("__DATA, __objc_") == 0)) {
         DEBUG(dbgs() << "Ignoring ObjC runtime global: " << *G);
+        continue;
+      }
+      // See http://code.google.com/p/address-sanitizer/issues/detail?id=32
+      // Constant CFString instances are compiled in the following way:
+      //  -- the string buffer is emitted into
+      //     __TEXT,__cstring,cstring_literals
+      //  -- the constant NSConstantString structure referencing that buffer
+      //     is placed into __DATA,__cfstring
+      // Therefore there's no point in placing redzones into __DATA,__cfstring.
+      // Moreover, it causes the linker to crash on OS X 10.7
+      if (Section.find("__DATA,__cfstring") == 0) {
+        DEBUG(dbgs() << "Ignoring CFString: " << *G);
         continue;
       }
     }
@@ -518,7 +480,11 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
         NewTy, G->getInitializer(),
         Constant::getNullValue(RightRedZoneTy), NULL);
 
-    GlobalVariable *Name = createPrivateGlobalForString(M, G->getName());
+    SmallString<2048> DescriptionOfGlobal = G->getName();
+    DescriptionOfGlobal += " (";
+    DescriptionOfGlobal += M.getModuleIdentifier();
+    DescriptionOfGlobal += ")";
+    GlobalVariable *Name = createPrivateGlobalForString(M, DescriptionOfGlobal);
 
     // Create a new global variable with enough space for a redzone.
     GlobalVariable *NewGlobal = new GlobalVariable(
@@ -532,7 +498,7 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
     Indices2[1] = IRB.getInt32(0);
 
     G->replaceAllUsesWith(
-        ConstantExpr::getGetElementPtr(NewGlobal, Indices2, 2));
+        ConstantExpr::getGetElementPtr(NewGlobal, Indices2, true));
     NewGlobal->takeName(G);
     G->eraseFromParent();
 
@@ -558,6 +524,22 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
   IRB.CreateCall2(AsanRegisterGlobals,
                   IRB.CreatePointerCast(AllGlobals, IntptrTy),
                   ConstantInt::get(IntptrTy, n));
+
+  // We also need to unregister globals at the end, e.g. when a shared library
+  // gets closed.
+  Function *AsanDtorFunction = Function::Create(
+      FunctionType::get(Type::getVoidTy(*C), false),
+      GlobalValue::InternalLinkage, kAsanModuleDtorName, &M);
+  BasicBlock *AsanDtorBB = BasicBlock::Create(*C, "", AsanDtorFunction);
+  IRBuilder<> IRB_Dtor(ReturnInst::Create(*C, AsanDtorBB));
+  Function *AsanUnregisterGlobals = cast<Function>(M.getOrInsertFunction(
+      kAsanUnregisterGlobalsName, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+  AsanUnregisterGlobals->setLinkage(Function::ExternalLinkage);
+
+  IRB_Dtor.CreateCall2(AsanUnregisterGlobals,
+                       IRB.CreatePointerCast(AllGlobals, IntptrTy),
+                       ConstantInt::get(IntptrTy, n));
+  appendToGlobalDtors(M, AsanDtorFunction, kAsanCtorAndCtorPriority);
 
   DEBUG(dbgs() << M);
   return true;
@@ -632,14 +614,35 @@ bool AddressSanitizer::runOnModule(Module &M) {
     Res |= handleFunction(M, *F);
   }
 
-  appendToGlobalCtors(M, AsanCtorFunction, 1 /*high priority*/);
+  appendToGlobalCtors(M, AsanCtorFunction, kAsanCtorAndCtorPriority);
 
   return Res;
+}
+
+bool AddressSanitizer::maybeInsertAsanInitAtFunctionEntry(Function &F) {
+  // For each NSObject descendant having a +load method, this method is invoked
+  // by the ObjC runtime before any of the static constructors is called.
+  // Therefore we need to instrument such methods with a call to __asan_init
+  // at the beginning in order to initialize our runtime before any access to
+  // the shadow memory.
+  // We cannot just ignore these methods, because they may call other
+  // instrumented functions.
+  if (F.getName().find(" load]") != std::string::npos) {
+    IRBuilder<> IRB(F.begin()->begin());
+    IRB.CreateCall(AsanInitFunction);
+    return true;
+  }
+  return false;
 }
 
 bool AddressSanitizer::handleFunction(Module &M, Function &F) {
   if (BL->isIn(F)) return false;
   if (&F == AsanCtorFunction) return false;
+
+  // If needed, insert __asan_init before checking for AddressSafety attr.
+  maybeInsertAsanInitAtFunctionEntry(F);
+
+  if (!F.hasFnAttr(Attribute::AddressSafety)) return false;
 
   if (!ClDebugFunc.empty() && ClDebugFunc != F.getName())
     return false;
@@ -647,6 +650,7 @@ bool AddressSanitizer::handleFunction(Module &M, Function &F) {
   // (unless there are calls between uses).
   SmallSet<Value*, 16> TempsToInstrument;
   SmallVector<Instruction*, 16> ToInstrument;
+  SmallVector<Instruction*, 8> NoReturnCalls;
 
   // Fill the set of memory operations to instrument.
   for (Function::iterator FI = F.begin(), FE = F.end();
@@ -654,6 +658,7 @@ bool AddressSanitizer::handleFunction(Module &M, Function &F) {
     TempsToInstrument.clear();
     for (BasicBlock::iterator BI = FI->begin(), BE = FI->end();
          BI != BE; ++BI) {
+      if (LooksLikeCodeInBug11395(BI)) return false;
       if ((isa<LoadInst>(BI) && ClInstrumentReads) ||
           (isa<StoreInst>(BI) && ClInstrumentWrites)) {
         Value *Addr = getLDSTOperand(BI);
@@ -664,9 +669,12 @@ bool AddressSanitizer::handleFunction(Module &M, Function &F) {
       } else if (isa<MemIntrinsic>(BI) && ClMemIntrin) {
         // ok, take it.
       } else {
-        if (isa<CallInst>(BI)) {
+        if (CallInst *CI = dyn_cast<CallInst>(BI)) {
           // A call inside BB.
           TempsToInstrument.clear();
+          if (CI->doesNotReturn()) {
+            NoReturnCalls.push_back(CI);
+          }
         }
         continue;
       }
@@ -692,19 +700,16 @@ bool AddressSanitizer::handleFunction(Module &M, Function &F) {
 
   bool ChangedStack = poisonStackInFunction(M, F);
 
-  // For each NSObject descendant having a +load method, this method is invoked
-  // by the ObjC runtime before any of the static constructors is called.
-  // Therefore we need to instrument such methods with a call to __asan_init
-  // at the beginning in order to initialize our runtime before any access to
-  // the shadow memory.
-  // We cannot just ignore these methods, because they may call other
-  // instrumented functions.
-  if (F.getName().find(" load]") != std::string::npos) {
-    IRBuilder<> IRB(F.begin()->begin());
-    IRB.CreateCall(AsanInitFunction);
+  // We must unpoison the stack before every NoReturn call (throw, _exit, etc).
+  // See e.g. http://code.google.com/p/address-sanitizer/issues/detail?id=37
+  for (size_t i = 0, n = NoReturnCalls.size(); i != n; i++) {
+    Instruction *CI = NoReturnCalls[i];
+    IRBuilder<> IRB(CI);
+    IRB.CreateCall(M.getOrInsertFunction(kAsanHandleNoReturnName,
+                                         IRB.getVoidTy(), NULL));
   }
 
-  return NumInstrumented > 0 || ChangedStack;
+  return NumInstrumented > 0 || ChangedStack || !NoReturnCalls.empty();
 }
 
 static uint64_t ValueForPoison(uint64_t PoisonByte, size_t ShadowRedzoneSize) {
@@ -713,8 +718,7 @@ static uint64_t ValueForPoison(uint64_t PoisonByte, size_t ShadowRedzoneSize) {
   if (ShadowRedzoneSize == 4)
     return (PoisonByte << 24) + (PoisonByte << 16) +
         (PoisonByte << 8) + (PoisonByte);
-  assert(0 && "ShadowRedzoneSize is either 1, 2 or 4");
-  return 0;
+  llvm_unreachable("ShadowRedzoneSize is either 1, 2 or 4");
 }
 
 static void PoisonShadowPartialRightRedzone(uint8_t *Shadow,
@@ -829,7 +833,6 @@ bool AddressSanitizer::poisonStackInFunction(Module &M, Function &F) {
     BasicBlock &BB = *FI;
     for (BasicBlock::iterator BI = BB.begin(), BE = BB.end();
          BI != BE; ++BI) {
-      if (LooksLikeCodeInBug11395(BI)) return false;
       if (isa<ReturnInst>(BI)) {
           RetVec.push_back(BI);
           continue;

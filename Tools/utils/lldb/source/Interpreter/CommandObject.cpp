@@ -17,6 +17,7 @@
 #include <ctype.h>
 
 #include "lldb/Core/Address.h"
+#include "lldb/Core/ArchSpec.h"
 #include "lldb/Interpreter/Options.h"
 
 // These are for the Sourcename completers.
@@ -53,7 +54,9 @@ CommandObject::CommandObject
     m_cmd_syntax (),
     m_is_alias (false),
     m_flags (flags),
-    m_arguments()
+    m_arguments(),
+    m_command_override_callback (NULL),
+    m_command_override_baton (NULL)
 {
     if (help && help[0])
         m_cmd_help_short = help;
@@ -160,17 +163,6 @@ const Flags&
 CommandObject::GetFlags() const
 {
     return m_flags;
-}
-
-bool
-CommandObject::ExecuteCommandString
-(
-    const char *command_line,
-    CommandReturnObject &result
-)
-{
-    Args command_args(command_line);
-    return ExecuteWithOptions (command_args, result);
 }
 
 bool
@@ -535,15 +527,30 @@ CommandObject::IsPairType (ArgumentRepetitionType arg_repeat_type)
     return false;
 }
 
+static CommandObject::CommandArgumentEntry
+OptSetFiltered(uint32_t opt_set_mask, CommandObject::CommandArgumentEntry &cmd_arg_entry)
+{
+    CommandObject::CommandArgumentEntry ret_val;
+    for (unsigned i = 0; i < cmd_arg_entry.size(); ++i)
+        if (opt_set_mask & cmd_arg_entry[i].arg_opt_set_association)
+            ret_val.push_back(cmd_arg_entry[i]);
+    return ret_val;
+}
+
+// Default parameter value of opt_set_mask is LLDB_OPT_SET_ALL, which means take
+// all the argument data into account.  On rare cases where some argument sticks
+// with certain option sets, this function returns the option set filtered args.
 void
-CommandObject::GetFormattedCommandArguments (Stream &str)
+CommandObject::GetFormattedCommandArguments (Stream &str, uint32_t opt_set_mask)
 {
     int num_args = m_arguments.size();
     for (int i = 0; i < num_args; ++i)
     {
         if (i > 0)
             str.Printf (" ");
-        CommandArgumentEntry arg_entry = m_arguments[i];
+        CommandArgumentEntry arg_entry =
+            opt_set_mask == LLDB_OPT_SET_ALL ? m_arguments[i]
+                                             : OptSetFiltered(opt_set_mask, m_arguments[i]);
         int num_alternatives = arg_entry.size();
 
         if ((num_alternatives == 2)
@@ -839,13 +846,27 @@ CommandObject::GetArgumentDescriptionAsCString (const lldb::CommandArgumentType 
     return NULL;
 }
 
+static
+const char *arch_helper()
+{
+    static StreamString g_archs_help;
+    if (g_archs_help.Empty())
+    {
+        StringList archs;
+        ArchSpec::AutoComplete(NULL, archs);
+        g_archs_help.Printf("These are the supported architecture names:\n");
+        archs.Join("\n", g_archs_help);
+    }
+    return g_archs_help.GetData();
+}
+
 CommandObject::ArgumentTableEntry
 CommandObject::g_arguments_data[] =
 {
     { eArgTypeAddress, "address", CommandCompletions::eNoCompletion, { NULL, false }, "A valid address in the target program's execution space." },
     { eArgTypeAliasName, "alias-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of an abbreviation (alias) for a debugger command." },
     { eArgTypeAliasOptions, "options-for-aliased-command", CommandCompletions::eNoCompletion, { NULL, false }, "Command options to be used as part of an alias (abbreviation) definition.  (See 'help commands alias' for more information.)" },
-    { eArgTypeArchitecture, "arch", CommandCompletions::eArchitectureCompletion, { NULL, false }, "The architecture name, e.g. i386 or x86_64." },
+    { eArgTypeArchitecture, "arch", CommandCompletions::eArchitectureCompletion, { arch_helper, true }, "The architecture name, e.g. i386 or x86_64." },
     { eArgTypeBoolean, "boolean", CommandCompletions::eNoCompletion, { NULL, false }, "A Boolean value: 'true' or 'false'" },
     { eArgTypeBreakpointID, "breakpt-id", CommandCompletions::eNoCompletion, { BreakpointIDHelpTextCallback, false }, NULL },
     { eArgTypeBreakpointIDRange, "breakpt-id-list", CommandCompletions::eNoCompletion, { BreakpointIDRangeHelpTextCallback, false }, NULL },
@@ -864,6 +885,7 @@ CommandObject::g_arguments_data[] =
     { eArgTypeFunctionName, "function-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a function." },
     { eArgTypeGDBFormat, "gdb-format", CommandCompletions::eNoCompletion, { GDBFormatHelpTextCallback, true }, NULL },
     { eArgTypeIndex, "index", CommandCompletions::eNoCompletion, { NULL, false }, "An index into a list." },
+    { eArgTypeLanguage, "language", CommandCompletions::eNoCompletion, { NULL, false }, "A source language name." },
     { eArgTypeLineNum, "linenum", CommandCompletions::eNoCompletion, { NULL, false }, "Line number in a source file." },
     { eArgTypeLogCategory, "log-category", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a category within a log channel, e.g. all (try \"log list\" to see a list of all channels and their categories." },
     { eArgTypeLogChannel, "log-channel", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a log channel, e.g. process.gdb-remote (try \"log list\" to see a list of all channels and their categories)." },

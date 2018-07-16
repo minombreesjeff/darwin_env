@@ -26,6 +26,7 @@
 #include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -53,26 +54,27 @@ static cl::opt<std::string>
 
 static const Target *GetTarget(const MachOObject *MachOObj) {
   // Figure out the target triple.
-  llvm::Triple TT("unknown-unknown-unknown");
-  switch (MachOObj->getHeader().CPUType) {
-  case llvm::MachO::CPUTypeI386:
-    TT.setArch(Triple::ArchType(Triple::x86));
-    break;
-  case llvm::MachO::CPUTypeX86_64:
-    TT.setArch(Triple::ArchType(Triple::x86_64));
-    break;
-  case llvm::MachO::CPUTypeARM:
-    TT.setArch(Triple::ArchType(Triple::arm));
-    break;
-  case llvm::MachO::CPUTypePowerPC:
-    TT.setArch(Triple::ArchType(Triple::ppc));
-    break;
-  case llvm::MachO::CPUTypePowerPC64:
-    TT.setArch(Triple::ArchType(Triple::ppc64));
-    break;
+  if (TripleName.empty()) {
+    llvm::Triple TT("unknown-unknown-unknown");
+    switch (MachOObj->getHeader().CPUType) {
+    case llvm::MachO::CPUTypeI386:
+      TT.setArch(Triple::ArchType(Triple::x86));
+      break;
+    case llvm::MachO::CPUTypeX86_64:
+      TT.setArch(Triple::ArchType(Triple::x86_64));
+      break;
+    case llvm::MachO::CPUTypeARM:
+      TT.setArch(Triple::ArchType(Triple::arm));
+      break;
+    case llvm::MachO::CPUTypePowerPC:
+      TT.setArch(Triple::ArchType(Triple::ppc));
+      break;
+    case llvm::MachO::CPUTypePowerPC64:
+      TT.setArch(Triple::ArchType(Triple::ppc64));
+      break;
+    }
+    TripleName = TT.str();
   }
-
-  TripleName = TT.str();
 
   // Get the target specific parser.
   std::string Error;
@@ -256,9 +258,10 @@ void llvm::DisassembleInputMachO(StringRef Filename) {
   OwningPtr<const MCSubtargetInfo>
     STI(TheTarget->createMCSubtargetInfo(TripleName, "", ""));
   OwningPtr<const MCDisassembler> DisAsm(TheTarget->createMCDisassembler(*STI));
+  OwningPtr<const MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
   int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
   OwningPtr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-                              AsmPrinterVariant, *AsmInfo, *STI));
+                              AsmPrinterVariant, *AsmInfo, *MRI, *STI));
 
   if (!InstrAnalysis || !AsmInfo || !STI || !DisAsm || !IP) {
     errs() << "error: couldn't initialize disassembler for target "
@@ -418,8 +421,11 @@ void llvm::DisassembleInputMachO(StringRef Filename) {
         continue;
 
       // Start at the address of the symbol relative to the section's address.
+      uint64_t SectionAddress = 0;
       uint64_t Start = 0;
+      Sections[SectIdx].getAddress(SectionAddress);
       Symbols[SymIdx].getAddress(Start);
+      Start -= SectionAddress;
 
       // Stop disassembling either at the beginning of the next symbol or at
       // the end of the section.
@@ -433,6 +439,7 @@ void llvm::DisassembleInputMachO(StringRef Filename) {
           Sections[SectIdx].containsSymbol(Symbols[NextSymIdx],
                                            containsNextSym);
           Symbols[NextSymIdx].getAddress(NextSym);
+          NextSym -= SectionAddress;
           break;
         }
         ++NextSymIdx;

@@ -245,7 +245,6 @@ bool Declarator::isDeclarationOfFunction() const {
       return false;
     }
     llvm_unreachable("Invalid type chunk");
-    return false;
   }
   
   switch (DS.getTypeSpecType()) {
@@ -295,8 +294,8 @@ bool Declarator::isDeclarationOfFunction() const {
       return QT->isFunctionType();
     }
   }
-  
-  return false;
+
+  llvm_unreachable("Invalid TypeSpecType!");
 }
 
 /// getParsedSpecifiers - Return a bitmask of which flavors of specifiers this
@@ -867,7 +866,8 @@ void DeclSpec::Finish(DiagnosticsEngine &D, Preprocessor &PP) {
       TypeSpecType = TST_double;   // _Complex -> _Complex double.
     } else if (TypeSpecType == TST_int || TypeSpecType == TST_char) {
       // Note that this intentionally doesn't include _Complex _Bool.
-      Diag(D, TSTLoc, diag::ext_integer_complex);
+      if (!PP.getLangOptions().CPlusPlus)
+        Diag(D, TSTLoc, diag::ext_integer_complex);
     } else if (TypeSpecType != TST_float && TypeSpecType != TST_double) {
       Diag(D, TSCLoc, diag::err_invalid_complex_spec)
         << getSpecifierName((TST)TypeSpecType);
@@ -898,8 +898,6 @@ void DeclSpec::Finish(DiagnosticsEngine &D, Preprocessor &PP) {
   if (TypeSpecType == TST_char16 || TypeSpecType == TST_char32)
     Diag(D, TSTLoc, diag::warn_cxx98_compat_unicode_type)
       << (TypeSpecType == TST_char16 ? "char16_t" : "char32_t");
-  if (TypeSpecType == TST_decltype)
-    Diag(D, TSTLoc, diag::warn_cxx98_compat_decltype);
   if (Constexpr_specified)
     Diag(D, ConstexprLoc, diag::warn_cxx98_compat_constexpr);
 

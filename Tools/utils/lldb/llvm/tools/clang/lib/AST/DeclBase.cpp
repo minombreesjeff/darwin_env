@@ -39,7 +39,24 @@ using namespace clang;
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
 
-static bool StatSwitch = false;
+void *Decl::AllocateDeserializedDecl(const ASTContext &Context, 
+                                     unsigned ID,
+                                     unsigned Size) {
+  // Allocate an extra 8 bytes worth of storage, which ensures that the
+  // resulting pointer will still be 8-byte aligned. 
+  void *Start = Context.Allocate(Size + 8);
+  void *Result = (char*)Start + 8;
+  
+  unsigned *PrefixPtr = (unsigned *)Result - 2;
+  
+  // Zero out the first 4 bytes; this is used to store the owning module ID.
+  PrefixPtr[0] = 0;
+  
+  // Store the global declaration ID in the second 4 bytes.
+  PrefixPtr[1] = ID;
+  
+  return Result;
+}
 
 const char *Decl::getDeclKindName() const {
   switch (DeclKind) {
@@ -69,9 +86,9 @@ const char *DeclContext::getDeclKindName() const {
   }
 }
 
-bool Decl::CollectingStats(bool Enable) {
-  if (Enable) StatSwitch = true;
-  return StatSwitch;
+bool Decl::StatisticsEnabled = false;
+void Decl::EnableStatistics() {
+  StatisticsEnabled = true;
 }
 
 void Decl::PrintStats() {
@@ -100,7 +117,6 @@ void Decl::PrintStats() {
 
 void Decl::add(Kind k) {
   switch (k) {
-  default: llvm_unreachable("Declaration not in DeclNodes.inc!");
 #define DECL(DERIVED, BASE) case DERIVED: ++n##DERIVED##s; break;
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
@@ -185,12 +201,21 @@ void Decl::setLexicalDeclContext(DeclContext *DC) {
     return;
 
   if (isInSemaDC()) {
-    MultipleDC *MDC = new (getASTContext()) MultipleDC();
-    MDC->SemanticDC = getDeclContext();
-    MDC->LexicalDC = DC;
-    DeclCtx = MDC;
+    setDeclContextsImpl(getDeclContext(), DC, getASTContext());
   } else {
     getMultipleDC()->LexicalDC = DC;
+  }
+}
+
+void Decl::setDeclContextsImpl(DeclContext *SemaDC, DeclContext *LexicalDC,
+                               ASTContext &Ctx) {
+  if (SemaDC == LexicalDC) {
+    DeclCtx = SemaDC;
+  } else {
+    Decl::MultipleDC *MDC = new (Ctx) Decl::MultipleDC();
+    MDC->SemanticDC = SemaDC;
+    MDC->LexicalDC = LexicalDC;
+    DeclCtx = MDC;
   }
 }
 
@@ -495,9 +520,7 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
     case LinkageSpec:
     case FileScopeAsm:
     case StaticAssert:
-    case ObjCClass:
     case ObjCPropertyImpl:
-    case ObjCForwardProtocol:
     case Block:
     case TranslationUnit:
 
@@ -513,13 +536,13 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
       return 0;
   }
 
-  return 0;
+  llvm_unreachable("Invalid DeclKind!");
 }
 
-void Decl::setAttrs(const AttrVec &attrs) {
+void Decl::setAttrsImpl(const AttrVec &attrs, ASTContext &Ctx) {
   assert(!HasAttrs && "Decl already contains attrs.");
 
-  AttrVec &AttrBlank = getASTContext().getDeclAttrs(this);
+  AttrVec &AttrBlank = Ctx.getDeclAttrs(this);
   assert(AttrBlank.empty() && "HasAttrs was wrong?");
 
   AttrBlank = attrs;
@@ -716,10 +739,14 @@ bool DeclContext::isDependentContext() const {
   if (isa<ClassTemplatePartialSpecializationDecl>(this))
     return true;
 
-  if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(this))
+  if (const CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(this)) {
     if (Record->getDescribedClassTemplate())
       return true;
-
+    
+    if (Record->isDependentLambda())
+      return true;
+  }
+  
   if (const FunctionDecl *Function = dyn_cast<FunctionDecl>(this)) {
     if (Function->getDescribedFunctionTemplate())
       return true;
@@ -779,9 +806,18 @@ DeclContext *DeclContext::getPrimaryContext() {
     return this;
 
   case Decl::ObjCInterface:
+    if (ObjCInterfaceDecl *Def = cast<ObjCInterfaceDecl>(this)->getDefinition())
+      return Def;
+      
+    return this;
+      
   case Decl::ObjCProtocol:
+    if (ObjCProtocolDecl *Def = cast<ObjCProtocolDecl>(this)->getDefinition())
+      return Def;
+    
+    return this;
+      
   case Decl::ObjCCategory:
-    // FIXME: Can Objective-C interfaces be forward-declared?
     return this;
 
   case Decl::ObjCImplementation:
@@ -816,21 +852,27 @@ DeclContext *DeclContext::getPrimaryContext() {
   }
 }
 
-DeclContext *DeclContext::getNextContext() {
-  switch (DeclKind) {
-  case Decl::Namespace:
-    // Return the next namespace
-    return static_cast<NamespaceDecl*>(this)->getNextNamespace();
-
-  default:
-    return 0;
+void 
+DeclContext::collectAllContexts(llvm::SmallVectorImpl<DeclContext *> &Contexts){
+  Contexts.clear();
+  
+  if (DeclKind != Decl::Namespace) {
+    Contexts.push_back(this);
+    return;
   }
+  
+  NamespaceDecl *Self = static_cast<NamespaceDecl *>(this);
+  for (NamespaceDecl *N = Self->getMostRecentDecl(); N;
+       N = N->getPreviousDecl())
+    Contexts.push_back(N);
+  
+  std::reverse(Contexts.begin(), Contexts.end());
 }
 
 std::pair<Decl *, Decl *>
-DeclContext::BuildDeclChain(const SmallVectorImpl<Decl*> &Decls,
+DeclContext::BuildDeclChain(ArrayRef<Decl*> Decls,
                             bool FieldsAlreadyLoaded) {
-  // Build up a chain of declarations via the Decl::NextDeclInContext field.
+  // Build up a chain of declarations via the Decl::NextInContextAndBits field.
   Decl *FirstNewDecl = 0;
   Decl *PrevDecl = 0;
   for (unsigned I = 0, N = Decls.size(); I != N; ++I) {
@@ -839,7 +881,7 @@ DeclContext::BuildDeclChain(const SmallVectorImpl<Decl*> &Decls,
 
     Decl *D = Decls[I];
     if (PrevDecl)
-      PrevDecl->NextDeclInContext = D;
+      PrevDecl->NextInContextAndBits.setPointer(D);
     else
       FirstNewDecl = D;
 
@@ -885,7 +927,7 @@ DeclContext::LoadLexicalDeclsFromExternalStorage() const {
   Decl *ExternalFirst, *ExternalLast;
   llvm::tie(ExternalFirst, ExternalLast) = BuildDeclChain(Decls,
                                                           FieldsAlreadyLoaded);
-  ExternalLast->NextDeclInContext = FirstDecl;
+  ExternalLast->NextInContextAndBits.setPointer(FirstDecl);
   FirstDecl = ExternalFirst;
   if (!LastDecl)
     LastDecl = ExternalLast;
@@ -960,7 +1002,7 @@ bool DeclContext::decls_empty() const {
 void DeclContext::removeDecl(Decl *D) {
   assert(D->getLexicalDeclContext() == this &&
          "decl being removed from non-lexical context");
-  assert((D->NextDeclInContext || D == LastDecl) &&
+  assert((D->NextInContextAndBits.getPointer() || D == LastDecl) &&
          "decl is not in decls list");
 
   // Remove D from the decl chain.  This is O(n) but hopefully rare.
@@ -968,12 +1010,12 @@ void DeclContext::removeDecl(Decl *D) {
     if (D == LastDecl)
       FirstDecl = LastDecl = 0;
     else
-      FirstDecl = D->NextDeclInContext;
+      FirstDecl = D->NextInContextAndBits.getPointer();
   } else {
-    for (Decl *I = FirstDecl; true; I = I->NextDeclInContext) {
+    for (Decl *I = FirstDecl; true; I = I->NextInContextAndBits.getPointer()) {
       assert(I && "decl not found in linked list");
-      if (I->NextDeclInContext == D) {
-        I->NextDeclInContext = D->NextDeclInContext;
+      if (I->NextInContextAndBits.getPointer() == D) {
+        I->NextInContextAndBits.setPointer(D->NextInContextAndBits.getPointer());
         if (D == LastDecl) LastDecl = I;
         break;
       }
@@ -981,7 +1023,7 @@ void DeclContext::removeDecl(Decl *D) {
   }
   
   // Mark that D is no longer in the decl chain.
-  D->NextDeclInContext = 0;
+  D->NextInContextAndBits.setPointer(0);
 
   // Remove D from the lookup table if necessary.
   if (isa<NamedDecl>(D)) {
@@ -1007,7 +1049,7 @@ void DeclContext::addHiddenDecl(Decl *D) {
          "Decl already inserted into a DeclContext");
 
   if (FirstDecl) {
-    LastDecl->NextDeclInContext = D;
+    LastDecl->NextInContextAndBits.setPointer(D);
     LastDecl = D;
   } else {
     FirstDecl = LastDecl = D;
@@ -1044,22 +1086,19 @@ void DeclContext::addDeclInternal(Decl *D) {
 /// declarations in DCtx (and any other contexts linked to it or
 /// transparent contexts nested within it).
 void DeclContext::buildLookup(DeclContext *DCtx) {
-  for (; DCtx; DCtx = DCtx->getNextContext()) {
-    for (decl_iterator D = DCtx->decls_begin(),
-                    DEnd = DCtx->decls_end();
+  llvm::SmallVector<DeclContext *, 2> Contexts;
+  DCtx->collectAllContexts(Contexts);
+  for (unsigned I = 0, N = Contexts.size(); I != N; ++I) {
+    for (decl_iterator D = Contexts[I]->decls_begin(),
+                    DEnd = Contexts[I]->decls_end();
          D != DEnd; ++D) {
       // Insert this declaration into the lookup structure, but only
       // if it's semantically in its decl context.  During non-lazy
       // lookup building, this is implicitly enforced by addDecl.
       if (NamedDecl *ND = dyn_cast<NamedDecl>(*D))
-        if (D->getDeclContext() == DCtx)
+        if (D->getDeclContext() == Contexts[I])
           makeDeclVisibleInContextImpl(ND, false);
 
-      // Insert any forward-declared Objective-C interface into the lookup
-      // data structure.
-      if (ObjCClassDecl *Class = dyn_cast<ObjCClassDecl>(*D))
-        makeDeclVisibleInContextImpl(Class->getForwardInterfaceDecl(), false);
-      
       // If this declaration is itself a transparent declaration context or
       // inline namespace, add its members (recursively).
       if (DeclContext *InnerCtx = dyn_cast<DeclContext>(*D))

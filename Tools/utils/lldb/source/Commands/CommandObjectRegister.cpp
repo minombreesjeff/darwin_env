@@ -95,18 +95,21 @@ public:
 
                 bool prefix_with_altname = m_command_options.alternate_name;
                 bool prefix_with_name = !prefix_with_altname;
-                reg_value.Dump(&strm, reg_info, prefix_with_name, prefix_with_altname, m_format_options.GetFormat());
-                if (((reg_info->encoding == eEncodingUint) || (reg_info->encoding == eEncodingSint)) && 
-                    (reg_info->byte_size == reg_ctx->GetThread().GetProcess().GetAddressByteSize()))
+                reg_value.Dump(&strm, reg_info, prefix_with_name, prefix_with_altname, m_format_options.GetFormat(), 8);
+                if ((reg_info->encoding == eEncodingUint) || (reg_info->encoding == eEncodingSint))
                 {
-                    addr_t reg_addr = reg_value.GetAsUInt64(LLDB_INVALID_ADDRESS);
-                    if (reg_addr != LLDB_INVALID_ADDRESS)
+                    Process *process = exe_ctx.GetProcessPtr();
+                    if (process && reg_info->byte_size == process->GetAddressByteSize())
                     {
-                        Address so_reg_addr;
-                        if (exe_ctx.GetTargetRef().GetSectionLoadList().ResolveLoadAddress(reg_addr, so_reg_addr))
+                        addr_t reg_addr = reg_value.GetAsUInt64(LLDB_INVALID_ADDRESS);
+                        if (reg_addr != LLDB_INVALID_ADDRESS)
                         {
-                            strm.PutCString ("  ");
-                            so_reg_addr.Dump(&strm, exe_ctx.GetBestExecutionContextScope(), Address::DumpStyleResolvedDescription);
+                            Address so_reg_addr;
+                            if (exe_ctx.GetTargetRef().GetSectionLoadList().ResolveLoadAddress(reg_addr, so_reg_addr))
+                            {
+                                strm.PutCString ("  ");
+                                so_reg_addr.Dump(&strm, exe_ctx.GetBestExecutionContextScope(), Address::DumpStyleResolvedDescription);
+                            }
                         }
                     }
                 }
@@ -121,7 +124,8 @@ public:
     DumpRegisterSet (const ExecutionContext &exe_ctx,
                      Stream &strm,
                      RegisterContext *reg_ctx,
-                     uint32_t set_idx)
+                     uint32_t set_idx,
+                     bool primitive_only=false)
     {
         uint32_t unavailable_count = 0;
         uint32_t available_count = 0;
@@ -134,7 +138,11 @@ public:
             for (uint32_t reg_idx = 0; reg_idx < num_registers; ++reg_idx)
             {
                 const uint32_t reg = reg_set->registers[reg_idx];
-                if (DumpRegister (exe_ctx, strm, reg_ctx, reg_ctx->GetRegisterInfoAtIndex(reg)))
+                const RegisterInfo *reg_info = reg_ctx->GetRegisterInfoAtIndex(reg);
+                // Skip the dumping of derived register if primitive_only is true.
+                if (primitive_only && reg_info && reg_info->value_regs)
+                    continue;
+                if (DumpRegister (exe_ctx, strm, reg_ctx, reg_info))
                     ++available_count;
                 else
                     ++unavailable_count;
@@ -199,7 +207,8 @@ public:
 
                     for (set_idx = 0; set_idx < num_register_sets; ++set_idx)
                     {
-                        DumpRegisterSet (exe_ctx, strm, reg_ctx, set_idx);
+                        // When dump_all_sets option is set, dump primitive as well as derived registers.
+                        DumpRegisterSet (exe_ctx, strm, reg_ctx, set_idx, !m_command_options.dump_all_sets.GetCurrentValue());
                     }
                 }
             }
@@ -422,6 +431,9 @@ public:
                     {
                         if (reg_ctx->WriteRegister (reg_info, reg_value))
                         {
+                            // Toss all frames and anything else in the thread
+                            // after a register has been written.
+                            exe_ctx.GetThreadRef().Flush();
                             result.SetStatus (eReturnStatusSuccessFinishNoResult);
                             return true;
                         }

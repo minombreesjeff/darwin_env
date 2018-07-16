@@ -66,6 +66,7 @@ ProcessPOSIX::Initialize()
 
 ProcessPOSIX::ProcessPOSIX(Target& target, Listener &listener)
     : Process(target, listener),
+      m_byte_order(lldb::endian::InlHostByteOrder()),
       m_monitor(NULL),
       m_module(NULL),
       m_in_limbo(false),
@@ -73,8 +74,9 @@ ProcessPOSIX::ProcessPOSIX(Target& target, Listener &listener)
 {
     // FIXME: Putting this code in the ctor and saving the byte order in a
     // member variable is a hack to avoid const qual issues in GetByteOrder.
-    ObjectFile *obj_file = GetTarget().GetExecutableModule()->GetObjectFile();
-    m_byte_order = obj_file->GetByteOrder();
+	lldb::ModuleSP module = GetTarget().GetExecutableModule();
+	if (module != NULL && module->GetObjectFile() != NULL)
+		m_byte_order = module->GetObjectFile()->GetByteOrder();
 }
 
 ProcessPOSIX::~ProcessPOSIX()
@@ -292,7 +294,7 @@ ProcessPOSIX::DoDestroy()
         // limbo).
         m_exit_now = true;
 
-        if (kill(m_monitor->GetPID(), SIGKILL) && error.Success())
+        if ((m_monitor == NULL || kill(m_monitor->GetPID(), SIGKILL)) && error.Success())
         {
             error.SetErrorToErrno();
             return error;
@@ -489,7 +491,7 @@ ProcessPOSIX::UpdateThreadListIfNeeded()
     return m_thread_list.GetSize(false);
 }
 
-uint32_t
+bool
 ProcessPOSIX::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
@@ -500,14 +502,16 @@ ProcessPOSIX::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
     // FIXME: We should be using tid, not pid.
     assert(m_monitor);
     ThreadSP thread_sp (old_thread_list.FindThreadByID (GetID(), false));
-    if (!thread_sp)
-        thread_sp.reset(new POSIXThread(*this, GetID()));
+    if (!thread_sp) {
+        ProcessSP me = this->shared_from_this();
+        thread_sp.reset(new POSIXThread(me, GetID()));
+    }
 
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
         log->Printf ("ProcessPOSIX::%s() updated pid = %i", __FUNCTION__, GetID());
     new_thread_list.AddThread(thread_sp);
 
-    return new_thread_list.GetSize(false);
+    return new_thread_list.GetSize(false) > 0;
 }
 
 ByteOrder

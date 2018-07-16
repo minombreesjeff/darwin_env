@@ -83,8 +83,15 @@ SBType::operator != (SBType &rhs)
             (rhs.m_opaque_sp->GetOpaqueQualType() != m_opaque_sp->GetOpaqueQualType());
 }
 
+lldb::TypeImplSP
+SBType::GetSP ()
+{
+    return m_opaque_sp;
+}
+
+
 void
-SBType::reset(const lldb::TypeImplSP &type_impl_sp)
+SBType::SetSP (const lldb::TypeImplSP &type_impl_sp)
 {
     m_opaque_sp = type_impl_sp;
 }
@@ -419,13 +426,23 @@ SBType::GetFieldAtIndex (uint32_t idx)
     return sb_type_member;
 }
 
+bool
+SBType::IsTypeComplete()
+{
+    if (!IsValid())
+        return false;
+    
+    return ClangASTContext::IsCompleteType(m_opaque_sp->GetASTContext(), m_opaque_sp->GetOpaqueQualType());
+}
+
 const char*
 SBType::GetName()
 {
     if (!IsValid())
         return "";
 
-    return ClangASTType::GetConstTypeName(m_opaque_sp->GetOpaqueQualType()).GetCString();
+    return ClangASTType::GetConstTypeName(m_opaque_sp->GetASTContext(),
+                                          m_opaque_sp->GetOpaqueQualType()).GetCString();
 }
 
 lldb::TypeClass
@@ -436,6 +453,50 @@ SBType::GetTypeClass ()
                                            m_opaque_sp->GetOpaqueQualType());
     return lldb::eTypeClassInvalid;
 }
+
+uint32_t
+SBType::GetNumberOfTemplateArguments ()
+{
+    if (IsValid())
+    {
+        return ClangASTContext::GetNumTemplateArguments (m_opaque_sp->GetASTContext(),
+                                                         m_opaque_sp->GetOpaqueQualType());
+    }
+    return 0;
+}
+
+lldb::SBType
+SBType::GetTemplateArgumentType (uint32_t idx)
+{
+    if (IsValid())
+    {
+        TemplateArgumentKind kind = eTemplateArgumentKindNull;
+        return SBType(ClangASTType(m_opaque_sp->GetASTContext(),
+                                   ClangASTContext::GetTemplateArgument(m_opaque_sp->GetASTContext(),
+                                                                        m_opaque_sp->GetOpaqueQualType(), 
+                                                                        idx, 
+                                                                        kind)));
+    }
+    return SBType();
+}
+
+
+lldb::TemplateArgumentKind
+SBType::GetTemplateArgumentKind (uint32_t idx)
+{
+    TemplateArgumentKind kind = eTemplateArgumentKindNull;
+    if (IsValid())
+    {
+        ClangASTContext::GetTemplateArgument(m_opaque_sp->GetASTContext(),
+                                             m_opaque_sp->GetOpaqueQualType(), 
+                                             idx, 
+                                             kind);
+    }
+    return kind;
+}
+
+
+
 
 SBTypeList::SBTypeList() :
     m_opaque_ap(new TypeListImpl())
@@ -556,7 +617,7 @@ SBTypeMember::GetType ()
     SBType sb_type;
     if (m_opaque_ap.get())
     {
-        sb_type.reset (m_opaque_ap->GetTypeImpl());
+        sb_type.SetSP (m_opaque_ap->GetTypeImpl());
     }
     return sb_type;
 
@@ -622,4 +683,3 @@ SBTypeMember::ref () const
 {
     return *m_opaque_ap.get();
 }
-

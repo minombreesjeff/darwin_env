@@ -148,7 +148,8 @@ public:
                        NULL),
         m_option_group (interpreter),
         m_arch_option (),
-        m_platform_options(true) // Do include the "--platform" option in the platform settings by passing true
+        m_platform_options(true), // Do include the "--platform" option in the platform settings by passing true
+        m_core_file (LLDB_OPT_SET_1, false, "core-file", 'c', 0, eArgTypePath, "Fullpath to a core file to use for this target.")
     {
         CommandArgumentEntry arg;
         CommandArgumentData file_arg;
@@ -165,6 +166,7 @@ public:
         
         m_option_group.Append (&m_arch_option, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_platform_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_core_file, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Finalize();
     }
 
@@ -182,11 +184,16 @@ public:
     Execute (Args& command, CommandReturnObject &result)
     {
         const int argc = command.GetArgumentCount();
-        if (argc == 1)
+        FileSpec core_file (m_core_file.GetOptionValue().GetCurrentValue());
+
+        if (argc == 1 || core_file)
         {
             const char *file_path = command.GetArgumentAtIndex(0);
             Timer scoped_timer(__PRETTY_FUNCTION__, "(lldb) target create '%s'", file_path);
-            FileSpec file_spec (file_path, true);
+            FileSpec file_spec;
+            
+            if (file_path)
+                file_spec.SetFile (file_path, true);
 
             TargetSP target_sp;
             Debugger &debugger = m_interpreter.GetDebugger();
@@ -202,8 +209,53 @@ public:
             if (target_sp)
             {
                 debugger.GetTargetList().SetSelectedTarget(target_sp.get());
-                result.AppendMessageWithFormat ("Current executable set to '%s' (%s).\n", file_path, target_sp->GetArchitecture().GetArchitectureName());
-                result.SetStatus (eReturnStatusSuccessFinishNoResult);
+                if (core_file)
+                {
+                    char core_path[PATH_MAX];
+                    core_file.GetPath(core_path, sizeof(core_path));
+                    if (core_file.Exists())
+                    {
+                        FileSpec core_file_dir;
+                        core_file_dir.GetDirectory() = core_file.GetDirectory();
+                        target_sp->GetExecutableSearchPaths ().Append (core_file_dir);
+                        
+                        ProcessSP process_sp (target_sp->CreateProcess (m_interpreter.GetDebugger().GetListener(), NULL, &core_file));
+
+                        if (process_sp)
+                        {
+                            // Seems wierd that we Launch a core file, but that is
+                            // what we do!
+                            error = process_sp->LoadCore();
+                            
+                            if (error.Fail())
+                            {
+                                result.AppendError(error.AsCString("can't find plug-in for core file"));
+                                result.SetStatus (eReturnStatusFailed);
+                                return false;
+                            }
+                            else
+                            {
+                                result.AppendMessageWithFormat ("Core file '%s' (%s) was loaded.\n", core_path, target_sp->GetArchitecture().GetArchitectureName());
+                                result.SetStatus (eReturnStatusSuccessFinishNoResult);
+                            }
+                        }
+                        else
+                        {
+                            result.AppendErrorWithFormat ("Unable to find process plug-in for core file '%s'\n", core_path);
+                            result.SetStatus (eReturnStatusFailed);
+                        }
+                    }
+                    else
+                    {
+                        result.AppendErrorWithFormat ("Core file '%s' does not exist\n", core_path);
+                        result.SetStatus (eReturnStatusFailed);
+                    }
+                }
+                else
+                {
+                    result.AppendMessageWithFormat ("Current executable set to '%s' (%s).\n", file_path, target_sp->GetArchitecture().GetArchitectureName());
+                    result.SetStatus (eReturnStatusSuccessFinishNoResult);
+                }
             }
             else
             {
@@ -213,7 +265,7 @@ public:
         }
         else
         {
-            result.AppendErrorWithFormat("'%s' takes exactly one executable path argument.\n", m_cmd_name.c_str());
+            result.AppendErrorWithFormat("'%s' takes exactly one executable path argument, or use the --core-file option.\n", m_cmd_name.c_str());
             result.SetStatus (eReturnStatusFailed);
         }
         return result.Succeeded();
@@ -247,6 +299,7 @@ private:
     OptionGroupOptions m_option_group;
     OptionGroupArchitecture m_arch_option;
     OptionGroupPlatform m_platform_options;
+    OptionGroupFile m_core_file;
 
 };
 
@@ -467,7 +520,8 @@ public:
             // the global shared module list
             if (m_cleanup_option.GetOptionValue ())
             {
-                ModuleList::RemoveOrphanSharedModules();
+                const bool mandatory = true;
+                ModuleList::RemoveOrphanSharedModules(mandatory);
             }
             result.GetOutputStream().Printf("%u targets deleted.\n", (uint32_t)num_targets_to_delete);
             result.SetStatus(eReturnStatusSuccessFinishResult);
@@ -541,13 +595,13 @@ public:
     {
         ValueObject::DumpValueObjectOptions options;
         
-        options.SetPointerDepth(m_varobj_options.ptr_depth)
+        options.SetMaximumPointerDepth(m_varobj_options.ptr_depth)
                .SetMaximumDepth(m_varobj_options.max_depth)
                .SetShowTypes(m_varobj_options.show_types)
                .SetShowLocation(m_varobj_options.show_location)
                .SetUseObjectiveC(m_varobj_options.use_objc)
                .SetUseDynamicType(m_varobj_options.use_dynamic)
-               .SetUseSyntheticValue((lldb::SyntheticValueType)m_varobj_options.use_synth)
+               .SetUseSyntheticValue(m_varobj_options.use_synth)
                .SetFlatOutput(m_varobj_options.flat_output)
                .SetOmitSummaryDepth(m_varobj_options.no_summary_depth)
                .SetIgnoreCap(m_varobj_options.ignore_cap);
@@ -588,13 +642,13 @@ public:
         
         const Format format = m_option_format.GetFormat();
         if (format != eFormatDefault)
-            valobj_sp->SetFormat (format);
+            options.SetFormat(format);
+
+        options.SetRootValueObjectName(root_name);
         
         ValueObject::DumpValueObject (s, 
                                       valobj_sp.get(), 
-                                      root_name,
-                                      options,
-                                      format);                                        
+                                      options);                                        
 
     }
     
@@ -1307,17 +1361,37 @@ DumpModuleSymbolVendor (Stream &strm, Module *module)
     return false;
 }
 
+static void
+DumpAddress (ExecutionContextScope *exe_scope, const Address &so_addr, bool verbose, Stream &strm)
+{
+    strm.IndentMore();
+    strm.Indent ("    Address: ");
+    so_addr.Dump (&strm, exe_scope, Address::DumpStyleModuleWithFileAddress);
+    strm.PutCString (" (");
+    so_addr.Dump (&strm, exe_scope, Address::DumpStyleSectionNameOffset);
+    strm.PutCString (")\n");
+    strm.Indent ("    Summary: ");
+    const uint32_t save_indent = strm.GetIndentLevel ();
+    strm.SetIndentLevel (save_indent + 13);
+    so_addr.Dump (&strm, exe_scope, Address::DumpStyleResolvedDescription);
+    strm.SetIndentLevel (save_indent);
+    // Print out detailed address information when verbose is enabled
+    if (verbose)
+    {
+        strm.EOL();
+        so_addr.Dump (&strm, exe_scope, Address::DumpStyleDetailedSymbolContext);
+    }
+    strm.IndentLess();
+}
+
 static bool
-LookupAddressInModule 
-(
- CommandInterpreter &interpreter, 
- Stream &strm, 
- Module *module, 
- uint32_t resolve_mask, 
- lldb::addr_t raw_addr, 
- lldb::addr_t offset,
- bool verbose
- )
+LookupAddressInModule (CommandInterpreter &interpreter, 
+                       Stream &strm, 
+                       Module *module, 
+                       uint32_t resolve_mask, 
+                       lldb::addr_t raw_addr, 
+                       lldb::addr_t offset,
+                       bool verbose)
 {
     if (module)
     {
@@ -1329,7 +1403,7 @@ LookupAddressInModule
         {
             if (!target->GetSectionLoadList().ResolveLoadAddress (addr, so_addr))
                 return false;
-            else if (so_addr.GetModule() != module)
+            else if (so_addr.GetModule().get() != module)
                 return false;
         }
         else
@@ -1339,24 +1413,25 @@ LookupAddressInModule
         }
         
         ExecutionContextScope *exe_scope = interpreter.GetExecutionContext().GetBestExecutionContextScope();
-        strm.IndentMore();
-        strm.Indent ("    Address: ");
-        so_addr.Dump (&strm, exe_scope, Address::DumpStyleModuleWithFileAddress);
-        strm.PutCString (" (");
-        so_addr.Dump (&strm, exe_scope, Address::DumpStyleSectionNameOffset);
-        strm.PutCString (")\n");
-        strm.Indent ("    Summary: ");
-        const uint32_t save_indent = strm.GetIndentLevel ();
-        strm.SetIndentLevel (save_indent + 13);
-        so_addr.Dump (&strm, exe_scope, Address::DumpStyleResolvedDescription);
-        strm.SetIndentLevel (save_indent);
-        // Print out detailed address information when verbose is enabled
-        if (verbose)
-        {
-            strm.EOL();
-            so_addr.Dump (&strm, exe_scope, Address::DumpStyleDetailedSymbolContext);
-        }
-        strm.IndentLess();
+        DumpAddress (exe_scope, so_addr, verbose, strm);
+//        strm.IndentMore();
+//        strm.Indent ("    Address: ");
+//        so_addr.Dump (&strm, exe_scope, Address::DumpStyleModuleWithFileAddress);
+//        strm.PutCString (" (");
+//        so_addr.Dump (&strm, exe_scope, Address::DumpStyleSectionNameOffset);
+//        strm.PutCString (")\n");
+//        strm.Indent ("    Summary: ");
+//        const uint32_t save_indent = strm.GetIndentLevel ();
+//        strm.SetIndentLevel (save_indent + 13);
+//        so_addr.Dump (&strm, exe_scope, Address::DumpStyleResolvedDescription);
+//        strm.SetIndentLevel (save_indent);
+//        // Print out detailed address information when verbose is enabled
+//        if (verbose)
+//        {
+//            strm.EOL();
+//            so_addr.Dump (&strm, exe_scope, Address::DumpStyleDetailedSymbolContext);
+//        }
+//        strm.IndentLess();
         return true;
     }
     
@@ -1364,7 +1439,7 @@ LookupAddressInModule
 }
 
 static uint32_t
-LookupSymbolInModule (CommandInterpreter &interpreter, Stream &strm, Module *module, const char *name, bool name_is_regex)
+LookupSymbolInModule (CommandInterpreter &interpreter, Stream &strm, Module *module, const char *name, bool name_is_regex, bool verbose)
 {
     if (module)
     {
@@ -1401,12 +1476,17 @@ LookupSymbolInModule (CommandInterpreter &interpreter, Stream &strm, Module *mod
                     DumpFullpath (strm, &module->GetFileSpec(), 0);
                     strm.PutCString(":\n");
                     strm.IndentMore ();
-                    Symtab::DumpSymbolHeader (&strm);
+                    //Symtab::DumpSymbolHeader (&strm);
                     for (i=0; i < num_matches; ++i)
                     {
                         Symbol *symbol = symtab->SymbolAtIndex(match_indexes[i]);
-                        strm.Indent ();
-                        symbol->Dump (&strm, interpreter.GetExecutionContext().GetTargetPtr(), i);
+                        DumpAddress (interpreter.GetExecutionContext().GetBestExecutionContextScope(),
+                                     symbol->GetAddress(),
+                                     verbose,
+                                     strm);
+
+//                        strm.Indent ();
+//                        symbol->Dump (&strm, interpreter.GetExecutionContext().GetTargetPtr(), i);
                     }
                     strm.IndentLess ();
                     return num_matches;
@@ -1419,7 +1499,7 @@ LookupSymbolInModule (CommandInterpreter &interpreter, Stream &strm, Module *mod
 
 
 static void
-DumpSymbolContextList (CommandInterpreter &interpreter, Stream &strm, SymbolContextList &sc_list, bool prepend_addr, bool verbose)
+DumpSymbolContextList (ExecutionContextScope *exe_scope, Stream &strm, SymbolContextList &sc_list, bool verbose)
 {
     strm.IndentMore ();
     uint32_t i;
@@ -1430,56 +1510,32 @@ DumpSymbolContextList (CommandInterpreter &interpreter, Stream &strm, SymbolCont
         SymbolContext sc;
         if (sc_list.GetContextAtIndex(i, sc))
         {
-            strm.Indent();
-            ExecutionContextScope *exe_scope = interpreter.GetExecutionContext().GetBestExecutionContextScope ();
+            AddressRange range;
             
-            if (prepend_addr)
-            {
-                if (sc.line_entry.range.GetBaseAddress().IsValid())
-                {
-                    sc.line_entry.range.GetBaseAddress().Dump (&strm, 
-                                                               exe_scope,
-                                                               Address::DumpStyleLoadAddress, 
-                                                               Address::DumpStyleModuleWithFileAddress);
-                    strm.PutCString(" in ");
-                }
-            }
-            sc.DumpStopContext(&strm, 
-                               exe_scope, 
-                               sc.line_entry.range.GetBaseAddress(), 
+            sc.GetAddressRange(eSymbolContextEverything, 
+                               0, 
                                true, 
-                               true, 
-                               false);
-            strm.EOL();
-            if (verbose)
-            {
-                if (sc.line_entry.range.GetBaseAddress().IsValid())
-                {
-                    if (sc.line_entry.range.GetBaseAddress().Dump (&strm, 
-                                                                   exe_scope, 
-                                                                   Address::DumpStyleDetailedSymbolContext))
-                        strm.PutCString("\n\n");
-                }
-                else if (sc.function->GetAddressRange().GetBaseAddress().IsValid())
-                {
-                    if (sc.function->GetAddressRange().GetBaseAddress().Dump (&strm, 
-                                                                              exe_scope, 
-                                                                              Address::DumpStyleDetailedSymbolContext))
-                        strm.PutCString("\n\n");
-                }
-            }
+                               range);
+            
+            DumpAddress (exe_scope, range.GetBaseAddress(), verbose, strm);
         }
     }
     strm.IndentLess ();
 }
 
 static uint32_t
-LookupFunctionInModule (CommandInterpreter &interpreter, Stream &strm, Module *module, const char *name, bool name_is_regex, bool verbose)
+LookupFunctionInModule (CommandInterpreter &interpreter,
+                        Stream &strm,
+                        Module *module,
+                        const char *name,
+                        bool name_is_regex,
+                        bool include_inlines,
+                        bool include_symbols,
+                        bool verbose)
 {
     if (module && name && name[0])
     {
         SymbolContextList sc_list;
-        const bool include_symbols = false;
         const bool append = true;
         uint32_t num_matches = 0;
         if (name_is_regex)
@@ -1487,6 +1543,7 @@ LookupFunctionInModule (CommandInterpreter &interpreter, Stream &strm, Module *m
             RegularExpression function_name_regex (name);
             num_matches = module->FindFunctions (function_name_regex, 
                                                  include_symbols,
+                                                 include_inlines, 
                                                  append, 
                                                  sc_list);
         }
@@ -1497,6 +1554,7 @@ LookupFunctionInModule (CommandInterpreter &interpreter, Stream &strm, Module *m
                                                  NULL,
                                                  eFunctionNameTypeBase | eFunctionNameTypeFull | eFunctionNameTypeMethod | eFunctionNameTypeSelector, 
                                                  include_symbols,
+                                                 include_inlines, 
                                                  append, 
                                                  sc_list);
         }
@@ -1507,7 +1565,7 @@ LookupFunctionInModule (CommandInterpreter &interpreter, Stream &strm, Module *m
             strm.Printf("%u match%s found in ", num_matches, num_matches > 1 ? "es" : "");
             DumpFullpath (strm, &module->GetFileSpec(), 0);
             strm.PutCString(":\n");
-            DumpSymbolContextList (interpreter, strm, sc_list, true, verbose);
+            DumpSymbolContextList (interpreter.GetExecutionContext().GetBestExecutionContextScope(), strm, sc_list, verbose);
         }
         return num_matches;
     }
@@ -1515,7 +1573,7 @@ LookupFunctionInModule (CommandInterpreter &interpreter, Stream &strm, Module *m
 }
 
 static uint32_t
-LookupTypeInModule (CommandInterpreter &interpreter, 
+LookupTypeInModule (CommandInterpreter &interpreter,
                     Stream &strm, 
                     Module *module, 
                     const char *name_cstr, 
@@ -1524,12 +1582,13 @@ LookupTypeInModule (CommandInterpreter &interpreter,
     if (module && name_cstr && name_cstr[0])
     {
         TypeList type_list;
-        const uint32_t max_num_matches = 1;
+        const uint32_t max_num_matches = UINT32_MAX;
         uint32_t num_matches = 0;
+        bool name_is_fully_qualified = false;
         SymbolContext sc;
 
         ConstString name(name_cstr);
-        num_matches = module->FindTypes(sc, name, NULL, true, max_num_matches, type_list);
+        num_matches = module->FindTypes(sc, name, name_is_fully_qualified, max_num_matches, type_list);
             
         if (num_matches)
         {
@@ -1547,6 +1606,18 @@ LookupTypeInModule (CommandInterpreter &interpreter,
                     // to types that haven't yet been parsed will get parsed.
                     type_sp->GetClangFullType ();
                     type_sp->GetDescription (&strm, eDescriptionLevelFull, true);
+                    // Print all typedef chains
+                    TypeSP typedef_type_sp (type_sp);
+                    TypeSP typedefed_type_sp (typedef_type_sp->GetTypedefType());
+                    while (typedefed_type_sp)
+                    {
+                        strm.EOL();
+                        strm.Printf("     typedef '%s': ", typedef_type_sp->GetName().GetCString());
+                        typedefed_type_sp->GetClangFullType ();
+                        typedefed_type_sp->GetDescription (&strm, eDescriptionLevelFull, true);
+                        typedef_type_sp = typedefed_type_sp;
+                        typedefed_type_sp = typedef_type_sp->GetTypedefType();
+                    }
                 }
                 strm.EOL();
             }
@@ -1557,8 +1628,58 @@ LookupTypeInModule (CommandInterpreter &interpreter,
 }
 
 static uint32_t
+LookupTypeHere (CommandInterpreter &interpreter,
+                Stream &strm,
+                const SymbolContext &sym_ctx,
+                const char *name_cstr, 
+                bool name_is_regex)
+{
+    if (!sym_ctx.module_sp)
+        return 0;
+    
+    TypeList type_list;
+    const uint32_t max_num_matches = UINT32_MAX;
+    uint32_t num_matches = 1;
+    bool name_is_fully_qualified = false;
+    
+    ConstString name(name_cstr);
+    num_matches = sym_ctx.module_sp->FindTypes(sym_ctx, name, name_is_fully_qualified, max_num_matches, type_list);
+    
+    if (num_matches)
+    {
+        strm.Indent ();
+        strm.PutCString("Best match found in ");
+        DumpFullpath (strm, &sym_ctx.module_sp->GetFileSpec(), 0);
+        strm.PutCString(":\n");
+        
+        TypeSP type_sp (type_list.GetTypeAtIndex(0));
+        if (type_sp)
+        {
+            // Resolve the clang type so that any forward references
+            // to types that haven't yet been parsed will get parsed.
+            type_sp->GetClangFullType ();
+            type_sp->GetDescription (&strm, eDescriptionLevelFull, true);
+            // Print all typedef chains
+            TypeSP typedef_type_sp (type_sp);
+            TypeSP typedefed_type_sp (typedef_type_sp->GetTypedefType());
+            while (typedefed_type_sp)
+            {
+                strm.EOL();
+                strm.Printf("     typedef '%s': ", typedef_type_sp->GetName().GetCString());
+                typedefed_type_sp->GetClangFullType ();
+                typedefed_type_sp->GetDescription (&strm, eDescriptionLevelFull, true);
+                typedef_type_sp = typedefed_type_sp;
+                typedefed_type_sp = typedef_type_sp->GetTypedefType();
+            }
+        }
+        strm.EOL();
+    }
+    return num_matches;
+}
+
+static uint32_t
 LookupFileAndLineInModule (CommandInterpreter &interpreter, 
-                           Stream &strm, 
+                           Stream &strm,
                            Module *module, 
                            const FileSpec &file_spec, 
                            uint32_t line, 
@@ -1580,7 +1701,7 @@ LookupFileAndLineInModule (CommandInterpreter &interpreter,
             strm << " in ";
             DumpFullpath (strm, &module->GetFileSpec(), 0);
             strm.PutCString(":\n");
-            DumpSymbolContextList (interpreter, strm, sc_list, true, verbose);
+            DumpSymbolContextList (interpreter.GetExecutionContext().GetBestExecutionContextScope(), strm, sc_list, verbose);
             return num_matches;
         }
     }
@@ -1597,6 +1718,7 @@ FindModulesByName (Target *target,
 {
 // Dump specified images (by basename or fullpath)
     FileSpec module_file_spec(module_name, false);
+    ModuleSpec module_spec (module_file_spec);
     
     const size_t initial_size = module_list.GetSize ();
 
@@ -1604,29 +1726,20 @@ FindModulesByName (Target *target,
     
     if (target)
     {
-        num_matches = target->GetImages().FindModules (&module_file_spec, 
-                                                       NULL, 
-                                                       NULL, 
-                                                       NULL, 
-                                                       module_list);
+        num_matches = target->GetImages().FindModules (module_spec, module_list);
     
         // Not found in our module list for our target, check the main
         // shared module list in case it is a extra file used somewhere
         // else
         if (num_matches == 0)
-            num_matches = ModuleList::FindSharedModules (module_file_spec, 
-                                                         target->GetArchitecture(), 
-                                                         NULL, 
-                                                         NULL, 
-                                                         module_list);
+        {
+            module_spec.GetArchitecture() = target->GetArchitecture();
+            num_matches = ModuleList::FindSharedModules (module_spec, module_list);
+        }
     }
     else
     {
-        num_matches = ModuleList::FindSharedModules (module_file_spec, 
-                                                     ArchSpec(),
-                                                     NULL, 
-                                                     NULL, 
-                                                     module_list);
+        num_matches = ModuleList::FindSharedModules (module_spec,module_list);
     }
     
     if (check_global_list && num_matches == 0)
@@ -1641,9 +1754,9 @@ FindModulesByName (Target *target,
             
             if (module)
             {
-                if (FileSpec::Equal(module->GetFileSpec(), module_file_spec, true))
+                if (module->MatchesModuleSpec (module_spec))
                 {
-                    module_sp = module;
+                    module_sp = module->shared_from_this();
                     module_list.AppendIfNeeded(module_sp);
                 }
             }
@@ -1819,6 +1932,7 @@ public:
             if (command.GetArgumentCount() == 0)
             {
                 // Dump all sections for all modules images
+                Mutex::Locker modules_locker(target->GetImages().GetMutex());
                 const uint32_t num_modules = target->GetImages().GetSize();
                 if (num_modules > 0)
                 {
@@ -1831,7 +1945,10 @@ public:
                             result.GetOutputStream().EOL();
                         }
                         num_dumped++;
-                        DumpModuleSymtab (m_interpreter, result.GetOutputStream(), target->GetImages().GetModulePointerAtIndex(image_idx), m_options.m_sort_order);
+                        DumpModuleSymtab (m_interpreter,
+                                          result.GetOutputStream(),
+                                          target->GetImages().GetModulePointerAtIndexUnlocked(image_idx),
+                                          m_options.m_sort_order);
                     }
                 }
                 else
@@ -2116,13 +2233,15 @@ public:
             if (command.GetArgumentCount() == 0)
             {
                 // Dump all sections for all modules images
-                const uint32_t num_modules = target->GetImages().GetSize();
+                ModuleList &target_modules = target->GetImages();
+                Mutex::Locker modules_locker (target_modules.GetMutex());
+                const uint32_t num_modules = target_modules.GetSize();
                 if (num_modules > 0)
                 {
                     result.GetOutputStream().Printf("Dumping debug symbols for %u modules.\n", num_modules);
                     for (uint32_t image_idx = 0;  image_idx<num_modules; ++image_idx)
                     {
-                        if (DumpModuleSymbolVendor (result.GetOutputStream(), target->GetImages().GetModulePointerAtIndex(image_idx)))
+                        if (DumpModuleSymbolVendor (result.GetOutputStream(), target_modules.GetModulePointerAtIndexUnlocked(image_idx)))
                             num_dumped++;
                     }
                 }
@@ -2225,7 +2344,10 @@ public:
                 for (int arg_idx = 0; (arg_cstr = command.GetArgumentAtIndex(arg_idx)) != NULL; ++arg_idx)
                 {
                     FileSpec file_spec(arg_cstr, false);
-                    const uint32_t num_modules = target->GetImages().GetSize();
+                    
+                    ModuleList &target_modules = target->GetImages();
+                    Mutex::Locker modules_locker(target_modules.GetMutex());
+                    const uint32_t num_modules = target_modules.GetSize();
                     if (num_modules > 0)
                     {
                         uint32_t num_dumped = 0;
@@ -2233,7 +2355,7 @@ public:
                         {
                             if (DumpCompileUnitLineTable (m_interpreter,
                                                           result.GetOutputStream(),
-                                                          target->GetImages().GetModulePointerAtIndex(i),
+                                                          target_modules.GetModulePointerAtIndexUnlocked(i),
                                                           file_spec,
                                                           exe_ctx.GetProcessPtr() && exe_ctx.GetProcessRef().IsAlive()))
                                 num_dumped++;
@@ -2334,10 +2456,10 @@ public:
                     if (path)
                     {
                         FileSpec file_spec(path, true);
-                        ArchSpec arch;
                         if (file_spec.Exists())
                         {
-                            ModuleSP module_sp (target->GetSharedModule(file_spec, arch));
+                            ModuleSpec module_spec (file_spec);
+                            ModuleSP module_sp (target->GetSharedModule (module_spec));
                             if (!module_sp)
                             {
                                 result.AppendError ("one or more executable image paths must be specified");
@@ -2431,23 +2553,25 @@ public:
         else
         {
             const size_t argc = args.GetArgumentCount();
-            const FileSpec *file_ptr = NULL;
-            const UUID *uuid_ptr = NULL;
+            ModuleSpec module_spec;
+            bool search_using_module_spec = false;
             if (m_file_option.GetOptionValue().OptionWasSet())
-                file_ptr = &m_file_option.GetOptionValue().GetCurrentValue();
+            {
+                search_using_module_spec = true;
+                module_spec.GetFileSpec() = m_file_option.GetOptionValue().GetCurrentValue();
+            }
             
             if (m_uuid_option_group.GetOptionValue().OptionWasSet())
-                uuid_ptr = &m_uuid_option_group.GetOptionValue().GetCurrentValue();
+            {
+                search_using_module_spec = true;
+                module_spec.GetUUID() = m_uuid_option_group.GetOptionValue().GetCurrentValue();
+            }
 
-            if (file_ptr || uuid_ptr)
+            if (search_using_module_spec)
             {
                 
                 ModuleList matching_modules;
-                const size_t num_matches = target->GetImages().FindModules (file_ptr,   // File spec to match (can be NULL to match by UUID only)
-                                                                            NULL,       // Architecture
-                                                                            uuid_ptr,   // UUID to match (can be NULL to not match on UUID)
-                                                                            NULL,       // Object name
-                                                                            matching_modules);
+                const size_t num_matches = target->GetImages().FindModules (module_spec, matching_modules);
 
                 char path[PATH_MAX];
                 if (num_matches == 1)
@@ -2461,30 +2585,13 @@ public:
                             SectionList *section_list = objfile->GetSectionList();
                             if (section_list)
                             {
+                                bool changed = false;
                                 if (argc == 0)
                                 {
                                     if (m_slide_option.GetOptionValue().OptionWasSet())
                                     {
-                                        Module *module = matching_modules.GetModulePointerAtIndex(0);
-                                        if (module)
-                                        {
-                                            ObjectFile *objfile = module->GetObjectFile();
-                                            if (objfile)
-                                            {
-                                                SectionList *section_list = objfile->GetSectionList();
-                                                if (section_list)
-                                                {
-                                                    const size_t num_sections = section_list->GetSize();
-                                                    const addr_t slide = m_slide_option.GetOptionValue().GetCurrentValue();
-                                                    for (size_t sect_idx = 0; sect_idx < num_sections; ++sect_idx)
-                                                    {
-                                                        SectionSP section_sp (section_list->GetSectionAtIndex(sect_idx));
-                                                        if (section_sp)
-                                                            target->GetSectionLoadList().SetSectionLoadAddress (section_sp.get(), section_sp->GetFileAddress() + slide);
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        const addr_t slide = m_slide_option.GetOptionValue().GetCurrentValue();
+                                        module->SetLoadAddress (*target, slide, changed);
                                     }
                                     else
                                     {
@@ -2516,8 +2623,18 @@ public:
                                                 SectionSP section_sp (section_list->FindSectionByName(const_sect_name));
                                                 if (section_sp)
                                                 {
-                                                    target->GetSectionLoadList().SetSectionLoadAddress (section_sp.get(), load_addr);
-                                                    result.AppendMessageWithFormat("section '%s' loaded at 0x%llx\n", sect_name, load_addr);
+                                                    if (section_sp->IsThreadSpecific())
+                                                    {
+                                                        result.AppendErrorWithFormat ("thread specific sections are not yet supported (section '%s')\n", sect_name);
+                                                        result.SetStatus (eReturnStatusFailed);
+                                                        break;
+                                                    }
+                                                    else
+                                                    {
+                                                        if (target->GetSectionLoadList().SetSectionLoadAddress (section_sp.get(), load_addr))
+                                                            changed = true;
+                                                        result.AppendMessageWithFormat("section '%s' loaded at 0x%llx\n", sect_name, load_addr);
+                                                    }
                                                 }
                                                 else
                                                 {
@@ -2544,6 +2661,9 @@ public:
                                         }
                                     }
                                 }
+                                
+                                if (changed)
+                                    target->ModulesDidLoad (matching_modules);
                             }
                             else
                             {
@@ -2569,13 +2689,14 @@ public:
                 else
                 {
                     char uuid_cstr[64];
-                    if (file_ptr)
-                        file_ptr->GetPath (path, sizeof(path));
+                    
+                    if (module_spec.GetFileSpec())
+                        module_spec.GetFileSpec().GetPath (path, sizeof(path));
                     else
                         path[0] = '\0';
 
-                    if (uuid_ptr)
-                        uuid_ptr->GetAsCString(uuid_cstr, sizeof(uuid_cstr));
+                    if (module_spec.GetUUIDPtr())
+                        module_spec.GetUUID().GetAsCString(uuid_cstr, sizeof(uuid_cstr));
                     else
                         uuid_cstr[0] = '\0';
                     if (num_matches > 1)
@@ -2745,9 +2866,6 @@ public:
                 result.GetErrorStream().SetAddressByteSize(addr_byte_size);
             }
             // Dump all sections for all modules images
-            uint32_t num_modules = 0;
-            Mutex::Locker locker;
-            
             Stream &strm = result.GetOutputStream();
             
             if (m_options.m_module_addr != LLDB_INVALID_ADDRESS)
@@ -2757,10 +2875,10 @@ public:
                     Address module_address;
                     if (module_address.SetLoadAddress(m_options.m_module_addr, target))
                     {
-                        Module *module = module_address.GetModule();
-                        if (module)
+                        ModuleSP module_sp (module_address.GetModule());
+                        if (module_sp)
                         {
-                            PrintModule (strm, module);
+                            PrintModule (target, module_sp.get(), UINT32_MAX, 0, strm);
                             result.SetStatus (eReturnStatusSuccessFinishResult);
                         }
                         else
@@ -2783,13 +2901,52 @@ public:
                 return result.Succeeded();
             }
             
-            if (use_global_module_list)
+            uint32_t num_modules = 0;
+            Mutex::Locker locker;      // This locker will be locked on the mutex in module_list_ptr if it is non-NULL.
+                                       // Otherwise it will lock the AllocationModuleCollectionMutex when accessing
+                                       // the global module list directly.
+            
+            ModuleList module_list;
+            ModuleList *module_list_ptr = NULL;
+            const size_t argc = command.GetArgumentCount();
+            if (argc == 0)
             {
-                locker.Reset (Module::GetAllocationModuleCollectionMutex()->GetMutex());
-                num_modules = Module::GetNumberAllocatedModules();
+                if (use_global_module_list)
+                {
+                    locker.Lock (Module::GetAllocationModuleCollectionMutex());
+                    num_modules = Module::GetNumberAllocatedModules();
+                }
+                else
+                {
+                    module_list_ptr = &target->GetImages();
+                }
             }
             else
-                num_modules = target->GetImages().GetSize();
+            {
+                for (size_t i=0; i<argc; ++i)
+                {
+                    // Dump specified images (by basename or fullpath)
+                    const char *arg_cstr = command.GetArgumentAtIndex(i);
+                    const size_t num_matches = FindModulesByName (target, arg_cstr, module_list, use_global_module_list);
+                    if (num_matches == 0)
+                    {
+                        if (argc == 1)
+                        {
+                            result.AppendErrorWithFormat ("no modules found that match '%s'", arg_cstr);
+                            result.SetStatus (eReturnStatusFailed);
+                            return false;
+                        }
+                    }
+                }
+                
+                module_list_ptr = &module_list;
+            }
+            
+            if (module_list_ptr != NULL)
+            {
+                locker.Lock(module_list_ptr->GetMutex());
+                num_modules = module_list_ptr->GetSize();
+            }
 
             if (num_modules > 0)
             {                
@@ -2797,29 +2954,39 @@ public:
                 {
                     ModuleSP module_sp;
                     Module *module;
-                    if (use_global_module_list)
+                    if (module_list_ptr)
                     {
-                        module = Module::GetAllocatedModuleAtIndex(image_idx);
-                        module_sp = module;
+                        module_sp = module_list_ptr->GetModuleAtIndexUnlocked(image_idx);
+                        module = module_sp.get();
                     }
                     else
                     {
-                        module_sp = target->GetImages().GetModuleAtIndex(image_idx);
-                        module = module_sp.get();
+                        module = Module::GetAllocatedModuleAtIndex(image_idx);
+                        module_sp = module->shared_from_this();
                     }
                     
-                    strm.Printf("[%3u] ", image_idx);
-                    PrintModule (strm, module);
+                    int indent = strm.Printf("[%3u] ", image_idx);
+                    PrintModule (target, module, image_idx, indent, strm);
 
                 }
                 result.SetStatus (eReturnStatusSuccessFinishResult);
             }
             else
             {
-                if (use_global_module_list)
-                    result.AppendError ("the global module list is empty");
+                if (argc)
+                {
+                    if (use_global_module_list)
+                        result.AppendError ("the global module list has no matching modules");
+                    else
+                        result.AppendError ("the target has no matching modules");
+                }
                 else
-                    result.AppendError ("the target has no associated executable images");
+                {
+                    if (use_global_module_list)
+                        result.AppendError ("the global module list is empty");
+                    else
+                        result.AppendError ("the target has no associated executable images");
+                }
                 result.SetStatus (eReturnStatusFailed);
                 return false;
             }
@@ -2829,108 +2996,160 @@ public:
 protected:
 
     void
-    PrintModule (Stream &strm, Module *module)
+    PrintModule (Target *target, Module *module, uint32_t idx, int indent, Stream &strm)
     {
 
         bool dump_object_name = false;
         if (m_options.m_format_array.empty())
         {
-            DumpFullpath(strm, &module->GetFileSpec(), 0);
-            dump_object_name = true;
+            m_options.m_format_array.push_back(std::make_pair('u', 0));
+            m_options.m_format_array.push_back(std::make_pair('h', 0));
+            m_options.m_format_array.push_back(std::make_pair('f', 0));
+            m_options.m_format_array.push_back(std::make_pair('S', 0));
         }
-        else
+        const size_t num_entries = m_options.m_format_array.size();
+        bool print_space = false;
+        for (size_t i=0; i<num_entries; ++i)
         {
-            const size_t num_entries = m_options.m_format_array.size();
-            for (size_t i=0; i<num_entries; ++i)
+            if (print_space)
+                strm.PutChar(' ');
+            print_space = true;
+            const char format_char = m_options.m_format_array[i].first;
+            uint32_t width = m_options.m_format_array[i].second;
+            switch (format_char)
             {
-                if (i > 0)
-                    strm.PutChar(' ');
-                char format_char = m_options.m_format_array[i].first;
-                uint32_t width = m_options.m_format_array[i].second;
-                switch (format_char)
-                {
-                    case 'A':
-                        DumpModuleArchitecture (strm, module, false, width);
-                        break;
-                        
-                    case 't':
-                        DumpModuleArchitecture (strm, module, true, width);
-                        break;
-                        
-                    case 'f':
-                        DumpFullpath (strm, &module->GetFileSpec(), width);
-                        dump_object_name = true;
-                        break;
-                        
-                    case 'd':
-                        DumpDirectory (strm, &module->GetFileSpec(), width);
-                        break;
-                        
-                    case 'b':
-                        DumpBasename (strm, &module->GetFileSpec(), width);
-                        dump_object_name = true;
-                        break;
-                        
-                    case 'r':
-                        {
-                            uint32_t ref_count = 0;
-                            ModuleSP module_sp (module);
-                            if (module_sp)
-                            {
-                                // Take one away to make sure we don't count our local "module_sp"
-                                ref_count = module_sp.use_count() - 1;
-                            }
-                            if (width)
-                                strm.Printf("{%*u}", width, ref_count);
-                            else
-                                strm.Printf("{%u}", ref_count);
-                        }
-                        break;
+                case 'A':
+                    DumpModuleArchitecture (strm, module, false, width);
+                    break;
+                    
+                case 't':
+                    DumpModuleArchitecture (strm, module, true, width);
+                    break;
+                    
+                case 'f':
+                    DumpFullpath (strm, &module->GetFileSpec(), width);
+                    dump_object_name = true;
+                    break;
+                    
+                case 'd':
+                    DumpDirectory (strm, &module->GetFileSpec(), width);
+                    break;
+                    
+                case 'b':
+                    DumpBasename (strm, &module->GetFileSpec(), width);
+                    dump_object_name = true;
+                    break;
+                
+                case 'h':
+                case 'o':
+                    // Image header address
+                    {
+                        uint32_t addr_nibble_width = target ? (target->GetArchitecture().GetAddressByteSize() * 2) : 16;
 
-                    case 's':
-                    case 'S':
+                        ObjectFile *objfile = module->GetObjectFile ();
+                        if (objfile)
                         {
-                            SymbolVendor *symbol_vendor = module->GetSymbolVendor();
-                            if (symbol_vendor)
+                            Address header_addr(objfile->GetHeaderAddress());
+                            if (header_addr.IsValid())
                             {
-                                SymbolFile *symbol_file = symbol_vendor->GetSymbolFile();
-                                if (symbol_file)
+                                if (target && !target->GetSectionLoadList().IsEmpty())
                                 {
-                                    if (format_char == 'S')
-                                        DumpBasename(strm, &symbol_file->GetObjectFile()->GetFileSpec(), width);
+                                    lldb::addr_t header_load_addr = header_addr.GetLoadAddress (target);
+                                    if (header_load_addr == LLDB_INVALID_ADDRESS)
+                                    {
+                                        header_addr.Dump (&strm, target, Address::DumpStyleModuleWithFileAddress, Address::DumpStyleFileAddress);
+                                    }
                                     else
-                                        DumpFullpath (strm, &symbol_file->GetObjectFile()->GetFileSpec(), width);
-                                    dump_object_name = true;
+                                    {
+                                        if (format_char == 'o')
+                                        {
+                                            // Show the offset of slide for the image
+                                            strm.Printf ("0x%*.*llx", addr_nibble_width, addr_nibble_width, header_load_addr - header_addr.GetFileAddress());
+                                        }
+                                        else
+                                        {
+                                            // Show the load address of the image
+                                            strm.Printf ("0x%*.*llx", addr_nibble_width, addr_nibble_width, header_load_addr);
+                                        }
+                                    }
                                     break;
                                 }
+                                // The address was valid, but the image isn't loaded, output the address in an appropriate format
+                                header_addr.Dump (&strm, target, Address::DumpStyleFileAddress);
+                                break;
                             }
-                            strm.Printf("%.*s", width, "<NONE>");
                         }
-                        break;
-                        
-                    case 'm':
-                        module->GetModificationTime().Dump(&strm, width);
-                        break;
+                        strm.Printf ("%*s", addr_nibble_width + 2, "");
+                    }
+                    break;
+                case 'r':
+                    {
+                        uint32_t ref_count = 0;
+                        ModuleSP module_sp (module->shared_from_this());
+                        if (module_sp)
+                        {
+                            // Take one away to make sure we don't count our local "module_sp"
+                            ref_count = module_sp.use_count() - 1;
+                        }
+                        if (width)
+                            strm.Printf("{%*u}", width, ref_count);
+                        else
+                            strm.Printf("{%u}", ref_count);
+                    }
+                    break;
 
-                    case 'p':
-                        strm.Printf("%p", module);
-                        break;
+                case 's':
+                case 'S':
+                    {
+                        SymbolVendor *symbol_vendor = module->GetSymbolVendor();
+                        if (symbol_vendor)
+                        {
+                            SymbolFile *symbol_file = symbol_vendor->GetSymbolFile();
+                            if (symbol_file)
+                            {
+                                if (format_char == 'S')
+                                {
+                                    FileSpec &symfile_spec = symbol_file->GetObjectFile()->GetFileSpec();
+                                    // Dump symbol file only if different from module file
+                                    if (!symfile_spec || symfile_spec == module->GetFileSpec())
+                                    {
+                                        print_space = false;
+                                        break;
+                                    }
+                                    // Add a newline and indent past the index
+                                    strm.Printf ("\n%*s", indent, "");
+                                }
+                                DumpFullpath (strm, &symbol_file->GetObjectFile()->GetFileSpec(), width);
+                                dump_object_name = true;
+                                break;
+                            }
+                        }
+                        strm.Printf("%.*s", width, "<NONE>");
+                    }
+                    break;
+                    
+                case 'm':
+                    module->GetModificationTime().Dump(&strm, width);
+                    break;
 
-                    case 'u':
-                        DumpModuleUUID(strm, module);
-                        break;
-                        
-                    default:
-                        break;
-                }
-                
+                case 'p':
+                    strm.Printf("%p", module);
+                    break;
+
+                case 'u':
+                    DumpModuleUUID(strm, module);
+                    break;
+                    
+                default:
+                    break;
             }
-            if (dump_object_name)
-            {
-                const char *object_name = module->GetObjectName().GetCString();
-                if (object_name)
-                    strm.Printf ("(%s)", object_name);
-            }
+            
+        }
+        if (dump_object_name)
+        {
+            const char *object_name = module->GetObjectName().GetCString();
+            if (object_name)
+                strm.Printf ("(%s)", object_name);
         }
         strm.EOL();
     }
@@ -2944,12 +3163,14 @@ CommandObjectTargetModulesList::CommandOptions::g_option_table[] =
     { LLDB_OPT_SET_1, false, "address",    'a', required_argument, NULL, 0, eArgTypeAddress, "Display the image at this address."},
     { LLDB_OPT_SET_1, false, "arch",       'A', optional_argument, NULL, 0, eArgTypeWidth,   "Display the architecture when listing images."},
     { LLDB_OPT_SET_1, false, "triple",     't', optional_argument, NULL, 0, eArgTypeWidth,   "Display the triple when listing images."},
+    { LLDB_OPT_SET_1, false, "header",     'h', no_argument,       NULL, 0, eArgTypeNone,    "Display the image header address as a load address if debugging, a file address otherwise."},
+    { LLDB_OPT_SET_1, false, "offset",     'o', no_argument,       NULL, 0, eArgTypeNone,    "Display the image header address offset from the header file address (the slide amount)."},
     { LLDB_OPT_SET_1, false, "uuid",       'u', no_argument,       NULL, 0, eArgTypeNone,    "Display the UUID when listing images."},
     { LLDB_OPT_SET_1, false, "fullpath",   'f', optional_argument, NULL, 0, eArgTypeWidth,   "Display the fullpath to the image object file."},
     { LLDB_OPT_SET_1, false, "directory",  'd', optional_argument, NULL, 0, eArgTypeWidth,   "Display the directory with optional width for the image object file."},
     { LLDB_OPT_SET_1, false, "basename",   'b', optional_argument, NULL, 0, eArgTypeWidth,   "Display the basename with optional width for the image object file."},
     { LLDB_OPT_SET_1, false, "symfile",    's', optional_argument, NULL, 0, eArgTypeWidth,   "Display the fullpath to the image symbol file with optional width."},
-    { LLDB_OPT_SET_1, false, "symfile-basename", 'S', optional_argument, NULL, 0, eArgTypeWidth,   "Display the basename to the image symbol file with optional width."},
+    { LLDB_OPT_SET_1, false, "symfile-unique", 'S', optional_argument, NULL, 0, eArgTypeWidth,   "Display the symbol file with optional width only if it is different from the executable object file."},
     { LLDB_OPT_SET_1, false, "mod-time",   'm', optional_argument, NULL, 0, eArgTypeWidth,   "Display the modification time with optional width of the module."},
     { LLDB_OPT_SET_1, false, "ref-count",  'r', optional_argument, NULL, 0, eArgTypeWidth,   "Display the reference count if the module is still in the shared module cache."},
     { LLDB_OPT_SET_1, false, "pointer",    'p', optional_argument, NULL, 0, eArgTypeNone,    "Display the module pointer."},
@@ -2973,6 +3194,7 @@ public:
         eLookupTypeSymbol,
         eLookupTypeFileLine,    // Line is optional
         eLookupTypeFunction,
+        eLookupTypeFunctionOrSymbol,
         eLookupTypeType,
         kNumLookupTypes
     };
@@ -3025,7 +3247,7 @@ public:
                     break;
                     
                 case 'i':
-                    m_check_inlines = false;
+                    m_include_inlines = false;
                     break;
                     
                 case 'l':
@@ -3037,11 +3259,16 @@ public:
                     m_type = eLookupTypeFileLine;
                     break;
                     
-                case 'n':
+                case 'F':
                     m_str = option_arg;
                     m_type = eLookupTypeFunction;
                     break;
-                    
+                
+                case 'n':
+                    m_str = option_arg;
+                    m_type = eLookupTypeFunctionOrSymbol;
+                    break;
+
                 case 't':
                     m_str = option_arg;
                     m_type = eLookupTypeType;
@@ -3049,6 +3276,10 @@ public:
                     
                 case 'v':
                     m_verbose = 1;
+                    break;
+                
+                case 'A':
+                    m_print_all = true;
                     break;
                     
                 case 'r':
@@ -3069,8 +3300,9 @@ public:
             m_offset = 0;
             m_line_number = 0;
             m_use_regex = false;
-            m_check_inlines = true;
+            m_include_inlines = true;
             m_verbose = false;
+            m_print_all = false;
         }
         
         const OptionDefinition*
@@ -3089,8 +3321,9 @@ public:
         lldb::addr_t    m_offset;       // Subtract this offset from m_addr before doing lookups.
         uint32_t        m_line_number;  // Line number for file+line lookups
         bool            m_use_regex;    // Name lookups in m_str are regular expressions.
-        bool            m_check_inlines;// Check for inline entries when looking up by file/line.
+        bool            m_include_inlines;// Check for inline entries when looking up by file/line.
         bool            m_verbose;      // Enable verbose lookup info
+        bool            m_print_all;    // Print all matches, even in cases where there's a best match.
         
     };
     
@@ -3126,6 +3359,56 @@ public:
         return &m_options;
     }
     
+    bool
+    LookupHere (CommandInterpreter &interpreter, CommandReturnObject &result, bool &syntax_error)
+    {
+        switch (m_options.m_type)
+        {
+            case eLookupTypeAddress:
+            case eLookupTypeFileLine:
+            case eLookupTypeFunction:
+            case eLookupTypeFunctionOrSymbol:
+            case eLookupTypeSymbol:
+            default:
+                return false;
+            case eLookupTypeType:
+                break;
+        }
+        
+        ExecutionContext exe_ctx = interpreter.GetDebugger().GetSelectedExecutionContext();
+        
+        StackFrameSP frame = exe_ctx.GetFrameSP();
+        
+        if (!frame)
+            return false;
+        
+        const SymbolContext &sym_ctx(frame->GetSymbolContext(eSymbolContextModule));
+        
+        if (!sym_ctx.module_sp)
+            return false;
+             
+        switch (m_options.m_type)
+        {
+        default:
+            return false;
+        case eLookupTypeType:
+            if (!m_options.m_str.empty())
+            {
+                if (LookupTypeHere (m_interpreter,
+                                    result.GetOutputStream(),
+                                    sym_ctx,
+                                    m_options.m_str.c_str(),
+                                    m_options.m_use_regex))
+                {
+                    result.SetStatus(eReturnStatusSuccessFinishResult);
+                    return true;
+                }
+            }
+            break;
+        }
+        
+        return true;
+    }
     
     bool
     LookupInModule (CommandInterpreter &interpreter, Module *module, CommandReturnObject &result, bool &syntax_error)
@@ -3152,7 +3435,12 @@ public:
             case eLookupTypeSymbol:
                 if (!m_options.m_str.empty())
                 {
-                    if (LookupSymbolInModule (m_interpreter, result.GetOutputStream(), module, m_options.m_str.c_str(), m_options.m_use_regex))
+                    if (LookupSymbolInModule (m_interpreter,
+                                              result.GetOutputStream(),
+                                              module,
+                                              m_options.m_str.c_str(),
+                                              m_options.m_use_regex,
+                                              m_options.m_verbose))
                     {
                         result.SetStatus(eReturnStatusSuccessFinishResult);
                         return true;
@@ -3169,7 +3457,7 @@ public:
                                                    module,
                                                    m_options.m_file,
                                                    m_options.m_line_number,
-                                                   m_options.m_check_inlines,
+                                                   m_options.m_include_inlines,
                                                    m_options.m_verbose))
                     {
                         result.SetStatus(eReturnStatusSuccessFinishResult);
@@ -3177,7 +3465,8 @@ public:
                     }
                 }
                 break;
-                
+
+            case eLookupTypeFunctionOrSymbol:
             case eLookupTypeFunction:
                 if (!m_options.m_str.empty())
                 {
@@ -3186,6 +3475,8 @@ public:
                                                 module,
                                                 m_options.m_str.c_str(),
                                                 m_options.m_use_regex,
+                                                m_options.m_include_inlines,
+                                                m_options.m_type == eLookupTypeFunctionOrSymbol, // include symbols
                                                 m_options.m_verbose))
                     {
                         result.SetStatus(eReturnStatusSuccessFinishResult);
@@ -3193,6 +3484,7 @@ public:
                     }
                 }
                 break;
+                
                 
             case eLookupTypeType:
                 if (!m_options.m_str.empty())
@@ -3242,13 +3534,35 @@ public:
             
             if (command.GetArgumentCount() == 0)
             {
-                // Dump all sections for all modules images
-                const uint32_t num_modules = target->GetImages().GetSize();
+                ModuleSP current_module;
+                
+                // Where it is possible to look in the current symbol context
+                // first, try that.  If this search was successful and --all
+                // was not passed, don't print anything else.
+                if (LookupHere (m_interpreter, result, syntax_error))
+                {
+                    result.GetOutputStream().EOL();
+                    num_successful_lookups++;
+                    if (!m_options.m_print_all)
+                    {
+                        result.SetStatus (eReturnStatusSuccessFinishResult);
+                        return result.Succeeded();
+                    }
+                }
+                
+                // Dump all sections for all other modules
+                
+                ModuleList &target_modules = target->GetImages();
+                Mutex::Locker modules_locker(target_modules.GetMutex());
+                const uint32_t num_modules = target_modules.GetSize();
                 if (num_modules > 0)
                 {
                     for (i = 0; i<num_modules && syntax_error == false; ++i)
                     {
-                        if (LookupInModule (m_interpreter, target->GetImages().GetModulePointerAtIndex(i), result, syntax_error))
+                        Module *module_pointer = target_modules.GetModulePointerAtIndexUnlocked(i);
+                        
+                        if (module_pointer != current_module.get() &&
+                            LookupInModule (m_interpreter, target_modules.GetModulePointerAtIndexUnlocked(i), result, syntax_error))
                         {
                             result.GetOutputStream().EOL();
                             num_successful_lookups++;
@@ -3307,17 +3621,20 @@ CommandObjectTargetModulesLookup::CommandOptions::g_option_table[] =
 {
     { LLDB_OPT_SET_1,   true,  "address",    'a', required_argument, NULL, 0, eArgTypeAddress,      "Lookup an address in one or more target modules."},
     { LLDB_OPT_SET_1,   false, "offset",     'o', required_argument, NULL, 0, eArgTypeOffset,       "When looking up an address subtract <offset> from any addresses before doing the lookup."},
-    { LLDB_OPT_SET_2| LLDB_OPT_SET_4  
-      /* FIXME: re-enable this for types when the LookupTypeInModule actually uses the regex option: | LLDB_OPT_SET_5 */ ,
+    { LLDB_OPT_SET_2| LLDB_OPT_SET_4 | LLDB_OPT_SET_5
+      /* FIXME: re-enable this for types when the LookupTypeInModule actually uses the regex option: | LLDB_OPT_SET_6 */ ,
                         false, "regex",      'r', no_argument,       NULL, 0, eArgTypeNone,         "The <name> argument for name lookups are regular expressions."},
     { LLDB_OPT_SET_2,   true,  "symbol",     's', required_argument, NULL, 0, eArgTypeSymbol,       "Lookup a symbol by name in the symbol tables in one or more target modules."},
     { LLDB_OPT_SET_3,   true,  "file",       'f', required_argument, NULL, 0, eArgTypeFilename,     "Lookup a file by fullpath or basename in one or more target modules."},
     { LLDB_OPT_SET_3,   false, "line",       'l', required_argument, NULL, 0, eArgTypeLineNum,      "Lookup a line number in a file (must be used in conjunction with --file)."},
-    { LLDB_OPT_SET_3,   false, "no-inlines", 'i', no_argument,       NULL, 0, eArgTypeNone,         "Check inline line entries (must be used in conjunction with --file)."},
-    { LLDB_OPT_SET_4,   true,  "function",   'n', required_argument, NULL, 0, eArgTypeFunctionName, "Lookup a function by name in the debug symbols in one or more target modules."},
-    { LLDB_OPT_SET_5,   true,  "type",       't', required_argument, NULL, 0, eArgTypeName,         "Lookup a type by name in the debug symbols in one or more target modules."},
+    { LLDB_OPT_SET_FROM_TO(3,5),
+                        false, "no-inlines", 'i', no_argument,       NULL, 0, eArgTypeNone,         "Ignore inline entries (must be used in conjunction with --file or --function)."},
+    { LLDB_OPT_SET_4,   true,  "function",   'F', required_argument, NULL, 0, eArgTypeFunctionName, "Lookup a function by name in the debug symbols in one or more target modules."},
+    { LLDB_OPT_SET_5,   true,  "name",       'n', required_argument, NULL, 0, eArgTypeFunctionName, "Lookup a function or symbol by name in one or more target modules."},
+    { LLDB_OPT_SET_6,   true,  "type",       't', required_argument, NULL, 0, eArgTypeName,         "Lookup a type by name in the debug symbols in one or more target modules."},
     { LLDB_OPT_SET_ALL, false, "verbose",    'v', no_argument,       NULL, 0, eArgTypeNone,         "Enable verbose lookup information."},
-    { 0, false, NULL,           0, 0,                 NULL, 0, eArgTypeNone, NULL }
+    { LLDB_OPT_SET_ALL, false, "all",        'A', no_argument,       NULL, 0, eArgTypeNone,         "Print all matches, not just the best match, if a best match is available."},
+    { 0,                false, NULL,           0, 0,                 NULL, 0, eArgTypeNone, NULL }
 };
 
 
@@ -3391,6 +3708,176 @@ private:
 };
 
 
+
+class CommandObjectTargetSymbolsAdd : public CommandObject
+{
+public:
+    CommandObjectTargetSymbolsAdd (CommandInterpreter &interpreter) :
+    CommandObject (interpreter,
+                   "target symbols add",
+                   "Add a debug symbol file to one of the target's current modules.",
+                   "target symbols add [<symfile>]")
+    {
+    }
+    
+    virtual
+    ~CommandObjectTargetSymbolsAdd ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args,
+             CommandReturnObject &result)
+    {
+        ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target == NULL)
+        {
+            result.AppendError ("invalid target, create a debug target using the 'target create' command");
+            result.SetStatus (eReturnStatusFailed);
+        }
+        else
+        {
+            bool flush = false;
+            const size_t argc = args.GetArgumentCount();
+            if (argc == 0)
+            {
+                result.AppendError ("one or more symbol file paths must be specified");
+                result.SetStatus (eReturnStatusFailed);
+            }
+            else
+            {
+                for (size_t i=0; i<argc; ++i)
+                {
+                    const char *symfile_path = args.GetArgumentAtIndex(i);
+                    if (symfile_path)
+                    {
+                        FileSpec symfile_spec(symfile_path, true);
+                        ArchSpec arch;
+                        if (symfile_spec.Exists())
+                        {
+                            ModuleSP symfile_module_sp (new Module (symfile_spec, target->GetArchitecture()));
+                            if (symfile_module_sp)
+                            {
+                                // We now have a module that represents a symbol file
+                                // that can be used for a module that might exist in the
+                                // current target, so we need to find that module in the
+                                // target
+                                
+                                ModuleSP old_module_sp (target->GetImages().FindModule (symfile_module_sp->GetUUID()));
+                                if (old_module_sp)
+                                {
+                                    // The module has not yet created its symbol vendor, we can just
+                                    // give the existing target module the symfile path to use for
+                                    // when it decides to create it!
+                                    old_module_sp->SetSymbolFileFileSpec (symfile_module_sp->GetFileSpec());
+
+                                    // Let clients know something changed in the module
+                                    // if it is currently loaded
+                                    ModuleList module_list;
+                                    module_list.Append (old_module_sp);
+                                    target->ModulesDidLoad (module_list);
+                                    flush = true;
+                                }
+                            }
+                            else
+                            {
+                                result.AppendError ("one or more executable image paths must be specified");
+                                result.SetStatus (eReturnStatusFailed);
+                                break;
+                            }
+                            result.SetStatus (eReturnStatusSuccessFinishResult);
+                        }
+                        else
+                        {
+                            char resolved_symfile_path[PATH_MAX];
+                            result.SetStatus (eReturnStatusFailed);
+                            if (symfile_spec.GetPath (resolved_symfile_path, sizeof(resolved_symfile_path)))
+                            {
+                                if (strcmp (resolved_symfile_path, symfile_path) != 0)
+                                {
+                                    result.AppendErrorWithFormat ("invalid module path '%s' with resolved path '%s'\n", symfile_path, resolved_symfile_path);
+                                    break;
+                                }
+                            }
+                            result.AppendErrorWithFormat ("invalid module path '%s'\n", symfile_path);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (flush)
+            {
+                Process *process = exe_ctx.GetProcessPtr();
+                if (process)
+                    process->Flush();
+            }
+        }
+        return result.Succeeded();
+    }
+    
+    int
+    HandleArgumentCompletion (Args &input,
+                              int &cursor_index,
+                              int &cursor_char_position,
+                              OptionElementVector &opt_element_vector,
+                              int match_start_point,
+                              int max_return_elements,
+                              bool &word_complete,
+                              StringList &matches)
+    {
+        std::string completion_str (input.GetArgumentAtIndex(cursor_index));
+        completion_str.erase (cursor_char_position);
+        
+        CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter, 
+                                                             CommandCompletions::eDiskFileCompletion,
+                                                             completion_str.c_str(),
+                                                             match_start_point,
+                                                             max_return_elements,
+                                                             NULL,
+                                                             word_complete,
+                                                             matches);
+        return matches.GetSize();
+    }
+    
+};
+
+
+#pragma mark CommandObjectTargetSymbols
+
+//-------------------------------------------------------------------------
+// CommandObjectTargetSymbols
+//-------------------------------------------------------------------------
+
+class CommandObjectTargetSymbols : public CommandObjectMultiword
+{
+public:
+    //------------------------------------------------------------------
+    // Constructors and Destructors
+    //------------------------------------------------------------------
+    CommandObjectTargetSymbols(CommandInterpreter &interpreter) :
+        CommandObjectMultiword (interpreter,
+                            "target symbols",
+                            "A set of commands for adding and managing debug symbol files.",
+                            "target symbols <sub-command> ...")
+    {
+        LoadSubCommand ("add", CommandObjectSP (new CommandObjectTargetSymbolsAdd (interpreter)));
+        
+    }
+    virtual
+    ~CommandObjectTargetSymbols()
+    {
+    }
+    
+private:
+    //------------------------------------------------------------------
+    // For CommandObjectTargetModules only
+    //------------------------------------------------------------------
+    DISALLOW_COPY_AND_ASSIGN (CommandObjectTargetSymbols);
+};
+
+
 #pragma mark CommandObjectTargetStopHookAdd
 
 //-------------------------------------------------------------------------
@@ -3457,6 +3944,10 @@ public:
                     }
                     m_sym_ctx_specified = true;
                 break;
+                    
+                case 'i':
+                    m_no_inlines = true;
+                break;
                 
                 case 'n':
                     m_function_name = option_arg;
@@ -3521,7 +4012,8 @@ public:
             m_thread_index = UINT32_MAX;
             m_thread_name.clear();
             m_queue_name.clear();
-
+            
+            m_no_inlines = false;
             m_sym_ctx_specified = false;
             m_thread_specified = false;
 
@@ -3544,6 +4036,7 @@ public:
         std::string m_thread_name;
         std::string m_queue_name;
         bool        m_sym_ctx_specified;
+        bool        m_no_inlines;
         bool        m_thread_specified;
         // Instance variables to hold the values for one_liner options.
         bool m_use_one_liner;
@@ -4061,6 +4554,7 @@ CommandObjectMultiwordTarget::CommandObjectMultiwordTarget (CommandInterpreter &
     LoadSubCommand ("select",    CommandObjectSP (new CommandObjectTargetSelect (interpreter)));
     LoadSubCommand ("stop-hook", CommandObjectSP (new CommandObjectMultiwordTargetStopHooks (interpreter)));
     LoadSubCommand ("modules",   CommandObjectSP (new CommandObjectTargetModules (interpreter)));
+    LoadSubCommand ("symbols",   CommandObjectSP (new CommandObjectTargetSymbols (interpreter)));
     LoadSubCommand ("variable",  CommandObjectSP (new CommandObjectTargetVariable (interpreter)));
 }
 

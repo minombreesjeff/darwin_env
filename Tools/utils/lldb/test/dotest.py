@@ -74,6 +74,13 @@ just_do_python_api_test = False
 # By default, benchmarks tests are not run.
 just_do_benchmarks_test = False
 
+# By default, both dsym and dwarf tests are performed.
+# Use @dsym_test or @dwarf_test decorators, defined in lldbtest.py, to mark a test
+# as a dsym or dwarf test.  Use '-N dsym' or '-N dwarf' to exclude dsym or dwarf
+# tests from running.
+dont_do_dsym_test = False
+dont_do_dwarf_test = False
+
 # The blacklist is optional (-b blacklistFile) and allows a central place to skip
 # testclass's and/or testclass.testmethod's.
 blacklist = None
@@ -89,13 +96,21 @@ count = 1
 
 # The dictionary as a result of sourcing configFile.
 config = {}
+# The pre_flight and post_flight functions come from reading a config file.
+pre_flight = None
+post_flight = None
 
 # The 'archs' and 'compilers' can be specified via either command line or configFile,
 # with the command line overriding the configFile.  When specified, they should be
 # of the list type.  For example, "-A x86_64^i386" => archs=['x86_64', 'i386'] and
 # "-C gcc^clang" => compilers=['gcc', 'clang'].
-archs = None
-compilers = None
+archs = ['x86_64', 'i386']
+compilers = ['clang']
+
+# The arch might dictate some specific CFLAGS to be passed to the toolchain to build
+# the inferior programs.  The global variable cflags_extras provides a hook to do
+# just that.
+cflags_extras = ''
 
 # Delay startup in order for the debugger to attach.
 delay = False
@@ -161,6 +176,9 @@ sdir_has_content = False
 # svn_info stores the output from 'svn info lldb.base.dir'.
 svn_info = ''
 
+# The environment variables to unset before running the test cases.
+unsets = []
+
 # Default verbosity is 0.
 verbose = 0
 
@@ -187,6 +205,12 @@ where options:
        -C /my/full/path/to/clang => specify a full path to the clang binary
        -C clang^gcc => build debuggee using clang and gcc compilers
 -D   : dump the Python sys.path variable
+-E   : specify the extra flags to be passed to the toolchain when building the
+       inferior programs to be debugged
+       suggestions: do not lump the -A arch1^arch2 together such that the -E
+       option applies to only one of the architectures
+-N   : don't do test cases marked with the @dsym decorator by passing 'dsym' as the option arg, or
+       don't do test cases marked with the @dwarf decorator by passing 'dwarf' as the option arg
 -a   : don't do lldb Python API tests
        use @python_api_test to decorate a test case as lldb Python API test
 +a   : just do lldb Python API tests
@@ -217,9 +241,11 @@ where options:
 -l   : don't skip long running test
 -n   : don't print the headers like build dir, lldb version, and svn info at all
 -p   : specify a regexp filename pattern for inclusion in the test suite
--r   : specify a dir to relocate the tests and their intermediate files to;
-       the directory must not exist before running this test driver;
+-R   : specify a dir to relocate the tests and their intermediate files to;
+       BE WARNED THAT the directory, if exists, will be deleted before running this test driver;
        no cleanup of intermediate test files is performed in this case
+-r   : similar to '-R',
+       except that the directory must not exist before running this test driver
 -S   : skip the build and cleanup while running the test
        use this option with care as you would need to build the inferior(s) by hand
        and build the executable(s) with the correct name(s)
@@ -229,6 +255,8 @@ where options:
        with errored or failed status; if not specified, the test driver uses the
        timestamp as the session dir name
 -t   : turn on tracing of lldb command and other detailed test executions
+-u   : specify an environment variable to unset before running the test cases
+       e.g., -u DYLD_INSERT_LIBRARIES -u MallocScribble'
 -v   : do verbose mode of unittest framework (print out each test case invocation)
 -X   : exclude a directory from consideration for test discovery
        -X types => if 'types' appear in the pathname components of a potential testfile
@@ -339,6 +367,8 @@ def parseOptionsAndInitTestdirs():
     global dont_do_python_api_test
     global just_do_python_api_test
     global just_do_benchmarks_test
+    global dont_do_dsym_test
+    global dont_do_dwarf_test
     global blacklist
     global blacklistConfig
     global configFile
@@ -362,13 +392,11 @@ def parseOptionsAndInitTestdirs():
     global regexp
     global rdir
     global sdir_name
+    global unsets
     global verbose
     global testdirs
 
     do_help = False
-
-    if len(sys.argv) == 1:
-        return
 
     # Process possible trace and/or verbose flag, among other things.
     index = 1
@@ -399,6 +427,29 @@ def parseOptionsAndInitTestdirs():
             index += 1
         elif sys.argv[index].startswith('-D'):
             dumpSysPath = True
+            index += 1
+        elif sys.argv[index].startswith('-E'):
+            # Increment by 1 to fetch the CFLAGS_EXTRAS spec.
+            index += 1
+            if index >= len(sys.argv):
+                usage()
+            cflags_extras = sys.argv[index]
+            os.environ["CFLAGS_EXTRAS"] = cflags_extras
+            index += 1
+        elif sys.argv[index].startswith('-N'):
+            # Increment by 1 to fetch 'dsym' or 'dwarf'.
+            index += 1
+            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
+                usage()
+            dont_do = sys.argv[index]
+            if dont_do.lower() == 'dsym':
+                dont_do_dsym_test = True
+            elif dont_do.lower() == 'dwarf':
+                dont_do_dwarf_test = True
+            else:
+                print "!!!"
+                print "Warning: -N only accepts either 'dsym' or 'dwarf' as the option arg; you passed in '%s'?" % dont_do
+                print "!!!"
             index += 1
         elif sys.argv[index].startswith('-a'):
             dont_do_python_api_test = True
@@ -480,6 +531,17 @@ def parseOptionsAndInitTestdirs():
                 usage()
             regexp = sys.argv[index]
             index += 1
+        elif sys.argv[index].startswith('-R'):
+            # Increment by 1 to fetch the relocated directory argument.
+            index += 1
+            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
+                usage()
+            rdir = os.path.abspath(sys.argv[index])
+            if os.path.exists(rdir):
+                import shutil
+                print "Removing tree:", rdir
+                shutil.rmtree(rdir)
+            index += 1
         elif sys.argv[index].startswith('-r'):
             # Increment by 1 to fetch the relocated directory argument.
             index += 1
@@ -502,6 +564,13 @@ def parseOptionsAndInitTestdirs():
             index += 1
         elif sys.argv[index].startswith('-t'):
             os.environ["LLDB_COMMAND_TRACE"] = "YES"
+            index += 1
+        elif sys.argv[index].startswith('-u'):
+            # Increment by 1 to fetch the environment variable to unset.
+            index += 1
+            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
+                usage()
+            unsets.append(sys.argv[index])
             index += 1
         elif sys.argv[index].startswith('-v'):
             verbose = 2
@@ -562,8 +631,17 @@ def parseOptionsAndInitTestdirs():
         from shutil import copytree, ignore_patterns
 
         tmpdirs = []
+        orig_testdirs = testdirs[:]
         for srcdir in testdirs:
-            dstdir = os.path.join(rdir, os.path.basename(srcdir))
+            # For example, /Volumes/data/lldb/svn/ToT/test/functionalities/watchpoint/hello_watchpoint
+            # shall be split into ['/Volumes/data/lldb/svn/ToT/', 'functionalities/watchpoint/hello_watchpoint'].
+            # Utilize the relative path to the 'test' directory to make our destination dir path.
+            if ("test"+os.sep) in srcdir:
+                to_split_on = "test"+os.sep
+            else:
+                to_split_on = "test"
+            dstdir = os.path.join(rdir, srcdir.split(to_split_on)[1])
+            dstdir = dstdir.rstrip(os.sep)
             # Don't copy the *.pyc and .svn stuffs.
             copytree(srcdir, dstdir, ignore=ignore_patterns('*.pyc', '.svn'))
             tmpdirs.append(dstdir)
@@ -574,7 +652,7 @@ def parseOptionsAndInitTestdirs():
         # With '-r dir' specified, there's no cleanup of intermediate test files.
         os.environ["LLDB_DO_CLEANUP"] = 'NO'
 
-        # If testdirs is ['test'], the make directory has already been copied
+        # If the original testdirs is ['test'], the make directory has already been copied
         # recursively and is contained within the rdir/test dir.  For anything
         # else, we would need to copy over the make directory and its contents,
         # so that, os.listdir(rdir) looks like, for example:
@@ -582,7 +660,7 @@ def parseOptionsAndInitTestdirs():
         #     array_types conditional_break make
         #
         # where the make directory contains the Makefile.rules file.
-        if len(testdirs) != 1 or os.path.basename(testdirs[0]) != 'test':
+        if len(testdirs) != 1 or os.path.basename(orig_testdirs[0]) != 'test':
             # Don't copy the .svn stuffs.
             copytree('make', os.path.join(rdir, 'make'),
                      ignore=ignore_patterns('.svn'))
@@ -600,11 +678,21 @@ def parseOptionsAndInitTestdirs():
     # respectively.
     #
     # See also lldb-trunk/example/test/usage-config.
-    global config
+    global config, pre_flight, post_flight
     if configFile:
         # Pass config (a dictionary) as the locals namespace for side-effect.
         execfile(configFile, globals(), config)
-        #print "config:", config
+        print "config:", config
+        if "pre_flight" in config:
+            pre_flight = config["pre_flight"]
+            if not callable(pre_flight):
+                print "fatal error: pre_flight is not callable, exiting."
+                sys.exit(1)
+        if "post_flight" in config:
+            post_flight = config["post_flight"]
+            if not callable(post_flight):
+                print "fatal error: post_flight is not callable, exiting."
+                sys.exit(1)
         #print "sys.stderr:", sys.stderr
         #print "sys.stdout:", sys.stdout
 
@@ -743,17 +831,17 @@ def setupSysPath():
     baiPath2 = os.path.join(base, *(xcode4_build_dir + bai + python_resource_dir))
 
     lldbPath = None
-    if os.path.isfile(os.path.join(dbgPath, 'lldb.py')):
+    if os.path.isfile(os.path.join(dbgPath, 'lldb/__init__.py')):
         lldbPath = dbgPath
-    elif os.path.isfile(os.path.join(dbgPath2, 'lldb.py')):
+    elif os.path.isfile(os.path.join(dbgPath2, 'lldb/__init__.py')):
         lldbPath = dbgPath2
-    elif os.path.isfile(os.path.join(relPath, 'lldb.py')):
+    elif os.path.isfile(os.path.join(relPath, 'lldb/__init__.py')):
         lldbPath = relPath
-    elif os.path.isfile(os.path.join(relPath2, 'lldb.py')):
+    elif os.path.isfile(os.path.join(relPath2, 'lldb/__init__.py')):
         lldbPath = relPath2
-    elif os.path.isfile(os.path.join(baiPath, 'lldb.py')):
+    elif os.path.isfile(os.path.join(baiPath, 'lldb/__init__.py')):
         lldbPath = baiPath
-    elif os.path.isfile(os.path.join(baiPath2, 'lldb.py')):
+    elif os.path.isfile(os.path.join(baiPath2, 'lldb/__init__.py')):
         lldbPath = baiPath2
 
     if not lldbPath:
@@ -961,10 +1049,29 @@ lldb.DBG = lldb.SBDebugger.Create()
 # Put the blacklist in the lldb namespace, to be used by lldb.TestBase.
 lldb.blacklist = blacklist
 
-# Put dont/just_do_python_api_test in the lldb namespace.
+# The pre_flight and post_flight come from reading a config file.
+lldb.pre_flight = pre_flight
+lldb.post_flight = post_flight
+def getsource_if_available(obj):
+    """
+    Return the text of the source code for an object if available.  Otherwise,
+    a print representation is returned.
+    """
+    import inspect
+    try:
+        return inspect.getsource(obj)
+    except:
+        return repr(obj)
+
+print "lldb.pre_flight:", getsource_if_available(lldb.pre_flight)
+print "lldb.post_flight:", getsource_if_available(lldb.post_flight)
+
+# Put all these test decorators in the lldb namespace.
 lldb.dont_do_python_api_test = dont_do_python_api_test
 lldb.just_do_python_api_test = just_do_python_api_test
 lldb.just_do_benchmarks_test = just_do_benchmarks_test
+lldb.dont_do_dsym_test = dont_do_dsym_test
+lldb.dont_do_dwarf_test = dont_do_dwarf_test
 
 # Do we need to skip build and cleanup?
 lldb.skip_build_and_cleanup = skip_build_and_cleanup
@@ -1009,6 +1116,16 @@ with open(fname, "w") as f:
     print >> f, "Command invoked: %s\n" % getMyCommandLine()
 
 #
+# If we have environment variables to unset, do it here before we invoke the test runner.
+#
+for env_var in unsets :
+    if env_var in os.environ:
+        # From Python Doc: When unsetenv() is supported, deletion of items in os.environ
+        # is automatically translated into a corresponding call to unsetenv().
+        del os.environ[env_var]
+        #os.unsetenv(env_var)
+
+#
 # Invoke the default TextTestRunner to run the test suite, possibly iterating
 # over different configurations.
 #
@@ -1024,6 +1141,31 @@ if isinstance(archs, list) and len(archs) >= 1:
 
 if not compilers and "compilers" in config:
     compilers = config["compilers"]
+
+#
+# Add some intervention here to sanity check that the compilers requested are sane.
+# If found not to be an executable program, the invalid one is dropped from the list.
+for i in range(len(compilers)):
+    c = compilers[i]
+    if which(c):
+        continue
+    else:
+        if sys.platform.startswith("darwin"):
+            pipe = subprocess.Popen(['xcrun', '-find', c], stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
+            cmd_output = pipe.stdout.read()
+            if cmd_output:
+                if "not found" in cmd_output:
+                    print "dropping %s from the compilers used" % c
+                    compilers.remove(i)
+                else:
+                    compilers[i] = cmd_output.split('\n')[0]
+                    print "'xcrun -find %s' returning %s" % (c, compilers[i])
+
+print "compilers=%s" % str(compilers)
+
+if not compilers or len(compilers) == 0:
+    print "No eligible compiler found, exiting."
+    sys.exit(1)
 
 if isinstance(compilers, list) and len(compilers) >= 1:
     iterCompilers = True
@@ -1077,11 +1219,13 @@ for ia in range(len(archs) if iterArchs else 1):
             # The purpose is to separate the configuration-specific directories
             # from each other.
             if rdir:
-                from shutil import copytree, ignore_patterns
+                from shutil import copytree, rmtree, ignore_patterns
 
                 newrdir = "%s.%s" % (rdir, configPostfix)
 
                 # Copy the tree to a new directory with postfix name configPostfix.
+                if os.path.exists(newrdir):
+                    rmtree(newrdir)
                 copytree(rdir, newrdir, ignore=ignore_patterns('*.pyc', '*.o', '*.d'))
 
                # Update the LLDB_TEST environment variable to reflect new top
@@ -1135,6 +1279,14 @@ for ia in range(len(archs) if iterArchs else 1):
                 # This counts from 1 .. suite.countTestCases().
                 self.counter = 0
 
+            def _exc_info_to_string(self, err, test):
+                """Overrides superclass TestResult's method in order to append
+                our test config info string to the exception info string."""
+                modified_exc_string = '%sConfig=%s-%s' % (super(LLDBTestResult, self)._exc_info_to_string(err, test),
+                                                          test.getArchitecture(),
+                                                          test.getCompiler())
+                return modified_exc_string
+
             def getDescription(self, test):
                 doc_first_line = test.shortDescription()
                 if self.descriptions and doc_first_line:
@@ -1147,16 +1299,6 @@ for ia in range(len(archs) if iterArchs else 1):
                 if self.showAll:
                     self.stream.write(self.fmt % self.counter)
                 super(LLDBTestResult, self).startTest(test)
-
-            def stopTest(self, test):
-                """Called when the given test has been run"""
-                if progress_bar:
-                    sys.__stdout__.write('.')
-                    sys.__stdout__.flush()
-                    if self.counter == suite.countTestCases():
-                        sys.__stdout__.write('\n')
-
-                super(LLDBTestResult, self).stopTest(test)
 
             def addError(self, test, err):
                 global sdir_has_content
@@ -1201,7 +1343,7 @@ for ia in range(len(archs) if iterArchs else 1):
         # Invoke the test runner.
         if count == 1:
             result = unittest2.TextTestRunner(stream=sys.stderr,
-                                              verbosity=verbose,
+                                              verbosity=(1 if progress_bar else verbose),
                                               failfast=failfast,
                                               resultclass=LLDBTestResult).run(suite)
         else:
@@ -1211,7 +1353,7 @@ for ia in range(len(archs) if iterArchs else 1):
             LLDBTestResult.__ignore_singleton__ = True
             for i in range(count):
                 result = unittest2.TextTestRunner(stream=sys.stderr,
-                                                  verbosity=verbose,
+                                                  verbosity=(1 if progress_bar else verbose),
                                                   failfast=failfast,
                                                   resultclass=LLDBTestResult).run(suite)
         

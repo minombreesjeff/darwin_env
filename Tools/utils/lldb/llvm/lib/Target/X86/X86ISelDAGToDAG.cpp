@@ -540,7 +540,7 @@ void X86DAGToDAGISel::EmitSpecialCodeForMain(MachineBasicBlock *BB,
   const TargetInstrInfo *TII = TM.getInstrInfo();
   if (Subtarget->isTargetCygMing()) {
     unsigned CallOp =
-      Subtarget->is64Bit() ? X86::WINCALL64pcrel32 : X86::CALLpcrel32;
+      Subtarget->is64Bit() ? X86::CALL64pcrel32 : X86::CALLpcrel32;
     BuildMI(BB, DebugLoc(),
             TII->get(CallOp)).addExternalSymbol("__main");
   }
@@ -725,6 +725,213 @@ bool X86DAGToDAGISel::MatchAddress(SDValue N, X86ISelAddressMode &AM) {
   return false;
 }
 
+// Insert a node into the DAG at least before the Pos node's position. This
+// will reposition the node as needed, and will assign it a node ID that is <=
+// the Pos node's ID. Note that this does *not* preserve the uniqueness of node
+// IDs! The selection DAG must no longer depend on their uniqueness when this
+// is used.
+static void InsertDAGNode(SelectionDAG &DAG, SDValue Pos, SDValue N) {
+  if (N.getNode()->getNodeId() == -1 ||
+      N.getNode()->getNodeId() > Pos.getNode()->getNodeId()) {
+    DAG.RepositionNode(Pos.getNode(), N.getNode());
+    N.getNode()->setNodeId(Pos.getNode()->getNodeId());
+  }
+}
+
+// Transform "(X >> (8-C1)) & C2" to "(X >> 8) & 0xff)" if safe. This
+// allows us to convert the shift and and into an h-register extract and
+// a scaled index. Returns false if the simplification is performed.
+static bool FoldMaskAndShiftToExtract(SelectionDAG &DAG, SDValue N,
+                                      uint64_t Mask,
+                                      SDValue Shift, SDValue X,
+                                      X86ISelAddressMode &AM) {
+  if (Shift.getOpcode() != ISD::SRL ||
+      !isa<ConstantSDNode>(Shift.getOperand(1)) ||
+      !Shift.hasOneUse())
+    return true;
+
+  int ScaleLog = 8 - Shift.getConstantOperandVal(1);
+  if (ScaleLog <= 0 || ScaleLog >= 4 ||
+      Mask != (0xffu << ScaleLog))
+    return true;
+
+  EVT VT = N.getValueType();
+  DebugLoc DL = N.getDebugLoc();
+  SDValue Eight = DAG.getConstant(8, MVT::i8);
+  SDValue NewMask = DAG.getConstant(0xff, VT);
+  SDValue Srl = DAG.getNode(ISD::SRL, DL, VT, X, Eight);
+  SDValue And = DAG.getNode(ISD::AND, DL, VT, Srl, NewMask);
+  SDValue ShlCount = DAG.getConstant(ScaleLog, MVT::i8);
+  SDValue Shl = DAG.getNode(ISD::SHL, DL, VT, And, ShlCount);
+
+  // Insert the new nodes into the topological ordering. We must do this in
+  // a valid topological ordering as nothing is going to go back and re-sort
+  // these nodes. We continually insert before 'N' in sequence as this is
+  // essentially a pre-flattened and pre-sorted sequence of nodes. There is no
+  // hierarchy left to express.
+  InsertDAGNode(DAG, N, Eight);
+  InsertDAGNode(DAG, N, Srl);
+  InsertDAGNode(DAG, N, NewMask);
+  InsertDAGNode(DAG, N, And);
+  InsertDAGNode(DAG, N, ShlCount);
+  InsertDAGNode(DAG, N, Shl);
+  DAG.ReplaceAllUsesWith(N, Shl);
+  AM.IndexReg = And;
+  AM.Scale = (1 << ScaleLog);
+  return false;
+}
+
+// Transforms "(X << C1) & C2" to "(X & (C2>>C1)) << C1" if safe and if this
+// allows us to fold the shift into this addressing mode. Returns false if the
+// transform succeeded.
+static bool FoldMaskedShiftToScaledMask(SelectionDAG &DAG, SDValue N,
+                                        uint64_t Mask,
+                                        SDValue Shift, SDValue X,
+                                        X86ISelAddressMode &AM) {
+  if (Shift.getOpcode() != ISD::SHL ||
+      !isa<ConstantSDNode>(Shift.getOperand(1)))
+    return true;
+
+  // Not likely to be profitable if either the AND or SHIFT node has more
+  // than one use (unless all uses are for address computation). Besides,
+  // isel mechanism requires their node ids to be reused.
+  if (!N.hasOneUse() || !Shift.hasOneUse())
+    return true;
+
+  // Verify that the shift amount is something we can fold.
+  unsigned ShiftAmt = Shift.getConstantOperandVal(1);
+  if (ShiftAmt != 1 && ShiftAmt != 2 && ShiftAmt != 3)
+    return true;
+
+  EVT VT = N.getValueType();
+  DebugLoc DL = N.getDebugLoc();
+  SDValue NewMask = DAG.getConstant(Mask >> ShiftAmt, VT);
+  SDValue NewAnd = DAG.getNode(ISD::AND, DL, VT, X, NewMask);
+  SDValue NewShift = DAG.getNode(ISD::SHL, DL, VT, NewAnd, Shift.getOperand(1));
+
+  // Insert the new nodes into the topological ordering. We must do this in
+  // a valid topological ordering as nothing is going to go back and re-sort
+  // these nodes. We continually insert before 'N' in sequence as this is
+  // essentially a pre-flattened and pre-sorted sequence of nodes. There is no
+  // hierarchy left to express.
+  InsertDAGNode(DAG, N, NewMask);
+  InsertDAGNode(DAG, N, NewAnd);
+  InsertDAGNode(DAG, N, NewShift);
+  DAG.ReplaceAllUsesWith(N, NewShift);
+
+  AM.Scale = 1 << ShiftAmt;
+  AM.IndexReg = NewAnd;
+  return false;
+}
+
+// Implement some heroics to detect shifts of masked values where the mask can
+// be replaced by extending the shift and undoing that in the addressing mode
+// scale. Patterns such as (shl (srl x, c1), c2) are canonicalized into (and
+// (srl x, SHIFT), MASK) by DAGCombines that don't know the shl can be done in
+// the addressing mode. This results in code such as:
+//
+//   int f(short *y, int *lookup_table) {
+//     ...
+//     return *y + lookup_table[*y >> 11];
+//   }
+//
+// Turning into:
+//   movzwl (%rdi), %eax
+//   movl %eax, %ecx
+//   shrl $11, %ecx
+//   addl (%rsi,%rcx,4), %eax
+//
+// Instead of:
+//   movzwl (%rdi), %eax
+//   movl %eax, %ecx
+//   shrl $9, %ecx
+//   andl $124, %rcx
+//   addl (%rsi,%rcx), %eax
+//
+// Note that this function assumes the mask is provided as a mask *after* the
+// value is shifted. The input chain may or may not match that, but computing
+// such a mask is trivial.
+static bool FoldMaskAndShiftToScale(SelectionDAG &DAG, SDValue N,
+                                    uint64_t Mask,
+                                    SDValue Shift, SDValue X,
+                                    X86ISelAddressMode &AM) {
+  if (Shift.getOpcode() != ISD::SRL || !Shift.hasOneUse() ||
+      !isa<ConstantSDNode>(Shift.getOperand(1)))
+    return true;
+
+  unsigned ShiftAmt = Shift.getConstantOperandVal(1);
+  unsigned MaskLZ = CountLeadingZeros_64(Mask);
+  unsigned MaskTZ = CountTrailingZeros_64(Mask);
+
+  // The amount of shift we're trying to fit into the addressing mode is taken
+  // from the trailing zeros of the mask.
+  unsigned AMShiftAmt = MaskTZ;
+
+  // There is nothing we can do here unless the mask is removing some bits.
+  // Also, the addressing mode can only represent shifts of 1, 2, or 3 bits.
+  if (AMShiftAmt <= 0 || AMShiftAmt > 3) return true;
+
+  // We also need to ensure that mask is a continuous run of bits.
+  if (CountTrailingOnes_64(Mask >> MaskTZ) + MaskTZ + MaskLZ != 64) return true;
+
+  // Scale the leading zero count down based on the actual size of the value.
+  // Also scale it down based on the size of the shift.
+  MaskLZ -= (64 - X.getValueSizeInBits()) + ShiftAmt;
+
+  // The final check is to ensure that any masked out high bits of X are
+  // already known to be zero. Otherwise, the mask has a semantic impact
+  // other than masking out a couple of low bits. Unfortunately, because of
+  // the mask, zero extensions will be removed from operands in some cases.
+  // This code works extra hard to look through extensions because we can
+  // replace them with zero extensions cheaply if necessary.
+  bool ReplacingAnyExtend = false;
+  if (X.getOpcode() == ISD::ANY_EXTEND) {
+    unsigned ExtendBits =
+      X.getValueSizeInBits() - X.getOperand(0).getValueSizeInBits();
+    // Assume that we'll replace the any-extend with a zero-extend, and
+    // narrow the search to the extended value.
+    X = X.getOperand(0);
+    MaskLZ = ExtendBits > MaskLZ ? 0 : MaskLZ - ExtendBits;
+    ReplacingAnyExtend = true;
+  }
+  APInt MaskedHighBits = APInt::getHighBitsSet(X.getValueSizeInBits(),
+                                               MaskLZ);
+  APInt KnownZero, KnownOne;
+  DAG.ComputeMaskedBits(X, MaskedHighBits, KnownZero, KnownOne);
+  if (MaskedHighBits != KnownZero) return true;
+
+  // We've identified a pattern that can be transformed into a single shift
+  // and an addressing mode. Make it so.
+  EVT VT = N.getValueType();
+  if (ReplacingAnyExtend) {
+    assert(X.getValueType() != VT);
+    // We looked through an ANY_EXTEND node, insert a ZERO_EXTEND.
+    SDValue NewX = DAG.getNode(ISD::ZERO_EXTEND, X.getDebugLoc(), VT, X);
+    InsertDAGNode(DAG, N, NewX);
+    X = NewX;
+  }
+  DebugLoc DL = N.getDebugLoc();
+  SDValue NewSRLAmt = DAG.getConstant(ShiftAmt + AMShiftAmt, MVT::i8);
+  SDValue NewSRL = DAG.getNode(ISD::SRL, DL, VT, X, NewSRLAmt);
+  SDValue NewSHLAmt = DAG.getConstant(AMShiftAmt, MVT::i8);
+  SDValue NewSHL = DAG.getNode(ISD::SHL, DL, VT, NewSRL, NewSHLAmt);
+
+  // Insert the new nodes into the topological ordering. We must do this in
+  // a valid topological ordering as nothing is going to go back and re-sort
+  // these nodes. We continually insert before 'N' in sequence as this is
+  // essentially a pre-flattened and pre-sorted sequence of nodes. There is no
+  // hierarchy left to express.
+  InsertDAGNode(DAG, N, NewSRLAmt);
+  InsertDAGNode(DAG, N, NewSRL);
+  InsertDAGNode(DAG, N, NewSHLAmt);
+  InsertDAGNode(DAG, N, NewSHL);
+  DAG.ReplaceAllUsesWith(N, NewSHL);
+
+  AM.Scale = 1 << AMShiftAmt;
+  AM.IndexReg = NewSRL;
+  return false;
+}
+
 bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
                                               unsigned Depth) {
   DebugLoc dl = N.getDebugLoc();
@@ -813,6 +1020,33 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
       }
     break;
     }
+
+  case ISD::SRL: {
+    // Scale must not be used already.
+    if (AM.IndexReg.getNode() != 0 || AM.Scale != 1) break;
+
+    SDValue And = N.getOperand(0);
+    if (And.getOpcode() != ISD::AND) break;
+    SDValue X = And.getOperand(0);
+
+    // We only handle up to 64-bit values here as those are what matter for
+    // addressing mode optimizations.
+    if (X.getValueSizeInBits() > 64) break;
+
+    // The mask used for the transform is expected to be post-shift, but we
+    // found the shift first so just apply the shift to the mask before passing
+    // it down.
+    if (!isa<ConstantSDNode>(N.getOperand(1)) ||
+        !isa<ConstantSDNode>(And.getOperand(1)))
+      break;
+    uint64_t Mask = And.getConstantOperandVal(1) >> N.getConstantOperandVal(1);
+
+    // Try to fold the mask and shift into the scale, and return false if we
+    // succeed.
+    if (!FoldMaskAndShiftToScale(*CurDAG, N, Mask, N, X, AM))
+      return false;
+    break;
+  }
 
   case ISD::SMUL_LOHI:
   case ISD::UMUL_LOHI:
@@ -917,16 +1151,8 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
     AM.Scale = 1;
 
     // Insert the new nodes into the topological ordering.
-    if (Zero.getNode()->getNodeId() == -1 ||
-        Zero.getNode()->getNodeId() > N.getNode()->getNodeId()) {
-      CurDAG->RepositionNode(N.getNode(), Zero.getNode());
-      Zero.getNode()->setNodeId(N.getNode()->getNodeId());
-    }
-    if (Neg.getNode()->getNodeId() == -1 ||
-        Neg.getNode()->getNodeId() > N.getNode()->getNodeId()) {
-      CurDAG->RepositionNode(N.getNode(), Neg.getNode());
-      Neg.getNode()->setNodeId(N.getNode()->getNodeId());
-    }
+    InsertDAGNode(*CurDAG, N, Zero);
+    InsertDAGNode(*CurDAG, N, Neg);
     return false;
   }
 
@@ -981,121 +1207,34 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
     // Perform some heroic transforms on an and of a constant-count shift
     // with a constant to enable use of the scaled offset field.
 
-    SDValue Shift = N.getOperand(0);
-    if (Shift.getNumOperands() != 2) break;
-
     // Scale must not be used already.
     if (AM.IndexReg.getNode() != 0 || AM.Scale != 1) break;
 
+    SDValue Shift = N.getOperand(0);
+    if (Shift.getOpcode() != ISD::SRL && Shift.getOpcode() != ISD::SHL) break;
     SDValue X = Shift.getOperand(0);
-    ConstantSDNode *C2 = dyn_cast<ConstantSDNode>(N.getOperand(1));
-    ConstantSDNode *C1 = dyn_cast<ConstantSDNode>(Shift.getOperand(1));
-    if (!C1 || !C2) break;
 
-    // Handle "(X >> (8-C1)) & C2" as "(X >> 8) & 0xff)" if safe. This
-    // allows us to convert the shift and and into an h-register extract and
-    // a scaled index.
-    if (Shift.getOpcode() == ISD::SRL && Shift.hasOneUse()) {
-      unsigned ScaleLog = 8 - C1->getZExtValue();
-      if (ScaleLog > 0 && ScaleLog < 4 &&
-          C2->getZExtValue() == (UINT64_C(0xff) << ScaleLog)) {
-        SDValue Eight = CurDAG->getConstant(8, MVT::i8);
-        SDValue Mask = CurDAG->getConstant(0xff, N.getValueType());
-        SDValue Srl = CurDAG->getNode(ISD::SRL, dl, N.getValueType(),
-                                      X, Eight);
-        SDValue And = CurDAG->getNode(ISD::AND, dl, N.getValueType(),
-                                      Srl, Mask);
-        SDValue ShlCount = CurDAG->getConstant(ScaleLog, MVT::i8);
-        SDValue Shl = CurDAG->getNode(ISD::SHL, dl, N.getValueType(),
-                                      And, ShlCount);
+    // We only handle up to 64-bit values here as those are what matter for
+    // addressing mode optimizations.
+    if (X.getValueSizeInBits() > 64) break;
 
-        // Insert the new nodes into the topological ordering.
-        if (Eight.getNode()->getNodeId() == -1 ||
-            Eight.getNode()->getNodeId() > X.getNode()->getNodeId()) {
-          CurDAG->RepositionNode(X.getNode(), Eight.getNode());
-          Eight.getNode()->setNodeId(X.getNode()->getNodeId());
-        }
-        if (Mask.getNode()->getNodeId() == -1 ||
-            Mask.getNode()->getNodeId() > X.getNode()->getNodeId()) {
-          CurDAG->RepositionNode(X.getNode(), Mask.getNode());
-          Mask.getNode()->setNodeId(X.getNode()->getNodeId());
-        }
-        if (Srl.getNode()->getNodeId() == -1 ||
-            Srl.getNode()->getNodeId() > Shift.getNode()->getNodeId()) {
-          CurDAG->RepositionNode(Shift.getNode(), Srl.getNode());
-          Srl.getNode()->setNodeId(Shift.getNode()->getNodeId());
-        }
-        if (And.getNode()->getNodeId() == -1 ||
-            And.getNode()->getNodeId() > N.getNode()->getNodeId()) {
-          CurDAG->RepositionNode(N.getNode(), And.getNode());
-          And.getNode()->setNodeId(N.getNode()->getNodeId());
-        }
-        if (ShlCount.getNode()->getNodeId() == -1 ||
-            ShlCount.getNode()->getNodeId() > X.getNode()->getNodeId()) {
-          CurDAG->RepositionNode(X.getNode(), ShlCount.getNode());
-          ShlCount.getNode()->setNodeId(N.getNode()->getNodeId());
-        }
-        if (Shl.getNode()->getNodeId() == -1 ||
-            Shl.getNode()->getNodeId() > N.getNode()->getNodeId()) {
-          CurDAG->RepositionNode(N.getNode(), Shl.getNode());
-          Shl.getNode()->setNodeId(N.getNode()->getNodeId());
-        }
-        CurDAG->ReplaceAllUsesWith(N, Shl);
-        AM.IndexReg = And;
-        AM.Scale = (1 << ScaleLog);
-        return false;
-      }
-    }
-
-    // Handle "(X << C1) & C2" as "(X & (C2>>C1)) << C1" if safe and if this
-    // allows us to fold the shift into this addressing mode.
-    if (Shift.getOpcode() != ISD::SHL) break;
-
-    // Not likely to be profitable if either the AND or SHIFT node has more
-    // than one use (unless all uses are for address computation). Besides,
-    // isel mechanism requires their node ids to be reused.
-    if (!N.hasOneUse() || !Shift.hasOneUse())
+    if (!isa<ConstantSDNode>(N.getOperand(1)))
       break;
-    
-    // Verify that the shift amount is something we can fold.
-    unsigned ShiftCst = C1->getZExtValue();
-    if (ShiftCst != 1 && ShiftCst != 2 && ShiftCst != 3)
-      break;
-    
-    // Get the new AND mask, this folds to a constant.
-    SDValue NewANDMask = CurDAG->getNode(ISD::SRL, dl, N.getValueType(),
-                                         SDValue(C2, 0), SDValue(C1, 0));
-    SDValue NewAND = CurDAG->getNode(ISD::AND, dl, N.getValueType(), X, 
-                                     NewANDMask);
-    SDValue NewSHIFT = CurDAG->getNode(ISD::SHL, dl, N.getValueType(),
-                                       NewAND, SDValue(C1, 0));
+    uint64_t Mask = N.getConstantOperandVal(1);
 
-    // Insert the new nodes into the topological ordering.
-    if (C1->getNodeId() > X.getNode()->getNodeId()) {
-      CurDAG->RepositionNode(X.getNode(), C1);
-      C1->setNodeId(X.getNode()->getNodeId());
-    }
-    if (NewANDMask.getNode()->getNodeId() == -1 ||
-        NewANDMask.getNode()->getNodeId() > X.getNode()->getNodeId()) {
-      CurDAG->RepositionNode(X.getNode(), NewANDMask.getNode());
-      NewANDMask.getNode()->setNodeId(X.getNode()->getNodeId());
-    }
-    if (NewAND.getNode()->getNodeId() == -1 ||
-        NewAND.getNode()->getNodeId() > Shift.getNode()->getNodeId()) {
-      CurDAG->RepositionNode(Shift.getNode(), NewAND.getNode());
-      NewAND.getNode()->setNodeId(Shift.getNode()->getNodeId());
-    }
-    if (NewSHIFT.getNode()->getNodeId() == -1 ||
-        NewSHIFT.getNode()->getNodeId() > N.getNode()->getNodeId()) {
-      CurDAG->RepositionNode(N.getNode(), NewSHIFT.getNode());
-      NewSHIFT.getNode()->setNodeId(N.getNode()->getNodeId());
-    }
+    // Try to fold the mask and shift into an extract and scale.
+    if (!FoldMaskAndShiftToExtract(*CurDAG, N, Mask, Shift, X, AM))
+      return false;
 
-    CurDAG->ReplaceAllUsesWith(N, NewSHIFT);
-    
-    AM.Scale = 1 << ShiftCst;
-    AM.IndexReg = NewAND;
-    return false;
+    // Try to fold the mask and shift directly into the scale.
+    if (!FoldMaskAndShiftToScale(*CurDAG, N, Mask, Shift, X, AM))
+      return false;
+
+    // Try to swap the mask and shift to place shifts which can be done as
+    // a scale on the outside of the mask.
+    if (!FoldMaskedShiftToScaledMask(*CurDAG, N, Mask, Shift, X, AM))
+      return false;
+    break;
   }
   }
 
@@ -1829,7 +1968,6 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
     SDNode *New = CurDAG->getMachineNode(Op, dl, NVT, N0->getOperand(0),NewCst);
     return CurDAG->SelectNodeTo(Node, ShlOp, NVT, SDValue(New, 0),
                                 getI8Imm(ShlVal));
-    break;
   }
   case X86ISD::UMUL: {
     SDValue N0 = Node->getOperand(0);
@@ -2131,7 +2269,7 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
 
         // On x86-32, only the ABCD registers have 8-bit subregisters.
         if (!Subtarget->is64Bit()) {
-          TargetRegisterClass *TRC = 0;
+          const TargetRegisterClass *TRC;
           switch (N0.getValueType().getSimpleVT().SimpleTy) {
           case MVT::i32: TRC = &X86::GR32_ABCDRegClass; break;
           case MVT::i16: TRC = &X86::GR16_ABCDRegClass; break;
@@ -2160,7 +2298,7 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
         SDValue Reg = N0.getNode()->getOperand(0);
 
         // Put the value in an ABCD register.
-        TargetRegisterClass *TRC = 0;
+        const TargetRegisterClass *TRC;
         switch (N0.getValueType().getSimpleVT().SimpleTy) {
         case MVT::i64: TRC = &X86::GR64_ABCDRegClass; break;
         case MVT::i32: TRC = &X86::GR32_ABCDRegClass; break;
@@ -2240,6 +2378,8 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
         Chain->getOpcode() != ISD::LOAD ||
         StoredVal->getOpcode() != X86ISD::DEC ||
         StoredVal.getResNo() != 0 ||
+        !StoredVal.getNode()->hasNUsesOfValue(1, 0) ||
+        !Chain.getNode()->hasNUsesOfValue(1, 0) ||
         StoredVal->getOperand(0).getNode() != Chain.getNode())
       break;
 

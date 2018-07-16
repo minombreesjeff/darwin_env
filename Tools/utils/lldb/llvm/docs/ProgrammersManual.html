@@ -81,6 +81,7 @@ option</a></li>
       <li><a href="#dss_smallset">"llvm/ADT/SmallSet.h"</a></li>
       <li><a href="#dss_smallptrset">"llvm/ADT/SmallPtrSet.h"</a></li>
       <li><a href="#dss_denseset">"llvm/ADT/DenseSet.h"</a></li>
+      <li><a href="#dss_sparseset">"llvm/ADT/SparseSet.h"</a></li>
       <li><a href="#dss_FoldingSet">"llvm/ADT/FoldingSet.h"</a></li>
       <li><a href="#dss_set">&lt;set&gt;</a></li>
       <li><a href="#dss_setvector">"llvm/ADT/SetVector.h"</a></li>
@@ -1490,6 +1491,24 @@ href="#dss_densemap">DenseMap</a> has.
 
 <!-- _______________________________________________________________________ -->
 <h4>
+  <a name="dss_sparseset">"llvm/ADT/SparseSet.h"</a>
+</h4>
+
+<div>
+
+<p>SparseSet holds a small number of objects identified by unsigned keys of
+moderate size. It uses a lot of memory, but provides operations that are
+almost as fast as a vector. Typical keys are physical registers, virtual
+registers, or numbered basic blocks.</p>
+
+<p>SparseSet is useful for algorithms that need very fast clear/find/insert/erase
+and fast iteration over small sets.  It is not intended for building composite
+data structures.</p>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
+<h4>
   <a name="dss_FoldingSet">"llvm/ADT/FoldingSet.h"</a>
 </h4>
 
@@ -1753,13 +1772,21 @@ pointers, or map other small types to each other.
 
 <p>
 There are several aspects of DenseMap that you should be aware of, however.  The
-iterators in a densemap are invalidated whenever an insertion occurs, unlike
+iterators in a DenseMap are invalidated whenever an insertion occurs, unlike
 map.  Also, because DenseMap allocates space for a large number of key/value
 pairs (it starts with 64 by default), it will waste a lot of space if your keys
 or values are large.  Finally, you must implement a partial specialization of
 DenseMapInfo for the key that you want, if it isn't already supported.  This
 is required to tell DenseMap about two special marker values (which can never be
 inserted into the map) that it needs internally.</p>
+
+<p>
+DenseMap's find_as() method supports lookup operations using an alternate key
+type. This is useful in cases where the normal key type is expensive to
+construct, but cheap to compare against. The DenseMapInfo is responsible for
+defining the appropriate comparison and hashing methods for each alternate
+key type used.
+</p>
 
 </div>
 
@@ -4096,7 +4123,7 @@ arguments. An argument has a pointer to the parent Function.</p>
   <a href="mailto:dhurjati@cs.uiuc.edu">Dinakar Dhurjati</a> and
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-11-15 14:40:14 -0800 (Tue, 15 Nov 2011) $
+  Last modified: $Date: 2012-02-21 16:56:08 -0800 (Tue, 21 Feb 2012) $
 </address>
 
 </body>

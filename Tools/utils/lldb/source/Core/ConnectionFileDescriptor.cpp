@@ -31,7 +31,7 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/Timer.h"
-#include "lldb/Host/Host.h"
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -603,33 +603,9 @@ ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_pt
     return eConnectionStatusLostConnection;
 }
 
-//class ScopedPThreadCancelDisabler
-//{
-//public:
-//    ScopedPThreadCancelDisabler()
-//    {
-//        // Disable the ability for this thread to be cancelled
-//        int err = ::pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, &m_old_state);
-//        if (err != 0)
-//            m_old_state = -1;
-//        
-//    }
-//    
-//    ~ScopedPThreadCancelDisabler()
-//    {
-//        // Restore the ability for this thread to be cancelled to what it
-//        // previously was.
-//        if (m_old_state != -1)
-//            ::pthread_setcancelstate (m_old_state, 0);
-//    }
-//private:
-//    int m_old_state;    // Save the old cancelability state.
-//};
-//
 ConnectionStatus
 ConnectionFileDescriptor::Close (int& fd, Error *error_ptr)
 {
-    //ScopedPThreadCancelDisabler pthread_cancel_disabler;
     if (error_ptr)
         error_ptr->Clear();
     bool success = true;

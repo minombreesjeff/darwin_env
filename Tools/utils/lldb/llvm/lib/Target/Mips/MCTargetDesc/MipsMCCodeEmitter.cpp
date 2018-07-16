@@ -1,4 +1,4 @@
-//===-- MipsMCCodeEmitter.cpp - Convert Mips code to machine code ---------===//
+//===-- MipsMCCodeEmitter.cpp - Convert Mips Code to Machine Code ---------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -34,10 +34,12 @@ class MipsMCCodeEmitter : public MCCodeEmitter {
   const MCInstrInfo &MCII;
   const MCSubtargetInfo &STI;
   MCContext &Ctx;
+  bool IsLittleEndian;
 
 public:
   MipsMCCodeEmitter(const MCInstrInfo &mcii, const MCSubtargetInfo &sti,
-                    MCContext &ctx) : MCII(mcii), STI(sti) , Ctx(ctx) {}
+                    MCContext &ctx, bool IsLittle) :
+            MCII(mcii), STI(sti) , Ctx(ctx), IsLittleEndian(IsLittle) {}
 
   ~MipsMCCodeEmitter() {}
 
@@ -58,7 +60,7 @@ public:
 
   // getBinaryCodeForInstr - TableGen'erated function for getting the
   // binary encoding for an instruction.
-  unsigned getBinaryCodeForInstr(const MCInst &MI,
+  uint64_t getBinaryCodeForInstr(const MCInst &MI,
                                  SmallVectorImpl<MCFixup> &Fixups) const;
 
   // getBranchJumpOpValue - Return binary encoding of the jump
@@ -88,11 +90,18 @@ public:
 }; // class MipsMCCodeEmitter
 }  // namespace
 
-MCCodeEmitter *llvm::createMipsMCCodeEmitter(const MCInstrInfo &MCII,
-                                             const MCSubtargetInfo &STI,
-                                             MCContext &Ctx)
+MCCodeEmitter *llvm::createMipsMCCodeEmitterEB(const MCInstrInfo &MCII,
+                                               const MCSubtargetInfo &STI,
+                                               MCContext &Ctx)
 {
-  return new MipsMCCodeEmitter(MCII, STI, Ctx);
+  return new MipsMCCodeEmitter(MCII, STI, Ctx, false);
+}
+
+MCCodeEmitter *llvm::createMipsMCCodeEmitterEL(const MCInstrInfo &MCII,
+                                               const MCSubtargetInfo &STI,
+                                               MCContext &Ctx)
+{
+  return new MipsMCCodeEmitter(MCII, STI, Ctx, true);
 }
 
 /// EncodeInstruction - Emit the instruction.
@@ -187,6 +196,7 @@ getMachineOpValue(const MCInst &MI, const MCOperand &MO,
 
     if (Kind == MCExpr::SymbolRef) {
       Mips::Fixups FixupKind;
+
       switch(cast<MCSymbolRefExpr>(Expr)->getKind()) {
       case MCSymbolRefExpr::VK_Mips_GPREL:
         FixupKind = Mips::fixup_Mips_GPREL16;
@@ -209,6 +219,15 @@ getMachineOpValue(const MCInst &MI, const MCOperand &MO,
       case MCSymbolRefExpr::VK_Mips_TLSGD:
         FixupKind = Mips::fixup_Mips_TLSGD;
         break;
+      case MCSymbolRefExpr::VK_Mips_TLSLDM:
+        FixupKind = Mips::fixup_Mips_TLSLDM;
+        break;
+      case MCSymbolRefExpr::VK_Mips_DTPREL_HI:
+        FixupKind = Mips::fixup_Mips_DTPREL_HI;
+        break;
+      case MCSymbolRefExpr::VK_Mips_DTPREL_LO:
+        FixupKind = Mips::fixup_Mips_DTPREL_LO;
+        break;
       case MCSymbolRefExpr::VK_Mips_GOTTPREL:
         FixupKind = Mips::fixup_Mips_GOTTPREL;
         break;
@@ -227,8 +246,6 @@ getMachineOpValue(const MCInst &MI, const MCOperand &MO,
     return Ret;
   }
   llvm_unreachable("Unable to encode MCOperand!");
-  // Not reached
-  return 0;
 }
 
 /// getMemEncoding - Return binary encoding of memory related operand.

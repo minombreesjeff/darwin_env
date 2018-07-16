@@ -1,4 +1,4 @@
-//===- MBlazeDisassembler.cpp - Disassembler for MicroBlaze  ----*- C++ -*-===//
+//===-- MBlazeDisassembler.cpp - Disassembler for MicroBlaze  -------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -492,7 +492,7 @@ static unsigned getOPCODE(uint32_t insn) {
   }
 }
 
-EDInstInfo *MBlazeDisassembler::getEDInfo() const {
+const EDInstInfo *MBlazeDisassembler::getEDInfo() const {
   return instInfoMBlaze;
 }
 

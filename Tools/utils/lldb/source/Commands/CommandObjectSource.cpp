@@ -299,6 +299,7 @@ public:
             SymbolContextList sc_list;
             ConstString name(m_options.symbol_name.c_str());
             bool include_symbols = false;
+            bool include_inlines = true;
             bool append = true;
             size_t num_matches = 0;
             
@@ -307,18 +308,19 @@ public:
                 ModuleList matching_modules;
                 for (unsigned i = 0, e = m_options.modules.size(); i != e; i++)
                 {
-                    FileSpec module_spec(m_options.modules[i].c_str(), false);
-                    if (module_spec)
+                    FileSpec module_file_spec(m_options.modules[i].c_str(), false);
+                    if (module_file_spec)
                     {
+                        ModuleSpec module_spec (module_file_spec);
                         matching_modules.Clear();
-                        target->GetImages().FindModules (&module_spec, NULL, NULL, NULL, matching_modules);
-                        num_matches += matching_modules.FindFunctions (name, eFunctionNameTypeAuto, include_symbols, append, sc_list);
+                        target->GetImages().FindModules (module_spec, matching_modules);
+                        num_matches += matching_modules.FindFunctions (name, eFunctionNameTypeAuto, include_symbols, include_inlines, append, sc_list);
                     }
                 }
             }
             else
             {
-                num_matches = target->GetImages().FindFunctions (name, eFunctionNameTypeAuto, include_symbols, append, sc_list);
+                num_matches = target->GetImages().FindFunctions (name, eFunctionNameTypeAuto, include_symbols, include_inlines, append, sc_list);
             }
             
             SymbolContext sc;
@@ -468,7 +470,7 @@ public:
                     {
                         const bool show_inlines = true;
                         m_breakpoint_locations.Reset (last_file_sp->GetFileSpec(), 0, show_inlines);
-                        SearchFilter target_search_filter (target->GetSP());
+                        SearchFilter target_search_filter (target->shared_from_this());
                         target_search_filter.Search (m_breakpoint_locations);
                     }
                 }
@@ -501,11 +503,12 @@ public:
                 ModuleList matching_modules;
                 for (unsigned i = 0, e = m_options.modules.size(); i != e; i++)
                 {
-                    FileSpec module_spec(m_options.modules[i].c_str(), false);
-                    if (module_spec)
+                    FileSpec module_file_spec(m_options.modules[i].c_str(), false);
+                    if (module_file_spec)
                     {
+                        ModuleSpec module_spec (module_file_spec);
                         matching_modules.Clear();
-                        target->GetImages().FindModules (&module_spec, NULL, NULL, NULL, matching_modules);
+                        target->GetImages().FindModules (module_spec, matching_modules);
                         num_matches += matching_modules.ResolveSymbolContextForFilePath (filename,
                                                                                          0,
                                                                                          check_inlines,
@@ -570,7 +573,7 @@ public:
                     {
                         const bool show_inlines = true;
                         m_breakpoint_locations.Reset (*sc.comp_unit, 0, show_inlines);
-                        SearchFilter target_search_filter (target->GetSP());
+                        SearchFilter target_search_filter (target->shared_from_this());
                         target_search_filter.Search (m_breakpoint_locations);
                     }
                     else

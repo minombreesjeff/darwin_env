@@ -25,56 +25,21 @@ using namespace ento;
 
 typedef llvm::DenseMap<FileID, unsigned> FIDMap;
 
-namespace {
-struct CompareDiagnostics {
-  // Compare if 'X' is "<" than 'Y'.
-  bool operator()(const PathDiagnostic *X, const PathDiagnostic *Y) const {
-    // First compare by location
-    const FullSourceLoc &XLoc = X->getLocation().asLocation();
-    const FullSourceLoc &YLoc = Y->getLocation().asLocation();
-    if (XLoc < YLoc)
-      return true;
-    if (XLoc != YLoc)
-      return false;
-    
-    // Next, compare by bug type.
-    StringRef XBugType = X->getBugType();
-    StringRef YBugType = Y->getBugType();
-    if (XBugType < YBugType)
-      return true;
-    if (XBugType != YBugType)
-      return false;
-    
-    // Next, compare by bug description.
-    StringRef XDesc = X->getDescription();
-    StringRef YDesc = Y->getDescription();
-    if (XDesc < YDesc)
-      return true;
-    if (XDesc != YDesc)
-      return false;
-    
-    // FIXME: Further refine by comparing PathDiagnosticPieces?
-    return false;    
-  }  
-};  
-}
 
 namespace {
   class PlistDiagnostics : public PathDiagnosticConsumer {
-    std::vector<const PathDiagnostic*> BatchedDiags;
     const std::string OutputFile;
     const LangOptions &LangOpts;
-    llvm::OwningPtr<PathDiagnosticConsumer> SubPD;
+    OwningPtr<PathDiagnosticConsumer> SubPD;
     bool flushed;
   public:
     PlistDiagnostics(const std::string& prefix, const LangOptions &LangOpts,
                      PathDiagnosticConsumer *subPD);
 
-    ~PlistDiagnostics() { FlushDiagnostics(NULL); }
+    virtual ~PlistDiagnostics() {}
 
-    void FlushDiagnostics(SmallVectorImpl<std::string> *FilesMade);
-    
-    void HandlePathDiagnosticImpl(const PathDiagnostic* D);
+    void FlushDiagnosticsImpl(std::vector<const PathDiagnostic *> &Diags,
+                              SmallVectorImpl<std::string> *FilesMade);
     
     virtual StringRef getName() const {
       return "PlistDiagnostics";
@@ -275,102 +240,130 @@ static void ReportEvent(raw_ostream &o, const PathDiagnosticPiece& P,
   Indent(o, indent); o << "</dict>\n";
 }
 
+static void ReportPiece(raw_ostream &o,
+                        const PathDiagnosticPiece &P,
+                        const FIDMap& FM, const SourceManager &SM,
+                        const LangOptions &LangOpts,
+                        unsigned indent,
+                        bool includeControlFlow);
+
+static void ReportCall(raw_ostream &o,
+                       const PathDiagnosticCallPiece &P,
+                       const FIDMap& FM, const SourceManager &SM,
+                       const LangOptions &LangOpts,
+                       unsigned indent) {
+  
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece> callEnter =
+    P.getCallEnterEvent();  
+
+  if (callEnter)
+    ReportPiece(o, *callEnter, FM, SM, LangOpts, indent, true);
+
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece> callEnterWithinCaller =
+    P.getCallEnterWithinCallerEvent();
+  
+  if (callEnterWithinCaller)
+    ReportPiece(o, *callEnterWithinCaller, FM, SM, LangOpts, indent, true);
+  
+  for (PathPieces::const_iterator I = P.path.begin(), E = P.path.end();I!=E;++I)
+    ReportPiece(o, **I, FM, SM, LangOpts, indent, true);
+  
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece> callExit =
+    P.getCallExitEvent();
+
+  if (callExit)
+    ReportPiece(o, *callExit, FM, SM, LangOpts, indent, true);
+}
+
 static void ReportMacro(raw_ostream &o,
                         const PathDiagnosticMacroPiece& P,
                         const FIDMap& FM, const SourceManager &SM,
                         const LangOptions &LangOpts,
                         unsigned indent) {
 
-  for (PathDiagnosticMacroPiece::const_iterator I=P.begin(), E=P.end();
+  for (PathPieces::const_iterator I = P.subPieces.begin(), E=P.subPieces.end();
        I!=E; ++I) {
-
-    switch ((*I)->getKind()) {
-    default:
-      break;
-    case PathDiagnosticPiece::Event:
-      ReportEvent(o, cast<PathDiagnosticEventPiece>(**I), FM, SM, LangOpts,
-                  indent);
-      break;
-    case PathDiagnosticPiece::Macro:
-      ReportMacro(o, cast<PathDiagnosticMacroPiece>(**I), FM, SM, LangOpts,
-                  indent);
-      break;
-    }
+    ReportPiece(o, **I, FM, SM, LangOpts, indent, false);
   }
 }
 
 static void ReportDiag(raw_ostream &o, const PathDiagnosticPiece& P,
                        const FIDMap& FM, const SourceManager &SM,
                        const LangOptions &LangOpts) {
+  ReportPiece(o, P, FM, SM, LangOpts, 4, true);
+}
 
-  unsigned indent = 4;
-
+static void ReportPiece(raw_ostream &o,
+                        const PathDiagnosticPiece &P,
+                        const FIDMap& FM, const SourceManager &SM,
+                        const LangOptions &LangOpts,
+                        unsigned indent,
+                        bool includeControlFlow) {
   switch (P.getKind()) {
-  case PathDiagnosticPiece::ControlFlow:
-    ReportControlFlow(o, cast<PathDiagnosticControlFlowPiece>(P), FM, SM,
-                      LangOpts, indent);
-    break;
-  case PathDiagnosticPiece::Event:
-    ReportEvent(o, cast<PathDiagnosticEventPiece>(P), FM, SM, LangOpts,
-                indent);
-    break;
-  case PathDiagnosticPiece::Macro:
-    ReportMacro(o, cast<PathDiagnosticMacroPiece>(P), FM, SM, LangOpts,
-                indent);
-    break;
+    case PathDiagnosticPiece::ControlFlow:
+      if (includeControlFlow)
+        ReportControlFlow(o, cast<PathDiagnosticControlFlowPiece>(P), FM, SM,
+                          LangOpts, indent);
+      break;
+    case PathDiagnosticPiece::Call:
+      ReportCall(o, cast<PathDiagnosticCallPiece>(P), FM, SM, LangOpts,
+                 indent);
+      break;
+    case PathDiagnosticPiece::Event:
+      ReportEvent(o, cast<PathDiagnosticSpotPiece>(P), FM, SM, LangOpts,
+                  indent);
+      break;
+    case PathDiagnosticPiece::Macro:
+      ReportMacro(o, cast<PathDiagnosticMacroPiece>(P), FM, SM, LangOpts,
+                  indent);
+      break;
   }
 }
 
-void PlistDiagnostics::HandlePathDiagnosticImpl(const PathDiagnostic* D) {
-  if (!D)
-    return;
-
-  if (D->empty()) {
-    delete D;
-    return;
-  }
-
-  // We need to flatten the locations (convert Stmt* to locations) because
-  // the referenced statements may be freed by the time the diagnostics
-  // are emitted.
-  const_cast<PathDiagnostic*>(D)->flattenLocations();
-  BatchedDiags.push_back(D);
-}
-
-void PlistDiagnostics::FlushDiagnostics(SmallVectorImpl<std::string>
-                                        *FilesMade) {
-  
-  if (flushed)
-    return;
-  
-  flushed = true;
-  
-  // Sort the diagnostics so that they are always emitted in a deterministic
-  // order.
-  if (!BatchedDiags.empty())
-    std::sort(BatchedDiags.begin(), BatchedDiags.end(), CompareDiagnostics()); 
-
+void PlistDiagnostics::FlushDiagnosticsImpl(
+                                    std::vector<const PathDiagnostic *> &Diags,
+                                    SmallVectorImpl<std::string> *FilesMade) {
   // Build up a set of FIDs that we use by scanning the locations and
   // ranges of the diagnostics.
   FIDMap FM;
   SmallVector<FileID, 10> Fids;
   const SourceManager* SM = 0;
 
-  if (!BatchedDiags.empty())
-    SM = &(*BatchedDiags.begin())->begin()->getLocation().getManager();
+  if (!Diags.empty())
+    SM = &(*(*Diags.begin())->path.begin())->getLocation().getManager();
 
-  for (std::vector<const PathDiagnostic*>::iterator DI = BatchedDiags.begin(),
-       DE = BatchedDiags.end(); DI != DE; ++DI) {
+  
+  for (std::vector<const PathDiagnostic*>::iterator DI = Diags.begin(),
+       DE = Diags.end(); DI != DE; ++DI) {
 
     const PathDiagnostic *D = *DI;
 
-    for (PathDiagnostic::const_iterator I=D->begin(), E=D->end(); I!=E; ++I) {
-      AddFID(FM, Fids, SM, I->getLocation().asLocation());
+    llvm::SmallVector<const PathPieces *, 5> WorkList;
+    WorkList.push_back(&D->path);
 
-      for (PathDiagnosticPiece::range_iterator RI=I->ranges_begin(),
-           RE=I->ranges_end(); RI!=RE; ++RI) {
-        AddFID(FM, Fids, SM, RI->getBegin());
-        AddFID(FM, Fids, SM, RI->getEnd());
+    while (!WorkList.empty()) {
+      const PathPieces &path = *WorkList.back();
+      WorkList.pop_back();
+    
+      for (PathPieces::const_iterator I = path.begin(), E = path.end();
+           I!=E; ++I) {
+        const PathDiagnosticPiece *piece = I->getPtr();
+        AddFID(FM, Fids, SM, piece->getLocation().asLocation());
+
+        for (PathDiagnosticPiece::range_iterator RI = piece->ranges_begin(),
+             RE= piece->ranges_end(); RI != RE; ++RI) {
+          AddFID(FM, Fids, SM, RI->getBegin());
+          AddFID(FM, Fids, SM, RI->getEnd());
+        }
+
+        if (const PathDiagnosticCallPiece *call =
+            dyn_cast<PathDiagnosticCallPiece>(piece)) {
+          WorkList.push_back(&call->path);
+        }
+        else if (const PathDiagnosticMacroPiece *macro =
+                 dyn_cast<PathDiagnosticMacroPiece>(piece)) {
+          WorkList.push_back(&macro->subPieces);
+        }
       }
     }
   }
@@ -379,7 +372,7 @@ void PlistDiagnostics::FlushDiagnostics(SmallVectorImpl<std::string>
   std::string ErrMsg;
   llvm::raw_fd_ostream o(OutputFile.c_str(), ErrMsg);
   if (!ErrMsg.empty()) {
-    llvm::errs() << "warning: could not creat file: " << OutputFile << '\n';
+    llvm::errs() << "warning: could not create file: " << OutputFile << '\n';
     return;
   }
 
@@ -406,21 +399,19 @@ void PlistDiagnostics::FlushDiagnostics(SmallVectorImpl<std::string>
        " <key>diagnostics</key>\n"
        " <array>\n";
 
-  for (std::vector<const PathDiagnostic*>::iterator DI=BatchedDiags.begin(),
-       DE = BatchedDiags.end(); DI!=DE; ++DI) {
+  for (std::vector<const PathDiagnostic*>::iterator DI=Diags.begin(),
+       DE = Diags.end(); DI!=DE; ++DI) {
 
     o << "  <dict>\n"
          "   <key>path</key>\n";
 
     const PathDiagnostic *D = *DI;
-    // Create an owning smart pointer for 'D' just so that we auto-free it
-    // when we exit this method.
-    llvm::OwningPtr<PathDiagnostic> OwnedD(const_cast<PathDiagnostic*>(D));
 
     o << "   <array>\n";
 
-    for (PathDiagnostic::const_iterator I=D->begin(), E=D->end(); I != E; ++I)
-      ReportDiag(o, *I, FM, *SM, LangOpts);
+    for (PathPieces::const_iterator I = D->path.begin(), E = D->path.end(); 
+         I != E; ++I)
+      ReportDiag(o, **I, FM, *SM, LangOpts);
 
     o << "   </array>\n";
 
@@ -438,9 +429,10 @@ void PlistDiagnostics::FlushDiagnostics(SmallVectorImpl<std::string>
 
     // Output the diagnostic to the sub-diagnostic client, if any.
     if (SubPD) {
-      SubPD->HandlePathDiagnostic(OwnedD.take());
+      std::vector<const PathDiagnostic *> SubDiags;
+      SubDiags.push_back(D);
       SmallVector<std::string, 1> SubFilesMade;
-      SubPD->FlushDiagnostics(SubFilesMade);
+      SubPD->FlushDiagnosticsImpl(SubDiags, &SubFilesMade);
 
       if (!SubFilesMade.empty()) {
         o << "  <key>" << SubPD->getName() << "_files</key>\n";
@@ -462,6 +454,4 @@ void PlistDiagnostics::FlushDiagnostics(SmallVectorImpl<std::string>
   
   if (FilesMade)
     FilesMade->push_back(OutputFile);
-  
-  BatchedDiags.clear();
 }

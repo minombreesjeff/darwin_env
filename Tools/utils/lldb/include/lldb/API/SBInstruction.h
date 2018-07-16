@@ -28,10 +28,8 @@ public:
 
     SBInstruction (const SBInstruction &rhs);
     
-#ifndef SWIG
     const SBInstruction &
     operator = (const SBInstruction &rhs);
-#endif
 
     ~SBInstruction ();
 
@@ -40,6 +38,9 @@ public:
 
     SBAddress
     GetAddress();
+    
+    lldb::AddressClass
+    GetAddressClass ();
     
     const char *
     GetMnemonic (lldb::SBTarget target);
@@ -69,7 +70,7 @@ public:
     EmulateWithFrame (lldb::SBFrame &frame, uint32_t evaluate_options);
 
     bool
-    DumpEmulation (const char * triple); // triple is to specify the architecture, e.g. 'armv6' or 'arm-apple-darwin'
+    DumpEmulation (const char * triple); // triple is to specify the architecture, e.g. 'armv6' or 'armv7-apple-ios'
     
     bool
     TestEmulation (lldb::SBStream &output_stream, const char *test_file);

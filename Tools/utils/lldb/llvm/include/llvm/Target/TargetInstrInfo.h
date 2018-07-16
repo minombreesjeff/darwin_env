@@ -15,6 +15,7 @@
 #define LLVM_TARGET_TARGETINSTRINFO_H
 
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/CodeGen/DFAPacketizer.h"
 #include "llvm/CodeGen/MachineFunction.h"
 
 namespace llvm {
@@ -278,8 +279,7 @@ public:
   /// This is only invoked in cases where AnalyzeBranch returns success. It
   /// returns the number of instructions that were removed.
   virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const {
-    assert(0 && "Target didn't implement TargetInstrInfo::RemoveBranch!");
-    return 0;
+    llvm_unreachable("Target didn't implement TargetInstrInfo::RemoveBranch!");
   }
 
   /// InsertBranch - Insert branch code into the end of the specified
@@ -296,8 +296,7 @@ public:
                                 MachineBasicBlock *FBB,
                                 const SmallVectorImpl<MachineOperand> &Cond,
                                 DebugLoc DL) const {
-    assert(0 && "Target didn't implement TargetInstrInfo::InsertBranch!");
-    return 0;
+    llvm_unreachable("Target didn't implement TargetInstrInfo::InsertBranch!");
   }
 
   /// ReplaceTailWithBranchTo - Delete the instruction OldInst and everything
@@ -353,12 +352,28 @@ public:
     return false;
   }
 
+  /// isProfitableToUnpredicate - Return true if it's profitable to unpredicate
+  /// one side of a 'diamond', i.e. two sides of if-else predicated on mutually
+  /// exclusive predicates.
+  /// e.g.
+  ///   subeq  r0, r1, #1
+  ///   addne  r0, r1, #1
+  /// =>
+  ///   sub    r0, r1, #1
+  ///   addne  r0, r1, #1
+  ///
+  /// This may be profitable is conditional instructions are always executed.
+  virtual bool isProfitableToUnpredicate(MachineBasicBlock &TMBB,
+                                         MachineBasicBlock &FMBB) const {
+    return false;
+  }
+
   /// copyPhysReg - Emit instructions to copy a pair of physical registers.
   virtual void copyPhysReg(MachineBasicBlock &MBB,
                            MachineBasicBlock::iterator MI, DebugLoc DL,
                            unsigned DestReg, unsigned SrcReg,
                            bool KillSrc) const {
-    assert(0 && "Target didn't implement TargetInstrInfo::copyPhysReg!");
+    llvm_unreachable("Target didn't implement TargetInstrInfo::copyPhysReg!");
   }
 
   /// storeRegToStackSlot - Store the specified register of the given register
@@ -371,7 +386,8 @@ public:
                                    unsigned SrcReg, bool isKill, int FrameIndex,
                                    const TargetRegisterClass *RC,
                                    const TargetRegisterInfo *TRI) const {
-  assert(0 && "Target didn't implement TargetInstrInfo::storeRegToStackSlot!");
+    llvm_unreachable("Target didn't implement "
+                     "TargetInstrInfo::storeRegToStackSlot!");
   }
 
   /// loadRegFromStackSlot - Load the specified register of the given register
@@ -383,7 +399,8 @@ public:
                                     unsigned DestReg, int FrameIndex,
                                     const TargetRegisterClass *RC,
                                     const TargetRegisterInfo *TRI) const {
-  assert(0 && "Target didn't implement TargetInstrInfo::loadRegFromStackSlot!");
+    llvm_unreachable("Target didn't implement "
+                     "TargetInstrInfo::loadRegFromStackSlot!");
   }
 
   /// expandPostRAPseudo - This function is called for all pseudo instructions
@@ -646,7 +663,7 @@ public:
 
   virtual int getOperandLatency(const InstrItineraryData *ItinData,
                                 SDNode *DefNode, unsigned DefIdx,
-                                SDNode *UseNode, unsigned UseIdx) const;
+                                SDNode *UseNode, unsigned UseIdx) const = 0;
 
   /// getOutputLatency - Compute and return the output dependency latency of a
   /// a given pair of defs which both target the same register. This is usually
@@ -665,7 +682,7 @@ public:
                               unsigned *PredCost = 0) const;
 
   virtual int getInstrLatency(const InstrItineraryData *ItinData,
-                              SDNode *Node) const;
+                              SDNode *Node) const = 0;
 
   /// isHighLatencyDef - Return true if this opcode has high latency to its
   /// result.
@@ -795,6 +812,12 @@ public:
   breakPartialRegDependency(MachineBasicBlock::iterator MI, unsigned OpNum,
                             const TargetRegisterInfo *TRI) const {}
 
+  /// Create machine specific model for scheduling.
+  virtual DFAPacketizer*
+    CreateTargetScheduleState(const TargetMachine*, const ScheduleDAG*) const {
+    return NULL;
+  }
+
 private:
   int CallFrameSetupOpcode, CallFrameDestroyOpcode;
 };
@@ -839,6 +862,13 @@ public:
   virtual bool isSchedulingBoundary(const MachineInstr *MI,
                                     const MachineBasicBlock *MBB,
                                     const MachineFunction &MF) const;
+  using TargetInstrInfo::getOperandLatency;
+  virtual int getOperandLatency(const InstrItineraryData *ItinData,
+                                SDNode *DefNode, unsigned DefIdx,
+                                SDNode *UseNode, unsigned UseIdx) const;
+  using TargetInstrInfo::getInstrLatency;
+  virtual int getInstrLatency(const InstrItineraryData *ItinData,
+                              SDNode *Node) const;
 
   bool usePreRAHazardRecognizer() const;
 

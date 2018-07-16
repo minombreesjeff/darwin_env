@@ -37,6 +37,7 @@
 #include "lldb/Expression/IRDynamicChecks.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/ReadWriteLock.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Target/ExecutionContextScope.h"
@@ -54,7 +55,7 @@ class ProcessInstanceSettings : public InstanceSettings
 {
 public:
 
-    ProcessInstanceSettings (UserSettingsController &owner, bool live_instance = true, const char *name = NULL);
+    ProcessInstanceSettings (const lldb::UserSettingsControllerSP &owner_sp, bool live_instance = true, const char *name = NULL);
   
     ProcessInstanceSettings (const ProcessInstanceSettings &rhs);
 
@@ -165,17 +166,14 @@ public:
             m_executable = exe_file;
             if (add_exe_file_as_first_arg)
             {
-                m_arguments.Clear();
                 char filename[PATH_MAX];
                 if (exe_file.GetPath(filename, sizeof(filename)))
-                    m_arguments.AppendArgument (filename);
+                    m_arguments.InsertArgumentAtIndex (0, filename);
             }
         }
         else
         {
             m_executable.Clear();
-            if (add_exe_file_as_first_arg)
-                m_arguments.Clear();
         }
     }
 
@@ -523,12 +521,12 @@ public:
         m_monitor_callback_baton (NULL),
         m_monitor_signals (false)
     {
-        if (stderr_path)
+        if (stdin_path)
         {
             ProcessLaunchInfo::FileAction file_action;
             const bool read = true;
-            const bool write = true;
-            if (file_action.Open(STDERR_FILENO, stderr_path, read, write))
+            const bool write = false;
+            if (file_action.Open(STDIN_FILENO, stdin_path, read, write))
                 AppendFileAction (file_action);
         }
         if (stdout_path)
@@ -539,12 +537,12 @@ public:
             if (file_action.Open(STDOUT_FILENO, stdout_path, read, write))
                 AppendFileAction (file_action);
         }
-        if (stdin_path)
+        if (stderr_path)
         {
             ProcessLaunchInfo::FileAction file_action;
-            const bool read = true;
-            const bool write = false;
-            if (file_action.Open(STDIN_FILENO, stdin_path, read, write))
+            const bool read = false;
+            const bool write = true;
+            if (file_action.Open(STDERR_FILENO, stderr_path, read, write))
                 AppendFileAction (file_action);
         }
         if (working_directory)
@@ -570,7 +568,7 @@ public:
     }
 
     bool
-    AppendDuplciateFileAction (int fd, int dup_fd)
+    AppendDuplicateFileAction (int fd, int dup_fd)
     {
         FileAction file_action;
         if (file_action.Duplicate (fd, dup_fd))
@@ -721,6 +719,22 @@ public:
     {
         m_resume_count = c;
     }
+    
+    bool
+    GetLaunchInSeparateProcessGroup ()
+    {
+        return m_flags.Test(lldb::eLaunchFlagLaunchInSeparateProcessGroup);
+    }
+    
+    void
+    SetLaunchInSeparateProcessGroup (bool separate)
+    {
+        if (separate)
+            m_flags.Set(lldb::eLaunchFlagLaunchInSeparateProcessGroup);
+        else
+            m_flags.Clear (lldb::eLaunchFlagLaunchInSeparateProcessGroup);
+
+    }
 
     void
     Clear ()
@@ -735,7 +749,10 @@ public:
     }
 
     bool
-    ConvertArgumentsForLaunchingInShell (Error &error, bool localhost);
+    ConvertArgumentsForLaunchingInShell (Error &error,
+                                         bool localhost,
+                                         bool will_debug,
+                                         bool first_arg_is_full_shell_command);
     
     void
     SetMonitorProcessCallback (Host::MonitorChildProcessCallback callback, 
@@ -778,6 +795,7 @@ protected:
     Host::MonitorChildProcessCallback m_monitor_callback;
     void *m_monitor_callback_baton;
     bool m_monitor_signals;
+
 };
 
 //----------------------------------------------------------------------
@@ -793,7 +811,8 @@ public:
         ProcessInstanceInfo(),
         m_plugin_name (),
         m_resume_count (0),
-        m_wait_for_launch (false)
+        m_wait_for_launch (false),
+        m_continue_once_attached (false)
     {
     }
 
@@ -801,7 +820,8 @@ public:
         ProcessInstanceInfo(),
         m_plugin_name (),
         m_resume_count (0),
-        m_wait_for_launch (false)
+        m_wait_for_launch (false),
+        m_continue_once_attached (false)
     {
         ProcessInfo::operator= (launch_info);
         SetProcessPluginName (launch_info.GetProcessPluginName());
@@ -818,6 +838,18 @@ public:
     SetWaitForLaunch (bool b)
     {
         m_wait_for_launch = b;
+    }
+
+    bool
+    GetContinueOnceAttached () const
+    {
+        return m_continue_once_attached;
+    }
+    
+    void
+    SetContinueOnceAttached (bool b)
+    {
+        m_continue_once_attached = b;
     }
 
     uint32_t
@@ -873,6 +905,7 @@ protected:
     std::string m_plugin_name;
     uint32_t m_resume_count; // How many times do we resume after launching
     bool m_wait_for_launch;
+    bool m_continue_once_attached; // Supports the use-case scenario of immediately continuing the process once attached.
 };
 
 class ProcessLaunchCommandOptions : public Options
@@ -925,13 +958,13 @@ class ProcessInstanceInfoMatch
 public:
     ProcessInstanceInfoMatch () :
         m_match_info (),
-        m_name_match_type (lldb_private::eNameMatchIgnore),
+        m_name_match_type (eNameMatchIgnore),
         m_match_all_users (false)
     {
     }
 
     ProcessInstanceInfoMatch (const char *process_name, 
-                              lldb_private::NameMatchType process_name_match_type) :
+                              NameMatchType process_name_match_type) :
         m_match_info (),
         m_name_match_type (process_name_match_type),
         m_match_all_users (false)
@@ -963,14 +996,14 @@ public:
         m_match_all_users = b;
     }
 
-    lldb_private::NameMatchType 
+    NameMatchType
     GetNameMatchType () const
     {
         return m_name_match_type;
     }
 
     void
-    SetNameMatchType (lldb_private::NameMatchType name_match_type)
+    SetNameMatchType (NameMatchType name_match_type)
     {
         m_name_match_type = name_match_type;
     }
@@ -988,7 +1021,7 @@ public:
 
 protected:
     ProcessInstanceInfo m_match_info;
-    lldb_private::NameMatchType m_name_match_type;
+    NameMatchType m_name_match_type;
     bool m_match_all_users;
 };
 
@@ -1263,7 +1296,7 @@ protected:
 /// @brief A plug-in interface definition class for debugging a process.
 //----------------------------------------------------------------------
 class Process :
-    public ReferenceCountedBaseVirtual<Process>,
+    public STD_ENABLE_SHARED_FROM_THIS(Process),
     public UserID,
     public Broadcaster,
     public ExecutionContextScope,
@@ -1296,7 +1329,27 @@ public:
         eBroadcastInternalStateControlPause = (1<<1),
         eBroadcastInternalStateControlResume = (1<<2)
     };
-        
+    
+    typedef Range<lldb::addr_t, lldb::addr_t> LoadRange;
+    // We use a read/write lock to allow on or more clients to
+    // access the process state while the process is stopped (reader).
+    // We lock the write lock to control access to the process
+    // while it is running (readers, or clients that want the process
+    // stopped can block waiting for the process to stop, or just
+    // try to lock it to see if they can immediately access the stopped
+    // process. If the try read lock fails, then the process is running.
+    typedef ReadWriteLock::ReadLocker StopLocker;
+    typedef ReadWriteLock::WriteLocker RunLocker;
+
+    // These two functions fill out the Broadcaster interface:
+    
+    static ConstString &GetStaticBroadcasterClass ();
+
+    virtual ConstString &GetBroadcasterClass() const
+    {
+        return GetStaticBroadcasterClass();
+    }
+
     //------------------------------------------------------------------
     /// A notification structure that can be used by clients to listen
     /// for changes in a process's lifetime.
@@ -1479,8 +1532,11 @@ public:
     ///
     /// @see Process::CanDebug ()
     //------------------------------------------------------------------
-    static Process*
-    FindPlugin (Target &target, const char *plugin_name, Listener &listener);
+    static lldb::ProcessSP
+    FindPlugin (Target &target, 
+                const char *plugin_name, 
+                Listener &listener, 
+                const FileSpec *crash_file_path);
 
 
 
@@ -1587,6 +1643,29 @@ public:
     //------------------------------------------------------------------
     virtual Error
     Launch (const ProcessLaunchInfo &launch_info);
+
+    virtual Error
+    LoadCore ();
+
+    virtual Error
+    DoLoadCore ()
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support loading core files.", GetShortPluginName());
+        return error;
+    }
+    
+    //------------------------------------------------------------------
+    /// Get the dynamic loader plug-in for this process. 
+    ///
+    /// The default action is to let the DynamicLoader plug-ins check
+    /// the main executable and the DynamicLoader will select itself
+    /// automatically. Subclasses can override this if inspecting the
+    /// executable is not desired, or if Process subclasses can only
+    /// use a specific DynamicLoader plug-in.
+    //------------------------------------------------------------------
+    virtual DynamicLoader *
+    GetDynamicLoader ();
 
     //------------------------------------------------------------------
     /// Attach to an existing process using the process attach info.
@@ -1722,6 +1801,12 @@ public:
     /// re-enabling breakpoints, and enabling the basic flow control
     /// that the plug-in instances need not worry about.
     ///
+    /// N.B. This function also sets the Write side of the Run Lock,
+    /// which is unset when the corresponding stop event is pulled off
+    /// the Public Event Queue.  If you need to resume the process without
+    /// setting the Run Lock, use PrivateResume (though you should only do
+    /// that from inside the Process class.
+    ///
     /// @return
     ///     Returns an error object.
     ///
@@ -1730,8 +1815,8 @@ public:
     /// @see Thread:Suspend()
     //------------------------------------------------------------------
     Error
-    Resume ();
-
+    Resume();
+    
     //------------------------------------------------------------------
     /// Halts a running process.
     ///
@@ -1844,7 +1929,35 @@ public:
     ///     LLDB_INVALID_PROCESS_ID if attaching fails.
     //------------------------------------------------------------------
     virtual Error
-    DoAttachToProcessWithID (lldb::pid_t pid) = 0;
+    DoAttachToProcessWithID (lldb::pid_t pid)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support attaching to a process by pid", GetShortPluginName());
+        return error;
+    }
+
+    //------------------------------------------------------------------
+    /// Attach to an existing process using a process ID.
+    ///
+    /// @param[in] pid
+    ///     The process ID that we should attempt to attach to.
+    ///
+    /// @param[in] attach_info
+    ///     Information on how to do the attach. For example, GetUserID()
+    ///     will return the uid to attach as.
+    ///
+    /// @return
+    ///     Returns \a pid if attaching was successful, or
+    ///     LLDB_INVALID_PROCESS_ID if attaching fails.
+    /// hanming : need flag
+    //------------------------------------------------------------------
+    virtual Error
+    DoAttachToProcessWithID (lldb::pid_t pid,  const ProcessAttachInfo &attach_info)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support attaching to a process by pid", GetShortPluginName());
+        return error;
+    }
 
     //------------------------------------------------------------------
     /// Attach to an existing process using a partial process name.
@@ -1857,12 +1970,16 @@ public:
     ///     as soon as possible after it does launch. If \b false, then
     ///     search for a matching process the currently exists.
     ///
+    /// @param[in] attach_info
+    ///     Information on how to do the attach. For example, GetUserID()
+    ///     will return the uid to attach as.
+    ///
     /// @return
     ///     Returns \a pid if attaching was successful, or
     ///     LLDB_INVALID_PROCESS_ID if attaching fails.
     //------------------------------------------------------------------
     virtual Error
-    DoAttachToProcessWithName (const char *process_name, bool wait_for_launch) 
+    DoAttachToProcessWithName (const char *process_name, bool wait_for_launch, const ProcessAttachInfo &attach_info) 
     {
         Error error;
         error.SetErrorString("attach by name is not supported");
@@ -1940,7 +2057,13 @@ public:
     //------------------------------------------------------------------
     virtual Error
     DoLaunch (Module *exe_module,
-              const ProcessLaunchInfo &launch_info) = 0;
+              const ProcessLaunchInfo &launch_info)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support launching processes", GetShortPluginName());
+        return error;
+    }
+
     
     //------------------------------------------------------------------
     /// Called after launching a process.
@@ -1983,7 +2106,13 @@ public:
     /// @see Thread:Suspend()
     //------------------------------------------------------------------
     virtual Error
-    DoResume () = 0;
+    DoResume ()
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support resuming processes", GetShortPluginName());
+        return error;
+    }
+
 
     //------------------------------------------------------------------
     /// Called after resuming a process.
@@ -2026,7 +2155,13 @@ public:
     ///     otherwise.
     //------------------------------------------------------------------
     virtual Error
-    DoHalt (bool &caused_stop) = 0;
+    DoHalt (bool &caused_stop)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support halting processes", GetShortPluginName());
+        return error;
+    }
+
 
     //------------------------------------------------------------------
     /// Called after halting a process.
@@ -2060,7 +2195,13 @@ public:
     ///     false otherwise.
     //------------------------------------------------------------------
     virtual Error
-    DoDetach () = 0;
+    DoDetach ()
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support detaching from processes", GetShortPluginName());
+        return error;
+    }
+
 
     //------------------------------------------------------------------
     /// Called after detaching from a process.
@@ -2092,9 +2233,12 @@ public:
     ///     Returns an error object.
     //------------------------------------------------------------------
     virtual Error
-    DoSignal (int signal) = 0;
-
-
+    DoSignal (int signal)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support senging signals to processes", GetShortPluginName());
+        return error;
+    }
 
     virtual Error
     WillDestroy () { return Error(); }
@@ -2114,7 +2258,6 @@ public:
     //------------------------------------------------------------------
     virtual void
     DidSignal () {}
-
 
     //------------------------------------------------------------------
     /// Currently called as part of ShouldStop.
@@ -2158,6 +2301,18 @@ public:
         return m_target;
     }
 
+    //------------------------------------------------------------------
+    /// Flush all data in the process.
+    ///
+    /// Flush the memory caches, all threads, and any other cached data
+    /// in the process.
+    ///
+    /// This function can be called after a world changing event like
+    /// adding a new symbol file, or after the process makes a large
+    /// context switch (from boot ROM to booted into an OS).
+    //------------------------------------------------------------------
+    void
+    Flush ();
 
     //------------------------------------------------------------------
     /// Get accessor for the current process state.
@@ -2199,6 +2354,16 @@ protected:
 
     lldb::StateType
     GetPrivateState ();
+
+    //------------------------------------------------------------------
+    /// The "private" side of resuming a process.  This doesn't alter the
+    /// state of m_run_lock, but just causes the process to resume.
+    ///
+    /// @return
+    ///     An Error object describing the success or failure of the resume.
+    //------------------------------------------------------------------
+    Error
+    PrivateResume ();
 
     //------------------------------------------------------------------
     // Called internally
@@ -2355,7 +2520,7 @@ public:
     ///     vm_addr, \a buf, and \a size updated appropriately. Zero is
     ///     returned to indicate an error.
     //------------------------------------------------------------------
-    size_t
+    virtual size_t
     ReadMemory (lldb::addr_t vm_addr, 
                 void *buf, 
                 size_t size,
@@ -2374,6 +2539,11 @@ public:
     ReadCStringFromMemory (lldb::addr_t vm_addr, 
                            char *cstr, 
                            size_t cstr_max_len,
+                           Error &error);
+
+    size_t
+    ReadCStringFromMemory (lldb::addr_t vm_addr,
+                           std::string &out_str,
                            Error &error);
 
     size_t
@@ -2445,7 +2615,12 @@ public:
     ///     The number of bytes that were actually written.
     //------------------------------------------------------------------
     virtual size_t
-    DoWriteMemory (lldb::addr_t vm_addr, const void *buf, size_t size, Error &error) = 0;
+    DoWriteMemory (lldb::addr_t vm_addr, const void *buf, size_t size, Error &error)
+    {
+        error.SetErrorStringWithFormat("error: %s does not support writing to processes", GetShortPluginName());
+        return 0;
+    }
+
 
     //------------------------------------------------------------------
     /// Write all or part of a scalar value to memory.
@@ -2537,7 +2712,12 @@ public:
     //------------------------------------------------------------------
 
     virtual lldb::addr_t
-    DoAllocateMemory (size_t size, uint32_t permissions, Error &error) = 0;
+    DoAllocateMemory (size_t size, uint32_t permissions, Error &error)
+    {
+        error.SetErrorStringWithFormat("error: %s does not support allocating in the debug process", GetShortPluginName());
+        return LLDB_INVALID_ADDRESS;
+    }
+
 
     //------------------------------------------------------------------
     /// The public interface to allocating memory in the process.
@@ -2573,6 +2753,20 @@ public:
         error.SetErrorString ("Process::GetMemoryRegionInfo() not supported");
         return error;
     }
+
+    virtual Error
+    GetWatchpointSupportInfo (uint32_t &num)
+    {
+        Error error;
+        error.SetErrorString ("Process::GetWatchpointSupportInfo() not supported");
+        return error;
+    }
+
+    lldb::ModuleSP
+    ReadModuleFromMemory (const FileSpec& file_spec, 
+                          lldb::addr_t header_addr,
+                          bool add_image_to_target,
+                          bool load_sections_in_target);
 
     //------------------------------------------------------------------
     /// Attempt to get the attributes for a region of memory in the process.
@@ -2656,7 +2850,13 @@ public:
     //------------------------------------------------------------------
 
     virtual Error
-    DoDeallocateMemory (lldb::addr_t ptr) = 0;
+    DoDeallocateMemory (lldb::addr_t ptr)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support deallocating in the debug process", GetShortPluginName());
+        return error;
+    }
+
 
     //------------------------------------------------------------------
     /// The public interface to deallocating memory in the process.
@@ -2737,10 +2937,22 @@ public:
     GetSoftwareBreakpointTrapOpcode (BreakpointSite* bp_site);
 
     virtual Error
-    EnableBreakpoint (BreakpointSite *bp_site) = 0;
+    EnableBreakpoint (BreakpointSite *bp_site)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support enabling breakpoints", GetShortPluginName());
+        return error;
+    }
+
 
     virtual Error
-    DisableBreakpoint (BreakpointSite *bp_site) = 0;
+    DisableBreakpoint (BreakpointSite *bp_site)
+    {
+        Error error;
+        error.SetErrorStringWithFormat("error: %s does not support disabling breakpoints", GetShortPluginName());
+        return error;
+    }
+
 
     // This is implemented completely using the lldb::Process API. Subclasses
     // don't need to implement this function unless the standard flow of
@@ -2769,7 +2981,7 @@ public:
     ClearBreakpointSiteByID (lldb::user_id_t break_id);
 
     lldb::break_id_t
-    CreateBreakpointSite (lldb::BreakpointLocationSP &owner,
+    CreateBreakpointSite (const lldb::BreakpointLocationSP &owner,
                           bool use_hardware);
 
     Error
@@ -2801,7 +3013,7 @@ public:
     //------------------------------------------------------------------
     // Thread Queries
     //------------------------------------------------------------------
-    virtual uint32_t
+    virtual bool
     UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list) = 0;
 
     void
@@ -2899,12 +3111,6 @@ public:
     const lldb::ABISP &
     GetABI ();
 
-    DynamicLoader *
-    GetDynamicLoader ()
-    {
-        return m_dyld_ap.get();
-    }
-
     OperatingSystem *
     GetOperatingSystem ()
     {
@@ -2913,14 +3119,17 @@ public:
     
 
     virtual LanguageRuntime *
-    GetLanguageRuntime (lldb::LanguageType language);
+    GetLanguageRuntime (lldb::LanguageType language, bool retry_if_null = true);
 
     virtual CPPLanguageRuntime *
-    GetCPPLanguageRuntime ();
+    GetCPPLanguageRuntime (bool retry_if_null = true);
 
     virtual ObjCLanguageRuntime *
-    GetObjCLanguageRuntime ();
-
+    GetObjCLanguageRuntime (bool retry_if_null = true);
+    
+    bool
+    IsPossibleDynamicValue (ValueObject& in_value);
+    
     bool
     IsRunning () const;
     
@@ -2970,38 +3179,75 @@ public:
     //------------------------------------------------------------------
     // lldb::ExecutionContextScope pure virtual functions
     //------------------------------------------------------------------
-    virtual Target *
-    CalculateTarget ()
-    {
-        return &m_target;
-    }
-
-    virtual Process *
+    virtual lldb::TargetSP
+    CalculateTarget ();
+    
+    virtual lldb::ProcessSP
     CalculateProcess ()
     {
-        return this;
+        return shared_from_this();
     }
-
-    virtual Thread *
+    
+    virtual lldb::ThreadSP
     CalculateThread ()
     {
-        return NULL;
+        return lldb::ThreadSP();
     }
-
-    virtual StackFrame *
+    
+    virtual lldb::StackFrameSP
     CalculateStackFrame ()
     {
-        return NULL;
+        return lldb::StackFrameSP();
     }
 
     virtual void
     CalculateExecutionContext (ExecutionContext &exe_ctx);
     
-    lldb::ProcessSP
-    GetSP ();
-    
     void
     SetSTDIOFileDescriptor (int file_descriptor);
+
+    //------------------------------------------------------------------
+    // Add a permanent region of memory that should never be read or 
+    // written to. This can be used to ensure that memory reads or writes
+    // to certain areas of memory never end up being sent to the 
+    // DoReadMemory or DoWriteMemory functions which can improve 
+    // performance.
+    //------------------------------------------------------------------
+    void
+    AddInvalidMemoryRegion (const LoadRange &region);
+    
+    //------------------------------------------------------------------
+    // Remove a permanent region of memory that should never be read or 
+    // written to that was previously added with AddInvalidMemoryRegion.
+    //------------------------------------------------------------------
+    bool
+    RemoveInvalidMemoryRange (const LoadRange &region);
+    
+    //------------------------------------------------------------------
+    // If the setup code of a thread plan needs to do work that might involve 
+    // calling a function in the target, it should not do that work directly
+    // in one of the thread plan functions (DidPush/WillResume) because
+    // such work needs to be handled carefully.  Instead, put that work in
+    // a PreResumeAction callback, and register it with the process.  It will
+    // get done before the actual "DoResume" gets called.
+    //------------------------------------------------------------------
+    
+    typedef bool (PreResumeActionCallback)(void *);
+
+    void
+    AddPreResumeAction (PreResumeActionCallback callback, void *baton);
+    
+    bool
+    RunPreResumeActions ();
+    
+    void
+    ClearPreResumeActions ();
+                              
+    ReadWriteLock &
+    GetRunLock ()
+    {
+        return m_run_lock;
+    }
 
 protected:
     //------------------------------------------------------------------
@@ -3033,7 +3279,7 @@ protected:
         }
         
         virtual EventActionResult PerformAction (lldb::EventSP &event_sp) = 0;
-        virtual void HandleBeingUnshipped () {};
+        virtual void HandleBeingUnshipped () {}
         virtual EventActionResult HandleBeingInterrupted () = 0;
         virtual const char *GetExitString() = 0;
     protected:
@@ -3080,9 +3326,25 @@ protected:
     bool
     PrivateStateThreadIsValid () const
     {
-        return m_private_state_thread != LLDB_INVALID_HOST_THREAD;
+        return IS_VALID_LLDB_HOST_THREAD(m_private_state_thread);
     }
 
+    //------------------------------------------------------------------
+    // Type definitions
+    //------------------------------------------------------------------
+    typedef std::map<lldb::LanguageType, lldb::LanguageRuntimeSP> LanguageRuntimeCollection;
+
+    struct PreResumeCallbackAndBaton
+    {
+        bool (*callback) (void *);
+        void *baton;
+        PreResumeCallbackAndBaton (PreResumeActionCallback in_callback, void *in_baton) :
+            callback (in_callback),
+            baton (in_baton)
+        {
+        }
+    };
+    
     //------------------------------------------------------------------
     // Member variables
     //------------------------------------------------------------------
@@ -3094,7 +3356,7 @@ protected:
     Listener                    m_private_state_listener;     // This is the listener for the private state thread.
     Predicate<bool>             m_private_state_control_wait; /// This Predicate is used to signal that a control operation is complete.
     lldb::thread_t              m_private_state_thread;  // Thread ID for the thread that watches interal state events
-    ProcessModID                m_mod_id;              ///< Tracks the state of the process over stops and other alterations.
+    ProcessModID                m_mod_id;               ///< Tracks the state of the process over stops and other alterations.
     uint32_t                    m_thread_index_id;      ///< Each thread is created with a 1 based index that won't get re-used.
     int                         m_exit_status;          ///< The exit status of the process, or -1 if not set.
     std::string                 m_exit_string;          ///< A textual description of why a process exited.
@@ -3102,25 +3364,25 @@ protected:
     std::vector<Notifications>  m_notifications;        ///< The list of notifications that this process can deliver.
     std::vector<lldb::addr_t>   m_image_tokens;
     Listener                    &m_listener;
-    BreakpointSiteList          m_breakpoint_site_list; ///< This is the list of breakpoint locations we intend
-                                                        ///< to insert in the target.
+    BreakpointSiteList          m_breakpoint_site_list; ///< This is the list of breakpoint locations we intend to insert in the target.
     std::auto_ptr<DynamicLoader> m_dyld_ap;
-    std::auto_ptr<DynamicCheckerFunctions>  m_dynamic_checkers_ap; ///< The functions used by the expression parser to validate data that expressions use.
-    std::auto_ptr<OperatingSystem>     m_os_ap;
+    std::auto_ptr<DynamicCheckerFunctions> m_dynamic_checkers_ap; ///< The functions used by the expression parser to validate data that expressions use.
+    std::auto_ptr<OperatingSystem> m_os_ap;
     UnixSignals                 m_unix_signals;         /// This is the current signal set for this process.
     lldb::ABISP                 m_abi_sp;
     lldb::InputReaderSP         m_process_input_reader;
-    lldb_private::Communication m_stdio_communication;
-    lldb_private::Mutex         m_stdio_communication_mutex;
+    Communication 				m_stdio_communication;
+    Mutex        				m_stdio_communication_mutex;
     std::string                 m_stdout_data;
     std::string                 m_stderr_data;
     MemoryCache                 m_memory_cache;
     AllocatedMemoryCache        m_allocated_memory_cache;
     bool                        m_should_detach;   /// Should we detach if the process object goes away with an explicit call to Kill or Detach?
-
-    typedef std::map<lldb::LanguageType, lldb::LanguageRuntimeSP> LanguageRuntimeCollection; 
-    LanguageRuntimeCollection m_language_runtimes;
+    LanguageRuntimeCollection 	m_language_runtimes;
     std::auto_ptr<NextEventAction> m_next_event_action_ap;
+    std::vector<PreResumeCallbackAndBaton> m_pre_resume_actions;
+    ReadWriteLock               m_run_lock;
+    Predicate<bool>             m_currently_handling_event;
 
     enum {
         eCanJITDontKnow= 0,
@@ -3141,7 +3403,7 @@ protected:
     SetPrivateState (lldb::StateType state);
 
     bool
-    StartPrivateStateThread ();
+    StartPrivateStateThread (bool force = false);
 
     void
     StopPrivateStateThread ();

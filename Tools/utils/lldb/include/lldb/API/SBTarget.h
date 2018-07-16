@@ -20,7 +20,203 @@
 
 namespace lldb {
 
-class SBBreakpoint;
+class SBLaunchInfo
+{
+public:
+    SBLaunchInfo (const char **argv);
+    
+    ~SBLaunchInfo();
+
+    uint32_t
+    GetUserID();
+    
+    uint32_t
+    GetGroupID();
+    
+    bool
+    UserIDIsValid ();
+    
+    bool
+    GroupIDIsValid ();
+    
+    void
+    SetUserID (uint32_t uid);
+    
+    void
+    SetGroupID (uint32_t gid);
+    
+    uint32_t
+    GetNumArguments ();
+    
+    const char *
+    GetArgumentAtIndex (uint32_t idx);
+    
+    void
+    SetArguments (const char **argv, bool append);
+    
+    uint32_t
+    GetNumEnvironmentEntries ();
+    
+    const char *
+    GetEnvironmentEntryAtIndex (uint32_t idx);
+    
+    void
+    SetEnvironmentEntries (const char **envp, bool append);
+    
+    void
+    Clear ();
+    
+    const char *
+    GetWorkingDirectory () const;
+    
+    void
+    SetWorkingDirectory (const char *working_dir);
+    
+    uint32_t
+    GetLaunchFlags ();
+    
+    void
+    SetLaunchFlags (uint32_t flags);
+    
+    const char *
+    GetProcessPluginName ();
+    
+    void
+    SetProcessPluginName (const char *plugin_name);
+    
+    const char *
+    GetShell ();
+    
+    void
+    SetShell (const char * path);
+    
+    uint32_t
+    GetResumeCount ();
+    
+    void
+    SetResumeCount (uint32_t c);
+    
+    bool
+    AddCloseFileAction (int fd);
+    
+    bool
+    AddDuplicateFileAction (int fd, int dup_fd);
+    
+    bool
+    AddOpenFileAction (int fd, const char *path, bool read, bool write);
+    
+    bool
+    AddSuppressFileAction (int fd, bool read, bool write);
+    
+protected:
+    friend class SBTarget;
+    
+    lldb_private::ProcessLaunchInfo &
+    ref ();
+
+    ProcessLaunchInfoSP m_opaque_sp;
+};
+
+class SBAttachInfo
+{
+public:
+    SBAttachInfo ();
+    
+    SBAttachInfo (lldb::pid_t pid);
+    
+    SBAttachInfo (const char *path, bool wait_for);
+    
+    SBAttachInfo (const SBAttachInfo &rhs);
+    
+    ~SBAttachInfo();
+
+    SBAttachInfo &
+    operator = (const SBAttachInfo &rhs);
+    
+    lldb::pid_t
+    GetProcessID ();
+    
+    void
+    SetProcessID (lldb::pid_t pid);
+    
+    void
+    SetExecutable (const char *path);
+    
+    void
+    SetExecutable (lldb::SBFileSpec exe_file);
+    
+    bool
+    GetWaitForLaunch ();
+    
+    void
+    SetWaitForLaunch (bool b);
+    
+    uint32_t
+    GetResumeCount ();
+    
+    void
+    SetResumeCount (uint32_t c);
+    
+    const char *
+    GetProcessPluginName ();
+    
+    void
+    SetProcessPluginName (const char *plugin_name);
+    
+    uint32_t
+    GetUserID();
+    
+    uint32_t
+    GetGroupID();
+    
+    bool
+    UserIDIsValid ();
+    
+    bool
+    GroupIDIsValid ();
+    
+    void
+    SetUserID (uint32_t uid);
+    
+    void
+    SetGroupID (uint32_t gid);
+    
+    uint32_t
+    GetEffectiveUserID();
+    
+    uint32_t
+    GetEffectiveGroupID();
+    
+    bool
+    EffectiveUserIDIsValid ();
+    
+    bool
+    EffectiveGroupIDIsValid ();
+    
+    void
+    SetEffectiveUserID (uint32_t uid);
+    
+    void
+    SetEffectiveGroupID (uint32_t gid);
+    
+    lldb::pid_t
+    GetParentProcessID ();
+    
+    void
+    SetParentProcessID (lldb::pid_t pid);
+    
+    bool
+    ParentProcessIDIsValid();
+    
+    
+protected:
+    friend class SBTarget;
+
+    lldb_private::ProcessAttachInfo &
+    ref ();
+    
+    ProcessAttachInfoSP m_opaque_sp;
+};
 
 class SBTarget
 {
@@ -42,10 +238,8 @@ public:
 
     SBTarget (const lldb::SBTarget& rhs);
 
-#ifndef SWIG
     const lldb::SBTarget&
     operator = (const lldb::SBTarget& rhs);
-#endif
 
     //------------------------------------------------------------------
     // Destructor
@@ -54,6 +248,9 @@ public:
 
     bool
     IsValid() const;
+    
+    static const char *
+    GetBroadcasterClassName ();
 
     lldb::SBProcess
     GetProcess ();
@@ -153,11 +350,17 @@ public:
     /// @return
     ///      A process object for the newly created process.
     //------------------------------------------------------------------
-    lldb::SBProcess
+    SBProcess
     LaunchSimple (const char **argv, 
                   const char **envp,
                   const char *working_directory);
     
+    SBProcess
+    Launch (SBLaunchInfo &launch_info, SBError& error);
+
+    SBProcess
+    Attach (SBAttachInfo &attach_info, SBError& error);
+
     //------------------------------------------------------------------
     /// Attach to process with pid.
     ///
@@ -254,6 +457,11 @@ public:
                const char *triple,
                const char *uuid);
 
+    lldb::SBModule
+    AddModule (const char *path,
+               const char *triple,
+               const char *uuid_cstr,
+               const char *symfile);
     uint32_t
     GetNumModules () const;
 
@@ -268,6 +476,15 @@ public:
 
     lldb::SBModule
     FindModule (const lldb::SBFileSpec &file_spec);
+
+    lldb::ByteOrder
+    GetByteOrder ();
+
+    uint32_t
+    GetAddressByteSize();
+
+    const char *
+    GetTriple ();
 
     //------------------------------------------------------------------
     /// Set the base load address for a module section.
@@ -352,22 +569,13 @@ public:
     ///     C++ methods, or ObjC selectors. 
     ///     See FunctionNameType for more details.
     ///
-    /// @param[in] append
-    ///     If true, any matches will be appended to \a sc_list, else
-    ///     matches replace the contents of \a sc_list.
-    ///
-    /// @param[out] sc_list
-    ///     A symbol context list that gets filled in with all of the
-    ///     matches.
-    ///
     /// @return
-    ///     The number of matches added to \a sc_list.
+    ///     A lldb::SBSymbolContextList that gets filled in with all of 
+    ///     the symbol contexts for all the matches.
     //------------------------------------------------------------------
-    uint32_t
+    lldb::SBSymbolContextList
     FindFunctions (const char *name, 
-                   uint32_t name_type_mask, // Logical OR one or more FunctionNameType enum bits
-                   bool append, 
-                   lldb::SBSymbolContextList& sc_list);
+                   uint32_t name_type_mask = lldb::eFunctionNameTypeAny);
 
     //------------------------------------------------------------------
     /// Find global and static variables by name.
@@ -418,6 +626,13 @@ public:
                             const SBFileSpecList &comp_unit_list);
 
     lldb::SBBreakpoint
+    BreakpointCreateByNames (const char *symbol_name[],
+                             uint32_t num_names,
+                             uint32_t name_type_mask,           // Logical OR one or more FunctionNameType enum bits
+                             const SBFileSpecList &module_list,
+                             const SBFileSpecList &comp_unit_list);
+
+    lldb::SBBreakpoint
     BreakpointCreateByRegex (const char *symbol_name_regex, const char *module_name = NULL);
     
     lldb::SBBreakpoint
@@ -434,6 +649,11 @@ public:
     BreakpointCreateBySourceRegex (const char *source_regex, 
                                    const SBFileSpecList &module_list, 
                                    const lldb::SBFileSpecList &source_file);
+    
+    lldb::SBBreakpoint
+    BreakpointCreateForException  (lldb::LanguageType language,
+                                   bool catch_bp,
+                                   bool throw_bp);
 
     lldb::SBBreakpoint
     BreakpointCreateByAddress (addr_t address);
@@ -472,7 +692,7 @@ public:
     FindWatchpointByID (lldb::watch_id_t watch_id);
 
     lldb::SBWatchpoint
-    WatchAddress (lldb::addr_t addr, size_t size, bool read, bool write);
+    WatchAddress (lldb::addr_t addr, size_t size, bool read, bool write, SBError& error);
 
     bool
     EnableAllWatchpoints ();
@@ -496,25 +716,26 @@ public:
     GetSourceManager();
     
     lldb::SBInstructionList
+    ReadInstructions (lldb::SBAddress base_addr, uint32_t count);
+
+    lldb::SBInstructionList
     GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
     
     lldb::SBInstructionList
     GetInstructions (lldb::addr_t base_addr, const void *buf, size_t size);
 
-#ifndef SWIG
     bool
     operator == (const lldb::SBTarget &rhs) const;
 
     bool
     operator != (const lldb::SBTarget &rhs) const;
 
-#endif
-
     bool
     GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
 
 protected:
     friend class SBAddress;
+    friend class SBBlock;
     friend class SBDebugger;
     friend class SBFunction;
     friend class SBInstruction;
@@ -531,17 +752,12 @@ protected:
 
     SBTarget (const lldb::TargetSP& target_sp);
 
+    lldb::TargetSP
+    GetSP () const;
+
     void
-    reset (const lldb::TargetSP& target_sp);
+    SetSP (const lldb::TargetSP& target_sp);
 
-    lldb_private::Target *
-    operator ->() const;
-
-    lldb_private::Target *
-    get() const;
-
-    const lldb::TargetSP &
-    get_sp () const;
 
 private:
     //------------------------------------------------------------------

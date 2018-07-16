@@ -17,7 +17,6 @@
 #include "llvm/Use.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
-#include <string>
 
 namespace llvm {
 
@@ -194,6 +193,8 @@ public:
     BlockAddressVal,          // This is an instance of BlockAddress
     ConstantExprVal,          // This is an instance of ConstantExpr
     ConstantAggregateZeroVal, // This is an instance of ConstantAggregateZero
+    ConstantDataArrayVal,     // This is an instance of ConstantDataArray
+    ConstantDataVectorVal,    // This is an instance of ConstantDataVector
     ConstantIntVal,           // This is an instance of ConstantInt
     ConstantFPVal,            // This is an instance of ConstantFP
     ConstantArrayVal,         // This is an instance of ConstantArray

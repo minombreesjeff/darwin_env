@@ -43,7 +43,7 @@ ValueObjectRegisterContext::~ValueObjectRegisterContext()
 }
 
 lldb::clang_type_t
-ValueObjectRegisterContext::GetClangType ()
+ValueObjectRegisterContext::GetClangTypeImpl ()
 {
     return NULL;
 }
@@ -51,8 +51,13 @@ ValueObjectRegisterContext::GetClangType ()
 ConstString
 ValueObjectRegisterContext::GetTypeName()
 {
-    ConstString empty_type_name;
-    return empty_type_name;
+    return ConstString();
+}
+
+ConstString
+ValueObjectRegisterContext::GetQualifiedTypeName()
+{
+    return ConstString();
 }
 
 uint32_t
@@ -62,7 +67,7 @@ ValueObjectRegisterContext::CalculateNumChildren()
 }
 
 clang::ASTContext *
-ValueObjectRegisterContext::GetClangAST ()
+ValueObjectRegisterContext::GetClangASTImpl ()
 {
     return NULL;
 }
@@ -77,8 +82,8 @@ bool
 ValueObjectRegisterContext::UpdateValue ()
 {
     m_error.Clear();
-    ExecutionContextScope *exe_scope = GetExecutionContextScope();
-    StackFrame *frame = exe_scope->CalculateStackFrame();
+    ExecutionContext exe_ctx(GetExecutionContextRef());
+    StackFrame *frame = exe_ctx.GetFramePtr();
     if (frame)
         m_reg_ctx_sp = frame->GetRegisterContext();
     else
@@ -102,7 +107,10 @@ ValueObjectRegisterContext::CreateChildAtIndex (uint32_t idx, bool synthetic_arr
     
     const uint32_t num_children = GetNumChildren();
     if (idx < num_children)
-        new_valobj = new ValueObjectRegisterSet(GetExecutionContextScope(), m_reg_ctx_sp, idx);
+    {
+        ExecutionContext exe_ctx(GetExecutionContextRef());
+        new_valobj = new ValueObjectRegisterSet(exe_ctx.GetBestExecutionContextScope(), m_reg_ctx_sp, idx);
+    }
     
     return new_valobj;
 }
@@ -137,13 +145,19 @@ ValueObjectRegisterSet::~ValueObjectRegisterSet()
 }
 
 lldb::clang_type_t
-ValueObjectRegisterSet::GetClangType ()
+ValueObjectRegisterSet::GetClangTypeImpl ()
 {
     return NULL;
 }
 
 ConstString
 ValueObjectRegisterSet::GetTypeName()
+{
+    return ConstString();
+}
+
+ConstString
+ValueObjectRegisterSet::GetQualifiedTypeName()
 {
     return ConstString();
 }
@@ -158,7 +172,7 @@ ValueObjectRegisterSet::CalculateNumChildren()
 }
 
 clang::ASTContext *
-ValueObjectRegisterSet::GetClangAST ()
+ValueObjectRegisterSet::GetClangASTImpl ()
 {
     return NULL;
 }
@@ -174,8 +188,8 @@ ValueObjectRegisterSet::UpdateValue ()
 {
     m_error.Clear();
     SetValueDidChange (false);
-    ExecutionContextScope *exe_scope = GetExecutionContextScope();
-    StackFrame *frame = exe_scope->CalculateStackFrame();
+    ExecutionContext exe_ctx(GetExecutionContextRef());
+    StackFrame *frame = exe_ctx.GetFramePtr();
     if (frame == NULL)
         m_reg_ctx_sp.reset();
     else
@@ -201,7 +215,7 @@ ValueObjectRegisterSet::UpdateValue ()
     {
         SetValueIsValid (false);
         m_error.SetErrorToGenericError ();
-        m_children.clear();
+        m_children.Clear();
     }
     return m_error.Success();
 }
@@ -300,14 +314,15 @@ ValueObjectRegister::~ValueObjectRegister()
 }
 
 lldb::clang_type_t
-ValueObjectRegister::GetClangType ()
+ValueObjectRegister::GetClangTypeImpl ()
 {
     if (m_clang_type == NULL)
     {
-        Process *process = m_reg_ctx_sp->CalculateProcess ();
-        if (process)
+        ExecutionContext exe_ctx (GetExecutionContextRef());
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target)
         {
-            Module *exe_module = process->GetTarget().GetExecutableModulePointer();
+            Module *exe_module = target->GetExecutableModulePointer();
             if (exe_module)
             {
                 m_clang_type = exe_module->GetClangASTContext().GetBuiltinTypeForEncodingAndBitSize (m_reg_info.encoding, 
@@ -322,7 +337,7 @@ ConstString
 ValueObjectRegister::GetTypeName()
 {
     if (m_type_name.IsEmpty())
-        m_type_name = ClangASTType::GetConstTypeName (GetClangType());
+        m_type_name = ClangASTType::GetConstTypeName (GetClangAST(), GetClangType());
     return m_type_name;
 }
 
@@ -333,12 +348,13 @@ ValueObjectRegister::CalculateNumChildren()
 }
 
 clang::ASTContext *
-ValueObjectRegister::GetClangAST ()
+ValueObjectRegister::GetClangASTImpl ()
 {
-    Process *process = m_reg_ctx_sp->CalculateProcess ();
-    if (process)
+    ExecutionContext exe_ctx (GetExecutionContextRef());
+    Target *target = exe_ctx.GetTargetPtr();
+    if (target)
     {
-        Module *exe_module = process->GetTarget().GetExecutableModulePointer();
+        Module *exe_module = target->GetExecutableModulePointer();
         if (exe_module)
             return exe_module->GetClangASTContext().getASTContext();
     }
@@ -355,8 +371,8 @@ bool
 ValueObjectRegister::UpdateValue ()
 {
     m_error.Clear();
-    ExecutionContextScope *exe_scope = GetExecutionContextScope();
-    StackFrame *frame = exe_scope->CalculateStackFrame();
+    ExecutionContext exe_ctx(GetExecutionContextRef());
+    StackFrame *frame = exe_ctx.GetFramePtr();
     if (frame == NULL)
     {
         m_reg_ctx_sp.reset();
@@ -370,7 +386,9 @@ ValueObjectRegister::UpdateValue ()
         {
             if (m_reg_value.GetData (m_data))
             {
-                m_data.SetAddressByteSize(m_reg_ctx_sp->GetThread().GetProcess().GetAddressByteSize());
+                Process *process = exe_ctx.GetProcessPtr();
+                if (process)
+                    m_data.SetAddressByteSize(process->GetAddressByteSize());
                 m_value.SetContext(Value::eContextTypeRegisterInfo, (void *)&m_reg_info);
                 m_value.SetValueType(Value::eValueTypeHostAddress);
                 m_value.GetScalar() = (uintptr_t)m_data.GetDataStart();
@@ -386,10 +404,10 @@ ValueObjectRegister::UpdateValue ()
 }
 
 bool
-ValueObjectRegister::SetValueFromCString (const char *value_str)
+ValueObjectRegister::SetValueFromCString (const char *value_str, Error& error)
 {
     // The new value will be in the m_data.  Copy that into our register value.
-    Error error = m_reg_value.SetValueFromCString (&m_reg_info, value_str); 
+    error = m_reg_value.SetValueFromCString (&m_reg_info, value_str);
     if (error.Success())
     {
         if (m_reg_ctx_sp->WriteRegister (&m_reg_info, m_reg_value))

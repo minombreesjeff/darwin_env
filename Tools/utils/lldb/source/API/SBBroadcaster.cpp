@@ -9,7 +9,6 @@
 
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Log.h"
-#include "lldb/lldb-forward-rtti.h"
 
 #include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBListener.h"
@@ -26,7 +25,7 @@ SBBroadcaster::SBBroadcaster () :
 }
 
 SBBroadcaster::SBBroadcaster (const char *name) :
-    m_opaque_sp (new Broadcaster (name)),
+    m_opaque_sp (new Broadcaster (NULL, name)),
     m_opaque_ptr (NULL)
 {
     m_opaque_ptr = m_opaque_sp.get();

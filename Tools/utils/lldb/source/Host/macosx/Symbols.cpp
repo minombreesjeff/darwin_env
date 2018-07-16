@@ -21,9 +21,11 @@
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/DataBuffer.h"
 #include "lldb/Core/DataExtractor.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/UUID.h"
 #include "lldb/Host/Endian.h"
+#include "lldb/Host/Host.h"
 #include "lldb/Utility/CleanUp.h"
 #include "Host/macosx/cfcpp/CFCBundle.h"
 #include "Host/macosx/cfcpp/CFCReleaser.h"
@@ -116,7 +118,18 @@ SkinnyMachOFileContainsArchAndUUID
         if (cmd == LoadCommandUUID)
         {
             lldb_private::UUID file_uuid (data.GetData(&data_offset, 16), 16);
-            return file_uuid == *uuid;
+            if (file_uuid == *uuid)
+                return true;
+
+            // Emit some warning messages since the UUIDs do not match!
+            char path_buf[PATH_MAX];
+            path_buf[0] = '\0';
+            const char *path = file_spec.GetPath(path_buf, PATH_MAX) ? path_buf
+                                                                     : file_spec.GetFilename().AsCString();
+            Host::SystemLog (Host::eSystemLogWarning, 
+                             "warning: UUID mismatch detected between binary and:\n\t'%s'\n", 
+                             path);
+            return false;
         }
         data_offset = cmd_offset + cmd_size;
     }
@@ -274,9 +287,7 @@ LocateDSYMMachFileInDSYMBundle
 static int
 LocateMacOSXFilesUsingDebugSymbols
 (
-    const FileSpec *exec_fspec, // An executable path that may or may not be correct if UUID is specified
-    const ArchSpec* arch,       // Limit the search to files with this architecture if non-NULL
-    const lldb_private::UUID *uuid,           // Match the UUID value if non-NULL,
+    const ModuleSpec &module_spec,
     FileSpec *out_exec_fspec,   // If non-NULL, try and find the executable
     FileSpec *out_dsym_fspec    // If non-NULL try and find the debug symbol file
 )
@@ -290,6 +301,9 @@ LocateMacOSXFilesUsingDebugSymbols
         out_dsym_fspec->Clear();
 
 #if !defined (__arm__) // No DebugSymbols on the iOS devices
+
+    const UUID *uuid = module_spec.GetUUIDPtr();
+    const ArchSpec *arch = module_spec.GetArchitecturePtr();
 
     if (uuid && uuid->IsValid())
     {
@@ -318,7 +332,7 @@ LocateMacOSXFilesUsingDebugSymbols
             if (module_uuid_ref.get())
             {
                 CFCReleaser<CFURLRef> exec_url;
-
+                const FileSpec *exec_fspec = module_spec.GetFileSpecPtr();
                 if (exec_fspec)
                 {
                     char exec_cf_path[PATH_MAX];
@@ -353,26 +367,49 @@ LocateMacOSXFilesUsingDebugSymbols
                         }
                     }
 
-                    if (out_exec_fspec)
+                    CFCReleaser<CFDictionaryRef> dict(::DBGCopyDSYMPropertyLists (dsym_url.get()));
+                    CFDictionaryRef uuid_dict = NULL;
+                    if (dict.get())
                     {
-                        CFCReleaser<CFDictionaryRef> dict(::DBGCopyDSYMPropertyLists (dsym_url.get()));;
-                        if (dict.get())
+                        char uuid_cstr_buf[64];
+                        const char *uuid_cstr = uuid->GetAsCString (uuid_cstr_buf, sizeof(uuid_cstr_buf));
+                        CFCString uuid_cfstr (uuid_cstr);
+                        CFDictionaryRef uuid_dict = static_cast<CFDictionaryRef>(::CFDictionaryGetValue (dict.get(), uuid_cfstr.get()));
+                        if (uuid_dict)
                         {
-                            char uuid_cstr_buf[64];
-                            const char *uuid_cstr = uuid->GetAsCString (uuid_cstr_buf, sizeof(uuid_cstr_buf));
-                            CFCString uuid_cfstr (uuid_cstr);
-                            CFDictionaryRef uuid_dict = static_cast<CFDictionaryRef>(::CFDictionaryGetValue (dict.get(), uuid_cfstr.get()));
-                            if (uuid_dict)
+
+                            CFStringRef actual_src_cfpath = static_cast<CFStringRef>(::CFDictionaryGetValue (uuid_dict, CFSTR("DBGSourcePath")));
+                            if (actual_src_cfpath)
                             {
-                                CFStringRef exec_cf_path = static_cast<CFStringRef>(::CFDictionaryGetValue (uuid_dict, CFSTR("DBGSymbolRichExecutable")));
-                                if (exec_cf_path && ::CFStringGetFileSystemRepresentation (exec_cf_path, path, sizeof(path)))
+                                CFStringRef build_src_cfpath = static_cast<CFStringRef>(::CFDictionaryGetValue (uuid_dict, CFSTR("DBGBuildSourcePath")));
+                                if (build_src_cfpath)
                                 {
-                                    ++items_found;
-                                    out_exec_fspec->SetFile(path, path[0] == '~');
+                                    char actual_src_path[PATH_MAX];
+                                    char build_src_path[PATH_MAX];
+                                    ::CFStringGetFileSystemRepresentation (actual_src_cfpath, actual_src_path, sizeof(actual_src_path));
+                                    ::CFStringGetFileSystemRepresentation (build_src_cfpath, build_src_path, sizeof(build_src_path));
+                                    module_spec.GetSourceMappingList().Append (ConstString(build_src_path), ConstString(actual_src_path), true);
                                 }
                             }
                         }
-                        else
+                    }
+
+                    if (out_exec_fspec)
+                    {
+                        bool success = false;
+                        if (uuid_dict)
+                        {
+                            CFStringRef exec_cf_path = static_cast<CFStringRef>(::CFDictionaryGetValue (uuid_dict, CFSTR("DBGSymbolRichExecutable")));
+                            if (exec_cf_path && ::CFStringGetFileSystemRepresentation (exec_cf_path, path, sizeof(path)))
+                            {
+                                ++items_found;
+                                out_exec_fspec->SetFile(path, path[0] == '~');
+                                if (out_exec_fspec->Exists())
+                                    success = true;
+                            }
+                        }
+
+                        if (!success)
                         {
                             // No dictionary, check near the dSYM bundle for an executable that matches...
                             if (::CFURLGetFileSystemRepresentation (dsym_url.get(), true, (UInt8*)path, sizeof(path)-1))
@@ -434,8 +471,9 @@ LocateMacOSXFilesUsingDebugSymbols
 }
 
 static bool
-LocateDSYMInVincinityOfExecutable (const FileSpec *exec_fspec, const ArchSpec* arch, const lldb_private::UUID *uuid, FileSpec &dsym_fspec)
+LocateDSYMInVincinityOfExecutable (const ModuleSpec &module_spec, FileSpec &dsym_fspec)
 {
+    const FileSpec *exec_fspec = module_spec.GetFileSpecPtr();
     if (exec_fspec)
     {
         char path[PATH_MAX];
@@ -445,12 +483,12 @@ LocateDSYMInVincinityOfExecutable (const FileSpec *exec_fspec, const ArchSpec* a
             if (strcasestr(path, ".dSYM/Contents/Resources/DWARF") == NULL)
             {
                 size_t obj_file_path_length = strlen(path);
-                strncat(path, ".dSYM/Contents/Resources/DWARF/", sizeof(path));
-                strncat(path, exec_fspec->GetFilename().AsCString(), sizeof(path));
+                strlcat(path, ".dSYM/Contents/Resources/DWARF/", sizeof(path));
+                strlcat(path, exec_fspec->GetFilename().AsCString(), sizeof(path));
 
                 dsym_fspec.SetFile(path, false);
 
-                if (dsym_fspec.Exists() && FileAtPathContainsArchAndUUID (dsym_fspec, arch, uuid))
+                if (dsym_fspec.Exists() && FileAtPathContainsArchAndUUID (dsym_fspec, module_spec.GetArchitecturePtr(), module_spec.GetUUIDPtr()))
                 {
                     return true;
                 }
@@ -465,10 +503,10 @@ LocateDSYMInVincinityOfExecutable (const FileSpec *exec_fspec, const ArchSpec* a
                         if (next_slash != NULL)
                         {
                             *next_slash = '\0';
-                            strncat(path, ".dSYM/Contents/Resources/DWARF/", sizeof(path));
-                            strncat(path, exec_fspec->GetFilename().AsCString(), sizeof(path));
+                            strlcat(path, ".dSYM/Contents/Resources/DWARF/", sizeof(path));
+                            strlcat(path, exec_fspec->GetFilename().AsCString(), sizeof(path));
                             dsym_fspec.SetFile(path, false);
-                            if (dsym_fspec.Exists() && FileAtPathContainsArchAndUUID (dsym_fspec, arch, uuid))
+                            if (dsym_fspec.Exists() && FileAtPathContainsArchAndUUID (dsym_fspec, module_spec.GetArchitecturePtr(), module_spec.GetUUIDPtr()))
                                 return true;
                             else
                             {
@@ -494,8 +532,11 @@ LocateDSYMInVincinityOfExecutable (const FileSpec *exec_fspec, const ArchSpec* a
 }
 
 FileSpec
-Symbols::LocateExecutableObjectFile (const FileSpec *exec_fspec, const ArchSpec* arch, const lldb_private::UUID *uuid)
+Symbols::LocateExecutableObjectFile (const ModuleSpec &module_spec)
 {
+    const FileSpec *exec_fspec = module_spec.GetFileSpecPtr();
+    const ArchSpec *arch = module_spec.GetArchitecturePtr();
+    const UUID *uuid = module_spec.GetUUIDPtr();
     Timer scoped_timer (__PRETTY_FUNCTION__,
                         "LocateExecutableObjectFile (file = %s, arch = %s, uuid = %p)",
                         exec_fspec ? exec_fspec->GetFilename().AsCString ("<NULL>") : "<NULL>",
@@ -503,16 +544,20 @@ Symbols::LocateExecutableObjectFile (const FileSpec *exec_fspec, const ArchSpec*
                         uuid);
 
     FileSpec objfile_fspec;
-    if (exec_fspec && FileAtPathContainsArchAndUUID (*exec_fspec, arch, uuid))
-        objfile_fspec = *exec_fspec;
+    if (exec_fspec && FileAtPathContainsArchAndUUID (exec_fspec, arch, uuid))
+        objfile_fspec = exec_fspec;
     else
-        LocateMacOSXFilesUsingDebugSymbols (exec_fspec, arch, uuid, &objfile_fspec, NULL);
+        LocateMacOSXFilesUsingDebugSymbols (module_spec, &objfile_fspec, NULL);
     return objfile_fspec;
 }
 
 FileSpec
-Symbols::LocateExecutableSymbolFile (const FileSpec *exec_fspec, const ArchSpec* arch, const lldb_private::UUID *uuid)
+Symbols::LocateExecutableSymbolFile (const ModuleSpec &module_spec)
 {
+    const FileSpec *exec_fspec = module_spec.GetFileSpecPtr();
+    const ArchSpec *arch = module_spec.GetArchitecturePtr();
+    const UUID *uuid = module_spec.GetUUIDPtr();
+
     Timer scoped_timer (__PRETTY_FUNCTION__,
                         "LocateExecutableSymbolFile (file = %s, arch = %s, uuid = %p)",
                         exec_fspec ? exec_fspec->GetFilename().AsCString ("<NULL>") : "<NULL>",
@@ -522,10 +567,10 @@ Symbols::LocateExecutableSymbolFile (const FileSpec *exec_fspec, const ArchSpec*
     FileSpec symbol_fspec;
     // First try and find the dSYM in the same directory as the executable or in
     // an appropriate parent directory
-    if (LocateDSYMInVincinityOfExecutable (exec_fspec, arch, uuid, symbol_fspec) == false)
+    if (LocateDSYMInVincinityOfExecutable (module_spec, symbol_fspec) == false)
     {
         // We failed to easily find the dSYM above, so use DebugSymbols
-        LocateMacOSXFilesUsingDebugSymbols (exec_fspec, arch, uuid, NULL, &symbol_fspec);
+        LocateMacOSXFilesUsingDebugSymbols (module_spec, NULL, &symbol_fspec);
     }
     return symbol_fspec;
 }

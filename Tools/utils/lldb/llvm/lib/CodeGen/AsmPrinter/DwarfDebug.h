@@ -31,6 +31,8 @@
 namespace llvm {
 
 class CompileUnit;
+class ConstantInt;
+class ConstantFP;
 class DbgVariable;
 class MachineFrameInfo;
 class MachineModuleInfo;
@@ -242,7 +244,7 @@ class DwarfDebug {
   SmallPtrSet<DIE *, 4> InlinedSubprogramDIEs;
 
   /// InlineInfo - Keep track of inlined functions and their location.  This
-  /// information is used to populate debug_inlined section.
+  /// information is used to populate the debug_inlined section.
   typedef std::pair<const MCSymbol *, DIE *> InlineInfoLabels;
   DenseMap<const MDNode *, SmallVector<InlineInfoLabels, 4> > InlineInfo;
   SmallVector<const MDNode *, 4> InlinedSPNodes;

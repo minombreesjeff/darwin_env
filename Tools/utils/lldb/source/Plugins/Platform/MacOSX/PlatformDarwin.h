@@ -30,7 +30,15 @@ public:
     virtual lldb_private::Error
     ResolveExecutable (const lldb_private::FileSpec &exe_file,
                        const lldb_private::ArchSpec &arch,
-                       lldb::ModuleSP &module_sp);
+                       lldb::ModuleSP &module_sp,
+                       const lldb_private::FileSpecList *module_search_paths_ptr);
+
+    virtual lldb_private::Error
+    GetSharedModule (const lldb_private::ModuleSpec &module_spec,
+                     lldb::ModuleSP &module_sp,
+                     const lldb_private::FileSpecList *module_search_paths_ptr,
+                     lldb::ModuleSP *old_module_sp_ptr,
+                     bool *did_create_ptr);
 
     virtual size_t
     GetSoftwareBreakpointTrapOpcode (lldb_private::Target &target, 
@@ -71,6 +79,9 @@ public:
     GetProcessInfo (lldb::pid_t pid, 
                     lldb_private::ProcessInstanceInfo &proc_info);
     
+    virtual lldb::BreakpointSP
+    SetThreadCreationBreakpoint (lldb_private::Target &target);
+
     virtual uint32_t
     FindProcesses (const lldb_private::ProcessInstanceInfoMatch &match_info,
                    lldb_private::ProcessInstanceInfoList &process_infos);
@@ -88,10 +99,18 @@ public:
     virtual bool
     ModuleIsExcludedForNonModuleSpecificSearches (lldb_private::Target &target, const lldb::ModuleSP &module_sp);
                 
-    bool ARMGetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
+    bool
+    ARMGetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
+    
+    bool 
+    x86GetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
 
 protected:
     lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote darwin OS
+    std::string m_developer_directory;
+    
+    const char *
+    GetDeveloperDirectory();
 
 private:
     DISALLOW_COPY_AND_ASSIGN (PlatformDarwin);

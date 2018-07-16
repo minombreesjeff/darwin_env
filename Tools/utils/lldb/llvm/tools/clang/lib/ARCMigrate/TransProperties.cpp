@@ -50,7 +50,7 @@ class PropertiesRewriter {
   
   enum PropActionKind {
     PropAction_None,
-    PropAction_RetainRemoved,
+    PropAction_RetainReplacedWithStrong,
     PropAction_AssignRemoved,
     PropAction_AssignRewritten,
     PropAction_MaybeAddWeakOrUnsafe
@@ -161,9 +161,11 @@ private:
     switch (kind) {
     case PropAction_None:
       return;
-    case PropAction_RetainRemoved:
-      removeAttribute("retain", atLoc);
+    case PropAction_RetainReplacedWithStrong: {
+      StringRef toAttr = "strong";
+      MigrateCtx.rewritePropertyAttribute("retain", toAttr, atLoc);
       return;
+    }
     case PropAction_AssignRemoved:
       return removeAssignForDefaultStrong(props, atLoc);
     case PropAction_AssignRewritten:
@@ -193,16 +195,14 @@ private:
 
     if (propAttrs & ObjCPropertyDecl::OBJC_PR_retain) {
       // strong is the default.
-      return doPropAction(PropAction_RetainRemoved, props, atLoc);
+      return doPropAction(PropAction_RetainReplacedWithStrong, props, atLoc);
     }
 
     bool HasIvarAssignedAPlusOneObject = hasIvarAssignedAPlusOneObject(props);
 
     if (propAttrs & ObjCPropertyDecl::OBJC_PR_assign) {
-      if (HasIvarAssignedAPlusOneObject ||
-          (Pass.isGCMigration() && !hasGCWeak(props, atLoc))) {
+      if (HasIvarAssignedAPlusOneObject)
         return doPropAction(PropAction_AssignRemoved, props, atLoc);
-      }
       return doPropAction(PropAction_AssignRewritten, props, atLoc);
     }
 
@@ -229,19 +229,23 @@ private:
   void rewriteAssign(PropsTy &props, SourceLocation atLoc) const {
     bool canUseWeak = canApplyWeak(Pass.Ctx, getPropertyType(props),
                                   /*AllowOnUnknownClass=*/Pass.isGCMigration());
+    const char *toWhich = 
+      (Pass.isGCMigration() && !hasGCWeak(props, atLoc)) ? "strong" :
+      (canUseWeak ? "weak" : "unsafe_unretained");
 
-    bool rewroteAttr = rewriteAttribute("assign",
-                                     canUseWeak ? "weak" : "unsafe_unretained",
-                                         atLoc);
+    bool rewroteAttr = rewriteAttribute("assign", toWhich, atLoc);
     if (!rewroteAttr)
       canUseWeak = false;
 
     for (PropsTy::iterator I = props.begin(), E = props.end(); I != E; ++I) {
       if (isUserDeclared(I->IvarD)) {
         if (I->IvarD &&
-            I->IvarD->getType().getObjCLifetime() != Qualifiers::OCL_Weak)
-          Pass.TA.insert(I->IvarD->getLocation(),
-                         canUseWeak ? "__weak " : "__unsafe_unretained ");
+            I->IvarD->getType().getObjCLifetime() != Qualifiers::OCL_Weak) {
+          const char *toWhich = 
+            (Pass.isGCMigration() && !hasGCWeak(props, atLoc)) ? "__strong " :
+              (canUseWeak ? "__weak " : "__unsafe_unretained ");
+          Pass.TA.insert(I->IvarD->getLocation(), toWhich);
+        }
       }
       if (I->ImplD)
         Pass.TA.clearDiagnostic(diag::err_arc_assign_property_ownership,

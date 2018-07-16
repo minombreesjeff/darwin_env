@@ -132,11 +132,17 @@ public:
     ID.AddPointer(&x);
   }
 
+  
   virtual PathDiagnosticPiece *VisitNode(const ExplodedNode *N,
                                          const ExplodedNode *Prev,
                                          BugReporterContext &BRC,
                                          BugReport &BR);
 
+  PathDiagnosticPiece *VisitNodeImpl(const ExplodedNode *N,
+                                     const ExplodedNode *Prev,
+                                     BugReporterContext &BRC,
+                                     BugReport &BR);
+  
   PathDiagnosticPiece *VisitTerminator(const Stmt *Term,
                                        const ExplodedNode *N,
                                        const CFGBlock *srcBlk,
@@ -159,12 +165,18 @@ public:
                                      const bool tookTrue,
                                      BugReporterContext &BRC,
                                      const LocationContext *LC);
+  
+  PathDiagnosticPiece *VisitConditionVariable(StringRef LhsString,
+                                              const Expr *CondVarExpr,
+                                              const bool tookTrue,
+                                              BugReporterContext &BRC,
+                                              const LocationContext *LC);
 
   bool patternMatch(const Expr *Ex,
                     llvm::raw_ostream &Out,
                     BugReporterContext &BRC);
 };
-
+  
 namespace bugreporter {
 
 BugReporterVisitor *getTrackNullOrUndefValueVisitor(const ExplodedNode *N,

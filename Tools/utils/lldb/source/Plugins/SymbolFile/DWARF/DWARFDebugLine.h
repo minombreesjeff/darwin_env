@@ -68,7 +68,7 @@ public:
         {
         }
 
-        typedef lldb::SharedPtr<Prologue>::Type shared_ptr;
+        typedef STD_SHARED_PTR(Prologue) shared_ptr;
 
         uint32_t    total_length;   // The size in bytes of the statement information for this compilation unit (not including the total_length field itself).
         uint16_t    version;        // Version identifier for the statement information format.
@@ -86,7 +86,7 @@ public:
         uint32_t Length() const { return prologue_length + sizeof(total_length) + sizeof(version) + sizeof(prologue_length); }
         // Length of the line table data in bytes (not including the prologue)
         uint32_t StatementTableLength() const { return total_length + sizeof(total_length) - Length(); }
-        int32_t MaxLineIncrementForSpecialOpcode() const { return line_base + (int8_t)line_range - 1; };
+        int32_t MaxLineIncrementForSpecialOpcode() const { return line_base + (int8_t)line_range - 1; }
         bool IsValid() const;
 //      void Append(BinaryStreamBuf& buff) const;
         void Dump (lldb_private::Log *log);
@@ -135,7 +135,7 @@ public:
     //------------------------------------------------------------------
     struct LineTable
     {
-        typedef lldb::SharedPtr<LineTable>::Type shared_ptr;
+        typedef STD_SHARED_PTR(LineTable) shared_ptr;
 
         LineTable() :
             prologue(),
@@ -196,7 +196,7 @@ public:
 
     static bool DumpOpcodes(lldb_private::Log *log, SymbolFileDWARF* dwarf2Data, dw_offset_t line_offset = DW_INVALID_OFFSET, uint32_t dump_flags = 0);   // If line_offset is invalid, dump everything
     static bool DumpLineTableRows(lldb_private::Log *log, SymbolFileDWARF* dwarf2Data, dw_offset_t line_offset = DW_INVALID_OFFSET);  // If line_offset is invalid, dump everything
-    static bool ParseSupportFiles(const lldb_private::DataExtractor& debug_line_data, const char *cu_comp_dir, dw_offset_t stmt_list, lldb_private::FileSpecList &support_files);
+    static bool ParseSupportFiles(const lldb::ModuleSP &module_sp, const lldb_private::DataExtractor& debug_line_data, const char *cu_comp_dir, dw_offset_t stmt_list, lldb_private::FileSpecList &support_files);
     static bool ParsePrologue(const lldb_private::DataExtractor& debug_line_data, dw_offset_t* offset_ptr, Prologue* prologue);
     static bool ParseStatementTable(const lldb_private::DataExtractor& debug_line_data, dw_offset_t* offset_ptr, State::Callback callback, void* userData);
     static dw_offset_t DumpStatementTable(lldb_private::Log *log, const lldb_private::DataExtractor& debug_line_data, const dw_offset_t line_offset);

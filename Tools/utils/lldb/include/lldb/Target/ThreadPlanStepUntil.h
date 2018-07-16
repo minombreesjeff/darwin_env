@@ -35,12 +35,6 @@ public:
     virtual bool WillStop ();
     virtual bool MischiefManaged ();
 
-    virtual bool
-    IsMasterPlan()
-    {
-        return true;
-    }
-
 protected:
     ThreadPlanStepUntil (Thread &thread,
                          lldb::addr_t *address_list,
@@ -51,7 +45,7 @@ protected:
 
 private:
 
-    uint64_t m_stack_depth;
+    StackID m_stack_id;
     lldb::addr_t m_step_from_insn;
     lldb::break_id_t m_return_bp_id;
     lldb::addr_t m_return_addr;

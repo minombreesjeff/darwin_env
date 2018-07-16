@@ -45,7 +45,8 @@ namespace lldb {
         eLaunchFlagDisableASLR  = (1u << 3),  ///< Disable Address Space Layout Randomization
         eLaunchFlagDisableSTDIO = (1u << 4),  ///< Disable stdio for inferior process (e.g. for a GUI app)
         eLaunchFlagLaunchInTTY  = (1u << 5),  ///< Launch the process in a new TTY if supported by the host 
-        eLaunchFlagLaunchInShell= (1u << 6)   ///< Launch the process inside a shell to get shell expansion
+        eLaunchFlagLaunchInShell= (1u << 6),   ///< Launch the process inside a shell to get shell expansion
+        eLaunchFlagLaunchInSeparateProcessGroup = (1u << 7) ///< Launch the process in a separate process group
     } LaunchFlags;
         
     //----------------------------------------------------------------------
@@ -250,21 +251,21 @@ namespace lldb {
     //------------------------------------------------------------------
     typedef enum SymbolContextItem
     {
-        eSymbolContextTarget     = (1 << 0), ///< Set when \a target is requested from a query, or was located in query results
-        eSymbolContextModule     = (1 << 1), ///< Set when \a module is requested from a query, or was located in query results
-        eSymbolContextCompUnit   = (1 << 2), ///< Set when \a comp_unit is requested from a query, or was located in query results
-        eSymbolContextFunction   = (1 << 3), ///< Set when \a function is requested from a query, or was located in query results
-        eSymbolContextBlock      = (1 << 4), ///< Set when the deepest \a block is requested from a query, or was located in query results
-        eSymbolContextLineEntry  = (1 << 5), ///< Set when \a line_entry is requested from a query, or was located in query results
-        eSymbolContextSymbol     = (1 << 6), ///< Set when \a symbol is requested from a query, or was located in query results
-        eSymbolContextEverything = ((eSymbolContextSymbol << 1) - 1)  ///< Indicates to try and lookup everything up during a query.
+        eSymbolContextTarget     = (1u << 0), ///< Set when \a target is requested from a query, or was located in query results
+        eSymbolContextModule     = (1u << 1), ///< Set when \a module is requested from a query, or was located in query results
+        eSymbolContextCompUnit   = (1u << 2), ///< Set when \a comp_unit is requested from a query, or was located in query results
+        eSymbolContextFunction   = (1u << 3), ///< Set when \a function is requested from a query, or was located in query results
+        eSymbolContextBlock      = (1u << 4), ///< Set when the deepest \a block is requested from a query, or was located in query results
+        eSymbolContextLineEntry  = (1u << 5), ///< Set when \a line_entry is requested from a query, or was located in query results
+        eSymbolContextSymbol     = (1u << 6), ///< Set when \a symbol is requested from a query, or was located in query results
+        eSymbolContextEverything = ((eSymbolContextSymbol << 1) - 1u)  ///< Indicates to try and lookup everything up during a query.
     } SymbolContextItem;
 
     typedef enum Permissions
     {
-        ePermissionsWritable = (1 << 0),
-        ePermissionsReadable = (1 << 1),
-        ePermissionsExecutable = (1 << 2)
+        ePermissionsWritable    = (1u << 0),
+        ePermissionsReadable    = (1u << 1),
+        ePermissionsExecutable  = (1u << 2)
     } Permissions;
 
     typedef enum InputReaderAction
@@ -284,9 +285,15 @@ namespace lldb {
         eBreakpointEventTypeInvalidType         = (1u << 0),
         eBreakpointEventTypeAdded               = (1u << 1),
         eBreakpointEventTypeRemoved             = (1u << 2),
-        eBreakpointEventTypeLocationsAdded      = (1u << 3),
+        eBreakpointEventTypeLocationsAdded      = (1u << 3),  // Locations added doesn't get sent when the breakpoint is created
         eBreakpointEventTypeLocationsRemoved    = (1u << 4),
-        eBreakpointEventTypeLocationsResolved   = (1u << 5)
+        eBreakpointEventTypeLocationsResolved   = (1u << 5),
+        eBreakpointEventTypeEnabled             = (1u << 6),
+        eBreakpointEventTypeDisabled            = (1u << 7),
+        eBreakpointEventTypeCommandChanged      = (1u << 8),
+        eBreakpointEventTypeConditionChanged    = (1u << 9),
+        eBreakpointEventTypeIgnoreChanged       = (1u << 10),
+        eBreakpointEventTypeThreadChanged       = (1u << 11)
     } BreakpointEventType;
 
 
@@ -295,6 +302,8 @@ namespace lldb {
     ///
     /// These enumerations use the same language enumerations as the DWARF
     /// specification for ease of use and consistency.
+    /// The enum -> string code is in LanguageRuntime.cpp, don't change this
+    /// table without updating that code as well.
     //----------------------------------------------------------------------
     typedef enum LanguageType
     {
@@ -327,12 +336,6 @@ namespace lldb {
         eDynamicCanRunTarget    = 1,
         eDynamicDontRunTarget   = 2
     } DynamicValueType;
-    
-    typedef enum SyntheticValueType
-    {
-        eNoSyntheticFilter = false,
-        eUseSyntheticFilter = true
-    } SyntheticValueType;
     
     typedef enum AccessType
     {
@@ -367,6 +370,7 @@ namespace lldb {
         eArgTypeFunctionName,
         eArgTypeGDBFormat,
         eArgTypeIndex,
+        eArgTypeLanguage,
         eArgTypeLineNum,
         eArgTypeLogCategory,
         eArgTypeLogChannel,
@@ -512,7 +516,11 @@ namespace lldb {
         eFunctionNameTypeBase       = (1u << 3),    // The function name only, no namespaces or arguments and no class 
                                                     // methods or selectors will be searched.
         eFunctionNameTypeMethod     = (1u << 4),    // Find function by method name (C++) with no namespace or arguments
-        eFunctionNameTypeSelector   = (1u << 5)     // Find function by selector name (ObjC) names
+        eFunctionNameTypeSelector   = (1u << 5),    // Find function by selector name (ObjC) names
+        eFunctionNameTypeAny        = (eFunctionNameTypeFull     |
+                                       eFunctionNameTypeBase     |
+                                       eFunctionNameTypeMethod   |
+                                       eFunctionNameTypeSelector )
     } FunctionNameType;
     
     
@@ -576,6 +584,69 @@ namespace lldb {
         // Define a mask that can be used for any type when finding types
         eTypeClassAny               = (0xffffffffu)
     }TypeClass;
+
+    typedef enum TemplateArgumentKind
+    {
+        eTemplateArgumentKindNull = 0,
+        eTemplateArgumentKindType,
+        eTemplateArgumentKindDeclaration,
+        eTemplateArgumentKindIntegral,
+        eTemplateArgumentKindTemplate,
+        eTemplateArgumentKindTemplateExpansion,
+        eTemplateArgumentKindExpression,
+        eTemplateArgumentKindPack
+
+    } TemplateArgumentKind;
+
+    //----------------------------------------------------------------------
+    // Options that can be set for a formatter to alter its behavior
+    // Not all of these are applicable to all formatter types
+    //----------------------------------------------------------------------
+    typedef enum TypeOptions
+    {
+        eTypeOptionNone            = (0u),
+        eTypeOptionCascade         = (1u << 0),
+        eTypeOptionSkipPointers    = (1u << 1),
+        eTypeOptionSkipReferences  = (1u << 2),
+        eTypeOptionHideChildren    = (1u << 3),
+        eTypeOptionHideValue       = (1u << 4),
+        eTypeOptionShowOneLiner    = (1u << 5),
+        eTypeOptionHideNames       = (1u << 6)
+    } TypeOptions;
+
+   //----------------------------------------------------------------------
+   // This is the return value for frame comparisons.  When frame A pushes
+   // frame B onto the stack, frame A is OLDER than frame B.
+   //----------------------------------------------------------------------
+   typedef enum FrameComparison
+   {
+       eFrameCompareInvalid,
+       eFrameCompareUnknown,
+       eFrameCompareEqual,
+       eFrameCompareYounger,
+       eFrameCompareOlder
+   } FrameComparison;
+   
+    //----------------------------------------------------------------------
+    // Address Class
+    //
+    // A way of classifying an address used for disassembling and setting 
+    // breakpoints. Many object files can track exactly what parts of their
+    // object files are code, data and other information. This is of course
+    // above and beyond just looking at the section types. For example, code
+    // might contain PC relative data and the object file might be able to
+    // tell us that an address in code is data.
+    //----------------------------------------------------------------------
+    typedef enum AddressClass
+    {
+        eAddressClassInvalid,
+        eAddressClassUnknown,
+        eAddressClassCode,
+        eAddressClassCodeAlternateISA,
+        eAddressClassData,
+        eAddressClassDebug,
+        eAddressClassRuntime
+    } AddressClass;
 
 } // namespace lldb
 

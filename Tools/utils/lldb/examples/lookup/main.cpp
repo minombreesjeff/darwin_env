@@ -10,15 +10,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "lldb/API/SBBlock.h"
-#include "lldb/API/SBCompileUnit.h"
-#include "lldb/API/SBDebugger.h"
-#include "lldb/API/SBFunction.h"
-#include "lldb/API/SBModule.h"
-#include "lldb/API/SBSymbol.h"
-#include "lldb/API/SBTarget.h"
-#include "lldb/API/SBThread.h"
-#include "lldb/API/SBProcess.h"
+#include "LLDB/SBBlock.h"
+#include "LLDB/SBCompileUnit.h"
+#include "LLDB/SBDebugger.h"
+#include "LLDB/SBFunction.h"
+#include "LLDB/SBModule.h"
+#include "LLDB/SBSymbol.h"
+#include "LLDB/SBTarget.h"
+#include "LLDB/SBThread.h"
+#include "LLDB/SBProcess.h"
 
 using namespace lldb;
 
@@ -29,12 +29,32 @@ using namespace lldb;
 // and find all symbol context objects (if any) for that address: 
 // compile unit, function, deepest block, line table entry and the 
 // symbol.
+//
+// To build the program, type (while in this directory):
+//
+//    $ make
+//
+// then (for example):
+//
+//    $ DYLD_FRAMEWORK_PATH=/Volumes/data/lldb/svn/ToT/build/Debug ./a.out executable_path file_address
 //----------------------------------------------------------------------
+class LLDBSentry
+{
+public:
+    LLDBSentry() {
+        // Initialize LLDB
+        SBDebugger::Initialize();
+    }
+    ~LLDBSentry() {
+        // Terminate LLDB
+        SBDebugger::Terminate();
+    }
+};
 int
 main (int argc, char const *argv[])
 {
-    // Initialize LLDB
-    SBDebugger::Initialize();
+    // Use a sentry object to properly initialize/terminate LLDB.
+    LLDBSentry sentry;
 
     if (argc < 3)
         exit (1);
@@ -43,9 +63,6 @@ main (int argc, char const *argv[])
     const char *exe_file_path = argv[1];
     // The second argument in the address that we want to lookup
     lldb::addr_t file_addr = strtoull (argv[2], NULL, 0);
-    
-    // Make a file spec out of our executable path
-    SBFileSpec exe_file_spec (exe_file_path);
     
     // Create a debugger instance so we can create a target
     SBDebugger debugger (SBDebugger::Create());
@@ -57,12 +74,14 @@ main (int argc, char const *argv[])
         if (target.IsValid())
         {
             // Find the executable module so we can do a lookup inside it
+            SBFileSpec exe_file_spec (exe_file_path, true);
             SBModule module (target.FindModule (exe_file_spec));
-            SBAddress addr;
             
             // Take a file virtual address and resolve it to a section offset
             // address that can be used to do a symbol lookup by address
-            if (module.ResolveFileAddress (file_addr, addr))
+            SBAddress addr = module.ResolveFileAddress (file_addr);
+            if (addr.IsValid())
+
             {
                 // We can resolve a section offset address in the module
                 // and only ask for what we need. You can logical or together
@@ -98,8 +117,6 @@ main (int argc, char const *argv[])
         }
     }
 
-    // Terminate LLDB
-    SBDebugger::Terminate();
     return 0;
 }
 

@@ -94,6 +94,9 @@ public:
     // you can't make an instance of this generic runtime.
     
 protected:
+    virtual bool
+    CalculateHasNewLiteralsAndIndexing();
+    
     static bool
     AppleIsModuleObjCLibrary (const lldb::ModuleSP &module_sp);
 
@@ -104,6 +107,8 @@ protected:
     // PluginInterface protocol
     //------------------------------------------------------------------
 public:
+    virtual void
+    SetExceptionBreakpoints();
 
     virtual void
     ClearExceptionBreakpoints ();

@@ -18,14 +18,14 @@
 #import "DNBLog.h"
 #include "MacOSX/CFUtils.h"
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
 #import <SpringBoardServices/SpringBoardServices.h>
 #endif
 
 int
 ListApplications(std::string& plist, bool opt_runningApps, bool opt_debuggable)
 {
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     int result = -1;
 
     CFAllocatorRef alloc = kCFAllocatorDefault;
@@ -36,7 +36,8 @@ ListApplications(std::string& plist, bool opt_runningApps, bool opt_debuggable)
     CFReleaser<CFStringRef> sbsFrontAppID (::SBSCopyFrontmostApplicationDisplayIdentifier ());
     CFReleaser<CFArrayRef> sbsAppIDs (::SBSCopyApplicationDisplayIdentifiers (opt_runningApps, opt_debuggable));
 
-    CFIndex count = ::CFArrayGetCount (sbsAppIDs.get());
+    // Need to check the return value from SBSCopyApplicationDisplayIdentifiers.
+    CFIndex count = sbsAppIDs.get() ? ::CFArrayGetCount (sbsAppIDs.get()) : 0;
     CFIndex i = 0;
     for (i = 0; i < count; i++)
     {
@@ -118,7 +119,7 @@ ListApplications(std::string& plist, bool opt_runningApps, bool opt_debuggable)
 bool
 IsSBProcess (nub_process_t pid)
 {
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     bool opt_runningApps = true;
     bool opt_debuggable = false;
 

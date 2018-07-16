@@ -28,19 +28,13 @@ public:
     ThreadPlanStepOverRange (Thread &thread, 
                              const AddressRange &range, 
                              const SymbolContext &addr_context, 
-                             lldb::RunMode stop_others, 
-                             bool okay_to_discard = false);
+                             lldb::RunMode stop_others);
                              
     virtual ~ThreadPlanStepOverRange ();
 
-    virtual bool PlanExplainsStop ();
     virtual void GetDescription (Stream *s, lldb::DescriptionLevel level);
     virtual bool ShouldStop (Event *event_ptr);
-    virtual bool
-    IsMasterPlan()
-    {
-        return true;
-    }
+    virtual bool PlanExplainsStop ();
 
 protected:
 

@@ -14,31 +14,30 @@
 #include "clang/Driver/ArgList.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
-#include "clang/Driver/HostInfo.h"
 #include "clang/Driver/ObjCRuntime.h"
 #include "clang/Driver/Options.h"
 #include "llvm/Support/ErrorHandling.h"
 using namespace clang::driver;
 using namespace clang;
 
-ToolChain::ToolChain(const HostInfo &H, const llvm::Triple &T)
-  : Host(H), Triple(T) {
+ToolChain::ToolChain(const Driver &D, const llvm::Triple &T)
+  : D(D), Triple(T) {
 }
 
 ToolChain::~ToolChain() {
 }
 
 const Driver &ToolChain::getDriver() const {
- return Host.getDriver();
+ return D;
 }
 
 std::string ToolChain::GetFilePath(const char *Name) const {
-  return Host.getDriver().GetFilePath(Name, *this);
+  return D.GetFilePath(Name, *this);
 
 }
 
 std::string ToolChain::GetProgramPath(const char *Name, bool WantFile) const {
-  return Host.getDriver().GetProgramPath(Name, *this, WantFile);
+  return D.GetProgramPath(Name, *this, WantFile);
 }
 
 types::ID ToolChain::LookupTypeForExtension(const char *Ext) const {
@@ -55,6 +54,7 @@ void ToolChain::configureObjCRuntime(ObjCRuntime &runtime) const {
     // Assume a minimal NeXT runtime.
     runtime.HasARC = false;
     runtime.HasWeak = false;
+    runtime.HasSubscripting = false;
     runtime.HasTerminate = false;
     return;
 
@@ -62,6 +62,7 @@ void ToolChain::configureObjCRuntime(ObjCRuntime &runtime) const {
     // Assume a maximal GNU runtime.
     runtime.HasARC = true;
     runtime.HasWeak = true;
+    runtime.HasSubscripting = false; // to be added
     runtime.HasTerminate = false; // to be added
     return;
   }
@@ -244,6 +245,40 @@ ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
   }
 
   return ToolChain::CST_Libstdcxx;
+}
+
+/// \brief Utility function to add a system include directory to CC1 arguments.
+/*static*/ void ToolChain::addSystemInclude(const ArgList &DriverArgs,
+                                            ArgStringList &CC1Args,
+                                            const Twine &Path) {
+  CC1Args.push_back("-internal-isystem");
+  CC1Args.push_back(DriverArgs.MakeArgString(Path));
+}
+
+/// \brief Utility function to add a system include directory with extern "C"
+/// semantics to CC1 arguments.
+///
+/// Note that this should be used rarely, and only for directories that
+/// historically and for legacy reasons are treated as having implicit extern
+/// "C" semantics. These semantics are *ignored* by and large today, but its
+/// important to preserve the preprocessor changes resulting from the
+/// classification.
+/*static*/ void ToolChain::addExternCSystemInclude(const ArgList &DriverArgs,
+                                                   ArgStringList &CC1Args,
+                                                   const Twine &Path) {
+  CC1Args.push_back("-internal-externc-isystem");
+  CC1Args.push_back(DriverArgs.MakeArgString(Path));
+}
+
+/// \brief Utility function to add a list of system include directories to CC1.
+/*static*/ void ToolChain::addSystemIncludes(const ArgList &DriverArgs,
+                                             ArgStringList &CC1Args,
+                                             ArrayRef<StringRef> Paths) {
+  for (ArrayRef<StringRef>::iterator I = Paths.begin(), E = Paths.end();
+       I != E; ++I) {
+    CC1Args.push_back("-internal-isystem");
+    CC1Args.push_back(DriverArgs.MakeArgString(*I));
+  }
 }
 
 void ToolChain::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,

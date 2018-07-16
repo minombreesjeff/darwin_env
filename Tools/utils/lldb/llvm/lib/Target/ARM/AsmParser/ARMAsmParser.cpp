@@ -44,6 +44,7 @@ enum VectorLaneTy { NoLanes, AllLanes, IndexedLane };
 class ARMAsmParser : public MCTargetAsmParser {
   MCSubtargetInfo &STI;
   MCAsmParser &Parser;
+  const MCRegisterInfo *MRI;
 
   // Map of register aliases registers via the .req directive.
   StringMap<unsigned> RegisterReqs;
@@ -101,6 +102,8 @@ class ARMAsmParser : public MCTargetAsmParser {
   bool parseDirectiveSyntax(SMLoc L);
   bool parseDirectiveReq(StringRef Name, SMLoc L);
   bool parseDirectiveUnreq(SMLoc L);
+  bool parseDirectiveArch(SMLoc L);
+  bool parseDirectiveEabiAttr(SMLoc L);
 
   StringRef splitMnemonic(StringRef Mnemonic, unsigned &PredicationCode,
                           bool &CarrySetting, unsigned &ProcessorIMod,
@@ -234,6 +237,9 @@ public:
     : MCTargetAsmParser(), STI(_STI), Parser(_Parser) {
     MCAsmParserExtension::Initialize(_Parser);
 
+    // Cache the MCRegisterInfo.
+    MRI = &getContext().getRegisterInfo();
+
     // Initialize the set of available features.
     setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
 
@@ -268,7 +274,6 @@ class ARMOperand : public MCParsedAsmOperand {
     k_CoprocReg,
     k_CoprocOption,
     k_Immediate,
-    k_FPImmediate,
     k_MemBarrierOpt,
     k_Memory,
     k_PostIndexRegister,
@@ -336,6 +341,7 @@ class ARMOperand : public MCParsedAsmOperand {
       unsigned RegNum;
       unsigned Count;
       unsigned LaneIndex;
+      bool isDoubleSpaced;
     } VectorList;
 
     struct {
@@ -345,10 +351,6 @@ class ARMOperand : public MCParsedAsmOperand {
     struct {
       const MCExpr *Val;
     } Imm;
-
-    struct {
-      unsigned Val;       // encoded 8-bit representation
-    } FPImm;
 
     /// Combined record for all forms of ARM address expressions.
     struct {
@@ -360,7 +362,7 @@ class ARMOperand : public MCParsedAsmOperand {
       ARM_AM::ShiftOpc ShiftType; // Shift type for OffsetReg
       unsigned ShiftImm;        // shift for OffsetReg.
       unsigned Alignment;       // 0 = no alignment specified
-                                // n = alignment in bytes (8, 16, or 32)
+                                // n = alignment in bytes (2, 4, 8, 16, or 32)
       unsigned isNegative : 1;  // Negated OffsetReg? (~'U' bit)
     } Memory;
 
@@ -435,9 +437,6 @@ public:
     case k_Immediate:
       Imm = o.Imm;
       break;
-    case k_FPImmediate:
-      FPImm = o.FPImm;
-      break;
     case k_MemBarrierOpt:
       MBOpt = o.MBOpt;
       break;
@@ -506,13 +505,8 @@ public:
   }
 
   const MCExpr *getImm() const {
-    assert(Kind == k_Immediate && "Invalid access!");
+    assert(isImm() && "Invalid access!");
     return Imm.Val;
-  }
-
-  unsigned getFPImm() const {
-    assert(Kind == k_FPImmediate && "Invalid access!");
-    return FPImm.Val;
   }
 
   unsigned getVectorIndex() const {
@@ -543,202 +537,197 @@ public:
   bool isITMask() const { return Kind == k_ITCondMask; }
   bool isITCondCode() const { return Kind == k_CondCode; }
   bool isImm() const { return Kind == k_Immediate; }
-  bool isFPImm() const { return Kind == k_FPImmediate; }
+  bool isFPImm() const {
+    if (!isImm()) return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int Val = ARM_AM::getFP32Imm(APInt(32, CE->getValue()));
+    return Val != -1;
+  }
+  bool isFBits16() const {
+    if (!isImm()) return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = CE->getValue();
+    return Value >= 0 && Value <= 16;
+  }
+  bool isFBits32() const {
+    if (!isImm()) return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = CE->getValue();
+    return Value >= 1 && Value <= 32;
+  }
   bool isImm8s4() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ((Value & 3) == 0) && Value >= -1020 && Value <= 1020;
   }
   bool isImm0_1020s4() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ((Value & 3) == 0) && Value >= 0 && Value <= 1020;
   }
   bool isImm0_508s4() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ((Value & 3) == 0) && Value >= 0 && Value <= 508;
   }
   bool isImm0_255() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 256;
   }
   bool isImm0_1() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 2;
   }
   bool isImm0_3() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 4;
   }
   bool isImm0_7() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 8;
   }
   bool isImm0_15() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 16;
   }
   bool isImm0_31() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 32;
   }
   bool isImm0_63() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 64;
   }
   bool isImm8() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value == 8;
   }
   bool isImm16() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value == 16;
   }
   bool isImm32() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value == 32;
   }
   bool isShrImm8() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value <= 8;
   }
   bool isShrImm16() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value <= 16;
   }
   bool isShrImm32() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value <= 32;
   }
   bool isShrImm64() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value <= 64;
   }
   bool isImm1_7() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value < 8;
   }
   bool isImm1_15() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value < 16;
   }
   bool isImm1_31() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value < 32;
   }
   bool isImm1_16() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value < 17;
   }
   bool isImm1_32() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value < 33;
   }
   bool isImm0_32() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 33;
   }
   bool isImm0_65535() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 65536;
   }
   bool isImm0_65535Expr() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     // If it's not a constant expression, it'll generate a fixup and be
     // handled later.
@@ -747,88 +736,77 @@ public:
     return Value >= 0 && Value < 65536;
   }
   bool isImm24bit() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value <= 0xffffff;
   }
   bool isImmThumbSR() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value < 33;
   }
   bool isPKHLSLImm() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 32;
   }
   bool isPKHASRImm() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return Value > 0 && Value <= 32;
   }
   bool isARMSOImm() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ARM_AM::getSOImmVal(Value) != -1;
   }
   bool isARMSOImmNot() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ARM_AM::getSOImmVal(~Value) != -1;
   }
   bool isARMSOImmNeg() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ARM_AM::getSOImmVal(-Value) != -1;
   }
   bool isT2SOImm() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ARM_AM::getT2SOImmVal(Value) != -1;
   }
   bool isT2SOImmNot() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ARM_AM::getT2SOImmVal(~Value) != -1;
   }
   bool isT2SOImmNeg() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
     return ARM_AM::getT2SOImmVal(-Value) != -1;
   }
   bool isSetEndImm() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Value = CE->getValue();
@@ -857,6 +835,17 @@ public:
     return Memory.OffsetRegNum == 0 && Memory.OffsetImm == 0 &&
      (alignOK || Memory.Alignment == 0);
   }
+  bool isMemPCRelImm12() const {
+    if (!isMemory() || Memory.OffsetRegNum != 0 || Memory.Alignment != 0)
+      return false;
+    // Base register must be PC.
+    if (Memory.BaseRegNum != ARM::PC)
+      return false;
+    // Immediate offset in range [-4095, 4095].
+    if (!Memory.OffsetImm) return true;
+    int64_t Val = Memory.OffsetImm->getValue();
+    return (Val > -4096 && Val < 4096) || (Val == INT32_MIN);
+  }
   bool isAlignedMemory() const {
     return isMemNoOffset(true);
   }
@@ -870,8 +859,7 @@ public:
     return Val > -4096 && Val < 4096;
   }
   bool isAM2OffsetImm() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     // Immediate offset in range [-4095, 4095].
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
@@ -879,6 +867,11 @@ public:
     return Val > -4096 && Val < 4096;
   }
   bool isAddrMode3() const {
+    // If we have an immediate that's not a constant, treat it as a label
+    // reference needing a fixup. If it is a constant, it's something else
+    // and we reject it.
+    if (isImm() && !isa<MCConstantExpr>(getImm()))
+      return true;
     if (!isMemory() || Memory.Alignment != 0) return false;
     // No shifts are legal for AM3.
     if (Memory.ShiftType != ARM_AM::no_shift) return false;
@@ -905,7 +898,7 @@ public:
     // If we have an immediate that's not a constant, treat it as a label
     // reference needing a fixup. If it is a constant, it's something else
     // and we reject it.
-    if (Kind == k_Immediate && !isa<MCConstantExpr>(getImm()))
+    if (isImm() && !isa<MCConstantExpr>(getImm()))
       return true;
     if (!isMemory() || Memory.Alignment != 0) return false;
     // Check for register offset.
@@ -991,6 +984,11 @@ public:
     return Val >= 0 && Val <= 1020 && (Val % 4) == 0;
   }
   bool isMemImm8s4Offset() const {
+    // If we have an immediate that's not a constant, treat it as a label
+    // reference needing a fixup. If it is a constant, it's something else
+    // and we reject it.
+    if (isImm() && !isa<MCConstantExpr>(getImm()))
+      return true;
     if (!isMemory() || Memory.OffsetRegNum != 0 || Memory.Alignment != 0)
       return false;
     // Immediate offset a multiple of 4 in range [-1020, 1020].
@@ -1009,6 +1007,8 @@ public:
   bool isMemImm8Offset() const {
     if (!isMemory() || Memory.OffsetRegNum != 0 || Memory.Alignment != 0)
       return false;
+    // Base reg of PC isn't allowed for these encodings.
+    if (Memory.BaseRegNum == ARM::PC) return false;
     // Immediate offset in range [-255, 255].
     if (!Memory.OffsetImm) return true;
     int64_t Val = Memory.OffsetImm->getValue();
@@ -1025,6 +1025,8 @@ public:
   bool isMemNegImm8Offset() const {
     if (!isMemory() || Memory.OffsetRegNum != 0 || Memory.Alignment != 0)
       return false;
+    // Base reg of PC isn't allowed for these encodings.
+    if (Memory.BaseRegNum == ARM::PC) return false;
     // Immediate offset in range [-255, -1].
     if (!Memory.OffsetImm) return false;
     int64_t Val = Memory.OffsetImm->getValue();
@@ -1042,7 +1044,7 @@ public:
     // If we have an immediate that's not a constant, treat it as a label
     // reference needing a fixup. If it is a constant, it's something else
     // and we reject it.
-    if (Kind == k_Immediate && !isa<MCConstantExpr>(getImm()))
+    if (isImm() && !isa<MCConstantExpr>(getImm()))
       return true;
 
     if (!isMemory() || Memory.OffsetRegNum != 0 || Memory.Alignment != 0)
@@ -1053,16 +1055,14 @@ public:
     return (Val > -4096 && Val < 4096) || (Val == INT32_MIN);
   }
   bool isPostIdxImm8() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Val = CE->getValue();
     return (Val > -256 && Val < 256) || (Val == INT32_MIN);
   }
   bool isPostIdxImm8s4() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     if (!CE) return false;
     int64_t Val = CE->getValue();
@@ -1074,71 +1074,185 @@ public:
   bool isProcIFlags() const { return Kind == k_ProcIFlags; }
 
   // NEON operands.
+  bool isSingleSpacedVectorList() const {
+    return Kind == k_VectorList && !VectorList.isDoubleSpaced;
+  }
+  bool isDoubleSpacedVectorList() const {
+    return Kind == k_VectorList && VectorList.isDoubleSpaced;
+  }
   bool isVecListOneD() const {
-    if (Kind != k_VectorList) return false;
+    if (!isSingleSpacedVectorList()) return false;
     return VectorList.Count == 1;
   }
 
-  bool isVecListTwoD() const {
-    if (Kind != k_VectorList) return false;
-    return VectorList.Count == 2;
+  bool isVecListDPair() const {
+    if (!isSingleSpacedVectorList()) return false;
+    return (ARMMCRegisterClasses[ARM::DPairRegClassID]
+              .contains(VectorList.RegNum));
   }
 
   bool isVecListThreeD() const {
-    if (Kind != k_VectorList) return false;
+    if (!isSingleSpacedVectorList()) return false;
     return VectorList.Count == 3;
   }
 
   bool isVecListFourD() const {
-    if (Kind != k_VectorList) return false;
+    if (!isSingleSpacedVectorList()) return false;
     return VectorList.Count == 4;
   }
 
-  bool isVecListTwoQ() const {
-    if (Kind != k_VectorList) return false;
-    //FIXME: We haven't taught the parser to handle by-two register lists
-    // yet, so don't pretend to know one.
-    return VectorList.Count == 2 && false;
+  bool isVecListDPairSpaced() const {
+    if (!isSingleSpacedVectorList()) return false;
+    return (ARMMCRegisterClasses[ARM::DPairSpcRegClassID]
+              .contains(VectorList.RegNum));
   }
 
+  bool isVecListThreeQ() const {
+    if (!isDoubleSpacedVectorList()) return false;
+    return VectorList.Count == 3;
+  }
+
+  bool isVecListFourQ() const {
+    if (!isDoubleSpacedVectorList()) return false;
+    return VectorList.Count == 4;
+  }
+
+  bool isSingleSpacedVectorAllLanes() const {
+    return Kind == k_VectorListAllLanes && !VectorList.isDoubleSpaced;
+  }
+  bool isDoubleSpacedVectorAllLanes() const {
+    return Kind == k_VectorListAllLanes && VectorList.isDoubleSpaced;
+  }
   bool isVecListOneDAllLanes() const {
-    if (Kind != k_VectorListAllLanes) return false;
+    if (!isSingleSpacedVectorAllLanes()) return false;
     return VectorList.Count == 1;
   }
 
-  bool isVecListTwoDAllLanes() const {
-    if (Kind != k_VectorListAllLanes) return false;
+  bool isVecListDPairAllLanes() const {
+    if (!isSingleSpacedVectorAllLanes()) return false;
+    return (ARMMCRegisterClasses[ARM::DPairRegClassID]
+              .contains(VectorList.RegNum));
+  }
+
+  bool isVecListDPairSpacedAllLanes() const {
+    if (!isDoubleSpacedVectorAllLanes()) return false;
     return VectorList.Count == 2;
   }
 
+  bool isVecListThreeDAllLanes() const {
+    if (!isSingleSpacedVectorAllLanes()) return false;
+    return VectorList.Count == 3;
+  }
+
+  bool isVecListThreeQAllLanes() const {
+    if (!isDoubleSpacedVectorAllLanes()) return false;
+    return VectorList.Count == 3;
+  }
+
+  bool isVecListFourDAllLanes() const {
+    if (!isSingleSpacedVectorAllLanes()) return false;
+    return VectorList.Count == 4;
+  }
+
+  bool isVecListFourQAllLanes() const {
+    if (!isDoubleSpacedVectorAllLanes()) return false;
+    return VectorList.Count == 4;
+  }
+
+  bool isSingleSpacedVectorIndexed() const {
+    return Kind == k_VectorListIndexed && !VectorList.isDoubleSpaced;
+  }
+  bool isDoubleSpacedVectorIndexed() const {
+    return Kind == k_VectorListIndexed && VectorList.isDoubleSpaced;
+  }
   bool isVecListOneDByteIndexed() const {
-    if (Kind != k_VectorListIndexed) return false;
+    if (!isSingleSpacedVectorIndexed()) return false;
     return VectorList.Count == 1 && VectorList.LaneIndex <= 7;
   }
 
   bool isVecListOneDHWordIndexed() const {
-    if (Kind != k_VectorListIndexed) return false;
+    if (!isSingleSpacedVectorIndexed()) return false;
     return VectorList.Count == 1 && VectorList.LaneIndex <= 3;
   }
 
   bool isVecListOneDWordIndexed() const {
-    if (Kind != k_VectorListIndexed) return false;
+    if (!isSingleSpacedVectorIndexed()) return false;
     return VectorList.Count == 1 && VectorList.LaneIndex <= 1;
   }
 
   bool isVecListTwoDByteIndexed() const {
-    if (Kind != k_VectorListIndexed) return false;
+    if (!isSingleSpacedVectorIndexed()) return false;
     return VectorList.Count == 2 && VectorList.LaneIndex <= 7;
   }
 
   bool isVecListTwoDHWordIndexed() const {
-    if (Kind != k_VectorListIndexed) return false;
+    if (!isSingleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 2 && VectorList.LaneIndex <= 3;
+  }
+
+  bool isVecListTwoQWordIndexed() const {
+    if (!isDoubleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 2 && VectorList.LaneIndex <= 1;
+  }
+
+  bool isVecListTwoQHWordIndexed() const {
+    if (!isDoubleSpacedVectorIndexed()) return false;
     return VectorList.Count == 2 && VectorList.LaneIndex <= 3;
   }
 
   bool isVecListTwoDWordIndexed() const {
-    if (Kind != k_VectorListIndexed) return false;
+    if (!isSingleSpacedVectorIndexed()) return false;
     return VectorList.Count == 2 && VectorList.LaneIndex <= 1;
+  }
+
+  bool isVecListThreeDByteIndexed() const {
+    if (!isSingleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 3 && VectorList.LaneIndex <= 7;
+  }
+
+  bool isVecListThreeDHWordIndexed() const {
+    if (!isSingleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 3 && VectorList.LaneIndex <= 3;
+  }
+
+  bool isVecListThreeQWordIndexed() const {
+    if (!isDoubleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 3 && VectorList.LaneIndex <= 1;
+  }
+
+  bool isVecListThreeQHWordIndexed() const {
+    if (!isDoubleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 3 && VectorList.LaneIndex <= 3;
+  }
+
+  bool isVecListThreeDWordIndexed() const {
+    if (!isSingleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 3 && VectorList.LaneIndex <= 1;
+  }
+
+  bool isVecListFourDByteIndexed() const {
+    if (!isSingleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 4 && VectorList.LaneIndex <= 7;
+  }
+
+  bool isVecListFourDHWordIndexed() const {
+    if (!isSingleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 4 && VectorList.LaneIndex <= 3;
+  }
+
+  bool isVecListFourQWordIndexed() const {
+    if (!isDoubleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 4 && VectorList.LaneIndex <= 1;
+  }
+
+  bool isVecListFourQHWordIndexed() const {
+    if (!isDoubleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 4 && VectorList.LaneIndex <= 3;
+  }
+
+  bool isVecListFourDWordIndexed() const {
+    if (!isSingleSpacedVectorIndexed()) return false;
+    return VectorList.Count == 4 && VectorList.LaneIndex <= 1;
   }
 
   bool isVectorIndex8() const {
@@ -1155,8 +1269,7 @@ public:
   }
 
   bool isNEONi8splat() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     // Must be a constant.
     if (!CE) return false;
@@ -1167,8 +1280,7 @@ public:
   }
 
   bool isNEONi16splat() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     // Must be a constant.
     if (!CE) return false;
@@ -1178,8 +1290,7 @@ public:
   }
 
   bool isNEONi32splat() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     // Must be a constant.
     if (!CE) return false;
@@ -1192,8 +1303,7 @@ public:
   }
 
   bool isNEONi32vmov() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     // Must be a constant.
     if (!CE) return false;
@@ -1207,10 +1317,24 @@ public:
       (Value >= 0x01ff && Value <= 0xffff && (Value & 0xff) == 0xff) ||
       (Value >= 0x01ffff && Value <= 0xffffff && (Value & 0xffff) == 0xffff);
   }
+  bool isNEONi32vmovNeg() const {
+    if (!isImm()) return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    // Must be a constant.
+    if (!CE) return false;
+    int64_t Value = ~CE->getValue();
+    // i32 value with set bits only in one byte X000, 0X00, 00X0, or 000X,
+    // for VMOV/VMVN only, 00Xf or 0Xff are also accepted.
+    return (Value >= 0 && Value < 256) ||
+      (Value >= 0x0100 && Value <= 0xff00) ||
+      (Value >= 0x010000 && Value <= 0xff0000) ||
+      (Value >= 0x01000000 && Value <= 0xff000000) ||
+      (Value >= 0x01ff && Value <= 0xffff && (Value & 0xff) == 0xff) ||
+      (Value >= 0x01ffff && Value <= 0xffffff && (Value & 0xffff) == 0xffff);
+  }
 
   bool isNEONi64splat() const {
-    if (Kind != k_Immediate)
-      return false;
+    if (!isImm()) return false;
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     // Must be a constant.
     if (!CE) return false;
@@ -1336,9 +1460,23 @@ public:
     addExpr(Inst, getImm());
   }
 
+  void addFBits16Operands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    Inst.addOperand(MCOperand::CreateImm(16 - CE->getValue()));
+  }
+
+  void addFBits32Operands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    Inst.addOperand(MCOperand::CreateImm(32 - CE->getValue()));
+  }
+
   void addFPImmOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getFPImm()));
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    int Val = ARM_AM::getFP32Imm(APInt(32, CE->getValue()));
+    Inst.addOperand(MCOperand::CreateImm(Val));
   }
 
   void addImm8s4Operands(MCInst &Inst, unsigned N) const {
@@ -1441,6 +1579,14 @@ public:
     Inst.addOperand(MCOperand::CreateReg(Memory.BaseRegNum));
   }
 
+  void addMemPCRelImm12Operands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    int32_t Imm = Memory.OffsetImm->getValue();
+    // FIXME: Handle #-0
+    if (Imm == INT32_MIN) Imm = 0;
+    Inst.addOperand(MCOperand::CreateImm(Imm));
+  }
+
   void addAlignedMemoryOperands(MCInst &Inst, unsigned N) const {
     assert(N == 2 && "Invalid number of operands!");
     Inst.addOperand(MCOperand::CreateReg(Memory.BaseRegNum));
@@ -1483,6 +1629,16 @@ public:
 
   void addAddrMode3Operands(MCInst &Inst, unsigned N) const {
     assert(N == 3 && "Invalid number of operands!");
+    // If we have an immediate that's not a constant, treat it as a label
+    // reference needing a fixup. If it is a constant, it's something else
+    // and we reject it.
+    if (isImm()) {
+      Inst.addOperand(MCOperand::CreateExpr(getImm()));
+      Inst.addOperand(MCOperand::CreateReg(0));
+      Inst.addOperand(MCOperand::CreateImm(0));
+      return;
+    }
+
     int32_t Val = Memory.OffsetImm ? Memory.OffsetImm->getValue() : 0;
     if (!Memory.OffsetRegNum) {
       ARM_AM::AddrOpc AddSub = Val < 0 ? ARM_AM::sub : ARM_AM::add;
@@ -1546,6 +1702,15 @@ public:
 
   void addMemImm8s4OffsetOperands(MCInst &Inst, unsigned N) const {
     assert(N == 2 && "Invalid number of operands!");
+    // If we have an immediate that's not a constant, treat it as a label
+    // reference needing a fixup. If it is a constant, it's something else
+    // and we reject it.
+    if (isImm()) {
+      Inst.addOperand(MCOperand::CreateExpr(getImm()));
+      Inst.addOperand(MCOperand::CreateImm(0));
+      return;
+    }
+
     int64_t Val = Memory.OffsetImm ? Memory.OffsetImm->getValue() : 0;
     Inst.addOperand(MCOperand::CreateReg(Memory.BaseRegNum));
     Inst.addOperand(MCOperand::CreateImm(Val));
@@ -1577,7 +1742,7 @@ public:
   void addMemUImm12OffsetOperands(MCInst &Inst, unsigned N) const {
     assert(N == 2 && "Invalid number of operands!");
     // If this is an immediate, it's a label reference.
-    if (Kind == k_Immediate) {
+    if (isImm()) {
       addExpr(Inst, getImm());
       Inst.addOperand(MCOperand::CreateImm(0));
       return;
@@ -1592,7 +1757,7 @@ public:
   void addMemImm12OffsetOperands(MCInst &Inst, unsigned N) const {
     assert(N == 2 && "Invalid number of operands!");
     // If this is an immediate, it's a label reference.
-    if (Kind == k_Immediate) {
+    if (isImm()) {
       addExpr(Inst, getImm());
       Inst.addOperand(MCOperand::CreateImm(0));
       return;
@@ -1791,6 +1956,20 @@ public:
     Inst.addOperand(MCOperand::CreateImm(Value));
   }
 
+  void addNEONi32vmovNegOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    // The immediate encodes the type of constant as well as the value.
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    unsigned Value = ~CE->getValue();
+    if (Value >= 256 && Value <= 0xffff)
+      Value = (Value >> 8) | ((Value & 0xff) ? 0xc00 : 0x200);
+    else if (Value > 0xffff && Value <= 0xffffff)
+      Value = (Value >> 16) | ((Value & 0xff) ? 0xd00 : 0x400);
+    else if (Value > 0xffffff)
+      Value = (Value >> 24) | 0x600;
+    Inst.addOperand(MCOperand::CreateImm(Value));
+  }
+
   void addNEONi64splatOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     // The immediate encodes the type of constant as well as the value.
@@ -1948,31 +2127,37 @@ public:
   }
 
   static ARMOperand *CreateVectorList(unsigned RegNum, unsigned Count,
-                                      SMLoc S, SMLoc E) {
+                                      bool isDoubleSpaced, SMLoc S, SMLoc E) {
     ARMOperand *Op = new ARMOperand(k_VectorList);
     Op->VectorList.RegNum = RegNum;
     Op->VectorList.Count = Count;
+    Op->VectorList.isDoubleSpaced = isDoubleSpaced;
     Op->StartLoc = S;
     Op->EndLoc = E;
     return Op;
   }
 
   static ARMOperand *CreateVectorListAllLanes(unsigned RegNum, unsigned Count,
+                                              bool isDoubleSpaced,
                                               SMLoc S, SMLoc E) {
     ARMOperand *Op = new ARMOperand(k_VectorListAllLanes);
     Op->VectorList.RegNum = RegNum;
     Op->VectorList.Count = Count;
+    Op->VectorList.isDoubleSpaced = isDoubleSpaced;
     Op->StartLoc = S;
     Op->EndLoc = E;
     return Op;
   }
 
   static ARMOperand *CreateVectorListIndexed(unsigned RegNum, unsigned Count,
-                                             unsigned Index, SMLoc S, SMLoc E) {
+                                             unsigned Index,
+                                             bool isDoubleSpaced,
+                                             SMLoc S, SMLoc E) {
     ARMOperand *Op = new ARMOperand(k_VectorListIndexed);
     Op->VectorList.RegNum = RegNum;
     Op->VectorList.Count = Count;
     Op->VectorList.LaneIndex = Index;
+    Op->VectorList.isDoubleSpaced = isDoubleSpaced;
     Op->StartLoc = S;
     Op->EndLoc = E;
     return Op;
@@ -1992,14 +2177,6 @@ public:
     Op->Imm.Val = Val;
     Op->StartLoc = S;
     Op->EndLoc = E;
-    return Op;
-  }
-
-  static ARMOperand *CreateFPImm(unsigned Val, SMLoc S, MCContext &Ctx) {
-    ARMOperand *Op = new ARMOperand(k_FPImmediate);
-    Op->FPImm.Val = Val;
-    Op->StartLoc = S;
-    Op->EndLoc = S;
     return Op;
   }
 
@@ -2067,10 +2244,6 @@ public:
 
 void ARMOperand::print(raw_ostream &OS) const {
   switch (Kind) {
-  case k_FPImmediate:
-    OS << "<fpimm " << getFPImm() << "(" << ARM_AM::getFPImmFloat(getFPImm())
-       << ") >";
-    break;
   case k_CondCode:
     OS << "<ARMCC::" << ARMCondCodeToString(getCondCode()) << ">";
     break;
@@ -2239,9 +2412,10 @@ int ARMAsmParser::tryParseRegister() {
       .Default(0);
   }
   if (!RegNum) {
-    // Check for aliases registered via .req.
-    StringMap<unsigned>::const_iterator Entry =
-      RegisterReqs.find(Tok.getIdentifier());
+    // Check for aliases registered via .req. Canonicalize to lower case.
+    // That's more consistent since register names are case insensitive, and
+    // it's how the original entry was passed in from MC/MCParser/AsmParser.
+    StringMap<unsigned>::const_iterator Entry = RegisterReqs.find(lowerCase);
     // If no match, return failure.
     if (Entry == RegisterReqs.end())
       return -1;
@@ -2321,6 +2495,10 @@ int ARMAsmParser::tryParseShiftRegister(
         Error(ImmLoc, "immediate shift value out of range");
         return -1;
       }
+      // shift by zero is a nop. Always send it through as lsl.
+      // ('as' compatibility)
+      if (Imm == 0)
+        ShiftTy = ARM_AM::lsl;
     } else if (Parser.getTok().is(AsmToken::Identifier)) {
       ShiftReg = tryParseRegister();
       SMLoc L = Parser.getTok().getLoc();
@@ -2379,18 +2557,14 @@ tryParseRegisterWithWriteBack(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 
     const MCExpr *ImmVal;
     if (getParser().ParseExpression(ImmVal))
-      return MatchOperand_ParseFail;
+      return true;
     const MCConstantExpr *MCE = dyn_cast<MCConstantExpr>(ImmVal);
-    if (!MCE) {
-      TokError("immediate value expected for vector index");
-      return MatchOperand_ParseFail;
-    }
+    if (!MCE)
+      return TokError("immediate value expected for vector index");
 
     SMLoc E = Parser.getTok().getLoc();
-    if (Parser.getTok().isNot(AsmToken::RBrac)) {
-      Error(E, "']' expected");
-      return MatchOperand_ParseFail;
-    }
+    if (Parser.getTok().isNot(AsmToken::RBrac))
+      return Error(E, "']' expected");
 
     Parser.Lex(); // Eat right bracket token.
 
@@ -2409,7 +2583,7 @@ static int MatchCoprocessorOperandName(StringRef Name, char CoprocOp) {
   // Use the same layout as the tablegen'erated register name matcher. Ugly,
   // but efficient.
   switch (Name.size()) {
-  default: break;
+  default: return -1;
   case 2:
     if (Name[0] != CoprocOp)
       return -1;
@@ -2426,7 +2600,6 @@ static int MatchCoprocessorOperandName(StringRef Name, char CoprocOp) {
     case '8': return 8;
     case '9': return 9;
     }
-    break;
   case 3:
     if (Name[0] != CoprocOp || Name[1] != '1')
       return -1;
@@ -2439,10 +2612,7 @@ static int MatchCoprocessorOperandName(StringRef Name, char CoprocOp) {
     case '4': return 14;
     case '5': return 15;
     }
-    break;
   }
-
-  return -1;
 }
 
 /// parseITCondCode - Try to parse a condition code for an IT instruction.
@@ -2562,7 +2732,7 @@ static unsigned getNextRegister(unsigned Reg) {
   if (!ARMMCRegisterClasses[ARM::GPRRegClassID].contains(Reg))
     return Reg + 1;
   switch(Reg) {
-  default: assert(0 && "Invalid GPR number!");
+  default: llvm_unreachable("Invalid GPR number!");
   case ARM::R0:  return ARM::R1;  case ARM::R1:  return ARM::R2;
   case ARM::R2:  return ARM::R3;  case ARM::R3:  return ARM::R4;
   case ARM::R4:  return ARM::R5;  case ARM::R5:  return ARM::R6;
@@ -2731,21 +2901,32 @@ parseVectorLane(VectorLaneTy &LaneKind, unsigned &Index) {
       Parser.Lex(); // Eat the ']'.
       return MatchOperand_Success;
     }
-    if (Parser.getTok().is(AsmToken::Integer)) {
-      int64_t Val = Parser.getTok().getIntVal();
-      // Make this range check context sensitive for .8, .16, .32.
-      if (Val < 0 && Val > 7)
-        Error(Parser.getTok().getLoc(), "lane index out of range");
-      Index = Val;
-      LaneKind = IndexedLane;
-      Parser.Lex(); // Eat the token;
-      if (Parser.getTok().isNot(AsmToken::RBrac))
-        Error(Parser.getTok().getLoc(), "']' expected");
-      Parser.Lex(); // Eat the ']'.
-      return MatchOperand_Success;
+    const MCExpr *LaneIndex;
+    SMLoc Loc = Parser.getTok().getLoc();
+    if (getParser().ParseExpression(LaneIndex)) {
+      Error(Loc, "illegal expression");
+      return MatchOperand_ParseFail;
     }
-    Error(Parser.getTok().getLoc(), "lane index must be empty or an integer");
-    return MatchOperand_ParseFail;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(LaneIndex);
+    if (!CE) {
+      Error(Loc, "lane index must be empty or an integer");
+      return MatchOperand_ParseFail;
+    }
+    if (Parser.getTok().isNot(AsmToken::RBrac)) {
+      Error(Parser.getTok().getLoc(), "']' expected");
+      return MatchOperand_ParseFail;
+    }
+    Parser.Lex(); // Eat the ']'.
+    int64_t Val = CE->getValue();
+
+    // FIXME: Make this range check context sensitive for .8, .16, .32.
+    if (Val < 0 || Val > 7) {
+      Error(Parser.getTok().getLoc(), "lane index out of range");
+      return MatchOperand_ParseFail;
+    }
+    Index = Val;
+    LaneKind = IndexedLane;
+    return MatchOperand_Success;
   }
   LaneKind = NoLanes;
   return MatchOperand_Success;
@@ -2770,19 +2951,19 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
       if (Res != MatchOperand_Success)
         return Res;
       switch (LaneKind) {
-      default:
-        assert(0 && "unexpected lane kind!");
       case NoLanes:
         E = Parser.getTok().getLoc();
-        Operands.push_back(ARMOperand::CreateVectorList(Reg, 1, S, E));
+        Operands.push_back(ARMOperand::CreateVectorList(Reg, 1, false, S, E));
         break;
       case AllLanes:
         E = Parser.getTok().getLoc();
-        Operands.push_back(ARMOperand::CreateVectorListAllLanes(Reg, 1, S, E));
+        Operands.push_back(ARMOperand::CreateVectorListAllLanes(Reg, 1, false,
+                                                                S, E));
         break;
       case IndexedLane:
         Operands.push_back(ARMOperand::CreateVectorListIndexed(Reg, 1,
-                                                               LaneIndex, S,E));
+                                                               LaneIndex,
+                                                               false, S, E));
         break;
       }
       return MatchOperand_Success;
@@ -2793,19 +2974,23 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
       if (Res != MatchOperand_Success)
         return Res;
       switch (LaneKind) {
-      default:
-        assert(0 && "unexpected lane kind!");
       case NoLanes:
         E = Parser.getTok().getLoc();
-        Operands.push_back(ARMOperand::CreateVectorList(Reg, 2, S, E));
+        Reg = MRI->getMatchingSuperReg(Reg, ARM::dsub_0,
+                                   &ARMMCRegisterClasses[ARM::DPairRegClassID]);
+        Operands.push_back(ARMOperand::CreateVectorList(Reg, 2, false, S, E));
         break;
       case AllLanes:
         E = Parser.getTok().getLoc();
-        Operands.push_back(ARMOperand::CreateVectorListAllLanes(Reg, 2, S, E));
+        Reg = MRI->getMatchingSuperReg(Reg, ARM::dsub_0,
+                                   &ARMMCRegisterClasses[ARM::DPairRegClassID]);
+        Operands.push_back(ARMOperand::CreateVectorListAllLanes(Reg, 2, false,
+                                                                S, E));
         break;
       case IndexedLane:
         Operands.push_back(ARMOperand::CreateVectorListIndexed(Reg, 2,
-                                                               LaneIndex, S,E));
+                                                               LaneIndex,
+                                                               false, S, E));
         break;
       }
       return MatchOperand_Success;
@@ -2826,11 +3011,14 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     return MatchOperand_ParseFail;
   }
   unsigned Count = 1;
+  int Spacing = 0;
   unsigned FirstReg = Reg;
   // The list is of D registers, but we also allow Q regs and just interpret
   // them as the two D sub-registers.
   if (ARMMCRegisterClasses[ARM::QPRRegClassID].contains(Reg)) {
     FirstReg = Reg = getDRegFromQReg(Reg);
+    Spacing = 1; // double-spacing requires explicit D registers, otherwise
+                 // it's ambiguous with four-register single spaced.
     ++Reg;
     ++Count;
   }
@@ -2840,6 +3028,13 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   while (Parser.getTok().is(AsmToken::Comma) ||
          Parser.getTok().is(AsmToken::Minus)) {
     if (Parser.getTok().is(AsmToken::Minus)) {
+      if (!Spacing)
+        Spacing = 1; // Register range implies a single spaced list.
+      else if (Spacing == 2) {
+        Error(Parser.getTok().getLoc(),
+              "sequential registers in double spaced list");
+        return MatchOperand_ParseFail;
+      }
       Parser.Lex(); // Eat the minus.
       SMLoc EndLoc = Parser.getTok().getLoc();
       int EndReg = tryParseRegister();
@@ -2895,6 +3090,13 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     // The list is of D registers, but we also allow Q regs and just interpret
     // them as the two D sub-registers.
     if (ARMMCRegisterClasses[ARM::QPRRegClassID].contains(Reg)) {
+      if (!Spacing)
+        Spacing = 1; // Register range implies a single spaced list.
+      else if (Spacing == 2) {
+        Error(RegLoc,
+              "invalid register in double-spaced list (must be 'D' register')");
+        return MatchOperand_ParseFail;
+      }
       Reg = getDRegFromQReg(Reg);
       if (Reg != OldReg + 1) {
         Error(RegLoc, "non-contiguous register range");
@@ -2914,8 +3116,14 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
       }
       continue;
     }
-    // Normal D register. Just check that it's contiguous and keep going.
-    if (Reg != OldReg + 1) {
+    // Normal D register.
+    // Figure out the register spacing (single or double) of the list if
+    // we don't know it already.
+    if (!Spacing)
+      Spacing = 1 + (Reg == OldReg + 2);
+
+    // Just check that it's contiguous and keep going.
+    if (Reg != OldReg + Spacing) {
       Error(RegLoc, "non-contiguous register range");
       return MatchOperand_ParseFail;
     }
@@ -2940,18 +3148,37 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   Parser.Lex(); // Eat '}' token.
 
   switch (LaneKind) {
-  default:
-    assert(0 && "unexpected lane kind in register list.");
   case NoLanes:
-    Operands.push_back(ARMOperand::CreateVectorList(FirstReg, Count, S, E));
+    // Two-register operands have been converted to the
+    // composite register classes.
+    if (Count == 2) {
+      const MCRegisterClass *RC = (Spacing == 1) ?
+        &ARMMCRegisterClasses[ARM::DPairRegClassID] :
+        &ARMMCRegisterClasses[ARM::DPairSpcRegClassID];
+      FirstReg = MRI->getMatchingSuperReg(FirstReg, ARM::dsub_0, RC);
+    }
+
+    Operands.push_back(ARMOperand::CreateVectorList(FirstReg, Count,
+                                                    (Spacing == 2), S, E));
     break;
   case AllLanes:
+    // Two-register operands have been converted to the
+    // composite register classes.
+    if (Count == 2) {
+      const MCRegisterClass *RC = (Spacing == 1) ?
+        &ARMMCRegisterClasses[ARM::DPairRegClassID] :
+        &ARMMCRegisterClasses[ARM::DPairSpcRegClassID];
+      FirstReg = MRI->getMatchingSuperReg(FirstReg, ARM::dsub_0, RC);
+    }
     Operands.push_back(ARMOperand::CreateVectorListAllLanes(FirstReg, Count,
+                                                            (Spacing == 2),
                                                             S, E));
     break;
   case IndexedLane:
     Operands.push_back(ARMOperand::CreateVectorListIndexed(FirstReg, Count,
-                                                           LaneIndex, S, E));
+                                                           LaneIndex,
+                                                           (Spacing == 2),
+                                                           S, E));
     break;
   }
   return MatchOperand_Success;
@@ -3047,14 +3274,14 @@ parseMSRMaskOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
       .Case("faultmask", 19)
       .Case("control", 20)
       .Default(~0U);
-    
+
     if (FlagsVal == ~0U)
       return MatchOperand_NoMatch;
 
     if (!hasV7Ops() && FlagsVal >= 17 && FlagsVal <= 19)
       // basepri, basepri_max and faultmask only valid for V7m.
       return MatchOperand_NoMatch;
-    
+
     Parser.Lex(); // Eat identifier token.
     Operands.push_back(ARMOperand::CreateMSRMask(FlagsVal, S));
     return MatchOperand_Success;
@@ -3919,7 +4146,10 @@ parseMemory(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     unsigned Align = 0;
     switch (CE->getValue()) {
     default:
-      return Error(E, "alignment specifier must be 64, 128, or 256 bits");
+      return Error(E,
+                   "alignment specifier must be 16, 32, 64, 128, or 256 bits");
+    case 16:  Align = 2; break;
+    case 32:  Align = 4; break;
     case 64:  Align = 8; break;
     case 128: Align = 16; break;
     case 256: Align = 32; break;
@@ -4100,6 +4330,15 @@ bool ARMAsmParser::parseMemRegOffsetShift(ARM_AM::ShiftOpc &St,
 /// parseFPImm - A floating point immediate expression operand.
 ARMAsmParser::OperandMatchResultTy ARMAsmParser::
 parseFPImm(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
+  // Anything that can accept a floating point constant as an operand
+  // needs to go through here, as the regular ParseExpression is
+  // integer only.
+  //
+  // This routine still creates a generic Immediate operand, containing
+  // a bitcast of the 64-bit floating point value. The various operands
+  // that accept floats can check whether the value is valid for them
+  // via the standard is*() predicates.
+
   SMLoc S = Parser.getTok().getLoc();
 
   if (Parser.getTok().isNot(AsmToken::Hash) &&
@@ -4130,34 +4369,39 @@ parseFPImm(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     Parser.Lex();
   }
   const AsmToken &Tok = Parser.getTok();
+  SMLoc Loc = Tok.getLoc();
   if (Tok.is(AsmToken::Real)) {
-    APFloat RealVal(APFloat::IEEEdouble, Tok.getString());
+    APFloat RealVal(APFloat::IEEEsingle, Tok.getString());
     uint64_t IntVal = RealVal.bitcastToAPInt().getZExtValue();
     // If we had a '-' in front, toggle the sign bit.
-    IntVal ^= (uint64_t)isNegative << 63;
-    int Val = ARM_AM::getFP64Imm(APInt(64, IntVal));
+    IntVal ^= (uint64_t)isNegative << 31;
     Parser.Lex(); // Eat the token.
-    if (Val == -1) {
-      TokError("floating point value out of range");
-      return MatchOperand_ParseFail;
-    }
-    Operands.push_back(ARMOperand::CreateFPImm(Val, S, getContext()));
+    Operands.push_back(ARMOperand::CreateImm(
+          MCConstantExpr::Create(IntVal, getContext()),
+          S, Parser.getTok().getLoc()));
     return MatchOperand_Success;
   }
+  // Also handle plain integers. Instructions which allow floating point
+  // immediates also allow a raw encoded 8-bit value.
   if (Tok.is(AsmToken::Integer)) {
     int64_t Val = Tok.getIntVal();
     Parser.Lex(); // Eat the token.
     if (Val > 255 || Val < 0) {
-      TokError("encoded floating point value out of range");
+      Error(Loc, "encoded floating point value out of range");
       return MatchOperand_ParseFail;
     }
-    Operands.push_back(ARMOperand::CreateFPImm(Val, S, getContext()));
+    double RealVal = ARM_AM::getFPImmFloat(Val);
+    Val = APFloat(APFloat::IEEEdouble, RealVal).bitcastToAPInt().getZExtValue();
+    Operands.push_back(ARMOperand::CreateImm(
+        MCConstantExpr::Create(Val, getContext()), S,
+        Parser.getTok().getLoc()));
     return MatchOperand_Success;
   }
 
-  TokError("invalid floating point immediate");
+  Error(Loc, "invalid floating point immediate");
   return MatchOperand_ParseFail;
 }
+
 /// Parse a arm instruction operand.  For now this parses the operand regardless
 /// of the mnemonic.
 bool ARMAsmParser::parseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands,
@@ -4180,7 +4424,6 @@ bool ARMAsmParser::parseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands,
     Error(Parser.getTok().getLoc(), "unexpected token in operand");
     return true;
   case AsmToken::Identifier: {
-    // If this is VMRS, check for the apsr_nzcv operand.
     if (!tryParseRegisterWithWriteBack(Operands))
       return false;
     int Res = tryParseShiftRegister(Operands);
@@ -4188,6 +4431,7 @@ bool ARMAsmParser::parseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands,
       return false;
     else if (Res == -1) // irrecoverable error
       return true;
+    // If this is VMRS, check for the apsr_nzcv operand.
     if (Mnemonic == "vmrs" && Parser.getTok().getString() == "apsr_nzcv") {
       S = Parser.getTok().getLoc();
       Parser.Lex();
@@ -4314,7 +4558,8 @@ StringRef ARMAsmParser::splitMnemonic(StringRef Mnemonic,
       Mnemonic == "vcge"  || Mnemonic == "vclt"   || Mnemonic == "vacgt" ||
       Mnemonic == "vcgt"  || Mnemonic == "vcle"   || Mnemonic == "smlal" ||
       Mnemonic == "umaal" || Mnemonic == "umlal"  || Mnemonic == "vabal" ||
-      Mnemonic == "vmlal" || Mnemonic == "vpadal" || Mnemonic == "vqdmlal")
+      Mnemonic == "vmlal" || Mnemonic == "vpadal" || Mnemonic == "vqdmlal" ||
+      Mnemonic == "fmuls")
     return Mnemonic;
 
   // First, split out any predication code. Ignore mnemonics we know aren't
@@ -4357,7 +4602,8 @@ StringRef ARMAsmParser::splitMnemonic(StringRef Mnemonic,
         Mnemonic == "vnmls" || Mnemonic == "vqabs" || Mnemonic == "vrecps" ||
         Mnemonic == "vrsqrts" || Mnemonic == "srs" || Mnemonic == "flds" ||
         Mnemonic == "fmrs" || Mnemonic == "fsqrts" || Mnemonic == "fsubs" ||
-        Mnemonic == "fsts" ||
+        Mnemonic == "fsts" || Mnemonic == "fcpys" || Mnemonic == "fdivs" ||
+        Mnemonic == "fmuls" || Mnemonic == "fcmps" ||
         (Mnemonic == "movs" && isThumb()))) {
     Mnemonic = Mnemonic.slice(0, Mnemonic.size() - 1);
     CarrySetting = true;
@@ -4486,9 +4732,11 @@ bool ARMAsmParser::shouldOmitCCOutOperand(StringRef Mnemonic,
     //
     // If either register is a high reg, it's either one of the SP
     // variants (handled above) or a 32-bit encoding, so we just
-    // check against T3.
+    // check against T3. If the second register is the PC, this is an
+    // alternate form of ADR, which uses encoding T4, so check for that too.
     if ((!isARMLowRegister(static_cast<ARMOperand*>(Operands[3])->getReg()) ||
          !isARMLowRegister(static_cast<ARMOperand*>(Operands[4])->getReg())) &&
+        static_cast<ARMOperand*>(Operands[4])->getReg() != ARM::PC &&
         static_cast<ARMOperand*>(Operands[5])->isT2SOImm())
       return false;
     // If both registers are low, we're in an IT block, and the immediate is
@@ -4856,10 +5104,11 @@ validateInstruction(MCInst &Inst,
   const MCInstrDesc &MCID = getInstDesc(Inst.getOpcode());
   SMLoc Loc = Operands[0]->getStartLoc();
   // Check the IT block state first.
-  // NOTE: In Thumb mode, the BKPT instruction has the interesting property of
-  // being allowed in IT blocks, but not being predicable.  It just always
+  // NOTE: BKPT instruction has the interesting property of being
+  // allowed in IT blocks, but not being predicable.  It just always
   // executes.
-  if (inITBlock() && Inst.getOpcode() != ARM::tBKPT) {
+  if (inITBlock() && Inst.getOpcode() != ARM::tBKPT &&
+      Inst.getOpcode() != ARM::BKPT) {
     unsigned bit = 1;
     if (ITState.FirstCond)
       ITState.FirstCond = false;
@@ -4999,165 +5248,259 @@ validateInstruction(MCInst &Inst,
   return false;
 }
 
-static unsigned getRealVSTLNOpcode(unsigned Opc) {
+static unsigned getRealVSTOpcode(unsigned Opc, unsigned &Spacing) {
   switch(Opc) {
-  default: assert(0 && "unexpected opcode!");
+  default: llvm_unreachable("unexpected opcode!");
   // VST1LN
-  case ARM::VST1LNdWB_fixed_Asm_8:  case ARM::VST1LNdWB_fixed_Asm_P8:
-  case ARM::VST1LNdWB_fixed_Asm_I8: case ARM::VST1LNdWB_fixed_Asm_S8:
-  case ARM::VST1LNdWB_fixed_Asm_U8:
-    return ARM::VST1LNd8_UPD;
-  case ARM::VST1LNdWB_fixed_Asm_16:  case ARM::VST1LNdWB_fixed_Asm_P16:
-  case ARM::VST1LNdWB_fixed_Asm_I16: case ARM::VST1LNdWB_fixed_Asm_S16:
-  case ARM::VST1LNdWB_fixed_Asm_U16:
-    return ARM::VST1LNd16_UPD;
-  case ARM::VST1LNdWB_fixed_Asm_32:  case ARM::VST1LNdWB_fixed_Asm_F:
-  case ARM::VST1LNdWB_fixed_Asm_F32: case ARM::VST1LNdWB_fixed_Asm_I32:
-  case ARM::VST1LNdWB_fixed_Asm_S32: case ARM::VST1LNdWB_fixed_Asm_U32:
-    return ARM::VST1LNd32_UPD;
-  case ARM::VST1LNdWB_register_Asm_8:  case ARM::VST1LNdWB_register_Asm_P8:
-  case ARM::VST1LNdWB_register_Asm_I8: case ARM::VST1LNdWB_register_Asm_S8:
-  case ARM::VST1LNdWB_register_Asm_U8:
-    return ARM::VST1LNd8_UPD;
-  case ARM::VST1LNdWB_register_Asm_16:  case ARM::VST1LNdWB_register_Asm_P16:
-  case ARM::VST1LNdWB_register_Asm_I16: case ARM::VST1LNdWB_register_Asm_S16:
-  case ARM::VST1LNdWB_register_Asm_U16:
-    return ARM::VST1LNd16_UPD;
-  case ARM::VST1LNdWB_register_Asm_32:  case ARM::VST1LNdWB_register_Asm_F:
-  case ARM::VST1LNdWB_register_Asm_F32: case ARM::VST1LNdWB_register_Asm_I32:
-  case ARM::VST1LNdWB_register_Asm_S32: case ARM::VST1LNdWB_register_Asm_U32:
-    return ARM::VST1LNd32_UPD;
-  case ARM::VST1LNdAsm_8:  case ARM::VST1LNdAsm_P8:
-  case ARM::VST1LNdAsm_I8: case ARM::VST1LNdAsm_S8:
-  case ARM::VST1LNdAsm_U8:
-    return ARM::VST1LNd8;
-  case ARM::VST1LNdAsm_16:  case ARM::VST1LNdAsm_P16:
-  case ARM::VST1LNdAsm_I16: case ARM::VST1LNdAsm_S16:
-  case ARM::VST1LNdAsm_U16:
-    return ARM::VST1LNd16;
-  case ARM::VST1LNdAsm_32:  case ARM::VST1LNdAsm_F:
-  case ARM::VST1LNdAsm_F32: case ARM::VST1LNdAsm_I32:
-  case ARM::VST1LNdAsm_S32: case ARM::VST1LNdAsm_U32:
-    return ARM::VST1LNd32;
+  case ARM::VST1LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VST1LNd8_UPD;
+  case ARM::VST1LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VST1LNd16_UPD;
+  case ARM::VST1LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VST1LNd32_UPD;
+  case ARM::VST1LNdWB_register_Asm_8:  Spacing = 1; return ARM::VST1LNd8_UPD;
+  case ARM::VST1LNdWB_register_Asm_16: Spacing = 1; return ARM::VST1LNd16_UPD;
+  case ARM::VST1LNdWB_register_Asm_32: Spacing = 1; return ARM::VST1LNd32_UPD;
+  case ARM::VST1LNdAsm_8:  Spacing = 1; return ARM::VST1LNd8;
+  case ARM::VST1LNdAsm_16: Spacing = 1; return ARM::VST1LNd16;
+  case ARM::VST1LNdAsm_32: Spacing = 1; return ARM::VST1LNd32;
 
   // VST2LN
-  case ARM::VST2LNdWB_fixed_Asm_8:  case ARM::VST2LNdWB_fixed_Asm_P8:
-  case ARM::VST2LNdWB_fixed_Asm_I8: case ARM::VST2LNdWB_fixed_Asm_S8:
-  case ARM::VST2LNdWB_fixed_Asm_U8:
-    return ARM::VST2LNd8_UPD;
-  case ARM::VST2LNdWB_fixed_Asm_16:  case ARM::VST2LNdWB_fixed_Asm_P16:
-  case ARM::VST2LNdWB_fixed_Asm_I16: case ARM::VST2LNdWB_fixed_Asm_S16:
-  case ARM::VST2LNdWB_fixed_Asm_U16:
-    return ARM::VST2LNd16_UPD;
-  case ARM::VST2LNdWB_fixed_Asm_32:  case ARM::VST2LNdWB_fixed_Asm_F:
-  case ARM::VST2LNdWB_fixed_Asm_F32: case ARM::VST2LNdWB_fixed_Asm_I32:
-  case ARM::VST2LNdWB_fixed_Asm_S32: case ARM::VST2LNdWB_fixed_Asm_U32:
-    return ARM::VST2LNd32_UPD;
-  case ARM::VST2LNdWB_register_Asm_8:  case ARM::VST2LNdWB_register_Asm_P8:
-  case ARM::VST2LNdWB_register_Asm_I8: case ARM::VST2LNdWB_register_Asm_S8:
-  case ARM::VST2LNdWB_register_Asm_U8:
-    return ARM::VST2LNd8_UPD;
-  case ARM::VST2LNdWB_register_Asm_16:  case ARM::VST2LNdWB_register_Asm_P16:
-  case ARM::VST2LNdWB_register_Asm_I16: case ARM::VST2LNdWB_register_Asm_S16:
-  case ARM::VST2LNdWB_register_Asm_U16:
-    return ARM::VST2LNd16_UPD;
-  case ARM::VST2LNdWB_register_Asm_32:  case ARM::VST2LNdWB_register_Asm_F:
-  case ARM::VST2LNdWB_register_Asm_F32: case ARM::VST2LNdWB_register_Asm_I32:
-  case ARM::VST2LNdWB_register_Asm_S32: case ARM::VST2LNdWB_register_Asm_U32:
-    return ARM::VST2LNd32_UPD;
-  case ARM::VST2LNdAsm_8:  case ARM::VST2LNdAsm_P8:
-  case ARM::VST2LNdAsm_I8: case ARM::VST2LNdAsm_S8:
-  case ARM::VST2LNdAsm_U8:
-    return ARM::VST2LNd8;
-  case ARM::VST2LNdAsm_16:  case ARM::VST2LNdAsm_P16:
-  case ARM::VST2LNdAsm_I16: case ARM::VST2LNdAsm_S16:
-  case ARM::VST2LNdAsm_U16:
-    return ARM::VST2LNd16;
-  case ARM::VST2LNdAsm_32:  case ARM::VST2LNdAsm_F:
-  case ARM::VST2LNdAsm_F32: case ARM::VST2LNdAsm_I32:
-  case ARM::VST2LNdAsm_S32: case ARM::VST2LNdAsm_U32:
-    return ARM::VST2LNd32;
+  case ARM::VST2LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VST2LNd8_UPD;
+  case ARM::VST2LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VST2LNd16_UPD;
+  case ARM::VST2LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VST2LNd32_UPD;
+  case ARM::VST2LNqWB_fixed_Asm_16: Spacing = 2; return ARM::VST2LNq16_UPD;
+  case ARM::VST2LNqWB_fixed_Asm_32: Spacing = 2; return ARM::VST2LNq32_UPD;
+
+  case ARM::VST2LNdWB_register_Asm_8:  Spacing = 1; return ARM::VST2LNd8_UPD;
+  case ARM::VST2LNdWB_register_Asm_16: Spacing = 1; return ARM::VST2LNd16_UPD;
+  case ARM::VST2LNdWB_register_Asm_32: Spacing = 1; return ARM::VST2LNd32_UPD;
+  case ARM::VST2LNqWB_register_Asm_16: Spacing = 2; return ARM::VST2LNq16_UPD;
+  case ARM::VST2LNqWB_register_Asm_32: Spacing = 2; return ARM::VST2LNq32_UPD;
+
+  case ARM::VST2LNdAsm_8:  Spacing = 1; return ARM::VST2LNd8;
+  case ARM::VST2LNdAsm_16: Spacing = 1; return ARM::VST2LNd16;
+  case ARM::VST2LNdAsm_32: Spacing = 1; return ARM::VST2LNd32;
+  case ARM::VST2LNqAsm_16: Spacing = 2; return ARM::VST2LNq16;
+  case ARM::VST2LNqAsm_32: Spacing = 2; return ARM::VST2LNq32;
+
+  // VST3LN
+  case ARM::VST3LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VST3LNd8_UPD;
+  case ARM::VST3LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VST3LNd16_UPD;
+  case ARM::VST3LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VST3LNd32_UPD;
+  case ARM::VST3LNqWB_fixed_Asm_16: Spacing = 1; return ARM::VST3LNq16_UPD;
+  case ARM::VST3LNqWB_fixed_Asm_32: Spacing = 2; return ARM::VST3LNq32_UPD;
+  case ARM::VST3LNdWB_register_Asm_8:  Spacing = 1; return ARM::VST3LNd8_UPD;
+  case ARM::VST3LNdWB_register_Asm_16: Spacing = 1; return ARM::VST3LNd16_UPD;
+  case ARM::VST3LNdWB_register_Asm_32: Spacing = 1; return ARM::VST3LNd32_UPD;
+  case ARM::VST3LNqWB_register_Asm_16: Spacing = 2; return ARM::VST3LNq16_UPD;
+  case ARM::VST3LNqWB_register_Asm_32: Spacing = 2; return ARM::VST3LNq32_UPD;
+  case ARM::VST3LNdAsm_8:  Spacing = 1; return ARM::VST3LNd8;
+  case ARM::VST3LNdAsm_16: Spacing = 1; return ARM::VST3LNd16;
+  case ARM::VST3LNdAsm_32: Spacing = 1; return ARM::VST3LNd32;
+  case ARM::VST3LNqAsm_16: Spacing = 2; return ARM::VST3LNq16;
+  case ARM::VST3LNqAsm_32: Spacing = 2; return ARM::VST3LNq32;
+
+  // VST3
+  case ARM::VST3dWB_fixed_Asm_8:  Spacing = 1; return ARM::VST3d8_UPD;
+  case ARM::VST3dWB_fixed_Asm_16: Spacing = 1; return ARM::VST3d16_UPD;
+  case ARM::VST3dWB_fixed_Asm_32: Spacing = 1; return ARM::VST3d32_UPD;
+  case ARM::VST3qWB_fixed_Asm_8:  Spacing = 2; return ARM::VST3q8_UPD;
+  case ARM::VST3qWB_fixed_Asm_16: Spacing = 2; return ARM::VST3q16_UPD;
+  case ARM::VST3qWB_fixed_Asm_32: Spacing = 2; return ARM::VST3q32_UPD;
+  case ARM::VST3dWB_register_Asm_8:  Spacing = 1; return ARM::VST3d8_UPD;
+  case ARM::VST3dWB_register_Asm_16: Spacing = 1; return ARM::VST3d16_UPD;
+  case ARM::VST3dWB_register_Asm_32: Spacing = 1; return ARM::VST3d32_UPD;
+  case ARM::VST3qWB_register_Asm_8:  Spacing = 2; return ARM::VST3q8_UPD;
+  case ARM::VST3qWB_register_Asm_16: Spacing = 2; return ARM::VST3q16_UPD;
+  case ARM::VST3qWB_register_Asm_32: Spacing = 2; return ARM::VST3q32_UPD;
+  case ARM::VST3dAsm_8:  Spacing = 1; return ARM::VST3d8;
+  case ARM::VST3dAsm_16: Spacing = 1; return ARM::VST3d16;
+  case ARM::VST3dAsm_32: Spacing = 1; return ARM::VST3d32;
+  case ARM::VST3qAsm_8:  Spacing = 2; return ARM::VST3q8;
+  case ARM::VST3qAsm_16: Spacing = 2; return ARM::VST3q16;
+  case ARM::VST3qAsm_32: Spacing = 2; return ARM::VST3q32;
+
+  // VST4LN
+  case ARM::VST4LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VST4LNd8_UPD;
+  case ARM::VST4LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VST4LNd16_UPD;
+  case ARM::VST4LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VST4LNd32_UPD;
+  case ARM::VST4LNqWB_fixed_Asm_16: Spacing = 1; return ARM::VST4LNq16_UPD;
+  case ARM::VST4LNqWB_fixed_Asm_32: Spacing = 2; return ARM::VST4LNq32_UPD;
+  case ARM::VST4LNdWB_register_Asm_8:  Spacing = 1; return ARM::VST4LNd8_UPD;
+  case ARM::VST4LNdWB_register_Asm_16: Spacing = 1; return ARM::VST4LNd16_UPD;
+  case ARM::VST4LNdWB_register_Asm_32: Spacing = 1; return ARM::VST4LNd32_UPD;
+  case ARM::VST4LNqWB_register_Asm_16: Spacing = 2; return ARM::VST4LNq16_UPD;
+  case ARM::VST4LNqWB_register_Asm_32: Spacing = 2; return ARM::VST4LNq32_UPD;
+  case ARM::VST4LNdAsm_8:  Spacing = 1; return ARM::VST4LNd8;
+  case ARM::VST4LNdAsm_16: Spacing = 1; return ARM::VST4LNd16;
+  case ARM::VST4LNdAsm_32: Spacing = 1; return ARM::VST4LNd32;
+  case ARM::VST4LNqAsm_16: Spacing = 2; return ARM::VST4LNq16;
+  case ARM::VST4LNqAsm_32: Spacing = 2; return ARM::VST4LNq32;
+
+  // VST4
+  case ARM::VST4dWB_fixed_Asm_8:  Spacing = 1; return ARM::VST4d8_UPD;
+  case ARM::VST4dWB_fixed_Asm_16: Spacing = 1; return ARM::VST4d16_UPD;
+  case ARM::VST4dWB_fixed_Asm_32: Spacing = 1; return ARM::VST4d32_UPD;
+  case ARM::VST4qWB_fixed_Asm_8:  Spacing = 2; return ARM::VST4q8_UPD;
+  case ARM::VST4qWB_fixed_Asm_16: Spacing = 2; return ARM::VST4q16_UPD;
+  case ARM::VST4qWB_fixed_Asm_32: Spacing = 2; return ARM::VST4q32_UPD;
+  case ARM::VST4dWB_register_Asm_8:  Spacing = 1; return ARM::VST4d8_UPD;
+  case ARM::VST4dWB_register_Asm_16: Spacing = 1; return ARM::VST4d16_UPD;
+  case ARM::VST4dWB_register_Asm_32: Spacing = 1; return ARM::VST4d32_UPD;
+  case ARM::VST4qWB_register_Asm_8:  Spacing = 2; return ARM::VST4q8_UPD;
+  case ARM::VST4qWB_register_Asm_16: Spacing = 2; return ARM::VST4q16_UPD;
+  case ARM::VST4qWB_register_Asm_32: Spacing = 2; return ARM::VST4q32_UPD;
+  case ARM::VST4dAsm_8:  Spacing = 1; return ARM::VST4d8;
+  case ARM::VST4dAsm_16: Spacing = 1; return ARM::VST4d16;
+  case ARM::VST4dAsm_32: Spacing = 1; return ARM::VST4d32;
+  case ARM::VST4qAsm_8:  Spacing = 2; return ARM::VST4q8;
+  case ARM::VST4qAsm_16: Spacing = 2; return ARM::VST4q16;
+  case ARM::VST4qAsm_32: Spacing = 2; return ARM::VST4q32;
   }
 }
 
-static unsigned getRealVLDLNOpcode(unsigned Opc) {
+static unsigned getRealVLDOpcode(unsigned Opc, unsigned &Spacing) {
   switch(Opc) {
-  default: assert(0 && "unexpected opcode!");
+  default: llvm_unreachable("unexpected opcode!");
   // VLD1LN
-  case ARM::VLD1LNdWB_fixed_Asm_8:  case ARM::VLD1LNdWB_fixed_Asm_P8:
-  case ARM::VLD1LNdWB_fixed_Asm_I8: case ARM::VLD1LNdWB_fixed_Asm_S8:
-  case ARM::VLD1LNdWB_fixed_Asm_U8:
-    return ARM::VLD1LNd8_UPD;
-  case ARM::VLD1LNdWB_fixed_Asm_16:  case ARM::VLD1LNdWB_fixed_Asm_P16:
-  case ARM::VLD1LNdWB_fixed_Asm_I16: case ARM::VLD1LNdWB_fixed_Asm_S16:
-  case ARM::VLD1LNdWB_fixed_Asm_U16:
-    return ARM::VLD1LNd16_UPD;
-  case ARM::VLD1LNdWB_fixed_Asm_32:  case ARM::VLD1LNdWB_fixed_Asm_F:
-  case ARM::VLD1LNdWB_fixed_Asm_F32: case ARM::VLD1LNdWB_fixed_Asm_I32:
-  case ARM::VLD1LNdWB_fixed_Asm_S32: case ARM::VLD1LNdWB_fixed_Asm_U32:
-    return ARM::VLD1LNd32_UPD;
-  case ARM::VLD1LNdWB_register_Asm_8:  case ARM::VLD1LNdWB_register_Asm_P8:
-  case ARM::VLD1LNdWB_register_Asm_I8: case ARM::VLD1LNdWB_register_Asm_S8:
-  case ARM::VLD1LNdWB_register_Asm_U8:
-    return ARM::VLD1LNd8_UPD;
-  case ARM::VLD1LNdWB_register_Asm_16:  case ARM::VLD1LNdWB_register_Asm_P16:
-  case ARM::VLD1LNdWB_register_Asm_I16: case ARM::VLD1LNdWB_register_Asm_S16:
-  case ARM::VLD1LNdWB_register_Asm_U16:
-    return ARM::VLD1LNd16_UPD;
-  case ARM::VLD1LNdWB_register_Asm_32:  case ARM::VLD1LNdWB_register_Asm_F:
-  case ARM::VLD1LNdWB_register_Asm_F32: case ARM::VLD1LNdWB_register_Asm_I32:
-  case ARM::VLD1LNdWB_register_Asm_S32: case ARM::VLD1LNdWB_register_Asm_U32:
-    return ARM::VLD1LNd32_UPD;
-  case ARM::VLD1LNdAsm_8:  case ARM::VLD1LNdAsm_P8:
-  case ARM::VLD1LNdAsm_I8: case ARM::VLD1LNdAsm_S8:
-  case ARM::VLD1LNdAsm_U8:
-    return ARM::VLD1LNd8;
-  case ARM::VLD1LNdAsm_16:  case ARM::VLD1LNdAsm_P16:
-  case ARM::VLD1LNdAsm_I16: case ARM::VLD1LNdAsm_S16:
-  case ARM::VLD1LNdAsm_U16:
-    return ARM::VLD1LNd16;
-  case ARM::VLD1LNdAsm_32:  case ARM::VLD1LNdAsm_F:
-  case ARM::VLD1LNdAsm_F32: case ARM::VLD1LNdAsm_I32:
-  case ARM::VLD1LNdAsm_S32: case ARM::VLD1LNdAsm_U32:
-    return ARM::VLD1LNd32;
+  case ARM::VLD1LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD1LNd8_UPD;
+  case ARM::VLD1LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VLD1LNd16_UPD;
+  case ARM::VLD1LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VLD1LNd32_UPD;
+  case ARM::VLD1LNdWB_register_Asm_8:  Spacing = 1; return ARM::VLD1LNd8_UPD;
+  case ARM::VLD1LNdWB_register_Asm_16: Spacing = 1; return ARM::VLD1LNd16_UPD;
+  case ARM::VLD1LNdWB_register_Asm_32: Spacing = 1; return ARM::VLD1LNd32_UPD;
+  case ARM::VLD1LNdAsm_8:  Spacing = 1; return ARM::VLD1LNd8;
+  case ARM::VLD1LNdAsm_16: Spacing = 1; return ARM::VLD1LNd16;
+  case ARM::VLD1LNdAsm_32: Spacing = 1; return ARM::VLD1LNd32;
 
   // VLD2LN
-  case ARM::VLD2LNdWB_fixed_Asm_8:  case ARM::VLD2LNdWB_fixed_Asm_P8:
-  case ARM::VLD2LNdWB_fixed_Asm_I8: case ARM::VLD2LNdWB_fixed_Asm_S8:
-  case ARM::VLD2LNdWB_fixed_Asm_U8:
-    return ARM::VLD2LNd8_UPD;
-  case ARM::VLD2LNdWB_fixed_Asm_16:  case ARM::VLD2LNdWB_fixed_Asm_P16:
-  case ARM::VLD2LNdWB_fixed_Asm_I16: case ARM::VLD2LNdWB_fixed_Asm_S16:
-  case ARM::VLD2LNdWB_fixed_Asm_U16:
-    return ARM::VLD2LNd16_UPD;
-  case ARM::VLD2LNdWB_fixed_Asm_32:  case ARM::VLD2LNdWB_fixed_Asm_F:
-  case ARM::VLD2LNdWB_fixed_Asm_F32: case ARM::VLD2LNdWB_fixed_Asm_I32:
-  case ARM::VLD2LNdWB_fixed_Asm_S32: case ARM::VLD2LNdWB_fixed_Asm_U32:
-    return ARM::VLD2LNd32_UPD;
-  case ARM::VLD2LNdWB_register_Asm_8:  case ARM::VLD2LNdWB_register_Asm_P8:
-  case ARM::VLD2LNdWB_register_Asm_I8: case ARM::VLD2LNdWB_register_Asm_S8:
-  case ARM::VLD2LNdWB_register_Asm_U8:
-    return ARM::VLD2LNd8_UPD;
-  case ARM::VLD2LNdWB_register_Asm_16:  case ARM::VLD2LNdWB_register_Asm_P16:
-  case ARM::VLD2LNdWB_register_Asm_I16: case ARM::VLD2LNdWB_register_Asm_S16:
-  case ARM::VLD2LNdWB_register_Asm_U16:
-    return ARM::VLD2LNd16_UPD;
-  case ARM::VLD2LNdWB_register_Asm_32:  case ARM::VLD2LNdWB_register_Asm_F:
-  case ARM::VLD2LNdWB_register_Asm_F32: case ARM::VLD2LNdWB_register_Asm_I32:
-  case ARM::VLD2LNdWB_register_Asm_S32: case ARM::VLD2LNdWB_register_Asm_U32:
-    return ARM::VLD2LNd32_UPD;
-  case ARM::VLD2LNdAsm_8:  case ARM::VLD2LNdAsm_P8:
-  case ARM::VLD2LNdAsm_I8: case ARM::VLD2LNdAsm_S8:
-  case ARM::VLD2LNdAsm_U8:
-    return ARM::VLD2LNd8;
-  case ARM::VLD2LNdAsm_16:  case ARM::VLD2LNdAsm_P16:
-  case ARM::VLD2LNdAsm_I16: case ARM::VLD2LNdAsm_S16:
-  case ARM::VLD2LNdAsm_U16:
-    return ARM::VLD2LNd16;
-  case ARM::VLD2LNdAsm_32:  case ARM::VLD2LNdAsm_F:
-  case ARM::VLD2LNdAsm_F32: case ARM::VLD2LNdAsm_I32:
-  case ARM::VLD2LNdAsm_S32: case ARM::VLD2LNdAsm_U32:
-    return ARM::VLD2LNd32;
+  case ARM::VLD2LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD2LNd8_UPD;
+  case ARM::VLD2LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VLD2LNd16_UPD;
+  case ARM::VLD2LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VLD2LNd32_UPD;
+  case ARM::VLD2LNqWB_fixed_Asm_16: Spacing = 1; return ARM::VLD2LNq16_UPD;
+  case ARM::VLD2LNqWB_fixed_Asm_32: Spacing = 2; return ARM::VLD2LNq32_UPD;
+  case ARM::VLD2LNdWB_register_Asm_8:  Spacing = 1; return ARM::VLD2LNd8_UPD;
+  case ARM::VLD2LNdWB_register_Asm_16: Spacing = 1; return ARM::VLD2LNd16_UPD;
+  case ARM::VLD2LNdWB_register_Asm_32: Spacing = 1; return ARM::VLD2LNd32_UPD;
+  case ARM::VLD2LNqWB_register_Asm_16: Spacing = 2; return ARM::VLD2LNq16_UPD;
+  case ARM::VLD2LNqWB_register_Asm_32: Spacing = 2; return ARM::VLD2LNq32_UPD;
+  case ARM::VLD2LNdAsm_8:  Spacing = 1; return ARM::VLD2LNd8;
+  case ARM::VLD2LNdAsm_16: Spacing = 1; return ARM::VLD2LNd16;
+  case ARM::VLD2LNdAsm_32: Spacing = 1; return ARM::VLD2LNd32;
+  case ARM::VLD2LNqAsm_16: Spacing = 2; return ARM::VLD2LNq16;
+  case ARM::VLD2LNqAsm_32: Spacing = 2; return ARM::VLD2LNq32;
+
+  // VLD3DUP
+  case ARM::VLD3DUPdWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD3DUPd8_UPD;
+  case ARM::VLD3DUPdWB_fixed_Asm_16: Spacing = 1; return ARM::VLD3DUPd16_UPD;
+  case ARM::VLD3DUPdWB_fixed_Asm_32: Spacing = 1; return ARM::VLD3DUPd32_UPD;
+  case ARM::VLD3DUPqWB_fixed_Asm_8: Spacing = 1; return ARM::VLD3DUPq8_UPD;
+  case ARM::VLD3DUPqWB_fixed_Asm_16: Spacing = 1; return ARM::VLD3DUPq16_UPD;
+  case ARM::VLD3DUPqWB_fixed_Asm_32: Spacing = 2; return ARM::VLD3DUPq32_UPD;
+  case ARM::VLD3DUPdWB_register_Asm_8:  Spacing = 1; return ARM::VLD3DUPd8_UPD;
+  case ARM::VLD3DUPdWB_register_Asm_16: Spacing = 1; return ARM::VLD3DUPd16_UPD;
+  case ARM::VLD3DUPdWB_register_Asm_32: Spacing = 1; return ARM::VLD3DUPd32_UPD;
+  case ARM::VLD3DUPqWB_register_Asm_8: Spacing = 2; return ARM::VLD3DUPq8_UPD;
+  case ARM::VLD3DUPqWB_register_Asm_16: Spacing = 2; return ARM::VLD3DUPq16_UPD;
+  case ARM::VLD3DUPqWB_register_Asm_32: Spacing = 2; return ARM::VLD3DUPq32_UPD;
+  case ARM::VLD3DUPdAsm_8:  Spacing = 1; return ARM::VLD3DUPd8;
+  case ARM::VLD3DUPdAsm_16: Spacing = 1; return ARM::VLD3DUPd16;
+  case ARM::VLD3DUPdAsm_32: Spacing = 1; return ARM::VLD3DUPd32;
+  case ARM::VLD3DUPqAsm_8: Spacing = 2; return ARM::VLD3DUPq8;
+  case ARM::VLD3DUPqAsm_16: Spacing = 2; return ARM::VLD3DUPq16;
+  case ARM::VLD3DUPqAsm_32: Spacing = 2; return ARM::VLD3DUPq32;
+
+  // VLD3LN
+  case ARM::VLD3LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD3LNd8_UPD;
+  case ARM::VLD3LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VLD3LNd16_UPD;
+  case ARM::VLD3LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VLD3LNd32_UPD;
+  case ARM::VLD3LNqWB_fixed_Asm_16: Spacing = 1; return ARM::VLD3LNq16_UPD;
+  case ARM::VLD3LNqWB_fixed_Asm_32: Spacing = 2; return ARM::VLD3LNq32_UPD;
+  case ARM::VLD3LNdWB_register_Asm_8:  Spacing = 1; return ARM::VLD3LNd8_UPD;
+  case ARM::VLD3LNdWB_register_Asm_16: Spacing = 1; return ARM::VLD3LNd16_UPD;
+  case ARM::VLD3LNdWB_register_Asm_32: Spacing = 1; return ARM::VLD3LNd32_UPD;
+  case ARM::VLD3LNqWB_register_Asm_16: Spacing = 2; return ARM::VLD3LNq16_UPD;
+  case ARM::VLD3LNqWB_register_Asm_32: Spacing = 2; return ARM::VLD3LNq32_UPD;
+  case ARM::VLD3LNdAsm_8:  Spacing = 1; return ARM::VLD3LNd8;
+  case ARM::VLD3LNdAsm_16: Spacing = 1; return ARM::VLD3LNd16;
+  case ARM::VLD3LNdAsm_32: Spacing = 1; return ARM::VLD3LNd32;
+  case ARM::VLD3LNqAsm_16: Spacing = 2; return ARM::VLD3LNq16;
+  case ARM::VLD3LNqAsm_32: Spacing = 2; return ARM::VLD3LNq32;
+
+  // VLD3
+  case ARM::VLD3dWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD3d8_UPD;
+  case ARM::VLD3dWB_fixed_Asm_16: Spacing = 1; return ARM::VLD3d16_UPD;
+  case ARM::VLD3dWB_fixed_Asm_32: Spacing = 1; return ARM::VLD3d32_UPD;
+  case ARM::VLD3qWB_fixed_Asm_8:  Spacing = 2; return ARM::VLD3q8_UPD;
+  case ARM::VLD3qWB_fixed_Asm_16: Spacing = 2; return ARM::VLD3q16_UPD;
+  case ARM::VLD3qWB_fixed_Asm_32: Spacing = 2; return ARM::VLD3q32_UPD;
+  case ARM::VLD3dWB_register_Asm_8:  Spacing = 1; return ARM::VLD3d8_UPD;
+  case ARM::VLD3dWB_register_Asm_16: Spacing = 1; return ARM::VLD3d16_UPD;
+  case ARM::VLD3dWB_register_Asm_32: Spacing = 1; return ARM::VLD3d32_UPD;
+  case ARM::VLD3qWB_register_Asm_8:  Spacing = 2; return ARM::VLD3q8_UPD;
+  case ARM::VLD3qWB_register_Asm_16: Spacing = 2; return ARM::VLD3q16_UPD;
+  case ARM::VLD3qWB_register_Asm_32: Spacing = 2; return ARM::VLD3q32_UPD;
+  case ARM::VLD3dAsm_8:  Spacing = 1; return ARM::VLD3d8;
+  case ARM::VLD3dAsm_16: Spacing = 1; return ARM::VLD3d16;
+  case ARM::VLD3dAsm_32: Spacing = 1; return ARM::VLD3d32;
+  case ARM::VLD3qAsm_8:  Spacing = 2; return ARM::VLD3q8;
+  case ARM::VLD3qAsm_16: Spacing = 2; return ARM::VLD3q16;
+  case ARM::VLD3qAsm_32: Spacing = 2; return ARM::VLD3q32;
+
+  // VLD4LN
+  case ARM::VLD4LNdWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD4LNd8_UPD;
+  case ARM::VLD4LNdWB_fixed_Asm_16: Spacing = 1; return ARM::VLD4LNd16_UPD;
+  case ARM::VLD4LNdWB_fixed_Asm_32: Spacing = 1; return ARM::VLD4LNd32_UPD;
+  case ARM::VLD4LNqWB_fixed_Asm_16: Spacing = 1; return ARM::VLD4LNq16_UPD;
+  case ARM::VLD4LNqWB_fixed_Asm_32: Spacing = 2; return ARM::VLD4LNq32_UPD;
+  case ARM::VLD4LNdWB_register_Asm_8:  Spacing = 1; return ARM::VLD4LNd8_UPD;
+  case ARM::VLD4LNdWB_register_Asm_16: Spacing = 1; return ARM::VLD4LNd16_UPD;
+  case ARM::VLD4LNdWB_register_Asm_32: Spacing = 1; return ARM::VLD4LNd32_UPD;
+  case ARM::VLD4LNqWB_register_Asm_16: Spacing = 2; return ARM::VLD4LNq16_UPD;
+  case ARM::VLD4LNqWB_register_Asm_32: Spacing = 2; return ARM::VLD4LNq32_UPD;
+  case ARM::VLD4LNdAsm_8:  Spacing = 1; return ARM::VLD4LNd8;
+  case ARM::VLD4LNdAsm_16: Spacing = 1; return ARM::VLD4LNd16;
+  case ARM::VLD4LNdAsm_32: Spacing = 1; return ARM::VLD4LNd32;
+  case ARM::VLD4LNqAsm_16: Spacing = 2; return ARM::VLD4LNq16;
+  case ARM::VLD4LNqAsm_32: Spacing = 2; return ARM::VLD4LNq32;
+
+  // VLD4DUP
+  case ARM::VLD4DUPdWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD4DUPd8_UPD;
+  case ARM::VLD4DUPdWB_fixed_Asm_16: Spacing = 1; return ARM::VLD4DUPd16_UPD;
+  case ARM::VLD4DUPdWB_fixed_Asm_32: Spacing = 1; return ARM::VLD4DUPd32_UPD;
+  case ARM::VLD4DUPqWB_fixed_Asm_8: Spacing = 1; return ARM::VLD4DUPq8_UPD;
+  case ARM::VLD4DUPqWB_fixed_Asm_16: Spacing = 1; return ARM::VLD4DUPq16_UPD;
+  case ARM::VLD4DUPqWB_fixed_Asm_32: Spacing = 2; return ARM::VLD4DUPq32_UPD;
+  case ARM::VLD4DUPdWB_register_Asm_8:  Spacing = 1; return ARM::VLD4DUPd8_UPD;
+  case ARM::VLD4DUPdWB_register_Asm_16: Spacing = 1; return ARM::VLD4DUPd16_UPD;
+  case ARM::VLD4DUPdWB_register_Asm_32: Spacing = 1; return ARM::VLD4DUPd32_UPD;
+  case ARM::VLD4DUPqWB_register_Asm_8: Spacing = 2; return ARM::VLD4DUPq8_UPD;
+  case ARM::VLD4DUPqWB_register_Asm_16: Spacing = 2; return ARM::VLD4DUPq16_UPD;
+  case ARM::VLD4DUPqWB_register_Asm_32: Spacing = 2; return ARM::VLD4DUPq32_UPD;
+  case ARM::VLD4DUPdAsm_8:  Spacing = 1; return ARM::VLD4DUPd8;
+  case ARM::VLD4DUPdAsm_16: Spacing = 1; return ARM::VLD4DUPd16;
+  case ARM::VLD4DUPdAsm_32: Spacing = 1; return ARM::VLD4DUPd32;
+  case ARM::VLD4DUPqAsm_8: Spacing = 2; return ARM::VLD4DUPq8;
+  case ARM::VLD4DUPqAsm_16: Spacing = 2; return ARM::VLD4DUPq16;
+  case ARM::VLD4DUPqAsm_32: Spacing = 2; return ARM::VLD4DUPq32;
+
+  // VLD4
+  case ARM::VLD4dWB_fixed_Asm_8:  Spacing = 1; return ARM::VLD4d8_UPD;
+  case ARM::VLD4dWB_fixed_Asm_16: Spacing = 1; return ARM::VLD4d16_UPD;
+  case ARM::VLD4dWB_fixed_Asm_32: Spacing = 1; return ARM::VLD4d32_UPD;
+  case ARM::VLD4qWB_fixed_Asm_8:  Spacing = 2; return ARM::VLD4q8_UPD;
+  case ARM::VLD4qWB_fixed_Asm_16: Spacing = 2; return ARM::VLD4q16_UPD;
+  case ARM::VLD4qWB_fixed_Asm_32: Spacing = 2; return ARM::VLD4q32_UPD;
+  case ARM::VLD4dWB_register_Asm_8:  Spacing = 1; return ARM::VLD4d8_UPD;
+  case ARM::VLD4dWB_register_Asm_16: Spacing = 1; return ARM::VLD4d16_UPD;
+  case ARM::VLD4dWB_register_Asm_32: Spacing = 1; return ARM::VLD4d32_UPD;
+  case ARM::VLD4qWB_register_Asm_8:  Spacing = 2; return ARM::VLD4q8_UPD;
+  case ARM::VLD4qWB_register_Asm_16: Spacing = 2; return ARM::VLD4q16_UPD;
+  case ARM::VLD4qWB_register_Asm_32: Spacing = 2; return ARM::VLD4q32_UPD;
+  case ARM::VLD4dAsm_8:  Spacing = 1; return ARM::VLD4d8;
+  case ARM::VLD4dAsm_16: Spacing = 1; return ARM::VLD4d16;
+  case ARM::VLD4dAsm_32: Spacing = 1; return ARM::VLD4d32;
+  case ARM::VLD4qAsm_8:  Spacing = 2; return ARM::VLD4q8;
+  case ARM::VLD4qAsm_16: Spacing = 2; return ARM::VLD4q16;
+  case ARM::VLD4qAsm_32: Spacing = 2; return ARM::VLD4q32;
   }
 }
 
@@ -5165,19 +5508,31 @@ bool ARMAsmParser::
 processInstruction(MCInst &Inst,
                    const SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   switch (Inst.getOpcode()) {
+  // Aliases for alternate PC+imm syntax of LDR instructions.
+  case ARM::t2LDRpcrel:
+    Inst.setOpcode(ARM::t2LDRpci);
+    return true;
+  case ARM::t2LDRBpcrel:
+    Inst.setOpcode(ARM::t2LDRBpci);
+    return true;
+  case ARM::t2LDRHpcrel:
+    Inst.setOpcode(ARM::t2LDRHpci);
+    return true;
+  case ARM::t2LDRSBpcrel:
+    Inst.setOpcode(ARM::t2LDRSBpci);
+    return true;
+  case ARM::t2LDRSHpcrel:
+    Inst.setOpcode(ARM::t2LDRSHpci);
+    return true;
   // Handle NEON VST complex aliases.
-  case ARM::VST1LNdWB_register_Asm_8: case ARM::VST1LNdWB_register_Asm_P8:
-  case ARM::VST1LNdWB_register_Asm_I8: case ARM::VST1LNdWB_register_Asm_S8:
-  case ARM::VST1LNdWB_register_Asm_U8: case ARM::VST1LNdWB_register_Asm_16:
-  case ARM::VST1LNdWB_register_Asm_P16: case ARM::VST1LNdWB_register_Asm_I16:
-  case ARM::VST1LNdWB_register_Asm_S16: case ARM::VST1LNdWB_register_Asm_U16:
-  case ARM::VST1LNdWB_register_Asm_32: case ARM::VST1LNdWB_register_Asm_F:
-  case ARM::VST1LNdWB_register_Asm_F32: case ARM::VST1LNdWB_register_Asm_I32:
-  case ARM::VST1LNdWB_register_Asm_S32: case ARM::VST1LNdWB_register_Asm_U32: {
+  case ARM::VST1LNdWB_register_Asm_8:
+  case ARM::VST1LNdWB_register_Asm_16:
+  case ARM::VST1LNdWB_register_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVSTLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
@@ -5190,42 +5545,92 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VST2LNdWB_register_Asm_8: case ARM::VST2LNdWB_register_Asm_P8:
-  case ARM::VST2LNdWB_register_Asm_I8: case ARM::VST2LNdWB_register_Asm_S8:
-  case ARM::VST2LNdWB_register_Asm_U8: case ARM::VST2LNdWB_register_Asm_16:
-  case ARM::VST2LNdWB_register_Asm_P16: case ARM::VST2LNdWB_register_Asm_I16:
-  case ARM::VST2LNdWB_register_Asm_S16: case ARM::VST2LNdWB_register_Asm_U16:
-  case ARM::VST2LNdWB_register_Asm_32: case ARM::VST2LNdWB_register_Asm_F:
-  case ARM::VST2LNdWB_register_Asm_F32: case ARM::VST2LNdWB_register_Asm_I32:
-  case ARM::VST2LNdWB_register_Asm_S32: case ARM::VST2LNdWB_register_Asm_U32: {
+  case ARM::VST2LNdWB_register_Asm_8:
+  case ARM::VST2LNdWB_register_Asm_16:
+  case ARM::VST2LNdWB_register_Asm_32:
+  case ARM::VST2LNqWB_register_Asm_16:
+  case ARM::VST2LNqWB_register_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVSTLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
     TmpInst.addOperand(Inst.getOperand(4)); // Rm
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(1)); // lane
     TmpInst.addOperand(Inst.getOperand(5)); // CondCode
     TmpInst.addOperand(Inst.getOperand(6));
     Inst = TmpInst;
     return true;
   }
-  case ARM::VST1LNdWB_fixed_Asm_8: case ARM::VST1LNdWB_fixed_Asm_P8:
-  case ARM::VST1LNdWB_fixed_Asm_I8: case ARM::VST1LNdWB_fixed_Asm_S8:
-  case ARM::VST1LNdWB_fixed_Asm_U8: case ARM::VST1LNdWB_fixed_Asm_16:
-  case ARM::VST1LNdWB_fixed_Asm_P16: case ARM::VST1LNdWB_fixed_Asm_I16:
-  case ARM::VST1LNdWB_fixed_Asm_S16: case ARM::VST1LNdWB_fixed_Asm_U16:
-  case ARM::VST1LNdWB_fixed_Asm_32: case ARM::VST1LNdWB_fixed_Asm_F:
-  case ARM::VST1LNdWB_fixed_Asm_F32: case ARM::VST1LNdWB_fixed_Asm_I32:
-  case ARM::VST1LNdWB_fixed_Asm_S32: case ARM::VST1LNdWB_fixed_Asm_U32: {
+
+  case ARM::VST3LNdWB_register_Asm_8:
+  case ARM::VST3LNdWB_register_Asm_16:
+  case ARM::VST3LNdWB_register_Asm_32:
+  case ARM::VST3LNqWB_register_Asm_16:
+  case ARM::VST3LNqWB_register_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVSTLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(4)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(5)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(6));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST4LNdWB_register_Asm_8:
+  case ARM::VST4LNdWB_register_Asm_16:
+  case ARM::VST4LNdWB_register_Asm_32:
+  case ARM::VST4LNqWB_register_Asm_16:
+  case ARM::VST4LNqWB_register_Asm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(4)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(5)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(6));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST1LNdWB_fixed_Asm_8:
+  case ARM::VST1LNdWB_fixed_Asm_16:
+  case ARM::VST1LNdWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
@@ -5238,40 +5643,92 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VST2LNdWB_fixed_Asm_8: case ARM::VST2LNdWB_fixed_Asm_P8:
-  case ARM::VST2LNdWB_fixed_Asm_I8: case ARM::VST2LNdWB_fixed_Asm_S8:
-  case ARM::VST2LNdWB_fixed_Asm_U8: case ARM::VST2LNdWB_fixed_Asm_16:
-  case ARM::VST2LNdWB_fixed_Asm_P16: case ARM::VST2LNdWB_fixed_Asm_I16:
-  case ARM::VST2LNdWB_fixed_Asm_S16: case ARM::VST2LNdWB_fixed_Asm_U16:
-  case ARM::VST2LNdWB_fixed_Asm_32: case ARM::VST2LNdWB_fixed_Asm_F:
-  case ARM::VST2LNdWB_fixed_Asm_F32: case ARM::VST2LNdWB_fixed_Asm_I32:
-  case ARM::VST2LNdWB_fixed_Asm_S32: case ARM::VST2LNdWB_fixed_Asm_U32: {
+  case ARM::VST2LNdWB_fixed_Asm_8:
+  case ARM::VST2LNdWB_fixed_Asm_16:
+  case ARM::VST2LNdWB_fixed_Asm_32:
+  case ARM::VST2LNqWB_fixed_Asm_16:
+  case ARM::VST2LNqWB_fixed_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVSTLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
     TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(1)); // lane
     TmpInst.addOperand(Inst.getOperand(4)); // CondCode
     TmpInst.addOperand(Inst.getOperand(5));
     Inst = TmpInst;
     return true;
   }
-  case ARM::VST1LNdAsm_8: case ARM::VST1LNdAsm_P8: case ARM::VST1LNdAsm_I8:
-  case ARM::VST1LNdAsm_S8: case ARM::VST1LNdAsm_U8: case ARM::VST1LNdAsm_16:
-  case ARM::VST1LNdAsm_P16: case ARM::VST1LNdAsm_I16: case ARM::VST1LNdAsm_S16:
-  case ARM::VST1LNdAsm_U16: case ARM::VST1LNdAsm_32: case ARM::VST1LNdAsm_F:
-  case ARM::VST1LNdAsm_F32: case ARM::VST1LNdAsm_I32: case ARM::VST1LNdAsm_S32:
-  case ARM::VST1LNdAsm_U32: {
+
+  case ARM::VST3LNdWB_fixed_Asm_8:
+  case ARM::VST3LNdWB_fixed_Asm_16:
+  case ARM::VST3LNdWB_fixed_Asm_32:
+  case ARM::VST3LNqWB_fixed_Asm_16:
+  case ARM::VST3LNqWB_fixed_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVSTLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST4LNdWB_fixed_Asm_8:
+  case ARM::VST4LNdWB_fixed_Asm_16:
+  case ARM::VST4LNdWB_fixed_Asm_32:
+  case ARM::VST4LNqWB_fixed_Asm_16:
+  case ARM::VST4LNqWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST1LNdAsm_8:
+  case ARM::VST1LNdAsm_16:
+  case ARM::VST1LNdAsm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
@@ -5282,39 +5739,87 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VST2LNdAsm_8: case ARM::VST2LNdAsm_P8: case ARM::VST2LNdAsm_I8:
-  case ARM::VST2LNdAsm_S8: case ARM::VST2LNdAsm_U8: case ARM::VST2LNdAsm_16:
-  case ARM::VST2LNdAsm_P16: case ARM::VST2LNdAsm_I16: case ARM::VST2LNdAsm_S16:
-  case ARM::VST2LNdAsm_U16: case ARM::VST2LNdAsm_32: case ARM::VST2LNdAsm_F:
-  case ARM::VST2LNdAsm_F32: case ARM::VST2LNdAsm_I32: case ARM::VST2LNdAsm_S32:
-  case ARM::VST2LNdAsm_U32: {
+  case ARM::VST2LNdAsm_8:
+  case ARM::VST2LNdAsm_16:
+  case ARM::VST2LNdAsm_32:
+  case ARM::VST2LNqAsm_16:
+  case ARM::VST2LNqAsm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVSTLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(1)); // lane
     TmpInst.addOperand(Inst.getOperand(4)); // CondCode
     TmpInst.addOperand(Inst.getOperand(5));
     Inst = TmpInst;
     return true;
   }
+
+  case ARM::VST3LNdAsm_8:
+  case ARM::VST3LNdAsm_16:
+  case ARM::VST3LNdAsm_32:
+  case ARM::VST3LNqAsm_16:
+  case ARM::VST3LNqAsm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST4LNdAsm_8:
+  case ARM::VST4LNdAsm_16:
+  case ARM::VST4LNdAsm_32:
+  case ARM::VST4LNqAsm_16:
+  case ARM::VST4LNqAsm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
   // Handle NEON VLD complex aliases.
-  case ARM::VLD1LNdWB_register_Asm_8: case ARM::VLD1LNdWB_register_Asm_P8:
-  case ARM::VLD1LNdWB_register_Asm_I8: case ARM::VLD1LNdWB_register_Asm_S8:
-  case ARM::VLD1LNdWB_register_Asm_U8: case ARM::VLD1LNdWB_register_Asm_16:
-  case ARM::VLD1LNdWB_register_Asm_P16: case ARM::VLD1LNdWB_register_Asm_I16:
-  case ARM::VLD1LNdWB_register_Asm_S16: case ARM::VLD1LNdWB_register_Asm_U16:
-  case ARM::VLD1LNdWB_register_Asm_32: case ARM::VLD1LNdWB_register_Asm_F:
-  case ARM::VLD1LNdWB_register_Asm_F32: case ARM::VLD1LNdWB_register_Asm_I32:
-  case ARM::VLD1LNdWB_register_Asm_S32: case ARM::VLD1LNdWB_register_Asm_U32: {
+  case ARM::VLD1LNdWB_register_Asm_8:
+  case ARM::VLD1LNdWB_register_Asm_16:
+  case ARM::VLD1LNdWB_register_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVLDLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
@@ -5328,26 +5833,26 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VLD2LNdWB_register_Asm_8: case ARM::VLD2LNdWB_register_Asm_P8:
-  case ARM::VLD2LNdWB_register_Asm_I8: case ARM::VLD2LNdWB_register_Asm_S8:
-  case ARM::VLD2LNdWB_register_Asm_U8: case ARM::VLD2LNdWB_register_Asm_16:
-  case ARM::VLD2LNdWB_register_Asm_P16: case ARM::VLD2LNdWB_register_Asm_I16:
-  case ARM::VLD2LNdWB_register_Asm_S16: case ARM::VLD2LNdWB_register_Asm_U16:
-  case ARM::VLD2LNdWB_register_Asm_32: case ARM::VLD2LNdWB_register_Asm_F:
-  case ARM::VLD2LNdWB_register_Asm_F32: case ARM::VLD2LNdWB_register_Asm_I32:
-  case ARM::VLD2LNdWB_register_Asm_S32: case ARM::VLD2LNdWB_register_Asm_U32: {
+  case ARM::VLD2LNdWB_register_Asm_8:
+  case ARM::VLD2LNdWB_register_Asm_16:
+  case ARM::VLD2LNdWB_register_Asm_32:
+  case ARM::VLD2LNqWB_register_Asm_16:
+  case ARM::VLD2LNqWB_register_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVLDLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
     TmpInst.addOperand(Inst.getOperand(4)); // Rm
     TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(1)); // lane
     TmpInst.addOperand(Inst.getOperand(5)); // CondCode
     TmpInst.addOperand(Inst.getOperand(6));
@@ -5355,18 +5860,80 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VLD1LNdWB_fixed_Asm_8: case ARM::VLD1LNdWB_fixed_Asm_P8:
-  case ARM::VLD1LNdWB_fixed_Asm_I8: case ARM::VLD1LNdWB_fixed_Asm_S8:
-  case ARM::VLD1LNdWB_fixed_Asm_U8: case ARM::VLD1LNdWB_fixed_Asm_16:
-  case ARM::VLD1LNdWB_fixed_Asm_P16: case ARM::VLD1LNdWB_fixed_Asm_I16:
-  case ARM::VLD1LNdWB_fixed_Asm_S16: case ARM::VLD1LNdWB_fixed_Asm_U16:
-  case ARM::VLD1LNdWB_fixed_Asm_32: case ARM::VLD1LNdWB_fixed_Asm_F:
-  case ARM::VLD1LNdWB_fixed_Asm_F32: case ARM::VLD1LNdWB_fixed_Asm_I32:
-  case ARM::VLD1LNdWB_fixed_Asm_S32: case ARM::VLD1LNdWB_fixed_Asm_U32: {
+  case ARM::VLD3LNdWB_register_Asm_8:
+  case ARM::VLD3LNdWB_register_Asm_16:
+  case ARM::VLD3LNdWB_register_Asm_32:
+  case ARM::VLD3LNqWB_register_Asm_16:
+  case ARM::VLD3LNqWB_register_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVLDLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(4)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(5)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(6));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD4LNdWB_register_Asm_8:
+  case ARM::VLD4LNdWB_register_Asm_16:
+  case ARM::VLD4LNdWB_register_Asm_32:
+  case ARM::VLD4LNqWB_register_Asm_16:
+  case ARM::VLD4LNqWB_register_Asm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(4)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(5)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(6));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD1LNdWB_fixed_Asm_8:
+  case ARM::VLD1LNdWB_fixed_Asm_16:
+  case ARM::VLD1LNdWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
@@ -5380,26 +5947,26 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VLD2LNdWB_fixed_Asm_8: case ARM::VLD2LNdWB_fixed_Asm_P8:
-  case ARM::VLD2LNdWB_fixed_Asm_I8: case ARM::VLD2LNdWB_fixed_Asm_S8:
-  case ARM::VLD2LNdWB_fixed_Asm_U8: case ARM::VLD2LNdWB_fixed_Asm_16:
-  case ARM::VLD2LNdWB_fixed_Asm_P16: case ARM::VLD2LNdWB_fixed_Asm_I16:
-  case ARM::VLD2LNdWB_fixed_Asm_S16: case ARM::VLD2LNdWB_fixed_Asm_U16:
-  case ARM::VLD2LNdWB_fixed_Asm_32: case ARM::VLD2LNdWB_fixed_Asm_F:
-  case ARM::VLD2LNdWB_fixed_Asm_F32: case ARM::VLD2LNdWB_fixed_Asm_I32:
-  case ARM::VLD2LNdWB_fixed_Asm_S32: case ARM::VLD2LNdWB_fixed_Asm_U32: {
+  case ARM::VLD2LNdWB_fixed_Asm_8:
+  case ARM::VLD2LNdWB_fixed_Asm_16:
+  case ARM::VLD2LNdWB_fixed_Asm_32:
+  case ARM::VLD2LNqWB_fixed_Asm_16:
+  case ARM::VLD2LNqWB_fixed_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVLDLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
     TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
     TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(1)); // lane
     TmpInst.addOperand(Inst.getOperand(4)); // CondCode
     TmpInst.addOperand(Inst.getOperand(5));
@@ -5407,16 +5974,80 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VLD1LNdAsm_8: case ARM::VLD1LNdAsm_P8: case ARM::VLD1LNdAsm_I8:
-  case ARM::VLD1LNdAsm_S8: case ARM::VLD1LNdAsm_U8: case ARM::VLD1LNdAsm_16:
-  case ARM::VLD1LNdAsm_P16: case ARM::VLD1LNdAsm_I16: case ARM::VLD1LNdAsm_S16:
-  case ARM::VLD1LNdAsm_U16: case ARM::VLD1LNdAsm_32: case ARM::VLD1LNdAsm_F:
-  case ARM::VLD1LNdAsm_F32: case ARM::VLD1LNdAsm_I32: case ARM::VLD1LNdAsm_S32:
-  case ARM::VLD1LNdAsm_U32: {
+  case ARM::VLD3LNdWB_fixed_Asm_8:
+  case ARM::VLD3LNdWB_fixed_Asm_16:
+  case ARM::VLD3LNdWB_fixed_Asm_32:
+  case ARM::VLD3LNqWB_fixed_Asm_16:
+  case ARM::VLD3LNqWB_fixed_Asm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVLDLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD4LNdWB_fixed_Asm_8:
+  case ARM::VLD4LNdWB_fixed_Asm_16:
+  case ARM::VLD4LNdWB_fixed_Asm_32:
+  case ARM::VLD4LNqWB_fixed_Asm_16:
+  case ARM::VLD4LNqWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn_wb
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD1LNdAsm_8:
+  case ARM::VLD1LNdAsm_16:
+  case ARM::VLD1LNdAsm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
@@ -5428,29 +6059,574 @@ processInstruction(MCInst &Inst,
     return true;
   }
 
-  case ARM::VLD2LNdAsm_8: case ARM::VLD2LNdAsm_P8: case ARM::VLD2LNdAsm_I8:
-  case ARM::VLD2LNdAsm_S8: case ARM::VLD2LNdAsm_U8: case ARM::VLD2LNdAsm_16:
-  case ARM::VLD2LNdAsm_P16: case ARM::VLD2LNdAsm_I16: case ARM::VLD2LNdAsm_S16:
-  case ARM::VLD2LNdAsm_U16: case ARM::VLD2LNdAsm_32: case ARM::VLD2LNdAsm_F:
-  case ARM::VLD2LNdAsm_F32: case ARM::VLD2LNdAsm_I32: case ARM::VLD2LNdAsm_S32:
-  case ARM::VLD2LNdAsm_U32: {
+  case ARM::VLD2LNdAsm_8:
+  case ARM::VLD2LNdAsm_16:
+  case ARM::VLD2LNdAsm_32:
+  case ARM::VLD2LNqAsm_16:
+  case ARM::VLD2LNqAsm_32: {
     MCInst TmpInst;
     // Shuffle the operands around so the lane index operand is in the
     // right place.
-    TmpInst.setOpcode(getRealVLDLNOpcode(Inst.getOpcode()));
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
     TmpInst.addOperand(Inst.getOperand(0)); // Vd
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(2)); // Rn
     TmpInst.addOperand(Inst.getOperand(3)); // alignment
     TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
-    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg()+1));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
     TmpInst.addOperand(Inst.getOperand(1)); // lane
     TmpInst.addOperand(Inst.getOperand(4)); // CondCode
     TmpInst.addOperand(Inst.getOperand(5));
     Inst = TmpInst;
     return true;
   }
+
+  case ARM::VLD3LNdAsm_8:
+  case ARM::VLD3LNdAsm_16:
+  case ARM::VLD3LNdAsm_32:
+  case ARM::VLD3LNqAsm_16:
+  case ARM::VLD3LNqAsm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD4LNdAsm_8:
+  case ARM::VLD4LNdAsm_16:
+  case ARM::VLD4LNdAsm_32:
+  case ARM::VLD4LNqAsm_16:
+  case ARM::VLD4LNqAsm_32: {
+    MCInst TmpInst;
+    // Shuffle the operands around so the lane index operand is in the
+    // right place.
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(2)); // Rn
+    TmpInst.addOperand(Inst.getOperand(3)); // alignment
+    TmpInst.addOperand(Inst.getOperand(0)); // Tied operand src (== Vd)
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // lane
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  // VLD3DUP single 3-element structure to all lanes instructions.
+  case ARM::VLD3DUPdAsm_8:
+  case ARM::VLD3DUPdAsm_16:
+  case ARM::VLD3DUPdAsm_32:
+  case ARM::VLD3DUPqAsm_8:
+  case ARM::VLD3DUPqAsm_16:
+  case ARM::VLD3DUPqAsm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD3DUPdWB_fixed_Asm_8:
+  case ARM::VLD3DUPdWB_fixed_Asm_16:
+  case ARM::VLD3DUPdWB_fixed_Asm_32:
+  case ARM::VLD3DUPqWB_fixed_Asm_8:
+  case ARM::VLD3DUPqWB_fixed_Asm_16:
+  case ARM::VLD3DUPqWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD3DUPdWB_register_Asm_8:
+  case ARM::VLD3DUPdWB_register_Asm_16:
+  case ARM::VLD3DUPdWB_register_Asm_32:
+  case ARM::VLD3DUPqWB_register_Asm_8:
+  case ARM::VLD3DUPqWB_register_Asm_16:
+  case ARM::VLD3DUPqWB_register_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // Rm
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  // VLD3 multiple 3-element structure instructions.
+  case ARM::VLD3dAsm_8:
+  case ARM::VLD3dAsm_16:
+  case ARM::VLD3dAsm_32:
+  case ARM::VLD3qAsm_8:
+  case ARM::VLD3qAsm_16:
+  case ARM::VLD3qAsm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD3dWB_fixed_Asm_8:
+  case ARM::VLD3dWB_fixed_Asm_16:
+  case ARM::VLD3dWB_fixed_Asm_32:
+  case ARM::VLD3qWB_fixed_Asm_8:
+  case ARM::VLD3qWB_fixed_Asm_16:
+  case ARM::VLD3qWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD3dWB_register_Asm_8:
+  case ARM::VLD3dWB_register_Asm_16:
+  case ARM::VLD3dWB_register_Asm_32:
+  case ARM::VLD3qWB_register_Asm_8:
+  case ARM::VLD3qWB_register_Asm_16:
+  case ARM::VLD3qWB_register_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // Rm
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  // VLD4DUP single 3-element structure to all lanes instructions.
+  case ARM::VLD4DUPdAsm_8:
+  case ARM::VLD4DUPdAsm_16:
+  case ARM::VLD4DUPdAsm_32:
+  case ARM::VLD4DUPqAsm_8:
+  case ARM::VLD4DUPqAsm_16:
+  case ARM::VLD4DUPqAsm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD4DUPdWB_fixed_Asm_8:
+  case ARM::VLD4DUPdWB_fixed_Asm_16:
+  case ARM::VLD4DUPdWB_fixed_Asm_32:
+  case ARM::VLD4DUPqWB_fixed_Asm_8:
+  case ARM::VLD4DUPqWB_fixed_Asm_16:
+  case ARM::VLD4DUPqWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD4DUPdWB_register_Asm_8:
+  case ARM::VLD4DUPdWB_register_Asm_16:
+  case ARM::VLD4DUPdWB_register_Asm_32:
+  case ARM::VLD4DUPqWB_register_Asm_8:
+  case ARM::VLD4DUPqWB_register_Asm_16:
+  case ARM::VLD4DUPqWB_register_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // Rm
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  // VLD4 multiple 4-element structure instructions.
+  case ARM::VLD4dAsm_8:
+  case ARM::VLD4dAsm_16:
+  case ARM::VLD4dAsm_32:
+  case ARM::VLD4qAsm_8:
+  case ARM::VLD4qAsm_16:
+  case ARM::VLD4qAsm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD4dWB_fixed_Asm_8:
+  case ARM::VLD4dWB_fixed_Asm_16:
+  case ARM::VLD4dWB_fixed_Asm_32:
+  case ARM::VLD4qWB_fixed_Asm_8:
+  case ARM::VLD4qWB_fixed_Asm_16:
+  case ARM::VLD4qWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VLD4dWB_register_Asm_8:
+  case ARM::VLD4dWB_register_Asm_16:
+  case ARM::VLD4dWB_register_Asm_32:
+  case ARM::VLD4qWB_register_Asm_8:
+  case ARM::VLD4qWB_register_Asm_16:
+  case ARM::VLD4qWB_register_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVLDOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // Rm
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  // VST3 multiple 3-element structure instructions.
+  case ARM::VST3dAsm_8:
+  case ARM::VST3dAsm_16:
+  case ARM::VST3dAsm_32:
+  case ARM::VST3qAsm_8:
+  case ARM::VST3qAsm_16:
+  case ARM::VST3qAsm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST3dWB_fixed_Asm_8:
+  case ARM::VST3dWB_fixed_Asm_16:
+  case ARM::VST3dWB_fixed_Asm_32:
+  case ARM::VST3qWB_fixed_Asm_8:
+  case ARM::VST3qWB_fixed_Asm_16:
+  case ARM::VST3qWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST3dWB_register_Asm_8:
+  case ARM::VST3dWB_register_Asm_16:
+  case ARM::VST3dWB_register_Asm_32:
+  case ARM::VST3qWB_register_Asm_8:
+  case ARM::VST3qWB_register_Asm_16:
+  case ARM::VST3qWB_register_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
+  // VST4 multiple 3-element structure instructions.
+  case ARM::VST4dAsm_8:
+  case ARM::VST4dAsm_16:
+  case ARM::VST4dAsm_32:
+  case ARM::VST4qAsm_8:
+  case ARM::VST4qAsm_16:
+  case ARM::VST4qAsm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST4dWB_fixed_Asm_8:
+  case ARM::VST4dWB_fixed_Asm_16:
+  case ARM::VST4dWB_fixed_Asm_32:
+  case ARM::VST4qWB_fixed_Asm_8:
+  case ARM::VST4qWB_fixed_Asm_16:
+  case ARM::VST4qWB_fixed_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(MCOperand::CreateReg(0)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    Inst = TmpInst;
+    return true;
+  }
+
+  case ARM::VST4dWB_register_Asm_8:
+  case ARM::VST4dWB_register_Asm_16:
+  case ARM::VST4dWB_register_Asm_32:
+  case ARM::VST4qWB_register_Asm_8:
+  case ARM::VST4qWB_register_Asm_16:
+  case ARM::VST4qWB_register_Asm_32: {
+    MCInst TmpInst;
+    unsigned Spacing;
+    TmpInst.setOpcode(getRealVSTOpcode(Inst.getOpcode(), Spacing));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn_wb == tied Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // alignment
+    TmpInst.addOperand(Inst.getOperand(3)); // Rm
+    TmpInst.addOperand(Inst.getOperand(0)); // Vd
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 2));
+    TmpInst.addOperand(MCOperand::CreateReg(Inst.getOperand(0).getReg() +
+                                            Spacing * 3));
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    Inst = TmpInst;
+    return true;
+  }
+
   // Handle the Thumb2 mode MOV complex aliases.
+  case ARM::t2MOVsr:
+  case ARM::t2MOVSsr: {
+    // Which instruction to expand to depends on the CCOut operand and
+    // whether we're in an IT block if the register operands are low
+    // registers.
+    bool isNarrow = false;
+    if (isARMLowRegister(Inst.getOperand(0).getReg()) &&
+        isARMLowRegister(Inst.getOperand(1).getReg()) &&
+        isARMLowRegister(Inst.getOperand(2).getReg()) &&
+        Inst.getOperand(0).getReg() == Inst.getOperand(1).getReg() &&
+        inITBlock() == (Inst.getOpcode() == ARM::t2MOVsr))
+      isNarrow = true;
+    MCInst TmpInst;
+    unsigned newOpc;
+    switch(ARM_AM::getSORegShOp(Inst.getOperand(3).getImm())) {
+    default: llvm_unreachable("unexpected opcode!");
+    case ARM_AM::asr: newOpc = isNarrow ? ARM::tASRrr : ARM::t2ASRrr; break;
+    case ARM_AM::lsr: newOpc = isNarrow ? ARM::tLSRrr : ARM::t2LSRrr; break;
+    case ARM_AM::lsl: newOpc = isNarrow ? ARM::tLSLrr : ARM::t2LSLrr; break;
+    case ARM_AM::ror: newOpc = isNarrow ? ARM::tROR   : ARM::t2RORrr; break;
+    }
+    TmpInst.setOpcode(newOpc);
+    TmpInst.addOperand(Inst.getOperand(0)); // Rd
+    if (isNarrow)
+      TmpInst.addOperand(MCOperand::CreateReg(
+          Inst.getOpcode() == ARM::t2MOVSsr ? ARM::CPSR : 0));
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // Rm
+    TmpInst.addOperand(Inst.getOperand(4)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(5));
+    if (!isNarrow)
+      TmpInst.addOperand(MCOperand::CreateReg(
+          Inst.getOpcode() == ARM::t2MOVSsr ? ARM::CPSR : 0));
+    Inst = TmpInst;
+    return true;
+  }
   case ARM::t2MOVsi:
   case ARM::t2MOVSsi: {
     // Which instruction to expand to depends on the CCOut operand and
@@ -5469,6 +6645,7 @@ processInstruction(MCInst &Inst,
     case ARM_AM::lsr: newOpc = isNarrow ? ARM::tLSRri : ARM::t2LSRri; break;
     case ARM_AM::lsl: newOpc = isNarrow ? ARM::tLSLri : ARM::t2LSLri; break;
     case ARM_AM::ror: newOpc = ARM::t2RORri; isNarrow = false; break;
+    case ARM_AM::rrx: isNarrow = false; newOpc = ARM::t2RRX; break;
     }
     unsigned Ammount = ARM_AM::getSORegOffset(Inst.getOperand(2).getImm());
     if (Ammount == 32) Ammount = 0;
@@ -5478,7 +6655,8 @@ processInstruction(MCInst &Inst,
       TmpInst.addOperand(MCOperand::CreateReg(
           Inst.getOpcode() == ARM::t2MOVSsi ? ARM::CPSR : 0));
     TmpInst.addOperand(Inst.getOperand(1)); // Rn
-    TmpInst.addOperand(MCOperand::CreateImm(Ammount));
+    if (newOpc != ARM::t2RRX)
+      TmpInst.addOperand(MCOperand::CreateImm(Ammount));
     TmpInst.addOperand(Inst.getOperand(3)); // CondCode
     TmpInst.addOperand(Inst.getOperand(4));
     if (!isNarrow)
@@ -5500,7 +6678,6 @@ processInstruction(MCInst &Inst,
     case ARM::LSLr: ShiftTy = ARM_AM::lsl; break;
     case ARM::RORr: ShiftTy = ARM_AM::ror; break;
     }
-    // A shift by zero is a plain MOVr, not a MOVsi.
     unsigned Shifter = ARM_AM::getSORegOpc(ShiftTy, 0);
     MCInst TmpInst;
     TmpInst.setOpcode(ARM::MOVsr);
@@ -5846,6 +7023,57 @@ processInstruction(MCInst &Inst,
     }
     break;
   }
+  case ARM::MOVsi: {
+    ARM_AM::ShiftOpc SOpc = ARM_AM::getSORegShOp(Inst.getOperand(2).getImm());
+    if (SOpc == ARM_AM::rrx) return false;
+    if (ARM_AM::getSORegOffset(Inst.getOperand(2).getImm()) == 0) {
+      // Shifting by zero is accepted as a vanilla 'MOVr'
+      MCInst TmpInst;
+      TmpInst.setOpcode(ARM::MOVr);
+      TmpInst.addOperand(Inst.getOperand(0));
+      TmpInst.addOperand(Inst.getOperand(1));
+      TmpInst.addOperand(Inst.getOperand(3));
+      TmpInst.addOperand(Inst.getOperand(4));
+      TmpInst.addOperand(Inst.getOperand(5));
+      Inst = TmpInst;
+      return true;
+    }
+    return false;
+  }
+  case ARM::ANDrsi:
+  case ARM::ORRrsi:
+  case ARM::EORrsi:
+  case ARM::BICrsi:
+  case ARM::SUBrsi:
+  case ARM::ADDrsi: {
+    unsigned newOpc;
+    ARM_AM::ShiftOpc SOpc = ARM_AM::getSORegShOp(Inst.getOperand(3).getImm());
+    if (SOpc == ARM_AM::rrx) return false;
+    switch (Inst.getOpcode()) {
+    default: llvm_unreachable("unexpected opcode!");
+    case ARM::ANDrsi: newOpc = ARM::ANDrr; break;
+    case ARM::ORRrsi: newOpc = ARM::ORRrr; break;
+    case ARM::EORrsi: newOpc = ARM::EORrr; break;
+    case ARM::BICrsi: newOpc = ARM::BICrr; break;
+    case ARM::SUBrsi: newOpc = ARM::SUBrr; break;
+    case ARM::ADDrsi: newOpc = ARM::ADDrr; break;
+    }
+    // If the shift is by zero, use the non-shifted instruction definition.
+    if (ARM_AM::getSORegOffset(Inst.getOperand(3).getImm()) == 0) {
+      MCInst TmpInst;
+      TmpInst.setOpcode(newOpc);
+      TmpInst.addOperand(Inst.getOperand(0));
+      TmpInst.addOperand(Inst.getOperand(1));
+      TmpInst.addOperand(Inst.getOperand(2));
+      TmpInst.addOperand(Inst.getOperand(4));
+      TmpInst.addOperand(Inst.getOperand(5));
+      TmpInst.addOperand(Inst.getOperand(6));
+      Inst = TmpInst;
+      return true;
+    }
+    return false;
+  }
+  case ARM::ITasm:
   case ARM::t2IT: {
     // The mask bits for all but the first condition are represented as
     // the low bit of the condition code value implies 't'. We currently
@@ -5952,6 +7180,12 @@ MatchAndEmitInstruction(SMLoc IDLoc,
     // block.
     forwardITPosition();
 
+    // ITasm is an ARM mode pseudo-instruction that just sets the ITblock and
+    // doesn't actually encode.
+    if (Inst.getOpcode() == ARM::ITasm)
+      return false;
+
+    Inst.setLoc(IDLoc);
     Out.EmitInstruction(Inst);
     return false;
   case Match_MissingFeature:
@@ -5985,7 +7219,6 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   }
 
   llvm_unreachable("Implement any new match types added!");
-  return true;
 }
 
 /// parseDirective parses the arm specific directives
@@ -6005,6 +7238,10 @@ bool ARMAsmParser::ParseDirective(AsmToken DirectiveID) {
     return parseDirectiveSyntax(DirectiveID.getLoc());
   else if (IDVal == ".unreq")
     return parseDirectiveUnreq(DirectiveID.getLoc());
+  else if (IDVal == ".arch")
+    return parseDirectiveArch(DirectiveID.getLoc());
+  else if (IDVal == ".eabi_attribute")
+    return parseDirectiveEabiAttr(DirectiveID.getLoc());
   return true;
 }
 
@@ -6065,23 +7302,32 @@ bool ARMAsmParser::parseDirectiveThumbFunc(SMLoc L) {
   const MCAsmInfo &MAI = getParser().getStreamer().getContext().getAsmInfo();
   bool isMachO = MAI.hasSubsectionsViaSymbols();
   StringRef Name;
+  bool needFuncName = true;
 
-  // Darwin asm has function name after .thumb_func direction
+  // Darwin asm has (optionally) function name after .thumb_func direction
   // ELF doesn't
   if (isMachO) {
     const AsmToken &Tok = Parser.getTok();
-    if (Tok.isNot(AsmToken::Identifier) && Tok.isNot(AsmToken::String))
-      return Error(L, "unexpected token in .thumb_func directive");
-    Name = Tok.getIdentifier();
-    Parser.Lex(); // Consume the identifier token.
+    if (Tok.isNot(AsmToken::EndOfStatement)) {
+      if (Tok.isNot(AsmToken::Identifier) && Tok.isNot(AsmToken::String))
+        return Error(L, "unexpected token in .thumb_func directive");
+      Name = Tok.getIdentifier();
+      Parser.Lex(); // Consume the identifier token.
+      needFuncName = false;
+    }
   }
 
- if (getLexer().isNot(AsmToken::EndOfStatement))
+  if (getLexer().isNot(AsmToken::EndOfStatement))
     return Error(L, "unexpected token in directive");
-  Parser.Lex();
+
+  // Eat the end of statement and any blank lines that follow.
+  while (getLexer().is(AsmToken::EndOfStatement))
+    Parser.Lex();
 
   // FIXME: assuming function name will be the line following .thumb_func
-  if (!isMachO) {
+  // We really should be checking the next symbol definition even if there's
+  // stuff in between.
+  if (needFuncName) {
     Name = Parser.getTok().getIdentifier();
   }
 
@@ -6182,6 +7428,18 @@ bool ARMAsmParser::parseDirectiveUnreq(SMLoc L) {
   RegisterReqs.erase(Parser.getTok().getIdentifier());
   Parser.Lex(); // Eat the identifier.
   return false;
+}
+
+/// parseDirectiveArch
+///  ::= .arch token
+bool ARMAsmParser::parseDirectiveArch(SMLoc L) {
+  return true;
+}
+
+/// parseDirectiveEabiAttr
+///  ::= .eabi_attribute int, int
+bool ARMAsmParser::parseDirectiveEabiAttr(SMLoc L) {
+  return true;
 }
 
 extern "C" void LLVMInitializeARMAsmLexer();

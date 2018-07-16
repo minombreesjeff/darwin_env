@@ -21,7 +21,7 @@
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Target/RegisterContext.h"
-
+#include "GDBRemoteCommunicationClient.h"
 
 class ThreadGDBRemote;
 class ProcessGDBRemote;
@@ -154,7 +154,10 @@ public:
     }
 
     void
-    HardcodeARMRegisters();
+    HardcodeARMRegisters(bool from_scratch);
+
+    void
+    Addx86_64ConvenienceRegisters();
 
 protected:
     //------------------------------------------------------------------
@@ -240,18 +243,19 @@ protected:
     void
     SetAllRegisterValid (bool b);
 
-    ProcessGDBRemote &
-    GetGDBProcess();
-
-    ThreadGDBRemote &
-    GetGDBThread();
-
     GDBRemoteDynamicRegisterInfo &m_reg_info;
     std::vector<bool> m_reg_valid;
     lldb_private::DataExtractor m_reg_data;
     bool m_read_all_at_once;
 
 private:
+    // Helper function for ReadRegisterBytes().
+    bool GetPrimordialRegister(const lldb_private::RegisterInfo *reg_info,
+                               GDBRemoteCommunicationClient &gdb_comm);
+    // Helper function for WriteRegisterBytes().
+    bool SetPrimordialRegister(const lldb_private::RegisterInfo *reg_info,
+                               GDBRemoteCommunicationClient &gdb_comm);
+
     //------------------------------------------------------------------
     // For GDBRemoteRegisterContext only
     //------------------------------------------------------------------

@@ -20,6 +20,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <cstring>
+#include <vector>
 
 namespace llvm {
 namespace object {
@@ -179,12 +180,24 @@ public:
   }
 
   enum Type {
+    ST_Unknown, // Type not specified
     ST_Data,
     ST_Debug,
-    ST_External,    // Defined in another object file
     ST_File,
     ST_Function,
     ST_Other
+  };
+
+  enum Flags {
+    SF_None            = 0,
+    SF_Undefined       = 1U << 0,  // Symbol is defined in another object file
+    SF_Global          = 1U << 1,  // Global symbol
+    SF_Weak            = 1U << 2,  // Weak symbol
+    SF_Absolute        = 1U << 3,  // Absolute symbol
+    SF_ThreadLocal     = 1U << 4,  // Thread local symbol
+    SF_Common          = 1U << 5,  // Symbol has common linkage
+    SF_FormatSpecific  = 1U << 31  // Specific to the object file format
+                                   // (e.g. section symbols)
   };
 
   SymbolRef(DataRefImpl SymbolP, const ObjectFile *Owner);
@@ -204,19 +217,8 @@ public:
   /// nm for this symbol.
   error_code getNMTypeChar(char &Result) const;
 
-  /// Returns true for symbols that are internal to the object file format such
-  /// as section symbols.
-  error_code isInternal(bool &Result) const;
-
-  /// Returns true for symbols that can be used in another objects,
-  /// such as library functions
-  error_code isGlobal(bool &Result) const;
-
-  /// Returns true for weak symbols.
-  error_code isWeak(bool &Result) const;
-
-  /// @brief Return true for absolute symbols.
-  error_code isAbsolute(bool &Result) const;
+  /// Get symbol flags (bitwise OR of SymbolRef::Flags)
+  error_code getFlags(uint32_t &Result) const;
 
   /// @brief Get section this symbol is defined in reference to. Result is
   /// end_sections() if it is undefined or is an absolute symbol.
@@ -226,13 +228,39 @@ public:
 };
 typedef content_iterator<SymbolRef> symbol_iterator;
 
+/// LibraryRef - This is a value type class that represents a single library in
+/// the list of libraries needed by a shared or dynamic object.
+class LibraryRef {
+  friend class SectionRef;
+  DataRefImpl LibraryPimpl;
+  const ObjectFile *OwningObject;
+
+public:
+  LibraryRef() : OwningObject(NULL) {
+    std::memset(&LibraryPimpl, 0, sizeof(LibraryPimpl));
+  }
+
+  LibraryRef(DataRefImpl LibraryP, const ObjectFile *Owner);
+
+  bool operator==(const LibraryRef &Other) const;
+  bool operator <(const LibraryRef &Other) const;
+
+  error_code getNext(LibraryRef &Result) const;
+
+  // Get the path to this library, as stored in the object file.
+  error_code getPath(StringRef &Result) const;
+
+  DataRefImpl getRawDataRefImpl() const;
+};
+typedef content_iterator<LibraryRef> library_iterator;
+
 const uint64_t UnknownAddressOrSize = ~0ULL;
 
 /// ObjectFile - This class is the base class for all object file types.
 /// Concrete instances of this object are created by createObjectFile, which
 /// figure out which type to create.
 class ObjectFile : public Binary {
-private:
+  virtual void anchor();
   ObjectFile(); // = delete
   ObjectFile(const ObjectFile &other); // = delete
 
@@ -260,10 +288,8 @@ protected:
   virtual error_code getSymbolType(DataRefImpl Symb,
                                    SymbolRef::Type &Res) const = 0;
   virtual error_code getSymbolNMTypeChar(DataRefImpl Symb, char &Res) const = 0;
-  virtual error_code isSymbolInternal(DataRefImpl Symb, bool &Res) const = 0;
-  virtual error_code isSymbolGlobal(DataRefImpl Symb, bool &Res) const = 0;
-  virtual error_code isSymbolWeak(DataRefImpl Symb, bool &Res) const = 0;
-  virtual error_code isSymbolAbsolute(DataRefImpl Symb, bool &Res) const = 0;
+  virtual error_code getSymbolFlags(DataRefImpl Symb,
+                                    uint32_t &Res) const = 0;
   virtual error_code getSymbolSection(DataRefImpl Symb,
                                       section_iterator &Res) const = 0;
 
@@ -307,13 +333,24 @@ protected:
     return object_error::success;
   }
 
+  // Same for LibraryRef
+  friend class LibraryRef;
+  virtual error_code getLibraryNext(DataRefImpl Lib, LibraryRef &Res) const = 0;
+  virtual error_code getLibraryPath(DataRefImpl Lib, StringRef &Res) const = 0;
+
 public:
 
   virtual symbol_iterator begin_symbols() const = 0;
   virtual symbol_iterator end_symbols() const = 0;
 
+  virtual symbol_iterator begin_dynamic_symbols() const = 0;
+  virtual symbol_iterator end_dynamic_symbols() const = 0;
+
   virtual section_iterator begin_sections() const = 0;
   virtual section_iterator end_sections() const = 0;
+
+  virtual library_iterator begin_libraries_needed() const = 0;
+  virtual library_iterator end_libraries_needed() const = 0;
 
   /// @brief The number of bytes used to represent an address in this object
   ///        file format.
@@ -321,6 +358,11 @@ public:
 
   virtual StringRef getFileFormatName() const = 0;
   virtual /* Triple::ArchType */ unsigned getArch() const = 0;
+
+  /// For shared objects, returns the name which this object should be
+  /// loaded from at runtime. This corresponds to DT_SONAME on ELF and
+  /// LC_ID_DYLIB (install name) on MachO.
+  virtual StringRef getLoadName() const = 0;
 
   /// @returns Pointer to ObjectFile subclass to handle this type of object.
   /// @param ObjectPath The path to the object file. ObjectPath.isObject must
@@ -378,20 +420,8 @@ inline error_code SymbolRef::getNMTypeChar(char &Result) const {
   return OwningObject->getSymbolNMTypeChar(SymbolPimpl, Result);
 }
 
-inline error_code SymbolRef::isInternal(bool &Result) const {
-  return OwningObject->isSymbolInternal(SymbolPimpl, Result);
-}
-
-inline error_code SymbolRef::isGlobal(bool &Result) const {
-  return OwningObject->isSymbolGlobal(SymbolPimpl, Result);
-}
-
-inline error_code SymbolRef::isWeak(bool &Result) const {
-  return OwningObject->isSymbolWeak(SymbolPimpl, Result);
-}
-
-inline error_code SymbolRef::isAbsolute(bool &Result) const {
-  return OwningObject->isSymbolAbsolute(SymbolPimpl, Result);
+inline error_code SymbolRef::getFlags(uint32_t &Result) const {
+  return OwningObject->getSymbolFlags(SymbolPimpl, Result);
 }
 
 inline error_code SymbolRef::getSection(section_iterator &Result) const {
@@ -517,6 +547,26 @@ inline error_code RelocationRef::getValueString(SmallVectorImpl<char> &Result)
 
 inline error_code RelocationRef::getHidden(bool &Result) const {
   return OwningObject->getRelocationHidden(RelocationPimpl, Result);
+}
+// Inline function definitions.
+inline LibraryRef::LibraryRef(DataRefImpl LibraryP, const ObjectFile *Owner)
+  : LibraryPimpl(LibraryP)
+  , OwningObject(Owner) {}
+
+inline bool LibraryRef::operator==(const LibraryRef &Other) const {
+  return LibraryPimpl == Other.LibraryPimpl;
+}
+
+inline bool LibraryRef::operator <(const LibraryRef &Other) const {
+  return LibraryPimpl < Other.LibraryPimpl;
+}
+
+inline error_code LibraryRef::getNext(LibraryRef &Result) const {
+  return OwningObject->getLibraryNext(LibraryPimpl, Result);
+}
+
+inline error_code LibraryRef::getPath(StringRef &Result) const {
+  return OwningObject->getLibraryPath(LibraryPimpl, Result);
 }
 
 } // end namespace object

@@ -113,8 +113,6 @@ CC_Hexagon_VarArg (unsigned ValNo, MVT ValVT,
     return false;
   }
   llvm_unreachable(0);
-
-  return true;
 }
 
 
@@ -305,9 +303,6 @@ HexagonTargetLowering::LowerReturn(SDValue Chain,
   // Analyze return values of ISD::RET
   CCInfo.AnalyzeReturn(Outs, RetCC_Hexagon);
 
-  SDValue StackPtr = DAG.getRegister(TM.getRegisterInfo()->getStackRegister(),
-                                     MVT::i32);
-
   // If this is the first return lowered for this function, add the regs to the
   // liveout set for the function.
   if (DAG.getMachineFunction().getRegInfo().liveout_empty()) {
@@ -320,8 +315,6 @@ HexagonTargetLowering::LowerReturn(SDValue Chain,
   // Copy the result values into the output registers.
   for (unsigned i = 0; i != RVLocs.size(); ++i) {
     CCValAssign &VA = RVLocs[i];
-    SDValue Ret = OutVals[i];
-    ISD::ArgFlagsTy Flags = Outs[i].Flags;
 
     Chain = DAG.getCopyToReg(Chain, dl, VA.getLocReg(), OutVals[i], Flag);
 
@@ -378,7 +371,7 @@ HexagonTargetLowering::LowerCallResult(SDValue Chain, SDValue InFlag,
 SDValue
 HexagonTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                                  CallingConv::ID CallConv, bool isVarArg,
-                                 bool &isTailCall,
+                                 bool doesNotRet, bool &isTailCall,
                                  const SmallVectorImpl<ISD::OutputArg> &Outs,
                                  const SmallVectorImpl<SDValue> &OutVals,
                                  const SmallVectorImpl<ISD::InputArg> &Ins,
@@ -456,7 +449,7 @@ HexagonTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
     switch (VA.getLocInfo()) {
       default:
         // Loc info must be one of Full, SExt, ZExt, or AExt.
-        assert(0 && "Unknown loc info!");
+        llvm_unreachable("Unknown loc info!");
       case CCValAssign::Full:
         break;
       case CCValAssign::SExt:
@@ -650,7 +643,7 @@ bool HexagonTargetLowering::getPostIndexedAddressParts(SDNode *N, SDNode *Op,
     return false;
   }
 
-  bool isInc;
+  bool isInc = false;
   bool isLegal = getIndexedAddressParts(Op, VT, isSEXTLoad, Base, Offset,
                                         isInc, DAG);
   // ShiftAmount = number of left-shifted bits in the Hexagon instruction.
@@ -1305,6 +1298,7 @@ HexagonTargetLowering::HexagonTargetLowering(HexagonTargetMachine
     // Needed for DYNAMIC_STACKALLOC expansion.
     unsigned StackRegister = TM.getRegisterInfo()->getStackRegister();
     setStackPointerRegisterToSaveRestore(StackRegister);
+    setSchedulingPreference(Sched::VLIW);
 }
 
 
@@ -1351,12 +1345,12 @@ bool HexagonTargetLowering::isTruncateFree(EVT VT1, EVT VT2) const {
 SDValue
 HexagonTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
-    default: assert(0 && "Should not custom lower this!");
+    default: llvm_unreachable("Should not custom lower this!");
       // Frame & Return address.  Currently unimplemented.
     case ISD::RETURNADDR: return LowerRETURNADDR(Op, DAG);
     case ISD::FRAMEADDR:  return LowerFRAMEADDR(Op, DAG);
     case ISD::GlobalTLSAddress:
-                          assert(0 && "TLS not implemented for Hexagon.");
+                          llvm_unreachable("TLS not implemented for Hexagon.");
     case ISD::MEMBARRIER:         return LowerMEMBARRIER(Op, DAG);
     case ISD::ATOMIC_FENCE:       return LowerATOMIC_FENCE(Op, DAG);
     case ISD::GlobalAddress:      return LowerGLOBALADDRESS(Op, DAG);
@@ -1388,10 +1382,8 @@ const {
       FuncInfo->addAllocaAdjustInst(MI);
       return BB;
     }
-    default:
-      assert(false && "Unexpected instr type to insert");
+    default: llvm_unreachable("Unexpected instr type to insert");
   } // switch
-  return NULL;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1407,7 +1399,7 @@ HexagonTargetLowering::getRegForInlineAsmConstraint(const
     case 'r':   // R0-R31
        switch (VT.getSimpleVT().SimpleTy) {
        default:
-         assert(0 && "getRegForInlineAsmConstraint Unhandled data type");
+         llvm_unreachable("getRegForInlineAsmConstraint Unhandled data type");
        case MVT::i32:
        case MVT::i16:
        case MVT::i8:
@@ -1416,7 +1408,7 @@ HexagonTargetLowering::getRegForInlineAsmConstraint(const
          return std::make_pair(0U, Hexagon::DoubleRegsRegisterClass);
       }
     default:
-      assert(0 && "Unknown asm register class");
+      llvm_unreachable("Unknown asm register class");
     }
   }
 

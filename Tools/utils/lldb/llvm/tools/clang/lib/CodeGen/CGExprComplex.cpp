@@ -261,6 +261,10 @@ public:
 
   ComplexPairTy VisitInitListExpr(InitListExpr *E);
 
+  ComplexPairTy VisitCompoundLiteralExpr(CompoundLiteralExpr *E) {
+    return EmitLoadOfLValue(E);
+  }
+
   ComplexPairTy VisitVAArgExpr(VAArgExpr *E);
 
   ComplexPairTy VisitAtomicExpr(AtomicExpr *E) {
@@ -358,6 +362,10 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
   switch (CK) {
   case CK_Dependent: llvm_unreachable("dependent cast kind in IR gen!");
 
+  // Atomic to non-atomic casts may be more than a no-op for some platforms and
+  // for some types.
+  case CK_AtomicToNonAtomic:
+  case CK_NonAtomicToAtomic:
   case CK_NoOp:
   case CK_LValueToRValue:
   case CK_UserDefinedConversion:
@@ -384,6 +392,7 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
   case CK_BaseToDerivedMemberPointer:
   case CK_DerivedToBaseMemberPointer:
   case CK_MemberPointerToBoolean:
+  case CK_ReinterpretMemberPointer:
   case CK_ConstructorConversion:
   case CK_IntegralToPointer:
   case CK_PointerToIntegral:
@@ -408,6 +417,7 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
   case CK_ARCConsumeObject:
   case CK_ARCReclaimReturnedObject:
   case CK_ARCExtendBlockObject:
+  case CK_CopyAndAutoreleaseBlockObject:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_FloatingRealToComplex:
@@ -813,7 +823,6 @@ EmitComplexCompoundAssignmentLValue(const CompoundAssignOperator *E) {
 
   default:
     llvm_unreachable("unexpected complex compound assignment");
-    Op = 0;
   }
 
   ComplexPairTy Val; // ignored

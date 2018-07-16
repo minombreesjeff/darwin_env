@@ -27,8 +27,9 @@ using namespace llvm;
 #include "PTXGenAsmWriter.inc"
 
 PTXInstPrinter::PTXInstPrinter(const MCAsmInfo &MAI,
+                               const MCRegisterInfo &MRI,
                                const MCSubtargetInfo &STI) :
-  MCInstPrinter(MAI) {
+  MCInstPrinter(MAI, MRI) {
   // Initialize the set of available features.
   setAvailableFeatures(STI.getFeatureBits());
 }
@@ -215,7 +216,6 @@ void PTXInstPrinter::printRoundingMode(const MCInst *MI, unsigned OpNo,
     llvm_unreachable("Unknown rounding mode!");
   case PTXRoundingMode::RndDefault:
     llvm_unreachable("FP rounding-mode pass did not handle instruction!");
-    break;
   case PTXRoundingMode::RndNone:
     // Do not print anything.
     break;

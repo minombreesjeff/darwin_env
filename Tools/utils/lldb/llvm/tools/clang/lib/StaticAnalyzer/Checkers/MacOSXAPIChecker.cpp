@@ -31,7 +31,7 @@ using namespace ento;
 
 namespace {
 class MacOSXAPIChecker : public Checker< check::PreStmt<CallExpr> > {
-  mutable llvm::OwningPtr<BugType> BT_dispatchOnce;
+  mutable OwningPtr<BugType> BT_dispatchOnce;
 
 public:
   void checkPreStmt(const CallExpr *CE, CheckerContext &C) const;
@@ -56,8 +56,9 @@ void MacOSXAPIChecker::CheckDispatchOnce(CheckerContext &C, const CallExpr *CE,
 
   // Check if the first argument is stack allocated.  If so, issue a warning
   // because that's likely to be bad news.
-  const ProgramState *state = C.getState();
-  const MemRegion *R = state->getSVal(CE->getArg(0)).getAsRegion();
+  ProgramStateRef state = C.getState();
+  const MemRegion *R =
+    state->getSVal(CE->getArg(0), C.getLocationContext()).getAsRegion();
   if (!R || !isa<StackSpaceRegion>(R->getMemorySpace()))
     return;
 
@@ -69,7 +70,7 @@ void MacOSXAPIChecker::CheckDispatchOnce(CheckerContext &C, const CallExpr *CE,
     BT_dispatchOnce.reset(new BugType("Improper use of 'dispatch_once'",
                                       "Mac OS X API"));
 
-  llvm::SmallString<256> S;
+  SmallString<256> S;
   llvm::raw_svector_ostream os(S);
   os << "Call to '" << FName << "' uses";
   if (const VarRegion *VR = dyn_cast<VarRegion>(R))

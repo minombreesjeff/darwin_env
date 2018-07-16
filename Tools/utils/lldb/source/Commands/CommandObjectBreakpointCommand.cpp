@@ -23,7 +23,6 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/State.h"
-#include "lldb/Core/StreamAsynchronousIO.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -38,7 +37,8 @@ CommandObjectBreakpointCommandAdd::CommandOptions::CommandOptions (CommandInterp
     m_use_script_language (false),
     m_script_language (eScriptLanguageNone),
     m_use_one_liner (false),
-    m_one_liner()
+    m_one_liner(),
+    m_function_name()
 {
 }
 
@@ -61,7 +61,7 @@ g_script_option_enumeration[4] =
 OptionDefinition
 CommandObjectBreakpointCommandAdd::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, false, "one-liner", 'o', required_argument, NULL, NULL, eArgTypeOneLiner,
+    { LLDB_OPT_SET_1, false, "one-liner", 'o', required_argument, NULL, NULL, eArgTypeOneLiner,
         "Specify a one-line breakpoint command inline. Be sure to surround it with quotes." },
 
     { LLDB_OPT_SET_ALL, false, "stop-on-error", 'e', required_argument, NULL, NULL, eArgTypeBoolean,
@@ -70,6 +70,9 @@ CommandObjectBreakpointCommandAdd::CommandOptions::g_option_table[] =
     { LLDB_OPT_SET_ALL,   false, "script-type",     's', required_argument, g_script_option_enumeration, NULL, eArgTypeNone,
         "Specify the language for the commands - if none is specified, the lldb command interpreter will be used."},
 
+    { LLDB_OPT_SET_2,   false, "python-function",     'F', required_argument, NULL, NULL, eArgTypePythonFunction,
+        "Give the name of a Python function to run as command for this breakpoint. Be sure to give a module name if appropriate."},
+    
     { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -105,12 +108,10 @@ CommandObjectBreakpointCommandAdd::CommandOptions::SetOptionValue
 
         if (m_script_language == eScriptLanguagePython || m_script_language == eScriptLanguageDefault)
         {
-            m_use_commands = false;
             m_use_script_language = true;
         }
         else
         {
-            m_use_commands = true;
             m_use_script_language = false;
         }          
         break;
@@ -121,6 +122,14 @@ CommandObjectBreakpointCommandAdd::CommandOptions::SetOptionValue
             m_stop_on_error = Args::StringToBoolean(option_arg, false, &success);
             if (!success)
                 error.SetErrorStringWithFormat("invalid value for stop-on-error: \"%s\"", option_arg);
+        }
+        break;
+            
+    case 'F':
+        {
+            m_use_one_liner = false;
+            m_use_script_language = true;
+            m_function_name.assign(option_arg);
         }
         break;
 
@@ -140,6 +149,7 @@ CommandObjectBreakpointCommandAdd::CommandOptions::OptionParsingStarting ()
     m_use_one_liner = false;
     m_stop_on_error = true;
     m_one_liner.clear();
+    m_function_name.clear();
 }
 
 //-------------------------------------------------------------------------
@@ -174,26 +184,38 @@ your breakpoint command does not appear to be getting executed, go \n\
 back and check your syntax. \n\
  \n\
  \n\
-Special information about PYTHON breakpoint commands \n\
----------------------------------------------------- \n\
- \n\
-You may enter either one line of Python or multiple lines of Python \n\
-(including defining whole functions, if desired).  If you enter a \n\
-single line of Python, that will be passed to the Python interpreter \n\
-'as is' when the breakpoint gets hit.  If you enter function \n\
-definitions, they will be passed to the Python interpreter as soon as \n\
-you finish entering the breakpoint command, and they can be called \n\
-later (don't forget to add calls to them, if you want them called when \n\
-the breakpoint is hit).  If you enter multiple lines of Python that \n\
-are not function definitions, they will be collected into a new, \n\
-automatically generated Python function, and a call to the newly \n\
-generated function will be attached to the breakpoint.  Important \n\
-Note: Because loose Python code gets collected into functions, if you \n\
-want to access global variables in the 'loose' code, you need to \n\
-specify that they are global, using the 'global' keyword.  Be sure to \n\
-use correct Python syntax, including indentation, when entering Python \n\
-breakpoint commands. \n\
- \n\
+Special information about PYTHON breakpoint commands                            \n\
+----------------------------------------------------                            \n\
+                                                                                \n\
+You may enter either one line of Python or multiple lines of Python             \n\
+(including defining whole functions, if desired).  If you enter a               \n\
+single line of Python, that will be passed to the Python interpreter            \n\
+'as is' when the breakpoint gets hit.  If you enter function                    \n\
+definitions, they will be passed to the Python interpreter as soon as           \n\
+you finish entering the breakpoint command, and they can be called              \n\
+later (don't forget to add calls to them, if you want them called when          \n\
+the breakpoint is hit).  If you enter multiple lines of Python that             \n\
+are not function definitions, they will be collected into a new,                \n\
+automatically generated Python function, and a call to the newly                \n\
+generated function will be attached to the breakpoint.                          \n\
+                                                                                \n\
+This auto-generated function is passed in two arguments:                        \n\
+                                                                                \n\
+    frame:  an SBFrame object representing the frame which hit the breakpoint.  \n\
+            From the frame you can get back to the thread and process.          \n\
+    bp_loc: the number of the breakpoint location that was hit.                 \n\
+            This is useful since one breakpoint can have many locations.        \n\
+                                                                                \n\
+Important Note: Because loose Python code gets collected into functions,        \n\
+if you want to access global variables in the 'loose' code, you need to         \n\
+specify that they are global, using the 'global' keyword.  Be sure to           \n\
+use correct Python syntax, including indentation, when entering Python          \n\
+breakpoint commands.                                                            \n\
+                                                                                \n\
+As a third option, you can pass the name of an already existing Python function \n\
+and that function will be attached to the breakpoint. It will get passed the    \n\
+frame and bp_loc arguments mentioned above.                                     \n\
+                                                                                \n\
 Example Python one-line breakpoint command: \n\
  \n\
 (lldb) breakpoint command add -s python 1 \n\
@@ -305,6 +327,13 @@ CommandObjectBreakpointCommandAdd::Execute
         return false;
     }
 
+    if (m_options.m_use_script_language == false && m_options.m_function_name.size())
+    {
+        result.AppendError ("need to enable scripting to have a function run as a breakpoint command");
+        result.SetStatus (eReturnStatusFailed);
+        return false;
+    }
+    
     BreakpointIDList valid_bp_ids;
     CommandObjectMultiwordBreakpoint::VerifyBreakpointIDs (command, target, result, &valid_bp_ids);
 
@@ -342,11 +371,25 @@ CommandObjectBreakpointCommandAdd::Execute
                 {
                     // Special handling for one-liner specified inline.
                     if (m_options.m_use_one_liner)
+                    {
                         m_interpreter.GetScriptInterpreter()->SetBreakpointCommandCallback (bp_options,
                                                                                             m_options.m_one_liner.c_str());
+                    }
+                    // Special handling for using a Python function by name
+                    // instead of extending the breakpoint callback data structures, we just automatize
+                    // what the user would do manually: make their breakpoint command be a function call
+                    else if (m_options.m_function_name.size())
+                    {
+                        std::string oneliner(m_options.m_function_name);
+                        oneliner += "(frame, bp_loc, dict)";
+                        m_interpreter.GetScriptInterpreter()->SetBreakpointCommandCallback (bp_options,
+                                                                                            oneliner.c_str());
+                    }
                     else
+                    {
                         m_interpreter.GetScriptInterpreter()->CollectDataForBreakpointCommandCallback (bp_options,
                                                                                                        result);
+                    }
                 }
                 else
                 {
@@ -423,7 +466,7 @@ CommandObjectBreakpointCommandAdd::SetBreakpointCommandCallback (BreakpointOptio
     // The former is used to generate callback description (as in breakpoint command list)
     // while the latter is used for Python to interpret during the actual callback.
     data_ap->user_source.AppendString (oneliner);
-    data_ap->script_source.AppendString (oneliner);
+    data_ap->script_source.assign (oneliner);
     data_ap->stop_on_error = m_options.m_stop_on_error;
 
     BatonSP baton_sp (new BreakpointOptions::CommandBaton (data_ap.release()));
@@ -500,7 +543,7 @@ CommandObjectBreakpointCommandAdd::GenerateBreakpointCommandCallback
                 if (bp_options_baton)
                 {
                     ((BreakpointOptions::CommandData *) bp_options_baton->m_data)->user_source.Clear();
-                    ((BreakpointOptions::CommandData *) bp_options_baton->m_data)->script_source.Clear();
+                    ((BreakpointOptions::CommandData *) bp_options_baton->m_data)->script_source.clear();
                 }
             }
             if (!batch_mode)
@@ -800,7 +843,8 @@ CommandObjectBreakpointCommand::BreakpointOptionsCallbackFunction
     
     if (commands.GetSize() > 0)
     {
-        Target *target = context->exe_ctx.GetTargetPtr();
+        ExecutionContext exe_ctx (context->exe_ctx_ref);
+        Target *target = exe_ctx.GetTargetPtr();
         if (target)
         {
             CommandReturnObject result;
@@ -818,11 +862,12 @@ CommandObjectBreakpointCommand::BreakpointOptionsCallbackFunction
             bool print_results    = true;
 
             debugger.GetCommandInterpreter().HandleCommands (commands, 
-                                                             &(context->exe_ctx),
+                                                             &exe_ctx,
                                                              stop_on_continue, 
                                                              data->stop_on_error, 
                                                              echo_commands, 
-                                                             print_results, 
+                                                             print_results,
+                                                             eLazyBoolNo,
                                                              result);
             result.GetImmediateOutputStream()->Flush();
             result.GetImmediateErrorStream()->Flush();

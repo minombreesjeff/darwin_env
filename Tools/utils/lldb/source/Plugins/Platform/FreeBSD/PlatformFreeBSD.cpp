@@ -25,9 +25,52 @@ using namespace lldb;
 using namespace lldb_private;
 
 Platform *
-PlatformFreeBSD::CreateInstance ()
+PlatformFreeBSD::CreateInstance (bool force, const lldb_private::ArchSpec *arch)
 {
-    return new PlatformFreeBSD (true);
+    // The only time we create an instance is when we are creating a remote
+    // freebsd platform
+    const bool is_host = false;
+
+    bool create = force;
+    if (create == false && arch && arch->IsValid())
+    {
+        const llvm::Triple &triple = arch->GetTriple();
+        switch (triple.getVendor())
+        {
+            case llvm::Triple::PC:
+                create = true;
+                break;
+                
+            case llvm::Triple::UnknownArch:
+                create = !arch->TripleVendorWasSpecified();
+                break;
+                
+            default:
+                break;
+        }
+        
+        if (create)
+        {
+            switch (triple.getOS())
+            {
+                case llvm::Triple::FreeBSD:
+                case llvm::Triple::KFreeBSD:
+                    break;
+                    
+                case llvm::Triple::UnknownOS:
+                    create = arch->TripleOSWasSpecified();
+                    break;
+                    
+                default:
+                    create = false;
+                    break;
+            }
+        }
+    }
+    if (create)
+        return new PlatformFreeBSD (is_host);
+    return NULL;
+
 }
 
 const char *
@@ -54,29 +97,30 @@ PlatformFreeBSD::GetDescriptionStatic (bool is_host)
         return "Remote FreeBSD user platform plug-in.";
 }
 
+static uint32_t g_initialize_count = 0;
+
 void
 PlatformFreeBSD::Initialize ()
 {
-    static bool g_initialized = false;
-
-    if (!g_initialized)
+    if (g_initialize_count++ == 0)
     {
 #if defined (__FreeBSD__)
-        PlatformSP default_platform_sp (CreateInstance());
+    	// Force a host flag to true for the default platform object.
+        PlatformSP default_platform_sp (new PlatformFreeBSD(true));
         default_platform_sp->SetSystemArchitecture (Host::GetArchitecture());
         Platform::SetDefaultPlatform (default_platform_sp);
 #endif
         PluginManager::RegisterPlugin(PlatformFreeBSD::GetShortPluginNameStatic(false),
                                       PlatformFreeBSD::GetDescriptionStatic(false),
                                       PlatformFreeBSD::CreateInstance);
-        g_initialized = true;
     }
 }
 
 void
 PlatformFreeBSD::Terminate ()
 {
-    PluginManager::UnregisterPlugin (PlatformFreeBSD::CreateInstance);
+    if (g_initialize_count > 0 && --g_initialize_count == 0)
+    	PluginManager::UnregisterPlugin (PlatformFreeBSD::CreateInstance);
 }
 
 //------------------------------------------------------------------
@@ -101,7 +145,8 @@ PlatformFreeBSD::~PlatformFreeBSD()
 Error
 PlatformFreeBSD::ResolveExecutable (const FileSpec &exe_file,
                                     const ArchSpec &exe_arch,
-                                    lldb::ModuleSP &exe_module_sp)
+                                    lldb::ModuleSP &exe_module_sp,
+                                    const FileSpecList *module_search_paths_ptr)
 {
     Error error;
     // Nothing special to do here, just use the actual file and architecture
@@ -139,7 +184,8 @@ PlatformFreeBSD::ResolveExecutable (const FileSpec &exe_file,
         {
             error = m_remote_platform_sp->ResolveExecutable (exe_file,
                                                              exe_arch,
-                                                             exe_module_sp);
+                                                             exe_module_sp,
+                                                             module_search_paths_ptr);
         }
         else
         {
@@ -153,7 +199,8 @@ PlatformFreeBSD::ResolveExecutable (const FileSpec &exe_file,
             }
             else
             {
-                error.SetErrorStringWithFormat("the platform is not currently connected, and '%s' doesn't exist in the system root.");
+                exe_file.GetPath(exe_path, sizeof(exe_path));
+                error.SetErrorStringWithFormat("the platform is not currently connected, and '%s' doesn't exist in the system root.", exe_path);
             }
         }
     }
@@ -161,14 +208,12 @@ PlatformFreeBSD::ResolveExecutable (const FileSpec &exe_file,
 
     if (error.Success())
     {
-        if (exe_arch.IsValid())
+        ModuleSpec module_spec (resolved_exe_file, exe_arch);
+        if (module_spec.GetArchitecture().IsValid())
         {
-            error = ModuleList::GetSharedModule (resolved_exe_file,
-                                                 exe_arch,
-                                                 NULL,
-                                                 NULL,
-                                                 0,
+            error = ModuleList::GetSharedModule (module_spec,
                                                  exe_module_sp,
+                                                 module_search_paths_ptr,
                                                  NULL,
                                                  NULL);
 
@@ -191,12 +236,9 @@ PlatformFreeBSD::ResolveExecutable (const FileSpec &exe_file,
             ArchSpec platform_arch;
             for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, platform_arch); ++idx)
             {
-                error = ModuleList::GetSharedModule (resolved_exe_file,
-                                                     platform_arch,
-                                                     NULL,
-                                                     NULL,
-                                                     0,
+                error = ModuleList::GetSharedModule (module_spec,
                                                      exe_module_sp,
+                                                     module_search_paths_ptr,
                                                      NULL,
                                                      NULL);
                 // Did we find an executable using one of the
@@ -466,7 +508,7 @@ PlatformFreeBSD::Attach(ProcessAttachInfo &attach_info,
             // The freebsd always currently uses the GDB remote debugger plug-in
             // so even when debugging locally we are debugging remotely!
             // Just like the darwin plugin.
-            process_sp = target->CreateProcess (listener, "gdb-remote");
+            process_sp = target->CreateProcess (listener, "gdb-remote", NULL);
 
             if (process_sp)
                 error = process_sp->Attach (attach_info);
@@ -526,12 +568,9 @@ PlatformFreeBSD::GetFile (const FileSpec &platform_file,
 }
 
 Error
-PlatformFreeBSD::GetSharedModule (const FileSpec &platform_file,
-                                  const ArchSpec &arch,
-                                  const UUID *uuid_ptr,
-                                  const ConstString *object_name_ptr,
-                                  off_t object_offset,
+PlatformFreeBSD::GetSharedModule (const ModuleSpec &module_spec,
                                   ModuleSP &module_sp,
+                                  const FileSpecList *module_search_paths_ptr,
                                   ModuleSP *old_module_sp_ptr,
                                   bool *did_create_ptr)
 {
@@ -544,12 +583,9 @@ PlatformFreeBSD::GetSharedModule (const FileSpec &platform_file,
         // the shared module first.
         if (m_remote_platform_sp)
         {
-            error = m_remote_platform_sp->GetSharedModule (platform_file,
-                                                           arch,
-                                                           uuid_ptr,
-                                                           object_name_ptr,
-                                                           object_offset,
+            error = m_remote_platform_sp->GetSharedModule (module_spec,
                                                            module_sp,
+                                                           module_search_paths_ptr,
                                                            old_module_sp_ptr,
                                                            did_create_ptr);
         }
@@ -558,17 +594,14 @@ PlatformFreeBSD::GetSharedModule (const FileSpec &platform_file,
     if (!module_sp)
     {
         // Fall back to the local platform and find the file locally
-        error = Platform::GetSharedModule (platform_file,
-                                           arch,
-                                           uuid_ptr,
-                                           object_name_ptr,
-                                           object_offset,
+        error = Platform::GetSharedModule (module_spec,
                                            module_sp,
+                                           module_search_paths_ptr,
                                            old_module_sp_ptr,
                                            did_create_ptr);
     }
     if (module_sp)
-        module_sp->SetPlatformFileSpec(platform_file);
+        module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
     return error;
 }
 

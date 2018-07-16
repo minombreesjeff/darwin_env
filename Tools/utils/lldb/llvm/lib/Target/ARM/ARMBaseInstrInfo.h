@@ -1,4 +1,4 @@
-//===- ARMBaseInstrInfo.h - ARM Base Instruction Information ----*- C++ -*-===//
+//===-- ARMBaseInstrInfo.h - ARM Base Instruction Information ---*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -35,6 +35,9 @@ protected:
   explicit ARMBaseInstrInfo(const ARMSubtarget &STI);
 
 public:
+  // Return whether the target has an explicit NOP encoding.
+  bool hasNOP() const;
+
   // Return the non-pre/post incrementing version of 'Opc'. Return 0
   // if there is not such an opcode.
   virtual unsigned getUnindexedOpcode(unsigned Opc) const =0;

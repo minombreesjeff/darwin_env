@@ -80,7 +80,7 @@ bool trans::canApplyWeak(ASTContext &Ctx, QualType type,
     ObjCInterfaceDecl *Class = ObjT->getInterfaceDecl();
     if (!AllowOnUnknownClass && (!Class || Class->getName() == "NSObject"))
       return false; // id/NSObject is not safe for weak.
-    if (!AllowOnUnknownClass && Class->isForwardDecl())
+    if (!AllowOnUnknownClass && !Class->hasDefinition())
       return false; // forward classes are not verifiable, therefore not safe.
     if (Class->isArcWeakrefUnavailable())
       return false;
@@ -111,9 +111,8 @@ SourceLocation trans::findSemiAfterLocation(SourceLocation loc,
                                             ASTContext &Ctx) {
   SourceManager &SM = Ctx.getSourceManager();
   if (loc.isMacroID()) {
-    if (!Lexer::isAtEndOfMacroExpansion(loc, SM, Ctx.getLangOptions()))
+    if (!Lexer::isAtEndOfMacroExpansion(loc, SM, Ctx.getLangOptions(), &loc))
       return SourceLocation();
-    loc = SM.getExpansionRange(loc).second;
   }
   loc = Lexer::getLocForEndOfToken(loc, /*Offset=*/0, SM, Ctx.getLangOptions());
 
@@ -503,6 +502,45 @@ void MigrationContext::traverse(TranslationUnitDecl *TU) {
   ASTTransform(*this).TraverseDecl(TU);
 }
 
+static void GCRewriteFinalize(MigrationPass &pass) {
+  ASTContext &Ctx = pass.Ctx;
+  TransformActions &TA = pass.TA;
+  DeclContext *DC = Ctx.getTranslationUnitDecl();
+  Selector FinalizeSel =
+   Ctx.Selectors.getNullarySelector(&pass.Ctx.Idents.get("finalize"));
+  
+  typedef DeclContext::specific_decl_iterator<ObjCImplementationDecl>
+  impl_iterator;
+  for (impl_iterator I = impl_iterator(DC->decls_begin()),
+       E = impl_iterator(DC->decls_end()); I != E; ++I) {
+    for (ObjCImplementationDecl::instmeth_iterator
+         MI = (*I)->instmeth_begin(),
+         ME = (*I)->instmeth_end(); MI != ME; ++MI) {
+      ObjCMethodDecl *MD = *MI;
+      if (!MD->hasBody())
+        continue;
+      
+      if (MD->isInstanceMethod() && MD->getSelector() == FinalizeSel) {
+        ObjCMethodDecl *FinalizeM = MD;
+        Transaction Trans(TA);
+        TA.insert(FinalizeM->getSourceRange().getBegin(), 
+                  "#if !__has_feature(objc_arc)\n");
+        CharSourceRange::getTokenRange(FinalizeM->getSourceRange());
+        const SourceManager &SM = pass.Ctx.getSourceManager();
+        const LangOptions &LangOpts = pass.Ctx.getLangOptions();
+        bool Invalid;
+        std::string str = "\n#endif\n";
+        str += Lexer::getSourceText(
+                  CharSourceRange::getTokenRange(FinalizeM->getSourceRange()), 
+                                    SM, LangOpts, &Invalid);
+        TA.insertAfterToken(FinalizeM->getSourceRange().getEnd(), str);
+        
+        break;
+      }
+    }
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // getAllTransformations.
 //===----------------------------------------------------------------------===//
@@ -515,6 +553,7 @@ static void traverseAST(MigrationPass &pass) {
     MigrateCtx.addTraverser(new GCAttrsTraverser());
   }
   MigrateCtx.addTraverser(new PropertyRewriteTraverser());
+  MigrateCtx.addTraverser(new BlockObjCVariableTraverser());
 
   MigrateCtx.traverse(pass.Ctx.getTranslationUnitDecl());
 }
@@ -526,15 +565,17 @@ static void independentTransforms(MigrationPass &pass) {
   removeZeroOutPropsInDeallocFinalize(pass);
   makeAssignARCSafe(pass);
   rewriteUnbridgedCasts(pass);
-  rewriteBlockObjCVariable(pass);
   checkAPIUses(pass);
   traverseAST(pass);
 }
 
 std::vector<TransformFn> arcmt::getAllTransformations(
-                                               LangOptions::GCMode OrigGCMode) {
+                                               LangOptions::GCMode OrigGCMode,
+                                               bool NoFinalizeRemoval) {
   std::vector<TransformFn> transforms;
 
+  if (OrigGCMode ==  LangOptions::GCOnly && NoFinalizeRemoval)
+    transforms.push_back(GCRewriteFinalize);
   transforms.push_back(independentTransforms);
   // This depends on previous transformations removing various expressions.
   transforms.push_back(removeEmptyStatementsAndDeallocFinalize);

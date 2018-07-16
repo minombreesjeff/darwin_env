@@ -12,8 +12,6 @@ add_llvm_library(LLVMCodeGen
   DFAPacketizer.cpp
   DwarfEHPrepare.cpp
   EdgeBundles.cpp
-  ELFCodeEmitter.cpp
-  ELFWriter.cpp
   ExecutionDepsFix.cpp
   ExpandISelPseudos.cpp
   ExpandPostRAPseudos.cpp
@@ -24,6 +22,7 @@ add_llvm_library(LLVMCodeGen
   InlineSpiller.cpp
   InterferenceCache.cpp
   IntrinsicLowering.cpp
+  JITCodeEmitter.cpp
   LLVMTargetMachine.cpp
   LatencyPriorityQueue.cpp
   LexicalScopes.cpp
@@ -40,6 +39,8 @@ add_llvm_library(LLVMCodeGen
   MachineBlockFrequencyInfo.cpp
   MachineBlockPlacement.cpp
   MachineBranchProbabilityInfo.cpp
+  MachineCodeEmitter.cpp
+  MachineCopyPropagation.cpp
   MachineCSE.cpp
   MachineDominators.cpp
   MachineFunction.cpp
@@ -56,9 +57,9 @@ add_llvm_library(LLVMCodeGen
   MachinePassRegistry.cpp
   MachineRegisterInfo.cpp
   MachineSSAUpdater.cpp
+  MachineScheduler.cpp
   MachineSink.cpp
   MachineVerifier.cpp
-  ObjectCodeEmitter.cpp
   OcamlGC.cpp
   OptimizePHIs.cpp
   PHIElimination.cpp
@@ -69,6 +70,7 @@ add_llvm_library(LLVMCodeGen
   ProcessImplicitDefs.cpp
   PrologEpilogInserter.cpp
   PseudoSourceValue.cpp
+  RegAllocBase.cpp
   RegAllocBasic.cpp
   RegAllocFast.cpp
   RegAllocGreedy.cpp
@@ -78,7 +80,6 @@ add_llvm_library(LLVMCodeGen
   RegisterScavenging.cpp
   RenderMachineFunction.cpp
   ScheduleDAG.cpp
-  ScheduleDAGEmit.cpp
   ScheduleDAGInstrs.cpp
   ScheduleDAGPrinter.cpp
   ScoreboardHazardRecognizer.cpp
@@ -93,8 +94,10 @@ add_llvm_library(LLVMCodeGen
   StackSlotColoring.cpp
   StrongPHIElimination.cpp
   TailDuplication.cpp
+  TargetFrameLoweringImpl.cpp
   TargetInstrInfoImpl.cpp
   TargetLoweringObjectFileImpl.cpp
+  TargetOptionsImpl.cpp
   TwoAddressInstructionPass.cpp
   UnreachableBlockElim.cpp
   VirtRegMap.cpp

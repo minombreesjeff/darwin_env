@@ -108,6 +108,11 @@
       </li>
     </ol>
   </li>
+  <li><a href="#module_flags">Module Flags Metadata</a>
+    <ol>
+      <li><a href="#objc_gc_flags">Objective-C Garbage Collection Module Flags Metadata</a></li>
+    </ol>
+  </li>
   <li><a href="#intrinsic_globals">Intrinsic Global Variables</a>
     <ol>
       <li><a href="#intg_used">The '<tt>llvm.used</tt>' Global Variable</a></li>
@@ -128,7 +133,6 @@
           <li><a href="#i_switch">'<tt>switch</tt>' Instruction</a></li>
           <li><a href="#i_indirectbr">'<tt>indirectbr</tt>' Instruction</a></li>
           <li><a href="#i_invoke">'<tt>invoke</tt>' Instruction</a></li>
-          <li><a href="#i_unwind">'<tt>unwind</tt>'  Instruction</a></li>
           <li><a href="#i_resume">'<tt>resume</tt>'  Instruction</a></li>
           <li><a href="#i_unreachable">'<tt>unreachable</tt>' Instruction</a></li>
         </ol>
@@ -1143,6 +1147,10 @@ define void @f() optsize { ... }
 </pre>
 
 <dl>
+  <dt><tt><b>address_safety</b></tt></dt>
+  <dd>This attribute indicates that the address safety analysis
+  is enabled for this function.  </dd>
+
   <dt><tt><b>alignstack(&lt;<em>n</em>&gt;)</b></tt></dt>
   <dd>This attribute indicates that, when emitting the prologue and epilogue,
       the backend should forcibly align the stack pointer. Specify the
@@ -1202,8 +1210,7 @@ define void @f() optsize { ... }
       It does not write through any pointer arguments
       (including <tt><a href="#byval">byval</a></tt> arguments) and never
       changes any state visible to callers.  This means that it cannot unwind
-      exceptions by calling the <tt>C++</tt> exception throwing methods, but
-      could use the <tt>unwind</tt> instruction.</dd>
+      exceptions by calling the <tt>C++</tt> exception throwing methods.</dd>
 
   <dt><tt><b><a name="readonly">readonly</a></b></tt></dt>
   <dd>This attribute indicates that the function does not write through any
@@ -1213,8 +1220,7 @@ define void @f() optsize { ... }
       and read state that may be set in the caller.  A readonly function always
       returns the same value (or unwinds an exception identically) when called
       with the same set of arguments and global state.  It cannot unwind an
-      exception by calling the <tt>C++</tt> exception throwing methods, but may
-      use the <tt>unwind</tt> instruction.</dd>
+      exception by calling the <tt>C++</tt> exception throwing methods.</dd>
 
   <dt><tt><b><a name="returns_twice">returns_twice</a></b></tt></dt>
   <dd>This attribute indicates that this function can return twice. The
@@ -1610,7 +1616,7 @@ that determines which other atomic instructions on the same address they
 <i>synchronize with</i>.  These semantics are borrowed from Java and C++0x,
 but are somewhat more colloquial. If these descriptions aren't precise enough,
 check those specs (see spec references in the
-<a href="Atomic.html#introduction">atomics guide</a>).
+<a href="Atomics.html#introduction">atomics guide</a>).
 <a href="#i_fence"><code>fence</code></a> instructions
 treat these orderings somewhat differently since they don't take an address.
 See that instruction's documentation for details.</p>
@@ -1709,7 +1715,7 @@ in signal handlers).</p>
     </tr>
     <tr>
       <td><a href="#t_floating">floating point</a></td>
-      <td><tt>float, double, x86_fp80, fp128, ppc_fp128</tt></td>
+      <td><tt>half, float, double, x86_fp80, fp128, ppc_fp128</tt></td>
     </tr>
     <tr>
       <td><a name="t_firstclass">first class</a></td>
@@ -1809,6 +1815,7 @@ in signal handlers).</p>
 <table>
   <tbody>
     <tr><th>Type</th><th>Description</th></tr>
+    <tr><td><tt>half</tt></td><td>16-bit floating point value</td></tr>
     <tr><td><tt>float</tt></td><td>32-bit floating point value</td></tr>
     <tr><td><tt>double</tt></td><td>64-bit floating point value</td></tr>
     <tr><td><tt>fp128</tt></td><td>128-bit floating point value (112-bit mantissa)</td></tr>
@@ -2268,10 +2275,11 @@ in signal handlers).</p>
    represented in their IEEE hexadecimal format so that assembly and disassembly
    do not cause any bits to change in the constants.</p>
 
-<p>When using the hexadecimal form, constants of types float and double are
+<p>When using the hexadecimal form, constants of types half, float, and double are
    represented using the 16-digit form shown above (which matches the IEEE754
-   representation for double); float values must, however, be exactly
-   representable as IEE754 single precision.  Hexadecimal format is always used
+   representation for double); half and float values must, however, be exactly
+   representable as IEE754 half and single precision, respectively.
+   Hexadecimal format is always used
    for long double, and there are three forms of long double.  The 80-bit format
    used by x86 is represented as <tt>0xK</tt> followed by 20 hexadecimal digits.
    The 128-bit format used by PowerPC (two adjacent doubles) is represented
@@ -2537,7 +2545,7 @@ b: unreachable
     control back to them.</li>
 
 <li><a href="#i_invoke"><tt>Invoke</tt></a> instructions depend on the
-    <a href="#i_ret"><tt>ret</tt></a>, <a href="#i_unwind"><tt>unwind</tt></a>,
+    <a href="#i_ret"><tt>ret</tt></a>, <a href="#i_resume"><tt>resume</tt></a>,
     or exception-throwing call instructions that dynamically transfer control
     back to them.</li>
 
@@ -3028,6 +3036,209 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
 
 <!-- *********************************************************************** -->
 <h2>
+  <a name="module_flags">Module Flags Metadata</a>
+</h2>
+<!-- *********************************************************************** -->
+
+<div>
+
+<p>Information about the module as a whole is difficult to convey to LLVM's
+   subsystems. The LLVM IR isn't sufficient to transmit this
+   information. The <tt>llvm.module.flags</tt> named metadata exists in order to
+   facilitate this. These flags are in the form of key / value pairs &mdash;
+   much like a dictionary &mdash; making it easy for any subsystem who cares
+   about a flag to look it up.</p>
+
+<p>The <tt>llvm.module.flags</tt> metadata contains a list of metadata
+   triplets. Each triplet has the following form:</p>
+
+<ul>
+  <li>The first element is a <i>behavior</i> flag, which specifies the behavior
+      when two (or more) modules are merged together, and it encounters two (or
+      more) metadata with the same ID. The supported behaviors are described
+      below.</li>
+
+  <li>The second element is a metadata string that is a unique ID for the
+      metadata. How each ID is interpreted is documented below.</li>
+
+  <li>The third element is the value of the flag.</li>
+</ul>
+
+<p>When two (or more) modules are merged together, the resulting
+   <tt>llvm.module.flags</tt> metadata is the union of the
+   modules' <tt>llvm.module.flags</tt> metadata. The only exception being a flag
+   with the <i>Override</i> behavior, which may override another flag's value
+   (see below).</p>
+
+<p>The following behaviors are supported:</p>
+
+<table border="1" cellspacing="0" cellpadding="4">
+  <tbody>
+    <tr>
+      <th>Value</th>
+      <th>Behavior</th>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td align="left">
+        <dl>
+          <dt><b>Error</b></dt>
+          <dd>Emits an error if two values disagree. It is an error to have an ID
+              with both an Error and a Warning behavior.</dd>
+        </dl>
+      </td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td align="left">
+        <dl>
+          <dt><b>Warning</b></dt>
+          <dd>Emits a warning if two values disagree.</dd>
+        </dl>
+      </td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td align="left">
+        <dl>
+          <dt><b>Require</b></dt>
+          <dd>Emits an error when the specified value is not present or doesn't
+              have the specified value. It is an error for two (or more)
+              <tt>llvm.module.flags</tt> with the same ID to have the Require
+              behavior but different values. There may be multiple Require flags
+              per ID.</dd>
+        </dl>
+      </td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td align="left">
+        <dl>
+          <dt><b>Override</b></dt>
+          <dd>Uses the specified value if the two values disagree. It is an
+              error for two (or more) <tt>llvm.module.flags</tt> with the same
+              ID to have the Override behavior but different values.</dd>
+        </dl>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<p>An example of module flags:</p>
+
+<pre class="doc_code">
+!0 = metadata !{ i32 1, metadata !"foo", i32 1 }
+!1 = metadata !{ i32 4, metadata !"bar", i32 37 }
+!2 = metadata !{ i32 2, metadata !"qux", i32 42 }
+!3 = metadata !{ i32 3, metadata !"qux",
+  metadata !{
+    metadata !"foo", i32 1
+  }
+}
+!llvm.module.flags = !{ !0, !1, !2, !3 }
+</pre>
+
+<ul>
+  <li><p>Metadata <tt>!0</tt> has the ID <tt>!"foo"</tt> and the value '1'. The
+         behavior if two or more <tt>!"foo"</tt> flags are seen is to emit an
+         error if their values are not equal.</p></li>
+
+  <li><p>Metadata <tt>!1</tt> has the ID <tt>!"bar"</tt> and the value '37'. The
+         behavior if two or more <tt>!"bar"</tt> flags are seen is to use the
+         value '37' if their values are not equal.</p></li>
+
+  <li><p>Metadata <tt>!2</tt> has the ID <tt>!"qux"</tt> and the value '42'. The
+         behavior if two or more <tt>!"qux"</tt> flags are seen is to emit a
+         warning if their values are not equal.</p></li>
+
+  <li><p>Metadata <tt>!3</tt> has the ID <tt>!"qux"</tt> and the value:</p>
+
+<pre class="doc_code">
+metadata !{ metadata !"foo", i32 1 }
+</pre>
+
+      <p>The behavior is to emit an error if the <tt>llvm.module.flags</tt> does
+         not contain a flag with the ID <tt>!"foo"</tt> that has the value
+         '1'. If two or more <tt>!"qux"</tt> flags exist, then they must have
+         the same value or an error will be issued.</p></li>
+</ul>
+
+
+<!-- ======================================================================= -->
+<h3>
+<a name="objc_gc_flags">Objective-C Garbage Collection Module Flags Metadata</a>
+</h3>
+
+<div>
+
+<p>On the Mach-O platform, Objective-C stores metadata about garbage collection
+   in a special section called "image info". The metadata consists of a version
+   number and a bitmask specifying what types of garbage collection are
+   supported (if any) by the file. If two or more modules are linked together
+   their garbage collection metadata needs to be merged rather than appended
+   together.</p>
+
+<p>The Objective-C garbage collection module flags metadata consists of the
+   following key-value pairs:</p>
+
+<table border="1" cellspacing="0" cellpadding="4">
+  <col width="30%">
+  <tbody>
+    <tr>
+      <th>Key</th>
+      <th>Value</th>
+    </tr>
+    <tr>
+      <td><tt>Objective-C&nbsp;Version</tt></td>
+      <td align="left"><b>[Required]</b> &mdash; The Objective-C ABI
+         version. Valid values are 1 and 2.</td>
+    </tr>
+    <tr>
+      <td><tt>Objective-C&nbsp;Image&nbsp;Info&nbsp;Version</tt></td>
+      <td align="left"><b>[Required]</b> &mdash; The version of the image info
+         section. Currently always 0.</td>
+    </tr>
+    <tr>
+      <td><tt>Objective-C&nbsp;Image&nbsp;Info&nbsp;Section</tt></td>
+      <td align="left"><b>[Required]</b> &mdash; The section to place the
+         metadata. Valid values are <tt>"__OBJC, __image_info, regular"</tt> for
+         Objective-C ABI version 1, and <tt>"__DATA,__objc_imageinfo, regular,
+         no_dead_strip"</tt> for Objective-C ABI version 2.</td>
+    </tr>
+    <tr>
+      <td><tt>Objective-C&nbsp;Garbage&nbsp;Collection</tt></td>
+      <td align="left"><b>[Required]</b> &mdash; Specifies whether garbage
+          collection is supported or not. Valid values are 0, for no garbage
+          collection, and 2, for garbage collection supported.</td>
+    </tr>
+    <tr>
+      <td><tt>Objective-C&nbsp;GC&nbsp;Only</tt></td>
+      <td align="left"><b>[Optional]</b> &mdash; Specifies that only garbage
+         collection is supported. If present, its value must be 6. This flag
+         requires that the <tt>Objective-C Garbage Collection</tt> flag have the
+         value 2.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Some important flag interactions:</p>
+
+<ul>
+  <li>If a module with <tt>Objective-C Garbage Collection</tt> set to 0 is
+      merged with a module with <tt>Objective-C Garbage Collection</tt> set to
+      2, then the resulting module has the <tt>Objective-C Garbage
+      Collection</tt> flag set to 0.</li>
+
+  <li>A module with <tt>Objective-C Garbage Collection</tt> set to 0 cannot be
+      merged with a module with <tt>Objective-C GC Only</tt> set to 6.</li>
+</ul>
+
+</div>
+
+</div>
+
+<!-- *********************************************************************** -->
+<h2>
   <a name="intrinsic_globals">Intrinsic Global Variables</a>
 </h2>
 <!-- *********************************************************************** -->
@@ -3174,7 +3385,6 @@ cast formed of bitcast or getelementptr.  For example, a legal use of it is:</p>
    '<a href="#i_switch"><tt>switch</tt></a>', 
    '<a href="#i_indirectbr"><tt>indirectbr</tt></a>',
    '<a href="#i_invoke"><tt>invoke</tt></a>', 
-   '<a href="#i_unwind"><tt>unwind</tt></a>',
    '<a href="#i_resume"><tt>resume</tt></a>', and 
    '<a href="#i_unreachable"><tt>unreachable</tt></a>'.</p>
 
@@ -3394,9 +3604,9 @@ IfUnequal:
    '<tt>normal</tt>' label or the '<tt>exception</tt>' label.  If the callee
    function returns with the "<tt><a href="#i_ret">ret</a></tt>" instruction,
    control flow will return to the "normal" label.  If the callee (or any
-   indirect callees) returns with the "<a href="#i_unwind"><tt>unwind</tt></a>"
-   instruction, control is interrupted and continued at the dynamically nearest
-   "exception" label.</p>
+   indirect callees) returns via the "<a href="#i_resume"><tt>resume</tt></a>"
+   instruction or other exception handling mechanism, control is interrupted and
+   continued at the dynamically nearest "exception" label.</p>
 
 <p>The '<tt>exception</tt>' label is a
    <i><a href="ExceptionHandling.html#overview">landing pad</a></i> for the
@@ -3438,8 +3648,9 @@ IfUnequal:
   <li>'<tt>normal label</tt>': the label reached when the called function
       executes a '<tt><a href="#i_ret">ret</a></tt>' instruction. </li>
 
-  <li>'<tt>exception label</tt>': the label reached when a callee returns with
-      the <a href="#i_unwind"><tt>unwind</tt></a> instruction. </li>
+  <li>'<tt>exception label</tt>': the label reached when a callee returns via
+      the <a href="#i_resume"><tt>resume</tt></a> instruction or other exception
+      handling mechanism.</li>
 
   <li>The optional <a href="#fnattrs">function attributes</a> list. Only
       '<tt>noreturn</tt>', '<tt>nounwind</tt>', '<tt>readonly</tt>' and
@@ -3462,9 +3673,6 @@ IfUnequal:
    block to the "normal" label. If the callee unwinds then no return value is
    available.</p>
 
-<p>Note that the code generator does not yet completely support unwind, and
-that the invoke/unwind semantics are likely to change in future versions.</p>
-
 <h5>Example:</h5>
 <pre>
   %retval = invoke i32 @Test(i32 15) to label %Continue
@@ -3472,38 +3680,6 @@ that the invoke/unwind semantics are likely to change in future versions.</p>
   %retval = invoke <a href="#callingconv">coldcc</a> i32 %Testfnptr(i32 15) to label %Continue
               unwind label %TestCleanup              <i>; {i32}:retval set</i>
 </pre>
-
-</div>
-
-<!-- _______________________________________________________________________ -->
-
-<h4>
-  <a name="i_unwind">'<tt>unwind</tt>' Instruction</a>
-</h4>
-
-<div>
-
-<h5>Syntax:</h5>
-<pre>
-  unwind
-</pre>
-
-<h5>Overview:</h5>
-<p>The '<tt>unwind</tt>' instruction unwinds the stack, continuing control flow
-   at the first callee in the dynamic call stack which used
-   an <a href="#i_invoke"><tt>invoke</tt></a> instruction to perform the call.
-   This is primarily used to implement exception handling.</p>
-
-<h5>Semantics:</h5>
-<p>The '<tt>unwind</tt>' instruction causes execution of the current function to
-   immediately halt.  The dynamic call stack is then searched for the
-   first <a href="#i_invoke"><tt>invoke</tt></a> instruction on the call stack.
-   Once found, execution continues at the "exceptional" destination block
-   specified by the <tt>invoke</tt> instruction.  If there is no <tt>invoke</tt>
-   instruction in the dynamic call chain, undefined behavior results.</p>
-
-<p>Note that the code generator does not yet completely support unwind, and
-that the invoke/unwind semantics are likely to change in future versions.</p>
 
 </div>
 
@@ -4691,8 +4867,13 @@ that the invoke/unwind semantics are likely to change in future versions.</p>
    '<tt>alloca</tt>' instruction is commonly used to represent automatic
    variables that must have an address available.  When the function returns
    (either with the <tt><a href="#i_ret">ret</a></tt>
-   or <tt><a href="#i_unwind">unwind</a></tt> instructions), the memory is
-   reclaimed.  Allocating zero bytes is legal, but the result is undefined.</p>
+   or <tt><a href="#i_resume">resume</a></tt> instructions), the memory is
+   reclaimed.  Allocating zero bytes is legal, but the result is undefined.
+   The order in which memory is allocated (ie., which way the stack grows) is
+   not specified, and relational comparisons involving '<tt>alloca</tt>'s are
+   undefined.</p>
+
+<p>
 
 <h5>Example:</h5>
 <pre>
@@ -4713,7 +4894,7 @@ that the invoke/unwind semantics are likely to change in future versions.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;result&gt; = load [volatile] &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;]
+  &lt;result&gt; = load [volatile] &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;][, !invariant.load !&lt;index&gt;]
   &lt;result&gt; = load atomic [volatile] &lt;ty&gt;* &lt;pointer&gt; [singlethread] &lt;ordering&gt;, align &lt;alignment&gt;
   !&lt;index&gt; = !{ i32 1 }
 </pre>
@@ -4757,6 +4938,14 @@ that the invoke/unwind semantics are likely to change in future versions.</p>
    and code generator that this load is not expected to be reused in the cache.
    The code generator may select special instructions to save cache bandwidth,
    such as the <tt>MOVNT</tt> instruction on x86.</p>
+
+<p>The optional <tt>!invariant.load</tt> metadata must reference a single
+   metatadata name &lt;index&gt; corresponding to a metadata node with no
+   entries.  The existence of the <tt>!invariant.load</tt> metatadata on the
+   instruction tells the optimizer and code generator that this load address
+   points to memory which does not change value during program execution.
+   The optimizer may then move this load around, for example, by hoisting it
+   out of loops using loop invariant code motion.</p>
 
 <h5>Semantics:</h5>
 <p>The location of memory pointed to is loaded.  If the value being loaded is of
@@ -6011,9 +6200,6 @@ Loop:       ; Infinite loop that counts from 0 on up...
   %X = select i1 true, i8 17, i8 42          <i>; yields i8:17</i>
 </pre>
 
-<p>Note that the code generator does not yet support conditions
-   with vector type.</p>
-
 </div>
 
 <!-- _______________________________________________________________________ -->
@@ -6180,8 +6366,8 @@ freestanding environments and non-C-based languages.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;resultval&gt; = landingpad &lt;somety&gt; personality &lt;type&gt; &lt;pers_fn&gt; &lt;clause&gt;+
-  &lt;resultval&gt; = landingpad &lt;somety&gt; personality &lt;type&gt; &lt;pers_fn&gt; cleanup &lt;clause&gt;*
+  &lt;resultval&gt; = landingpad &lt;resultty&gt; personality &lt;type&gt; &lt;pers_fn&gt; &lt;clause&gt;+
+  &lt;resultval&gt; = landingpad &lt;resultty&gt; personality &lt;type&gt; &lt;pers_fn&gt; cleanup &lt;clause&gt;*
 
   &lt;clause&gt; := catch &lt;type&gt; &lt;value&gt;
   &lt;clause&gt; := filter &lt;array constant type&gt; &lt;array constant&gt;
@@ -6195,7 +6381,7 @@ freestanding environments and non-C-based languages.</p>
    <i><tt>catch</tt></i> portion of a <i><tt>try/catch</tt></i> sequence. It
    defines values supplied by the personality function (<tt>pers_fn</tt>) upon
    re-entry to the function. The <tt>resultval</tt> has the
-   type <tt>somety</tt>.</p>
+   type <tt>resultty</tt>.</p>
 
 <h5>Arguments:</h5>
 <p>This instruction takes a <tt>pers_fn</tt> value. This is the personality
@@ -6219,7 +6405,11 @@ freestanding environments and non-C-based languages.</p>
 
 <p>The clauses are applied in order from top to bottom. If two
    <tt>landingpad</tt> instructions are merged together through inlining, the
-   clauses from the calling function are appended to the list of clauses.</p>
+   clauses from the calling function are appended to the list of clauses.
+   When the call stack is being unwound due to an exception being thrown, the
+   exception is compared against each <tt>clause</tt> in turn.  If it doesn't
+   match any of the clauses, and the <tt>cleanup</tt> flag is not set, then
+   unwinding continues further up the call stack.</p>
 
 <p>The <tt>landingpad</tt> instruction has several restrictions:</p>
 
@@ -8281,7 +8471,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-12-14 07:44:20 -0800 (Wed, 14 Dec 2011) $
+  Last modified: $Date: 2012-03-06 01:23:25 -0800 (Tue, 06 Mar 2012) $
 </address>
 
 </body>

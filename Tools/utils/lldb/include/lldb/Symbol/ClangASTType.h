@@ -78,15 +78,25 @@ public:
 
     ConstString
     GetConstTypeName ();
+    
+    ConstString
+    GetConstQualifiedTypeName ();
 
     static ConstString
-    GetConstTypeName (lldb::clang_type_t clang_type);
+    GetConstTypeName (clang::ASTContext *ast,
+                      lldb::clang_type_t clang_type);
     
-    static std::string
-    GetTypeNameForQualType (clang::QualType qual_type);
+    static ConstString
+    GetConstQualifiedTypeName (clang::ASTContext *ast,
+                               lldb::clang_type_t clang_type);
 
     static std::string
-    GetTypeNameForOpaqueQualType (lldb::clang_type_t opaque_qual_type);
+    GetTypeNameForQualType (clang::ASTContext *ast,
+                            clang::QualType qual_type);
+
+    static std::string
+    GetTypeNameForOpaqueQualType (clang::ASTContext *ast,
+                                  lldb::clang_type_t opaque_qual_type);
 
     uint32_t
     GetClangTypeBitWidth ();
@@ -301,7 +311,7 @@ public:
 						 uint32_t& stride);
     
     lldb::clang_type_t
-    GetPointerType ();
+    GetPointerType () const;
     
     static lldb::clang_type_t
     GetPointerType (clang::ASTContext *ast_context,
@@ -309,6 +319,13 @@ public:
 
     static lldb::clang_type_t
     RemoveFastQualifiers (lldb::clang_type_t);
+
+    void
+    Clear()
+    {
+        m_type = NULL;
+        m_ast = NULL;
+    }
 
 private:
     lldb::clang_type_t m_type;

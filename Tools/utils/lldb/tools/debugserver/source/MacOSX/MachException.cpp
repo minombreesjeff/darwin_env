@@ -165,12 +165,16 @@ catch_mach_exception_raise
                         (uint64_t)(exc_data_count > 1 ? exc_data[1] : 0xBADDBADD));
     }
 
-    g_message->task_port = task_port;
-    g_message->thread_port = thread_port;
-    g_message->exc_type = exc_type;
-    g_message->exc_data.resize(exc_data_count);
-    ::memcpy (&g_message->exc_data[0], exc_data, g_message->exc_data.size() * sizeof (mach_exception_data_type_t));
-    return KERN_SUCCESS;
+    if (task_port == g_message->task_port)
+    {
+        g_message->task_port = task_port;
+        g_message->thread_port = thread_port;
+        g_message->exc_type = exc_type;
+        g_message->exc_data.resize(exc_data_count);
+        ::memcpy (&g_message->exc_data[0], exc_data, g_message->exc_data.size() * sizeof (mach_exception_data_type_t));
+        return KERN_SUCCESS;
+    }
+    return KERN_FAILURE;
 }
 
 
@@ -318,12 +322,13 @@ MachException::Message::Receive(mach_port_t port, mach_msg_option_t options, mac
 }
 
 bool
-MachException::Message::CatchExceptionRaise()
+MachException::Message::CatchExceptionRaise(task_t task)
 {
     bool success = false;
     // locker will keep a mutex locked until it goes out of scope
 //    PThreadMutex::Locker locker(&g_message_mutex);
     //    DNBLogThreaded("calling  mach_exc_server");
+    state.task_port = task;
     g_message = &state;
     // The exc_server function is the MIG generated server handling function
     // to handle messages from the kernel relating to the occurrence of an
@@ -465,18 +470,47 @@ MachException::Data::Dump() const
     }
 }
 
+#define PREV_EXC_MASK_ALL (EXC_MASK_BAD_ACCESS      | \
+                           EXC_MASK_BAD_INSTRUCTION | \
+                           EXC_MASK_ARITHMETIC      | \
+                           EXC_MASK_EMULATION       | \
+                           EXC_MASK_SOFTWARE        | \
+                           EXC_MASK_BREAKPOINT      | \
+                           EXC_MASK_SYSCALL         | \
+                           EXC_MASK_MACH_SYSCALL    | \
+                           EXC_MASK_RPC_ALERT       | \
+                           EXC_MASK_MACHINE)
+
 
 kern_return_t
 MachException::PortInfo::Save (task_t task)
 {
-    count = (sizeof (ports) / sizeof (ports[0]));
     DNBLogThreadedIf(LOG_EXCEPTIONS | LOG_VERBOSE, "MachException::PortInfo::Save ( task = 0x%4.4x )", task);
+    // Be careful to be able to have debugserver built on a newer OS than what
+    // it is currently running on by being able to start with all exceptions
+    // and back off to just what is supported on the current system
     DNBError err;
-    err = ::task_get_exception_ports (task, EXC_MASK_ALL, masks, &count, ports, behaviors, flavors);
+
+    mask = EXC_MASK_ALL;
+
+    count = (sizeof (ports) / sizeof (ports[0]));
+    err = ::task_get_exception_ports (task, mask, masks, &count, ports, behaviors, flavors);
     if (DNBLogCheckLogBit(LOG_EXCEPTIONS) || err.Fail())
-        err.LogThreaded("::task_get_exception_ports ( task = 0x%4.4x, mask = 0x%x, maskCnt => %u, ports, behaviors, flavors )", task, EXC_MASK_ALL, count);
+        err.LogThreaded("::task_get_exception_ports ( task = 0x%4.4x, mask = 0x%x, maskCnt => %u, ports, behaviors, flavors )", task, mask, count);
+
+    if (err.Error() == KERN_INVALID_ARGUMENT && mask != PREV_EXC_MASK_ALL)
+    {
+        mask = PREV_EXC_MASK_ALL;
+        count = (sizeof (ports) / sizeof (ports[0]));
+        err = ::task_get_exception_ports (task, mask, masks, &count, ports, behaviors, flavors);
+        if (DNBLogCheckLogBit(LOG_EXCEPTIONS) || err.Fail())
+            err.LogThreaded("::task_get_exception_ports ( task = 0x%4.4x, mask = 0x%x, maskCnt => %u, ports, behaviors, flavors )", task, mask, count);
+    }
     if (err.Fail())
+    {
+        mask = 0;
         count = 0;
+    }
     return err.Error();
 }
 

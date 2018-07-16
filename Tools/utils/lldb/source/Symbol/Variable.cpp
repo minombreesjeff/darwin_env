@@ -146,8 +146,9 @@ Variable::Dump(Stream *s, bool show_context) const
         ABI *abi = NULL;
         if (m_owner_scope)
         {
-            Module *module = m_owner_scope->CalculateSymbolContextModule();
-            abi = ABI::FindPlugin (module->GetArchitecture()).get();
+            ModuleSP module_sp (m_owner_scope->CalculateSymbolContextModule());
+            if (module_sp)
+                abi = ABI::FindPlugin (module_sp->GetArchitecture()).get();
         }
         m_location.GetDescription(s, lldb::eDescriptionLevelBrief, loclist_base_addr, abi);
     }
@@ -216,19 +217,19 @@ Variable::LocationIsValidForFrame (StackFrame *frame)
 
     if (frame)
     {
-        Target *target = &frame->GetThread().GetProcess().GetTarget();
-        
         Function *function = frame->GetSymbolContext(eSymbolContextFunction).function;
         if (function)
         {
-            addr_t loclist_base_load_addr = function->GetAddressRange().GetBaseAddress().GetLoadAddress (target);
+            TargetSP target_sp (frame->CalculateTarget());
+            
+            addr_t loclist_base_load_addr = function->GetAddressRange().GetBaseAddress().GetLoadAddress (target_sp.get());
             if (loclist_base_load_addr == LLDB_INVALID_ADDRESS)
                 return false;
             // It is a location list. We just need to tell if the location
             // list contains the current address when converted to a load
             // address
             return m_location.LocationListContainsAddress (loclist_base_load_addr, 
-                                                           frame->GetFrameCodeAddress().GetLoadAddress (target));
+                                                           frame->GetFrameCodeAddress().GetLoadAddress (target_sp.get()));
         }
     }
     return false;
@@ -243,7 +244,7 @@ Variable::LocationIsValidForAddress (const Address &address)
     {
         SymbolContext sc;
         CalculateSymbolContext(&sc);
-        if (sc.module_sp.get() == address.GetModule())
+        if (sc.module_sp == address.GetModule())
         {
             // Is the variable is described by a single location?
             if (!m_location.IsLocationList())
@@ -480,13 +481,14 @@ Variable::DumpLocationForAddress (Stream *s, const Address &address)
     {
         SymbolContext sc;
         CalculateSymbolContext(&sc);
-        if (sc.module_sp.get() == address.GetModule())
+        if (sc.module_sp == address.GetModule())
         {
             ABI *abi = NULL;
             if (m_owner_scope)
             {
-                Module *module = m_owner_scope->CalculateSymbolContextModule();
-                abi = ABI::FindPlugin (module->GetArchitecture()).get();
+                ModuleSP module_sp (m_owner_scope->CalculateSymbolContextModule());
+                if (module_sp)
+                    abi = ABI::FindPlugin (module_sp->GetArchitecture()).get();
             }
 
             const addr_t file_addr = address.GetFileAddress();

@@ -422,7 +422,7 @@ public:
     virtual void
     CalculateSymbolContext(SymbolContext* sc);
 
-    virtual Module *
+    virtual lldb::ModuleSP
     CalculateSymbolContextModule ();
     
     virtual CompileUnit *
@@ -463,7 +463,7 @@ public:
     /// @param[out] line_no
     ///     The line number.
     //------------------------------------------------------------------
-   void
+    void
     GetEndLineSourceInfo (FileSpec &source_file, uint32_t &line_no);
 
     //------------------------------------------------------------------

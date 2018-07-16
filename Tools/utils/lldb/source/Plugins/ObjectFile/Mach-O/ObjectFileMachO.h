@@ -13,6 +13,7 @@
 #include "llvm/Support/MachO.h"
 
 #include "lldb/Core/Address.h"
+#include "lldb/Core/RangeMap.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Mutex.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -40,12 +41,18 @@ public:
     static const char *
     GetPluginDescriptionStatic();
 
-    static ObjectFile *
-    CreateInstance (lldb_private::Module* module,
+    static lldb_private::ObjectFile *
+    CreateInstance (const lldb::ModuleSP &module_sp,
                     lldb::DataBufferSP& dataSP,
                     const lldb_private::FileSpec* file,
                     lldb::addr_t offset,
                     lldb::addr_t length);
+
+    static lldb_private::ObjectFile *
+    CreateMemoryInstance (const lldb::ModuleSP &module_sp, 
+                          lldb::DataBufferSP& data_sp, 
+                          const lldb::ProcessSP &process_sp, 
+                          lldb::addr_t header_addr);
 
     static bool
     MagicBytesMatch (lldb::DataBufferSP& dataSP, 
@@ -55,11 +62,16 @@ public:
     //------------------------------------------------------------------
     // Member Functions
     //------------------------------------------------------------------
-    ObjectFileMachO (lldb_private::Module* module,
+    ObjectFileMachO (const lldb::ModuleSP &module_sp,
                      lldb::DataBufferSP& dataSP,
                      const lldb_private::FileSpec* file,
                      lldb::addr_t offset,
                      lldb::addr_t length);
+
+    ObjectFileMachO (const lldb::ModuleSP &module_sp,
+                     lldb::DataBufferSP& dataSP,
+                     const lldb::ProcessSP &process_sp,
+                     lldb::addr_t header_addr);
 
     virtual
     ~ObjectFileMachO();
@@ -76,7 +88,7 @@ public:
     virtual size_t
     GetAddressByteSize ()  const;
 
-    virtual lldb_private::AddressClass
+    virtual lldb::AddressClass
     GetAddressClass (lldb::addr_t file_addr);
 
     virtual lldb_private::Symtab *
@@ -111,6 +123,15 @@ public:
 
     virtual lldb_private::Address
     GetEntryPointAddress ();
+    
+    virtual lldb_private::Address
+    GetHeaderAddress ();
+    
+    virtual uint32_t
+    GetNumThreadContexts ();
+    
+    virtual lldb::RegisterContextSP
+    GetThreadContextAtIndex (uint32_t idx, lldb_private::Thread &thread);
 
     virtual ObjectFile::Type
     CalculateType();
@@ -118,16 +139,26 @@ public:
     virtual ObjectFile::Strata
     CalculateStrata();
 
+    virtual uint32_t
+    GetVersion (uint32_t *versions, uint32_t num_versions);
+
 protected:
-    mutable lldb_private::Mutex m_mutex;
     llvm::MachO::mach_header m_header;
     mutable std::auto_ptr<lldb_private::SectionList> m_sections_ap;
     mutable std::auto_ptr<lldb_private::Symtab> m_symtab_ap;
+    static const lldb_private::ConstString &GetSegmentNameTEXT();
+    static const lldb_private::ConstString &GetSegmentNameDATA();
+    static const lldb_private::ConstString &GetSegmentNameOBJC();
+    static const lldb_private::ConstString &GetSegmentNameLINKEDIT();
+    static const lldb_private::ConstString &GetSectionNameEHFrame();
 
     llvm::MachO::dysymtab_command m_dysymtab;
     std::vector<llvm::MachO::segment_command_64> m_mach_segments;
     std::vector<llvm::MachO::section_64> m_mach_sections;
+    typedef lldb_private::RangeArray<uint32_t, uint32_t, 1> FileRangeArray;
     lldb_private::Address  m_entry_point_address;
+    FileRangeArray m_thread_context_offsets;
+    bool m_thread_context_offsets_valid;
 
     size_t
     ParseSections ();

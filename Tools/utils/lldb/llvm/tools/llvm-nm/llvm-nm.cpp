@@ -61,6 +61,12 @@ namespace {
   cl::alias UndefinedOnly2("u", cl::desc("Alias for --undefined-only"),
                            cl::aliasopt(UndefinedOnly));
 
+  cl::opt<bool> DynamicSyms("dynamic",
+                             cl::desc("Display the dynamic symbols instead "
+                                      "of normal symbols."));
+  cl::alias DynamicSyms2("D", cl::desc("Alias for --dynamic"),
+                         cl::aliasopt(DynamicSyms));
+
   cl::opt<bool> DefinedOnly("defined-only",
                             cl::desc("Show only defined symbols"));
 
@@ -277,13 +283,17 @@ static void DumpSymbolNamesFromModule(Module *M) {
 
 static void DumpSymbolNamesFromObject(ObjectFile *obj) {
   error_code ec;
-  for (symbol_iterator i = obj->begin_symbols(),
-                       e = obj->end_symbols();
-                       i != e; i.increment(ec)) {
+  symbol_iterator ibegin = obj->begin_symbols();
+  symbol_iterator iend = obj->end_symbols();
+  if (DynamicSyms) {
+    ibegin = obj->begin_dynamic_symbols();
+    iend = obj->end_dynamic_symbols();
+  }
+  for (symbol_iterator i = ibegin; i != iend; i.increment(ec)) {
     if (error(ec)) break;
-    bool internal;
-    if (error(i->isInternal(internal))) break;
-    if (!DebugSyms && internal)
+    uint32_t symflags;
+    if (error(i->getFlags(symflags))) break;
+    if (!DebugSyms && (symflags & SymbolRef::SF_FormatSpecific))
       continue;
     NMSymbol s;
     s.Size = object::UnknownAddressOrSize;
@@ -335,7 +345,7 @@ static void DumpSymbolNamesFromFile(std::string &Filename) {
       for (object::Archive::child_iterator i = a->begin_children(),
                                            e = a->end_children(); i != e; ++i) {
         OwningPtr<Binary> child;
-        if (error_code ec = i->getAsBinary(child)) {
+        if (i->getAsBinary(child)) {
           // Try opening it as a bitcode file.
           OwningPtr<MemoryBuffer> buff(i->getBuffer());
           Module *Result = 0;

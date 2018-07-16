@@ -245,8 +245,9 @@ SourceManager::GetDefaultFileAndLine (FileSpec &file_spec, uint32_t &line)
             uint32_t num_matches;
             ConstString main_name("main");
             bool symbols_okay = false;  // Force it to be a debug symbol.
+            bool inlines_okay = true;
             bool append = false;
-            num_matches = executable_ptr->FindFunctions (main_name, NULL, lldb::eFunctionNameTypeBase, symbols_okay, append, sc_list);
+            num_matches = executable_ptr->FindFunctions (main_name, NULL, lldb::eFunctionNameTypeBase, inlines_okay, symbols_okay, append, sc_list);
             for (uint32_t idx = 0; idx < num_matches; idx++)
             {
                 SymbolContext sc;
@@ -271,10 +272,10 @@ SourceManager::GetDefaultFileAndLine (FileSpec &file_spec, uint32_t &line)
 
 void
 SourceManager::FindLinesMatchingRegex (FileSpec &file_spec,
-                        RegularExpression& regex, 
-                        uint32_t start_line, 
-                        uint32_t end_line, 
-                        std::vector<uint32_t> &match_lines)
+                                       RegularExpression& regex,
+                                       uint32_t start_line,
+                                       uint32_t end_line,
+                                       std::vector<uint32_t> &match_lines)
 {
     match_lines.clear();
     FileSP file_sp = GetFile (file_spec);
@@ -332,7 +333,7 @@ SourceManager::File::File(const FileSpec &file_spec, Target *target) :
                     {
                         SymbolContext sc;
                         sc_list.GetContextAtIndex (0, sc);
-                        m_file_spec = static_cast<FileSpec *>(sc.comp_unit);
+                        m_file_spec = sc.comp_unit;
                         m_mod_time = m_file_spec.GetModificationTime();
                     }
                 }
@@ -340,12 +341,15 @@ SourceManager::File::File(const FileSpec &file_spec, Target *target) :
             // Try remapping if m_file_spec does not correspond to an existing file.
             if (!m_file_spec.Exists())
             {
-                ConstString new_path;
-                if (target->GetSourcePathMap().RemapPath(m_file_spec.GetDirectory(), new_path))
+                FileSpec new_file_spec;
+                // Check target specific source remappings first, then fall back to
+                // modules objects can have individual path remappings that were detected
+                // when the debug info for a module was found.
+                // then
+                if (target->GetSourcePathMap().FindFile (m_file_spec, new_file_spec) ||
+                    target->GetImages().FindSourceFile (m_file_spec, new_file_spec))
                 {
-                    char resolved_path[PATH_MAX];
-                    ::snprintf(resolved_path, PATH_MAX, "%s/%s", new_path.AsCString(), m_file_spec.GetFilename().AsCString());
-                    m_file_spec = new FileSpec(resolved_path, true);
+                    m_file_spec = new_file_spec;
                     m_mod_time = m_file_spec.GetModificationTime();
                 }
             }

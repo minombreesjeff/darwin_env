@@ -30,7 +30,7 @@ using namespace lldb_private;
 //-------------------------------------------------------------------------
 // CommandObjectProcessLaunch
 //-------------------------------------------------------------------------
-#pragma mark CommandObjectProjectLaunch
+#pragma mark CommandObjectProcessLaunch
 class CommandObjectProcessLaunch : public CommandObject
 {
 public:
@@ -189,7 +189,7 @@ public:
             else
             {
                 const char *plugin_name = m_options.launch_info.GetProcessPluginName();
-                process = target->CreateProcess (debugger.GetListener(), plugin_name).get();
+                process = target->CreateProcess (debugger.GetListener(), plugin_name, NULL).get();
                 if (process)
                     error = process->Launch (m_options.launch_info);
             }
@@ -320,6 +320,10 @@ public:
             bool success = false;
             switch (short_option)
             {
+                case 'c':
+                    attach_info.SetContinueOnceAttached(true);
+                    break;
+
                 case 'p':   
                     {
                         lldb::pid_t pid = Args::StringToUInt32 (option_arg, LLDB_INVALID_PROCESS_ID, 0, &success);
@@ -501,7 +505,7 @@ public:
             if (state != eStateConnected)
             {
                 const char *plugin_name = m_options.attach_info.GetProcessPluginName();
-                process = target->CreateProcess (m_interpreter.GetDebugger().GetListener(), plugin_name).get();
+                process = target->CreateProcess (m_interpreter.GetDebugger().GetListener(), plugin_name, NULL).get();
             }
 
             if (process)
@@ -541,8 +545,18 @@ public:
                     StateType state = process->WaitForProcessToStop (NULL);
                     
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
-                    result.SetStatus (eReturnStatusSuccessFinishNoResult);
+
+                    if (state == eStateStopped)
+                    {
+                        result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                        result.SetStatus (eReturnStatusSuccessFinishNoResult);
+                    }
+                    else
+                    {
+                        result.AppendError ("attach failed: process did not stop (no such process or permission problem?)");
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;                
+                    }
                 }
             }
         }
@@ -581,6 +595,10 @@ public:
                 result.AppendWarningWithFormat("Architecture changed from %s to %s.\n", 
                                                 old_arch_spec.GetArchitectureName(), target->GetArchitecture().GetArchitectureName());
             }
+
+            // This supports the use-case scenario of immediately continuing the process once attached.
+            if (m_options.attach_info.GetContinueOnceAttached())
+                m_interpreter.HandleCommand("process continue", eLazyBoolNo, result);
         }
         return result.Succeeded();
     }
@@ -600,10 +618,11 @@ protected:
 OptionDefinition
 CommandObjectProcessAttach::CommandOptions::g_option_table[] =
 {
-{ LLDB_OPT_SET_ALL, false, "plugin", 'P', required_argument, NULL, 0, eArgTypePlugin,        "Name of the process plugin you want to use."},
-{ LLDB_OPT_SET_1,   false, "pid",    'p', required_argument, NULL, 0, eArgTypePid,           "The process ID of an existing process to attach to."},
-{ LLDB_OPT_SET_2,   false, "name",   'n', required_argument, NULL, 0, eArgTypeProcessName,  "The name of the process to attach to."},
-{ LLDB_OPT_SET_2,   false, "waitfor",'w', no_argument,       NULL, 0, eArgTypeNone,              "Wait for the the process with <process-name> to launch."},
+{ LLDB_OPT_SET_ALL, false, "continue",'c', no_argument,       NULL, 0, eArgTypeNone,         "Immediately continue the process once attached."},
+{ LLDB_OPT_SET_ALL, false, "plugin",  'P', required_argument, NULL, 0, eArgTypePlugin,       "Name of the process plugin you want to use."},
+{ LLDB_OPT_SET_1,   false, "pid",     'p', required_argument, NULL, 0, eArgTypePid,          "The process ID of an existing process to attach to."},
+{ LLDB_OPT_SET_2,   false, "name",    'n', required_argument, NULL, 0, eArgTypeProcessName,  "The name of the process to attach to."},
+{ LLDB_OPT_SET_2,   false, "waitfor", 'w', no_argument,       NULL, 0, eArgTypeNone,         "Wait for the process with <process-name> to launch."},
 { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -870,7 +889,7 @@ public:
                 plugin_name = m_options.plugin_name.c_str();
 
             const char *remote_url = command.GetArgumentAtIndex(0);
-            process = target_sp->CreateProcess (m_interpreter.GetDebugger().GetListener(), plugin_name).get();
+            process = target_sp->CreateProcess (m_interpreter.GetDebugger().GetListener(), plugin_name, NULL).get();
             
             if (process)
             {
@@ -880,6 +899,7 @@ public:
                 {
                     result.AppendError(error.AsCString("Remote connect failed"));
                     result.SetStatus (eReturnStatusFailed);
+                    target_sp->DeleteCurrentProcess();
                     return false;
                 }
             }

@@ -151,8 +151,7 @@ SBBreakpoint::FindLocationByAddress (addr_t vm_addr)
             Target &target = m_opaque_sp->GetTarget();
             if (target.GetSectionLoadList().ResolveLoadAddress (vm_addr, address) == false)
             {
-                address.SetSection (NULL);
-                address.SetOffset (vm_addr);
+                address.SetRawAddress (vm_addr);
             }
             sb_bp_location.SetLocation (m_opaque_sp->FindLocationByAddress (address));
         }
@@ -172,8 +171,7 @@ SBBreakpoint::FindLocationIDByAddress (addr_t vm_addr)
         Target &target = m_opaque_sp->GetTarget();
         if (target.GetSectionLoadList().ResolveLoadAddress (vm_addr, address) == false)
         {
-            address.SetSection (NULL);
-            address.SetOffset (vm_addr);
+            address.SetRawAddress (vm_addr);
         }
         break_id = m_opaque_sp->FindLocationIDByAddress (address);
     }
@@ -487,24 +485,25 @@ SBBreakpoint::PrivateBreakpointHitCallback
     lldb::user_id_t break_loc_id
 )
 {
-    BreakpointSP bp_sp(ctx->exe_ctx.GetTargetRef().GetBreakpointList().FindBreakpointByID(break_id));
+    ExecutionContext exe_ctx (ctx->exe_ctx_ref);
+    BreakpointSP bp_sp(exe_ctx.GetTargetRef().GetBreakpointList().FindBreakpointByID(break_id));
     if (baton && bp_sp)
     {
         CallbackData *data = (CallbackData *)baton;
         lldb_private::Breakpoint *bp = bp_sp.get();
         if (bp && data->callback)
         {
-            Process *process = ctx->exe_ctx.GetProcessPtr();
+            Process *process = exe_ctx.GetProcessPtr();
             if (process)
             {
-                SBProcess sb_process (process->GetSP());
+                SBProcess sb_process (process->shared_from_this());
                 SBThread sb_thread;
                 SBBreakpointLocation sb_location;
                 assert (bp_sp);
                 sb_location.SetLocation (bp_sp->FindLocationByID (break_loc_id));
-                Thread *thread = ctx->exe_ctx.GetThreadPtr();
+                Thread *thread = exe_ctx.GetThreadPtr();
                 if (thread)
-                    sb_thread.SetThread(thread->GetSP());
+                    sb_thread.SetThread(thread->shared_from_this());
 
                 return data->callback (data->callback_baton, 
                                           sb_process, 
@@ -557,6 +556,13 @@ SBBreakpoint::operator *() const
     return m_opaque_sp;
 }
 
+bool
+SBBreakpoint::EventIsBreakpointEvent (const lldb::SBEvent &event)
+{
+    return Breakpoint::BreakpointEventData::GetEventDataFromEvent(event.get()) != NULL;
+
+}
+
 BreakpointEventType
 SBBreakpoint::GetBreakpointEventTypeFromEvent (const SBEvent& event)
 {
@@ -581,6 +587,15 @@ SBBreakpoint::GetBreakpointLocationAtIndexFromEvent (const lldb::SBEvent& event,
     if (event.IsValid())
         sb_breakpoint_loc.SetLocation (Breakpoint::BreakpointEventData::GetBreakpointLocationAtIndexFromEvent (event.GetSP(), loc_idx));
     return sb_breakpoint_loc;
+}
+
+uint32_t
+SBBreakpoint::GetNumBreakpointLocationsFromEvent (const lldb::SBEvent &event)
+{
+    uint32_t num_locations = 0;
+    if (event.IsValid())
+        num_locations = (Breakpoint::BreakpointEventData::GetNumBreakpointLocationsFromEvent (event.GetSP()));
+    return num_locations;
 }
 
 

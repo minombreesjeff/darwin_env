@@ -117,6 +117,19 @@ public:
     
     static const char *
     GetGroupName (uint32_t gid, std::string &group_name);
+    
+    static uint32_t
+    GetUserID ();
+    
+    static uint32_t
+    GetGroupID ();
+
+    static uint32_t
+    GetEffectiveUserID ();
+
+    static uint32_t
+    GetEffectiveGroupID ();
+
 
     enum SystemLogType
     {
@@ -191,6 +204,16 @@ public:
     //------------------------------------------------------------------
     static lldb::tid_t
     GetCurrentThreadID ();
+
+    //------------------------------------------------------------------
+    /// Get the thread token (the one returned by ThreadCreate when the thread was created) for the
+    /// calling thread in the current process.
+    ///
+    /// @return
+    ///     The thread token for the calling thread in the current process.
+    //------------------------------------------------------------------
+    static lldb::thread_t
+    GetCurrentThread ();
 
     static const char *
     GetSignalAsCString (int signo);
@@ -298,6 +321,28 @@ public:
     GetModuleFileSpecForHostAddress (const void *host_addr);
 
 
+    
+    //------------------------------------------------------------------
+    /// If you have an executable that is in a bundle and want to get
+    /// back to the bundle directory from the path itself, this 
+    /// function will change a path to a file within a bundle to the
+    /// bundle directory itself.
+    ///
+    /// @param[in] file
+    ///     A file spec that might point to a file in a bundle. 
+    ///
+    /// @param[out] bundle_directory
+    ///     An object will be filled in with the bundle directory for
+    ///     the bundle when \b true is returned. Otherwise \a file is 
+    ///     left untouched and \b false is returned.
+    ///
+    /// @return
+    ///     \b true if \a file was resolved in \a bundle_directory,
+    ///     \b false otherwise.
+    //------------------------------------------------------------------
+    static bool
+    GetBundleDirectory (const FileSpec &file, FileSpec &bundle_directory);
+
     //------------------------------------------------------------------
     /// When executable files may live within a directory, where the 
     /// directory represents an executable bundle (like the MacOSX 
@@ -369,6 +414,14 @@ public:
     static Error
     LaunchProcess (ProcessLaunchInfo &launch_info);
 
+    static Error
+    RunShellCommand (const char *command,           // Shouldn't be NULL
+                     const char *working_dir,       // Pass NULL to use the current working directory
+                     int *status_ptr,               // Pass NULL if you don't want the process exit status
+                     int *signo_ptr,                // Pass NULL if you don't want the signal that caused the process to exit
+                     std::string *command_output,   // Pass NULL if you don't want the command output
+                     uint32_t timeout_sec);         // Timeout in seconds to wait for shell program to finish
+    
     static lldb::DataBufferSP
     GetAuxvData (lldb_private::Process *process);
 

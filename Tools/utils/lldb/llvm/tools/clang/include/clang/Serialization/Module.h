@@ -57,7 +57,7 @@ struct DeclContextInfo {
 /// other modules.
 class ModuleFile {
 public:
-  ModuleFile(ModuleKind Kind);
+  ModuleFile(ModuleKind Kind, unsigned Generation);
   ~ModuleFile();
 
   // === General information ===
@@ -72,9 +72,12 @@ public:
   /// user.
   bool DirectlyImported;
 
+  /// \brief The generation of which this module file is a part.
+  unsigned Generation;
+  
   /// \brief The memory buffer that stores the data associated with
   /// this AST file.
-  llvm::OwningPtr<llvm::MemoryBuffer> Buffer;
+  OwningPtr<llvm::MemoryBuffer> Buffer;
 
   /// \brief The size of this file, in bits.
   uint64_t SizeInBits;
@@ -260,6 +263,15 @@ public:
   /// \brief Remapping table for declaration IDs in this module.
   ContinuousRangeMap<uint32_t, int, 2> DeclRemap;
 
+  /// \brief Mapping from the module files that this module file depends on
+  /// to the base declaration ID for that module as it is understood within this
+  /// module.
+  ///
+  /// This is effectively a reverse global-to-local mapping for declaration
+  /// IDs, so that we can interpret a true global ID (for this translation unit)
+  /// as a local ID (for this module file).
+  llvm::DenseMap<ModuleFile *, serialization::DeclID> GlobalToLocalDeclIDs;
+
   /// \brief The number of C++ base specifier sets in this AST file.
   unsigned LocalNumCXXBaseSpecifiers;
 
@@ -274,17 +286,30 @@ public:
   /// for each DeclContext.
   DeclContextInfosMap DeclContextInfos;
 
-  typedef llvm::DenseMap<serialization::GlobalDeclID,
-             std::pair<serialization::LocalDeclID, serialization::LocalDeclID> >
-    ChainedObjCCategoriesMap;
-  /// \brief ObjC categories that got chained to an interface from another
-  /// module.
-  /// Key is the ID of the interface.
-  /// Value is a pair of linked category DeclIDs (head category, tail category).
-  ChainedObjCCategoriesMap ChainedObjCCategories;
-
   /// \brief Array of file-level DeclIDs sorted by file.
   const serialization::DeclID *FileSortedDecls;
+
+  /// \brief Array of redeclaration chain location information within this 
+  /// module file, sorted by the first declaration ID.
+  const serialization::LocalRedeclarationsInfo *RedeclarationsMap;
+
+  /// \brief The number of redeclaration info entries in RedeclarationsMap.
+  unsigned LocalNumRedeclarationsInMap;
+  
+  /// \brief The redeclaration chains for declarations local to this
+  /// module file.
+  SmallVector<uint64_t, 1> RedeclarationChains;
+  
+  /// \brief Array of category list location information within this 
+  /// module file, sorted by the definition ID.
+  const serialization::ObjCCategoriesInfo *ObjCCategoriesMap;
+  
+  /// \brief The number of redeclaration info entries in ObjCCategoriesMap.
+  unsigned LocalNumObjCCategoriesInMap;
+  
+  /// \brief The Objective-C category lists for categories known to this
+  /// module.
+  SmallVector<uint64_t, 1> ObjCCategories;
 
   // === Types ===
 

@@ -24,6 +24,10 @@ no_trace = False
 # To be filled with the filterspecs found in the session logs.
 redo_specs = []
 
+# The filename components to match for.  Only files with the contained component names
+# will be considered for re-run.  Examples: ['X86_64', 'clang'].
+filename_components = []
+
 # There is a known bug with respect to comp_specs and arch_specs, in that if we
 # encountered "-C clang" and "-C gcc" when visiting the session files, both
 # compilers will end up in the invocation of the test driver when rerunning.
@@ -36,8 +40,10 @@ arch_specs = set()
 
 def usage():
     print"""\
-Usage: redo.py [-n] [session_dir]
+Usage: redo.py [-F filename_component] [-n] [session_dir]
 where options:
+-F : only consider the test for re-run if the session filename conatins the filename component
+     for example: -F x86_64
 -n : when running the tests, do not turn on trace mode, i.e, no '-t' option
      is passed to the test driver (this will run the tests faster)
 
@@ -74,11 +80,15 @@ def redo(suffix, dir, names):
     global filter_pattern
     global comp_pattern
     global arch_pattern
+    global filename_components
 
     for name in names:
         if name.endswith(suffix):
             #print "Find a log file:", name
             if name.startswith("Error") or name.startswith("Failure"):
+                if filename_components:
+                    if not all([comp in name for comp in filename_components]):
+                        continue
                 with open(os.path.join(dir, name), 'r') as log:
                     content = log.read()
                     for line in content.splitlines():
@@ -100,14 +110,14 @@ def main():
     """Read the session directory and run the failed test cases one by one."""
     global no_trace
     global redo_specs
+    global filename_components
 
     test_dir = sys.path[0]
+    if not test_dir:
+        test_dir = os.getcwd()
     if not test_dir.endswith('test'):
         print "This script expects to reside in lldb's test directory."
         sys.exit(-1)
-
-    if len(sys.argv) > 3:
-        usage()
 
     index = 1
     while index < len(sys.argv):
@@ -121,9 +131,16 @@ def main():
             # End of option processing.
             break
 
-        if sys.argv[index] == '-n':
-            no_trace = True
+        if sys.argv[index] == '-F':
+            # Increment by 1 to fetch the filename component spec.
             index += 1
+            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
+                usage()
+            filename_components.append(sys.argv[index])
+        elif sys.argv[index] == '-n':
+            no_trace = True
+
+        index += 1
 
     if index < len(sys.argv):
         # Get the specified session directory.
@@ -132,6 +149,9 @@ def main():
         # Use heuristic to find the latest session directory.
         name = datetime.datetime.now().strftime("%Y-%m-%d-")
         dirs = [d for d in os.listdir(os.getcwd()) if d.startswith(name)]
+        if len(dirs) == 0:
+            print "No default session directory found, please specify it explicitly."
+            usage()
         session_dir = max(dirs, key=os.path.getmtime)
         if not session_dir or not os.path.exists(session_dir):
             print "No default session directory found, please specify it explicitly."
@@ -145,7 +165,7 @@ def main():
     os.path.walk(session_dir_path, redo, ".log")
 
     if not redo_specs:
-        print "No failures/errors recorded within the session directory, please specify a different session directory."
+        print "No failures/errors recorded within the session directory, please specify a different session directory.\n"
         usage()
 
     filters = " -f ".join(redo_specs)

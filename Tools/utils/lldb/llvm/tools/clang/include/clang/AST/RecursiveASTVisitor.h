@@ -228,6 +228,11 @@ public:
   /// \returns false if the visitation was terminated early, true otherwise.
   bool TraverseConstructorInitializer(CXXCtorInitializer *Init);
 
+  /// \brief Recursively visit a lambda capture.
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraverseLambdaCapture(LambdaExpr::Capture C);
+  
   // ---- Methods on Stmts ----
 
   // Declare Traverse*() for all concrete Stmt classes.
@@ -675,6 +680,10 @@ bool RecursiveASTVisitor<Derived>::TraverseConstructorInitializer(
   return true;
 }
 
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseLambdaCapture(LambdaExpr::Capture C){
+  return true;
+}
 
 // ----------------- Type traversal -----------------
 
@@ -1162,14 +1171,6 @@ DEF_TRAVERSE_DECL(ClassScopeFunctionSpecializationDecl, {
 
 DEF_TRAVERSE_DECL(LinkageSpecDecl, { })
 
-DEF_TRAVERSE_DECL(ObjCClassDecl, {
-    // FIXME: implement this
-  })
-
-DEF_TRAVERSE_DECL(ObjCForwardProtocolDecl, {
-    // FIXME: implement this
-  })
-
 DEF_TRAVERSE_DECL(ObjCPropertyImplDecl, {
     // FIXME: implement this
   })
@@ -1365,8 +1366,6 @@ bool RecursiveASTVisitor<Derived>::TraverseFunctionInstantiations(
     case TSK_Undeclared:           // Declaration of the template definition.
     case TSK_ExplicitSpecialization:
       break;
-    default:
-      llvm_unreachable("Unknown specialization kind.");
     }
   }
 
@@ -1664,7 +1663,9 @@ DEF_TRAVERSE_DECL(CXXDestructorDecl, {
 template<typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseVarHelper(VarDecl *D) {
   TRY_TO(TraverseDeclaratorHelper(D));
-  TRY_TO(TraverseStmt(D->getInit()));
+  // Default params are taken care of when we traverse the ParmVarDecl.
+  if (!isa<ParmVarDecl>(D))
+    TRY_TO(TraverseStmt(D->getInit()));
   return true;
 }
 
@@ -1945,6 +1946,11 @@ DEF_TRAVERSE_STMT(BinaryTypeTraitExpr, {
     TRY_TO(TraverseTypeLoc(S->getRhsTypeSourceInfo()->getTypeLoc()));
   })
 
+DEF_TRAVERSE_STMT(TypeTraitExpr, {
+  for (unsigned I = 0, N = S->getNumArgs(); I != N; ++I)
+    TRY_TO(TraverseTypeLoc(S->getArg(I)->getTypeLoc()));
+})
+
 DEF_TRAVERSE_STMT(ArrayTypeTraitExpr, {
     TRY_TO(TraverseTypeLoc(S->getQueriedTypeSourceInfo()->getTypeLoc()));
   })
@@ -1962,6 +1968,37 @@ DEF_TRAVERSE_STMT(CXXTemporaryObjectExpr, {
     // This is called for code like 'return T()' where T is a class type.
     TRY_TO(TraverseTypeLoc(S->getTypeSourceInfo()->getTypeLoc()));
   })
+
+// Walk only the visible parts of lambda expressions.  
+template<typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseLambdaExpr(LambdaExpr *S) {
+  for (LambdaExpr::capture_iterator C = S->explicit_capture_begin(),
+                                 CEnd = S->explicit_capture_end();
+       C != CEnd; ++C) {
+    TRY_TO(TraverseLambdaCapture(*C));
+  }
+
+  if (S->hasExplicitParameters() || S->hasExplicitResultType()) {
+    TypeLoc TL = S->getCallOperator()->getTypeSourceInfo()->getTypeLoc();
+    if (S->hasExplicitParameters() && S->hasExplicitResultType()) {
+      // Visit the whole type.
+      TRY_TO(TraverseTypeLoc(TL));
+    } else if (isa<FunctionProtoTypeLoc>(TL)) {
+      FunctionProtoTypeLoc Proto = cast<FunctionProtoTypeLoc>(TL);
+      if (S->hasExplicitParameters()) {
+        // Visit parameters.
+        for (unsigned I = 0, N = Proto.getNumArgs(); I != N; ++I) {
+          TRY_TO(TraverseDecl(Proto.getArg(I)));
+        }
+      } else {
+        TRY_TO(TraverseTypeLoc(Proto.getResultLoc()));
+      }        
+    }
+  }
+
+  TRY_TO(TraverseStmt(S->getBody()));
+  return true;
+}
 
 DEF_TRAVERSE_STMT(CXXUnresolvedConstructExpr, {
     // This is called for code like 'T()', where T is a template argument.
@@ -2000,15 +2037,18 @@ DEF_TRAVERSE_STMT(CXXPseudoDestructorExpr, {
 })
 DEF_TRAVERSE_STMT(CXXThisExpr, { })
 DEF_TRAVERSE_STMT(CXXThrowExpr, { })
+DEF_TRAVERSE_STMT(UserDefinedLiteral, { })
 DEF_TRAVERSE_STMT(DesignatedInitExpr, { })
 DEF_TRAVERSE_STMT(ExtVectorElementExpr, { })
 DEF_TRAVERSE_STMT(GNUNullExpr, { })
 DEF_TRAVERSE_STMT(ImplicitValueInitExpr, { })
+DEF_TRAVERSE_STMT(ObjCBoolLiteralExpr, { })
 DEF_TRAVERSE_STMT(ObjCEncodeExpr, { })
 DEF_TRAVERSE_STMT(ObjCIsaExpr, { })
 DEF_TRAVERSE_STMT(ObjCIvarRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCMessageExpr, { })
 DEF_TRAVERSE_STMT(ObjCPropertyRefExpr, { })
+DEF_TRAVERSE_STMT(ObjCSubscriptRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCProtocolExpr, { })
 DEF_TRAVERSE_STMT(ObjCSelectorExpr, { })
 DEF_TRAVERSE_STMT(ObjCIndirectCopyRestoreExpr, { })
@@ -2066,7 +2106,10 @@ DEF_TRAVERSE_STMT(FloatingLiteral, { })
 DEF_TRAVERSE_STMT(ImaginaryLiteral, { })
 DEF_TRAVERSE_STMT(StringLiteral, { })
 DEF_TRAVERSE_STMT(ObjCStringLiteral, { })
-
+DEF_TRAVERSE_STMT(ObjCBoxedExpr, { })
+DEF_TRAVERSE_STMT(ObjCArrayLiteral, { })
+DEF_TRAVERSE_STMT(ObjCDictionaryLiteral, { })
+  
 // Traverse OpenCL: AsType, Convert.
 DEF_TRAVERSE_STMT(AsTypeExpr, { })
 

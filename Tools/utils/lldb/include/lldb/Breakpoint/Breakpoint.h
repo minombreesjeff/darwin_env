@@ -74,7 +74,7 @@ namespace lldb_private {
 /// not by the breakpoint.
 //----------------------------------------------------------------------
 class Breakpoint:
-    public ReferenceCountedBase<Breakpoint>,
+    public STD_ENABLE_SHARED_FROM_THIS(Breakpoint),
     public Stoppoint
 {
 public:
@@ -106,7 +106,7 @@ public:
         GetFlavor () const;
 
         BreakpointEventData (lldb::BreakpointEventType sub_type,
-                             lldb::BreakpointSP &new_breakpoint_sp);
+                             const lldb::BreakpointSP &new_breakpoint_sp);
 
         virtual
         ~BreakpointEventData();
@@ -116,6 +116,12 @@ public:
 
         lldb::BreakpointSP &
         GetBreakpoint ();
+        
+        BreakpointLocationCollection &
+        GetBreakpointLocationCollection()
+        {
+            return m_locations;
+        }
 
 
         virtual void
@@ -129,10 +135,14 @@ public:
 
         static lldb::BreakpointLocationSP
         GetBreakpointLocationAtIndexFromEvent (const lldb::EventSP &event_sp, uint32_t loc_idx);
+        
+        static uint32_t
+        GetNumBreakpointLocationsFromEvent (const lldb::EventSP &event_sp);
+
+        static const BreakpointEventData *
+        GetEventDataFromEvent (const Event *event_sp);
 
     private:
-        static BreakpointEventData *
-        GetEventDataFromEvent (const lldb::EventSP &event_sp);
 
         lldb::BreakpointEventType m_breakpoint_event;
         lldb::BreakpointSP m_new_breakpoint_sp;
@@ -193,11 +203,11 @@ public:
     /// Tell this breakpoint to scan a given module list and resolve any
     /// new locations that match the breakpoint's specifications.
     ///
-    /// @param[in] changedModules
+    /// @param[in] changed_modules
     ///    The list of modules to look in for new locations.
     //------------------------------------------------------------------
     void
-    ResolveBreakpointInModules (ModuleList &changedModules);
+    ResolveBreakpointInModules (ModuleList &changed_modules);
 
 
     //------------------------------------------------------------------
@@ -209,12 +219,28 @@ public:
     ///    The list of modules to look in for new locations.
     /// @param[in] load_event
     ///    If \b true then the modules were loaded, if \b false, unloaded.
+    /// @param[in] delete_locations
+    ///    If \b true then the modules were unloaded delete any locations in the changed modules.
     //------------------------------------------------------------------
     void
-    ModulesChanged (ModuleList &changedModules,
-                    bool load_event);
+    ModulesChanged (ModuleList &changed_modules,
+                    bool load_event,
+                    bool delete_locations = false);
 
 
+    //------------------------------------------------------------------
+    /// Tells the breakpoint the old module \a old_module_sp has been
+    /// replaced by new_module_sp (usually because the underlying file has been
+    /// rebuilt, and the old version is gone.)
+    ///
+    /// @param[in] old_module_sp
+    ///    The old module that is going away.
+    /// @param[in] new_module_sp
+    ///    The new module that is replacing it.
+    //------------------------------------------------------------------
+    void
+    ModuleReplaced (lldb::ModuleSP old_module_sp, lldb::ModuleSP new_module_sp);
+    
     //------------------------------------------------------------------
     // The next set of methods provide access to the breakpoint locations
     // for this breakpoint.
@@ -286,10 +312,6 @@ public:
     lldb::BreakpointLocationSP
     GetLocationAtIndex (uint32_t index);
 
-
-    const lldb::BreakpointSP
-    GetSP ();
-
     //------------------------------------------------------------------
     // The next section deals with various breakpoint options.
     //------------------------------------------------------------------
@@ -347,7 +369,25 @@ public:
     ///     The thread id for which the breakpoint hit will stop, LLDB_INVALID_THREAD_ID for all threads.
     //------------------------------------------------------------------
     lldb::tid_t
-    GetThreadID ();
+    GetThreadID () const;
+
+    void
+    SetThreadIndex (uint32_t index);
+    
+    uint32_t
+    GetThreadIndex() const;
+    
+    void
+    SetThreadName (const char *thread_name);
+    
+    const char *
+    GetThreadName () const;
+    
+    void 
+    SetQueueName (const char *queue_name);
+    
+    const char *
+    GetQueueName () const;
 
     //------------------------------------------------------------------
     /// Set the callback action invoked when the breakpoint is hit.  
@@ -386,25 +426,6 @@ public:
     ///    Pass in NULL to clear the condition.
     //------------------------------------------------------------------
     void SetCondition (const char *condition);
-    
-    //------------------------------------------------------------------
-    /// Test the breakpoint condition in the Execution context passed in.
-    ///
-    /// @param[in] exe_ctx
-    ///    The execution context in which to evaluate this expression.
-    /// 
-    /// @param[in] break_loc_sp
-    ///    A shared pointer to the location that we are testing thsi condition for.
-    ///
-    /// @param[in] error
-    ///    Error messages will be written to this stream.
-    ///
-    /// @return
-    ///     A thread plan to run to test the condition or NULL if no condition.
-    //------------------------------------------------------------------
-    ThreadPlan *GetThreadPlanToTestCondition (ExecutionContext &exe_ctx, 
-                                              lldb::BreakpointLocationSP break_loc_sp, 
-                                              Stream &error);
     
     //------------------------------------------------------------------
     /// Return a pointer to the text of the condition expression.
@@ -535,11 +556,18 @@ private:
     //------------------------------------------------------------------
     // For Breakpoint only
     //------------------------------------------------------------------
+    bool m_being_created;
     Target &m_target;                         // The target that holds this breakpoint.
     lldb::SearchFilterSP m_filter_sp;         // The filter that constrains the breakpoint's domain.
     lldb::BreakpointResolverSP m_resolver_sp; // The resolver that defines this breakpoint.
     BreakpointOptions m_options;              // Settable breakpoint options
     BreakpointLocationList m_locations;       // The list of locations currently found for this breakpoint.
+    
+    void
+    SendBreakpointChangedEvent (lldb::BreakpointEventType eventKind);
+    
+    void
+    SendBreakpointChangedEvent (BreakpointEventData *data);
 
     DISALLOW_COPY_AND_ASSIGN(Breakpoint);
 };

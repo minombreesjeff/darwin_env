@@ -27,10 +27,8 @@ public:
 
     ~SBFileSpec ();
 
-#ifndef SWIG
     const SBFileSpec &
     operator = (const lldb::SBFileSpec &rhs);
-#endif
 
     bool
     IsValid() const;
@@ -57,10 +55,12 @@ public:
     GetDescription (lldb::SBStream &description) const;
 
 private:
+    friend class SBAttachInfo;
     friend class SBBlock;
     friend class SBCompileUnit;
     friend class SBFileSpecList;
     friend class SBHostOS;
+    friend class SBLaunchInfo;
     friend class SBLineEntry;
     friend class SBModule;
     friend class SBProcess;
@@ -70,7 +70,6 @@ private:
 
     void
     SetFileSpec (const lldb_private::FileSpec& fs);
-#ifndef SWIG
 
     const lldb_private::FileSpec *
     operator->() const;
@@ -83,8 +82,6 @@ private:
 
     const lldb_private::FileSpec &
     ref() const;
-
-#endif
 
     std::auto_ptr <lldb_private::FileSpec> m_opaque_ap;
 };

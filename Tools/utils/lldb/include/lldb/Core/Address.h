@@ -97,7 +97,7 @@ public:
     /// offset (LLDB_INVALID_ADDRESS).
     //------------------------------------------------------------------
     Address () :
-        m_section (NULL),
+        m_section_wp (),
         m_offset (LLDB_INVALID_ADDRESS)
     {
     }
@@ -112,7 +112,7 @@ public:
     ///     A const Address object reference to copy.
     //------------------------------------------------------------------
     Address (const Address& rhs) :
-        m_section (rhs.m_section),
+        m_section_wp (rhs.m_section_wp),
         m_offset (rhs.m_offset)
     {
     }
@@ -130,10 +130,12 @@ public:
     /// @param[in] offset
     ///     The offset in bytes into \a section.
     //------------------------------------------------------------------
-    Address (const Section* section, lldb::addr_t offset) :
-        m_section (section),
+    Address (const lldb::SectionSP &section_sp, lldb::addr_t offset) :
+        m_section_wp (), // Don't init with section_sp in case section_sp is invalid (the weak_ptr will throw)
         m_offset (offset)
     {
+        if (section_sp)
+            m_section_wp = section_sp;
     }
 
     //------------------------------------------------------------------
@@ -149,6 +151,8 @@ public:
     ///     A list of sections, one of which may contain the \a file_addr.
     //------------------------------------------------------------------
     Address (lldb::addr_t file_addr, const SectionList * section_list);
+
+    Address (lldb::addr_t abs_addr);
 
     //------------------------------------------------------------------
     /// Assignment operator.
@@ -175,7 +179,7 @@ public:
     void
     Clear ()
     {
-        m_section = NULL;
+        m_section_wp.reset();
         m_offset = LLDB_INVALID_ADDRESS;
     }
 
@@ -246,7 +250,7 @@ public:
           DumpStyle fallback_style = DumpStyleInvalid,
           uint32_t addr_byte_size = UINT32_MAX) const;
 
-    AddressClass
+    lldb::AddressClass
     GetAddressClass () const;
     
     //------------------------------------------------------------------
@@ -344,7 +348,7 @@ public:
     bool
     IsSectionOffset() const
     {
-        return m_section != NULL && IsValid();
+        return IsValid() && (GetSection().get() != NULL);
     }
 
     //------------------------------------------------------------------
@@ -434,7 +438,7 @@ public:
     ///     in, or NULL if this address doesn't belong in a module, or
     ///     isn't resolved yet.
     //------------------------------------------------------------------
-    Module *
+    lldb::ModuleSP
     GetModule () const;
 
     //------------------------------------------------------------------
@@ -444,8 +448,8 @@ public:
     ///     Returns the const lldb::Section pointer that this address is an
     ///     offset in, or NULL if this address is absolute.
     //------------------------------------------------------------------
-    const Section*
-    GetSection() const { return m_section; }
+    lldb::SectionSP
+    GetSection () const { return m_section_wp.lock(); }
 
     //------------------------------------------------------------------
     /// Set accessor for the offset.
@@ -462,6 +466,13 @@ public:
         bool changed = m_offset != offset;
         m_offset = offset;
         return changed;
+    }
+    
+    void
+    SetRawAddress (lldb::addr_t addr)
+    {
+        m_section_wp.reset();
+        m_offset = addr;
     }
 
     bool
@@ -484,8 +495,16 @@ public:
     ///     any section.
     //------------------------------------------------------------------
     void
-    SetSection (const Section* section) { m_section = section; }
+    SetSection (const lldb::SectionSP &section_sp) 
+    {
+        m_section_wp = section_sp; 
+    }
 
+    void
+    ClearSection ()
+    {
+        m_section_wp.reset();
+    }
     //------------------------------------------------------------------
     /// Reconstruct a symbol context from an address.
     ///
@@ -500,7 +519,7 @@ public:
     CalculateSymbolContext (SymbolContext *sc, 
                             uint32_t resolve_scope = lldb::eSymbolContextEverything) const;
 
-    Module *
+    lldb::ModuleSP
     CalculateSymbolContextModule () const;
     
     CompileUnit *
@@ -522,8 +541,8 @@ protected:
     //------------------------------------------------------------------
     // Member variables.
     //------------------------------------------------------------------
-    const Section* m_section;   ///< The section for the address, can be NULL.
-    lldb::addr_t m_offset;      ///< Offset into section if \a m_section != NULL, else the absolute address value.
+    lldb::SectionWP m_section_wp;   ///< The section for the address, can be NULL.
+    lldb::addr_t m_offset;      ///< Offset into section if \a m_section_wp is valid...
 };
 
 

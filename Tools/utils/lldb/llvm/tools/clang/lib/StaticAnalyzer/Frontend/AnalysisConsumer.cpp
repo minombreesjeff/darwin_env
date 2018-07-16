@@ -34,7 +34,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/ADT/OwningPtr.h"
+#include "llvm/ADT/Statistic.h"
 
 using namespace clang;
 using namespace ento;
@@ -73,8 +75,11 @@ public:
   StoreManagerCreator CreateStoreMgr;
   ConstraintManagerCreator CreateConstraintMgr;
 
-  llvm::OwningPtr<CheckerManager> checkerMgr;
-  llvm::OwningPtr<AnalysisManager> Mgr;
+  OwningPtr<CheckerManager> checkerMgr;
+  OwningPtr<AnalysisManager> Mgr;
+
+  /// Time the analyzes time of each translation unit.
+  static llvm::Timer* TUTotalTimer;
 
   AnalysisConsumer(const Preprocessor& pp,
                    const std::string& outdir,
@@ -82,6 +87,15 @@ public:
                    ArrayRef<std::string> plugins)
     : Ctx(0), PP(pp), OutDir(outdir), Opts(opts), Plugins(plugins), PD(0) {
     DigestAnalyzerOptions();
+    if (Opts.PrintStats) {
+      llvm::EnableStatistics();
+      TUTotalTimer = new llvm::Timer("Analyzer Total Time");
+    }
+  }
+
+  ~AnalysisConsumer() {
+    if (Opts.PrintStats)
+      delete TUTotalTimer;
   }
 
   void DigestAnalyzerOptions() {
@@ -156,7 +170,9 @@ public:
                                   Opts.TrimGraph, Opts.InlineCall,
                                   Opts.UnoptimizedCFG, Opts.CFGAddImplicitDtors,
                                   Opts.CFGAddInitializers,
-                                  Opts.EagerlyTrimEGraph));
+                                  Opts.EagerlyTrimEGraph,
+                                  Opts.InlineMaxStackDepth,
+                                  Opts.InlineMaxFunctionSize));
   }
 
   virtual void HandleTranslationUnit(ASTContext &C);
@@ -170,6 +186,7 @@ public:
 //===----------------------------------------------------------------------===//
 // AnalysisConsumer implementation.
 //===----------------------------------------------------------------------===//
+llvm::Timer* AnalysisConsumer::TUTotalTimer = 0;
 
 void AnalysisConsumer::HandleDeclContext(ASTContext &C, DeclContext *dc) {
   for (DeclContext::decl_iterator I = dc->decls_begin(), E = dc->decls_end();
@@ -236,19 +253,26 @@ void AnalysisConsumer::HandleDeclContextDecl(ASTContext &C, Decl *D) {
 }
 
 void AnalysisConsumer::HandleTranslationUnit(ASTContext &C) {
-  BugReporter BR(*Mgr);
-  TranslationUnitDecl *TU = C.getTranslationUnitDecl();
-  checkerMgr->runCheckersOnASTDecl(TU, *Mgr, BR);
-  HandleDeclContext(C, TU);
+  {
+    if (TUTotalTimer) TUTotalTimer->startTimer();
 
-  // After all decls handled, run checkers on the entire TranslationUnit.
-  checkerMgr->runCheckersOnEndOfTranslationUnit(TU, *Mgr, BR);
+    // Introduce a scope to destroy BR before Mgr.
+    BugReporter BR(*Mgr);
+    TranslationUnitDecl *TU = C.getTranslationUnitDecl();
+    checkerMgr->runCheckersOnASTDecl(TU, *Mgr, BR);
+    HandleDeclContext(C, TU);
+
+    // After all decls handled, run checkers on the entire TranslationUnit.
+    checkerMgr->runCheckersOnEndOfTranslationUnit(TU, *Mgr, BR);
+  }
 
   // Explicitly destroy the PathDiagnosticConsumer.  This will flush its output.
   // FIXME: This should be replaced with something that doesn't rely on
   // side-effects in PathDiagnosticConsumer's destructor. This is required when
   // used with option -disable-free.
   Mgr.reset(NULL);
+
+  if (TUTotalTimer) TUTotalTimer->stopTimer();
 }
 
 static void FindBlocks(DeclContext *D, SmallVectorImpl<Decl*> &WL) {
@@ -311,7 +335,7 @@ static void ActionExprEngine(AnalysisConsumer &C, AnalysisManager &mgr,
   ExprEngine Eng(mgr, ObjCGCEnabled);
 
   // Set the graph auditor.
-  llvm::OwningPtr<ExplodedNode::Auditor> Auditor;
+  OwningPtr<ExplodedNode::Auditor> Auditor;
   if (mgr.shouldVisualizeUbigraph()) {
     Auditor.reset(CreateUbiViz());
     ExplodedNode::SetAuditor(Auditor.get());
@@ -337,8 +361,6 @@ static void RunPathSensitiveChecks(AnalysisConsumer &C, AnalysisManager &mgr,
                                    Decl *D) {
 
   switch (mgr.getLangOptions().getGC()) {
-  default:
-    llvm_unreachable("Invalid GC mode.");
   case LangOptions::NonGC:
     ActionExprEngine(C, mgr, D, false);
     break;
@@ -375,7 +397,7 @@ ASTConsumer* ento::CreateAnalysisConsumer(const Preprocessor& pp,
 namespace {
 
 class UbigraphViz : public ExplodedNode::Auditor {
-  llvm::OwningPtr<raw_ostream> Out;
+  OwningPtr<raw_ostream> Out;
   llvm::sys::Path Dir, Filename;
   unsigned Cntr;
 
@@ -409,7 +431,7 @@ static ExplodedNode::Auditor* CreateUbiViz() {
 
   llvm::errs() << "Writing '" << Filename.str() << "'.\n";
 
-  llvm::OwningPtr<llvm::raw_fd_ostream> Stream;
+  OwningPtr<llvm::raw_fd_ostream> Stream;
   Stream.reset(new llvm::raw_fd_ostream(Filename.c_str(), ErrMsg));
 
   if (!ErrMsg.empty())

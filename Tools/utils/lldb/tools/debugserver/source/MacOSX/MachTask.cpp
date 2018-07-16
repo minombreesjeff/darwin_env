@@ -33,7 +33,7 @@
 #include "DNBDataRef.h"
 #include "stack_logging.h"
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <SpringBoardServices/SpringBoardServer.h>
@@ -367,8 +367,25 @@ MachTask::StartExceptionThread(DNBError &err)
         // Save the original state of the exception ports for our child process
         SaveExceptionPortInfo();
 
+        // We weren't able to save the info for our exception ports, we must stop...
+        if (m_exc_port_info.mask == 0)
+        {
+            err.SetErrorString("failed to get exception port info");
+            return false;
+        }
+
         // Set the ability to get all exceptions on this port
-        err = ::task_set_exception_ports (task, EXC_MASK_ALL, m_exception_port, EXCEPTION_DEFAULT | MACH_EXCEPTION_CODES, THREAD_STATE_NONE);
+        err = ::task_set_exception_ports (task, m_exc_port_info.mask, m_exception_port, EXCEPTION_DEFAULT | MACH_EXCEPTION_CODES, THREAD_STATE_NONE);
+        if (DNBLogCheckLogBit(LOG_EXCEPTIONS) || err.Fail())
+        {
+            err.LogThreaded("::task_set_exception_ports ( task = 0x%4.4x, exception_mask = 0x%8.8x, new_port = 0x%4.4x, behavior = 0x%8.8x, new_flavor = 0x%8.8x )",
+                            task,
+                            m_exc_port_info.mask,
+                            m_exception_port,
+                            (EXCEPTION_DEFAULT | MACH_EXCEPTION_CODES),
+                            THREAD_STATE_NONE);
+        }
+
         if (err.Fail())
             return false;
 
@@ -407,7 +424,6 @@ MachTask::ShutDownExcecptionThread()
     err = ::mach_port_deallocate (task_self, exception_port);
     if (DNBLogCheckLogBit(LOG_TASK) || err.Fail())
         err.LogThreaded("::mach_port_deallocate ( task = 0x%4.4x, name = 0x%4.4x )", task_self, exception_port);
-    exception_port = NULL;
 
     return err.Error();
 }
@@ -444,7 +460,7 @@ MachTask::ExceptionThread (void *arg)
     task_t task = mach_task->TaskPort();
     mach_msg_timeout_t periodic_timeout = 0;
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     mach_msg_timeout_t watchdog_elapsed = 0;
     mach_msg_timeout_t watchdog_timeout = 60 * 1000;
     pid_t pid = mach_proc->ProcessID();
@@ -474,7 +490,7 @@ MachTask::ExceptionThread (void *arg)
         if (periodic_timeout == 0 || periodic_timeout > watchdog_timeout)
             periodic_timeout = watchdog_timeout;
     }
-#endif  // #if defined (__arm__)
+#endif  // #ifdef WITH_SPRINGBOARD
 
     while (mach_task->ExceptionPortIsValid())
     {
@@ -555,7 +571,7 @@ MachTask::ExceptionThread (void *arg)
                 continue;
             }
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
             if (watchdog.get())
             {
                 watchdog_elapsed += periodic_timeout;
@@ -575,7 +591,7 @@ MachTask::ExceptionThread (void *arg)
         }
         else
         {
-            if (exception_message.CatchExceptionRaise())
+            if (exception_message.CatchExceptionRaise(task))
             {
                 ++num_exceptions_received;
                 mach_proc->ExceptionMessageReceived(exception_message);
@@ -583,7 +599,7 @@ MachTask::ExceptionThread (void *arg)
         }
     }
 
-#if defined (__arm__)
+#ifdef WITH_SPRINGBOARD
     if (watchdog.get())
     {
         // TODO: change SBSWatchdogAssertionRelease to SBSWatchdogAssertionCancel when we
@@ -593,7 +609,7 @@ MachTask::ExceptionThread (void *arg)
         DNBLogThreadedIf(LOG_TASK, "::SBSWatchdogAssertionRelease(%p)", watchdog.get());
         ::SBSWatchdogAssertionRelease (watchdog.get());
     }
-#endif  // #if defined (__arm__)
+#endif  // #ifdef WITH_SPRINGBOARD
 
     DNBLogThreadedIf(LOG_EXCEPTIONS, "MachTask::%s (%p): thread exiting...", __FUNCTION__, arg);
     return NULL;

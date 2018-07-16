@@ -39,22 +39,23 @@ using namespace lldb;
 using namespace lldb_private;
 
 bool
-AppleObjCRuntime::GetObjectDescription (Stream &str, ValueObject &object)
+AppleObjCRuntime::GetObjectDescription (Stream &str, ValueObject &valobj)
 {
     bool is_signed;
     // ObjC objects can only be pointers, but we extend this to integer types because an expression might just
     // result in an address, and we should try that to see if the address is an ObjC object.
     
-    if (!(object.IsPointerType() || object.IsIntegerType(is_signed)))
-        return NULL;
+    if (!(valobj.IsPointerType() || valobj.IsIntegerType(is_signed)))
+        return false;
     
     // Make the argument list: we pass one arg, the address of our pointer, to the print function.
     Value val;
     
-    if (!object.ResolveValue(val.GetScalar()))
-        return NULL;
-                        
-    return GetObjectDescription(str, val, object.GetExecutionContextScope());
+    if (!valobj.ResolveValue(val.GetScalar()))
+        return false;
+    
+    ExecutionContext exe_ctx (valobj.GetExecutionContextRef());
+    return GetObjectDescription(str, val, exe_ctx.GetBestExecutionContextScope());
                    
 }
 bool
@@ -107,6 +108,20 @@ AppleObjCRuntime::GetObjectDescription (Stream &strm, Value &value, ExecutionCon
     Value ret;
     ret.SetContext(Value::eContextTypeClangType, return_qualtype);
     
+    if (exe_ctx.GetFramePtr() == NULL)
+    {
+        Thread *thread = exe_ctx.GetThreadPtr();
+        if (thread == NULL)
+        {
+            exe_ctx.SetThreadSP(process->GetThreadList().GetSelectedThread());
+            thread = exe_ctx.GetThreadPtr();
+        }
+        if (thread)
+        {
+            exe_ctx.SetFrameSP(thread->GetSelectedFrame());
+        }
+    }
+    
     // Now we're ready to call the function:
     ClangFunction func (*exe_ctx.GetBestExecutionContextScope(),
                         ast_context, 
@@ -127,7 +142,7 @@ AppleObjCRuntime::GetObjectDescription (Stream &strm, Value &value, ExecutionCon
                                                      &wrapper_struct_addr, 
                                                      error_stream, 
                                                      stop_others, 
-                                                     1000000, 
+                                                     100000, 
                                                      try_all_threads, 
                                                      unwind_on_error, 
                                                      ret);
@@ -169,7 +184,7 @@ AppleObjCRuntime::GetPrintForDebuggerAddr()
         
         contexts.GetContextAtIndex(0, context);
         
-        m_PrintForDebugger_addr.reset(new Address(context.symbol->GetValue()));
+        m_PrintForDebugger_addr.reset(new Address(context.symbol->GetAddress()));
     }
     
     return m_PrintForDebugger_addr.get();
@@ -178,11 +193,10 @@ AppleObjCRuntime::GetPrintForDebuggerAddr()
 bool
 AppleObjCRuntime::CouldHaveDynamicValue (ValueObject &in_value)
 {
-    lldb::LanguageType known_type = in_value.GetObjectRuntimeLanguage();
-    if (known_type == lldb::eLanguageTypeObjC)
-        return in_value.IsPossibleDynamicType ();
-    else
-        return in_value.IsPointerType();
+    return ClangASTContext::IsPossibleDynamicType(in_value.GetClangAST(), in_value.GetClangType(),
+                                                  NULL,
+                                                  false, // do not check C++
+                                                  true); // check ObjC
 }
 
 bool
@@ -220,7 +234,7 @@ AppleObjCRuntime::ReadObjCLibrary (const ModuleSP &module_sp)
 {
     // Maybe check here and if we have a handler already, and the UUID of this module is the same as the one in the
     // current module, then we don't have to reread it?
-    m_objc_trampoline_handler_ap.reset(new AppleObjCTrampolineHandler (m_process->GetSP(), module_sp));
+    m_objc_trampoline_handler_ap.reset(new AppleObjCTrampolineHandler (m_process->shared_from_this(), module_sp));
     if (m_objc_trampoline_handler_ap.get() != NULL)
     {
         m_read_objc_library = true;
@@ -245,12 +259,23 @@ AppleObjCRuntime::GetStepThroughTrampolinePlan (Thread &thread, bool stop_others
 enum ObjCRuntimeVersions
 AppleObjCRuntime::GetObjCVersion (Process *process, ModuleSP &objc_module_sp)
 {
-    ModuleList &images = process->GetTarget().GetImages();
-    size_t num_images = images.GetSize();
+    if (!process)
+        return eObjC_VersionUnknown;
+        
+    Target &target = process->GetTarget();
+    ModuleList &target_modules = target.GetImages();
+    Mutex::Locker modules_locker(target_modules.GetMutex());
+    
+    size_t num_images = target_modules.GetSize();
     for (size_t i = 0; i < num_images; i++)
     {
-        ModuleSP module_sp = images.GetModuleAtIndex(i);
-        if (AppleIsModuleObjCLibrary (module_sp))
+        ModuleSP module_sp = target_modules.GetModuleAtIndexUnlocked(i);
+        // One tricky bit here is that we might get called as part of the initial module loading, but
+        // before all the pre-run libraries get winnowed from the module list.  So there might actually
+        // be an old and incorrect ObjC library sitting around in the list, and we don't want to look at that.
+        // That's why we call IsLoadedInTarget.
+        
+        if (AppleIsModuleObjCLibrary (module_sp) && module_sp->IsLoadedInTarget(&target))
         {
             objc_module_sp = module_sp;
             ObjectFile *ofile = module_sp->GetObjectFile();
@@ -271,6 +296,24 @@ AppleObjCRuntime::GetObjCVersion (Process *process, ModuleSP &objc_module_sp)
             
     return eObjC_VersionUnknown;
 }
+
+void
+AppleObjCRuntime::SetExceptionBreakpoints ()
+{
+    const bool catch_bp = false;
+    const bool throw_bp = true;
+    const bool is_internal = true;
+    
+    if (!m_objc_exception_bp_sp)
+        m_objc_exception_bp_sp = LanguageRuntime::CreateExceptionBreakpoint (m_process->GetTarget(),
+                                                                            GetLanguageType(),
+                                                                            catch_bp, 
+                                                                            throw_bp, 
+                                                                            is_internal);
+    else
+        m_objc_exception_bp_sp->SetEnabled(true);
+}
+
 
 void
 AppleObjCRuntime::ClearExceptionBreakpoints ()
@@ -295,29 +338,26 @@ AppleObjCRuntime::ExceptionBreakpointsExplainStop (lldb::StopInfoSP stop_reason)
         return false;
     
     uint64_t break_site_id = stop_reason->GetValue();
-    lldb::BreakpointSiteSP bp_site_sp = m_process->GetBreakpointSiteList().FindByID(break_site_id);
-    
-    if (!bp_site_sp)
+    return m_process->GetBreakpointSiteList().BreakpointSiteContainsBreakpoint (break_site_id,
+                                                                                m_objc_exception_bp_sp->GetID());
+}
+
+bool
+AppleObjCRuntime::CalculateHasNewLiteralsAndIndexing()
+{
+    if (!m_process)
         return false;
     
-    uint32_t num_owners = bp_site_sp->GetNumberOfOwners();
+    Target &target(m_process->GetTarget());
     
-    bool        check_objc_exception = false;
-    break_id_t  objc_exception_bid;
+    static ConstString s_method_signature("-[NSDictionary objectForKeyedSubscript:]");
+    static ConstString s_arclite_method_signature("__arclite_objectForKeyedSubscript");
     
-    if (m_objc_exception_bp_sp)
-    {
-        check_objc_exception = true;
-        objc_exception_bid = m_objc_exception_bp_sp->GetID();
-    }
+    SymbolContextList sc_list;
     
-    for (uint32_t i = 0; i < num_owners; i++)
-    {
-        break_id_t bid = bp_site_sp->GetOwnerAtIndex(i)->GetBreakpoint().GetID();
-        
-        if ((check_objc_exception && (bid == objc_exception_bid)))
-            return true;
-    }
-    
-    return false;
+    if (target.GetImages().FindSymbolsWithNameAndType(s_method_signature, eSymbolTypeCode, sc_list) ||
+        target.GetImages().FindSymbolsWithNameAndType(s_arclite_method_signature, eSymbolTypeCode, sc_list))
+        return true;
+    else
+        return false;
 }

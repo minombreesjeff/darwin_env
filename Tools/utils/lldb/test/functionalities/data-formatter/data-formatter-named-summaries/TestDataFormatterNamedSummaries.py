@@ -12,11 +12,13 @@ class NamedSummariesDataFormatterTestCase(TestBase):
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-named-summaries")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_with_dsym_and_run_command(self):
         """Test data formatter commands."""
         self.buildDsym()
         self.data_formatter_commands()
 
+    @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()
@@ -64,13 +66,14 @@ class NamedSummariesDataFormatterTestCase(TestBase):
         self.expect("frame variable first --summary AllUseIt",
             substrs = ['AllUseIt: x=12'])
                     
-        # We remember the summary choice...
-        self.expect("frame variable first",
+        # We *DO NOT* remember the summary choice anymore
+        self.expect("frame variable first", matching=False,
             substrs = ['AllUseIt: x=12'])
-                    
+        self.expect("frame variable first",
+            substrs = ['First: x=12'])
+
         self.runCmd("thread step-over") # 2
                   
-        # ...but not after a stoppoint
         self.expect("frame variable first",
             substrs = ['First: x=12'])
                     
@@ -111,17 +114,16 @@ class NamedSummariesDataFormatterTestCase(TestBase):
             substrs = ['FirstAndFriends: x=12',
                         'y=34'])
                     
-        self.expect("frame variable first",
-            substrs = ['FirstAndFriends: x=12',
-                        'y=34'])
+        self.expect("frame variable first", matching=True,
+            substrs = ['x = 12',
+                        'y = 34'])
                     
         self.runCmd("type summary delete FirstAndFriends")
         self.expect("type summary delete NoSuchSummary", error=True)
         self.runCmd("type summary delete AllUseIt")
                     
-        self.expect("frame variable first",
-            substrs = ['FirstAndFriends: x=12',
-                       'y=34'])
+        self.expect("frame variable first", matching=False,
+            substrs = ['FirstAndFriends'])
 
         self.runCmd("thread step-over") # 4
 

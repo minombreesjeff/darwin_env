@@ -41,6 +41,8 @@ typedef std::multimap<uint32_t, const DWARFDebugInfoEntry*> UInt32ToDIEMMap;
 typedef UInt32ToDIEMMap::iterator                           UInt32ToDIEMMapIter;
 typedef UInt32ToDIEMMap::const_iterator                     UInt32ToDIEMMapConstIter;
 
+class DWARFDeclContext;
+
 #define DIE_SIBLING_IDX_BITSIZE 31
 #define DIE_ABBR_IDX_BITSIZE 15
 
@@ -355,6 +357,19 @@ public:
     const   DWARFDebugInfoEntry*    GetFirstChild() const   { return (HasChildren() && !m_empty_children) ? this + 1 : NULL; }
 
     
+    void                            GetDeclContextDIEs (SymbolFileDWARF* dwarf2Data, 
+                                                        DWARFCompileUnit* cu,
+                                                        DWARFDIECollection &decl_context_dies) const;
+
+    void                            GetDWARFDeclContext (SymbolFileDWARF* dwarf2Data,
+                                                         DWARFCompileUnit* cu,
+                                                         DWARFDeclContext &dwarf_decl_ctx) const;
+
+
+    bool                            MatchesDWARFDeclContext(SymbolFileDWARF* dwarf2Data,
+                                                            DWARFCompileUnit* cu,
+                                                            const DWARFDeclContext &dwarf_decl_ctx) const;
+
     const   DWARFDebugInfoEntry*    GetParentDeclContextDIE (SymbolFileDWARF* dwarf2Data, 
                                                              DWARFCompileUnit* cu) const;
     const   DWARFDebugInfoEntry*    GetParentDeclContextDIE (SymbolFileDWARF* dwarf2Data, 

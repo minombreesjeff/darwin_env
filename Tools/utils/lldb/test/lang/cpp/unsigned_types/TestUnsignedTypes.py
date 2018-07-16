@@ -13,11 +13,13 @@ class UnsignedTypesTestCase(TestBase):
     mydir = os.path.join("lang", "cpp", "unsigned_types")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_with_dsym(self):
         """Test that variables with unsigned types display correctly."""
         self.buildDsym()
         self.unsigned_types()
 
+    @dwarf_test
     def test_with_dwarf(self):
         """Test that variables with unsigned types display correctly."""
         self.buildDwarf()
@@ -55,8 +57,8 @@ class UnsignedTypesTestCase(TestBase):
             startstr = "(unsigned char) the_unsigned_char = 'c'",
             patterns = ["\((short unsigned int|unsigned short)\) the_unsigned_short = 99"],
             substrs = ["(unsigned int) the_unsigned_int = 99",
-                       "(long unsigned int) the_unsigned_long = 99",
-                       "(long long unsigned int) the_unsigned_long_long = 99",
+                       "(unsigned long) the_unsigned_long = 99",
+                       "(unsigned long long) the_unsigned_long_long = 99",
                        "(uint32_t) the_uint32 = 99"])
 
 

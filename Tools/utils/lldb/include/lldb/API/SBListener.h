@@ -25,10 +25,8 @@ public:
 
     ~SBListener ();
 
-#ifndef SWIG
     const lldb::SBListener &
     operator = (const lldb::SBListener &rhs);
-#endif
 
     void
     AddEvent (const lldb::SBEvent &event);
@@ -39,6 +37,16 @@ public:
     bool
     IsValid () const;
 
+    uint32_t
+    StartListeningForEventClass (SBDebugger &debugger,
+                                 const char *broadcaster_class, 
+                                 uint32_t event_mask);
+                                 
+    bool
+    StopListeningForEventClass (SBDebugger &debugger,
+                                const char *broadcaster_class,
+                                uint32_t event_mask);
+    
     uint32_t
     StartListeningForEvents (const lldb::SBBroadcaster& broadcaster,
                              uint32_t event_mask);
@@ -100,8 +108,6 @@ protected:
 
 private:
 
-#ifndef SWIG
-
     lldb_private::Listener *
     operator->() const;
 
@@ -119,8 +125,6 @@ private:
 
     void
     reset(lldb_private::Listener *listener, bool transfer_ownership);
-
-#endif
 
     lldb::ListenerSP m_opaque_sp;
     lldb_private::Listener *m_opaque_ptr;

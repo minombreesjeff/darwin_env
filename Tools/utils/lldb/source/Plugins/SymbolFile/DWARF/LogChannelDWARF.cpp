@@ -91,26 +91,27 @@ LogChannelDWARF::Delete ()
 
 
 void
-LogChannelDWARF::Disable (Args &categories, Stream *feedback_strm)
+LogChannelDWARF::Disable (const char **categories, Stream *feedback_strm)
 {
     if (!m_log_sp)
         return;
 
     g_log_channel = this;
     uint32_t flag_bits = m_log_sp->GetMask().Get();
-    const size_t argc = categories.GetArgumentCount();
-    for (size_t i = 0; i < argc; ++i)
+    for (size_t i = 0; categories[i] != NULL; ++i)
     {
-         const char *arg = categories.GetArgumentAtIndex(i);
+         const char *arg = categories[i];
 
-        if      (::strcasecmp (arg, "all")        == 0   ) flag_bits &= ~DWARF_LOG_ALL;
-        else if (::strcasecmp (arg, "info")       == 0   ) flag_bits &= ~DWARF_LOG_DEBUG_INFO;
-        else if (::strcasecmp (arg, "line")       == 0   ) flag_bits &= ~DWARF_LOG_DEBUG_LINE;
-        else if (::strcasecmp (arg, "pubnames")   == 0   ) flag_bits &= ~DWARF_LOG_DEBUG_PUBNAMES;
-        else if (::strcasecmp (arg, "pubtypes")   == 0   ) flag_bits &= ~DWARF_LOG_DEBUG_PUBTYPES;
-        else if (::strcasecmp (arg, "aranges")    == 0   ) flag_bits &= ~DWARF_LOG_DEBUG_ARANGES;
-        else if (::strcasecmp (arg, "lookups")    == 0   ) flag_bits &= ~DWARF_LOG_LOOKUPS;
-        else if (::strcasecmp (arg, "default")    == 0   ) flag_bits &= ~DWARF_LOG_DEFAULT;
+        if      (::strcasecmp (arg, "all")        == 0) flag_bits &= ~DWARF_LOG_ALL;
+        else if (::strcasecmp (arg, "info")       == 0) flag_bits &= ~DWARF_LOG_DEBUG_INFO;
+        else if (::strcasecmp (arg, "line")       == 0) flag_bits &= ~DWARF_LOG_DEBUG_LINE;
+        else if (::strcasecmp (arg, "pubnames")   == 0) flag_bits &= ~DWARF_LOG_DEBUG_PUBNAMES;
+        else if (::strcasecmp (arg, "pubtypes")   == 0) flag_bits &= ~DWARF_LOG_DEBUG_PUBTYPES;
+        else if (::strcasecmp (arg, "aranges")    == 0) flag_bits &= ~DWARF_LOG_DEBUG_ARANGES;
+        else if (::strcasecmp (arg, "lookups")    == 0) flag_bits &= ~DWARF_LOG_LOOKUPS;
+        else if (::strcasecmp (arg, "map")        == 0) flag_bits &= ~DWARF_LOG_DEBUG_MAP;
+        else if (::strcasecmp (arg, "default")    == 0) flag_bits &= ~DWARF_LOG_DEFAULT;
+        else if (::strncasecmp(arg, "comp", 4)    == 0) flag_bits &= ~DWARF_LOG_TYPE_COMPLETION;
         else
         {
             feedback_strm->Printf("error: unrecognized log category '%s'\n", arg);
@@ -132,7 +133,7 @@ LogChannelDWARF::Enable
     StreamSP &log_stream_sp,
     uint32_t log_options,
     Stream *feedback_strm,  // Feedback stream for argument errors etc
-    const Args &categories  // The categories to enable within this logging stream, if empty, enable default set
+    const char **categories  // The categories to enable within this logging stream, if empty, enable default set
 )
 {
     Delete ();
@@ -141,19 +142,20 @@ LogChannelDWARF::Enable
     g_log_channel = this;
     uint32_t flag_bits = 0;
     bool got_unknown_category = false;
-    const size_t argc = categories.GetArgumentCount();
-    for (size_t i=0; i<argc; ++i)
+    for (size_t i = 0; categories[i] != NULL; ++i)
     {
-        const char *arg = categories.GetArgumentAtIndex(i);
+        const char *arg = categories[i];
 
-        if      (::strcasecmp (arg, "all")        == 0   ) flag_bits |= DWARF_LOG_ALL;
-        else if (::strcasecmp (arg, "info")       == 0   ) flag_bits |= DWARF_LOG_DEBUG_INFO;
-        else if (::strcasecmp (arg, "line")       == 0   ) flag_bits |= DWARF_LOG_DEBUG_LINE;
-        else if (::strcasecmp (arg, "pubnames")   == 0   ) flag_bits |= DWARF_LOG_DEBUG_PUBNAMES;
-        else if (::strcasecmp (arg, "pubtypes")   == 0   ) flag_bits |= DWARF_LOG_DEBUG_PUBTYPES;
-        else if (::strcasecmp (arg, "aranges")    == 0   ) flag_bits |= DWARF_LOG_DEBUG_ARANGES;
-        else if (::strcasecmp (arg, "lookups")    == 0   ) flag_bits |= DWARF_LOG_LOOKUPS;
-        else if (::strcasecmp (arg, "default")    == 0   ) flag_bits |= DWARF_LOG_DEFAULT;
+        if      (::strcasecmp (arg, "all")        == 0) flag_bits |= DWARF_LOG_ALL;
+        else if (::strcasecmp (arg, "info")       == 0) flag_bits |= DWARF_LOG_DEBUG_INFO;
+        else if (::strcasecmp (arg, "line")       == 0) flag_bits |= DWARF_LOG_DEBUG_LINE;
+        else if (::strcasecmp (arg, "pubnames")   == 0) flag_bits |= DWARF_LOG_DEBUG_PUBNAMES;
+        else if (::strcasecmp (arg, "pubtypes")   == 0) flag_bits |= DWARF_LOG_DEBUG_PUBTYPES;
+        else if (::strcasecmp (arg, "aranges")    == 0) flag_bits |= DWARF_LOG_DEBUG_ARANGES;
+        else if (::strcasecmp (arg, "lookups")    == 0) flag_bits |= DWARF_LOG_LOOKUPS;
+        else if (::strcasecmp (arg, "map")        == 0) flag_bits |= DWARF_LOG_DEBUG_MAP;
+        else if (::strcasecmp (arg, "default")    == 0) flag_bits |= DWARF_LOG_DEFAULT;
+        else if (::strncasecmp(arg, "comp", 4)    == 0) flag_bits |= DWARF_LOG_TYPE_COMPLETION;
         else
         {
             feedback_strm->Printf("error: unrecognized log category '%s'\n", arg);
@@ -180,7 +182,9 @@ LogChannelDWARF::ListCategories (Stream *strm)
                   "  line - log the parsing if .debug_line\n"
                   "  pubnames - log the parsing if .debug_pubnames\n"
                   "  pubtypes - log the parsing if .debug_pubtypes\n"
-                  "  lookups - log any lookups that happen by name, regex, or address\n\n",
+                  "  lookups - log any lookups that happen by name, regex, or address\n\n"
+                  "  completion - log struct/unions/class type completions\n\n"
+                  "  map - log insertions of object files into DWARF debug maps\n\n",
                   SymbolFileDWARF::GetPluginNameStatic());
 }
 

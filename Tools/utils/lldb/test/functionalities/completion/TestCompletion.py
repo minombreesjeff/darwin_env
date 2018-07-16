@@ -18,29 +18,55 @@ class CommandLineCompletionTestCase(TestBase):
         system(["/bin/sh", "-c", "rm -f child_send.txt"])
         system(["/bin/sh", "-c", "rm -f child_read.txt"])
 
-    def test_frame_variable_dash_w(self):
-        """Test that 'frame variable -w' completes to 'frame variable -w '."""
-        self.complete_from_to('frame variable -w', 'frame variable -w ')
+    def test_process_attach_dash_dash_con(self):
+        """Test that 'process attach --con' completes to 'process attach --continue '."""
+        self.complete_from_to('process attach --con', 'process attach --continue ')
 
-    def test_frame_variable_dash_w_space(self):
-        """Test that 'frame variable -w ' completes to ['Available completions:', 'read', 'write', 'read_write']."""
-        self.complete_from_to('frame variable -w ', ['Available completions:', 'read', 'write', 'read_write'])
+    # <rdar://problem/11052829>
+    def test_infinite_loop_while_completing(self):
+        """Test that 'process print hello\' completes to itself and does not infinite loop."""
+        self.complete_from_to('process print hello\\', 'process print hello\\',
+                              turn_off_re_match=True)
+
+    def test_watchpoint_set_variable_dash_w(self):
+        """Test that 'watchpoint set variable -w' completes to 'watchpoint set variable -w '."""
+        self.complete_from_to('watchpoint set variable -w', 'watchpoint set variable -w ')
+
+    def test_watchpoint_set_variable_dash_w_space(self):
+        """Test that 'watchpoint set variable -w ' completes to ['Available completions:', 'read', 'write', 'read_write']."""
+        self.complete_from_to('watchpoint set variable -w ', ['Available completions:', 'read', 'write', 'read_write'])
+
+    def test_watchpoint_set_ex(self):
+        """Test that 'watchpoint set ex' completes to 'watchpoint set expression '."""
+        self.complete_from_to('watchpoint set ex', 'watchpoint set expression ')
+
+    def test_watchpoint_set_var(self):
+        """Test that 'watchpoint set var' completes to 'watchpoint set variable '."""
+        self.complete_from_to('watchpoint set var', 'watchpoint set variable ')
+
+    def test_watchpoint_set_variable_dash_w_read_underbar(self):
+        """Test that 'watchpoint set variable -w read_' completes to 'watchpoint set variable -w read_write'."""
+        self.complete_from_to('watchpoint set variable -w read_', 'watchpoint set variable -w read_write')
 
     def test_help_fi(self):
         """Test that 'help fi' completes to ['Available completions:', 'file', 'finish']."""
         self.complete_from_to('help fi', ['Available completions:', 'file', 'finish'])
+
+    def test_help_watchpoint_s(self):
+        """Test that 'help watchpoint s' completes to 'help watchpoint set '."""
+        self.complete_from_to('help watchpoint s', 'help watchpoint set ')
 
     def test_settings_append_target_er(self):
         """Test that 'settings append target.er' completes to 'settings append target.error-path'."""
         self.complete_from_to('settings append target.er', 'settings append target.error-path')
 
     def test_settings_insert_after_target_en(self):
-        """Test that 'settings insert-after target.en' completes to 'settings insert-after target.env-vars'."""
-        self.complete_from_to('settings insert-after target.en', 'settings insert-after target.env-vars')
+        """Test that 'settings insert-after target.env' completes to 'settings insert-after target.env-vars'."""
+        self.complete_from_to('settings insert-after target.env', 'settings insert-after target.env-vars')
 
     def test_settings_insert_before_target_en(self):
-        """Test that 'settings insert-before target.en' completes to 'settings insert-before target.env-vars'."""
-        self.complete_from_to('settings insert-before target.en', 'settings insert-before target.env-vars')
+        """Test that 'settings insert-before target.env' completes to 'settings insert-before target.env-vars'."""
+        self.complete_from_to('settings insert-before target.env', 'settings insert-before target.env-vars')
 
     def test_settings_replace_target_ru(self):
         """Test that 'settings replace target.ru' completes to 'settings replace target.run-args'."""
@@ -66,6 +92,10 @@ class CommandLineCompletionTestCase(TestBase):
         """Test that 'settings set ta' completes to 'settings set target.'."""
         self.complete_from_to('settings set ta', 'settings set target.')
 
+    def test_settings_set_target_exec(self):
+        """Test that 'settings set target.exec' completes to 'settings set target.exec-search-paths '."""
+        self.complete_from_to('settings set target.exec', 'settings set target.exec-search-paths ')
+
     def test_settings_set_target_pr(self):
         """Test that 'settings set target.pr' completes to ['Available completions:',
         'target.prefer-dynamic-value', 'target.process.']."""
@@ -90,7 +120,18 @@ class CommandLineCompletionTestCase(TestBase):
                                'target.process.thread.step-avoid-regexp',
                                'target.process.thread.trace-thread'])
 
-    def complete_from_to(self, str_input, patterns):
+    def test_target_space(self):
+        """Test that 'target ' completes to ['Available completions:', 'create', 'delete', 'list',
+        'modules', 'select', 'stop-hook', 'variable']."""
+        self.complete_from_to('target ',
+                              ['Available completions:', 'create', 'delete', 'list',
+                               'modules', 'select', 'stop-hook', 'variable'])
+
+    def test_target_va(self):
+        """Test that 'target va' completes to 'target variable '."""
+        self.complete_from_to('target va', 'target variable ')
+
+    def complete_from_to(self, str_input, patterns, turn_off_re_match=False):
         """Test that the completion mechanism completes str_input to patterns,
         where patterns could be a pattern-string or a list of pattern-strings"""
         # Patterns should not be None in order to proceed.
@@ -136,11 +177,16 @@ class CommandLineCompletionTestCase(TestBase):
                 print "\n\nContents of child_read.txt:"
                 print from_child
 
-            # Test that str_input completes to our patterns.
-            # If each pattern matches from_child, the completion mechanism works!
+            # The matching could be verbatim or using generic re pattern.
             for p in patterns:
-                self.expect(from_child, msg=COMPLETIOND_MSG(str_input, p), exe=False,
-                    patterns = [p])
+                # Test that str_input completes to our patterns or substrings.
+                # If each pattern/substring matches from_child, the completion mechanism works!
+                if turn_off_re_match:
+                    self.expect(from_child, msg=COMPLETION_MSG(str_input, p), exe=False,
+                        substrs = [p])
+                else:
+                    self.expect(from_child, msg=COMPLETION_MSG(str_input, p), exe=False,
+                        patterns = [p])
 
 
 if __name__ == '__main__':

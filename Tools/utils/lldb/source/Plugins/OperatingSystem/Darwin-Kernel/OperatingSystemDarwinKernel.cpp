@@ -68,20 +68,15 @@ OperatingSystemDarwinKernel::CreateInstance (Process *process, bool force)
             ObjectFile *object_file = exe_module->GetObjectFile();
             if (object_file)
             {
-                SectionList *section_list = object_file->GetSectionList();
-                if (section_list)
+                if (object_file->GetStrata() != ObjectFile::eStrataKernel)
                 {
-                    static ConstString g_kld_section_name ("__KLD");
-                    if (section_list->FindSectionByName (g_kld_section_name))
-                    {
-                        create = true;
-                    }
+                    return NULL;
                 }
             }
         }
 
-        // We can limit the creation of this plug-in to "*-apple-darwin" triples
-        // if we command out the lines below...
+        // We can limit the creation of this plug-in to "*-apple-macosx" or "*-apple-ios" triples
+        // if we comment out the lines below...
 //        if (create)
 //        {
 //            const llvm::Triple &triple_ref = process->GetTarget().GetArchitecture().GetTriple();
@@ -228,7 +223,7 @@ OperatingSystemDarwinKernel::GetPluginVersion()
     return 1;
 }
 
-uint32_t
+bool
 OperatingSystemDarwinKernel::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     // Make any constant strings once and cache the uniqued C string values
@@ -254,7 +249,7 @@ OperatingSystemDarwinKernel::UpdateThreadList (ThreadList &old_thread_list, Thre
 
         ThreadSP thread_sp (old_thread_list.FindThreadByID (tid, false));
         if (!thread_sp)
-            thread_sp.reset (new ThreadMemory (*m_process, tid, valobj_sp));
+            thread_sp.reset (new ThreadMemory (m_process->shared_from_this(), tid, valobj_sp));
 
         new_thread_list.AddThread(thread_sp);
 
@@ -268,7 +263,7 @@ OperatingSystemDarwinKernel::UpdateThreadList (ThreadList &old_thread_list, Thre
         }
         next_valobj_sp.swap(valobj_sp);
     }
-    return new_thread_list.GetSize(false);
+    return new_thread_list.GetSize(false) > 0;
 }
 
 void

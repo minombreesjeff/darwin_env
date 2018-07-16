@@ -19,6 +19,7 @@
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/Target/TargetOpcodes.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/STLExtras.h"
@@ -189,11 +190,11 @@ public:
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   /// In this case, the first MI starts a bundle but is not inside a bundle, the
   /// next 2 MIs are considered "inside" the bundle.
@@ -208,11 +209,11 @@ public:
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   ///          |
   ///   ----------------
-  ///   |      MI    * | 
+  ///   |      MI    * |
   ///   ----------------
   /// The first instruction has the special opcode "BUNDLE". It's not "inside"
   /// a bundle, but the next three MIs are.
@@ -228,6 +229,10 @@ public:
     else
       clearFlag(InsideBundle);
   }
+
+  /// isBundled - Return true if this instruction part of a bundle. This is true
+  /// if either itself or its following instruction is marked "InsideBundle".
+  bool isBundled() const;
 
   /// getDebugLoc - Returns the debug location id of this MachineInstr.
   ///
@@ -302,9 +307,6 @@ public:
   /// The first argument is the property being queried.
   /// The second argument indicates whether the query should look inside
   /// instruction bundles.
-  /// If the third argument is true, than the query can return true when *any*
-  /// of the bundled instructions has the queried property. If it's false, then
-  /// this can return true iff *all* of the instructions have the property.
   bool hasProperty(unsigned Flag, QueryType Type = AnyInBundle) const;
 
   /// isVariadic - Return true if this instruction can have a variable number of
@@ -700,6 +702,7 @@ public:
   /// that are not dead are skipped. If Overlap is true, then it also looks for
   /// defs that merely overlap the specified register. If TargetRegisterInfo is
   /// non-null, then it also checks if there is a def of a super-register.
+  /// This may also return a register mask operand when Overlap is true.
   int findRegisterDefOperandIdx(unsigned Reg,
                                 bool isDead = false, bool Overlap = false,
                                 const TargetRegisterInfo *TRI = NULL) const;
@@ -744,7 +747,7 @@ public:
   /// isRegTiedToUseOperand - Given the index of a register def operand,
   /// check if the register def is tied to a source operand, due to either
   /// two-address elimination or inline assembly constraints. Returns the
-  /// first tied use operand index by reference is UseOpIdx is not null.
+  /// first tied use operand index by reference if UseOpIdx is not null.
   bool isRegTiedToUseOperand(unsigned DefOpIdx, unsigned *UseOpIdx = 0) const;
 
   /// isRegTiedToDefOperand - Return true if the use operand of the specified
@@ -776,6 +779,10 @@ public:
                          const TargetRegisterInfo *RegInfo,
                          bool AddIfNotFound = false);
 
+  /// clearRegisterKills - Clear all kill flags affecting Reg.  If RegInfo is
+  /// provided, this includes super-register kills.
+  void clearRegisterKills(unsigned Reg, const TargetRegisterInfo *RegInfo);
+
   /// addRegisterDead - We have determined MI defined a register without a use.
   /// Look for the operand that defines it and mark it as IsDead. If
   /// AddIfNotFound is true, add a implicit operand if it's not found. Returns
@@ -790,7 +797,10 @@ public:
 
   /// setPhysRegsDeadExcept - Mark every physreg used by this instruction as
   /// dead except those in the UsedRegs list.
-  void setPhysRegsDeadExcept(const SmallVectorImpl<unsigned> &UsedRegs,
+  ///
+  /// On instructions with register mask operands, also add implicit-def
+  /// operands for all registers in UsedRegs.
+  void setPhysRegsDeadExcept(ArrayRef<unsigned> UsedRegs,
                              const TargetRegisterInfo &TRI);
 
   /// isSafeToMove - Return true if it is safe to move this instruction. If

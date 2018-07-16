@@ -236,7 +236,7 @@ public:
     qs.removeObjCGCAttr();
     return qs;
   }
-  Qualifiers withoutObjCGLifetime() const {
+  Qualifiers withoutObjCLifetime() const {
     Qualifiers qs = *this;
     qs.removeObjCLifetime();
     return qs;
@@ -252,7 +252,8 @@ public:
   void removeObjCLifetime() { setObjCLifetime(OCL_None); }
   void addObjCLifetime(ObjCLifetime type) {
     assert(type);
-    setObjCLifetime(type);
+    assert(!hasObjCLifetime());
+    Mask |= (type << LifetimeShift);
   }
 
   /// True if the lifetime is neither None or ExplicitNone.
@@ -447,7 +448,32 @@ enum CallingConv {
   CC_AAPCS_VFP    // __attribute__((pcs("aapcs-vfp")))
 };
 
-typedef std::pair<const Type*, Qualifiers> SplitQualType;
+/// A std::pair-like structure for storing a qualified type split
+/// into its local qualifiers and its locally-unqualified type.
+struct SplitQualType {
+  /// The locally-unqualified type.
+  const Type *Ty;
+
+  /// The local qualifiers.
+  Qualifiers Quals;
+
+  SplitQualType() : Ty(0), Quals() {}
+  SplitQualType(const Type *ty, Qualifiers qs) : Ty(ty), Quals(qs) {}
+
+  SplitQualType getSingleStepDesugaredType() const; // end of this file
+
+  // Make llvm::tie work.
+  operator std::pair<const Type *,Qualifiers>() const {
+    return std::pair<const Type *,Qualifiers>(Ty, Quals);
+  }
+
+  friend bool operator==(SplitQualType a, SplitQualType b) {
+    return a.Ty == b.Ty && a.Quals == b.Quals;
+  }
+  friend bool operator!=(SplitQualType a, SplitQualType b) {
+    return a.Ty != b.Ty || a.Quals != b.Quals;
+  }
+};
 
 /// QualType - For efficiency, we don't store CV-qualified types as nodes on
 /// their own: instead each reference to a type stores the qualifiers.  This
@@ -639,6 +665,14 @@ public:
   QualType withVolatile() const {
     return withFastQualifiers(Qualifiers::Volatile);
   }
+  
+  /// Add the restrict qualifier to this QualType.
+  void addRestrict() {
+    addFastQualifiers(Qualifiers::Restrict);
+  }
+  QualType withRestrict() const {
+    return withFastQualifiers(Qualifiers::Restrict);
+  }
 
   QualType withCVRQualifiers(unsigned CVR) const {
     return withFastQualifiers(CVR);
@@ -761,7 +795,9 @@ public:
   ///
   /// This routine takes off the first typedef, typeof, etc. If the outer level
   /// of the type is already concrete, it returns it unmodified.
-  QualType getSingleStepDesugaredType(const ASTContext &Context) const;
+  QualType getSingleStepDesugaredType(const ASTContext &Context) const {
+    return getSingleStepDesugaredTypeImpl(*this, Context);
+  }
 
   /// IgnoreParens - Returns the specified type after dropping any
   /// outer-level parentheses.
@@ -783,7 +819,7 @@ public:
     return getAsString(split());
   }
   static std::string getAsString(SplitQualType split) {
-    return getAsString(split.first, split.second);
+    return getAsString(split.Ty, split.Quals);
   }
   static std::string getAsString(const Type *ty, Qualifiers qs);
 
@@ -798,7 +834,7 @@ public:
   }
   static void getAsStringInternal(SplitQualType split, std::string &out,
                                   const PrintingPolicy &policy) {
-    return getAsStringInternal(split.first, split.second, out, policy);
+    return getAsStringInternal(split.Ty, split.Quals, out, policy);
   }
   static void getAsStringInternal(const Type *ty, Qualifiers qs,
                                   std::string &out,
@@ -879,6 +915,8 @@ private:
   static QualType getDesugaredType(QualType T, const ASTContext &Context);
   static SplitQualType getSplitDesugaredType(QualType T);
   static SplitQualType getSplitUnqualifiedTypeImpl(QualType type);
+  static QualType getSingleStepDesugaredTypeImpl(QualType type,
+                                                 const ASTContext &C);
   static QualType IgnoreParens(QualType T);
   static DestructionKind isDestructedTypeImpl(QualType type);
 };
@@ -1088,6 +1126,9 @@ private:
     /// LangOptions::VisibilityMode+1.
     mutable unsigned CacheValidAndVisibility : 2;
 
+    /// \brief True if the visibility was set explicitly in the source code.
+    mutable unsigned CachedExplicitVisibility : 1;
+
     /// \brief Linkage of this type.
     mutable unsigned CachedLinkage : 2;
 
@@ -1104,6 +1145,10 @@ private:
       assert(isCacheValid() && "getting linkage from invalid cache");
       return static_cast<Visibility>(CacheValidAndVisibility-1);
     }
+    bool isVisibilityExplicit() const {
+      assert(isCacheValid() && "getting linkage from invalid cache");
+      return CachedExplicitVisibility;
+    }
     Linkage getLinkage() const {
       assert(isCacheValid() && "getting linkage from invalid cache");
       return static_cast<Linkage>(CachedLinkage);
@@ -1113,7 +1158,7 @@ private:
       return CachedLocalOrUnnamed;
     }
   };
-  enum { NumTypeBits = 18 };
+  enum { NumTypeBits = 19 };
 
 protected:
   // These classes allow subclasses to somewhat cleanly pack bitfields
@@ -1151,9 +1196,6 @@ protected:
     /// Extra information which affects how the function is called, like
     /// regparm and the calling convention.
     unsigned ExtInfo : 8;
-
-    /// Whether the function is variadic.  Only used by FunctionProtoType.
-    unsigned Variadic : 1;
 
     /// TypeQuals - Used only by FunctionProtoType, put here to pack with the
     /// other bitfields.
@@ -1267,6 +1309,7 @@ protected:
     TypeBits.VariablyModified = VariablyModified;
     TypeBits.ContainsUnexpandedParameterPack = ContainsUnexpandedParameterPack;
     TypeBits.CacheValidAndVisibility = 0;
+    TypeBits.CachedExplicitVisibility = false;
     TypeBits.CachedLocalOrUnnamed = false;
     TypeBits.CachedLinkage = NoLinkage;
     TypeBits.FromAST = false;
@@ -1317,6 +1360,11 @@ public:
     return CanonicalType == QualType(this, 0);
   }
 
+  /// Pull a single level of sugar off of this locally-unqualified type.
+  /// Users should generally prefer SplitQualType::getSingleStepDesugaredType()
+  /// or QualType::getSingleStepDesugaredType(const ASTContext&).
+  QualType getLocallyUnqualifiedSingleStepDesugaredType() const;
+
   /// Types are partitioned into 3 broad categories (C99 6.2.5p1):
   /// object types, function types, and incomplete types.
 
@@ -1324,7 +1372,11 @@ public:
   /// A type that can describe objects, but which lacks information needed to
   /// determine its size (e.g. void, or a fwd declared struct). Clients of this
   /// routine will need to determine if the size is actually required.
-  bool isIncompleteType() const;
+  ///
+  /// \brief Def If non-NULL, and the type refers to some kind of declaration
+  /// that can be completed (such as a C struct, C++ class, or Objective-C
+  /// class), will be set to the declaration.
+  bool isIncompleteType(NamedDecl **Def = 0) const;
 
   /// isIncompleteOrObjectType - Return true if this is an incomplete or object
   /// type, in other words, not a function type.
@@ -1455,7 +1507,7 @@ public:
   bool isCARCBridgableType() const;
   bool isTemplateTypeParmType() const;          // C++ template type parameter
   bool isNullPtrType() const;                   // C++0x nullptr_t
-  bool isAtomicType() const;                    // C1X _Atomic()
+  bool isAtomicType() const;                    // C11 _Atomic()
 
   /// Determines if this type, which must satisfy
   /// isObjCLifetimeType(), is implicitly __unsafe_unretained rather
@@ -1639,6 +1691,9 @@ public:
   /// \brief Determine the visibility of this type.
   Visibility getVisibility() const;
 
+  /// \brief Return true if the visibility was explicitly set is the code.
+  bool isVisibilityExplicit() const;
+
   /// \brief Determine the linkage and visibility of this type.
   std::pair<Linkage,Visibility> getLinkageAndVisibility() const;
 
@@ -1651,7 +1706,7 @@ public:
     return CanonicalType;
   }
   CanQualType getCanonicalTypeUnqualified() const; // in CanonicalType.h
-  void dump() const;
+  LLVM_ATTRIBUTE_USED void dump() const;
 
   static bool classof(const Type *) { return true; }
 
@@ -1659,9 +1714,9 @@ public:
   friend class ASTWriter;
 };
 
-template <> inline const TypedefType *Type::getAs() const {
-  return dyn_cast<TypedefType>(this);
-}
+/// \brief This will check for a TypedefType by removing any existing sugar
+/// until it reaches a TypedefType or a non-sugared type.
+template <> const TypedefType *Type::getAs() const;
 
 // We can do canonical leaf types faster, because we don't have to
 // worry about preserving child type decoration.
@@ -2557,7 +2612,7 @@ class FunctionType : public Type {
   };
 
 protected:
-  FunctionType(TypeClass tc, QualType res, bool variadic,
+  FunctionType(TypeClass tc, QualType res,
                unsigned typeQuals, RefQualifierKind RefQualifier,
                QualType Canonical, bool Dependent,
                bool InstantiationDependent,
@@ -2567,11 +2622,9 @@ protected:
            ContainsUnexpandedParameterPack),
       ResultType(res) {
     FunctionTypeBits.ExtInfo = Info.Bits;
-    FunctionTypeBits.Variadic = variadic;
     FunctionTypeBits.TypeQuals = typeQuals;
     FunctionTypeBits.RefQualifier = static_cast<unsigned>(RefQualifier);
   }
-  bool isVariadic() const { return FunctionTypeBits.Variadic; }
   unsigned getTypeQuals() const { return FunctionTypeBits.TypeQuals; }
 
   RefQualifierKind getRefQualifier() const {
@@ -2607,7 +2660,7 @@ public:
 /// no information available about its arguments.
 class FunctionNoProtoType : public FunctionType, public llvm::FoldingSetNode {
   FunctionNoProtoType(QualType Result, QualType Canonical, ExtInfo Info)
-    : FunctionType(FunctionNoProto, Result, false, 0, RQ_None, Canonical,
+    : FunctionType(FunctionNoProto, Result, 0, RQ_None, Canonical,
                    /*Dependent=*/false, /*InstantiationDependent=*/false,
                    Result->isVariablyModifiedType(),
                    /*ContainsUnexpandedParameterPack=*/false, Info) {}
@@ -2645,14 +2698,15 @@ public:
   /// ExtProtoInfo - Extra information about a function prototype.
   struct ExtProtoInfo {
     ExtProtoInfo() :
-      Variadic(false), ExceptionSpecType(EST_None), TypeQuals(0),
-      RefQualifier(RQ_None), NumExceptions(0), Exceptions(0), NoexceptExpr(0),
-      ConsumedArguments(0) {}
+      Variadic(false), HasTrailingReturn(false), TypeQuals(0),
+      ExceptionSpecType(EST_None), RefQualifier(RQ_None),
+      NumExceptions(0), Exceptions(0), NoexceptExpr(0), ConsumedArguments(0) {}
 
     FunctionType::ExtInfo ExtInfo;
-    bool Variadic;
-    ExceptionSpecificationType ExceptionSpecType;
+    bool Variadic : 1;
+    bool HasTrailingReturn : 1;
     unsigned char TypeQuals;
+    ExceptionSpecificationType ExceptionSpecType;
     RefQualifierKind RefQualifier;
     unsigned NumExceptions;
     const QualType *Exceptions;
@@ -2676,7 +2730,7 @@ private:
                     QualType canonical, const ExtProtoInfo &epi);
 
   /// NumArgs - The number of arguments this function has, not counting '...'.
-  unsigned NumArgs : 19;
+  unsigned NumArgs : 17;
 
   /// NumExceptions - The number of types in the exception spec, if any.
   unsigned NumExceptions : 9;
@@ -2686,6 +2740,12 @@ private:
 
   /// HasAnyConsumedArgs - Whether this function has any consumed arguments.
   unsigned HasAnyConsumedArgs : 1;
+
+  /// Variadic - Whether the function is variadic.
+  unsigned Variadic : 1;
+
+  /// HasTrailingReturn - Whether this function has a trailing return type.
+  unsigned HasTrailingReturn : 1;
 
   // ArgInfo - There is an variable size array after the class in memory that
   // holds the argument types.
@@ -2726,6 +2786,7 @@ public:
     ExtProtoInfo EPI;
     EPI.ExtInfo = getExtInfo();
     EPI.Variadic = isVariadic();
+    EPI.HasTrailingReturn = hasTrailingReturn();
     EPI.ExceptionSpecType = getExceptionSpecType();
     EPI.TypeQuals = static_cast<unsigned char>(getTypeQuals());
     EPI.RefQualifier = getRefQualifier();
@@ -2787,15 +2848,17 @@ public:
     return getNoexceptSpec(Ctx) == NR_Nothrow;
   }
 
-  using FunctionType::isVariadic;
+  bool isVariadic() const { return Variadic; }
 
   /// \brief Determines whether this function prototype contains a
   /// parameter pack at the end.
   ///
   /// A function template whose last parameter is a parameter pack can be
   /// called with an arbitrary number of arguments, much like a variadic
-  /// function. However,
+  /// function.
   bool isTemplateVariadic() const;
+
+  bool hasTrailingReturn() const { return HasTrailingReturn; }
 
   unsigned getTypeQuals() const { return FunctionType::getTypeQuals(); }
 
@@ -2834,6 +2897,9 @@ public:
 
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
+
+  void printExceptionSpecification(std::string &S, 
+                                   PrintingPolicy Policy) const;
 
   static bool classof(const Type *T) {
     return T->getTypeClass() == FunctionProto;
@@ -2974,10 +3040,6 @@ public:
 /// DecltypeType (C++0x)
 class DecltypeType : public Type {
   Expr *E;
-
-  // FIXME: We could get rid of UnderlyingType if we wanted to: We would have to
-  // Move getDesugaredType to ASTContext so that it can call getDecltypeForExpr
-  // from it.
   QualType UnderlyingType;
 
 protected:
@@ -3055,6 +3117,8 @@ class TagType : public Type {
   /// TagDecl that declares the entity.
   TagDecl * decl;
 
+  friend class ASTReader;
+  
 protected:
   TagType(TypeClass TC, const TagDecl *D, QualType can);
 
@@ -3069,8 +3133,6 @@ public:
     return T->getTypeClass() >= TagFirst && T->getTypeClass() <= TagLast;
   }
   static bool classof(const TagType *) { return true; }
-  static bool classof(const RecordType *) { return true; }
-  static bool classof(const EnumType *) { return true; }
 };
 
 /// RecordType - This is a helper class that allows the use of isa/cast/dyncast
@@ -3096,10 +3158,7 @@ public:
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
 
-  static bool classof(const TagType *T);
-  static bool classof(const Type *T) {
-    return isa<TagType>(T) && classof(cast<TagType>(T));
-  }
+  static bool classof(const Type *T) { return T->getTypeClass() == Record; }
   static bool classof(const RecordType *) { return true; }
 };
 
@@ -3118,10 +3177,7 @@ public:
   bool isSugared() const { return false; }
   QualType desugar() const { return QualType(this, 0); }
 
-  static bool classof(const TagType *T);
-  static bool classof(const Type *T) {
-    return isa<TagType>(T) && classof(cast<TagType>(T));
-  }
+  static bool classof(const Type *T) { return T->getTypeClass() == Enum; }
   static bool classof(const EnumType *) { return true; }
 };
 
@@ -3467,8 +3523,12 @@ class TemplateSpecializationType
 
   /// \brief - The number of template arguments named in this class
   /// template specialization.
-  unsigned NumArgs;
+  unsigned NumArgs : 31;
 
+  /// \brief Whether this template specialization type is a substituted
+  /// type alias.
+  bool TypeAlias : 1;
+    
   TemplateSpecializationType(TemplateName T,
                              const TemplateArgument *Args,
                              unsigned NumArgs, QualType Canon,
@@ -3510,9 +3570,23 @@ public:
     return isa<InjectedClassNameType>(getCanonicalTypeInternal());
   }
 
-  /// True if this template specialization type is for a type alias
-  /// template.
-  bool isTypeAlias() const;
+  /// \brief Determine if this template specialization type is for a type alias
+  /// template that has been substituted.
+  ///
+  /// Nearly every template specialization type whose template is an alias
+  /// template will be substituted. However, this is not the case when
+  /// the specialization contains a pack expansion but the template alias
+  /// does not have a corresponding parameter pack, e.g.,
+  ///
+  /// \code
+  /// template<typename T, typename U, typename V> struct S;
+  /// template<typename T, typename U> using A = S<T, int, U>;
+  /// template<typename... Ts> struct X {
+  ///   typedef A<Ts...> type; // not a type alias
+  /// };
+  /// \endcode
+  bool isTypeAlias() const { return TypeAlias; }
+    
   /// Get the aliased type, if this is a specialization of a type alias
   /// template.
   QualType getAliasedType() const {
@@ -4139,12 +4213,14 @@ inline ObjCProtocolDecl **ObjCObjectType::getProtocolStorage() {
 ///   - It is its own base type.  That is, if T is an ObjCInterfaceType*,
 ///     T->getBaseType() == QualType(T, 0).
 class ObjCInterfaceType : public ObjCObjectType {
-  ObjCInterfaceDecl *Decl;
+  mutable ObjCInterfaceDecl *Decl;
 
   ObjCInterfaceType(const ObjCInterfaceDecl *D)
     : ObjCObjectType(Nonce_ObjCInterface),
       Decl(const_cast<ObjCInterfaceDecl*>(D)) {}
   friend class ASTContext;  // ASTContext creates these.
+  friend class ASTReader;
+  friend class ObjCInterfaceDecl;
 
 public:
   /// getDecl - Get the declaration of this interface.
@@ -4366,6 +4442,13 @@ public:
 
 // Inline function definitions.
 
+inline SplitQualType SplitQualType::getSingleStepDesugaredType() const {
+  SplitQualType desugar =
+    Ty->getLocallyUnqualifiedSingleStepDesugaredType().split();
+  desugar.Quals.addConsistentQualifiers(Quals);
+  return desugar;
+}
+
 inline const Type *QualType::getTypePtr() const {
   return getCommonPtr()->BaseType;
 }
@@ -4450,7 +4533,7 @@ inline QualType QualType::getUnqualifiedType() const {
   if (!getTypePtr()->getCanonicalTypeInternal().hasLocalQualifiers())
     return QualType(getTypePtr(), 0);
 
-  return QualType(getSplitUnqualifiedTypeImpl(*this).first, 0);
+  return QualType(getSplitUnqualifiedTypeImpl(*this).Ty, 0);
 }
 
 inline SplitQualType QualType::getSplitUnqualifiedType() const {
@@ -4730,6 +4813,55 @@ inline bool Type::isSpecificPlaceholderType(unsigned K) const {
 inline bool Type::isNonOverloadPlaceholderType() const {
   if (const BuiltinType *BT = dyn_cast<BuiltinType>(this))
     return BT->isNonOverloadPlaceholderType();
+  return false;
+}
+
+inline bool Type::isHalfType() const {
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
+    return BT->getKind() == BuiltinType::Half;
+  // FIXME: Should we allow complex __fp16? Probably not.
+  return false;
+}
+
+inline bool Type::isNullPtrType() const {
+  if (const BuiltinType *BT = getAs<BuiltinType>())
+    return BT->getKind() == BuiltinType::NullPtr;
+  return false;
+}
+
+extern bool IsEnumDeclComplete(EnumDecl *);
+
+inline bool Type::isScalarType() const {
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
+    return BT->getKind() > BuiltinType::Void &&
+           BT->getKind() <= BuiltinType::NullPtr;
+  if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType))
+    // Enums are scalar types, but only if they are defined.  Incomplete enums
+    // are not treated as scalar types.
+    return IsEnumDeclComplete(ET->getDecl());
+  return isa<PointerType>(CanonicalType) ||
+         isa<BlockPointerType>(CanonicalType) ||
+         isa<MemberPointerType>(CanonicalType) ||
+         isa<ComplexType>(CanonicalType) ||
+         isa<ObjCObjectPointerType>(CanonicalType);
+}
+
+inline bool Type::isIntegralOrEnumerationType() const {
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
+    return BT->getKind() >= BuiltinType::Bool &&
+           BT->getKind() <= BuiltinType::Int128;
+
+  // Check for a complete enum type; incomplete enum types are not properly an
+  // enumeration type in the sense required here.
+  if (const EnumType *ET = dyn_cast<EnumType>(CanonicalType))
+    return IsEnumDeclComplete(ET->getDecl());
+
+  return false;  
+}
+
+inline bool Type::isBooleanType() const {
+  if (const BuiltinType *BT = dyn_cast<BuiltinType>(CanonicalType))
+    return BT->getKind() == BuiltinType::Bool;
   return false;
 }
 

@@ -1,4 +1,4 @@
-//===-- PPCAsmPrinter.cpp - Print machine instrs to PowerPC assembly --------=//
+//===-- PPCAsmPrinter.cpp - Print machine instrs to PowerPC assembly ------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -39,6 +39,7 @@
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
+#include "llvm/MC/MCSectionELF.h"
 #include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
@@ -49,6 +50,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ELF.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "InstPrinter/PPCInstPrinter.h"
@@ -391,14 +393,26 @@ void PPCLinuxAsmPrinter::EmitFunctionEntryLabel() {
     return AsmPrinter::EmitFunctionEntryLabel();
     
   // Emit an official procedure descriptor.
-  // FIXME 64-bit SVR4: Use MCSection here!
-  OutStreamer.EmitRawText(StringRef("\t.section\t\".opd\",\"aw\""));
-  OutStreamer.EmitRawText(StringRef("\t.align 3"));
+  const MCSection *Current = OutStreamer.getCurrentSection();
+  const MCSectionELF *Section = OutStreamer.getContext().getELFSection(".opd",
+      ELF::SHT_PROGBITS, ELF::SHF_WRITE | ELF::SHF_ALLOC,
+      SectionKind::getReadOnly());
+  OutStreamer.SwitchSection(Section);
   OutStreamer.EmitLabel(CurrentFnSym);
-  OutStreamer.EmitRawText("\t.quad .L." + Twine(CurrentFnSym->getName()) +
-                          ",.TOC.@tocbase");
-  OutStreamer.EmitRawText(StringRef("\t.previous"));
-  OutStreamer.EmitRawText(".L." + Twine(CurrentFnSym->getName()) + ":");
+  OutStreamer.EmitValueToAlignment(8);
+  MCSymbol *Symbol1 = 
+    OutContext.GetOrCreateSymbol(".L." + Twine(CurrentFnSym->getName()));
+  MCSymbol *Symbol2 = OutContext.GetOrCreateSymbol(StringRef(".TOC.@tocbase"));
+  OutStreamer.EmitValue(MCSymbolRefExpr::Create(Symbol1, OutContext),
+                        Subtarget.isPPC64() ? 8 : 4/*size*/, 0/*addrspace*/);
+  OutStreamer.EmitValue(MCSymbolRefExpr::Create(Symbol2, OutContext),
+                        Subtarget.isPPC64() ? 8 : 4/*size*/, 0/*addrspace*/);
+  OutStreamer.SwitchSection(Current);
+
+  MCSymbol *RealFnSym = OutContext.GetOrCreateSymbol(
+                          ".L." + Twine(CurrentFnSym->getName()));
+  OutStreamer.EmitLabel(RealFnSym);
+  CurrentFnSymForSize = RealFnSym;
 }
 
 
@@ -408,8 +422,10 @@ bool PPCLinuxAsmPrinter::doFinalization(Module &M) {
   bool isPPC64 = TD->getPointerSizeInBits() == 64;
 
   if (isPPC64 && !TOC.empty()) {
-    // FIXME 64-bit SVR4: Use MCSection here?
-    OutStreamer.EmitRawText(StringRef("\t.section\t\".toc\",\"aw\""));
+    const MCSectionELF *Section = OutStreamer.getContext().getELFSection(".toc",
+        ELF::SHT_PROGBITS, ELF::SHF_WRITE | ELF::SHF_ALLOC,
+        SectionKind::getReadOnly());
+    OutStreamer.SwitchSection(Section);
 
     // FIXME: This is nondeterminstic!
     for (DenseMap<MCSymbol*, MCSymbol*>::iterator I = TOC.begin(),

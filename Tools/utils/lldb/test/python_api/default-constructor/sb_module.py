@@ -15,7 +15,8 @@ def fuzz_obj(obj):
     obj.GetDescription(lldb.SBStream())
     obj.GetNumSymbols()
     obj.GetSymbolAtIndex(sys.maxint)
-    obj.FindFunctions("my_func", 0xffffffff, True, lldb.SBSymbolContextList())
+    sc_list = obj.FindFunctions("my_func")
+    sc_list = obj.FindFunctions("my_func", lldb.eFunctionNameTypeAny)
     obj.FindGlobalVariables(lldb.SBTarget(), "my_global_var", 1)
     for section in obj.section_iter():
         print section
@@ -23,4 +24,6 @@ def fuzz_obj(obj):
         print symbol
     for symbol in obj:
         print symbol
-
+    obj.GetAddressByteSize()
+    obj.GetByteOrder()
+    obj.GetTriple()

@@ -1,4 +1,4 @@
-//==- HexagonRegisterInfo.cpp - Hexagon Register Information -----*- C++ -*-==//
+//===-- HexagonRegisterInfo.cpp - Hexagon Register Information ------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -17,24 +17,23 @@
 #include "HexagonSubtarget.h"
 #include "HexagonTargetMachine.h"
 #include "HexagonMachineFunctionInfo.h"
+#include "llvm/Function.h"
+#include "llvm/Type.h"
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/MC/MachineLocation.h"
 #include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Type.h"
-#include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
-#include <iostream>
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ErrorHandling.h"
 
-#include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/Function.h"
 using namespace llvm;
 
 
@@ -45,31 +44,29 @@ HexagonRegisterInfo::HexagonRegisterInfo(HexagonSubtarget &st,
    TII(tii) {
 }
 
-const unsigned* HexagonRegisterInfo::getCalleeSavedRegs(const MachineFunction
+const uint16_t* HexagonRegisterInfo::getCalleeSavedRegs(const MachineFunction
                                                         *MF)
   const {
-  static const unsigned CalleeSavedRegsV2[] = {
-  Hexagon::R24,   Hexagon::R25,   Hexagon::R26,   Hexagon::R27, 0
+  static const uint16_t CalleeSavedRegsV2[] = {
+    Hexagon::R24,   Hexagon::R25,   Hexagon::R26,   Hexagon::R27, 0
   };
-  static const unsigned CalleeSavedRegsV3[] = {
+  static const uint16_t CalleeSavedRegsV3[] = {
     Hexagon::R16,   Hexagon::R17,   Hexagon::R18,   Hexagon::R19,
     Hexagon::R20,   Hexagon::R21,   Hexagon::R22,   Hexagon::R23,
     Hexagon::R24,   Hexagon::R25,   Hexagon::R26,   Hexagon::R27, 0
   };
 
   switch(Subtarget.getHexagonArchVersion()) {
+  case HexagonSubtarget::V1:
+    break;
   case HexagonSubtarget::V2:
     return CalleeSavedRegsV2;
-    break;
   case HexagonSubtarget::V3:
   case HexagonSubtarget::V4:
     return CalleeSavedRegsV3;
-    break;
-  default:
-    const char *ErrorString = 
-      "Callee saved registers requested for unknown archtecture version";
-    llvm_unreachable(ErrorString);
   }
+  llvm_unreachable("Callee saved registers requested for unknown architecture "
+                   "version");
 }
 
 BitVector HexagonRegisterInfo::getReservedRegs(const MachineFunction &MF)
@@ -106,18 +103,16 @@ HexagonRegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const {
   };
 
   switch(Subtarget.getHexagonArchVersion()) {
+  case HexagonSubtarget::V1:
+    break;
   case HexagonSubtarget::V2:
     return CalleeSavedRegClassesV2;
-    break;
   case HexagonSubtarget::V3:
   case HexagonSubtarget::V4:
     return CalleeSavedRegClassesV3;
-    break;
-  default:
-    const char *ErrorString = 
-      "Callee saved register classes requested for unknown archtecture version";
-    llvm_unreachable(ErrorString);
   }
+  llvm_unreachable("Callee saved register classes requested for unknown "
+                   "architecture version");
 }
 
 void HexagonRegisterInfo::
@@ -130,7 +125,7 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
   } else if (MI.getOpcode() == Hexagon::ADJCALLSTACKUP) {
     // Hexagon_TODO: add code
   } else {
-    assert(0 && "Cannot handle this call frame pseudo instruction");
+    llvm_unreachable("Cannot handle this call frame pseudo instruction");
   }
   MBB.erase(I);
 }
@@ -211,8 +206,7 @@ void HexagonRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       } else if ((MI.getOpcode() == Hexagon::STriw) ||
                  (MI.getOpcode() == Hexagon::STrid) ||
                  (MI.getOpcode() == Hexagon::STrih) ||
-                 (MI.getOpcode() == Hexagon::STrib) ||
-                 (MI.getOpcode() == Hexagon::STriwt)) {
+                 (MI.getOpcode() == Hexagon::STrib)) {
         // For stores, we need a reserved register. Change
         // memw(r30 + #10000) = r0 to:
         //
@@ -310,13 +304,12 @@ void HexagonRegisterInfo::getInitialFrameState(std::vector<MachineMove>
 }
 
 unsigned HexagonRegisterInfo::getEHExceptionRegister() const {
-  assert(0 && "What is the exception register");
-  return 0;
+  llvm_unreachable("What is the exception register");
 }
 
 unsigned HexagonRegisterInfo::getEHHandlerRegister() const {
-  assert(0 && "What is the exception handler register");
-  return 0;
+  llvm_unreachable("What is the exception handler register");
 }
 
+#define GET_REGINFO_TARGET_DESC
 #include "HexagonGenRegisterInfo.inc"

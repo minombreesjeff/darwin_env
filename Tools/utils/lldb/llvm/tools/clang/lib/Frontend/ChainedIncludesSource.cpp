@@ -31,7 +31,7 @@ static ASTReader *createASTReader(CompilerInstance &CI,
                                   SmallVector<std::string, 4> &bufNames,
                              ASTDeserializationListener *deserialListener = 0) {
   Preprocessor &PP = CI.getPreprocessor();
-  llvm::OwningPtr<ASTReader> Reader;
+  OwningPtr<ASTReader> Reader;
   Reader.reset(new ASTReader(PP, CI.getASTContext(), /*isysroot=*/"",
                              /*DisableValidation=*/true));
   for (unsigned ti = 0; ti < bufNames.size(); ++ti) {
@@ -62,15 +62,15 @@ ChainedIncludesSource *ChainedIncludesSource::create(CompilerInstance &CI) {
   std::vector<std::string> &includes = CI.getPreprocessorOpts().ChainedIncludes;
   assert(!includes.empty() && "No '-chain-include' in options!");
 
-  llvm::OwningPtr<ChainedIncludesSource> source(new ChainedIncludesSource());
-  InputKind IK = CI.getFrontendOpts().Inputs[0].first;
+  OwningPtr<ChainedIncludesSource> source(new ChainedIncludesSource());
+  InputKind IK = CI.getFrontendOpts().Inputs[0].Kind;
 
   SmallVector<llvm::MemoryBuffer *, 4> serialBufs;
   SmallVector<std::string, 4> serialBufNames;
 
   for (unsigned i = 0, e = includes.size(); i != e; ++i) {
     bool firstInclude = (i == 0);
-    llvm::OwningPtr<CompilerInvocation> CInvok;
+    OwningPtr<CompilerInvocation> CInvok;
     CInvok.reset(new CompilerInvocation(CI.getInvocation()));
     
     CInvok->getPreprocessorOpts().ChainedIncludes.clear();
@@ -82,15 +82,16 @@ ChainedIncludesSource *ChainedIncludesSource::create(CompilerInstance &CI) {
     CInvok->getPreprocessorOpts().Macros.clear();
     
     CInvok->getFrontendOpts().Inputs.clear();
-    CInvok->getFrontendOpts().Inputs.push_back(std::make_pair(IK, includes[i]));
+    CInvok->getFrontendOpts().Inputs.push_back(FrontendInputFile(includes[i],
+                                                                 IK));
 
     TextDiagnosticPrinter *DiagClient =
       new TextDiagnosticPrinter(llvm::errs(), DiagnosticOptions());
-    llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+    IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
+    IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
         new DiagnosticsEngine(DiagID, DiagClient));
 
-    llvm::OwningPtr<CompilerInstance> Clang(new CompilerInstance());
+    OwningPtr<CompilerInstance> Clang(new CompilerInstance());
     Clang->setInvocation(CInvok.take());
     Clang->setDiagnostics(Diags.getPtr());
     Clang->setTarget(TargetInfo::CreateTargetInfo(Clang->getDiagnostics(),
@@ -104,7 +105,7 @@ ChainedIncludesSource *ChainedIncludesSource::create(CompilerInstance &CI) {
 
     SmallVector<char, 256> serialAST;
     llvm::raw_svector_ostream OS(serialAST);
-    llvm::OwningPtr<ASTConsumer> consumer;
+    OwningPtr<ASTConsumer> consumer;
     consumer.reset(new PCHGenerator(Clang->getPreprocessor(), "-", 0,
                                     /*isysroot=*/"", &OS));
     Clang->getASTContext().setASTMutationListener(
@@ -131,7 +132,7 @@ ChainedIncludesSource *ChainedIncludesSource::create(CompilerInstance &CI) {
       
       serialBufNames.push_back(pchName);
 
-      llvm::OwningPtr<ExternalASTSource> Reader;
+      OwningPtr<ExternalASTSource> Reader;
 
       Reader.reset(createASTReader(*Clang, pchName, bufs, serialBufNames, 
         Clang->getASTConsumer().GetASTDeserializationListener()));
@@ -155,7 +156,7 @@ ChainedIncludesSource *ChainedIncludesSource::create(CompilerInstance &CI) {
   assert(!serialBufs.empty());
   std::string pchName = includes.back() + ".pch-final";
   serialBufNames.push_back(pchName);
-  llvm::OwningPtr<ASTReader> Reader;
+  OwningPtr<ASTReader> Reader;
   Reader.reset(createASTReader(CI, pchName, serialBufs, serialBufNames));
   if (!Reader)
     return 0;
@@ -230,9 +231,8 @@ void ChainedIncludesSource::InitializeSema(Sema &S) {
 void ChainedIncludesSource::ForgetSema() {
   return getFinalReader().ForgetSema();
 }
-std::pair<ObjCMethodList,ObjCMethodList>
-ChainedIncludesSource::ReadMethodPool(Selector Sel) {
-  return getFinalReader().ReadMethodPool(Sel);
+void ChainedIncludesSource::ReadMethodPool(Selector Sel) {
+  getFinalReader().ReadMethodPool(Sel);
 }
 bool ChainedIncludesSource::LookupUnqualified(LookupResult &R, Scope *S) {
   return getFinalReader().LookupUnqualified(R, S);

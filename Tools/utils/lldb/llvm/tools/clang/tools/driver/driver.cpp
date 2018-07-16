@@ -22,7 +22,6 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/OwningPtr.h"
-#include "llvm/Config/config.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -187,7 +186,7 @@ static void ExpandArgsFromBuf(const char *Arg,
                               SmallVectorImpl<const char*> &ArgVector,
                               std::set<std::string> &SavedStrings) {
   const char *FName = Arg + 1;
-  llvm::OwningPtr<llvm::MemoryBuffer> MemBuf;
+  OwningPtr<llvm::MemoryBuffer> MemBuf;
   if (llvm::MemoryBuffer::getFile(FName, MemBuf)) {
     ArgVector.push_back(SaveStringInSet(SavedStrings, Arg));
     return;
@@ -272,7 +271,7 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
   // the function tries to identify a target as prefix. E.g.
   // "x86_64-linux-clang" as interpreted as suffix "clang" with
   // target prefix "x86_64-linux". If such a target prefix is found,
-  // is gets added via -ccc-host-triple as implicit first argument.
+  // is gets added via -target as implicit first argument.
   static const struct {
     const char *Suffix;
     bool IsCXX;
@@ -332,7 +331,7 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
       ++it;
     ArgVector.insert(it, SaveStringInSet(SavedStrings, Prefix));
     ArgVector.insert(it,
-      SaveStringInSet(SavedStrings, std::string("-ccc-host-triple")));
+      SaveStringInSet(SavedStrings, std::string("-target")));
   }
 }
 
@@ -374,7 +373,7 @@ int main(int argc_, const char **argv_) {
   TextDiagnosticPrinter *DiagClient
     = new TextDiagnosticPrinter(llvm::errs(), DiagnosticOptions());
   DiagClient->setPrefix(llvm::sys::path::stem(Path.str()));
-  llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
+  IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
   DiagnosticsEngine Diags(DiagID, DiagClient);
 
 #ifdef CLANG_IS_PRODUCTION
@@ -389,7 +388,7 @@ int main(int argc_, const char **argv_) {
   // the installed path. We do this manually, because we want to support that
   // path being a symlink.
   {
-    llvm::SmallString<128> InstalledPath(argv[0]);
+    SmallString<128> InstalledPath(argv[0]);
 
     // Do a PATH lookup, if there are no directory components.
     if (llvm::sys::path::filename(InstalledPath) == InstalledPath) {
@@ -449,7 +448,7 @@ int main(int argc_, const char **argv_) {
     argv.insert(&argv[1], ExtraArgs.begin(), ExtraArgs.end());
   }
 
-  llvm::OwningPtr<Compilation> C(TheDriver.BuildCompilation(argv));
+  OwningPtr<Compilation> C(TheDriver.BuildCompilation(argv));
   int Res = 0;
   const Command *FailingCommand = 0;
   if (C.get())

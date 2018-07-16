@@ -576,6 +576,7 @@ void CGRecordLayoutBuilder::LayoutUnion(const RecordDecl *D) {
     }
   }
   if (unionAlign.isZero()) {
+    (void)hasOnlyZeroSizedBitFields;
     assert(hasOnlyZeroSizedBitFields &&
            "0-align record did not have all zero-sized bit-fields!");
     unionAlign = CharUnits::One();
@@ -997,7 +998,7 @@ CGRecordLayout *CodeGenTypes::ComputeRecordLayout(const RecordDecl *D,
 
   // If we're in C++, compute the base subobject type.
   llvm::StructType *BaseTy = 0;
-  if (isa<CXXRecordDecl>(D)) {
+  if (isa<CXXRecordDecl>(D) && !D->isUnion()) {
     BaseTy = Builder.BaseSubobjectType;
     if (!BaseTy) BaseTy = Ty;
   }

@@ -47,6 +47,9 @@ ThreadPlanCallUserExpression::ThreadPlanCallUserExpression (Thread &thread,
     ThreadPlanCallFunction (thread, function, ClangASTType(), arg, stop_other_threads, discard_on_error, this_arg, cmd_arg),
     m_user_expression_sp (user_expression_sp)
 {
+    // User expressions are generally "User generated" so we should set them up to stop when done.
+    SetIsMasterPlan (true);
+    SetOkayToDiscard(false);
 }
 
 ThreadPlanCallUserExpression::~ThreadPlanCallUserExpression ()
@@ -64,7 +67,7 @@ ThreadPlanCallUserExpression::GetRealStopInfo()
 {
     StopInfoSP stop_info_sp = ThreadPlanCallFunction::GetRealStopInfo();
     lldb::addr_t addr = GetStopAddress();
-    DynamicCheckerFunctions *checkers = m_thread.GetProcess().GetDynamicCheckers();
+    DynamicCheckerFunctions *checkers = m_thread.GetProcess()->GetDynamicCheckers();
     StreamString s;
     
     if (checkers && checkers->DoCheckersExplainStop(addr, s))

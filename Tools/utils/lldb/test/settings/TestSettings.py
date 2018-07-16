@@ -115,6 +115,14 @@ class SettingsCommandTestCase(TestBase):
         exe = os.path.join(os.getcwd(), "a.out")
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
+        def cleanup():
+            format_string = "frame #${frame.index}: ${frame.pc}{ ${module.file.basename}{`${function.name}${function.pc-offset}}}{ at ${line.file.basename}:${line.number}}\n"
+            self.runCmd("settings set frame-format %s" % format_string, check=False)
+            self.runCmd('command unalias hello', check=False)
+
+        # Execute the cleanup function during test case tear down.
+        self.addTearDownHook(cleanup)
+
         format_string = "frame #${frame.index}: ${frame.pc}{ ${module.file.basename}`${function.name-with-args}{${function.pc-offset}}}{ at ${line.file.fullpath}:${line.number}}\n"
         self.runCmd("settings set frame-format %s" % format_string)
 
@@ -152,11 +160,13 @@ class SettingsCommandTestCase(TestBase):
             startstr = "auto-confirm (boolean) = false")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_run_args_and_env_vars_with_dsym(self):
         """Test that run-args and env-vars are passed to the launched process."""
         self.buildDsym()
         self.pass_run_args_and_env_vars()
 
+    @dwarf_test
     def test_run_args_and_env_vars_with_dwarf(self):
         """Test that run-args and env-vars are passed to the launched process."""
         self.buildDwarf()

@@ -300,6 +300,11 @@ namespace SrcMgr {
         SourceLocation::getFromRawEncoding(ExpansionLocEnd).isInvalid();
     }
 
+    bool isFunctionMacroExpansion() const {
+      return getExpansionLocStart().isValid() &&
+          getExpansionLocStart() != getExpansionLocEnd();
+    }
+
     /// create - Return a ExpansionInfo for an expansion. Start and End specify
     /// the expansion range (where the macro is expanded), and SpellingLoc
     /// specifies the spelling location (where the characters from the token
@@ -438,8 +443,7 @@ public:
     // to determine which came first. This will also take care the case where
     // one of the locations points at the inclusion/expansion point of the other
     // in which case its FileID will come before the other.
-    if (LOffset == ROffset &&
-        (LQueryFID != CommonFID || RQueryFID != CommonFID))
+    if (LOffset == ROffset)
       return IsLQFIDBeforeRQFID;
 
     return LOffset < ROffset;
@@ -479,7 +483,7 @@ public:
 /// the case of a macro expansion, for example, the spelling location indicates
 /// where the expanded token came from and the expansion location specifies
 /// where it was expanded.
-class SourceManager : public llvm::RefCountedBase<SourceManager> {
+class SourceManager : public RefCountedBase<SourceManager> {
   /// \brief DiagnosticsEngine object.
   DiagnosticsEngine &Diag;
 
@@ -515,7 +519,7 @@ class SourceManager : public llvm::RefCountedBase<SourceManager> {
   ///
   /// Negative FileIDs are indexes into this table. To get from ID to an index,
   /// use (-ID - 2).
-  std::vector<SrcMgr::SLocEntry> LoadedSLocEntryTable;
+  mutable std::vector<SrcMgr::SLocEntry> LoadedSLocEntryTable;
 
   /// \brief The starting offset of the next local SLocEntry.
   ///
@@ -572,6 +576,8 @@ class SourceManager : public llvm::RefCountedBase<SourceManager> {
   // Cache for the "fake" buffer used for error-recovery purposes.
   mutable llvm::MemoryBuffer *FakeBufferForRecovery;
 
+  mutable SrcMgr::ContentCache *FakeContentCacheForRecovery;
+
   /// \brief Lazily computed map of macro argument chunks to their expanded
   /// source location.
   typedef std::map<unsigned, SourceLocation> MacroArgsMap;
@@ -614,10 +620,17 @@ public:
   FileID getMainFileID() const { return MainFileID; }
 
   /// createMainFileID - Create the FileID for the main source file.
-  FileID createMainFileID(const FileEntry *SourceFile) {
+  FileID createMainFileID(const FileEntry *SourceFile, 
+                          SrcMgr::CharacteristicKind Kind = SrcMgr::C_User) {
     assert(MainFileID.isInvalid() && "MainFileID already set!");
-    MainFileID = createFileID(SourceFile, SourceLocation(), SrcMgr::C_User);
+    MainFileID = createFileID(SourceFile, SourceLocation(), Kind);
     return MainFileID;
+  }
+
+  /// \brief Set the file ID for the main source file.
+  void setMainFileID(FileID FID) {
+    assert(MainFileID.isInvalid() && "MainFileID already set!");
+    MainFileID = FID;
   }
 
   /// \brief Set the file ID for the precompiled preamble.
@@ -746,13 +759,19 @@ public:
     if (MyInvalid || !Entry.isFile())
       return 0;
 
-    return Entry.getFile().getContentCache()->OrigEntry;
+    const SrcMgr::ContentCache *Content = Entry.getFile().getContentCache();
+    if (!Content)
+      return 0;
+    return Content->OrigEntry;
   }
 
   /// Returns the FileEntry record for the provided SLocEntry.
   const FileEntry *getFileEntryForSLocEntry(const SrcMgr::SLocEntry &sloc) const
   {
-    return sloc.getFile().getContentCache()->OrigEntry;
+    const SrcMgr::ContentCache *Content = sloc.getFile().getContentCache();
+    if (!Content)
+      return 0;
+    return Content->OrigEntry;
   }
 
   /// getBufferData - Return a StringRef to the source buffer data for the
@@ -1071,6 +1090,11 @@ public:
     return getFileCharacteristic(Loc) == SrcMgr::C_ExternCSystem;
   }
 
+  /// \brief Returns whether \p Loc is expanded from a macro in a system header.
+  bool isInSystemMacro(SourceLocation loc) {
+    return loc.isMacroID() && isInSystemHeader(getSpellingLoc(loc));
+  }
+
   /// \brief The size of the SLocEnty that \p FID represents.
   unsigned getFileIDSize(FileID FID) const;
 
@@ -1238,9 +1262,9 @@ public:
   const SrcMgr::SLocEntry &getLoadedSLocEntry(unsigned Index,
                                               bool *Invalid = 0) const {
     assert(Index < LoadedSLocEntryTable.size() && "Invalid index");
-    if (!SLocEntryLoaded[Index])
-      ExternalSLocEntries->ReadSLocEntry(-(static_cast<int>(Index) + 2));
-    return LoadedSLocEntryTable[Index];
+    if (SLocEntryLoaded[Index])
+      return LoadedSLocEntryTable[Index];
+    return loadSLocEntry(Index, Invalid);
   }
 
   const SrcMgr::SLocEntry &getSLocEntry(FileID FID, bool *Invalid = 0) const {
@@ -1291,6 +1315,9 @@ public:
 
 private:
   const llvm::MemoryBuffer *getFakeBufferForRecovery() const;
+  const SrcMgr::ContentCache *getFakeContentCacheForRecovery() const;
+
+  const SrcMgr::SLocEntry &loadSLocEntry(unsigned Index, bool *Invalid) const;
 
   /// \brief Get the entry with the given unwrapped FileID.
   const SrcMgr::SLocEntry &getSLocEntryByID(int ID) const {
@@ -1300,8 +1327,9 @@ private:
     return getLocalSLocEntry(static_cast<unsigned>(ID));
   }
 
-  const SrcMgr::SLocEntry &getLoadedSLocEntryByID(int ID) const {
-    return getLoadedSLocEntry(static_cast<unsigned>(-ID - 2));
+  const SrcMgr::SLocEntry &getLoadedSLocEntryByID(int ID,
+                                                  bool *Invalid = 0) const {
+    return getLoadedSLocEntry(static_cast<unsigned>(-ID - 2), Invalid);
   }
 
   /// createExpansionLoc - Implements the common elements of storing an

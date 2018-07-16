@@ -203,12 +203,14 @@ SymbolContext::DumpStopContext
         if (symbol->GetMangled().GetName())
         {
             dumped_something = true;
+            if (symbol->GetType() == eSymbolTypeTrampoline)
+                s->PutCString("symbol stub for: ");
             symbol->GetMangled().GetName().Dump(s);
         }
 
-        if (addr.IsValid() && symbol->GetAddressRangePtr())
+        if (addr.IsValid() && symbol->ValueIsAddress())
         {
-            const addr_t symbol_offset = addr.GetOffset() - symbol->GetAddressRangePtr()->GetBaseAddress().GetOffset();
+            const addr_t symbol_offset = addr.GetOffset() - symbol->GetAddress().GetOffset();
             if (symbol_offset)
             {
                 dumped_something = true;
@@ -427,26 +429,16 @@ SymbolContext::GetAddressRange (uint32_t scope,
         }            
     } 
     
-    if ((scope & eSymbolContextSymbol) && (symbol != NULL) && (symbol->GetAddressRangePtr() != NULL))
+    if ((scope & eSymbolContextSymbol) && (symbol != NULL))
     {
         if (range_idx == 0)
         {
-            range = *symbol->GetAddressRangePtr();
-
-            if (range.GetByteSize() == 0)
+            if (symbol->ValueIsAddress())
             {
-                if (module_sp)
-                {
-                    ObjectFile *objfile = module_sp->GetObjectFile();
-                    if (objfile)
-                    {
-                        Symtab *symtab = objfile->GetSymtab();
-                        if (symtab)
-                            range.SetByteSize(symtab->CalculateSymbolSize (symbol));
-                    }
-                }
+                range.GetBaseAddress() = symbol->GetAddress();
+                range.SetByteSize (symbol->GetByteSize());
+                return true;
             }
-            return true;
         }
     }
     range.Clear();
@@ -561,7 +553,7 @@ SymbolContext::GetFunctionName (Mangled::NamePreference preference)
         }
         return function->GetMangled().GetName(preference);
     }
-    else if (symbol && symbol->GetAddressRangePtr())
+    else if (symbol && symbol->ValueIsAddress())
     {
         return symbol->GetMangled().GetName(preference);
     }
@@ -632,8 +624,9 @@ SymbolContextSpecifier::AddSpecification (const char *spec_string, Specification
     case eModuleSpecified:
         {
             // See if we can find the Module, if so stick it in the SymbolContext.
-            FileSpec module_spec(spec_string, false);
-            lldb::ModuleSP module_sp = m_target_sp->GetImages().FindFirstModuleForFileSpec (module_spec, NULL, NULL);
+            FileSpec module_file_spec(spec_string, false);
+            ModuleSpec module_spec (module_file_spec);
+            lldb::ModuleSP module_sp (m_target_sp->GetImages().FindFirstModule (module_spec));
             m_type |= eModuleSpecified;
             if (module_sp)
                 m_module_sp = module_sp;
@@ -905,6 +898,28 @@ SymbolContextList::Append(const SymbolContext& sc)
     m_symbol_contexts.push_back(sc);
 }
 
+void
+SymbolContextList::Append (const SymbolContextList& sc_list)
+{
+    collection::const_iterator pos, end = sc_list.m_symbol_contexts.end();
+    for (pos = sc_list.m_symbol_contexts.begin(); pos != end; ++pos)
+        m_symbol_contexts.push_back (*pos);
+}
+
+
+uint32_t
+SymbolContextList::AppendIfUnique (const SymbolContextList& sc_list, bool merge_symbol_into_function)
+{
+    uint32_t unique_sc_add_count = 0;
+    collection::const_iterator pos, end = sc_list.m_symbol_contexts.end();
+    for (pos = sc_list.m_symbol_contexts.begin(); pos != end; ++pos)
+    {
+        if (AppendIfUnique (*pos, merge_symbol_into_function))
+            ++unique_sc_add_count;
+    }
+    return unique_sc_add_count;
+}
+
 bool
 SymbolContextList::AppendIfUnique (const SymbolContext& sc, bool merge_symbol_into_function)
 {
@@ -921,14 +936,13 @@ SymbolContextList::AppendIfUnique (const SymbolContext& sc, bool merge_symbol_in
         && sc.block     == NULL
         && sc.line_entry.IsValid() == false)
     {
-        const AddressRange *symbol_range = sc.symbol->GetAddressRangePtr();
-        if (symbol_range)
+        if (sc.symbol->ValueIsAddress())
         {
             for (pos = m_symbol_contexts.begin(); pos != end; ++pos)
             {
                 if (pos->function)
                 {
-                    if (pos->function->GetAddressRange().GetBaseAddress() == symbol_range->GetBaseAddress())
+                    if (pos->function->GetAddressRange().GetBaseAddress() == sc.symbol->GetAddress())
                     {
                         // Do we already have a function with this symbol?
                         if (pos->symbol == sc.symbol)
@@ -1011,6 +1025,16 @@ SymbolContextList::NumLineEntriesWithLine (uint32_t line) const
             ++match_count;
     }
     return match_count;
+}
+
+void
+SymbolContextList::GetDescription(Stream *s, 
+                                  lldb::DescriptionLevel level, 
+                                  Target *target) const
+{
+    const uint32_t size = m_symbol_contexts.size();
+    for (uint32_t idx = 0; idx<size; ++idx)
+        m_symbol_contexts[idx].GetDescription (s, level, target);
 }
 
 bool

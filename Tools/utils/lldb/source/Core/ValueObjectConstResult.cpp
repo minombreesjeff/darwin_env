@@ -261,9 +261,9 @@ ValueObjectConstResult::ValueObjectConstResult (
     const Value &value,
     const ConstString &name) :
     ValueObject (exe_scope),
+    m_clang_ast (clang_ast),
     m_type_name (),
     m_byte_size (0),
-    m_clang_ast (clang_ast),
     m_impl(this)
 {
     m_value = value;
@@ -275,7 +275,7 @@ ValueObjectConstResult::~ValueObjectConstResult()
 }
 
 lldb::clang_type_t
-ValueObjectConstResult::GetClangType()
+ValueObjectConstResult::GetClangTypeImpl()
 {
     return m_value.GetClangType();
 }
@@ -307,7 +307,7 @@ ValueObjectConstResult::CalculateNumChildren()
 }
 
 clang::ASTContext *
-ValueObjectConstResult::GetClangAST ()
+ValueObjectConstResult::GetClangASTImpl ()
 {
     return m_clang_ast;
 }
@@ -316,7 +316,7 @@ ConstString
 ValueObjectConstResult::GetTypeName()
 {
     if (m_type_name.IsEmpty())
-        m_type_name = ClangASTType::GetConstTypeName (GetClangType());
+        m_type_name = ClangASTType::GetConstTypeName (GetClangAST(), GetClangType());
     return m_type_name;
 }
 

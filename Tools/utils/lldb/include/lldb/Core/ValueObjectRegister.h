@@ -34,12 +34,6 @@ public:
     virtual size_t
     GetByteSize();
 
-    virtual clang::ASTContext *
-    GetClangAST ();
-
-    virtual lldb::clang_type_t
-    GetClangType ();
-
     virtual lldb::ValueType
     GetValueType () const
     {
@@ -48,6 +42,9 @@ public:
 
     virtual ConstString
     GetTypeName();
+    
+    virtual ConstString
+    GetQualifiedTypeName();
 
     virtual uint32_t
     CalculateNumChildren();
@@ -58,6 +55,12 @@ public:
 protected:
     virtual bool
     UpdateValue ();
+    
+    virtual clang::ASTContext *
+    GetClangASTImpl ();
+    
+    virtual lldb::clang_type_t
+    GetClangTypeImpl ();
 
     lldb::RegisterContextSP m_reg_ctx_sp;
 
@@ -81,12 +84,6 @@ public:
     virtual size_t
     GetByteSize();
 
-    virtual clang::ASTContext *
-    GetClangAST ();
-
-    virtual lldb::clang_type_t
-    GetClangType ();
-
     virtual lldb::ValueType
     GetValueType () const
     {
@@ -95,6 +92,9 @@ public:
 
     virtual ConstString
     GetTypeName();
+    
+    virtual ConstString
+    GetQualifiedTypeName();
 
     virtual uint32_t
     CalculateNumChildren();
@@ -112,6 +112,12 @@ public:
 protected:
     virtual bool
     UpdateValue ();
+    
+    virtual clang::ASTContext *
+    GetClangASTImpl ();
+    
+    virtual lldb::clang_type_t
+    GetClangTypeImpl ();
 
     lldb::RegisterContextSP m_reg_ctx_sp;
     const RegisterSet *m_reg_set;
@@ -139,12 +145,6 @@ public:
     virtual size_t
     GetByteSize();
 
-    virtual clang::ASTContext *
-    GetClangAST ();
-
-    virtual lldb::clang_type_t
-    GetClangType ();
-
     virtual lldb::ValueType
     GetValueType () const
     {
@@ -158,7 +158,7 @@ public:
     CalculateNumChildren();
     
     virtual bool
-    SetValueFromCString (const char *value_str);
+    SetValueFromCString (const char *value_str, Error& error);
 
     virtual bool
     ResolveValue (Scalar &scalar);
@@ -166,6 +166,12 @@ public:
 protected:
     virtual bool
     UpdateValue ();
+    
+    virtual clang::ASTContext *
+    GetClangASTImpl ();
+    
+    virtual lldb::clang_type_t
+    GetClangTypeImpl ();
 
     lldb::RegisterContextSP m_reg_ctx_sp;
     RegisterInfo m_reg_info;

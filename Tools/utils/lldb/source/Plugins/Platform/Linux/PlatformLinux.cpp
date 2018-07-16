@@ -33,9 +33,46 @@ using namespace lldb_private;
 static uint32_t g_initialize_count = 0;
 
 Platform *
-PlatformLinux::CreateInstance ()
+PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
 {
-    return new PlatformLinux(true);
+    bool create = force;
+    if (create == false && arch && arch->IsValid())
+    {
+        const llvm::Triple &triple = arch->GetTriple();
+        switch (triple.getVendor())
+        {
+            case llvm::Triple::PC:
+                create = true;
+                break;
+                
+            case llvm::Triple::UnknownArch:
+                create = !arch->TripleVendorWasSpecified();
+                break;
+                
+            default:
+                break;
+        }
+        
+        if (create)
+        {
+            switch (triple.getOS())
+            {
+                case llvm::Triple::Linux:
+                    break;
+                    
+                case llvm::Triple::UnknownOS:
+                    create = !arch->TripleOSWasSpecified();
+                    break;
+                    
+                default:
+                    create = false;
+                    break;
+            }
+        }
+    }
+    if (create)
+        return new PlatformLinux(true);
+    return NULL;
 }
 
 const char *
@@ -93,7 +130,8 @@ PlatformLinux::Terminate ()
 Error
 PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
                                   const ArchSpec &exe_arch,
-                                  lldb::ModuleSP &exe_module_sp)
+                                  lldb::ModuleSP &exe_module_sp,
+                                  const FileSpecList *module_search_paths_ptr)
 {
     Error error;
     // Nothing special to do here, just use the actual file and architecture
@@ -128,7 +166,8 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
         {
             error = m_remote_platform_sp->ResolveExecutable (exe_file,
                                                              exe_arch,
-                                                             exe_module_sp);
+                                                             exe_module_sp,
+                                                             NULL);
         }
         else
         {
@@ -143,15 +182,13 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
 
     if (error.Success())
     {
+        ModuleSpec module_spec (resolved_exe_file, exe_arch);
         if (exe_arch.IsValid())
         {
-            error = ModuleList::GetSharedModule (resolved_exe_file, 
-                                                 exe_arch, 
-                                                 NULL,
-                                                 NULL, 
-                                                 0, 
+            error = ModuleList::GetSharedModule (module_spec, 
                                                  exe_module_sp, 
                                                  NULL, 
+                                                 NULL,
                                                  NULL);
         
             if (exe_module_sp->GetObjectFile() == NULL)
@@ -170,16 +207,12 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
             // the architectures that we should be using (in the correct order)
             // and see if we can find a match that way
             StreamString arch_names;
-            ArchSpec platform_arch;
-            for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, platform_arch); ++idx)
+            for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, module_spec.GetArchitecture()); ++idx)
             {
-                error = ModuleList::GetSharedModule (resolved_exe_file, 
-                                                     platform_arch, 
-                                                     NULL,
-                                                     NULL, 
-                                                     0, 
+                error = ModuleList::GetSharedModule (module_spec, 
                                                      exe_module_sp, 
                                                      NULL, 
+                                                     NULL,
                                                      NULL);
                 // Did we find an executable using one of the 
                 if (error.Success())
@@ -192,7 +225,7 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
                 
                 if (idx > 0)
                     arch_names.PutCString (", ");
-                arch_names.PutCString (platform_arch.GetArchitectureName());
+                arch_names.PutCString (module_spec.GetArchitecture().GetArchitectureName());
             }
             
             if (error.Fail() || !exe_module_sp)
@@ -324,7 +357,12 @@ PlatformLinux::LaunchProcess (ProcessLaunchInfo &launch_info)
         if (launch_info.GetFlags().Test (eLaunchFlagLaunchInShell))
         {
             const bool is_localhost = true;
-            if (!launch_info.ConvertArgumentsForLaunchingInShell (error, is_localhost))
+            const bool will_debug = launch_info.GetFlags().Test(eLaunchFlagDebug);
+            const bool first_arg_is_full_shell_command = false;
+            if (!launch_info.ConvertArgumentsForLaunchingInShell (error,
+                                                                  is_localhost,
+                                                                  will_debug,
+                                                                  first_arg_is_full_shell_command))
                 return error;
         }
         error = Platform::LaunchProcess (launch_info);
@@ -367,7 +405,9 @@ PlatformLinux::Attach(ProcessAttachInfo &attach_info,
         {
             debugger.GetTargetList().SetSelectedTarget(target);
 
-            process_sp = target->CreateProcess (listener, attach_info.GetProcessPluginName());
+            process_sp = target->CreateProcess (listener,
+                                                attach_info.GetProcessPluginName(),
+                                                NULL);
 
             if (process_sp)
                 error = process_sp->Attach (attach_info);

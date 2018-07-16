@@ -93,8 +93,8 @@ SBCommandInterpreter::HandleCommand (const char *command_line, SBCommandReturnOb
         TargetSP target_sp(m_opaque_ptr->GetDebugger().GetSelectedTarget());
         Mutex::Locker api_locker;
         if (target_sp)
-            api_locker.Reset(target_sp->GetAPIMutex().GetMutex());
-        m_opaque_ptr->HandleCommand (command_line, add_to_history, result.ref());
+            api_locker.Lock(target_sp->GetAPIMutex());
+        m_opaque_ptr->HandleCommand (command_line, add_to_history ? eLazyBoolYes : eLazyBoolNo, result.ref());
     }
     else
     {
@@ -188,24 +188,26 @@ SBCommandInterpreter::HasAliasOptions ()
 SBProcess
 SBCommandInterpreter::GetProcess ()
 {
-    SBProcess process;
+    SBProcess sb_process;
+    ProcessSP process_sp;
     if (m_opaque_ptr)
     {
         TargetSP target_sp(m_opaque_ptr->GetDebugger().GetSelectedTarget());
         if (target_sp)
         {
             Mutex::Locker api_locker(target_sp->GetAPIMutex());
-            process.SetProcess(target_sp->GetProcessSP());
+            process_sp = target_sp->GetProcessSP();
+            sb_process.SetSP(process_sp);
         }
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (log)
         log->Printf ("SBCommandInterpreter(%p)::GetProcess () => SBProcess(%p)", 
-                     m_opaque_ptr, process.get());
+                     m_opaque_ptr, process_sp.get());
 
     
-    return process;
+    return sb_process;
 }
 
 CommandInterpreter *
@@ -236,7 +238,7 @@ SBCommandInterpreter::SourceInitFileInHomeDirectory (SBCommandReturnObject &resu
         TargetSP target_sp(m_opaque_ptr->GetDebugger().GetSelectedTarget());
         Mutex::Locker api_locker;
         if (target_sp)
-            api_locker.Reset(target_sp->GetAPIMutex().GetMutex());
+            api_locker.Lock(target_sp->GetAPIMutex());
         m_opaque_ptr->SourceInitFile (false, result.ref());
     }
     else
@@ -261,7 +263,7 @@ SBCommandInterpreter::SourceInitFileInCurrentWorkingDirectory (SBCommandReturnOb
         TargetSP target_sp(m_opaque_ptr->GetDebugger().GetSelectedTarget());
         Mutex::Locker api_locker;
         if (target_sp)
-            api_locker.Reset(target_sp->GetAPIMutex().GetMutex());
+            api_locker.Lock(target_sp->GetAPIMutex());
         m_opaque_ptr->SourceInitFile (true, result.ref());
     }
     else
@@ -290,6 +292,12 @@ SBCommandInterpreter::GetBroadcaster ()
     return broadcaster;
 }
 
+const char *
+SBCommandInterpreter::GetBroadcasterClass ()
+{
+    return Communication::GetStaticBroadcasterClass().AsCString();
+}
+
 const char * 
 SBCommandInterpreter::GetArgumentTypeAsCString (const lldb::CommandArgumentType arg_type)
 {
@@ -302,60 +310,30 @@ SBCommandInterpreter::GetArgumentDescriptionAsCString (const lldb::CommandArgume
     return CommandObject::GetArgumentDescriptionAsCString (arg_type);
 }
 
+bool
+SBCommandInterpreter::SetCommandOverrideCallback (const char *command_name,
+                                                  lldb::CommandOverrideCallback callback,
+                                                  void *baton)
+{
+    if (command_name && command_name[0] && m_opaque_ptr)
+    {
+        std::string command_name_str (command_name);
+        CommandObject *cmd_obj = m_opaque_ptr->GetCommandObjectForCommand(command_name_str);
+        if (cmd_obj)
+        {
+            assert(command_name_str.empty());
+            cmd_obj->SetOverrideCallback (callback, baton);
+            return true;
+        }
+    }
+    return false;
+}
 
 #ifndef LLDB_DISABLE_PYTHON
-extern "C" bool
-LLDBSwigPythonBreakpointCallbackFunction 
-(
-    const char *python_function_name,
-    const char *session_dictionary_name,
-    const lldb::StackFrameSP& sb_frame, 
-    const lldb::BreakpointLocationSP& sb_bp_loc
-);
-
-extern "C" std::string
-LLDBSwigPythonCallTypeScript 
-(
-    const char *python_function_name,
-    const char *session_dictionary_name,
-    const lldb::ValueObjectSP& valobj_sp
-);
-
-extern "C" void*
-LLDBSwigPythonCreateSyntheticProvider 
-(
-    const std::string python_class_name,
-    const char *session_dictionary_name,
-    const lldb::ValueObjectSP& valobj_sp
-);
-
-
-extern "C" uint32_t       LLDBSwigPython_CalculateNumChildren        (void *implementor);
-extern "C" void*          LLDBSwigPython_GetChildAtIndex             (void *implementor, uint32_t idx);
-extern "C" int            LLDBSwigPython_GetIndexOfChildWithName     (void *implementor, const char* child_name);
-extern "C" void*          LLDBSWIGPython_CastPyObjectToSBValue       (void* data);
-extern "C" void           LLDBSwigPython_UpdateSynthProviderInstance (void* implementor);
-
-extern "C" bool           LLDBSwigPythonCallCommand 
-(
-    const char *python_function_name,
-    const char *session_dictionary_name,
-    lldb::DebuggerSP& debugger,
-    const char* args,
-    std::string& err_msg,
-    lldb_private::CommandReturnObject& cmd_retobj
-);
 
 // Defined in the SWIG source file
 extern "C" void 
 init_lldb(void);
-
-extern "C" bool           LLDBSwigPythonCallModuleInit 
-(
-    const std::string python_module_name,
-    const char *session_dictionary_name,
-    lldb::DebuggerSP& debugger
-);
 
 #else
 
@@ -377,17 +355,8 @@ SBCommandInterpreter::InitializeSWIG ()
     {
         g_initialized = true;
 #ifndef LLDB_DISABLE_PYTHON
-        ScriptInterpreter::InitializeInterpreter (init_lldb, 
-                                                  LLDBSwigPythonBreakpointCallbackFunction,
-                                                  LLDBSwigPythonCallTypeScript,
-                                                  LLDBSwigPythonCreateSyntheticProvider,
-                                                  LLDBSwigPython_CalculateNumChildren,
-                                                  LLDBSwigPython_GetChildAtIndex,
-                                                  LLDBSwigPython_GetIndexOfChildWithName,
-                                                  LLDBSWIGPython_CastPyObjectToSBValue,
-                                                  LLDBSwigPython_UpdateSynthProviderInstance,
-                                                  LLDBSwigPythonCallCommand,
-                                                  LLDBSwigPythonCallModuleInit);
+        ScriptInterpreter::InitializeInterpreter (init_lldb);
 #endif
     }
 }
+

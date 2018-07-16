@@ -76,8 +76,9 @@ RNBRemote::RNBRemote () :
     m_max_payload_size(DEFAULT_GDB_REMOTE_PROTOCOL_BUFSIZE - 4),
     m_extended_mode(false),
     m_noack_mode(false),
+    m_use_native_regs (false),
     m_thread_suffix_supported (false),
-    m_use_native_regs (false)
+    m_list_threads_in_stop_reply (false)
 {
     DNBLogThreadedIf (LOG_RNB_REMOTE, "%s", __PRETTY_FUNCTION__);
     CreatePacketTable ();
@@ -183,10 +184,12 @@ RNBRemote::CreatePacketTable  ()
     t.push_back (Packet (set_stdout,                    &RNBRemote::HandlePacket_QSetSTDIO              , NULL, "QSetSTDOUT:", "Set the standard output for a process to be launched with the 'A' packet"));
     t.push_back (Packet (set_stderr,                    &RNBRemote::HandlePacket_QSetSTDIO              , NULL, "QSetSTDERR:", "Set the standard error for a process to be launched with the 'A' packet"));
     t.push_back (Packet (set_working_dir,               &RNBRemote::HandlePacket_QSetWorkingDir         , NULL, "QSetWorkingDir:", "Set the working directory for a process to be launched with the 'A' packet"));
+    t.push_back (Packet (set_list_threads_in_stop_reply,&RNBRemote::HandlePacket_QListThreadsInStopReply , NULL, "QListThreadsInStopReply", "Set if the 'threads' key should be added to the stop reply packets with a list of all thread IDs."));
 //  t.push_back (Packet (pass_signals_to_inferior,      &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "QPassSignals:", "Specify which signals are passed to the inferior"));
     t.push_back (Packet (allocate_memory,               &RNBRemote::HandlePacket_AllocateMemory, NULL, "_M", "Allocate memory in the inferior process."));
     t.push_back (Packet (deallocate_memory,             &RNBRemote::HandlePacket_DeallocateMemory, NULL, "_m", "Deallocate memory in the inferior process."));
     t.push_back (Packet (memory_region_info,            &RNBRemote::HandlePacket_MemoryRegionInfo, NULL, "qMemoryRegionInfo", "Return size and attributes of a memory region that contains the given address"));
+    t.push_back (Packet (watchpoint_support_info,       &RNBRemote::HandlePacket_WatchpointSupportInfo, NULL, "qWatchpointSupportInfo", "Return the number of supported hardware watchpoints"));
 
 }
 
@@ -1128,12 +1131,12 @@ RNBRemote::NotifyThatProcessStopped (void)
 }
 
 
-/* `A arglen,argnum,arg,...'
+/* 'A arglen,argnum,arg,...'
  Update the inferior context CTX with the program name and arg
  list.
  The documentation for this packet is underwhelming but my best reading
  of this is that it is a series of (len, position #, arg)'s, one for
- each argument with "arg" ``hex encoded'' (two 0-9a-f chars?).
+ each argument with "arg" hex encoded (two 0-9a-f chars?).
  Why we need BOTH a "len" and a hex encoded "arg" is beyond me - either
  is sufficient to get around the "," position separator escape issue.
 
@@ -1223,7 +1226,7 @@ RNBRemote::HandlePacket_A (const char *p)
     return rnb_success;
 }
 
-/* `H c t'
+/* 'H c t'
  Set the thread for subsequent actions; 'c' for step/continue ops,
  'g' for other ops.  -1 means all threads, 0 means any thread.  */
 
@@ -1868,6 +1871,28 @@ RNBRemote::HandlePacket_QSetWorkingDir (const char *p)
     return SendPacket ("E60"); // Already had a process, too late to set working dir
 }
 
+rnb_err_t
+RNBRemote::HandlePacket_QListThreadsInStopReply (const char *p)
+{
+    // If this packet is received, it allows us to send an extra key/value
+    // pair in the stop reply packets where we will list all of the thread IDs
+    // separated by commas:
+    //
+    //  "threads:10a,10b,10c;"
+    //
+    // This will get included in the stop reply packet as something like:
+    //
+    //  "T11thread:10a;00:00000000;01:00010203:threads:10a,10b,10c;"
+    //
+    // This can save two packets on each stop: qfThreadInfo/qsThreadInfo and
+    // speed things up a bit.
+    //
+    // Send the OK packet first so the correct checksum is appended...
+    rnb_err_t result = SendPacket ("OK");
+    m_list_threads_in_stop_reply = true;
+    return result;
+}
+
 
 rnb_err_t
 RNBRemote::HandlePacket_QSetMaxPayloadSize (const char *p)
@@ -2118,6 +2143,33 @@ RNBRemote::SendStopReplyPacketForThread (nub_thread_t tid)
             if (thread_ident_info.dispatch_qaddr != 0)
                 ostrm << std::hex << "qaddr:" << thread_ident_info.dispatch_qaddr << ';';
         }
+        
+        // If a 'QListThreadsInStopReply' was sent to enable this feature, we
+        // will send all thread IDs back in the "threads" key whose value is
+        // a listc of hex thread IDs separated by commas:
+        //  "threads:10a,10b,10c;"
+        // This will save the debugger from having to send a pair of qfThreadInfo
+        // and qsThreadInfo packets, but it also might take a lot of room in the
+        // stop reply packet, so it must be enabled only on systems where there
+        // are no limits on packet lengths.
+        
+        if (m_list_threads_in_stop_reply)
+        {
+            const nub_size_t numthreads = DNBProcessGetNumThreads (pid);
+            if (numthreads > 0)
+            {
+                ostrm << std::hex << "threads:";
+                for (nub_size_t i = 0; i < numthreads; ++i)
+                {
+                    nub_thread_t th = DNBProcessGetThreadAtIndex (pid, i);
+                    if (i > 0)
+                        ostrm << ',';
+                    ostrm << std::hex << th;
+                }
+                ostrm << ';';
+            }
+        }
+
         if (g_num_reg_entries == 0)
             InitializeRegisters ();
 
@@ -2145,7 +2197,7 @@ RNBRemote::SendStopReplyPacketForThread (nub_thread_t tid)
     return SendPacket("E51");
 }
 
-/* `?'
+/* '?'
  The stop reply packet - tell gdb what the status of the inferior is.
  Often called the questionmark_packet.  */
 
@@ -2401,7 +2453,7 @@ RNBRemote::HandlePacket_X (const char *p)
     return SendPacket ("OK");
 }
 
-/* `g' -- read registers
+/* 'g' -- read registers
  Get the contents of the registers for the current thread,
  send them to gdb.
  Should the setting of the Hg packet determine which thread's registers
@@ -2449,7 +2501,7 @@ RNBRemote::HandlePacket_g (const char *p)
     return SendPacket (ostrm.str ());
 }
 
-/* `G XXX...' -- write registers
+/* 'G XXX...' -- write registers
  How is the thread for these specified, beyond "the current thread"?
  Does gdb actually use the Hg packet to set this?  */
 
@@ -2512,8 +2564,11 @@ RNBRemote::HandlePacket_G (const char *p)
         if (packet.GetHexBytes (reg_value.value.v_sint8, reg_entry->gdb_size, 0xcc) != reg_entry->gdb_size)
             break;
 
-        if (!DNBThreadSetRegisterValueByID (pid, tid, reg_entry->nub_info.set, reg_entry->nub_info.reg, &reg_value))
-            return SendPacket ("E15");
+        if (reg_entry->fail_value == NULL)
+        {
+            if (!DNBThreadSetRegisterValueByID (pid, tid, reg_entry->nub_info.set, reg_entry->nub_info.reg, &reg_value))
+                return SendPacket ("E15");
+        }
     }
     return SendPacket ("OK");
 }
@@ -2806,7 +2861,7 @@ RNBRemote::HandlePacket_v (const char *p)
     return HandlePacket_UNIMPLEMENTED(p);
 }
 
-/* `T XX' -- status of thread
+/* 'T XX' -- status of thread
  Check if the specified thread is alive.
  The thread number is in hex?  */
 
@@ -3079,7 +3134,7 @@ RNBRemote::ExtractThreadIDFromThreadSuffix (const char *p)
 
 }
 
-/* `p XX'
+/* 'p XX'
  print the contents of register X */
 
 rnb_err_t
@@ -3144,7 +3199,7 @@ RNBRemote::HandlePacket_p (const char *p)
     return SendPacket (ostrm.str());
 }
 
-/* `Pnn=rrrrr'
+/* 'Pnn=rrrrr'
  Set register number n to value r.
  n and r are hex strings.  */
 
@@ -3209,7 +3264,7 @@ RNBRemote::HandlePacket_P (const char *p)
     return SendPacket ("OK");
 }
 
-/* `c [addr]'
+/* 'c [addr]'
  Continue, optionally from a specified address. */
 
 rnb_err_t
@@ -3307,8 +3362,35 @@ RNBRemote::HandlePacket_MemoryRegionInfo (const char *p)
     return SendPacket (ostrm.str());
 }
 
+rnb_err_t
+RNBRemote::HandlePacket_WatchpointSupportInfo (const char *p)
+{
+    /* This packet simply returns the number of supported hardware watchpoints.
+       
+       Examples of use:
+          qWatchpointSupportInfo:
+          num:4
 
-/* `C sig [;addr]'
+          qWatchpointSupportInfo
+          OK                   // this packet is implemented by the remote nub
+    */
+
+    p += sizeof ("qWatchpointSupportInfo") - 1;
+    if (*p == '\0')
+       return SendPacket ("OK");
+    if (*p++ != ':')
+       return SendPacket ("E67");
+
+    errno = 0;
+    uint32_t num = DNBWatchpointGetNumSupportedHWP (m_ctx.ProcessID());
+    std::ostringstream ostrm;
+
+    // size:4
+    ostrm << "num:" << std::dec << num << ';';
+    return SendPacket (ostrm.str());
+}
+
+/* 'C sig [;addr]'
  Resume with signal sig, optionally at address addr.  */
 
 rnb_err_t
@@ -3356,14 +3438,13 @@ RNBRemote::HandlePacket_C (const char *p)
 rnb_err_t
 RNBRemote::HandlePacket_D (const char *p)
 {
-    // We are not supposed to send a response for deatch.
-    //SendPacket ("OK");
+    SendPacket ("OK");
     if (m_ctx.HasValidProcessID())
         DNBProcessDetach(m_ctx.ProcessID());
     return rnb_success;
 }
 
-/* `k'
+/* 'k'
  Kill the inferior process.  */
 
 rnb_err_t
@@ -3385,7 +3466,7 @@ RNBRemote::HandlePacket_stop_process (const char *p)
     return rnb_success;
 }
 
-/* `s'
+/* 's'
  Step the inferior process.  */
 
 rnb_err_t
@@ -3414,7 +3495,7 @@ RNBRemote::HandlePacket_s (const char *p)
     return rnb_success;
 }
 
-/* `S sig [;addr]'
+/* 'S sig [;addr]'
  Step with signal sig, optionally at address addr.  */
 
 rnb_err_t
@@ -3500,14 +3581,25 @@ RNBRemote::HandlePacket_qHostInfo (const char *p)
         strm << "cpusubtype:" << std::dec << cpusubtype << ';';
     }
 
-    char ostype[64];
-    len = sizeof(ostype);
-    if (::sysctlbyname("kern.ostype", &ostype, &len, NULL, 0) == 0)
+    // The OS in the triple should be "ios" or "macosx" which doesn't match our
+    // "Darwin" which gets returned from "kern.ostype", so we need to hardcode
+    // this for now.
+    if (cputype == CPU_TYPE_ARM)
     {
-        len = strlen(ostype);
-        std::transform (ostype, ostype + len, ostype, tolower);
-        strm << "ostype:" << std::dec << ostype << ';';
+        strm << "ostype:ios;";
     }
+    else
+    {
+        strm << "ostype:macosx;";
+    }
+//    char ostype[64];
+//    len = sizeof(ostype);
+//    if (::sysctlbyname("kern.ostype", &ostype, &len, NULL, 0) == 0)
+//    {
+//        len = strlen(ostype);
+//        std::transform (ostype, ostype + len, ostype, tolower);
+//        strm << "ostype:" << std::dec << ostype << ';';
+//    }
 
     strm << "vendor:apple;";
 

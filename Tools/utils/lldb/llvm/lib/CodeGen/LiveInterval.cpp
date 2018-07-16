@@ -381,37 +381,40 @@ void LiveInterval::join(LiveInterval &Other,
   for (unsigned i = 0; i != NumVals; ++i) {
     unsigned LHSValID = LHSValNoAssignments[i];
     if (i != LHSValID ||
-        (NewVNInfo[LHSValID] && NewVNInfo[LHSValID] != getValNumInfo(i)))
+        (NewVNInfo[LHSValID] && NewVNInfo[LHSValID] != getValNumInfo(i))) {
       MustMapCurValNos = true;
+      break;
+    }
   }
 
   // If we have to apply a mapping to our base interval assignment, rewrite it
   // now.
   if (MustMapCurValNos) {
     // Map the first live range.
+
     iterator OutIt = begin();
     OutIt->valno = NewVNInfo[LHSValNoAssignments[OutIt->valno->id]];
-    ++OutIt;
-    for (iterator I = OutIt, E = end(); I != E; ++I) {
-      OutIt->valno = NewVNInfo[LHSValNoAssignments[I->valno->id]];
+    for (iterator I = next(OutIt), E = end(); I != E; ++I) {
+      VNInfo* nextValNo = NewVNInfo[LHSValNoAssignments[I->valno->id]];
+      assert(nextValNo != 0 && "Huh?");
 
       // If this live range has the same value # as its immediate predecessor,
       // and if they are neighbors, remove one LiveRange.  This happens when we
-      // have [0,3:0)[4,7:1) and map 0/1 onto the same value #.
-      if (OutIt->valno == (OutIt-1)->valno && (OutIt-1)->end == OutIt->start) {
-        (OutIt-1)->end = OutIt->end;
+      // have [0,4:0)[4,7:1) and map 0/1 onto the same value #.
+      if (OutIt->valno == nextValNo && OutIt->end == I->start) {
+        OutIt->end = I->end;
       } else {
-        if (I != OutIt) {
+        // Didn't merge. Move OutIt to the next interval,
+        ++OutIt;
+        OutIt->valno = nextValNo;
+        if (OutIt != I) {
           OutIt->start = I->start;
           OutIt->end = I->end;
         }
-
-        // Didn't merge, on to the next one.
-        ++OutIt;
       }
     }
-
     // If we merge some live ranges, chop off the end.
+    ++OutIt;
     ranges.erase(OutIt, end());
   }
 
@@ -639,8 +642,6 @@ void LiveInterval::print(raw_ostream &OS, const TargetRegisterInfo *TRI) const {
           OS << "-phidef";
         if (vni->hasPHIKill())
           OS << "-phikill";
-        if (vni->hasRedefByEC())
-          OS << "-ec";
       }
     }
   }

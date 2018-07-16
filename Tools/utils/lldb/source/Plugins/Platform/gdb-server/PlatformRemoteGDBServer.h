@@ -30,7 +30,7 @@ public:
     Terminate ();
     
     static lldb_private::Platform* 
-    CreateInstance ();
+    CreateInstance (bool force, const lldb_private::ArchSpec *arch);
 
     static const char *
     GetShortPluginNameStatic();
@@ -72,7 +72,8 @@ public:
     virtual lldb_private::Error
     ResolveExecutable (const lldb_private::FileSpec &exe_file,
                        const lldb_private::ArchSpec &arch,
-                       lldb::ModuleSP &module_sp);
+                       lldb::ModuleSP &module_sp,
+                       const lldb_private::FileSpecList *module_search_paths_ptr);
 
     virtual const char *
     GetDescription ();

@@ -36,7 +36,16 @@ using namespace llvm;
   MAP(F8, 41)           \
   MAP(F9, 42)           \
   MAP(D0, 45)           \
-  MAP(D1, 46)
+  MAP(D1, 46)           \
+  MAP(D4, 47)           \
+  MAP(D8, 48)           \
+  MAP(D9, 49)           \
+  MAP(DA, 50)           \
+  MAP(DB, 51)           \
+  MAP(DC, 52)           \
+  MAP(DD, 53)           \
+  MAP(DE, 54)           \
+  MAP(DF, 55)
 
 // A clone of X86 since we can't depend on something that is generated.
 namespace X86Local {
@@ -216,11 +225,13 @@ RecognizableInstr::RecognizableInstr(DisassemblerTables &tables,
   SegOvr   = byteFromRec(Rec, "SegOvrBits");
   
   HasOpSizePrefix  = Rec->getValueAsBit("hasOpSizePrefix");
+  HasAdSizePrefix  = Rec->getValueAsBit("hasAdSizePrefix");
   HasREX_WPrefix   = Rec->getValueAsBit("hasREX_WPrefix");
   HasVEXPrefix     = Rec->getValueAsBit("hasVEXPrefix");
   HasVEX_4VPrefix  = Rec->getValueAsBit("hasVEX_4VPrefix");
   HasVEX_4VOp3Prefix = Rec->getValueAsBit("hasVEX_4VOp3Prefix");
   HasVEX_WPrefix   = Rec->getValueAsBit("hasVEX_WPrefix");
+  HasMemOp4Prefix  = Rec->getValueAsBit("hasMemOp4Prefix");
   IgnoresVEX_L     = Rec->getValueAsBit("ignoresVEX_L");
   HasLockPrefix    = Rec->getValueAsBit("hasLockPrefix");
   IsCodeGenOnly    = Rec->getValueAsBit("isCodeGenOnly");
@@ -333,6 +344,8 @@ InstructionContext RecognizableInstr::insnContext() const {
       insnContext = IC_64BIT_XS_OPSIZE;
     else if (HasOpSizePrefix)
       insnContext = IC_64BIT_OPSIZE;
+    else if (HasAdSizePrefix)
+      insnContext = IC_64BIT_ADSIZE;
     else if (HasREX_WPrefix &&
              (Prefix == X86Local::XS || Prefix == X86Local::T8XS))
       insnContext = IC_64BIT_REXW_XS;
@@ -359,6 +372,8 @@ InstructionContext RecognizableInstr::insnContext() const {
       insnContext = IC_XS_OPSIZE;
     else if (HasOpSizePrefix)
       insnContext = IC_OPSIZE;
+    else if (HasAdSizePrefix)
+      insnContext = IC_ADSIZE;
     else if (Prefix == X86Local::XD || Prefix == X86Local::T8XD ||
              Prefix == X86Local::TAXD)
       insnContext = IC_XD;
@@ -390,13 +405,13 @@ RecognizableInstr::filter_ret RecognizableInstr::filter() const {
     return FILTER_STRONG;
     
     
-  // Filter out artificial instructions
+  // Filter out artificial instructions but leave in the LOCK_PREFIX so it is
+  // printed as a separate "instruction".
     
   if (Name.find("_Int") != Name.npos       ||
       Name.find("Int_") != Name.npos       ||
       Name.find("_NOREX") != Name.npos     ||
-      Name.find("2SDL") != Name.npos       ||
-      Name == "LOCK_PREFIX")
+      Name.find("2SDL") != Name.npos)
     return FILTER_STRONG;
 
   // Filter out instructions with segment override prefixes.
@@ -558,7 +573,7 @@ void RecognizableInstr::emitInstructionSpecifier(DisassemblerTables &tables) {
   
   bool hasFROperands = false;
   
-  assert(numOperands < X86_MAX_OPERANDS && "X86_MAX_OPERANDS is not large enough");
+  assert(numOperands <= X86_MAX_OPERANDS && "X86_MAX_OPERANDS is not large enough");
   
   for (operandIndex = 0; operandIndex < numOperands; ++operandIndex) {
     if (OperandList[operandIndex].Constraints.size()) {
@@ -677,7 +692,7 @@ void RecognizableInstr::emitInstructionSpecifier(DisassemblerTables &tables) {
     // Operand 3 (optional) is an immediate.
 
     if (HasVEX_4VPrefix || HasVEX_4VOp3Prefix)
-      assert(numPhysicalOperands >= 3 && numPhysicalOperands <= 4 &&
+      assert(numPhysicalOperands >= 3 && numPhysicalOperands <= 5 &&
              "Unexpected number of operands for MRMSrcRegFrm with VEX_4V"); 
     else
       assert(numPhysicalOperands >= 2 && numPhysicalOperands <= 3 &&
@@ -690,12 +705,17 @@ void RecognizableInstr::emitInstructionSpecifier(DisassemblerTables &tables) {
       // in ModRMVEX and the one above the one in the VEX.VVVV field
       HANDLE_OPERAND(vvvvRegister)
 
+    if (HasMemOp4Prefix)
+      HANDLE_OPERAND(immediate)
+
     HANDLE_OPERAND(rmRegister)
 
     if (HasVEX_4VOp3Prefix)
       HANDLE_OPERAND(vvvvRegister)
 
-    HANDLE_OPTIONAL(immediate)
+    if (!HasMemOp4Prefix)
+      HANDLE_OPTIONAL(immediate)
+    HANDLE_OPTIONAL(immediate) // above might be a register in 7:4
     break;
   case X86Local::MRMSrcMem:
     // Operand 1 is a register operand in the Reg/Opcode field.
@@ -704,7 +724,7 @@ void RecognizableInstr::emitInstructionSpecifier(DisassemblerTables &tables) {
     // Operand 3 (optional) is an immediate.
 
     if (HasVEX_4VPrefix || HasVEX_4VOp3Prefix)
-      assert(numPhysicalOperands >= 3 && numPhysicalOperands <= 4 &&
+      assert(numPhysicalOperands >= 3 && numPhysicalOperands <= 5 &&
              "Unexpected number of operands for MRMSrcMemFrm with VEX_4V"); 
     else
       assert(numPhysicalOperands >= 2 && numPhysicalOperands <= 3 &&
@@ -717,12 +737,17 @@ void RecognizableInstr::emitInstructionSpecifier(DisassemblerTables &tables) {
       // in ModRMVEX and the one above the one in the VEX.VVVV field
       HANDLE_OPERAND(vvvvRegister)
 
+    if (HasMemOp4Prefix)
+      HANDLE_OPERAND(immediate)
+
     HANDLE_OPERAND(memory)
 
     if (HasVEX_4VOp3Prefix)
       HANDLE_OPERAND(vvvvRegister)
 
-    HANDLE_OPTIONAL(immediate)
+    if (!HasMemOp4Prefix)
+      HANDLE_OPTIONAL(immediate)
+    HANDLE_OPTIONAL(immediate) // above might be a register in 7:4
     break;
   case X86Local::MRM0r:
   case X86Local::MRM1r:

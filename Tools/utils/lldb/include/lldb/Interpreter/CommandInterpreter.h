@@ -55,6 +55,15 @@ public:
         eCommandTypesAllThem = 0xFFFF   // all commands
     };
 
+    // These two functions fill out the Broadcaster interface:
+    
+    static ConstString &GetStaticBroadcasterClass ();
+
+    virtual ConstString &GetBroadcasterClass() const
+    {
+        return GetStaticBroadcasterClass();
+    }
+
     void
     SourceInitFile (bool in_cwd, 
                     CommandReturnObject &result);
@@ -137,7 +146,7 @@ public:
 
     bool
     HandleCommand (const char *command_line, 
-                   bool add_to_history, 
+                   LazyBool add_to_history,
                    CommandReturnObject &result, 
                    ExecutionContext *override_context = NULL,
                    bool repeat_on_empty_command = true,
@@ -170,7 +179,8 @@ public:
                     bool stop_on_continue, 
                     bool stop_on_error, 
                     bool echo_commands,
-                    bool print_results, 
+                    bool print_results,
+                    LazyBool add_to_history,
                     CommandReturnObject &result);
 
     //------------------------------------------------------------------
@@ -200,7 +210,8 @@ public:
                             bool stop_on_continue, 
                             bool stop_on_error, 
                             bool echo_commands,
-                            bool print_results, 
+                            bool print_results,
+                            LazyBool add_to_history,
                             CommandReturnObject &result);
 
     CommandObject *
@@ -437,7 +448,7 @@ public:
     {
         return "*** Some of your variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to %s or raise the limit by changing the target.max-children-count setting.\n";
     }
-
+    
 protected:
     friend class Debugger;
 
@@ -468,6 +479,8 @@ private:
     char m_repeat_char;
     bool m_batch_command_mode;
     ChildrenTruncatedWarningStatus m_truncation_warning;    // Whether we truncated children and whether the user has been told
+    uint32_t m_command_source_depth;
+    
 };
 
 

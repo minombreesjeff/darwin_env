@@ -17,6 +17,7 @@
 // C++ Includes
 // Other libraries and framework includes
 #include "lldb/Core/Log.h"
+#include "lldb/Core/StreamFile.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Host.h"
@@ -31,6 +32,100 @@
 using namespace lldb;
 using namespace lldb_private;
 
+GDBRemoteCommunication::History::History (uint32_t size) :
+    m_packets(),
+    m_curr_idx (0),
+    m_total_packet_count (0),
+    m_dumped_to_log (false)
+{
+    m_packets.resize(size);
+}
+
+GDBRemoteCommunication::History::~History ()
+{
+}
+
+void
+GDBRemoteCommunication::History::AddPacket (char packet_char,
+                                            PacketType type,
+                                            uint32_t bytes_transmitted)
+{
+    const size_t size = m_packets.size();
+    if (size > 0)
+    {
+        const uint32_t idx = GetNextIndex();
+        m_packets[idx].packet.assign (1, packet_char);
+        m_packets[idx].type = type;
+        m_packets[idx].bytes_transmitted = bytes_transmitted;
+        m_packets[idx].packet_idx = m_total_packet_count;
+        m_packets[idx].tid = Host::GetCurrentThreadID();
+    }
+}
+
+void
+GDBRemoteCommunication::History::AddPacket (const std::string &src,
+                                            uint32_t src_len,
+                                            PacketType type,
+                                            uint32_t bytes_transmitted)
+{
+    const size_t size = m_packets.size();
+    if (size > 0)
+    {
+        const uint32_t idx = GetNextIndex();
+        m_packets[idx].packet.assign (src, 0, src_len);
+        m_packets[idx].type = type;
+        m_packets[idx].bytes_transmitted = bytes_transmitted;
+        m_packets[idx].packet_idx = m_total_packet_count;
+        m_packets[idx].tid = Host::GetCurrentThreadID();
+    }
+}
+
+void
+GDBRemoteCommunication::History::Dump (lldb_private::Stream &strm) const
+{
+    const uint32_t size = GetNumPacketsInHistory ();
+    const uint32_t first_idx = GetFirstSavedPacketIndex ();
+    const uint32_t stop_idx = m_curr_idx + size;
+    for (uint32_t i = first_idx;  i < stop_idx; ++i)
+    {
+        const uint32_t idx = NormalizeIndex (i);
+        const Entry &entry = m_packets[idx];
+        if (entry.type == ePacketTypeInvalid || entry.packet.empty())
+            break;
+        strm.Printf ("history[%u] tid=0x%4.4llx <%4u> %s packet: %s\n",
+                     entry.packet_idx,
+                     entry.tid,
+                     entry.bytes_transmitted,
+                     (entry.type == ePacketTypeSend) ? "send" : "read",
+                     entry.packet.c_str());
+    }
+}
+
+void
+GDBRemoteCommunication::History::Dump (lldb_private::Log *log) const
+{
+    if (log && !m_dumped_to_log)
+    {
+        m_dumped_to_log = true;
+        const uint32_t size = GetNumPacketsInHistory ();
+        const uint32_t first_idx = GetFirstSavedPacketIndex ();
+        const uint32_t stop_idx = m_curr_idx + size;
+        for (uint32_t i = first_idx;  i < stop_idx; ++i)
+        {
+            const uint32_t idx = NormalizeIndex (i);
+            const Entry &entry = m_packets[idx];
+            if (entry.type == ePacketTypeInvalid || entry.packet.empty())
+                break;
+            log->Printf ("history[%u] tid=0x%4.4llx <%4u> %s packet: %s",
+                         entry.packet_idx,
+                         entry.tid,
+                         entry.bytes_transmitted,
+                         (entry.type == ePacketTypeSend) ? "send" : "read",
+                         entry.packet.c_str());
+        }
+    }
+}
+
 //----------------------------------------------------------------------
 // GDBRemoteCommunication constructor
 //----------------------------------------------------------------------
@@ -42,6 +137,7 @@ GDBRemoteCommunication::GDBRemoteCommunication(const char *comm_name,
     m_sequence_mutex (Mutex::eMutexTypeRecursive),
     m_public_is_running (false),
     m_private_is_running (false),
+    m_history (512),
     m_send_acks (true),
     m_is_platform (is_platform)
 {
@@ -76,37 +172,26 @@ size_t
 GDBRemoteCommunication::SendAck ()
 {
     LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PACKETS));
-    if (log)
-        log->Printf ("send packet: +");
     ConnectionStatus status = eConnectionStatusSuccess;
-    char ack_char = '+';
-    return Write (&ack_char, 1, status, NULL);
+    char ch = '+';
+    const size_t bytes_written = Write (&ch, 1, status, NULL);
+    if (log)
+        log->Printf ("<%4zu> send packet: %c", bytes_written, ch);
+    m_history.AddPacket (ch, History::ePacketTypeSend, bytes_written);
+    return bytes_written;
 }
 
 size_t
 GDBRemoteCommunication::SendNack ()
 {
     LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PACKETS));
-    if (log)
-        log->Printf ("send packet: -");
     ConnectionStatus status = eConnectionStatusSuccess;
-    char nack_char = '-';
-    return Write (&nack_char, 1, status, NULL);
-}
-
-size_t
-GDBRemoteCommunication::SendPacket (lldb_private::StreamString &payload)
-{
-    Mutex::Locker locker(m_sequence_mutex);
-    const std::string &p (payload.GetString());
-    return SendPacketNoLock (p.c_str(), p.size());
-}
-
-size_t
-GDBRemoteCommunication::SendPacket (const char *payload)
-{
-    Mutex::Locker locker(m_sequence_mutex);
-    return SendPacketNoLock (payload, ::strlen (payload));
+    char ch = '-';
+    const size_t bytes_written = Write (&ch, 1, status, NULL);
+    if (log)
+        log->Printf ("<%4zu> send packet: %c", bytes_written, ch);
+    m_history.AddPacket (ch, History::ePacketTypeSend, bytes_written);
+    return bytes_written;
 }
 
 size_t
@@ -129,24 +214,37 @@ GDBRemoteCommunication::SendPacketNoLock (const char *payload, size_t payload_le
         packet.PutHex8(CalculcateChecksum (payload, payload_length));
 
         LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PACKETS));
-        if (log)
-            log->Printf ("send packet: %.*s", (int)packet.GetSize(), packet.GetData());
         ConnectionStatus status = eConnectionStatusSuccess;
         size_t bytes_written = Write (packet.GetData(), packet.GetSize(), status, NULL);
+        if (log)
+        {
+            // If logging was just enabled and we have history, then dump out what
+            // we have to the log so we get the historical context. The Dump() call that
+            // logs all of the packet will set a boolean so that we don't dump this more
+            // than once
+            if (!m_history.DidDumpToLog ())
+                m_history.Dump (log.get());
+
+            log->Printf ("<%4zu> send packet: %.*s", bytes_written, (int)packet.GetSize(), packet.GetData());
+        }
+
+        m_history.AddPacket (packet.GetString(), packet.GetSize(), History::ePacketTypeSend, bytes_written);
+
+
         if (bytes_written == packet.GetSize())
         {
             if (GetSendAcks ())
             {
                 if (GetAck () != '+')
                 {
-                    printf("get ack failed...");
+                    if (log)
+                        log->Printf("get ack failed...");
                     return 0;
                 }
             }
         }
         else
         {
-            LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PACKETS));
             if (log)
                 log->Printf ("error: failed to send packet: %.*s", (int)packet.GetSize(), packet.GetData());
         }
@@ -159,7 +257,7 @@ char
 GDBRemoteCommunication::GetAck ()
 {
     StringExtractorGDBRemote packet;
-    if (WaitForPacketWithTimeoutMicroSeconds (packet, GetPacketTimeoutInMicroSeconds ()) == 1)
+    if (WaitForPacketWithTimeoutMicroSecondsNoLock (packet, GetPacketTimeoutInMicroSeconds ()) == 1)
         return packet.GetChar();
     return 0;
 }
@@ -167,7 +265,11 @@ GDBRemoteCommunication::GetAck ()
 bool
 GDBRemoteCommunication::GetSequenceMutex (Mutex::Locker& locker)
 {
-    return locker.TryLock (m_sequence_mutex.GetMutex());
+    if (IsRunning())
+        return locker.TryLock (m_sequence_mutex);
+
+    locker.Lock (m_sequence_mutex);
+    return true;
 }
 
 
@@ -175,13 +277,6 @@ bool
 GDBRemoteCommunication::WaitForNotRunningPrivate (const TimeValue *timeout_ptr)
 {
     return m_private_is_running.WaitForValueEqualTo (false, timeout_ptr, NULL);
-}
-
-size_t
-GDBRemoteCommunication::WaitForPacketWithTimeoutMicroSeconds (StringExtractorGDBRemote &packet, uint32_t timeout_usec)
-{
-    Mutex::Locker locker(m_sequence_mutex);
-    return WaitForPacketWithTimeoutMicroSecondsNoLock (packet, timeout_usec);
 }
 
 size_t
@@ -353,7 +448,24 @@ GDBRemoteCommunication::CheckForPacket (const uint8_t *src, size_t src_len, Stri
             
             bool success = true;
             std::string &packet_str = packet.GetStringRef();
+            
+            
+            if (log)
+            {
+                // If logging was just enabled and we have history, then dump out what
+                // we have to the log so we get the historical context. The Dump() call that
+                // logs all of the packet will set a boolean so that we don't dump this more
+                // than once
+                if (!m_history.DidDumpToLog ())
+                    m_history.Dump (log.get());
+                
+                log->Printf ("<%4zu> read packet: %.*s", total_length, (int)(total_length), m_bytes.c_str());
+            }
+
+            m_history.AddPacket (m_bytes.c_str(), total_length, History::ePacketTypeRecv, total_length);
+
             packet_str.assign (m_bytes, content_start, content_length);
+            
             if (m_bytes[0] == '$')
             {
                 assert (checksum_idx < m_bytes.size());
@@ -381,11 +493,6 @@ GDBRemoteCommunication::CheckForPacket (const uint8_t *src, size_t src_len, Stri
                         else
                             SendAck();
                     }
-                    if (success)
-                    {
-                        if (log)
-                            log->Printf ("read packet: %.*s", (int)(total_length), m_bytes.c_str());
-                    }
                 }
                 else
                 {
@@ -394,6 +501,7 @@ GDBRemoteCommunication::CheckForPacket (const uint8_t *src, size_t src_len, Stri
                         log->Printf ("error: invalid checksum in packet: '%s'\n", m_bytes.c_str());
                 }
             }
+            
             m_bytes.erase(0, total_length);
             packet.SetFilePos(0);
             return success;
@@ -531,3 +639,8 @@ GDBRemoteCommunication::StartDebugserverProcess (const char *debugserver_url,
     return error;
 }
 
+void
+GDBRemoteCommunication::DumpHistory(Stream &strm)
+{
+    m_history.Dump (strm);
+}

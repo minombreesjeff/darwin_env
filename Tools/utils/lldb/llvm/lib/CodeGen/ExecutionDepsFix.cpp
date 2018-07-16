@@ -654,11 +654,10 @@ bool ExeDepsFix::runOnMachineFunction(MachineFunction &mf) {
   bool anyregs = false;
   for (TargetRegisterClass::const_iterator I = RC->begin(), E = RC->end();
        I != E; ++I)
-    for (const unsigned *AI = TRI->getOverlaps(*I); *AI; ++AI)
-      if (MF->getRegInfo().isPhysRegUsed(*AI)) {
-        anyregs = true;
-        break;
-      }
+    if (MF->getRegInfo().isPhysRegOrOverlapUsed(*I)) {
+      anyregs = true;
+      break;
+    }
   if (!anyregs) return false;
 
   // Initialize the AliasMap on the first use.
@@ -667,7 +666,7 @@ bool ExeDepsFix::runOnMachineFunction(MachineFunction &mf) {
     // or -1.
     AliasMap.resize(TRI->getNumRegs(), -1);
     for (unsigned i = 0, e = RC->getNumRegs(); i != e; ++i)
-      for (const unsigned *AI = TRI->getOverlaps(RC->getRegister(i)); *AI; ++AI)
+      for (const uint16_t *AI = TRI->getOverlaps(RC->getRegister(i)); *AI; ++AI)
         AliasMap[*AI] = i;
   }
 

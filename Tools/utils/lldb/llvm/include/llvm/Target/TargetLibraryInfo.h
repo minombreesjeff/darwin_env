@@ -199,6 +199,15 @@ namespace llvm {
       truncf,
       /// long double truncl(long double x);
       truncl,
+      /// int __cxa_atexit(void (*f)(void *), void *p, void *d);
+      cxa_atexit,
+      /// void __cxa_guard_abort(guard_t *guard);
+      /// guard_t is int64_t in Itanium ABI or int32_t on ARM eabi.
+      cxa_guard_abort,      
+      /// int __cxa_guard_acquire(guard_t *guard);
+      cxa_guard_acquire,
+      /// void __cxa_guard_release(guard_t *guard);
+      cxa_guard_release,
 
       NumLibFuncs
     };
@@ -208,6 +217,7 @@ namespace llvm {
 /// library functions are available for the current target, and allows a
 /// frontend to disable optimizations through -fno-builtin etc.
 class TargetLibraryInfo : public ImmutablePass {
+  virtual void anchor();
   unsigned char AvailableArray[(LibFunc::NumLibFuncs+3)/4];
   llvm::DenseMap<unsigned, std::string> CustomNames;
   static const char* StandardNames[LibFunc::NumLibFuncs];

@@ -65,6 +65,11 @@ class HelpCommandTestCase(TestBase):
         return None
 
 
+    def test_help_arch(self):
+        """Test 'help arch' which should list of supported architectures."""
+        self.expect("help arch",
+            substrs = ['arm', 'x86_64', 'i386'])
+
     def test_help_version(self):
         """Test 'help version' and 'version' commands."""
         self.expect("help version",
@@ -85,6 +90,12 @@ class HelpCommandTestCase(TestBase):
         self.runCmd("settings set term-width 0")
         self.expect("help",
             startstr = 'The following is a list of built-in, permanent debugger commands')
+
+    def test_help_breakpoint_set(self):
+        """Test that 'help breakpoint set' does not print out redundant lines of:
+        'breakpoint set [-s <shlib-name>] ...'."""
+        self.expect("help breakpoint set", matching=False,
+            substrs = ['breakpoint set [-s <shlib-name>]'])
 
     def test_help_image_dump_symtab_should_not_crash(self):
         """Command 'help image dump symtab' should not crash lldb."""
@@ -120,6 +131,14 @@ class HelpCommandTestCase(TestBase):
             substrs = ['<watchpt-id>'])
         self.expect("help watchpt-id-list",
             substrs = ['<watchpt-id-list>'])
+
+    def test_help_watchpoint_set(self):
+        """Test that 'help watchpoint set' prints out 'expression' and 'variable'
+        as the possible subcommands."""
+        self.expect("help watchpoint set",
+            substrs = ['The following subcommands are supported:'],
+            patterns = ['expression +--',
+                        'variable +--'])
 
 
 if __name__ == '__main__':

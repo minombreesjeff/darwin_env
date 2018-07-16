@@ -85,7 +85,7 @@ private:
   /// e.g. <v4i32> <0, 1, 0, 1> -> v8i16 <0, 1, 2, 3, 0, 1, 2, 3>
   SDValue ShuffleWithNarrowerEltType(EVT NVT, EVT VT, DebugLoc dl,
                                      SDValue N1, SDValue N2,
-                                     SmallVectorImpl<int> &Mask) const;
+                                     ArrayRef<int> Mask) const;
 
   void LegalizeSetCCCondCode(EVT VT, SDValue &LHS, SDValue &RHS, SDValue &CC,
                              DebugLoc dl);
@@ -177,7 +177,7 @@ public:
 SDValue
 SelectionDAGLegalize::ShuffleWithNarrowerEltType(EVT NVT, EVT VT,  DebugLoc dl,
                                                  SDValue N1, SDValue N2,
-                                             SmallVectorImpl<int> &Mask) const {
+                                                 ArrayRef<int> Mask) const {
   unsigned NumMaskElts = VT.getVectorNumElements();
   unsigned NumDestElts = NVT.getVectorNumElements();
   unsigned NumEltsGrowth = NumDestElts / NumMaskElts;
@@ -893,7 +893,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
     Node->dump( &DAG);
     dbgs() << "\n";
 #endif
-    assert(0 && "Do not know how to legalize this operator!");
+    llvm_unreachable("Do not know how to legalize this operator!");
 
   case ISD::CALLSEQ_START:
   case ISD::CALLSEQ_END:
@@ -910,7 +910,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
       Tmp4 = SDValue(Node, 1);
 
       switch (TLI.getOperationAction(Node->getOpcode(), VT)) {
-      default: assert(0 && "This action is not supported yet!");
+      default: llvm_unreachable("This action is not supported yet!");
       case TargetLowering::Legal:
         // If this is an unaligned load and the target doesn't support it,
         // expand it.
@@ -1079,7 +1079,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
       Tmp2 = Ch;
     } else {
       switch (TLI.getLoadExtAction(ExtType, SrcVT)) {
-      default: assert(0 && "This action is not supported yet!");
+      default: llvm_unreachable("This action is not supported yet!");
       case TargetLowering::Custom:
         isCustom = true;
         // FALLTHROUGH
@@ -1185,7 +1185,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
         Tmp3 = ST->getValue();
         EVT VT = Tmp3.getValueType();
         switch (TLI.getOperationAction(ISD::STORE, VT)) {
-        default: assert(0 && "This action is not supported yet!");
+        default: llvm_unreachable("This action is not supported yet!");
         case TargetLowering::Legal:
           // If this is an unaligned store and the target doesn't support it,
           // expand it.
@@ -1290,7 +1290,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
         ReplaceNode(SDValue(Node, 0), Result);
       } else {
         switch (TLI.getTruncStoreAction(ST->getValue().getValueType(), StVT)) {
-        default: assert(0 && "This action is not supported yet!");
+        default: llvm_unreachable("This action is not supported yet!");
         case TargetLowering::Legal:
           // If this is an unaligned store and the target doesn't support it,
           // expand it.
@@ -1556,7 +1556,7 @@ void SelectionDAGLegalize::LegalizeSetCCCondCode(EVT VT,
   EVT OpVT = LHS.getValueType();
   ISD::CondCode CCCode = cast<CondCodeSDNode>(CC)->get();
   switch (TLI.getCondCodeAction(CCCode, OpVT)) {
-  default: assert(0 && "Unknown condition code action!");
+  default: llvm_unreachable("Unknown condition code action!");
   case TargetLowering::Legal:
     // Nothing to do.
     break;
@@ -1564,7 +1564,7 @@ void SelectionDAGLegalize::LegalizeSetCCCondCode(EVT VT,
     ISD::CondCode CC1 = ISD::SETCC_INVALID, CC2 = ISD::SETCC_INVALID;
     unsigned Opc = 0;
     switch (CCCode) {
-    default: assert(0 && "Don't know how to expand this condition!");
+    default: llvm_unreachable("Don't know how to expand this condition!");
     case ISD::SETOEQ: CC1 = ISD::SETEQ; CC2 = ISD::SETO;  Opc = ISD::AND; break;
     case ISD::SETOGT: CC1 = ISD::SETGT; CC2 = ISD::SETO;  Opc = ISD::AND; break;
     case ISD::SETOGE: CC1 = ISD::SETGE; CC2 = ISD::SETO;  Opc = ISD::AND; break;
@@ -1699,7 +1699,7 @@ SDValue SelectionDAGLegalize::ExpandBUILD_VECTOR(SDNode *Node) {
 
   // If all elements are constants, create a load from the constant pool.
   if (isConstant) {
-    std::vector<Constant*> CV;
+    SmallVector<Constant*, 16> CV;
     for (unsigned i = 0, e = NumElems; i != e; ++i) {
       if (ConstantFPSDNode *V =
           dyn_cast<ConstantFPSDNode>(Node->getOperand(i))) {
@@ -1788,7 +1788,7 @@ SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, SDNode *Node,
   std::pair<SDValue, SDValue> CallInfo =
     TLI.LowerCallTo(InChain, RetTy, isSigned, !isSigned, false, false,
                     0, TLI.getLibcallCallingConv(LC), isTailCall,
-                    /*isReturnValueUsed=*/true,
+                    /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
                     Callee, Args, DAG, Node->getDebugLoc());
 
   if (!CallInfo.second.getNode())
@@ -1821,7 +1821,7 @@ SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, EVT RetVT,
   std::pair<SDValue,SDValue> CallInfo =
   TLI.LowerCallTo(DAG.getEntryNode(), RetTy, isSigned, !isSigned, false,
                   false, 0, TLI.getLibcallCallingConv(LC), false,
-                  /*isReturnValueUsed=*/true,
+                  /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
                   Callee, Args, DAG, dl);
 
   return CallInfo.first;
@@ -1853,7 +1853,7 @@ SelectionDAGLegalize::ExpandChainLibCall(RTLIB::Libcall LC,
   std::pair<SDValue, SDValue> CallInfo =
     TLI.LowerCallTo(InChain, RetTy, isSigned, !isSigned, false, false,
                     0, TLI.getLibcallCallingConv(LC), /*isTailCall=*/false,
-                    /*isReturnValueUsed=*/true,
+                    /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
                     Callee, Args, DAG, Node->getDebugLoc());
 
   return CallInfo;
@@ -1866,7 +1866,7 @@ SDValue SelectionDAGLegalize::ExpandFPLibCall(SDNode* Node,
                                               RTLIB::Libcall Call_PPCF128) {
   RTLIB::Libcall LC;
   switch (Node->getValueType(0).getSimpleVT().SimpleTy) {
-  default: assert(0 && "Unexpected request for libcall!");
+  default: llvm_unreachable("Unexpected request for libcall!");
   case MVT::f32: LC = Call_F32; break;
   case MVT::f64: LC = Call_F64; break;
   case MVT::f80: LC = Call_F80; break;
@@ -1883,7 +1883,7 @@ SDValue SelectionDAGLegalize::ExpandIntLibCall(SDNode* Node, bool isSigned,
                                                RTLIB::Libcall Call_I128) {
   RTLIB::Libcall LC;
   switch (Node->getValueType(0).getSimpleVT().SimpleTy) {
-  default: assert(0 && "Unexpected request for libcall!");
+  default: llvm_unreachable("Unexpected request for libcall!");
   case MVT::i8:   LC = Call_I8; break;
   case MVT::i16:  LC = Call_I16; break;
   case MVT::i32:  LC = Call_I32; break;
@@ -1898,7 +1898,7 @@ static bool isDivRemLibcallAvailable(SDNode *Node, bool isSigned,
                                      const TargetLowering &TLI) {
   RTLIB::Libcall LC;
   switch (Node->getValueType(0).getSimpleVT().SimpleTy) {
-  default: assert(0 && "Unexpected request for libcall!");
+  default: llvm_unreachable("Unexpected request for libcall!");
   case MVT::i8:   LC= isSigned ? RTLIB::SDIVREM_I8  : RTLIB::UDIVREM_I8;  break;
   case MVT::i16:  LC= isSigned ? RTLIB::SDIVREM_I16 : RTLIB::UDIVREM_I16; break;
   case MVT::i32:  LC= isSigned ? RTLIB::SDIVREM_I32 : RTLIB::UDIVREM_I32; break;
@@ -1943,7 +1943,7 @@ SelectionDAGLegalize::ExpandDivRemLibCall(SDNode *Node,
 
   RTLIB::Libcall LC;
   switch (Node->getValueType(0).getSimpleVT().SimpleTy) {
-  default: assert(0 && "Unexpected request for libcall!");
+  default: llvm_unreachable("Unexpected request for libcall!");
   case MVT::i8:   LC= isSigned ? RTLIB::SDIVREM_I8  : RTLIB::UDIVREM_I8;  break;
   case MVT::i16:  LC= isSigned ? RTLIB::SDIVREM_I16 : RTLIB::UDIVREM_I16; break;
   case MVT::i32:  LC= isSigned ? RTLIB::SDIVREM_I32 : RTLIB::UDIVREM_I32; break;
@@ -1985,7 +1985,8 @@ SelectionDAGLegalize::ExpandDivRemLibCall(SDNode *Node,
   std::pair<SDValue, SDValue> CallInfo =
     TLI.LowerCallTo(InChain, RetTy, isSigned, !isSigned, false, false,
                     0, TLI.getLibcallCallingConv(LC), /*isTailCall=*/false,
-                    /*isReturnValueUsed=*/true, Callee, Args, DAG, dl);
+                    /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
+                    Callee, Args, DAG, dl);
 
   // Remainder is loaded back from the stack frame.
   SDValue Rem = DAG.getLoad(RetVT, dl, CallInfo.second, FIPtr,
@@ -2160,7 +2161,7 @@ SDValue SelectionDAGLegalize::ExpandLegalINT_TO_FP(bool isSigned,
   // offset depending on the data type.
   uint64_t FF;
   switch (Op0.getValueType().getSimpleVT().SimpleTy) {
-  default: assert(0 && "Unsupported integer type!");
+  default: llvm_unreachable("Unsupported integer type!");
   case MVT::i8 : FF = 0x43800000ULL; break;  // 2^8  (as a float)
   case MVT::i16: FF = 0x47800000ULL; break;  // 2^16 (as a float)
   case MVT::i32: FF = 0x4F800000ULL; break;  // 2^32 (as a float)
@@ -2282,7 +2283,7 @@ SDValue SelectionDAGLegalize::ExpandBSWAP(SDValue Op, DebugLoc dl) {
   EVT SHVT = TLI.getShiftAmountTy(VT);
   SDValue Tmp1, Tmp2, Tmp3, Tmp4, Tmp5, Tmp6, Tmp7, Tmp8;
   switch (VT.getSimpleVT().SimpleTy) {
-  default: assert(0 && "Unhandled Expand type in BSWAP!");
+  default: llvm_unreachable("Unhandled Expand type in BSWAP!");
   case MVT::i16:
     Tmp2 = DAG.getNode(ISD::SHL, dl, VT, Op, DAG.getConstant(8, SHVT));
     Tmp1 = DAG.getNode(ISD::SRL, dl, VT, Op, DAG.getConstant(8, SHVT));
@@ -2339,7 +2340,7 @@ static APInt SplatByte(unsigned NumBits, uint8_t ByteVal) {
 SDValue SelectionDAGLegalize::ExpandBitCount(unsigned Opc, SDValue Op,
                                              DebugLoc dl) {
   switch (Opc) {
-  default: assert(0 && "Cannot expand this yet!");
+  default: llvm_unreachable("Cannot expand this yet!");
   case ISD::CTPOP: {
     EVT VT = Op.getValueType();
     EVT ShVT = TLI.getShiftAmountTy(VT);
@@ -2438,7 +2439,6 @@ std::pair <SDValue, SDValue> SelectionDAGLegalize::ExpandAtomic(SDNode *Node) {
   switch (Opc) {
   default:
     llvm_unreachable("Unhandled atomic intrinsic Expand!");
-    break;
   case ISD::ATOMIC_SWAP:
     switch (VT.SimpleTy) {
     default: llvm_unreachable("Unexpected value type for atomic!");
@@ -2564,7 +2564,7 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
       TLI.LowerCallTo(Node->getOperand(0), Type::getVoidTy(*DAG.getContext()),
                       false, false, false, false, 0, CallingConv::C,
                       /*isTailCall=*/false,
-                      /*isReturnValueUsed=*/true,
+                      /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
                       DAG.getExternalSymbol("__sync_synchronize",
                                             TLI.getPointerTy()),
                       Args, DAG, dl);
@@ -2641,7 +2641,7 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
       TLI.LowerCallTo(Node->getOperand(0), Type::getVoidTy(*DAG.getContext()),
                       false, false, false, false, 0, CallingConv::C,
                       /*isTailCall=*/false,
-                      /*isReturnValueUsed=*/true,
+                      /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
                       DAG.getExternalSymbol("abort", TLI.getPointerTy()),
                       Args, DAG, dl);
     Results.push_back(CallResult.second);
@@ -2795,15 +2795,57 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
                                               Node->getOperand(2), dl));
     break;
   case ISD::VECTOR_SHUFFLE: {
-    SmallVector<int, 8> Mask;
-    cast<ShuffleVectorSDNode>(Node)->getMask(Mask);
+    SmallVector<int, 32> NewMask;
+    ArrayRef<int> Mask = cast<ShuffleVectorSDNode>(Node)->getMask();
 
     EVT VT = Node->getValueType(0);
     EVT EltVT = VT.getVectorElementType();
-    if (!TLI.isTypeLegal(EltVT))
-      EltVT = TLI.getTypeToTransformTo(*DAG.getContext(), EltVT);
+    SDValue Op0 = Node->getOperand(0);
+    SDValue Op1 = Node->getOperand(1);
+    if (!TLI.isTypeLegal(EltVT)) {
+
+      EVT NewEltVT = TLI.getTypeToTransformTo(*DAG.getContext(), EltVT);
+
+      // BUILD_VECTOR operands are allowed to be wider than the element type.
+      // But if NewEltVT is smaller that EltVT the BUILD_VECTOR does not accept it
+      if (NewEltVT.bitsLT(EltVT)) {
+
+        // Convert shuffle node.
+        // If original node was v4i64 and the new EltVT is i32,
+        // cast operands to v8i32 and re-build the mask.
+
+        // Calculate new VT, the size of the new VT should be equal to original.
+        EVT NewVT = EVT::getVectorVT(*DAG.getContext(), NewEltVT, 
+                                      VT.getSizeInBits()/NewEltVT.getSizeInBits());
+        assert(NewVT.bitsEq(VT));
+
+        // cast operands to new VT
+        Op0 = DAG.getNode(ISD::BITCAST, dl, NewVT, Op0);
+        Op1 = DAG.getNode(ISD::BITCAST, dl, NewVT, Op1);
+
+        // Convert the shuffle mask
+        unsigned int factor = NewVT.getVectorNumElements()/VT.getVectorNumElements();
+
+        // EltVT gets smaller
+        assert(factor > 0);
+
+        for (unsigned i = 0; i < VT.getVectorNumElements(); ++i) {
+          if (Mask[i] < 0) {
+            for (unsigned fi = 0; fi < factor; ++fi)
+              NewMask.push_back(Mask[i]);
+          }
+          else {
+            for (unsigned fi = 0; fi < factor; ++fi)
+              NewMask.push_back(Mask[i]*factor+fi);
+          }
+        }
+        Mask = NewMask;
+        VT = NewVT;
+      }
+      EltVT = NewEltVT;
+    }
     unsigned NumElems = VT.getVectorNumElements();
-    SmallVector<SDValue, 8> Ops;
+    SmallVector<SDValue, 16> Ops;
     for (unsigned i = 0; i != NumElems; ++i) {
       if (Mask[i] < 0) {
         Ops.push_back(DAG.getUNDEF(EltVT));
@@ -2812,14 +2854,17 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
       unsigned Idx = Mask[i];
       if (Idx < NumElems)
         Ops.push_back(DAG.getNode(ISD::EXTRACT_VECTOR_ELT, dl, EltVT,
-                                  Node->getOperand(0),
+                                  Op0,
                                   DAG.getIntPtrConstant(Idx)));
       else
         Ops.push_back(DAG.getNode(ISD::EXTRACT_VECTOR_ELT, dl, EltVT,
-                                  Node->getOperand(1),
+                                  Op1,
                                   DAG.getIntPtrConstant(Idx - NumElems)));
     }
+
     Tmp1 = DAG.getNode(ISD::BUILD_VECTOR, dl, VT, &Ops[0], Ops.size());
+    // We may have changed the BUILD_VECTOR type. Cast it back to the Node type.
+    Tmp1 = DAG.getNode(ISD::BITCAST, dl, Node->getValueType(0), Tmp1);
     Results.push_back(Tmp1);
     break;
   }
@@ -2980,11 +3025,21 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     break;
   }
   case ISD::EXCEPTIONADDR: {
-    unsigned Reg = TLI.getExceptionAddressRegister();
+    unsigned Reg = TLI.getExceptionPointerRegister();
     assert(Reg && "Can't expand to unknown register!");
     Results.push_back(DAG.getCopyFromReg(Node->getOperand(0), dl, Reg,
                                          Node->getValueType(0)));
     Results.push_back(Results[0].getValue(1));
+    break;
+  }
+  case ISD::FSUB: {
+    EVT VT = Node->getValueType(0);
+    assert(TLI.isOperationLegalOrCustom(ISD::FADD, VT) &&
+           TLI.isOperationLegalOrCustom(ISD::FNEG, VT) &&
+           "Don't know how to expand this FP subtraction!");
+    Tmp1 = DAG.getNode(ISD::FNEG, dl, VT, Node->getOperand(1));
+    Tmp1 = DAG.getNode(ISD::FADD, dl, VT, Node->getOperand(0), Tmp1);
+    Results.push_back(Tmp1);
     break;
   }
   case ISD::SUB: {
@@ -3520,8 +3575,7 @@ void SelectionDAGLegalize::PromoteNode(SDNode *Node) {
     break;
   }
   case ISD::VECTOR_SHUFFLE: {
-    SmallVector<int, 8> Mask;
-    cast<ShuffleVectorSDNode>(Node)->getMask(Mask);
+    ArrayRef<int> Mask = cast<ShuffleVectorSDNode>(Node)->getMask();
 
     // Cast the two input vectors.
     Tmp1 = DAG.getNode(ISD::BITCAST, dl, NVT, Node->getOperand(0));
@@ -3544,6 +3598,24 @@ void SelectionDAGLegalize::PromoteNode(SDNode *Node) {
     Tmp2 = DAG.getNode(ExtOp, dl, NVT, Node->getOperand(1));
     Results.push_back(DAG.getNode(ISD::SETCC, dl, Node->getValueType(0),
                                   Tmp1, Tmp2, Node->getOperand(2)));
+    break;
+  }
+  case ISD::FPOW: {
+    Tmp1 = DAG.getNode(ISD::FP_EXTEND, dl, NVT, Node->getOperand(0));
+    Tmp2 = DAG.getNode(ISD::FP_EXTEND, dl, NVT, Node->getOperand(1));
+    Tmp3 = DAG.getNode(ISD::FPOW, dl, NVT, Tmp1, Tmp2);
+    Results.push_back(DAG.getNode(ISD::FP_ROUND, dl, OVT,
+                                  Tmp3, DAG.getIntPtrConstant(0)));
+    break;
+  }
+  case ISD::FLOG2:
+  case ISD::FEXP2:
+  case ISD::FLOG:
+  case ISD::FEXP: {
+    Tmp1 = DAG.getNode(ISD::FP_EXTEND, dl, NVT, Node->getOperand(0));
+    Tmp2 = DAG.getNode(Node->getOpcode(), dl, NVT, Tmp1);
+    Results.push_back(DAG.getNode(ISD::FP_ROUND, dl, OVT,
+                                  Tmp2, DAG.getIntPtrConstant(0)));
     break;
   }
   }

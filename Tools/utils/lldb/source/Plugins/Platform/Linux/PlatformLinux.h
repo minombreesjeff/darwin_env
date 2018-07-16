@@ -37,7 +37,7 @@ namespace lldb_private {
         // lldb_private::PluginInterface functions
         //------------------------------------------------------------
         static Platform *
-        CreateInstance ();
+        CreateInstance (bool force, const lldb_private::ArchSpec *arch);
 
         static const char *
         GetPluginNameStatic();
@@ -72,7 +72,8 @@ namespace lldb_private {
         virtual Error
         ResolveExecutable (const FileSpec &exe_file,
                            const ArchSpec &arch,
-                           lldb::ModuleSP &module_sp);
+                           lldb::ModuleSP &module_sp,
+                           const FileSpecList *module_search_paths_ptr);
 
         virtual const char *
         GetDescription ()

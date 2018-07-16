@@ -30,10 +30,6 @@ namespace llvm {
     };
   }
 
-  /// StrongPHIElim - This flag enables more aggressive PHI elimination
-  /// wth earlier copy coalescing.
-  extern bool StrongPHIElim;
-
   class TargetOptions {
   public:
     TargetOptions()
@@ -43,8 +39,9 @@ namespace llvm {
           NoNaNsFPMath(false), HonorSignDependentRoundingFPMathOption(false),
           UseSoftFloat(false), NoZerosInBSS(false), JITExceptionHandling(false),
           JITEmitDebugInfo(false), JITEmitDebugInfoToDisk(false),
-          GuaranteedTailCallOpt(false), StackAlignmentOverride(0),
-          RealignStack(true), DisableJumpTables(false), EnableFastISel(false),
+          GuaranteedTailCallOpt(false), DisableTailCalls(false),
+          StackAlignmentOverride(0), RealignStack(true),
+          DisableJumpTables(false), EnableFastISel(false),
           EnableSegmentedStacks(false), TrapFuncName(""),
           FloatABIType(FloatABI::Default)
     {}
@@ -114,7 +111,7 @@ namespace llvm {
     /// assume that the rounding mode may dynamically change.
     unsigned HonorSignDependentRoundingFPMathOption : 1;
     bool HonorSignDependentRoundingFPMath() const;
-  
+
     /// UseSoftFloat - This flag is enabled when the -soft-float flag is
     /// specified on the command line.  When this flag is on, the code generator
     /// will generate libcalls to the software floating point library instead of
@@ -147,6 +144,10 @@ namespace llvm {
     /// as their parent function, etc.), using an alternate ABI if necessary.
     unsigned GuaranteedTailCallOpt : 1;
 
+    /// DisableTailCalls - This flag controls whether we will use tail calls.
+    /// Disabling them may be useful to maintain a correct call stack.
+    unsigned DisableTailCalls : 1;
+
     /// StackAlignmentOverride - Override default stack alignment for target.
     unsigned StackAlignmentOverride;
 
@@ -154,7 +155,7 @@ namespace llvm {
     /// automatically realigned, if needed.
     unsigned RealignStack : 1;
 
-    /// DisableJumpTables - This flag indicates jump tables should not be 
+    /// DisableJumpTables - This flag indicates jump tables should not be
     /// generated.
     unsigned DisableJumpTables : 1;
 
@@ -162,7 +163,7 @@ namespace llvm {
     /// which trades away generated code quality in favor of reducing
     /// compile time.
     unsigned EnableFastISel : 1;
-  
+
     unsigned EnableSegmentedStacks : 1;
 
     /// getTrapFunctionName - If this returns a non-empty string, this means

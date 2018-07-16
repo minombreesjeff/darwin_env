@@ -62,7 +62,7 @@ bool Parser::isCXXDeclarationStatement() {
     return true;
     // simple-declaration
   default:
-    return isCXXSimpleDeclaration();
+    return isCXXSimpleDeclaration(/*AllowForRangeDecl=*/false);
   }
 }
 
@@ -75,7 +75,11 @@ bool Parser::isCXXDeclarationStatement() {
 /// simple-declaration:
 ///   decl-specifier-seq init-declarator-list[opt] ';'
 ///
-bool Parser::isCXXSimpleDeclaration() {
+/// (if AllowForRangeDecl specified)
+/// for ( for-range-declaration : for-range-initializer ) statement
+/// for-range-declaration: 
+///    attribute-specifier-seqopt type-specifier-seq declarator
+bool Parser::isCXXSimpleDeclaration(bool AllowForRangeDecl) {
   // C++ 6.8p1:
   // There is an ambiguity in the grammar involving expression-statements and
   // declarations: An expression-statement with a function-style explicit type
@@ -112,7 +116,7 @@ bool Parser::isCXXSimpleDeclaration() {
   // We need tentative parsing...
 
   TentativeParsingAction PA(*this);
-  TPR = TryParseSimpleDeclaration();
+  TPR = TryParseSimpleDeclaration(AllowForRangeDecl);
   PA.Revert();
 
   // In case of an error, let the declaration parsing code handle it.
@@ -130,7 +134,12 @@ bool Parser::isCXXSimpleDeclaration() {
 /// simple-declaration:
 ///   decl-specifier-seq init-declarator-list[opt] ';'
 ///
-Parser::TPResult Parser::TryParseSimpleDeclaration() {
+/// (if AllowForRangeDecl specified)
+/// for ( for-range-declaration : for-range-initializer ) statement
+/// for-range-declaration: 
+///    attribute-specifier-seqopt type-specifier-seq declarator
+///
+Parser::TPResult Parser::TryParseSimpleDeclaration(bool AllowForRangeDecl) {
   // We know that we have a simple-type-specifier/typename-specifier followed
   // by a '('.
   assert(isCXXDeclarationSpecifier() == TPResult::Ambiguous());
@@ -150,7 +159,7 @@ Parser::TPResult Parser::TryParseSimpleDeclaration() {
   if (TPR != TPResult::Ambiguous())
     return TPR;
 
-  if (Tok.isNot(tok::semi))
+  if (Tok.isNot(tok::semi) && (!AllowForRangeDecl || Tok.isNot(tok::colon)))
     return TPResult::False();
 
   return TPResult::Ambiguous();
@@ -224,6 +233,8 @@ Parser::TPResult Parser::TryParseInitDeclaratorList() {
 ///       condition:
 ///         expression
 ///         type-specifier-seq declarator '=' assignment-expression
+/// [C++11] type-specifier-seq declarator '=' initializer-clause
+/// [C++11] type-specifier-seq declarator braced-init-list
 /// [GNU]   type-specifier-seq declarator simple-asm-expr[opt] attributes[opt]
 ///             '=' assignment-expression
 ///
@@ -264,6 +275,8 @@ bool Parser::isCXXConditionDeclaration() {
     // [GNU] simple-asm-expr[opt] attributes[opt]
     if (Tok.is(tok::equal)  ||
         Tok.is(tok::kw_asm) || Tok.is(tok::kw___attribute))
+      TPR = TPResult::True();
+    else if (getLang().CPlusPlus0x && Tok.is(tok::l_brace))
       TPR = TPResult::True();
     else
       TPR = TPResult::False();
@@ -676,6 +689,8 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
   case tok::kw___is_pod:
   case tok::kw___is_polymorphic:
   case tok::kw___is_trivial:
+  case tok::kw___is_trivially_assignable:
+  case tok::kw___is_trivially_constructible:
   case tok::kw___is_trivially_copyable:
   case tok::kw___is_union:
   case tok::kw___uuidof:
@@ -825,7 +840,8 @@ Parser::isExpressionOrTypeSpecifierSimple(tok::TokenKind Kind) {
 ///           'volatile'
 /// [GNU]     restrict
 ///
-Parser::TPResult Parser::isCXXDeclarationSpecifier() {
+Parser::TPResult
+Parser::isCXXDeclarationSpecifier(Parser::TPResult BracedCastResult) {
   switch (Tok.getKind()) {
   case tok::identifier:   // foo::bar
     // Check for need to substitute AltiVec __vector keyword
@@ -840,7 +856,7 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
       return TPResult::Error();
     if (Tok.is(tok::identifier))
       return TPResult::False();
-    return isCXXDeclarationSpecifier();
+    return isCXXDeclarationSpecifier(BracedCastResult);
 
   case tok::coloncolon: {    // ::foo::bar
     const Token &Next = NextToken();
@@ -854,8 +870,8 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
     // recurse to handle whatever we get.
     if (TryAnnotateTypeOrScopeToken())
       return TPResult::Error();
-    return isCXXDeclarationSpecifier();
-      
+    return isCXXDeclarationSpecifier(BracedCastResult);
+
     // decl-specifier:
     //   storage-class-specifier
     //   type-specifier
@@ -941,8 +957,31 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
     // We've already annotated a scope; try to annotate a type.
     if (TryAnnotateTypeOrScopeToken())
       return TPResult::Error();
-    if (!Tok.is(tok::annot_typename))
+    if (!Tok.is(tok::annot_typename)) {
+      // If the next token is an identifier or a type qualifier, then this
+      // can't possibly be a valid expression either.
+      if (Tok.is(tok::annot_cxxscope) && NextToken().is(tok::identifier)) {
+        CXXScopeSpec SS;
+        Actions.RestoreNestedNameSpecifierAnnotation(Tok.getAnnotationValue(),
+                                                     Tok.getAnnotationRange(),
+                                                     SS);
+        if (SS.getScopeRep() && SS.getScopeRep()->isDependent()) {
+          TentativeParsingAction PA(*this);
+          ConsumeToken();
+          ConsumeToken();
+          bool isIdentifier = Tok.is(tok::identifier);
+          TPResult TPR = TPResult::False();
+          if (!isIdentifier)
+            TPR = isCXXDeclarationSpecifier(BracedCastResult);
+          PA.Revert();
+
+          if (isIdentifier ||
+              TPR == TPResult::True() || TPR == TPResult::Error())
+            return TPResult::Error();
+        }
+      }
       return TPResult::False();
+    }
     // If that succeeded, fallthrough into the generic simple-type-id case.
 
     // The ambiguity resides in a simple-type-specifier/typename-specifier
@@ -973,6 +1012,7 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
       
       TPResult TPR = TryParseProtocolQualifiers();
       bool isFollowedByParen = Tok.is(tok::l_paren);
+      bool isFollowedByBrace = Tok.is(tok::l_brace);
       
       PA.Revert();
       
@@ -981,6 +1021,9 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
       
       if (isFollowedByParen)
         return TPResult::Ambiguous();
+
+      if (getLang().CPlusPlus0x && isFollowedByBrace)
+        return BracedCastResult;
       
       return TPResult::True();
     }
@@ -1000,8 +1043,18 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
   case tok::kw_float:
   case tok::kw_double:
   case tok::kw_void:
+  case tok::annot_decltype:
     if (NextToken().is(tok::l_paren))
       return TPResult::Ambiguous();
+
+    // This is a function-style cast in all cases we disambiguate other than
+    // one:
+    //   struct S {
+    //     enum E : int { a = 4 }; // enum
+    //     enum E : int { 4 };     // bit-field
+    //   };
+    if (getLang().CPlusPlus0x && NextToken().is(tok::l_brace))
+      return BracedCastResult;
 
     if (isStartOfObjCClassMessageMissingOpenBracket())
       return TPResult::False();
@@ -1017,6 +1070,7 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
 
     TPResult TPR = TryParseTypeofSpecifier();
     bool isFollowedByParen = Tok.is(tok::l_paren);
+    bool isFollowedByBrace = Tok.is(tok::l_brace);
 
     PA.Revert();
 
@@ -1026,18 +1080,17 @@ Parser::TPResult Parser::isCXXDeclarationSpecifier() {
     if (isFollowedByParen)
       return TPResult::Ambiguous();
 
+    if (getLang().CPlusPlus0x && isFollowedByBrace)
+      return BracedCastResult;
+
     return TPResult::True();
   }
-
-  // C++0x decltype support.
-  case tok::annot_decltype:
-    return TPResult::True();
 
   // C++0x type traits support
   case tok::kw___underlying_type:
     return TPResult::True();
 
-  // C1x _Atomic
+  // C11 _Atomic
   case tok::kw__Atomic:
     return TPResult::True();
 
@@ -1190,6 +1243,8 @@ Parser::TPResult Parser::TryParseParameterDeclarationClause() {
     MaybeParseMicrosoftAttributes(attrs);
 
     // decl-specifier-seq
+    // A parameter-declaration's initializer must be preceded by an '=', so
+    // decl-specifier-seq '{' is not a parameter in C++11.
     TPResult TPR = TryParseDeclarationSpecifier();
     if (TPR != TPResult::Ambiguous())
       return TPR;

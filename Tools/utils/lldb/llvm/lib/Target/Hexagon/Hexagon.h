@@ -16,6 +16,7 @@
 #define TARGET_Hexagon_H
 
 #include <cassert>
+#include "MCTargetDesc/HexagonMCTargetDesc.h"
 #include "llvm/Target/TargetLowering.h"
 
 namespace llvm {
@@ -34,25 +35,10 @@ namespace llvm {
   FunctionPass* createHexagonExpandPredSpillCode(HexagonTargetMachine &TM);
 
   FunctionPass *createHexagonHardwareLoops();
-  FunctionPass *createHexagonOptimizeSZExtends();
+  FunctionPass *createHexagonPeephole();
   FunctionPass *createHexagonFixupHwLoops();
 
-  extern Target TheHexagonTarget;
-
 } // end namespace llvm;
-
-// Defines symbolic names for Hexagon instructions and registers.
-// This defines a mapping from register name to register number.
-//
-
-#define GET_REGINFO_ENUM
-#include "HexagonGenRegisterInfo.inc"
-
-#define GET_INSTRINFO_ENUM
-#include "HexagonGenInstrInfo.inc"
-
-#define GET_SUBTARGETINFO_ENUM
-#include "HexagonGenSubtargetInfo.inc"
 
 #define Hexagon_POINTER_SIZE 4
 

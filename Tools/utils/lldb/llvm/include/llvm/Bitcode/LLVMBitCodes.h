@@ -94,7 +94,7 @@ namespace bitc {
     TYPE_CODE_FUNCTION_OLD = 9, // FUNCTION: [vararg, attrid, retty,
                                 //            paramty x N]
     
-    // Code #10 is unused.
+    TYPE_CODE_HALF     =  10,   // HALF
     
     TYPE_CODE_ARRAY    = 11,    // ARRAY: [numelts, eltty]
     TYPE_CODE_VECTOR   = 12,    // VECTOR: [numelts, eltty]
@@ -164,7 +164,8 @@ namespace bitc {
     CST_CODE_INLINEASM     = 18,  // INLINEASM:     [sideeffect,asmstr,conststr]
     CST_CODE_CE_SHUFVEC_EX = 19,  // SHUFVEC_EX:    [opty, opval, opval, opval]
     CST_CODE_CE_INBOUNDS_GEP = 20,// INBOUNDS_GEP:  [n x operands]
-    CST_CODE_BLOCKADDRESS  = 21   // CST_CODE_BLOCKADDRESS [fnty, fnval, bb#]
+    CST_CODE_BLOCKADDRESS  = 21,  // CST_CODE_BLOCKADDRESS [fnty, fnval, bb#]
+    CST_CODE_DATA          = 22   // DATA:          [n x elements]
   };
 
   /// CastOpcodes - These are values used in the bitcode files to encode which
@@ -271,7 +272,7 @@ namespace bitc {
     FUNC_CODE_INST_BR          = 11, // BR:         [bb#, bb#, cond] or [bb#]
     FUNC_CODE_INST_SWITCH      = 12, // SWITCH:     [opty, op0, op1, ...]
     FUNC_CODE_INST_INVOKE      = 13, // INVOKE:     [attr, fnty, op0,op1, ...]
-    FUNC_CODE_INST_UNWIND      = 14, // UNWIND
+    // 14 is unused.
     FUNC_CODE_INST_UNREACHABLE = 15, // UNREACHABLE
 
     FUNC_CODE_INST_PHI         = 16, // PHI:        [ty, val0,bb0, ...]

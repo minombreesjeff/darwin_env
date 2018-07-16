@@ -25,10 +25,8 @@ public:
 
     ~SBCompileUnit ();
 
-#ifndef SWIG
     const lldb::SBCompileUnit &
     operator = (const lldb::SBCompileUnit &rhs);
-#endif
 
     bool
     IsValid () const;
@@ -53,15 +51,20 @@ public:
                         lldb::SBFileSpec *inline_file_spec,
                         bool exact) const;
 
-#ifndef SWIG
+    SBFileSpec
+    GetSupportFileAtIndex (uint32_t idx) const;
+
+    uint32_t
+    GetNumSupportFiles () const;
+
+    uint32_t
+    FindSupportFileIndex (uint32_t start_idx, const SBFileSpec &sb_file, bool full);
 
     bool
     operator == (const lldb::SBCompileUnit &rhs) const;
 
     bool
     operator != (const lldb::SBCompileUnit &rhs) const;
-
-#endif
 
     bool
     GetDescription (lldb::SBStream &description);
@@ -70,10 +73,9 @@ private:
     friend class SBAddress;
     friend class SBFrame;
     friend class SBSymbolContext;
+    friend class SBModule;
 
     SBCompileUnit (lldb_private::CompileUnit *lldb_object_ptr);
-
-#ifndef SWIG
 
     const lldb_private::CompileUnit *
     operator->() const;
@@ -86,8 +88,6 @@ private:
     
     void
     reset (lldb_private::CompileUnit *lldb_object_ptr);
-
-#endif
 
     lldb_private::CompileUnit *m_opaque_ptr;
 };

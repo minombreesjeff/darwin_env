@@ -98,7 +98,8 @@ public:
             m_named_decl (NULL),
             m_llvm_value (NULL),
             m_lldb_value (NULL),
-            m_lldb_var   ()
+            m_lldb_var   (),
+            m_lldb_sym   (NULL)
         {
         }
 
@@ -216,7 +217,7 @@ public:
     void
     TransferAddress (bool force = false);
 
-    typedef lldb::SharedPtr<ValueObjectConstResult>::Type ValueObjectConstResultSP;
+    typedef STD_SHARED_PTR(ValueObjectConstResult) ValueObjectConstResultSP;
 
     //----------------------------------------------------------------------
     /// Members
@@ -234,10 +235,13 @@ public:
         EVNeedsFreezeDry        = 1 << 4,   ///< Copy from m_live_sp to m_frozen_sp during dematerialization
         EVKeepInTarget          = 1 << 5,   ///< Keep the allocation after the expression is complete rather than freeze drying its contents and freeing it
         EVTypeIsReference       = 1 << 6,   ///< The original type of this variable is a reference, so materialize the value rather than the location
-        EVUnknownType           = 1 << 7    ///< This is a symbol of unknown type, and the type must be resolved after parsing is complete
+        EVUnknownType           = 1 << 7,   ///< This is a symbol of unknown type, and the type must be resolved after parsing is complete
+        EVBareRegister          = 1 << 8    ///< This variable is a direct reference to $pc or some other entity.
     };
     
-    uint16_t m_flags; // takes elements of Flags
+    typedef uint16_t FlagType;
+    
+    FlagType m_flags; // takes elements of Flags
     
     lldb::ValueObjectSP m_frozen_sp;
     lldb::ValueObjectSP m_live_sp;
@@ -375,8 +379,6 @@ public:
         m_variables.push_back(var_sp);
         return var_sp;
     }
-    
-    
 
     lldb::ClangExpressionVariableSP
     CreateVariable (ExecutionContextScope *exe_scope,
@@ -391,6 +393,21 @@ public:
         var_sp->SetClangAST (user_type.GetASTContext());
         m_variables.push_back(var_sp);
         return var_sp;
+    }
+    
+    void
+    RemoveVariable (lldb::ClangExpressionVariableSP var_sp)
+    {
+        for (std::vector<lldb::ClangExpressionVariableSP>::iterator vi = m_variables.begin(), ve = m_variables.end();
+             vi != ve;
+             ++vi)
+        {
+            if (vi->get() == var_sp.get())
+            {
+                m_variables.erase(vi);
+                return;
+            }
+        }
     }
     
     void

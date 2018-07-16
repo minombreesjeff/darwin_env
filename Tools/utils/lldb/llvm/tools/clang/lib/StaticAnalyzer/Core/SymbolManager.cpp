@@ -21,6 +21,8 @@
 using namespace clang;
 using namespace ento;
 
+void SymExpr::anchor() { }
+
 void SymExpr::dump() const {
   dumpToStream(llvm::errs());
 }
@@ -98,6 +100,8 @@ void SymbolMetadata::dumpToStream(raw_ostream &os) const {
   os << "meta_$" << getSymbolID() << '{'
      << getRegion() << ',' << T.getAsString() << '}';
 }
+
+void SymbolData::anchor() { }
 
 void SymbolRegionValue::dumpToStream(raw_ostream &os) const {
   os << "reg_$" << getSymbolID() << "<" << R << ">";
@@ -177,16 +181,17 @@ SymbolManager::getRegionValueSymbol(const TypedValueRegion* R) {
 }
 
 const SymbolConjured*
-SymbolManager::getConjuredSymbol(const Stmt *E, QualType T, unsigned Count,
+SymbolManager::getConjuredSymbol(const Stmt *E, const LocationContext *LCtx,
+                                 QualType T, unsigned Count,
                                  const void *SymbolTag) {
 
   llvm::FoldingSetNodeID profile;
-  SymbolConjured::Profile(profile, E, T, Count, SymbolTag);
+  SymbolConjured::Profile(profile, E, T, Count, LCtx, SymbolTag);
   void *InsertPos;
   SymExpr *SD = DataSet.FindNodeOrInsertPos(profile, InsertPos);
   if (!SD) {
     SD = (SymExpr*) BPAlloc.Allocate<SymbolConjured>();
-    new (SD) SymbolConjured(SymbolCounter, E, T, Count, SymbolTag);
+    new (SD) SymbolConjured(SymbolCounter, E, LCtx, T, Count, SymbolTag);
     DataSet.InsertNode(SD, InsertPos);
     ++SymbolCounter;
   }
@@ -487,7 +492,16 @@ bool SymbolReaper::isLive(SymbolRef sym) {
   return isa<SymbolRegionValue>(sym);
 }
 
-bool SymbolReaper::isLive(const Stmt *ExprVal) const {
+bool
+SymbolReaper::isLive(const Stmt *ExprVal, const LocationContext *ELCtx) const {
+  if (LCtx != ELCtx) {
+    // If the reaper's location context is a parent of the expression's
+    // location context, then the expression value is now "out of scope".
+    if (LCtx->isParentOf(ELCtx))
+      return false;
+    return true;
+  }
+
   return LCtx->getAnalysis<RelaxedLiveVariables>()->isLive(Loc, ExprVal);
 }
 

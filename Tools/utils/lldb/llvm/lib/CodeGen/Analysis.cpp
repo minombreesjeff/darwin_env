@@ -167,10 +167,8 @@ ISD::CondCode llvm::getFCmpCondCode(FCmpInst::Predicate Pred) {
   case FCmpInst::FCMP_ULE:   return ISD::SETULE;
   case FCmpInst::FCMP_UNE:   return ISD::SETUNE;
   case FCmpInst::FCMP_TRUE:  return ISD::SETTRUE;
-  default: break;
+  default: llvm_unreachable("Invalid FCmp predicate opcode!");
   }
-  llvm_unreachable("Invalid FCmp predicate opcode!");
-  return ISD::SETFALSE;
 }
 
 ISD::CondCode llvm::getFCmpCodeWithoutNaN(ISD::CondCode CC) {
@@ -181,9 +179,8 @@ ISD::CondCode llvm::getFCmpCodeWithoutNaN(ISD::CondCode CC) {
     case ISD::SETOLE: case ISD::SETULE: return ISD::SETLE;
     case ISD::SETOGT: case ISD::SETUGT: return ISD::SETGT;
     case ISD::SETOGE: case ISD::SETUGE: return ISD::SETGE;
-    default: break;
+    default: return CC;
   }
-  return CC;
 }
 
 /// getICmpCondCode - Return the ISD condition code corresponding to
@@ -203,7 +200,6 @@ ISD::CondCode llvm::getICmpCondCode(ICmpInst::Predicate Pred) {
   case ICmpInst::ICMP_UGT: return ISD::SETUGT;
   default:
     llvm_unreachable("Invalid ICmp predicate opcode!");
-    return ISD::SETNE;
   }
 }
 
@@ -259,7 +255,7 @@ bool llvm::isInTailCallPosition(ImmutableCallSite CS, Attributes CalleeRetAttr,
   // Conservatively require the attributes of the call to match those of
   // the return. Ignore noalias because it doesn't affect the call sequence.
   const Function *F = ExitBB->getParent();
-  unsigned CallerRetAttr = F->getAttributes().getRetAttributes();
+  Attributes CallerRetAttr = F->getAttributes().getRetAttributes();
   if ((CalleeRetAttr ^ CallerRetAttr) & ~Attribute::NoAlias)
     return false;
 
@@ -299,7 +295,7 @@ bool llvm::isInTailCallPosition(SelectionDAG &DAG, SDNode *Node,
 
   // Conservatively require the attributes of the call to match those of
   // the return. Ignore noalias because it doesn't affect the call sequence.
-  unsigned CallerRetAttr = F->getAttributes().getRetAttributes();
+  Attributes CallerRetAttr = F->getAttributes().getRetAttributes();
   if (CallerRetAttr & ~Attribute::NoAlias)
     return false;
 

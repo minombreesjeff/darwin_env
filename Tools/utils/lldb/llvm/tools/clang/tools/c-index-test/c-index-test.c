@@ -37,8 +37,6 @@ static unsigned getDefaultParsingOptions() {
     options |= clang_defaultEditingTranslationUnitOptions();
   if (getenv("CINDEXTEST_COMPLETION_CACHING"))
     options |= CXTranslationUnit_CacheCompletionResults;
-  if (getenv("CINDEXTEST_NESTED_MACROS"))
-    options |= CXTranslationUnit_NestedMacroExpansions;
   if (getenv("CINDEXTEST_COMPLETION_NO_CACHING"))
     options &= ~CXTranslationUnit_CacheCompletionResults;
   
@@ -418,13 +416,21 @@ void PrintDiagnostic(CXDiagnostic Diagnostic) {
   }
 }
 
-void PrintDiagnostics(CXTranslationUnit TU) {
-  int i, n = clang_getNumDiagnostics(TU);
-  for (i = 0; i != n; ++i) {
-    CXDiagnostic Diag = clang_getDiagnostic(TU, i);
+void PrintDiagnosticSet(CXDiagnosticSet Set) {
+  int i = 0, n = clang_getNumDiagnosticsInSet(Set);
+  for ( ; i != n ; ++i) {
+    CXDiagnostic Diag = clang_getDiagnosticInSet(Set, i);
+    CXDiagnosticSet ChildDiags = clang_getChildDiagnostics(Diag);
     PrintDiagnostic(Diag);
-    clang_disposeDiagnostic(Diag);
-  }
+    if (ChildDiags)
+      PrintDiagnosticSet(ChildDiags);
+  }  
+}
+
+void PrintDiagnostics(CXTranslationUnit TU) {
+  CXDiagnosticSet TUSet = clang_getDiagnosticSetFromTU(TU);
+  PrintDiagnosticSet(TUSet);
+  clang_disposeDiagnosticSet(TUSet);
 }
 
 void PrintMemoryUsage(CXTranslationUnit TU) {
@@ -1803,6 +1809,7 @@ static void index_indexDeclaration(CXClientData client_data,
   const CXIdxObjCCategoryDeclInfo *CatInfo;
   const CXIdxObjCInterfaceDeclInfo *InterInfo;
   const CXIdxObjCProtocolRefListInfo *ProtoInfo;
+  const CXIdxObjCPropertyDeclInfo *PropInfo;
   const CXIdxCXXClassDeclInfo *CXXClassInfo;
   unsigned i;
   index_data = (IndexData *)client_data;
@@ -1864,6 +1871,17 @@ static void index_indexDeclaration(CXClientData client_data,
     printProtocolList(ProtoInfo, client_data);
   }
 
+  if ((PropInfo = clang_index_getObjCPropertyDeclInfo(info))) {
+    if (PropInfo->getter) {
+      printEntityInfo("     <getter>", client_data, PropInfo->getter);
+      printf("\n");
+    }
+    if (PropInfo->setter) {
+      printEntityInfo("     <setter>", client_data, PropInfo->setter);
+      printf("\n");
+    }
+  }
+
   if ((CXXClassInfo = clang_index_getCXXClassDeclInfo(info))) {
     for (i = 0; i != CXXClassInfo->numBases; ++i) {
       printBaseClassInfo(client_data, CXXClassInfo->bases[i]);
@@ -1911,6 +1929,17 @@ static IndexerCallbacks IndexCB = {
   index_indexEntityReference
 };
 
+static unsigned getIndexOptions(void) {
+  unsigned index_opts;
+  index_opts = 0;
+  if (getenv("CINDEXTEST_SUPPRESSREFS"))
+    index_opts |= CXIndexOpt_SuppressRedundantRefs;
+  if (getenv("CINDEXTEST_INDEXLOCALSYMBOLS"))
+    index_opts |= CXIndexOpt_IndexFunctionLocalSymbols;
+
+  return index_opts;
+}
+
 static int index_file(int argc, const char **argv) {
   const char *check_prefix;
   CXIndex Idx;
@@ -1946,10 +1975,7 @@ static int index_file(int argc, const char **argv) {
   index_data.fail_for_error = 0;
   index_data.abort = 0;
 
-  index_opts = 0;
-  if (getenv("CINDEXTEST_SUPPRESSREFS"))
-    index_opts |= CXIndexOpt_SuppressRedundantRefs;
-
+  index_opts = getIndexOptions();
   idxAction = clang_IndexAction_create(Idx);
   result = clang_indexSourceFile(idxAction, &index_data,
                                  &IndexCB,sizeof(IndexCB), index_opts,
@@ -2001,10 +2027,7 @@ static int index_tu(int argc, const char **argv) {
   index_data.fail_for_error = 0;
   index_data.abort = 0;
 
-  index_opts = 0;
-  if (getenv("CINDEXTEST_SUPPRESSREFS"))
-    index_opts |= CXIndexOpt_SuppressRedundantRefs;
-
+  index_opts = getIndexOptions();
   idxAction = clang_IndexAction_create(Idx);
   result = clang_indexTranslationUnit(idxAction, &index_data,
                                       &IndexCB,sizeof(IndexCB),

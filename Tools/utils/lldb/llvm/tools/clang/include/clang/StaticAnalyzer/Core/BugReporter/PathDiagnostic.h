@@ -14,8 +14,10 @@
 #ifndef LLVM_CLANG_PATH_DIAGNOSTIC_H
 #define LLVM_CLANG_PATH_DIAGNOSTIC_H
 
-#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/SourceLocation.h"
+#include "clang/Analysis/ProgramPoint.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/PointerUnion.h"
 #include <deque>
 #include <iterator>
@@ -46,33 +48,34 @@ class ExplodedNode;
 class PathDiagnostic;
 
 class PathDiagnosticConsumer {
+  virtual void anchor();
 public:
-  PathDiagnosticConsumer() {}
+  PathDiagnosticConsumer() : flushed(false) {}
+  virtual ~PathDiagnosticConsumer();
 
-  virtual ~PathDiagnosticConsumer() {}
-  
-  virtual void
-  FlushDiagnostics(SmallVectorImpl<std::string> *FilesMade = 0) = 0;
-  
-  void FlushDiagnostics(SmallVectorImpl<std::string> &FilesMade) {
-    FlushDiagnostics(&FilesMade);
-  }
-  
+  void FlushDiagnostics(SmallVectorImpl<std::string> *FilesMade);
+
+  virtual void FlushDiagnosticsImpl(std::vector<const PathDiagnostic *> &Diags,
+                                    SmallVectorImpl<std::string> *FilesMade)
+                                    = 0;
+
   virtual StringRef getName() const = 0;
   
-  void HandlePathDiagnostic(const PathDiagnostic* D);
+  void HandlePathDiagnostic(PathDiagnostic *D);
 
   enum PathGenerationScheme { Minimal, Extensive };
   virtual PathGenerationScheme getGenerationScheme() const { return Minimal; }
   virtual bool supportsLogicalOpControlFlow() const { return false; }
   virtual bool supportsAllBlockEdges() const { return false; }
   virtual bool useVerboseDescription() const { return true; }
+  
+  /// Return true if the PathDiagnosticConsumer supports individual
+  /// PathDiagnostics that span multiple files.
+  virtual bool supportsCrossFileDiagnostics() const { return false; }
 
 protected:
-  /// The actual logic for handling path diagnostics, as implemented
-  /// by subclasses of PathDiagnosticConsumer.
-  virtual void HandlePathDiagnosticImpl(const PathDiagnostic* D) = 0;
-
+  bool flushed;
+  llvm::FoldingSet<PathDiagnostic> Diags;
 };
 
 //===----------------------------------------------------------------------===//
@@ -128,6 +131,7 @@ public:
     : K(StmtK), S(s), D(0), SM(&sm),
       Loc(genLocation(SourceLocation(), lac)),
       Range(genRange(lac)) {
+    assert(S);
     assert(Loc.isValid());
     assert(Range.isValid());
   }
@@ -136,6 +140,7 @@ public:
   PathDiagnosticLocation(const Decl *d, const SourceManager &sm)
     : K(DeclK), S(0), D(d), SM(&sm),
       Loc(genLocation()), Range(genRange()) {
+    assert(D);
     assert(Loc.isValid());
     assert(Range.isValid());
   }
@@ -260,14 +265,13 @@ public:
 // Path "pieces" for path-sensitive diagnostics.
 //===----------------------------------------------------------------------===//
 
-class PathDiagnosticPiece {
+class PathDiagnosticPiece : public RefCountedBaseVPTR {
 public:
-  enum Kind { ControlFlow, Event, Macro };
+  enum Kind { ControlFlow, Event, Macro, Call };
   enum DisplayHint { Above, Below };
 
 private:
   const std::string str;
-  std::vector<FixItHint> FixItHints;
   const Kind kind;
   const DisplayHint Hint;
   std::vector<SourceRange> ranges;
@@ -308,10 +312,6 @@ public:
     ranges.push_back(SourceRange(B,E));
   }
 
-  void addFixItHint(const FixItHint& Hint) {
-    FixItHints.push_back(Hint);
-  }
-
   typedef const SourceRange* range_iterator;
 
   range_iterator ranges_begin() const {
@@ -322,22 +322,18 @@ public:
     return ranges_begin() + ranges.size();
   }
 
-  typedef const FixItHint *fixit_iterator;
-
-  fixit_iterator fixit_begin() const {
-    return FixItHints.empty()? 0 : &FixItHints[0];
-  }
-
-  fixit_iterator fixit_end() const {
-    return FixItHints.empty()? 0
-                   : &FixItHints[0] + FixItHints.size();
-  }
-
   static inline bool classof(const PathDiagnosticPiece *P) {
     return true;
   }
   
   virtual void Profile(llvm::FoldingSetNodeID &ID) const;
+};
+  
+  
+class PathPieces :
+  public std::deque<IntrusiveRefCntPtr<PathDiagnosticPiece> > {
+public:
+  ~PathPieces();  
 };
 
 class PathDiagnosticSpotPiece : public PathDiagnosticPiece {
@@ -361,16 +357,73 @@ public:
 };
 
 class PathDiagnosticEventPiece : public PathDiagnosticSpotPiece {
-
+  bool IsPrunable;
 public:
   PathDiagnosticEventPiece(const PathDiagnosticLocation &pos,
                            StringRef s, bool addPosRange = true)
-    : PathDiagnosticSpotPiece(pos, s, Event, addPosRange) {}
+    : PathDiagnosticSpotPiece(pos, s, Event, addPosRange),
+      IsPrunable(false) {}
 
   ~PathDiagnosticEventPiece();
 
+  void setPrunable(bool isPrunable) { IsPrunable = isPrunable; }
+  bool isPrunable() const { return IsPrunable; }
+  
   static inline bool classof(const PathDiagnosticPiece *P) {
     return P->getKind() == Event;
+  }
+};
+
+class PathDiagnosticCallPiece : public PathDiagnosticPiece {
+  PathDiagnosticCallPiece(const Decl *callerD,
+                          const PathDiagnosticLocation &callReturnPos)
+    : PathDiagnosticPiece(Call), Caller(callerD),
+      Callee(0), callReturn(callReturnPos) {}
+
+  PathDiagnosticCallPiece(PathPieces &oldPath)
+    : PathDiagnosticPiece(Call), Caller(0), Callee(0), path(oldPath) {}
+  
+  const Decl *Caller;
+  const Decl *Callee;
+public:
+  PathDiagnosticLocation callEnter;
+  PathDiagnosticLocation callEnterWithin;
+  PathDiagnosticLocation callReturn;  
+  PathPieces path;
+  
+  virtual ~PathDiagnosticCallPiece();
+  
+  const Decl *getCaller() const { return Caller; }
+  
+  const Decl *getCallee() const { return Callee; }
+  void setCallee(const CallEnter &CE, const SourceManager &SM);
+  
+  virtual PathDiagnosticLocation getLocation() const {
+    return callEnter;
+  }
+  
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece> getCallEnterEvent() const;
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece>
+    getCallEnterWithinCallerEvent() const;
+  IntrusiveRefCntPtr<PathDiagnosticEventPiece> getCallExitEvent() const;
+
+  virtual void flattenLocations() {
+    callEnter.flatten();
+    callReturn.flatten();
+    for (PathPieces::iterator I = path.begin(), 
+         E = path.end(); I != E; ++I) (*I)->flattenLocations();
+  }
+  
+  static PathDiagnosticCallPiece *construct(const ExplodedNode *N,
+                                            const CallExit &CE,
+                                            const SourceManager &SM);
+  
+  static PathDiagnosticCallPiece *construct(PathPieces &pieces);
+  
+  virtual void Profile(llvm::FoldingSetNodeID &ID) const;
+
+  static inline bool classof(const PathDiagnosticPiece *P) {
+    return P->getKind() == Call;
   }
 };
 
@@ -431,29 +484,21 @@ public:
 };
 
 class PathDiagnosticMacroPiece : public PathDiagnosticSpotPiece {
-  std::vector<PathDiagnosticPiece*> SubPieces;
 public:
   PathDiagnosticMacroPiece(const PathDiagnosticLocation &pos)
     : PathDiagnosticSpotPiece(pos, "", Macro) {}
 
   ~PathDiagnosticMacroPiece();
 
+  PathPieces subPieces;
+  
   bool containsEvent() const;
-
-  void push_back(PathDiagnosticPiece *P) { SubPieces.push_back(P); }
-
-  typedef std::vector<PathDiagnosticPiece*>::iterator iterator;
-  iterator begin() { return SubPieces.begin(); }
-  iterator end() { return SubPieces.end(); }
 
   virtual void flattenLocations() {
     PathDiagnosticSpotPiece::flattenLocations();
-    for (iterator I=begin(), E=end(); I!=E; ++I) (*I)->flattenLocations();
+    for (PathPieces::iterator I = subPieces.begin(), 
+         E = subPieces.end(); I != E; ++I) (*I)->flattenLocations();
   }
-
-  typedef std::vector<PathDiagnosticPiece*>::const_iterator const_iterator;
-  const_iterator begin() const { return SubPieces.begin(); }
-  const_iterator end() const { return SubPieces.end(); }
 
   static inline bool classof(const PathDiagnosticPiece *P) {
     return P->getKind() == Macro;
@@ -466,16 +511,35 @@ public:
 ///  diagnostic.  It represents an ordered-collection of PathDiagnosticPieces,
 ///  each which represent the pieces of the path.
 class PathDiagnostic : public llvm::FoldingSetNode {
-  std::deque<PathDiagnosticPiece*> path;
-  unsigned Size;
   std::string BugType;
   std::string Desc;
   std::string Category;
   std::deque<std::string> OtherDesc;
-
+  PathPieces pathImpl;
+  llvm::SmallVector<PathPieces *, 3> pathStack;
 public:
-  PathDiagnostic();
+  const PathPieces &path;
 
+  /// Return the path currently used by builders for constructing the 
+  /// PathDiagnostic.
+  PathPieces &getActivePath() {
+    if (pathStack.empty())
+      return pathImpl;
+    return *pathStack.back();
+  }
+  
+  /// Return a mutable version of 'path'.
+  PathPieces &getMutablePieces() {
+    return pathImpl;
+  }
+    
+  /// Return the unrolled size of the path.
+  unsigned full_size();
+
+  void pushActivePath(PathPieces *p) { pathStack.push_back(p); }
+  void popActivePath() { if (!pathStack.empty()) pathStack.pop_back(); }
+  
+  PathDiagnostic();
   PathDiagnostic(StringRef bugtype, StringRef desc,
                  StringRef category);
 
@@ -484,116 +548,23 @@ public:
   StringRef getDescription() const { return Desc; }
   StringRef getBugType() const { return BugType; }
   StringRef getCategory() const { return Category; }
+  
 
   typedef std::deque<std::string>::const_iterator meta_iterator;
   meta_iterator meta_begin() const { return OtherDesc.begin(); }
   meta_iterator meta_end() const { return OtherDesc.end(); }
   void addMeta(StringRef s) { OtherDesc.push_back(s); }
 
-  PathDiagnosticLocation getLocation() const {
-    assert(Size > 0 && "getLocation() requires a non-empty PathDiagnostic.");
-    return rbegin()->getLocation();
-  }
-
-  void push_front(PathDiagnosticPiece *piece) {
-    assert(piece);
-    path.push_front(piece);
-    ++Size;
-  }
-
-  void push_back(PathDiagnosticPiece *piece) {
-    assert(piece);
-    path.push_back(piece);
-    ++Size;
-  }
-
-  PathDiagnosticPiece *back() {
-    return path.back();
-  }
-
-  const PathDiagnosticPiece *back() const {
-    return path.back();
-  }
-
-  unsigned size() const { return Size; }
-  bool empty() const { return Size == 0; }
-
-  void resetPath(bool deletePieces = true);
-
-  class iterator {
-  public:
-    typedef std::deque<PathDiagnosticPiece*>::iterator ImplTy;
-
-    typedef PathDiagnosticPiece              value_type;
-    typedef value_type&                      reference;
-    typedef value_type*                      pointer;
-    typedef ptrdiff_t                        difference_type;
-    typedef std::bidirectional_iterator_tag  iterator_category;
-
-  private:
-    ImplTy I;
-
-  public:
-    iterator(const ImplTy& i) : I(i) {}
-
-    bool operator==(const iterator &X) const { return I == X.I; }
-    bool operator!=(const iterator &X) const { return I != X.I; }
-
-    PathDiagnosticPiece& operator*() const { return **I; }
-    PathDiagnosticPiece *operator->() const { return *I; }
-
-    iterator &operator++() { ++I; return *this; }
-    iterator &operator--() { --I; return *this; }
-  };
-
-  class const_iterator {
-  public:
-    typedef std::deque<PathDiagnosticPiece*>::const_iterator ImplTy;
-
-    typedef const PathDiagnosticPiece        value_type;
-    typedef value_type&                      reference;
-    typedef value_type*                      pointer;
-    typedef ptrdiff_t                        difference_type;
-    typedef std::bidirectional_iterator_tag  iterator_category;
-
-  private:
-    ImplTy I;
-
-  public:
-    const_iterator(const ImplTy& i) : I(i) {}
-
-    bool operator==(const const_iterator &X) const { return I == X.I; }
-    bool operator!=(const const_iterator &X) const { return I != X.I; }
-
-    reference operator*() const { return **I; }
-    pointer operator->() const { return *I; }
-
-    const_iterator &operator++() { ++I; return *this; }
-    const_iterator &operator--() { --I; return *this; }
-  };
-
-  typedef std::reverse_iterator<iterator>       reverse_iterator;
-  typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
-
-  // forward iterator creation methods.
-
-  iterator begin() { return path.begin(); }
-  iterator end() { return path.end(); }
-
-  const_iterator begin() const { return path.begin(); }
-  const_iterator end() const { return path.end(); }
-
-  // reverse iterator creation methods.
-  reverse_iterator rbegin()            { return reverse_iterator(end()); }
-  const_reverse_iterator rbegin() const{ return const_reverse_iterator(end()); }
-  reverse_iterator rend()              { return reverse_iterator(begin()); }
-  const_reverse_iterator rend() const { return const_reverse_iterator(begin());}
+  PathDiagnosticLocation getLocation() const;
 
   void flattenLocations() {
-    for (iterator I = begin(), E = end(); I != E; ++I) I->flattenLocations();
+    for (PathPieces::iterator I = pathImpl.begin(), E = pathImpl.end(); 
+         I != E; ++I) (*I)->flattenLocations();
   }
   
   void Profile(llvm::FoldingSetNodeID &ID) const;
+  
+  void FullProfile(llvm::FoldingSetNodeID &ID) const;
 };  
 
 } // end GR namespace

@@ -62,13 +62,14 @@ SlotIndex SplitAnalysis::computeLastSplitPoint(unsigned Num) {
   const MachineBasicBlock *MBB = MF.getBlockNumbered(Num);
   const MachineBasicBlock *LPad = MBB->getLandingPadSuccessor();
   std::pair<SlotIndex, SlotIndex> &LSP = LastSplitPoint[Num];
+  SlotIndex MBBEnd = LIS.getMBBEndIdx(MBB);
 
   // Compute split points on the first call. The pair is independent of the
   // current live interval.
   if (!LSP.first.isValid()) {
     MachineBasicBlock::const_iterator FirstTerm = MBB->getFirstTerminator();
     if (FirstTerm == MBB->end())
-      LSP.first = LIS.getMBBEndIdx(MBB);
+      LSP.first = MBBEnd;
     else
       LSP.first = LIS.getInstructionIndex(FirstTerm);
 
@@ -89,10 +90,32 @@ SlotIndex SplitAnalysis::computeLastSplitPoint(unsigned Num) {
 
   // If CurLI is live into a landing pad successor, move the last split point
   // back to the call that may throw.
-  if (LPad && LSP.second.isValid() && LIS.isLiveInToMBB(*CurLI, LPad))
-    return LSP.second;
-  else
+  if (!LPad || !LSP.second || !LIS.isLiveInToMBB(*CurLI, LPad))
     return LSP.first;
+
+  // Find the value leaving MBB.
+  const VNInfo *VNI = CurLI->getVNInfoBefore(MBBEnd);
+  if (!VNI)
+    return LSP.first;
+
+  // If the value leaving MBB was defined after the call in MBB, it can't
+  // really be live-in to the landing pad.  This can happen if the landing pad
+  // has a PHI, and this register is undef on the exceptional edge.
+  // <rdar://problem/10664933>
+  if (!SlotIndex::isEarlierInstr(VNI->def, LSP.second) && VNI->def < MBBEnd)
+    return LSP.first;
+
+  // Value is properly live-in to the landing pad.
+  // Only allow splits before the call.
+  return LSP.second;
+}
+
+MachineBasicBlock::iterator
+SplitAnalysis::getLastSplitPointIter(MachineBasicBlock *MBB) {
+  SlotIndex LSP = getLastSplitPoint(MBB->getNumber());
+  if (LSP == LIS.getMBBEndIdx(MBB))
+    return MBB->end();
+  return LIS.getInstructionFromIndex(LSP);
 }
 
 /// analyzeUses - Count instructions, basic blocks, and loops using CurLI.
@@ -351,7 +374,7 @@ VNInfo *SplitEditor::defValue(unsigned RegIdx,
   LiveInterval *LI = Edit->get(RegIdx);
 
   // Create a new value.
-  VNInfo *VNI = LI->getNextValue(Idx, 0, LIS.getVNInfoAllocator());
+  VNInfo *VNI = LI->getNextValue(Idx, LIS.getVNInfoAllocator());
 
   // Use insert for lookup, so we can add missing values with a second lookup.
   std::pair<ValueMap::iterator, bool> InsP =
@@ -426,9 +449,7 @@ VNInfo *SplitEditor::defFromParent(unsigned RegIdx,
   }
 
   // Define the value in Reg.
-  VNInfo *VNI = defValue(RegIdx, ParentVNI, Def);
-  VNI->setCopy(CopyMI);
-  return VNI;
+  return defValue(RegIdx, ParentVNI, Def);
 }
 
 /// Create a new virtual register and live interval.
@@ -497,7 +518,7 @@ SlotIndex SplitEditor::enterIntvAtEnd(MachineBasicBlock &MBB) {
   }
   DEBUG(dbgs() << ": valno " << ParentVNI->id);
   VNInfo *VNI = defFromParent(OpenIdx, ParentVNI, Last, MBB,
-                              LIS.getLastSplitPoint(Edit->getParent(), &MBB));
+                              SA.getLastSplitPointIter(&MBB));
   RegAssign.insert(VNI->def, End, OpenIdx);
   DEBUG(dump());
   return VNI->def;
@@ -780,7 +801,7 @@ void SplitEditor::hoistCopiesForSize() {
     SlotIndex Last = LIS.getMBBEndIdx(Dom.first).getPrevSlot();
     Dom.second =
       defFromParent(0, ParentVNI, Last, *Dom.first,
-                    LIS.getLastSplitPoint(Edit->getParent(), Dom.first))->def;
+                    SA.getLastSplitPointIter(Dom.first))->def;
   }
 
   // Remove redundant back-copies that are now known to be dominated by another
@@ -1030,7 +1051,6 @@ void SplitEditor::finish(SmallVectorImpl<unsigned> *LRMap) {
     unsigned RegIdx = RegAssign.lookup(ParentVNI->def);
     VNInfo *VNI = defValue(RegIdx, ParentVNI, ParentVNI->def);
     VNI->setIsPHIDef(ParentVNI->isPHIDef());
-    VNI->setCopy(ParentVNI->getCopy());
 
     // Force rematted values to be recomputed everywhere.
     // The new live ranges may be truncated.
@@ -1049,7 +1069,6 @@ void SplitEditor::finish(SmallVectorImpl<unsigned> *LRMap) {
     break;
   case SM_Speed:
     llvm_unreachable("Spill mode 'speed' not implemented yet");
-    break;
   }
 
   // Transfer the simply mapped values, check if any are skipped.

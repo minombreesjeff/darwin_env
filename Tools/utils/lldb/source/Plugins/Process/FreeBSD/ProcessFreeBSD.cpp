@@ -31,10 +31,15 @@ using namespace lldb_private;
 //------------------------------------------------------------------------------
 // Static functions.
 
-Process*
-ProcessFreeBSD::CreateInstance(Target& target, Listener &listener)
+lldb::ProcessSP
+ProcessFreeBSD::CreateInstance(Target& target,
+                               Listener &listener,
+                               const FileSpec *crash_file_path)
 {
-    return new ProcessFreeBSD(target, listener);
+    lldb::ProcessSP process_sp;
+    if (crash_file_path == NULL)
+        process_sp.reset(new ProcessFreeBSD (target, listener));
+    return process_sp;
 }
 
 void
@@ -115,10 +120,6 @@ ProcessFreeBSD::EnablePluginLogging(Stream *strm, Args &command)
 ProcessFreeBSD::ProcessFreeBSD(Target& target, Listener &listener)
     : ProcessPOSIX(target, listener)
 {
-    // FIXME: Putting this code in the ctor and saving the byte order in a
-    // member variable is a hack to avoid const qual issues in GetByteOrder.
-    ObjectFile *obj_file = GetTarget().GetExecutableModule()->GetObjectFile();
-    m_byte_order = obj_file->GetByteOrder();
 }
 
 void
@@ -126,11 +127,11 @@ ProcessFreeBSD::Terminate()
 {
 }
 
-uint32_t
+bool
 ProcessFreeBSD::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     // XXX haxx
     new_thread_list = old_thread_list;
   
-    return 0;
+    return false;
 }

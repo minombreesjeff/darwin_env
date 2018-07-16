@@ -208,6 +208,8 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
     case bitc::CST_CODE_CE_CMP:          return "CE_CMP";
     case bitc::CST_CODE_INLINEASM:       return "INLINEASM";
     case bitc::CST_CODE_CE_SHUFVEC_EX:   return "CE_SHUFVEC_EX";
+    case bitc::CST_CODE_BLOCKADDRESS:    return "CST_CODE_BLOCKADDRESS";
+    case bitc::CST_CODE_DATA:            return "DATA";
     }
   case bitc::FUNCTION_BLOCK_ID:
     switch (CodeID) {
@@ -228,7 +230,6 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
     case bitc::FUNC_CODE_INST_BR:           return "INST_BR";
     case bitc::FUNC_CODE_INST_SWITCH:       return "INST_SWITCH";
     case bitc::FUNC_CODE_INST_INVOKE:       return "INST_INVOKE";
-    case bitc::FUNC_CODE_INST_UNWIND:       return "INST_UNWIND";
     case bitc::FUNC_CODE_INST_UNREACHABLE:  return "INST_UNREACHABLE";
 
     case bitc::FUNC_CODE_INST_PHI:          return "INST_PHI";
@@ -482,13 +483,13 @@ static int AnalyzeBitcode() {
   if (MemBuf->getBufferSize() & 3)
     return Error("Bitcode stream should be a multiple of 4 bytes in length");
 
-  unsigned char *BufPtr = (unsigned char *)MemBuf->getBufferStart();
-  unsigned char *EndBufPtr = BufPtr+MemBuf->getBufferSize();
+  const unsigned char *BufPtr = (unsigned char *)MemBuf->getBufferStart();
+  const unsigned char *EndBufPtr = BufPtr+MemBuf->getBufferSize();
 
   // If we have a wrapper header, parse it and ignore the non-bc file contents.
   // The magic number is 0x0B17C0DE stored in little endian.
   if (isBitcodeWrapper(BufPtr, EndBufPtr))
-    if (SkipBitcodeWrapperHeader(BufPtr, EndBufPtr))
+    if (SkipBitcodeWrapperHeader(BufPtr, EndBufPtr, true))
       return Error("Invalid bitcode wrapper header");
 
   BitstreamReader StreamFile(BufPtr, EndBufPtr);
@@ -534,7 +535,6 @@ static int AnalyzeBitcode() {
   errs() << "\n";
   errs() << "        Stream type: ";
   switch (CurStreamType) {
-  default: assert(0 && "Unknown bitstream type");
   case UnknownBitstream: errs() << "unknown\n"; break;
   case LLVMIRBitstream:  errs() << "LLVM IR\n"; break;
   }

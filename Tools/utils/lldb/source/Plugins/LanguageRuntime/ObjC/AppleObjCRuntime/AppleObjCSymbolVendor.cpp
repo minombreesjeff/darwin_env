@@ -18,8 +18,8 @@
 using namespace lldb_private;
 
 AppleObjCSymbolVendor::AppleObjCSymbolVendor(Process *process) :
-    SymbolVendor(NULL),
-    m_process(process->GetSP()),
+    SymbolVendor(lldb::ModuleSP()),
+    m_process(process->shared_from_this()),
     m_ast_ctx(process->GetTarget().GetArchitecture().GetTriple().getTriple().c_str())
 {
 }
@@ -43,13 +43,14 @@ AppleObjCSymbolVendor::FindTypes (const SymbolContext& sc,
     
     uint32_t ret = 0;
     
-    ModuleList &images = m_process->GetTarget().GetImages();
+    ModuleList &target_modules = m_process->GetTarget().GetImages();
+    Mutex::Locker modules_locker(target_modules.GetMutex());
     
-    for (size_t image_index = 0, end_index = images.GetSize();
+    for (size_t image_index = 0, end_index = target_modules.GetSize();
          image_index < end_index;
          ++image_index)
     {
-        Module *image = images.GetModulePointerAtIndex(image_index);
+        Module *image = target_modules.GetModulePointerAtIndexUnlocked(image_index);
         
         if (!image)
             continue;
@@ -61,7 +62,12 @@ AppleObjCSymbolVendor::FindTypes (const SymbolContext& sc,
         
         SymbolFile *symbol_file = image->GetSymbolVendor()->GetSymbolFile();
         
-        if (!symbol_file || !(symbol_file->GetAbilities() & SymbolFile::RuntimeTypes))
+        // Don't use a symbol file if it actually has types. We are specifically
+        // looking for something in runtime information, not from debug information,
+        // as the data in debug information will get parsed by the debug info
+        // symbol files. So we veto any symbol file that has actual variable
+        // type parsing abilities.
+        if (symbol_file == NULL || (symbol_file->GetAbilities() & SymbolFile::VariableTypes))
             continue;
         
         const bool inferior_append = true;

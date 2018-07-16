@@ -284,7 +284,8 @@ public:
                                                   m_options.m_stop_on_continue, 
                                                   m_options.m_stop_on_error, 
                                                   echo_commands, 
-                                                  print_results, 
+                                                  print_results,
+                                                  eLazyBoolCalculate,
                                                   result);
         }
         else
@@ -294,6 +295,36 @@ public:
         }
         return result.Succeeded();
 
+    }
+    
+    virtual const char*
+    GetRepeatCommand (Args &current_command_args, uint32_t index)
+    {
+        return "";
+    }
+    
+    int
+    HandleArgumentCompletion (Args &input,
+                              int &cursor_index,
+                              int &cursor_char_position,
+                              OptionElementVector &opt_element_vector,
+                              int match_start_point,
+                              int max_return_elements,
+                              bool &word_complete,
+                              StringList &matches)
+    {
+        std::string completion_str (input.GetArgumentAtIndex(cursor_index));
+        completion_str.erase (cursor_char_position);
+        
+        CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter, 
+                                                             CommandCompletions::eDiskFileCompletion,
+                                                             completion_str.c_str(),
+                                                             match_start_point,
+                                                             max_return_elements,
+                                                             NULL,
+                                                             word_complete,
+                                                             matches);
+        return matches.GetSize();
     }
 };
 
@@ -1571,33 +1602,25 @@ private:
                 out_stream->Flush();
                 return;
             }
-            StringList funct_name_sl;
+            std::string funct_name_str;
             if (!interpreter->GenerateScriptAliasFunction (m_user_input, 
-                                                           funct_name_sl))
+                                                           funct_name_str))
             {
                 out_stream->Printf ("Unable to create function: no script attached.\n");
                 out_stream->Flush();
                 return;
             }
-            if (funct_name_sl.GetSize() == 0)
+            if (funct_name_str.empty())
             {
                 out_stream->Printf ("Unable to obtain a function name: no script attached.\n");
                 out_stream->Flush();
                 return;
             }
-            const char *funct_name = funct_name_sl.GetStringAtIndex(0);
-            if (!funct_name || !funct_name[0])
-            {
-                out_stream->Printf ("Invalid function name: no script attached.\n");
-                out_stream->Flush();
-                return;
-            }
-            
             // everything should be fine now, let's add this alias
             
             CommandObjectSP command_obj_sp(new CommandObjectPythonFunction(m_interpreter,
                                                                            m_cmd_name,
-                                                                           funct_name,
+                                                                           funct_name_str.c_str(),
                                                                            m_synchronous));
             
             if (!m_interpreter.AddUserCommand(m_cmd_name, command_obj_sp, true))

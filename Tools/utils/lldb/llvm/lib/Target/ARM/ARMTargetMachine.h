@@ -52,17 +52,15 @@ public:
   }
 
   // Pass Pipeline Configuration
-  virtual bool addPreISel(PassManagerBase &PM);
-  virtual bool addInstSelector(PassManagerBase &PM);
-  virtual bool addPreRegAlloc(PassManagerBase &PM);
-  virtual bool addPreSched2(PassManagerBase &PM);
-  virtual bool addPreEmitPass(PassManagerBase &PM);
+  virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);
+
   virtual bool addCodeEmitter(PassManagerBase &PM, JITCodeEmitter &MCE);
 };
 
 /// ARMTargetMachine - ARM target machine.
 ///
 class ARMTargetMachine : public ARMBaseTargetMachine {
+  virtual void anchor();
   ARMInstrInfo        InstrInfo;
   const TargetData    DataLayout;       // Calculates type size & alignment
   ARMELFWriterInfo    ELFWriterInfo;
@@ -103,6 +101,7 @@ class ARMTargetMachine : public ARMBaseTargetMachine {
 ///   Thumb-1 and Thumb-2.
 ///
 class ThumbTargetMachine : public ARMBaseTargetMachine {
+  virtual void anchor();
   // Either Thumb1InstrInfo or Thumb2InstrInfo.
   OwningPtr<ARMBaseInstrInfo> InstrInfo;
   const TargetData    DataLayout;   // Calculates type size & alignment

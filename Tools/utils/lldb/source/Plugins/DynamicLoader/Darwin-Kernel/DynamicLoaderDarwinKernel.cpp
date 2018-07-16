@@ -58,22 +58,24 @@ DynamicLoaderDarwinKernel::CreateInstance (Process* process, bool force)
             ObjectFile *object_file = exe_module->GetObjectFile();
             if (object_file)
             {
-                SectionList *section_list = object_file->GetSectionList();
-                if (section_list)
-                {
-                    static ConstString g_kld_section_name ("__KLD");
-                    if (section_list->FindSectionByName (g_kld_section_name))
-                    {
-                        create = true;
-                    }
-                }
+                create = (object_file->GetStrata() == ObjectFile::eStrataKernel);
             }
         }
         
         if (create)
         {
             const llvm::Triple &triple_ref = process->GetTarget().GetArchitecture().GetTriple();
-            create = triple_ref.getOS() == llvm::Triple::Darwin && triple_ref.getVendor() == llvm::Triple::Apple;
+            switch (triple_ref.getOS())
+            {
+                case llvm::Triple::Darwin:
+                case llvm::Triple::MacOSX:
+                case llvm::Triple::IOS:
+                    create = triple_ref.getVendor() == llvm::Triple::Apple;
+                    break;
+                default:
+                    create = false;
+                    break;
+            }
         }
     }
     
@@ -162,6 +164,145 @@ DynamicLoaderDarwinKernel::Clear (bool clear_process)
 }
 
 
+bool
+DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::LoadImageAtFileAddress (Process *process)
+{
+    if (IsLoaded())
+        return true;
+
+    if (module_sp)
+    {
+        bool changed = false;
+        if (module_sp->SetLoadAddress (process->GetTarget(), 0, changed))
+            load_process_stop_id = process->GetStopID();
+    }
+    return false;
+}
+
+bool
+DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::LoadImageUsingMemoryModule (Process *process)
+{
+    if (IsLoaded())
+        return true;
+
+    bool uuid_is_valid = uuid.IsValid();
+
+    Target &target = process->GetTarget();
+    ModuleSP memory_module_sp;
+    // Use the memory module as the module if we have one...
+    if (address != LLDB_INVALID_ADDRESS)
+    {
+        FileSpec file_spec;
+        if (module_sp)
+            file_spec = module_sp->GetFileSpec();
+        else
+            file_spec.SetFile (name, false);
+        
+        memory_module_sp = process->ReadModuleFromMemory (file_spec, address, false, false);
+        if (memory_module_sp && !uuid_is_valid)
+        {
+            uuid = memory_module_sp->GetUUID();
+            uuid_is_valid = uuid.IsValid();
+        }
+    }
+
+    if (!module_sp)
+    {
+        bool uuid_is_valid = uuid.IsValid();
+        if (uuid_is_valid)
+        {
+            ModuleList &target_images = target.GetImages();
+            module_sp = target_images.FindModule(uuid);
+            
+            if (!module_sp)
+            {
+                ModuleSpec module_spec;
+                module_spec.GetUUID() = uuid;
+                module_sp = target.GetSharedModule (module_spec);
+            }
+        }
+    }
+    
+
+    if (memory_module_sp)
+    {
+        // Someone already supplied a file, make sure it is the right one.
+        if (module_sp)
+        {
+            if (module_sp->GetUUID() == memory_module_sp->GetUUID())
+            {
+                ObjectFile *ondisk_object_file = module_sp->GetObjectFile();
+                ObjectFile *memory_object_file = memory_module_sp->GetObjectFile();
+                if (memory_object_file && ondisk_object_file)
+                {
+                    SectionList *ondisk_section_list = ondisk_object_file->GetSectionList ();
+                    SectionList *memory_section_list = memory_object_file->GetSectionList ();
+                    if (memory_section_list && ondisk_section_list)
+                    {
+                        const uint32_t num_ondisk_sections = ondisk_section_list->GetSize();
+                        // There may be CTF sections in the memory image so we can't
+                        // always just compare the number of sections (which are actually
+                        // segments in mach-o parlance)
+                        uint32_t sect_idx = 0;
+                        
+                        
+                        // We now iterate through all sections in the file module 
+                        // and look to see if the memory module has a load address
+                        // for that section.
+                        uint32_t num_sections_loaded = 0;
+                        for (sect_idx=0; sect_idx<num_ondisk_sections; ++sect_idx)
+                        {
+                            const Section *ondisk_section = ondisk_section_list->GetSectionAtIndex(sect_idx).get();
+                            if (ondisk_section)
+                            {
+                                const Section *memory_section = memory_section_list->FindSectionByName(ondisk_section->GetName()).get();
+                                if (memory_section)
+                                {
+                                    target.GetSectionLoadList().SetSectionLoadAddress (ondisk_section, memory_section->GetFileAddress());
+                                    ++num_sections_loaded;
+                                }
+                            }
+                        }
+                        if (num_sections_loaded > 0)
+                            load_process_stop_id = process->GetStopID();
+                        else
+                            module_sp.reset(); // No sections were loaded
+                    }
+                    else
+                        module_sp.reset(); // One or both section lists
+                }
+                else
+                    module_sp.reset(); // One or both object files missing
+            }
+            else
+                module_sp.reset(); // UUID mismatch
+        }
+        
+        // Use the memory module as the module if we didn't like the file
+        // module we either found or were supplied with
+        if (!module_sp)
+        {
+            module_sp = memory_module_sp;
+            // Load the memory image in the target as all adresses are already correct
+            bool changed = false;
+            target.GetImages().Append (memory_module_sp);
+            if (module_sp->SetLoadAddress (target, 0, changed))
+                load_process_stop_id = process->GetStopID();
+        }
+    }
+    bool is_loaded = IsLoaded();
+    
+    if (so_address.IsValid())
+    {
+        if (is_loaded)
+            so_address.SetLoadAddress (address, &target);
+        else
+            target.GetImages().ResolveFileAddress (address, so_address);
+
+    }
+    return is_loaded;
+}
+
 //----------------------------------------------------------------------
 // Load the kernel module and initialize the "m_kernel" member. Return
 // true _only_ if the kernel is loaded the first time through (subsequent
@@ -175,232 +316,46 @@ DynamicLoaderDarwinKernel::LoadKernelModuleIfNeeded()
     {
         m_kernel.Clear(false);
         m_kernel.module_sp = m_process->GetTarget().GetExecutableModule();
-        if (m_kernel.module_sp)
+        strncpy(m_kernel.name, "mach_kernel", sizeof(m_kernel.name));
+        if (m_kernel.address == LLDB_INVALID_ADDRESS)
         {
-            static ConstString mach_header_name ("_mh_execute_header");
-            static ConstString kext_summary_symbol ("gLoadedKextSummaries");
-            const Symbol *symbol = NULL;
-            symbol = m_kernel.module_sp->FindFirstSymbolWithNameAndType (kext_summary_symbol, eSymbolTypeData);
-            if (symbol)
-                m_kext_summary_header_ptr_addr = symbol->GetValue();
-
-            symbol = m_kernel.module_sp->FindFirstSymbolWithNameAndType (mach_header_name, eSymbolTypeAbsolute);
-            if (symbol)
+            m_kernel.address = m_process->GetImageInfoAddress ();
+            if (m_kernel.address == LLDB_INVALID_ADDRESS && m_kernel.module_sp)
             {
-                // The "_mh_execute_header" symbol is absolute and not a section based 
-                // symbol that will have a valid address, so we need to resolve it...
-                m_process->GetTarget().GetImages().ResolveFileAddress (symbol->GetValue().GetFileAddress(), m_kernel.so_address);
-                DataExtractor data; // Load command data
-                if (ReadMachHeader (m_kernel, &data))
-                {
-                    if (m_kernel.header.filetype == llvm::MachO::HeaderFileTypeExecutable)
-                    {
-                        if (ParseLoadCommands (data, m_kernel))
-                            UpdateImageLoadAddress (m_kernel);
-                                                
-                        // Update all image infos
-                        ReadAllKextSummaries ();
-                    }
-                }
-                else
-                {
-                    m_kernel.Clear(false);
-                }
+                // We didn't get a hint from the process, so we will
+                // try the kernel at the address that it exists at in
+                // the file if we have one
+                ObjectFile *kernel_object_file = m_kernel.module_sp->GetObjectFile();
+                if (kernel_object_file)
+                    m_kernel.address = kernel_object_file->GetHeaderAddress().GetFileAddress();
             }
         }
-    }
-}
-
-bool
-DynamicLoaderDarwinKernel::FindTargetModule (OSKextLoadedKextSummary &image_info, bool can_create, bool *did_create_ptr)
-{
-    if (did_create_ptr)
-        *did_create_ptr = false;
-    
-    const bool image_info_uuid_is_valid = image_info.uuid.IsValid();
-
-    if (image_info.module_sp)
-    {
-        if (image_info_uuid_is_valid)
+        
+        if (m_kernel.address != LLDB_INVALID_ADDRESS)
         {
-            if (image_info.module_sp->GetUUID() == image_info.uuid)
-                return true;
-            else
-                image_info.module_sp.reset();
+            if (!m_kernel.LoadImageUsingMemoryModule (m_process))
+            {
+                m_kernel.LoadImageAtFileAddress (m_process);
+            }
+        }
+
+        if (m_kernel.IsLoaded())
+        {
+            static ConstString kext_summary_symbol ("gLoadedKextSummaries");
+            const Symbol *symbol = m_kernel.module_sp->FindFirstSymbolWithNameAndType (kext_summary_symbol, eSymbolTypeData);
+            if (symbol)
+            {
+                m_kext_summary_header_ptr_addr = symbol->GetAddress();
+                // Update all image infos
+                ReadAllKextSummaries ();
+            }
         }
         else
-            return true;
-    }
-
-    ModuleList &target_images = m_process->GetTarget().GetImages();
-    if (image_info_uuid_is_valid)
-        image_info.module_sp = target_images.FindModule(image_info.uuid);
-    
-    if (image_info.module_sp)
-        return true;
-    
-    ArchSpec arch (image_info.GetArchitecture ());
-    if (can_create)
-    {
-        if (image_info_uuid_is_valid)
         {
-            image_info.module_sp = m_process->GetTarget().GetSharedModule (FileSpec(),
-                                                                           arch,
-                                                                           &image_info.uuid);
-            if (did_create_ptr)
-                *did_create_ptr = image_info.module_sp;
+            m_kernel.Clear(false);
         }
     }
-    return image_info.module_sp;
 }
-
-bool
-DynamicLoaderDarwinKernel::UpdateCommPageLoadAddress(Module *module)
-{
-    bool changed = false;
-    if (module)
-    {
-        ObjectFile *image_object_file = module->GetObjectFile();
-        if (image_object_file)
-        {
-            SectionList *section_list = image_object_file->GetSectionList ();
-            if (section_list)
-            {
-                uint32_t num_sections = section_list->GetSize();
-                for (uint32_t i=0; i<num_sections; ++i)
-                {
-                    Section* section = section_list->GetSectionAtIndex (i).get();
-                    if (section)
-                    {
-                        const addr_t new_section_load_addr = section->GetFileAddress ();
-                        const addr_t old_section_load_addr = m_process->GetTarget().GetSectionLoadList().GetSectionLoadAddress (section);
-                        if (old_section_load_addr == LLDB_INVALID_ADDRESS ||
-                            old_section_load_addr != new_section_load_addr)
-                        {
-                            if (m_process->GetTarget().GetSectionLoadList().SetSectionLoadAddress (section, section->GetFileAddress ()))
-                                changed = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return changed;
-}
-
-//----------------------------------------------------------------------
-// Update the load addresses for all segments in MODULE using the
-// updated INFO that is passed in.
-//----------------------------------------------------------------------
-bool
-DynamicLoaderDarwinKernel::UpdateImageLoadAddress (OSKextLoadedKextSummary& info)
-{
-    Module *module = info.module_sp.get();
-    bool changed = false;
-    if (module)
-    {
-        ObjectFile *image_object_file = module->GetObjectFile();
-        if (image_object_file)
-        {
-            SectionList *section_list = image_object_file->GetSectionList ();
-            if (section_list)
-            {
-                // We now know the slide amount, so go through all sections
-                // and update the load addresses with the correct values.
-                uint32_t num_segments = info.segments.size();
-                for (uint32_t i=0; i<num_segments; ++i)
-                {
-                    const addr_t new_section_load_addr = info.segments[i].vmaddr;
-                    if (section_list->FindSectionByName(info.segments[i].name))
-                    {
-                        SectionSP section_sp(section_list->FindSectionByName(info.segments[i].name));
-                        if (section_sp)
-                        {
-                            const addr_t old_section_load_addr = m_process->GetTarget().GetSectionLoadList().GetSectionLoadAddress (section_sp.get());
-                            if (old_section_load_addr == LLDB_INVALID_ADDRESS ||
-                                old_section_load_addr != new_section_load_addr)
-                            {
-                                if (m_process->GetTarget().GetSectionLoadList().SetSectionLoadAddress (section_sp.get(), new_section_load_addr))
-                                    changed = true;
-                            }
-                        }
-                        else
-                        {
-                            Host::SystemLog (Host::eSystemLogWarning, "warning: unable to find and load segment named '%s' at 0x%llx in '%s/%s' in macosx dynamic loader plug-in.\n",
-                                             info.segments[i].name.AsCString("<invalid>"),
-                                             (uint64_t)new_section_load_addr,
-                                             image_object_file->GetFileSpec().GetDirectory().AsCString(),
-                                             image_object_file->GetFileSpec().GetFilename().AsCString());
-                        }
-                    }
-                    else
-                    {
-                        // The segment name is empty which means this is a .o file.
-                        // Object files in LLDB end up getting reorganized so that
-                        // the segment name that is in the section is promoted into
-                        // an actual segment, so we just need to go through all sections
-                        // and slide them by a single amount.
-                        
-                        uint32_t num_sections = section_list->GetSize();
-                        for (uint32_t i=0; i<num_sections; ++i)
-                        {
-                            Section* section = section_list->GetSectionAtIndex (i).get();
-                            if (section)
-                            {
-                                if (m_process->GetTarget().GetSectionLoadList().SetSectionLoadAddress (section, section->GetFileAddress() + new_section_load_addr))
-                                    changed = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return changed;
-}
-
-//----------------------------------------------------------------------
-// Update the load addresses for all segments in MODULE using the
-// updated INFO that is passed in.
-//----------------------------------------------------------------------
-bool
-DynamicLoaderDarwinKernel::UnloadImageLoadAddress (OSKextLoadedKextSummary& info)
-{
-    Module *module = info.module_sp.get();
-    bool changed = false;
-    if (module)
-    {
-        ObjectFile *image_object_file = module->GetObjectFile();
-        if (image_object_file)
-        {
-            SectionList *section_list = image_object_file->GetSectionList ();
-            if (section_list)
-            {
-                uint32_t num_segments = info.segments.size();
-                for (uint32_t i=0; i<num_segments; ++i)
-                {
-                    SectionSP section_sp(section_list->FindSectionByName(info.segments[i].name));
-                    if (section_sp)
-                    {
-                        const addr_t old_section_load_addr = info.segments[i].vmaddr;
-                        if (m_process->GetTarget().GetSectionLoadList().SetSectionUnloaded (section_sp.get(), old_section_load_addr))
-                            changed = true;
-                    }
-                    else
-                    {
-                        Host::SystemLog (Host::eSystemLogWarning, 
-                                         "warning: unable to find and unload segment named '%s' in '%s/%s' in macosx dynamic loader plug-in.\n",
-                                         info.segments[i].name.AsCString("<invalid>"),
-                                         image_object_file->GetFileSpec().GetDirectory().AsCString(),
-                                         image_object_file->GetFileSpec().GetFilename().AsCString());
-                    }
-                }
-            }
-        }
-    }
-    return changed;
-}
-
 
 //----------------------------------------------------------------------
 // Static callback function that gets called when our DYLD notification
@@ -521,18 +476,21 @@ DynamicLoaderDarwinKernel::ParseKextSummaries (const Address &kext_summary_addr,
             }
         }
         
-        DataExtractor data; // Load command data
-        if (ReadMachHeader (kext_summaries[i], &data))
-        {
-            ParseLoadCommands (data, kext_summaries[i]);
-        }
-        
+        if (!kext_summaries[i].LoadImageUsingMemoryModule (m_process))
+            kext_summaries[i].LoadImageAtFileAddress (m_process);
+
         if (s)
         {
             if (kext_summaries[i].module_sp)
-                s->Printf("\n  found kext: %s/%s\n", 
-                          kext_summaries[i].module_sp->GetFileSpec().GetDirectory().AsCString(),
-                          kext_summaries[i].module_sp->GetFileSpec().GetFilename().AsCString());
+            {
+                if (kext_summaries[i].module_sp->GetFileSpec().GetDirectory())
+                    s->Printf("\n  found kext: %s/%s\n", 
+                              kext_summaries[i].module_sp->GetFileSpec().GetDirectory().AsCString(),
+                              kext_summaries[i].module_sp->GetFileSpec().GetFilename().AsCString());
+                else
+                    s->Printf("\n  found kext: %s\n", 
+                              kext_summaries[i].module_sp->GetFileSpec().GetFilename().AsCString());
+            }
             else
                 s->Printf (" failed to locate/load.\n");
         }
@@ -555,44 +513,15 @@ DynamicLoaderDarwinKernel::AddModulesUsingImageInfos (OSKextLoadedKextSummary::c
     
     for (uint32_t idx = 0; idx < image_infos.size(); ++idx)
     {
-        m_kext_summaries.push_back(image_infos[idx]);
+        OSKextLoadedKextSummary &image_info = image_infos[idx];
+        m_kext_summaries.push_back(image_info);
         
-        if (FindTargetModule (image_infos[idx], true, NULL))
-        {
-            // UpdateImageLoadAddress will return true if any segments
-            // change load address. We need to check this so we don't
-            // mention that all loaded shared libraries are newly loaded
-            // each time we hit out dyld breakpoint since dyld will list all
-            // shared libraries each time.
-            if (UpdateImageLoadAddress (image_infos[idx]))
-            {
-                loaded_module_list.AppendIfNeeded (image_infos[idx].module_sp);
-            }
-        }
+        if (image_info.module_sp && m_process->GetStopID() == image_info.load_process_stop_id)
+            loaded_module_list.AppendIfNeeded (image_infos[idx].module_sp);
     }
     
     if (loaded_module_list.GetSize() > 0)
     {
-        // FIXME: This should really be in the Runtime handlers class, which should get
-        // called by the target's ModulesDidLoad, but we're doing it all locally for now 
-        // to save time.
-        // Also, I'm assuming there can be only one libobjc dylib loaded...
-        
-        ObjCLanguageRuntime *objc_runtime = m_process->GetObjCLanguageRuntime();
-        if (objc_runtime != NULL && !objc_runtime->HasReadObjCLibrary())
-        {
-            size_t num_modules = loaded_module_list.GetSize();
-            for (int i = 0; i < num_modules; i++)
-            {
-                if (objc_runtime->IsModuleObjCLibrary (loaded_module_list.GetModuleAtIndex (i)))
-                {
-                    objc_runtime->ReadObjCLibrary (loaded_module_list.GetModuleAtIndex (i));
-                    break;
-                }
-            }
-        }
-//        if (log)
-//            loaded_module_list.LogUUIDAndPaths (log, "DynamicLoaderDarwinKernel::ModulesDidLoad");
         m_process->GetTarget().ModulesDidLoad (loaded_module_list);
     }
     return true;
@@ -652,6 +581,14 @@ DynamicLoaderDarwinKernel::ReadKextSummaries (const Address &kext_summary_addr,
             {
                 image_infos[i].reference_list = 0;
             }
+//            printf ("[%3u] %*.*s: address=0x%16.16llx, size=0x%16.16llx, version=0x%16.16llx, load_tag=0x%8.8x, flags=0x%8.8x\n", 
+//                    i,
+//                    KERNEL_MODULE_MAX_NAME, KERNEL_MODULE_MAX_NAME,  (char *)name_data, 
+//                    image_infos[i].address, 
+//                    image_infos[i].size,
+//                    image_infos[i].version,
+//                    image_infos[i].load_tag,
+//                    image_infos[i].flags);
         }
         if (i < image_infos.size())
             image_infos.resize(i);
@@ -685,215 +622,6 @@ DynamicLoaderDarwinKernel::ReadAllKextSummaries ()
     }
     return false;
 }
-
-//----------------------------------------------------------------------
-// Read a mach_header at ADDR into HEADER, and also fill in the load
-// command data into LOAD_COMMAND_DATA if it is non-NULL.
-//
-// Returns true if we succeed, false if we fail for any reason.
-//----------------------------------------------------------------------
-bool
-DynamicLoaderDarwinKernel::ReadMachHeader (OSKextLoadedKextSummary& kext_summary, DataExtractor *load_command_data)
-{
-    DataBufferHeap header_bytes(sizeof(llvm::MachO::mach_header), 0);
-    Error error;
-    const bool prefer_file_cache = false;
-    size_t bytes_read = m_process->GetTarget().ReadMemory (kext_summary.so_address,
-                                                           prefer_file_cache,
-                                                           header_bytes.GetBytes(), 
-                                                           header_bytes.GetByteSize(), 
-                                                           error);
-    if (bytes_read == sizeof(llvm::MachO::mach_header))
-    {
-        uint32_t offset = 0;
-        ::memset (&kext_summary.header, 0, sizeof(kext_summary.header));
-
-        // Get the magic byte unswapped so we can figure out what we are dealing with
-        DataExtractor data(header_bytes.GetBytes(), header_bytes.GetByteSize(), endian::InlHostByteOrder(), 4);
-        kext_summary.header.magic = data.GetU32(&offset);
-        Address load_cmd_addr = kext_summary.so_address;
-        data.SetByteOrder(DynamicLoaderDarwinKernel::GetByteOrderFromMagic(kext_summary.header.magic));
-        switch (kext_summary.header.magic)
-        {
-        case llvm::MachO::HeaderMagic32:
-        case llvm::MachO::HeaderMagic32Swapped:
-            data.SetAddressByteSize(4);
-            load_cmd_addr.Slide (sizeof(llvm::MachO::mach_header));
-            break;
-
-        case llvm::MachO::HeaderMagic64:
-        case llvm::MachO::HeaderMagic64Swapped:
-            data.SetAddressByteSize(8);
-            load_cmd_addr.Slide (sizeof(llvm::MachO::mach_header_64));
-            break;
-
-        default:
-            return false;
-        }
-
-        // Read the rest of dyld's mach header
-        if (data.GetU32(&offset, &kext_summary.header.cputype, (sizeof(llvm::MachO::mach_header)/sizeof(uint32_t)) - 1))
-        {
-            if (load_command_data == NULL)
-                return true; // We were able to read the mach_header and weren't asked to read the load command bytes
-
-            DataBufferSP load_cmd_data_sp(new DataBufferHeap(kext_summary.header.sizeofcmds, 0));
-
-            size_t load_cmd_bytes_read = m_process->GetTarget().ReadMemory (load_cmd_addr, 
-                                                                            prefer_file_cache,
-                                                                            load_cmd_data_sp->GetBytes(), 
-                                                                            load_cmd_data_sp->GetByteSize(),
-                                                                            error);
-            
-            if (load_cmd_bytes_read == kext_summary.header.sizeofcmds)
-            {
-                // Set the load command data and also set the correct endian
-                // swap settings and the correct address size
-                load_command_data->SetData(load_cmd_data_sp, 0, kext_summary.header.sizeofcmds);
-                load_command_data->SetByteOrder(data.GetByteOrder());
-                load_command_data->SetAddressByteSize(data.GetAddressByteSize());
-                return true; // We successfully read the mach_header and the load command data
-            }
-
-            return false; // We weren't able to read the load command data
-        }
-    }
-    return false; // We failed the read the mach_header
-}
-
-
-//----------------------------------------------------------------------
-// Parse the load commands for an image
-//----------------------------------------------------------------------
-uint32_t
-DynamicLoaderDarwinKernel::ParseLoadCommands (const DataExtractor& data, OSKextLoadedKextSummary& image_info)
-{
-    uint32_t offset = 0;
-    uint32_t cmd_idx;
-    Segment segment;
-    image_info.Clear (true);
-
-    for (cmd_idx = 0; cmd_idx < image_info.header.ncmds; cmd_idx++)
-    {
-        // Clear out any load command specific data from image_info since
-        // we are about to read it.
-
-        if (data.ValidOffsetForDataOfSize (offset, sizeof(llvm::MachO::load_command)))
-        {
-            llvm::MachO::load_command load_cmd;
-            uint32_t load_cmd_offset = offset;
-            load_cmd.cmd = data.GetU32 (&offset);
-            load_cmd.cmdsize = data.GetU32 (&offset);
-            switch (load_cmd.cmd)
-            {
-            case llvm::MachO::LoadCommandSegment32:
-                {
-                    segment.name.SetTrimmedCStringWithLength ((const char *)data.GetData(&offset, 16), 16);
-                    // We are putting 4 uint32_t values 4 uint64_t values so
-                    // we have to use multiple 32 bit gets below.
-                    segment.vmaddr = data.GetU32 (&offset);
-                    segment.vmsize = data.GetU32 (&offset);
-                    segment.fileoff = data.GetU32 (&offset);
-                    segment.filesize = data.GetU32 (&offset);
-                    // Extract maxprot, initprot, nsects and flags all at once
-                    data.GetU32(&offset, &segment.maxprot, 4);
-                    image_info.segments.push_back (segment);
-                }
-                break;
-
-            case llvm::MachO::LoadCommandSegment64:
-                {
-                    segment.name.SetTrimmedCStringWithLength ((const char *)data.GetData(&offset, 16), 16);
-                    // Extract vmaddr, vmsize, fileoff, and filesize all at once
-                    data.GetU64(&offset, &segment.vmaddr, 4);
-                    // Extract maxprot, initprot, nsects and flags all at once
-                    data.GetU32(&offset, &segment.maxprot, 4);
-                    image_info.segments.push_back (segment);
-                }
-                break;
-
-            case llvm::MachO::LoadCommandUUID:
-                image_info.uuid.SetBytes(data.GetData (&offset, 16));
-                break;
-
-            default:
-                break;
-            }
-            // Set offset to be the beginning of the next load command.
-            offset = load_cmd_offset + load_cmd.cmdsize;
-        }
-    }
-#if 0
-    // No slide in the kernel...
-    
-    // All sections listed in the dyld image info structure will all
-    // either be fixed up already, or they will all be off by a single
-    // slide amount that is determined by finding the first segment
-    // that is at file offset zero which also has bytes (a file size
-    // that is greater than zero) in the object file.
-    
-    // Determine the slide amount (if any)
-    const size_t num_sections = image_info.segments.size();
-    for (size_t i = 0; i < num_sections; ++i)
-    {
-        // Iterate through the object file sections to find the
-        // first section that starts of file offset zero and that
-        // has bytes in the file...
-        if (image_info.segments[i].fileoff == 0 && image_info.segments[i].filesize > 0)
-        {
-            image_info.slide = image_info.address - image_info.segments[i].vmaddr;
-            // We have found the slide amount, so we can exit
-            // this for loop.
-            break;
-        }
-    }
-#endif
-    if (image_info.uuid.IsValid())
-    {
-        bool did_create = false;
-        if (FindTargetModule(image_info, true, &did_create))
-        {
-            if (did_create)
-                image_info.module_create_stop_id = m_process->GetStopID();
-        }
-    }
-    return cmd_idx;
-}
-
-//----------------------------------------------------------------------
-// Dump a Segment to the file handle provided.
-//----------------------------------------------------------------------
-void
-DynamicLoaderDarwinKernel::Segment::PutToLog (Log *log, addr_t slide) const
-{
-    if (log)
-    {
-        if (slide == 0)
-            log->Printf ("\t\t%16s [0x%16.16llx - 0x%16.16llx)", 
-                         name.AsCString(""), 
-                         vmaddr + slide, 
-                         vmaddr + slide + vmsize);
-        else
-            log->Printf ("\t\t%16s [0x%16.16llx - 0x%16.16llx) slide = 0x%llx", 
-                         name.AsCString(""), 
-                         vmaddr + slide, 
-                         vmaddr + slide + vmsize, 
-                         slide);
-    }
-}
-
-const DynamicLoaderDarwinKernel::Segment *
-DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::FindSegment (const ConstString &name) const
-{
-    const size_t num_segments = segments.size();
-    for (size_t i=0; i<num_segments; ++i)
-    {
-        if (segments[i].name == name)
-            return &segments[i];
-    }
-    return NULL;
-}
-
 
 //----------------------------------------------------------------------
 // Dump an image info structure to the file handle provided.
@@ -935,8 +663,6 @@ DynamicLoaderDarwinKernel::OSKextLoadedKextSummary::PutToLog (Log *log) const
                         address, address+size, version, load_tag, flags, reference_list,
                         name);
         }
-        for (uint32_t i=0; i<segments.size(); ++i)
-            segments[i].PutToLog(log, 0);
     }
 }
 
@@ -979,12 +705,12 @@ DynamicLoaderDarwinKernel::PrivateInitialize(Process *process)
 void
 DynamicLoaderDarwinKernel::SetNotificationBreakpointIfNeeded ()
 {
-    if (m_break_id == LLDB_INVALID_BREAK_ID)
+    if (m_break_id == LLDB_INVALID_BREAK_ID && m_kernel.module_sp)
     {
         DEBUG_PRINTF("DynamicLoaderDarwinKernel::%s() process state = %s\n", __FUNCTION__, StateAsCString(m_process->GetState()));
 
         
-        const bool internal_bp = false;
+        const bool internal_bp = true;
         const LazyBool skip_prologue = eLazyBoolNo;
         FileSpecList module_spec_list;
         module_spec_list.Append (m_kernel.module_sp->GetFileSpec());
@@ -992,8 +718,8 @@ DynamicLoaderDarwinKernel::SetNotificationBreakpointIfNeeded ()
                                                                   NULL,
                                                                   "OSKextLoadedKextSummariesUpdated",
                                                                   eFunctionNameTypeFull,
-                                                                  internal_bp,
-                                                                  skip_prologue).get();
+                                                                  skip_prologue,
+                                                                  internal_bp).get();
 
         bp->SetCallback (DynamicLoaderDarwinKernel::BreakpointHitCallback, this, true);
         m_break_id = bp->GetID();

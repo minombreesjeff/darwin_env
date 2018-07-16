@@ -53,7 +53,7 @@ ValueObjectVariable::~ValueObjectVariable()
 }
 
 lldb::clang_type_t
-ValueObjectVariable::GetClangType ()
+ValueObjectVariable::GetClangTypeImpl ()
 {
     Type *var_type = m_variable_sp->GetType();
     if (var_type)
@@ -67,21 +67,33 @@ ValueObjectVariable::GetTypeName()
     Type * var_type = m_variable_sp->GetType();
     if (var_type)
         return var_type->GetName();
-    ConstString empty_type_name;
-    return empty_type_name;
+    return ConstString();
+}
+
+ConstString
+ValueObjectVariable::GetQualifiedTypeName()
+{
+    Type * var_type = m_variable_sp->GetType();
+    if (var_type)
+        return var_type->GetQualifiedName();
+    return ConstString();
 }
 
 uint32_t
 ValueObjectVariable::CalculateNumChildren()
-{
-    Type *var_type = m_variable_sp->GetType();
-    if (var_type)
-        return var_type->GetNumChildren(true);
-    return 0;
+{    
+    ClangASTType type(GetClangAST(),
+                      GetClangType());
+    
+    if (!type.IsValid())
+        return 0;
+    
+    const bool omit_empty_base_classes = true;
+    return ClangASTContext::GetNumChildren(type.GetASTContext(), type.GetOpaqueQualType(), omit_empty_base_classes);
 }
 
 clang::ASTContext *
-ValueObjectVariable::GetClangAST ()
+ValueObjectVariable::GetClangASTImpl ()
 {
     Type *var_type = m_variable_sp->GetType();
     if (var_type)
@@ -92,10 +104,13 @@ ValueObjectVariable::GetClangAST ()
 size_t
 ValueObjectVariable::GetByteSize()
 {
-    Type *type = m_variable_sp->GetType();
-    if (type)
-        return type->GetByteSize();
-    return 0;
+    ClangASTType type(GetClangAST(),
+                      GetClangType());
+    
+    if (!type.IsValid())
+        return 0;
+    
+    return (ClangASTType::GetClangTypeBitWidth(type.GetASTContext(), type.GetOpaqueQualType()) + 7) / 8;
 }
 
 lldb::ValueType
@@ -127,7 +142,7 @@ ValueObjectVariable::UpdateValue ()
     else
     {
         lldb::addr_t loclist_base_load_addr = LLDB_INVALID_ADDRESS;
-        ExecutionContext exe_ctx (GetExecutionContextScope());
+        ExecutionContext exe_ctx (GetExecutionContextRef());
         
         Target *target = exe_ctx.GetTargetPtr();
         if (target)
@@ -173,7 +188,7 @@ ValueObjectVariable::UpdateValue ()
             case Value::eValueTypeScalar:
                 // The variable value is in the Scalar value inside the m_value.
                 // We can point our m_data right to it.
-                m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule());
+                m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
                 break;
 
             case Value::eValueTypeFileAddress:
@@ -226,7 +241,7 @@ ValueObjectVariable::UpdateValue ()
                     // so it can extract read its value into m_data appropriately
                     Value value(m_value);
                     value.SetContext(Value::eContextTypeVariable, variable);
-                    m_error = value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0, GetModule());
+                    m_error = value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
                 }
                 break;
             }
@@ -242,18 +257,30 @@ ValueObjectVariable::UpdateValue ()
 bool
 ValueObjectVariable::IsInScope ()
 {
-    ExecutionContextScope *exe_scope = GetExecutionContextScope();
-    if (!exe_scope)
-        return true;
-        
-    StackFrame *frame = exe_scope->CalculateStackFrame();
-    if (!frame)
-        return true;
+    const ExecutionContextRef &exe_ctx_ref = GetExecutionContextRef();
+    if (exe_ctx_ref.HasFrameRef())
+    {
+        ExecutionContext exe_ctx (exe_ctx_ref);
+        StackFrame *frame = exe_ctx.GetFramePtr();
+        if (frame)
+        {
+            return m_variable_sp->IsInScope (frame);
+        }
+        else
+        {
+            // This ValueObject had a frame at one time, but now we
+            // can't locate it, so return false since we probably aren't
+            // in scope.
+            return false;
+        }
+    }
+    // We have a variable that wasn't tied to a frame, which
+    // means it is a global and is always in scope.
+    return true;
          
-    return m_variable_sp->IsInScope (frame);
 }
 
-Module *
+lldb::ModuleSP
 ValueObjectVariable::GetModule()
 {
     if (m_variable_sp)
@@ -261,12 +288,10 @@ ValueObjectVariable::GetModule()
         SymbolContextScope *sc_scope = m_variable_sp->GetSymbolContextScope();
         if (sc_scope)
         {
-            SymbolContext sc;
-            sc_scope->CalculateSymbolContext (&sc);
-            return sc.module_sp.get();
+            return sc_scope->CalculateSymbolContextModule();
         }
     }
-    return NULL;
+    return lldb::ModuleSP();
 }
 
 SymbolContextScope *
@@ -275,4 +300,15 @@ ValueObjectVariable::GetSymbolContextScope()
     if (m_variable_sp)
         return m_variable_sp->GetSymbolContextScope();
     return NULL;
+}
+
+bool
+ValueObjectVariable::GetDeclaration (Declaration &decl)
+{
+    if (m_variable_sp)
+    {
+        decl = m_variable_sp->GetDeclaration();
+        return true;
+    }
+    return false;
 }

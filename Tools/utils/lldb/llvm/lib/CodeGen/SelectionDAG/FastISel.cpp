@@ -561,12 +561,19 @@ bool FastISel::SelectCall(const User *I) {
     return true;
   }
 
+  MachineModuleInfo &MMI = FuncInfo.MF->getMMI();
+  ComputeUsesVAFloatArgument(*Call, &MMI);
+
   const Function *F = Call->getCalledFunction();
   if (!F) return false;
 
   // Handle selected intrinsic function calls.
   switch (F->getIntrinsicID()) {
   default: break;
+    // At -O0 we don't care about the lifetime intrinsics.
+  case Intrinsic::lifetime_start:
+  case Intrinsic::lifetime_end:
+    return true;
   case Intrinsic::dbg_declare: {
     const DbgDeclareInst *DI = cast<DbgDeclareInst>(Call);
     if (!DIVariable(DI->getVariable()).Verify() ||
@@ -628,60 +635,6 @@ bool FastISel::SelectCall(const User *I) {
       // generating code, thus altering codegen because of debug info.
       DEBUG(dbgs() << "Dropping debug info for " << DI);
     }
-    return true;
-  }
-  case Intrinsic::eh_exception: {
-    EVT VT = TLI.getValueType(Call->getType());
-    if (TLI.getOperationAction(ISD::EXCEPTIONADDR, VT)!=TargetLowering::Expand)
-      break;
-
-    assert(FuncInfo.MBB->isLandingPad() &&
-           "Call to eh.exception not in landing pad!");
-    unsigned Reg = TLI.getExceptionAddressRegister();
-    const TargetRegisterClass *RC = TLI.getRegClassFor(VT);
-    unsigned ResultReg = createResultReg(RC);
-    BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(TargetOpcode::COPY),
-            ResultReg).addReg(Reg);
-    UpdateValueMap(Call, ResultReg);
-    return true;
-  }
-  case Intrinsic::eh_selector: {
-    EVT VT = TLI.getValueType(Call->getType());
-    if (TLI.getOperationAction(ISD::EHSELECTION, VT) != TargetLowering::Expand)
-      break;
-    if (FuncInfo.MBB->isLandingPad())
-      AddCatchInfo(*Call, &FuncInfo.MF->getMMI(), FuncInfo.MBB);
-    else {
-#ifndef NDEBUG
-      FuncInfo.CatchInfoLost.insert(Call);
-#endif
-      // FIXME: Mark exception selector register as live in.  Hack for PR1508.
-      unsigned Reg = TLI.getExceptionSelectorRegister();
-      if (Reg) FuncInfo.MBB->addLiveIn(Reg);
-    }
-
-    unsigned Reg = TLI.getExceptionSelectorRegister();
-    EVT SrcVT = TLI.getPointerTy();
-    const TargetRegisterClass *RC = TLI.getRegClassFor(SrcVT);
-    unsigned ResultReg = createResultReg(RC);
-    BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(TargetOpcode::COPY),
-            ResultReg).addReg(Reg);
-
-    bool ResultRegIsKill = hasTrivialKill(Call);
-
-    // Cast the register to the type of the selector.
-    if (SrcVT.bitsGT(MVT::i32))
-      ResultReg = FastEmit_r(SrcVT.getSimpleVT(), MVT::i32, ISD::TRUNCATE,
-                             ResultReg, ResultRegIsKill);
-    else if (SrcVT.bitsLT(MVT::i32))
-      ResultReg = FastEmit_r(SrcVT.getSimpleVT(), MVT::i32,
-                             ISD::SIGN_EXTEND, ResultReg, ResultRegIsKill);
-    if (ResultReg == 0)
-      // Unhandled operand. Halt "fast" selection and bail.
-      return false;
-
-    UpdateValueMap(Call, ResultReg);
-
     return true;
   }
   case Intrinsic::objectsize: {
@@ -775,8 +728,8 @@ bool FastISel::SelectBitCast(const User *I) {
   // First, try to perform the bitcast by inserting a reg-reg copy.
   unsigned ResultReg = 0;
   if (SrcVT.getSimpleVT() == DstVT.getSimpleVT()) {
-    TargetRegisterClass* SrcClass = TLI.getRegClassFor(SrcVT);
-    TargetRegisterClass* DstClass = TLI.getRegClassFor(DstVT);
+    const TargetRegisterClass* SrcClass = TLI.getRegClassFor(SrcVT);
+    const TargetRegisterClass* DstClass = TLI.getRegClassFor(DstVT);
     // Don't attempt a cross-class copy. It will likely fail.
     if (SrcClass == DstClass) {
       ResultReg = createResultReg(DstClass);
@@ -1419,8 +1372,8 @@ bool FastISel::HandlePHINodesInSuccessorBlocks(const BasicBlock *LLVMBB) {
       // exactly one register for each non-void instruction.
       EVT VT = TLI.getValueType(PN->getType(), /*AllowUnknown=*/true);
       if (VT == MVT::Other || !TLI.isTypeLegal(VT)) {
-        // Promote MVT::i1.
-        if (VT == MVT::i1)
+        // Handle integer promotions, though, because they're common and easy.
+        if (VT == MVT::i1 || VT == MVT::i8 || VT == MVT::i16)
           VT = TLI.getTypeToTransformTo(LLVMBB->getContext(), VT);
         else {
           FuncInfo.PHINodesToUpdate.resize(OrigNumPHINodesToUpdate);

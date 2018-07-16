@@ -24,7 +24,7 @@ public:
     // Class functions
     //------------------------------------------------------------
     static lldb_private::Platform* 
-    CreateInstance ();
+    CreateInstance (bool force, const lldb_private::ArchSpec *arch);
 
     static void
     Initialize ();
@@ -80,16 +80,6 @@ public:
     GetFile (const lldb_private::FileSpec &platform_file, 
              const lldb_private::UUID *uuid_ptr,
              lldb_private::FileSpec &local_file);
-
-    lldb_private::Error
-    GetSharedModule (const lldb_private::FileSpec &platform_file, 
-                     const lldb_private::ArchSpec &arch,
-                     const lldb_private::UUID *uuid_ptr,
-                     const lldb_private::ConstString *object_name_ptr,
-                     off_t object_offset,
-                     lldb::ModuleSP &module_sp,
-                     lldb::ModuleSP *old_module_sp_ptr,
-                     bool *did_create_ptr);
 
     virtual bool
     GetSupportedArchitectureAtIndex (uint32_t idx, 

@@ -23,6 +23,7 @@
 class SymbolFileDWARF;
 class DWARFCompileUnit;
 class DWARFDebugInfoEntry;
+class DWARFDeclContext;
 
 class SymbolFileDWARFDebugMap : public lldb_private::SymbolFile
 {
@@ -76,8 +77,8 @@ public:
     virtual uint32_t        ResolveSymbolContext (const lldb_private::FileSpec& file_spec, uint32_t line, bool check_inlines, uint32_t resolve_scope, lldb_private::SymbolContextList& sc_list);
     virtual uint32_t        FindGlobalVariables (const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
     virtual uint32_t        FindGlobalVariables (const lldb_private::RegularExpression& regex, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
-    virtual uint32_t        FindFunctions (const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, lldb_private::SymbolContextList& sc_list);
-    virtual uint32_t        FindFunctions (const lldb_private::RegularExpression& regex, bool append, lldb_private::SymbolContextList& sc_list);
+    virtual uint32_t        FindFunctions (const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool include_inlines, bool append, lldb_private::SymbolContextList& sc_list);
+    virtual uint32_t        FindFunctions (const lldb_private::RegularExpression& regex, bool include_inlines, bool append, lldb_private::SymbolContextList& sc_list);
     virtual uint32_t        FindTypes (const lldb_private::SymbolContext& sc, const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::TypeList& types);
     virtual lldb_private::ClangNamespaceDecl
             FindNamespace (const lldb_private::SymbolContext& sc, 
@@ -141,7 +142,8 @@ protected:
         lldb_private::SymbolVendor *oso_symbol_vendor;
         std::vector<uint32_t> function_indexes;
         std::vector<uint32_t> static_indexes;
-        lldb::SharedPtr<lldb_private::SectionList>::Type debug_map_sections_sp;
+        STD_SHARED_PTR(lldb_private::SectionList) debug_map_sections_sp;
+        bool symbol_file_supported;
 
         CompileUnitInfo() :
             so_file (),
@@ -155,7 +157,8 @@ protected:
             oso_symbol_vendor (NULL),
             function_indexes (),
             static_indexes (),
-            debug_map_sections_sp ()
+            debug_map_sections_sp (),
+            symbol_file_supported (true)
         {
         }
     };
@@ -225,9 +228,7 @@ protected:
     SetCompileUnit (SymbolFileDWARF *oso_dwarf, const lldb::CompUnitSP &cu_sp);
 
     lldb::TypeSP
-    FindDefinitionTypeForDIE (DWARFCompileUnit* cu, 
-                              const DWARFDebugInfoEntry *die, 
-                              const lldb_private::ConstString &type_name);    
+    FindDefinitionTypeForDWARFDeclContext (const DWARFDeclContext &die_decl_ctx);    
 
     bool
     Supports_DW_AT_APPLE_objc_complete_type (SymbolFileDWARF *skip_dwarf_oso);

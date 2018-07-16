@@ -66,11 +66,14 @@ public:
     AsChar,       // 'hh'
     AsShort,      // 'h'
     AsLong,       // 'l'
-    AsLongLong,   // 'll', 'q' (BSD, deprecated)
+    AsLongLong,   // 'll'
+    AsQuad,       // 'q' (BSD, deprecated, for 64-bit integer types)
     AsIntMax,     // 'j'
     AsSizeT,      // 'z'
     AsPtrDiff,    // 't'
     AsLongDouble, // 'L'
+    AsAllocate,   // for '%as', GNU extension to C90 scanf
+    AsMAllocate,  // for '%ms', GNU extension to scanf
     AsWideChar = AsLong // for '%ls', only makes sense for printf
   };
 
@@ -345,6 +348,12 @@ public:
   bool usesPositionalArg() const { return UsesPositionalArg; }
 
   bool hasValidLengthModifier() const;
+
+  bool hasStandardLengthModifier() const;
+
+  bool hasStandardConversionSpecifier(const LangOptions &LangOpt) const;
+
+  bool hasStandardLengthConversionCombination() const;
 };
 
 } // end analyze_format_string namespace
@@ -366,7 +375,7 @@ public:
   bool isObjCArg() const { return kind >= ObjCBeg && kind <= ObjCEnd; }
   bool isIntArg() const { return kind >= IntArgBeg && kind <= IntArgEnd; }
   bool isDoubleArg() const { return kind >= DoubleArgBeg &&
-                                    kind <= DoubleArgBeg; }
+                                    kind <= DoubleArgEnd; }
   unsigned getLength() const {
       // Conversion specifiers currently only are represented by
       // single characters, but we be flexible.
@@ -453,7 +462,7 @@ public:
   /// will return null if the format specifier does not have
   /// a matching data argument or the matching argument matches
   /// more than one type.
-  ArgTypeResult getArgType(ASTContext &Ctx) const;
+  ArgTypeResult getArgType(ASTContext &Ctx, bool IsObjCLiteral) const;
 
   const OptionalFlag &hasThousandsGrouping() const {
       return HasThousandsGrouping;
@@ -465,10 +474,11 @@ public:
   const OptionalFlag &hasSpacePrefix() const { return HasSpacePrefix; }
   bool usesPositionalArg() const { return UsesPositionalArg; }
 
-    /// Changes the specifier and length according to a QualType, retaining any
-    /// flags or options. Returns true on success, or false when a conversion
-    /// was not successful.
-  bool fixType(QualType QT, const LangOptions &LangOpt);
+  /// Changes the specifier and length according to a QualType, retaining any
+  /// flags or options. Returns true on success, or false when a conversion
+  /// was not successful.
+  bool fixType(QualType QT, const LangOptions &LangOpt, ASTContext &Ctx,
+               bool IsObjCLiteral);
 
   void toString(raw_ostream &os) const;
 
@@ -565,7 +575,7 @@ public:
 
   ScanfArgTypeResult getArgType(ASTContext &Ctx) const;
 
-  bool fixType(QualType QT, const LangOptions &LangOpt);
+  bool fixType(QualType QT, const LangOptions &LangOpt, ASTContext &Ctx);
 
   void toString(raw_ostream &os) const;
 
@@ -630,10 +640,10 @@ public:
 };
 
 bool ParsePrintfString(FormatStringHandler &H,
-                       const char *beg, const char *end);
+                       const char *beg, const char *end, const LangOptions &LO);
 
 bool ParseScanfString(FormatStringHandler &H,
-                       const char *beg, const char *end);
+                      const char *beg, const char *end, const LangOptions &LO);
 
 } // end analyze_format_string namespace
 } // end clang namespace

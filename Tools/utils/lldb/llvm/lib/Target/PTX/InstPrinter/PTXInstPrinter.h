@@ -1,4 +1,4 @@
-//===-- PTXInstPrinter.h - Convert PTX MCInst to assembly syntax ----------===//
+//===- PTXInstPrinter.h - Convert PTX MCInst to assembly syntax -*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -23,7 +23,8 @@ class MCOperand;
 
 class PTXInstPrinter : public MCInstPrinter {
 public:
-  PTXInstPrinter(const MCAsmInfo &MAI, const MCSubtargetInfo &STI);
+  PTXInstPrinter(const MCAsmInfo &MAI, const MCRegisterInfo &MRI,
+                 const MCSubtargetInfo &STI);
 
   virtual void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot);
   virtual StringRef getOpcodeName(unsigned Opcode) const;

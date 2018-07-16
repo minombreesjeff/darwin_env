@@ -19,7 +19,7 @@
 #ifndef LLVM_CODEGEN_SLOTINDEXES_H
 #define LLVM_CODEGEN_SLOTINDEXES_H
 
-#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineInstrBundle.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -206,6 +206,12 @@ namespace llvm {
     /// isSameInstr - Return true if A and B refer to the same instruction.
     static bool isSameInstr(SlotIndex A, SlotIndex B) {
       return A.lie.getPointer() == B.lie.getPointer();
+    }
+
+    /// isEarlierInstr - Return true if A refers to an instruction earlier than
+    /// B. This is equivalent to A < B && !isSameInstr(A, B).
+    static bool isEarlierInstr(SlotIndex A, SlotIndex B) {
+      return A.entry().getIndex() < B.entry().getIndex();
     }
 
     /// Return the distance from this index to the given one.
@@ -466,11 +472,6 @@ namespace llvm {
       return SlotIndex(back(), 0);
     }
 
-    /// Returns the invalid index marker for this analysis.
-    SlotIndex getInvalidIndex() {
-      return getZeroIndex();
-    }
-
     /// Returns the distance between the highest and lowest indexes allocated
     /// so far.
     unsigned getIndexesLength() const {
@@ -488,12 +489,13 @@ namespace llvm {
     /// Returns true if the given machine instr is mapped to an index,
     /// otherwise returns false.
     bool hasIndex(const MachineInstr *instr) const {
-      return (mi2iMap.find(instr) != mi2iMap.end());
+      return mi2iMap.count(instr);
     }
 
     /// Returns the base index for the given instruction.
-    SlotIndex getInstructionIndex(const MachineInstr *instr) const {
-      Mi2IndexMap::const_iterator itr = mi2iMap.find(instr);
+    SlotIndex getInstructionIndex(const MachineInstr *MI) const {
+      // Instructions inside a bundle have the same number as the bundle itself.
+      Mi2IndexMap::const_iterator itr = mi2iMap.find(getBundleStart(MI));
       assert(itr != mi2iMap.end() && "Instruction not found in maps.");
       return itr->second;
     }
@@ -647,6 +649,8 @@ namespace llvm {
     /// instructions, create the new index after the null indexes instead of
     /// before them.
     SlotIndex insertMachineInstrInMaps(MachineInstr *mi, bool Late = false) {
+      assert(!mi->isInsideBundle() &&
+             "Instructions inside bundles should use bundle start's slot.");
       assert(mi2iMap.find(mi) == mi2iMap.end() && "Instr already indexed.");
       // Numbering DBG_VALUE instructions could cause code generation to be
       // affected by debug information.

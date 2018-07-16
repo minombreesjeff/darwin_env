@@ -122,7 +122,7 @@ public:
     {
         Mutex::Locker locker(m_mutex);
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (value = 0x%8.8x, broadcast_type = %i)", __FUNCTION__, value, broadcast_type);
+        printf("%s (value = 0x%8.8x, broadcast_type = %i)\n", __FUNCTION__, value, broadcast_type);
 #endif
         const T old_value = m_value;
         m_value = value;
@@ -150,7 +150,7 @@ public:
     {
         Mutex::Locker locker(m_mutex);
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (bits = 0x%8.8x, broadcast_type = %i)", __FUNCTION__, bits, broadcast_type);
+        printf("%s (bits = 0x%8.8x, broadcast_type = %i)\n", __FUNCTION__, bits, broadcast_type);
 #endif
         const T old_value = m_value;
         m_value |= bits;
@@ -178,7 +178,7 @@ public:
     {
         Mutex::Locker locker(m_mutex);
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (bits = 0x%8.8x, broadcast_type = %i)", __FUNCTION__, bits, broadcast_type);
+        printf("%s (bits = 0x%8.8x, broadcast_type = %i)\n", __FUNCTION__, bits, broadcast_type);
 #endif
         const T old_value = m_value;
         m_value &= ~bits;
@@ -216,14 +216,14 @@ public:
         // function and not have to worry about unlocking the mutex.
         Mutex::Locker locker(m_mutex);
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (bits = 0x%8.8x, abstime = %p), m_value = 0x%8.8x", __FUNCTION__, bits, abstime, m_value);
+        printf("%s (bits = 0x%8.8x, abstime = %p), m_value = 0x%8.8x\n", __FUNCTION__, bits, abstime, m_value);
 #endif
         while (err == 0 && ((m_value & bits) == 0))
         {
-            err = m_condition.Wait (m_mutex.GetMutex(), abstime);
+            err = m_condition.Wait (m_mutex, abstime);
         }
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (bits = 0x%8.8x), m_value = 0x%8.8x, returning 0x%8.8x", __FUNCTION__, bits, m_value, m_value & bits);
+        printf("%s (bits = 0x%8.8x), m_value = 0x%8.8x, returning 0x%8.8x\n", __FUNCTION__, bits, m_value, m_value & bits);
 #endif
 
         return m_value & bits;
@@ -260,15 +260,15 @@ public:
         Mutex::Locker locker(m_mutex);
 
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (bits = 0x%8.8x, abstime = %p), m_value = 0x%8.8x", __FUNCTION__, bits, abstime, m_value);
+        printf("%s (bits = 0x%8.8x, abstime = %p), m_value = 0x%8.8x\n", __FUNCTION__, bits, abstime, m_value);
 #endif
         while (err == 0 && ((m_value & bits) != 0))
         {
-            err = m_condition.Wait (m_mutex.GetMutex(), abstime);
+            err = m_condition.Wait (m_mutex, abstime);
         }
 
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (bits = 0x%8.8x), m_value = 0x%8.8x", __FUNCTION__, bits, m_value);
+        printf("%s (bits = 0x%8.8x), m_value = 0x%8.8x, returning 0x%8.8x\n", __FUNCTION__, bits, m_value, m_value & bits);
 #endif
         return m_value & bits;
     }
@@ -307,14 +307,14 @@ public:
         Mutex::Locker locker(m_mutex);
 
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (value = 0x%8.8x, abstime = %p), m_value = 0x%8.8x", __FUNCTION__, value, abstime, m_value);
+        printf("%s (value = 0x%8.8x, abstime = %p), m_value = 0x%8.8x\n", __FUNCTION__, value, abstime, m_value);
 #endif
         if (timed_out)
             *timed_out = false;
 
         while (err == 0 && m_value != value)
         {
-            err = m_condition.Wait (m_mutex.GetMutex(), abstime, timed_out);
+            err = m_condition.Wait (m_mutex, abstime, timed_out);
         }
 
         return m_value == value;
@@ -332,14 +332,14 @@ public:
         Mutex::Locker locker(m_mutex);
 
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (value = 0x%8.8x, abstime = %p), m_value = 0x%8.8x", __FUNCTION__, value, abstime, m_value);
+        printf("%s (wait_value = 0x%8.8x, new_value = 0x%8.8x, abstime = %p), m_value = 0x%8.8x\n", __FUNCTION__, wait_value, new_value, abstime, m_value);
 #endif
         if (timed_out)
             *timed_out = false;
 
         while (err == 0 && m_value != wait_value)
         {
-            err = m_condition.Wait (m_mutex.GetMutex(), abstime, timed_out);
+            err = m_condition.Wait (m_mutex, abstime, timed_out);
         }
 
         if (m_value == wait_value)
@@ -384,11 +384,11 @@ public:
         // function and not have to worry about unlocking the mutex.
         Mutex::Locker locker(m_mutex);
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (value = 0x%8.8x, abstime = %p), m_value = 0x%8.8x", __FUNCTION__, value, abstime, m_value);
+        printf("%s (value = 0x%8.8x, abstime = %p), m_value = 0x%8.8x\n", __FUNCTION__, value, abstime, m_value);
 #endif
         while (err == 0 && m_value == value)
         {
-            err = m_condition.Wait (m_mutex.GetMutex(), abstime);
+            err = m_condition.Wait (m_mutex, abstime);
         }
 
         if (m_value != value)
@@ -430,7 +430,7 @@ private:
     {
         bool broadcast = (broadcast_type == eBroadcastAlways) || ((broadcast_type == eBroadcastOnChange) && old_value != m_value);
 #ifdef DB_PTHREAD_LOG_EVENTS
-        printf("%s (old_value = 0x%8.8x, broadcast_type = %i) m_value = 0x%8.8x, broadcast = %u", __FUNCTION__, old_value, broadcast_type, m_value, broadcast);
+        printf("%s (old_value = 0x%8.8x, broadcast_type = %i) m_value = 0x%8.8x, broadcast = %u\n", __FUNCTION__, old_value, broadcast_type, m_value, broadcast);
 #endif
         if (broadcast)
             m_condition.Broadcast();

@@ -370,7 +370,8 @@ LineTableInfo &SourceManager::getLineTable() {
 SourceManager::SourceManager(DiagnosticsEngine &Diag, FileManager &FileMgr)
   : Diag(Diag), FileMgr(FileMgr), OverridenFilesKeepOriginalName(true),
     ExternalSLocEntries(0), LineTable(0), NumLinearScans(0),
-    NumBinaryProbes(0), FakeBufferForRecovery(0) {
+    NumBinaryProbes(0), FakeBufferForRecovery(0),
+    FakeContentCacheForRecovery(0) {
   clearIDTables();
   Diag.setSourceManager(this);
 }
@@ -382,16 +383,21 @@ SourceManager::~SourceManager() {
   // content cache objects are bump pointer allocated, we just have to run the
   // dtors, but we call the deallocate method for completeness.
   for (unsigned i = 0, e = MemBufferInfos.size(); i != e; ++i) {
-    MemBufferInfos[i]->~ContentCache();
-    ContentCacheAlloc.Deallocate(MemBufferInfos[i]);
+    if (MemBufferInfos[i]) {
+      MemBufferInfos[i]->~ContentCache();
+      ContentCacheAlloc.Deallocate(MemBufferInfos[i]);
+    }
   }
   for (llvm::DenseMap<const FileEntry*, SrcMgr::ContentCache*>::iterator
        I = FileInfos.begin(), E = FileInfos.end(); I != E; ++I) {
-    I->second->~ContentCache();
-    ContentCacheAlloc.Deallocate(I->second);
+    if (I->second) {
+      I->second->~ContentCache();
+      ContentCacheAlloc.Deallocate(I->second);
+    }
   }
   
   delete FakeBufferForRecovery;
+  delete FakeContentCacheForRecovery;
 
   for (llvm::DenseMap<FileID, MacroArgsMap *>::iterator
          I = MacroArgsCacheMap.begin(),E = MacroArgsCacheMap.end(); I!=E; ++I) {
@@ -465,6 +471,25 @@ SourceManager::createMemBufferContentCache(const MemoryBuffer *Buffer) {
   return Entry;
 }
 
+const SrcMgr::SLocEntry &SourceManager::loadSLocEntry(unsigned Index,
+                                                      bool *Invalid) const {
+  assert(!SLocEntryLoaded[Index]);
+  if (ExternalSLocEntries->ReadSLocEntry(-(static_cast<int>(Index) + 2))) {
+    if (Invalid)
+      *Invalid = true;
+    // If the file of the SLocEntry changed we could still have loaded it.
+    if (!SLocEntryLoaded[Index]) {
+      // Try to recover; create a SLocEntry so the rest of clang can handle it.
+      LoadedSLocEntryTable[Index] = SLocEntry::get(0,
+                                 FileInfo::get(SourceLocation(),
+                                               getFakeContentCacheForRecovery(),
+                                               SrcMgr::C_User));
+    }
+  }
+
+  return LoadedSLocEntryTable[Index];
+}
+
 std::pair<int, unsigned>
 SourceManager::AllocateLoadedSLocEntries(unsigned NumSLocEntries,
                                          unsigned TotalSize) {
@@ -485,6 +510,18 @@ const llvm::MemoryBuffer *SourceManager::getFakeBufferForRecovery() const {
       = llvm::MemoryBuffer::getMemBuffer("<<<INVALID BUFFER>>");
   
   return FakeBufferForRecovery;
+}
+
+/// \brief As part of recovering from missing or changed content, produce a
+/// fake content cache.
+const SrcMgr::ContentCache *
+SourceManager::getFakeContentCacheForRecovery() const {
+  if (!FakeContentCacheForRecovery) {
+    FakeContentCacheForRecovery = new ContentCache();
+    FakeContentCacheForRecovery->replaceBuffer(getFakeBufferForRecovery(),
+                                               /*DoNotFree=*/true);
+  }
+  return FakeContentCacheForRecovery;
 }
 
 //===----------------------------------------------------------------------===//
@@ -958,13 +995,13 @@ unsigned SourceManager::getColumnNumber(FileID FID, unsigned FilePos,
   if (MyInvalid)
     return 1;
 
-  const char *Buf = MemBuf->getBufferStart();
-  if (Buf + FilePos >= MemBuf->getBufferEnd()) {
+  if (FilePos >= MemBuf->getBufferSize()) {
     if (Invalid)
       *Invalid = MyInvalid;
     return 1;
   }
 
+  const char *Buf = MemBuf->getBufferStart();
   unsigned LineStart = FilePos;
   while (LineStart && Buf[LineStart-1] != '\n' && Buf[LineStart-1] != '\r')
     --LineStart;
@@ -1520,9 +1557,10 @@ SourceLocation SourceManager::translateLineCol(FileID FID,
     return FileLoc.getLocWithOffset(Size);
   }
 
+  const llvm::MemoryBuffer *Buffer = Content->getBuffer(Diag, *this);
   unsigned FilePos = Content->SourceLineCache[Line - 1];
-  const char *Buf = Content->getBuffer(Diag, *this)->getBufferStart() + FilePos;
-  unsigned BufLength = Content->getBuffer(Diag, *this)->getBufferEnd() - Buf;
+  const char *Buf = Buffer->getBufferStart() + FilePos;
+  unsigned BufLength = Buffer->getBufferSize() - FilePos;
   if (BufLength == 0)
     return FileLoc.getLocWithOffset(FilePos);
 
@@ -1580,14 +1618,31 @@ void SourceManager::computeMacroArgsCache(MacroArgsMap *&CachePtr,
       continue;
     }
 
-    if (!Entry.getExpansion().isMacroArgExpansion())
+    const ExpansionInfo &ExpInfo = Entry.getExpansion();
+
+    if (ExpInfo.getExpansionLocStart().isFileID()) {
+      if (!isInFileID(ExpInfo.getExpansionLocStart(), FID))
+        return; // No more files/macros that may be "contained" in this file.
+    }
+
+    if (!ExpInfo.isMacroArgExpansion())
       continue;
- 
-    SourceLocation SpellLoc =
-        getSpellingLoc(Entry.getExpansion().getSpellingLoc());
+
+    SourceLocation SpellLoc = ExpInfo.getSpellingLoc();
+    while (!SpellLoc.isFileID()) {
+      std::pair<FileID, unsigned> LocInfo = getDecomposedLoc(SpellLoc);
+      const ExpansionInfo &Info = getSLocEntry(LocInfo.first).getExpansion();
+      if (!Info.isMacroArgExpansion())
+        break;
+      SpellLoc = Info.getSpellingLoc().getLocWithOffset(LocInfo.second);
+    }
+    if (!SpellLoc.isFileID())
+      continue;
+    
     unsigned BeginOffs;
     if (!isInFileID(SpellLoc, FID, &BeginOffs))
-      return; // No more files/macros that may be "contained" in this file.
+      continue;
+
     unsigned EndOffs = BeginOffs + getFileIDSize(FileID::get(ID));
 
     // Add a new chunk for this macro argument. A previous macro argument chunk
@@ -1660,7 +1715,7 @@ static bool MoveUpIncludeHierarchy(std::pair<FileID, unsigned> &Loc,
   SourceLocation UpperLoc;
   const SrcMgr::SLocEntry &Entry = SM.getSLocEntry(Loc.first);
   if (Entry.isExpansion())
-    UpperLoc = Entry.getExpansion().getExpansionLocEnd();
+    UpperLoc = Entry.getExpansion().getExpansionLocStart();
   else
     UpperLoc = Entry.getFile().getIncludeLoc();
   

@@ -21,6 +21,259 @@
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/Symtab.h"
 #include "lldb/Symbol/TypeList.h"
+#include "lldb/Target/PathMappingList.h"
+
+
+namespace lldb_private {
+
+class ModuleSpec
+{
+public:
+    ModuleSpec () :
+        m_file (),
+        m_platform_file (),
+        m_symbol_file (),
+        m_arch (),
+        m_uuid (),
+        m_object_name (),
+        m_object_offset (0),
+        m_source_mappings ()
+    {
+    }
+
+    ModuleSpec (const FileSpec &file_spec) :
+        m_file (file_spec),
+        m_platform_file (),
+        m_symbol_file (),
+        m_arch (),
+        m_uuid (),
+        m_object_name (),
+        m_object_offset (0),
+        m_source_mappings ()
+    {
+    }
+
+    ModuleSpec (const FileSpec &file_spec, const ArchSpec &arch) :
+        m_file (file_spec),
+        m_platform_file (),
+        m_symbol_file (),
+        m_arch (arch),
+        m_uuid (),
+        m_object_name (),
+        m_object_offset (0),
+        m_source_mappings ()
+    {
+    }
+    
+    ModuleSpec (const ModuleSpec &rhs) :
+        m_file (rhs.m_file),
+        m_platform_file (rhs.m_platform_file),
+        m_symbol_file (rhs.m_symbol_file),
+        m_arch (rhs.m_arch),
+        m_uuid (rhs.m_uuid),
+        m_object_name (rhs.m_object_name),
+        m_object_offset (rhs.m_object_offset),
+        m_source_mappings (rhs.m_source_mappings)
+    {
+    }
+
+    ModuleSpec &
+    operator = (const ModuleSpec &rhs)
+    {
+        if (this != &rhs)
+        {
+            m_file = rhs.m_file;
+            m_platform_file = rhs.m_platform_file;
+            m_symbol_file = rhs.m_symbol_file;
+            m_arch = rhs.m_arch;
+            m_uuid = rhs.m_uuid;
+            m_object_name = rhs.m_object_name;
+            m_object_offset = rhs.m_object_offset;
+            m_source_mappings = rhs.m_source_mappings;
+        }
+        return *this;
+    }
+
+    FileSpec *
+    GetFileSpecPtr ()
+    {
+        if (m_file)
+            return &m_file;
+        return NULL;
+    }
+
+    const FileSpec *
+    GetFileSpecPtr () const
+    {
+        if (m_file)
+            return &m_file;
+        return NULL;
+    }
+    
+    FileSpec &
+    GetFileSpec ()
+    {
+        return m_file;
+    }
+    const FileSpec &
+    GetFileSpec () const
+    {
+        return m_file;
+    }
+
+    FileSpec *
+    GetPlatformFileSpecPtr ()
+    {
+        if (m_platform_file)
+            return &m_platform_file;
+        return NULL;
+    }
+
+    const FileSpec *
+    GetPlatformFileSpecPtr () const
+    {
+        if (m_platform_file)
+            return &m_platform_file;
+        return NULL;
+    }
+
+    FileSpec &
+    GetPlatformFileSpec ()
+    {
+        return m_platform_file;
+    }
+
+    const FileSpec &
+    GetPlatformFileSpec () const
+    {
+        return m_platform_file;
+    }
+
+    FileSpec *
+    GetSymbolFileSpecPtr ()
+    {
+        if (m_symbol_file)
+            return &m_symbol_file;
+        return NULL;
+    }
+    
+    const FileSpec *
+    GetSymbolFileSpecPtr () const
+    {
+        if (m_symbol_file)
+            return &m_symbol_file;
+        return NULL;
+    }
+    
+    FileSpec &
+    GetSymbolFileSpec ()
+    {
+        return m_symbol_file;
+    }
+    
+    const FileSpec &
+    GetSymbolFileSpec () const
+    {
+        return m_symbol_file;
+    }
+
+    
+    ArchSpec *
+    GetArchitecturePtr ()
+    {
+        if (m_arch.IsValid())
+            return &m_arch;
+        return NULL;
+    }
+    
+    const ArchSpec *
+    GetArchitecturePtr () const
+    {
+        if (m_arch.IsValid())
+            return &m_arch;
+        return NULL;
+    }
+    
+    ArchSpec &
+    GetArchitecture ()
+    {
+        return m_arch;
+    }
+    
+    const ArchSpec &
+    GetArchitecture () const
+    {
+        return m_arch;
+    }
+
+    UUID *
+    GetUUIDPtr ()
+    {
+        if (m_uuid.IsValid())
+            return &m_uuid;
+        return NULL;
+    }
+    
+    const UUID *
+    GetUUIDPtr () const
+    {
+        if (m_uuid.IsValid())
+            return &m_uuid;
+        return NULL;
+    }
+    
+    UUID &
+    GetUUID ()
+    {
+        return m_uuid;
+    }
+    
+    const UUID &
+    GetUUID () const
+    {
+        return m_uuid;
+    }
+
+    ConstString &
+    GetObjectName ()
+    {
+        return m_object_name;
+    }
+
+    const ConstString &
+    GetObjectName () const
+    {
+        return m_object_name;
+    }
+
+    uint64_t
+    GetObjectOffset () const
+    {
+        return m_object_offset;
+    }
+
+    void
+    SetObjectOffset (uint64_t object_offset)
+    {
+        m_object_offset = object_offset;
+    }
+
+    PathMappingList &
+    GetSourceMappingList () const
+    {
+        return m_source_mappings;
+    }
+
+protected:
+    FileSpec m_file;
+    FileSpec m_platform_file;
+    FileSpec m_symbol_file;
+    ArchSpec m_arch;
+    UUID m_uuid;
+    ConstString m_object_name;
+    uint64_t m_object_offset;
+    mutable PathMappingList m_source_mappings;
+};
 
 //----------------------------------------------------------------------
 /// @class Module Module.h "lldb/Core/Module.h"
@@ -41,10 +294,8 @@
 /// The module will parse more detailed information as more queries are
 /// made.
 //----------------------------------------------------------------------
-namespace lldb_private {
-
 class Module :
-    public ReferenceCountedBaseVirtual<Module>,
+    public STD_ENABLE_SHARED_FROM_THIS(Module),
     public SymbolContextScope
 {
 public:
@@ -96,12 +347,51 @@ public:
             const ConstString *object_name = NULL,
             off_t object_offset = 0);
 
+    Module (const ModuleSpec &module_spec);
     //------------------------------------------------------------------
     /// Destructor.
     //------------------------------------------------------------------
     virtual 
     ~Module ();
 
+    bool
+    MatchesModuleSpec (const ModuleSpec &module_ref);
+    
+    //------------------------------------------------------------------
+    /// Set the load address for all sections in a module to be the
+    /// file address plus \a slide.
+    ///
+    /// Many times a module will be loaded in a target with a constant
+    /// offset applied to all top level sections. This function can 
+    /// set the load address for all top level sections to be the
+    /// section file address + offset.
+    ///
+    /// @param[in] target
+    ///     The target in which to apply the section load addresses.
+    ///
+    /// @param[in] offset
+    ///     The offset to apply to all file addresses for all top 
+    ///     level sections in the object file as each section load
+    ///     address is being set.
+    ///
+    /// @param[out] changed
+    ///     If any section load addresses were changed in \a target,
+    ///     then \a changed will be set to \b true. Else \a changed
+    ///     will be set to false. This allows this function to be
+    ///     called multiple times on the same module for the same
+    ///     target. If the module hasn't moved, then \a changed will
+    ///     be false and no module updated notification will need to
+    ///     be sent out.
+    ///
+    /// @return
+    ///     /b True if any sections were successfully loaded in \a target,
+    ///     /b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    SetLoadAddress (Target &target, 
+                    lldb::addr_t offset, 
+                    bool &changed);
+    
     //------------------------------------------------------------------
     /// @copydoc SymbolContextScope::CalculateSymbolContext(SymbolContext*)
     ///
@@ -110,7 +400,7 @@ public:
     virtual void
     CalculateSymbolContext (SymbolContext* sc);
 
-    virtual Module *
+    virtual lldb::ModuleSP
     CalculateSymbolContextModule ();
 
     void
@@ -232,7 +522,8 @@ public:
     FindFunctions (const ConstString &name,
                    const ClangNamespaceDecl *namespace_decl,
                    uint32_t name_type_mask, 
-                   bool symbols_ok, 
+                   bool symbols_ok,
+                   bool inlines_ok,
                    bool append, 
                    SymbolContextList& sc_list);
 
@@ -261,6 +552,7 @@ public:
     uint32_t
     FindFunctions (const RegularExpression& regex, 
                    bool symbols_ok, 
+                   bool inlines_ok,
                    bool append, 
                    SymbolContextList& sc_list);
 
@@ -328,32 +620,37 @@ public:
     //------------------------------------------------------------------
     /// Find types by name.
     ///
+    /// Type lookups in modules go through the SymbolVendor (which will
+    /// use one or more SymbolFile subclasses). The SymbolFile needs to
+    /// be able to lookup types by basename and not the fully qualified
+    /// typename. This allows the type accelerator tables to stay small,
+    /// even with heavily templatized C++. The type search will then
+    /// narrow down the search results. If "exact_match" is true, then
+    /// the type search will only match exact type name matches. If
+    /// "exact_match" is false, the type will match as long as the base
+    /// typename matches and as long as any immediate containing
+    /// namespaces/class scopes that are specified match. So to search
+    /// for a type "d" in "b::c", the name "b::c::d" can be specified
+    /// and it will match any class/namespace "b" which contains a
+    /// class/namespace "c" which contains type "d". We do this to
+    /// allow users to not always have to specify complete scoping on
+    /// all expressions, but it also allows for exact matching when
+    /// required.
+    ///
     /// @param[in] sc
     ///     A symbol context that scopes where to extract a type list
     ///     from.
     ///
-    /// @param[in] name
-    ///     The name of the type we are looking for.
+    /// @param[in] type_name
+    ///     The name of the type we are looking for that is a fully
+    ///     or partially qualfieid type name.
     ///
-    /// @param[in] namespace_decl
-    ///     If valid, a namespace to search in.
-    ///
-    /// @param[in] append
-    ///     If \b true, any matches will be appended to \a
-    ///     variable_list, else matches replace the contents of
-    ///     \a variable_list.
-    ///
-    /// @param[in] max_matches
-    ///     Allow the number of matches to be limited to \a
-    ///     max_matches. Specify UINT32_MAX to get all possible matches.
-    ///
-    /// @param[in] encoding
-    ///     Limit the search to specific types, or get all types if
-    ///     set to Type::invalid.
-    ///
-    /// @param[in] udt_name
-    ///     If the encoding is a user defined type, specify the name
-    ///     of the user defined type ("struct", "union", "class", etc).
+    /// @param[in] exact_match
+    ///     If \b true, \a type_name is fully qualifed and must match
+    ///     exactly. If \b false, \a type_name is a partially qualfied
+    ///     name where the leading namespaces or classes can be
+    ///     omitted to make finding types that a user may type
+    ///     easier.
     ///
     /// @param[out] type_list
     ///     A type list gets populated with any matches.
@@ -363,11 +660,39 @@ public:
     //------------------------------------------------------------------
     uint32_t
     FindTypes (const SymbolContext& sc,
-               const ConstString &name,
-               const ClangNamespaceDecl *namespace_decl,
-               bool append, 
-               uint32_t max_matches, 
+               const ConstString &type_name,
+               bool exact_match,
+               uint32_t max_matches,
                TypeList& types);
+
+    //------------------------------------------------------------------
+    /// Find types by name that are in a namespace. This function is
+    /// used by the expression parser when searches need to happen in
+    /// an exact namespace scope.
+    ///
+    /// @param[in] sc
+    ///     A symbol context that scopes where to extract a type list
+    ///     from.
+    ///
+    /// @param[in] type_name
+    ///     The name of a type within a namespace that should not include
+    ///     any qualifying namespaces (just a type basename).
+    ///
+    /// @param[in] namespace_decl
+    ///     The namespace declaration that this type must exist in.
+    ///
+    /// @param[out] type_list
+    ///     A type list gets populated with any matches.
+    ///
+    /// @return
+    ///     The number of matches added to \a type_list.
+    //------------------------------------------------------------------
+    uint32_t
+    FindTypesInNamespace (const SymbolContext& sc,
+                          const ConstString &type_name,
+                          const ClangNamespaceDecl *namespace_decl,
+                          uint32_t max_matches,
+                          TypeList& type_list);
 
     //------------------------------------------------------------------
     /// Get const accessor for the module architecture.
@@ -421,6 +746,20 @@ public:
     SetPlatformFileSpec (const FileSpec &file)
     {
         m_platform_file = file;
+    }
+
+    const FileSpec &
+    GetSymbolFileFileSpec () const
+    {
+        return m_symfile_spec;
+    }
+    
+    void
+    SetSymbolFileFileSpec (const FileSpec &file)
+    {
+        m_symfile_spec = file;
+        m_symfile_ap.reset();
+        m_did_load_symbol_vendor = false;
     }
 
     const TimeValue &
@@ -490,6 +829,11 @@ public:
     ObjectFile *
     GetObjectFile ();
 
+    // Load an object file from memory.
+    ObjectFile *
+    GetMemoryObjectFile (const lldb::ProcessSP &process_sp, 
+                         lldb::addr_t header_addr,
+                         Error &error);
     //------------------------------------------------------------------
     /// Get the symbol vendor interface for the current architecture.
     ///
@@ -672,6 +1016,9 @@ public:
     void                    
     LogMessage (Log *log, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
 
+    void                    
+    LogMessageVerboseBacktrace (Log *log, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
+    
     void
     ReportWarning (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
 
@@ -689,6 +1036,72 @@ public:
     bool
     SetModified (bool b);
 
+    //------------------------------------------------------------------
+    // SymbolVendor, SymbolFile and ObjectFile member objects should
+    // lock the module mutex to avoid deadlocks.
+    //------------------------------------------------------------------
+    Mutex &
+    GetMutex () const
+    {
+        return m_mutex;
+    }
+
+    PathMappingList &
+    GetSourceMappingList ()
+    {
+        return m_source_mappings;
+    }
+    
+    const PathMappingList &
+    GetSourceMappingList () const
+    {
+        return m_source_mappings;
+    }
+    
+    //------------------------------------------------------------------
+    /// Finds a source file given a file spec using the module source
+    /// path remappings (if any).
+    ///
+    /// Tries to resolve \a orig_spec by checking the module source path
+    /// remappings. It makes sure the file exists, so this call can be
+    /// expensive if the remappings are on a network file system, so
+    /// use this function sparingly (not in a tight debug info parsing
+    /// loop).
+    ///
+    /// @param[in] orig_spec
+    ///     The original source file path to try and remap.
+    ///
+    /// @param[out] new_spec
+    ///     The newly remapped filespec that is guaranteed to exist.
+    ///
+    /// @return
+    ///     /b true if \a orig_spec was successfully located and
+    ///     \a new_spec is filled in with an existing file spec,
+    ///     \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    FindSourceFile (const FileSpec &orig_spec, FileSpec &new_spec) const;
+    
+    //------------------------------------------------------------------
+    /// Remaps a source file given \a path into \a new_path.
+    ///
+    /// Remaps \a path if any source remappings match. This function
+    /// does NOT stat the file system so it can be used in tight loops
+    /// where debug info is being parsed.
+    ///
+    /// @param[in] path
+    ///     The original source file path to try and remap.
+    ///
+    /// @param[out] new_path
+    ///     The newly remapped filespec that is may or may not exist.
+    ///
+    /// @return
+    ///     /b true if \a path was successfully located and \a new_path
+    ///     is filled in with a new source path, \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    RemapSourceFile (const char *path, std::string &new_path) const;
+    
 protected:
     //------------------------------------------------------------------
     // Member Variables
@@ -699,11 +1112,14 @@ protected:
     lldb_private::UUID          m_uuid;         ///< Each module is assumed to have a unique identifier to help match it up to debug symbols.
     FileSpec                    m_file;         ///< The file representation on disk for this module (if there is one).
     FileSpec                    m_platform_file;///< The path to the module on the platform on which it is being debugged
+    FileSpec                    m_symfile_spec; ///< If this path is valid, then this is the file that _will_ be used as the symbol file for this module
     ConstString                 m_object_name;  ///< The name an object within this module that is selected, or empty of the module is represented by \a m_file.
     uint64_t                    m_object_offset;
     lldb::ObjectFileSP          m_objfile_sp;   ///< A shared pointer to the object file parser for this module as it may or may not be shared with the SymbolFile
     std::auto_ptr<SymbolVendor> m_symfile_ap;   ///< A pointer to the symbol vendor for this module.
     ClangASTContext             m_ast;          ///< The AST context for this module.
+    PathMappingList             m_source_mappings; ///< Module specific source remappings for when you have debug info for a module that doesn't match where the sources currently are
+
     bool                        m_did_load_objfile:1,
                                 m_did_load_symbol_vendor:1,
                                 m_did_parse_uuid:1,

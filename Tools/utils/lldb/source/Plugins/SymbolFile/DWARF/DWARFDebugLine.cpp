@@ -14,6 +14,7 @@
 
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
 
@@ -467,7 +468,11 @@ DWARFDebugLine::ParsePrologue(const DataExtractor& debug_line_data, dw_offset_t*
 }
 
 bool
-DWARFDebugLine::ParseSupportFiles(const DataExtractor& debug_line_data, const char *cu_comp_dir, dw_offset_t stmt_list, FileSpecList &support_files)
+DWARFDebugLine::ParseSupportFiles (const lldb::ModuleSP &module_sp,
+                                   const DataExtractor& debug_line_data,
+                                   const char *cu_comp_dir,
+                                   dw_offset_t stmt_list,
+                                   FileSpecList &support_files)
 {
     uint32_t offset = stmt_list + 4;    // Skip the total length
     const char * s;
@@ -492,6 +497,7 @@ DWARFDebugLine::ParseSupportFiles(const DataExtractor& debug_line_data, const ch
             break;
     }
     std::string fullpath;
+    std::string remapped_fullpath;
     while (offset < end_prologue_offset)
     {
         const char* path = debug_line_data.GetCStr( &offset );
@@ -504,7 +510,10 @@ DWARFDebugLine::ParseSupportFiles(const DataExtractor& debug_line_data, const ch
             if (path[0] == '/')
             {
                 // The path starts with a directory delimiter, so we are done.
-                fullpath = path;
+                if (module_sp->RemapSourceFile (path, fullpath))
+                    support_files.Append(FileSpec (fullpath.c_str(), false));
+                else
+                    support_files.Append(FileSpec (path, false));
             }
             else
             {
@@ -533,11 +542,12 @@ DWARFDebugLine::ParseSupportFiles(const DataExtractor& debug_line_data, const ch
                         fullpath += '/';
                 }
                 fullpath += path;
+                if (module_sp->RemapSourceFile (fullpath.c_str(), remapped_fullpath))
+                    support_files.Append(FileSpec (remapped_fullpath.c_str(), false));
+                else
+                    support_files.Append(FileSpec (fullpath.c_str(), false));
             }
             
-            // We don't need to realpath files in the debug_line tables.
-            FileSpec file_spec(fullpath.c_str(), false);
-            support_files.Append(file_spec);
         }
     }
 

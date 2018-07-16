@@ -61,7 +61,7 @@ using namespace idx;
 /// \brief Allocator for a cached set of global code completions.
 class GlobalCodeCompletionAllocator 
   : public CodeCompletionAllocator,
-    public llvm::RefCountedBase<GlobalCodeCompletionAllocator> 
+    public RefCountedBase<GlobalCodeCompletionAllocator>
 {
 
 };
@@ -70,29 +70,29 @@ class GlobalCodeCompletionAllocator
 ///
 class ASTUnit : public ModuleLoader {
 private:
-  llvm::IntrusiveRefCntPtr<LangOptions>       LangOpts;
-  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diagnostics;
-  llvm::IntrusiveRefCntPtr<FileManager>       FileMgr;
-  llvm::IntrusiveRefCntPtr<SourceManager>     SourceMgr;
-  llvm::OwningPtr<HeaderSearch>               HeaderInfo;
-  llvm::IntrusiveRefCntPtr<TargetInfo>        Target;
-  llvm::IntrusiveRefCntPtr<Preprocessor>      PP;
-  llvm::IntrusiveRefCntPtr<ASTContext>        Ctx;
+  IntrusiveRefCntPtr<LangOptions>       LangOpts;
+  IntrusiveRefCntPtr<DiagnosticsEngine> Diagnostics;
+  IntrusiveRefCntPtr<FileManager>       FileMgr;
+  IntrusiveRefCntPtr<SourceManager>     SourceMgr;
+  OwningPtr<HeaderSearch>               HeaderInfo;
+  IntrusiveRefCntPtr<TargetInfo>        Target;
+  IntrusiveRefCntPtr<Preprocessor>      PP;
+  IntrusiveRefCntPtr<ASTContext>        Ctx;
   ASTReader *Reader;
 
   FileSystemOptions FileSystemOpts;
 
   /// \brief The AST consumer that received information about the translation
   /// unit as it was parsed or loaded.
-  llvm::OwningPtr<ASTConsumer> Consumer;
+  OwningPtr<ASTConsumer> Consumer;
   
   /// \brief The semantic analysis object used to type-check the translation
   /// unit.
-  llvm::OwningPtr<Sema> TheSema;
+  OwningPtr<Sema> TheSema;
   
   /// Optional owned invocation, just used to make the invocation used in
   /// LoadFromCommandLine available.
-  llvm::IntrusiveRefCntPtr<CompilerInvocation> Invocation;
+  IntrusiveRefCntPtr<CompilerInvocation> Invocation;
   
   /// \brief The set of target features.
   ///
@@ -258,15 +258,11 @@ private:
   
   /// \brief Whether we should be caching code-completion results.
   bool ShouldCacheCodeCompletionResults;
-  
-  /// \brief Whether we want to include nested macro expansions in the
-  /// detailed preprocessing record.
-  bool NestedMacroExpansions;
  
   /// \brief The language options used when we load an AST file.
   LangOptions ASTFileLangOpts;
 
-  static void ConfigureDiags(llvm::IntrusiveRefCntPtr<DiagnosticsEngine> &Diags,
+  static void ConfigureDiags(IntrusiveRefCntPtr<DiagnosticsEngine> &Diags,
                              const char **ArgBegin, const char **ArgEnd,
                              ASTUnit &AST, bool CaptureDiagnostics);
 
@@ -324,14 +320,14 @@ public:
   }
   
   /// \brief Retrieve the allocator used to cache global code completions.
-  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator> 
+  IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
   getCachedCompletionAllocator() {
     return CachedCompletionAllocator;
   }
   
   /// \brief Retrieve the allocator used to cache global code completions.
   /// Creates the allocator if it doesn't already exist.
-  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
+  IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
   getCursorCompletionAllocator() {
     if (!CursorCompletionAllocator.getPtr()) {
       CursorCompletionAllocator = new GlobalCodeCompletionAllocator;
@@ -341,11 +337,11 @@ public:
   
 private:
   /// \brief Allocator used to store cached code completions.
-  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
+  IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
     CachedCompletionAllocator;
   
   /// \brief Allocator used to store code completions for arbitrary cursors.
-  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
+  IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
     CursorCompletionAllocator;
 
   /// \brief The set of cached code-completion results.
@@ -457,6 +453,7 @@ public:
         ASTContext &getASTContext()       { return *Ctx; }
 
   void setASTContext(ASTContext *ctx) { Ctx = ctx; }
+  void setPreprocessor(Preprocessor *pp);
 
   bool hasSema() const { return TheSema; }
   Sema &getSema() const { 
@@ -628,7 +625,7 @@ public:
 
   /// \brief Create a ASTUnit. Gets ownership of the passed CompilerInvocation. 
   static ASTUnit *create(CompilerInvocation *CI,
-                         llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                         IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                          bool CaptureDiagnostics = false);
 
   /// \brief Create a ASTUnit from an AST file.
@@ -640,12 +637,13 @@ public:
   ///
   /// \returns - The initialized ASTUnit or null if the AST failed to load.
   static ASTUnit *LoadFromASTFile(const std::string &Filename,
-                              llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                              IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                   const FileSystemOptions &FileSystemOpts,
                                   bool OnlyLocalDecls = false,
                                   RemappedFile *RemappedFiles = 0,
                                   unsigned NumRemappedFiles = 0,
-                                  bool CaptureDiagnostics = false);
+                                  bool CaptureDiagnostics = false,
+                                  bool AllowPCHWithCompilerErrors = false);
 
 private:
   /// \brief Helper function for \c LoadFromCompilerInvocation() and
@@ -679,7 +677,7 @@ public:
   /// false means the caller is only interested in getting info through the
   /// provided \see Action.
   static ASTUnit *LoadFromCompilerInvocationAction(CompilerInvocation *CI,
-                              llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                              IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                              ASTFrontendAction *Action = 0,
                                              ASTUnit *Unit = 0,
                                              bool Persistent = true,
@@ -701,13 +699,12 @@ public:
   // FIXME: Move OnlyLocalDecls, UseBumpAllocator to setters on the ASTUnit, we
   // shouldn't need to specify them at construction time.
   static ASTUnit *LoadFromCompilerInvocation(CompilerInvocation *CI,
-                              llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                              IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                              bool OnlyLocalDecls = false,
                                              bool CaptureDiagnostics = false,
                                              bool PrecompilePreamble = false,
                                       TranslationUnitKind TUKind = TU_Complete,
-                                       bool CacheCodeCompletionResults = false,
-                                       bool NestedMacroExpansions = true);
+                                       bool CacheCodeCompletionResults = false);
 
   /// LoadFromCommandLine - Create an ASTUnit from a vector of command line
   /// arguments, which must specify exactly one source file.
@@ -725,7 +722,7 @@ public:
   // shouldn't need to specify them at construction time.
   static ASTUnit *LoadFromCommandLine(const char **ArgBegin,
                                       const char **ArgEnd,
-                              llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
+                              IntrusiveRefCntPtr<DiagnosticsEngine> Diags,
                                       StringRef ResourceFilesPath,
                                       bool OnlyLocalDecls = false,
                                       bool CaptureDiagnostics = false,
@@ -735,7 +732,7 @@ public:
                                       bool PrecompilePreamble = false,
                                       TranslationUnitKind TUKind = TU_Complete,
                                       bool CacheCodeCompletionResults = false,
-                                      bool NestedMacroExpansions = true);
+                                      bool AllowPCHWithCompilerErrors = false);
   
   /// \brief Reparse the source files using the same command-line options that
   /// were originally used to produce this translation unit.

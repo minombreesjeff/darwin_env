@@ -25,7 +25,7 @@ class ThreadInstanceSettings : public InstanceSettings
 {
 public:
 
-    ThreadInstanceSettings (UserSettingsController &owner, bool live_instance = true, const char *name = NULL);
+    ThreadInstanceSettings (const lldb::UserSettingsControllerSP &owner_sp, bool live_instance = true, const char *name = NULL);
   
     ThreadInstanceSettings (const ThreadInstanceSettings &rhs);
 
@@ -85,7 +85,7 @@ private:
 };
 
 class Thread :
-    public ReferenceCountedBaseVirtual<Thread>,
+    public STD_ENABLE_SHARED_FROM_THIS(Thread),
     public UserID,
     public ExecutionContextScope,
     public ThreadInstanceSettings
@@ -203,19 +203,13 @@ public:
     static lldb::UserSettingsControllerSP &
     GetSettingsController ();
 
-    Thread (Process &process, lldb::tid_t tid);
+    Thread (const lldb::ProcessSP &process_sp, lldb::tid_t tid);
     virtual ~Thread();
 
-    Process &
-    GetProcess() 
+    lldb::ProcessSP
+    GetProcess() const
     {
-        return m_process; 
-    }
-
-    const Process &
-    GetProcess() const 
-    {
-        return m_process; 
+        return m_process_wp.lock(); 
     }
 
     int
@@ -232,9 +226,6 @@ public:
 
     lldb::StateType
     GetState() const;
-
-    lldb::ThreadSP
-    GetSP ();
 
     void
     SetState (lldb::StateType state);
@@ -283,6 +274,9 @@ public:
     Vote
     ShouldReportRun (Event *event_ptr);
     
+    void
+    Flush ();
+
     // Return whether this thread matches the specification in ThreadSpec.  This is a virtual
     // method because at some point we may extend the thread spec with a platform specific
     // dictionary of attributes, which then only the platform specific Thread implementation
@@ -329,52 +323,53 @@ public:
     virtual uint32_t
     GetStackFrameCount()
     {
-        return GetStackFrameList().GetNumFrames();
+        return GetStackFrameList()->GetNumFrames();
     }
 
     virtual lldb::StackFrameSP
     GetStackFrameAtIndex (uint32_t idx)
     {
-        return GetStackFrameList().GetFrameAtIndex(idx);
+        return GetStackFrameList()->GetFrameAtIndex(idx);
     }
     
     virtual lldb::StackFrameSP
     GetFrameWithConcreteFrameIndex (uint32_t unwind_idx);
     
     virtual lldb::StackFrameSP
-    GetFrameWithStackID(StackID &stack_id)
+    GetFrameWithStackID (const StackID &stack_id)
     {
-        return GetStackFrameList().GetFrameWithStackID (stack_id);
+        return GetStackFrameList()->GetFrameWithStackID (stack_id);
     }
 
     uint32_t
     GetSelectedFrameIndex ()
     {
-        return GetStackFrameList().GetSelectedFrameIndex();
+        return GetStackFrameList()->GetSelectedFrameIndex();
     }
 
     lldb::StackFrameSP
     GetSelectedFrame ()
     {
-        return GetStackFrameAtIndex (GetStackFrameList().GetSelectedFrameIndex());
+        lldb::StackFrameListSP stack_frame_list_sp(GetStackFrameList());
+        return stack_frame_list_sp->GetFrameAtIndex (stack_frame_list_sp->GetSelectedFrameIndex());
     }
 
     uint32_t
     SetSelectedFrame (lldb_private::StackFrame *frame)
     {
-        return GetStackFrameList().SetSelectedFrame(frame);
+        return GetStackFrameList()->SetSelectedFrame(frame);
     }
 
-    void
+    bool
     SetSelectedFrameByIndex (uint32_t frame_idx)
     {
-        GetStackFrameList().SetSelectedFrameByIndex(frame_idx);
+        return GetStackFrameList()->SetSelectedFrameByIndex(frame_idx);
     }
 
     void
     SetDefaultFileAndLineToSelectedFrame()
     {
-        GetStackFrameList().SetDefaultFileAndLineToSelectedFrame();
+        GetStackFrameList()->SetDefaultFileAndLineToSelectedFrame();
     }
 
     virtual lldb::RegisterContextSP
@@ -529,6 +524,11 @@ public:
     /// Gets the plan used to step through the code that steps from a function
     /// call site at the current PC into the actual function call.
     ///
+    ///
+    /// @param[in] return_stack_id
+    ///    The stack id that we will return to (by setting backstop breakpoints on the return
+    ///    address to that frame) if we fail to step through.
+    ///
     /// @param[in] abort_other_plans
     ///    \b true if we discard the currently queued plans and replace them with this one.
     ///    Otherwise this plan will go on the end of the plan stack.
@@ -540,7 +540,8 @@ public:
     ///     A pointer to the newly queued thread plan, or NULL if the plan could not be queued.
     //------------------------------------------------------------------
     virtual ThreadPlan *
-    QueueThreadPlanForStepThrough (bool abort_other_plans,
+    QueueThreadPlanForStepThrough (StackID &return_stack_id,
+                                   bool abort_other_plans,
                                    bool stop_other_threads);
 
     //------------------------------------------------------------------
@@ -595,12 +596,8 @@ public:
 
 private:
     bool
-    PlanIsBasePlan (ThreadPlan *plan_ptr)
-    {
-        if (m_plan_stack.size() == 0)
-            return false;
-        return m_plan_stack[0].get() == plan_ptr;
-    }
+    PlanIsBasePlan (ThreadPlan *plan_ptr);
+    
 public:
 
     //------------------------------------------------------------------
@@ -686,6 +683,9 @@ public:
     void
     DiscardThreadPlansUpToPlan (lldb::ThreadPlanSP &up_to_plan_sp);
 
+    void
+    DiscardThreadPlansUpToPlan (ThreadPlan *up_to_plan_ptr);
+    
     //------------------------------------------------------------------
     /// Prints the current plan stack.
     ///
@@ -733,16 +733,16 @@ public:
     //------------------------------------------------------------------
     // lldb::ExecutionContextScope pure virtual functions
     //------------------------------------------------------------------
-    virtual Target *
+    virtual lldb::TargetSP
     CalculateTarget ();
-
-    virtual Process *
+    
+    virtual lldb::ProcessSP
     CalculateProcess ();
-
-    virtual Thread *
+    
+    virtual lldb::ThreadSP
     CalculateThread ();
-
-    virtual StackFrame *
+    
+    virtual lldb::StackFrameSP
     CalculateStackFrame ();
 
     virtual void
@@ -766,6 +766,22 @@ public:
                          uint32_t source_lines_before,
                          uint32_t source_lines_after);
 
+    // We need a way to verify that even though we have a thread in a shared
+    // pointer that the object itself is still valid. Currently this won't be
+    // the case if DestroyThread() was called. DestroyThread is called when
+    // a thread has been removed from the Process' thread list.
+    bool
+    IsValid () const
+    {
+        return m_destroy_called;
+    }
+
+    // When you implement this method, make sure you don't overwrite the m_actual_stop_info if it claims to be
+    // valid.  The stop info may be a "checkpointed and restored" stop info, so if it is still around it is right
+    // even if you have not calculated this yourself, or if it disagrees with what you might have calculated.
+    virtual lldb::StopInfoSP
+    GetPrivateStopReason () = 0;
+
 protected:
 
     friend class ThreadPlan;
@@ -787,12 +803,6 @@ protected:
 
     ThreadPlan *GetPreviousPlan (ThreadPlan *plan);
 
-    // When you implement this method, make sure you don't overwrite the m_actual_stop_info if it claims to be
-    // valid.  The stop info may be a "checkpointed and restored" stop info, so if it is still around it is right
-    // even if you have not calculated this yourself, or if it disagrees with what you might have calculated.
-    virtual lldb::StopInfoSP
-    GetPrivateStopReason () = 0;
-
     typedef std::vector<lldb::ThreadPlanSP> plan_stack;
 
     void
@@ -807,8 +817,20 @@ protected:
     virtual lldb_private::Unwind *
     GetUnwinder ();
 
-    StackFrameList &
+    lldb::StackFrameListSP
     GetStackFrameList ();
+    
+    lldb::StateType GetTemporaryResumeState()
+    {
+        return m_temporary_resume_state;
+    }
+    
+    lldb::StateType SetTemporaryResumeState(lldb::StateType resume_state)
+    {
+        lldb::StateType old_temp_resume_state = m_temporary_resume_state;
+        m_temporary_resume_state = resume_state;
+        return old_temp_resume_state;
+    }
     
     struct ThreadState
     {
@@ -820,23 +842,26 @@ protected:
     //------------------------------------------------------------------
     // Classes that inherit from Process can see and modify these
     //------------------------------------------------------------------
-    Process &           m_process;          ///< The process that owns this thread.
-    lldb::StopInfoSP    m_actual_stop_info_sp;     ///< The private stop reason for this thread
-    const uint32_t      m_index_id;         ///< A unique 1 based index assigned to each thread for easy UI/command line access.
-    lldb::RegisterContextSP   m_reg_context_sp;   ///< The register context for this thread's current register state.
-    lldb::StateType     m_state;            ///< The state of our process.
-    mutable Mutex       m_state_mutex;      ///< Multithreaded protection for m_state.
-    plan_stack          m_plan_stack;       ///< The stack of plans this thread is executing.
-    plan_stack          m_completed_plan_stack;  ///< Plans that have been completed by this stop.  They get deleted when the thread resumes.
-    plan_stack          m_discarded_plan_stack;  ///< Plans that have been discarded by this stop.  They get deleted when the thread resumes.
-    lldb::StackFrameListSP m_curr_frames_sp; ///< The stack frames that get lazily populated after a thread stops.
-    lldb::StackFrameListSP m_prev_frames_sp; ///< The previous stack frames from the last time this thread stopped.
-    int                 m_resume_signal;    ///< The signal that should be used when continuing this thread.
-    lldb::StateType     m_resume_state;     ///< The state that indicates what this thread should do when the process is resumed.
+    lldb::ProcessWP     m_process_wp;           ///< The process that owns this thread.
+    lldb::StopInfoSP    m_actual_stop_info_sp;  ///< The private stop reason for this thread
+    const uint32_t      m_index_id;             ///< A unique 1 based index assigned to each thread for easy UI/command line access.
+    lldb::RegisterContextSP m_reg_context_sp;   ///< The register context for this thread's current register state.
+    lldb::StateType     m_state;                ///< The state of our process.
+    mutable Mutex       m_state_mutex;          ///< Multithreaded protection for m_state.
+    plan_stack          m_plan_stack;           ///< The stack of plans this thread is executing.
+    plan_stack          m_completed_plan_stack; ///< Plans that have been completed by this stop.  They get deleted when the thread resumes.
+    plan_stack          m_discarded_plan_stack; ///< Plans that have been discarded by this stop.  They get deleted when the thread resumes.
+    mutable Mutex       m_frame_mutex;          ///< Multithreaded protection for m_state.
+    lldb::StackFrameListSP m_curr_frames_sp;    ///< The stack frames that get lazily populated after a thread stops.
+    lldb::StackFrameListSP m_prev_frames_sp;    ///< The previous stack frames from the last time this thread stopped.
+    int                 m_resume_signal;        ///< The signal that should be used when continuing this thread.
+    lldb::StateType     m_resume_state;         ///< This state is used to force a thread to be suspended from outside the ThreadPlan logic.
+    lldb::StateType     m_temporary_resume_state; ///< This state records what the thread was told to do by the thread plan logic for the current resume.
+                                                  /// It gets set in Thread::WillResume.
     std::auto_ptr<lldb_private::Unwind> m_unwinder_ap;
-    bool                m_destroy_called;    // This is used internally to make sure derived Thread classes call DestroyThread.
-    uint32_t m_thread_stop_reason_stop_id;   // This is the stop id for which the StopInfo is valid.  Can use this so you know that
-                                             // the thread's m_actual_stop_info_sp is current and you don't have to fetch it again
+    bool                m_destroy_called;       // This is used internally to make sure derived Thread classes call DestroyThread.
+    uint32_t m_thread_stop_reason_stop_id;      // This is the stop id for which the StopInfo is valid.  Can use this so you know that
+                                                // the thread's m_actual_stop_info_sp is current and you don't have to fetch it again
 
 private:
     //------------------------------------------------------------------

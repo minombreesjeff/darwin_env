@@ -31,12 +31,9 @@ namespace {
 } // end anonymous namespace
 
 char UnpackMachineBundles::ID = 0;
-INITIALIZE_PASS(UnpackMachineBundles, "unpack-mi-bundle",
+char &llvm::UnpackMachineBundlesID = UnpackMachineBundles::ID;
+INITIALIZE_PASS(UnpackMachineBundles, "unpack-mi-bundles",
                 "Unpack machine instruction bundles", false, false)
-
-FunctionPass *llvm::createUnpackMachineBundlesPass() {
-  return new UnpackMachineBundles();
-}
 
 bool UnpackMachineBundles::runOnMachineFunction(MachineFunction &MF) {
   bool Changed = false;
@@ -71,15 +68,40 @@ bool UnpackMachineBundles::runOnMachineFunction(MachineFunction &MF) {
   return Changed;
 }
 
-/// FinalizeBundle - Finalize a machine instruction bundle which includes
-/// a sequence of instructions starting from FirstMI to LastMI (inclusive).
+
+namespace {
+  class FinalizeMachineBundles : public MachineFunctionPass {
+  public:
+    static char ID; // Pass identification
+    FinalizeMachineBundles() : MachineFunctionPass(ID) {
+      initializeFinalizeMachineBundlesPass(*PassRegistry::getPassRegistry());
+    }
+
+    virtual bool runOnMachineFunction(MachineFunction &MF);
+  };
+} // end anonymous namespace
+
+char FinalizeMachineBundles::ID = 0;
+char &llvm::FinalizeMachineBundlesID = FinalizeMachineBundles::ID;
+INITIALIZE_PASS(FinalizeMachineBundles, "finalize-mi-bundles",
+                "Finalize machine instruction bundles", false, false)
+
+bool FinalizeMachineBundles::runOnMachineFunction(MachineFunction &MF) {
+  return llvm::finalizeBundles(MF);
+}
+
+
+/// finalizeBundle - Finalize a machine instruction bundle which includes
+/// a sequence of instructions starting from FirstMI to LastMI (exclusive).
 /// This routine adds a BUNDLE instruction to represent the bundle, it adds
 /// IsInternalRead markers to MachineOperands which are defined inside the
 /// bundle, and it copies externally visible defs and uses to the BUNDLE
 /// instruction.
-void llvm::FinalizeBundle(MachineBasicBlock &MBB,
+void llvm::finalizeBundle(MachineBasicBlock &MBB,
                           MachineBasicBlock::instr_iterator FirstMI,
                           MachineBasicBlock::instr_iterator LastMI) {
+  assert(FirstMI != LastMI && "Empty bundle?");
+
   const TargetMachine &TM = MBB.getParent()->getTarget();
   const TargetInstrInfo *TII = TM.getInstrInfo();
   const TargetRegisterInfo *TRI = TM.getRegisterInfo();
@@ -96,7 +118,7 @@ void llvm::FinalizeBundle(MachineBasicBlock &MBB,
   SmallSet<unsigned, 8> KilledUseSet;
   SmallSet<unsigned, 8> UndefUseSet;
   SmallVector<MachineOperand*, 4> Defs;
-  do {
+  for (; FirstMI != LastMI; ++FirstMI) {
     for (unsigned i = 0, e = FirstMI->getNumOperands(); i != e; ++i) {
       MachineOperand &MO = FirstMI->getOperand(i);
       if (!MO.isReg())
@@ -147,7 +169,7 @@ void llvm::FinalizeBundle(MachineBasicBlock &MBB,
       }
 
       if (!MO.isDead()) {
-        for (const unsigned *SubRegs = TRI->getSubRegisters(Reg);
+        for (const uint16_t *SubRegs = TRI->getSubRegisters(Reg);
              unsigned SubReg = *SubRegs; ++SubRegs) {
           if (LocalDefSet.insert(SubReg))
             LocalDefs.push_back(SubReg);
@@ -157,7 +179,7 @@ void llvm::FinalizeBundle(MachineBasicBlock &MBB,
 
     FirstMI->setIsInsideBundle();
     Defs.clear();
-  } while (FirstMI++ != LastMI);
+  }
 
   SmallSet<unsigned, 8> Added;
   for (unsigned i = 0, e = LocalDefs.size(); i != e; ++i) {
@@ -177,4 +199,80 @@ void llvm::FinalizeBundle(MachineBasicBlock &MBB,
     MIB.addReg(Reg, getKillRegState(isKill) | getUndefRegState(isUndef) |
                getImplRegState(true));
   }
+}
+
+/// finalizeBundle - Same functionality as the previous finalizeBundle except
+/// the last instruction in the bundle is not provided as an input. This is
+/// used in cases where bundles are pre-determined by marking instructions
+/// with 'InsideBundle' marker. It returns the MBB instruction iterator that
+/// points to the end of the bundle.
+MachineBasicBlock::instr_iterator
+llvm::finalizeBundle(MachineBasicBlock &MBB,
+                     MachineBasicBlock::instr_iterator FirstMI) {
+  MachineBasicBlock::instr_iterator E = MBB.instr_end();
+  MachineBasicBlock::instr_iterator LastMI = llvm::next(FirstMI);
+  while (LastMI != E && LastMI->isInsideBundle())
+    ++LastMI;
+  finalizeBundle(MBB, FirstMI, LastMI);
+  return LastMI;
+}
+
+/// finalizeBundles - Finalize instruction bundles in the specified
+/// MachineFunction. Return true if any bundles are finalized.
+bool llvm::finalizeBundles(MachineFunction &MF) {
+  bool Changed = false;
+  for (MachineFunction::iterator I = MF.begin(), E = MF.end(); I != E; ++I) {
+    MachineBasicBlock &MBB = *I;
+
+    MachineBasicBlock::instr_iterator MII = MBB.instr_begin();
+    assert(!MII->isInsideBundle() &&
+           "First instr cannot be inside bundle before finalization!");
+
+    MachineBasicBlock::instr_iterator MIE = MBB.instr_end();
+    if (MII == MIE)
+      continue;
+    for (++MII; MII != MIE; ) {
+      if (!MII->isInsideBundle())
+        ++MII;
+      else {
+        MII = finalizeBundle(MBB, llvm::prior(MII));
+        Changed = true;
+      }
+    }
+  }
+
+  return Changed;
+}
+
+//===----------------------------------------------------------------------===//
+// MachineOperand iterator
+//===----------------------------------------------------------------------===//
+
+MachineOperandIteratorBase::RegInfo
+MachineOperandIteratorBase::analyzeVirtReg(unsigned Reg,
+                    SmallVectorImpl<std::pair<MachineInstr*, unsigned> > *Ops) {
+  RegInfo RI = { false, false, false };
+  for(; isValid(); ++*this) {
+    MachineOperand &MO = deref();
+    if (!MO.isReg() || MO.getReg() != Reg)
+      continue;
+
+    // Remember each (MI, OpNo) that refers to Reg.
+    if (Ops)
+      Ops->push_back(std::make_pair(MO.getParent(), getOperandNo()));
+
+    // Both defs and uses can read virtual registers.
+    if (MO.readsReg()) {
+      RI.Reads = true;
+      if (MO.isDef())
+        RI.Tied = true;
+    }
+
+    // Only defs can write.
+    if (MO.isDef())
+      RI.Writes = true;
+    else if (!RI.Tied && MO.getParent()->isRegTiedToDefOperand(getOperandNo()))
+      RI.Tied = true;
+  }
+  return RI;
 }

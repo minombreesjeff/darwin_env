@@ -47,87 +47,67 @@ ClangASTType::~ClangASTType()
 }
 
 std::string
-ClangASTType::GetTypeNameForQualType (clang::QualType qual_type)
+ClangASTType::GetTypeNameForQualType (clang::ASTContext *ast, clang::QualType qual_type)
 {
     std::string type_name;
     
+    clang::PrintingPolicy printing_policy (ast->getPrintingPolicy());
+    printing_policy.SuppressTagKeyword = true;
     const clang::TypedefType *typedef_type = qual_type->getAs<clang::TypedefType>();
     if (typedef_type)
     {
         const clang::TypedefNameDecl *typedef_decl = typedef_type->getDecl();
-        type_name = typedef_decl->getQualifiedNameAsString();
+        type_name = typedef_decl->getQualifiedNameAsString(printing_policy);
     }
     else
     {
-        type_name = qual_type.getAsString();
+        type_name = qual_type.getAsString(printing_policy);
     }
-    
-    // There is no call to a clang type to get the type name without the
-    // class/struct/union/enum on the front, so lets strip it here
-    const char *type_name_cstr = type_name.c_str();
-    if (type_name_cstr[0] == 'c' &&
-        type_name_cstr[1] == 'l' &&
-        type_name_cstr[2] == 'a' &&
-        type_name_cstr[3] == 's' &&
-        type_name_cstr[4] == 's' &&
-        type_name_cstr[5] == ' ')
-    {
-        type_name.erase (0, 6);
-    }
-    else if (type_name_cstr[0] == 's' &&
-             type_name_cstr[1] == 't' &&
-             type_name_cstr[2] == 'r' &&
-             type_name_cstr[3] == 'u' &&
-             type_name_cstr[4] == 'c' &&
-             type_name_cstr[5] == 't' &&
-             type_name_cstr[6] == ' ')
-    {
-        type_name.erase (0, 7);
-    }
-    else if (type_name_cstr[0] == 'u' &&
-             type_name_cstr[1] == 'n' &&
-             type_name_cstr[2] == 'i' &&
-             type_name_cstr[3] == 'o' &&
-             type_name_cstr[4] == 'n' &&
-             type_name_cstr[5] == ' ')
-    {
-        type_name.erase (0, 6);
-    }
-    else if (type_name_cstr[0] == 'e' &&
-             type_name_cstr[1] == 'n' &&
-             type_name_cstr[2] == 'u' &&
-             type_name_cstr[3] == 'm' &&
-             type_name_cstr[4] == ' ')
-    {
-        type_name.erase (0, 5);
-    }
-
     return type_name;
 }
 
 std::string
-ClangASTType::GetTypeNameForOpaqueQualType (clang_type_t opaque_qual_type)
+ClangASTType::GetTypeNameForOpaqueQualType (clang::ASTContext *ast, clang_type_t opaque_qual_type)
 {
-    return GetTypeNameForQualType (clang::QualType::getFromOpaquePtr(opaque_qual_type));
+    return GetTypeNameForQualType (ast, clang::QualType::getFromOpaquePtr(opaque_qual_type));
 }
 
 
 ConstString
 ClangASTType::GetConstTypeName ()
 {
+    // TODO: verify if we actually need to complete a type just to get its type name????
     if (!ClangASTContext::GetCompleteType (this->m_ast, this->m_type))
         return ConstString("<invalid>");
-    return GetConstTypeName (m_type);
+    return GetConstTypeName (m_ast, m_type);
 }
 
 ConstString
-ClangASTType::GetConstTypeName (clang_type_t clang_type)
+ClangASTType::GetConstQualifiedTypeName ()
+{
+    // TODO: verify if we actually need to complete a type just to get its fully qualified type name????
+    if (!ClangASTContext::GetCompleteType (this->m_ast, this->m_type))
+        return ConstString("<invalid>");
+    return GetConstQualifiedTypeName (m_ast, m_type);
+}
+
+ConstString
+ClangASTType::GetConstQualifiedTypeName (clang::ASTContext *ast, clang_type_t clang_type)
+{
+    if (ast == NULL || clang_type == NULL)
+        return ConstString("<invalid>");
+
+    return ConstString (GetTypeNameForQualType (ast, clang::QualType::getFromOpaquePtr(clang_type)).c_str());
+}
+
+
+ConstString
+ClangASTType::GetConstTypeName (clang::ASTContext *ast, clang_type_t clang_type)
 {
     if (!clang_type)
         return ConstString("<invalid>");
     
-    clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
-    std::string type_name (GetTypeNameForQualType (qual_type));
+    std::string type_name (GetTypeNameForOpaqueQualType(ast, clang_type));
     ConstString const_type_name;
     if (type_name.empty())
         const_type_name.SetCString ("<invalid>");
@@ -182,10 +162,9 @@ ClangASTType::GetArrayElementType (clang::ASTContext* ast,
 }
 
 lldb::clang_type_t
-ClangASTType::GetPointerType ()
+ClangASTType::GetPointerType () const
 {
-    return GetPointerType (m_ast,
-                           m_type);
+    return GetPointerType (m_ast, m_type);
 }
 
 lldb::clang_type_t
@@ -511,6 +490,9 @@ ClangASTType::GetFormat ()
 lldb::Format
 ClangASTType::GetFormat (clang_type_t clang_type)
 {
+    if (clang_type == NULL)
+        return lldb::eFormatDefault;
+        
     clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
 
     switch (qual_type->getTypeClass())
@@ -595,6 +577,8 @@ ClangASTType::GetFormat (clang_type_t clang_type)
     case clang::Type::Typedef:
             return ClangASTType::GetFormat(llvm::cast<clang::TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
 
+    case clang::Type::Auto:
+            return ClangASTType::GetFormat(llvm::cast<clang::AutoType>(qual_type)->desugar().getAsOpaquePtr());
     case clang::Type::DependentSizedArray:
     case clang::Type::DependentSizedExtVector:
     case clang::Type::UnresolvedUsing:
@@ -604,7 +588,6 @@ ClangASTType::GetFormat (clang_type_t clang_type)
     case clang::Type::TemplateTypeParm:
     case clang::Type::SubstTemplateTypeParm:
     case clang::Type::SubstTemplateTypeParmPack:
-    case clang::Type::Auto:
     case clang::Type::InjectedClassName:
     case clang::Type::DependentName:
     case clang::Type::DependentTemplateSpecialization:
@@ -1136,7 +1119,6 @@ ClangASTType::DumpSummary
 )
 {
     uint32_t length = 0;
-    clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
     if (ClangASTContext::IsCStringType (clang_type, length))
     {
         if (exe_ctx)
@@ -1224,7 +1206,7 @@ ClangASTType::IsDefined (clang_type_t clang_type)
     {
         clang::TagDecl *tag_decl = tag_type->getDecl();
         if (tag_decl)
-            return tag_decl->getDefinition() != NULL;
+            return tag_decl->isCompleteDefinition();
         return false;
     }
     else
@@ -1233,8 +1215,9 @@ ClangASTType::IsDefined (clang_type_t clang_type)
         if (objc_class_type)
         {
             clang::ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
-            if (class_interface_decl->isForwardDecl())
-                return false;
+            if (class_interface_decl)
+                return class_interface_decl->getDefinition() != NULL;
+            return false;
         }
     }
     return true;
@@ -1668,8 +1651,12 @@ ClangASTType::ReadFromMemory
         // context (which Module it came from)
         return false;
     }
+    
+    if (!ClangASTContext::GetCompleteType(ast_context, clang_type))
+        return false;
+    
     clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
-
+    
     const uint32_t byte_size = (ast_context->getTypeSize (qual_type) + 7) / 8;
     if (data.GetByteSize() < byte_size)
     {

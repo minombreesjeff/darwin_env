@@ -13,7 +13,7 @@
 #===------------------------------------------------------------------------===#
 
 # Define LLVM specific info and directories based on the autoconf variables
-LLVMPackageName   := @PACKAGE_NAME@
+LLVMPackageName   := @PACKAGE_TARNAME@
 LLVMVersion       := @PACKAGE_VERSION@
 LLVM_CONFIGTIME   := @LLVM_CONFIGTIME@
 
@@ -48,7 +48,7 @@ PROJ_OBJ_ROOT := $(call realpath, $(PROJ_OBJ_DIR)/$(LEVEL))
 
 CLANG_SRC_ROOT  := @CLANG_SRC_ROOT@
 
-ifeq ($(PROJECT_NAME),llvm)
+ifeq ($(PROJECT_NAME),$(LLVMPackageName))
 LLVM_SRC_ROOT   := $(call realpath, @abs_top_srcdir@)
 LLVM_OBJ_ROOT   := $(call realpath, @abs_top_builddir@)
 PROJ_SRC_ROOT   := $(LLVM_SRC_ROOT)
@@ -175,7 +175,6 @@ SED        := @SED@
 TAR        := @TAR@
 
 # Paths to miscellaneous programs we hope are present but might not be
-PERL       := @PERL@
 BZIP2      := @BZIP2@
 CAT        := @CAT@
 DOT        := @DOT@
@@ -194,7 +193,6 @@ RUNTEST    := @RUNTEST@
 TCLSH      := @TCLSH@
 ZIP        := @ZIP@
 
-HAVE_PERL    := @HAVE_PERL@
 HAVE_PTHREAD := @HAVE_PTHREAD@
 
 LIBS       := @LIBS@
@@ -337,6 +335,8 @@ BINUTILS_INCDIR := @BINUTILS_INCDIR@
 NO_MISSING_FIELD_INITIALIZERS = @NO_MISSING_FIELD_INITIALIZERS@
 # -Wno-variadic-macros
 NO_VARIADIC_MACROS = @NO_VARIADIC_MACROS@
+# -Wcovered-switch-default
+COVERED_SWITCH_DEFAULT = @COVERED_SWITCH_DEFAULT@
 
 # Was polly found in tools/polly?
 LLVM_HAS_POLLY = @LLVM_HAS_POLLY@

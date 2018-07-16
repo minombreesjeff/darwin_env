@@ -938,13 +938,14 @@ public:
   void run(AllocaInst *AI, const SmallVectorImpl<Instruction*> &Insts) {
     // Remember which alloca we're promoting (for isInstInList).
     this->AI = AI;
-    if (MDNode *DebugNode = MDNode::getIfExists(AI->getContext(), AI))
+    if (MDNode *DebugNode = MDNode::getIfExists(AI->getContext(), AI)) {
       for (Value::use_iterator UI = DebugNode->use_begin(),
              E = DebugNode->use_end(); UI != E; ++UI)
         if (DbgDeclareInst *DDI = dyn_cast<DbgDeclareInst>(*UI))
           DDIs.push_back(DDI);
         else if (DbgValueInst *DVI = dyn_cast<DbgValueInst>(*UI))
           DVIs.push_back(DVI);
+    }
 
     LoadAndStorePromoter::run(Insts);
     AI->eraseFromParent();
@@ -979,30 +980,25 @@ public:
     for (SmallVector<DbgValueInst *, 4>::const_iterator I = DVIs.begin(), 
            E = DVIs.end(); I != E; ++I) {
       DbgValueInst *DVI = *I;
+      Value *Arg = NULL;
       if (StoreInst *SI = dyn_cast<StoreInst>(Inst)) {
-        Instruction *DbgVal = NULL;
         // If an argument is zero extended then use argument directly. The ZExt
         // may be zapped by an optimization pass in future.
-        Argument *ExtendedArg = NULL;
         if (ZExtInst *ZExt = dyn_cast<ZExtInst>(SI->getOperand(0)))
-          ExtendedArg = dyn_cast<Argument>(ZExt->getOperand(0));
+          Arg = dyn_cast<Argument>(ZExt->getOperand(0));
         if (SExtInst *SExt = dyn_cast<SExtInst>(SI->getOperand(0)))
-          ExtendedArg = dyn_cast<Argument>(SExt->getOperand(0));
-        if (ExtendedArg)
-          DbgVal = DIB->insertDbgValueIntrinsic(ExtendedArg, 0, 
-                                                DIVariable(DVI->getVariable()),
-                                                SI);
-        else
-          DbgVal = DIB->insertDbgValueIntrinsic(SI->getOperand(0), 0, 
-                                                DIVariable(DVI->getVariable()),
-                                                SI);
-        DbgVal->setDebugLoc(DVI->getDebugLoc());
+          Arg = dyn_cast<Argument>(SExt->getOperand(0));
+        if (!Arg)
+          Arg = SI->getOperand(0);
       } else if (LoadInst *LI = dyn_cast<LoadInst>(Inst)) {
-        Instruction *DbgVal = 
-          DIB->insertDbgValueIntrinsic(LI->getOperand(0), 0, 
-                                       DIVariable(DVI->getVariable()), LI);
-        DbgVal->setDebugLoc(DVI->getDebugLoc());
+        Arg = LI->getOperand(0);
+      } else {
+        continue;
       }
+      Instruction *DbgVal =
+        DIB->insertDbgValueIntrinsic(Arg, 0, DIVariable(DVI->getVariable()),
+                                     Inst);
+      DbgVal->setDebugLoc(DVI->getDebugLoc());
     }
   }
 };
@@ -2156,8 +2152,7 @@ void SROA::RewriteMemIntrinUserOfAlloca(MemIntrinsic *MI, Instruction *Inst,
           // If the requested value was a vector constant, create it.
           if (EltTy->isVectorTy()) {
             unsigned NumElts = cast<VectorType>(EltTy)->getNumElements();
-            SmallVector<Constant*, 16> Elts(NumElts, StoreVal);
-            StoreVal = ConstantVector::get(Elts);
+            StoreVal = ConstantVector::getSplat(NumElts, StoreVal);
           }
         }
         new StoreInst(StoreVal, EltPtr, MI);

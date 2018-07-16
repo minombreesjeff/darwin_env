@@ -6,7 +6,7 @@ tablegen(LLVM HexagonGenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM HexagonGenDAGISel.inc -gen-dag-isel)
 tablegen(LLVM HexagonGenCallingConv.inc -gen-callingconv)
 tablegen(LLVM HexagonGenSubtargetInfo.inc -gen-subtarget)
-tablegen(LLVM HexagonGenIntrinsics.inc -gen-tgt-intrinsic)
+tablegen(LLVM HexagonGenDFAPacketizer.inc -gen-dfa-packetizer)
 add_public_tablegen_target(HexagonCommonTableGen)
 
 add_llvm_target(HexagonCodeGen
@@ -19,8 +19,7 @@ add_llvm_target(HexagonCodeGen
   HexagonInstrInfo.cpp
   HexagonISelDAGToDAG.cpp
   HexagonISelLowering.cpp
-  HexagonMCAsmInfo.cpp
-  HexagonOptimizeSZExtends.cpp
+  HexagonPeephole.cpp
   HexagonRegisterInfo.cpp
   HexagonRemoveSZExtArgs.cpp
   HexagonSelectionDAGInfo.cpp
@@ -31,3 +30,5 @@ add_llvm_target(HexagonCodeGen
   )
 
 add_subdirectory(TargetInfo)
+add_subdirectory(MCTargetDesc)
+

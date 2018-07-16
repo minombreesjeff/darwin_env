@@ -26,6 +26,7 @@
 #include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
@@ -126,6 +127,8 @@ static const Target *GetTarget(const ObjectFile *Obj = NULL) {
   return 0;
 }
 
+void llvm::StringRefMemoryObject::anchor() { }
+
 void llvm::DumpBytes(StringRef bytes) {
   static const char hex_rep[] = "0123456789abcdef";
   // FIXME: The real way to do this is to figure out the longest instruction
@@ -187,6 +190,8 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       if (!error(i->containsSymbol(*si, contains)) && contains) {
         uint64_t Address;
         if (error(si->getAddress(Address))) break;
+        Address -= SectionAddr;
+
         StringRef Name;
         if (error(si->getName(Name))) break;
         Symbols.push_back(std::make_pair(Address, Name));
@@ -242,9 +247,15 @@ static void DisassembleObject(const ObjectFile *Obj, bool InlineRelocs) {
       return;
     }
 
+    OwningPtr<const MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
+    if (!MRI) {
+      errs() << "error: no register info for target " << TripleName << "\n";
+      return;
+    }
+
     int AsmPrinterVariant = AsmInfo->getAssemblerDialect();
     OwningPtr<MCInstPrinter> IP(TheTarget->createMCInstPrinter(
-                                AsmPrinterVariant, *AsmInfo, *STI));
+                                AsmPrinterVariant, *AsmInfo, *MRI, *STI));
     if (!IP) {
       errs() << "error: no instruction printer for target " << TripleName
              << '\n';
@@ -478,27 +489,27 @@ static void PrintSymbolTable(const ObjectFile *o) {
       if (error(ec)) return;
       StringRef Name;
       uint64_t Address;
-      bool Global;
       SymbolRef::Type Type;
-      bool Weak;
-      bool Absolute;
       uint64_t Size;
+      uint32_t Flags;
       section_iterator Section = o->end_sections();
       if (error(si->getName(Name))) continue;
       if (error(si->getAddress(Address))) continue;
-      if (error(si->isGlobal(Global))) continue;
+      if (error(si->getFlags(Flags))) continue;
       if (error(si->getType(Type))) continue;
-      if (error(si->isWeak(Weak))) continue;
-      if (error(si->isAbsolute(Absolute))) continue;
       if (error(si->getSize(Size))) continue;
       if (error(si->getSection(Section))) continue;
+
+      bool Global = Flags & SymbolRef::SF_Global;
+      bool Weak = Flags & SymbolRef::SF_Weak;
+      bool Absolute = Flags & SymbolRef::SF_Absolute;
 
       if (Address == UnknownAddressOrSize)
         Address = 0;
       if (Size == UnknownAddressOrSize)
         Size = 0;
       char GlobLoc = ' ';
-      if (Type != SymbolRef::ST_External)
+      if (Type != SymbolRef::ST_Unknown)
         GlobLoc = Global ? 'g' : 'l';
       char Debug = (Type == SymbolRef::ST_Debug || Type == SymbolRef::ST_File)
                    ? 'd' : ' ';

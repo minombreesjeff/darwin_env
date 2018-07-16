@@ -127,16 +127,17 @@ SBFunction::GetInstructions (SBTarget target)
     {
         Mutex::Locker api_locker;
         ExecutionContext exe_ctx;
-        if (target.IsValid())
+        TargetSP target_sp (target.GetSP());
+        if (target_sp)
         {
-            api_locker.Reset (target->GetAPIMutex().GetMutex());
-            target->CalculateExecutionContext (exe_ctx);
-            exe_ctx.SetProcessSP(target->GetProcessSP());
+            api_locker.Lock (target_sp->GetAPIMutex());
+            target_sp->CalculateExecutionContext (exe_ctx);
+            exe_ctx.SetProcessSP(target_sp->GetProcessSP());
         }
-        Module *module = m_opaque_ptr->GetAddressRange().GetBaseAddress().GetModule();
-        if (module)
+        ModuleSP module_sp (m_opaque_ptr->GetAddressRange().GetBaseAddress().GetModule());
+        if (module_sp)
         {
-            sb_instructions.SetDisassembler (Disassembler::DisassembleRange (module->GetArchitecture(),
+            sb_instructions.SetDisassembler (Disassembler::DisassembleRange (module_sp->GetArchitecture(),
                                                                              NULL,
                                                                              exe_ctx,
                                                                              m_opaque_ptr->GetAddressRange()));
@@ -190,5 +191,28 @@ SBFunction::GetPrologueByteSize ()
         return m_opaque_ptr->GetPrologueByteSize();
     return 0;
 }
+
+SBType
+SBFunction::GetType ()
+{
+    SBType sb_type;
+    if (m_opaque_ptr)
+    {
+        Type *function_type = m_opaque_ptr->GetType();
+        if (function_type)
+            sb_type.ref().SetType (function_type->shared_from_this());
+    }
+    return sb_type;
+}
+
+SBBlock
+SBFunction::GetBlock ()
+{
+    SBBlock sb_block;
+    if (m_opaque_ptr)
+        sb_block.SetPtr (&m_opaque_ptr->GetBlock (true));
+    return sb_block;
+}
+
 
 

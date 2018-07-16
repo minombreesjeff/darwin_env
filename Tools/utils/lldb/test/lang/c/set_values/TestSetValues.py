@@ -10,11 +10,13 @@ class SetValuesTestCase(TestBase):
     mydir = os.path.join("lang", "c", "set_values")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_with_dsym(self):
         """Test settings and readings of program variables."""
         self.buildDsym()
         self.set_values()
 
+    @dwarf_test
     def test_with_dwarf(self):
         """Test settings and readings of program variables."""
         self.buildDwarf()
@@ -99,12 +101,12 @@ class SetValuesTestCase(TestBase):
         # main.c:57
         # Check that 'frame variable -T' displays the correct data type and value.
         self.expect("frame variable -T", VARIABLES_DISPLAYED_CORRECTLY,
-            startstr = "(long int) i = 33")
+            startstr = "(long) i = 33")
 
         # Now set variable 'i' and check that it is correctly displayed.
         self.runCmd("expression i = 33333")
         self.expect("frame variable -T", VARIABLES_DISPLAYED_CORRECTLY,
-            startstr = "(long int) i = 33333")
+            startstr = "(long) i = 33333")
 
         self.runCmd("continue")
 

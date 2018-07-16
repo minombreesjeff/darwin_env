@@ -15,6 +15,8 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-public.h"
+#include "lldb/Breakpoint/BreakpointResolver.h"
+#include "lldb/Breakpoint/BreakpointResolverName.h"
 #include "lldb/Core/PluginInterface.h"
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ValueObject.h"
@@ -68,10 +70,70 @@ public:
     {
         return false;
     }
+    
+    static lldb::BreakpointSP
+    CreateExceptionBreakpoint (Target &target,
+                               lldb::LanguageType language, 
+                               bool catch_bp, 
+                               bool throw_bp, 
+                               bool is_internal = false);
+                            
+    static lldb::LanguageType
+    GetLanguageTypeFromString (const char *string);
+    
+    static const char *
+    GetNameForLanguageType (lldb::LanguageType language);
+        
 protected:
     //------------------------------------------------------------------
     // Classes that inherit from LanguageRuntime can see and modify these
     //------------------------------------------------------------------
+    
+    // The Target is the one that knows how to create breakpoints, so this function is meant to be used either
+    // by the target or internally in Set/ClearExceptionBreakpoints.
+    class ExceptionBreakpointResolver : public BreakpointResolver
+    {
+    public:
+        ExceptionBreakpointResolver (Breakpoint *bkpt,
+                                lldb::LanguageType language,
+                                bool catch_bp,
+                                bool throw_bp);
+
+        virtual ~ExceptionBreakpointResolver() {}
+
+        virtual Searcher::CallbackReturn
+        SearchCallback (SearchFilter &filter,
+                        SymbolContext &context,
+                        Address *addr,
+                        bool containing);
+
+        virtual Searcher::Depth
+        GetDepth ();
+
+        virtual void
+        GetDescription (Stream *s);
+        
+        virtual void
+        Dump (Stream *s) const {}
+
+        /// Methods for support type inquiry through isa, cast, and dyn_cast:
+        static inline bool classof(const BreakpointResolverName *) { return true; }
+        static inline bool classof(const BreakpointResolver *V) {
+            return V->getResolverID() == BreakpointResolver::ExceptionResolver;
+        }
+    protected:
+        bool SetActualResolver();
+        
+        lldb::BreakpointResolverSP m_actual_resolver_sp;
+        lldb::ProcessWP m_process_wp;
+        lldb::LanguageType m_language;
+        bool m_catch_bp;
+        bool m_throw_bp;
+    };
+    
+    virtual lldb::BreakpointResolverSP
+    CreateExceptionResolver (Breakpoint *bkpt, bool catch_bp, bool throw_bp) = 0;
+    
     LanguageRuntime(Process *process);
     Process *m_process;
 private:

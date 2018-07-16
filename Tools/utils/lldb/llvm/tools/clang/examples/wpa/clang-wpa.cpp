@@ -22,7 +22,7 @@
 #include "clang/StaticAnalyzer/Checkers/LocalCheckers.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
-#include "clang/Index/CallGraph.h"
+#include "clang/Index/GlobalCallGraph.h"
 #include "clang/Index/Indexer.h"
 #include "clang/Index/TranslationUnit.h"
 #include "clang/Index/DeclReferenceMap.h"
@@ -90,11 +90,11 @@ int main(int argc, char **argv) {
     return 0;
 
   DiagnosticOptions DiagOpts;
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags
+  IntrusiveRefCntPtr<Diagnostic> Diags
     = CompilerInstance::createDiagnostics(DiagOpts, argc, argv);
   for (unsigned i = 0, e = InputFilenames.size(); i != e; ++i) {
     const std::string &InFile = InputFilenames[i];
-    llvm::OwningPtr<ASTUnit> AST(ASTUnit::LoadFromASTFile(InFile, Diags,
+    OwningPtr<ASTUnit> AST(ASTUnit::LoadFromASTFile(InFile, Diags,
                                                           FileSystemOptions(),
                                                           false, 0, 0, true));
     if (!AST)
@@ -104,8 +104,8 @@ int main(int argc, char **argv) {
   }
 
   if (ViewCallGraph) {
-    llvm::OwningPtr<CallGraph> CG;
-    CG.reset(new CallGraph(Prog));
+    OwningPtr<clang::idx::CallGraph> CG;
+    CG.reset(new clang::idx::CallGraph(Prog));
 
     for (unsigned i = 0, e = ASTUnits.size(); i != e; ++i)
       CG->addTU(ASTUnits[i]->getASTContext());
@@ -154,7 +154,7 @@ int main(int argc, char **argv) {
   if (PP.getLangOptions().ObjC1)
     Opts.CheckersControlList.push_back(std::make_pair("cocoa", true));
 
-  llvm::OwningPtr<ento::CheckerManager> checkerMgr;
+  OwningPtr<ento::CheckerManager> checkerMgr;
   checkerMgr.reset(ento::registerCheckers(Opts, PP.getLangOptions(),
                                           PP.getDiagnostics()));
 

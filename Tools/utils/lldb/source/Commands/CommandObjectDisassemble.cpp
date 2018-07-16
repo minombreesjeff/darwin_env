@@ -134,7 +134,8 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
         break;
 
     case 'a':
-            arch.SetTriple (option_arg, m_interpreter.GetPlatform (true).get());
+        if (!arch.SetTriple (option_arg, m_interpreter.GetPlatform (true).get()))
+            arch.SetTriple (option_arg);
         break;
 
     default:
@@ -344,7 +345,10 @@ CommandObjectDisassemble::Execute
             }
             Symbol *symbol = frame->GetSymbolContext(eSymbolContextSymbol).symbol;
             if (symbol)
-                range = symbol->GetAddressRangeRef();
+            {
+                range.GetBaseAddress() = symbol->GetAddress();
+                range.SetByteSize(symbol->GetByteSize());
+            }
         }
 
         // Did the "m_options.frame_line" find a valid range already? If so
@@ -395,8 +399,8 @@ CommandObjectDisassemble::Execute
                     SymbolContext sc(frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
                     if (sc.function)
                         range.GetBaseAddress() = sc.function->GetAddressRange().GetBaseAddress();
-                    else if (sc.symbol && sc.symbol->GetAddressRangePtr())
-                        range.GetBaseAddress() = sc.symbol->GetAddressRangePtr()->GetBaseAddress();
+                    else if (sc.symbol && sc.symbol->ValueIsAddress())
+                        range.GetBaseAddress() = sc.symbol->GetAddress();
                     else
                         range.GetBaseAddress() = frame->GetFrameCodeAddress();
                 }
@@ -437,8 +441,11 @@ CommandObjectDisassemble::Execute
                     SymbolContext sc(frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
                     if (sc.function)
                         range = sc.function->GetAddressRange();
-                    else if (sc.symbol && sc.symbol->GetAddressRangePtr())
-                        range = *sc.symbol->GetAddressRangePtr();
+                    else if (sc.symbol && sc.symbol->ValueIsAddress())
+                    {
+                        range.GetBaseAddress() = sc.symbol->GetAddress();
+                        range.SetByteSize (sc.symbol->GetByteSize());
+                    }
                     else
                         range.GetBaseAddress() = frame->GetFrameCodeAddress();
                 }

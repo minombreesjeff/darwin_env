@@ -37,6 +37,9 @@ public:
     void
     Clear();
 
+    bool
+    Empty() const;
+
     const char *
     GetData () const;
 
@@ -48,6 +51,9 @@ public:
 
     const std::string &
     GetString() const;
+
+    void
+    FillLastLineToColumn (uint32_t column, char fill_char);
 
 protected:
     std::string m_packet;

@@ -24,11 +24,9 @@ public:
 
     SBValue (const lldb::SBValue &rhs);
 
-#ifndef SWIG
     lldb::SBValue &
     operator =(const lldb::SBValue &rhs);
-#endif
-
+    
     ~SBValue ();
 
     bool
@@ -94,14 +92,37 @@ public:
     lldb::SBValue
     GetStaticValue ();
     
+    lldb::SBValue
+    GetNonSyntheticValue ();
+    
     bool
     IsDynamic();
 
     const char *
     GetLocation ();
 
+    // Deprecated - use the one that takes SBError&
     bool
     SetValueFromCString (const char *value_str);
+
+    bool
+    SetValueFromCString (const char *value_str, lldb::SBError& error);
+    
+    lldb::SBTypeFormat
+    GetTypeFormat ();
+    
+#ifndef LLDB_DISABLE_PYTHON
+    lldb::SBTypeSummary
+    GetTypeSummary ();
+#endif
+
+    lldb::SBTypeFilter
+    GetTypeFilter ();
+    
+#ifndef LLDB_DISABLE_PYTHON
+    lldb::SBTypeSynthetic
+    GetTypeSynthetic ();
+#endif
 
     lldb::SBValue
     GetChildAtIndex (uint32_t idx);
@@ -304,12 +325,19 @@ public:
     /// @param[in] write
     ///     Stop when this value is modified
     ///
+    /// @param[out]
+    ///     An error object. Contains the reason if there is some failure.
+    ///
     /// @return
     ///     An SBWatchpoint object. This object might not be valid upon
     ///     return due to a value not being contained in memory, too 
     ///     large, or watchpoint resources are not available or all in
     ///     use.
     //------------------------------------------------------------------
+    lldb::SBWatchpoint
+    Watch (bool resolve_location, bool read, bool write, SBError &error);
+
+    // Backward compatibility fix in the interim.
     lldb::SBWatchpoint
     Watch (bool resolve_location, bool read, bool write);
 
@@ -330,6 +358,9 @@ public:
     /// @param[in] write
     ///     Stop when this value is modified
     ///
+    /// @param[out]
+    ///     An error object. Contains the reason if there is some failure.
+    ///
     /// @return
     ///     An SBWatchpoint object. This object might not be valid upon
     ///     return due to a value not being contained in memory, too 
@@ -337,9 +368,8 @@ public:
     ///     use.
     //------------------------------------------------------------------
     lldb::SBWatchpoint
-    WatchPointee (bool resolve_location, bool read, bool write);
+    WatchPointee (bool resolve_location, bool read, bool write, SBError &error);
 
-#ifndef SWIG
     // this must be defined in the .h file because synthetic children as implemented in the core
     // currently rely on being able to extract the SharedPointer out of an SBValue. if the implementation
     // is deferred to the .cpp file instead of being inlined here, the platform will fail to link
@@ -349,33 +379,22 @@ public:
     {
         return m_opaque_sp;
     }
-#endif
 
 protected:
     friend class SBValueList;
     friend class SBFrame;
 
-#ifndef SWIG
-    // Mimic shared pointer...
-    lldb_private::ValueObject *
-    get() const;
-
-    lldb_private::ValueObject *
-    operator->() const;
-
-    lldb::ValueObjectSP &
-    operator*();
-
-    const lldb::ValueObjectSP &
-    operator*() const;
-
-#endif
-
+    lldb::ValueObjectSP
+    GetSP () const;
+    
+    // anyone who needs to set the value of the SP on this SBValue should rely on SetSP() exclusively
+    // since this function contains logic to "do the right thing" with regard to providing to the user
+    // a synthetic value when possible - in the future the same should automatically occur with
+    // dynamic values
+    void
+    SetSP (const lldb::ValueObjectSP &sp);
+    
 private:
-    // Helper function for SBValue::Watch() and SBValue::WatchPointee().
-    lldb::SBWatchpoint
-    WatchValue(bool read, bool write, bool watch_pointee);
-
     lldb::ValueObjectSP m_opaque_sp;
 };
 

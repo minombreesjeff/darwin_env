@@ -13,17 +13,8 @@
 // C Includes
 // C++ Includes
 
-// <locale> is not strictly-speaking a requirement for DataVisualization.h
-// but including it ensures a smooth compilation of STLUtils.h. if <locale>
-// is not included, a macro definition of isspace() and other cctype functions occurs
-// which prevents <ostream> from getting included correctly. at least, this is what
-// happens on OSX Lion. If other OSs don't have this side effect, you may want to
-// #if defined (__APPLE__) this include directive
-#include <locale>
-
 // Other libraries and framework includes
 // Project includes
-#include "lldb/lldb-forward-rtti.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/FormatClasses.h"
 #include "lldb/Core/FormatManager.h"
@@ -48,11 +39,14 @@ public:
     class ValueFormats
     {
     public:
-        static lldb::ValueFormatSP
+        static lldb::TypeFormatImplSP
         GetFormat (ValueObject& valobj, lldb::DynamicValueType use_dynamic);
         
+        static lldb::TypeFormatImplSP
+        GetFormat (const ConstString &type);
+        
         static void
-        Add (const ConstString &type, const lldb::ValueFormatSP &entry);
+        Add (const ConstString &type, const lldb::TypeFormatImplSP &entry);
         
         static bool
         Delete (const ConstString &type);
@@ -61,35 +55,59 @@ public:
         Clear ();
         
         static void
-        LoopThrough (ValueFormat::ValueCallback callback, void* callback_baton);
+        LoopThrough (TypeFormatImpl::ValueCallback callback, void* callback_baton);
         
         static uint32_t
         GetCount ();
+        
+        static lldb::TypeNameSpecifierImplSP
+        GetTypeNameSpecifierForFormatAtIndex (uint32_t);
+        
+        static lldb::TypeFormatImplSP
+        GetFormatAtIndex (uint32_t);
     };
     
-    static lldb::SummaryFormatSP
+    static lldb::TypeSummaryImplSP
     GetSummaryFormat(ValueObject& valobj,
                      lldb::DynamicValueType use_dynamic);
+
+    static lldb::TypeSummaryImplSP
+    GetSummaryForType (lldb::TypeNameSpecifierImplSP type_sp);
     
+#ifndef LLDB_DISABLE_PYTHON
+    static lldb::SyntheticChildrenSP
+    GetSyntheticChildrenForType (lldb::TypeNameSpecifierImplSP type_sp);
+#endif
+    
+    static lldb::TypeFilterImplSP
+    GetFilterForType (lldb::TypeNameSpecifierImplSP type_sp);
+
+#ifndef LLDB_DISABLE_PYTHON
+    static lldb::TypeSyntheticImplSP
+    GetSyntheticForType (lldb::TypeNameSpecifierImplSP type_sp);
+#endif
+    
+#ifndef LLDB_DISABLE_PYTHON
     static lldb::SyntheticChildrenSP
     GetSyntheticChildren(ValueObject& valobj,
                          lldb::DynamicValueType use_dynamic);
+#endif
     
     static bool
     AnyMatches(ConstString type_name,
-               FormatCategory::FormatCategoryItems items = FormatCategory::ALL_ITEM_TYPES,
+               TypeCategoryImpl::FormatCategoryItems items = TypeCategoryImpl::ALL_ITEM_TYPES,
                bool only_enabled = true,
                const char** matching_category = NULL,
-               FormatCategory::FormatCategoryItems* matching_type = NULL);
+               TypeCategoryImpl::FormatCategoryItems* matching_type = NULL);
     
     class NamedSummaryFormats
     {
     public:
         static bool
-        GetSummaryFormat (const ConstString &type, lldb::SummaryFormatSP &entry);
+        GetSummaryFormat (const ConstString &type, lldb::TypeSummaryImplSP &entry);
         
         static void
-        Add (const ConstString &type, const lldb::SummaryFormatSP &entry);
+        Add (const ConstString &type, const lldb::TypeSummaryImplSP &entry);
         
         static bool
         Delete (const ConstString &type);
@@ -98,7 +116,7 @@ public:
         Clear ();
         
         static void
-        LoopThrough (SummaryFormat::SummaryCallback callback, void* callback_baton);
+        LoopThrough (TypeSummaryImpl::SummaryCallback callback, void* callback_baton);
         
         static uint32_t
         GetCount ();
@@ -109,8 +127,10 @@ public:
     public:
         
         static bool
-        GetCategory (const ConstString &category, lldb::FormatCategorySP &entry);
-        
+        GetCategory (const ConstString &category,
+                     lldb::TypeCategoryImplSP &entry,
+                     bool allow_create = true);
+
         static void
         Add (const ConstString &category);
         
@@ -121,19 +141,30 @@ public:
         Clear ();
         
         static void
-        Clear (ConstString &category);
+        Clear (const ConstString &category);
         
         static void
-        Enable (ConstString& category);
+        Enable (const ConstString& category,
+                CategoryMap::Position = CategoryMap::Default);
         
         static void
-        Disable (ConstString& category);
+        Disable (const ConstString& category);
+
+        static void
+        Enable (const lldb::TypeCategoryImplSP& category,
+                CategoryMap::Position = CategoryMap::Default);
+        
+        static void
+        Disable (const lldb::TypeCategoryImplSP& category);
         
         static void
         LoopThrough (FormatManager::CategoryCallback callback, void* callback_baton);
         
         static uint32_t
         GetCount ();
+        
+        static lldb::TypeCategoryImplSP
+        GetCategoryAtIndex (uint32_t);
     };
 };
 

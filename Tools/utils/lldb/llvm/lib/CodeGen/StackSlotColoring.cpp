@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "stackcoloring"
-#include "VirtRegMap.h"
 #include "llvm/Function.h"
 #include "llvm/Module.h"
 #include "llvm/CodeGen/Passes.h"
@@ -86,18 +85,12 @@ namespace {
       MachineFunctionPass(ID), ColorWithRegs(false), NextColor(-1) {
         initializeStackSlotColoringPass(*PassRegistry::getPassRegistry());
       }
-    StackSlotColoring(bool RegColor) :
-      MachineFunctionPass(ID), ColorWithRegs(RegColor), NextColor(-1) {
-        initializeStackSlotColoringPass(*PassRegistry::getPassRegistry());
-      }
-    
+
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesCFG();
       AU.addRequired<SlotIndexes>();
       AU.addPreserved<SlotIndexes>();
       AU.addRequired<LiveStacks>();
-      AU.addRequired<VirtRegMap>();
-      AU.addPreserved<VirtRegMap>();      
       AU.addRequired<MachineLoopInfo>();
       AU.addPreserved<MachineLoopInfo>();
       AU.addPreservedID(MachineDominatorsID);
@@ -105,9 +98,6 @@ namespace {
     }
 
     virtual bool runOnMachineFunction(MachineFunction &MF);
-    virtual const char* getPassName() const {
-      return "Stack Slot Coloring";
-    }
 
   private:
     void InitializeSlots();
@@ -122,19 +112,15 @@ namespace {
 } // end anonymous namespace
 
 char StackSlotColoring::ID = 0;
+char &llvm::StackSlotColoringID = StackSlotColoring::ID;
 
 INITIALIZE_PASS_BEGIN(StackSlotColoring, "stack-slot-coloring",
                 "Stack Slot Coloring", false, false)
 INITIALIZE_PASS_DEPENDENCY(SlotIndexes)
 INITIALIZE_PASS_DEPENDENCY(LiveStacks)
-INITIALIZE_PASS_DEPENDENCY(VirtRegMap)
 INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
 INITIALIZE_PASS_END(StackSlotColoring, "stack-slot-coloring",
                 "Stack Slot Coloring", false, false)
-
-FunctionPass *llvm::createStackSlotColoringPass(bool RegColor) {
-  return new StackSlotColoring(RegColor);
-}
 
 namespace {
   // IntervalSorter - Comparison predicate that sort live intervals by
@@ -372,33 +358,33 @@ bool StackSlotColoring::RemoveDeadStores(MachineBasicBlock* MBB) {
        I != E; ++I) {
     if (DCELimit != -1 && (int)NumDead >= DCELimit)
       break;
-    
+
     MachineBasicBlock::iterator NextMI = llvm::next(I);
     if (NextMI == MBB->end()) continue;
-    
+
     int FirstSS, SecondSS;
     unsigned LoadReg = 0;
     unsigned StoreReg = 0;
     if (!(LoadReg = TII->isLoadFromStackSlot(I, FirstSS))) continue;
     if (!(StoreReg = TII->isStoreToStackSlot(NextMI, SecondSS))) continue;
     if (FirstSS != SecondSS || LoadReg != StoreReg || FirstSS == -1) continue;
-    
+
     ++NumDead;
     changed = true;
-    
+
     if (NextMI->findRegisterUseOperandIdx(LoadReg, true, 0) != -1) {
       ++NumDead;
       toErase.push_back(I);
     }
-    
+
     toErase.push_back(NextMI);
     ++I;
   }
-  
+
   for (SmallVector<MachineInstr*, 4>::iterator I = toErase.begin(),
        E = toErase.end(); I != E; ++I)
     (*I)->eraseFromParent();
-  
+
   return changed;
 }
 
@@ -406,7 +392,7 @@ bool StackSlotColoring::RemoveDeadStores(MachineBasicBlock* MBB) {
 bool StackSlotColoring::runOnMachineFunction(MachineFunction &MF) {
   DEBUG({
       dbgs() << "********** Stack Slot Coloring **********\n"
-             << "********** Function: " 
+             << "********** Function: "
              << MF.getFunction()->getName() << '\n';
     });
 
@@ -426,7 +412,7 @@ bool StackSlotColoring::runOnMachineFunction(MachineFunction &MF) {
   // coloring. The stack could be modified before the longjmp is executed,
   // resulting in the wrong value being used afterwards. (See
   // <rdar://problem/8007500>.)
-  if (MF.callsSetJmp())
+  if (MF.exposesReturnsTwice())
     return false;
 
   // Gather spill slot references

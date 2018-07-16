@@ -126,8 +126,11 @@ class BitcodeReader : public GVMaterializer {
   Module *TheModule;
   MemoryBuffer *Buffer;
   bool BufferOwned;
-  BitstreamReader StreamFile;
+  OwningPtr<BitstreamReader> StreamFile;
   BitstreamCursor Stream;
+  DataStreamer *LazyStreamer;
+  uint64_t NextUnreadBit;
+  bool SeenValueSymbolTable;
   
   const char *ErrorString;
   
@@ -161,9 +164,10 @@ class BitcodeReader : public GVMaterializer {
   // Map the bitcode's custom MDKind ID to the Module's MDKind ID.
   DenseMap<unsigned, unsigned> MDKindMap;
   
-  // After the module header has been read, the FunctionsWithBodies list is 
-  // reversed.  This keeps track of whether we've done this yet.
-  bool HasReversedFunctionsWithBodies;
+  // Several operations happen after the module header has been read, but
+  // before function bodies are processed. This keeps track of whether
+  // we've done this yet.
+  bool SeenFirstFunctionBody;
   
   /// DeferredFunctionInfo - When function bodies are initially scanned, this
   /// map contains info about where to find deferred function body in the
@@ -178,13 +182,22 @@ class BitcodeReader : public GVMaterializer {
 public:
   explicit BitcodeReader(MemoryBuffer *buffer, LLVMContext &C)
     : Context(C), TheModule(0), Buffer(buffer), BufferOwned(false),
-      ErrorString(0), ValueList(C), MDValueList(C) {
-    HasReversedFunctionsWithBodies = false;
+      LazyStreamer(0), NextUnreadBit(0), SeenValueSymbolTable(false),
+      ErrorString(0), ValueList(C), MDValueList(C),
+      SeenFirstFunctionBody(false) {
+  }
+  explicit BitcodeReader(DataStreamer *streamer, LLVMContext &C)
+    : Context(C), TheModule(0), Buffer(0), BufferOwned(false),
+      LazyStreamer(streamer), NextUnreadBit(0), SeenValueSymbolTable(false),
+      ErrorString(0), ValueList(C), MDValueList(C),
+      SeenFirstFunctionBody(false) {
   }
   ~BitcodeReader() {
     FreeState();
   }
-  
+
+  void materializeForwardReferencedFunctions();
+
   void FreeState();
   
   /// setBufferOwned - If this is true, the reader will destroy the MemoryBuffer
@@ -256,7 +269,7 @@ private:
   }
 
   
-  bool ParseModule();
+  bool ParseModule(bool Resume);
   bool ParseAttributeBlock();
   bool ParseTypeTable();
   bool ParseTypeTableBody();
@@ -265,11 +278,17 @@ private:
   bool ParseConstants();
   bool RememberAndSkipFunctionBody();
   bool ParseFunctionBody(Function *F);
+  bool GlobalCleanup();
   bool ResolveGlobalAndAliasInits();
   bool ParseMetadata();
   bool ParseMetadataAttachment();
   bool ParseModuleTriple(std::string &Triple);
   bool ParseUseLists();
+  bool InitStream();
+  bool InitStreamFromBuffer();
+  bool InitLazyStream();
+  bool FindFunctionInStream(Function *F,
+         DenseMap<Function*, uint64_t>::iterator DeferredFunctionInfoIterator);
 };
   
 } // End llvm namespace

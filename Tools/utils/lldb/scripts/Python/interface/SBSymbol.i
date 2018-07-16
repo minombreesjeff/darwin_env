@@ -52,6 +52,47 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description);
+
+    bool
+    IsExternal();
+
+    bool
+    IsSynthetic();
+
+    %pythoncode %{
+        def get_instructions_from_current_target (self):
+            return self.GetInstructions (target)
+        
+        __swig_getmethods__["name"] = GetName
+        if _newclass: x = property(GetName, None)
+        
+        __swig_getmethods__["mangled"] = GetMangledName
+        if _newclass: x = property(GetMangledName, None)
+        
+        __swig_getmethods__["type"] = GetType
+        if _newclass: x = property(GetType, None)
+        
+        __swig_getmethods__["addr"] = GetStartAddress
+        if _newclass: x = property(GetStartAddress, None)
+        
+        __swig_getmethods__["end_addr"] = GetEndAddress
+        if _newclass: x = property(GetEndAddress, None)
+        
+        __swig_getmethods__["prologue_size"] = GetPrologueByteSize
+        if _newclass: x = property(GetPrologueByteSize, None)
+        
+        __swig_getmethods__["instructions"] = get_instructions_from_current_target
+        if _newclass: x = property(get_instructions_from_current_target, None)
+
+        __swig_getmethods__["external"] = IsExternal
+        if _newclass: x = property(IsExternal, None)
+
+        __swig_getmethods__["synthetic"] = IsSynthetic
+        if _newclass: x = property(IsSynthetic, None)
+
+        
+    %}
+
 };
 
 } // namespace lldb

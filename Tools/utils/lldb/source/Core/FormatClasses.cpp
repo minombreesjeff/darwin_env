@@ -9,22 +9,7 @@
 
 // C Includes
 
-#ifdef LLDB_DISABLE_PYTHON
-
-struct PyObject;
-
-#else   // #ifdef LLDB_DISABLE_PYTHON
-
-#if defined (__APPLE__)
-#include <Python/Python.h>
-#else
-#include <Python.h>
-#endif
-
-#endif  // #ifdef LLDB_DISABLE_PYTHON
-
 // C++ Includes
-#include <ostream>
 
 // Other libraries and framework includes
 
@@ -35,7 +20,7 @@ struct PyObject;
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/FormatClasses.h"
 #include "lldb/Core/StreamString.h"
-#include "lldb/Core/ValueObjectConstResult.h"
+#include "lldb/Core/Timer.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Target/StackFrame.h"
@@ -44,99 +29,115 @@ struct PyObject;
 using namespace lldb;
 using namespace lldb_private;
 
-ValueFormat::ValueFormat (lldb::Format f,
-                          bool casc,
-                          bool skipptr,
-                          bool skipref) : 
-    m_cascades(casc),
-    m_skip_pointers(skipptr),
-    m_skip_references(skipref),
+TypeFormatImpl::TypeFormatImpl (lldb::Format f,
+                          const Flags& flags) : 
+    m_flags(flags),
     m_format (f)
 {
 }
 
-SummaryFormat::SummaryFormat(bool casc,
-                             bool skipptr,
-                             bool skipref,
-                             bool nochildren,
-                             bool novalue,
-                             bool oneliner) :
-    m_cascades(casc),
-    m_skip_pointers(skipptr),
-    m_skip_references(skipref),
-    m_dont_show_children(nochildren),
-    m_dont_show_value(novalue),
-    m_show_members_oneliner(oneliner)
-{
-}
-
-StringSummaryFormat::StringSummaryFormat(bool casc,
-                                         bool skipptr,
-                                         bool skipref,
-                                         bool nochildren,
-                                         bool novalue,
-                                         bool oneliner,
-                                         std::string f) :
-    SummaryFormat(casc,
-                  skipptr,
-                  skipref,
-                  nochildren,
-                  novalue,
-                  oneliner),
-    m_format(f)
-{
-}
-
-
 std::string
-StringSummaryFormat::FormatObject(lldb::ValueObjectSP object)
+TypeFormatImpl::GetDescription()
 {
-    if (!object.get())
-        return "NULL";
+    StreamString sstr;
+    sstr.Printf ("%s%s%s%s\n", 
+                 FormatManager::GetFormatAsCString (GetFormat()),
+                 Cascades() ? "" : " (not cascading)",
+                 SkipsPointers() ? " (skip pointers)" : "",
+                 SkipsReferences() ? " (skip references)" : "");
+    return sstr.GetString();
+}
+
+TypeSummaryImpl::TypeSummaryImpl(const TypeSummaryImpl::Flags& flags) :
+    m_flags(flags)
+{
+}
+
+
+StringSummaryFormat::StringSummaryFormat(const TypeSummaryImpl::Flags& flags,
+                                         const char *format_cstr) :
+    TypeSummaryImpl(flags),
+    m_format()
+{
+  if (format_cstr)
+    m_format.assign(format_cstr);
+}
+
+bool
+StringSummaryFormat::FormatObject(ValueObject *valobj,
+                                  std::string& retval)
+{
+    if (!valobj)
+    {
+        retval.assign("NULL ValueObject");
+        return false;
+    }
     
     StreamString s;
-    ExecutionContext exe_ctx;
-    object->GetExecutionContextScope()->CalculateExecutionContext(exe_ctx);
+    ExecutionContext exe_ctx (valobj->GetExecutionContextRef());
     SymbolContext sc;
     StackFrame *frame = exe_ctx.GetFramePtr();
     if (frame)
         sc = frame->GetSymbolContext(lldb::eSymbolContextEverything);
     
-    if (m_show_members_oneliner)
+    if (IsOneliner())
     {
-        ValueObjectSP synth_valobj = object->GetSyntheticValue(lldb::eUseSyntheticFilter);
-        const uint32_t num_children = synth_valobj->GetNumChildren();
+        ValueObject* object;
+        
+        ValueObjectSP synth_valobj = valobj->GetSyntheticValue();
+        if (synth_valobj)
+            object = synth_valobj.get();
+        else
+            object = valobj;
+        
+        const uint32_t num_children = object->GetNumChildren();
         if (num_children)
         {
             s.PutChar('(');
             
             for (uint32_t idx=0; idx<num_children; ++idx)
             {
-                lldb::ValueObjectSP child_sp(synth_valobj->GetChildAtIndex(idx, true));
+                lldb::ValueObjectSP child_sp(object->GetChildAtIndex(idx, true));
                 if (child_sp.get())
                 {
                     if (idx)
                         s.PutCString(", ");
-                    s.PutCString(child_sp.get()->GetName().AsCString());
-                    s.PutChar('=');
-                    child_sp.get()->GetPrintableRepresentation(s);
+                    if (!HideNames())
+                    {
+                        s.PutCString(child_sp.get()->GetName().AsCString());
+                        s.PutCString(" = ");
+                    }
+                    child_sp.get()->DumpPrintableRepresentation(s,
+                                                                ValueObject::eValueObjectRepresentationStyleSummary,
+                                                                lldb::eFormatInvalid,
+                                                                ValueObject::ePrintableRepresentationSpecialCasesDisable);
                 }
             }
             
             s.PutChar(')');
             
-            return s.GetString();
+            retval.assign(s.GetString());
+            return true;
         }
         else
-            return "";
+        {
+            retval.assign("error: oneliner for no children");
+            return false;
+        }
         
     }
     else
     {
-        if (Debugger::FormatPrompt(m_format.c_str(), &sc, &exe_ctx, &sc.line_entry.range.GetBaseAddress(), s, NULL, object.get()))
-            return s.GetString();
+        if (Debugger::FormatPrompt(m_format.c_str(), &sc, &exe_ctx, &sc.line_entry.range.GetBaseAddress(), s, NULL, valobj))
+        {
+            retval.assign(s.GetString());
+            return true;
+        }
         else
-            return "";
+        {
+            retval.assign("error: summary string parsing error");
+            return false;
+        }
     }
 }
 
@@ -144,55 +145,75 @@ std::string
 StringSummaryFormat::GetDescription()
 {
     StreamString sstr;
-    sstr.Printf ("`%s`%s%s%s%s%s%s",      m_format.c_str(),
-                 m_cascades ? "" : " (not cascading)",
-                 m_dont_show_children ? "" : " (show children)",
-                 m_dont_show_value ? " (hide value)" : "",
-                 m_show_members_oneliner ? " (one-line printout)" : "",
-                 m_skip_pointers ? " (skip pointers)" : "",
-                 m_skip_references ? " (skip references)" : "");
+    
+    sstr.Printf ("`%s`%s%s%s%s%s%s%s",      m_format.c_str(),
+                 Cascades() ? "" : " (not cascading)",
+                 !DoesPrintChildren() ? "" : " (show children)",
+                 !DoesPrintValue() ? " (hide value)" : "",
+                 IsOneliner() ? " (one-line printout)" : "",
+                 SkipsPointers() ? " (skip pointers)" : "",
+                 SkipsReferences() ? " (skip references)" : "",
+                 HideNames() ? " (hide member names)" : "");
     return sstr.GetString();
 }
 
 #ifndef LLDB_DISABLE_PYTHON
 
-ScriptSummaryFormat::ScriptSummaryFormat(bool casc,
-                                         bool skipptr,
-                                         bool skipref,
-                                         bool nochildren,
-                                         bool novalue,
-                                         bool oneliner,
-                                         std::string fname,
-                                         std::string pscri) :
-    SummaryFormat(casc,
-                  skipptr,
-                  skipref,
-                  nochildren,
-                  novalue,
-                  oneliner),
-    m_function_name(fname),
-    m_python_script(pscri)
+
+ScriptSummaryFormat::ScriptSummaryFormat(const TypeSummaryImpl::Flags& flags,
+                                         const char * function_name,
+                                         const char * python_script) :
+    TypeSummaryImpl(flags),
+    m_function_name(),
+    m_python_script(),
+    m_script_function_sp()
 {
+   if (function_name)
+     m_function_name.assign(function_name);
+   if (python_script)
+     m_python_script.assign(python_script);
 }
 
-
-std::string
-ScriptSummaryFormat::FormatObject(lldb::ValueObjectSP object)
+bool
+ScriptSummaryFormat::FormatObject(ValueObject *valobj,
+                                  std::string& retval)
 {
-    return std::string(ScriptInterpreterPython::CallPythonScriptFunction(m_function_name.c_str(),
-                                                                         object).c_str());
+    Timer scoped_timer (__PRETTY_FUNCTION__, __PRETTY_FUNCTION__);
+
+    TargetSP target_sp(valobj->GetTargetSP());
+
+    if (!target_sp)
+    {
+        retval.assign("error: no target");
+        return false;
+    }
+
+    ScriptInterpreter *script_interpreter = target_sp->GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+
+    if (!script_interpreter)
+    {
+        retval.assign("error: no ScriptInterpreter");
+        return false;
+    }
+        
+    return script_interpreter->GetScriptedSummary(m_function_name.c_str(),
+                                                  valobj->GetSP(),
+                                                  m_script_function_sp,
+                                                  retval);
+
 }
 
 std::string
 ScriptSummaryFormat::GetDescription()
 {
     StreamString sstr;
-    sstr.Printf ("%s%s%s%s%s%s\n%s",       m_cascades ? "" : " (not cascading)",
-                 m_dont_show_children ? "" : " (show children)",
-                 m_dont_show_value ? " (hide value)" : "",
-                 m_show_members_oneliner ? " (one-line printout)" : "",
-                 m_skip_pointers ? " (skip pointers)" : "",
-                 m_skip_references ? " (skip references)" : "",
+    sstr.Printf ("%s%s%s%s%s%s%s\n%s",       Cascades() ? "" : " (not cascading)",
+                 !DoesPrintChildren() ? "" : " (show children)",
+                 !DoesPrintValue() ? " (hide value)" : "",
+                 IsOneliner() ? " (one-line printout)" : "",
+                 SkipsPointers() ? " (skip pointers)" : "",
+                 SkipsReferences() ? " (skip references)" : "",
+                 HideNames() ? " (hide member names)" : "",
                  m_python_script.c_str());
     return sstr.GetString();
     
@@ -201,18 +222,18 @@ ScriptSummaryFormat::GetDescription()
 #endif // #ifndef LLDB_DISABLE_PYTHON
 
 std::string
-SyntheticFilter::GetDescription()
+TypeFilterImpl::GetDescription()
 {
     StreamString sstr;
     sstr.Printf("%s%s%s {\n",
-                m_cascades ? "" : " (not cascading)",
-                m_skip_pointers ? " (skip pointers)" : "",
-                m_skip_references ? " (skip references)" : "");
+                Cascades() ? "" : " (not cascading)",
+                SkipsPointers() ? " (skip pointers)" : "",
+                SkipsReferences() ? " (skip references)" : "");
     
     for (int i = 0; i < GetCount(); i++)
     {
         sstr.Printf("    %s\n",
-                    GetExpressionPathAtIndex(i).c_str());
+                    GetExpressionPathAtIndex(i));
     }
                     
     sstr.Printf("}");
@@ -224,9 +245,10 @@ SyntheticArrayView::GetDescription()
 {
     StreamString sstr;
     sstr.Printf("%s%s%s {\n",
-                m_cascades ? "" : " (not cascading)",
-                m_skip_pointers ? " (skip pointers)" : "",
-                m_skip_references ? " (skip references)" : "");
+                Cascades() ? "" : " (not cascading)",
+                SkipsPointers() ? " (skip pointers)" : "",
+                SkipsReferences() ? " (skip references)" : "");
+    
     SyntheticArrayRange* ptr = &m_head;
     while (ptr && ptr != m_tail)
     {
@@ -246,48 +268,47 @@ SyntheticArrayView::GetDescription()
 
 #ifndef LLDB_DISABLE_PYTHON
 
-SyntheticScriptProvider::FrontEnd::FrontEnd(std::string pclass,
-                                            lldb::ValueObjectSP be) :
-    SyntheticChildrenFrontEnd(be),
-    m_python_class(pclass)
+TypeSyntheticImpl::FrontEnd::FrontEnd(std::string pclass, ValueObject &backend) :
+    SyntheticChildrenFrontEnd(backend),
+    m_python_class(pclass),
+    m_wrapper_sp(),
+    m_interpreter(NULL)
 {
-    if (be.get() == NULL)
-    {
-        m_interpreter = NULL;
-        m_wrapper = NULL;
+    if (backend == NULL)
         return;
-    }
     
-    m_interpreter = m_backend->GetUpdatePoint().GetTargetSP()->GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+    TargetSP target_sp = backend.GetTargetSP();
     
-    if (m_interpreter == NULL)
-        m_wrapper = NULL;
-    else
-        m_wrapper = m_interpreter->CreateSyntheticScriptedProvider(m_python_class, m_backend);
+    if (!target_sp)
+        return;
+    
+    m_interpreter = target_sp->GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
+    
+    if (m_interpreter != NULL)
+        m_wrapper_sp = m_interpreter->CreateSyntheticScriptedProvider(m_python_class, backend.GetSP());
 }
 
-SyntheticScriptProvider::FrontEnd::~FrontEnd()
+TypeSyntheticImpl::FrontEnd::~FrontEnd()
 {
-    Py_XDECREF((PyObject*)m_wrapper);
 }
 
 lldb::ValueObjectSP
-SyntheticScriptProvider::FrontEnd::GetChildAtIndex (uint32_t idx, bool can_create)
+TypeSyntheticImpl::FrontEnd::GetChildAtIndex (uint32_t idx, bool can_create)
 {
-    if (m_wrapper == NULL || m_interpreter == NULL)
+    if (!m_wrapper_sp || !m_interpreter)
         return lldb::ValueObjectSP();
     
-    return m_interpreter->GetChildAtIndex(m_wrapper, idx);
+    return m_interpreter->GetChildAtIndex(m_wrapper_sp, idx);
 }
 
 std::string
-SyntheticScriptProvider::GetDescription()
+TypeSyntheticImpl::GetDescription()
 {
     StreamString sstr;
     sstr.Printf("%s%s%s Python class %s",
-                m_cascades ? "" : " (not cascading)",
-                m_skip_pointers ? " (skip pointers)" : "",
-                m_skip_references ? " (skip references)" : "",
+                Cascades() ? "" : " (not cascading)",
+                SkipsPointers() ? " (skip pointers)" : "",
+                SkipsReferences() ? " (skip references)" : "",
                 m_python_class.c_str());
     
     return sstr.GetString();

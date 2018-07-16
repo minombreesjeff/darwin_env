@@ -12,7 +12,6 @@
 
 #include <vector>
 
-#include "lldb/Host/Mutex.h"
 #include "lldb/Symbol/ObjectFile.h"
 
 class ObjectFilePECOFF : 
@@ -36,17 +35,22 @@ public:
     GetPluginDescriptionStatic();
     
     static ObjectFile *
-    CreateInstance (lldb_private::Module* module,
+    CreateInstance (const lldb::ModuleSP &module_sp,
                     lldb::DataBufferSP& dataSP,
                     const lldb_private::FileSpec* file,
                     lldb::addr_t offset,
                     lldb::addr_t length);
     
+    static lldb_private::ObjectFile *
+    CreateMemoryInstance (const lldb::ModuleSP &module_sp, 
+                          lldb::DataBufferSP& data_sp, 
+                          const lldb::ProcessSP &process_sp, 
+                          lldb::addr_t header_addr);
     static bool
     MagicBytesMatch (lldb::DataBufferSP& dataSP);
     
     
-    ObjectFilePECOFF (lldb_private::Module* module,
+    ObjectFilePECOFF (const lldb::ModuleSP &module_sp,
                       lldb::DataBufferSP& dataSP,
                       const lldb_private::FileSpec* file,
                       lldb::addr_t offset,
@@ -223,7 +227,6 @@ protected:
 	typedef SectionHeaderColl::iterator			SectionHeaderCollIter;
 	typedef SectionHeaderColl::const_iterator	SectionHeaderCollConstIter;
 private:
-    mutable lldb_private::Mutex m_mutex;
     mutable std::auto_ptr<lldb_private::SectionList> m_sections_ap;
     mutable std::auto_ptr<lldb_private::Symtab> m_symtab_ap;
 	dos_header_t		m_dos_header;

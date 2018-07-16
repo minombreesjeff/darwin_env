@@ -25,12 +25,14 @@ class WatchpointConditionCmdTestCase(TestBase):
         self.d = {'CXX_SOURCES': self.source, 'EXE': self.exe_name}
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @dsym_test
     def test_watchpoint_cond_with_dsym(self):
         """Test watchpoint condition."""
         self.buildDsym(dictionary=self.d)
         self.setTearDownCleanup(dictionary=self.d)
         self.watchpoint_condition()
 
+    @dwarf_test
     def test_watchpoint_cond_with_dwarf(self):
         """Test watchpoint condition."""
         self.buildDwarf(dictionary=self.d)
@@ -58,7 +60,7 @@ class WatchpointConditionCmdTestCase(TestBase):
 
         # Now let's set a write-type watchpoint for 'global'.
         # With a condition of 'global==5'.
-        self.expect("frame variable -w write -g -L global", WATCHPOINT_CREATED,
+        self.expect("watchpoint set variable -w write global", WATCHPOINT_CREATED,
             substrs = ['Watchpoint created', 'size = 4', 'type = w',
                        '%s:%d' % (self.source, self.decl)])
 
