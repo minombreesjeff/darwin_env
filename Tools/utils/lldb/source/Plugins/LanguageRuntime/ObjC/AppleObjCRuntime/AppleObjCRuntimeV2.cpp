@@ -26,6 +26,7 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Scalar.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/ClangFunction.h"
 #include "lldb/Expression/ClangUtilityFunction.h"
 #include "lldb/Symbol/ClangASTContext.h"
@@ -93,7 +94,9 @@ const char *AppleObjCRuntimeV2::g_objc_class_data_section_name = "__objc_data";
 AppleObjCRuntimeV2::AppleObjCRuntimeV2 (Process *process, ModuleSP &objc_module_sp) : 
     lldb_private::AppleObjCRuntime (process),
     m_get_class_name_args(LLDB_INVALID_ADDRESS),
-    m_get_class_name_args_mutex(Mutex::eMutexTypeNormal)
+    m_get_class_name_args_mutex(Mutex::eMutexTypeNormal),
+    m_isa_to_name_cache(),
+    m_isa_to_parent_cache()
 {
     m_has_object_getClass = (objc_module_sp->FindFirstSymbolWithNameAndType(ConstString("gdb_object_getClass")) != NULL);
 }
@@ -213,7 +216,7 @@ AppleObjCRuntimeV2::RunFunctionToFindClassName(lldb::addr_t object_addr, Thread 
     if (results != eExecutionCompleted)
     {
         if (log)
-        log->Printf("Error evaluating our find class name function: %d.\n", results);
+            log->Printf("Error evaluating our find class name function: %d.\n", results);
         return false;
     }
     
@@ -235,7 +238,7 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
                                               Address &address)
 {
     // The Runtime is attached to a particular process, you shouldn't pass in a value from another process.
-    assert (in_value.GetUpdatePoint().GetProcess() == m_process);
+    assert (in_value.GetUpdatePoint().GetProcessSP().get() == m_process);
     
     // Make sure we can have a dynamic value before starting...
     if (CouldHaveDynamicValue (in_value))
@@ -480,6 +483,8 @@ AppleObjCRuntimeV2::SetExceptionBreakpoints ()
                                                                           eFunctionNameTypeBase, 
                                                                           true);
     }
+    else
+        m_objc_exception_bp_sp->SetEnabled (true);
 }
 
 ClangUtilityFunction *
@@ -561,4 +566,174 @@ AppleObjCRuntimeV2::GetByteOffsetForIvar (ClangASTType &parent_ast_type, const c
     return ivar_offset;
 }
 
+// tagged pointers are marked by having their least-significant bit
+// set. this makes them "invalid" as pointers because they violate
+// the alignment requirements. this way, we can always know when
+// we are dealing with a tagged pointer, and use the lookup approach
+// that the runtime would
+bool
+AppleObjCRuntimeV2::IsTaggedPointer(lldb::addr_t ptr)
+{
+    return (ptr & 0x01);
+}
+
+
+lldb_private::ObjCLanguageRuntime::ObjCISA
+AppleObjCRuntimeV2::GetISA(ValueObject& valobj)
+{
+    
+    if (valobj.GetIsExpressionResult() &&
+        valobj.GetValue().GetValueType() == Value::eValueTypeHostAddress)
+    {
+        // when using the expression parser, an additional layer of "frozen data"
+        // can be created, which is basically a byte-exact copy of the data returned
+        // by the expression, but in host memory. because Python code might need to read
+        // into the object memory in non-obvious ways, we need to hand it the target version
+        // of the expression output
+        lldb::addr_t tgt_address = valobj.GetValueAsUnsigned();
+        ValueObjectSP target_object = ValueObjectConstResult::Create (valobj.GetExecutionContextScope(),
+                                                                      valobj.GetClangAST(),
+                                                                      valobj.GetClangType(),
+                                                                      valobj.GetName(),
+                                                                      tgt_address,
+                                                                      eAddressTypeLoad,
+                                                                      valobj.GetUpdatePoint().GetProcessSP()->GetAddressByteSize());
+        return GetISA(*target_object);
+    }
+    
+    if (ClangASTType::GetMinimumLanguage(valobj.GetClangAST(),valobj.GetClangType()) != lldb::eLanguageTypeObjC)
+        return 0;
+    
+    // if we get an invalid VO (which might still happen when playing around
+    // with pointers returned by the expression parser, don't consider this
+    // a valid ObjC object)
+    if (valobj.GetValue().GetContextType() == Value::eContextTypeInvalid)
+        return 0;
+    
+    uint32_t offset = 0;
+    uint64_t isa_pointer = valobj.GetDataExtractor().GetPointer(&offset);
+    
+    // tagged pointer
+    if (IsTaggedPointer(isa_pointer))
+        return g_objc_Tagged_ISA;
+
+    uint8_t pointer_size = valobj.GetUpdatePoint().GetProcessSP()->GetAddressByteSize();
+    
+    Error error;
+    lldb_private::ObjCLanguageRuntime::ObjCISA isa = 
+    valobj.GetUpdatePoint().GetProcessSP()->ReadUnsignedIntegerFromMemory(isa_pointer,
+                                                                          pointer_size,
+                                                                          0,
+                                                                          error);
+    return isa;
+}
+
+// TODO: should we have a transparent_kvo parameter here to say if we 
+// want to replace the KVO swizzled class with the actual user-level type?
+ConstString
+AppleObjCRuntimeV2::GetActualTypeName(lldb_private::ObjCLanguageRuntime::ObjCISA isa)
+{
+    if (!IsValidISA(isa))
+        return ConstString(NULL);
+     
+    if (isa == g_objc_Tagged_ISA)
+        return ConstString("_lldb_Tagged_ObjC_ISA");
+    
+    ISAToNameIterator found = m_isa_to_name_cache.find(isa);
+    ISAToNameIterator end = m_isa_to_name_cache.end();
+    
+    if (found != end)
+        return found->second;
+    
+    uint8_t pointer_size = m_process->GetAddressByteSize();
+    Error error;
+    lldb::addr_t rw_pointer = isa + (4 * pointer_size);
+    //printf("rw_pointer: %llx\n", rw_pointer);
+    
+    uint64_t data_pointer =  m_process->ReadUnsignedIntegerFromMemory(rw_pointer,
+                                                                      pointer_size,
+                                                                      0,
+                                                                      error);
+    if (error.Fail())
+        return ConstString("unknown");
+    
+    data_pointer += 8;
+    //printf("data_pointer: %llx\n", data_pointer);
+    uint64_t ro_pointer = m_process->ReadUnsignedIntegerFromMemory(data_pointer,
+                                                                   pointer_size,
+                                                                   0,
+                                                                   error);
+    if (error.Fail())
+        return ConstString("unknown");
+    
+    ro_pointer += 12;
+    if (pointer_size == 8)
+        ro_pointer += 4;
+    ro_pointer += pointer_size;
+    //printf("ro_pointer: %llx\n", ro_pointer);
+    uint64_t name_pointer = m_process->ReadUnsignedIntegerFromMemory(ro_pointer,
+                                                                     pointer_size,
+                                                                     0,
+                                                                     error);
+    if (error.Fail())
+        return ConstString("unknown");
+    
+    //printf("name_pointer: %llx\n", name_pointer);
+    char* cstr = new char[512];
+    if (m_process->ReadCStringFromMemory(name_pointer, cstr, 512) > 0)
+    {
+        if (::strstr(cstr, "NSKVONotify") == cstr)
+        {
+            // the ObjC runtime implements KVO by replacing the isa with a special
+            // NSKVONotifying_className that overrides the relevant methods
+            // the side effect on us is that getting the typename for a KVO-ed object
+            // will return the swizzled class instead of the actual one
+            // this swizzled class is a descendant of the real class, so just
+            // return the parent type and all should be fine
+            ConstString class_name = GetActualTypeName(GetParentClass(isa));
+            m_isa_to_name_cache[isa] = class_name;
+            return class_name;
+        }
+        else
+        {
+            ConstString class_name = ConstString(cstr);
+            m_isa_to_name_cache[isa] = class_name;
+            return class_name;
+        }
+    }
+    else
+        return ConstString("unknown");
+}
+
+lldb_private::ObjCLanguageRuntime::ObjCISA
+AppleObjCRuntimeV2::GetParentClass(lldb_private::ObjCLanguageRuntime::ObjCISA isa)
+{
+    if (!IsValidISA(isa))
+        return 0;
+    
+    if (isa == g_objc_Tagged_ISA)
+        return 0;
+    
+    ISAToParentIterator found = m_isa_to_parent_cache.find(isa);
+    ISAToParentIterator end = m_isa_to_parent_cache.end();
+    
+    if (found != end)
+        return found->second;
+    
+    uint8_t pointer_size = m_process->GetAddressByteSize();
+    Error error;
+    lldb::addr_t parent_pointer = isa + pointer_size;
+    //printf("rw_pointer: %llx\n", rw_pointer);
+    
+    uint64_t parent_isa =  m_process->ReadUnsignedIntegerFromMemory(parent_pointer,
+                                                                    pointer_size,
+                                                                    0,
+                                                                    error);
+    if (error.Fail())
+        return 0;
+    
+    m_isa_to_parent_cache[isa] = parent_isa;
+    
+    return parent_isa;
+}
 

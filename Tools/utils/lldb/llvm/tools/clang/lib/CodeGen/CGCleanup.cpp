@@ -48,9 +48,8 @@ DominatingValue<RValue>::saved_type::save(CodeGenFunction &CGF, RValue rv) {
 
   if (rv.isComplex()) {
     CodeGenFunction::ComplexPairTy V = rv.getComplexVal();
-    const llvm::Type *ComplexTy =
-      llvm::StructType::get(CGF.getLLVMContext(),
-                            V.first->getType(), V.second->getType(),
+    llvm::Type *ComplexTy =
+      llvm::StructType::get(V.first->getType(), V.second->getType(),
                             (void*) 0);
     llvm::Value *addr = CGF.CreateTempAlloca(ComplexTy, "saved-complex");
     CGF.StoreComplexToAddr(V, addr, /*volatile*/ false);
@@ -257,9 +256,7 @@ void CodeGenFunction::initFullExprCleanup() {
   if (cleanup.isEHCleanup()) cleanup.setTestFlagInEHCleanup();
 }
 
-EHScopeStack::Cleanup::~Cleanup() {
-  llvm_unreachable("Cleanup is indestructable");
-}
+void EHScopeStack::Cleanup::anchor() {}
 
 /// All the branch fixups on the EH stack have propagated out past the
 /// outermost normal cleanup; resolve them all by adding cases to the
@@ -421,12 +418,12 @@ static llvm::BasicBlock *SimplifyCleanupEntry(CodeGenFunction &CGF,
   // Kill the branch.
   Br->eraseFromParent();
 
-  // Merge the blocks.
-  Pred->getInstList().splice(Pred->end(), Entry->getInstList());
-
   // Replace all uses of the entry with the predecessor, in case there
   // are phis in the cleanup.
   Entry->replaceAllUsesWith(Pred);
+
+  // Merge the blocks.
+  Pred->getInstList().splice(Pred->end(), Entry->getInstList());
 
   // Kill the entry block.
   Entry->eraseFromParent();
@@ -439,10 +436,10 @@ static llvm::BasicBlock *SimplifyCleanupEntry(CodeGenFunction &CGF,
 
 static void EmitCleanup(CodeGenFunction &CGF,
                         EHScopeStack::Cleanup *Fn,
-                        bool ForEH,
+                        EHScopeStack::Cleanup::Flags flags,
                         llvm::Value *ActiveFlag) {
   // EH cleanups always occur within a terminate scope.
-  if (ForEH) CGF.EHStack.pushTerminate();
+  if (flags.isForEHCleanup()) CGF.EHStack.pushTerminate();
 
   // If there's an active flag, load it and skip the cleanup if it's
   // false.
@@ -457,7 +454,7 @@ static void EmitCleanup(CodeGenFunction &CGF,
   }
 
   // Ask the cleanup to emit itself.
-  Fn->Emit(CGF, ForEH);
+  Fn->Emit(CGF, flags);
   assert(CGF.HaveInsertPoint() && "cleanup ended with no insertion point?");
 
   // Emit the continuation block if there was an active flag.
@@ -465,7 +462,7 @@ static void EmitCleanup(CodeGenFunction &CGF,
     CGF.EmitBlock(ContBB);
 
   // Leave the terminate scope.
-  if (ForEH) CGF.EHStack.popTerminate();
+  if (flags.isForEHCleanup()) CGF.EHStack.popTerminate();
 }
 
 static void ForwardPrebranchedFallthrough(llvm::BasicBlock *Exit,
@@ -484,6 +481,49 @@ static void ForwardPrebranchedFallthrough(llvm::BasicBlock *Exit,
       if (Switch->getSuccessor(I) == From)
         Switch->setSuccessor(I, To);
   }
+}
+
+/// We don't need a normal entry block for the given cleanup.
+/// Optimistic fixup branches can cause these blocks to come into
+/// existence anyway;  if so, destroy it.
+///
+/// The validity of this transformation is very much specific to the
+/// exact ways in which we form branches to cleanup entries.
+static void destroyOptimisticNormalEntry(CodeGenFunction &CGF,
+                                         EHCleanupScope &scope) {
+  llvm::BasicBlock *entry = scope.getNormalBlock();
+  if (!entry) return;
+
+  // Replace all the uses with unreachable.
+  llvm::BasicBlock *unreachableBB = CGF.getUnreachableBlock();
+  for (llvm::BasicBlock::use_iterator
+         i = entry->use_begin(), e = entry->use_end(); i != e; ) {
+    llvm::Use &use = i.getUse();
+    ++i;
+
+    use.set(unreachableBB);
+    
+    // The only uses should be fixup switches.
+    llvm::SwitchInst *si = cast<llvm::SwitchInst>(use.getUser());
+    if (si->getNumCases() == 2 && si->getDefaultDest() == unreachableBB) {
+      // Replace the switch with a branch.
+      llvm::BranchInst::Create(si->getSuccessor(1), si);
+
+      // The switch operand is a load from the cleanup-dest alloca.
+      llvm::LoadInst *condition = cast<llvm::LoadInst>(si->getCondition());
+
+      // Destroy the switch.
+      si->eraseFromParent();
+
+      // Destroy the load.
+      assert(condition->getOperand(0) == CGF.NormalCleanupDest);
+      assert(condition->use_empty());
+      condition->eraseFromParent();
+    }
+  }
+  
+  assert(entry->use_empty());
+  delete entry;
 }
 
 /// Pops a cleanup block.  If the block includes a normal cleanup, the
@@ -540,37 +580,43 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
     RequiresNormalCleanup = true;
   }
 
-  // Even if we don't need the normal cleanup, we might still have
-  // prebranched fallthrough to worry about.
-  if (Scope.isNormalCleanup() && !RequiresNormalCleanup &&
-      HasPrebranchedFallthrough) {
-    assert(!IsActive);
+  EHScopeStack::Cleanup::Flags cleanupFlags;
+  if (Scope.isNormalCleanup())
+    cleanupFlags.setIsNormalCleanupKind();
+  if (Scope.isEHCleanup())
+    cleanupFlags.setIsEHCleanupKind();
 
-    llvm::BasicBlock *NormalEntry = Scope.getNormalBlock();
-
-    // If we're branching through this cleanup, just forward the
-    // prebranched fallthrough to the next cleanup, leaving the insert
-    // point in the old block.
+  // If we have a prebranched fallthrough into an inactive normal
+  // cleanup, rewrite it so that it leads to the appropriate place.
+  if (Scope.isNormalCleanup() && HasPrebranchedFallthrough && !IsActive) {
+    llvm::BasicBlock *prebranchDest;
+    
+    // If the prebranch is semantically branching through the next
+    // cleanup, just forward it to the next block, leaving the
+    // insertion point in the prebranched block.
     if (FallthroughIsBranchThrough) {
-      EHScope &S = *EHStack.find(Scope.getEnclosingNormalCleanup());
-      llvm::BasicBlock *EnclosingEntry = 
-        CreateNormalEntry(*this, cast<EHCleanupScope>(S));
+      EHScope &enclosing = *EHStack.find(Scope.getEnclosingNormalCleanup());
+      prebranchDest = CreateNormalEntry(*this, cast<EHCleanupScope>(enclosing));
 
-      ForwardPrebranchedFallthrough(FallthroughSource,
-                                    NormalEntry, EnclosingEntry);
-      assert(NormalEntry->use_empty() &&
-             "uses of entry remain after forwarding?");
-      delete NormalEntry;
-
-    // Otherwise, we're branching out;  just emit the next block.
+    // Otherwise, we need to make a new block.  If the normal cleanup
+    // isn't being used at all, we could actually reuse the normal
+    // entry block, but this is simpler, and it avoids conflicts with
+    // dead optimistic fixup branches.
     } else {
-      EmitBlock(NormalEntry);
-      SimplifyCleanupEntry(*this, NormalEntry);
+      prebranchDest = createBasicBlock("forwarded-prebranch");
+      EmitBlock(prebranchDest);
     }
+
+    llvm::BasicBlock *normalEntry = Scope.getNormalBlock();
+    assert(normalEntry && !normalEntry->use_empty());
+
+    ForwardPrebranchedFallthrough(FallthroughSource,
+                                  normalEntry, prebranchDest);
   }
 
   // If we don't need the cleanup at all, we're done.
   if (!RequiresNormalCleanup && !RequiresEHCleanup) {
+    destroyOptimisticNormalEntry(*this, Scope);
     EHStack.popCleanup(); // safe because there are no fixups
     assert(EHStack.getNumBranchFixups() == 0 ||
            EHStack.hasNormalCleanups());
@@ -580,7 +626,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
   // Copy the cleanup emission data out.  Note that SmallVector
   // guarantees maximal alignment for its buffer regardless of its
   // type parameter.
-  llvm::SmallVector<char, 8*sizeof(void*)> CleanupBuffer;
+  SmallVector<char, 8*sizeof(void*)> CleanupBuffer;
   CleanupBuffer.reserve(Scope.getCleanupSize());
   memcpy(CleanupBuffer.data(),
          Scope.getCleanupBuffer(), Scope.getCleanupSize());
@@ -592,7 +638,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
   // ahead and do the setup for the EH cleanup while the scope is still
   // alive.
   llvm::BasicBlock *EHEntry = 0;
-  llvm::SmallVector<llvm::Instruction*, 2> EHInstsToAppend;
+  SmallVector<llvm::Instruction*, 2> EHInstsToAppend;
   if (RequiresEHCleanup) {
     EHEntry = CreateEHEntry(*this, Scope);
 
@@ -645,6 +691,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
   }
 
   if (!RequiresNormalCleanup) {
+    destroyOptimisticNormalEntry(*this, Scope);
     EHStack.popCleanup();
   } else {
     // If we have a fallthrough and no other need for the cleanup,
@@ -652,18 +699,10 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
     if (HasFallthrough && !HasPrebranchedFallthrough &&
         !HasFixups && !HasExistingBranches) {
 
-      // Fixups can cause us to optimistically create a normal block,
-      // only to later have no real uses for it.  Just delete it in
-      // this case.
-      // TODO: we can potentially simplify all the uses after this.
-      if (Scope.getNormalBlock()) {
-        Scope.getNormalBlock()->replaceAllUsesWith(getUnreachableBlock());
-        delete Scope.getNormalBlock();
-      }
-
+      destroyOptimisticNormalEntry(*this, Scope);
       EHStack.popCleanup();
 
-      EmitCleanup(*this, Fn, /*ForEH*/ false, NormalActiveFlag);
+      EmitCleanup(*this, Fn, cleanupFlags, NormalActiveFlag);
 
     // Otherwise, the best approach is to thread everything through
     // the cleanup block and then try to clean up after ourselves.
@@ -673,18 +712,19 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
 
       // I.  Set up the fallthrough edge in.
 
+    CGBuilderTy::InsertPoint savedInactiveFallthroughIP;
+
       // If there's a fallthrough, we need to store the cleanup
       // destination index.  For fall-throughs this is always zero.
       if (HasFallthrough) {
         if (!HasPrebranchedFallthrough)
           Builder.CreateStore(Builder.getInt32(0), getNormalCleanupDestSlot());
 
-      // Otherwise, clear the IP if we don't have fallthrough because
-      // the cleanup is inactive.  We don't need to save it because
-      // it's still just FallthroughSource.
+      // Otherwise, save and clear the IP if we don't have fallthrough
+      // because the cleanup is inactive.
       } else if (FallthroughSource) {
         assert(!IsActive && "source without fallthrough for active cleanup");
-        Builder.ClearInsertionPoint();
+        savedInactiveFallthroughIP = Builder.saveAndClearIP();
       }
 
       // II.  Emit the entry block.  This implicitly branches to it if
@@ -713,7 +753,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
       }
 
       llvm::BasicBlock *FallthroughDest = 0;
-      llvm::SmallVector<llvm::Instruction*, 2> InstsToAppend;
+      SmallVector<llvm::Instruction*, 2> InstsToAppend;
 
       // If there's exactly one branch-after and no other threads,
       // we can route it without a switch.
@@ -774,7 +814,7 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
       EHStack.popCleanup();
       assert(EHStack.hasNormalCleanups() == HasEnclosingCleanups);
 
-      EmitCleanup(*this, Fn, /*ForEH*/ false, NormalActiveFlag);
+      EmitCleanup(*this, Fn, cleanupFlags, NormalActiveFlag);
 
       // Append the prepared cleanup prologue from above.
       llvm::BasicBlock *NormalExit = Builder.GetInsertBlock();
@@ -797,25 +837,14 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
 
       // V.  Set up the fallthrough edge out.
       
-      // Case 1: a fallthrough source exists but shouldn't branch to
-      // the cleanup because the cleanup is inactive.
+      // Case 1: a fallthrough source exists but doesn't branch to the
+      // cleanup because the cleanup is inactive.
       if (!HasFallthrough && FallthroughSource) {
+        // Prebranched fallthrough was forwarded earlier.
+        // Non-prebranched fallthrough doesn't need to be forwarded.
+        // Either way, all we need to do is restore the IP we cleared before.
         assert(!IsActive);
-
-        // If we have a prebranched fallthrough, that needs to be
-        // forwarded to the right block.
-        if (HasPrebranchedFallthrough) {
-          llvm::BasicBlock *Next;
-          if (FallthroughIsBranchThrough) {
-            Next = BranchThroughDest;
-            assert(!FallthroughDest);
-          } else {
-            Next = FallthroughDest;
-          }
-
-          ForwardPrebranchedFallthrough(FallthroughSource, NormalEntry, Next);
-        }
-        Builder.SetInsertPoint(FallthroughSource);
+        Builder.restoreIP(savedInactiveFallthroughIP);
 
       // Case 2: a fallthrough source exists and should branch to the
       // cleanup, but we're not supposed to branch through to the next
@@ -857,7 +886,9 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
     CGBuilderTy::InsertPoint SavedIP = Builder.saveAndClearIP();
 
     EmitBlock(EHEntry);
-    EmitCleanup(*this, Fn, /*ForEH*/ true, EHActiveFlag);
+
+    cleanupFlags.setIsForEHCleanup();
+    EmitCleanup(*this, Fn, cleanupFlags, EHActiveFlag);
 
     // Append the prepared cleanup prologue from above.
     llvm::BasicBlock *EHExit = Builder.GetInsertBlock();

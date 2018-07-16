@@ -16,6 +16,8 @@
 #ifndef LLVM_SUPPORT_WIN64EH_H
 #define LLVM_SUPPORT_WIN64EH_H
 
+#include "llvm/Support/DataTypes.h"
+
 namespace llvm {
 namespace Win64EH {
 
@@ -28,7 +30,7 @@ enum UnwindOpcodes {
   UOP_SetFPReg,
   UOP_SaveNonVol,
   UOP_SaveNonVolBig,
-  UOP_SaveXMM128,
+  UOP_SaveXMM128 = 8,
   UOP_SaveXMM128Big,
   UOP_PushMachFrame
 };

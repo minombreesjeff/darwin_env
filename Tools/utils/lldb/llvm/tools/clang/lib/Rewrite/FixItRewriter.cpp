@@ -41,7 +41,7 @@ FixItRewriter::~FixItRewriter() {
   Diags.setClient(Client);
 }
 
-bool FixItRewriter::WriteFixedFile(FileID ID, llvm::raw_ostream &OS) {
+bool FixItRewriter::WriteFixedFile(FileID ID, raw_ostream &OS) {
   const RewriteBuffer *RewriteBuf = Rewrite.getRewriteBufferFor(ID);
   if (!RewriteBuf) return true;
   RewriteBuf->write(OS);
@@ -121,8 +121,7 @@ void FixItRewriter::HandleDiagnostic(Diagnostic::Level DiagLevel,
 
     if (Hint.CodeToInsert.empty()) {
       // We're removing code.
-      if (Rewrite.RemoveText(Hint.RemoveRange.getBegin(),
-                             Rewrite.getRangeSize(Hint.RemoveRange)))
+      if (Rewrite.RemoveText(Hint.RemoveRange))
         Failed = true;
       continue;
     }

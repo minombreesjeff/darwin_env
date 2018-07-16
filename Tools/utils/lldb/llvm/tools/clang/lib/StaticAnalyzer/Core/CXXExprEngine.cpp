@@ -36,7 +36,7 @@ void ExprEngine::evalArguments(ConstExprIterator AI, ConstExprIterator AE,
                                  bool FstArgAsLValue) {
 
 
-  llvm::SmallVector<CallExprWLItem, 20> WorkList;
+  SmallVector<CallExprWLItem, 20> WorkList;
   WorkList.reserve(AE - AI);
   WorkList.push_back(CallExprWLItem(AI, Pred));
 
@@ -103,23 +103,24 @@ const CXXThisRegion *ExprEngine::getCXXThisRegion(const CXXMethodDecl *decl,
                     getCXXThisRegion(decl->getThisType(getContext()), frameCtx);
 }
 
-void ExprEngine::CreateCXXTemporaryObject(const Expr *Ex, ExplodedNode *Pred,
-                                            ExplodedNodeSet &Dst) {
+void ExprEngine::CreateCXXTemporaryObject(const MaterializeTemporaryExpr *ME,
+                                          ExplodedNode *Pred,
+                                          ExplodedNodeSet &Dst) {
   ExplodedNodeSet Tmp;
-  Visit(Ex, Pred, Tmp);
+  Visit(ME->GetTemporaryExpr(), Pred, Tmp);
   for (ExplodedNodeSet::iterator I = Tmp.begin(), E = Tmp.end(); I != E; ++I) {
     const GRState *state = GetState(*I);
 
     // Bind the temporary object to the value of the expression. Then bind
     // the expression to the location of the object.
-    SVal V = state->getSVal(Ex);
+    SVal V = state->getSVal(ME->GetTemporaryExpr());
 
     const MemRegion *R =
-      svalBuilder.getRegionManager().getCXXTempObjectRegion(Ex,
+      svalBuilder.getRegionManager().getCXXTempObjectRegion(ME,
                                                    Pred->getLocationContext());
 
     state = state->bindLoc(loc::MemRegionVal(R), V);
-    MakeNode(Dst, Ex, Pred, state->BindExpr(Ex, loc::MemRegionVal(R)));
+    MakeNode(Dst, ME, Pred, state->BindExpr(ME, loc::MemRegionVal(R)));
   }
 }
 
@@ -197,7 +198,7 @@ void ExprEngine::VisitCXXConstructExpr(const CXXConstructExpr *E,
 #endif
   
   // Default semantics: invalidate all regions passed as arguments.
-  llvm::SmallVector<const MemRegion*, 10> regionsToInvalidate;
+  SmallVector<const MemRegion*, 10> regionsToInvalidate;
 
   // FIXME: We can have collisions on the conjured symbol if the
   //  expression *I also creates conjured symbols.  We probably want
@@ -303,7 +304,7 @@ void ExprEngine::VisitCXXNewExpr(const CXXNewExpr *CNE, ExplodedNode *Pred,
     // Accumulate list of regions that are invalidated.
     // FIXME: Eventually we should unify the logic for constructor
     // processing in one place.
-    llvm::SmallVector<const MemRegion*, 10> regionsToInvalidate;
+    SmallVector<const MemRegion*, 10> regionsToInvalidate;
     for (CXXNewExpr::const_arg_iterator
           ai = CNE->constructor_arg_begin(), ae = CNE->constructor_arg_end();
           ai != ae; ++ai)

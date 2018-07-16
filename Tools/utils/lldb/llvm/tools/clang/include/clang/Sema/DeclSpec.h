@@ -40,6 +40,7 @@ namespace clang {
   class NamespaceDecl;
   class NestedNameSpecifier;
   class NestedNameSpecifierLoc;
+  class ObjCDeclSpec;
   class Preprocessor;
   class Declarator;
   struct TemplateIdAnnotation;
@@ -153,6 +154,12 @@ public:
   /// copied.
   NestedNameSpecifierLoc getWithLocInContext(ASTContext &Context) const;
 
+  /// \brief Retrieve the location of the name in the last qualifier
+  /// in this nested name specifier.  For example:
+  ///   ::foo::bar<0>::
+  ///          ^~~
+  SourceLocation getLastQualifierNameLoc() const;
+
   /// No scope specifier.
   bool isEmpty() const { return !Range.isValid(); }
   /// A scope specifier is present, but may be valid or invalid.
@@ -249,7 +256,7 @@ public:
   static const TST TST_typeofType = clang::TST_typeofType;
   static const TST TST_typeofExpr = clang::TST_typeofExpr;
   static const TST TST_decltype = clang::TST_decltype;
-  static const TST TST_underlying_type = clang::TST_underlying_type;
+  static const TST TST_underlyingType = clang::TST_underlyingType;
   static const TST TST_auto = clang::TST_auto;
   static const TST TST_unknown_anytype = clang::TST_unknown_anytype;
   static const TST TST_error = clang::TST_error;
@@ -344,9 +351,11 @@ private:
   void SaveWrittenBuiltinSpecs();
   void SaveStorageSpecifierAsWritten();
 
+  ObjCDeclSpec *ObjCQualifiers;
+
   static bool isTypeRep(TST T) {
     return (T == TST_typename || T == TST_typeofType ||
-            T == TST_underlying_type);
+            T == TST_underlyingType);
   }
   static bool isExprRep(TST T) {
     return (T == TST_typeofExpr || T == TST_decltype);
@@ -372,7 +381,7 @@ public:
       TypeAltiVecPixel(false),
       TypeAltiVecBool(false),
       TypeSpecOwned(false),
-      TypeQualifiers(TSS_unspecified),
+      TypeQualifiers(TQ_unspecified),
       FS_inline_specified(false),
       FS_virtual_specified(false),
       FS_explicit_specified(false),
@@ -383,7 +392,8 @@ public:
       ProtocolQualifiers(0),
       NumProtocolQualifiers(0),
       ProtocolLocs(0),
-      writtenBS() {
+      writtenBS(),
+      ObjCQualifiers(0) {
   }
   ~DeclSpec() {
     delete [] ProtocolQualifiers;
@@ -653,6 +663,9 @@ public:
     return writtenBS;
   }
 
+  ObjCDeclSpec *getObjCQualifiers() const { return ObjCQualifiers; }
+  void setObjCQualifiers(ObjCDeclSpec *quals) { ObjCQualifiers = quals; }
+
   /// isMissingDeclaratorOk - This checks if this DeclSpec can stand alone,
   /// without a Declarator. Only tag declspecs can stand alone.
   bool isMissingDeclaratorOk();
@@ -689,7 +702,10 @@ public:
     DQ_PR_copy = 0x20,
     DQ_PR_nonatomic = 0x40,
     DQ_PR_setter = 0x80,
-    DQ_PR_atomic = 0x100
+    DQ_PR_atomic = 0x100,
+    DQ_PR_weak =   0x200,
+    DQ_PR_strong = 0x400,
+    DQ_PR_unsafe_unretained = 0x800
   };
 
 
@@ -723,7 +739,7 @@ private:
   ObjCDeclQualifier objcDeclQualifier : 6;
 
   // NOTE: VC++ treats enums as signed, avoid using ObjCPropertyAttributeKind
-  unsigned PropertyAttributes : 9;
+  unsigned PropertyAttributes : 12;
   IdentifierInfo *GetterName;    // getter name of NULL if no getter
   IdentifierInfo *SetterName;    // setter name of NULL if no setter
 };
@@ -751,7 +767,9 @@ public:
     /// \brief A destructor name.
     IK_DestructorName,
     /// \brief A template-id, e.g., f<int>.
-    IK_TemplateId
+    IK_TemplateId,
+    /// \brief An implicit 'self' parameter
+    IK_ImplicitSelfParam
   } Kind;
 
   /// \brief Anonymous union that holds extra data associated with the
@@ -804,7 +822,7 @@ public:
   SourceLocation EndLocation;
   
   UnqualifiedId() : Kind(IK_Identifier), Identifier(0) { }
-  
+
   /// \brief Do not use this copy constructor. It is temporary, and only
   /// exists because we are holding FieldDeclarators in a SmallVector when we
   /// don't actually need them.
@@ -831,6 +849,7 @@ public:
   
   /// \brief Determine what kind of name we have.
   IdKind getKind() const { return Kind; }
+  void setKind(IdKind kind) { Kind = kind; } 
   
   /// \brief Specify that this unqualified-id was parsed as an identifier.
   ///
@@ -942,7 +961,7 @@ public:
   
 /// CachedTokens - A set of tokens that has been cached for later
 /// parsing.
-typedef llvm::SmallVector<Token, 4> CachedTokens;
+typedef SmallVector<Token, 4> CachedTokens;
 
 /// DeclaratorChunk - One instance of this struct is used for each type in a
 /// declarator that is parsed.
@@ -1078,8 +1097,12 @@ struct DeclaratorChunk {
     /// If this is an invalid location, there is no ref-qualifier.
     unsigned RefQualifierLoc;
 
-    /// \brief When ExceptionSpecType isn't EST_None, the location of the
-    /// keyword introducing the spec.
+    /// \brief The location of the 'mutable' qualifer in a lambda-declarator, if
+    /// any.
+    unsigned MutableLoc;
+
+    /// \brief When ExceptionSpecType isn't EST_None or EST_Delayed, the
+    /// location of the keyword introducing the spec.
     unsigned ExceptionSpecLoc;
 
     /// ArgInfo - This is a pointer to a new[]'d array of ParamInfo objects that
@@ -1139,9 +1162,18 @@ struct DeclaratorChunk {
       return SourceLocation::getFromRawEncoding(RefQualifierLoc);
     }
 
+    /// \brief Retrieve the location of the 'mutable' qualifier, if any.
+    SourceLocation getMutableLoc() const {
+      return SourceLocation::getFromRawEncoding(MutableLoc);
+    }
+
     /// \brief Determine whether this function declaration contains a 
     /// ref-qualifier.
     bool hasRefQualifier() const { return getRefQualifierLoc().isValid(); }
+
+    /// \brief Determine whether this lambda-declarator contains a 'mutable'
+    /// qualifier.
+    bool hasMutableQualifier() const { return getMutableLoc().isValid(); }
 
     /// \brief Get the type of exception specification this function has.
     ExceptionSpecificationType getExceptionSpecType() const {
@@ -1266,6 +1298,7 @@ struct DeclaratorChunk {
                                      unsigned TypeQuals, 
                                      bool RefQualifierIsLvalueRef,
                                      SourceLocation RefQualifierLoc,
+                                     SourceLocation MutableLoc,
                                      ExceptionSpecificationType ESpecType,
                                      SourceLocation ESpecLoc,
                                      ParsedType *Exceptions,
@@ -1339,7 +1372,9 @@ public:
     ForContext,          // Declaration within first part of a for loop.
     ConditionContext,    // Condition declaration in a C++ if/switch/while/for.
     TemplateParamContext,// Within a template parameter list.
+    CXXNewContext,       // C++ new-expression.
     CXXCatchContext,     // C++ catch exception-declaration
+    ObjCCatchContext,    // Objective-C catch exception-declaration
     BlockLiteralContext,  // Block literal declarator.
     TemplateTypeArgContext, // Template type argument.
     AliasDeclContext,    // C++0x alias-declaration.
@@ -1360,7 +1395,7 @@ private:
   /// parsed.  This is pushed from the identifier out, which means that element
   /// #0 will be the most closely bound to the identifier, and
   /// DeclTypeInfo.back() will be the least closely bound.
-  llvm::SmallVector<DeclaratorChunk, 8> DeclTypeInfo;
+  SmallVector<DeclaratorChunk, 8> DeclTypeInfo;
 
   /// InvalidType - Set by Sema::GetTypeForDeclarator().
   bool InvalidType : 1;
@@ -1489,7 +1524,9 @@ public:
     case PrototypeContext:
     case ObjCPrototypeContext:
     case TemplateParamContext:
+    case CXXNewContext:
     case CXXCatchContext:
+    case ObjCCatchContext:
     case BlockLiteralContext:
     case TemplateTypeArgContext:
       return true;
@@ -1511,9 +1548,11 @@ public:
     case PrototypeContext:
     case TemplateParamContext:
     case CXXCatchContext:
+    case ObjCCatchContext:
       return true;
 
     case TypeNameContext:
+    case CXXNewContext:
     case AliasDeclContext:
     case AliasTemplateContext:
     case ObjCPrototypeContext:
@@ -1542,7 +1581,9 @@ public:
     case ObjCPrototypeContext:
     case TemplateParamContext:
     case CXXCatchContext:
+    case ObjCCatchContext:
     case TypeNameContext:
+    case CXXNewContext:
     case AliasDeclContext:
     case AliasTemplateContext:
     case BlockLiteralContext:
@@ -1616,6 +1657,29 @@ public:
     DeclTypeInfo.erase(DeclTypeInfo.begin());
   }
 
+  /// isArrayOfUnknownBound - This method returns true if the declarator
+  /// is a declarator for an array of unknown bound (looking through
+  /// parentheses).
+  bool isArrayOfUnknownBound() const {
+    for (unsigned i = 0, i_end = DeclTypeInfo.size(); i < i_end; ++i) {
+      switch (DeclTypeInfo[i].Kind) {
+      case DeclaratorChunk::Paren:
+        continue;
+      case DeclaratorChunk::Function:
+      case DeclaratorChunk::Pointer:
+      case DeclaratorChunk::Reference:
+      case DeclaratorChunk::BlockPointer:
+      case DeclaratorChunk::MemberPointer:
+        return false;
+      case DeclaratorChunk::Array:
+        return !DeclTypeInfo[i].Arr.NumElts;
+      }
+      llvm_unreachable("Invalid type chunk");
+      return false;
+    }
+    return false;
+  }
+
   /// isFunctionDeclarator - This method returns true if the declarator
   /// is a function declarator (looking through parentheses).
   /// If true is returned, then the reference type parameter idx is
@@ -1664,6 +1728,14 @@ public:
     return const_cast<Declarator*>(this)->getFunctionTypeInfo();
   }
 
+  /// \brief Determine whether the declaration that will be produced from 
+  /// this declaration will be a function.
+  /// 
+  /// A declaration can declare a function even if the declarator itself
+  /// isn't a function declarator, if the type specifier refers to a function
+  /// type. This routine checks for both cases.
+  bool isDeclarationOfFunction() const;
+  
   /// takeAttributes - Takes attributes from the given parsed-attributes
   /// set and add them to this declarator.
   ///
@@ -1754,6 +1826,53 @@ private:
 
   SourceLocation VS_overrideLoc, VS_finalLoc;
   SourceLocation LastLocation;
+};
+
+/// LambdaCaptureDefault - The default, if any, capture method for a
+/// lambda expression.
+enum LambdaCaptureDefault {
+  LCD_None,
+  LCD_ByCopy,
+  LCD_ByRef
+};
+
+/// LambdaCaptureKind - The different capture forms in a lambda
+/// introducer: 'this' or a copied or referenced variable.
+enum LambdaCaptureKind {
+  LCK_This,
+  LCK_ByCopy,
+  LCK_ByRef
+};
+
+/// LambdaCapture - An individual capture in a lambda introducer.
+struct LambdaCapture {
+  LambdaCaptureKind Kind;
+  SourceLocation Loc;
+  IdentifierInfo* Id;
+
+  LambdaCapture(LambdaCaptureKind Kind,
+                     SourceLocation Loc,
+                     IdentifierInfo* Id = 0)
+    : Kind(Kind), Loc(Loc), Id(Id)
+  {}
+};
+
+/// LambdaIntroducer - Represents a complete lambda introducer.
+struct LambdaIntroducer {
+  SourceRange Range;
+  LambdaCaptureDefault Default;
+  llvm::SmallVector<LambdaCapture, 4> Captures;
+
+  LambdaIntroducer()
+    : Default(LCD_None) {}
+
+  /// addCapture - Append a capture in a lambda introducer.
+  void addCapture(LambdaCaptureKind Kind,
+                  SourceLocation Loc,
+                  IdentifierInfo* Id = 0) {
+    Captures.push_back(LambdaCapture(Kind, Loc, Id));
+  }
+
 };
 
 } // end namespace clang

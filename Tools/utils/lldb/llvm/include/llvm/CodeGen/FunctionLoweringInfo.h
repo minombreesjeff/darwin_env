@@ -24,6 +24,7 @@
 #ifndef NDEBUG
 #include "llvm/ADT/SmallSet.h"
 #endif
+#include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -57,7 +58,7 @@ public:
   const Function *Fn;
   MachineFunction *MF;
   MachineRegisterInfo *RegInfo;
-
+  BranchProbabilityInfo *BPI;
   /// CanLowerReturn - true iff the function's return value can be lowered to
   /// registers.
   bool CanLowerReturn;
@@ -138,7 +139,7 @@ public:
 
   unsigned CreateReg(EVT VT);
   
-  unsigned CreateRegs(const Type *Ty);
+  unsigned CreateRegs(Type *Ty);
   
   unsigned InitializeRegForValue(const Value *V) {
     unsigned &R = ValueMap[V];

@@ -25,8 +25,9 @@ static void DummyArgToStringFn(Diagnostic::ArgumentKind AK, intptr_t QT,
                                const char *Argument, unsigned ArgLen,
                                const Diagnostic::ArgumentValue *PrevArgs,
                                unsigned NumPrevArgs,
-                               llvm::SmallVectorImpl<char> &Output,
-                               void *Cookie) {
+                               SmallVectorImpl<char> &Output,
+                               void *Cookie,
+                               SmallVectorImpl<intptr_t> &QualTypeVals) {
   const char *Str = "<can't format argument>";
   Output.append(Str, Str+strlen(Str));
 }
@@ -86,10 +87,14 @@ bool Diagnostic::popMappings(SourceLocation Loc) {
 void Diagnostic::Reset() {
   ErrorOccurred = false;
   FatalErrorOccurred = false;
+  UnrecoverableErrorOccurred = false;
   
   NumWarnings = 0;
   NumErrors = 0;
   NumErrorsSuppressed = 0;
+  TrapNumErrorsOccurred = 0;
+  TrapNumUnrecoverableErrorsOccurred = 0;
+  
   CurDiagID = ~0U;
   // Set LastDiagLevel to an "unset" state. If we set it to 'Ignored', notes
   // using a Diagnostic associated to a translation unit that follow
@@ -109,8 +114,8 @@ void Diagnostic::Reset() {
   PushDiagStatePoint(&DiagStates.back(), SourceLocation());
 }
 
-void Diagnostic::SetDelayedDiagnostic(unsigned DiagID, llvm::StringRef Arg1,
-                                      llvm::StringRef Arg2) {
+void Diagnostic::SetDelayedDiagnostic(unsigned DiagID, StringRef Arg1,
+                                      StringRef Arg2) {
   if (DelayedDiagID)
     return;
 
@@ -336,7 +341,7 @@ static const char *ScanFormat(const char *I, const char *E, char Target) {
 /// This is very useful for certain classes of variant diagnostics.
 static void HandleSelectModifier(const DiagnosticInfo &DInfo, unsigned ValNo,
                                  const char *Argument, unsigned ArgumentLen,
-                                 llvm::SmallVectorImpl<char> &OutStr) {
+                                 SmallVectorImpl<char> &OutStr) {
   const char *ArgumentEnd = Argument+ArgumentLen;
 
   // Skip over 'ValNo' |'s.
@@ -359,7 +364,7 @@ static void HandleSelectModifier(const DiagnosticInfo &DInfo, unsigned ValNo,
 /// letter 's' to the string if the value is not 1.  This is used in cases like
 /// this:  "you idiot, you have %4 parameter%s4!".
 static void HandleIntegerSModifier(unsigned ValNo,
-                                   llvm::SmallVectorImpl<char> &OutStr) {
+                                   SmallVectorImpl<char> &OutStr) {
   if (ValNo != 1)
     OutStr.push_back('s');
 }
@@ -369,7 +374,7 @@ static void HandleIntegerSModifier(unsigned ValNo,
 /// to the first ordinal.  Currently this is hard-coded to use the
 /// English form.
 static void HandleOrdinalModifier(unsigned ValNo,
-                                  llvm::SmallVectorImpl<char> &OutStr) {
+                                  SmallVectorImpl<char> &OutStr) {
   assert(ValNo != 0 && "ValNo must be strictly positive!");
 
   llvm::raw_svector_ostream Out(OutStr);
@@ -494,7 +499,7 @@ static bool EvalPluralExpr(unsigned ValNo, const char *Start, const char *End) {
 /// {1:form0|%100=[10,20]:form2|%10=[2,4]:form1|:form2}
 static void HandlePluralModifier(const DiagnosticInfo &DInfo, unsigned ValNo,
                                  const char *Argument, unsigned ArgumentLen,
-                                 llvm::SmallVectorImpl<char> &OutStr) {
+                                 SmallVectorImpl<char> &OutStr) {
   const char *ArgumentEnd = Argument + ArgumentLen;
   while (1) {
     assert(Argument < ArgumentEnd && "Plural expression didn't match.");
@@ -521,28 +526,35 @@ static void HandlePluralModifier(const DiagnosticInfo &DInfo, unsigned ValNo,
 /// formal arguments into the %0 slots.  The result is appended onto the Str
 /// array.
 void DiagnosticInfo::
-FormatDiagnostic(llvm::SmallVectorImpl<char> &OutStr) const {
+FormatDiagnostic(SmallVectorImpl<char> &OutStr) const {
   if (!StoredDiagMessage.empty()) {
     OutStr.append(StoredDiagMessage.begin(), StoredDiagMessage.end());
     return;
   }
 
-  const char *DiagStr = getDiags()->getDiagnosticIDs()->getDescription(getID());
-  const char *DiagEnd = DiagStr+strlen(DiagStr);
+  StringRef Diag = 
+    getDiags()->getDiagnosticIDs()->getDescription(getID());
 
-  FormatDiagnostic(DiagStr, DiagEnd, OutStr);
+  FormatDiagnostic(Diag.begin(), Diag.end(), OutStr);
 }
 
 void DiagnosticInfo::
 FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
-                 llvm::SmallVectorImpl<char> &OutStr) const {
+                 SmallVectorImpl<char> &OutStr) const {
 
   /// FormattedArgs - Keep track of all of the arguments formatted by
   /// ConvertArgToString and pass them into subsequent calls to
   /// ConvertArgToString, allowing the implementation to avoid redundancies in
   /// obvious cases.
-  llvm::SmallVector<Diagnostic::ArgumentValue, 8> FormattedArgs;
-  
+  SmallVector<Diagnostic::ArgumentValue, 8> FormattedArgs;
+
+  /// QualTypeVals - Pass a vector of arrays so that QualType names can be
+  /// compared to see if more information is needed to be printed.
+  SmallVector<intptr_t, 2> QualTypeVals;
+  for (unsigned i = 0, e = getNumArgs(); i < e; ++i)
+    if (getArgKind(i) == Diagnostic::ak_qualtype)
+      QualTypeVals.push_back(getRawArg(i));
+
   while (DiagStr != DiagEnd) {
     if (DiagStr[0] != '%') {
       // Append non-%0 substrings to Str if we have one.
@@ -673,7 +685,7 @@ FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
                                      Modifier, ModifierLen,
                                      Argument, ArgumentLen,
                                      FormattedArgs.data(), FormattedArgs.size(),
-                                     OutStr);
+                                     OutStr, QualTypeVals);
       break;
     }
     
@@ -692,7 +704,7 @@ FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
 StoredDiagnostic::StoredDiagnostic() { }
 
 StoredDiagnostic::StoredDiagnostic(Diagnostic::Level Level, unsigned ID,
-                                   llvm::StringRef Message)
+                                   StringRef Message)
   : ID(ID), Level(Level), Loc(), Message(Message) { }
 
 StoredDiagnostic::StoredDiagnostic(Diagnostic::Level Level, 
@@ -714,6 +726,16 @@ StoredDiagnostic::StoredDiagnostic(Diagnostic::Level Level,
   FixIts.reserve(Info.getNumFixItHints());
   for (unsigned I = 0, N = Info.getNumFixItHints(); I != N; ++I)
     FixIts.push_back(Info.getFixItHint(I));
+}
+
+StoredDiagnostic::StoredDiagnostic(Diagnostic::Level Level, unsigned ID, 
+                                   StringRef Message, FullSourceLoc Loc,
+                                   ArrayRef<CharSourceRange> Ranges,
+                                   ArrayRef<FixItHint> Fixits)
+  : ID(ID), Level(Level), Loc(Loc), Message(Message) 
+{
+  this->Ranges.assign(Ranges.begin(), Ranges.end());
+  this->FixIts.assign(FixIts.begin(), FixIts.end());
 }
 
 StoredDiagnostic::~StoredDiagnostic() { }

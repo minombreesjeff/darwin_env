@@ -96,8 +96,12 @@ public:
     return DbgValues.empty() && ByvalParmDbgValues.empty();
   }
 
-  SmallVector<SDDbgValue*,2> &getSDDbgValues(const SDNode *Node) {
-    return DbgValMap[Node];
+  ArrayRef<SDDbgValue*> getSDDbgValues(const SDNode *Node) {
+    DenseMap<const SDNode*, SmallVector<SDDbgValue*, 2> >::iterator I =
+      DbgValMap.find(Node);
+    if (I != DbgValMap.end())
+      return I->second;
+    return ArrayRef<SDDbgValue*>();
   }
 
   typedef SmallVector<SDDbgValue*,32>::iterator DbgIterator;
@@ -585,19 +589,27 @@ public:
   /// takes 3 operands
   SDValue getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT, SDValue Chain,
                     SDValue Ptr, SDValue Cmp, SDValue Swp,
-                    MachinePointerInfo PtrInfo, unsigned Alignment=0);
+                    MachinePointerInfo PtrInfo, unsigned Alignment,
+                    AtomicOrdering Ordering,
+                    SynchronizationScope SynchScope);
   SDValue getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT, SDValue Chain,
                     SDValue Ptr, SDValue Cmp, SDValue Swp,
-                    MachineMemOperand *MMO);
+                    MachineMemOperand *MMO,
+                    AtomicOrdering Ordering,
+                    SynchronizationScope SynchScope);
 
   /// getAtomic - Gets a node for an atomic op, produces result and chain and
   /// takes 2 operands.
   SDValue getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT, SDValue Chain,
                     SDValue Ptr, SDValue Val, const Value* PtrVal,
-                    unsigned Alignment = 0);
+                    unsigned Alignment,
+                    AtomicOrdering Ordering,
+                    SynchronizationScope SynchScope);
   SDValue getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT, SDValue Chain,
                     SDValue Ptr, SDValue Val,
-                    MachineMemOperand *MMO);
+                    MachineMemOperand *MMO,
+                    AtomicOrdering Ordering,
+                    SynchronizationScope SynchScope);
 
   /// getMemIntrinsicNode - Creates a MemIntrinsicNode that may produce a
   /// result and takes a list of operands. Opcode may be INTRINSIC_VOID,
@@ -898,7 +910,7 @@ public:
   void AddDbgValue(SDDbgValue *DB, SDNode *SD, bool isParameter);
 
   /// GetDbgValues - Get the debug values which reference the given SDNode.
-  SmallVector<SDDbgValue*,2> &GetDbgValues(const SDNode* SD) {
+  ArrayRef<SDDbgValue*> GetDbgValues(const SDNode* SD) {
     return DbgInfo->getSDDbgValues(SD);
   }
 
@@ -984,10 +996,6 @@ public:
   /// is true if they are the same value, or if one is negative zero and the
   /// other positive zero.
   bool isEqualTo(SDValue A, SDValue B) const;
-
-  /// isVerifiedDebugInfoDesc - Returns true if the specified SDValue has
-  /// been verified as a debug information descriptor.
-  bool isVerifiedDebugInfoDesc(SDValue Op) const;
 
   /// UnrollVectorOp - Utility function used by legalize and lowering to
   /// "unroll" a vector operation by splitting out the scalars and operating

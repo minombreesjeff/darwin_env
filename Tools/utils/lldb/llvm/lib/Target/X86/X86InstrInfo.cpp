@@ -13,7 +13,6 @@
 
 #include "X86InstrInfo.h"
 #include "X86.h"
-#include "X86GenInstrInfo.inc"
 #include "X86InstrBuilder.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
@@ -36,6 +35,9 @@
 #include "llvm/MC/MCAsmInfo.h"
 #include <limits>
 
+#define GET_INSTRINFO_CTOR
+#include "X86GenInstrInfo.inc"
+
 using namespace llvm;
 
 static cl::opt<bool>
@@ -52,7 +54,12 @@ ReMatPICStubLoad("remat-pic-stub-load",
                  cl::init(false), cl::Hidden);
 
 X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
-  : TargetInstrInfoImpl(X86Insts, array_lengthof(X86Insts)),
+  : X86GenInstrInfo((tm.getSubtarget<X86Subtarget>().is64Bit()
+                     ? X86::ADJCALLSTACKDOWN64
+                     : X86::ADJCALLSTACKDOWN32),
+                    (tm.getSubtarget<X86Subtarget>().is64Bit()
+                     ? X86::ADJCALLSTACKUP64
+                     : X86::ADJCALLSTACKUP32)),
     TM(tm), RI(tm, *this) {
   enum {
     TB_NOT_REVERSABLE = 1U << 31,
@@ -293,12 +300,17 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::MOVAPDrr,    X86::MOVAPDmr, 0, 16 },
     { X86::MOVAPSrr,    X86::MOVAPSmr, 0, 16 },
     { X86::MOVDQArr,    X86::MOVDQAmr, 0, 16 },
+    { X86::VMOVAPDYrr,  X86::VMOVAPDYmr, 0, 32 },
+    { X86::VMOVAPSYrr,  X86::VMOVAPSYmr, 0, 32 },
+    { X86::VMOVDQAYrr,  X86::VMOVDQAYmr, 0, 32 },
     { X86::MOVPDI2DIrr, X86::MOVPDI2DImr, 0, 0 },
     { X86::MOVPQIto64rr,X86::MOVPQI2QImr, 0, 0 },
     { X86::MOVSDto64rr, X86::MOVSDto64mr, 0, 0 },
     { X86::MOVSS2DIrr,  X86::MOVSS2DImr, 0, 0 },
     { X86::MOVUPDrr,    X86::MOVUPDmr, 0, 0 },
     { X86::MOVUPSrr,    X86::MOVUPSmr, 0, 0 },
+    { X86::VMOVUPDYrr,  X86::VMOVUPDYmr, 0, 0 },
+    { X86::VMOVUPSYrr,  X86::VMOVUPSYmr, 0, 0 },
     { X86::MUL16r,      X86::MUL16m, 1, 0 },
     { X86::MUL32r,      X86::MUL32m, 1, 0 },
     { X86::MUL64r,      X86::MUL64m, 1, 0 },
@@ -395,6 +407,8 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::Int_CVTTSS2SIrr, X86::Int_CVTTSS2SIrm, 0 },
     { X86::Int_UCOMISDrr,   X86::Int_UCOMISDrm, 0 },
     { X86::Int_UCOMISSrr,   X86::Int_UCOMISSrm, 0 },
+    { X86::Int_VUCOMISDrr,  X86::Int_VUCOMISDrm, 0 },
+    { X86::Int_VUCOMISSrr,  X86::Int_VUCOMISSrm, 0 },
     { X86::MOV16rr,         X86::MOV16rm, 0 },
     { X86::MOV32rr,         X86::MOV32rm, 0 },
     { X86::MOV64rr,         X86::MOV64rm, 0 },
@@ -403,10 +417,13 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::MOV8rr,          X86::MOV8rm, 0 },
     { X86::MOVAPDrr,        X86::MOVAPDrm, 16 },
     { X86::MOVAPSrr,        X86::MOVAPSrm, 16 },
+    { X86::VMOVAPDYrr,      X86::VMOVAPDYrm, 32 },
+    { X86::VMOVAPSYrr,      X86::VMOVAPSYrm, 32 },
     { X86::MOVDDUPrr,       X86::MOVDDUPrm, 0 },
     { X86::MOVDI2PDIrr,     X86::MOVDI2PDIrm, 0 },
     { X86::MOVDI2SSrr,      X86::MOVDI2SSrm, 0 },
     { X86::MOVDQArr,        X86::MOVDQArm, 16 },
+    { X86::VMOVDQAYrr,      X86::VMOVDQAYrm, 16 },
     { X86::MOVSHDUPrr,      X86::MOVSHDUPrm, 16 },
     { X86::MOVSLDUPrr,      X86::MOVSLDUPrm, 16 },
     { X86::MOVSX16rr8,      X86::MOVSX16rm8, 0 },
@@ -417,6 +434,8 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::MOVSX64rr8,      X86::MOVSX64rm8, 0 },
     { X86::MOVUPDrr,        X86::MOVUPDrm, 16 },
     { X86::MOVUPSrr,        X86::MOVUPSrm, 0 },
+    { X86::VMOVUPDYrr,      X86::VMOVUPDYrm, 0 },
+    { X86::VMOVUPSYrr,      X86::VMOVUPSYrm, 0 },
     { X86::MOVZDI2PDIrr,    X86::MOVZDI2PDIrm, 0 },
     { X86::MOVZQI2PQIrr,    X86::MOVZQI2PQIrm, 0 },
     { X86::MOVZPQILo2PQIrr, X86::MOVZPQILo2PQIrm, 16 },
@@ -450,7 +469,9 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     { X86::TEST8rr,         X86::TEST8rm, 0 },
     // FIXME: TEST*rr EAX,EAX ---> CMP [mem], 0
     { X86::UCOMISDrr,       X86::UCOMISDrm, 0 },
-    { X86::UCOMISSrr,       X86::UCOMISSrm, 0 }
+    { X86::UCOMISSrr,       X86::UCOMISSrm, 0 },
+    { X86::VUCOMISDrr,      X86::VUCOMISDrm, 0 },
+    { X86::VUCOMISSrr,      X86::VUCOMISSrm, 0 }
   };
 
   for (unsigned i = 0, e = array_lengthof(OpTbl1); i != e; ++i) {
@@ -779,6 +800,9 @@ static bool isFrameLoadOpcode(int Opcode) {
   case X86::MOVAPSrm:
   case X86::MOVAPDrm:
   case X86::MOVDQArm:
+  case X86::VMOVAPSYrm:
+  case X86::VMOVAPDYrm:
+  case X86::VMOVDQAYrm:
   case X86::MMX_MOVD64rm:
   case X86::MMX_MOVQ64rm:
     return true;
@@ -800,6 +824,9 @@ static bool isFrameStoreOpcode(int Opcode) {
   case X86::MOVAPSmr:
   case X86::MOVAPDmr:
   case X86::MOVDQAmr:
+  case X86::VMOVAPSYmr:
+  case X86::VMOVAPDYmr:
+  case X86::VMOVDQAYmr:
   case X86::MMX_MOVD64mr:
   case X86::MMX_MOVQ64mr:
   case X86::MMX_MOVNTQmr:
@@ -829,24 +856,6 @@ unsigned X86InstrInfo::isLoadFromStackSlotPostFE(const MachineInstr *MI,
   return 0;
 }
 
-bool X86InstrInfo::hasLoadFromStackSlot(const MachineInstr *MI,
-                                        const MachineMemOperand *&MMO,
-                                        int &FrameIndex) const {
-  for (MachineInstr::mmo_iterator o = MI->memoperands_begin(),
-         oe = MI->memoperands_end();
-       o != oe;
-       ++o) {
-    if ((*o)->isLoad() && (*o)->getValue())
-      if (const FixedStackPseudoSourceValue *Value =
-          dyn_cast<const FixedStackPseudoSourceValue>((*o)->getValue())) {
-        FrameIndex = Value->getFrameIndex();
-        MMO = *o;
-        return true;
-      }
-  }
-  return false;
-}
-
 unsigned X86InstrInfo::isStoreToStackSlot(const MachineInstr *MI,
                                           int &FrameIndex) const {
   if (isFrameStoreOpcode(MI->getOpcode()))
@@ -867,24 +876,6 @@ unsigned X86InstrInfo::isStoreToStackSlotPostFE(const MachineInstr *MI,
     return hasStoreToStackSlot(MI, Dummy, FrameIndex);
   }
   return 0;
-}
-
-bool X86InstrInfo::hasStoreToStackSlot(const MachineInstr *MI,
-                                       const MachineMemOperand *&MMO,
-                                       int &FrameIndex) const {
-  for (MachineInstr::mmo_iterator o = MI->memoperands_begin(),
-         oe = MI->memoperands_end();
-       o != oe;
-       ++o) {
-    if ((*o)->isStore() && (*o)->getValue())
-      if (const FixedStackPseudoSourceValue *Value =
-          dyn_cast<const FixedStackPseudoSourceValue>((*o)->getValue())) {
-        FrameIndex = Value->getFrameIndex();
-        MMO = *o;
-        return true;
-      }
-  }
-  return false;
 }
 
 /// regIsPICBase - Return true if register is PIC base (i.e.g defined by
@@ -918,6 +909,10 @@ X86InstrInfo::isReallyTriviallyReMaterializable(const MachineInstr *MI,
     case X86::MOVUPSrm:
     case X86::MOVAPDrm:
     case X86::MOVDQArm:
+    case X86::VMOVAPSYrm:
+    case X86::VMOVUPSYrm:
+    case X86::VMOVAPDYrm:
+    case X86::VMOVDQAYrm:
     case X86::MMX_MOVD64rm:
     case X86::MMX_MOVQ64rm:
     case X86::FsMOVAPSrm:
@@ -1689,13 +1684,13 @@ X86::CondCode X86::GetOppositeBranchCondition(X86::CondCode CC) {
 }
 
 bool X86InstrInfo::isUnpredicatedTerminator(const MachineInstr *MI) const {
-  const TargetInstrDesc &TID = MI->getDesc();
-  if (!TID.isTerminator()) return false;
+  const MCInstrDesc &MCID = MI->getDesc();
+  if (!MCID.isTerminator()) return false;
 
   // Conditional branch is a special case.
-  if (TID.isBranch() && !TID.isBarrier())
+  if (MCID.isBranch() && !MCID.isBarrier())
     return true;
-  if (!TID.isPredicable())
+  if (!MCID.isPredicable())
     return true;
   return !isPredicated(MI);
 }
@@ -1789,7 +1784,6 @@ bool X86InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
           .addMBB(UnCondBrIter->getOperand(0).getMBB());
         BuildMI(MBB, UnCondBrIter, MBB.findDebugLoc(I), get(X86::JMP_4))
           .addMBB(TargetBB);
-        MBB.addSuccessor(TargetBB);
 
         OldInst->eraseFromParent();
         UnCondBrIter->eraseFromParent();
@@ -1968,6 +1962,8 @@ void X86InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       Opc = X86::MOV8rr;
   } else if (X86::VR128RegClass.contains(DestReg, SrcReg))
     Opc = X86::MOVAPSrr;
+  else if (X86::VR256RegClass.contains(DestReg, SrcReg))
+    Opc = X86::VMOVAPSYrr;
   else if (X86::VR64RegClass.contains(DestReg, SrcReg))
     Opc = X86::MMX_MOVQ64rr;
   else
@@ -2015,62 +2011,55 @@ static unsigned getLoadStoreRegOpcode(unsigned Reg,
                                       bool isStackAligned,
                                       const TargetMachine &TM,
                                       bool load) {
-  switch (RC->getID()) {
+  switch (RC->getSize()) {
   default:
-    llvm_unreachable("Unknown regclass");
-  case X86::GR64RegClassID:
-  case X86::GR64_ABCDRegClassID:
-  case X86::GR64_NOREXRegClassID:
-  case X86::GR64_NOREX_NOSPRegClassID:
-  case X86::GR64_NOSPRegClassID:
-  case X86::GR64_TCRegClassID:
-  case X86::GR64_TCW64RegClassID:
-    return load ? X86::MOV64rm : X86::MOV64mr;
-  case X86::GR32RegClassID:
-  case X86::GR32_ABCDRegClassID:
-  case X86::GR32_ADRegClassID:
-  case X86::GR32_NOREXRegClassID:
-  case X86::GR32_NOSPRegClassID:
-  case X86::GR32_TCRegClassID:
-    return load ? X86::MOV32rm : X86::MOV32mr;
-  case X86::GR16RegClassID:
-  case X86::GR16_ABCDRegClassID:
-  case X86::GR16_NOREXRegClassID:
-    return load ? X86::MOV16rm : X86::MOV16mr;
-  case X86::GR8RegClassID:
-    // Copying to or from a physical H register on x86-64 requires a NOREX
-    // move.  Otherwise use a normal move.
-    if (isHReg(Reg) &&
-        TM.getSubtarget<X86Subtarget>().is64Bit())
-      return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
-    else
-      return load ? X86::MOV8rm : X86::MOV8mr;
-  case X86::GR8_ABCD_LRegClassID:
-  case X86::GR8_NOREXRegClassID:
-    return load ? X86::MOV8rm :X86::MOV8mr;
-  case X86::GR8_ABCD_HRegClassID:
+    llvm_unreachable("Unknown spill size");
+  case 1:
+    assert(X86::GR8RegClass.hasSubClassEq(RC) && "Unknown 1-byte regclass");
     if (TM.getSubtarget<X86Subtarget>().is64Bit())
-      return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
-    else
-      return load ? X86::MOV8rm : X86::MOV8mr;
-  case X86::RFP80RegClassID:
+      // Copying to or from a physical H register on x86-64 requires a NOREX
+      // move.  Otherwise use a normal move.
+      if (isHReg(Reg) || X86::GR8_ABCD_HRegClass.hasSubClassEq(RC))
+        return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
+    return load ? X86::MOV8rm : X86::MOV8mr;
+  case 2:
+    assert(X86::GR16RegClass.hasSubClassEq(RC) && "Unknown 2-byte regclass");
+    return load ? X86::MOV16rm : X86::MOV16mr;
+  case 4:
+    if (X86::GR32RegClass.hasSubClassEq(RC))
+      return load ? X86::MOV32rm : X86::MOV32mr;
+    if (X86::FR32RegClass.hasSubClassEq(RC))
+      return load ? X86::MOVSSrm : X86::MOVSSmr;
+    if (X86::RFP32RegClass.hasSubClassEq(RC))
+      return load ? X86::LD_Fp32m : X86::ST_Fp32m;
+    llvm_unreachable("Unknown 4-byte regclass");
+  case 8:
+    if (X86::GR64RegClass.hasSubClassEq(RC))
+      return load ? X86::MOV64rm : X86::MOV64mr;
+    if (X86::FR64RegClass.hasSubClassEq(RC))
+      return load ? X86::MOVSDrm : X86::MOVSDmr;
+    if (X86::VR64RegClass.hasSubClassEq(RC))
+      return load ? X86::MMX_MOVQ64rm : X86::MMX_MOVQ64mr;
+    if (X86::RFP64RegClass.hasSubClassEq(RC))
+      return load ? X86::LD_Fp64m : X86::ST_Fp64m;
+    llvm_unreachable("Unknown 8-byte regclass");
+  case 10:
+    assert(X86::RFP80RegClass.hasSubClassEq(RC) && "Unknown 10-byte regclass");
     return load ? X86::LD_Fp80m : X86::ST_FpP80m;
-  case X86::RFP64RegClassID:
-    return load ? X86::LD_Fp64m : X86::ST_Fp64m;
-  case X86::RFP32RegClassID:
-    return load ? X86::LD_Fp32m : X86::ST_Fp32m;
-  case X86::FR32RegClassID:
-    return load ? X86::MOVSSrm : X86::MOVSSmr;
-  case X86::FR64RegClassID:
-    return load ? X86::MOVSDrm : X86::MOVSDmr;
-  case X86::VR128RegClassID:
+  case 16:
+    assert(X86::VR128RegClass.hasSubClassEq(RC) && "Unknown 16-byte regclass");
     // If stack is realigned we can use aligned stores.
     if (isStackAligned)
       return load ? X86::MOVAPSrm : X86::MOVAPSmr;
     else
       return load ? X86::MOVUPSrm : X86::MOVUPSmr;
-  case X86::VR64RegClassID:
-    return load ? X86::MMX_MOVQ64rm : X86::MMX_MOVQ64mr;
+  case 32:
+    assert(X86::VR256RegClass.hasSubClassEq(RC) && "Unknown 32-byte regclass");
+    // If stack is realigned we can use aligned stores.
+    if (isStackAligned)
+      return load ? X86::VMOVAPSYrm : X86::VMOVAPSYmr;
+    else
+      return load ? X86::VMOVUPSYrm : X86::VMOVUPSYmr;
   }
 }
 
@@ -2097,7 +2086,8 @@ void X86InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
   const MachineFunction &MF = *MBB.getParent();
   assert(MF.getFrameInfo()->getObjectSize(FrameIdx) >= RC->getSize() &&
          "Stack slot too small for store");
-  bool isAligned = (RI.getStackAlignment() >= 16) || RI.canRealignStack(MF);
+  bool isAligned = (TM.getFrameLowering()->getStackAlignment() >= 16) ||
+    RI.canRealignStack(MF);
   unsigned Opc = getStoreRegOpcode(SrcReg, RC, isAligned, TM);
   DebugLoc DL = MBB.findDebugLoc(MI);
   addFrameReference(BuildMI(MBB, MI, DL, get(Opc)), FrameIdx)
@@ -2129,7 +2119,8 @@ void X86InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                         const TargetRegisterClass *RC,
                                         const TargetRegisterInfo *TRI) const {
   const MachineFunction &MF = *MBB.getParent();
-  bool isAligned = (RI.getStackAlignment() >= 16) || RI.canRealignStack(MF);
+  bool isAligned = (TM.getFrameLowering()->getStackAlignment() >= 16) ||
+    RI.canRealignStack(MF);
   unsigned Opc = getLoadRegOpcode(DestReg, RC, isAligned, TM);
   DebugLoc DL = MBB.findDebugLoc(MI);
   addFrameReference(BuildMI(MBB, MI, DL, get(Opc), DestReg), FrameIdx);
@@ -2238,7 +2229,7 @@ X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   bool isTwoAddrFold = false;
   unsigned NumOps = MI->getDesc().getNumOperands();
   bool isTwoAddr = NumOps > 1 &&
-    MI->getDesc().getOperandConstraint(1, TOI::TIED_TO) != -1;
+    MI->getDesc().getOperandConstraint(1, MCOI::TIED_TO) != -1;
 
   // FIXME: AsmPrinter doesn't know how to handle
   // X86II::MO_GOT_ABSOLUTE_ADDRESS after folding.
@@ -2287,7 +2278,7 @@ X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
         return NULL;
       bool NarrowToMOV32rm = false;
       if (Size) {
-        unsigned RCSize =  MI->getDesc().OpInfo[i].getRegClass(&RI)->getSize();
+        unsigned RCSize = getRegClass(MI->getDesc(), i, &RI)->getSize();
         if (Size < RCSize) {
           // Check if it's safe to fold the load. If the size of the object is
           // narrower than the load width, then it's not.
@@ -2423,6 +2414,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     case X86::AVX_SET0PS:
     case X86::AVX_SET0PD:
     case X86::AVX_SET0PI:
+    case X86::AVX_SETALLONES:
       Alignment = 16;
       break;
     case X86::FsFLD0SD:
@@ -2434,7 +2426,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       Alignment = 4;
       break;
     default:
-      llvm_unreachable("Don't know how to fold this instruction!");
+      return 0;
     }
   if (Ops.size() == 2 && Ops[0] == 0 && Ops[1] == 1) {
     unsigned NewOpc = 0;
@@ -2467,8 +2459,11 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   case X86::AVX_SET0PI:
   case X86::AVX_SET0PSY:
   case X86::AVX_SET0PDY:
+  case X86::AVX_SETALLONES:
   case X86::FsFLD0SD:
-  case X86::FsFLD0SS: {
+  case X86::FsFLD0SS:
+  case X86::VFsFLD0SD:
+  case X86::VFsFLD0SS: {
     // Folding a V_SET0P? or V_SETALLONES as a load, to ease register pressure.
     // Create a constant-pool entry and operands to load from it.
 
@@ -2492,7 +2487,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
 
     // Create a constant-pool entry.
     MachineConstantPool &MCP = *MF.getConstantPool();
-    const Type *Ty;
+    Type *Ty;
     unsigned Opc = LoadMI->getOpcode();
     if (Opc == X86::FsFLD0SS || Opc == X86::VFsFLD0SS)
       Ty = Type::getFloatTy(MF.getFunction()->getContext());
@@ -2502,9 +2497,10 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       Ty = VectorType::get(Type::getFloatTy(MF.getFunction()->getContext()), 8);
     else
       Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()), 4);
-    const Constant *C = LoadMI->getOpcode() == X86::V_SETALLONES ?
-                    Constant::getAllOnesValue(Ty) :
-                    Constant::getNullValue(Ty);
+
+    bool IsAllOnes = (Opc == X86::V_SETALLONES || Opc == X86::AVX_SETALLONES);
+    const Constant *C = IsAllOnes ? Constant::getAllOnesValue(Ty) :
+                                    Constant::getNullValue(Ty);
     unsigned CPI = MCP.getConstantPoolIndex(C, Alignment);
 
     // Create operands to load from the constant pool entry.
@@ -2556,7 +2552,7 @@ bool X86InstrInfo::canFoldMemoryOperand(const MachineInstr *MI,
   unsigned Opc = MI->getOpcode();
   unsigned NumOps = MI->getDesc().getNumOperands();
   bool isTwoAddr = NumOps > 1 &&
-    MI->getDesc().getOperandConstraint(1, TOI::TIED_TO) != -1;
+    MI->getDesc().getOperandConstraint(1, MCOI::TIED_TO) != -1;
 
   // Folding a memory location into the two-address part of a two-address
   // instruction is different than folding it other places.  It requires
@@ -2602,9 +2598,8 @@ bool X86InstrInfo::unfoldMemoryOperand(MachineFunction &MF, MachineInstr *MI,
     return false;
   UnfoldStore &= FoldedStore;
 
-  const TargetInstrDesc &TID = get(Opc);
-  const TargetOperandInfo &TOI = TID.OpInfo[Index];
-  const TargetRegisterClass *RC = TOI.getRegClass(&RI);
+  const MCInstrDesc &MCID = get(Opc);
+  const TargetRegisterClass *RC = getRegClass(MCID, Index, &RI);
   if (!MI->hasOneMemOperand() &&
       RC == &X86::VR128RegClass &&
       !TM.getSubtarget<X86Subtarget>().isUnalignedMemAccessFast())
@@ -2646,7 +2641,7 @@ bool X86InstrInfo::unfoldMemoryOperand(MachineFunction &MF, MachineInstr *MI,
   }
 
   // Emit the data processing instruction.
-  MachineInstr *DataMI = MF.CreateMachineInstr(TID, MI->getDebugLoc(), true);
+  MachineInstr *DataMI = MF.CreateMachineInstr(MCID, MI->getDebugLoc(), true);
   MachineInstrBuilder MIB(DataMI);
 
   if (FoldedStore)
@@ -2699,7 +2694,7 @@ bool X86InstrInfo::unfoldMemoryOperand(MachineFunction &MF, MachineInstr *MI,
 
   // Emit the store instruction.
   if (UnfoldStore) {
-    const TargetRegisterClass *DstRC = TID.OpInfo[0].getRegClass(&RI);
+    const TargetRegisterClass *DstRC = getRegClass(MCID, 0, &RI);
     std::pair<MachineInstr::mmo_iterator,
               MachineInstr::mmo_iterator> MMOs =
       MF.extractStoreMemRefs(MI->memoperands_begin(),
@@ -2724,9 +2719,9 @@ X86InstrInfo::unfoldMemoryOperand(SelectionDAG &DAG, SDNode *N,
   unsigned Index = I->second.second & 0xf;
   bool FoldedLoad = I->second.second & (1 << 4);
   bool FoldedStore = I->second.second & (1 << 5);
-  const TargetInstrDesc &TID = get(Opc);
-  const TargetRegisterClass *RC = TID.OpInfo[Index].getRegClass(&RI);
-  unsigned NumDefs = TID.NumDefs;
+  const MCInstrDesc &MCID = get(Opc);
+  const TargetRegisterClass *RC = getRegClass(MCID, Index, &RI);
+  unsigned NumDefs = MCID.NumDefs;
   std::vector<SDValue> AddrOps;
   std::vector<SDValue> BeforeOps;
   std::vector<SDValue> AfterOps;
@@ -2770,13 +2765,13 @@ X86InstrInfo::unfoldMemoryOperand(SelectionDAG &DAG, SDNode *N,
   // Emit the data processing instruction.
   std::vector<EVT> VTs;
   const TargetRegisterClass *DstRC = 0;
-  if (TID.getNumDefs() > 0) {
-    DstRC = TID.OpInfo[0].getRegClass(&RI);
+  if (MCID.getNumDefs() > 0) {
+    DstRC = getRegClass(MCID, 0, &RI);
     VTs.push_back(*DstRC->vt_begin());
   }
   for (unsigned i = 0, e = N->getNumValues(); i != e; ++i) {
     EVT VT = N->getValueType(i);
-    if (VT != MVT::Other && i >= (unsigned)TID.getNumDefs())
+    if (VT != MVT::Other && i >= (unsigned)MCID.getNumDefs())
       VTs.push_back(VT);
   }
   if (Load)
@@ -2859,6 +2854,11 @@ X86InstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
   case X86::MOVAPDrm:
   case X86::MOVDQArm:
   case X86::MOVDQUrm:
+  case X86::VMOVAPSYrm:
+  case X86::VMOVUPSYrm:
+  case X86::VMOVAPDYrm:
+  case X86::VMOVDQAYrm:
+  case X86::VMOVDQUYrm:
     break;
   }
   switch (Opc2) {
@@ -2881,6 +2881,11 @@ X86InstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
   case X86::MOVAPDrm:
   case X86::MOVDQArm:
   case X86::MOVDQUrm:
+  case X86::VMOVAPSYrm:
+  case X86::VMOVUPSYrm:
+  case X86::VMOVAPDYrm:
+  case X86::VMOVDQAYrm:
+  case X86::VMOVDQUYrm:
     break;
   }
 
@@ -2975,31 +2980,6 @@ isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const {
            RC == &X86::RFP64RegClass || RC == &X86::RFP80RegClass);
 }
 
-
-/// isX86_64ExtendedReg - Is the MachineOperand a x86-64 extended (r8 or higher)
-/// register?  e.g. r8, xmm8, xmm13, etc.
-bool X86InstrInfo::isX86_64ExtendedReg(unsigned RegNo) {
-  switch (RegNo) {
-  default: break;
-  case X86::R8:    case X86::R9:    case X86::R10:   case X86::R11:
-  case X86::R12:   case X86::R13:   case X86::R14:   case X86::R15:
-  case X86::R8D:   case X86::R9D:   case X86::R10D:  case X86::R11D:
-  case X86::R12D:  case X86::R13D:  case X86::R14D:  case X86::R15D:
-  case X86::R8W:   case X86::R9W:   case X86::R10W:  case X86::R11W:
-  case X86::R12W:  case X86::R13W:  case X86::R14W:  case X86::R15W:
-  case X86::R8B:   case X86::R9B:   case X86::R10B:  case X86::R11B:
-  case X86::R12B:  case X86::R13B:  case X86::R14B:  case X86::R15B:
-  case X86::XMM8:  case X86::XMM9:  case X86::XMM10: case X86::XMM11:
-  case X86::XMM12: case X86::XMM13: case X86::XMM14: case X86::XMM15:
-  case X86::YMM8:  case X86::YMM9:  case X86::YMM10: case X86::YMM11:
-  case X86::YMM12: case X86::YMM13: case X86::YMM14: case X86::YMM15:
-  case X86::CR8:   case X86::CR9:   case X86::CR10:  case X86::CR11:
-  case X86::CR12:  case X86::CR13:  case X86::CR14:  case X86::CR15:
-    return true;
-  }
-  return false;
-}
-
 /// getGlobalBaseReg - Return a virtual register initialized with the
 /// the global base register value. Output instructions required to
 /// initialize the register in the function entry block, if necessary.
@@ -3059,6 +3039,13 @@ static const unsigned ReplaceableInstrs[][3] = {
   { X86::AVX_SET0PS, X86::AVX_SET0PD, X86::AVX_SET0PI },
   { X86::VXORPSrm,   X86::VXORPDrm,   X86::VPXORrm    },
   { X86::VXORPSrr,   X86::VXORPDrr,   X86::VPXORrr    },
+  // AVX 256-bit support
+  { X86::VMOVAPSYmr,   X86::VMOVAPDYmr,   X86::VMOVDQAYmr  },
+  { X86::VMOVAPSYrm,   X86::VMOVAPDYrm,   X86::VMOVDQAYrm  },
+  { X86::VMOVAPSYrr,   X86::VMOVAPDYrr,   X86::VMOVDQAYrr  },
+  { X86::VMOVUPSYmr,   X86::VMOVUPDYmr,   X86::VMOVDQUYmr  },
+  { X86::VMOVUPSYrm,   X86::VMOVUPDYrm,   X86::VMOVDQUYrm  },
+  { X86::VMOVNTPSYmr,  X86::VMOVNTPDYmr,  X86::VMOVNTDQYmr },
 };
 
 // FIXME: Some shuffle and unpack instructions have equivalents in different

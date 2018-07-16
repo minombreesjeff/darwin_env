@@ -25,7 +25,9 @@ InputReader::InputReader (Debugger &debugger) :
     m_done (true),
     m_echo (true),
     m_active (false), 
-    m_reader_done (false)
+    m_reader_done (false),
+    m_user_input(),
+    m_save_user_input(false)
 {
 }
 
@@ -370,3 +372,14 @@ InputReader::GranularityAsCString (lldb::InputReaderGranularity granularity)
     return unknown_state_string;
 }
 
+bool
+InputReader::HandlerData::GetBatchMode()
+{
+    return reader.GetDebugger().GetCommandInterpreter().GetBatchCommandMode();
+}
+
+lldb::StreamSP
+InputReader::HandlerData::GetOutStream()
+{
+    return reader.GetDebugger().GetAsyncOutputStream();
+}

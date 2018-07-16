@@ -100,10 +100,9 @@ class BasicExprCommandsTestCase(TestBase):
 
         # Launch the process, and do not stop at the entry point.
         # Pass 'X Y Z' as the args, which makes argc == 4.
-        error = lldb.SBError()
-        process = target.Launch(self.dbg.GetListener(), ['X', 'Y', 'Z'], None, os.ctermid(), os.ctermid(), os.ctermid(), None, 0, False, error)
+        process = target.LaunchSimple(['X', 'Y', 'Z'], None, os.getcwd())
 
-        if not error.Success() or not process:
+        if not process:
             self.fail("SBTarget.LaunchProcess() failed")
 
         if process.GetState() != lldb.eStateStopped:
@@ -135,31 +134,31 @@ class BasicExprCommandsTestCase(TestBase):
         frame = thread.GetFrameAtIndex(0)
 
         val = frame.EvaluateExpression("2.234")
-        self.expect(val.GetValue(frame), "2.345 evaluated correctly", exe=False,
+        self.expect(val.GetValue(), "2.345 evaluated correctly", exe=False,
             startstr = "2.234")
         self.expect(val.GetTypeName(), "2.345 evaluated correctly", exe=False,
             startstr = "double")
-        self.DebugSBValue(frame, val)
+        self.DebugSBValue(val)
 
         val = frame.EvaluateExpression("argc")
-        self.expect(val.GetValue(frame), "Argc evaluated correctly", exe=False,
+        self.expect(val.GetValue(), "Argc evaluated correctly", exe=False,
             startstr = "4")
-        self.DebugSBValue(frame, val)
+        self.DebugSBValue(val)
 
         val = frame.EvaluateExpression("*argv[1]")
-        self.expect(val.GetValue(frame), "Argv[1] evaluated correctly", exe=False,
+        self.expect(val.GetValue(), "Argv[1] evaluated correctly", exe=False,
             startstr = "'X'")
-        self.DebugSBValue(frame, val)
+        self.DebugSBValue(val)
 
         val = frame.EvaluateExpression("*argv[2]")
-        self.expect(val.GetValue(frame), "Argv[2] evaluated correctly", exe=False,
+        self.expect(val.GetValue(), "Argv[2] evaluated correctly", exe=False,
             startstr = "'Y'")
-        self.DebugSBValue(frame, val)
+        self.DebugSBValue(val)
 
         val = frame.EvaluateExpression("*argv[3]")
-        self.expect(val.GetValue(frame), "Argv[3] evaluated correctly", exe=False,
+        self.expect(val.GetValue(), "Argv[3] evaluated correctly", exe=False,
             startstr = "'Z'")
-        self.DebugSBValue(frame, val)
+        self.DebugSBValue(val)
 
     # rdar://problem/8686536
     # CommandInterpreter::HandleCommand is stripping \'s from input for WantsRawCommand commands

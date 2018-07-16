@@ -83,7 +83,7 @@ static OptionDefinition g_options[] =
 
 Driver::Driver () :
     SBBroadcaster ("Driver"),
-    m_debugger (SBDebugger::Create()),
+    m_debugger (SBDebugger::Create(false)),
     m_editline_pty (),
     m_editline_slave_fh (NULL),
     m_editline_reader (),
@@ -478,6 +478,15 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         }
     }
 
+    // This is kind of a pain, but since we make the debugger in the Driver's constructor, we can't
+    // know at that point whether we should read in init files yet.  So we don't read them in in the
+    // Driver constructor, then set the flags back to "read them in" here, and then if we see the
+    // "-n" flag, we'll turn it off again.  Finally we have to read them in by hand later in the
+    // main loop.
+    
+    m_debugger.SkipLLDBInitFiles (false);
+    m_debugger.SkipAppInitFiles (false);
+
     // Prepare for & make calls to getopt_long.
 #if __GLIBC__
     optind = 0;
@@ -542,6 +551,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
 
                     case 'n':
                         m_debugger.SkipLLDBInitFiles (true);
+                        m_debugger.SkipAppInitFiles (true);
                         break;
 
                     case 'f':
@@ -554,8 +564,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
                             else if (file.ResolveExecutableLocation())
                             {
                                 char path[PATH_MAX];
-                                int path_len;
-                                file.GetPath (path, path_len);
+                                file.GetPath (path, sizeof(path));
                                 m_option_data.m_args.push_back (path);
                             }
                             else
@@ -584,8 +593,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
                             else if (file.ResolveExecutableLocation())
                             {
                                 char final_path[PATH_MAX];
-                                size_t path_len;
-                                file.GetPath (final_path, path_len);
+                                file.GetPath (final_path, sizeof(final_path));
                                 std::string path_str (final_path);
                                 m_option_data.m_source_command_files.push_back (path_str);
                             }
@@ -1066,12 +1074,6 @@ Driver::MainLoop ()
         exit(5);
     }
 
-//    const char *crash_log = GetCrashLogFilename();
-//    if (crash_log)
-//    {
-//        ParseCrashLog (crash_log);
-//    }
-//
     SBCommandInterpreter sb_interpreter = m_debugger.GetCommandInterpreter();
 
     m_io_channel_ap.reset (new IOChannel(m_editline_slave_fh, editline_output_slave_fh, stdout, stderr, this));
@@ -1231,7 +1233,6 @@ Driver::MainLoop ()
                                 done = true;
                                 if (event_type & IOChannel::eBroadcastBitThreadDidExit)
                                     iochannel_thread_exited = true;
-                                break;
                             }
                             else
                                 done = HandleIOEvent (event);

@@ -18,6 +18,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/Capacity.h"
 #include <cstdio>
 using namespace clang;
 
@@ -37,6 +38,7 @@ ExternalHeaderFileInfoSource::~ExternalHeaderFileInfoSource() {}
 
 HeaderSearch::HeaderSearch(FileManager &FM)
     : FileMgr(FM), FrameworkMap(64) {
+  AngledDirIdx = 0;
   SystemDirIdx = 0;
   NoCurDirSearch = false;
 
@@ -115,19 +117,17 @@ const char *DirectoryLookup::getName() const {
 /// LookupFile - Lookup the specified file in this search path, returning it
 /// if it exists or returning null if not.
 const FileEntry *DirectoryLookup::LookupFile(
-    llvm::StringRef Filename,
+    StringRef Filename,
     HeaderSearch &HS,
-    llvm::SmallVectorImpl<char> *SearchPath,
-    llvm::SmallVectorImpl<char> *RelativePath) const {
+    SmallVectorImpl<char> *SearchPath,
+    SmallVectorImpl<char> *RelativePath) const {
   llvm::SmallString<1024> TmpDir;
   if (isNormalDir()) {
     // Concatenate the requested file onto the directory.
-    // FIXME: Portability.  Filename concatenation should be in sys::Path.
-    TmpDir += getDir()->getName();
-    TmpDir.push_back('/');
-    TmpDir.append(Filename.begin(), Filename.end());
+    TmpDir = getDir()->getName();
+    llvm::sys::path::append(TmpDir, Filename);
     if (SearchPath != NULL) {
-      llvm::StringRef SearchPathRef(getDir()->getName());
+      StringRef SearchPathRef(getDir()->getName());
       SearchPath->clear();
       SearchPath->append(SearchPathRef.begin(), SearchPathRef.end());
     }
@@ -146,7 +146,7 @@ const FileEntry *DirectoryLookup::LookupFile(
       Filename, HS.getFileMgr());
   if (Result) {
     if (SearchPath != NULL) {
-      llvm::StringRef SearchPathRef(getName());
+      StringRef SearchPathRef(getName());
       SearchPath->clear();
       SearchPath->append(SearchPathRef.begin(), SearchPathRef.end());
     }
@@ -162,15 +162,15 @@ const FileEntry *DirectoryLookup::LookupFile(
 /// DoFrameworkLookup - Do a lookup of the specified file in the current
 /// DirectoryLookup, which is a framework directory.
 const FileEntry *DirectoryLookup::DoFrameworkLookup(
-    llvm::StringRef Filename,
+    StringRef Filename,
     HeaderSearch &HS,
-    llvm::SmallVectorImpl<char> *SearchPath,
-    llvm::SmallVectorImpl<char> *RelativePath) const {
+    SmallVectorImpl<char> *SearchPath,
+    SmallVectorImpl<char> *RelativePath) const {
   FileManager &FileMgr = HS.getFileMgr();
 
   // Framework names must have a '/' in the filename.
   size_t SlashPos = Filename.find('/');
-  if (SlashPos == llvm::StringRef::npos) return 0;
+  if (SlashPos == StringRef::npos) return 0;
 
   // Find out if this is the home for the specified framework, by checking
   // HeaderSearch.  Possible answer are yes/no and unknown.
@@ -256,13 +256,13 @@ const FileEntry *DirectoryLookup::DoFrameworkLookup(
 /// non-null, indicates where the #including file is, in case a relative search
 /// is needed.
 const FileEntry *HeaderSearch::LookupFile(
-    llvm::StringRef Filename,
+    StringRef Filename,
     bool isAngled,
     const DirectoryLookup *FromDir,
     const DirectoryLookup *&CurDir,
     const FileEntry *CurFileEnt,
-    llvm::SmallVectorImpl<char> *SearchPath,
-    llvm::SmallVectorImpl<char> *RelativePath) {
+    SmallVectorImpl<char> *SearchPath,
+    SmallVectorImpl<char> *RelativePath) {
   // If 'Filename' is absolute, check to see if it exists and no searching.
   if (llvm::sys::path::is_absolute(Filename)) {
     CurDir = 0;
@@ -280,7 +280,7 @@ const FileEntry *HeaderSearch::LookupFile(
     return FileMgr.getFile(Filename, /*openFile=*/true);
   }
 
-  // Step #0, unless disabled, check to see if the file is in the #includer's
+  // Unless disabled, check to see if the file is in the #includer's
   // directory.  This has to be based on CurFileEnt, not CurDir, because
   // CurFileEnt could be a #include of a subdirectory (#include "foo/bar.h") and
   // a subsequent include of "baz.h" should resolve to "whatever/foo/baz.h".
@@ -302,7 +302,7 @@ const FileEntry *HeaderSearch::LookupFile(
       unsigned DirInfo = getFileInfo(CurFileEnt).DirInfo;
       getFileInfo(FE).DirInfo = DirInfo;
       if (SearchPath != NULL) {
-        llvm::StringRef SearchPathRef(CurFileEnt->getDir()->getName());
+        StringRef SearchPathRef(CurFileEnt->getDir()->getName());
         SearchPath->clear();
         SearchPath->append(SearchPathRef.begin(), SearchPathRef.end());
       }
@@ -317,7 +317,7 @@ const FileEntry *HeaderSearch::LookupFile(
   CurDir = 0;
 
   // If this is a system #include, ignore the user #include locs.
-  unsigned i = isAngled ? SystemDirIdx : 0;
+  unsigned i = isAngled ? AngledDirIdx : 0;
 
   // If this is a #include_next request, start searching after the directory the
   // file was found in.
@@ -353,11 +353,46 @@ const FileEntry *HeaderSearch::LookupFile(
     CurDir = &SearchDirs[i];
 
     // This file is a system header or C++ unfriendly if the dir is.
-    getFileInfo(FE).DirInfo = CurDir->getDirCharacteristic();
+    HeaderFileInfo &HFI = getFileInfo(FE);
+    HFI.DirInfo = CurDir->getDirCharacteristic();
 
+    // If this file is found in a header map and uses the framework style of
+    // includes, then this header is part of a framework we're building.
+    if (CurDir->isIndexHeaderMap()) {
+      size_t SlashPos = Filename.find('/');
+      if (SlashPos != StringRef::npos) {
+        HFI.IndexHeaderMapHeader = 1;
+        HFI.Framework = getUniqueFrameworkName(StringRef(Filename.begin(), 
+                                                         SlashPos));
+      }
+    }
+    
     // Remember this location for the next lookup we do.
     CacheLookup.second = i;
     return FE;
+  }
+
+  // If we are including a file with a quoted include "foo.h" from inside
+  // a header in a framework that is currently being built, and we couldn't
+  // resolve "foo.h" any other way, change the include to <Foo/foo.h>, where
+  // "Foo" is the name of the framework in which the including header was found.
+  if (CurFileEnt && !isAngled && Filename.find('/') == StringRef::npos) {
+    HeaderFileInfo &IncludingHFI = getFileInfo(CurFileEnt);
+    if (IncludingHFI.IndexHeaderMapHeader) {
+      llvm::SmallString<128> ScratchFilename;
+      ScratchFilename += IncludingHFI.Framework;
+      ScratchFilename += '/';
+      ScratchFilename += Filename;
+      
+      const FileEntry *Result = LookupFile(ScratchFilename, /*isAngled=*/true,
+                                           FromDir, CurDir, CurFileEnt, 
+                                           SearchPath, RelativePath);
+      std::pair<unsigned, unsigned> &CacheLookup 
+        = LookupFileCache.GetOrCreateValue(Filename).getValue();
+      CacheLookup.second
+        = LookupFileCache.GetOrCreateValue(ScratchFilename).getValue().second;
+      return Result;
+    }
   }
 
   // Otherwise, didn't find it. Remember we didn't find this.
@@ -371,15 +406,15 @@ const FileEntry *HeaderSearch::LookupFile(
 /// is a subframework within Carbon.framework.  If so, return the FileEntry
 /// for the designated file, otherwise return null.
 const FileEntry *HeaderSearch::
-LookupSubframeworkHeader(llvm::StringRef Filename,
+LookupSubframeworkHeader(StringRef Filename,
                          const FileEntry *ContextFileEnt,
-                         llvm::SmallVectorImpl<char> *SearchPath,
-                         llvm::SmallVectorImpl<char> *RelativePath) {
+                         SmallVectorImpl<char> *SearchPath,
+                         SmallVectorImpl<char> *RelativePath) {
   assert(ContextFileEnt && "No context file?");
 
   // Framework names must have a '/' in the filename.  Find it.
   size_t SlashPos = Filename.find('/');
-  if (SlashPos == llvm::StringRef::npos) return 0;
+  if (SlashPos == StringRef::npos) return 0;
 
   // Look up the base framework name of the ContextFileEnt.
   const char *ContextName = ContextFileEnt->getName();
@@ -543,4 +578,14 @@ bool HeaderSearch::ShouldEnterIncludeFile(const FileEntry *File, bool isImport){
   return true;
 }
 
+size_t HeaderSearch::getTotalMemory() const {
+  return SearchDirs.capacity()
+    + llvm::capacity_in_bytes(FileInfo)
+    + llvm::capacity_in_bytes(HeaderMaps)
+    + LookupFileCache.getAllocator().getTotalMemory()
+    + FrameworkMap.getAllocator().getTotalMemory();
+}
 
+StringRef HeaderSearch::getUniqueFrameworkName(StringRef Framework) {
+  return FrameworkNames.GetOrCreateValue(Framework).getKey();
+}

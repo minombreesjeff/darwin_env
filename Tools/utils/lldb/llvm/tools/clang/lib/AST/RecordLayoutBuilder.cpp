@@ -44,7 +44,7 @@ struct BaseSubobjectInfo {
   bool IsVirtual;
 
   /// Bases - Information about the base subobjects.
-  llvm::SmallVector<BaseSubobjectInfo*, 4> Bases;
+  SmallVector<BaseSubobjectInfo*, 4> Bases;
 
   /// PrimaryVirtualBaseInfo - Holds the base info for the primary virtual base
   /// of this base info (if one exists).
@@ -64,7 +64,7 @@ class EmptySubobjectMap {
   const CXXRecordDecl *Class;
 
   /// EmptyClassOffsets - A map from offsets to empty record decls.
-  typedef llvm::SmallVector<const CXXRecordDecl *, 1> ClassVectorTy;
+  typedef SmallVector<const CXXRecordDecl *, 1> ClassVectorTy;
   typedef llvm::DenseMap<CharUnits, ClassVectorTy> EmptyClassOffsetsMapTy;
   EmptyClassOffsetsMapTy EmptyClassOffsets;
   
@@ -556,7 +556,7 @@ protected:
   /// \brief The alignment if attribute packed is not used.
   CharUnits UnpackedAlignment;
 
-  llvm::SmallVector<uint64_t, 16> FieldOffsets;
+  SmallVector<uint64_t, 16> FieldOffsets;
 
   /// Packed - Whether the record is packed or not.
   unsigned Packed : 1;
@@ -1242,12 +1242,10 @@ void RecordLayoutBuilder::Layout(const ObjCInterfaceDecl *D) {
   }
 
   InitializeLayout(D);
-
   // Layout each ivar sequentially.
-  llvm::SmallVector<ObjCIvarDecl*, 16> Ivars;
-  Context.ShallowCollectObjCIvars(D, Ivars);
-  for (unsigned i = 0, e = Ivars.size(); i != e; ++i)
-    LayoutField(Ivars[i]);
+  for (const ObjCIvarDecl *IVD = D->all_declared_ivar_begin(); IVD;
+       IVD = IVD->getNextIvar())
+    LayoutField(IVD);
 
   // Finally, round the size of the total struct up to the alignment of the
   // struct itself.
@@ -1272,8 +1270,8 @@ void RecordLayoutBuilder::LayoutFields(const RecordDecl *D) {
         continue;
       // FIXME. streamline these conditions into a simple one.
       else if (Context.BitfieldFollowsBitfield(FD, LastFD) ||
-               Context.BitfieldFollowsNoneBitfield(FD, LastFD) ||
-               Context.NoneBitfieldFollowsBitfield(FD, LastFD)) {
+               Context.BitfieldFollowsNonBitfield(FD, LastFD) ||
+               Context.NonBitfieldFollowsBitfield(FD, LastFD)) {
         // 1) Adjacent bit fields are packed into the same 1-, 2-, or
         // 4-byte allocation unit if the integral types are the same
         // size and if the next bit field fits into the current
@@ -1350,6 +1348,13 @@ void RecordLayoutBuilder::LayoutFields(const RecordDecl *D) {
       }
       LastFD = FD;
     }
+    else if (!Context.Target.useBitFieldTypeAlignment() &&
+             Context.Target.useZeroLengthBitfieldAlignment()) {             
+      FieldDecl *FD =  (*Field);
+      if (FD->isBitField() && 
+          FD->getBitWidth()->EvaluateAsInt(Context).getZExtValue() == 0)
+        ZeroLengthBitfield = FD;
+    }
     LayoutField(*Field);
   }
   if (IsMsStruct && RemainingInAlignment &&
@@ -1406,8 +1411,8 @@ void RecordLayoutBuilder::LayoutWideBitField(uint64_t FieldSize,
     setDataSize(std::max(getDataSizeInBits(), FieldSize));
     FieldOffset = 0;
   } else {
-    // The bitfield is allocated starting at the next offset aligned appropriately
-    // for T', with length n bits.
+    // The bitfield is allocated starting at the next offset aligned 
+    // appropriately for T', with length n bits.
     FieldOffset = llvm::RoundUpToAlignment(getDataSizeInBits(), 
                                            Context.toBits(TypeAlign));
 
@@ -1444,21 +1449,32 @@ void RecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
   // This check is needed for 'long long' in -m32 mode.
   if (IsMsStruct && (TypeSize > FieldAlign))
     FieldAlign = TypeSize;
-  
+
   if (ZeroLengthBitfield) {
-    // If a zero-length bitfield is inserted after a bitfield,
-    // and the alignment of the zero-length bitfield is
-    // greater than the member that follows it, `bar', `bar' 
-    // will be aligned as the type of the zero-length bitfield.
-    if (ZeroLengthBitfield != D) {
-      std::pair<uint64_t, unsigned> FieldInfo = 
-        Context.getTypeInfo(ZeroLengthBitfield->getType());
-      unsigned ZeroLengthBitfieldAlignment = FieldInfo.second;
-      // Ignore alignment of subsequent zero-length bitfields.
-      if ((ZeroLengthBitfieldAlignment > FieldAlign) || (FieldSize == 0))
-        FieldAlign = ZeroLengthBitfieldAlignment;
-      if (FieldSize)
-        ZeroLengthBitfield = 0;
+    std::pair<uint64_t, unsigned> FieldInfo;
+    unsigned ZeroLengthBitfieldAlignment;
+    if (IsMsStruct) {
+      // If a zero-length bitfield is inserted after a bitfield,
+      // and the alignment of the zero-length bitfield is
+      // greater than the member that follows it, `bar', `bar' 
+      // will be aligned as the type of the zero-length bitfield.
+      if (ZeroLengthBitfield != D) {
+        FieldInfo = Context.getTypeInfo(ZeroLengthBitfield->getType());
+        ZeroLengthBitfieldAlignment = FieldInfo.second;
+        // Ignore alignment of subsequent zero-length bitfields.
+        if ((ZeroLengthBitfieldAlignment > FieldAlign) || (FieldSize == 0))
+          FieldAlign = ZeroLengthBitfieldAlignment;
+        if (FieldSize)
+          ZeroLengthBitfield = 0;
+      }
+    } else {
+      // The alignment of a zero-length bitfield affects the alignment
+      // of the next member.  The alignment is the max of the zero 
+      // length bitfield's alignment and a target specific fixed value.
+      unsigned ZeroLengthBitfieldBoundary =
+        Context.Target.getZeroLengthBitfieldBoundary();
+      if (ZeroLengthBitfieldBoundary > FieldAlign)
+        FieldAlign = ZeroLengthBitfieldBoundary;
     }
   }
 
@@ -1471,10 +1487,11 @@ void RecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
   // was unnecessary (-Wpacked).
   unsigned UnpackedFieldAlign = FieldAlign;
   uint64_t UnpackedFieldOffset = FieldOffset;
-  if (!Context.Target.useBitFieldTypeAlignment())
+  if (!Context.Target.useBitFieldTypeAlignment() && !ZeroLengthBitfield)
     UnpackedFieldAlign = 1;
 
-  if (FieldPacked || !Context.Target.useBitFieldTypeAlignment())
+  if (FieldPacked || 
+      (!Context.Target.useBitFieldTypeAlignment() && !ZeroLengthBitfield))
     FieldAlign = 1;
   FieldAlign = std::max(FieldAlign, D->getMaxAlignment());
   UnpackedFieldAlign = std::max(UnpackedFieldAlign, D->getMaxAlignment());
@@ -1495,9 +1512,13 @@ void RecordLayoutBuilder::LayoutBitField(const FieldDecl *D) {
     UnpackedFieldOffset = llvm::RoundUpToAlignment(UnpackedFieldOffset,
                                                    UnpackedFieldAlign);
 
-  // Padding members don't affect overall alignment.
-  if (!D->getIdentifier())
+  // Padding members don't affect overall alignment, unless zero length bitfield
+  // alignment is enabled.
+  if (!D->getIdentifier() && !Context.Target.useZeroLengthBitfieldAlignment())
     FieldAlign = UnpackedFieldAlign = 1;
+
+  if (!IsMsStruct)
+    ZeroLengthBitfield = 0;
 
   // Place this field at the current location.
   FieldOffsets.push_back(FieldOffset);
@@ -1561,17 +1582,28 @@ void RecordLayoutBuilder::LayoutField(const FieldDecl *D) {
       Context.getTypeInfoInChars(D->getType());
     FieldSize = FieldInfo.first;
     FieldAlign = FieldInfo.second;
-    
+
     if (ZeroLengthBitfield) {
-      // If a zero-length bitfield is inserted after a bitfield,
-      // and the alignment of the zero-length bitfield is
-      // greater than the member that follows it, `bar', `bar' 
-      // will be aligned as the type of the zero-length bitfield.
-      std::pair<CharUnits, CharUnits> FieldInfo = 
-        Context.getTypeInfoInChars(ZeroLengthBitfield->getType());
-      CharUnits ZeroLengthBitfieldAlignment = FieldInfo.second;
-      if (ZeroLengthBitfieldAlignment > FieldAlign)
-        FieldAlign = ZeroLengthBitfieldAlignment;
+      CharUnits ZeroLengthBitfieldBoundary = 
+        Context.toCharUnitsFromBits(
+          Context.Target.getZeroLengthBitfieldBoundary());
+      if (ZeroLengthBitfieldBoundary == CharUnits::Zero()) {
+        // If a zero-length bitfield is inserted after a bitfield,
+        // and the alignment of the zero-length bitfield is
+        // greater than the member that follows it, `bar', `bar' 
+        // will be aligned as the type of the zero-length bitfield.
+        std::pair<CharUnits, CharUnits> FieldInfo = 
+          Context.getTypeInfoInChars(ZeroLengthBitfield->getType());
+        CharUnits ZeroLengthBitfieldAlignment = FieldInfo.second;        
+        if (ZeroLengthBitfieldAlignment > FieldAlign)
+          FieldAlign = ZeroLengthBitfieldAlignment;
+      } else if (ZeroLengthBitfieldBoundary > FieldAlign) {
+        // Align 'bar' based on a fixed alignment specified by the target.
+        assert(Context.Target.useZeroLengthBitfieldAlignment() &&
+               "ZeroLengthBitfieldBoundary should only be used in conjunction"
+               " with useZeroLengthBitfieldAlignment.");
+        FieldAlign = ZeroLengthBitfieldBoundary;
+      }
       ZeroLengthBitfield = 0;
     }
 
@@ -1757,10 +1789,10 @@ RecordLayoutBuilder::ComputeKeyFunction(const CXXRecordDecl *RD) {
   if (!RD->isPolymorphic())
     return 0;
 
-  // A class inside an anonymous namespace doesn't have a key function.  (Or
+  // A class that is not externally visible doesn't have a key function. (Or
   // at least, there's no point to assigning a key function to such a class;
   // this doesn't affect the ABI.)
-  if (RD->isInAnonymousNamespace())
+  if (RD->getLinkage() != ExternalLinkage)
     return 0;
 
   // Template instantiations don't have key functions,see Itanium C++ ABI 5.2.6.
@@ -1958,13 +1990,13 @@ ASTContext::getObjCLayout(const ObjCInterfaceDecl *D,
   return *NewEntry;
 }
 
-static void PrintOffset(llvm::raw_ostream &OS,
+static void PrintOffset(raw_ostream &OS,
                         CharUnits Offset, unsigned IndentLevel) {
   OS << llvm::format("%4d | ", Offset.getQuantity());
   OS.indent(IndentLevel * 2);
 }
 
-static void DumpCXXRecordLayout(llvm::raw_ostream &OS,
+static void DumpCXXRecordLayout(raw_ostream &OS,
                                 const CXXRecordDecl *RD, const ASTContext &C,
                                 CharUnits Offset,
                                 unsigned IndentLevel,
@@ -2054,7 +2086,7 @@ static void DumpCXXRecordLayout(llvm::raw_ostream &OS,
 }
 
 void ASTContext::DumpRecordLayout(const RecordDecl *RD,
-                                  llvm::raw_ostream &OS) const {
+                                  raw_ostream &OS) const {
   const ASTRecordLayout &Info = getASTRecordLayout(RD);
 
   if (const CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(RD))

@@ -10,15 +10,17 @@
 #ifndef LLVM_CLANG_CODEGEN_BACKEND_UTIL_H
 #define LLVM_CLANG_CODEGEN_BACKEND_UTIL_H
 
+#include "clang/Basic/LLVM.h"
+
 namespace llvm {
   class Module;
-  class raw_ostream;
 }
 
 namespace clang {
   class Diagnostic;
   class CodeGenOptions;
   class TargetOptions;
+  class LangOptions;
   
   enum BackendAction {
     Backend_EmitAssembly,  ///< Emit native assembly files
@@ -30,8 +32,9 @@ namespace clang {
   };
   
   void EmitBackendOutput(Diagnostic &Diags, const CodeGenOptions &CGOpts,
-                         const TargetOptions &TOpts, llvm::Module *M,
-                         BackendAction Action, llvm::raw_ostream *OS);
+                         const TargetOptions &TOpts, const LangOptions &LOpts,
+                         llvm::Module *M,
+                         BackendAction Action, raw_ostream *OS);
 }
 
 #endif

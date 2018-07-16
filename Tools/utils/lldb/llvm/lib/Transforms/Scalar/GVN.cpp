@@ -63,7 +63,7 @@ static cl::opt<bool> EnableLoadPRE("enable-load-pre", cl::init(true));
 namespace {
   struct Expression {
     uint32_t opcode;
-    const Type *type;
+    Type *type;
     SmallVector<uint32_t, 4> varargs;
 
     Expression(uint32_t o = ~2U) : opcode(o) { }
@@ -91,6 +91,7 @@ namespace {
     uint32_t nextValueNumber;
 
     Expression create_expression(Instruction* I);
+    Expression create_extractvalue_expression(ExtractValueInst* EI);
     uint32_t lookup_or_add_call(CallInst* C);
   public:
     ValueTable() : nextValueNumber(1) { }
@@ -141,7 +142,6 @@ template <> struct DenseMapInfo<Expression> {
 //                     ValueTable Internal Functions
 //===----------------------------------------------------------------------===//
 
-
 Expression ValueTable::create_expression(Instruction *I) {
   Expression e;
   e.type = I->getType();
@@ -150,18 +150,66 @@ Expression ValueTable::create_expression(Instruction *I) {
        OI != OE; ++OI)
     e.varargs.push_back(lookup_or_add(*OI));
   
-  if (CmpInst *C = dyn_cast<CmpInst>(I))
+  if (CmpInst *C = dyn_cast<CmpInst>(I)) {
     e.opcode = (C->getOpcode() << 8) | C->getPredicate();
-  else if (ExtractValueInst *E = dyn_cast<ExtractValueInst>(I)) {
-    for (ExtractValueInst::idx_iterator II = E->idx_begin(), IE = E->idx_end();
-         II != IE; ++II)
-      e.varargs.push_back(*II);
   } else if (InsertValueInst *E = dyn_cast<InsertValueInst>(I)) {
     for (InsertValueInst::idx_iterator II = E->idx_begin(), IE = E->idx_end();
          II != IE; ++II)
       e.varargs.push_back(*II);
   }
   
+  return e;
+}
+
+Expression ValueTable::create_extractvalue_expression(ExtractValueInst *EI) {
+  assert(EI != 0 && "Not an ExtractValueInst?");
+  Expression e;
+  e.type = EI->getType();
+  e.opcode = 0;
+
+  IntrinsicInst *I = dyn_cast<IntrinsicInst>(EI->getAggregateOperand());
+  if (I != 0 && EI->getNumIndices() == 1 && *EI->idx_begin() == 0 ) {
+    // EI might be an extract from one of our recognised intrinsics. If it
+    // is we'll synthesize a semantically equivalent expression instead on
+    // an extract value expression.
+    switch (I->getIntrinsicID()) {
+      case Intrinsic::sadd_with_overflow:
+      case Intrinsic::uadd_with_overflow:
+        e.opcode = Instruction::Add;
+        break;
+      case Intrinsic::ssub_with_overflow:
+      case Intrinsic::usub_with_overflow:
+        e.opcode = Instruction::Sub;
+        break;
+      case Intrinsic::smul_with_overflow:
+      case Intrinsic::umul_with_overflow:
+        e.opcode = Instruction::Mul;
+        break;
+      default:
+        break;
+    }
+
+    if (e.opcode != 0) {
+      // Intrinsic recognized. Grab its args to finish building the expression.
+      assert(I->getNumArgOperands() == 2 &&
+             "Expect two args for recognised intrinsics.");
+      e.varargs.push_back(lookup_or_add(I->getArgOperand(0)));
+      e.varargs.push_back(lookup_or_add(I->getArgOperand(1)));
+      return e;
+    }
+  }
+
+  // Not a recognised intrinsic. Fall back to producing an extract value
+  // expression.
+  e.opcode = EI->getOpcode();
+  for (Instruction::op_iterator OI = EI->op_begin(), OE = EI->op_end();
+       OI != OE; ++OI)
+    e.varargs.push_back(lookup_or_add(*OI));
+
+  for (ExtractValueInst::idx_iterator II = EI->idx_begin(), IE = EI->idx_end();
+         II != IE; ++II)
+    e.varargs.push_back(*II);
+
   return e;
 }
 
@@ -227,21 +275,19 @@ uint32_t ValueTable::lookup_or_add_call(CallInst* C) {
     // Non-local case.
     const MemoryDependenceAnalysis::NonLocalDepInfo &deps =
       MD->getNonLocalCallDependency(CallSite(C));
-    // FIXME: call/call dependencies for readonly calls should return def, not
-    // clobber!  Move the checking logic to MemDep!
+    // FIXME: Move the checking logic to MemDep!
     CallInst* cdep = 0;
 
     // Check to see if we have a single dominating call instruction that is
     // identical to C.
     for (unsigned i = 0, e = deps.size(); i != e; ++i) {
       const NonLocalDepEntry *I = &deps[i];
-      // Ignore non-local dependencies.
       if (I->getResult().isNonLocal())
         continue;
 
-      // We don't handle non-depedencies.  If we already have a call, reject
+      // We don't handle non-definitions.  If we already have a call, reject
       // instruction dependencies.
-      if (I->getResult().isClobber() || cdep != 0) {
+      if (!I->getResult().isDef() || cdep != 0) {
         cdep = 0;
         break;
       }
@@ -338,10 +384,12 @@ uint32_t ValueTable::lookup_or_add(Value *V) {
     case Instruction::ExtractElement:
     case Instruction::InsertElement:
     case Instruction::ShuffleVector:
-    case Instruction::ExtractValue:
     case Instruction::InsertValue:
     case Instruction::GetElementPtr:
       exp = create_expression(I);
+      break;
+    case Instruction::ExtractValue:
+      exp = create_extractvalue_expression(cast<ExtractValueInst>(I));
       break;
     default:
       valueNumbering[V] = nextValueNumber;
@@ -607,7 +655,7 @@ SpeculationFailure:
 /// CanCoerceMustAliasedValueToLoad - Return true if
 /// CoerceAvailableValueToLoadType will succeed.
 static bool CanCoerceMustAliasedValueToLoad(Value *StoredVal,
-                                            const Type *LoadTy,
+                                            Type *LoadTy,
                                             const TargetData &TD) {
   // If the loaded or stored value is an first class array or struct, don't try
   // to transform them.  We need to be able to bitcast to integer.
@@ -632,14 +680,14 @@ static bool CanCoerceMustAliasedValueToLoad(Value *StoredVal,
 ///
 /// If we can't do it, return null.
 static Value *CoerceAvailableValueToLoadType(Value *StoredVal, 
-                                             const Type *LoadedTy,
+                                             Type *LoadedTy,
                                              Instruction *InsertPt,
                                              const TargetData &TD) {
   if (!CanCoerceMustAliasedValueToLoad(StoredVal, LoadedTy, TD))
     return 0;
   
   // If this is already the right type, just return it.
-  const Type *StoredValTy = StoredVal->getType();
+  Type *StoredValTy = StoredVal->getType();
   
   uint64_t StoreSize = TD.getTypeStoreSizeInBits(StoredValTy);
   uint64_t LoadSize = TD.getTypeStoreSizeInBits(LoadedTy);
@@ -656,7 +704,7 @@ static Value *CoerceAvailableValueToLoadType(Value *StoredVal,
       StoredVal = new PtrToIntInst(StoredVal, StoredValTy, "", InsertPt);
     }
     
-    const Type *TypeToCastTo = LoadedTy;
+    Type *TypeToCastTo = LoadedTy;
     if (TypeToCastTo->isPointerTy())
       TypeToCastTo = TD.getIntPtrType(StoredValTy->getContext());
     
@@ -695,7 +743,7 @@ static Value *CoerceAvailableValueToLoadType(Value *StoredVal,
   }
   
   // Truncate the integer to the right size now.
-  const Type *NewIntTy = IntegerType::get(StoredValTy->getContext(), LoadSize);
+  Type *NewIntTy = IntegerType::get(StoredValTy->getContext(), LoadSize);
   StoredVal = new TruncInst(StoredVal, NewIntTy, "trunc", InsertPt);
   
   if (LoadedTy == NewIntTy)
@@ -717,7 +765,7 @@ static Value *CoerceAvailableValueToLoadType(Value *StoredVal,
 /// Check this case to see if there is anything more we can do before we give
 /// up.  This returns -1 if we have to give up, or a byte number in the stored
 /// value of the piece that feeds the load.
-static int AnalyzeLoadFromClobberingWrite(const Type *LoadTy, Value *LoadPtr,
+static int AnalyzeLoadFromClobberingWrite(Type *LoadTy, Value *LoadPtr,
                                           Value *WritePtr,
                                           uint64_t WriteSizeInBits,
                                           const TargetData &TD) {
@@ -791,7 +839,7 @@ static int AnalyzeLoadFromClobberingWrite(const Type *LoadTy, Value *LoadPtr,
 
 /// AnalyzeLoadFromClobberingStore - This function is called when we have a
 /// memdep query of a load that ends up being a clobbering store.
-static int AnalyzeLoadFromClobberingStore(const Type *LoadTy, Value *LoadPtr,
+static int AnalyzeLoadFromClobberingStore(Type *LoadTy, Value *LoadPtr,
                                           StoreInst *DepSI,
                                           const TargetData &TD) {
   // Cannot handle reading from store of first-class aggregate yet.
@@ -808,7 +856,7 @@ static int AnalyzeLoadFromClobberingStore(const Type *LoadTy, Value *LoadPtr,
 /// AnalyzeLoadFromClobberingLoad - This function is called when we have a
 /// memdep query of a load that ends up being clobbered by another load.  See if
 /// the other load can feed into the second load.
-static int AnalyzeLoadFromClobberingLoad(const Type *LoadTy, Value *LoadPtr,
+static int AnalyzeLoadFromClobberingLoad(Type *LoadTy, Value *LoadPtr,
                                          LoadInst *DepLI, const TargetData &TD){
   // Cannot handle reading from store of first-class aggregate yet.
   if (DepLI->getType()->isStructTy() || DepLI->getType()->isArrayTy())
@@ -835,7 +883,7 @@ static int AnalyzeLoadFromClobberingLoad(const Type *LoadTy, Value *LoadPtr,
 
 
 
-static int AnalyzeLoadFromClobberingMemInst(const Type *LoadTy, Value *LoadPtr,
+static int AnalyzeLoadFromClobberingMemInst(Type *LoadTy, Value *LoadPtr,
                                             MemIntrinsic *MI,
                                             const TargetData &TD) {
   // If the mem operation is a non-constant size, we can't handle it.
@@ -872,7 +920,7 @@ static int AnalyzeLoadFromClobberingMemInst(const Type *LoadTy, Value *LoadPtr,
                                  llvm::Type::getInt8PtrTy(Src->getContext()));
   Constant *OffsetCst = 
     ConstantInt::get(Type::getInt64Ty(Src->getContext()), (unsigned)Offset);
-  Src = ConstantExpr::getGetElementPtr(Src, &OffsetCst, 1);
+  Src = ConstantExpr::getGetElementPtr(Src, OffsetCst);
   Src = ConstantExpr::getBitCast(Src, PointerType::getUnqual(LoadTy));
   if (ConstantFoldLoadFromConstPtr(Src, &TD))
     return Offset;
@@ -886,7 +934,7 @@ static int AnalyzeLoadFromClobberingMemInst(const Type *LoadTy, Value *LoadPtr,
 /// mustalias.  Check this case to see if there is anything more we can do
 /// before we give up.
 static Value *GetStoreValueForLoad(Value *SrcVal, unsigned Offset,
-                                   const Type *LoadTy,
+                                   Type *LoadTy,
                                    Instruction *InsertPt, const TargetData &TD){
   LLVMContext &Ctx = SrcVal->getType()->getContext();
   
@@ -926,7 +974,7 @@ static Value *GetStoreValueForLoad(Value *SrcVal, unsigned Offset,
 /// because the pointers don't mustalias.  Check this case to see if there is
 /// anything more we can do before we give up.
 static Value *GetLoadValueForLoad(LoadInst *SrcVal, unsigned Offset,
-                                  const Type *LoadTy, Instruction *InsertPt,
+                                  Type *LoadTy, Instruction *InsertPt,
                                   GVN &gvn) {
   const TargetData &TD = *gvn.getTargetData();
   // If Offset+LoadTy exceeds the size of SrcVal, then we must be wanting to
@@ -948,7 +996,7 @@ static Value *GetLoadValueForLoad(LoadInst *SrcVal, unsigned Offset,
     // memdep queries will find the new load.  We can't easily remove the old
     // load completely because it is already in the value numbering table.
     IRBuilder<> Builder(SrcVal->getParent(), ++BasicBlock::iterator(SrcVal));
-    const Type *DestPTy = 
+    Type *DestPTy = 
       IntegerType::get(LoadTy->getContext(), NewLoadSize*8);
     DestPTy = PointerType::get(DestPTy, 
                        cast<PointerType>(PtrVal->getType())->getAddressSpace());
@@ -986,7 +1034,7 @@ static Value *GetLoadValueForLoad(LoadInst *SrcVal, unsigned Offset,
 /// GetMemInstValueForLoad - This function is called when we have a
 /// memdep query of a load that ends up being a clobbering mem intrinsic.
 static Value *GetMemInstValueForLoad(MemIntrinsic *SrcInst, unsigned Offset,
-                                     const Type *LoadTy, Instruction *InsertPt,
+                                     Type *LoadTy, Instruction *InsertPt,
                                      const TargetData &TD){
   LLVMContext &Ctx = LoadTy->getContext();
   uint64_t LoadSize = TD.getTypeSizeInBits(LoadTy)/8;
@@ -1033,7 +1081,7 @@ static Value *GetMemInstValueForLoad(MemIntrinsic *SrcInst, unsigned Offset,
                                  llvm::Type::getInt8PtrTy(Src->getContext()));
   Constant *OffsetCst = 
   ConstantInt::get(Type::getInt64Ty(Src->getContext()), (unsigned)Offset);
-  Src = ConstantExpr::getGetElementPtr(Src, &OffsetCst, 1);
+  Src = ConstantExpr::getGetElementPtr(Src, OffsetCst);
   Src = ConstantExpr::getBitCast(Src, PointerType::getUnqual(LoadTy));
   return ConstantFoldLoadFromConstPtr(Src, &TD);
 }
@@ -1106,7 +1154,7 @@ struct AvailableValueInBlock {
   
   /// MaterializeAdjustedValue - Emit code into this block to adjust the value
   /// defined here to the specified type.  This handles various coercion cases.
-  Value *MaterializeAdjustedValue(const Type *LoadTy, GVN &gvn) const {
+  Value *MaterializeAdjustedValue(Type *LoadTy, GVN &gvn) const {
     Value *Res;
     if (isSimpleValue()) {
       Res = getSimpleValue();
@@ -1165,7 +1213,7 @@ static Value *ConstructSSAForLoadSet(LoadInst *LI,
   SSAUpdater SSAUpdate(&NewPHIs);
   SSAUpdate.Initialize(LI->getType(), LI->getName());
   
-  const Type *LoadTy = LI->getType();
+  Type *LoadTy = LI->getType();
   
   for (unsigned i = 0, e = ValuesPerBlock.size(); i != e; ++i) {
     const AvailableValueInBlock &AV = ValuesPerBlock[i];
@@ -1192,8 +1240,10 @@ static Value *ConstructSSAForLoadSet(LoadInst *LI,
     // escaping uses to any values that are operands to these PHIs.
     for (unsigned i = 0, e = NewPHIs.size(); i != e; ++i) {
       PHINode *P = NewPHIs[i];
-      for (unsigned ii = 0, ee = P->getNumIncomingValues(); ii != ee; ++ii)
-        AA->addEscapingUse(P->getOperandUse(2*ii));
+      for (unsigned ii = 0, ee = P->getNumIncomingValues(); ii != ee; ++ii) {
+        unsigned jj = PHINode::getOperandNumForIncomingValue(ii);
+        AA->addEscapingUse(P->getOperandUse(jj));
+      }
     }
   }
 
@@ -1224,12 +1274,11 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
 
   // If we had a phi translation failure, we'll have a single entry which is a
   // clobber in the current block.  Reject this early.
-  if (Deps.size() == 1 && Deps[0].getResult().isClobber() &&
-      Deps[0].getResult().getInst()->getParent() == LI->getParent()) {
+  if (Deps.size() == 1 && Deps[0].getResult().isUnknown()) {
     DEBUG(
       dbgs() << "GVN: non-local load ";
       WriteAsOperand(dbgs(), LI);
-      dbgs() << " is clobbered by " << *Deps[0].getResult().getInst() << '\n';
+      dbgs() << " has unknown dependencies\n";
     );
     return false;
   }
@@ -1244,6 +1293,11 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
   for (unsigned i = 0, e = Deps.size(); i != e; ++i) {
     BasicBlock *DepBB = Deps[i].getBB();
     MemDepResult DepInfo = Deps[i].getResult();
+
+    if (DepInfo.isUnknown()) {
+      UnavailableBlocks.push_back(DepBB);
+      continue;
+    }
 
     if (DepInfo.isClobber()) {
       // The address being loaded in this non-local block may not be the same as
@@ -1304,6 +1358,8 @@ bool GVN::processNonLocalLoad(LoadInst *LI) {
       UnavailableBlocks.push_back(DepBB);
       continue;
     }
+
+    assert(DepInfo.isDef() && "Expecting def here");
 
     Instruction *DepInst = DepInfo.getInst();
 
@@ -1607,6 +1663,11 @@ bool GVN::processLoad(LoadInst *L) {
   if (L->isVolatile())
     return false;
 
+  if (L->use_empty()) {
+    markInstructionForDeletion(L);
+    return true;
+  }
+  
   // ... to a pointer that has been loaded from before...
   MemDepResult Dep = MD->getDependency(L);
 
@@ -1686,9 +1747,21 @@ bool GVN::processLoad(LoadInst *L) {
     return false;
   }
 
+  if (Dep.isUnknown()) {
+    DEBUG(
+      // fast print dep, using operator<< on instruction is too slow.
+      dbgs() << "GVN: load ";
+      WriteAsOperand(dbgs(), L);
+      dbgs() << " has unknown dependence\n";
+    );
+    return false;
+  }
+
   // If it is defined in another block, try harder.
   if (Dep.isNonLocal())
     return processNonLocalLoad(L);
+
+  assert(Dep.isDef() && "Expecting def here");
 
   Instruction *DepInst = Dep.getInst();
   if (StoreInst *DepSI = dyn_cast<StoreInst>(DepInst)) {
@@ -2128,8 +2201,11 @@ bool GVN::performPRE(Function &F) {
         // Because we have added a PHI-use of the pointer value, it has now
         // "escaped" from alias analysis' perspective.  We need to inform
         // AA of this.
-        for (unsigned ii = 0, ee = Phi->getNumIncomingValues(); ii != ee; ++ii)
-          VN.getAliasAnalysis()->addEscapingUse(Phi->getOperandUse(2*ii));
+        for (unsigned ii = 0, ee = Phi->getNumIncomingValues(); ii != ee;
+             ++ii) {
+          unsigned jj = PHINode::getOperandNumForIncomingValue(ii);
+          VN.getAliasAnalysis()->addEscapingUse(Phi->getOperandUse(jj));
+        }
         
         if (MD)
           MD->invalidateCachedPointerInfo(Phi);

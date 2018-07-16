@@ -33,6 +33,8 @@ add_llvm_library(LLVMCodeGen
   LocalStackSlotAllocation.cpp
   LowerSubregs.cpp
   MachineBasicBlock.cpp
+  MachineBlockFrequencyInfo.cpp
+  MachineBranchProbabilityInfo.cpp
   MachineCSE.cpp
   MachineDominators.cpp
   MachineFunction.cpp
@@ -58,7 +60,6 @@ add_llvm_library(LLVMCodeGen
   Passes.cpp
   PeepholeOptimizer.cpp
   PostRASchedulerList.cpp
-  PreAllocSplitting.cpp
   ProcessImplicitDefs.cpp
   PrologEpilogInserter.cpp
   PseudoSourceValue.cpp
@@ -67,6 +68,7 @@ add_llvm_library(LLVMCodeGen
   RegAllocGreedy.cpp
   RegAllocLinearScan.cpp
   RegAllocPBQP.cpp
+  RegisterClassInfo.cpp
   RegisterCoalescer.cpp
   RegisterScavenging.cpp
   RenderMachineFunction.cpp
@@ -77,7 +79,6 @@ add_llvm_library(LLVMCodeGen
   ScoreboardHazardRecognizer.cpp
   ShadowStackGC.cpp
   ShrinkWrapping.cpp
-  SimpleRegisterCoalescing.cpp
   SjLjEHPrepare.cpp
   SlotIndexes.cpp
   Spiller.cpp
@@ -94,6 +95,16 @@ add_llvm_library(LLVMCodeGen
   UnreachableBlockElim.cpp
   VirtRegMap.cpp
   VirtRegRewriter.cpp
+  )
+
+add_llvm_library_dependencies(LLVMCodeGen
+  LLVMAnalysis
+  LLVMCore
+  LLVMMC
+  LLVMScalarOpts
+  LLVMSupport
+  LLVMTarget
+  LLVMTransformUtils
   )
 
 add_subdirectory(SelectionDAG)

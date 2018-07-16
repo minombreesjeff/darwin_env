@@ -18,37 +18,8 @@ namespace lldb {
 
 class SBFrame;
 
-#ifdef SWIG
-%feature("docstring",
-"Represents a thread of execution. SBProcess contains SBThread(s).
-
-For example (in test/lldbutil.py),
-
-# ==================================================
-# Utility functions related to Threads and Processes
-# ==================================================
-
-def get_stopped_threads(process, reason):
-    '''Returns the thread(s) with the specified stop reason in a list.
-
-    The list can be empty if no such thread exists.
-    '''
-    threads = []
-    for t in process:
-        if t.GetStopReason() == reason:
-            threads.append(t)
-    return threads
-
-...
-"
-         ) SBThread;
-#endif
 class SBThread
 {
-#ifdef SWIG
-    %feature("autodoc", "1");
-#endif
-
 public:
     SBThread ();
 
@@ -65,20 +36,11 @@ public:
     lldb::StopReason
     GetStopReason();
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// Get the number of words associated with the stop reason.
     /// See also GetStopReasonDataAtIndex().
-#ifdef SWIG
-    ") GetStopReasonDataCount;
-#endif
     size_t
     GetStopReasonDataCount();
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     //--------------------------------------------------------------------------
     /// Get information associated with a stop reason.
     ///
@@ -96,9 +58,6 @@ public:
     /// eStopReasonException     N     exception data
     /// eStopReasonPlanComplete  0
     //--------------------------------------------------------------------------
-#ifdef SWIG
-    ") GetStopReasonDataAtIndex;
-#endif
     uint64_t
     GetStopReasonDataAtIndex(uint32_t idx);
 
@@ -140,9 +99,6 @@ public:
     void
     RunToAddress (lldb::addr_t addr);
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     //--------------------------------------------------------------------------
     /// LLDB currently supports process centric debugging which means when any
     /// thread in a process stops, all other threads are stopped. The Suspend()
@@ -164,9 +120,6 @@ public:
     /// anyone has the need for them to be reference counted, please let us
     /// know.
     //--------------------------------------------------------------------------
-#ifdef SWIG
-    ") Suspend;
-#endif
     bool
     Suspend();
     

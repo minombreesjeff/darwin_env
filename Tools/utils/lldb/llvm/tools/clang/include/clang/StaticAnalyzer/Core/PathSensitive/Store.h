@@ -146,12 +146,14 @@ public:
   const MemRegion *castRegion(const MemRegion *region, QualType CastToTy);
 
   virtual StoreRef removeDeadBindings(Store store, const StackFrameContext *LCtx,
-                                      SymbolReaper& SymReaper,
-                      llvm::SmallVectorImpl<const MemRegion*>& RegionRoots) = 0;
+                                      SymbolReaper& SymReaper) = 0;
 
   virtual StoreRef BindDecl(Store store, const VarRegion *VR, SVal initVal) = 0;
 
   virtual StoreRef BindDeclWithNoInit(Store store, const VarRegion *VR) = 0;
+  
+  virtual bool includedInBindings(Store store,
+                                  const MemRegion *region) const = 0;
   
   /// If the StoreManager supports it, increment the reference count of
   /// the specified Store object.
@@ -163,7 +165,7 @@ public:
   virtual void decrementReferenceCount(Store store) {}
 
   typedef llvm::DenseSet<SymbolRef> InvalidatedSymbols;
-  typedef llvm::SmallVector<const MemRegion *, 8> InvalidatedRegions;
+  typedef SmallVector<const MemRegion *, 8> InvalidatedRegions;
 
   /// invalidateRegions - Clears out the specified regions from the store,
   ///  marking their values as unknown. Depending on the store, this may also
@@ -197,7 +199,7 @@ public:
   virtual StoreRef enterStackFrame(const GRState *state,
                                    const StackFrameContext *frame);
 
-  virtual void print(Store store, llvm::raw_ostream& Out,
+  virtual void print(Store store, raw_ostream& Out,
                      const char* nl, const char *sep) = 0;
 
   class BindingsHandler {
@@ -270,10 +272,8 @@ public:
 };
 
 // FIXME: Do we need to pass GRStateManager anymore?
-StoreManager *CreateBasicStoreManager(GRStateManager& StMgr);
 StoreManager *CreateRegionStoreManager(GRStateManager& StMgr);
 StoreManager *CreateFieldsOnlyRegionStoreManager(GRStateManager& StMgr);
-StoreManager *CreateFlatStoreManager(GRStateManager &StMgr);
 
 } // end GR namespace
 

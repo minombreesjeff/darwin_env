@@ -20,6 +20,7 @@ add_llvm_library(LLVMScalarOpts
   LoopUnswitch.cpp
   LowerAtomic.cpp
   MemCpyOptimizer.cpp
+  ObjCARC.cpp
   Reassociate.cpp
   Reg2Mem.cpp
   SCCP.cpp
@@ -30,4 +31,13 @@ add_llvm_library(LLVMScalarOpts
   Sink.cpp
   TailDuplication.cpp
   TailRecursionElimination.cpp
+  )
+
+add_llvm_library_dependencies(LLVMScalarOpts
+  LLVMAnalysis
+  LLVMCore
+  LLVMInstCombine
+  LLVMSupport
+  LLVMTarget
+  LLVMTransformUtils
   )

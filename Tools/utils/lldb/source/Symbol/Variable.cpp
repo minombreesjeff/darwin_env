@@ -11,10 +11,13 @@
 
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/RegularExpression.h"
+#include "lldb/Core/ValueObject.h"
+#include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/Type.h"
+#include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StackFrame.h"
@@ -139,6 +142,32 @@ Variable::Dump(Stream *s, bool show_context) const
     s->EOL();
 }
 
+bool
+Variable::DumpDeclaration (Stream *s, bool show_fullpaths, bool show_module)
+{
+    bool dumped_declaration_info = false;
+    if (m_owner_scope)
+    {
+        SymbolContext sc;
+        m_owner_scope->CalculateSymbolContext(&sc);
+        sc.block = NULL;
+        sc.line_entry.Clear();
+        bool show_inlined_frames = false;
+    
+        dumped_declaration_info = sc.DumpStopContext (s, 
+                                                      NULL, 
+                                                      Address(), 
+                                                      show_fullpaths, 
+                                                      show_module, 
+                                                      show_inlined_frames);
+        
+        if (sc.function)
+            s->PutChar(':');
+    }
+    if (m_declaration.DumpStopContext (s, false))
+        dumped_declaration_info = true;
+    return dumped_declaration_info;
+}
 
 size_t
 Variable::MemorySize() const
@@ -187,6 +216,40 @@ Variable::LocationIsValidForFrame (StackFrame *frame)
 }
 
 bool
+Variable::LocationIsValidForAddress (const Address &address)
+{
+    // Be sure to resolve the address to section offset prior to 
+    // calling this function.
+    if (address.IsSectionOffset())
+    {
+        SymbolContext sc;
+        CalculateSymbolContext(&sc);
+        if (sc.module_sp.get() == address.GetModule())
+        {
+            // Is the variable is described by a single location?
+            if (!m_location.IsLocationList())
+            {
+                // Yes it is, the location is valid. 
+                return true;
+            }
+            
+            if (sc.function)
+            {
+                addr_t loclist_base_file_addr = sc.function->GetAddressRange().GetBaseAddress().GetFileAddress();
+                if (loclist_base_file_addr == LLDB_INVALID_ADDRESS)
+                    return false;
+                // It is a location list. We just need to tell if the location
+                // list contains the current address when converted to a load
+                // address
+                return m_location.LocationListContainsAddress (loclist_base_file_addr, 
+                                                               address.GetFileAddress());
+            }
+        }
+    }
+    return false;
+}
+
+bool
 Variable::IsInScope (StackFrame *frame)
 {
     switch (m_scope)
@@ -196,10 +259,10 @@ Variable::IsInScope (StackFrame *frame)
         return frame != NULL;
 
     case eValueTypeConstResult:
-        return true;
-
     case eValueTypeVariableGlobal:
     case eValueTypeVariableStatic:
+        return true;
+
     case eValueTypeVariableArgument:
     case eValueTypeVariableLocal:
         if (frame)
@@ -227,5 +290,201 @@ Variable::IsInScope (StackFrame *frame)
         break;
     }
     return false;
+}
+
+Error
+Variable::GetValuesForVariableExpressionPath (const char *variable_expr_path,
+                                              ExecutionContextScope *scope,
+                                              GetVariableCallback callback,
+                                              void *baton,
+                                              VariableList &variable_list,
+                                              ValueObjectList &valobj_list)
+{
+    Error error;
+    if (variable_expr_path && callback)
+    {
+        switch (variable_expr_path[0])
+        {
+        case '*':
+            {
+                error = Variable::GetValuesForVariableExpressionPath (variable_expr_path + 1,
+                                                                      scope,
+                                                                      callback,
+                                                                      baton,
+                                                                      variable_list,
+                                                                      valobj_list);
+                if (error.Success())
+                {
+                    for (uint32_t i=0; i<valobj_list.GetSize(); )
+                    {
+                        Error tmp_error;
+                        ValueObjectSP valobj_sp (valobj_list.GetValueObjectAtIndex(i)->Dereference(tmp_error));
+                        if (tmp_error.Fail())
+                        {
+                            variable_list.RemoveVariableAtIndex (i);
+                            valobj_list.RemoveValueObjectAtIndex (i);
+                        }
+                        else
+                        {
+                            valobj_list.SetValueObjectAtIndex (i, valobj_sp);
+                            ++i;
+                        }
+                    }
+                }
+                else
+                {
+                    error.SetErrorString ("unknown error");
+                }
+                return error;
+            }
+            break;
+        
+        case '&':
+            {
+                error = Variable::GetValuesForVariableExpressionPath (variable_expr_path + 1,
+                                                                      scope,
+                                                                      callback,
+                                                                      baton,
+                                                                      variable_list,
+                                                                      valobj_list);
+                if (error.Success())
+                {
+                    for (uint32_t i=0; i<valobj_list.GetSize(); )
+                    {
+                        Error tmp_error;
+                        ValueObjectSP valobj_sp (valobj_list.GetValueObjectAtIndex(i)->AddressOf(tmp_error));
+                        if (tmp_error.Fail())
+                        {
+                            variable_list.RemoveVariableAtIndex (i);
+                            valobj_list.RemoveValueObjectAtIndex (i);
+                        }
+                        else
+                        {
+                            valobj_list.SetValueObjectAtIndex (i, valobj_sp);
+                            ++i;
+                        }
+                    }
+                }
+                else
+                {
+                    error.SetErrorString ("unknown error");
+                }
+                return error;
+            }
+            break;
+            
+        default:
+            {
+                RegularExpression regex ("^([A-Za-z_:][A-Za-z_0-9:]*)(.*)");
+                if (regex.Execute(variable_expr_path, 1))
+                {
+                    std::string variable_name;
+                    if (regex.GetMatchAtIndex(variable_expr_path, 1, variable_name))
+                    {
+                        variable_list.Clear();
+                        if (callback (baton, variable_name.c_str(), variable_list))
+                        {
+                            uint32_t i=0;
+                            while (i < variable_list.GetSize())
+                            {
+                                VariableSP var_sp (variable_list.GetVariableAtIndex (i));
+                                ValueObjectSP valobj_sp;
+                                if (var_sp)
+                                {
+                                    ValueObjectSP variable_valobj_sp(ValueObjectVariable::Create (scope, var_sp));
+                                    if (variable_valobj_sp)
+                                    {
+                                        variable_expr_path += variable_name.size();
+                                        if (*variable_expr_path)
+                                        {
+                                            const char* first_unparsed = NULL;
+                                            ValueObject::ExpressionPathScanEndReason reason_to_stop;
+                                            ValueObject::ExpressionPathEndResultType final_value_type;
+                                            ValueObject::GetValueForExpressionPathOptions options;
+                                            ValueObject::ExpressionPathAftermath final_task_on_target;
+
+                                            valobj_sp = variable_valobj_sp->GetValueForExpressionPath (variable_expr_path,
+                                                                                                       &first_unparsed,
+                                                                                                       &reason_to_stop,
+                                                                                                       &final_value_type,
+                                                                                                       options,
+                                                                                                       &final_task_on_target);
+                                            if (!valobj_sp)
+                                            {
+                                                error.SetErrorStringWithFormat ("invalid expression path '%s' for variable '%s'",
+                                                                                variable_expr_path,
+                                                                                var_sp->GetName().GetCString());
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Just the name of a variable with no extras
+                                            valobj_sp = variable_valobj_sp;
+                                        }
+                                    }
+                                }
+
+                                if (!var_sp || !valobj_sp)
+                                {
+                                    variable_list.RemoveVariableAtIndex (i);
+                                }
+                                else
+                                {
+                                    valobj_list.Append(valobj_sp);
+                                    ++i;
+                                }
+                            }
+                            
+                            if (variable_list.GetSize() > 0)
+                            {
+                                error.Clear();
+                                return error;
+                            }
+                        }
+                    }
+                }
+                error.SetErrorStringWithFormat ("unable to extracta variable name from '%s'", variable_expr_path);
+            }
+            break;
+        }
+    }
+    error.SetErrorString ("unknown error");
+    return error;
+}
+
+bool
+Variable::DumpLocationForAddress (Stream *s, const Address &address)
+{
+    // Be sure to resolve the address to section offset prior to 
+    // calling this function.
+    if (address.IsSectionOffset())
+    {
+        SymbolContext sc;
+        CalculateSymbolContext(&sc);
+        if (sc.module_sp.get() == address.GetModule())
+        {
+            const addr_t file_addr = address.GetFileAddress();
+            if (sc.function)
+            {
+                if (sc.function->GetAddressRange().ContainsFileAddress(address))
+                {
+                    addr_t loclist_base_file_addr = sc.function->GetAddressRange().GetBaseAddress().GetFileAddress();
+                    if (loclist_base_file_addr == LLDB_INVALID_ADDRESS)
+                        return false;
+                    return m_location.DumpLocationForAddress (s, 
+                                                              eDescriptionLevelBrief, 
+                                                              loclist_base_file_addr, 
+                                                              file_addr);
+                }
+            }
+            return m_location.DumpLocationForAddress (s, 
+                                                      eDescriptionLevelBrief, 
+                                                      LLDB_INVALID_ADDRESS, 
+                                                      file_addr);
+            
+        }
+    }
+    return false;
+
 }
 

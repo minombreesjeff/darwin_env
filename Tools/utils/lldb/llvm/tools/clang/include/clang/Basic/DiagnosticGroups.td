@@ -33,7 +33,10 @@ def : DiagGroup<"char-align">;
 def Comment : DiagGroup<"comment">;
 def : DiagGroup<"ctor-dtor-privacy">;
 def : DiagGroup<"declaration-after-statement">;
+def DefaultArgSpecialMember : DiagGroup<"default-arg-special-member">;
 def GNUDesignator : DiagGroup<"gnu-designator">;
+
+def DeleteNonVirtualDtor : DiagGroup<"delete-non-virtual-dtor">;
 
 def DeprecatedDeclarations : DiagGroup<"deprecated-declarations">;
 def DeprecatedWritableStr : DiagGroup<"deprecated-writable-strings">;
@@ -52,13 +55,15 @@ def FormatExtraArgs : DiagGroup<"format-extra-args">;
 def FormatZeroLength : DiagGroup<"format-zero-length">;
 
 def CXXHexFloats : DiagGroup<"c++-hex-floats">;
+def CXX0xNarrowing : DiagGroup<"c++0x-narrowing">;
 
-def : DiagGroup<"c++0x-compat", [CXXHexFloats]>;
+def CXX0xCompat : DiagGroup<"c++0x-compat", [CXXHexFloats, CXX0xNarrowing]>;
 def : DiagGroup<"effc++">;
 def ExitTimeDestructors : DiagGroup<"exit-time-destructors">;
 def FourByteMultiChar : DiagGroup<"four-char-constants">;
 def GlobalConstructors : DiagGroup<"global-constructors">;
 def : DiagGroup<"idiomatic-parentheses">;
+def BitwiseOpParentheses: DiagGroup<"bitwise-op-parentheses">;
 def LogicalOpParentheses: DiagGroup<"logical-op-parentheses">;
 def IgnoredQualifiers : DiagGroup<"ignored-qualifiers">;
 def : DiagGroup<"import">;
@@ -104,6 +109,8 @@ def ReturnType : DiagGroup<"return-type">;
 def BindToTemporaryCopy : DiagGroup<"bind-to-temporary-copy">;
 def SelfAssignment : DiagGroup<"self-assign">;
 def SemiBeforeMethodBody : DiagGroup<"semicolon-before-method-body">;
+def Sentinel : DiagGroup<"sentinel">;
+def MissingMethodReturnType : DiagGroup<"missing-method-return-type">;
 def : DiagGroup<"sequence-point">;
 def Shadow : DiagGroup<"shadow">;
 def : DiagGroup<"shorten-64-to-32">;
@@ -112,6 +119,7 @@ def SignCompare : DiagGroup<"sign-compare">;
 def : DiagGroup<"stack-protector">;
 def : DiagGroup<"switch-default">;
 def : DiagGroup<"synth">;
+def SizeofArrayArgument : DiagGroup<"sizeof-array-argument">;
 def TautologicalCompare : DiagGroup<"tautological-compare">;
 def HeaderHygiene : DiagGroup<"header-hygiene">;
 
@@ -144,7 +152,7 @@ def : DiagGroup<"type-limits">;
 def Uninitialized  : DiagGroup<"uninitialized">;
 def UninitializedMaybe : DiagGroup<"conditional-uninitialized">;
 def UnknownPragmas : DiagGroup<"unknown-pragmas">;
-def UnknownAttributes : DiagGroup<"unknown-attributes">;
+def UnknownAttributes : DiagGroup<"attributes">;
 def UnnamedTypeTemplateArgs : DiagGroup<"unnamed-type-template-args">;
 def UnusedArgument : DiagGroup<"unused-argument">;
 def UnusedExceptionParameter : DiagGroup<"unused-exception-parameter">;
@@ -155,7 +163,8 @@ def UnusedMemberFunction : DiagGroup<"unused-member-function",
                                      [UnneededMemberFunction]>;
 def UnusedLabel : DiagGroup<"unused-label">;
 def UnusedParameter : DiagGroup<"unused-parameter">;
-def UnusedValue    : DiagGroup<"unused-value">;
+def UnusedResult : DiagGroup<"unused-result">;
+def UnusedValue    : DiagGroup<"unused-value", [UnusedResult]>;
 def UnusedVariable : DiagGroup<"unused-variable">;
 def UsedButMarkedUnused : DiagGroup<"used-but-marked-unused">;
 def ReadOnlySetterAttrs : DiagGroup<"readonly-setter-attrs">;
@@ -165,6 +174,15 @@ def ImplicitAtomic : DiagGroup<"implicit-atomic-properties">;
 def CustomAtomic : DiagGroup<"custom-atomic-properties">;
 def AtomicProperties : DiagGroup<"atomic-properties",
                                  [ImplicitAtomic, CustomAtomic]>;
+def AutomaticReferenceCountingABI : DiagGroup<"arc-abi">;
+def ARCUnsafeRetainedAssign : DiagGroup<"arc-unsafe-retained-assign">;
+def ARCRetainCycles : DiagGroup<"arc-retain-cycles">;
+def ARCNonPodMemAccess : DiagGroup<"arc-non-pod-memaccess">;
+def AutomaticReferenceCounting : DiagGroup<"arc",
+                                           [AutomaticReferenceCountingABI,
+                                            ARCUnsafeRetainedAssign,
+                                            ARCRetainCycles,
+                                            ARCNonPodMemAccess]>;
 def Selector : DiagGroup<"selector">;
 def NonfragileAbi2 : DiagGroup<"nonfragile-abi2">;
 def Protocol : DiagGroup<"protocol">;
@@ -189,7 +207,8 @@ def DuplicateArgDecl : DiagGroup<"duplicate-method-arg">;
 // in -Wparentheses because most users who use -Wparentheses explicitly
 // do not want these warnings.
 def Parentheses : DiagGroup<"parentheses",
-                            [LogicalOpParentheses]>;
+                            [LogicalOpParentheses,
+                             BitwiseOpParentheses]>;
 
 // -Wconversion has its own warnings, but we split a few out for
 // legacy reasons:
@@ -214,12 +233,12 @@ def Unused : DiagGroup<"unused",
 
 // Format settings.
 def FormatSecurity : DiagGroup<"format-security">;
+def FormatY2K : DiagGroup<"format-y2k">;
 def Format : DiagGroup<"format",
                        [FormatExtraArgs, FormatZeroLength, NonNull,
-                        FormatSecurity]>,
+                        FormatSecurity, FormatY2K]>,
              DiagCategory<"Format String Issue">;
 def FormatNonLiteral : DiagGroup<"format-nonliteral", [FormatSecurity]>;
-def FormatY2K : DiagGroup<"format-y2k", [Format]>;
 def Format2 : DiagGroup<"format=2",
                         [FormatNonLiteral, FormatSecurity, FormatY2K]>;
 
@@ -228,6 +247,7 @@ def Extra : DiagGroup<"extra", [
     IgnoredQualifiers,
     InitializerOverrides,
     SemiBeforeMethodBody,
+    MissingMethodReturnType,
     SignCompare,
     UnusedParameter
   ]>;
@@ -235,6 +255,7 @@ def Extra : DiagGroup<"extra", [
 def Most : DiagGroup<"most", [
     CharSubscript,
     Comment,
+    DeleteNonVirtualDtor,
     Format,
     Implicit,
     MismatchedTags,
@@ -244,14 +265,17 @@ def Most : DiagGroup<"most", [
     ReturnType,
     SelfAssignment,
     Switch,
+    SizeofArrayArgument,
     Trigraphs,
     Uninitialized,
     UnknownPragmas,
     Unused,
-    VectorConversions,
     VolatileRegisterVar,
     OverloadedVirtual
  ]>;
+
+// Thread Safety warnings 
+def : DiagGroup<"thread-safety">;
 
 // -Wall is -Wmost -Wparentheses
 def : DiagGroup<"all", [Most, Parentheses]>;
@@ -279,3 +303,7 @@ def GNU : DiagGroup<"gnu", [GNUDesignator, VLA]>;
 
 // A warning group for warnings about Microsoft extensions.
 def Microsoft : DiagGroup<"microsoft">;
+
+def ObjCNonUnifiedException : DiagGroup<"objc-nonunified-exceptions">;
+
+def ObjCProtocolMethodImpl : DiagGroup<"objc-protocol-method-implementation">;

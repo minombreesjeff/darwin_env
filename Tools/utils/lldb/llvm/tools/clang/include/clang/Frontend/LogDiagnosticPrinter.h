@@ -40,7 +40,7 @@ class LogDiagnosticPrinter : public DiagnosticClient {
     Diagnostic::Level DiagnosticLevel;
   };
   
-  llvm::raw_ostream &OS;
+  raw_ostream &OS;
   const LangOptions *LangOpts;
   const DiagnosticOptions *DiagOpts;
 
@@ -48,17 +48,17 @@ class LogDiagnosticPrinter : public DiagnosticClient {
   FullSourceLoc LastLoc;
   unsigned OwnsOutputStream : 1;
 
-  llvm::SmallVector<DiagEntry, 8> Entries;
+  SmallVector<DiagEntry, 8> Entries;
 
   std::string MainFilename;
   std::string DwarfDebugFlags;
 
 public:
-  LogDiagnosticPrinter(llvm::raw_ostream &OS, const DiagnosticOptions &Diags,
+  LogDiagnosticPrinter(raw_ostream &OS, const DiagnosticOptions &Diags,
                        bool OwnsOutputStream = false);
   virtual ~LogDiagnosticPrinter();
 
-  void setDwarfDebugFlags(llvm::StringRef Value) {
+  void setDwarfDebugFlags(StringRef Value) {
     DwarfDebugFlags = Value;
   }
 

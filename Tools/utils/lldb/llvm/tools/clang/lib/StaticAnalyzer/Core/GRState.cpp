@@ -71,15 +71,16 @@ GRStateManager::removeDeadBindings(const GRState* state,
   // those around.  This code more than likely can be made faster, and the
   // frequency of which this method is called should be experimented with
   // for optimum performance.
-  llvm::SmallVector<const MemRegion*, 10> RegionRoots;
   GRState NewState = *state;
 
-  NewState.Env = EnvMgr.removeDeadBindings(NewState.Env, SymReaper,
-                                           state, RegionRoots);
+  NewState.Env = EnvMgr.removeDeadBindings(NewState.Env, SymReaper, state);
 
   // Clean up the store.
-  NewState.setStore(StoreMgr->removeDeadBindings(NewState.getStore(), LCtx,
-                                                 SymReaper, RegionRoots));
+  StoreRef newStore = StoreMgr->removeDeadBindings(NewState.getStore(), LCtx,
+                                                   SymReaper);
+  NewState.setStore(newStore);
+  SymReaper.setReapedStore(newStore);
+  
   state = getPersistentState(NewState);
   return ConstraintMgr->removeDeadBindings(state, SymReaper);
 }
@@ -384,7 +385,7 @@ static bool IsEnvLoc(const Stmt *S) {
   return (bool) (((uintptr_t) S) & 0x1);
 }
 
-void GRState::print(llvm::raw_ostream& Out, CFG &C, const char* nl,
+void GRState::print(raw_ostream& Out, CFG &C, const char* nl,
                     const char* sep) const {
   // Print the store.
   GRStateManager &Mgr = getStateManager();
@@ -459,7 +460,7 @@ void GRState::print(llvm::raw_ostream& Out, CFG &C, const char* nl,
   }
 }
 
-void GRState::printDOT(llvm::raw_ostream& Out, CFG &C) const {
+void GRState::printDOT(raw_ostream& Out, CFG &C) const {
   print(Out, C, "\\l", "\\|");
 }
 
@@ -519,9 +520,9 @@ const GRState *GRStateManager::removeGDM(const GRState *state, void *Key) {
 
 namespace {
 class ScanReachableSymbols : public SubRegionMap::Visitor  {
-  typedef llvm::DenseSet<const MemRegion*> VisitedRegionsTy;
+  typedef llvm::DenseMap<const void*, unsigned> VisitedItems;
 
-  VisitedRegionsTy visited;
+  VisitedItems visited;
   const GRState *state;
   SymbolVisitor &visitor;
   llvm::OwningPtr<SubRegionMap> SRM;
@@ -533,6 +534,7 @@ public:
   bool scan(nonloc::CompoundVal val);
   bool scan(SVal val);
   bool scan(const MemRegion *R);
+  bool scan(const SymExpr *sym);
 
   // From SubRegionMap::Visitor.
   bool Visit(const MemRegion* Parent, const MemRegion* SubRegion) {
@@ -549,6 +551,33 @@ bool ScanReachableSymbols::scan(nonloc::CompoundVal val) {
   return true;
 }
 
+bool ScanReachableSymbols::scan(const SymExpr *sym) {
+  unsigned &isVisited = visited[sym];
+  if (isVisited)
+    return true;
+  isVisited = 1;
+  
+  if (const SymbolData *sData = dyn_cast<SymbolData>(sym))
+    if (!visitor.VisitSymbol(sData))
+      return false;
+  
+  switch (sym->getKind()) {
+    case SymExpr::RegionValueKind:
+    case SymExpr::ConjuredKind:
+    case SymExpr::DerivedKind:
+    case SymExpr::ExtentKind:
+    case SymExpr::MetadataKind:
+      break;
+    case SymExpr::SymIntKind:
+      return scan(cast<SymIntExpr>(sym)->getLHS());
+    case SymExpr::SymSymKind: {
+      const SymSymExpr *x = cast<SymSymExpr>(sym);
+      return scan(x->getLHS()) && scan(x->getRHS());
+    }
+  }
+  return true;
+}
+
 bool ScanReachableSymbols::scan(SVal val) {
   if (loc::MemRegionVal *X = dyn_cast<loc::MemRegionVal>(&val))
     return scan(X->getRegion());
@@ -557,7 +586,10 @@ bool ScanReachableSymbols::scan(SVal val) {
     return scan(X->getLoc());
 
   if (SymbolRef Sym = val.getAsSymbol())
-    return visitor.VisitSymbol(Sym);
+    return scan(Sym);
+
+  if (const SymExpr *Sym = val.getAsSymbolicExpression())
+    return scan(Sym);
 
   if (nonloc::CompoundVal *X = dyn_cast<nonloc::CompoundVal>(&val))
     return scan(*X);
@@ -566,10 +598,13 @@ bool ScanReachableSymbols::scan(SVal val) {
 }
 
 bool ScanReachableSymbols::scan(const MemRegion *R) {
-  if (isa<MemSpaceRegion>(R) || visited.count(R))
+  if (isa<MemSpaceRegion>(R))
     return true;
-
-  visited.insert(R);
+  
+  unsigned &isVisited = visited[R];
+  if (isVisited)
+    return true;
+  isVisited = 1;
 
   // If this is a symbolic region, visit the symbol for the region.
   if (const SymbolicRegion *SR = dyn_cast<SymbolicRegion>(R))

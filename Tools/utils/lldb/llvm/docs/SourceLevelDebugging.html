@@ -174,22 +174,15 @@ height="369">
       as setting program variables, or calling functions that have been
       deleted.</li>
 
-  <li>LLVM optimizations gracefully interact with debugging information.  If
-      they are not aware of debug information, they are automatically disabled
-      as necessary in the cases that would invalidate the debug info.  This
-      retains the LLVM features, making it easy to write new
-      transformations.</li>
-
   <li>As desired, LLVM optimizations can be upgraded to be aware of the LLVM
       debugging information, allowing them to update the debugging information
       as they perform aggressive optimizations.  This means that, with effort,
       the LLVM optimizers could optimize debug code just as well as non-debug
       code.</li>
 
-  <li>LLVM debug information does not prevent many important optimizations from
+  <li>LLVM debug information does not prevent optimizations from
       happening (for example inlining, basic block reordering/merging/cleanup,
-      tail duplication, etc), further reducing the amount of the compiler that
-      eventually is "aware" of debugging information.</li>
+      tail duplication, etc).</li>
 
   <li>LLVM debug information is automatically optimized along with the rest of
       the program, using existing facilities.  For example, duplicate
@@ -305,8 +298,8 @@ height="369">
    of tags are loosely bound to the tag values of DWARF information entries.
    However, that does not restrict the use of the information supplied to DWARF
    targets.  To facilitate versioning of debug information, the tag is augmented
-   with the current debug version (LLVMDebugVersion = 8 &lt;&lt; 16 or 0x80000 or
-   524288.)</a></p>
+   with the current debug version (LLVMDebugVersion = 8 &lt;&lt; 16 or
+   0x80000 or 524288.)</a></p>
 
 <p>The details of the various descriptors follow.</p>  
 
@@ -757,7 +750,9 @@ DW_TAG_inheritance      = 28
   metadata, ;; Reference to file where defined
   i32,      ;; 24 bit - Line number where defined
             ;; 8 bit - Argument number. 1 indicates 1st argument.
-  metadata  ;; Type descriptor
+  metadata, ;; Type descriptor
+  i32,      ;; flags
+  metadata  ;; (optional) Reference to inline location
 }
 </pre>
 </div>
@@ -1801,7 +1796,7 @@ enum Trees {
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2011-05-03 09:18:28 -0700 (Tue, 03 May 2011) $
+  Last modified: $Date: 2011-07-27 11:14:50 -0700 (Wed, 27 Jul 2011) $
 </address>
 
 </body>

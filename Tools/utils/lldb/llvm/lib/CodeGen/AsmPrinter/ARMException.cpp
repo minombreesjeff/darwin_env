@@ -17,7 +17,6 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineLocation.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -27,7 +26,6 @@
 #include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetFrameLowering.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegisterInfo.h"
@@ -52,7 +50,7 @@ void ARMException::EndModule() {
 /// being emitted immediately after the function entry point.
 void ARMException::BeginFunction(const MachineFunction *MF) {
   Asm->OutStreamer.EmitFnStart();
-  if (!Asm->MF->getFunction()->doesNotThrow() || UnwindTablesMandatory)
+  if (Asm->MF->getFunction()->needsUnwindTableEntry())
     Asm->OutStreamer.EmitLabel(Asm->GetTempSymbol("eh_func_begin",
                                                   Asm->getFunctionNumber()));
 }
@@ -60,7 +58,7 @@ void ARMException::BeginFunction(const MachineFunction *MF) {
 /// EndFunction - Gather and emit post-function exception information.
 ///
 void ARMException::EndFunction() {
-  if (Asm->MF->getFunction()->doesNotThrow() && !UnwindTablesMandatory)
+  if (!Asm->MF->getFunction()->needsUnwindTableEntry())
     Asm->OutStreamer.EmitCantUnwind();
   else {
     Asm->OutStreamer.EmitLabel(Asm->GetTempSymbol("eh_func_end",

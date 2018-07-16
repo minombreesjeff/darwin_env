@@ -18,13 +18,15 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
 #include "clang/Analysis/AnalysisContext.h"
+#include "clang/Basic/LLVM.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/StoreRef.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/DenseMap.h"
 
 namespace llvm {
 class BumpPtrAllocator;
-class raw_ostream;
 }
 
 namespace clang {
@@ -40,10 +42,10 @@ namespace ento {
 
 class SymExpr : public llvm::FoldingSetNode {
 public:
-  enum Kind { BEGIN_SYMBOLS,
-              RegionValueKind, ConjuredKind, DerivedKind, ExtentKind,
+  enum Kind { RegionValueKind, ConjuredKind, DerivedKind, ExtentKind,
               MetadataKind,
-              END_SYMBOLS,
+              BEGIN_SYMBOLS = RegionValueKind,
+              END_SYMBOLS = MetadataKind,
               SymIntKind, SymSymKind };
 private:
   Kind K;
@@ -58,7 +60,7 @@ public:
 
   void dump() const;
 
-  virtual void dumpToStream(llvm::raw_ostream &os) const = 0;
+  virtual void dumpToStream(raw_ostream &os) const = 0;
 
   virtual QualType getType(ASTContext&) const = 0;
   virtual void Profile(llvm::FoldingSetNodeID& profile) = 0;
@@ -84,7 +86,7 @@ public:
   // Implement isa<T> support.
   static inline bool classof(const SymExpr* SE) {
     Kind k = SE->getKind();
-    return k > BEGIN_SYMBOLS && k < END_SYMBOLS;
+    return k >= BEGIN_SYMBOLS && k <= END_SYMBOLS;
   }
 };
 
@@ -109,7 +111,7 @@ public:
     Profile(profile, R);
   }
 
-  void dumpToStream(llvm::raw_ostream &os) const;
+  void dumpToStream(raw_ostream &os) const;
 
   QualType getType(ASTContext&) const;
 
@@ -138,7 +140,7 @@ public:
 
   QualType getType(ASTContext&) const;
 
-  void dumpToStream(llvm::raw_ostream &os) const;
+  void dumpToStream(raw_ostream &os) const;
 
   static void Profile(llvm::FoldingSetNodeID& profile, const Stmt* S,
                       QualType T, unsigned Count, const void* SymbolTag) {
@@ -174,7 +176,7 @@ public:
 
   QualType getType(ASTContext&) const;
 
-  void dumpToStream(llvm::raw_ostream &os) const;
+  void dumpToStream(raw_ostream &os) const;
 
   static void Profile(llvm::FoldingSetNodeID& profile, SymbolRef parent,
                       const TypedRegion *r) {
@@ -207,7 +209,7 @@ public:
 
   QualType getType(ASTContext&) const;
 
-  void dumpToStream(llvm::raw_ostream &os) const;
+  void dumpToStream(raw_ostream &os) const;
 
   static void Profile(llvm::FoldingSetNodeID& profile, const SubRegion *R) {
     profile.AddInteger((unsigned) ExtentKind);
@@ -246,7 +248,7 @@ public:
 
   QualType getType(ASTContext&) const;
 
-  void dumpToStream(llvm::raw_ostream &os) const;
+  void dumpToStream(raw_ostream &os) const;
 
   static void Profile(llvm::FoldingSetNodeID& profile, const MemRegion *R,
                       const Stmt *S, QualType T, unsigned Count,
@@ -287,7 +289,7 @@ public:
 
   BinaryOperator::Opcode getOpcode() const { return Op; }
 
-  void dumpToStream(llvm::raw_ostream &os) const;
+  void dumpToStream(raw_ostream &os) const;
 
   const SymExpr *getLHS() const { return LHS; }
   const llvm::APSInt &getRHS() const { return RHS; }
@@ -332,7 +334,7 @@ public:
   // generation of virtual functions.
   QualType getType(ASTContext& C) const { return T; }
 
-  void dumpToStream(llvm::raw_ostream &os) const;
+  void dumpToStream(raw_ostream &os) const;
 
   static void Profile(llvm::FoldingSetNodeID& ID, const SymExpr *lhs,
                     BinaryOperator::Opcode op, const SymExpr *rhs, QualType t) {
@@ -387,6 +389,9 @@ public:
 
   const SymbolExtent *getExtentSymbol(const SubRegion *R);
 
+  /// Creates a metadata symbol associated with a specific region.
+  /// VisitCount can be used to differentiate regions corresponding to
+  /// different loop iterations, thus, making the symbol path-dependent.
   const SymbolMetadata* getMetadataSymbol(const MemRegion* R, const Stmt* S,
                                           QualType T, unsigned VisitCount,
                                           const void* SymbolTag = 0);
@@ -411,18 +416,25 @@ public:
 };
 
 class SymbolReaper {
-  typedef llvm::DenseSet<SymbolRef> SetTy;
+  typedef llvm::DenseSet<SymbolRef> SymbolSetTy;
+  typedef llvm::DenseSet<const MemRegion *> RegionSetTy;
 
-  SetTy TheLiving;
-  SetTy MetadataInUse;
-  SetTy TheDead;
+  SymbolSetTy TheLiving;
+  SymbolSetTy MetadataInUse;
+  SymbolSetTy TheDead;
+
+  RegionSetTy RegionRoots;
+  
   const LocationContext *LCtx;
   const Stmt *Loc;
   SymbolManager& SymMgr;
+  StoreRef reapedStore;
+  llvm::DenseMap<const MemRegion *, unsigned> includedRegionCache;
 
 public:
-  SymbolReaper(const LocationContext *ctx, const Stmt *s, SymbolManager& symmgr)
-   : LCtx(ctx), Loc(s), SymMgr(symmgr) {}
+  SymbolReaper(const LocationContext *ctx, const Stmt *s, SymbolManager& symmgr,
+               StoreManager &storeMgr)
+   : LCtx(ctx), Loc(s), SymMgr(symmgr), reapedStore(0, storeMgr) {}
 
   ~SymbolReaper() {}
 
@@ -430,8 +442,9 @@ public:
   const Stmt *getCurrentStatement() const { return Loc; }
 
   bool isLive(SymbolRef sym);
+  bool isLiveRegion(const MemRegion *region);
   bool isLive(const Stmt *ExprVal) const;
-  bool isLive(const VarRegion *VR) const;
+  bool isLive(const VarRegion *VR, bool includeStoreBindings = false) const;
 
   // markLive - Unconditionally marks a symbol as live. This should never be
   //  used by checkers, only by the state infrastructure such as the store and
@@ -450,13 +463,17 @@ public:
   //  Returns true if the symbol is dead, false if live.
   bool maybeDead(SymbolRef sym);
 
-  typedef SetTy::const_iterator dead_iterator;
+  typedef SymbolSetTy::const_iterator dead_iterator;
   dead_iterator dead_begin() const { return TheDead.begin(); }
   dead_iterator dead_end() const { return TheDead.end(); }
 
   bool hasDeadSymbols() const {
     return !TheDead.empty();
   }
+  
+  typedef RegionSetTy::const_iterator region_iterator;
+  region_iterator region_begin() const { return RegionRoots.begin(); }
+  region_iterator region_end() const { return RegionRoots.end(); }
 
   /// isDead - Returns whether or not a symbol has been confirmed dead. This
   ///  should only be called once all marking of dead symbols has completed.
@@ -464,6 +481,12 @@ public:
   bool isDead(SymbolRef sym) const {
     return TheDead.count(sym);
   }
+  
+  void markLive(const MemRegion *region);
+  
+  /// Set to the value of the symbolic store after
+  /// StoreManager::removeDeadBindings has been called.
+  void setReapedStore(StoreRef st) { reapedStore = st; }
 };
 
 class SymbolVisitor {
@@ -472,6 +495,7 @@ public:
   //  GRStateManager::scanReachableSymbols.  The method returns \c true if
   //  symbols should continue be scanned and \c false otherwise.
   virtual bool VisitSymbol(SymbolRef sym) = 0;
+  virtual bool VisitMemRegion(const MemRegion *region) { return true; };
   virtual ~SymbolVisitor();
 };
 
@@ -480,7 +504,7 @@ public:
 } // end clang namespace
 
 namespace llvm {
-static inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
+static inline raw_ostream& operator<<(raw_ostream& os,
                                             const clang::ento::SymExpr *SE) {
   SE->dumpToStream(os);
   return os;

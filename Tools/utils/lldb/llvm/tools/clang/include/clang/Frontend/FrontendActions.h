@@ -24,7 +24,7 @@ class InitOnlyAction : public FrontendAction {
   virtual void ExecuteAction();
 
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 
 public:
   // Don't claim to only use the preprocessor, we want to follow the AST path,
@@ -39,37 +39,37 @@ public:
 class ASTPrintAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 };
 
 class ASTDumpAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 };
 
 class ASTDumpXMLAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 };
 
 class ASTViewAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 };
 
 class DeclContextPrintAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 };
 
 class GeneratePCHAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 
   virtual bool usesCompleteTranslationUnit() { return false; }
 
@@ -81,26 +81,20 @@ public:
   ///
   /// \returns true if an error occurred, false otherwise.
   static bool ComputeASTConsumerArguments(CompilerInstance &CI,
-                                          llvm::StringRef InFile,
+                                          StringRef InFile,
                                           std::string &Sysroot,
                                           std::string &OutputFile,
-                                          llvm::raw_ostream *&OS,
+                                          raw_ostream *&OS,
                                           bool &Chaining);
 };
 
 class SyntaxOnlyAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 
 public:
   virtual bool hasCodeCompletionSupport() const { return true; }
-};
-
-class BoostConAction : public SyntaxOnlyAction {
-protected:
-  virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
 };
 
 /**
@@ -120,10 +114,10 @@ class ASTMergeAction : public FrontendAction {
 
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
-                                         llvm::StringRef InFile);
+                                         StringRef InFile);
 
   virtual bool BeginSourceFileAction(CompilerInstance &CI,
-                                     llvm::StringRef Filename);
+                                     StringRef Filename);
 
   virtual void ExecuteAction();
   virtual void EndSourceFileAction();
@@ -143,7 +137,7 @@ public:
 class PrintPreambleAction : public FrontendAction {
 protected:
   void ExecuteAction();
-  virtual ASTConsumer *CreateASTConsumer(CompilerInstance &, llvm::StringRef) { 
+  virtual ASTConsumer *CreateASTConsumer(CompilerInstance &, StringRef) { 
     return 0; 
   }
   

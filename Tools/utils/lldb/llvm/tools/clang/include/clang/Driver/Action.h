@@ -10,17 +10,9 @@
 #ifndef CLANG_DRIVER_ACTION_H_
 #define CLANG_DRIVER_ACTION_H_
 
-#include "llvm/ADT/SmallVector.h"
-
 #include "clang/Driver/Types.h"
 #include "clang/Driver/Util.h"
-
-#include "llvm/Support/Casting.h"
-using llvm::isa;
-using llvm::cast;
-using llvm::cast_or_null;
-using llvm::dyn_cast;
-using llvm::dyn_cast_or_null;
+#include "llvm/ADT/SmallVector.h"
 
 namespace clang {
 namespace driver {

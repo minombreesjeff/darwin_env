@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines 
+// This file implements cocoa naming convention analysis. 
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,11 +17,8 @@
 #include "clang/AST/DeclObjC.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ErrorHandling.h"
-
 using namespace clang;
 using namespace ento;
-
-using llvm::StringRef;
 
 // The "fundamental rule" for naming conventions of methods:
 //  (url broken into two lines)
@@ -36,14 +33,18 @@ using llvm::StringRef;
 //  not release it."
 //
 
-cocoa::NamingConvention cocoa::deriveNamingConvention(Selector S) {
-  switch (S.getMethodFamily()) {
+cocoa::NamingConvention cocoa::deriveNamingConvention(Selector S, 
+                                                    const ObjCMethodDecl *MD) {
+  switch (MD && MD->hasAttr<ObjCMethodFamilyAttr>()? MD->getMethodFamily() 
+                                                   : S.getMethodFamily()) {
   case OMF_None:
   case OMF_autorelease:
   case OMF_dealloc:
   case OMF_release:
   case OMF_retain:
   case OMF_retainCount:
+  case OMF_self:
+  case OMF_performSelector:
     return NoConvention;
 
   case OMF_init:
@@ -59,11 +60,11 @@ cocoa::NamingConvention cocoa::deriveNamingConvention(Selector S) {
   return NoConvention;
 }
 
-bool cocoa::isRefType(QualType RetTy, llvm::StringRef Prefix,
-                      llvm::StringRef Name) {
+bool cocoa::isRefType(QualType RetTy, StringRef Prefix,
+                      StringRef Name) {
   // Recursively walk the typedef stack, allowing typedefs of reference types.
   while (const TypedefType *TD = dyn_cast<TypedefType>(RetTy.getTypePtr())) {
-    llvm::StringRef TDName = TD->getDecl()->getIdentifier()->getName();
+    StringRef TDName = TD->getDecl()->getIdentifier()->getName();
     if (TDName.startswith(Prefix) && TDName.endswith("Ref"))
       return true;
     
@@ -82,12 +83,12 @@ bool cocoa::isRefType(QualType RetTy, llvm::StringRef Prefix,
   return Name.startswith(Prefix);
 }
 
-bool cocoa::isCFObjectRef(QualType T) {
-  return isRefType(T, "CF") || // Core Foundation.
-         isRefType(T, "CG") || // Core Graphics.
-         isRefType(T, "DADisk") || // Disk Arbitration API.
-         isRefType(T, "DADissenter") ||
-         isRefType(T, "DASessionRef");
+bool coreFoundation::isCFObjectRef(QualType T) {
+  return cocoa::isRefType(T, "CF") || // Core Foundation.
+         cocoa::isRefType(T, "CG") || // Core Graphics.
+         cocoa::isRefType(T, "DADisk") || // Disk Arbitration API.
+         cocoa::isRefType(T, "DADissenter") ||
+         cocoa::isRefType(T, "DASessionRef");
 }
 
 
@@ -119,6 +120,50 @@ bool cocoa::isCocoaObjectRef(QualType Ty) {
   for ( ; ID ; ID = ID->getSuperClass())
     if (ID->getIdentifier()->getName() == "NSObject")
       return true;
+  
+  return false;
+}
+
+bool coreFoundation::followsCreateRule(StringRef functionName) {
+  StringRef::iterator it = functionName.begin();
+  StringRef::iterator start = it;
+  StringRef::iterator endI = functionName.end();
+    
+  while (true) {
+    // Scan for the start of 'create' or 'copy'.
+    for ( ; it != endI ; ++it) {
+      // Search for the first character.  It can either be 'C' or 'c'.
+      char ch = *it;
+      if (ch == 'C' || ch == 'c') {
+        ++it;
+        break;
+      }
+    }
+
+    // Did we hit the end of the string?  If so, we didn't find a match.
+    if (it == endI)
+      return false;
+    
+    // Scan for *lowercase* 'reate' or 'opy', followed by no lowercase
+    // character.
+    StringRef suffix = functionName.substr(it - start);
+    if (suffix.startswith("reate")) {
+      it += 5;
+    }
+    else if (suffix.startswith("opy")) {
+      it += 3;
+    }
+    else {
+      // Keep scanning.
+      continue;
+    }
+    
+    if (it == endI || !islower(*it))
+      return true;
+  
+    // If we matched a lowercase character, it isn't the end of the
+    // word.  Keep scanning.
+  }
   
   return false;
 }

@@ -17,6 +17,7 @@
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/ValueObjectVariable.h"
+#include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/Target.h"
 
@@ -228,7 +229,7 @@ bool
 SBModule::ResolveFileAddress (lldb::addr_t vm_addr, SBAddress& addr)
 {
     if (m_opaque_sp && addr.IsValid())
-        return m_opaque_sp->ResolveFileAddress (vm_addr, *addr);
+        return m_opaque_sp->ResolveFileAddress (vm_addr, addr.ref());
     
     if (addr.IsValid())
         addr->Clear();
@@ -240,7 +241,7 @@ SBModule::ResolveSymbolContextForAddress (const SBAddress& addr, uint32_t resolv
 {
     SBSymbolContext sb_sc;
     if (m_opaque_sp && addr.IsValid())
-        m_opaque_sp->ResolveSymbolContextForAddress (*addr, resolve_scope, *sb_sc);
+        m_opaque_sp->ResolveSymbolContextForAddress (addr.ref(), resolve_scope, *sb_sc);
     return sb_sc;
 }
 
@@ -341,4 +342,57 @@ SBModule::FindGlobalVariables (SBTarget &target, const char *name, uint32_t max_
     }
     
     return sb_value_list;
+}
+
+lldb::SBType
+SBModule::FindFirstType (const char* name_cstr)
+{
+    SBType sb_type;
+    if (IsValid())
+    {
+        SymbolContext sc;
+        TypeList type_list;
+        uint32_t num_matches = 0;
+        ConstString name(name_cstr);
+
+        num_matches = m_opaque_sp->FindTypes(sc,
+                                             name,
+                                             false,
+                                             1,
+                                             type_list);
+        
+        if (num_matches)
+            sb_type = lldb::SBType(type_list.GetTypeAtIndex(0));
+    }
+    return sb_type;
+}
+
+lldb::SBTypeList
+SBModule::FindTypes (const char* type)
+{
+    
+    SBTypeList retval;
+    
+    if (IsValid())
+    {
+        SymbolContext sc;
+        TypeList type_list;
+        uint32_t num_matches = 0;
+        ConstString name(type);
+        
+        num_matches = m_opaque_sp->FindTypes(sc,
+                                             name,
+                                             false,
+                                             UINT32_MAX,
+                                             type_list);
+            
+        for (size_t idx = 0; idx < num_matches; idx++)
+        {
+            TypeSP type_sp (type_list.GetTypeAtIndex(idx));
+            if (type_sp)
+                retval.Append(SBType(type_sp));
+        }
+    }
+
+    return retval;
 }

@@ -92,6 +92,7 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::ObjCAtFinallyStmtClass:    
   case Stmt::ObjCAtThrowStmtClass:      
   case Stmt::ObjCAtSynchronizedStmtClass: 
+  case Stmt::ObjCAutoreleasePoolStmtClass:    
   case Stmt::ObjCForCollectionStmtClass:
   case Stmt::CXXCatchStmtClass:
   case Stmt::CXXTryStmtClass:  
@@ -99,6 +100,7 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::SEHTryStmtClass:
   case Stmt::SEHExceptStmtClass:
   case Stmt::SEHFinallyStmtClass:
+  case Stmt::MaterializeTemporaryExprClass:
     K = CXCursor_UnexposedStmt;
     break;
       
@@ -167,17 +169,21 @@ CXCursor cxcursor::MakeCXCursor(Stmt *S, Decl *Parent,
   case Stmt::ObjCEncodeExprClass:       
   case Stmt::ObjCSelectorExprClass:   
   case Stmt::ObjCProtocolExprClass:   
-  case Stmt::ObjCIsaExprClass:       
+  case Stmt::ObjCIsaExprClass:   
+  case Stmt::ObjCIndirectCopyRestoreExprClass:
+  case Stmt::ObjCBridgedCastExprClass:
   case Stmt::ShuffleVectorExprClass: 
   case Stmt::BlockExprClass:  
   case Stmt::OpaqueValueExprClass:
   case Stmt::PackExpansionExprClass:
   case Stmt::SizeOfPackExprClass:
+  case Stmt::AsTypeExprClass:
     K = CXCursor_UnexposedExpr;
     break;
       
   case Stmt::DeclRefExprClass:           
   case Stmt::BlockDeclRefExprClass:
+  case Stmt::SubstNonTypeTemplateParmExprClass:
   case Stmt::SubstNonTypeTemplateParmPackExprClass:
     // FIXME: UnresolvedLookupExpr?
     // FIXME: DependentScopeDeclRefExpr?
@@ -373,15 +379,15 @@ MacroDefinition *cxcursor::getCursorMacroDefinition(CXCursor C) {
   return static_cast<MacroDefinition *>(C.data[0]);
 }
 
-CXCursor cxcursor::MakeMacroInstantiationCursor(MacroInstantiation *MI, 
-                                                CXTranslationUnit TU) {
-  CXCursor C = { CXCursor_MacroInstantiation, { MI, 0, TU } };
+CXCursor cxcursor::MakeMacroExpansionCursor(MacroExpansion *MI, 
+                                            CXTranslationUnit TU) {
+  CXCursor C = { CXCursor_MacroExpansion, { MI, 0, TU } };
   return C;
 }
 
-MacroInstantiation *cxcursor::getCursorMacroInstantiation(CXCursor C) {
-  assert(C.kind == CXCursor_MacroInstantiation);
-  return static_cast<MacroInstantiation *>(C.data[0]);
+MacroExpansion *cxcursor::getCursorMacroExpansion(CXCursor C) {
+  assert(C.kind == CXCursor_MacroExpansion);
+  return static_cast<MacroExpansion *>(C.data[0]);
 }
 
 CXCursor cxcursor::MakeInclusionDirectiveCursor(InclusionDirective *ID, 
@@ -479,6 +485,10 @@ Attr *cxcursor::getCursorAttr(CXCursor Cursor) {
   return (Attr *)Cursor.data[1];
 }
 
+Decl *cxcursor::getCursorParentDecl(CXCursor Cursor) {
+  return (Decl *)Cursor.data[0];
+}
+
 ASTContext &cxcursor::getCursorContext(CXCursor Cursor) {
   return getCursorASTUnit(Cursor)->getASTContext();
 }
@@ -567,4 +577,40 @@ unsigned clang_CXCursorSet_insert(CXCursorSet set, CXCursor cursor) {
   entry = 1;
   return flag;
 }
+  
+CXCompletionString clang_getCursorCompletionString(CXCursor cursor) {
+  enum CXCursorKind kind = clang_getCursorKind(cursor);
+  if (clang_isDeclaration(kind)) {
+    Decl *decl = getCursorDecl(cursor);
+    if (isa<NamedDecl>(decl)) {
+      NamedDecl *namedDecl = (NamedDecl *)decl;
+      ASTUnit *unit = getCursorASTUnit(cursor);
+      if (unit->hasSema()) {
+        Sema &S = unit->getSema();
+        CodeCompletionAllocator *Allocator 
+          = unit->getCursorCompletionAllocator().getPtr();
+        CodeCompletionResult Result(namedDecl);
+        CodeCompletionString *String 
+          = Result.CreateCodeCompletionString(S, *Allocator);
+        return String;
+      }
+    }
+  }
+  else if (kind == CXCursor_MacroDefinition) {
+    MacroDefinition *definition = getCursorMacroDefinition(cursor);
+    const IdentifierInfo *MacroInfo = definition->getName();
+    ASTUnit *unit = getCursorASTUnit(cursor);
+    if (unit->hasSema()) {
+      Sema &S = unit->getSema();
+      CodeCompletionAllocator *Allocator
+        = unit->getCursorCompletionAllocator().getPtr();
+      CodeCompletionResult Result((IdentifierInfo *)MacroInfo);
+      CodeCompletionString *String 
+        = Result.CreateCodeCompletionString(S, *Allocator);
+      return String;
+    }
+  }
+  return NULL;
+}
+  
 } // end: extern "C"

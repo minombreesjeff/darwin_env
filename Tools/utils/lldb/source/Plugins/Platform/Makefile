@@ -19,6 +19,10 @@ endif
 
 ifeq ($(HOST_OS),Linux)
   DIRS += Linux
-endif  
+endif
+
+ifeq ($(HOST_OS),FreeBSD)
+  DIRS += FreeBSD
+endif
 
 include $(LLDB_LEVEL)/Makefile

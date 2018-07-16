@@ -226,7 +226,7 @@ Retry:
   case tok::semi: {                 // C99 6.8.3p3: expression[opt] ';'
     SourceLocation LeadingEmptyMacroLoc;
     if (Tok.hasLeadingEmptyMacro())
-      LeadingEmptyMacroLoc = PP.getLastEmptyMacroInstantiationLoc();
+      LeadingEmptyMacroLoc = PP.getLastEmptyMacroExpansionLoc();
     return Actions.ActOnNullStmt(ConsumeToken(), LeadingEmptyMacroLoc);
   }
 
@@ -502,6 +502,7 @@ StmtResult Parser::ParseCaseStatement(ParsedAttributes &attrs, bool MissingCase,
   StmtTy *DeepestParsedCaseStmt = 0;
 
   // While we have case statements, eat and stack them.
+  SourceLocation ColonLoc;
   do {
     SourceLocation CaseLoc = MissingCase ? Expr.get()->getExprLoc() :
                                            ConsumeToken();  // eat the 'case'.
@@ -539,7 +540,6 @@ StmtResult Parser::ParseCaseStatement(ParsedAttributes &attrs, bool MissingCase,
     
     ColonProtection.restore();
 
-    SourceLocation ColonLoc;
     if (Tok.is(tok::colon)) {
       ColonLoc = ConsumeToken();
 
@@ -589,8 +589,8 @@ StmtResult Parser::ParseCaseStatement(ParsedAttributes &attrs, bool MissingCase,
   } else {
     // Nicely diagnose the common error "switch (X) { case 4: }", which is
     // not valid.
-    // FIXME: add insertion hint.
-    Diag(Tok, diag::err_label_end_of_compound_statement);
+    SourceLocation AfterColonLoc = PP.getLocForEndOfToken(ColonLoc);
+    Diag(AfterColonLoc, diag::err_label_end_of_compound_statement);
     SubStmt = true;
   }
 
@@ -634,7 +634,8 @@ StmtResult Parser::ParseDefaultStatement(ParsedAttributes &attrs) {
   
   // Diagnose the common error "switch (X) {... default: }", which is not valid.
   if (Tok.is(tok::r_brace)) {
-    Diag(Tok, diag::err_label_end_of_compound_statement);
+    SourceLocation AfterColonLoc = PP.getLocForEndOfToken(ColonLoc);
+    Diag(AfterColonLoc, diag::err_label_end_of_compound_statement);
     return StmtError();
   }
 
@@ -646,6 +647,10 @@ StmtResult Parser::ParseDefaultStatement(ParsedAttributes &attrs) {
                                   SubStmt.get(), getCurScope());
 }
 
+StmtResult Parser::ParseCompoundStatement(ParsedAttributes &Attr,
+                                          bool isStmtExpr) {
+  return ParseCompoundStatement(Attr, isStmtExpr, Scope::DeclScope);
+}
 
 /// ParseCompoundStatement - Parse a "{}" block.
 ///
@@ -675,14 +680,15 @@ StmtResult Parser::ParseDefaultStatement(ParsedAttributes &attrs) {
 /// [OMP]   flush-directive
 ///
 StmtResult Parser::ParseCompoundStatement(ParsedAttributes &attrs,
-                                                        bool isStmtExpr) {
+                                          bool isStmtExpr,
+                                          unsigned ScopeFlags) {
   //FIXME: Use attributes?
 
   assert(Tok.is(tok::l_brace) && "Not a compount stmt!");
 
   // Enter a scope to hold everything within the compound stmt.  Compound
   // statements can always hold declarations.
-  ParseScope CompoundScope(this, Scope::DeclScope);
+  ParseScope CompoundScope(this, ScopeFlags);
 
   // Parse the statements in the body.
   return ParseCompoundStatementBody(isStmtExpr);
@@ -709,7 +715,7 @@ StmtResult Parser::ParseCompoundStatementBody(bool isStmtExpr) {
     SourceLocation LabelLoc = ConsumeToken();
     Diag(LabelLoc, diag::ext_gnu_local_label);
     
-    llvm::SmallVector<Decl *, 8> DeclsInGroup;
+    SmallVector<Decl *, 8> DeclsInGroup;
     while (1) {
       if (Tok.isNot(tok::identifier)) {
         Diag(Tok, diag::err_expected_ident);
@@ -947,6 +953,9 @@ StmtResult Parser::ParseIfStatement(ParsedAttributes &attrs) {
     
     // Pop the 'else' scope if needed.
     InnerScope.Exit();
+  } else if (Tok.is(tok::code_completion)) {
+    Actions.CodeCompleteAfterIf(getCurScope());
+    ConsumeCodeCompletionToken();
   }
 
   IfScope.Exit();
@@ -1399,12 +1408,21 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
   // statememt before parsing the body, in order to be able to deduce the type
   // of an auto-typed loop variable.
   StmtResult ForRangeStmt;
-  if (ForRange)
+  if (ForRange) {
     ForRangeStmt = Actions.ActOnCXXForRangeStmt(ForLoc, LParenLoc,
                                                 FirstPart.take(),
                                                 ForRangeInit.ColonLoc,
                                                 ForRangeInit.RangeExpr.get(),
                                                 RParenLoc);
+
+
+  // Similarly, we need to do the semantic analysis for a for-range
+  // statement immediately in order to close over temporaries correctly.
+  } else if (ForEach) {
+    if (!Collection.isInvalid())
+      Collection =
+        Actions.ActOnObjCForCollectionOperand(ForLoc, Collection.take());
+  }
 
   // C99 6.8.5p5 - In C99, the body of the if statement is a scope, even if
   // there is no compound stmt.  C90 does not have this clause.  We only do this
@@ -1433,8 +1451,6 @@ StmtResult Parser::ParseForStatement(ParsedAttributes &attrs) {
     return StmtError();
 
   if (ForEach)
-    // FIXME: It isn't clear how to communicate the late destruction of 
-    // C++ temporaries used to create the collection.
     return Actions.ActOnObjCForCollectionStmt(ForLoc, LParenLoc,
                                               FirstPart.take(),
                                               Collection.take(), RParenLoc, 
@@ -1561,12 +1577,12 @@ StmtResult Parser::FuzzyParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
     // that the rest of the line is an assembly-language statement.
     SourceManager &SrcMgr = PP.getSourceManager();
     SourceLocation TokLoc = Tok.getLocation();
-    unsigned LineNo = SrcMgr.getInstantiationLineNumber(TokLoc);
+    unsigned LineNo = SrcMgr.getExpansionLineNumber(TokLoc);
     do {
       EndLoc = TokLoc;
       ConsumeAnyToken();
       TokLoc = Tok.getLocation();
-    } while ((SrcMgr.getInstantiationLineNumber(TokLoc) == LineNo) &&
+    } while ((SrcMgr.getExpansionLineNumber(TokLoc) == LineNo) &&
              Tok.isNot(tok::r_brace) && Tok.isNot(tok::semi) &&
              Tok.isNot(tok::eof));
   }
@@ -1643,7 +1659,7 @@ StmtResult Parser::ParseAsmStatement(bool &msAsm) {
   if (AsmString.isInvalid())
     return StmtError();
 
-  llvm::SmallVector<IdentifierInfo *, 4> Names;
+  SmallVector<IdentifierInfo *, 4> Names;
   ExprVector Constraints(Actions);
   ExprVector Exprs(Actions);
   ExprVector Clobbers(Actions);
@@ -1736,9 +1752,9 @@ StmtResult Parser::ParseAsmStatement(bool &msAsm) {
 ///
 //
 // FIXME: Avoid unnecessary std::string trashing.
-bool Parser::ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
-                                 llvm::SmallVectorImpl<ExprTy *> &Constraints,
-                                 llvm::SmallVectorImpl<ExprTy *> &Exprs) {
+bool Parser::ParseAsmOperandsOpt(SmallVectorImpl<IdentifierInfo *> &Names,
+                                 SmallVectorImpl<ExprTy *> &Constraints,
+                                 SmallVectorImpl<ExprTy *> &Exprs) {
   // 'asm-operands' isn't present?
   if (!isTokenStringLiteral() && Tok.isNot(tok::l_square))
     return false;
@@ -1909,7 +1925,8 @@ StmtResult Parser::ParseCXXTryBlockCommon(SourceLocation TryLoc) {
     return StmtError(Diag(Tok, diag::err_expected_lbrace));
   // FIXME: Possible draft standard bug: attribute-specifier should be allowed?
   ParsedAttributesWithRange attrs(AttrFactory);
-  StmtResult TryBlock(ParseCompoundStatement(attrs));
+  StmtResult TryBlock(ParseCompoundStatement(attrs, /*isStmtExpr=*/false,
+                                             Scope::DeclScope|Scope::TryScope));
   if (TryBlock.isInvalid())
     return move(TryBlock);
 

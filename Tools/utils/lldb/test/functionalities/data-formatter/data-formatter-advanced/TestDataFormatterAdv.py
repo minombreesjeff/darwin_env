@@ -49,6 +49,8 @@ class DataFormatterTestCase(TestBase):
         def cleanup():
             self.runCmd('type format clear', check=False)
             self.runCmd('type summary clear', check=False)
+            self.runCmd("settings set target.max-children-count 256", check=False)
+
 
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
@@ -158,6 +160,125 @@ class DataFormatterTestCase(TestBase):
         self.expect("frame variable int_array",
             substrs = ['0x',
                        '7'])
+
+        self.runCmd("type summary clear")
+
+        self.runCmd("type summary add -f \"${*var[].x[0-3]%hex} is a bitfield on a set of integers\" -x \"SimpleWithPointers \[[0-9]\]\"")
+        self.runCmd("type summary add -f \"${*var.sp.x[0-2]} are low bits of integer ${*var.sp.x}. If I pretend it is an array I get ${var.sp.x[0-5]}\" Couple")
+
+        self.expect("frame variable couple",
+            substrs = ['1 are low bits of integer 9.',
+                       'If I pretend it is an array I get [9,'])
+
+        self.expect("frame variable sparray",
+            substrs = ['[0x0000000f,0x0000000c,0x00000009]'])
+        
+        # check that we can format a variable in a summary even if a format is defined for its datatype
+        self.runCmd("type format add -f hex int")
+        self.runCmd("type summary add -f \"x=${var.x%i}\" Simple")
+
+        self.expect("frame variable a_simple_object",
+            substrs = ['x=3'])
+
+        self.expect("frame variable a_simple_object", matching=False,
+                    substrs = ['0x0'])
+
+        # now check that the default is applied if we do not hand out a format
+        self.runCmd("type summary add -f \"x=${var.x}\" Simple")
+
+        self.expect("frame variable a_simple_object", matching=False,
+                    substrs = ['x=3'])
+
+        self.expect("frame variable a_simple_object", matching=True,
+                    substrs = ['x=0x00000003'])
+
+        # check that we can correctly cap the number of children shown
+        self.runCmd("settings set target.max-children-count 5")
+
+        self.expect('frame variable a_long_guy', matching=True,
+            substrs = ['a_1',
+                       'b_1',
+                       'c_1',
+                       'd_1',
+                       'e_1',
+                       '...'])
+
+        # check that no further stuff is printed (not ALL values are checked!)
+        self.expect('frame variable a_long_guy', matching=False,
+                    substrs = ['f_1',
+                               'g_1',
+                               'h_1',
+                               'i_1',
+                               'j_1',
+                               'q_1',
+                               'a_2',
+                               'f_2',
+                               't_2',
+                               'w_2'])
+
+        self.runCmd("settings set target.max-children-count 1")
+        self.expect('frame variable a_long_guy', matching=True,
+                    substrs = ['a_1',
+                               '...'])
+        self.expect('frame variable a_long_guy', matching=False,
+                    substrs = ['b_1',
+                               'c_1',
+                               'd_1',
+                               'e_1'])
+        self.expect('frame variable a_long_guy', matching=False,
+                    substrs = ['f_1',
+                               'g_1',
+                               'h_1',
+                               'i_1',
+                               'j_1',
+                               'q_1',
+                               'a_2',
+                               'f_2',
+                               't_2',
+                               'w_2'])
+
+        self.runCmd("settings set target.max-children-count 30")
+        self.expect('frame variable a_long_guy', matching=True,
+                    substrs = ['a_1',
+                               'b_1',
+                               'c_1',
+                               'd_1',
+                               'e_1',
+                               'z_1',
+                               'a_2',
+                               'b_2',
+                               'c_2',
+                               'd_2',
+                               '...'])
+        self.expect('frame variable a_long_guy', matching=False,
+                    substrs = ['e_2',
+                               'n_2',
+                               'r_2',
+                               'i_2',
+                               'k_2',
+                               'o_2'])
+
+        # override the cap 
+        self.expect('frame variable a_long_guy --show-all-children', matching=True,
+                    substrs = ['a_1',
+                               'b_1',
+                               'c_1',
+                               'd_1',
+                               'e_1',
+                               'z_1',
+                               'a_2',
+                               'b_2',
+                               'c_2',
+                               'd_2'])
+        self.expect('frame variable a_long_guy --show-all-children', matching=True,
+                    substrs = ['e_2',
+                               'n_2',
+                               'r_2',
+                               'i_2',
+                               'k_2',
+                               'o_2'])
+        self.expect('frame variable a_long_guy -A', matching=False,
+                    substrs = ['...'])
 
 
 if __name__ == '__main__':

@@ -17,18 +17,8 @@ namespace lldb {
 
 class SBValue;
 
-#ifdef SWIG
-%feature("docstring",
-         "Represents one of the stack frames associated with a thread."
-         " SBThread contains SBFrame(s)."
-         ) SBFrame;
-#endif
 class SBFrame
 {
-#ifdef SWIG
-    %feature("autodoc", "1");
-#endif
-
 public:
     SBFrame ();
 
@@ -77,21 +67,12 @@ public:
     lldb::SBSymbol
     GetSymbol () const;
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// Gets the deepest block that contains the frame PC.
     ///
     /// See also GetFrameBlock().
-#ifdef SWIG
-    ") GetBlock;
-#endif
     lldb::SBBlock
     GetBlock () const;
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// Get the appropriate function name for this frame. Inlined functions in
     /// LLDB are represented by Blocks that have inlined function information, so
     /// just looking at the SBFunction or SBSymbol for a frame isn't enough.
@@ -105,41 +86,23 @@ public:
     /// - NULL
     ///
     /// See also IsInlined().
-#ifdef SWIG
-    ") GetFunctionName;
-#endif
     const char *
     GetFunctionName();
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// Return true if this frame represents an inlined function.
     ///
     /// See also GetFunctionName().
-#ifdef SWIG
-    ") IsInlined;
-#endif
     bool
     IsInlined();
     
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// The version that doesn't supply a 'use_dynamic' value will use the
     /// target's default.
-#ifdef SWIG
-    ") EvaluateExpression;
-#endif
     lldb::SBValue
     EvaluateExpression (const char *expr);    
 
     lldb::SBValue
     EvaluateExpression (const char *expr, lldb::DynamicValueType use_dynamic);
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// Gets the lexical block that defines the stack frame. Another way to think
     /// of this is it will return the block that contains all of the variables
     /// for a stack frame. Inlined functions are represented as SBBlock objects
@@ -152,9 +115,6 @@ public:
     /// in one of those inlined functions, this method will return the inlined
     /// block that defines this frame. If the PC isn't currently in an inlined
     /// function, the lexical block that defines the function is returned.
-#ifdef SWIG
-    ") GetFrameBlock;
-#endif
     lldb::SBBlock
     GetFrameBlock () const;
 
@@ -179,14 +139,8 @@ public:
 
 #endif
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// The version that doesn't supply a 'use_dynamic' value will use the
     /// target's default.
-#ifdef SWIG
-    ") GetVariables;
-#endif
     lldb::SBValueList
     GetVariables (bool arguments,
                   bool locals,
@@ -203,31 +157,19 @@ public:
     lldb::SBValueList
     GetRegisters ();
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// The version that doesn't supply a 'use_dynamic' value will use the
     /// target's default.
-#ifdef SWIG
-    ") FindVariable;
-#endif
     lldb::SBValue
     FindVariable (const char *var_name);
 
     lldb::SBValue
     FindVariable (const char *var_name, lldb::DynamicValueType use_dynamic);
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     /// Find variables, register sets, registers, or persistent variables using
     /// the frame as the scope.
     ///
     /// The version that doesn't supply a 'use_dynamic' value will use the
     /// target's default.
-#ifdef SWIG
-    ") FindValue;
-#endif
     lldb::SBValue
     FindValue (const char *name, ValueType value_type);
 

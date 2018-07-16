@@ -42,6 +42,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Capacity.h"
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -92,7 +93,7 @@ Preprocessor::Preprocessor(Diagnostic &diags, const LangOptions &opts,
   SetPoisonReason(Ident__VA_ARGS__,diag::ext_pp_bad_vaargs_use);
 
   // Initialize the pragma handlers.
-  PragmaHandlers = new PragmaNamespace(llvm::StringRef());
+  PragmaHandlers = new PragmaNamespace(StringRef());
   RegisterBuiltinPragmas();
 
   // Initialize builtin macros like __LINE__ and friends.
@@ -118,6 +119,8 @@ Preprocessor::Preprocessor(Diagnostic &diags, const LangOptions &opts,
 
 Preprocessor::~Preprocessor() {
   assert(BacktrackPositions.empty() && "EnableBacktrack/Backtrack imbalance!");
+  assert(MacroExpandingLexersStack.empty() && MacroExpandedTokens.empty() &&
+         "Preprocessor::HandleEndOfTokenLexer should have cleared those");
 
   while (!IncludeMacroStack.empty()) {
     delete IncludeMacroStack.back().TheLexer;
@@ -170,7 +173,7 @@ void Preprocessor::DumpToken(const Token &Tok, bool DumpFlags) const {
     llvm::errs() << " [ExpandDisabled]";
   if (Tok.needsCleaning()) {
     const char *Start = SourceMgr.getCharacterData(Tok.getLocation());
-    llvm::errs() << " [UnClean='" << llvm::StringRef(Start, Tok.getLength())
+    llvm::errs() << " [UnClean='" << StringRef(Start, Tok.getLength())
                  << "']";
   }
 
@@ -225,6 +228,16 @@ Preprocessor::macro_begin(bool IncludeExternalMacros) const {
   return Macros.begin();
 }
 
+size_t Preprocessor::getTotalMemory() const {
+  return BP.getTotalMemory()
+    + llvm::capacity_in_bytes(MacroExpandedTokens)
+    + Predefines.capacity() /* Predefines buffer. */
+    + llvm::capacity_in_bytes(Macros)
+    + llvm::capacity_in_bytes(PragmaPushMacroInfo)
+    + llvm::capacity_in_bytes(PoisonReasons)
+    + llvm::capacity_in_bytes(CommentHandlers);
+}
+
 Preprocessor::macro_iterator
 Preprocessor::macro_end(bool IncludeExternalMacros) const {
   if (IncludeExternalMacros && ExternalSource &&
@@ -273,7 +286,7 @@ bool Preprocessor::SetCodeCompletionPoint(const FileEntry *File,
 
   // Truncate the buffer.
   if (Position < Buffer->getBufferEnd()) {
-    llvm::StringRef Data(Buffer->getBufferStart(),
+    StringRef Data(Buffer->getBufferStart(),
                          Position-Buffer->getBufferStart());
     MemoryBuffer *TruncatedBuffer
       = MemoryBuffer::getMemBufferCopy(Data, Buffer->getBufferIdentifier());
@@ -299,8 +312,8 @@ void Preprocessor::CodeCompleteNaturalLanguage() {
 /// getSpelling - This method is used to get the spelling of a token into a
 /// SmallVector. Note that the returned StringRef may not point to the
 /// supplied buffer if a copy can be avoided.
-llvm::StringRef Preprocessor::getSpelling(const Token &Tok,
-                                          llvm::SmallVectorImpl<char> &Buffer,
+StringRef Preprocessor::getSpelling(const Token &Tok,
+                                          SmallVectorImpl<char> &Buffer,
                                           bool *Invalid) const {
   // NOTE: this has to be checked *before* testing for an IdentifierInfo.
   if (Tok.isNot(tok::raw_identifier)) {
@@ -315,22 +328,21 @@ llvm::StringRef Preprocessor::getSpelling(const Token &Tok,
 
   const char *Ptr = Buffer.data();
   unsigned Len = getSpelling(Tok, Ptr, Invalid);
-  return llvm::StringRef(Ptr, Len);
+  return StringRef(Ptr, Len);
 }
 
 /// CreateString - Plop the specified string into a scratch buffer and return a
 /// location for it.  If specified, the source location provides a source
 /// location for the token.
 void Preprocessor::CreateString(const char *Buf, unsigned Len, Token &Tok,
-                                SourceLocation InstantiationLoc) {
+                                SourceLocation ExpansionLoc) {
   Tok.setLength(Len);
 
   const char *DestPtr;
   SourceLocation Loc = ScratchBuf->getToken(Buf, Len, DestPtr);
 
-  if (InstantiationLoc.isValid())
-    Loc = SourceMgr.createInstantiationLoc(Loc, InstantiationLoc,
-                                           InstantiationLoc, Len);
+  if (ExpansionLoc.isValid())
+    Loc = SourceMgr.createExpansionLoc(Loc, ExpansionLoc, ExpansionLoc, Len);
   Tok.setLocation(Loc);
 
   // If this is a raw identifier or a literal token, set the pointer data.
@@ -401,12 +413,12 @@ IdentifierInfo *Preprocessor::LookUpIdentifierInfo(Token &Identifier) const {
   IdentifierInfo *II;
   if (!Identifier.needsCleaning()) {
     // No cleaning needed, just use the characters from the lexed buffer.
-    II = getIdentifierInfo(llvm::StringRef(Identifier.getRawIdentifierData(),
+    II = getIdentifierInfo(StringRef(Identifier.getRawIdentifierData(),
                                            Identifier.getLength()));
   } else {
     // Cleaning needed, alloca a buffer, clean into it, then use the buffer.
     llvm::SmallString<64> IdentifierBuffer;
-    llvm::StringRef CleanedStr = getSpelling(Identifier, IdentifierBuffer);
+    StringRef CleanedStr = getSpelling(Identifier, IdentifierBuffer);
     II = getIdentifierInfo(CleanedStr);
   }
 
@@ -528,10 +540,10 @@ CommentHandler::~CommentHandler() { }
 CodeCompletionHandler::~CodeCompletionHandler() { }
 
 void Preprocessor::createPreprocessingRecord(
-                                      bool IncludeNestedMacroInstantiations) {
+                                      bool IncludeNestedMacroExpansions) {
   if (Record)
     return;
   
-  Record = new PreprocessingRecord(IncludeNestedMacroInstantiations);
+  Record = new PreprocessingRecord(IncludeNestedMacroExpansions);
   addPPCallbacks(Record);
 }

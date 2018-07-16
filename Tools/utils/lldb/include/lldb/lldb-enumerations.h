@@ -324,6 +324,12 @@ namespace lldb {
         eDynamicDontRunTarget   = 2
     } DynamicValueType;
     
+    typedef enum SyntheticValueType
+    {
+        eNoSyntheticFilter = false,
+        eUseSyntheticFilter = true
+    } SyntheticValueType;
+    
     typedef enum AccessType
     {
         eAccessNone,
@@ -351,7 +357,6 @@ namespace lldb {
         eArgTypeExprFormat,
         eArgTypeFilename,
         eArgTypeFormat,
-        eArgTypeFormatString,
         eArgTypeFrameIndex,
         eArgTypeFullName,
         eArgTypeFunctionName,
@@ -387,10 +392,12 @@ namespace lldb {
         eArgTypeSourceFile,
         eArgTypeSortOrder,
         eArgTypeStartAddress,
+        eArgTypeSummaryString,
         eArgTypeSymbol,
         eArgTypeThreadID,
         eArgTypeThreadIndex,
         eArgTypeThreadName,
+        eArgTypeUnsignedInteger,
         eArgTypeUnixSignal,
         eArgTypeVarName,
         eArgTypeValue,
@@ -489,7 +496,55 @@ namespace lldb {
         eFunctionNameTypeSelector   = (1u << 5)     // Find function by selector name (ObjC) names
     } FunctionNameType;
     
-
+    //----------------------------------------------------------------------
+    // Ways that the FormatManager picks a particular format for a type
+    //----------------------------------------------------------------------
+    typedef enum FormatterChoiceCriterion
+    {
+        eFormatterChoiceCriterionDirectChoice =                  0x00000000,
+        eFormatterChoiceCriterionStrippedPointerReference =      0x00000001,
+        eFormatterChoiceCriterionNavigatedTypedefs =             0x00000002,
+        eFormatterChoiceCriterionNavigatedBaseClasses =          0x00000004,
+        eFormatterChoiceCriterionRegularExpressionSummary =      0x00000008,
+        eFormatterChoiceCriterionRegularExpressionFilter =       0x00000008,
+        eFormatterChoiceCriterionDynamicObjCHierarchy =          0x00000010,
+        eFormatterChoiceCriterionStrippedBitField =              0x00000020
+    } FormatterChoiceCriterion;
+    
+    //----------------------------------------------------------------------
+    // Basic types enumeration for the public API SBType::GetBasicType()
+    //----------------------------------------------------------------------
+    typedef enum BasicType
+    {
+		eBasicTypeInvalid = 0,
+        eBasicTypeVoid = 1,
+        eBasicTypeChar,
+        eBasicTypeSignedChar,
+        eBasicTypeWChar,
+        eBasicTypeChar16,
+        eBasicTypeChar32,
+        eBasicTypeShort,
+        eBasicTypeUnsignedShort,
+        eBasicTypeInt,
+        eBasicTypeUnsignedInt,
+        eBasicTypeLong,
+        eBasicTypeUnsignedLong,
+        eBasicTypeLongLong,
+        eBasicTypeUnsignedLongLong,
+        eBasicTypeInt128,
+        eBasicTypeUnsignedInt128,
+        eBasicTypeBool,
+        eBasicTypeFloat,
+        eBasicTypeDouble,
+        eBasicTypeLongDouble,
+        eBasicTypeFloatComplex,
+        eBasicTypeDoubleComplex,
+        eBasicTypeLongDoubleComplex,
+        eBasicTypeObjCID,
+        eBasicTypeObjCClass,
+        eBasicTypeObjCSel
+    } BasicType;
+        
 } // namespace lldb
 
 

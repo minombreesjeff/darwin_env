@@ -34,7 +34,8 @@ namespace clang {
     BackendAction Action;
     const CodeGenOptions &CodeGenOpts;
     const TargetOptions &TargetOpts;
-    llvm::raw_ostream *AsmOutStream;
+    const LangOptions &LangOpts;
+    raw_ostream *AsmOutStream;
     ASTContext *Context;
 
     Timer LLVMIRGeneration;
@@ -46,13 +47,16 @@ namespace clang {
   public:
     BackendConsumer(BackendAction action, Diagnostic &_Diags,
                     const CodeGenOptions &compopts,
-                    const TargetOptions &targetopts, bool TimePasses,
-                    const std::string &infile, llvm::raw_ostream *OS,
+                    const TargetOptions &targetopts,
+                    const LangOptions &langopts,
+                    bool TimePasses,
+                    const std::string &infile, raw_ostream *OS,
                     LLVMContext &C) :
       Diags(_Diags),
       Action(action),
       CodeGenOpts(compopts),
       TargetOpts(targetopts),
+      LangOpts(langopts),
       AsmOutStream(OS),
       LLVMIRGeneration("LLVM IR Generation Time"),
       Gen(CreateLLVMCodeGen(Diags, infile, compopts, C)) {
@@ -126,7 +130,7 @@ namespace clang {
       void *OldContext = Ctx.getInlineAsmDiagnosticContext();
       Ctx.setInlineAsmDiagnosticHandler(InlineAsmDiagHandler, this);
 
-      EmitBackendOutput(Diags, CodeGenOpts, TargetOpts,
+      EmitBackendOutput(Diags, CodeGenOpts, TargetOpts, LangOpts,
                         TheModule.get(), Action, AsmOutStream);
       
       Ctx.setInlineAsmDiagnosticHandler(OldHandler, OldContext);
@@ -195,7 +199,7 @@ void BackendConsumer::InlineAsmDiagHandler2(const llvm::SMDiagnostic &D,
   // we re-format the SMDiagnostic in terms of a clang diagnostic.
 
   // Strip "error: " off the start of the message string.
-  llvm::StringRef Message = D.getMessage();
+  StringRef Message = D.getMessage();
   if (Message.startswith("error: "))
     Message = Message.substr(7);
 
@@ -255,7 +259,7 @@ llvm::LLVMContext *CodeGenAction::takeLLVMContext() {
 }
 
 static raw_ostream *GetOutputStream(CompilerInstance &CI,
-                                    llvm::StringRef InFile,
+                                    StringRef InFile,
                                     BackendAction Action) {
   switch (Action) {
   case Backend_EmitAssembly:
@@ -276,15 +280,16 @@ static raw_ostream *GetOutputStream(CompilerInstance &CI,
 }
 
 ASTConsumer *CodeGenAction::CreateASTConsumer(CompilerInstance &CI,
-                                              llvm::StringRef InFile) {
+                                              StringRef InFile) {
   BackendAction BA = static_cast<BackendAction>(Act);
-  llvm::OwningPtr<llvm::raw_ostream> OS(GetOutputStream(CI, InFile, BA));
+  llvm::OwningPtr<raw_ostream> OS(GetOutputStream(CI, InFile, BA));
   if (BA != Backend_EmitNothing && !OS)
     return 0;
 
   BEConsumer = 
       new BackendConsumer(BA, CI.getDiagnostics(),
                           CI.getCodeGenOpts(), CI.getTargetOpts(),
+                          CI.getLangOpts(),
                           CI.getFrontendOpts().ShowTimers, InFile, OS.take(),
                           *VMContext);
   return BEConsumer;
@@ -321,7 +326,7 @@ void CodeGenAction::ExecuteAction() {
 
       // Get a custom diagnostic for the error. We strip off a leading
       // diagnostic code if there is one.
-      llvm::StringRef Msg = Err.getMessage();
+      StringRef Msg = Err.getMessage();
       if (Msg.startswith("error: "))
         Msg = Msg.substr(7);
       unsigned DiagID = CI.getDiagnostics().getCustomDiagID(Diagnostic::Error,
@@ -332,7 +337,8 @@ void CodeGenAction::ExecuteAction() {
     }
 
     EmitBackendOutput(CI.getDiagnostics(), CI.getCodeGenOpts(),
-                      CI.getTargetOpts(), TheModule.get(),
+                      CI.getTargetOpts(), CI.getLangOpts(),
+                      TheModule.get(),
                       BA, OS);
     return;
   }

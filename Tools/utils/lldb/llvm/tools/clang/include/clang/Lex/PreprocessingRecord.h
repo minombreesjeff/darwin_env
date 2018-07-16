@@ -38,13 +38,13 @@ namespace clang {
   class FileEntry;
 
   /// \brief Base class that describes a preprocessed entity, which may be a
-  /// preprocessor directive or macro instantiation.
+  /// preprocessor directive or macro expansion.
   class PreprocessedEntity {
   public:
     /// \brief The kind of preprocessed entity an object describes.
     enum EntityKind {
-      /// \brief A macro instantiation.
-      MacroInstantiationKind,
+      /// \brief A macro expansion.
+      MacroExpansionKind,
       
       /// \brief A preprocessing directive whose kind is not specified.
       ///
@@ -110,31 +110,31 @@ namespace clang {
     void operator delete(void* data) throw();
   };
   
-  /// \brief Records the location of a macro instantiation.
-  class MacroInstantiation : public PreprocessedEntity {
-    /// \brief The name of the macro being instantiation.
+  /// \brief Records the location of a macro expansion.
+  class MacroExpansion : public PreprocessedEntity {
+    /// \brief The name of the macro being expanded.
     IdentifierInfo *Name;
     
     /// \brief The definition of this macro.
     MacroDefinition *Definition;
     
   public:
-    MacroInstantiation(IdentifierInfo *Name, SourceRange Range,
-                       MacroDefinition *Definition)
-      : PreprocessedEntity(MacroInstantiationKind, Range), Name(Name), 
+    MacroExpansion(IdentifierInfo *Name, SourceRange Range,
+                   MacroDefinition *Definition)
+      : PreprocessedEntity(MacroExpansionKind, Range), Name(Name),
         Definition(Definition) { }
     
-    /// \brief The name of the macro being instantiated.
+    /// \brief The name of the macro being expanded.
     IdentifierInfo *getName() const { return Name; }
     
-    /// \brief The definition of the macro being instantiated.
+    /// \brief The definition of the macro being expanded.
     MacroDefinition *getDefinition() const { return Definition; }
 
     // Implement isa/cast/dyncast/etc.
     static bool classof(const PreprocessedEntity *PE) {
-      return PE->getKind() == MacroInstantiationKind;
+      return PE->getKind() == MacroExpansionKind;
     }
-    static bool classof(const MacroInstantiation *) { return true; }
+    static bool classof(const MacroExpansion *) { return true; }
 
   };
   
@@ -199,7 +199,7 @@ namespace clang {
   private:
     /// \brief The name of the file that was included, as written in
     /// the source.
-    llvm::StringRef FileName;
+    StringRef FileName;
 
     /// \brief Whether the file name was in quotation marks; otherwise, it was
     /// in angle brackets.
@@ -215,14 +215,14 @@ namespace clang {
 
   public:
     InclusionDirective(PreprocessingRecord &PPRec,
-                       InclusionKind Kind, llvm::StringRef FileName, 
+                       InclusionKind Kind, StringRef FileName, 
                        bool InQuotes, const FileEntry *File, SourceRange Range);
     
     /// \brief Determine what kind of inclusion directive this is.
     InclusionKind getKind() const { return static_cast<InclusionKind>(Kind); }
     
     /// \brief Retrieve the included file name as it was written in the source.
-    llvm::StringRef getFileName() const { return FileName; }
+    StringRef getFileName() const { return FileName; }
     
     /// \brief Determine whether the included file name was written in quotes;
     /// otherwise, it was written in angle brackets.
@@ -256,11 +256,11 @@ namespace clang {
   
   /// \brief A record of the steps taken while preprocessing a source file,
   /// including the various preprocessing directives processed, macros 
-  /// instantiated, etc.
+  /// expanded, etc.
   class PreprocessingRecord : public PPCallbacks {
-    /// \brief Whether we should include nested macro instantiations in
+    /// \brief Whether we should include nested macro expansions in
     /// the preprocessing record.
-    bool IncludeNestedMacroInstantiations;
+    bool IncludeNestedMacroExpansions;
     
     /// \brief Allocator used to store preprocessing objects.
     llvm::BumpPtrAllocator BumpAlloc;
@@ -269,15 +269,18 @@ namespace clang {
     /// were seen.
     std::vector<PreprocessedEntity *> PreprocessedEntities;
     
+    /// \brief The set of preprocessed entities in this record that have been
+    /// loaded from external sources.
+    ///
+    /// The entries in this vector are loaded lazily from the external source,
+    /// and are referenced by the iterator using negative indices.
+    std::vector<PreprocessedEntity *> LoadedPreprocessedEntities;
+    
     /// \brief Mapping from MacroInfo structures to their definitions.
     llvm::DenseMap<const MacroInfo *, MacroDefinition *> MacroDefinitions;
 
     /// \brief External source of preprocessed entities.
     ExternalPreprocessingRecordSource *ExternalSource;
-    
-    /// \brief The number of preallocated entities (that are known to the
-    /// external source).
-    unsigned NumPreallocatedEntities;
     
     /// \brief Whether we have already loaded all of the preallocated entities.
     mutable bool LoadedPreallocatedEntities;
@@ -285,8 +288,8 @@ namespace clang {
     void MaybeLoadPreallocatedEntities() const ;
     
   public:
-    /// \brief Construct 
-    explicit PreprocessingRecord(bool IncludeNestedMacroInstantiations);
+    /// \brief Construct a new preprocessing record.
+    explicit PreprocessingRecord(bool IncludeNestedMacroExpansions);
     
     /// \brief Allocate memory in the preprocessing record.
     void *Allocate(unsigned Size, unsigned Align = 8) {
@@ -295,64 +298,189 @@ namespace clang {
     
     /// \brief Deallocate memory in the preprocessing record.
     void Deallocate(void *Ptr) { }
-    
-    size_t getTotalMemory() const {
-      return BumpAlloc.getTotalMemory();
-    }
-    
+
+    size_t getTotalMemory() const;
+
     // Iteration over the preprocessed entities.
-    typedef std::vector<PreprocessedEntity *>::iterator iterator;
-    typedef std::vector<PreprocessedEntity *>::const_iterator const_iterator;
+    class iterator {
+      PreprocessingRecord *Self;
+      
+      /// \brief Position within the preprocessed entity sequence.
+      ///
+      /// In a complete iteration, the Position field walks the range [-M, N),
+      /// where negative values are used to indicate preprocessed entities
+      /// loaded from the external source while non-negative values are used to
+      /// indicate preprocessed entities introduced by the current preprocessor.
+      /// However, to provide iteration in source order (for, e.g., chained
+      /// precompiled headers), dereferencing the iterator flips the negative
+      /// values (corresponding to loaded entities), so that position -M 
+      /// corresponds to element 0 in the loaded entities vector, position -M+1
+      /// corresponds to element 1 in the loaded entities vector, etc. This
+      /// gives us a reasonably efficient, source-order walk.
+      int Position;
+      
+    public:
+      typedef PreprocessedEntity *value_type;
+      typedef value_type&         reference;
+      typedef value_type*         pointer;
+      typedef std::random_access_iterator_tag iterator_category;
+      typedef int                 difference_type;
+      
+      iterator() : Self(0), Position(0) { }
+      
+      iterator(PreprocessingRecord *Self, int Position) 
+        : Self(Self), Position(Position) { }
+      
+      reference operator*() const {
+        if (Position < 0)
+          return Self->LoadedPreprocessedEntities.end()[Position];
+        return Self->PreprocessedEntities[Position];
+      }
+    
+      pointer operator->() const {
+        if (Position < 0)
+          return &Self->LoadedPreprocessedEntities.end()[Position];
+        
+        return &Self->PreprocessedEntities[Position];        
+      }
+      
+      reference operator[](difference_type D) {
+        return *(*this + D);
+      }
+      
+      iterator &operator++() {
+        ++Position;
+        return *this;
+      }
+      
+      iterator operator++(int) {
+        iterator Prev(*this);
+        ++Position;
+        return Prev;
+      }
+
+      iterator &operator--() {
+        --Position;
+        return *this;
+      }
+      
+      iterator operator--(int) {
+        iterator Prev(*this);
+        --Position;
+        return Prev;
+      }
+
+      friend bool operator==(const iterator &X, const iterator &Y) {
+        return X.Position == Y.Position;
+      }
+
+      friend bool operator!=(const iterator &X, const iterator &Y) {
+        return X.Position != Y.Position;
+      }
+      
+      friend bool operator<(const iterator &X, const iterator &Y) {
+        return X.Position < Y.Position;
+      }
+
+      friend bool operator>(const iterator &X, const iterator &Y) {
+        return X.Position > Y.Position;
+      }
+
+      friend bool operator<=(const iterator &X, const iterator &Y) {
+        return X.Position < Y.Position;
+      }
+      
+      friend bool operator>=(const iterator &X, const iterator &Y) {
+        return X.Position > Y.Position;
+      }
+
+      friend iterator& operator+=(iterator &X, difference_type D) {
+        X.Position += D;
+        return X;
+      }
+
+      friend iterator& operator-=(iterator &X, difference_type D) {
+        X.Position -= D;
+        return X;
+      }
+
+      friend iterator operator+(iterator X, difference_type D) {
+        X.Position += D;
+        return X;
+      }
+
+      friend iterator operator+(difference_type D, iterator X) {
+        X.Position += D;
+        return X;
+      }
+
+      friend difference_type operator-(const iterator &X, const iterator &Y) {
+        return X.Position - Y.Position;
+      }
+
+      friend iterator operator-(iterator X, difference_type D) {
+        X.Position -= D;
+        return X;
+      }
+    };
+    friend class iterator;
+    
     iterator begin(bool OnlyLocalEntities = false);
     iterator end(bool OnlyLocalEntities = false);
-    const_iterator begin(bool OnlyLocalEntities = false) const;
-    const_iterator end(bool OnlyLocalEntities = false) const;
 
     /// \brief Add a new preprocessed entity to this record.
     void addPreprocessedEntity(PreprocessedEntity *Entity);
     
     /// \brief Set the external source for preprocessed entities.
-    void SetExternalSource(ExternalPreprocessingRecordSource &Source,
-                           unsigned NumPreallocatedEntities);
+    void SetExternalSource(ExternalPreprocessingRecordSource &Source);
 
     /// \brief Retrieve the external source for preprocessed entities.
     ExternalPreprocessingRecordSource *getExternalSource() const {
       return ExternalSource;
     }
     
-    unsigned getNumPreallocatedEntities() const {
-      return NumPreallocatedEntities;
-    }
-    
+    /// \brief Allocate space for a new set of loaded preprocessed entities.
+    ///
+    /// \returns The index into the set of loaded preprocessed entities, which
+    /// corresponds to the first newly-allocated entity.
+    unsigned allocateLoadedEntities(unsigned NumEntities);
+
     /// \brief Set the preallocated entry at the given index to the given
-    /// preprocessed entity.
-    void SetPreallocatedEntity(unsigned Index, PreprocessedEntity *Entity);
+    /// preprocessed entity, which was loaded from the external source.
+    void setLoadedPreallocatedEntity(unsigned Index, 
+                                     PreprocessedEntity *Entity);
 
     /// \brief Register a new macro definition.
     void RegisterMacroDefinition(MacroInfo *Macro, MacroDefinition *MD);
                            
-    /// \brief Retrieve the preprocessed entity at the given index.
-    PreprocessedEntity *getPreprocessedEntity(unsigned Index) {
-      assert(Index < PreprocessedEntities.size() &&
-             "Out-of-bounds preprocessed entity");
-      return PreprocessedEntities[Index];
+    /// \brief Retrieve the loaded preprocessed entity at the given index.
+    PreprocessedEntity *getLoadedPreprocessedEntity(unsigned Index) {
+      assert(Index < LoadedPreprocessedEntities.size() && 
+             "Out-of bounds loaded preprocessed entity");
+      return LoadedPreprocessedEntities[Index];
+    }
+    
+    /// \brief Determine the number of preprocessed entities that were
+    /// loaded (or can be loaded) from an external source.
+    unsigned getNumLoadedPreprocessedEntities() const {
+      return LoadedPreprocessedEntities.size();
     }
     
     /// \brief Retrieve the macro definition that corresponds to the given
     /// \c MacroInfo.
     MacroDefinition *findMacroDefinition(const MacroInfo *MI);
-    
+        
     virtual void MacroExpands(const Token &Id, const MacroInfo* MI);
     virtual void MacroDefined(const Token &Id, const MacroInfo *MI);
     virtual void MacroUndefined(const Token &Id, const MacroInfo *MI);
     virtual void InclusionDirective(SourceLocation HashLoc,
                                     const Token &IncludeTok,
-                                    llvm::StringRef FileName,
+                                    StringRef FileName,
                                     bool IsAngled,
                                     const FileEntry *File,
                                     SourceLocation EndLoc,
-                                    llvm::StringRef SearchPath,
-                                    llvm::StringRef RelativePath);
+                                    StringRef SearchPath,
+                                    StringRef RelativePath);
   };
 } // end namespace clang
 

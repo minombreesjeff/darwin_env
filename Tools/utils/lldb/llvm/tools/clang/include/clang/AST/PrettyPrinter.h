@@ -15,10 +15,7 @@
 #define LLVM_CLANG_AST_PRETTY_PRINTER_H
 
 #include "clang/Basic/LangOptions.h"
-
-namespace llvm {
-  class raw_ostream;
-}
+#include "clang/Basic/LLVM.h"
 
 namespace clang {
 
@@ -29,7 +26,7 @@ class LangOptions;
 class PrinterHelper {
 public:
   virtual ~PrinterHelper();
-  virtual bool handledStmt(Stmt* E, llvm::raw_ostream& OS) = 0;
+  virtual bool handledStmt(Stmt* E, raw_ostream& OS) = 0;
 };
 
 /// \brief Describes how types, statements, expressions, and
@@ -41,7 +38,7 @@ struct PrintingPolicy {
       SuppressTagKeyword(false), SuppressTag(false), SuppressScope(false),
       SuppressInitializers(false),
       Dump(false), ConstantArraySizeAsWritten(false),
-      AnonymousTagLocations(true) { }
+      AnonymousTagLocations(true), SuppressStrongLifetime(false) { }
 
   /// \brief The number of spaces to use to indent each line.
   unsigned Indentation : 8;
@@ -129,6 +126,10 @@ struct PrintingPolicy {
   /// that entity (e.g., "enum <anonymous at t.h:10:5>"). Otherwise, just 
   /// prints "<anonymous>" for the name.
   bool AnonymousTagLocations : 1;
+  
+  /// \brief When true, suppress printing of the __strong lifetime qualifier in
+  /// ARC.
+  unsigned SuppressStrongLifetime : 1;
 };
 
 } // end namespace clang

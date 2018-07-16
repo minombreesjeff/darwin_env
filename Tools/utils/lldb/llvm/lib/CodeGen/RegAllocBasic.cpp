@@ -13,10 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "regalloc"
+#include "RegAllocBase.h"
 #include "LiveDebugVariables.h"
 #include "LiveIntervalUnion.h"
 #include "LiveRangeEdit.h"
-#include "RegAllocBase.h"
 #include "RenderMachineFunction.h"
 #include "Spiller.h"
 #include "VirtRegMap.h"
@@ -34,7 +34,6 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/RegAllocRegistry.h"
-#include "llvm/CodeGen/RegisterCoalescer.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegisterInfo.h"
@@ -85,7 +84,6 @@ class RABasic : public MachineFunctionPass, public RegAllocBase
 {
   // context
   MachineFunction *MF;
-  BitVector ReservedRegs;
 
   // analyses
   LiveStacks *LS;
@@ -142,7 +140,7 @@ RABasic::RABasic(): MachineFunctionPass(ID) {
   initializeLiveIntervalsPass(*PassRegistry::getPassRegistry());
   initializeSlotIndexesPass(*PassRegistry::getPassRegistry());
   initializeStrongPHIEliminationPass(*PassRegistry::getPassRegistry());
-  initializeRegisterCoalescerAnalysisGroup(*PassRegistry::getPassRegistry());
+  initializeRegisterCoalescerPass(*PassRegistry::getPassRegistry());
   initializeCalculateSpillWeightsPass(*PassRegistry::getPassRegistry());
   initializeLiveStacksPass(*PassRegistry::getPassRegistry());
   initializeMachineDominatorTreePass(*PassRegistry::getPassRegistry());
@@ -161,7 +159,7 @@ void RABasic::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<LiveDebugVariables>();
   if (StrongPHIElim)
     AU.addRequiredID(StrongPHIEliminationID);
-  AU.addRequiredTransitive<RegisterCoalescer>();
+  AU.addRequiredTransitiveID(RegisterCoalescerPassID);
   AU.addRequired<CalculateSpillWeights>();
   AU.addRequired<LiveStacks>();
   AU.addPreserved<LiveStacks>();
@@ -235,6 +233,8 @@ void RegAllocBase::init(VirtRegMap &vrm, LiveIntervals &lis) {
   MRI = &vrm.getRegInfo();
   VRM = &vrm;
   LIS = &lis;
+  RegClassInfo.runOnMachineFunction(vrm.getMachineFunction());
+
   const unsigned NumRegs = TRI->getNumRegs();
   if (NumRegs != PhysReg2LiveUnion.numRegs()) {
     PhysReg2LiveUnion.init(UnionAllocator, NumRegs);
@@ -323,19 +323,21 @@ void RegAllocBase::allocatePhysRegs() {
 
     if (AvailablePhysReg == ~0u) {
       // selectOrSplit failed to find a register!
-      std::string msg;
-      raw_string_ostream Msg(msg);
-      Msg << "Ran out of registers during register allocation!"
-             "\nCannot allocate: " << *VirtReg;
+      const char *Msg = "ran out of registers during register allocation";
+      // Probably caused by an inline asm.
+      MachineInstr *MI;
       for (MachineRegisterInfo::reg_iterator I = MRI->reg_begin(VirtReg->reg);
-      MachineInstr *MI = I.skipInstruction();) {
-        if (!MI->isInlineAsm())
-          continue;
-        Msg << "\nPlease check your inline asm statement for "
-          "invalid constraints:\n";
-        MI->print(Msg, &VRM->getMachineFunction().getTarget());
-      }
-      report_fatal_error(Msg.str());
+           (MI = I.skipInstruction());)
+        if (MI->isInlineAsm())
+          break;
+      if (MI)
+        MI->emitError(Msg);
+      else
+        report_fatal_error(Msg);
+      // Keep going after reporting the error.
+      VRM->assignVirt2Phys(VirtReg->reg,
+                 RegClassInfo.getOrder(MRI->getRegClass(VirtReg->reg)).front());
+      continue;
     }
 
     if (AvailablePhysReg)
@@ -436,6 +438,7 @@ void RegAllocBase::addMBBLiveIns(MachineFunction *MF) {
     LiveIntervalUnion &LiveUnion = PhysReg2LiveUnion[PhysReg];
     if (LiveUnion.empty())
       continue;
+    DEBUG(dbgs() << PrintReg(PhysReg, TRI) << " live-in:");
     MachineFunction::iterator MBB = llvm::next(MF->begin());
     MachineFunction::iterator MFE = MF->end();
     SlotIndex Start, Stop;
@@ -446,6 +449,8 @@ void RegAllocBase::addMBBLiveIns(MachineFunction *MF) {
       if (SI.start() <= Start) {
         if (!MBB->isLiveIn(PhysReg))
           MBB->addLiveIn(PhysReg);
+        DEBUG(dbgs() << "\tBB#" << MBB->getNumber() << ':'
+                     << PrintReg(SI.value()->reg, TRI));
       } else if (SI.start() > Stop)
         MBB = Indexes->getMBBFromIndex(SI.start().getPrevIndex());
       if (++MBB == MFE)
@@ -453,6 +458,7 @@ void RegAllocBase::addMBBLiveIns(MachineFunction *MF) {
       tie(Start, Stop) = Indexes->getMBBRange(MBB);
       SI.advanceTo(Start);
     }
+    DEBUG(dbgs() << '\n');
   }
 }
 
@@ -479,14 +485,11 @@ unsigned RABasic::selectOrSplit(LiveInterval &VirtReg,
   SmallVector<unsigned, 8> PhysRegSpillCands;
 
   // Check for an available register in this class.
-  const TargetRegisterClass *TRC = MRI->getRegClass(VirtReg.reg);
-
-  for (TargetRegisterClass::iterator I = TRC->allocation_order_begin(*MF),
-         E = TRC->allocation_order_end(*MF);
-       I != E; ++I) {
-
+  ArrayRef<unsigned> Order =
+    RegClassInfo.getOrder(MRI->getRegClass(VirtReg.reg));
+  for (ArrayRef<unsigned>::iterator I = Order.begin(), E = Order.end(); I != E;
+       ++I) {
     unsigned PhysReg = *I;
-    if (ReservedRegs.test(PhysReg)) continue;
 
     // Check interference and as a side effect, intialize queries for this
     // VirtReg and its aliases.
@@ -537,9 +540,6 @@ bool RABasic::runOnMachineFunction(MachineFunction &mf) {
   DEBUG(RMF = &getAnalysis<RenderMachineFunction>());
 
   RegAllocBase::init(getAnalysis<VirtRegMap>(), getAnalysis<LiveIntervals>());
-
-  ReservedRegs = TRI->getReservedRegs(*MF);
-
   SpillerInstance.reset(createInlineSpiller(*this, *MF, *VRM));
 
   allocatePhysRegs();

@@ -101,12 +101,12 @@ ProcessGDBRemote::CreateInstance (Target &target, Listener &listener)
 }
 
 bool
-ProcessGDBRemote::CanDebug(Target &target)
+ProcessGDBRemote::CanDebug (Target &target, bool plugin_specified_by_name)
 {
     // For now we are just making sure the file exists for a given module
-    ModuleSP exe_module_sp(target.GetExecutableModule());
-    if (exe_module_sp.get())
-        return exe_module_sp->GetFileSpec().Exists();
+    Module *exe_module = target.GetExecutableModulePointer();
+    if (exe_module)
+        return exe_module->GetFileSpec().Exists();
     // However, if there is no executable module, we return true since we might be preparing to attach.
     return true;
 }
@@ -435,6 +435,7 @@ ProcessGDBRemote::DoLaunch
     //  ::LogSetBitMask (GDBR_LOG_DEFAULT);
     //  ::LogSetOptions (LLDB_LOG_OPTION_THREADSAFE | LLDB_LOG_OPTION_PREPEND_TIMESTAMP | LLDB_LOG_OPTION_PREPEND_PROC_AND_THREAD);
     //  ::LogSetLogFile ("/dev/stdout");
+    LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
 
     ObjectFile * object_file = module->GetObjectFile();
     if (object_file)
@@ -449,7 +450,11 @@ ProcessGDBRemote::DoLaunch
         {
             error = StartDebugserverProcess (host_port);
             if (error.Fail())
+            {
+                if (log)
+                    log->Printf("failed to start debugserver process: %s", error.AsCString());
                 return error;
+            }
 
             error = ConnectToDebugserver (connect_url);
         }
@@ -526,7 +531,6 @@ ProcessGDBRemote::DoLaunch
 
             const uint32_t old_packet_timeout = m_gdb_comm.SetPacketTimeout (10);
             int arg_packet_err = m_gdb_comm.SendArgumentsPacket (argv);
-            m_gdb_comm.SetPacketTimeout (old_packet_timeout);
             if (arg_packet_err == 0)
             {
                 std::string error_str;
@@ -543,9 +547,13 @@ ProcessGDBRemote::DoLaunch
             {
                 error.SetErrorStringWithFormat("'A' packet returned an error: %i.\n", arg_packet_err);
             }
+            
+            m_gdb_comm.SetPacketTimeout (old_packet_timeout);
                 
             if (GetID() == LLDB_INVALID_PROCESS_ID)
             {
+                if (log)
+                    log->Printf("failed to connect to debugserver: %s", error.AsCString());
                 KillDebugserverProcess ();
                 return error;
             }
@@ -560,6 +568,11 @@ ProcessGDBRemote::DoLaunch
                         SetUpProcessInputReader (pty.ReleaseMasterFileDescriptor());
                 }
             }
+        }
+        else
+        {
+            if (log)
+                log->Printf("failed to connect to debugserver: %s", error.AsCString());
         }
     }
     else
@@ -1319,7 +1332,7 @@ ProcessGDBRemote::SetThreadStopInfo (StringExtractor& stop_packet)
                         if (stop_info_sp)
                         {
                             stop_info_sp->SetDescription (description.c_str());
-            }
+                        }
                         else
                         {
                             gdb_thread->SetStopInfo (StopInfo::CreateStopReasonWithException (*thread_sp, description.c_str()));

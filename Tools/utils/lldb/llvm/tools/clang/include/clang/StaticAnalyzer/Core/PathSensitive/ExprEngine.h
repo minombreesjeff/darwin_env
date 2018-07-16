@@ -21,6 +21,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CoreEngine.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/GRState.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/TransferFuncs.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/ObjCMessage.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/ExprObjC.h"
@@ -314,14 +315,7 @@ public:
   void VisitObjCForCollectionStmt(const ObjCForCollectionStmt* S, 
                                   ExplodedNode* Pred, ExplodedNodeSet& Dst);
 
-  void VisitObjCForCollectionStmtAux(const ObjCForCollectionStmt* S, 
-                                     ExplodedNode* Pred,
-                                     ExplodedNodeSet& Dst, SVal ElementV);
-
-  /// VisitObjCMessageExpr - Transfer function for ObjC message expressions.
-  void VisitObjCMessageExpr(const ObjCMessageExpr* ME, ExplodedNode* Pred, 
-                            ExplodedNodeSet& Dst);
-  void VisitObjCMessage(const ObjCMessage &msg, ExplodedNodeSet &Src,
+  void VisitObjCMessage(const ObjCMessage &msg, ExplodedNode *Pred,
                         ExplodedNodeSet& Dst);
 
   /// VisitReturnStmt - Transfer function logic for return statements.
@@ -365,7 +359,8 @@ public:
                     ExplodedNodeSet &Dst);
 
   /// Create a C++ temporary object for an rvalue.
-  void CreateCXXTemporaryObject(const Expr *Ex, ExplodedNode *Pred, 
+  void CreateCXXTemporaryObject(const MaterializeTemporaryExpr *ME,
+                                ExplodedNode *Pred, 
                                 ExplodedNodeSet &Dst);
 
   /// Synthesize CXXThisRegion.
@@ -460,6 +455,13 @@ private:
                     const void *tag, bool isLoad);
 
   bool InlineCall(ExplodedNodeSet &Dst, const CallExpr *CE, ExplodedNode *Pred);
+  
+  
+public:
+  /// Returns true if calling the specific function or method would possibly
+  /// cause global variables to be invalidated.
+  bool doesInvalidateGlobals(const CallOrObjCMessage &callOrMessage) const;
+  
 };
 
 } // end ento namespace

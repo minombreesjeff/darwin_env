@@ -140,6 +140,32 @@ public:
     GetModulePointerAtIndex (uint32_t idx) const;
 
     //------------------------------------------------------------------
+    /// Find compile units by partial or full path.
+    ///
+    /// Finds all compile units that match \a path in all of the modules
+    /// and returns the results in \a sc_list.
+    ///
+    /// @param[in] path
+    ///     The name of the compile unit we are looking for.
+    ///
+    /// @param[in] append
+    ///     If \b true, then append any compile units that were found
+    ///     to \a sc_list. If \b false, then the \a sc_list is cleared
+    ///     and the contents of \a sc_list are replaced.
+    ///
+    /// @param[out] sc_list
+    ///     A symbol context list that gets filled in with all of the
+    ///     matches.
+    ///
+    /// @return
+    ///     The number of matches added to \a sc_list.
+    //------------------------------------------------------------------
+    uint32_t
+    FindCompileUnits (const FileSpec &path,
+                      bool append,
+                      SymbolContextList &sc_list);
+    
+    //------------------------------------------------------------------
     /// Find functions by name.
     ///
     /// Finds all functions that match \a name in all of the modules and
@@ -161,7 +187,7 @@ public:
     /// @return
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
-    size_t
+    uint32_t
     FindFunctions (const ConstString &name,
                    uint32_t name_type_mask,
                    bool include_symbols,
@@ -337,6 +363,9 @@ public:
     size_t
     Remove (ModuleList &module_list);
     
+    size_t
+    RemoveOrphans ();
+
     bool
     ResolveFileAddress (lldb::addr_t vm_addr,
                         Address& so_addr);
@@ -402,6 +431,9 @@ public:
                        const ConstString *object_name_ptr,
                        ModuleList &matching_module_list);
 
+    static uint32_t
+    RemoveOrphanSharedModules ();
+
 protected:
     //------------------------------------------------------------------
     // Class typedefs.
@@ -414,6 +446,13 @@ protected:
     collection m_modules; ///< The collection of modules.
     mutable Mutex m_modules_mutex;
 
+private:
+    uint32_t
+    FindTypes_Impl (const SymbolContext& sc, 
+                    const ConstString &name, 
+                    bool append, 
+                    uint32_t max_matches, 
+                    TypeList& types);
 };
 
 } // namespace lldb_private

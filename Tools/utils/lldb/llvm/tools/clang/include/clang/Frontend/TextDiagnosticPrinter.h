@@ -23,7 +23,7 @@ class DiagnosticOptions;
 class LangOptions;
 
 class TextDiagnosticPrinter : public DiagnosticClient {
-  llvm::raw_ostream &OS;
+  raw_ostream &OS;
   const LangOptions *LangOpts;
   const DiagnosticOptions *DiagOpts;
 
@@ -36,7 +36,7 @@ class TextDiagnosticPrinter : public DiagnosticClient {
   std::string Prefix;
 
 public:
-  TextDiagnosticPrinter(llvm::raw_ostream &os, const DiagnosticOptions &diags,
+  TextDiagnosticPrinter(raw_ostream &os, const DiagnosticOptions &diags,
                         bool OwnsOutputStream = false);
   virtual ~TextDiagnosticPrinter();
 
@@ -62,18 +62,17 @@ public:
                       std::string &CaretLine,
                       const std::string &SourceLine);
 
-  void EmitCaretDiagnostic(Diagnostic::Level Level, SourceLocation Loc,
-                           CharSourceRange *Ranges, unsigned NumRanges,
-                           const SourceManager &SM,
-                           const FixItHint *Hints,
-                           unsigned NumHints,
-                           unsigned Columns,  
-                           unsigned OnMacroInst,
-                           unsigned MacroSkipStart,
-                           unsigned MacroSkipEnd);
-
   virtual void HandleDiagnostic(Diagnostic::Level Level,
                                 const DiagnosticInfo &Info);
+
+private:
+  void EmitCaretDiagnostic(SourceLocation Loc, CharSourceRange *Ranges,
+                           unsigned NumRanges, const SourceManager &SM,
+                           const FixItHint *Hints,
+                           unsigned NumHints, unsigned Columns,  
+                           unsigned OnMacroInst, unsigned MacroSkipStart,
+                           unsigned MacroSkipEnd);
+  
 };
 
 } // end namespace clang

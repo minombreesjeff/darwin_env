@@ -290,6 +290,23 @@ enum {
   R_MICROBLAZE_COPY           = 21
 };
 
+enum {
+  R_PPC_NONE                  = 0,      /* No relocation. */
+  R_PPC_ADDR32                = 1,
+  R_PPC_ADDR24                = 2,
+  R_PPC_ADDR16                = 3,
+  R_PPC_ADDR16_LO             = 4,
+  R_PPC_ADDR16_HI             = 5,
+  R_PPC_ADDR16_HA             = 6,
+  R_PPC_ADDR14                = 7,
+  R_PPC_ADDR14_BRTAKEN        = 8,
+  R_PPC_ADDR14_BRNTAKEN       = 9,
+  R_PPC_REL24                 = 10,
+  R_PPC_REL14                 = 11,
+  R_PPC_REL14_BRTAKEN         = 12,
+  R_PPC_REL14_BRNTAKEN        = 13,
+  R_PPC_REL32                 = 26
+};
 
 // ARM Specific e_flags
 enum { EF_ARM_EABIMASK = 0xFF000000U };
@@ -487,11 +504,11 @@ enum {
   SHT_REL           = 9,  // Relocation entries; no explicit addends.
   SHT_SHLIB         = 10, // Reserved.
   SHT_DYNSYM        = 11, // Symbol table.
-  SHT_INIT_ARRAY    = 14, // Pointers to initialisation functions.
+  SHT_INIT_ARRAY    = 14, // Pointers to initialization functions.
   SHT_FINI_ARRAY    = 15, // Pointers to termination functions.
   SHT_PREINIT_ARRAY = 16, // Pointers to pre-init functions.
   SHT_GROUP         = 17, // Section group.
-  SHT_SYMTAB_SHNDX  = 18, // Indicies for SHN_XINDEX entries.
+  SHT_SYMTAB_SHNDX  = 18, // Indices for SHN_XINDEX entries.
   SHT_LOOS          = 0x60000000, // Lowest operating system-specific type.
   SHT_HIOS          = 0x6fffffff, // Highest operating system-specific type.
   SHT_LOPROC        = 0x70000000, // Lowest processor architecture-specific type.
@@ -630,7 +647,7 @@ enum {
   STT_FUNC    = 2,   // Symbol is executable code (function, etc.)
   STT_SECTION = 3,   // Symbol refers to a section
   STT_FILE    = 4,   // Local, absolute symbol that refers to a file
-  STT_COMMON  = 5,   // An uninitialised common block
+  STT_COMMON  = 5,   // An uninitialized common block
   STT_TLS     = 6,   // Thread local data object
   STT_LOPROC  = 13,  // Lowest processor-specific symbol type
   STT_HIPROC  = 15   // Highest processor-specific symbol type
@@ -804,7 +821,7 @@ enum {
   DT_RELENT       = 19,       // Size of a Rel relocation entry.
   DT_PLTREL       = 20,       // Type of relocation entry used for linking.
   DT_DEBUG        = 21,       // Reserved for debugger.
-  DT_TEXTREL      = 22,       // Relocations exist for non-writable segements.
+  DT_TEXTREL      = 22,       // Relocations exist for non-writable segments.
   DT_JMPREL       = 23,       // Address of relocations associated with PLT.
   DT_BIND_NOW     = 24,       // Process all relocations before execution.
   DT_INIT_ARRAY   = 25,       // Pointer to array of initialization functions.

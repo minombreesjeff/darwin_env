@@ -66,8 +66,8 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
         if (original_ptr == LLDB_INVALID_ADDRESS)
             return false;
             
-        Target *target = in_value.GetUpdatePoint().GetTarget();
-        Process *process = in_value.GetUpdatePoint().GetProcess();
+        Target *target = in_value.GetUpdatePoint().GetTargetSP().get();
+        Process *process = in_value.GetUpdatePoint().GetProcessSP().get();
 
         char memory_buffer[16];
         DataExtractor data(memory_buffer, sizeof(memory_buffer), 
@@ -265,12 +265,16 @@ ItaniumABILanguageRuntime::SetExceptionBreakpoints ()
                                                                          "__cxa_throw",
                                                                          eFunctionNameTypeBase, 
                                                                          true);
+    else
+        m_cxx_exception_bp_sp->SetEnabled (true);
     
     if (!m_cxx_exception_alloc_bp_sp)
         m_cxx_exception_alloc_bp_sp = m_process->GetTarget().CreateBreakpoint (NULL,
                                                                                "__cxa_allocate",
                                                                                eFunctionNameTypeBase,
                                                                                true);
+    else
+        m_cxx_exception_alloc_bp_sp->SetEnabled (true);
 }
 
 void
@@ -281,14 +285,12 @@ ItaniumABILanguageRuntime::ClearExceptionBreakpoints ()
     
     if (m_cxx_exception_bp_sp.get())
     {
-        m_process->GetTarget().RemoveBreakpointByID(m_cxx_exception_bp_sp->GetID());
-        m_cxx_exception_bp_sp.reset();
+        m_cxx_exception_bp_sp->SetEnabled (false);
     }
     
     if (m_cxx_exception_alloc_bp_sp.get())
     {
-        m_process->GetTarget().RemoveBreakpointByID(m_cxx_exception_alloc_bp_sp->GetID());
-        m_cxx_exception_bp_sp.reset();
+        m_cxx_exception_bp_sp->SetEnabled (false);
     }
 }
 

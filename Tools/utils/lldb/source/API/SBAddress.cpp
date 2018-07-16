@@ -39,6 +39,15 @@ SBAddress::SBAddress (const SBAddress &rhs) :
         m_opaque_ap.reset (new lldb_private::Address(*rhs.m_opaque_ap.get()));
 }
 
+// Create an address by resolving a load address using the supplied target
+SBAddress::SBAddress (lldb::addr_t load_addr, lldb::SBTarget &target) :
+    m_opaque_ap()
+{    
+    SetLoadAddress (load_addr, target);
+}
+
+
+
 SBAddress::~SBAddress ()
 {
 }
@@ -110,6 +119,24 @@ SBAddress::GetLoadAddress (const SBTarget &target) const
     return addr;
 }
 
+void
+SBAddress::SetLoadAddress (lldb::addr_t load_addr, lldb::SBTarget &target)
+{
+    // Create the address object if we don't already have one
+    ref();
+    if (target.IsValid())
+        *this = target.ResolveLoadAddress(load_addr);
+    else
+        m_opaque_ap->Clear();
+
+    // Check if we weren't were able to resolve a section offset address.
+    // If we weren't it is ok, the load address might be a location on the
+    // stack or heap, so we should just have an address with no section and
+    // a valid offset
+    if (!m_opaque_ap->IsValid())
+        m_opaque_ap->SetOffset(load_addr);
+}
+
 bool
 SBAddress::OffsetAddress (addr_t offset)
 {
@@ -138,7 +165,7 @@ SBAddress::operator->() const
 }
 
 lldb_private::Address &
-SBAddress::operator*()
+SBAddress::ref ()
 {
     if (m_opaque_ap.get() == NULL)
         m_opaque_ap.reset (new lldb_private::Address);
@@ -146,8 +173,11 @@ SBAddress::operator*()
 }
 
 const lldb_private::Address &
-SBAddress::operator*() const
+SBAddress::ref () const
 {
+    // "const SBAddress &addr" should already have checked "addr.IsValid()" 
+    // prior to calling this function. In case you didn't we will assert
+    // and die to let you know.
     assert (m_opaque_ap.get());
     return *m_opaque_ap;
 }
@@ -196,6 +226,64 @@ SBAddress::GetModule ()
             *sb_module = module->GetSP();
     }
     return sb_module;
+}
+
+SBSymbolContext
+SBAddress::GetSymbolContext (uint32_t resolve_scope)
+{
+    SBSymbolContext sb_sc;
+    if (m_opaque_ap.get())
+        m_opaque_ap->CalculateSymbolContext (&sb_sc.ref(), resolve_scope);
+    return sb_sc;
+}
+
+SBCompileUnit
+SBAddress::GetCompileUnit ()
+{
+    SBCompileUnit sb_comp_unit;
+    if (m_opaque_ap.get())
+        sb_comp_unit.reset(m_opaque_ap->CalculateSymbolContextCompileUnit());
+    return sb_comp_unit;
+}
+
+SBFunction
+SBAddress::GetFunction ()
+{
+    SBFunction sb_function;
+    if (m_opaque_ap.get())
+        sb_function.reset(m_opaque_ap->CalculateSymbolContextFunction());
+    return sb_function;
+}
+
+SBBlock
+SBAddress::GetBlock ()
+{
+    SBBlock sb_block;
+    if (m_opaque_ap.get())
+        sb_block.reset(m_opaque_ap->CalculateSymbolContextBlock());
+    return sb_block;
+}
+
+SBSymbol
+SBAddress::GetSymbol ()
+{
+    SBSymbol sb_symbol;
+    if (m_opaque_ap.get())
+        sb_symbol.reset(m_opaque_ap->CalculateSymbolContextSymbol());
+    return sb_symbol;
+}
+
+SBLineEntry
+SBAddress::GetLineEntry ()
+{
+    SBLineEntry sb_line_entry;
+    if (m_opaque_ap.get())
+    {
+        LineEntry line_entry;
+        if (m_opaque_ap->CalculateSymbolContextLineEntry (line_entry))
+            sb_line_entry.SetLineEntry (line_entry);
+    }
+    return sb_line_entry;
 }
 
 

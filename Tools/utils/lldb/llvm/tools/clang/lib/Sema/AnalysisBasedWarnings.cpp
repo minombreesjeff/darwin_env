@@ -486,7 +486,8 @@ static void SuggestInitializationFixit(Sema &S, const VarDecl *VD) {
   const char *initialization = 0;
   QualType VariableTy = VD->getType().getCanonicalType();
 
-  if (VariableTy->getAs<ObjCObjectPointerType>()) {
+  if (VariableTy->isObjCObjectPointerType() ||
+      VariableTy->isBlockPointerType()) {
     // Check if 'nil' is defined.
     if (S.PP.getMacroInfo(&S.getASTContext().Idents.get("nil")))
       initialization = " = nil";
@@ -499,6 +500,13 @@ static void SuggestInitializationFixit(Sema &S, const VarDecl *VD) {
     initialization = " = false";
   else if (VariableTy->isEnumeralType())
     return;
+  else if (VariableTy->isPointerType() || VariableTy->isMemberPointerType()) {
+    // Check if 'NULL' is defined.
+    if (S.PP.getMacroInfo(&S.getASTContext().Idents.get("NULL")))
+      initialization = " = NULL";
+    else
+      initialization = " = 0";
+  }
   else if (VariableTy->isScalarType())
     initialization = " = 0";
 
@@ -522,7 +530,7 @@ struct SLocSort {
 
 class UninitValsDiagReporter : public UninitVariablesHandler {
   Sema &S;
-  typedef llvm::SmallVector<UninitUse, 2> UsesVec;
+  typedef SmallVector<UninitUse, 2> UsesVec;
   typedef llvm::DenseMap<const VarDecl *, UsesVec*> UsesMap;
   UsesMap *uses;
   
@@ -552,8 +560,6 @@ public:
       const VarDecl *vd = i->first;
       UsesVec *vec = i->second;
 
-      bool fixitIssued = false;
-            
       // Sort the uses by their SourceLocations.  While not strictly
       // guaranteed to produce them in line/column order, this will provide
       // a stable ordering.
@@ -565,11 +571,11 @@ public:
                                       /*isAlwaysUninit=*/vi->second))
           continue;
 
-        // Suggest a fixit hint the first time we diagnose a use of a variable.
-        if (!fixitIssued) {
-          SuggestInitializationFixit(S, vd);
-          fixitIssued = true;
-        }
+        SuggestInitializationFixit(S, vd);
+
+        // Skip further diagnostics for this variable. We try to warn only on
+        // the first point at which a variable is used uninitialized.
+        break;
       }
 
       delete vec;
@@ -589,7 +595,17 @@ clang::sema::AnalysisBasedWarnings::Policy::Policy() {
   enableCheckUnreachable = 0;
 }
 
-clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s) : S(s) {
+clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s)
+  : S(s),
+    NumFunctionsAnalyzed(0),
+    NumFunctionsWithBadCFGs(0),
+    NumCFGBlocks(0),
+    MaxCFGBlocksPerFunction(0),
+    NumUninitAnalysisFunctions(0),
+    NumUninitAnalysisVariables(0),
+    MaxUninitAnalysisVariablesPerFunction(0),
+    NumUninitAnalysisBlockVisits(0),
+    MaxUninitAnalysisBlockVisitsPerFunction(0) {
   Diagnostic &D = S.getDiagnostics();
   DefaultPolicy.enableCheckUnreachable = (unsigned)
     (D.getDiagnosticLevel(diag::warn_unreachable, SourceLocation()) !=
@@ -597,7 +613,7 @@ clang::sema::AnalysisBasedWarnings::AnalysisBasedWarnings(Sema &s) : S(s) {
 }
 
 static void flushDiagnostics(Sema &S, sema::FunctionScopeInfo *fscope) {
-  for (llvm::SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
+  for (SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
        i = fscope->PossiblyUnreachableDiags.begin(),
        e = fscope->PossiblyUnreachableDiags.end();
        i != e; ++i) {
@@ -638,17 +654,37 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   const Stmt *Body = D->getBody();
   assert(Body);
 
+  AnalysisContext AC(D, 0);
+
   // Don't generate EH edges for CallExprs as we'd like to avoid the n^2
   // explosion for destrutors that can result and the compile time hit.
-  AnalysisContext AC(D, 0, /*useUnoptimizedCFG=*/false, /*addehedges=*/false,
-                     /*addImplicitDtors=*/true, /*addInitializers=*/true);
+  AC.getCFGBuildOptions().PruneTriviallyFalseEdges = true;
+  AC.getCFGBuildOptions().AddEHEdges = false;
+  AC.getCFGBuildOptions().AddInitializers = true;
+  AC.getCFGBuildOptions().AddImplicitDtors = true;
+  
+  // Force that certain expressions appear as CFGElements in the CFG.  This
+  // is used to speed up various analyses.
+  // FIXME: This isn't the right factoring.  This is here for initial
+  // prototyping, but we need a way for analyses to say what expressions they
+  // expect to always be CFGElements and then fill in the BuildOptions
+  // appropriately.  This is essentially a layering violation.
+  AC.getCFGBuildOptions()
+    .setAlwaysAdd(Stmt::BinaryOperatorClass)
+    .setAlwaysAdd(Stmt::BlockExprClass)
+    .setAlwaysAdd(Stmt::CStyleCastExprClass)
+    .setAlwaysAdd(Stmt::DeclRefExprClass)
+    .setAlwaysAdd(Stmt::ImplicitCastExprClass)
+    .setAlwaysAdd(Stmt::UnaryOperatorClass);
 
+  // Construct the analysis context with the specified CFG build options.
+  
   // Emit delayed diagnostics.
   if (!fscope->PossiblyUnreachableDiags.empty()) {
     bool analyzed = false;
 
     // Register the expressions with the CFGBuilder.
-    for (llvm::SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
+    for (SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
          i = fscope->PossiblyUnreachableDiags.begin(),
          e = fscope->PossiblyUnreachableDiags.end();
          i != e; ++i) {
@@ -658,7 +694,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
 
     if (AC.getCFG()) {
       analyzed = true;
-      for (llvm::SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
+      for (SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
             i = fscope->PossiblyUnreachableDiags.begin(),
             e = fscope->PossiblyUnreachableDiags.end();
             i != e; ++i)
@@ -705,8 +741,68 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       != Diagnostic::Ignored) {
     if (CFG *cfg = AC.getCFG()) {
       UninitValsDiagReporter reporter(S);
+      UninitVariablesAnalysisStats stats;
+      std::memset(&stats, 0, sizeof(UninitVariablesAnalysisStats));
       runUninitializedVariablesAnalysis(*cast<DeclContext>(D), *cfg, AC,
-                                        reporter);
+                                        reporter, stats);
+
+      if (S.CollectStats && stats.NumVariablesAnalyzed > 0) {
+        ++NumUninitAnalysisFunctions;
+        NumUninitAnalysisVariables += stats.NumVariablesAnalyzed;
+        NumUninitAnalysisBlockVisits += stats.NumBlockVisits;
+        MaxUninitAnalysisVariablesPerFunction =
+            std::max(MaxUninitAnalysisVariablesPerFunction,
+                     stats.NumVariablesAnalyzed);
+        MaxUninitAnalysisBlockVisitsPerFunction =
+            std::max(MaxUninitAnalysisBlockVisitsPerFunction,
+                     stats.NumBlockVisits);
+      }
     }
   }
+
+  // Collect statistics about the CFG if it was built.
+  if (S.CollectStats && AC.isCFGBuilt()) {
+    ++NumFunctionsAnalyzed;
+    if (CFG *cfg = AC.getCFG()) {
+      // If we successfully built a CFG for this context, record some more
+      // detail information about it.
+      NumCFGBlocks += cfg->getNumBlockIDs();
+      MaxCFGBlocksPerFunction = std::max(MaxCFGBlocksPerFunction,
+                                         cfg->getNumBlockIDs());
+    } else {
+      ++NumFunctionsWithBadCFGs;
+    }
+  }
+}
+
+void clang::sema::AnalysisBasedWarnings::PrintStats() const {
+  llvm::errs() << "\n*** Analysis Based Warnings Stats:\n";
+
+  unsigned NumCFGsBuilt = NumFunctionsAnalyzed - NumFunctionsWithBadCFGs;
+  unsigned AvgCFGBlocksPerFunction =
+      !NumCFGsBuilt ? 0 : NumCFGBlocks/NumCFGsBuilt;
+  llvm::errs() << NumFunctionsAnalyzed << " functions analyzed ("
+               << NumFunctionsWithBadCFGs << " w/o CFGs).\n"
+               << "  " << NumCFGBlocks << " CFG blocks built.\n"
+               << "  " << AvgCFGBlocksPerFunction
+               << " average CFG blocks per function.\n"
+               << "  " << MaxCFGBlocksPerFunction
+               << " max CFG blocks per function.\n";
+
+  unsigned AvgUninitVariablesPerFunction = !NumUninitAnalysisFunctions ? 0
+      : NumUninitAnalysisVariables/NumUninitAnalysisFunctions;
+  unsigned AvgUninitBlockVisitsPerFunction = !NumUninitAnalysisFunctions ? 0
+      : NumUninitAnalysisBlockVisits/NumUninitAnalysisFunctions;
+  llvm::errs() << NumUninitAnalysisFunctions
+               << " functions analyzed for uninitialiazed variables\n"
+               << "  " << NumUninitAnalysisVariables << " variables analyzed.\n"
+               << "  " << AvgUninitVariablesPerFunction
+               << " average variables per function.\n"
+               << "  " << MaxUninitAnalysisVariablesPerFunction
+               << " max variables per function.\n"
+               << "  " << NumUninitAnalysisBlockVisits << " block visits.\n"
+               << "  " << AvgUninitBlockVisitsPerFunction
+               << " average block visits per function.\n"
+               << "  " << MaxUninitAnalysisBlockVisitsPerFunction
+               << " max block visits per function.\n";
 }

@@ -472,7 +472,16 @@ def REMU_l3r : FL3R<"remu", urem>;
 }
 def XOR_l3r : FL3R<"xor", xor>;
 defm ASHR : FL3R_L2RBITP<"ashr", sra>;
-// TODO crc32, crc8, inpw, outpw
+
+let Constraints = "$src1 = $dst" in
+def CRC_l3r : _FL3R<(outs GRRegs:$dst),
+                     (ins GRRegs:$src1, GRRegs:$src2, GRRegs:$src3),
+                     "crc32 $dst, $src2, $src3",
+                     [(set GRRegs:$dst,
+                        (int_xcore_crc32 GRRegs:$src1, GRRegs:$src2,
+                                         GRRegs:$src3))]>;
+
+// TODO inpw, outpw
 let mayStore=1 in {
 def ST16_l3r : _FL3R<(outs), (ins GRRegs:$val, GRRegs:$addr, GRRegs:$offset),
                 "st16 $val, $addr[$offset]",
@@ -497,6 +506,12 @@ def MACCS_l4r : _L4R<(outs GRRegs:$dst1, GRRegs:$dst2),
                     "maccs $dst1, $dst2, $src3, $src4",
                     []>;
 }
+
+let Constraints = "$src1 = $dst1" in
+def CRC8_l4r : _L4R<(outs GRRegs:$dst1, GRRegs:$dst2),
+                    (ins GRRegs:$src1, GRRegs:$src2, GRRegs:$src3),
+                    "crc8 $dst1, $dst2, $src2, $src3",
+                    []>;
 
 // Five operand long
 
@@ -739,7 +754,7 @@ def BL_lu10 : _FLU10<
 }
 
 // Two operand short
-// TODO eet, eef, testwct, tsetmr, sext (reg), zext (reg)
+// TODO eet, eef, tsetmr
 def NOT : _F2R<(outs GRRegs:$dst), (ins GRRegs:$b),
                  "not $dst, $b",
                  [(set GRRegs:$dst, (not GRRegs:$b))]>;
@@ -749,15 +764,21 @@ def NEG : _F2R<(outs GRRegs:$dst), (ins GRRegs:$b),
                  [(set GRRegs:$dst, (ineg GRRegs:$b))]>;
 
 let Constraints = "$src1 = $dst" in {
-let neverHasSideEffects = 1 in
 def SEXT_rus : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, i32imm:$src2),
-                 "sext $dst, $src2",
-                 []>;
+                      "sext $dst, $src2",
+                      [(set GRRegs:$dst, (int_xcore_sext GRRegs:$src1, immBitp:$src2))]>;
 
-let neverHasSideEffects = 1 in
+def SEXT_2r : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, GRRegs:$src2),
+                     "sext $dst, $src2",
+                     [(set GRRegs:$dst, (int_xcore_sext GRRegs:$src1, GRRegs:$src2))]>;
+
 def ZEXT_rus : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, i32imm:$src2),
-                 "zext $dst, $src2",
-                 []>;
+                      "zext $dst, $src2",
+                      [(set GRRegs:$dst, (int_xcore_zext GRRegs:$src1, immBitp:$src2))]>;
+
+def ZEXT_2r : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, GRRegs:$src2),
+                     "zext $dst, $src2",
+                     [(set GRRegs:$dst, (int_xcore_zext GRRegs:$src1, GRRegs:$src2))]>;
 
 def ANDNOT_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$src1, GRRegs:$src2),
                  "andnot $dst, $src2",
@@ -831,6 +852,14 @@ def CHKCT_rus : _F2R<(outs), (ins GRRegs:$r, i32imm:$val),
                  "chkct res[$r], $val",
                  [(int_xcore_chkct GRRegs:$r, immUs:$val)]>;
 
+def TESTCT_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$src),
+                     "testct $dst, res[$src]",
+                     [(set GRRegs:$dst, (int_xcore_testct GRRegs:$src))]>;
+
+def TESTWCT_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$src),
+                      "testwct $dst, res[$src]",
+                      [(set GRRegs:$dst, (int_xcore_testwct GRRegs:$src))]>;
+
 def SETD_2r : _F2R<(outs), (ins GRRegs:$r, GRRegs:$val),
                  "setd res[$r], $val",
                  [(int_xcore_setd GRRegs:$r, GRRegs:$val)]>;
@@ -856,7 +885,6 @@ def INITDP_2r : _F2R<(outs), (ins GRRegs:$t, GRRegs:$src),
                      [(int_xcore_initdp GRRegs:$t, GRRegs:$src)]>;
 
 // Two operand long
-// TODO endin, peek,
 // getd, testlcl
 def BITREV_l2r : _FL2R<(outs GRRegs:$dst), (ins GRRegs:$src),
                  "bitrev $dst, $src",
@@ -901,6 +929,14 @@ def SETRDY_l2r : _FL2R<(outs), (ins GRRegs:$src1, GRRegs:$src2),
 def SETPSC_l2r : _FL2R<(outs), (ins GRRegs:$src1, GRRegs:$src2),
                        "setpsc res[$src1], $src2",
                        [(int_xcore_setpsc GRRegs:$src1, GRRegs:$src2)]>;
+
+def PEEK_l2r : _FL2R<(outs GRRegs:$dst), (ins GRRegs:$src),
+                      "peek $dst, res[$src]",
+                      [(set GRRegs:$dst, (int_xcore_peek GRRegs:$src))]>;
+
+def ENDIN_l2r : _FL2R<(outs GRRegs:$dst), (ins GRRegs:$src),
+                       "endin $dst, res[$src]",
+                       [(set GRRegs:$dst, (int_xcore_endin GRRegs:$src))]>;
 
 // One operand short
 // TODO edu, eeu, waitet, waitef, tstart, clrtp

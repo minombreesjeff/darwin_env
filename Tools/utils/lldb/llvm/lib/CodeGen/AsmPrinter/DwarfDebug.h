@@ -15,7 +15,7 @@
 #define CODEGEN_ASMPRINTER_DWARFDEBUG_H__
 
 #include "llvm/CodeGen/AsmPrinter.h"
-#include "llvm/CodeGen/MachineLocation.h"
+#include "llvm/MC/MachineLocation.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "DIE.h"
 #include "llvm/ADT/DenseMap.h"
@@ -68,10 +68,37 @@ typedef struct DotDebugLocEntry {
   MachineLocation Loc;
   const MDNode *Variable;
   bool Merged;
-  DotDebugLocEntry() : Begin(0), End(0), Variable(0), Merged(false) {}
+  bool Constant;
+  enum EntryType {
+    E_Location,
+    E_Integer,
+    E_ConstantFP,
+    E_ConstantInt
+  };
+  enum EntryType EntryKind;
+
+  union {
+    int64_t Int;
+    const ConstantFP *CFP;
+    const ConstantInt *CIP;
+  } Constants;
+  DotDebugLocEntry() 
+    : Begin(0), End(0), Variable(0), Merged(false), 
+      Constant(false) { Constants.Int = 0;}
   DotDebugLocEntry(const MCSymbol *B, const MCSymbol *E, MachineLocation &L,
                    const MDNode *V) 
-    : Begin(B), End(E), Loc(L), Variable(V), Merged(false) {}
+    : Begin(B), End(E), Loc(L), Variable(V), Merged(false), 
+      Constant(false) { Constants.Int = 0; EntryKind = E_Location; }
+  DotDebugLocEntry(const MCSymbol *B, const MCSymbol *E, int64_t i)
+    : Begin(B), End(E), Variable(0), Merged(false), 
+      Constant(true) { Constants.Int = i; EntryKind = E_Integer; }
+  DotDebugLocEntry(const MCSymbol *B, const MCSymbol *E, const ConstantFP *FPtr)
+    : Begin(B), End(E), Variable(0), Merged(false), 
+      Constant(true) { Constants.CFP = FPtr; EntryKind = E_ConstantFP; }
+  DotDebugLocEntry(const MCSymbol *B, const MCSymbol *E, const ConstantInt *IPtr)
+    : Begin(B), End(E), Variable(0), Merged(false), 
+      Constant(true) { Constants.CIP = IPtr; EntryKind = E_ConstantInt; }
+
   /// Empty entries are also used as a trigger to emit temp label. Such
   /// labels are referenced is used to find debug_loc offset for a given DIE.
   bool isEmpty() { return Begin == 0 && End == 0; }
@@ -82,6 +109,13 @@ typedef struct DotDebugLocEntry {
     Next->Begin = Begin;
     Merged = true;
   }
+  bool isLocation() const    { return EntryKind == E_Location; }
+  bool isInt() const         { return EntryKind == E_Integer; }
+  bool isConstantFP() const  { return EntryKind == E_ConstantFP; }
+  bool isConstantInt() const { return EntryKind == E_ConstantInt; }
+  int64_t getInt()                    { return Constants.Int; }
+  const ConstantFP *getConstantFP()   { return Constants.CFP; }
+  const ConstantInt *getConstantInt() { return Constants.CIP; }
 } DotDebugLocEntry;
 
 //===----------------------------------------------------------------------===//
@@ -167,12 +201,10 @@ class DwarfDebug {
 
   /// DbgScopeMap - Tracks the scopes in the current function.  Owns the
   /// contained DbgScope*s.
-  ///
   DenseMap<const MDNode *, DbgScope *> DbgScopeMap;
 
-  /// ConcreteScopes - Tracks the concrete scopees in the current function.
-  /// These scopes are also included in DbgScopeMap.
-  DenseMap<const MDNode *, DbgScope *> ConcreteScopes;
+  /// InlinedDbgScopeMap - Tracks inlined function scopes in current function.
+  DenseMap<DebugLoc, DbgScope *> InlinedDbgScopeMap;
 
   /// AbstractScopes - Tracks the abstract scopes a module. These scopes are
   /// not included DbgScopeMap.  AbstractScopes owns its DbgScope*s.
@@ -285,8 +317,9 @@ private:
   void assignAbbrevNumber(DIEAbbrev &Abbrev);
 
   /// getOrCreateDbgScope - Create DbgScope for the scope.
-  DbgScope *getOrCreateDbgScope(const MDNode *Scope, const MDNode *InlinedAt);
-
+  DbgScope *getOrCreateDbgScope(DebugLoc DL);
+  DbgScope *getOrCreateRegularScope(MDNode *Scope);
+  DbgScope *getOrCreateInlinedScope(MDNode *Scope, MDNode *InlinedAt);
   DbgScope *getOrCreateAbstractScope(const MDNode *N);
 
   /// findAbstractVariable - Find abstract variable associated with Var.
@@ -416,9 +449,8 @@ private:
   /// is found. Update FI to hold value of the index.
   bool findVariableFrameIndex(const DbgVariable *V, int *FI);
 
-  /// findDbgScope - Find DbgScope for the debug loc attached with an 
-  /// instruction.
-  DbgScope *findDbgScope(const MachineInstr *MI);
+  /// findDbgScope - Find DbgScope for the debug loc.
+  DbgScope *findDbgScope(DebugLoc DL);
 
   /// identifyScopeMarkers() - Indentify instructions that are marking
   /// beginning of or end of a scope.

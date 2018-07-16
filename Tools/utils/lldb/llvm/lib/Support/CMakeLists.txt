@@ -9,6 +9,8 @@ add_llvm_library(LLVMSupport
   APInt.cpp
   APSInt.cpp
   Allocator.cpp
+  BlockFrequency.cpp
+  BranchProbability.cpp
   circular_raw_ostream.cpp
   CommandLine.cpp
   ConstantRange.cpp
@@ -41,7 +43,6 @@ add_llvm_library(LLVMSupport
   StringPool.cpp
   StringRef.cpp
   SystemUtils.cpp
-  TargetRegistry.cpp
   Timer.cpp
   ToolOutputFile.cpp
   Triple.cpp

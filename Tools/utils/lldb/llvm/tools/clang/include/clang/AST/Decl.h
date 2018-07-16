@@ -115,7 +115,7 @@ public:
   /// getName - Get the name of identifier for this declaration as a StringRef.
   /// This requires that the declaration have a name and that it be a simple
   /// identifier.
-  llvm::StringRef getName() const {
+  StringRef getName() const {
     assert(Name.isIdentifier() && "Name is not a simple identifier");
     return getIdentifier() ? getIdentifier()->getName() : "";
   }
@@ -132,7 +132,7 @@ public:
   // FIXME: Deprecated, move clients to getName().
   std::string getNameAsString() const { return Name.getAsString(); }
 
-  void printName(llvm::raw_ostream &os) const { return Name.printName(os); }
+  void printName(raw_ostream &os) const { return Name.printName(os); }
 
   /// getDeclName - Get the actual, stored name of the declaration,
   /// which may be a special name.
@@ -294,7 +294,7 @@ public:
   static bool classofKind(Kind K) { return K >= firstNamed && K <= lastNamed; }
 };
 
-inline llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
+inline raw_ostream &operator<<(raw_ostream &OS,
                                      const NamedDecl *ND) {
   ND->getDeclName().printName(OS);
   return OS;
@@ -702,8 +702,12 @@ private:
     /// \brief Whether this variable is the for-range-declaration in a C++0x
     /// for-range statement.
     unsigned CXXForRangeDecl : 1;
+
+    /// \brief Whether this variable is an ARC pseudo-__strong
+    /// variable;  see isARCPseudoStrong() for details.
+    unsigned ARCPseudoStrong : 1;
   };
-  enum { NumVarDeclBits = 13 }; // two reserved bits for now
+  enum { NumVarDeclBits = 13 }; // one reserved bit
 
   friend class ASTDeclReader;
   friend class StmtIteratorBase;
@@ -975,6 +979,20 @@ public:
 
   void setInit(Expr *I);
 
+  /// \brief Determine whether this variable is a reference that
+  /// extends the lifetime of its temporary initializer. 
+  ///
+  /// A reference extends the lifetime of its temporary initializer if
+  /// it's initializer is an rvalue that would normally go out of scope
+  /// at the end of the initializer (a full expression). In such cases,
+  /// the reference itself takes ownership of the temporary, which will
+  /// be destroyed when the reference goes out of scope. For example:
+  ///
+  /// \code
+  /// const int &r = 1.0; // creates a temporary of type 'int'
+  /// \endcode
+  bool extendsLifetimeOfTemporary() const;
+
   EvaluatedStmt *EnsureEvaluatedStmt() const {
     EvaluatedStmt *Eval = Init.dyn_cast<EvaluatedStmt *>();
     if (!Eval) {
@@ -1102,6 +1120,13 @@ public:
   /// a C++0x for-range statement.
   bool isCXXForRangeDecl() const { return VarDeclBits.CXXForRangeDecl; }
   void setCXXForRangeDecl(bool FRD) { VarDeclBits.CXXForRangeDecl = FRD; }
+
+  /// \brief Determine whether this variable is an ARC pseudo-__strong
+  /// variable.  A pseudo-__strong variable has a __strong-qualified
+  /// type but does not actually retain the object written into it.
+  /// Generally such variables are also 'const' for safety.
+  bool isARCPseudoStrong() const { return VarDeclBits.ARCPseudoStrong; }
+  void setARCPseudoStrong(bool ps) { VarDeclBits.ARCPseudoStrong = ps; }
   
   /// \brief If this variable is an instantiated static data member of a
   /// class template specialization, returns the templated static data member
@@ -1172,6 +1197,8 @@ public:
                              QualType T, TypeSourceInfo *TInfo,
                              StorageClass S, StorageClass SCAsWritten,
                              Expr *DefArg);
+
+  virtual SourceRange getSourceRange() const;
 
   void setObjCMethodScopeInfo(unsigned parameterIndex) {
     ParmVarDeclBits.IsObjCMethodParam = true;
@@ -1748,6 +1775,8 @@ public:
   bool isInlined() const;
 
   bool isInlineDefinitionExternallyVisible() const;
+
+  bool doesDeclarationForceExternallyVisibleDefinition() const;
                        
   /// isOverloadedOperator - Whether this function declaration
   /// represents an C++ overloaded operator, e.g., "operator+".
@@ -1953,20 +1982,33 @@ class FieldDecl : public DeclaratorDecl {
   bool Mutable : 1;
   mutable unsigned CachedFieldIndex : 31;
 
-  Expr *BitWidth;
+  /// \brief A pointer to either the in-class initializer for this field (if
+  /// the boolean value is false), or the bit width expression for this bit
+  /// field (if the boolean value is true).
+  ///
+  /// We can safely combine these two because in-class initializers are not
+  /// permitted for bit-fields.
+  ///
+  /// If the boolean is false and the initializer is null, then this field has
+  /// an in-class initializer which has not yet been parsed and attached.
+  llvm::PointerIntPair<Expr *, 1, bool> InitializerOrBitWidth;
 protected:
   FieldDecl(Kind DK, DeclContext *DC, SourceLocation StartLoc,
             SourceLocation IdLoc, IdentifierInfo *Id,
-            QualType T, TypeSourceInfo *TInfo, Expr *BW, bool Mutable)
+            QualType T, TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
+            bool HasInit)
     : DeclaratorDecl(DK, DC, IdLoc, Id, T, TInfo, StartLoc),
-      Mutable(Mutable), CachedFieldIndex(0), BitWidth(BW) {
+      Mutable(Mutable), CachedFieldIndex(0),
+      InitializerOrBitWidth(BW, !HasInit) {
+    assert(!(BW && HasInit) && "got initializer for bitfield");
   }
 
 public:
   static FieldDecl *Create(const ASTContext &C, DeclContext *DC,
                            SourceLocation StartLoc, SourceLocation IdLoc,
                            IdentifierInfo *Id, QualType T,
-                           TypeSourceInfo *TInfo, Expr *BW, bool Mutable);
+                           TypeSourceInfo *TInfo, Expr *BW, bool Mutable,
+                           bool HasInit);
 
   /// getFieldIndex - Returns the index of this field within its record,
   /// as appropriate for passing to ASTRecordLayout::getFieldOffset.
@@ -1979,10 +2021,12 @@ public:
   void setMutable(bool M) { Mutable = M; }
 
   /// isBitfield - Determines whether this field is a bitfield.
-  bool isBitField() const { return BitWidth != NULL; }
+  bool isBitField() const {
+    return InitializerOrBitWidth.getInt() && InitializerOrBitWidth.getPointer();
+  }
 
   /// @brief Determines whether this is an unnamed bitfield.
-  bool isUnnamedBitfield() const { return BitWidth != NULL && !getDeclName(); }
+  bool isUnnamedBitfield() const { return isBitField() && !getDeclName(); }
 
   /// isAnonymousStructOrUnion - Determines whether this field is a
   /// representative for an anonymous struct or union. Such fields are
@@ -1990,8 +2034,42 @@ public:
   /// store the data for the anonymous union or struct.
   bool isAnonymousStructOrUnion() const;
 
-  Expr *getBitWidth() const { return BitWidth; }
-  void setBitWidth(Expr *BW) { BitWidth = BW; }
+  Expr *getBitWidth() const {
+    return isBitField() ? InitializerOrBitWidth.getPointer() : 0;
+  }
+  void setBitWidth(Expr *BW) {
+    assert(!InitializerOrBitWidth.getPointer() &&
+           "bit width or initializer already set");
+    InitializerOrBitWidth.setPointer(BW);
+    InitializerOrBitWidth.setInt(1);
+  }
+  /// removeBitWidth - Remove the bitfield width from this member.
+  void removeBitWidth() {
+    assert(isBitField() && "no bit width to remove");
+    InitializerOrBitWidth.setPointer(0);
+  }
+
+  /// hasInClassInitializer - Determine whether this member has a C++0x in-class
+  /// initializer.
+  bool hasInClassInitializer() const {
+    return !InitializerOrBitWidth.getInt();
+  }
+  /// getInClassInitializer - Get the C++0x in-class initializer for this
+  /// member, or null if one has not been set. If a valid declaration has an
+  /// in-class initializer, but this returns null, then we have not parsed and
+  /// attached it yet.
+  Expr *getInClassInitializer() const {
+    return hasInClassInitializer() ? InitializerOrBitWidth.getPointer() : 0;
+  }
+  /// setInClassInitializer - Set the C++0x in-class initializer for this member.
+  void setInClassInitializer(Expr *Init);
+  /// removeInClassInitializer - Remove the C++0x in-class initializer from this
+  /// member.
+  void removeInClassInitializer() {
+    assert(!InitializerOrBitWidth.getInt() && "no initializer to remove");
+    InitializerOrBitWidth.setPointer(0);
+    InitializerOrBitWidth.setInt(1);
+  }
 
   /// getParent - Returns the parent of this field declaration, which
   /// is the struct in which this method is defined.
@@ -2911,6 +2989,8 @@ public:
   capture_const_iterator capture_end() const { return Captures + NumCaptures; }
 
   bool capturesCXXThis() const { return CapturesCXXThis; }
+
+  bool capturesVariable(const VarDecl *var) const;
 
   void setCaptures(ASTContext &Context,
                    const Capture *begin,

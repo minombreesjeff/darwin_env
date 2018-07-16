@@ -27,7 +27,9 @@ getValueAsListOfStrings(Record &R, StringRef FieldName) {
   std::vector<StringRef> Strings;
   Strings.reserve(List->getSize());
 
-  for (ListInit::iterator i = List->begin(), e = List->end(); i != e; ++i) {
+  for (ListInit::const_iterator i = List->begin(), e = List->end();
+       i != e;
+       ++i) {
     assert(*i && "Got a null element in a ListInit");
     if (StringInit *S = dynamic_cast<StringInit *>(*i))
       Strings.push_back(S->getValue());
@@ -42,11 +44,11 @@ getValueAsListOfStrings(Record &R, StringRef FieldName) {
 
 std::string ReadPCHRecord(StringRef type) {
   return StringSwitch<std::string>(type)
-    .EndsWith("Decl *", "cast_or_null<" + std::string(type, 0, type.size()-1) +
-              ">(GetDecl(Record[Idx++]))")
-    .Case("QualType", "GetType(Record[Idx++])")
+    .EndsWith("Decl *", "GetLocalDeclAs<" 
+              + std::string(type, 0, type.size()-1) + ">(F, Record[Idx++])")
+    .Case("QualType", "getLocalType(F, Record[Idx++])")
     .Case("Expr *", "ReadSubExpr()")
-    .Case("IdentifierInfo *", "GetIdentifierInfo(Record, Idx)")
+    .Case("IdentifierInfo *", "GetIdentifierInfo(F, Record, Idx)")
     .Default("Record[Idx++]");
 }
 

@@ -485,6 +485,34 @@ StackFrame::GetVariableList (bool get_file_globals)
     return m_variable_list_sp.get();
 }
 
+VariableListSP
+StackFrame::GetInScopeVariableList (bool get_file_globals)
+{
+    VariableListSP var_list_sp(new VariableList);
+    GetSymbolContext (eSymbolContextCompUnit | eSymbolContextBlock);
+
+    if (m_sc.block)
+    {
+        const bool can_create = true;
+        const bool get_parent_variables = true;
+        const bool stop_if_block_is_inlined_function = true;
+        m_sc.block->AppendVariables (can_create, 
+                                     get_parent_variables,
+                                     stop_if_block_is_inlined_function,
+                                     var_list_sp.get());
+    }
+                     
+    if (m_sc.comp_unit)
+    {
+        VariableListSP global_variable_list_sp (m_sc.comp_unit->GetVariableList(true));
+        if (global_variable_list_sp)
+            var_list_sp->AddVariables (global_variable_list_sp.get());
+    }
+    
+    return var_list_sp;
+}
+
+
 ValueObjectSP
 StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr, 
                                                lldb::DynamicValueType use_dynamic,
@@ -497,12 +525,16 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
     {
         const bool check_ptr_vs_member = (options & eExpressionPathOptionCheckPtrVsMember) != 0;
         const bool no_fragile_ivar = (options & eExpressionPathOptionsNoFragileObjcIvar) != 0;
+        const bool no_synth_child = (options & eExpressionPathOptionsNoSyntheticChildren) != 0;
         error.Clear();
         bool deref = false;
         bool address_of = false;
         ValueObjectSP valobj_sp;
         const bool get_file_globals = true;
-        VariableList *variable_list = GetVariableList (get_file_globals);
+        // When looking up a variable for an expression, we need only consider the
+        // variables that are in scope.
+        VariableListSP var_list_sp (GetInScopeVariableList (get_file_globals));
+        VariableList *variable_list = var_list_sp.get();
         
         if (variable_list)
         {
@@ -609,23 +641,28 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             child_valobj_sp = valobj_sp->GetChildMemberWithName (child_name, true);
                             if (!child_valobj_sp)
                             {
-                                // No child member with name "child_name"
-                                valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                if (child_name)
+                                if (no_synth_child == false)
+                                    child_valobj_sp = valobj_sp->GetSyntheticValue(lldb::eUseSyntheticFilter)->GetChildMemberWithName (child_name, true);
+                                
+                                if (no_synth_child || !child_valobj_sp)
                                 {
-                                    error.SetErrorStringWithFormat ("\"%s\" is not a member of \"(%s) %s\"", 
-                                                                    child_name.GetCString(), 
-                                                                    valobj_sp->GetTypeName().AsCString("<invalid type>"),
-                                                                    var_expr_path_strm.GetString().c_str());
+                                    // No child member with name "child_name"
+                                    valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                    if (child_name)
+                                    {
+                                        error.SetErrorStringWithFormat ("\"%s\" is not a member of \"(%s) %s\"", 
+                                                                        child_name.GetCString(), 
+                                                                        valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                        var_expr_path_strm.GetString().c_str());
+                                    }
+                                    else
+                                    {
+                                        error.SetErrorStringWithFormat ("incomplete expression path after \"%s\" in \"%s\"",
+                                                                        var_expr_path_strm.GetString().c_str(),
+                                                                        var_expr_cstr);
+                                    }
+                                    return ValueObjectSP();
                                 }
-                                else
-                                {
-                                    error.SetErrorStringWithFormat ("incomplete expression path after \"%s\" in \"%s\"",
-                                                                    var_expr_path_strm.GetString().c_str(),
-                                                                    var_expr_cstr);
-                                }
-
-                                return ValueObjectSP();
                             }
                             // Remove the child name from the path
                             var_path.erase(0, child_name.GetLength());
@@ -687,14 +724,55 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 
                                 if (valobj_sp->IsPointerType ())
                                 {
-                                    child_valobj_sp = valobj_sp->GetSyntheticArrayMemberFromPointer (child_index, true);
-                                    if (!child_valobj_sp)
+                                    if (no_synth_child == false
+                                        && 
+                                        ClangASTType::GetMinimumLanguage(valobj_sp->GetClangAST(),
+                                                                         valobj_sp->GetClangType()) == lldb::eLanguageTypeObjC /* is ObjC pointer */
+                                        &&
+                                        ClangASTContext::IsPointerType(ClangASTType::GetPointeeType(valobj_sp->GetClangType())) == false /* is not double-ptr */)
                                     {
-                                        valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                        error.SetErrorStringWithFormat ("failed to use pointer as array for index %i for \"(%s) %s\"", 
-                                                                        child_index, 
-                                                                        valobj_sp->GetTypeName().AsCString("<invalid type>"),
-                                                                        var_expr_path_strm.GetString().c_str());
+                                        // dereferencing ObjC variables is not valid.. so let's try and recur to synthetic children
+                                        lldb::ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(lldb::eUseSyntheticFilter);
+                                        if (synthetic.get() == NULL /* no synthetic */
+                                            || synthetic == valobj_sp) /* synthetic is the same as the original object */
+                                        {
+                                            valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                            error.SetErrorStringWithFormat ("\"(%s) %s\" is not an array type", 
+                                                                            valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                            var_expr_path_strm.GetString().c_str());
+                                        }
+                                        else if (child_index >= synthetic->GetNumChildren() /* synthetic does not have that many values */)
+                                        {
+                                            valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                            error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                                                            child_index, 
+                                                                            valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                            var_expr_path_strm.GetString().c_str());
+                                        }
+                                        else
+                                        {
+                                            child_valobj_sp = synthetic->GetChildAtIndex(child_index, true);
+                                            if (!child_valobj_sp)
+                                            {
+                                                valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                                error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                                                                child_index, 
+                                                                                valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                                var_expr_path_strm.GetString().c_str());
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        child_valobj_sp = valobj_sp->GetSyntheticArrayMemberFromPointer (child_index, true);
+                                        if (!child_valobj_sp)
+                                        {
+                                            valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                            error.SetErrorStringWithFormat ("failed to use pointer as array for index %i for \"(%s) %s\"", 
+                                                                            child_index, 
+                                                                            valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                            var_expr_path_strm.GetString().c_str());
+                                        }
                                     }
                                 }
                                 else if (ClangASTContext::IsArrayType (valobj_sp->GetClangType(), NULL, NULL))
@@ -726,10 +804,36 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 }
                                 else
                                 {
-                                    valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                    error.SetErrorStringWithFormat ("\"(%s) %s\" is not an array type", 
-                                                                    valobj_sp->GetTypeName().AsCString("<invalid type>"),
-                                                                    var_expr_path_strm.GetString().c_str());
+                                    lldb::ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(lldb::eUseSyntheticFilter);
+                                    if (no_synth_child /* synthetic is forbidden */ ||
+                                        synthetic.get() == NULL /* no synthetic */
+                                        || synthetic == valobj_sp) /* synthetic is the same as the original object */
+                                    {
+                                        valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                        error.SetErrorStringWithFormat ("\"(%s) %s\" is not an array type", 
+                                                                        valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                        var_expr_path_strm.GetString().c_str());
+                                    }
+                                    else if (child_index >= synthetic->GetNumChildren() /* synthetic does not have that many values */)
+                                    {
+                                        valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                        error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                                                        child_index, 
+                                                                        valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                        var_expr_path_strm.GetString().c_str());
+                                    }
+                                    else
+                                    {
+                                        child_valobj_sp = synthetic->GetChildAtIndex(child_index, true);
+                                        if (!child_valobj_sp)
+                                        {
+                                            valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                            error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                                                            child_index, 
+                                                                            valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                            var_expr_path_strm.GetString().c_str());
+                                        }
+                                    }
                                 }
 
                                 if (!child_valobj_sp)
@@ -752,15 +856,15 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 // able to find the child member
                                 break;
                             }
-                            else if(end && *end == '-')
+                            else if (end && *end == '-')
                             {
                                 // this is most probably a BitField, let's take a look
                                 char *real_end = NULL;
                                 long final_index = ::strtol (end+1, &real_end, 0);
-                                if(real_end && *real_end == ']')
+                                if (real_end && *real_end == ']')
                                 {
                                     // if the format given is [high-low], swap range
-                                    if(child_index > final_index)
+                                    if (child_index > final_index)
                                     {
                                         long temp = child_index;
                                         child_index = final_index;

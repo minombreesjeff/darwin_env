@@ -94,7 +94,7 @@ BindingKey BindingKey::Make(const MemRegion *R, Kind k) {
 
 namespace llvm {
   static inline
-  llvm::raw_ostream& operator<<(llvm::raw_ostream& os, BindingKey K) {
+  raw_ostream& operator<<(raw_ostream& os, BindingKey K) {
     os << '(' << K.getRegion() << ',' << K.getOffset()
        << ',' << (K.isDirect() ? "direct" : "default")
        << ')';
@@ -157,7 +157,7 @@ public:
     return false;
   }
 
-  void process(llvm::SmallVectorImpl<const SubRegion*> &WL, const SubRegion *R);
+  void process(SmallVectorImpl<const SubRegion*> &WL, const SubRegion *R);
 
   ~RegionStoreSubRegionMap() {}
 
@@ -183,7 +183,7 @@ public:
 };
 
 void
-RegionStoreSubRegionMap::process(llvm::SmallVectorImpl<const SubRegion*> &WL,
+RegionStoreSubRegionMap::process(SmallVectorImpl<const SubRegion*> &WL,
                                  const SubRegion *R) {
   const MemRegion *superR = R->getSuperRegion();
   if (add(superR, R))
@@ -307,6 +307,8 @@ public: // Part of public interface to class.
   void decrementReferenceCount(Store store) {
     GetRegionBindings(store).manualRelease();
   }
+  
+  bool includedInBindings(Store store, const MemRegion *region) const;
 
   //===------------------------------------------------------------------===//
   // Loading values from regions.
@@ -371,10 +373,10 @@ public: // Part of public interface to class.
   /// removeDeadBindings - Scans the RegionStore of 'state' for dead values.
   ///  It returns a new Store with these values removed.
   StoreRef removeDeadBindings(Store store, const StackFrameContext *LCtx,
-                           SymbolReaper& SymReaper,
-                          llvm::SmallVectorImpl<const MemRegion*>& RegionRoots);
+                              SymbolReaper& SymReaper);
 
-  StoreRef enterStackFrame(const GRState *state, const StackFrameContext *frame);
+  StoreRef enterStackFrame(const GRState *state,
+                           const StackFrameContext *frame);
 
   //===------------------------------------------------------------------===//
   // Region "extents".
@@ -392,7 +394,7 @@ public: // Part of public interface to class.
     return RegionBindings(static_cast<const RegionBindings::TreeTy*>(store));
   }
 
-  void print(Store store, llvm::raw_ostream& Out, const char* nl,
+  void print(Store store, raw_ostream& Out, const char* nl,
              const char *sep);
 
   void iterBindings(Store store, BindingsHandler& f) {
@@ -433,7 +435,7 @@ RegionStoreManager::getRegionStoreSubRegionMap(Store store) {
   RegionBindings B = GetRegionBindings(store);
   RegionStoreSubRegionMap *M = new RegionStoreSubRegionMap();
 
-  llvm::SmallVector<const SubRegion*, 10> WL;
+  SmallVector<const SubRegion*, 10> WL;
 
   for (RegionBindings::iterator I=B.begin(), E=B.end(); I!=E; ++I)
     if (const SubRegion *R = dyn_cast<SubRegion>(I.getKey().getRegion()))
@@ -461,7 +463,7 @@ protected:
   typedef BumpVector<BindingKey> RegionCluster;
   typedef llvm::DenseMap<const MemRegion *, RegionCluster *> ClusterMap;
   llvm::DenseMap<const RegionCluster*, unsigned> Visited;
-  typedef llvm::SmallVector<std::pair<const MemRegion *, RegionCluster*>, 10>
+  typedef SmallVector<std::pair<const MemRegion *, RegionCluster*>, 10>
     WorkList;
 
   BumpVectorContext BVC;
@@ -1042,6 +1044,10 @@ SVal RegionStoreManager::RetrieveElement(Store store,
     SVal Idx = R->getIndex();
     if (nonloc::ConcreteInt *CI = dyn_cast<nonloc::ConcreteInt>(&Idx)) {
       int64_t i = CI->getValue().getSExtValue();
+      // Abort on string underrun.  This can be possible by arbitrary
+      // clients of RetrieveElement().
+      if (i < 0)
+        return UndefinedVal();
       int64_t byteLength = Str->getByteLength();
       // Technically, only i == byteLength is guaranteed to be null.
       // However, such overflows should be caught before reaching this point;
@@ -1063,6 +1069,11 @@ SVal RegionStoreManager::RetrieveElement(Store store,
   //   return *y;
   // FIXME: This is a hack, and doesn't do anything really intelligent yet.
   const RegionRawOffset &O = R->getAsArrayOffset();
+  
+  // If we cannot reason about the offset, return an unknown value.
+  if (!O.getRegion())
+    return UnknownVal();
+  
   if (const TypedRegion *baseR = dyn_cast_or_null<TypedRegion>(O.getRegion())) {
     QualType baseT = baseR->getValueType();
     if (baseT->isScalarType()) {
@@ -1275,6 +1286,23 @@ SVal RegionStoreManager::RetrieveArray(Store store, const TypedRegion * R) {
   return svalBuilder.makeLazyCompoundVal(StoreRef(store, *this), R);
 }
 
+bool RegionStoreManager::includedInBindings(Store store,
+                                            const MemRegion *region) const {
+  RegionBindings B = GetRegionBindings(store);
+  region = region->getBaseRegion();
+  
+  for (RegionBindings::iterator it = B.begin(), ei = B.end(); it != ei; ++it) {
+    const BindingKey &K = it.getKey();
+    if (region == K.getRegion())
+      return true;
+    const SVal &D = it.getData();
+    if (const MemRegion *r = D.getAsRegion())
+      if (r == region)
+        return true;
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // Binding values to regions.
 //===----------------------------------------------------------------------===//
@@ -1372,7 +1400,12 @@ StoreRef RegionStoreManager::setImplicitDefaultValue(Store store,
     V = svalBuilder.makeZeroVal(Ctx.IntTy);
   }
   else {
-    return StoreRef(store, *this);
+    // We can't represent values of this type, but we still need to set a value
+    // to record that the region has been initialized.
+    // If this assertion ever fires, a new case should be added above -- we
+    // should know how to default-initialize any value we can symbolicate.
+    assert(!SymbolManager::canSymbolicate(T) && "This type is representable");
+    V = UnknownVal();
   }
 
   return StoreRef(addBinding(B, R, BindingKey::Default,
@@ -1601,7 +1634,7 @@ RegionBindings RegionStoreManager::removeBinding(RegionBindings B,
 namespace {
 class removeDeadBindingsWorker :
   public ClusterAnalysis<removeDeadBindingsWorker> {
-  llvm::SmallVector<const SymbolicRegion*, 12> Postponed;
+  SmallVector<const SymbolicRegion*, 12> Postponed;
   SymbolReaper &SymReaper;
   const StackFrameContext *CurrentLCtx;
 
@@ -1726,7 +1759,7 @@ bool removeDeadBindingsWorker::UpdatePostponed() {
   // having done a scan.
   bool changed = false;
 
-  for (llvm::SmallVectorImpl<const SymbolicRegion*>::iterator
+  for (SmallVectorImpl<const SymbolicRegion*>::iterator
         I = Postponed.begin(), E = Postponed.end() ; I != E ; ++I) {
     if (const SymbolicRegion *SR = cast_or_null<SymbolicRegion>(*I)) {
       if (SymReaper.isLive(SR->getSymbol())) {
@@ -1741,17 +1774,16 @@ bool removeDeadBindingsWorker::UpdatePostponed() {
 
 StoreRef RegionStoreManager::removeDeadBindings(Store store,
                                                 const StackFrameContext *LCtx,
-                                                SymbolReaper& SymReaper,
-                           llvm::SmallVectorImpl<const MemRegion*>& RegionRoots)
-{
+                                                SymbolReaper& SymReaper) {
   RegionBindings B = GetRegionBindings(store);
   removeDeadBindingsWorker W(*this, StateMgr, B, SymReaper, LCtx);
   W.GenerateClusters();
 
   // Enqueue the region roots onto the worklist.
-  for (llvm::SmallVectorImpl<const MemRegion*>::iterator I=RegionRoots.begin(),
-       E=RegionRoots.end(); I!=E; ++I)
+  for (SymbolReaper::region_iterator I = SymReaper.region_begin(),
+       E = SymReaper.region_end(); I != E; ++I) {
     W.AddToWorkList(*I);
+  }
 
   do W.RunWorkList(); while (W.UpdatePostponed());
 
@@ -1821,7 +1853,7 @@ StoreRef RegionStoreManager::enterStackFrame(const GRState *state,
 // Utility methods.
 //===----------------------------------------------------------------------===//
 
-void RegionStoreManager::print(Store store, llvm::raw_ostream& OS,
+void RegionStoreManager::print(Store store, raw_ostream& OS,
                                const char* nl, const char *sep) {
   RegionBindings B = GetRegionBindings(store);
   OS << "Store (direct and default bindings):" << nl;

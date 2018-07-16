@@ -23,7 +23,6 @@
 
 namespace llvm {
   class FoldingSetNodeID;
-  class raw_ostream;
 }
 
 namespace clang {
@@ -235,8 +234,13 @@ public:
   bool isNull() const { return Kind == Null; }
 
   /// \brief Whether this template argument is dependent on a template
-  /// parameter.
+  /// parameter such that its result can change from one instantiation to
+  /// another.
   bool isDependent() const;
+
+  /// \brief Whether this template argument is dependent on a template
+  /// parameter.
+  bool isInstantiationDependent() const;
 
   /// \brief Whether this template argument contains an unexpanded
   /// parameter pack.
@@ -349,7 +353,7 @@ public:
   TemplateArgument getPackExpansionPattern() const;
 
   /// \brief Print this template argument to the given output stream.
-  void print(const PrintingPolicy &Policy, llvm::raw_ostream &Out) const;
+  void print(const PrintingPolicy &Policy, raw_ostream &Out) const;
              
   /// \brief Used to insert TemplateArguments into FoldingSets.
   void Profile(llvm::FoldingSetNodeID &ID, const ASTContext &Context) const;
@@ -510,7 +514,7 @@ public:
 /// A convenient class for passing around template argument
 /// information.  Designed to be passed by reference.
 class TemplateArgumentListInfo {
-  llvm::SmallVector<TemplateArgumentLoc, 8> Arguments;
+  SmallVector<TemplateArgumentLoc, 8> Arguments;
   SourceLocation LAngleLoc;
   SourceLocation RAngleLoc;
 

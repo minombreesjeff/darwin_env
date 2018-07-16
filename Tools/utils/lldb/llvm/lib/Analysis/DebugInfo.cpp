@@ -111,9 +111,17 @@ Function *DIDescriptor::getFunctionField(unsigned Elt) const {
 unsigned DIVariable::getNumAddrElements() const {
   if (getVersion() <= llvm::LLVMDebugVersion8)
     return DbgNode->getNumOperands()-6;
-  return DbgNode->getNumOperands()-7;
+  if (getVersion() == llvm::LLVMDebugVersion9)
+    return DbgNode->getNumOperands()-7;
+  return DbgNode->getNumOperands()-8;
 }
 
+/// getInlinedAt - If this variable is inlined then return inline location.
+MDNode *DIVariable::getInlinedAt() const {
+  if (getVersion() <= llvm::LLVMDebugVersion9)
+    return NULL;
+  return dyn_cast_or_null<MDNode>(DbgNode->getOperand(7));
+}
 
 //===----------------------------------------------------------------------===//
 // Predicates
@@ -666,6 +674,42 @@ void DIGlobalVariable::print(raw_ostream &OS) const {
   OS << "]\n";
 }
 
+static void printDebugLoc(DebugLoc DL, raw_ostream &CommentOS,
+                          const LLVMContext &Ctx) {
+  if (!DL.isUnknown()) {          // Print source line info.
+    DIScope Scope(DL.getScope(Ctx));
+    // Omit the directory, because it's likely to be long and uninteresting.
+    if (Scope.Verify())
+      CommentOS << Scope.getFilename();
+    else
+      CommentOS << "<unknown>";
+    CommentOS << ':' << DL.getLine();
+    if (DL.getCol() != 0)
+      CommentOS << ':' << DL.getCol();
+    DebugLoc InlinedAtDL = DebugLoc::getFromDILocation(DL.getInlinedAt(Ctx));
+    if (!InlinedAtDL.isUnknown()) {
+      CommentOS << " @[ ";
+      printDebugLoc(InlinedAtDL, CommentOS, Ctx);
+      CommentOS << " ]";
+    }
+  }
+}
+
+void DIVariable::printExtendedName(raw_ostream &OS) const {
+  const LLVMContext &Ctx = DbgNode->getContext();
+  StringRef Res = getName();
+  if (!Res.empty())
+    OS << Res << "," << getLineNumber();
+  if (MDNode *InlinedAt = getInlinedAt()) {
+    DebugLoc InlinedAtDL = DebugLoc::getFromDILocation(InlinedAt);
+    if (!InlinedAtDL.isUnknown()) {
+      OS << " @[";
+      printDebugLoc(InlinedAtDL, OS, Ctx);
+      OS << "]";
+    }
+  }
+}
+
 /// print - Print variable.
 void DIVariable::print(raw_ostream &OS) const {
   StringRef Res = getName();
@@ -727,39 +771,52 @@ void DIVariable::dump() const {
 
 /// fixupObjcLikeName - Replace contains special characters used
 /// in a typical Objective-C names with '.' in a given string.
-static void fixupObjcLikeName(std::string &Str) {
+static void fixupObjcLikeName(StringRef Str, SmallVectorImpl<char> &Out) {
+  bool isObjCLike = false;
   for (size_t i = 0, e = Str.size(); i < e; ++i) {
     char C = Str[i];
-    if (C == '[' || C == ']' || C == ' ' || C == ':' || C == '+' ||
-        C == '(' || C == ')')
-      Str[i] = '.';
+    if (C == '[')
+      isObjCLike = true;
+
+    if (isObjCLike && (C == '[' || C == ']' || C == ' ' || C == ':' ||
+                       C == '+' || C == '(' || C == ')'))
+      Out.push_back('.');
+    else
+      Out.push_back(C);
   }
 }
 
 /// getFnSpecificMDNode - Return a NameMDNode, if available, that is 
 /// suitable to hold function specific information.
 NamedMDNode *llvm::getFnSpecificMDNode(const Module &M, StringRef FuncName) {
-  if (FuncName.find('[') == StringRef::npos)
-    return M.getNamedMetadata(Twine("llvm.dbg.lv.", FuncName));
-  std::string Name = FuncName;
-  fixupObjcLikeName(Name);
-  return M.getNamedMetadata(Twine("llvm.dbg.lv.", Name));
+  SmallString<32> Name = StringRef("llvm.dbg.lv.");
+  fixupObjcLikeName(FuncName, Name);
+
+  return M.getNamedMetadata(Name.str());
 }
 
 /// getOrInsertFnSpecificMDNode - Return a NameMDNode that is suitable
 /// to hold function specific information.
 NamedMDNode *llvm::getOrInsertFnSpecificMDNode(Module &M, StringRef FuncName) {
-  SmallString<32> Out;
-  if (FuncName.find('[') == StringRef::npos)
-    return M.getOrInsertNamedMetadata(Twine("llvm.dbg.lv.", FuncName)
-                                      .toStringRef(Out));
-  
-  std::string Name = FuncName;
-  fixupObjcLikeName(Name);
-  return M.getOrInsertNamedMetadata(Twine("llvm.dbg.lv.", Name)
-                                    .toStringRef(Out));
+  SmallString<32> Name = StringRef("llvm.dbg.lv.");
+  fixupObjcLikeName(FuncName, Name);
+
+  return M.getOrInsertNamedMetadata(Name.str());
 }
 
+/// createInlinedVariable - Create a new inlined variable based on current
+/// variable.
+/// @param DV            Current Variable.
+/// @param InlinedScope  Location at current variable is inlined.
+DIVariable llvm::createInlinedVariable(MDNode *DV, MDNode *InlinedScope,
+                                       LLVMContext &VMContext) {
+  SmallVector<Value *, 16> Elts;
+  // Insert inlined scope as 7th element.
+  for (unsigned i = 0, e = DV->getNumOperands(); i != e; ++i)
+    i == 7 ? Elts.push_back(InlinedScope) :
+             Elts.push_back(DV->getOperand(i));
+  return DIVariable(MDNode::get(VMContext, Elts));
+}
 
 //===----------------------------------------------------------------------===//
 // DebugInfoFinder implementations.

@@ -25,7 +25,9 @@
 #include "llvm/Constants.h"
 #include "llvm/Metadata.h"
 #include "llvm/Value.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/ADT/IntervalMap.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -44,6 +46,7 @@ static cl::opt<bool>
 EnableLDV("live-debug-variables", cl::init(true),
           cl::desc("Enable the live debug variables pass"), cl::Hidden);
 
+STATISTIC(NumInsertedDebugValues, "Number of DBG_VALUEs inserted");
 char LiveDebugVariables::ID = 0;
 
 INITIALIZE_PASS_BEGIN(LiveDebugVariables, "livedebugvars",
@@ -123,7 +126,7 @@ public:
   /// getNext - Return the next UserValue in the equivalence class.
   UserValue *getNext() const { return next; }
 
-  /// match - Does this UserValue match the aprameters?
+  /// match - Does this UserValue match the parameters?
   bool match(const MDNode *Var, unsigned Offset) const {
     return Var == variable && Offset == offset;
   }
@@ -179,6 +182,9 @@ public:
     LocMap::iterator I = locInts.find(Idx);
     if (!I.valid() || I.start() != Idx)
       I.insert(Idx, Idx.getNextSlot(), getLocationNo(LocMO));
+    else
+      // A later DBG_VALUE at the same SlotIndex overrides the old location.
+      I.setValue(getLocationNo(LocMO));
   }
 
   /// extendDef - Extend the current definition as far as possible down the
@@ -312,8 +318,10 @@ public:
 } // namespace
 
 void UserValue::print(raw_ostream &OS, const TargetMachine *TM) {
-  if (const MDString *MDS = dyn_cast<MDString>(variable->getOperand(2)))
-    OS << "!\"" << MDS->getString() << "\"\t";
+  DIVariable DV(variable);
+  OS << "!\""; 
+  DV.printExtendedName(OS);
+  OS << "\"\t";
   if (offset)
     OS << '+' << offset;
   for (LocMap::const_iterator I = locInts.begin(); I.valid(); ++I) {
@@ -891,6 +899,7 @@ void UserValue::insertDebugValue(MachineBasicBlock *MBB, SlotIndex Idx,
                                  const TargetInstrInfo &TII) {
   MachineBasicBlock::iterator I = findInsertLocation(MBB, Idx, LIS);
   MachineOperand &Loc = locations[LocNo];
+  ++NumInsertedDebugValues;
 
   // Frame index locations may require a target callback.
   if (Loc.isFI()) {
@@ -921,7 +930,6 @@ void UserValue::emitDebugValues(VirtRegMap *VRM, LiveIntervals &LIS,
 
     DEBUG(dbgs() << " BB#" << MBB->getNumber() << '-' << MBBEnd);
     insertDebugValue(MBB, Start, LocNo, LIS, TII);
-
     // This interval may span multiple basic blocks.
     // Insert a DBG_VALUE into each one.
     while(Stop > MBBEnd) {

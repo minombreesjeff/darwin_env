@@ -640,7 +640,7 @@ Type::CreateClangTypedefType (Type *typedef_type, Type *base_type)
     assert(typedef_type && base_type);
     return GetClangASTContext().CreateTypedefType (typedef_type->GetName().AsCString(), 
                                                    base_type->GetClangForwardType(), 
-                                                   typedef_type->GetSymbolFile()->GetClangDeclContextForTypeUID(typedef_type->GetID()));
+                                                   typedef_type->GetSymbolFile()->GetClangDeclContextContainingTypeUID(typedef_type->GetID()));
 }
 
 void *
@@ -729,4 +729,44 @@ TypeAndOrName::IsEmpty()
         return false;
     else
         return true;
+}
+
+TypeImpl::TypeImpl(const lldb_private::ClangASTType& clang_ast_type) :
+    m_clang_ast_type(clang_ast_type.GetASTContext(), clang_ast_type.GetOpaqueQualType()),
+    m_type_sp()
+{}
+
+TypeImpl::TypeImpl(const lldb::TypeSP& type) :
+    m_clang_ast_type(type->GetClangAST(), type->GetClangFullType()),
+    m_type_sp(type)
+{
+}
+
+TypeImpl&
+TypeImpl::operator = (const TypeImpl& rhs)
+{
+    if (*this != rhs)
+    {
+        m_clang_ast_type = rhs.m_clang_ast_type;
+        m_type_sp = rhs.m_type_sp;
+    }
+    return *this;
+}
+
+clang::ASTContext*
+TypeImpl::GetASTContext()
+{
+    if (!IsValid())
+        return NULL;
+    
+    return m_clang_ast_type.GetASTContext();
+}
+
+lldb::clang_type_t
+TypeImpl::GetOpaqueQualType()
+{
+    if (!IsValid())
+        return NULL;
+    
+    return m_clang_ast_type.GetOpaqueQualType();
 }

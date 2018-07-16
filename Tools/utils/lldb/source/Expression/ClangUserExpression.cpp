@@ -37,6 +37,9 @@
 #include "lldb/Target/ThreadPlan.h"
 #include "lldb/Target/ThreadPlanCallUserExpression.h"
 
+#include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclObjC.h"
+
 using namespace lldb_private;
 
 ClangUserExpression::ClangUserExpression (const char *expr,
@@ -71,37 +74,43 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx)
     if (!exe_ctx.frame)
         return;
     
-    VariableList *vars = exe_ctx.frame->GetVariableList(false);
+    SymbolContext sym_ctx = exe_ctx.frame->GetSymbolContext(lldb::eSymbolContextFunction);
     
-    if (!vars)
+    if (!sym_ctx.function)
         return;
     
-    lldb::VariableSP this_var(vars->FindVariable(ConstString("this")));
-    lldb::VariableSP self_var(vars->FindVariable(ConstString("self")));
+    clang::DeclContext *decl_context;
     
-    if (this_var.get())
+    if (sym_ctx.block && sym_ctx.block->GetInlinedFunctionInfo())
+        decl_context = sym_ctx.block->GetClangDeclContextForInlinedFunction();
+    else
+        decl_context = sym_ctx.function->GetClangDeclContext();
+        
+    if (!decl_context)
+        return;
+        
+    if (clang::CXXMethodDecl *method_decl = llvm::dyn_cast<clang::CXXMethodDecl>(decl_context))
     {
-        Type *this_type = this_var->GetType();
-        
-        lldb::clang_type_t pointer_target_type;
-        
-        if (ClangASTContext::IsPointerType(this_type->GetClangForwardType(),
-                                           &pointer_target_type))
+        if (method_decl->isInstance())
         {
-            TypeFromUser target_ast_type(pointer_target_type, this_type->GetClangAST());
+            m_cplusplus = true;
             
-            if (ClangASTContext::IsCXXClassType(target_ast_type.GetOpaqueQualType()))
-            {
-                m_cplusplus = true;
-            
-                if (target_ast_type.IsConst())
-                    m_const_object = true;
-            }
+            do {
+                clang::QualType this_type = method_decl->getThisType(decl_context->getParentASTContext());
+
+                const clang::PointerType *this_pointer_type = llvm::dyn_cast<clang::PointerType>(this_type.getTypePtr());
+
+                if (!this_pointer_type)
+                    break;
+                
+                clang::QualType this_pointee_type = this_pointer_type->getPointeeType();
+            } while (0);
         }
     }
-    else if (self_var.get())
+    else if (clang::ObjCMethodDecl *method_decl = llvm::dyn_cast<clang::ObjCMethodDecl>(decl_context))
     {
-        m_objectivec = true;
+        if (method_decl->isInstanceMethod())
+            m_objectivec = true;
     }
 }
 
@@ -179,7 +188,7 @@ ClangUserExpression::Parse (Stream &error_stream,
         
         m_needs_object_ptr = true;
     }
-    else if(m_objectivec)
+    else if (m_objectivec)
     {
         const char *function_name = FunctionName();
         
@@ -241,7 +250,11 @@ ClangUserExpression::Parse (Stream &error_stream,
     
     m_expr_decl_map.reset(new ClangExpressionDeclMap(keep_result_in_memory));
     
-    m_expr_decl_map->WillParse(exe_ctx);
+    if (!m_expr_decl_map->WillParse(exe_ctx))
+    {
+        error_stream.PutCString ("error: current process state is unsuitable for expression parsing\n");
+        return false;
+    }
     
     ClangExpressionParser parser(exe_ctx.process, *this);
     
@@ -413,8 +426,8 @@ ClangUserExpression::GetThreadPlanToExecuteJITExpression (Stream &error_stream,
 {
     lldb::addr_t struct_address;
             
-    lldb::addr_t object_ptr = NULL;
-    lldb::addr_t cmd_ptr = NULL;
+    lldb::addr_t object_ptr = 0;
+    lldb::addr_t cmd_ptr = 0;
     
     PrepareToExecuteJITExpression (error_stream, exe_ctx, struct_address, object_ptr, cmd_ptr);
     
@@ -494,8 +507,8 @@ ClangUserExpression::Execute (Stream &error_stream,
     {
         lldb::addr_t struct_address;
                 
-        lldb::addr_t object_ptr = NULL;
-        lldb::addr_t cmd_ptr = NULL;
+        lldb::addr_t object_ptr = 0;
+        lldb::addr_t cmd_ptr = 0;
         
         if (!PrepareToExecuteJITExpression (error_stream, exe_ctx, struct_address, object_ptr, cmd_ptr))
             return eExecutionSetupError;
@@ -592,9 +605,20 @@ ClangUserExpression::Evaluate (ExecutionContext &exe_ctx,
                                const char *expr_prefix,
                                lldb::ValueObjectSP &result_valobj_sp)
 {
+    Error error;
+    return EvaluateWithError (exe_ctx, discard_on_error, expr_cstr, expr_prefix, result_valobj_sp, error);
+}
+
+ExecutionResults
+ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx, 
+                               bool discard_on_error,
+                               const char *expr_cstr,
+                               const char *expr_prefix,
+                               lldb::ValueObjectSP &result_valobj_sp,
+                               Error &error)
+{
     lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
 
-    Error error;
     ExecutionResults execution_results = eExecutionSetupError;
     
     if (exe_ctx.process == NULL || exe_ctx.process->GetState() != lldb::eStateStopped)
@@ -655,6 +679,7 @@ ClangUserExpression::Evaluate (ExecutionContext &exe_ctx,
                 log->Printf("== [ClangUserExpression::Evaluate] Expression evaluated as a constant ==");
             
             result_valobj_sp = user_expression_sp->m_const_result->GetValueObject();
+            execution_results = eExecutionCompleted;
         }
         else
         {    

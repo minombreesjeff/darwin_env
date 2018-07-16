@@ -15,6 +15,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -23,30 +24,19 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ELF.h"
-#include "llvm/Target/TargetAsmBackend.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringSwitch.h"
 
-#include "../Target/X86/X86FixupKinds.h"
-#include "../Target/ARM/ARMFixupKinds.h"
+#include "../Target/X86/MCTargetDesc/X86FixupKinds.h"
+#include "../Target/ARM/MCTargetDesc/ARMFixupKinds.h"
+#include "../Target/PowerPC/MCTargetDesc/PPCFixupKinds.h"
 
 #include <vector>
 using namespace llvm;
 
 #undef  DEBUG_TYPE
 #define DEBUG_TYPE "reloc-info"
-
-// FIXME: This switch must be removed. Since GNU as does not
-// need a command line switch for doing its wierd thing with PIC,
-// LLVM should not need it either.
-// --
-// Emulate the wierd behavior of GNU-as for relocation types
-namespace llvm {
-cl::opt<bool>
-ForceARMElfPIC("arm-elf-force-pic", cl::Hidden, cl::init(false),
-               cl::desc("Force ELF emitter to emit PIC style relocations"));
-}
 
 bool ELFObjectWriter::isFixupKindPCRel(const MCAssembler &Asm, unsigned Kind) {
   const MCFixupKindInfo &FKI =
@@ -62,6 +52,7 @@ bool ELFObjectWriter::RelocNeedsGOT(MCSymbolRefExpr::VariantKind Variant) {
   case MCSymbolRefExpr::VK_GOT:
   case MCSymbolRefExpr::VK_PLT:
   case MCSymbolRefExpr::VK_GOTPCREL:
+  case MCSymbolRefExpr::VK_GOTOFF:
   case MCSymbolRefExpr::VK_TPOFF:
   case MCSymbolRefExpr::VK_TLSGD:
   case MCSymbolRefExpr::VK_GOTTPOFF:
@@ -457,8 +448,16 @@ void ELFObjectWriter::RecordRelocation(const MCAssembler &Asm,
   uint64_t RelocOffset = Layout.getFragmentOffset(Fragment) +
     Fixup.getOffset();
 
+  adjustFixupOffset(Fixup, RelocOffset);
+
   if (!hasRelocationAddend())
     Addend = 0;
+
+  if (is64Bit())
+    assert(isInt<64>(Addend));
+  else
+    assert(isInt<32>(Addend));
+
   ELFRelocationEntry ERE(RelocOffset, Index, Type, RelocSymbol, Addend);
   Relocations[Fragment->getParent()].push_back(ERE);
 }
@@ -556,6 +555,7 @@ void ELFObjectWriter::ComputeSymbolTable(MCAssembler &Asm,
                                          RevGroupMapTy RevGroupMap,
                                          unsigned NumRegularSections) {
   // FIXME: Is this the correct place to do this?
+  // FIXME: Why is an undefined reference to _GLOBAL_OFFSET_TABLE_ needed?
   if (NeedsGOT) {
     llvm::StringRef Name = "_GLOBAL_OFFSET_TABLE_";
     MCSymbol *Sym = Asm.getContext().GetOrCreateSymbol(Name);
@@ -1261,6 +1261,9 @@ MCObjectWriter *llvm::createELFObjectWriter(MCELFObjectTargetWriter *MOTW,
       return new ARMELFObjectWriter(MOTW, OS, IsLittleEndian); break;
     case ELF::EM_MBLAZE:
       return new MBlazeELFObjectWriter(MOTW, OS, IsLittleEndian); break;
+    case ELF::EM_PPC:
+    case ELF::EM_PPC64:
+      return new PPCELFObjectWriter(MOTW, OS, IsLittleEndian); break;
     default: llvm_unreachable("Unsupported architecture"); break;
   }
 }
@@ -1319,7 +1322,7 @@ const MCSymbol *ARMELFObjectWriter::ExplicitRelSym(const MCAssembler &Asm,
         << Symbol.isVariable() << "/" << Symbol.isTemporary()
         << " Counts:" << PCRelCount << "/" << NonPCRelCount << "\n");
 
-  if (IsPCRel || ForceARMElfPIC) { ++PCRelCount;
+  if (IsPCRel) { ++PCRelCount;
     switch (RelocType) {
     default:
       // Most relocation types are emitted as explicit symbols
@@ -1441,6 +1444,17 @@ unsigned ARMELFObjectWriter::GetRelocTypeInner(const MCValue &Target,
     case ARM::fixup_t2_movw_lo16_pcrel:
       Type = ELF::R_ARM_THM_MOVW_PREL_NC;
       break;
+    case ARM::fixup_arm_thumb_bl:
+    case ARM::fixup_arm_thumb_blx:
+      switch (Modifier) {
+      case MCSymbolRefExpr::VK_ARM_PLT:
+        Type = ELF::R_ARM_THM_CALL;
+        break;
+      default:
+        Type = ELF::R_ARM_NONE;
+        break;
+      }
+      break;
     }
   } else {
     switch ((unsigned)Fixup.getKind()) {
@@ -1499,6 +1513,76 @@ unsigned ARMELFObjectWriter::GetRelocTypeInner(const MCValue &Target,
   }
 
   return Type;
+}
+
+//===- PPCELFObjectWriter -------------------------------------------===//
+
+PPCELFObjectWriter::PPCELFObjectWriter(MCELFObjectTargetWriter *MOTW,
+                                             raw_ostream &_OS,
+                                             bool IsLittleEndian)
+  : ELFObjectWriter(MOTW, _OS, IsLittleEndian) {
+}
+
+PPCELFObjectWriter::~PPCELFObjectWriter() {
+}
+
+unsigned PPCELFObjectWriter::GetRelocType(const MCValue &Target,
+                                             const MCFixup &Fixup,
+                                             bool IsPCRel,
+                                             bool IsRelocWithSymbol,
+                                             int64_t Addend) {
+  // determine the type of the relocation
+  unsigned Type;
+  if (IsPCRel) {
+    switch ((unsigned)Fixup.getKind()) {
+    default:
+      llvm_unreachable("Unimplemented");
+    case PPC::fixup_ppc_br24:
+      Type = ELF::R_PPC_REL24;
+      break;
+    case FK_PCRel_4:
+      Type = ELF::R_PPC_REL32;
+      break;
+    }
+  } else {
+    switch ((unsigned)Fixup.getKind()) {
+      default: llvm_unreachable("invalid fixup kind!");
+    case PPC::fixup_ppc_br24:
+      Type = ELF::R_PPC_ADDR24;
+      break;
+    case PPC::fixup_ppc_brcond14:
+      Type = ELF::R_PPC_ADDR14_BRTAKEN; // XXX: or BRNTAKEN?_
+      break;
+    case PPC::fixup_ppc_ha16:
+      Type = ELF::R_PPC_ADDR16_HA;
+      break;
+    case PPC::fixup_ppc_lo16:
+      Type = ELF::R_PPC_ADDR16_LO;
+      break;
+    case PPC::fixup_ppc_lo14:
+      Type = ELF::R_PPC_ADDR14;
+      break;
+    case FK_Data_4:
+      Type = ELF::R_PPC_ADDR32;
+      break;
+    case FK_Data_2:
+      Type = ELF::R_PPC_ADDR16;
+      break;
+    }
+  }
+  return Type;
+}
+
+void
+PPCELFObjectWriter::adjustFixupOffset(const MCFixup &Fixup, uint64_t &RelocOffset) {
+  switch ((unsigned)Fixup.getKind()) {
+    case PPC::fixup_ppc_ha16:
+    case PPC::fixup_ppc_lo16:
+      RelocOffset += 2;
+      break;
+    default:
+      break;
+  }
 }
 
 //===- MBlazeELFObjectWriter -------------------------------------------===//
@@ -1622,7 +1706,6 @@ unsigned X86ELFObjectWriter::GetRelocType(const MCValue &Target,
       default: llvm_unreachable("invalid fixup kind!");
       case FK_Data_8: Type = ELF::R_X86_64_64; break;
       case X86::reloc_signed_4byte:
-        assert(isInt<32>(Target.getConstant()));
         switch (Modifier) {
         default:
           llvm_unreachable("Unimplemented");
@@ -1708,6 +1791,9 @@ unsigned X86ELFObjectWriter::GetRelocType(const MCValue &Target,
           break;
         case MCSymbolRefExpr::VK_DTPOFF:
           Type = ELF::R_386_TLS_LDO_32;
+          break;
+        case MCSymbolRefExpr::VK_GOTTPOFF:
+          Type = ELF::R_386_TLS_IE_32;
           break;
         }
         break;

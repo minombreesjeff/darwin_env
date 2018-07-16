@@ -14,6 +14,7 @@
 #ifndef LLVM_CLANG_GR_VALUESTATE_H
 #define LLVM_CLANG_GR_VALUESTATE_H
 
+#include "clang/Basic/LLVM.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ConstraintManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/Environment.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/Store.h"
@@ -21,12 +22,10 @@
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/ImmutableMap.h"
-#include "llvm/Support/Casting.h"
 
 namespace llvm {
 class APSInt;
 class BumpPtrAllocator;
-class raw_ostream;
 }
 
 namespace clang {
@@ -347,17 +346,17 @@ public:
   class Printer {
   public:
     virtual ~Printer() {}
-    virtual void Print(llvm::raw_ostream& Out, const GRState* state,
+    virtual void Print(raw_ostream& Out, const GRState* state,
                        const char* nl, const char* sep) = 0;
   };
 
   // Pretty-printing.
-  void print(llvm::raw_ostream& Out, CFG &C, const char *nl = "\n",
+  void print(raw_ostream& Out, CFG &C, const char *nl = "\n",
              const char *sep = "") const;
 
   void printStdErr(CFG &C) const;
 
-  void printDOT(llvm::raw_ostream& Out, CFG &C) const;
+  void printDOT(raw_ostream& Out, CFG &C) const;
 
 private:
   /// Increments the number of times this state is referenced by ExplodeNodes.

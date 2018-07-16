@@ -264,7 +264,7 @@ static uint64_t getPointerSize(Value *V, AliasAnalysis &AA) {
   }
   
   assert(isa<Argument>(V) && "Expected AllocaInst or Argument!");
-  const PointerType *PT = cast<PointerType>(V->getType());
+  PointerType *PT = cast<PointerType>(V->getType());
   return TD->getTypeAllocSize(PT->getElementType());
 }
 
@@ -437,12 +437,9 @@ bool DSE::runOnBasicBlock(BasicBlock &BB) {
 
     MemDepResult InstDep = MD->getDependency(Inst);
     
-    // Ignore non-local store liveness.
+    // Ignore any store where we can't find a local dependence.
     // FIXME: cross-block DSE would be fun. :)
-    if (InstDep.isNonLocal() || 
-        // Ignore self dependence, which happens in the entry block of the
-        // function.
-        InstDep.getInst() == Inst)
+    if (InstDep.isNonLocal() || InstDep.isUnknown())
       continue;
      
     // If we're storing the same value back to a pointer that we just
@@ -478,7 +475,7 @@ bool DSE::runOnBasicBlock(BasicBlock &BB) {
     if (Loc.Ptr == 0)
       continue;
     
-    while (!InstDep.isNonLocal()) {
+    while (!InstDep.isNonLocal() && !InstDep.isUnknown()) {
       // Get the memory clobbered by the instruction we depend on.  MemDep will
       // skip any instructions that 'Loc' clearly doesn't interact with.  If we
       // end up depending on a may- or must-aliased load, then we can't optimize
@@ -542,24 +539,26 @@ bool DSE::runOnBasicBlock(BasicBlock &BB) {
 /// HandleFree - Handle frees of entire structures whose dependency is a store
 /// to a field of that structure.
 bool DSE::HandleFree(CallInst *F) {
+  bool MadeChange = false;
+
   MemDepResult Dep = MD->getDependency(F);
-  do {
-    if (Dep.isNonLocal()) return false;
-    
+
+  while (!Dep.isNonLocal() && !Dep.isUnknown()) {
     Instruction *Dependency = Dep.getInst();
     if (!hasMemoryWrite(Dependency) || !isRemovable(Dependency))
-      return false;
+      return MadeChange;
   
     Value *DepPointer =
       GetUnderlyingObject(getStoredPointerOperand(Dependency));
 
     // Check for aliasing.
     if (!AA->isMustAlias(F->getArgOperand(0), DepPointer))
-      return false;
+      return MadeChange;
   
     // DCE instructions only used to calculate that store
     DeleteDeadInstruction(Dependency, *MD);
     ++NumFastStores;
+    MadeChange = true;
 
     // Inst's old Dependency is now deleted. Compute the next dependency,
     // which may also be dead, as in
@@ -567,9 +566,9 @@ bool DSE::HandleFree(CallInst *F) {
     //    s[1] = 0; // This has just been deleted.
     //    free(s);
     Dep = MD->getDependency(F);
-  } while (!Dep.isNonLocal());
+  };
   
-  return true;
+  return MadeChange;
 }
 
 /// handleEndBlock - Remove dead stores to stack-allocated locations in the
@@ -666,7 +665,7 @@ bool DSE::handleEndBlock(BasicBlock &BB) {
       
       continue;
     }
-    
+
     AliasAnalysis::Location LoadedLoc;
     
     // If we encounter a use of the pointer, it is no longer considered dead
@@ -676,9 +675,12 @@ bool DSE::handleEndBlock(BasicBlock &BB) {
       LoadedLoc = AA->getLocation(V);
     } else if (MemTransferInst *MTI = dyn_cast<MemTransferInst>(BBI)) {
       LoadedLoc = AA->getLocationForSource(MTI);
-    } else {
-      // Not a loading instruction.
+    } else if (!BBI->mayReadOrWriteMemory()) {
+      // Instruction doesn't touch memory.
       continue;
+    } else {
+      // Unknown inst; assume it clobbers everything.
+      break;
     }
 
     // Remove any allocas from the DeadPointer set that are loaded, as this

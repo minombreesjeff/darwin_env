@@ -24,6 +24,7 @@
 #include "clang/Analysis/CFG.h"
 #include "clang/Analysis/CFGStmtMap.h"
 #include "clang/Analysis/Support/BumpVector.h"
+#include "clang/Analysis/Support/SaveAndRestore.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -31,18 +32,32 @@ using namespace clang;
 
 AnalysisContext::AnalysisContext(const Decl *d,
                                  idx::TranslationUnit *tu,
-                                 bool useUnoptimizedCFG,
-                                 bool addehedges,
-                                 bool addImplicitDtors,
-                                 bool addInitializers)
+                                 const CFG::BuildOptions &buildOptions)
   : D(d), TU(tu),
+    cfgBuildOptions(buildOptions),
     forcedBlkExprs(0),
-    builtCFG(false), builtCompleteCFG(false),
-    useUnoptimizedCFG(useUnoptimizedCFG),
+    builtCFG(false),
+    builtCompleteCFG(false),
     ReferencedBlockVars(0)
-{
+{  
   cfgBuildOptions.forcedBlkExprs = &forcedBlkExprs;
-  cfgBuildOptions.AddEHEdges = addehedges;
+}
+
+AnalysisContext::AnalysisContext(const Decl *d,
+                                 idx::TranslationUnit *tu)
+: D(d), TU(tu),
+  forcedBlkExprs(0),
+  builtCFG(false),
+  builtCompleteCFG(false),
+  ReferencedBlockVars(0)
+{  
+  cfgBuildOptions.forcedBlkExprs = &forcedBlkExprs;
+}
+
+AnalysisContextManager::AnalysisContextManager(bool useUnoptimizedCFG,
+                                               bool addImplicitDtors,
+                                               bool addInitializers) {
+  cfgBuildOptions.PruneTriviallyFalseEdges = !useUnoptimizedCFG;
   cfgBuildOptions.AddImplicitDtors = addImplicitDtors;
   cfgBuildOptions.AddInitializers = addInitializers;
 }
@@ -78,16 +93,16 @@ void AnalysisContext::registerForcedBlockExpression(const Stmt *stmt) {
   if (!forcedBlkExprs)
     forcedBlkExprs = new CFG::BuildOptions::ForcedBlkExprs();
   // Default construct an entry for 'stmt'.
-  if (const ParenExpr *pe = dyn_cast<ParenExpr>(stmt))
-    stmt = pe->IgnoreParens();
+  if (const Expr *e = dyn_cast<Expr>(stmt))
+    stmt = e->IgnoreParens();
   (void) (*forcedBlkExprs)[stmt];
 }
 
 const CFGBlock *
 AnalysisContext::getBlockForRegisteredExpression(const Stmt *stmt) {
   assert(forcedBlkExprs);
-  if (const ParenExpr *pe = dyn_cast<ParenExpr>(stmt))
-    stmt = pe->IgnoreParens();
+  if (const Expr *e = dyn_cast<Expr>(stmt))
+    stmt = e->IgnoreParens();
   CFG::BuildOptions::ForcedBlkExprs::const_iterator itr = 
     forcedBlkExprs->find(stmt);
   assert(itr != forcedBlkExprs->end());
@@ -95,7 +110,7 @@ AnalysisContext::getBlockForRegisteredExpression(const Stmt *stmt) {
 }
 
 CFG *AnalysisContext::getCFG() {
-  if (useUnoptimizedCFG)
+  if (!cfgBuildOptions.PruneTriviallyFalseEdges)
     return getUnoptimizedCFG();
 
   if (!builtCFG) {
@@ -110,9 +125,10 @@ CFG *AnalysisContext::getCFG() {
 
 CFG *AnalysisContext::getUnoptimizedCFG() {
   if (!builtCompleteCFG) {
-    CFG::BuildOptions B = cfgBuildOptions;
-    B.PruneTriviallyFalseEdges = false;
-    completeCFG.reset(CFG::buildCFG(D, getBody(), &D->getASTContext(), B));
+    SaveAndRestore<bool> NotPrune(cfgBuildOptions.PruneTriviallyFalseEdges,
+                                  false);
+    completeCFG.reset(CFG::buildCFG(D, getBody(), &D->getASTContext(),
+                                    cfgBuildOptions));
     // Even when the cfg is not successfully built, we don't
     // want to try building it again.
     builtCompleteCFG = true;
@@ -161,25 +177,14 @@ PseudoConstantAnalysis *AnalysisContext::getPseudoConstantAnalysis() {
 }
 
 LiveVariables *AnalysisContext::getLiveVariables() {
-  if (!liveness) {
-    if (CFG *c = getCFG()) {
-      liveness.reset(new LiveVariables(*this));
-      liveness->runOnCFG(*c);
-      liveness->runOnAllBlocks(*c, 0, true);
-    }
-  }
-
+  if (!liveness)
+    liveness.reset(LiveVariables::computeLiveness(*this));
   return liveness.get();
 }
 
 LiveVariables *AnalysisContext::getRelaxedLiveVariables() {
   if (!relaxedLiveness)
-    if (CFG *c = getCFG()) {
-      relaxedLiveness.reset(new LiveVariables(*this, false));
-      relaxedLiveness->runOnCFG(*c);
-      relaxedLiveness->runOnAllBlocks(*c, 0, true);
-    }
-
+    relaxedLiveness.reset(LiveVariables::computeLiveness(*this, false));
   return relaxedLiveness.get();
 }
 
@@ -187,9 +192,7 @@ AnalysisContext *AnalysisContextManager::getContext(const Decl *D,
                                                     idx::TranslationUnit *TU) {
   AnalysisContext *&AC = Contexts[D];
   if (!AC)
-    AC = new AnalysisContext(D, TU, UseUnoptimizedCFG, false,
-        AddImplicitDtors, AddInitializers);
-
+    AC = new AnalysisContext(D, TU, cfgBuildOptions);
   return AC;
 }
 

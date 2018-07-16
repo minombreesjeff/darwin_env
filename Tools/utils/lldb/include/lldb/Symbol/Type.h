@@ -14,11 +14,12 @@
 #include "lldb/Core/ClangForward.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/UserID.h"
+#include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/Declaration.h"
 #include <set>
 
 namespace lldb_private {
-
+    
 class Type : public UserID
 {
 public:
@@ -272,9 +273,12 @@ public:
     operator= (const TypeAndOrName &rhs);
     
     ConstString GetName () const;
-    lldb::TypeSP      GetTypeSP () const {
+
+    lldb::TypeSP
+    GetTypeSP () const 
+    {
         return m_type_sp;
-    };
+    }
     
     void
     SetName (ConstString &type_name_const_str);
@@ -293,6 +297,101 @@ private:
     ConstString m_type_name;
 };
 
+// the two classes here are used by the public API as a backend to
+// the SBType and SBTypeList classes
+    
+class TypeImpl
+{
+public:
+    
+    TypeImpl() :
+        m_clang_ast_type(),
+        m_type_sp()
+    {
+    }
+    
+    TypeImpl(const TypeImpl& rhs) :
+        m_clang_ast_type(rhs.m_clang_ast_type),
+        m_type_sp(rhs.m_type_sp)
+    {
+    }
+    
+    TypeImpl(const lldb_private::ClangASTType& type);
+    
+    TypeImpl(const lldb::TypeSP& type);
+    
+    TypeImpl&
+    operator = (const TypeImpl& rhs);
+    
+    bool
+    operator == (const TypeImpl& rhs)
+    {
+        return m_clang_ast_type == rhs.m_clang_ast_type && m_type_sp.get() == rhs.m_type_sp.get();
+    }
+
+    bool
+    operator != (const TypeImpl& rhs)
+    {
+        return m_clang_ast_type != rhs.m_clang_ast_type || m_type_sp.get() != rhs.m_type_sp.get();
+    }
+    
+    bool
+    IsValid()
+    {
+        return m_type_sp.get() != NULL || m_clang_ast_type.IsValid();
+    }
+    
+    const lldb_private::ClangASTType &
+    GetClangASTType() const
+    {
+        return m_clang_ast_type;
+    }
+    
+    clang::ASTContext*
+    GetASTContext();
+    
+    lldb::clang_type_t
+    GetOpaqueQualType();    
+
+private:
+    ClangASTType m_clang_ast_type;
+    lldb::TypeSP m_type_sp;
+};
+
+class TypeListImpl
+{
+public:
+    TypeListImpl() :
+        m_content() 
+    {
+    }
+    
+    void
+    Append (const lldb::TypeImplSP& type)
+    {
+        m_content.push_back(type);
+    }
+    
+    lldb::TypeImplSP
+    GetTypeAtIndex(size_t idx)
+    {
+        lldb::TypeImplSP type_sp;
+        if (idx < GetSize())
+            type_sp = m_content[idx];
+        return type_sp;
+    }
+    
+    size_t
+    GetSize()
+    {
+        return m_content.size();
+    }
+    
+private:
+    std::vector<lldb::TypeImplSP> m_content;
+};
+
+    
 } // namespace lldb_private
 
 #endif  // liblldb_Type_h_

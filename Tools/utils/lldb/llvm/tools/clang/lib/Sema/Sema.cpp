@@ -141,9 +141,9 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
   : TheTargetAttributesSema(0), FPFeatures(pp.getLangOptions()),
     LangOpts(pp.getLangOptions()), PP(pp), Context(ctxt), Consumer(consumer),
     Diags(PP.getDiagnostics()), SourceMgr(PP.getSourceManager()),
-    ExternalSource(0), CodeCompleter(CodeCompleter), CurContext(0), 
-    PackContext(0), MSStructPragmaOn(false), VisContext(0),
-    LateTemplateParser(0), OpaqueParser(0),
+    CollectStats(false), ExternalSource(0), CodeCompleter(CodeCompleter),
+    CurContext(0), PackContext(0), MSStructPragmaOn(false), VisContext(0),
+    ExprNeedsCleanups(0), LateTemplateParser(0), OpaqueParser(0),
     IdResolver(pp.getLangOptions()), CXXTypeInfoDecl(0), MSVCGuidDecl(0),
     GlobalNewDeleteDeclared(false), 
     CompleteTranslationUnit(CompleteTranslationUnit),
@@ -154,6 +154,8 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
     AnalysisWarnings(*this)
 {
   TUScope = 0;
+  LoadedExternalKnownNamespaces = false;
+  
   if (getLangOptions().CPlusPlus)
     FieldCollector.reset(new CXXFieldCollector());
 
@@ -162,7 +164,7 @@ Sema::Sema(Preprocessor &pp, ASTContext &ctxt, ASTConsumer &consumer,
                                        &Context);
 
   ExprEvalContexts.push_back(
-                  ExpressionEvaluationContextRecord(PotentiallyEvaluated, 0));  
+        ExpressionEvaluationContextRecord(PotentiallyEvaluated, 0, false));
 
   FunctionScopes.push_back(new FunctionScopeInfo(Diags));
 }
@@ -202,8 +204,43 @@ Sema::~Sema() {
     ExternalSema->ForgetSema();
 }
 
+
+/// makeUnavailableInSystemHeader - There is an error in the current
+/// context.  If we're still in a system header, and we can plausibly
+/// make the relevant declaration unavailable instead of erroring, do
+/// so and return true.
+bool Sema::makeUnavailableInSystemHeader(SourceLocation loc,
+                                         StringRef msg) {
+  // If we're not in a function, it's an error.
+  FunctionDecl *fn = dyn_cast<FunctionDecl>(CurContext);
+  if (!fn) return false;
+
+  // If we're in template instantiation, it's an error.
+  if (!ActiveTemplateInstantiations.empty())
+    return false;
+  
+  // If that function's not in a system header, it's an error.
+  if (!Context.getSourceManager().isInSystemHeader(loc))
+    return false;
+
+  // If the function is already unavailable, it's not an error.
+  if (fn->hasAttr<UnavailableAttr>()) return true;
+
+  fn->addAttr(new (Context) UnavailableAttr(loc, Context, msg));
+  return true;
+}
+
 ASTMutationListener *Sema::getASTMutationListener() const {
   return getASTConsumer().GetASTMutationListener();
+}
+
+/// \brief Print out statistics about the semantic analysis.
+void Sema::PrintStats() const {
+  llvm::errs() << "\n*** Semantic Analysis Stats:\n";
+  llvm::errs() << NumSFINAEErrors << " SFINAE diagnostics trapped.\n";
+
+  BumpAlloc.PrintStats();
+  AnalysisWarnings.PrintStats();
 }
 
 /// ImpCastExprToType - If Expr is not of type 'Type', insert an implicit cast.
@@ -211,12 +248,16 @@ ASTMutationListener *Sema::getASTMutationListener() const {
 /// The result is of the given category.
 ExprResult Sema::ImpCastExprToType(Expr *E, QualType Ty,
                                    CastKind Kind, ExprValueKind VK,
-                                   const CXXCastPath *BasePath) {
+                                   const CXXCastPath *BasePath,
+                                   CheckedConversionKind CCK) {
   QualType ExprTy = Context.getCanonicalType(E->getType());
   QualType TypeTy = Context.getCanonicalType(Ty);
 
   if (ExprTy == TypeTy)
     return Owned(E);
+
+  if (getLangOptions().ObjCAutoRefCount)
+    CheckObjCARCConversion(SourceRange(), Ty, E, CCK);
 
   // If this is a derived-to-base cast to a through a virtual base, we
   // need a vtable.
@@ -317,7 +358,7 @@ static void checkUndefinedInternals(Sema &S) {
   if (S.UndefinedInternals.empty()) return;
 
   // Collect all the still-undefined entities with internal linkage.
-  llvm::SmallVector<UndefinedInternal, 16> undefined;
+  SmallVector<UndefinedInternal, 16> undefined;
   for (llvm::DenseMap<NamedDecl*,SourceLocation>::iterator
          i = S.UndefinedInternals.begin(), e = S.UndefinedInternals.end();
        i != e; ++i) {
@@ -348,12 +389,28 @@ static void checkUndefinedInternals(Sema &S) {
   // the iteration order through an llvm::DenseMap.
   llvm::array_pod_sort(undefined.begin(), undefined.end());
 
-  for (llvm::SmallVectorImpl<UndefinedInternal>::iterator
+  for (SmallVectorImpl<UndefinedInternal>::iterator
          i = undefined.begin(), e = undefined.end(); i != e; ++i) {
     NamedDecl *decl = i->decl;
     S.Diag(decl->getLocation(), diag::warn_undefined_internal)
       << isa<VarDecl>(decl) << decl;
     S.Diag(i->useLoc, diag::note_used_here);
+  }
+}
+
+void Sema::LoadExternalWeakUndeclaredIdentifiers() {
+  if (!ExternalSource)
+    return;
+  
+  SmallVector<std::pair<IdentifierInfo *, WeakInfo>, 4> WeakIDs;
+  ExternalSource->ReadWeakUndeclaredIdentifiers(WeakIDs);
+  for (unsigned I = 0, N = WeakIDs.size(); I != N; ++I) {
+    llvm::DenseMap<IdentifierInfo*,WeakInfo>::iterator Pos
+      = WeakUndeclaredIdentifiers.find(WeakIDs[I].first);
+    if (Pos != WeakUndeclaredIdentifiers.end())
+      continue;
+    
+    WeakUndeclaredIdentifiers.insert(WeakIDs[I]);
   }
 }
 
@@ -367,45 +424,39 @@ void Sema::ActOnEndOfTranslationUnit() {
     // If any dynamic classes have their key function defined within
     // this translation unit, then those vtables are considered "used" and must
     // be emitted.
-    for (unsigned I = 0, N = DynamicClasses.size(); I != N; ++I) {
-      assert(!DynamicClasses[I]->isDependentType() &&
+    for (DynamicClassesType::iterator I = DynamicClasses.begin(ExternalSource),
+                                      E = DynamicClasses.end();
+         I != E; ++I) {
+      assert(!(*I)->isDependentType() &&
              "Should not see dependent types here!");
-      if (const CXXMethodDecl *KeyFunction
-          = Context.getKeyFunction(DynamicClasses[I])) {
+      if (const CXXMethodDecl *KeyFunction = Context.getKeyFunction(*I)) {
         const FunctionDecl *Definition = 0;
         if (KeyFunction->hasBody(Definition))
-          MarkVTableUsed(Definition->getLocation(), DynamicClasses[I], true);
+          MarkVTableUsed(Definition->getLocation(), *I, true);
       }
     }
 
-    bool SomethingChanged;
-    do {
-      SomethingChanged = false;
-      
-      // If DefinedUsedVTables ends up marking any virtual member functions it
-      // might lead to more pending template instantiations, which we then need
-      // to instantiate.
-      if (DefineUsedVTables())
-        SomethingChanged = true;
+    // If DefinedUsedVTables ends up marking any virtual member functions it
+    // might lead to more pending template instantiations, which we then need
+    // to instantiate.
+    DefineUsedVTables();
 
-      // C++: Perform implicit template instantiations.
-      //
-      // FIXME: When we perform these implicit instantiations, we do not
-      // carefully keep track of the point of instantiation (C++ [temp.point]).
-      // This means that name lookup that occurs within the template
-      // instantiation will always happen at the end of the translation unit,
-      // so it will find some names that should not be found. Although this is
-      // common behavior for C++ compilers, it is technically wrong. In the
-      // future, we either need to be able to filter the results of name lookup
-      // or we need to perform template instantiations earlier.
-      if (PerformPendingInstantiations())
-        SomethingChanged = true;
-      
-    } while (SomethingChanged);
+    // C++: Perform implicit template instantiations.
+    //
+    // FIXME: When we perform these implicit instantiations, we do not
+    // carefully keep track of the point of instantiation (C++ [temp.point]).
+    // This means that name lookup that occurs within the template
+    // instantiation will always happen at the end of the translation unit,
+    // so it will find some names that should not be found. Although this is
+    // common behavior for C++ compilers, it is technically wrong. In the
+    // future, we either need to be able to filter the results of name lookup
+    // or we need to perform template instantiations earlier.
+    PerformPendingInstantiations();
   }
   
   // Remove file scoped decls that turned out to be used.
-  UnusedFileScopedDecls.erase(std::remove_if(UnusedFileScopedDecls.begin(),
+  UnusedFileScopedDecls.erase(std::remove_if(UnusedFileScopedDecls.begin(0, 
+                                                                         true),
                                              UnusedFileScopedDecls.end(),
                               std::bind1st(std::ptr_fun(ShouldRemoveFromUnused),
                                            this)),
@@ -419,6 +470,7 @@ void Sema::ActOnEndOfTranslationUnit() {
   // Check for #pragma weak identifiers that were never declared
   // FIXME: This will cause diagnostics to be emitted in a non-determinstic
   // order!  Iterating over a densemap like this is bad.
+  LoadExternalWeakUndeclaredIdentifiers();
   for (llvm::DenseMap<IdentifierInfo*,WeakInfo>::iterator
        I = WeakUndeclaredIdentifiers.begin(),
        E = WeakUndeclaredIdentifiers.end(); I != E; ++I) {
@@ -440,8 +492,12 @@ void Sema::ActOnEndOfTranslationUnit() {
   //   identifier, with the composite type as of the end of the
   //   translation unit, with an initializer equal to 0.
   llvm::SmallSet<VarDecl *, 32> Seen;
-  for (unsigned i = 0, e = TentativeDefinitions.size(); i != e; ++i) {
-    VarDecl *VD = TentativeDefinitions[i]->getActingDefinition();
+  for (TentativeDefinitionsType::iterator 
+            T = TentativeDefinitions.begin(ExternalSource),
+         TEnd = TentativeDefinitions.end();
+       T != TEnd; ++T) 
+  {
+    VarDecl *VD = (*T)->getActingDefinition();
 
     // If the tentative definition was completed, getActingDefinition() returns
     // null. If we've already seen this variable before, insert()'s second
@@ -484,9 +540,12 @@ void Sema::ActOnEndOfTranslationUnit() {
   // noise.
   if (!Diags.hasErrorOccurred()) {
     // Output warning for unused file scoped decls.
-    for (llvm::SmallVectorImpl<const DeclaratorDecl*>::iterator
-           I = UnusedFileScopedDecls.begin(),
+    for (UnusedFileScopedDeclsType::iterator
+           I = UnusedFileScopedDecls.begin(ExternalSource),
            E = UnusedFileScopedDecls.end(); I != E; ++I) {
+      if (ShouldRemoveFromUnused(this, *I))
+        continue;
+      
       if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(*I)) {
         const FunctionDecl *DiagD;
         if (!FD->hasBody(DiagD))
@@ -644,20 +703,20 @@ Sema::Diag(SourceLocation Loc, const PartialDiagnostic& PD) {
   return Builder;
 }
 
-/// \brief Looks through the macro-instantiation chain for the given
-/// location, looking for a macro instantiation with the given name.
+/// \brief Looks through the macro-expansion chain for the given
+/// location, looking for a macro expansion with the given name.
 /// If one is found, returns true and sets the location to that
-/// instantiation loc.
-bool Sema::findMacroSpelling(SourceLocation &locref, llvm::StringRef name) {
+/// expansion loc.
+bool Sema::findMacroSpelling(SourceLocation &locref, StringRef name) {
   SourceLocation loc = locref;
   if (!loc.isMacroID()) return false;
 
   // There's no good way right now to look at the intermediate
-  // instantiations, so just jump to the instantiation location.
-  loc = getSourceManager().getInstantiationLoc(loc);
+  // expansions, so just jump to the expansion location.
+  loc = getSourceManager().getExpansionLoc(loc);
 
   // If that's written with the name, stop here.
-  llvm::SmallVector<char, 16> buffer;
+  SmallVector<char, 16> buffer;
   if (getPreprocessor().getSpelling(loc, buffer) == name) {
     locref = loc;
     return true;
@@ -721,7 +780,7 @@ void Sema::PopFunctionOrBlockScope(const AnalysisBasedWarnings::Policy *WP,
   if (WP && D)
     AnalysisWarnings.IssueWarnings(*WP, Scope, D, blkExpr);
   else {
-    for (llvm::SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
+    for (SmallVectorImpl<sema::PossiblyUnreachableDiag>::iterator
          i = Scope->PossiblyUnreachableDiags.begin(),
          e = Scope->PossiblyUnreachableDiags.end();
          i != e; ++i) {
@@ -737,8 +796,8 @@ void Sema::PopFunctionOrBlockScope(const AnalysisBasedWarnings::Policy *WP,
 
 /// \brief Determine whether any errors occurred within this function/method/
 /// block.
-bool Sema::hasAnyErrorsInThisFunction() const {
-  return getCurFunction()->ErrorTrap.hasErrorOccurred();
+bool Sema::hasAnyUnrecoverableErrorsInThisFunction() const {
+  return getCurFunction()->ErrorTrap.hasUnrecoverableErrorOccurred();
 }
 
 BlockScopeInfo *Sema::getCurBlock() {
@@ -756,7 +815,11 @@ ExternalSemaSource::ReadMethodPool(Selector Sel) {
   return std::pair<ObjCMethodList, ObjCMethodList>();
 }
 
-void PrettyDeclStackTraceEntry::print(llvm::raw_ostream &OS) const {
+void ExternalSemaSource::ReadKnownNamespaces(
+                           SmallVectorImpl<NamespaceDecl *> &Namespaces) {  
+}
+
+void PrettyDeclStackTraceEntry::print(raw_ostream &OS) const {
   SourceLocation Loc = this->Loc;
   if (!Loc.isValid() && TheDecl) Loc = TheDecl->getLocation();
   if (Loc.isValid()) {

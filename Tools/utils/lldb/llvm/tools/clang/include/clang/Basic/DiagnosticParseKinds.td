@@ -108,6 +108,7 @@ def err_expected_ident_lparen : Error<"expected identifier or '('">;
 def err_expected_ident_lbrace : Error<"expected identifier or '{'">;
 def err_expected_lbrace : Error<"expected '{'">;
 def err_expected_lparen : Error<"expected '('">;
+def err_expected_lparen_or_lbrace : Error<"expected '('or '{'">;
 def err_expected_rparen : Error<"expected ')'">;
 def err_expected_lsquare : Error<"expected '['">;
 def err_expected_rsquare : Error<"expected ']'">;
@@ -161,6 +162,8 @@ def err_unexpected_namespace_attributes_alias : Error<
 def err_inline_namespace_alias : Error<"namespace alias cannot be inline">;
 def err_namespace_nonnamespace_scope : Error<
   "namespaces can only be defined in global or namespace scope">;
+def err_nested_namespaces_with_double_colon : Error<
+  "nested namespace definition must define each namespace separately">;
 def err_expected_semi_after_attribute_list : Error<
   "expected ';' after attribute list">;
 def err_expected_semi_after_static_assert : Error<
@@ -190,6 +193,8 @@ def ext_ref_qualifier : ExtWarn<
   "reference qualifiers on functions are a C++0x extension">, InGroup<CXX0x>;
 def ext_inline_namespace : ExtWarn<
   "inline namespaces are a C++0x feature">, InGroup<CXX0x>;
+def err_generalized_initializer_lists : Error<
+  "generalized initializer lists are a C++0x extension unsupported in Clang">;
 def ext_generalized_initializer_lists : ExtWarn<
   "generalized initializer lists are a C++0x extension unsupported in Clang">,
   InGroup<CXX0x>;
@@ -258,6 +263,11 @@ def warn_objc_protocol_qualifier_missing_id : Warning<
 def err_objc_unknown_at : Error<"expected an Objective-C directive after '@'">;
 def err_illegal_super_cast : Error<
   "cannot cast 'super' (it isn't an expression)">;
+
+let CategoryName = "Automatic Reference Counting Issue" in {
+def err_arc_bridge_retain : Error<
+  "unknown cast annotation __bridge_retain; did you mean __bridge_retained?">;
+}
   
 def err_objc_illegal_visibility_spec : Error<
   "illegal visibility specification">;
@@ -441,6 +451,15 @@ def warn_defaulted_function_accepted_as_extension: ExtWarn<
   "defaulted function definition accepted as a C++0x extension">,
   InGroup<CXX0x>;
 
+// C++0x in-class member initialization
+def warn_nonstatic_member_init_accepted_as_extension: ExtWarn<
+  "in-class initialization of non-static data member accepted as a C++0x extension">,
+  InGroup<CXX0x>;
+def err_bitfield_member_init: Error<
+  "bitfield member cannot have an in-class initializer">;
+def err_incomplete_array_member_init: Error<
+  "array bound cannot be deduced from an in-class initializer">;
+
 // C++0x alias-declaration
 def ext_alias_declaration : ExtWarn<
   "alias declarations accepted as a C++0x extension">, InGroup<CXX0x>;
@@ -467,6 +486,15 @@ def err_paren_sizeof_parameter_pack : Error<
   "missing parentheses around the size of parameter pack %0">;
 def err_sizeof_parameter_pack : Error<
   "expected parenthesized parameter pack name in 'sizeof...' expression">;
+
+// C++0x lambda expressions
+def err_expected_comma_or_rsquare : Error<
+  "expected ',' or ']' in lambda capture list">;
+def err_this_captured_by_reference : Error<
+  "'this' cannot be captured by reference">;
+def err_expected_capture : Error<
+  "expected variable name or 'this' in lambda capture list">;
+def err_expected_lambda_body : Error<"expected body of lambda expression">;
 
 // Availability attribute
 def err_expected_version : Error<

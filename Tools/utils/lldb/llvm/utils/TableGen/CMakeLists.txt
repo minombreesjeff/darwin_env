@@ -16,6 +16,7 @@ add_llvm_utility(tblgen
   CodeEmitterGen.cpp
   CodeGenDAGPatterns.cpp
   CodeGenInstruction.cpp
+  CodeGenRegisters.cpp
   CodeGenTarget.cpp
   DAGISelEmitter.cpp
   DAGISelMatcherEmitter.cpp
@@ -24,6 +25,7 @@ add_llvm_utility(tblgen
   DAGISelMatcher.cpp
   DisassemblerEmitter.cpp
   EDEmitter.cpp
+  Error.cpp
   FastISelEmitter.cpp
   FixedLenDecoderEmitter.cpp
   InstrEnumEmitter.cpp
@@ -32,8 +34,10 @@ add_llvm_utility(tblgen
   LLVMCConfigurationEmitter.cpp
   NeonEmitter.cpp
   OptParserEmitter.cpp
+  PseudoLoweringEmitter.cpp
   Record.cpp
   RegisterInfoEmitter.cpp
+  SetTheory.cpp
   StringMatcher.cpp
   SubtargetEmitter.cpp
   TGLexer.cpp
@@ -48,6 +52,9 @@ add_llvm_utility(tblgen
 target_link_libraries(tblgen LLVMSupport)
 if( MINGW )
   target_link_libraries(tblgen imagehlp psapi)
+  if(CMAKE_SIZEOF_VOID_P MATCHES "8")
+    set_target_properties(tblgen PROPERTIES LINK_FLAGS -Wl,--stack,16777216)
+  endif(CMAKE_SIZEOF_VOID_P MATCHES "8")
 endif( MINGW )
 if( LLVM_ENABLE_THREADS AND HAVE_LIBPTHREAD AND NOT BEOS )
   target_link_libraries(tblgen pthread)

@@ -86,6 +86,12 @@ public:
         return m_source_map;
     }
     
+    uint32_t
+    GetMaximumNumberOfChildrenToDisplay()
+    {
+        return m_max_children_display;
+    }
+    
 protected:
 
     void
@@ -100,6 +106,7 @@ protected:
     int                m_prefer_dynamic_value;
     OptionValueBoolean m_skip_prologue;
     PathMappingList m_source_map;
+    uint32_t m_max_children_display;
     
 
 };
@@ -199,6 +206,9 @@ public:
 
     lldb::TargetSP
     GetSP();
+    
+    void
+    Destroy();
 
     //------------------------------------------------------------------
     // This part handles the breakpoints.
@@ -238,17 +248,23 @@ public:
                       bool internal = false);
 
     // Use this to create a function breakpoint by regexp in containingModule, or all modules if it is NULL
+    // When "skip_prologue is set to eLazyBoolCalculate, we use the current target 
+    // setting, else we use the values passed in
     lldb::BreakpointSP
-    CreateBreakpoint (FileSpec *containingModule,
+    CreateBreakpoint (const FileSpec *containingModule,
                       RegularExpression &func_regexp,
-                      bool internal = false);
+                      bool internal = false,
+                      LazyBool skip_prologue = eLazyBoolCalculate);
 
     // Use this to create a function breakpoint by name in containingModule, or all modules if it is NULL
+    // When "skip_prologue is set to eLazyBoolCalculate, we use the current target 
+    // setting, else we use the values passed in
     lldb::BreakpointSP
-    CreateBreakpoint (FileSpec *containingModule,
+    CreateBreakpoint (const FileSpec *containingModule,
                       const char *func_name,
                       uint32_t func_name_type_mask, 
-                      bool internal = false);
+                      bool internal = false,
+                      LazyBool skip_prologue = eLazyBoolCalculate);
 
     // Use this to create a general breakpoint:
     lldb::BreakpointSP
@@ -337,6 +353,9 @@ public:
     //------------------------------------------------------------------
     lldb::ModuleSP
     GetExecutableModule ();
+
+    Module*
+    GetExecutableModulePointer ();
 
     //------------------------------------------------------------------
     /// Set the main executable module.
@@ -461,6 +480,27 @@ public:
                 size_t dst_len,
                 Error &error);
 
+    size_t
+    ReadScalarIntegerFromMemory (const Address& addr, 
+                                 bool prefer_file_cache,
+                                 uint32_t byte_size, 
+                                 bool is_signed, 
+                                 Scalar &scalar, 
+                                 Error &error);
+
+    uint64_t
+    ReadUnsignedIntegerFromMemory (const Address& addr, 
+                                   bool prefer_file_cache,
+                                   size_t integer_byte_size, 
+                                   uint64_t fail_value, 
+                                   Error &error);
+
+    bool
+    ReadPointerFromMemory (const Address& addr, 
+                           bool prefer_file_cache,
+                           Error &error,
+                           Address &pointer_addr);
+
     SectionLoadList&
     GetSectionLoadList()
     {
@@ -473,6 +513,32 @@ public:
         return m_section_load_list;
     }
 
+
+    //------------------------------------------------------------------
+    /// Load a module in this target by at the section file addresses
+    /// with an optional constant slide applied to each section.
+    ///
+    /// This function will load all top level sections at their file
+    /// addresses and apply an optional constant slide amount to each 
+    /// section. This can be used to easily load a module at the same 
+    /// addresses that are contained in the object file (trust that
+    /// the addresses in an object file are the correct load addresses).
+    ///
+    /// @param[in] module
+    ///     The module to load.
+    ///
+    /// @param[in] slide
+    ///     A constant slide to add to each file address as each section
+    ///     is being loaded.
+    ///
+    /// @return
+    ///     \b true if loading the module at the specified address 
+    ///     causes a section to be loaded when it previously wasn't, or
+    ///     if a section changes load address. Returns \b false if
+    ///     the sections were all already loaded at these addresses.
+    //------------------------------------------------------------------
+    bool
+    LoadModuleWithSlide (Module *module, lldb::addr_t slide);
 
     static Target *
     GetTargetFromContexts (const ExecutionContext *exe_ctx_ptr, 

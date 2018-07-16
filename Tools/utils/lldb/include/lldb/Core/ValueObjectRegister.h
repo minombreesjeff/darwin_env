@@ -156,6 +156,12 @@ public:
 
     virtual uint32_t
     CalculateNumChildren();
+    
+    virtual bool
+    SetValueFromCString (const char *value_str);
+
+    virtual bool
+    ResolveValue (Scalar &scalar);
 
 protected:
     virtual bool

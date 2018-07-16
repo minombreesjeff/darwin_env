@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -2084,6 +2085,23 @@ APFloat::convertToInteger(integerPart *parts, unsigned int width,
   return fs;
 }
 
+/* Same as convertToInteger(integerPart*, ...), except the result is returned in
+   an APSInt, whose initial bit-width and signed-ness are used to determine the
+   precision of the conversion.
+ */
+APFloat::opStatus
+APFloat::convertToInteger(APSInt &result,
+                          roundingMode rounding_mode, bool *isExact) const
+{
+  unsigned bitWidth = result.getBitWidth();
+  SmallVector<uint64_t, 4> parts(result.getNumWords());
+  opStatus status = convertToInteger(
+    parts.data(), bitWidth, result.isSigned(), rounding_mode, isExact);
+  // Keeps the original signed-ness.
+  result = APInt(bitWidth, parts);
+  return status;
+}
+
 /* Convert an unsigned integer SRC to a floating point number,
    rounding according to ROUNDING_MODE.  The sign of the floating
    point number is not modified.  */
@@ -2174,7 +2192,7 @@ APFloat::convertFromZeroExtendedInteger(const integerPart *parts,
                                         roundingMode rounding_mode)
 {
   unsigned int partCount = partCountForBits(width);
-  APInt api = APInt(width, partCount, parts);
+  APInt api = APInt(width, makeArrayRef(parts, partCount));
 
   sign = false;
   if (isSigned && APInt::tcExtractBit(parts, width - 1)) {
@@ -2728,7 +2746,7 @@ APFloat::convertF80LongDoubleAPFloatToAPInt() const
   words[0] = mysignificand;
   words[1] =  ((uint64_t)(sign & 1) << 15) |
               (myexponent & 0x7fffLL);
-  return APInt(80, 2, words);
+  return APInt(80, words);
 }
 
 APInt
@@ -2773,7 +2791,7 @@ APFloat::convertPPCDoubleDoubleAPFloatToAPInt() const
   words[1] =  ((uint64_t)(sign2 & 1) << 63) |
               ((myexponent2 & 0x7ff) <<  52) |
               (mysignificand2 & 0xfffffffffffffLL);
-  return APInt(128, 2, words);
+  return APInt(128, words);
 }
 
 APInt
@@ -2809,7 +2827,7 @@ APFloat::convertQuadrupleAPFloatToAPInt() const
              ((myexponent & 0x7fff) << 48) |
              (mysignificand2 & 0xffffffffffffLL);
 
-  return APInt(128, 2, words);
+  return APInt(128, words);
 }
 
 APInt
@@ -3395,8 +3413,8 @@ void APFloat::toString(SmallVectorImpl<char> &Str,
   // Decompose the number into an APInt and an exponent.
   int exp = exponent - ((int) semantics->precision - 1);
   APInt significand(semantics->precision,
-                    partCountForBits(semantics->precision),
-                    significandParts());
+                    makeArrayRef(significandParts(),
+                                 partCountForBits(semantics->precision)));
 
   // Set FormatPrecision if zero.  We want to do this before we
   // truncate trailing zeros, as those are part of the precision.

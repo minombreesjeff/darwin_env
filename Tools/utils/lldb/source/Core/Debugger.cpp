@@ -694,17 +694,12 @@ TestPromptFormats (StackFrame *frame)
     }
 }
 
-// #define VERBOSE_FORMATPROMPT_OUTPUT
-#ifdef VERBOSE_FORMATPROMPT_OUTPUT
 #define IFERROR_PRINT_IT if (error.Fail()) \
 { \
-    printf("ERROR: %s\n",error.AsCString("unknown")); \
+    if (log) \
+        log->Printf("ERROR: %s\n", error.AsCString("unknown")); \
     break; \
 }
-#else // IFERROR_PRINT_IT
-#define IFERROR_PRINT_IT if (error.Fail()) \
-break;
-#endif // IFERROR_PRINT_IT
 
 static bool
 ScanFormatDescriptor(const char* var_name_begin,
@@ -714,30 +709,57 @@ ScanFormatDescriptor(const char* var_name_begin,
                      lldb::Format* custom_format,
                      ValueObject::ValueObjectRepresentationStyle* val_obj_display)
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     *percent_position = ::strchr(var_name_begin,'%');
     if (!*percent_position || *percent_position > var_name_end)
+    {
+        if (log)
+            log->Printf("no format descriptor in string, skipping");
         *var_name_final = var_name_end;
+    }
     else
     {
         *var_name_final = *percent_position;
         char* format_name = new char[var_name_end-*var_name_final]; format_name[var_name_end-*var_name_final-1] = '\0';
         memcpy(format_name, *var_name_final+1, var_name_end-*var_name_final-1);
+        if (log)
+            log->Printf("parsing %s as a format descriptor", format_name);
         if ( !FormatManager::GetFormatFromCString(format_name,
                                                   true,
                                                   *custom_format) )
         {
+            if (log)
+                log->Printf("%s is an unknown format", format_name);
             // if this is an @ sign, print ObjC description
             if (*format_name == '@')
                 *val_obj_display = ValueObject::eDisplayLanguageSpecific;
             // if this is a V, print the value using the default format
-            if (*format_name == 'V')
+            else if (*format_name == 'V')
                 *val_obj_display = ValueObject::eDisplayValue;
+            // if this is an L, print the location of the value
+            else if (*format_name == 'L')
+                *val_obj_display = ValueObject::eDisplayLocation;
+            // if this is an S, print the summary after all
+            else if (*format_name == 'S')
+                *val_obj_display = ValueObject::eDisplaySummary;
+            else if (*format_name == '#')
+                *val_obj_display = ValueObject::eDisplayChildrenCount;
+            else if (log)
+                log->Printf("%s is an error, leaving the previous value alone", format_name);
         }
         // a good custom format tells us to print the value using it
         else
+        {
+            if (log)
+                log->Printf("will display value for this VO");
             *val_obj_display = ValueObject::eDisplayValue;
+        }
         delete format_name;
     }
+    if (log)
+        log->Printf("final format description outcome: custom_format = %d, val_obj_display = %d",
+                    *custom_format,
+                    *val_obj_display);
     return true;
 }
 
@@ -752,6 +774,7 @@ ScanBracketedRange(const char* var_name_begin,
                    int64_t* index_lower,
                    int64_t* index_higher)
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     *open_bracket_position = ::strchr(var_name_begin,'[');
     if (*open_bracket_position && *open_bracket_position < var_name_final)
     {
@@ -762,6 +785,8 @@ ScanBracketedRange(const char* var_name_begin,
         *var_name_final_if_array_range = *open_bracket_position;
         if (*close_bracket_position - *open_bracket_position == 1)
         {
+            if (log)
+                log->Printf("[] detected.. going from 0 to end of data");
             *index_lower = 0;
         }
         else if (*separator_position == NULL || *separator_position > var_name_end)
@@ -769,24 +794,34 @@ ScanBracketedRange(const char* var_name_begin,
             char *end = NULL;
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = *index_lower;
-            //printf("got to read low=%d high same\n",bitfield_lower);
+            if (log)
+                log->Printf("[%d] detected, high index is same", *index_lower);
         }
         else if (*close_bracket_position && *close_bracket_position < var_name_end)
         {
             char *end = NULL;
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = ::strtoul (*separator_position+1, &end, 0);
-            //printf("got to read low=%d high=%d\n",bitfield_lower,bitfield_higher);
+            if (log)
+                log->Printf("[%d-%d] detected", *index_lower, *index_higher);
         }
         else
+        {
+            if (log)
+                log->Printf("expression is erroneous, cannot extract indices out of it");
             return false;
+        }
         if (*index_lower > *index_higher && *index_higher > 0)
         {
+            if (log)
+                log->Printf("swapping indices");
             int temp = *index_lower;
             *index_lower = *index_higher;
             *index_higher = temp;
         }
     }
+    else if (log)
+            log->Printf("no bracketed range, skipping entirely");
     return true;
 }
 
@@ -799,26 +834,30 @@ ExpandExpressionPath(ValueObject* vobj,
                      const char* var_name_final,
                      Error& error)
 {
-
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     StreamString sstring;
     VariableSP var_sp;
     
     if (*do_deref_pointer)
+    {
+        if (log)
+            log->Printf("been told to deref_pointer by caller");
         sstring.PutChar('*');
+    }
     else if (vobj->IsDereferenceOfParent() && ClangASTContext::IsPointerType(vobj->GetParent()->GetClangType()) && !vobj->IsArrayItemForPointer())
     {
+        if (log)
+            log->Printf("decided to deref_pointer myself");
         sstring.PutChar('*');
         *do_deref_pointer = true;
     }
 
     vobj->GetExpressionPath(sstring, true, ValueObject::eHonorPointers);
-#ifdef VERBOSE_FORMATPROMPT_OUTPUT                                
-    printf("name to expand in phase 0: %s\n",sstring.GetData());
-#endif //VERBOSE_FORMATPROMPT_OUTPUT
+    if (log)
+        log->Printf("expression path to expand in phase 0: %s",sstring.GetData());
     sstring.PutRawBytes(var_name_begin+3, var_name_final-var_name_begin-3);
-#ifdef VERBOSE_FORMATPROMPT_OUTPUT
-    printf("name to expand in phase 1: %s\n",sstring.GetData());
-#endif //VERBOSE_FORMATPROMPT_OUTPUT
+    if (log)
+        log->Printf("expression path to expand in phase 1: %s",sstring.GetData());
     std::string name = std::string(sstring.GetData());
     ValueObjectSP target = frame->GetValueForVariableExpressionPath (name.c_str(),
                                                                      eNoDynamicValues, 
@@ -832,34 +871,38 @@ static ValueObjectSP
 ExpandIndexedExpression(ValueObject* vobj,
                         uint32_t index,
                         StackFrame* frame,
-                        Error error)
+                        bool deref_pointer)
 {
-    ValueObjectSP item;
-    bool is_array = ClangASTContext::IsArrayType(vobj->GetClangType());
-
-    if (is_array)
-        return vobj->GetChildAtIndex(index, true);
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    const char* ptr_deref_format = "[%d]";
+    std::auto_ptr<char> ptr_deref_buffer(new char[10]);
+    ::sprintf(ptr_deref_buffer.get(), ptr_deref_format, index);
+    if (log)
+        log->Printf("name to deref: %s",ptr_deref_buffer.get());
+    const char* first_unparsed;
+    ValueObject::GetValueForExpressionPathOptions options;
+    ValueObject::ExpressionPathEndResultType final_value_type;
+    ValueObject::ExpressionPathScanEndReason reason_to_stop;
+    ValueObject::ExpressionPathAftermath what_next = (deref_pointer ? ValueObject::eDereference : ValueObject::eNothing);
+    ValueObjectSP item = vobj->GetValueForExpressionPath (ptr_deref_buffer.get(),
+                                                          &first_unparsed,
+                                                          &reason_to_stop,
+                                                          &final_value_type,
+                                                          options,
+                                                          &what_next);
+    if (!item)
+    {
+        if (log)
+            log->Printf("ERROR: unparsed portion = %s, why stopping = %d,"
+               " final_value_type %d",
+               first_unparsed, reason_to_stop, final_value_type);
+    }
     else
     {
-        const char* ptr_deref_format = "%s[%d]";
-        char* ptr_deref_buffer = new char[1024];
-        StreamString expr_path_string;
-        vobj->GetExpressionPath(expr_path_string, true, ValueObject::eHonorPointers);
-        const char* expr_path = expr_path_string.GetData();
-#ifdef VERBOSE_FORMATPROMPT_OUTPUT
-        printf("name to deref in phase 0: %s\n",expr_path);
-#endif //VERBOSE_FORMATPROMPT_OUTPUT
-        ::sprintf(ptr_deref_buffer, ptr_deref_format, expr_path, index);
-#ifdef VERBOSE_FORMATPROMPT_OUTPUT
-        printf("name to deref in phase 1: %s\n",ptr_deref_buffer);
-#endif //VERBOSE_FORMATPROMPT_OUTPUT
-        lldb::VariableSP var_sp;
-        item = frame->GetValueForVariableExpressionPath (ptr_deref_buffer,
-                                                         eNoDynamicValues, 
-                                                         0,
-                                                         var_sp,
-                                                         error);
-        delete ptr_deref_buffer;
+        if (log)
+            log->Printf("ALL RIGHT: unparsed portion = %s, why stopping = %d,"
+               " final_value_type %d",
+               first_unparsed, reason_to_stop, final_value_type);
     }
     return item;
 }
@@ -879,6 +922,7 @@ Debugger::FormatPrompt
     ValueObject* realvobj = NULL; // makes it super-easy to parse pointers
     bool success = true;
     const char *p;
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
     for (p = format; *p != '\0'; ++p)
     {
         if (realvobj)
@@ -954,23 +998,53 @@ Debugger::FormatPrompt
                         const RegisterInfo *reg_info = NULL;
                         RegisterContext *reg_ctx = NULL;
                         bool do_deref_pointer = false;
-                        bool did_deref_pointer = true;
-
+                        ValueObject::ExpressionPathScanEndReason reason_to_stop = ValueObject::eEndOfString;
+                        ValueObject::ExpressionPathEndResultType final_value_type = ValueObject::ePlain;
+                        
                         // Each variable must set success to true below...
                         bool var_success = false;
                         switch (var_name_begin[0])
                         {
                         case '*':
-                            {
-                                if (!vobj) 
-                                    break;
-                                do_deref_pointer = true;
-                                var_name_begin++;
-                            }
-                            // Fall through...
-
                         case 'v':
+                        case 's':
                             {
+                                if (!vobj)
+                                    break;
+                                
+                                if (log)
+                                    log->Printf("initial string: %s",var_name_begin);
+                                
+                                // check for *var and *svar
+                                if (*var_name_begin == '*')
+                                {
+                                    do_deref_pointer = true;
+                                    var_name_begin++;
+                                }
+                                
+                                if (log)
+                                    log->Printf("initial string: %s",var_name_begin);
+                                
+                                if (*var_name_begin == 's')
+                                {
+                                    vobj = vobj->GetSyntheticValue(lldb::eUseSyntheticFilter).get();
+                                    var_name_begin++;
+                                }
+                                
+                                if (log)
+                                    log->Printf("initial string: %s",var_name_begin);
+                                
+                                // should be a 'v' by now
+                                if (*var_name_begin != 'v')
+                                    break;
+                                
+                                if (log)
+                                    log->Printf("initial string: %s",var_name_begin);
+                                                                
+                                ValueObject::ExpressionPathAftermath what_next = (do_deref_pointer ?
+                                                                                  ValueObject::eDereference : ValueObject::eNothing);
+                                ValueObject::GetValueForExpressionPathOptions options;
+                                options.DontCheckDotVsArrowSyntax().DoAllowBitfieldSyntax().DoAllowFragileIVar().DoAllowSyntheticChildren();
                                 ValueObject::ValueObjectRepresentationStyle val_obj_display = ValueObject::eDisplaySummary;
                                 ValueObject* target = NULL;
                                 lldb::Format custom_format = eFormatInvalid;
@@ -980,6 +1054,8 @@ Debugger::FormatPrompt
                                 int64_t index_lower = -1;
                                 int64_t index_higher = -1;
                                 bool is_array_range = false;
+                                const char* first_unparsed;
+
                                 if (!vobj) break;
                                 // simplest case ${var}, just print vobj's value
                                 if (::strncmp (var_name_begin, "var}", strlen("var}")) == 0)
@@ -1025,57 +1101,44 @@ Debugger::FormatPrompt
                                                         &index_higher);
                                                                     
                                     Error error;
-                                    target = ExpandExpressionPath (vobj,
-                                                                   exe_ctx->frame,
-                                                                   &do_deref_pointer,
-                                                                   var_name_begin,
-                                                                   var_name_final,
-                                                                   error).get();
-
-                                    if (error.Fail() || !target)
-                                    {
-#ifdef VERBOSE_FORMATPROMPT_OUTPUT                                
-                                        printf("ERROR: %s\n",error.AsCString("unknown"));
-#endif //VERBOSE_FORMATPROMPT_OUTPUT
-                                        if (var_name_final_if_array_range)
-                                        {
-                                            target = ExpandExpressionPath(vobj,
-                                                                          exe_ctx->frame,
-                                                                          &do_deref_pointer,
-                                                                          var_name_begin,
-                                                                          var_name_final_if_array_range,
-                                                                          error).get();
-                                        }
-                                        
-                                        if (var_name_final_if_array_range && (error.Fail() || !target))
-                                        {
-                                            bool fake_do_deref = false;
-                                            target = ExpandExpressionPath(vobj,
-                                                                          exe_ctx->frame,
-                                                                          &fake_do_deref,
-                                                                          var_name_begin,
-                                                                          var_name_final_if_array_range,
-                                                                          error).get();
-                                            
-                                            did_deref_pointer = false;
-                                            
-                                            if (target && ClangASTContext::IsArrayType(target->GetClangType()))
-                                                error.Clear();
-                                            else
-                                                error.SetErrorString("error in expression");
-                                        }
-                                        
-                                        IFERROR_PRINT_IT
-                                        else
-                                            is_array_range = true;
-                                    }
+                                                                        
+                                    std::auto_ptr<char> expr_path(new char[var_name_final-var_name_begin-1]);
+                                    ::memset(expr_path.get(), 0, var_name_final-var_name_begin-1);
+                                    memcpy(expr_path.get(), var_name_begin+3,var_name_final-var_name_begin-3);
+                                                                        
+                                    if (log)
+                                        log->Printf("symbol to expand: %s",expr_path.get());
                                     
-                                    if (did_deref_pointer)
-                                        do_deref_pointer = false; // I have honored the request to deref                               
-
+                                    target = vobj->GetValueForExpressionPath(expr_path.get(),
+                                                                             &first_unparsed,
+                                                                             &reason_to_stop,
+                                                                             &final_value_type,
+                                                                             options,
+                                                                             &what_next).get();
+                                    
+                                    if (!target)
+                                    {
+                                        if (log)
+                                            log->Printf("ERROR: unparsed portion = %s, why stopping = %d,"
+                                               " final_value_type %d",
+                                               first_unparsed, reason_to_stop, final_value_type);
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        if (log)
+                                            log->Printf("ALL RIGHT: unparsed portion = %s, why stopping = %d,"
+                                               " final_value_type %d",
+                                               first_unparsed, reason_to_stop, final_value_type);
+                                    }
                                 }
                                 else
                                     break;
+                                
+                                is_array_range = (final_value_type == ValueObject::eBoundedRange ||
+                                                  final_value_type == ValueObject::eUnboundedRange);
+                                
+                                do_deref_pointer = (what_next == ValueObject::eDereference);
 
                                 if (do_deref_pointer && !is_array_range)
                                 {
@@ -1087,35 +1150,47 @@ Debugger::FormatPrompt
                                     IFERROR_PRINT_IT
                                     do_deref_pointer = false;
                                 }
+                                
+                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType());
+                                bool is_pointer = ClangASTContext::IsPointerType(target->GetClangType());
+                                
+                                if ((is_array || is_pointer) && (!is_array_range) && val_obj_display == ValueObject::eDisplayValue) // this should be wrong, but there are some exceptions
+                                {
+                                    if (log)
+                                        log->Printf("I am into array || pointer && !range");
+                                    // try to use the special cases
+                                    var_success = target->DumpPrintableRepresentation(s,val_obj_display, custom_format);
+                                    if (!var_success)
+                                        s << "<invalid, please use [] operator>";
+                                    if (log)
+                                        log->Printf("special cases did%s match", var_success ? "" : "n't");
+                                    break;
+                                }
                                                                 
                                 if (!is_array_range)
-                                    var_success = target->DumpPrintableRepresentation(s,val_obj_display, custom_format);
-                                else
                                 {
-                                    bool is_array = ClangASTContext::IsArrayType(vobj->GetClangType());
-                                    bool is_pointer = ClangASTContext::IsPointerType(vobj->GetClangType());
-                                    
+                                    if (log)
+                                        log->Printf("dumping ordinary printable output");
+                                    var_success = target->DumpPrintableRepresentation(s,val_obj_display, custom_format);
+                                }
+                                else
+                                {   
+                                    if (log)
+                                        log->Printf("checking if I can handle as array");
                                     if (!is_array && !is_pointer)
                                         break;
-                                    
-                                    char* special_directions = NULL;
+                                    if (log)
+                                        log->Printf("handle as array");
+                                    const char* special_directions = NULL;
+                                    StreamString special_directions_writer;
                                     if (close_bracket_position && (var_name_end-close_bracket_position > 1))
                                     {
-                                        int base_len = var_name_end-close_bracket_position;
-                                        special_directions = new char[7+base_len];
-                                        int star_offset = (do_deref_pointer ? 1 : 0);
-                                        special_directions[0] = '$';
-                                        special_directions[1] = '{';
-                                        if (do_deref_pointer)
-                                            special_directions[2] = '*';
-                                        special_directions[2+star_offset] = 'v';
-                                        special_directions[3+star_offset] = 'a';
-                                        special_directions[4+star_offset] = 'r';
-                                        memcpy(special_directions+5+star_offset, close_bracket_position+1, base_len);
-                                        special_directions[base_len+5+star_offset] = '\0';
-#ifdef VERBOSE_FORMATPROMPT_OUTPUT
-                                        printf("%s\n",special_directions);
-#endif //VERBOSE_FORMATPROMPT_OUTPUT
+                                        ConstString additional_data;
+                                        additional_data.SetCStringWithLength(close_bracket_position+1, var_name_end-close_bracket_position-1);
+                                        special_directions_writer.Printf("${%svar%s}",
+                                                                         do_deref_pointer ? "*" : "",
+                                                                         additional_data.GetCString());
+                                        special_directions = special_directions_writer.GetData();
                                     }
                                     
                                     // let us display items index_lower thru index_higher of this array
@@ -1125,19 +1200,36 @@ Debugger::FormatPrompt
                                     if (index_higher < 0)
                                         index_higher = vobj->GetNumChildren() - 1;
                                     
+                                    uint32_t max_num_children = target->GetUpdatePoint().GetTargetSP()->GetMaximumNumberOfChildrenToDisplay();
+                                    
                                     for (;index_lower<=index_higher;index_lower++)
                                     {
-                                        Error error;
-                                        ValueObject* item = ExpandIndexedExpression(vobj,
+                                        ValueObject* item = ExpandIndexedExpression(target,
                                                                                     index_lower,
                                                                                     exe_ctx->frame,
-                                                                                    error).get();
+                                                                                    false).get();
                                         
-                                        IFERROR_PRINT_IT
+                                        if (!item)
+                                        {
+                                            if (log)
+                                                log->Printf("ERROR in getting child item at index %d", index_lower);
+                                        }
+                                        else
+                                        {
+                                            if (log)
+                                                log->Printf("special_directions for child item: %s",special_directions);
+                                        }
+
                                         if (!special_directions)
                                             var_success &= item->DumpPrintableRepresentation(s,val_obj_display, custom_format);
                                         else
                                             var_success &= FormatPrompt(special_directions, sc, exe_ctx, addr, s, NULL, item);
+                                        
+                                        if (--max_num_children == 0)
+                                        {
+                                            s.PutCString(", ...");
+                                            break;
+                                        }
                                         
                                         if (index_lower < index_higher)
                                             s.PutChar(',');
@@ -1172,17 +1264,17 @@ Debugger::FormatPrompt
                                              (::strncmp (var_name_begin, "file.basename}", strlen("file.basename}")) == 0) ||
                                              (::strncmp (var_name_begin, "file.fullpath}", strlen("file.fullpath}")) == 0))
                                     {
-                                        ModuleSP exe_module_sp (exe_ctx->process->GetTarget().GetExecutableModule());
-                                        if (exe_module_sp)
+                                        Module *exe_module = exe_ctx->process->GetTarget().GetExecutableModulePointer();
+                                        if (exe_module)
                                         {
                                             if (var_name_begin[0] == 'n' || var_name_begin[5] == 'f')
                                             {
-                                                format_file_spec.GetFilename() = exe_module_sp->GetFileSpec().GetFilename();
+                                                format_file_spec.GetFilename() = exe_module->GetFileSpec().GetFilename();
                                                 var_success = format_file_spec;
                                             }
                                             else
                                             {
-                                                format_file_spec = exe_module_sp->GetFileSpec();
+                                                format_file_spec = exe_module->GetFileSpec();
                                                 var_success = format_file_spec;
                                             }
                                         }
@@ -1689,130 +1781,192 @@ GetFormatManager() {
     return g_format_manager;
 }
 
-bool
-Debugger::ValueFormats::Get(ValueObject& vobj, ValueFormat::SharedPointer &entry)
+void
+Debugger::Formatting::ForceUpdate()
 {
-    return GetFormatManager().Value().Get(vobj,entry);
+    GetFormatManager().Changed();
+}
+
+bool
+Debugger::Formatting::ValueFormats::Get(ValueObject& vobj, lldb::DynamicValueType use_dynamic, ValueFormat::SharedPointer &entry)
+{
+    return GetFormatManager().Value().Get(vobj,entry, use_dynamic);
 }
 
 void
-Debugger::ValueFormats::Add(const ConstString &type, const ValueFormat::SharedPointer &entry)
+Debugger::Formatting::ValueFormats::Add(const ConstString &type, const ValueFormat::SharedPointer &entry)
 {
     GetFormatManager().Value().Add(type.AsCString(),entry);
 }
 
 bool
-Debugger::ValueFormats::Delete(const ConstString &type)
+Debugger::Formatting::ValueFormats::Delete(const ConstString &type)
 {
     return GetFormatManager().Value().Delete(type.AsCString());
 }
 
 void
-Debugger::ValueFormats::Clear()
+Debugger::Formatting::ValueFormats::Clear()
 {
     GetFormatManager().Value().Clear();
 }
 
 void
-Debugger::ValueFormats::LoopThrough(ValueFormat::ValueCallback callback, void* callback_baton)
+Debugger::Formatting::ValueFormats::LoopThrough(ValueFormat::ValueCallback callback, void* callback_baton)
 {
     GetFormatManager().Value().LoopThrough(callback, callback_baton);
 }
 
 uint32_t
-Debugger::ValueFormats::GetCurrentRevision()
+Debugger::Formatting::ValueFormats::GetCurrentRevision()
 {
     return GetFormatManager().GetCurrentRevision();
 }
 
 uint32_t
-Debugger::ValueFormats::GetCount()
+Debugger::Formatting::ValueFormats::GetCount()
 {
     return GetFormatManager().Value().GetCount();
 }
 
 bool
-Debugger::SummaryFormats::Get(ValueObject& vobj, SummaryFormat::SharedPointer &entry)
+Debugger::Formatting::GetSummaryFormat(ValueObject& vobj,
+                                       lldb::DynamicValueType use_dynamic,
+                                       lldb::SummaryFormatSP& entry)
 {
-    return GetFormatManager().Summary().Get(vobj,entry);
+    return GetFormatManager().Get(vobj, entry, use_dynamic);
 }
-
-void
-Debugger::SummaryFormats::Add(const ConstString &type, const SummaryFormat::SharedPointer &entry)
+bool
+Debugger::Formatting::GetSyntheticChildren(ValueObject& vobj,
+                                           lldb::DynamicValueType use_dynamic,
+                                           lldb::SyntheticChildrenSP& entry)
 {
-    GetFormatManager().Summary().Add(type.AsCString(),entry);
+    return GetFormatManager().Get(vobj, entry, use_dynamic);
 }
 
 bool
-Debugger::SummaryFormats::Delete(const ConstString &type)
+Debugger::Formatting::AnyMatches(ConstString type_name,
+                                 FormatCategory::FormatCategoryItems items,
+                                 bool only_enabled,
+                                 const char** matching_category,
+                                 FormatCategory::FormatCategoryItems* matching_type)
 {
-    return GetFormatManager().Summary().Delete(type.AsCString());
+    return GetFormatManager().AnyMatches(type_name,
+                                         items,
+                                         only_enabled,
+                                         matching_category,
+                                         matching_type);
+}
+
+bool
+Debugger::Formatting::Categories::Get(const ConstString &category, lldb::FormatCategorySP &entry)
+{
+    entry = GetFormatManager().Category(category.GetCString());
+    return true;
 }
 
 void
-Debugger::SummaryFormats::Clear()
+Debugger::Formatting::Categories::Add(const ConstString &category)
 {
-    GetFormatManager().Summary().Clear();
+    GetFormatManager().Category(category.GetCString());
+}
+
+bool
+Debugger::Formatting::Categories::Delete(const ConstString &category)
+{
+    GetFormatManager().DisableCategory(category.GetCString());
+    return GetFormatManager().Categories().Delete(category.GetCString());
 }
 
 void
-Debugger::SummaryFormats::LoopThrough(SummaryFormat::SummaryCallback callback, void* callback_baton)
+Debugger::Formatting::Categories::Clear()
 {
-    GetFormatManager().Summary().LoopThrough(callback, callback_baton);
+    GetFormatManager().Categories().Clear();
+}
+
+void
+Debugger::Formatting::Categories::Clear(ConstString &category)
+{
+    GetFormatManager().Category(category.GetCString())->ClearSummaries();
+}
+
+void
+Debugger::Formatting::Categories::Enable(ConstString& category)
+{
+    if (GetFormatManager().Category(category.GetCString())->IsEnabled() == false)
+        GetFormatManager().EnableCategory(category.GetCString());
+    else
+    {
+        GetFormatManager().DisableCategory(category.GetCString());
+        GetFormatManager().EnableCategory(category.GetCString());
+    }
+}
+
+void
+Debugger::Formatting::Categories::Disable(ConstString& category)
+{
+    if (GetFormatManager().Category(category.GetCString())->IsEnabled() == true)
+        GetFormatManager().DisableCategory(category.GetCString());
+}
+
+void
+Debugger::Formatting::Categories::LoopThrough(FormatManager::CategoryCallback callback, void* callback_baton)
+{
+    GetFormatManager().LoopThroughCategories(callback, callback_baton);
 }
 
 uint32_t
-Debugger::SummaryFormats::GetCurrentRevision()
+Debugger::Formatting::Categories::GetCurrentRevision()
 {
     return GetFormatManager().GetCurrentRevision();
 }
 
 uint32_t
-Debugger::SummaryFormats::GetCount()
+Debugger::Formatting::Categories::GetCount()
 {
-    return GetFormatManager().Summary().GetCount();
+    return GetFormatManager().Categories().GetCount();
 }
 
 bool
-Debugger::RegexSummaryFormats::Get(ValueObject& vobj, SummaryFormat::SharedPointer &entry)
+Debugger::Formatting::NamedSummaryFormats::Get(const ConstString &type, SummaryFormat::SharedPointer &entry)
 {
-    return GetFormatManager().RegexSummary().Get(vobj,entry);
+    return GetFormatManager().NamedSummary().Get(type.AsCString(),entry);
 }
 
 void
-Debugger::RegexSummaryFormats::Add(const lldb::RegularExpressionSP &type, const SummaryFormat::SharedPointer &entry)
+Debugger::Formatting::NamedSummaryFormats::Add(const ConstString &type, const SummaryFormat::SharedPointer &entry)
 {
-    GetFormatManager().RegexSummary().Add(type,entry);
+    GetFormatManager().NamedSummary().Add(type.AsCString(),entry);
 }
 
 bool
-Debugger::RegexSummaryFormats::Delete(const ConstString &type)
+Debugger::Formatting::NamedSummaryFormats::Delete(const ConstString &type)
 {
-    return GetFormatManager().RegexSummary().Delete(type.AsCString());
+    return GetFormatManager().NamedSummary().Delete(type.AsCString());
 }
 
 void
-Debugger::RegexSummaryFormats::Clear()
+Debugger::Formatting::NamedSummaryFormats::Clear()
 {
-    GetFormatManager().RegexSummary().Clear();
+    GetFormatManager().NamedSummary().Clear();
 }
 
 void
-Debugger::RegexSummaryFormats::LoopThrough(SummaryFormat::RegexSummaryCallback callback, void* callback_baton)
+Debugger::Formatting::NamedSummaryFormats::LoopThrough(SummaryFormat::SummaryCallback callback, void* callback_baton)
 {
-    GetFormatManager().RegexSummary().LoopThrough(callback, callback_baton);
+    GetFormatManager().NamedSummary().LoopThrough(callback, callback_baton);
 }
 
 uint32_t
-Debugger::RegexSummaryFormats::GetCurrentRevision()
+Debugger::Formatting::NamedSummaryFormats::GetCurrentRevision()
 {
     return GetFormatManager().GetCurrentRevision();
 }
 
 uint32_t
-Debugger::RegexSummaryFormats::GetCount()
+Debugger::Formatting::NamedSummaryFormats::GetCount()
 {
-    return GetFormatManager().RegexSummary().GetCount();
+    return GetFormatManager().NamedSummary().GetCount();
 }
 
 #pragma mark Debugger::SettingsController

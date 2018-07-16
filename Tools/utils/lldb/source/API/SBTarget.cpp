@@ -38,6 +38,7 @@
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Interpreter/Args.h"
+#include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
@@ -458,9 +459,9 @@ SBTarget::GetExecutable ()
     SBFileSpec exe_file_spec;
     if (m_opaque_sp)
     {
-        ModuleSP exe_module_sp (m_opaque_sp->GetExecutableModule ());
-        if (exe_module_sp)
-            exe_file_spec.SetFileSpec (exe_module_sp->GetFileSpec());
+        Module *exe_module = m_opaque_sp->GetExecutableModulePointer();
+        if (exe_module)
+            exe_file_spec.SetFileSpec (exe_module->GetFileSpec());
     }
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
@@ -503,19 +504,23 @@ SBTarget::reset (const lldb::TargetSP& target_sp)
     m_opaque_sp = target_sp;
 }
 
-bool
-SBTarget::ResolveLoadAddress (lldb::addr_t vm_addr, 
-                              lldb::SBAddress& addr)
+lldb::SBAddress
+SBTarget::ResolveLoadAddress (lldb::addr_t vm_addr)
 {
-    if (m_opaque_sp && addr.IsValid())
+    lldb::SBAddress sb_addr;
+    Address &addr = sb_addr.ref();
+    if (m_opaque_sp)
     {
         Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
-        return m_opaque_sp->GetSectionLoadList().ResolveLoadAddress (vm_addr, *addr);
+        if (m_opaque_sp->GetSectionLoadList().ResolveLoadAddress (vm_addr, addr))
+            return sb_addr;
     }
 
-    if (addr.IsValid())
-        addr->Clear();
-    return false;    
+    // We have a load address that isn't in a section, just return an address
+    // with the offset filled in (the address) and the section set to NULL
+    addr.SetSection(NULL);
+    addr.SetOffset(vm_addr);
+    return sb_addr;
 }
 
 SBSymbolContext
@@ -523,7 +528,7 @@ SBTarget::ResolveSymbolContextForAddress (const SBAddress& addr, uint32_t resolv
 {
     SBSymbolContext sc;
     if (m_opaque_sp && addr.IsValid())
-        m_opaque_sp->GetImages().ResolveSymbolContextForAddress (*addr, resolve_scope, sc.ref());
+        m_opaque_sp->GetImages().ResolveSymbolContextForAddress (addr.ref(), resolve_scope, sc.ref());
     return sc;
 }
 
@@ -873,6 +878,52 @@ SBTarget::FindFunctions (const char *name,
                                                        *sc_list);
     }
     return 0;
+}
+
+lldb::SBType
+SBTarget::FindFirstType (const char* type)
+{
+    if (m_opaque_sp)
+    {
+        size_t count = m_opaque_sp->GetImages().GetSize();
+        for (size_t idx = 0; idx < count; idx++)
+        {
+            SBType found_at_idx = GetModuleAtIndex(idx).FindFirstType(type);
+            
+            if (found_at_idx.IsValid())
+                return found_at_idx;
+        }
+    }
+    return SBType();
+}
+
+lldb::SBTypeList
+SBTarget::FindTypes (const char* type)
+{
+    
+    SBTypeList retval;
+    
+    if (m_opaque_sp)
+    {
+        ModuleList& images = m_opaque_sp->GetImages();
+        ConstString name_const(type);
+        SymbolContext sc;
+        TypeList type_list;
+        
+        uint32_t num_matches = images.FindTypes(sc,
+                                                name_const,
+                                                true,
+                                                UINT32_MAX,
+                                                type_list);
+        
+        for (size_t idx = 0; idx < num_matches; idx++)
+        {
+            TypeSP type_sp (type_list.GetTypeAtIndex(idx));
+            if (type_sp)
+                retval.Append(SBType(type_sp));
+        }
+    }
+    return retval;
 }
 
 SBValueList

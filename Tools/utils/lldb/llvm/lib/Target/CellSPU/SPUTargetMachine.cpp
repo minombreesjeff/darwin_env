@@ -12,8 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "SPU.h"
-#include "SPURegisterNames.h"
-#include "SPUMCAsmInfo.h"
 #include "SPUTargetMachine.h"
 #include "llvm/PassManager.h"
 #include "llvm/CodeGen/RegAllocRegistry.h"
@@ -25,7 +23,6 @@ using namespace llvm;
 extern "C" void LLVMInitializeCellSPUTarget() { 
   // Register the target.
   RegisterTargetMachine<SPUTargetMachine> X(TheCellSPUTarget);
-  RegisterAsmInfo<SPULinuxMCAsmInfo> Y(TheCellSPUTarget);
 }
 
 const std::pair<unsigned, int> *
@@ -34,19 +31,17 @@ SPUFrameLowering::getCalleeSaveSpillSlots(unsigned &NumEntries) const {
   return &LR[0];
 }
 
-SPUTargetMachine::SPUTargetMachine(const Target &T, const std::string &TT,
-                                   const std::string &FS)
-  : LLVMTargetMachine(T, TT),
-    Subtarget(TT, FS),
+SPUTargetMachine::SPUTargetMachine(const Target &T, StringRef TT,
+                                   StringRef CPU, StringRef FS,
+                                   Reloc::Model RM, CodeModel::Model CM)
+  : LLVMTargetMachine(T, TT, CPU, FS, RM, CM),
+    Subtarget(TT, CPU, FS),
     DataLayout(Subtarget.getTargetDataString()),
     InstrInfo(*this),
     FrameLowering(Subtarget),
     TLInfo(*this),
     TSInfo(*this),
     InstrItins(Subtarget.getInstrItineraryData()) {
-  // For the time being, use static relocations, since there's really no
-  // support for PIC yet.
-  setRelocationModel(Reloc::Static);
 }
 
 //===----------------------------------------------------------------------===//

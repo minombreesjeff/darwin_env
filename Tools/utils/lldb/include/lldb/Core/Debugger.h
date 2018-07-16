@@ -474,84 +474,115 @@ private:
     
 public:
     
-    class ValueFormats
-    {
-    public:
-        static bool
-        Get(ValueObject& vobj, ValueFormat::SharedPointer &entry);
-        
-        static void
-        Add(const ConstString &type, const ValueFormat::SharedPointer &entry);
-        
-        static bool
-        Delete(const ConstString &type);
-        
-        static void
-        Clear();
-        
-        static void
-        LoopThrough(ValueFormat::ValueCallback callback, void* callback_baton);
-        
-        static uint32_t
-        GetCurrentRevision();
-    
-        static uint32_t
-        GetCount();
-    };
-    
-    class SummaryFormats
-    {
-    public:
-    
-        static bool
-        Get(ValueObject& vobj, SummaryFormat::SharedPointer &entry);
-        
-        static void
-        Add(const ConstString &type, const SummaryFormat::SharedPointer &entry);
-        
-        static bool
-        Delete(const ConstString &type);
-        
-        static void
-        Clear();
-        
-        static void
-        LoopThrough(SummaryFormat::SummaryCallback callback, void* callback_baton);
-        
-        static uint32_t
-        GetCurrentRevision();
-    
-        static uint32_t
-        GetCount();
-    };
-    
-    class RegexSummaryFormats
+    class Formatting
     {
     public:
         
-        static bool
-        Get(ValueObject& vobj, SummaryFormat::SharedPointer &entry);
-        
+        // use this call to force the FM to consider itself updated even when there is no apparent reason for that
         static void
-        Add(const lldb::RegularExpressionSP &type, const SummaryFormat::SharedPointer &entry);
+        ForceUpdate();
         
-        static bool
-        Delete(const ConstString &type);
-        
-        static void
-        Clear();
-        
-        static void
-        LoopThrough(SummaryFormat::RegexSummaryCallback callback, void* callback_baton);
-        
-        static uint32_t
-        GetCurrentRevision();
-        
-        static uint32_t
-        GetCount();
-    };
+        class ValueFormats
+        {
+        public:
+            static bool
+            Get(ValueObject& vobj, lldb::DynamicValueType use_dynamic, ValueFormat::SharedPointer &entry);
+            
+            static void
+            Add(const ConstString &type, const ValueFormat::SharedPointer &entry);
+            
+            static bool
+            Delete(const ConstString &type);
+            
+            static void
+            Clear();
+            
+            static void
+            LoopThrough(ValueFormat::ValueCallback callback, void* callback_baton);
+            
+            static uint32_t
+            GetCurrentRevision();
+            
+            static uint32_t
+            GetCount();
+        };
 
-    
+        static bool
+        GetSummaryFormat(ValueObject& vobj,
+                         lldb::DynamicValueType use_dynamic,
+                         lldb::SummaryFormatSP& entry);
+        static bool
+        GetSyntheticChildren(ValueObject& vobj,
+                             lldb::DynamicValueType use_dynamic,
+                             lldb::SyntheticChildrenSP& entry);
+        
+        static bool
+        AnyMatches(ConstString type_name,
+                   FormatCategory::FormatCategoryItems items = FormatCategory::ALL_ITEM_TYPES,
+                   bool only_enabled = true,
+                   const char** matching_category = NULL,
+                   FormatCategory::FormatCategoryItems* matching_type = NULL);
+        
+        class NamedSummaryFormats
+        {
+        public:
+            static bool
+            Get(const ConstString &type, SummaryFormat::SharedPointer &entry);
+            
+            static void
+            Add(const ConstString &type, const SummaryFormat::SharedPointer &entry);
+            
+            static bool
+            Delete(const ConstString &type);
+            
+            static void
+            Clear();
+            
+            static void
+            LoopThrough(SummaryFormat::SummaryCallback callback, void* callback_baton);
+            
+            static uint32_t
+            GetCurrentRevision();
+            
+            static uint32_t
+            GetCount();
+        };
+                
+        class Categories
+        {
+        public:
+            
+            static bool
+            Get(const ConstString &category, lldb::FormatCategorySP &entry);
+            
+            static void
+            Add(const ConstString &category);
+            
+            static bool
+            Delete(const ConstString &category);
+            
+            static void
+            Clear();
+            
+            static void
+            Clear(ConstString &category);
+            
+            static void
+            Enable(ConstString& category);
+            
+            static void
+            Disable(ConstString& category);
+            
+            static void
+            LoopThrough(FormatManager::CategoryCallback callback, void* callback_baton);
+            
+            static uint32_t
+            GetCurrentRevision();
+            
+            static uint32_t
+            GetCount();
+        };
+    };
 };
 
 } // namespace lldb_private

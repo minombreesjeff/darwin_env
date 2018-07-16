@@ -19,17 +19,8 @@ namespace lldb {
 
 class SBEvent;
 
-#ifdef SWIG
-%feature("docstring",
-         "Represents the process associated with the target program."
-         ) SBProcess;
-#endif
 class SBProcess
 {
-#ifdef SWIG
-    %feature("autodoc", "1");
-#endif
-
 public:
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
@@ -80,26 +71,15 @@ public:
     void
     AppendEventStateReport (const lldb::SBEvent &event, lldb::SBCommandReturnObject &result);
 
-#ifdef SWIG
-    %feature("docstring", "
-#endif
     //------------------------------------------------------------------
     /// Remote connection related functions. These will fail if the
     /// process is not in eStateConnected. They are intended for use
     /// when connecting to an externally managed debugserver instance.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") RemoteAttachToProcessWithID;
-#endif
     bool
     RemoteAttachToProcessWithID (lldb::pid_t pid,
                                  lldb::SBError& error);
     
-#ifdef SWIG
-    %feature("docstring",
-             "See SBTarget.Launch for argument description and usage."
-             ) RemoteLaunch;
-#endif
     bool
     RemoteLaunch (char const **argv,
                   char const **envp,
@@ -151,12 +131,6 @@ public:
     uint32_t
     GetAddressByteSize() const;
 
-#ifdef SWIG
-    %feature("docstring",
-             "Kills the process and shuts down all threads that were spawned to"
-             " track and monitor process."
-             ) Destroy;
-#endif
     lldb::SBError
     Destroy ();
 
@@ -166,48 +140,18 @@ public:
     lldb::SBError
     Stop ();
 
-#ifdef SWIG
-    %feature("docstring", "Same as Destroy(self).") Destroy;
-#endif
     lldb::SBError
     Kill ();
 
     lldb::SBError
     Detach ();
 
-#ifdef SWIG
-    %feature("docstring", "Sends the process a unix signal.") Signal;
-#endif
     lldb::SBError
     Signal (int signal);
 
-#ifdef SWIG
-    %feature("autodoc",
-"Reads memory from the current process's address space and removes any
-traps that may have been inserted into the memory. It returns the byte
-buffer in a Python string. Example:
-
-# Read 4 bytes from address 'addr' and assume error.Success() is True.
-content = process.ReadMemory(addr, 4, error)
-# Use 'ascii' encoding as each byte of 'content' is within [0..255].
-new_bytes = bytearray(content, 'ascii')"
-             ) ReadMemory;
-#endif
     size_t
     ReadMemory (addr_t addr, void *buf, size_t size, lldb::SBError &error);
 
-#ifdef SWIG
-    %feature("autodoc",
-"Writes memory to the current process's address space and maintains any
-traps that might be present due to software breakpoints. Example:
-
-# Create a Python string from the byte array.
-new_value = str(bytes)
-result = process.WriteMemory(addr, new_value, error)
-if not error.Success() or result != len(bytes):
-    print 'SBProcess.WriteMemory() failed!'"
-             ) WriteMemory;
-#endif
     size_t
     WriteMemory (addr_t addr, const void *buf, size_t size, lldb::SBError &error);
 

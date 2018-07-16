@@ -14,6 +14,8 @@
 // Other libraries and framework includes
 // Project includes
 
+#include "lldb/Core/Debugger.h"
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -154,12 +156,11 @@ FormatManager::GetFormatAsCString (Format format)
 
 template<>
 bool
-FormatNavigator<std::map<lldb::RegularExpressionSP, SummaryFormat::SharedPointer>, SummaryFormat::RegexSummaryCallback>::Get(const char* key,
-                                                                                                                     SummaryFormat::SharedPointer& value)
+FormatNavigator<lldb::RegularExpressionSP, SummaryFormat>::Get(const char* key, SummaryFormat::SharedPointer& value)
 {
-    Mutex::Locker(m_map_mutex);
-    MapIterator pos, end = m_map.end();
-    for (pos = m_map.begin(); pos != end; pos++)
+    Mutex::Locker(m_format_map.mutex());
+    MapIterator pos, end = m_format_map.map().end();
+    for (pos = m_format_map.map().begin(); pos != end; pos++)
     {
         lldb::RegularExpressionSP regex = pos->first;
         if (regex->Execute(key))
@@ -173,18 +174,126 @@ FormatNavigator<std::map<lldb::RegularExpressionSP, SummaryFormat::SharedPointer
 
 template<>
 bool
-FormatNavigator<std::map<lldb::RegularExpressionSP, SummaryFormat::SharedPointer>, SummaryFormat::RegexSummaryCallback>::Delete(const char* type)
+FormatNavigator<lldb::RegularExpressionSP, SummaryFormat>::Delete(const char* type)
 {
-    Mutex::Locker(m_map_mutex);
-    MapIterator pos, end = m_map.end();
-    for (pos = m_map.begin(); pos != end; pos++)
+    Mutex::Locker(m_format_map.mutex());
+    MapIterator pos, end = m_format_map.map().end();
+    for (pos = m_format_map.map().begin(); pos != end; pos++)
     {
         lldb::RegularExpressionSP regex = pos->first;
         if ( ::strcmp(type,regex->GetText()) == 0)
         {
-            m_map.erase(pos);
+            m_format_map.map().erase(pos);
+            if (m_format_map.listener)
+                m_format_map.listener->Changed();
             return true;
         }
     }
     return false;
+}
+
+template<>
+bool
+FormatNavigator<lldb::RegularExpressionSP, SyntheticFilter>::Get(const char* key, SyntheticFilter::SharedPointer& value)
+{
+    Mutex::Locker(m_format_map.mutex());
+    MapIterator pos, end = m_format_map.map().end();
+    for (pos = m_format_map.map().begin(); pos != end; pos++)
+    {
+        lldb::RegularExpressionSP regex = pos->first;
+        if (regex->Execute(key))
+        {
+            value = pos->second;
+            return true;
+        }
+    }
+    return false;
+}
+
+template<>
+bool
+FormatNavigator<lldb::RegularExpressionSP, SyntheticFilter>::Delete(const char* type)
+{
+    Mutex::Locker(m_format_map.mutex());
+    MapIterator pos, end = m_format_map.map().end();
+    for (pos = m_format_map.map().begin(); pos != end; pos++)
+    {
+        lldb::RegularExpressionSP regex = pos->first;
+        if ( ::strcmp(type,regex->GetText()) == 0)
+        {
+            m_format_map.map().erase(pos);
+            if (m_format_map.listener)
+                m_format_map.listener->Changed();
+            return true;
+        }
+    }
+    return false;
+}
+
+template<>
+bool
+FormatNavigator<lldb::RegularExpressionSP, SyntheticScriptProvider>::Get(const char* key, SyntheticFilter::SharedPointer& value)
+{
+    Mutex::Locker(m_format_map.mutex());
+    MapIterator pos, end = m_format_map.map().end();
+    for (pos = m_format_map.map().begin(); pos != end; pos++)
+    {
+        lldb::RegularExpressionSP regex = pos->first;
+        if (regex->Execute(key))
+        {
+            value = pos->second;
+            return true;
+        }
+    }
+    return false;
+}
+
+template<>
+bool
+FormatNavigator<lldb::RegularExpressionSP, SyntheticScriptProvider>::Delete(const char* type)
+{
+    Mutex::Locker(m_format_map.mutex());
+    MapIterator pos, end = m_format_map.map().end();
+    for (pos = m_format_map.map().begin(); pos != end; pos++)
+    {
+        lldb::RegularExpressionSP regex = pos->first;
+        if ( ::strcmp(type,regex->GetText()) == 0)
+        {
+            m_format_map.map().erase(pos);
+            if (m_format_map.listener)
+                m_format_map.listener->Changed();
+            return true;
+        }
+    }
+    return false;
+}
+
+lldb::Format
+FormatManager::GetSingleItemFormat(lldb::Format vector_format)
+{
+    switch(vector_format)
+    {
+        case eFormatVectorOfChar:
+            return eFormatCharArray;
+            
+        case eFormatVectorOfSInt8:
+        case eFormatVectorOfSInt16:
+        case eFormatVectorOfSInt32:
+        case eFormatVectorOfSInt64:
+            return eFormatDecimal;
+            
+        case eFormatVectorOfUInt8:
+        case eFormatVectorOfUInt16:
+        case eFormatVectorOfUInt32:
+        case eFormatVectorOfUInt64:
+        case eFormatVectorOfUInt128:
+            return eFormatHex;
+            
+        case eFormatVectorOfFloat32:
+        case eFormatVectorOfFloat64:
+            return eFormatFloat;
+            
+        default:
+            return lldb::eFormatInvalid;
+    }
 }

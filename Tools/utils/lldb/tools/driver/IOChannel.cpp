@@ -85,6 +85,12 @@ IOChannel::HandleCompletion (EditLine *e, int ch)
         el_insertstr (m_edit_line, m_completion_key);
         return CC_REDISPLAY;
     }
+    else if (num_completions == -2)
+    {
+        el_deletestr (m_edit_line, line_info->cursor - line_info->buffer);
+        el_insertstr (m_edit_line, completions.GetStringAtIndex(0));
+        return CC_REDISPLAY;
+    }
 
     // If we get a longer match display that first.
     const char *completion_str = completions.GetStringAtIndex(0);
@@ -405,7 +411,7 @@ IOChannel::Run ()
                 else if (event_type & Driver::eBroadcastBitThreadShouldExit)
                 {
                     done = true;
-                    break;
+                    continue;
                 }
             }
             else if (event.BroadcasterMatchesRef (interpreter_broadcaster))
@@ -431,7 +437,7 @@ IOChannel::Run ()
                 if (event_type & IOChannel::eBroadcastBitThreadShouldExit)
                 {
                     done = true;
-                    break;
+                    continue;
                 }
             }
         }
@@ -496,6 +502,15 @@ IOChannel::OutWrite (const char *buffer, size_t len, bool asynchronous)
 {
     if (len == 0)
         return;
+
+    // We're in the process of exiting -- IOChannel::Run() has already completed
+    // and set m_driver to NULL - it is time for us to leave now.  We might not
+    // print the final ^D to stdout in this case.  We need to do some re-work on
+    // how the I/O streams are managed at some point.
+    if (m_driver == NULL)
+    {
+        return;
+    }
 
     // Use the mutex to make sure OutWrite and ErrWrite do not interfere with each other's output.
     IOLocker locker (m_output_mutex);

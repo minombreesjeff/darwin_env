@@ -244,9 +244,6 @@ LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const
 {
   const GlobalValue *GV = cast<GlobalAddressSDNode>(Op)->getGlobal();
   SDValue GA = DAG.getTargetGlobalAddress(GV, Op.getDebugLoc(), MVT::i32);
-  // If it's a debug information descriptor, don't mess with it.
-  if (DAG.isVerifiedDebugInfoDesc(Op))
-    return GA;
   return getGlobalAddressWrapper(GA, GV, DAG);
 }
 
@@ -255,8 +252,8 @@ static inline SDValue BuildGetId(SelectionDAG &DAG, DebugLoc dl) {
                      DAG.getConstant(Intrinsic::xcore_getid, MVT::i32));
 }
 
-static inline bool isZeroLengthArray(const Type *Ty) {
-  const ArrayType *AT = dyn_cast_or_null<ArrayType>(Ty);
+static inline bool isZeroLengthArray(Type *Ty) {
+  ArrayType *AT = dyn_cast_or_null<ArrayType>(Ty);
   return AT && (AT->getNumElements() == 0);
 }
 
@@ -278,7 +275,7 @@ LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const
     llvm_unreachable("Thread local object not a GlobalVariable?");
     return SDValue();
   }
-  const Type *Ty = cast<PointerType>(GV->getType())->getElementType();
+  Type *Ty = cast<PointerType>(GV->getType())->getElementType();
   if (!Ty->isSized() || isZeroLengthArray(Ty)) {
 #ifndef NDEBUG
     errs() << "Size of thread local object " << GVar->getName()
@@ -468,7 +465,7 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   }
 
   // Lower to a call to __misaligned_load(BasePtr).
-  const Type *IntPtrTy = getTargetData()->getIntPtrType(*DAG.getContext());
+  Type *IntPtrTy = getTargetData()->getIntPtrType(*DAG.getContext());
   TargetLowering::ArgListTy Args;
   TargetLowering::ArgListEntry Entry;
 
@@ -527,7 +524,7 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG) const
   }
 
   // Lower to a call to __misaligned_store(BasePtr, Value).
-  const Type *IntPtrTy = getTargetData()->getIntPtrType(*DAG.getContext());
+  Type *IntPtrTy = getTargetData()->getIntPtrType(*DAG.getContext());
   TargetLowering::ArgListTy Args;
   TargetLowering::ArgListEntry Entry;
 
@@ -900,8 +897,8 @@ XCoreTargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
 
   // Analyze operands of the call, assigning locations to each operand.
   SmallVector<CCValAssign, 16> ArgLocs;
-  CCState CCInfo(CallConv, isVarArg, getTargetMachine(),
-                 ArgLocs, *DAG.getContext());
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
+		 getTargetMachine(), ArgLocs, *DAG.getContext());
 
   // The ABI dictates there should be one stack slot available to the callee
   // on function entry (for saving lr).
@@ -1023,8 +1020,8 @@ XCoreTargetLowering::LowerCallResult(SDValue Chain, SDValue InFlag,
 
   // Assign locations to each value returned by this call.
   SmallVector<CCValAssign, 16> RVLocs;
-  CCState CCInfo(CallConv, isVarArg, getTargetMachine(),
-                 RVLocs, *DAG.getContext());
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
+		 getTargetMachine(), RVLocs, *DAG.getContext());
 
   CCInfo.AnalyzeCallResult(Ins, RetCC_XCore);
 
@@ -1083,8 +1080,8 @@ XCoreTargetLowering::LowerCCCArguments(SDValue Chain,
 
   // Assign locations to all of the incoming arguments.
   SmallVector<CCValAssign, 16> ArgLocs;
-  CCState CCInfo(CallConv, isVarArg, getTargetMachine(),
-                 ArgLocs, *DAG.getContext());
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
+		 getTargetMachine(), ArgLocs, *DAG.getContext());
 
   CCInfo.AnalyzeFormalArguments(Ins, CC_XCore);
 
@@ -1151,10 +1148,10 @@ XCoreTargetLowering::LowerCCCArguments(SDValue Chain,
       int offset = 0;
       // Save remaining registers, storing higher register numbers at a higher
       // address
-      for (unsigned i = array_lengthof(ArgRegs) - 1; i >= FirstVAReg; --i) {
+      for (int i = array_lengthof(ArgRegs) - 1; i >= (int)FirstVAReg; --i) {
         // Create a stack slot
         int FI = MFI->CreateFixedObject(4, offset, true);
-        if (i == FirstVAReg) {
+        if (i == (int)FirstVAReg) {
           XFI->setVarArgsFrameIndex(FI);
         }
         offset -= StackSlotSize;
@@ -1188,12 +1185,12 @@ XCoreTargetLowering::LowerCCCArguments(SDValue Chain,
 //===----------------------------------------------------------------------===//
 
 bool XCoreTargetLowering::
-CanLowerReturn(CallingConv::ID CallConv, bool isVarArg,
+CanLowerReturn(CallingConv::ID CallConv, MachineFunction &MF,
+	       bool isVarArg,
                const SmallVectorImpl<ISD::OutputArg> &Outs,
                LLVMContext &Context) const {
   SmallVector<CCValAssign, 16> RVLocs;
-  CCState CCInfo(CallConv, isVarArg, getTargetMachine(),
-                 RVLocs, Context);
+  CCState CCInfo(CallConv, isVarArg, MF, getTargetMachine(), RVLocs, Context);
   return CCInfo.CheckReturn(Outs, RetCC_XCore);
 }
 
@@ -1209,10 +1206,10 @@ XCoreTargetLowering::LowerReturn(SDValue Chain,
   SmallVector<CCValAssign, 16> RVLocs;
 
   // CCState - Info about the registers and stack slot.
-  CCState CCInfo(CallConv, isVarArg, getTargetMachine(),
-                 RVLocs, *DAG.getContext());
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
+		 getTargetMachine(), RVLocs, *DAG.getContext());
 
-  // Analize return values.
+  // Analyze return values.
   CCInfo.AnalyzeReturn(Outs, RetCC_XCore);
 
   // If this is the first return lowered for this function, add
@@ -1551,7 +1548,7 @@ static inline bool isImmUs4(int64_t val)
 /// by AM is legal for this target, for a load/store of the specified type.
 bool
 XCoreTargetLowering::isLegalAddressingMode(const AddrMode &AM,
-                                              const Type *Ty) const {
+                                              Type *Ty) const {
   if (Ty->getTypeID() == Type::VoidTyID)
     return AM.Scale == 0 && isImmUs(AM.BaseOffs) && isImmUs4(AM.BaseOffs);
 
@@ -1594,21 +1591,18 @@ XCoreTargetLowering::isLegalAddressingMode(const AddrMode &AM,
 //                           XCore Inline Assembly Support
 //===----------------------------------------------------------------------===//
 
-std::vector<unsigned> XCoreTargetLowering::
-getRegClassForInlineAsmConstraint(const std::string &Constraint,
-                                  EVT VT) const
-{
-  if (Constraint.size() != 1)
-    return std::vector<unsigned>();
-
-  switch (Constraint[0]) {
+std::pair<unsigned, const TargetRegisterClass*>
+XCoreTargetLowering::
+getRegForInlineAsmConstraint(const std::string &Constraint,
+			     EVT VT) const {
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
     default : break;
     case 'r':
-      return make_vector<unsigned>(XCore::R0, XCore::R1,  XCore::R2,
-                                   XCore::R3, XCore::R4,  XCore::R5,
-                                   XCore::R6, XCore::R7,  XCore::R8,
-                                   XCore::R9, XCore::R10, XCore::R11, 0);
-      break;
+      return std::make_pair(0U, XCore::GRRegsRegisterClass);
+    }
   }
-  return std::vector<unsigned>();
+  // Use the default implementation in TargetLowering to convert the register
+  // constraint into a member of a register class.
+  return TargetLowering::getRegForInlineAsmConstraint(Constraint, VT);
 }

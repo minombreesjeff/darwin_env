@@ -37,18 +37,20 @@ endif
 # Change any build/tool options needed
 #----------------------------------------------------------------------
 CFLAGS ?= -gdwarf-2 -O0
-CXXFLAGS +=$(CFLAGS)
-LD = $(CC)
-LDFLAGS ?= $(CFLAGS)
-OBJECTS =
-EXE ?= a.out
-
+CFLAGS += $(FRAMEWORK_INCLUDES)
 ifeq "$(OS)" "Darwin"
 	CFLAGS += -arch $(ARCH)
 	DS := /usr/bin/dsymutil
 	DSFLAGS =
 	DSYM = $(EXE).dSYM
 endif
+
+CXXFLAGS +=$(CFLAGS)
+LD = $(CC)
+LDFLAGS ?= $(CFLAGS)
+LDFLAGS += $(LD_EXTRAS)
+OBJECTS =
+EXE ?= a.out
 
 ifneq "$(DYLIB_NAME)" ""
 	ifeq "$(OS)" "Darwin"
@@ -158,25 +160,25 @@ endif
 #----------------------------------------------------------------------
 %.d: %.c
 	@set -e; rm -f $@; \
-	$(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
+	$(CC) -M $(CFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 
 %.d: %.cpp
 	@set -e; rm -f $@; \
-	$(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
+	$(CC) -M $(CXXFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 
 %.d: %.m
 	@set -e; rm -f $@; \
-	$(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
+	$(CC) -M $(CFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 
 %.d: %.mm
 	@set -e; rm -f $@; \
-	$(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
+	$(CC) -M $(CXXFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 

@@ -26,10 +26,11 @@ namespace llvm {
   class MCLabel;
   class MCDwarfFile;
   class MCDwarfLoc;
+  class MCObjectFileInfo;
+  class MCRegisterInfo;
   class MCLineSection;
   class StringRef;
   class Twine;
-  class TargetAsmInfo;
   class MCSectionMachO;
   class MCSectionELF;
 
@@ -39,11 +40,18 @@ namespace llvm {
   class MCContext {
     MCContext(const MCContext&); // DO NOT IMPLEMENT
     MCContext &operator=(const MCContext&); // DO NOT IMPLEMENT
+  public:
+    typedef StringMap<MCSymbol*, BumpPtrAllocator&> SymbolTable;
+  private:
 
     /// The MCAsmInfo for this target.
     const MCAsmInfo &MAI;
 
-    const TargetAsmInfo *TAI;
+    /// The MCRegisterInfo for this target.
+    const MCRegisterInfo &MRI;
+
+    /// The MCObjectFileInfo for this target.
+    const MCObjectFileInfo *MOFI;
 
     /// Allocator - Allocator object used for creating machine code objects.
     ///
@@ -52,7 +60,7 @@ namespace llvm {
     BumpPtrAllocator Allocator;
 
     /// Symbols - Bindings of names to symbols.
-    StringMap<MCSymbol*, BumpPtrAllocator&> Symbols;
+    SymbolTable Symbols;
 
     /// UsedNames - Keeps tracks of names that were used both for used declared
     /// and artificial symbols.
@@ -107,12 +115,15 @@ namespace llvm {
     MCSymbol *CreateSymbol(StringRef Name);
 
   public:
-    explicit MCContext(const MCAsmInfo &MAI, const TargetAsmInfo *TAI);
+    explicit MCContext(const MCAsmInfo &MAI, const MCRegisterInfo &MRI,
+                       const MCObjectFileInfo *MOFI);
     ~MCContext();
 
     const MCAsmInfo &getAsmInfo() const { return MAI; }
 
-    const TargetAsmInfo &getTargetAsmInfo() const { return *TAI; }
+    const MCRegisterInfo &getRegisterInfo() const { return MRI; }
+
+    const MCObjectFileInfo *getObjectFileInfo() const { return MOFI; }
 
     void setAllowTemporaryLabels(bool Value) { AllowTemporaryLabels = Value; }
 
@@ -141,6 +152,14 @@ namespace llvm {
 
     /// LookupSymbol - Get the symbol for \p Name, or null.
     MCSymbol *LookupSymbol(StringRef Name) const;
+
+    /// getSymbols - Get a reference for the symbol table for clients that
+    /// want to, for example, iterate over all symbols. 'const' because we
+    /// still want any modifications to the table itself to use the MCContext
+    /// APIs.
+    const SymbolTable &getSymbols() const {
+      return Symbols;
+    }
 
     /// @}
 

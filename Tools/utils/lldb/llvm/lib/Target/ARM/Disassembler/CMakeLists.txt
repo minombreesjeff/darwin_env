@@ -11,4 +11,12 @@ set_property(
   PROPERTY COMPILE_FLAGS "/Od"
   )
 endif()
-add_dependencies(LLVMARMDisassembler ARMCodeGenTable_gen)
+add_dependencies(LLVMARMDisassembler ARMCommonTableGen)
+
+add_llvm_library_dependencies(LLVMARMDisassembler
+  LLVMARMCodeGen
+  LLVMARMDesc
+  LLVMARMInfo
+  LLVMMC
+  LLVMSupport
+  )

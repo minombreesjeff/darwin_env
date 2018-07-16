@@ -219,21 +219,19 @@ ASTResultSynthesizer::SynthesizeBodyResult (CompoundStmt *Body,
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     ASTContext &Ctx(*m_ast_context);
-    
-    CompoundStmt *compound_stmt = dyn_cast<CompoundStmt>(Body);
-    
-    if (!compound_stmt)
+        
+    if (!Body)
         return false;
     
-    if (compound_stmt->body_empty())
+    if (Body->body_empty())
         return false;
     
-    Stmt **last_stmt_ptr = compound_stmt->body_end() - 1;
+    Stmt **last_stmt_ptr = Body->body_end() - 1;
     Stmt *last_stmt = *last_stmt_ptr;
     
     while (dyn_cast<NullStmt>(last_stmt))
     {
-        if (last_stmt_ptr != compound_stmt->body_begin())
+        if (last_stmt_ptr != Body->body_begin())
         {
             last_stmt_ptr--;
             last_stmt = *last_stmt_ptr;
@@ -309,11 +307,16 @@ ASTResultSynthesizer::SynthesizeBodyResult (CompoundStmt *Body,
         log->Printf("Last statement is an %s with type: %s", (is_lvalue ? "lvalue" : "rvalue"), s.c_str());
     }
     
-    clang::VarDecl *result_decl;
+    clang::VarDecl *result_decl = NULL;
     
     if (is_lvalue)
     {
-        IdentifierInfo &result_ptr_id = Ctx.Idents.get("$__lldb_expr_result_ptr");
+        IdentifierInfo *result_ptr_id;
+        
+        if (expr_type->isFunctionType())
+            result_ptr_id = &Ctx.Idents.get("$__lldb_expr_result"); // functions actually should be treated like function pointers
+        else
+            result_ptr_id = &Ctx.Idents.get("$__lldb_expr_result_ptr");
         
         QualType ptr_qual_type = Ctx.getPointerType(expr_qual_type);
         
@@ -321,7 +324,7 @@ ASTResultSynthesizer::SynthesizeBodyResult (CompoundStmt *Body,
                                       DC,
                                       SourceLocation(),
                                       SourceLocation(),
-                                      &result_ptr_id,
+                                      result_ptr_id,
                                       ptr_qual_type,
                                       NULL,
                                       SC_Static,

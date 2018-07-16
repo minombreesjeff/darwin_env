@@ -174,6 +174,28 @@ bool NestedNameSpecifier::isDependent() const {
   return false;
 }
 
+/// \brief Whether this nested name specifier refers to a dependent
+/// type or not.
+bool NestedNameSpecifier::isInstantiationDependent() const {
+  switch (getKind()) {
+  case Identifier:
+    // Identifier specifiers always represent dependent types
+    return true;
+    
+  case Namespace:
+  case NamespaceAlias:
+  case Global:
+    return false;
+    
+  case TypeSpec:
+  case TypeSpecWithTemplate:
+    return getAsType()->isInstantiationDependentType();
+  }
+  
+  // Necessary to suppress a GCC warning.
+  return false;
+}
+
 bool NestedNameSpecifier::containsUnexpandedParameterPack() const {
   switch (getKind()) {
   case Identifier:
@@ -196,7 +218,7 @@ bool NestedNameSpecifier::containsUnexpandedParameterPack() const {
 /// \brief Print this nested name specifier to the given output
 /// stream.
 void
-NestedNameSpecifier::print(llvm::raw_ostream &OS,
+NestedNameSpecifier::print(raw_ostream &OS,
                            const PrintingPolicy &Policy) const {
   if (getPrefix())
     getPrefix()->print(OS, Policy);
@@ -547,7 +569,7 @@ void NestedNameSpecifierLocBuilder::MakeTrivial(ASTContext &Context,
   // Construct bogus (but well-formed) source information for the 
   // nested-name-specifier.
   BufferSize = 0;
-  llvm::SmallVector<NestedNameSpecifier *, 4> Stack;
+  SmallVector<NestedNameSpecifier *, 4> Stack;
   for (NestedNameSpecifier *NNS = Qualifier; NNS; NNS = NNS->getPrefix())
     Stack.push_back(NNS);
   while (!Stack.empty()) {

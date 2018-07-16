@@ -16,22 +16,8 @@
 
 namespace lldb {
 
-#ifdef SWIG
-%feature("docstring",
-         "Represents an executable image and its associated object and symbol"
-         " files.\n"
-         "\n"
-         "The module is designed to be able to select a single slice of an\n"
-         "executable image as it would appear on disk and during program\n"
-         "execution."
-         ) SBModule;
-#endif
 class SBModule
 {
-#ifdef SWIG
-    %feature("autodoc", "1");
-#endif
-
 public:
 
     SBModule ();
@@ -48,9 +34,6 @@ public:
     bool
     IsValid () const;
 
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Get const accessor for the module file specification.
     ///
@@ -61,15 +44,9 @@ public:
     /// @return
     ///     A const reference to the file specification object.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") GetFileSpec;
-#endif
     lldb::SBFileSpec
     GetFileSpec () const;
 
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Get accessor for the module platform file specification.
     ///
@@ -85,9 +62,6 @@ public:
     /// @return
     ///     A const reference to the file specification object.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") GetPlatformFileSpec;
-#endif
     lldb::SBFileSpec
     GetPlatformFileSpec () const;
 
@@ -99,11 +73,6 @@ public:
     GetUUIDBytes () const;
 #endif
 
-#ifdef SWIG
-    %feature("autodoc",
-             "Returns the UUID of the module as a Python string."
-             ) GetUUIDString;
-#endif
     const char *
     GetUUIDString () const;
 
@@ -133,9 +102,6 @@ public:
     lldb::SBSymbol
     GetSymbolAtIndex (size_t idx);
 
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Find functions by name.
     ///
@@ -160,39 +126,38 @@ public:
     /// @return
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") FindFunctions;
-#endif
     uint32_t
     FindFunctions (const char *name, 
                    uint32_t name_type_mask, // Logical OR one or more FunctionNameType enum bits
                    bool append, 
                    lldb::SBSymbolContextList& sc_list);
 
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Find global and static variables by name.
+    ///
+    /// @param[in] target
+    ///     A valid SBTarget instance representing the debuggee.
     ///
     /// @param[in] name
     ///     The name of the global or static variable we are looking
     ///     for.
     ///
-    /// @param[in] target
-    ///     The target program where the variables reside.
+    /// @param[in] max_matches
+    ///     Allow the number of matches to be limited to \a max_matches.
     ///
     /// @return
     ///     A list of matched variables in an SBValueList.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") FindGlobalVariables;
-#endif
     lldb::SBValueList
     FindGlobalVariables (lldb::SBTarget &target, 
                          const char *name, 
                          uint32_t max_matches);
     
+    lldb::SBType
+    FindFirstType (const char* name);
+    
+    lldb::SBTypeList
+    FindTypes (const char* type);
 
 private:
     friend class SBAddress;

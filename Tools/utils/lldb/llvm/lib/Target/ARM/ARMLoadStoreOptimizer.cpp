@@ -14,10 +14,10 @@
 
 #define DEBUG_TYPE "arm-ldst-opt"
 #include "ARM.h"
-#include "ARMAddressingModes.h"
 #include "ARMBaseInstrInfo.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMRegisterInfo.h"
+#include "MCTargetDesc/ARMAddressingModes.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -26,6 +26,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
+#include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
@@ -329,13 +330,9 @@ ARMLoadStoreOpt::MergeOps(MachineBasicBlock &MBB,
       if (NewBase == 0)
         return false;
     }
-    int BaseOpc = !isThumb2
-      ? ARM::ADDri
-      : ((Base == ARM::SP) ? ARM::t2ADDrSPi : ARM::t2ADDri);
+    int BaseOpc = !isThumb2 ? ARM::ADDri : ARM::t2ADDri;
     if (Offset < 0) {
-      BaseOpc = !isThumb2
-        ? ARM::SUBri
-        : ((Base == ARM::SP) ? ARM::t2SUBrSPi : ARM::t2SUBri);
+      BaseOpc = !isThumb2 ? ARM::SUBri : ARM::t2SUBri;
       Offset = - Offset;
     }
     int ImmedOffset = isThumb2
@@ -516,8 +513,6 @@ static inline bool isMatchingDecrement(MachineInstr *MI, unsigned Base,
   if (!MI)
     return false;
   if (MI->getOpcode() != ARM::t2SUBri &&
-      MI->getOpcode() != ARM::t2SUBrSPi &&
-      MI->getOpcode() != ARM::t2SUBrSPi12 &&
       MI->getOpcode() != ARM::tSUBspi &&
       MI->getOpcode() != ARM::SUBri)
     return false;
@@ -541,8 +536,6 @@ static inline bool isMatchingIncrement(MachineInstr *MI, unsigned Base,
   if (!MI)
     return false;
   if (MI->getOpcode() != ARM::t2ADDri &&
-      MI->getOpcode() != ARM::t2ADDrSPi &&
-      MI->getOpcode() != ARM::t2ADDrSPi12 &&
       MI->getOpcode() != ARM::tADDspi &&
       MI->getOpcode() != ARM::ADDri)
     return false;
@@ -773,7 +766,7 @@ static unsigned getPreIndexedLoadStoreOpcode(unsigned Opc,
   case ARM::LDRi12:
     return ARM::LDR_PRE;
   case ARM::STRi12:
-    return ARM::STR_PRE;
+    return ARM::STR_PRE_IMM;
   case ARM::VLDRS:
     return Mode == ARM_AM::add ? ARM::VLDMSIA_UPD : ARM::VLDMSDB_UPD;
   case ARM::VLDRD:
@@ -797,9 +790,9 @@ static unsigned getPostIndexedLoadStoreOpcode(unsigned Opc,
                                               ARM_AM::AddrOpc Mode) {
   switch (Opc) {
   case ARM::LDRi12:
-    return ARM::LDR_POST;
+    return ARM::LDR_POST_IMM;
   case ARM::STRi12:
-    return ARM::STR_POST;
+    return ARM::STR_POST_IMM;
   case ARM::VLDRS:
     return Mode == ARM_AM::add ? ARM::VLDMSIA_UPD : ARM::VLDMSDB_UPD;
   case ARM::VLDRD:
@@ -901,7 +894,10 @@ bool ARMLoadStoreOpt::MergeBaseUpdateLoadStore(MachineBasicBlock &MBB,
     return false;
 
   unsigned Offset = 0;
-  if (isAM2)
+  // FIXME: Loads still use a combined reg/imm offset operand. When
+  // AM2 refactoring is complete, this can go away and just always use
+  // the raw Offset value.
+  if (isAM2 && isLd)
     Offset = ARM_AM::getAM2Opc(AddSub, Bytes, ARM_AM::no_shift);
   else if (!isAM5)
     Offset = AddSub == ARM_AM::sub ? -Bytes : Bytes;
@@ -931,7 +927,10 @@ bool ARMLoadStoreOpt::MergeBaseUpdateLoadStore(MachineBasicBlock &MBB,
         .addReg(Base).addImm(Offset).addImm(Pred).addReg(PredReg);
   } else {
     MachineOperand &MO = MI->getOperand(0);
-    if (isAM2)
+    // FIXME: post-indexed stores use am2offset_imm, which still encodes
+    // the vestigal zero-reg offset register. When that's fixed, this clause
+    // can be removed entirely.
+    if (isAM2 && NewOpc == ARM::STR_POST_IMM)
       // STR_PRE, STR_POST
       BuildMI(MBB, MBBI, dl, TII->get(NewOpc), Base)
         .addReg(MO.getReg(), getKillRegState(MO.isKill()))
@@ -947,8 +946,8 @@ bool ARMLoadStoreOpt::MergeBaseUpdateLoadStore(MachineBasicBlock &MBB,
   return true;
 }
 
-/// isMemoryOp - Returns true if instruction is a memory operations (that this
-/// pass is capable of operating on).
+/// isMemoryOp - Returns true if instruction is a memory operation that this
+/// pass is capable of operating on.
 static bool isMemoryOp(const MachineInstr *MI) {
   // When no memory operands are present, conservatively assume unaligned,
   // volatile, unfoldable.
@@ -1461,19 +1460,19 @@ static bool IsSafeAndProfitableToMove(bool isLd, unsigned Base,
   while (++I != E) {
     if (I->isDebugValue() || MemOps.count(&*I))
       continue;
-    const TargetInstrDesc &TID = I->getDesc();
-    if (TID.isCall() || TID.isTerminator() || I->hasUnmodeledSideEffects())
+    const MCInstrDesc &MCID = I->getDesc();
+    if (MCID.isCall() || MCID.isTerminator() || I->hasUnmodeledSideEffects())
       return false;
-    if (isLd && TID.mayStore())
+    if (isLd && MCID.mayStore())
       return false;
     if (!isLd) {
-      if (TID.mayLoad())
+      if (MCID.mayLoad())
         return false;
       // It's not safe to move the first 'str' down.
       // str r1, [r0]
       // strh r5, [r0]
       // str r4, [r0, #+4]
-      if (TID.mayStore())
+      if (MCID.mayStore())
         return false;
     }
     for (unsigned j = 0, NumOps = I->getNumOperands(); j != NumOps; ++j) {
@@ -1672,14 +1671,14 @@ bool ARMPreAllocLoadStoreOpt::RescheduleOps(MachineBasicBlock *MBB,
           Ops.pop_back();
           Ops.pop_back();
 
-          const TargetInstrDesc &TID = TII->get(NewOpc);
-          const TargetRegisterClass *TRC = TID.OpInfo[0].getRegClass(TRI);
+          const MCInstrDesc &MCID = TII->get(NewOpc);
+          const TargetRegisterClass *TRC = TII->getRegClass(MCID, 0, TRI);
           MRI->constrainRegClass(EvenReg, TRC);
           MRI->constrainRegClass(OddReg, TRC);
 
           // Form the pair instruction.
           if (isLd) {
-            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos, dl, TID)
+            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos, dl, MCID)
               .addReg(EvenReg, RegState::Define)
               .addReg(OddReg, RegState::Define)
               .addReg(BaseReg);
@@ -1691,7 +1690,7 @@ bool ARMPreAllocLoadStoreOpt::RescheduleOps(MachineBasicBlock *MBB,
             MIB.addImm(Offset).addImm(Pred).addReg(PredReg);
             ++NumLDRDFormed;
           } else {
-            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos, dl, TID)
+            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos, dl, MCID)
               .addReg(EvenReg)
               .addReg(OddReg)
               .addReg(BaseReg);
@@ -1742,8 +1741,8 @@ ARMPreAllocLoadStoreOpt::RescheduleLoadStoreInstrs(MachineBasicBlock *MBB) {
   while (MBBI != E) {
     for (; MBBI != E; ++MBBI) {
       MachineInstr *MI = MBBI;
-      const TargetInstrDesc &TID = MI->getDesc();
-      if (TID.isCall() || TID.isTerminator()) {
+      const MCInstrDesc &MCID = MI->getDesc();
+      if (MCID.isCall() || MCID.isTerminator()) {
         // Stop at barriers.
         ++MBBI;
         break;

@@ -117,7 +117,7 @@ GetCompleteQualType (clang::ASTContext *ast, clang::QualType qual_type)
                 clang::ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
                 // We currently can't complete objective C types through the newly added ASTContext
                 // because it only supports TagDecl objects right now...
-                if(class_interface_decl)
+                if (class_interface_decl)
                 {
                     bool is_forward_decl = class_interface_decl->isForwardDecl();
                     if (is_forward_decl && class_interface_decl->hasExternalLexicalStorage())
@@ -143,6 +143,9 @@ GetCompleteQualType (clang::ASTContext *ast, clang::QualType qual_type)
 
     case clang::Type::Typedef:
         return GetCompleteQualType (ast, cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType());
+    
+    case clang::Type::Elaborated:
+        return GetCompleteQualType (ast, cast<ElaboratedType>(qual_type)->getNamedType());
 
     default:
         break;
@@ -368,7 +371,7 @@ ClangASTContext::ClangASTContext (const char *target_triple) :
 
 {
     if (target_triple && target_triple[0])
-        m_target_triple.assign (target_triple);
+        SetTargetTriple (target_triple);
 }
 
 //----------------------------------------------------------------------
@@ -418,8 +421,7 @@ ClangASTContext::SetTargetTriple (const char *target_triple)
 void
 ClangASTContext::SetArchitecture (const ArchSpec &arch)
 {
-    Clear();
-    m_target_triple.assign(arch.GetTriple().str());
+    SetTargetTriple(arch.GetTriple().str().c_str());
 }
 
 bool
@@ -1066,7 +1068,7 @@ ClangASTContext::CreateRecordType (const char *name, int kind, DeclContext *decl
         decl_ctx = ast->getTranslationUnitDecl();
 
 
-    if (language == eLanguageTypeObjC)
+    if (language == eLanguageTypeObjC || language == eLanguageTypeObjC_plus_plus)
     {
         bool isForwardDecl = true;
         bool isInternal = false;
@@ -1144,6 +1146,9 @@ ClangASTContext::SetHasExternalStorage (clang_type_t clang_type, bool has_extern
 
     case clang::Type::Typedef:
         return ClangASTContext::SetHasExternalStorage (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(), has_extern);
+    
+    case clang::Type::Elaborated:
+        return ClangASTContext::SetHasExternalStorage (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(), has_extern);
 
     default:
         break;
@@ -1602,9 +1607,10 @@ ClangASTContext::AddFieldToRecordType
                                                   SourceLocation(),
                                                   name ? &identifier_table->get(name) : NULL, // Identifier
                                                   QualType::getFromOpaquePtr(field_type), // Field type
-                                                  NULL,       // DeclaratorInfo *
+                                                  NULL,       // TInfo *
                                                   bit_width,  // BitWidth
-                                                  false);     // Mutable
+                                                  false,      // Mutable
+                                                  false);     // HasInit
 
             field->setAccess (ConvertAccessTypeToAccessSpecifier (access));
 
@@ -2077,7 +2083,30 @@ ClangASTContext::GetTypeInfo
             if (ast && pointee_or_element_clang_type)
                 *pointee_or_element_clang_type = ast->ObjCBuiltinClassTy.getAsOpaquePtr();
             return eTypeIsBuiltIn | eTypeIsPointer | eTypeHasValue;
-
+                break;
+        case clang::BuiltinType::Bool:
+        case clang::BuiltinType::Char_U:
+        case clang::BuiltinType::UChar:
+        case clang::BuiltinType::WChar_U:
+        case clang::BuiltinType::Char16:
+        case clang::BuiltinType::Char32:
+        case clang::BuiltinType::UShort:
+        case clang::BuiltinType::UInt:
+        case clang::BuiltinType::ULong:
+        case clang::BuiltinType::ULongLong:
+        case clang::BuiltinType::UInt128:
+        case clang::BuiltinType::Char_S:
+        case clang::BuiltinType::SChar:
+        case clang::BuiltinType::WChar_S:
+        case clang::BuiltinType::Short:
+        case clang::BuiltinType::Int:
+        case clang::BuiltinType::Long:
+        case clang::BuiltinType::LongLong:
+        case clang::BuiltinType::Int128:
+        case clang::BuiltinType::Float:
+        case clang::BuiltinType::Double:
+        case clang::BuiltinType::LongDouble:
+                return eTypeIsBuiltIn | eTypeHasValue | eTypeIsScalar;
         default: 
             break;
         }
@@ -2108,7 +2137,10 @@ ClangASTContext::GetTypeInfo
             *pointee_or_element_clang_type = cast<EnumType>(qual_type)->getDecl()->getIntegerType().getAsOpaquePtr();
         return eTypeIsEnumeration | eTypeHasValue;
 
-    case clang::Type::Elaborated:                       return 0;
+    case clang::Type::Elaborated:
+        return ClangASTContext::GetTypeInfo (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                             ast, 
+                                             pointee_or_element_clang_type);
     case clang::Type::ExtVector:                        return eTypeHasChildren | eTypeIsVector;
     case clang::Type::FunctionProto:                    return eTypeIsFuncPrototype | eTypeHasValue;
     case clang::Type::FunctionNoProto:                  return eTypeIsFuncPrototype | eTypeHasValue;
@@ -2182,7 +2214,8 @@ ClangASTContext::IsAggregateType (clang_type_t clang_type)
     case clang::Type::ObjCObject:
     case clang::Type::ObjCInterface:
         return true;
-
+    case clang::Type::Elaborated:
+        return ClangASTContext::IsAggregateType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
     case clang::Type::Typedef:
         return ClangASTContext::IsAggregateType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
 
@@ -2351,6 +2384,12 @@ ClangASTContext::GetNumChildren (clang::ASTContext *ast, clang_type_t clang_type
                                                         cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(), 
                                                         omit_empty_base_classes);
         break;
+        
+    case clang::Type::Elaborated:
+        num_children = ClangASTContext::GetNumChildren (ast, 
+                                                        cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                                        omit_empty_base_classes);
+        break;
 
     default:
         break;
@@ -2430,12 +2469,12 @@ ClangASTContext::GetNumPointeeChildren (clang_type_t clang_type)
     case clang::Type::UnresolvedUsing:          return 0;
     case clang::Type::Paren:                    return 0;
     case clang::Type::Typedef:                  return ClangASTContext::GetNumPointeeChildren (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+    case clang::Type::Elaborated:               return ClangASTContext::GetNumPointeeChildren (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
     case clang::Type::TypeOfExpr:               return 0;
     case clang::Type::TypeOf:                   return 0;
     case clang::Type::Decltype:                 return 0;
     case clang::Type::Record:                   return 0;
     case clang::Type::Enum:                     return 1;
-    case clang::Type::Elaborated:               return 1;
     case clang::Type::TemplateTypeParm:         return 1;
     case clang::Type::SubstTemplateTypeParm:    return 1;
     case clang::Type::TemplateSpecialization:   return 1;
@@ -2460,6 +2499,7 @@ ClangASTContext::GetChildClangTypeAtIndex
     uint32_t idx,
     bool transparent_pointers,
     bool omit_empty_base_classes,
+    bool ignore_array_bounds,
     std::string& child_name,
     uint32_t &child_byte_size,
     int32_t &child_byte_offset,
@@ -2478,6 +2518,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                                          idx,
                                          transparent_pointers,
                                          omit_empty_base_classes,
+                                         ignore_array_bounds,
                                          child_name,
                                          child_byte_size,
                                          child_byte_offset,
@@ -2498,6 +2539,7 @@ ClangASTContext::GetChildClangTypeAtIndex
     uint32_t idx,
     bool transparent_pointers,
     bool omit_empty_base_classes,
+    bool ignore_array_bounds,
     std::string& child_name,
     uint32_t &child_byte_size,
     int32_t &child_byte_offset,
@@ -2699,7 +2741,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                                         ObjCLanguageRuntime *objc_runtime = exe_ctx->process->GetObjCLanguageRuntime();
                                         if (objc_runtime != NULL)
                                         {
-                                            ClangASTType parent_ast_type (parent_qual_type.getAsOpaquePtr(), ast);
+                                            ClangASTType parent_ast_type (ast, parent_qual_type.getAsOpaquePtr());
                                             child_byte_offset = objc_runtime->GetByteOffsetForIvar (parent_ast_type, ivar_decl->getNameAsString().c_str());
                                         }
                                     }
@@ -2736,6 +2778,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                                                      idx,
                                                      transparent_pointers,
                                                      omit_empty_base_classes,
+                                                     ignore_array_bounds,
                                                      child_name,
                                                      child_byte_size,
                                                      child_byte_offset,
@@ -2771,7 +2814,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                 const ConstantArrayType *array = cast<ConstantArrayType>(parent_qual_type.getTypePtr());
                 const uint64_t element_count = array->getSize().getLimitedValue();
 
-                if (idx < element_count)
+                if (ignore_array_bounds || idx < element_count)
                 {
                     if (GetCompleteQualType (ast, array->getElementType()))
                     {
@@ -2783,7 +2826,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                         child_name.assign(element_name);
                         assert(field_type_info.first % 8 == 0);
                         child_byte_size = field_type_info.first / 8;
-                        child_byte_offset = idx * child_byte_size;
+                        child_byte_offset = (int32_t)idx * (int32_t)child_byte_size;
                         return array->getElementType().getAsOpaquePtr();
                     }
                 }
@@ -2810,6 +2853,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                                                      idx,
                                                      transparent_pointers,
                                                      omit_empty_base_classes,
+                                                     ignore_array_bounds,
                                                      child_name,
                                                      child_byte_size,
                                                      child_byte_offset,
@@ -2858,6 +2902,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                                                      idx,
                                                      transparent_pointers,
                                                      omit_empty_base_classes,
+                                                     ignore_array_bounds,
                                                      child_name,
                                                      child_byte_size,
                                                      child_byte_offset,
@@ -2895,6 +2940,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                                              idx,
                                              transparent_pointers,
                                              omit_empty_base_classes,
+                                             ignore_array_bounds,
                                              child_name,
                                              child_byte_size,
                                              child_byte_offset,
@@ -2903,6 +2949,23 @@ ClangASTContext::GetChildClangTypeAtIndex
                                              child_is_base_class,
                                              child_is_deref_of_parent);
             break;
+    
+        case clang::Type::Elaborated:
+            return GetChildClangTypeAtIndex (exe_ctx,
+                                             ast,
+                                             parent_name,
+                                             cast<ElaboratedType>(parent_qual_type)->getNamedType().getAsOpaquePtr(),
+                                             idx,
+                                             transparent_pointers,
+                                             omit_empty_base_classes,
+                                             ignore_array_bounds,
+                                             child_name,
+                                             child_byte_size,
+                                             child_byte_offset,
+                                             child_bitfield_bit_size,
+                                             child_bitfield_bit_offset,
+                                             child_is_base_class,
+                                             child_is_deref_of_parent); 
 
         default:
             break;
@@ -3135,7 +3198,7 @@ ClangASTContext::GetIndexOfChildMemberWithName
 
                     //const Decl *root_cdecl = cxx_record_decl->getCanonicalDecl();
                     // Didn't find things easily, lets let clang do its thang...
-                    IdentifierInfo & ident_ref = ast->Idents.get(name, name + strlen (name));
+                    IdentifierInfo & ident_ref = ast->Idents.get(name_sref);
                     DeclarationName decl_name(&ident_ref);
 
                     CXXBasePaths paths;
@@ -3612,6 +3675,7 @@ ClangASTContext::GetDeclContextForType (clang_type_t clang_type)
     const clang::Type::TypeClass type_class = qual_type->getTypeClass();
     switch (type_class)
     {
+    case clang::Type::UnaryTransform:           break;
     case clang::Type::FunctionNoProto:          break;
     case clang::Type::FunctionProto:            break;
     case clang::Type::IncompleteArray:          break;
@@ -3634,7 +3698,7 @@ ClangASTContext::GetDeclContextForType (clang_type_t clang_type)
     case clang::Type::Record:                   return cast<RecordType>(qual_type)->getDecl();
     case clang::Type::Enum:                     return cast<EnumType>(qual_type)->getDecl();
     case clang::Type::Typedef:                  return ClangASTContext::GetDeclContextForType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
-
+    case clang::Type::Elaborated:               return ClangASTContext::GetDeclContextForType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
     case clang::Type::TypeOfExpr:               break;
     case clang::Type::TypeOf:                   break;
     case clang::Type::Decltype:                 break;
@@ -3647,7 +3711,6 @@ ClangASTContext::GetDeclContextForType (clang_type_t clang_type)
     case clang::Type::PackExpansion:            break;
     case clang::Type::UnresolvedUsing:          break;
     case clang::Type::Paren:                    break;
-    case clang::Type::Elaborated:               break;
     case clang::Type::Attributed:               break;
     case clang::Type::Auto:                     break;
     case clang::Type::InjectedClassName:        break;
@@ -4088,7 +4151,10 @@ ClangASTContext::IsPossibleDynamicType (clang::ASTContext *ast, clang_type_t cla
                 
             case clang::Type::Typedef:
                 return ClangASTContext::IsPossibleDynamicType (ast, cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(), dynamic_pointee_type);
-                
+            
+            case clang::Type::Elaborated:
+                return ClangASTContext::IsPossibleDynamicType (ast, cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(), dynamic_pointee_type);
+            
             default:
                 break;
         }
@@ -4218,6 +4284,9 @@ ClangASTContext::IsPossibleCPlusPlusDynamicType (clang::ASTContext *ast, clang_t
 
             case clang::Type::Typedef:
                 return ClangASTContext::IsPossibleCPlusPlusDynamicType (ast, cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(), dynamic_pointee_type);
+
+            case clang::Type::Elaborated:
+                return ClangASTContext::IsPossibleCPlusPlusDynamicType (ast, cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
 
             default:
                 break;
@@ -4355,6 +4424,8 @@ ClangASTContext::IsPointerOrReferenceType (clang_type_t clang_type, clang_type_t
         return true;
     case clang::Type::Typedef:
         return ClangASTContext::IsPointerOrReferenceType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+    case clang::Type::Elaborated:
+        return ClangASTContext::IsPointerOrReferenceType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
     default:
         break;
     }
@@ -4421,6 +4492,8 @@ ClangASTContext::IsPointerType (clang_type_t clang_type, clang_type_t *target_ty
             return true;
         case clang::Type::Typedef:
             return ClangASTContext::IsPointerType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(), target_type);
+        case clang::Type::Elaborated:
+            return ClangASTContext::IsPointerType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(), target_type);
         default:
             break;
         }
@@ -4605,6 +4678,8 @@ ClangASTContext::IsFunctionPointerType (clang_type_t clang_type)
             break;
         case clang::Type::Typedef:
             return ClangASTContext::IsFunctionPointerType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+        case clang::Type::Elaborated:
+            return ClangASTContext::IsFunctionPointerType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
 
         case clang::Type::LValueReference:
         case clang::Type::RValueReference:
@@ -4624,9 +4699,27 @@ ClangASTContext::GetArraySize (clang_type_t clang_type)
 {
     if (clang_type)
     {
-        const ConstantArrayType *array = cast<ConstantArrayType>(QualType::getFromOpaquePtr(clang_type).getTypePtr());
-        if (array)
-            return array->getSize().getLimitedValue();
+        QualType qual_type(QualType::getFromOpaquePtr(clang_type));
+        const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+        switch (type_class)
+        {
+        case clang::Type::ConstantArray:
+            {
+                const ConstantArrayType *array = cast<ConstantArrayType>(QualType::getFromOpaquePtr(clang_type).getTypePtr());
+                if (array)
+                    return array->getSize().getLimitedValue();
+            }
+            break;
+
+        case clang::Type::Typedef:
+            return ClangASTContext::GetArraySize(cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+            
+        case clang::Type::Elaborated:
+            return ClangASTContext::GetArraySize(cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
+                
+        default:
+            break;
+        }
     }
     return 0;
 }
@@ -4644,30 +4737,44 @@ ClangASTContext::IsArrayType (clang_type_t clang_type, clang_type_t*member_type,
     {
     default:
         break;
+
     case clang::Type::ConstantArray:
         if (member_type)
             *member_type = cast<ConstantArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = cast<ConstantArrayType>(qual_type)->getSize().getLimitedValue(ULLONG_MAX);
         return true;
+
     case clang::Type::IncompleteArray:
         if (member_type)
             *member_type = cast<IncompleteArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = 0;
         return true;
+
     case clang::Type::VariableArray:
         if (member_type)
             *member_type = cast<VariableArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = 0;
         return true;
+
     case clang::Type::DependentSizedArray:
         if (member_type)
             *member_type = cast<DependentSizedArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = 0;
         return true;
+    
+    case clang::Type::Typedef:
+        return ClangASTContext::IsArrayType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(),
+                                             member_type, 
+                                             size);
+    
+    case clang::Type::Elaborated:
+        return ClangASTContext::IsArrayType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                             member_type,
+                                             size);
     }
     return false;
 }
@@ -4848,5 +4955,17 @@ ClangASTContext::GetCompleteDecl (clang::ASTContext *ast,
     {
         return false;
     }
+}
+
+clang::DeclContext *
+ClangASTContext::GetAsDeclContext (clang::CXXMethodDecl *cxx_method_decl)
+{
+    return clang::dyn_cast<clang::DeclContext>(cxx_method_decl);
+}
+
+clang::DeclContext *
+ClangASTContext::GetAsDeclContext (clang::ObjCMethodDecl *objc_method_decl)
+{
+    return clang::dyn_cast<clang::DeclContext>(objc_method_decl);
 }
 

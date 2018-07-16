@@ -604,7 +604,7 @@ ObjectFileMachO::ParseSections ()
                             segment_name.Clear();
                         }
                     }
-                    if (m_header.filetype == HeaderFileTypeDSYM)
+                    if (segment_sp && m_header.filetype == HeaderFileTypeDSYM)
                     {
                         if (first_segment_sectID <= sectID)
                         {
@@ -675,9 +675,15 @@ public:
             {
                 Section *section = m_section_list->FindSectionByID (n_sect).get();
                 m_section_infos[n_sect].section = section;
-                assert (section != NULL);
-                m_section_infos[n_sect].vm_range.SetBaseAddress (section->GetFileAddress());
-                m_section_infos[n_sect].vm_range.SetByteSize (section->GetByteSize());
+                if (section != NULL)
+                {
+                    m_section_infos[n_sect].vm_range.SetBaseAddress (section->GetFileAddress());
+                    m_section_infos[n_sect].vm_range.SetByteSize (section->GetByteSize());
+                }
+                else
+                {
+                    fprintf (stderr, "error: unable to find section for section %u\n", n_sect);
+                }
             }
             if (m_section_infos[n_sect].vm_range.Contains(file_addr))
                 return m_section_infos[n_sect].section;
@@ -1671,6 +1677,90 @@ ObjectFileMachO::GetEntryPointAddress ()
     return m_entry_point_address;
 
 }
+
+ObjectFile::Type
+ObjectFileMachO::CalculateType()
+{
+    switch (m_header.filetype)
+    {
+        case HeaderFileTypeObject:                                          // 0x1u MH_OBJECT
+            if (GetAddressByteSize () == 4)
+            {
+                // 32 bit kexts are just object files, but they do have a valid
+                // UUID load command.
+                UUID uuid;
+                if (GetUUID(&uuid))
+                {
+                    // this checking for the UUID load command is not enough
+                    // we could eventually look for the symbol named 
+                    // "OSKextGetCurrentIdentifier" as this is required of kexts
+                    if (m_strata == eStrataInvalid)
+                        m_strata = eStrataKernel;
+                    return eTypeSharedLibrary;
+                }
+            }
+            return eTypeObjectFile;
+
+        case HeaderFileTypeExecutable:          return eTypeExecutable;     // 0x2u MH_EXECUTE
+        case HeaderFileTypeFixedVMShlib:        return eTypeSharedLibrary;  // 0x3u MH_FVMLIB
+        case HeaderFileTypeCore:                return eTypeCoreFile;       // 0x4u MH_CORE
+        case HeaderFileTypePreloadedExecutable: return eTypeSharedLibrary;  // 0x5u MH_PRELOAD
+        case HeaderFileTypeDynamicShlib:        return eTypeSharedLibrary;  // 0x6u MH_DYLIB
+        case HeaderFileTypeDynamicLinkEditor:   return eTypeDynamicLinker;  // 0x7u MH_DYLINKER
+        case HeaderFileTypeBundle:              return eTypeSharedLibrary;  // 0x8u MH_BUNDLE
+        case HeaderFileTypeDynamicShlibStub:    return eTypeStubLibrary;    // 0x9u MH_DYLIB_STUB
+        case HeaderFileTypeDSYM:                return eTypeDebugInfo;      // 0xAu MH_DSYM
+        case HeaderFileTypeKextBundle:          return eTypeSharedLibrary;  // 0xBu MH_KEXT_BUNDLE
+        default:
+            break;
+    }
+    return eTypeUnknown;
+}
+
+ObjectFile::Strata
+ObjectFileMachO::CalculateStrata()
+{
+    switch (m_header.filetype)
+    {
+        case HeaderFileTypeObject:      // 0x1u MH_OBJECT
+            {
+                // 32 bit kexts are just object files, but they do have a valid
+                // UUID load command.
+                UUID uuid;
+                if (GetUUID(&uuid))
+                {
+                    // this checking for the UUID load command is not enough
+                    // we could eventually look for the symbol named 
+                    // "OSKextGetCurrentIdentifier" as this is required of kexts
+                    if (m_type == eTypeInvalid)
+                        m_type = eTypeSharedLibrary;
+
+                    return eStrataKernel;
+                }
+            }
+            return eStrataUnknown;
+
+        case HeaderFileTypeExecutable:                                     // 0x2u MH_EXECUTE
+            // Check for the MH_DYLDLINK bit in the flags
+            if (m_header.flags & HeaderFlagBitIsDynamicLinkObject)
+                return eStrataUser;
+            return eStrataKernel;
+
+        case HeaderFileTypeFixedVMShlib:        return eStrataUser;         // 0x3u MH_FVMLIB
+        case HeaderFileTypeCore:                return eStrataUnknown;      // 0x4u MH_CORE
+        case HeaderFileTypePreloadedExecutable: return eStrataUser;         // 0x5u MH_PRELOAD
+        case HeaderFileTypeDynamicShlib:        return eStrataUser;         // 0x6u MH_DYLIB
+        case HeaderFileTypeDynamicLinkEditor:   return eStrataUser;         // 0x7u MH_DYLINKER
+        case HeaderFileTypeBundle:              return eStrataUser;         // 0x8u MH_BUNDLE
+        case HeaderFileTypeDynamicShlibStub:    return eStrataUser;         // 0x9u MH_DYLIB_STUB
+        case HeaderFileTypeDSYM:                return eStrataUnknown;      // 0xAu MH_DSYM
+        case HeaderFileTypeKextBundle:          return eStrataKernel;       // 0xBu MH_KEXT_BUNDLE
+        default:
+            break;
+    }
+    return eStrataUnknown;
+}
+
 
 bool
 ObjectFileMachO::GetArchitecture (ArchSpec &arch)

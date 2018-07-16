@@ -88,9 +88,30 @@ DynamicLoaderMacOSXDYLD::CreateInstance (Process* process, bool force)
     bool create = force;
     if (!create)
     {
-        const llvm::Triple &triple_ref = process->GetTarget().GetArchitecture().GetTriple();
-        if (triple_ref.getOS() == llvm::Triple::Darwin && triple_ref.getVendor() == llvm::Triple::Apple)
-            create = true;
+        create = true;
+        Module* exe_module = process->GetTarget().GetExecutableModulePointer();
+        if (exe_module)
+        {
+            ObjectFile *object_file = exe_module->GetObjectFile();
+            if (object_file)
+            {
+                SectionList *section_list = object_file->GetSectionList();
+                if (section_list)
+                {
+                    static ConstString g_kld_section_name ("__KLD");
+                    if (section_list->FindSectionByName (g_kld_section_name))
+                    {
+                        create = false;
+                    }
+                }
+            }
+        }
+        
+        if (create)
+        {
+            const llvm::Triple &triple_ref = process->GetTarget().GetArchitecture().GetTriple();
+            create = triple_ref.getOS() == llvm::Triple::Darwin && triple_ref.getVendor() == llvm::Triple::Apple;
+        }
     }
     
     if (create)
@@ -204,7 +225,7 @@ DynamicLoaderMacOSXDYLD::LocateDYLD()
     }
 
     // Check some default values
-    Module *executable = m_process->GetTarget().GetExecutableModule().get();
+    Module *executable = m_process->GetTarget().GetExecutableModulePointer();
 
     if (executable)
     {
@@ -242,13 +263,32 @@ DynamicLoaderMacOSXDYLD::FindTargetModuleForDYLDImageInfo (const DYLDImageInfo &
 
         module_sp = target_images.FindFirstModuleForFileSpec (image_info.file_spec, &arch, NULL);
 
-        if (can_create && !module_sp)
+        if (can_create)
         {
-            module_sp = m_process->GetTarget().GetSharedModule (image_info.file_spec,
-                                                                arch,
-                                                                image_info_uuid_is_valid ? &image_info.uuid : NULL);
-            if (did_create_ptr)
-                *did_create_ptr = module_sp;
+            if (module_sp)
+            {
+                if (image_info_uuid_is_valid)
+                {
+                    if (module_sp->GetUUID() != image_info.uuid)
+                        module_sp.reset();
+                }
+                else
+                {
+                    // No UUID, we must rely upon the cached module modification 
+                    // time and the modification time of the file on disk
+                    if (module_sp->GetModificationTime() != module_sp->GetFileSpec().GetModificationTime())
+                        module_sp.reset();
+                }
+            }
+            
+            if (!module_sp)
+            {
+                module_sp = m_process->GetTarget().GetSharedModule (image_info.file_spec,
+                                                                    arch,
+                                                                    image_info_uuid_is_valid ? &image_info.uuid : NULL);
+                if (did_create_ptr)
+                    *did_create_ptr = module_sp;
+            }
         }
     }
     return module_sp;
@@ -808,7 +848,9 @@ DynamicLoaderMacOSXDYLD::RemoveModulesUsingImageInfosAddress (lldb::addr_t image
                 ModuleSP unload_image_module_sp (FindTargetModuleForDYLDImageInfo (image_infos[idx], false, NULL));
                 if (unload_image_module_sp.get())
                 {
-                    UnloadImageLoadAddress (unload_image_module_sp.get(), image_infos[idx]);
+                    // When we unload, be sure to use the image info from the old list,
+                    // since that has sections correctly filled in.
+                    UnloadImageLoadAddress (unload_image_module_sp.get(), *pos);
                     unloaded_module_list.AppendIfNeeded (unload_image_module_sp);
                 }
                 else
@@ -908,24 +950,55 @@ DynamicLoaderMacOSXDYLD::InitializeFromAllImageInfos ()
 
     if (ReadAllImageInfosStructure ())
     {
-        if (m_dyld_all_image_infos.dylib_info_count > 0)
+        // Nothing to load or unload?
+        if (m_dyld_all_image_infos.dylib_info_count == 0)
+            return true;
+        
+        if (m_dyld_all_image_infos.dylib_info_addr == 0)
         {
-            if (m_dyld_all_image_infos.dylib_info_addr == 0)
+            // DYLD is updating the images now.  So we should say we have no images, and then we'll 
+            // figure it out when we hit the added breakpoint.
+            return false;
+        }
+        else
+        {
+            if (!AddModulesUsingImageInfosAddress (m_dyld_all_image_infos.dylib_info_addr, 
+                                                   m_dyld_all_image_infos.dylib_info_count))
             {
-                // DYLD is updating the images now.  So we should say we have no images, and then we'll 
-                // figure it out when we hit the added breakpoint.
-                return false;
-            }
-            else
-            {
-                if (!AddModulesUsingImageInfosAddress (m_dyld_all_image_infos.dylib_info_addr, 
-                                                       m_dyld_all_image_infos.dylib_info_count))
-                {
-                    DEBUG_PRINTF( "unable to read all data for all_dylib_infos.");
-                    m_dyld_image_infos.clear();
-                }
+                DEBUG_PRINTF( "unable to read all data for all_dylib_infos.");
+                m_dyld_image_infos.clear();
             }
         }
+
+        // Now we have one more bit of business.  If there is a library left in the images for our target that
+        // doesn't have a load address, then it must be something that we were expecting to load (for instance we
+        // read a load command for it) but it didn't in fact load - probably because DYLD_*_PATH pointed
+        // to an equivalent version.  We don't want it to stay in the target's module list or it will confuse
+        // us, so unload it here.
+        Target &target = m_process->GetTarget();
+        ModuleList &modules = target.GetImages();
+        ModuleList not_loaded_modules;
+        size_t num_modules = modules.GetSize();
+        for (size_t i = 0; i < num_modules; i++)
+        {
+            ModuleSP module_sp = modules.GetModuleAtIndex(i);
+            if (!module_sp->IsLoadedInTarget (&target))
+            {
+                if (log)
+                {
+                    StreamString s;
+                    module_sp->GetDescription (&s);
+                    log->Printf ("Unloading pre-run module: %s.", s.GetData ());
+                }
+                not_loaded_modules.Append (module_sp);
+            }
+        }
+        
+        if (not_loaded_modules.GetSize() != 0)
+        {
+            target.ModulesDidUnload(not_loaded_modules);
+        }
+
         return true;
     }
     else
@@ -950,7 +1023,7 @@ DynamicLoaderMacOSXDYLD::ReadMachHeader (lldb::addr_t addr, llvm::MachO::mach_he
     if (bytes_read == sizeof(llvm::MachO::mach_header))
     {
         uint32_t offset = 0;
-        ::memset (header, 0, sizeof(header));
+        ::memset (header, 0, sizeof(llvm::MachO::mach_header));
 
         // Get the magic byte unswapped so we can figure out what we are dealing with
         DataExtractor data(header_bytes.GetBytes(), header_bytes.GetByteSize(), lldb::endian::InlHostByteOrder(), 4);
@@ -1131,7 +1204,8 @@ DynamicLoaderMacOSXDYLD::UpdateImageInfosHeaderAndLoadCommands(DYLDImageInfo::co
 
     if (exe_idx < image_infos.size())
     {
-        ModuleSP exe_module_sp (FindTargetModuleForDYLDImageInfo (image_infos[exe_idx], false, NULL));
+        const bool can_create = true;
+        ModuleSP exe_module_sp (FindTargetModuleForDYLDImageInfo (image_infos[exe_idx], can_create, NULL));
 
         if (!exe_module_sp)
         {
@@ -1143,11 +1217,11 @@ DynamicLoaderMacOSXDYLD::UpdateImageInfosHeaderAndLoadCommands(DYLDImageInfo::co
         
         if (exe_module_sp)
         {
-            if (exe_module_sp.get() != m_process->GetTarget().GetExecutableModule().get())
+            if (exe_module_sp.get() != m_process->GetTarget().GetExecutableModulePointer())
             {
                 // Don't load dependent images since we are in dyld where we will know
                 // and find out about all images that are loaded
-                bool get_dependent_images = false;
+                const bool get_dependent_images = false;
                 m_process->GetTarget().SetExecutableModule (exe_module_sp, 
                                                             get_dependent_images);
             }

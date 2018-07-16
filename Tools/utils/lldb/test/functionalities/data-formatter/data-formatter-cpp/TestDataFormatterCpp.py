@@ -73,7 +73,16 @@ class DataFormatterTestCase(TestBase):
         self.expect("frame variable",
             patterns = ['\(Speed\) SPILookHex = 0x[0-9a-f]+' # Speed should look hex-ish now.
                         ]);
-
+        
+        # gcc4.2 on Mac OS X skips typedef chains in the DWARF output
+        if self.getCompiler() in ['clang', 'llvm-gcc']:        
+            self.expect("frame variable",
+                patterns = ['\(SignalMask\) SMILookHex = 0x[0-9a-f]+' # SignalMask should look hex-ish now.
+                            ]);
+            self.expect("frame variable", matching=False,
+                        patterns = ['\(Type4\) T4ILookChar = 0x[0-9a-f]+' # Type4 should NOT look hex-ish now.
+                                    ]);
+        
         # Now let's delete the 'Speed' custom format.
         self.runCmd("type format delete Speed")
 
@@ -85,6 +94,26 @@ class DataFormatterTestCase(TestBase):
         self.expect("type format delete Speed", error=True,
             substrs = ['no custom format for Speed'])
         
+        self.runCmd("type summary add -f \"arr = ${var%s}\" -x \"char \\[[0-9]+\\]\" -v")
+        
+        self.expect("frame variable strarr",
+                    substrs = ['arr = "Hello world!"'])
+        
+        self.runCmd("type summary clear")
+        
+        self.runCmd("type summary add -f \"ptr = ${var%s}\" \"char *\" -v")
+        
+        self.expect("frame variable strptr",
+                    substrs = ['ptr = "Hello world!"'])
+        
+        self.runCmd("type summary add -f \"arr = ${var%s}\" -x \"char \\[[0-9]+\\]\" -v")
+        
+        self.expect("frame variable strarr",
+                    substrs = ['arr = "Hello world!'])
+        
+        self.expect("frame variable strptr",
+                    substrs = ['ptr = "Hello world!"'])
+
         self.runCmd("type summary add -c Point")
             
         self.expect("frame variable iAmSomewhere",
@@ -99,6 +128,12 @@ class DataFormatterTestCase(TestBase):
 
         self.expect("frame variable iAmSomewhere",
             substrs = ['y=0x'])
+        
+        self.runCmd("type summary add -f \"y=${var.y},x=${var.x}\" Point")
+        
+        self.expect("frame variable iAmSomewhere",
+                    substrs = ['y=6',
+                               'x=4'])
 
         self.runCmd("type summary add -f \"hello\" Point -e")
 
@@ -147,7 +182,25 @@ class DataFormatterTestCase(TestBase):
         self.expect("frame variable cool_pointer",
             substrs = ['3,0,0'])
 
+        # test special symbols for formatting variables into summaries
+        self.runCmd("type summary add -f \"cool object @ ${var%L}\" i_am_cool")
+        self.runCmd("type summary delete \"i_am_cool [5]\"")
         
+        # this test might fail if the compiler tries to store
+        # these values into registers.. hopefully this is not
+        # going to be the case
+        self.expect("frame variable cool_array",
+            substrs = ['[0] = cool object @ 0x',
+                       '[1] = cool object @ 0x',
+                       '[2] = cool object @ 0x',
+                       '[3] = cool object @ 0x',
+                       '[4] = cool object @ 0x'])
+            
+        self.runCmd("type summary add -f \"goofy\" i_am_cool")
+        self.runCmd("type summary add -f \"${var.second_cool%S}\" i_am_cooler")
+
+        self.expect("frame variable the_coolest_guy",
+            substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
 
 if __name__ == '__main__':
     import atexit

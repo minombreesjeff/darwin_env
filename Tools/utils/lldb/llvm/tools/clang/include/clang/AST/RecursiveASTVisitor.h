@@ -750,6 +750,11 @@ DEF_TRAVERSE_TYPE(DecltypeType, {
     TRY_TO(TraverseStmt(T->getUnderlyingExpr()));
   })
 
+DEF_TRAVERSE_TYPE(UnaryTransformType, {
+    TRY_TO(TraverseType(T->getBaseType()));
+    TRY_TO(TraverseType(T->getUnderlyingType()));
+    })
+
 DEF_TRAVERSE_TYPE(AutoType, {
     TRY_TO(TraverseType(T->getDeducedType()));
   })
@@ -964,6 +969,10 @@ DEF_TRAVERSE_TYPELOC(TypeOfType, {
 // FIXME: location of underlying expr
 DEF_TRAVERSE_TYPELOC(DecltypeType, {
     TRY_TO(TraverseStmt(TL.getTypePtr()->getUnderlyingExpr()));
+  })
+
+DEF_TRAVERSE_TYPELOC(UnaryTransformType, {
+    TRY_TO(TraverseTypeLoc(TL.getUnderlyingTInfo()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_TYPELOC(AutoType, {
@@ -1712,6 +1721,7 @@ DEF_TRAVERSE_STMT(ObjCAtSynchronizedStmt, { })
 DEF_TRAVERSE_STMT(ObjCAtThrowStmt, { })
 DEF_TRAVERSE_STMT(ObjCAtTryStmt, { })
 DEF_TRAVERSE_STMT(ObjCForCollectionStmt, { })
+DEF_TRAVERSE_STMT(ObjCAutoreleasePoolStmt, { })
 DEF_TRAVERSE_STMT(CXXForRangeStmt, { })
 DEF_TRAVERSE_STMT(ReturnStmt, { })
 DEF_TRAVERSE_STMT(SwitchStmt, { })
@@ -1924,6 +1934,10 @@ DEF_TRAVERSE_STMT(ObjCMessageExpr, { })
 DEF_TRAVERSE_STMT(ObjCPropertyRefExpr, { })
 DEF_TRAVERSE_STMT(ObjCProtocolExpr, { })
 DEF_TRAVERSE_STMT(ObjCSelectorExpr, { })
+DEF_TRAVERSE_STMT(ObjCIndirectCopyRestoreExpr, { })
+DEF_TRAVERSE_STMT(ObjCBridgedCastExpr, {
+  TRY_TO(TraverseTypeLoc(S->getTypeInfoAsWritten()->getTypeLoc()));
+})
 DEF_TRAVERSE_STMT(ParenExpr, { })
 DEF_TRAVERSE_STMT(ParenListExpr, { })
 DEF_TRAVERSE_STMT(PredefinedExpr, { })
@@ -1964,6 +1978,8 @@ DEF_TRAVERSE_STMT(CXXNoexceptExpr, { })
 DEF_TRAVERSE_STMT(PackExpansionExpr, { })
 DEF_TRAVERSE_STMT(SizeOfPackExpr, { })
 DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmPackExpr, { })
+DEF_TRAVERSE_STMT(SubstNonTypeTemplateParmExpr, { })
+DEF_TRAVERSE_STMT(MaterializeTemporaryExpr, { })
 
 // These literals (all of them) do not need any action.
 DEF_TRAVERSE_STMT(IntegerLiteral, { })
@@ -1972,6 +1988,9 @@ DEF_TRAVERSE_STMT(FloatingLiteral, { })
 DEF_TRAVERSE_STMT(ImaginaryLiteral, { })
 DEF_TRAVERSE_STMT(StringLiteral, { })
 DEF_TRAVERSE_STMT(ObjCStringLiteral, { })
+  
+// Traverse OpenCL: AsType, Convert.
+DEF_TRAVERSE_STMT(AsTypeExpr, { })
 
 // FIXME: look at the following tricky-seeming exprs to see if we
 // need to recurse on anything.  These are ones that have methods

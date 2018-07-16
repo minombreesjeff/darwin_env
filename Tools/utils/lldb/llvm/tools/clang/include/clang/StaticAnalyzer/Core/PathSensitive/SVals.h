@@ -15,13 +15,9 @@
 #ifndef LLVM_CLANG_GR_RVALUE_H
 #define LLVM_CLANG_GR_RVALUE_H
 
+#include "clang/Basic/LLVM.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
-#include "llvm/Support/Casting.h"
 #include "llvm/ADT/ImmutableList.h"
-
-namespace llvm {
-  class raw_ostream;
-}
 
 //==------------------------------------------------------------------------==//
 //  Base SVal types.
@@ -74,7 +70,7 @@ public:
   ~SVal() {}
 
   /// BufferTy - A temporary buffer to hold a set of SVals.
-  typedef llvm::SmallVector<SVal,5> BufferTy;
+  typedef SmallVector<SVal,5> BufferTy;
 
   inline unsigned getRawKind() const { return Kind; }
   inline BaseKind getBaseKind() const { return (BaseKind) (Kind & BaseMask); }
@@ -142,12 +138,12 @@ public:
 
   const MemRegion *getAsRegion() const;
 
-  void dumpToStream(llvm::raw_ostream& OS) const;
+  void dumpToStream(raw_ostream& OS) const;
   void dump() const;
 
   // Iterators.
   class symbol_iterator {
-    llvm::SmallVector<const SymExpr*, 5> itr;
+    SmallVector<const SymExpr*, 5> itr;
     void expand();
   public:
     symbol_iterator() {}
@@ -240,7 +236,7 @@ protected:
     : DefinedSVal(d, false, SubKind) {}
 
 public:
-  void dumpToStream(llvm::raw_ostream& Out) const;
+  void dumpToStream(raw_ostream& Out) const;
 
   // Implement isa<T> support.
   static inline bool classof(const SVal* V) {
@@ -254,7 +250,7 @@ protected:
   : DefinedSVal(const_cast<void*>(D), true, SubKind) {}
 
 public:
-  void dumpToStream(llvm::raw_ostream& Out) const;
+  void dumpToStream(raw_ostream& Out) const;
 
   Loc(const Loc& X) : DefinedSVal(X.Data, true, X.getSubKind()) {}
 
@@ -533,7 +529,7 @@ public:
 } // end clang namespace
 
 namespace llvm {
-static inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
+static inline raw_ostream& operator<<(raw_ostream& os,
                                             clang::ento::SVal V) {
   V.dumpToStream(os);
   return os;

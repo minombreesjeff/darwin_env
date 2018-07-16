@@ -25,13 +25,13 @@ class SBEvent
 public:
     SBEvent();
 
+    SBEvent (const lldb::SBEvent &rhs);
+    
     // Make an event that contains a C string.
     SBEvent (uint32_t event, const char *cstr, uint32_t cstr_len);
 
     ~SBEvent();
 
-    SBEvent (const lldb::SBEvent &rhs);
-    
 #ifndef SWIG
     const SBEvent &
     operator = (const lldb::SBEvent &rhs);
@@ -49,8 +49,10 @@ public:
     lldb::SBBroadcaster
     GetBroadcaster () const;
 
+#ifndef SWIG
     bool
     BroadcasterMatchesPtr (const lldb::SBBroadcaster *broadcaster);
+#endif
 
     bool
     BroadcasterMatchesRef (const lldb::SBBroadcaster &broadcaster);
@@ -61,8 +63,10 @@ public:
     static const char *
     GetCStringFromEvent (const lldb::SBEvent &event);
 
+#ifndef SWIG
     bool
     GetDescription (lldb::SBStream &description);
+#endif
 
     bool
     GetDescription (lldb::SBStream &description) const;

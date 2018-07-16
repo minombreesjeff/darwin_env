@@ -21,18 +21,23 @@
 #include "lldb/Core/Section.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/Timer.h"
+#include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/OptionGroupArchitecture.h"
+#include "lldb/Interpreter/OptionGroupBoolean.h"
 #include "lldb/Interpreter/OptionGroupFile.h"
+#include "lldb/Interpreter/OptionGroupVariable.h"
 #include "lldb/Interpreter/OptionGroupPlatform.h"
 #include "lldb/Interpreter/OptionGroupUInt64.h"
 #include "lldb/Interpreter/OptionGroupUUID.h"
+#include "lldb/Interpreter/OptionGroupValueObjectDisplay.h"
 #include "lldb/Symbol/LineTable.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
+#include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Thread.h"
@@ -48,11 +53,11 @@ DumpTargetInfo (uint32_t target_idx, Target *target, const char *prefix_cstr, bo
 {
     const ArchSpec &target_arch = target->GetArchitecture();
     
-    ModuleSP exe_module_sp (target->GetExecutableModule ());
+    Module *exe_module = target->GetExecutableModulePointer();
     char exe_path[PATH_MAX];
     bool exe_valid = false;
-    if (exe_module_sp)
-        exe_valid = exe_module_sp->GetFileSpec().GetPath (exe_path, sizeof(exe_path));
+    if (exe_module)
+        exe_valid = exe_module->GetFileSpec().GetPath (exe_path, sizeof(exe_path));
     
     if (!exe_valid)
         ::strcpy (exe_path, "<none>");
@@ -141,7 +146,7 @@ public:
                        "Create a target using the argument as the main executable.",
                        NULL),
         m_option_group (interpreter),
-        m_file_options (),
+        m_arch_option (),
         m_platform_options(true) // Do include the "--platform" option in the platform settings by passing true
     {
         CommandArgumentEntry arg;
@@ -157,7 +162,7 @@ public:
         // Push the data for the first argument into the m_arguments vector.
         m_arguments.push_back (arg);
         
-        m_option_group.Append (&m_file_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_arch_option, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_platform_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Finalize();
     }
@@ -199,12 +204,12 @@ public:
             }
             ArchSpec file_arch;
             
-            const char *arch_cstr = m_file_options.GetArchitectureName();
+            const char *arch_cstr = m_arch_option.GetArchitectureName();
             if (arch_cstr)
             {        
                 if (!platform_sp)
                     platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
-                if (!m_file_options.GetArchitecture(platform_sp.get(), file_arch))
+                if (!m_arch_option.GetArchitecture(platform_sp.get(), file_arch))
                 {
                     result.AppendErrorWithFormat("invalid architecture '%s'\n", arch_cstr);
                     result.SetStatus (eReturnStatusFailed);
@@ -269,7 +274,7 @@ public:
     }
 private:
     OptionGroupOptions m_option_group;
-    OptionGroupArchitecture m_file_options;
+    OptionGroupArchitecture m_arch_option;
     OptionGroupPlatform m_platform_options;
 
 };
@@ -394,6 +399,350 @@ public:
         }
         return result.Succeeded();
     }
+};
+
+#pragma mark CommandObjectTargetSelect
+
+//----------------------------------------------------------------------
+// "target delete"
+//----------------------------------------------------------------------
+
+class CommandObjectTargetDelete : public CommandObject
+{
+public:
+    CommandObjectTargetDelete (CommandInterpreter &interpreter) :
+        CommandObject (interpreter,
+                       "target delete",
+                       "Delete one or more targets by target index.",
+                       NULL,
+                       0),
+        m_option_group (interpreter),
+        m_cleanup_option (LLDB_OPT_SET_1, false, "clean", 'c', 0, eArgTypeNone, "Perform extra cleanup to minimize memory consumption after deleting the target.", false)
+    {
+        m_option_group.Append (&m_cleanup_option, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Finalize();
+    }
+    
+    virtual
+    ~CommandObjectTargetDelete ()
+    {
+    }
+    
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        const size_t argc = args.GetArgumentCount();
+        std::vector<TargetSP> delete_target_list;
+        TargetList &target_list = m_interpreter.GetDebugger().GetTargetList();
+        bool success = true;
+        TargetSP target_sp;
+        if (argc > 0)
+        {
+            const uint32_t num_targets = target_list.GetNumTargets();
+            for (uint32_t arg_idx = 0; success && arg_idx < argc; ++arg_idx)
+            {
+                const char *target_idx_arg = args.GetArgumentAtIndex(arg_idx);
+                uint32_t target_idx = Args::StringToUInt32 (target_idx_arg, UINT32_MAX, 0, &success);
+                if (success)
+                {
+                    if (target_idx < num_targets)
+                    {     
+                        target_sp = target_list.GetTargetAtIndex (target_idx);
+                        if (target_sp)
+                        {
+                            delete_target_list.push_back (target_sp);
+                            continue;
+                        }
+                    }
+                    result.AppendErrorWithFormat ("target index %u is out of range, valid target indexes are 0 - %u\n", 
+                                                  target_idx,
+                                                  num_targets - 1);
+                    result.SetStatus (eReturnStatusFailed);
+                    success = false;
+                }
+                else
+                {
+                    result.AppendErrorWithFormat("invalid target index '%s'\n", target_idx_arg);
+                    result.SetStatus (eReturnStatusFailed);
+                    success = false;
+                }
+            }
+            
+        }
+        else
+        {
+            target_sp = target_list.GetSelectedTarget();
+            if (target_sp)
+            {
+                delete_target_list.push_back (target_sp);
+            }
+            else
+            {
+                result.AppendErrorWithFormat("no target is currently selected\n");
+                result.SetStatus (eReturnStatusFailed);
+                success = false;
+            }
+        }
+        if (success)
+        {
+            const size_t num_targets_to_delete = delete_target_list.size();
+            for (size_t idx = 0; idx < num_targets_to_delete; ++idx)
+            {
+                target_sp = delete_target_list[idx];
+                target_list.DeleteTarget(target_sp);
+                target_sp->Destroy();
+            }
+            // If "--clean" was specified, prune any orphaned shared modules from
+            // the global shared module list
+            if (m_cleanup_option.GetOptionValue ())
+            {
+                ModuleList::RemoveOrphanSharedModules();
+            }
+            result.GetOutputStream().Printf("%u targets deleted.\n", (uint32_t)num_targets_to_delete);
+            result.SetStatus(eReturnStatusSuccessFinishResult);
+        }
+        
+        return result.Succeeded();
+    }
+    
+    Options *
+    GetOptions ()
+    {
+        return &m_option_group;
+    }
+
+protected:
+    OptionGroupOptions m_option_group;
+    OptionGroupBoolean m_cleanup_option;
+};
+
+
+#pragma mark CommandObjectTargetVariable
+
+//----------------------------------------------------------------------
+// "target variable"
+//----------------------------------------------------------------------
+
+class CommandObjectTargetVariable : public CommandObject
+{
+public:
+    CommandObjectTargetVariable (CommandInterpreter &interpreter) :
+        CommandObject (interpreter,
+                       "target variable",
+                       "Read global variable(s) prior to running your binary.",
+                       NULL,
+                       0),
+        m_option_group (interpreter),
+        m_option_variable (false), // Don't include frame options
+        m_option_compile_units    (LLDB_OPT_SET_1, false, "file", 'f', 0, eArgTypePath, "A basename or fullpath to a file that contains global variables. This option can be specified multiple times."),
+        m_option_shared_libraries (LLDB_OPT_SET_1, false, "shlib",'s', 0, eArgTypePath, "A basename or fullpath to a shared library to use in the search for global variables. This option can be specified multiple times."),
+        m_varobj_options()
+    {
+        m_option_group.Append (&m_varobj_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_option_variable, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_option_compile_units, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);   
+        m_option_group.Append (&m_option_shared_libraries, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);   
+        m_option_group.Finalize();
+    }
+    
+    virtual
+    ~CommandObjectTargetVariable ()
+    {
+    }
+
+    void
+    DumpValueObject (Stream &s, VariableSP &var_sp, ValueObjectSP &valobj_sp, const char *root_name)
+    {
+        ValueObject::DumpValueObjectOptions options;
+        
+        options.SetPointerDepth(m_varobj_options.ptr_depth)
+               .SetMaximumDepth(m_varobj_options.max_depth)
+               .SetShowTypes(m_varobj_options.show_types)
+               .SetShowLocation(m_varobj_options.show_location)
+               .SetUseObjectiveC(m_varobj_options.use_objc)
+               .SetUseDynamicType(m_varobj_options.use_dynamic)
+               .SetUseSyntheticValue((lldb::SyntheticValueType)m_varobj_options.use_synth)
+               .SetFlatOutput(m_varobj_options.flat_output)
+               .SetOmitSummaryDepth(m_varobj_options.no_summary_depth)
+               .SetIgnoreCap(m_varobj_options.ignore_cap);
+                
+        if (m_option_variable.format != eFormatDefault)
+            valobj_sp->SetFormat (m_option_variable.format);
+        
+        switch (var_sp->GetScope())
+        {
+            case eValueTypeVariableGlobal:
+                if (m_option_variable.show_scope)
+                    s.PutCString("GLOBAL: ");
+                break;
+                
+            case eValueTypeVariableStatic:
+                if (m_option_variable.show_scope)
+                    s.PutCString("STATIC: ");
+                break;
+                
+            case eValueTypeVariableArgument:
+                if (m_option_variable.show_scope)
+                    s.PutCString("   ARG: ");
+                break;
+                
+            case eValueTypeVariableLocal:
+                if (m_option_variable.show_scope)
+                    s.PutCString(" LOCAL: ");
+                break;
+                
+            default:
+                break;
+        }
+        
+        if (m_option_variable.show_decl)
+        {
+            bool show_fullpaths = false;
+            bool show_module = true;
+            if (var_sp->DumpDeclaration(&s, show_fullpaths, show_module))
+                s.PutCString (": ");
+        }
+        
+        const Format format = m_option_variable.format;
+        if (format != eFormatDefault)
+            valobj_sp->SetFormat (format);
+        
+        ValueObject::DumpValueObject (s, 
+                                      valobj_sp.get(), 
+                                      root_name,
+                                      options);                                        
+
+    }
+    
+    
+    static uint32_t GetVariableCallback (void *baton, 
+                                         const char *name,
+                                         VariableList &variable_list)
+    {
+        Target *target = static_cast<Target *>(baton);
+        if (target)
+        {
+            return target->GetImages().FindGlobalVariables (ConstString(name),
+                                                            true, 
+                                                            UINT32_MAX, 
+                                                            variable_list);
+        }
+        return 0;
+    }
+    
+
+
+    virtual bool
+    Execute (Args& args, CommandReturnObject &result)
+    {
+        ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
+
+        if (exe_ctx.target)
+        {
+            const size_t argc = args.GetArgumentCount();
+            if (argc > 0)
+            {
+                Stream &s = result.GetOutputStream();
+
+                for (size_t idx = 0; idx < argc; ++idx)
+                {
+                    VariableList variable_list;
+                    ValueObjectList valobj_list;
+
+                    const char *arg = args.GetArgumentAtIndex(idx);
+                    uint32_t matches = 0;
+                    bool use_var_name = false;
+                    if (m_option_variable.use_regex)
+                    {
+                        RegularExpression regex(arg);
+                        if (!regex.IsValid ())
+                        {
+                            result.GetErrorStream().Printf ("error: invalid regular expression: '%s'\n", arg);
+                            result.SetStatus (eReturnStatusFailed);
+                            return false;
+                        }
+                        use_var_name = true;
+                        matches = exe_ctx.target->GetImages().FindGlobalVariables (regex,
+                                                                                   true, 
+                                                                                   UINT32_MAX, 
+                                                                                   variable_list);
+                    }
+                    else
+                    {
+                        Error error (Variable::GetValuesForVariableExpressionPath (arg,
+                                                                                   exe_ctx.GetBestExecutionContextScope(),
+                                                                                   GetVariableCallback,
+                                                                                   exe_ctx.target,
+                                                                                   variable_list,
+                                                                                   valobj_list));
+                        
+//                        matches = exe_ctx.target->GetImages().FindGlobalVariables (ConstString(arg),
+//                                                                                   true, 
+//                                                                                   UINT32_MAX, 
+//                                                                                   variable_list);
+                        matches = variable_list.GetSize();
+                    }
+                    
+                    if (matches == 0)
+                    {
+                        result.GetErrorStream().Printf ("error: can't find global variable '%s'\n", arg);
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;
+                    }
+                    else
+                    {
+                        for (uint32_t global_idx=0; global_idx<matches; ++global_idx)
+                        {
+                            VariableSP var_sp (variable_list.GetVariableAtIndex(global_idx));
+                            if (var_sp)
+                            {
+                                ValueObjectSP valobj_sp (valobj_list.GetValueObjectAtIndex(global_idx));
+                                if (!valobj_sp)
+                                    valobj_sp = ValueObjectVariable::Create (exe_ctx.GetBestExecutionContextScope(), var_sp);
+                                
+                                if (valobj_sp)
+                                    DumpValueObject (s, var_sp, valobj_sp, use_var_name ? var_sp->GetName().GetCString() : arg);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                result.AppendError ("'target variable' takes one or more global variable names as arguments\n");
+                result.SetStatus (eReturnStatusFailed);
+            }
+        }
+        else
+        {
+            result.AppendError ("invalid target, create a debug target using the 'target create' command");
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+        
+        if (m_interpreter.TruncationWarningNecessary())
+        {
+            result.GetOutputStream().Printf(m_interpreter.TruncationWarningText(),
+                                            m_cmd_name.c_str());
+            m_interpreter.TruncationWarningGiven();
+        }
+        
+        return result.Succeeded();
+    }
+    
+    Options *
+    GetOptions ()
+    {
+        return &m_option_group;
+    }
+    
+protected:
+    OptionGroupOptions m_option_group;
+    OptionGroupVariable m_option_variable;
+    OptionGroupFileList m_option_compile_units;
+    OptionGroupFileList m_option_shared_libraries;
+    OptionGroupValueObjectDisplay m_varobj_options;
+
 };
 
 
@@ -769,7 +1118,10 @@ DumpModuleArchitecture (Stream &strm, Module *module, bool full_triple, uint32_t
 static void
 DumpModuleUUID (Stream &strm, Module *module)
 {
-    module->GetUUID().Dump (&strm);
+    if (module->GetUUID().IsValid())
+        module->GetUUID().Dump (&strm);
+    else
+        strm.PutCString("                                    ");
 }
 
 static uint32_t
@@ -1137,22 +1489,19 @@ LookupFunctionInModule (CommandInterpreter &interpreter, Stream &strm, Module *m
 }
 
 static uint32_t
-LookupTypeInModule 
-(
- CommandInterpreter &interpreter, 
- Stream &strm, 
- Module *module, 
- const char *name_cstr, 
- bool name_is_regex
- )
+LookupTypeInModule (CommandInterpreter &interpreter, 
+                    Stream &strm, 
+                    Module *module, 
+                    const char *name_cstr, 
+                    bool name_is_regex)
 {
     if (module && name_cstr && name_cstr[0])
     {
-        SymbolContextList sc_list;
+        /*SymbolContextList sc_list;
         
         SymbolVendor *symbol_vendor = module->GetSymbolVendor();
         if (symbol_vendor)
-        {
+        {*/
             TypeList type_list;
             uint32_t num_matches = 0;
             SymbolContext sc;
@@ -1164,7 +1513,7 @@ LookupTypeInModule
             //            else
             //            {
             ConstString name(name_cstr);
-            num_matches = symbol_vendor->FindTypes(sc, name, true, UINT32_MAX, type_list);
+            num_matches = module->FindTypes(sc, name, true, UINT32_MAX, type_list);
             //            }
             
             if (num_matches)
@@ -1188,7 +1537,7 @@ LookupTypeInModule
                 }
             }
             return num_matches;
-        }
+        //}
     }
     return 0;
 }
@@ -1955,6 +2304,7 @@ public:
                                 result.SetStatus (eReturnStatusFailed);
                                 return false;
                             }
+                            result.SetStatus (eReturnStatusSuccessFinishResult);
                         }
                         else
                         {
@@ -2247,8 +2597,8 @@ public:
     public:
         
         CommandOptions (CommandInterpreter &interpreter) :
-        Options(interpreter),
-        m_format_array()
+            Options(interpreter),
+            m_format_array()
         {
         }
         
@@ -2261,10 +2611,17 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             char short_option = (char) m_getopt_table[option_idx].val;
-            uint32_t width = 0;
-            if (option_arg)
-                width = strtoul (option_arg, NULL, 0);
-            m_format_array.push_back(std::make_pair(short_option, width));
+            if (short_option == 'g')
+            {
+                m_use_global_module_list = true;
+            }
+            else
+            {
+                uint32_t width = 0;
+                if (option_arg)
+                    width = strtoul (option_arg, NULL, 0);
+                m_format_array.push_back(std::make_pair(short_option, width));
+            }
             Error error;
             return error;
         }
@@ -2273,6 +2630,7 @@ public:
         OptionParsingStarting ()
         {
             m_format_array.clear();
+            m_use_global_module_list = false;
         }
         
         const OptionDefinition*
@@ -2288,6 +2646,7 @@ public:
         // Instance variables to hold the values for command options.
         typedef std::vector< std::pair<char, uint32_t> > FormatWidthCollection;
         FormatWidthCollection m_format_array;
+        bool m_use_global_module_list;
     };
     
     CommandObjectTargetModulesList (CommandInterpreter &interpreter) :
@@ -2316,7 +2675,8 @@ public:
              CommandReturnObject &result)
     {
         Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
-        if (target == NULL)
+        const bool use_global_module_list = m_options.m_use_global_module_list;
+        if (target == NULL && use_global_module_list == false)
         {
             result.AppendError ("invalid target, create a debug target using the 'target create' command");
             result.SetStatus (eReturnStatusFailed);
@@ -2324,20 +2684,44 @@ public:
         }
         else
         {
-            uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
-            result.GetOutputStream().SetAddressByteSize(addr_byte_size);
-            result.GetErrorStream().SetAddressByteSize(addr_byte_size);
+            if (target)
+            {
+                uint32_t addr_byte_size = target->GetArchitecture().GetAddressByteSize();
+                result.GetOutputStream().SetAddressByteSize(addr_byte_size);
+                result.GetErrorStream().SetAddressByteSize(addr_byte_size);
+            }
             // Dump all sections for all modules images
-            const uint32_t num_modules = target->GetImages().GetSize();
+            uint32_t num_modules = 0;
+            Mutex::Locker locker;
+            if (use_global_module_list)
+            {
+                locker.Reset (Module::GetAllocationModuleCollectionMutex().GetMutex());
+                num_modules = Module::GetNumberAllocatedModules();
+            }
+            else
+                num_modules = target->GetImages().GetSize();
+
             if (num_modules > 0)
             {
                 Stream &strm = result.GetOutputStream();
                 
                 for (uint32_t image_idx = 0; image_idx<num_modules; ++image_idx)
                 {
-                    Module *module = target->GetImages().GetModulePointerAtIndex(image_idx);
+                    ModuleSP module_sp;
+                    Module *module;
+                    if (use_global_module_list)
+                    {
+                        module = Module::GetAllocatedModuleAtIndex(image_idx);
+                        module_sp = module->GetSP();
+                    }
+                    else
+                    {
+                        module_sp = target->GetImages().GetModuleAtIndex(image_idx);
+                        module = module_sp.get();
+                    }
+
                     strm.Printf("[%3u] ", image_idx);
-                    
+
                     bool dump_object_name = false;
                     if (m_options.m_format_array.empty())
                     {
@@ -2377,27 +2761,50 @@ public:
                                     dump_object_name = true;
                                     break;
                                     
+                                case 'r':
+                                    {
+                                        uint32_t ref_count = 0;
+                                        if (module_sp)
+                                        {
+                                            // Take one away to make sure we don't count our local "module_sp"
+                                            ref_count = module_sp.use_count() - 1;
+                                        }
+                                        if (width)
+                                            strm.Printf("{%*u}", width, ref_count);
+                                        else
+                                            strm.Printf("{%u}", ref_count);
+                                    }
+                                    break;
+
                                 case 's':
                                 case 'S':
-                                {
-                                    SymbolVendor *symbol_vendor = module->GetSymbolVendor();
-                                    if (symbol_vendor)
                                     {
-                                        SymbolFile *symbol_file = symbol_vendor->GetSymbolFile();
-                                        if (symbol_file)
+                                        SymbolVendor *symbol_vendor = module->GetSymbolVendor();
+                                        if (symbol_vendor)
                                         {
-                                            if (format_char == 'S')
-                                                DumpBasename(strm, &symbol_file->GetObjectFile()->GetFileSpec(), width);
-                                            else
-                                                DumpFullpath (strm, &symbol_file->GetObjectFile()->GetFileSpec(), width);
-                                            dump_object_name = true;
-                                            break;
+                                            SymbolFile *symbol_file = symbol_vendor->GetSymbolFile();
+                                            if (symbol_file)
+                                            {
+                                                if (format_char == 'S')
+                                                    DumpBasename(strm, &symbol_file->GetObjectFile()->GetFileSpec(), width);
+                                                else
+                                                    DumpFullpath (strm, &symbol_file->GetObjectFile()->GetFileSpec(), width);
+                                                dump_object_name = true;
+                                                break;
+                                            }
                                         }
+                                        strm.Printf("%.*s", width, "<NONE>");
                                     }
-                                    strm.Printf("%.*s", width, "<NONE>");
-                                }
                                     break;
                                     
+                                case 'm':
+                                    module->GetModificationTime().Dump(&strm, width);
+                                    break;
+
+                                case 'p':
+                                    strm.Printf("%p", module);
+                                    break;
+
                                 case 'u':
                                     DumpModuleUUID(strm, module);
                                     break;
@@ -2420,7 +2827,10 @@ public:
             }
             else
             {
-                result.AppendError ("the target has no associated executable images");
+                if (use_global_module_list)
+                    result.AppendError ("the global module list is empty");
+                else
+                    result.AppendError ("the target has no associated executable images");
                 result.SetStatus (eReturnStatusFailed);
                 return false;
             }
@@ -2443,6 +2853,10 @@ CommandObjectTargetModulesList::CommandOptions::g_option_table[] =
     { LLDB_OPT_SET_1, false, "basename",   'b', optional_argument, NULL, 0, eArgTypeWidth,   "Display the basename with optional width for the image object file."},
     { LLDB_OPT_SET_1, false, "symfile",    's', optional_argument, NULL, 0, eArgTypeWidth,   "Display the fullpath to the image symbol file with optional width."},
     { LLDB_OPT_SET_1, false, "symfile-basename", 'S', optional_argument, NULL, 0, eArgTypeWidth,   "Display the basename to the image symbol file with optional width."},
+    { LLDB_OPT_SET_1, false, "mod-time",   'm', optional_argument, NULL, 0, eArgTypeWidth,   "Display the modification time with optional width of the module."},
+    { LLDB_OPT_SET_1, false, "ref-count",  'r', optional_argument, NULL, 0, eArgTypeWidth,   "Display the reference count if the module is still in the shared module cache."},
+    { LLDB_OPT_SET_1, false, "pointer",    'p', optional_argument, NULL, 0, eArgTypeNone,    "Display the module pointer."},
+    { LLDB_OPT_SET_1, false, "global",     'g', no_argument,       NULL, 0, eArgTypeNone,    "Display the modules from the global module list, not just the current target."},
     { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -3561,10 +3975,12 @@ CommandObjectMultiwordTarget::CommandObjectMultiwordTarget (CommandInterpreter &
 {
     
     LoadSubCommand ("create",    CommandObjectSP (new CommandObjectTargetCreate (interpreter)));
+    LoadSubCommand ("delete",    CommandObjectSP (new CommandObjectTargetDelete (interpreter)));
     LoadSubCommand ("list",      CommandObjectSP (new CommandObjectTargetList   (interpreter)));
     LoadSubCommand ("select",    CommandObjectSP (new CommandObjectTargetSelect (interpreter)));
     LoadSubCommand ("stop-hook", CommandObjectSP (new CommandObjectMultiwordTargetStopHooks (interpreter)));
     LoadSubCommand ("modules",   CommandObjectSP (new CommandObjectTargetModules (interpreter)));
+    LoadSubCommand ("variable",  CommandObjectSP (new CommandObjectTargetVariable (interpreter)));
 }
 
 CommandObjectMultiwordTarget::~CommandObjectMultiwordTarget ()

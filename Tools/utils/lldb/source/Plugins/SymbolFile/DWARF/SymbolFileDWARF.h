@@ -101,7 +101,8 @@ public:
     virtual lldb::clang_type_t ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_opaque_type);
 
     virtual lldb_private::Type* ResolveType (DWARFCompileUnit* cu, const DWARFDebugInfoEntry* type_die, bool assert_not_being_parsed = true);
-    virtual clang::DeclContext* GetClangDeclContextForTypeUID (lldb::user_id_t type_uid);
+    virtual clang::DeclContext* GetClangDeclContextContainingTypeUID (lldb::user_id_t type_uid);
+    virtual clang::DeclContext* GetClangDeclContextForTypeUID (const lldb_private::SymbolContext &sc, lldb::user_id_t type_uid);
 
     virtual uint32_t        ResolveSymbolContext (const lldb_private::Address& so_addr, uint32_t resolve_scope, lldb_private::SymbolContext& sc);
     virtual uint32_t        ResolveSymbolContext (const lldb_private::FileSpec& file_spec, uint32_t line, bool check_inlines, uint32_t resolve_scope, lldb_private::SymbolContextList& sc_list);
@@ -183,16 +184,22 @@ public:
     SupportedVersion(uint16_t version);
 
     clang::DeclContext *
-    GetClangDeclContextForDIE (DWARFCompileUnit *cu, const DWARFDebugInfoEntry *die);
+    GetClangDeclContextForDIE (const lldb_private::SymbolContext &sc, DWARFCompileUnit *cu, const DWARFDebugInfoEntry *die);
+    
+    clang::DeclContext *
+    GetClangDeclContextForDIEOffset (const lldb_private::SymbolContext &sc, dw_offset_t die_offset);
+    
+    clang::DeclContext *
+    GetClangDeclContextContainingDIE (DWARFCompileUnit *cu, const DWARFDebugInfoEntry *die);
 
     clang::DeclContext *
-    GetClangDeclContextForDIEOffset (dw_offset_t die_offset);
+    GetClangDeclContextContainingDIEOffset (dw_offset_t die_offset);
     
     void
-    SearchNamespace (const clang::NamespaceDecl *namespace_decl, 
-                     const char *name, 
-                     llvm::SmallVectorImpl <clang::NamedDecl *> *results);
-
+    SearchDeclContext (const clang::DeclContext *decl_context, 
+                       const char *name, 
+                       llvm::SmallVectorImpl <clang::NamedDecl *> *results);
+    
     lldb_private::Flags&
     GetFlags ()
     {
@@ -237,8 +244,7 @@ protected:
                                                  DWARFCompileUnit* dwarf_cu,
                                                  const DWARFDebugInfoEntry *die,
                                                  lldb::addr_t subprogram_low_pc,
-                                                 bool parse_siblings,
-                                                 bool parse_children);
+                                                 uint32_t depth);
     size_t                  ParseTypes (const lldb_private::SymbolContext& sc, DWARFCompileUnit* dwarf_cu, const DWARFDebugInfoEntry *die, bool parse_siblings, bool parse_children);
     lldb::TypeSP            ParseType (const lldb_private::SymbolContext& sc, DWARFCompileUnit* dwarf_cu, const DWARFDebugInfoEntry *die, bool *type_is_new);
 
@@ -271,10 +277,12 @@ protected:
 
     size_t                  ParseChildParameters(
                                 const lldb_private::SymbolContext& sc,
+                                clang::DeclContext *containing_decl_ctx,
                                 lldb::TypeSP& type_sp,
                                 DWARFCompileUnit* dwarf_cu,
                                 const DWARFDebugInfoEntry *parent_die,
                                 bool skip_artificial,
+                                bool &is_static,
                                 lldb_private::TypeList* type_list,
                                 std::vector<lldb::clang_type_t>& function_args,
                                 std::vector<clang::ParmVarDecl*>& function_param_decls,
@@ -317,6 +325,8 @@ protected:
     uint32_t                FindTypes(std::vector<dw_offset_t> die_offsets, uint32_t max_matches, lldb_private::TypeList& types);
 
     void                    Index();
+    
+    void                    DumpIndexes();
 
     void                    SetDebugMapSymfile (SymbolFileDWARFDebugMap *debug_map_symfile)
                             {
@@ -346,6 +356,9 @@ protected:
                                 m_die_to_decl_ctx[die] = decl_ctx;
                                 m_decl_ctx_to_die[decl_ctx] = die;
                             }
+    
+    void
+    ReportError (const char *format, ...);
     
     SymbolFileDWARFDebugMap *       m_debug_map_symfile;
     clang::TranslationUnitDecl *    m_clang_tu_decl;

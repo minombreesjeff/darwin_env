@@ -35,12 +35,12 @@ public:
 private:
   void EmitStackError(CheckerContext &C, const MemRegion *R,
                       const Expr *RetE) const;
-  static SourceRange GenName(llvm::raw_ostream &os, const MemRegion *R,
+  static SourceRange GenName(raw_ostream &os, const MemRegion *R,
                              SourceManager &SM);
 };
 }
 
-SourceRange StackAddrEscapeChecker::GenName(llvm::raw_ostream &os,
+SourceRange StackAddrEscapeChecker::GenName(raw_ostream &os,
                                           const MemRegion *R,
                                           SourceManager &SM) {
     // Get the base region, stripping away fields and elements.
@@ -53,7 +53,7 @@ SourceRange StackAddrEscapeChecker::GenName(llvm::raw_ostream &os,
     const CompoundLiteralExpr* CL = CR->getLiteralExpr();
     os << "stack memory associated with a compound literal "
           "declared on line "
-        << SM.getInstantiationLineNumber(CL->getLocStart())
+        << SM.getExpansionLineNumber(CL->getLocStart())
         << " returned to caller";    
     range = CL->getSourceRange();
   }
@@ -62,14 +62,14 @@ SourceRange StackAddrEscapeChecker::GenName(llvm::raw_ostream &os,
     SourceLocation L = ARE->getLocStart();
     range = ARE->getSourceRange();    
     os << "stack memory allocated by call to alloca() on line "
-       << SM.getInstantiationLineNumber(L);
+       << SM.getExpansionLineNumber(L);
   }
   else if (const BlockDataRegion *BR = dyn_cast<BlockDataRegion>(R)) {
     const BlockDecl *BD = BR->getCodeRegion()->getDecl();
     SourceLocation L = BD->getLocStart();
     range = BD->getSourceRange();
     os << "stack-allocated block declared on line "
-       << SM.getInstantiationLineNumber(L);
+       << SM.getExpansionLineNumber(L);
   }
   else if (const VarRegion *VR = dyn_cast<VarRegion>(R)) {
     os << "stack memory associated with local variable '"
@@ -121,6 +121,11 @@ void StackAddrEscapeChecker::checkPreStmt(const ReturnStmt *RS,
     return;  
   
   if (R->hasStackStorage()) {
+    // Automatic reference counting automatically copies blocks.
+    if (C.getASTContext().getLangOptions().ObjCAutoRefCount &&
+        isa<BlockDataRegion>(R))
+      return;
+
     EmitStackError(C, R, RetE);
     return;
   }
@@ -135,12 +140,13 @@ void StackAddrEscapeChecker::checkEndPath(EndOfFunctionNodeBuilder &B,
   // a memory region in the stack space.
   class CallBack : public StoreManager::BindingsHandler {
   private:
+    ExprEngine &Eng;
     const StackFrameContext *CurSFC;
   public:
-    llvm::SmallVector<std::pair<const MemRegion*, const MemRegion*>, 10> V;
+    SmallVector<std::pair<const MemRegion*, const MemRegion*>, 10> V;
 
-    CallBack(const LocationContext *LCtx)
-      : CurSFC(LCtx->getCurrentStackFrame()) {}
+    CallBack(ExprEngine &Eng, const LocationContext *LCtx)
+      : Eng(Eng), CurSFC(LCtx->getCurrentStackFrame()) {}
     
     bool HandleBinding(StoreManager &SMgr, Store store,
                        const MemRegion *region, SVal val) {
@@ -151,7 +157,13 @@ void StackAddrEscapeChecker::checkEndPath(EndOfFunctionNodeBuilder &B,
       const MemRegion *vR = val.getAsRegion();
       if (!vR)
         return true;
-      
+        
+      // Under automated retain release, it is okay to assign a block
+      // directly to a global variable.
+      if (Eng.getContext().getLangOptions().ObjCAutoRefCount &&
+          isa<BlockDataRegion>(vR))
+        return true;
+
       if (const StackSpaceRegion *SSR = 
           dyn_cast<StackSpaceRegion>(vR->getMemorySpace())) {
         // If the global variable holds a location in the current stack frame,
@@ -164,7 +176,7 @@ void StackAddrEscapeChecker::checkEndPath(EndOfFunctionNodeBuilder &B,
     }
   };
     
-  CallBack cb(B.getPredecessor()->getLocationContext());
+  CallBack cb(Eng, B.getPredecessor()->getLocationContext());
   state->getStateManager().getStoreManager().iterBindings(state->getStore(),cb);
 
   if (cb.V.empty())

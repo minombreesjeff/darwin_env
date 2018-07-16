@@ -15,12 +15,14 @@
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/HostInfo.h"
+#include "clang/Driver/ObjCRuntime.h"
 #include "clang/Driver/Options.h"
-
+#include "llvm/Support/ErrorHandling.h"
 using namespace clang::driver;
+using namespace clang;
 
-ToolChain::ToolChain(const HostInfo &_Host, const llvm::Triple &_Triple)
-  : Host(_Host), Triple(_Triple) {
+ToolChain::ToolChain(const HostInfo &H, const llvm::Triple &T)
+  : Host(H), Triple(T) {
 }
 
 ToolChain::~ToolChain() {
@@ -47,6 +49,25 @@ bool ToolChain::HasNativeLLVMSupport() const {
   return false;
 }
 
+void ToolChain::configureObjCRuntime(ObjCRuntime &runtime) const {
+  switch (runtime.getKind()) {
+  case ObjCRuntime::NeXT:
+    // Assume a minimal NeXT runtime.
+    runtime.HasARC = false;
+    runtime.HasWeak = false;
+    runtime.HasTerminate = false;
+    return;
+
+  case ObjCRuntime::GNU:
+    // Assume a maximal GNU runtime.
+    runtime.HasARC = true;
+    runtime.HasWeak = true;
+    runtime.HasTerminate = false; // to be added
+    return;
+  }
+  llvm_unreachable("invalid runtime kind!");
+}
+
 /// getARMTargetCPU - Get the (LLVM) name of the ARM cpu we are targeting.
 //
 // FIXME: tblgen this.
@@ -58,7 +79,7 @@ static const char *getARMTargetCPU(const ArgList &Args,
   if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
     return A->getValue(Args);
 
-  llvm::StringRef MArch;
+  StringRef MArch;
   if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
     // Otherwise, if we have -march= choose the base CPU for that arch.
     MArch = A->getValue(Args);
@@ -113,7 +134,7 @@ static const char *getARMTargetCPU(const ArgList &Args,
 //
 // FIXME: This is redundant with -mcpu, why does LLVM use this.
 // FIXME: tblgen this, or kill it!
-static const char *getLLVMArchSuffixForARM(llvm::StringRef CPU) {
+static const char *getLLVMArchSuffixForARM(StringRef CPU) {
   if (CPU == "arm7tdmi" || CPU == "arm7tdmi-s" || CPU == "arm710t" ||
       CPU == "arm720t" || CPU == "arm9" || CPU == "arm9tdmi" ||
       CPU == "arm920" || CPU == "arm920t" || CPU == "arm922t" ||
@@ -161,7 +182,7 @@ std::string ToolChain::ComputeLLVMTriple(const ArgList &Args) const {
     // Thumb2 is the default for V7 on Darwin.
     //
     // FIXME: Thumb should just be another -target-feaure, not in the triple.
-    llvm::StringRef Suffix =
+    StringRef Suffix =
       getLLVMArchSuffixForARM(getARMTargetCPU(Args, Triple));
     bool ThumbDefault =
       (Suffix == "v7" && getTriple().getOS() == llvm::Triple::Darwin);
@@ -180,7 +201,7 @@ std::string ToolChain::ComputeEffectiveClangTriple(const ArgList &Args) const {
   if (Arg *A = Args.getLastArg(options::OPT_mmacosx_version_min_EQ,
                                options::OPT_miphoneos_version_min_EQ,
                                options::OPT_mios_simulator_version_min_EQ))
-    getDriver().Diag(clang::diag::err_drv_clang_unsupported)
+    getDriver().Diag(diag::err_drv_clang_unsupported)
       << A->getAsString(Args);
 
   return ComputeLLVMTriple(Args);
@@ -188,12 +209,12 @@ std::string ToolChain::ComputeEffectiveClangTriple(const ArgList &Args) const {
 
 ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
   if (Arg *A = Args.getLastArg(options::OPT_stdlib_EQ)) {
-    llvm::StringRef Value = A->getValue(Args);
+    StringRef Value = A->getValue(Args);
     if (Value == "libc++")
       return ToolChain::CST_Libcxx;
     if (Value == "libstdc++")
       return ToolChain::CST_Libstdcxx;
-    getDriver().Diag(clang::diag::err_drv_invalid_stdlib_name)
+    getDriver().Diag(diag::err_drv_invalid_stdlib_name)
       << A->getAsString(Args);
   }
 
@@ -201,18 +222,21 @@ ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
 }
 
 void ToolChain::AddClangCXXStdlibIncludeArgs(const ArgList &Args,
-                                             ArgStringList &CmdArgs) const {
+                                             ArgStringList &CmdArgs,
+                                             bool ObjCXXAutoRefCount) const {
   CXXStdlibType Type = GetCXXStdlibType(Args);
+
+  // Header search paths are handled by the mass of goop in InitHeaderSearch.
 
   switch (Type) {
   case ToolChain::CST_Libcxx:
-    CmdArgs.push_back("-nostdinc++");
-    CmdArgs.push_back("-cxx-isystem");
-    CmdArgs.push_back("/usr/include/c++/v1");
+    if (ObjCXXAutoRefCount)
+      CmdArgs.push_back("-fobjc-arc-cxxlib=libc++");
     break;
 
   case ToolChain::CST_Libstdcxx:
-    // Currently handled by the mass of goop in InitHeaderSearch.
+    if (ObjCXXAutoRefCount)
+      CmdArgs.push_back("-fobjc-arc-cxxlib=libstdc++");
     break;
   }
 }

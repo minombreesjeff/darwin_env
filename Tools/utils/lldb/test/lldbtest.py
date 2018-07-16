@@ -194,6 +194,8 @@ VALID_SYMBOL = "Got a valid symbol"
 
 VALID_TARGET = "Got a valid target"
 
+VALID_VARIABLE = "Got a valid variable"
+
 VARIABLES_DISPLAYED_CORRECTLY = "Variable(s) displayed correctly"
 
 
@@ -229,24 +231,6 @@ def pointer_size():
     a_pointer = ctypes.c_void_p(0xffff)
     return 8 * ctypes.sizeof(a_pointer)
 
-from functools import wraps
-def python_api_test(func):
-    """Decorate the item as a Python API only test."""
-    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
-        raise Exception("@python_api_test can only be used to decorate a test method")
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        try:
-            if lldb.dont_do_python_api_test:
-                self.skipTest("Skip Python API tests")
-        except AttributeError:
-            pass
-        return func(self, *args, **kwargs)
-
-    # Mark this function as such to separate them from lldb command line tests.
-    wrapper.__python_api_test__ = True
-    return wrapper
-
 class recording(StringIO.StringIO):
     """
     A nice little context manager for recording the debugger interactions into
@@ -256,7 +240,9 @@ class recording(StringIO.StringIO):
     def __init__(self, test, trace):
         """Create a StringIO instance; record the session obj and trace flag."""
         StringIO.StringIO.__init__(self)
-        self.session = test.session if test else None
+        # The test might not have undergone the 'setUp(self)' phase yet, so that
+        # the attribute 'session' might not even exist yet.
+        self.session = getattr(test, "session", None) if test else None
         self.trace = trace
 
     def __enter__(self):
@@ -343,7 +329,470 @@ def getsource_if_available(obj):
 def builder_module():
     return __import__("builder_" + sys.platform)
 
-class TestBase(unittest2.TestCase):
+#
+# Decorators for categorizing test cases.
+#
+
+from functools import wraps
+def python_api_test(func):
+    """Decorate the item as a Python API only test."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@python_api_test can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            if lldb.dont_do_python_api_test:
+                self.skipTest("python api tests")
+        except AttributeError:
+            pass
+        return func(self, *args, **kwargs)
+
+    # Mark this function as such to separate them from lldb command line tests.
+    wrapper.__python_api_test__ = True
+    return wrapper
+
+from functools import wraps
+def benchmarks_test(func):
+    """Decorate the item as a benchmarks test."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@benchmarks_test can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            if not lldb.just_do_benchmarks_test:
+                self.skipTest("benchmarks tests")
+        except AttributeError:
+            pass
+        return func(self, *args, **kwargs)
+
+    # Mark this function as such to separate them from the regular tests.
+    wrapper.__benchmarks_test__ = True
+    return wrapper
+
+class Base(unittest2.TestCase):
+    """
+    Abstract base for performing lldb (see TestBase) or other generic tests (see
+    BenchBase for one example).  lldbtest.Base works with the test driver to
+    accomplish things.
+    
+    """
+    # The concrete subclass should override this attribute.
+    mydir = None
+
+    # Keep track of the old current working directory.
+    oldcwd = None
+
+    def TraceOn(self):
+        """Returns True if we are in trace mode (tracing detailed test execution)."""
+        return traceAlways
+
+    @classmethod
+    def setUpClass(cls):
+        """
+        Python unittest framework class setup fixture.
+        Do current directory manipulation.
+        """
+
+        # Fail fast if 'mydir' attribute is not overridden.
+        if not cls.mydir or len(cls.mydir) == 0:
+            raise Exception("Subclasses must override the 'mydir' attribute.")
+        # Save old working directory.
+        cls.oldcwd = os.getcwd()
+
+        # Change current working directory if ${LLDB_TEST} is defined.
+        # See also dotest.py which sets up ${LLDB_TEST}.
+        if ("LLDB_TEST" in os.environ):
+            if traceAlways:
+                print >> sys.stderr, "Change dir to:", os.path.join(os.environ["LLDB_TEST"], cls.mydir)
+            os.chdir(os.path.join(os.environ["LLDB_TEST"], cls.mydir))
+
+    @classmethod
+    def tearDownClass(cls):
+        """
+        Python unittest framework class teardown fixture.
+        Do class-wide cleanup.
+        """
+
+        if doCleanup:
+            # First, let's do the platform-specific cleanup.
+            module = builder_module()
+            if not module.cleanup():
+                raise Exception("Don't know how to do cleanup")
+
+            # Subclass might have specific cleanup function defined.
+            if getattr(cls, "classCleanup", None):
+                if traceAlways:
+                    print >> sys.stderr, "Call class-specific cleanup function for class:", cls
+                try:
+                    cls.classCleanup()
+                except:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    traceback.print_exception(exc_type, exc_value, exc_tb)
+
+        # Restore old working directory.
+        if traceAlways:
+            print >> sys.stderr, "Restore dir to:", cls.oldcwd
+        os.chdir(cls.oldcwd)
+
+    @classmethod
+    def skipLongRunningTest(cls):
+        """
+        By default, we skip long running test case.
+        This can be overridden by passing '-l' to the test driver (dotest.py).
+        """
+        if "LLDB_SKIP_LONG_RUNNING_TEST" in os.environ and "NO" == os.environ["LLDB_SKIP_LONG_RUNNING_TEST"]:
+            return False
+        else:
+            return True
+
+    def setUp(self):
+        """Fixture for unittest test case setup.
+
+        It works with the test driver to conditionally skip tests and does other
+        initializations."""
+        #import traceback
+        #traceback.print_stack()
+
+        if "LLDB_EXEC" in os.environ:
+            self.lldbExec = os.environ["LLDB_EXEC"]
+
+        # Assign the test method name to self.testMethodName.
+        #
+        # For an example of the use of this attribute, look at test/types dir.
+        # There are a bunch of test cases under test/types and we don't want the
+        # module cacheing subsystem to be confused with executable name "a.out"
+        # used for all the test cases.
+        self.testMethodName = self._testMethodName
+
+        # Python API only test is decorated with @python_api_test,
+        # which also sets the "__python_api_test__" attribute of the
+        # function object to True.
+        try:
+            if lldb.just_do_python_api_test:
+                testMethod = getattr(self, self._testMethodName)
+                if getattr(testMethod, "__python_api_test__", False):
+                    pass
+                else:
+                    self.skipTest("non python api test")
+        except AttributeError:
+            pass
+
+        # Benchmarks test is decorated with @benchmarks_test,
+        # which also sets the "__benchmarks_test__" attribute of the
+        # function object to True.
+        try:
+            if lldb.just_do_benchmarks_test:
+                testMethod = getattr(self, self._testMethodName)
+                if getattr(testMethod, "__benchmarks_test__", False):
+                    pass
+                else:
+                    self.skipTest("non benchmarks test")
+        except AttributeError:
+            pass
+
+        # This is for the case of directly spawning 'lldb'/'gdb' and interacting
+        # with it using pexpect.
+        self.child = None
+        self.child_prompt = "(lldb) "
+        # If the child is interacting with the embedded script interpreter,
+        # there are two exits required during tear down, first to quit the
+        # embedded script interpreter and second to quit the lldb command
+        # interpreter.
+        self.child_in_script_interpreter = False
+
+        # These are for customized teardown cleanup.
+        self.dict = None
+        self.doTearDownCleanup = False
+        # And in rare cases where there are multiple teardown cleanups.
+        self.dicts = []
+        self.doTearDownCleanups = False
+
+        # Create a string buffer to record the session info, to be dumped into a
+        # test case specific file if test failure is encountered.
+        self.session = StringIO.StringIO()
+
+        # Optimistically set __errored__, __failed__, __expected__ to False
+        # initially.  If the test errored/failed, the session info
+        # (self.session) is then dumped into a session specific file for
+        # diagnosis.
+        self.__errored__    = False
+        self.__failed__     = False
+        self.__expected__   = False
+        # We are also interested in unexpected success.
+        self.__unexpected__ = False
+        # And skipped tests.
+        self.__skipped__ = False
+
+        # See addTearDownHook(self, hook) which allows the client to add a hook
+        # function to be run during tearDown() time.
+        self.hooks = []
+
+        # See HideStdout(self).
+        self.sys_stdout_hidden = False
+
+    def HideStdout(self):
+        """Hide output to stdout from the user.
+
+        During test execution, there might be cases where we don't want to show the
+        standard output to the user.  For example,
+
+            self.runCmd(r'''sc print "\n\n\tHello!\n"''')
+
+        tests whether command abbreviation for 'script' works or not.  There is no
+        need to show the 'Hello' output to the user as long as the 'script' command
+        succeeds and we are not in TraceOn() mode (see the '-t' option).
+
+        In this case, the test method calls self.HideStdout(self) to redirect the
+        sys.stdout to a null device, and restores the sys.stdout upon teardown.
+
+        Note that you should only call this method at most once during a test case
+        execution.  Any subsequent call has no effect at all."""
+        if self.sys_stdout_hidden:
+            return
+
+        self.sys_stdout_hidden = True
+        old_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+        def restore_stdout():
+            sys.stdout = old_stdout
+        self.addTearDownHook(restore_stdout)
+
+    # =======================================================================
+    # Methods for customized teardown cleanups as well as execution of hooks.
+    # =======================================================================
+
+    def setTearDownCleanup(self, dictionary=None):
+        """Register a cleanup action at tearDown() time with a dictinary"""
+        self.dict = dictionary
+        self.doTearDownCleanup = True
+
+    def addTearDownCleanup(self, dictionary):
+        """Add a cleanup action at tearDown() time with a dictinary"""
+        self.dicts.append(dictionary)
+        self.doTearDownCleanups = True
+
+    def addTearDownHook(self, hook):
+        """
+        Add a function to be run during tearDown() time.
+
+        Hooks are executed in a first come first serve manner.
+        """
+        if callable(hook):
+            with recording(self, traceAlways) as sbuf:
+                print >> sbuf, "Adding tearDown hook:", getsource_if_available(hook)
+            self.hooks.append(hook)
+
+    def tearDown(self):
+        """Fixture for unittest test case teardown."""
+        #import traceback
+        #traceback.print_stack()
+
+        # This is for the case of directly spawning 'lldb' and interacting with it
+        # using pexpect.
+        import pexpect
+        if self.child and self.child.isalive():
+            with recording(self, traceAlways) as sbuf:
+                print >> sbuf, "tearing down the child process...."
+            if self.child_in_script_interpreter:
+                self.child.sendline('quit()')
+                self.child.expect_exact(self.child_prompt)
+            self.child.sendline('quit')
+            try:
+                self.child.expect(pexpect.EOF)
+            except:
+                pass
+
+        # Check and run any hook functions.
+        for hook in reversed(self.hooks):
+            with recording(self, traceAlways) as sbuf:
+                print >> sbuf, "Executing tearDown hook:", getsource_if_available(hook)
+            hook()
+
+        del self.hooks
+
+        # Perform registered teardown cleanup.
+        if doCleanup and self.doTearDownCleanup:
+            module = builder_module()
+            if not module.cleanup(self, dictionary=self.dict):
+                raise Exception("Don't know how to do cleanup with dictionary: " + self.dict)
+
+        # In rare cases where there are multiple teardown cleanups added.
+        if doCleanup and self.doTearDownCleanups:
+            module = builder_module()
+            if self.dicts:
+                for dict in reversed(self.dicts):
+                    if not module.cleanup(self, dictionary=dict):
+                        raise Exception("Don't know how to do cleanup with dictionary: " + dict)
+
+        # Decide whether to dump the session info.
+        self.dumpSessionInfo()
+
+    # =========================================================
+    # Various callbacks to allow introspection of test progress
+    # =========================================================
+
+    def markError(self):
+        """Callback invoked when an error (unexpected exception) errored."""
+        self.__errored__ = True
+        with recording(self, False) as sbuf:
+            # False because there's no need to write "ERROR" to the stderr twice.
+            # Once by the Python unittest framework, and a second time by us.
+            print >> sbuf, "ERROR"
+
+    def markFailure(self):
+        """Callback invoked when a failure (test assertion failure) occurred."""
+        self.__failed__ = True
+        with recording(self, False) as sbuf:
+            # False because there's no need to write "FAIL" to the stderr twice.
+            # Once by the Python unittest framework, and a second time by us.
+            print >> sbuf, "FAIL"
+
+    def markExpectedFailure(self):
+        """Callback invoked when an expected failure/error occurred."""
+        self.__expected__ = True
+        with recording(self, False) as sbuf:
+            # False because there's no need to write "expected failure" to the
+            # stderr twice.
+            # Once by the Python unittest framework, and a second time by us.
+            print >> sbuf, "expected failure"
+
+    def markSkippedTest(self):
+        """Callback invoked when a test is skipped."""
+        self.__skipped__ = True
+        with recording(self, False) as sbuf:
+            # False because there's no need to write "skipped test" to the
+            # stderr twice.
+            # Once by the Python unittest framework, and a second time by us.
+            print >> sbuf, "skipped test"
+
+    def markUnexpectedSuccess(self):
+        """Callback invoked when an unexpected success occurred."""
+        self.__unexpected__ = True
+        with recording(self, False) as sbuf:
+            # False because there's no need to write "unexpected success" to the
+            # stderr twice.
+            # Once by the Python unittest framework, and a second time by us.
+            print >> sbuf, "unexpected success"
+
+    def dumpSessionInfo(self):
+        """
+        Dump the debugger interactions leading to a test error/failure.  This
+        allows for more convenient postmortem analysis.
+
+        See also LLDBTestResult (dotest.py) which is a singlton class derived
+        from TextTestResult and overwrites addError, addFailure, and
+        addExpectedFailure methods to allow us to to mark the test instance as
+        such.
+        """
+
+        # We are here because self.tearDown() detected that this test instance
+        # either errored or failed.  The lldb.test_result singleton contains
+        # two lists (erros and failures) which get populated by the unittest
+        # framework.  Look over there for stack trace information.
+        #
+        # The lists contain 2-tuples of TestCase instances and strings holding
+        # formatted tracebacks.
+        #
+        # See http://docs.python.org/library/unittest.html#unittest.TestResult.
+        if self.__errored__:
+            pairs = lldb.test_result.errors
+            prefix = 'Error'
+        elif self.__failed__:
+            pairs = lldb.test_result.failures
+            prefix = 'Failure'
+        elif self.__expected__:
+            pairs = lldb.test_result.expectedFailures
+            prefix = 'ExpectedFailure'
+        elif self.__skipped__:
+            prefix = 'SkippedTest'
+        elif self.__unexpected__:
+            prefix = "UnexpectedSuccess"
+        else:
+            # Simply return, there's no session info to dump!
+            return
+
+        if not self.__unexpected__ and not self.__skipped__:
+            for test, traceback in pairs:
+                if test is self:
+                    print >> self.session, traceback
+
+        testMethod = getattr(self, self._testMethodName)
+        if getattr(testMethod, "__benchmarks_test__", False):
+            benchmarks = True
+        else:
+            benchmarks = False
+
+        dname = os.path.join(os.environ["LLDB_TEST"],
+                             os.environ["LLDB_SESSION_DIRNAME"])
+        if not os.path.isdir(dname):
+            os.mkdir(dname)
+        fname = os.path.join(dname, "%s-%s.log" % (prefix, self.id()))
+        with open(fname, "w") as f:
+            import datetime
+            print >> f, "Session info generated @", datetime.datetime.now().ctime()
+            print >> f, self.session.getvalue()
+            print >> f, "To rerun this test, issue the following command from the 'test' directory:\n"
+            print >> f, "./dotest.py %s -v %s -f %s.%s" % (self.getRunOptions(),
+                                                           ('+b' if benchmarks else '-t'),
+                                                           self.__class__.__name__,
+                                                           self._testMethodName)
+
+    # ====================================================
+    # Config. methods supported through a plugin interface
+    # (enables reading of the current test configuration)
+    # ====================================================
+
+    def getArchitecture(self):
+        """Returns the architecture in effect the test suite is running with."""
+        module = builder_module()
+        return module.getArchitecture()
+
+    def getCompiler(self):
+        """Returns the compiler in effect the test suite is running with."""
+        module = builder_module()
+        return module.getCompiler()
+
+    def getRunOptions(self):
+        """Command line option for -A and -C to run this test again, called from
+        self.dumpSessionInfo()."""
+        arch = self.getArchitecture()
+        comp = self.getCompiler()
+        if not arch and not comp:
+            return ""
+        else:
+            return "%s %s" % ("-A "+arch if arch else "",
+                              "-C "+comp if comp else "")
+
+    # ==================================================
+    # Build methods supported through a plugin interface
+    # ==================================================
+
+    def buildDefault(self, architecture=None, compiler=None, dictionary=None):
+        """Platform specific way to build the default binaries."""
+        module = builder_module()
+        if not module.buildDefault(self, architecture, compiler, dictionary):
+            raise Exception("Don't know how to build default binary")
+
+    def buildDsym(self, architecture=None, compiler=None, dictionary=None):
+        """Platform specific way to build binaries with dsym info."""
+        module = builder_module()
+        if not module.buildDsym(self, architecture, compiler, dictionary):
+            raise Exception("Don't know how to build binary with dsym")
+
+    def buildDwarf(self, architecture=None, compiler=None, dictionary=None):
+        """Platform specific way to build binaries with dwarf maps."""
+        module = builder_module()
+        if not module.buildDwarf(self, architecture, compiler, dictionary):
+            raise Exception("Don't know how to build binary with dwarf")
+
+    def cleanup(self, dictionary=None):
+        """Platform specific way to do cleanup after build."""
+        module = builder_module()
+        if not module.cleanup(self, dictionary):
+            raise Exception("Don't know how to do cleanup")
+
+
+class TestBase(Base):
     """
     This abstract base class is meant to be subclassed.  It provides default
     implementations for setUpClass(), tearDownClass(), setUp(), and tearDown(),
@@ -395,20 +844,6 @@ class TestBase(unittest2.TestCase):
           Mac OS X implementation is located in plugins/darwin.py.
     """
 
-    @classmethod
-    def skipLongRunningTest(cls):
-        """
-        By default, we skip long running test case.
-        This can be overridden by passing '-l' to the test driver (dotest.py).
-        """
-        if "LLDB_SKIP_LONG_RUNNING_TEST" in os.environ and "NO" == os.environ["LLDB_SKIP_LONG_RUNNING_TEST"]:
-            return False
-        else:
-            return True
-
-    # The concrete subclass should override this attribute.
-    mydir = None
-
     # Maximum allowed attempts when launching the inferior process.
     # Can be overridden by the LLDB_MAX_LAUNCH_COUNT environment variable.
     maxLaunchCount = 3;
@@ -416,57 +851,6 @@ class TestBase(unittest2.TestCase):
     # Time to wait before the next launching attempt in second(s).
     # Can be overridden by the LLDB_TIME_WAIT_NEXT_LAUNCH environment variable.
     timeWaitNextLaunch = 1.0;
-
-    # Keep track of the old current working directory.
-    oldcwd = None
-
-    @classmethod
-    def setUpClass(cls):
-        """
-        Python unittest framework class setup fixture.
-        Do current directory manipulation.
-        """
-
-        # Fail fast if 'mydir' attribute is not overridden.
-        if not cls.mydir or len(cls.mydir) == 0:
-            raise Exception("Subclasses must override the 'mydir' attribute.")
-        # Save old working directory.
-        cls.oldcwd = os.getcwd()
-
-        # Change current working directory if ${LLDB_TEST} is defined.
-        # See also dotest.py which sets up ${LLDB_TEST}.
-        if ("LLDB_TEST" in os.environ):
-            if traceAlways:
-                print >> sys.stderr, "Change dir to:", os.path.join(os.environ["LLDB_TEST"], cls.mydir)
-            os.chdir(os.path.join(os.environ["LLDB_TEST"], cls.mydir))
-
-    @classmethod
-    def tearDownClass(cls):
-        """
-        Python unittest framework class teardown fixture.
-        Do class-wide cleanup.
-        """
-
-        if doCleanup:
-            # First, let's do the platform-specific cleanup.
-            module = builder_module()
-            if not module.cleanup():
-                raise Exception("Don't know how to do cleanup")
-
-            # Subclass might have specific cleanup function defined.
-            if getattr(cls, "classCleanup", None):
-                if traceAlways:
-                    print >> sys.stderr, "Call class-specific cleanup function for class:", cls
-                try:
-                    cls.classCleanup()
-                except:
-                    exc_type, exc_value, exc_tb = sys.exc_info()
-                    traceback.print_exception(exc_type, exc_value, exc_tb)
-
-        # Restore old working directory.
-        if traceAlways:
-            print >> sys.stderr, "Restore dir to:", cls.oldcwd
-        os.chdir(cls.oldcwd)
 
     def doDelay(self):
         """See option -w of dotest.py."""
@@ -481,16 +865,8 @@ class TestBase(unittest2.TestCase):
         #import traceback
         #traceback.print_stack()
 
-        # Assign the test method name to self.testMethodName.
-        #
-        # For an example of the use of this attribute, look at test/types dir.
-        # There are a bunch of test cases under test/types and we don't want the
-        # module cacheing subsystem to be confused with executable name "a.out"
-        # used for all the test cases.
-        self.testMethodName = self._testMethodName
-
-        if "LLDB_EXEC" in os.environ:
-            self.lldbExec = os.environ["LLDB_EXEC"]
+        # Works with the test driver to conditionally skip tests via decorators.
+        Base.setUp(self)
 
         try:
             if lldb.blacklist:
@@ -500,19 +876,6 @@ class TestBase(unittest2.TestCase):
                     self.skipTest(lldb.blacklist.get(className))
                 elif classAndMethodName in lldb.blacklist:
                     self.skipTest(lldb.blacklist.get(classAndMethodName))
-        except AttributeError:
-            pass
-
-        # Python API only test is decorated with @python_api_test,
-        # which also sets the "__python_api_test__" attribute of the
-        # function object to True.
-        try:
-            if lldb.just_do_python_api_test:
-                testMethod = getattr(self, self._testMethodName)
-                if getattr(testMethod, "__python_api_test__", False):
-                    pass
-                else:
-                    self.skipTest("Skip lldb command line test")
         except AttributeError:
             pass
 
@@ -537,15 +900,6 @@ class TestBase(unittest2.TestCase):
         # We want our debugger to be synchronous.
         self.dbg.SetAsync(False)
 
-        # This is for the case of directly spawning 'lldb' and interacting with
-        # it using pexpect.
-        self.child = None
-        # If the child is interacting with the embedded script interpreter,
-        # there are two exits required during tear down, first to quit the
-        # embedded script interpreter and second to quit the lldb command
-        # interpreter.
-        self.child_in_script_interpreter = False
-
         # Retrieve the associated command interpreter instance.
         self.ci = self.dbg.GetCommandInterpreter()
         if not self.ci:
@@ -554,167 +908,11 @@ class TestBase(unittest2.TestCase):
         # And the result object.
         self.res = lldb.SBCommandReturnObject()
 
-        # These are for customized teardown cleanup.
-        self.dict = None
-        self.doTearDownCleanup = False
-        # And in rare cases where there are multiple teardown cleanups.
-        self.dicts = []
-        self.doTearDownCleanups = False
-
-        # Create a string buffer to record the session info, to be dumped into a
-        # test case specific file if test failure is encountered.
-        self.session = StringIO.StringIO()
-
-        # Optimistically set __errored__, __failed__, __expected__ to False
-        # initially.  If the test errored/failed, the session info
-        # (self.session) is then dumped into a session specific file for
-        # diagnosis.
-        self.__errored__    = False
-        self.__failed__     = False
-        self.__expected__   = False
-        # We are also interested in unexpected success.
-        self.__unexpected__ = False
-
-        # See addTearDownHook(self, hook) which allows the client to add a hook
-        # function to be run during tearDown() time.
-        self.hooks = []
-
-        # See HideStdout(self).
-        self.sys_stdout_hidden = False
-
-    def markError(self):
-        """Callback invoked when an error (unexpected exception) errored."""
-        self.__errored__ = True
-        with recording(self, False) as sbuf:
-            # False because there's no need to write "ERROR" to the stderr twice.
-            # Once by the Python unittest framework, and a second time by us.
-            print >> sbuf, "ERROR"
-
-    def markFailure(self):
-        """Callback invoked when a failure (test assertion failure) occurred."""
-        self.__failed__ = True
-        with recording(self, False) as sbuf:
-            # False because there's no need to write "FAIL" to the stderr twice.
-            # Once by the Python unittest framework, and a second time by us.
-            print >> sbuf, "FAIL"
-
-    def markExpectedFailure(self):
-        """Callback invoked when an expected failure/error occurred."""
-        self.__expected__ = True
-        with recording(self, False) as sbuf:
-            # False because there's no need to write "expected failure" to the
-            # stderr twice.
-            # Once by the Python unittest framework, and a second time by us.
-            print >> sbuf, "expected failure"
-
-    def markUnexpectedSuccess(self):
-        """Callback invoked when an unexpected success occurred."""
-        self.__unexpected__ = True
-        with recording(self, False) as sbuf:
-            # False because there's no need to write "unexpected success" to the
-            # stderr twice.
-            # Once by the Python unittest framework, and a second time by us.
-            print >> sbuf, "unexpected success"
-
-    def dumpSessionInfo(self):
-        """
-        Dump the debugger interactions leading to a test error/failure.  This
-        allows for more convenient postmortem analysis.
-
-        See also LLDBTestResult (dotest.py) which is a singlton class derived
-        from TextTestResult and overwrites addError, addFailure, and
-        addExpectedFailure methods to allow us to to mark the test instance as
-        such.
-        """
-
-        # We are here because self.tearDown() detected that this test instance
-        # either errored or failed.  The lldb.test_result singleton contains
-        # two lists (erros and failures) which get populated by the unittest
-        # framework.  Look over there for stack trace information.
-        #
-        # The lists contain 2-tuples of TestCase instances and strings holding
-        # formatted tracebacks.
-        #
-        # See http://docs.python.org/library/unittest.html#unittest.TestResult.
-        if self.__errored__:
-            pairs = lldb.test_result.errors
-            prefix = 'Error'
-        elif self.__failed__:
-            pairs = lldb.test_result.failures
-            prefix = 'Failure'
-        elif self.__expected__:
-            pairs = lldb.test_result.expectedFailures
-            prefix = 'ExpectedFailure'
-        elif self.__unexpected__:
-            prefix = "UnexpectedSuccess"
-        else:
-            # Simply return, there's no session info to dump!
-            return
-
-        if not self.__unexpected__:
-            for test, traceback in pairs:
-                if test is self:
-                    print >> self.session, traceback
-
-        dname = os.path.join(os.environ["LLDB_TEST"],
-                             os.environ["LLDB_SESSION_DIRNAME"])
-        if not os.path.isdir(dname):
-            os.mkdir(dname)
-        fname = os.path.join(dname, "%s-%s.log" % (prefix, self.id()))
-        with open(fname, "w") as f:
-            import datetime
-            print >> f, "Session info generated @", datetime.datetime.now().ctime()
-            print >> f, self.session.getvalue()
-            print >> f, "To rerun this test, issue the following command from the 'test' directory:\n"
-            print >> f, "./dotest.py %s -v -t -f %s.%s" % (self.getRunOptions(),
-                                                           self.__class__.__name__,
-                                                           self._testMethodName)
-
-    def setTearDownCleanup(self, dictionary=None):
-        """Register a cleanup action at tearDown() time with a dictinary"""
-        self.dict = dictionary
-        self.doTearDownCleanup = True
-
-    def addTearDownCleanup(self, dictionary):
-        """Add a cleanup action at tearDown() time with a dictinary"""
-        self.dicts.append(dictionary)
-        self.doTearDownCleanups = True
-
-    def addTearDownHook(self, hook):
-        """
-        Add a function to be run during tearDown() time.
-
-        Hooks are executed in a first come first serve manner.
-        """
-        if callable(hook):
-            with recording(self, traceAlways) as sbuf:
-                print >> sbuf, "Adding tearDown hook:", getsource_if_available(hook)
-            self.hooks.append(hook)
-
     def tearDown(self):
         #import traceback
         #traceback.print_stack()
 
-        # Check and run any hook functions.
-        for hook in reversed(self.hooks):
-            with recording(self, traceAlways) as sbuf:
-                print >> sbuf, "Executing tearDown hook:", getsource_if_available(hook)
-            hook()
-
-        # This is for the case of directly spawning 'lldb' and interacting with it
-        # using pexpect.
-        import pexpect
-        if self.child and self.child.isalive():
-            with recording(self, traceAlways) as sbuf:
-                print >> sbuf, "tearing down the child process...."
-            if self.child_in_script_interpreter:
-                self.child.sendline('quit()')
-                self.child.expect_exact('(lldb) ')
-            self.child.sendline('quit')
-            try:
-                self.child.expect(pexpect.EOF)
-            except:
-                pass
+        Base.tearDown(self)
 
         # Delete the target(s) from the debugger as a general cleanup step.
         # This includes terminating the process for each target, if any.
@@ -732,24 +930,6 @@ class TestBase(unittest2.TestCase):
             self.dbg.DeleteTarget(target)
 
         del self.dbg
-        del self.hooks
-
-        # Perform registered teardown cleanup.
-        if doCleanup and self.doTearDownCleanup:
-            module = builder_module()
-            if not module.cleanup(self, dictionary=self.dict):
-                raise Exception("Don't know how to do cleanup with dictionary: " + self.dict)
-
-        # In rare cases where there are multiple teardown cleanups added.
-        if doCleanup and self.doTearDownCleanups:
-            module = builder_module()
-            if self.dicts:
-                for dict in reversed(self.dicts):
-                    if not module.cleanup(self, dictionary=dict):
-                        raise Exception("Don't know how to do cleanup with dictionary: " + dict)
-
-        # Decide whether to dump the session info.
-        self.dumpSessionInfo()
 
     def runCmd(self, cmd, msg=None, check=True, trace=False):
         """
@@ -886,59 +1066,11 @@ class TestBase(unittest2.TestCase):
             print >> sbuf, str(method) + ":",  result
         return result
 
-    # ====================================================
-    # Config. methods supported through a plugin interface
-    # (enables reading of the current test configuration)
-    # ====================================================
-
-    def getArchitecture(self):
-        """Returns the architecture in effect the test suite is running with."""
-        module = builder_module()
-        return module.getArchitecture()
-
-    def getCompiler(self):
-        """Returns the compiler in effect the test suite is running with."""
-        module = builder_module()
-        return module.getCompiler()
-
-    def getRunOptions(self):
-        """Command line option for -A and -C to run this test again, called from
-        self.dumpSessionInfo()."""
-        arch = self.getArchitecture()
-        comp = self.getCompiler()
-        if not arch and not comp:
-            return ""
-        else:
-            return "%s %s" % ("-A "+arch if arch else "",
-                              "-C "+comp if comp else "")
-
-    # ==================================================
-    # Build methods supported through a plugin interface
-    # ==================================================
-
-    def buildDefault(self, architecture=None, compiler=None, dictionary=None):
-        """Platform specific way to build the default binaries."""
-        module = builder_module()
-        if not module.buildDefault(self, architecture, compiler, dictionary):
-            raise Exception("Don't know how to build default binary")
-
-    def buildDsym(self, architecture=None, compiler=None, dictionary=None):
-        """Platform specific way to build binaries with dsym info."""
-        module = builder_module()
-        if not module.buildDsym(self, architecture, compiler, dictionary):
-            raise Exception("Don't know how to build binary with dsym")
-
-    def buildDwarf(self, architecture=None, compiler=None, dictionary=None):
-        """Platform specific way to build binaries with dwarf maps."""
-        module = builder_module()
-        if not module.buildDwarf(self, architecture, compiler, dictionary):
-            raise Exception("Don't know how to build binary with dwarf")
-
     # =================================================
     # Misc. helper methods for debugging test execution
     # =================================================
 
-    def DebugSBValue(self, frame, val):
+    def DebugSBValue(self, val):
         """Debug print a SBValue object, if traceAlways is True."""
         from lldbutil import value_type_to_str
 
@@ -950,11 +1082,22 @@ class TestBase(unittest2.TestCase):
         err.write('\t' + "TypeName      -> " + val.GetTypeName()            + '\n')
         err.write('\t' + "ByteSize      -> " + str(val.GetByteSize())       + '\n')
         err.write('\t' + "NumChildren   -> " + str(val.GetNumChildren())    + '\n')
-        err.write('\t' + "Value         -> " + str(val.GetValue(frame))     + '\n')
+        err.write('\t' + "Value         -> " + str(val.GetValue())          + '\n')
         err.write('\t' + "ValueType     -> " + value_type_to_str(val.GetValueType()) + '\n')
-        err.write('\t' + "Summary       -> " + str(val.GetSummary(frame))   + '\n')
+        err.write('\t' + "Summary       -> " + str(val.GetSummary())        + '\n')
         err.write('\t' + "IsPointerType -> " + str(val.TypeIsPointerType()) + '\n')
-        err.write('\t' + "Location      -> " + val.GetLocation(frame)       + '\n')
+        err.write('\t' + "Location      -> " + val.GetLocation()            + '\n')
+
+    def DebugSBType(self, type):
+        """Debug print a SBType object, if traceAlways is True."""
+        if not traceAlways:
+            return
+
+        err = sys.stderr
+        err.write(type.GetName() + ":\n")
+        err.write('\t' + "ByteSize        -> " + str(type.GetByteSize())     + '\n')
+        err.write('\t' + "IsPointerType   -> " + str(type.IsPointerType())   + '\n')
+        err.write('\t' + "IsReferenceType -> " + str(type.IsReferenceType()) + '\n')
 
     def DebugPExpect(self, child):
         """Debug the spwaned pexpect object."""
@@ -962,34 +1105,3 @@ class TestBase(unittest2.TestCase):
             return
 
         print child
-
-    def TraceOn(self):
-        """Returns True if we are in trace mode (i.e., tracing lldb command execution)."""
-        return traceAlways
-
-    def HideStdout(self):
-        """Hide output to stdout from the user.
-
-        During test execution, there might be cases where we don't want to show the
-        standard output to the user.  For example,
-
-            self.runCmd(r'''sc print "\n\n\tHello!\n"''')
-
-        tests whether command abbreviation for 'script' works or not.  There is no
-        need to show the 'Hello' output to the user as long as the 'script' command
-        succeeds and we are not in TraceOn() mode (see the '-t' option).
-
-        In this case, the test method calls self.HideStdout(self) to redirect the
-        sys.stdout to a null device, and restores the sys.stdout upon teardown.
-
-        Note that you should only call this method at most once during a test case
-        execution.  Any subsequent call has no effect at all."""
-        if self.sys_stdout_hidden:
-            return
-
-        self.sys_stdout_hidden = True
-        old_stdout = sys.stdout
-        sys.stdout = open(os.devnull, 'w')
-        def restore_stdout():
-            sys.stdout = old_stdout
-        self.addTearDownHook(restore_stdout)

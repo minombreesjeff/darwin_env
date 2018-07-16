@@ -3,6 +3,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/* Bug report URL. */
+#undef BUG_REPORT_URL
+
 /* Relative directory for resource files */
 #undef CLANG_RESOURCE_DIR
 
@@ -572,6 +575,9 @@
 
 /* LLVM name for the native AsmPrinter init function, if available */
 #undef LLVM_NATIVE_ASMPRINTER
+
+/* LLVM name for the native TargetMC init function, if available */
+#undef LLVM_NATIVE_TARGETMC
 
 /* LLVM name for the native Target init function, if available */
 #undef LLVM_NATIVE_TARGET

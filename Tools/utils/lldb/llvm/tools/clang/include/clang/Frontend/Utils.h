@@ -19,6 +19,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Support/raw_ostream.h"
+#include "clang/Basic/Diagnostic.h"
 
 namespace llvm {
 class Triple;
@@ -47,7 +48,7 @@ class FrontendOptions;
 
 /// Normalize \arg File for use in a user defined #include directive (in the
 /// predefines buffer).
-std::string NormalizeDashIncludePath(llvm::StringRef File,
+std::string NormalizeDashIncludePath(StringRef File,
                                      FileManager &FileMgr);
 
 /// Apply the header search options to get given HeaderSearch object.
@@ -68,11 +69,8 @@ void InitializePreprocessor(Preprocessor &PP,
 void ProcessWarningOptions(Diagnostic &Diags, const DiagnosticOptions &Opts);
 
 /// DoPrintPreprocessedInput - Implement -E mode.
-void DoPrintPreprocessedInput(Preprocessor &PP, llvm::raw_ostream* OS,
+void DoPrintPreprocessedInput(Preprocessor &PP, raw_ostream* OS,
                               const PreprocessorOutputOptions &Opts);
-
-/// CheckDiagnostics - Gather the expected diagnostics and check them.
-bool CheckDiagnostics(Preprocessor &PP);
 
 /// AttachDependencyFileGen - Create a dependency file generator, and attach
 /// it to the given preprocessor.  This takes ownership of the output stream.
@@ -89,7 +87,7 @@ void AttachDependencyFileGen(Preprocessor &PP,
 /// \param OutputPath - If non-empty, a path to write the header include
 /// information to, instead of writing to stderr.
 void AttachHeaderIncludeGen(Preprocessor &PP, bool ShowAllHeaders = false,
-                            llvm::StringRef OutputPath = "",
+                            StringRef OutputPath = "",
                             bool ShowDepth = true);
 
 /// CacheTokens - Cache tokens for use with PCH. Note that this requires
@@ -102,7 +100,7 @@ void CacheTokens(Preprocessor &PP, llvm::raw_fd_ostream* OS);
 /// \return A CompilerInvocation, or 0 if none was built for the given
 /// argument vector.
 CompilerInvocation *
-createInvocationFromCommandLine(llvm::ArrayRef<const char *> Args,
+createInvocationFromCommandLine(ArrayRef<const char *> Args,
                                 llvm::IntrusiveRefCntPtr<Diagnostic> Diags =
                                     llvm::IntrusiveRefCntPtr<Diagnostic>());
 

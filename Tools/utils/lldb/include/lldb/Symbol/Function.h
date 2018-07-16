@@ -10,6 +10,7 @@
 #ifndef liblldb_Function_h_
 #define liblldb_Function_h_
 
+#include "lldb/Core/ClangForward.h"
 #include "lldb/Core/AddressRange.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/Declaration.h"
@@ -421,6 +422,15 @@ public:
     virtual void
     CalculateSymbolContext(SymbolContext* sc);
 
+    virtual Module *
+    CalculateSymbolContextModule ();
+    
+    virtual CompileUnit *
+    CalculateSymbolContextCompileUnit ();
+    
+    virtual Function *
+    CalculateSymbolContextFunction ();
+
     const AddressRange &
     GetAddressRange()
     {
@@ -526,6 +536,15 @@ public:
         return m_mangled;
     }
 
+    //------------------------------------------------------------------
+    /// Get the DeclContext for this function, if available.
+    ///
+    /// @return
+    ///     The DeclContext, or NULL if none exists.
+    //------------------------------------------------------------------
+    clang::DeclContext *
+    GetClangDeclContext();
+    
     //------------------------------------------------------------------
     /// Get accessor for the type that describes the function
     /// return value type, and paramter types.

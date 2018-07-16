@@ -51,7 +51,8 @@ Thread::Thread (Process &process, lldb::tid_t tid) :
     m_state_mutex (Mutex::eMutexTypeRecursive),
     m_plan_stack (),
     m_completed_plan_stack(),
-    m_curr_frames_ap (),
+    m_curr_frames_sp (),
+    m_prev_frames_sp (),
     m_resume_signal (LLDB_INVALID_SIGNAL_NUMBER),
     m_resume_state (eStateRunning),
     m_unwinder_ap (),
@@ -93,13 +94,22 @@ Thread::GetStopInfo ()
     if (plan_sp)
         return StopInfo::CreateStopReasonWithPlan (plan_sp);
     else
-        return GetPrivateStopReason ();
+    {
+        if (m_actual_stop_info_sp 
+            && m_actual_stop_info_sp->IsValid()
+            && m_thread_stop_reason_stop_id == m_process.GetStopID())
+            return m_actual_stop_info_sp;
+        else
+            return GetPrivateStopReason ();
+    }
 }
 
 void
 Thread::SetStopInfo (const lldb::StopInfoSP &stop_info_sp)
 {
     m_actual_stop_info_sp = stop_info_sp;
+    if (m_actual_stop_info_sp)
+        m_actual_stop_info_sp->MakeStopInfoValid();
     m_thread_stop_reason_stop_id = GetProcess().GetStopID();
 }
 
@@ -907,9 +917,9 @@ Thread::CalculateExecutionContext (ExecutionContext &exe_ctx)
 StackFrameList &
 Thread::GetStackFrameList ()
 {
-    if (m_curr_frames_ap.get() == NULL)
-        m_curr_frames_ap.reset (new StackFrameList (*this, m_prev_frames_sp, true));
-    return *m_curr_frames_ap;
+    if (!m_curr_frames_sp)
+        m_curr_frames_sp.reset (new StackFrameList (*this, m_prev_frames_sp, true));
+    return *m_curr_frames_sp;
 }
 
 
@@ -924,13 +934,9 @@ Thread::GetStackFrameCount()
 void
 Thread::ClearStackFrames ()
 {
-    if (m_curr_frames_ap.get() && m_curr_frames_ap->GetNumFrames (false) > 1)
-        m_prev_frames_sp.reset (m_curr_frames_ap.release());
-    else
-        m_curr_frames_ap.release();
-
-//    StackFrameList::Merge (m_curr_frames_ap, m_prev_frames_sp);
-//    assert (m_curr_frames_ap.get() == NULL);
+    if (m_curr_frames_sp && m_curr_frames_sp->GetNumFrames (false) > 1)
+        m_prev_frames_sp.swap (m_curr_frames_sp);
+    m_curr_frames_sp.reset();
 }
 
 lldb::StackFrameSP
@@ -1107,14 +1113,17 @@ Thread::GetStatus (Stream &strm, uint32_t start_frame, uint32_t num_frames, uint
     size_t num_frames_shown = 0;
     strm.Indent();
     strm.Printf("%c ", GetProcess().GetThreadList().GetSelectedThread().get() == this ? '*' : ' ');
-
-    StackFrameSP frame_sp = GetStackFrameAtIndex(start_frame);
-    SymbolContext frame_sc(frame_sp->GetSymbolContext (eSymbolContextLineEntry));
-    if (frame_sc.line_entry.line != 0 &&
-        frame_sc.line_entry.file &&
-        GetProcess().GetTarget().GetDebugger().GetUseExternalEditor())
+    if (GetProcess().GetTarget().GetDebugger().GetUseExternalEditor())
     {
-        Host::OpenFileInExternalEditor (frame_sc.line_entry.file, frame_sc.line_entry.line);
+        StackFrameSP frame_sp = GetStackFrameAtIndex(start_frame);
+        if (frame_sp)
+        {
+            SymbolContext frame_sc(frame_sp->GetSymbolContext (eSymbolContextLineEntry));
+            if (frame_sc.line_entry.line != 0 && frame_sc.line_entry.file)
+            {
+                Host::OpenFileInExternalEditor (frame_sc.line_entry.file, frame_sc.line_entry.line);
+            }
+        }
     }
     
     DumpUsingSettingsFormat (strm, start_frame);
@@ -1126,6 +1135,7 @@ Thread::GetStatus (Stream &strm, uint32_t start_frame, uint32_t num_frames, uint
         const bool show_frame_info = true;
         const uint32_t source_lines_before = 3;
         const uint32_t source_lines_after = 3;
+        strm.IndentMore ();
         num_frames_shown = GetStackFrameList ().GetStatus (strm, 
                                                            start_frame, 
                                                            num_frames, 
@@ -1133,6 +1143,7 @@ Thread::GetStatus (Stream &strm, uint32_t start_frame, uint32_t num_frames, uint
                                                            num_frames_with_source,
                                                            source_lines_before,
                                                            source_lines_after);
+        strm.IndentLess();
         strm.IndentLess();
     }
     return num_frames_shown;

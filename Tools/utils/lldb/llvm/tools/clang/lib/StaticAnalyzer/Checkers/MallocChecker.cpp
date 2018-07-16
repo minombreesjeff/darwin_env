@@ -107,8 +107,8 @@ private:
   void ReallocMem(CheckerContext &C, const CallExpr *CE) const;
   static void CallocMem(CheckerContext &C, const CallExpr *CE);
   
-  static bool SummarizeValue(llvm::raw_ostream& os, SVal V);
-  static bool SummarizeRegion(llvm::raw_ostream& os, const MemRegion *MR);
+  static bool SummarizeValue(raw_ostream& os, SVal V);
+  static bool SummarizeRegion(raw_ostream& os, const MemRegion *MR);
   void ReportBadFree(CheckerContext &C, SVal ArgVal, SourceRange range) const;
 };
 } // end anonymous namespace
@@ -364,7 +364,7 @@ const GRState *MallocChecker::FreeMemAux(CheckerContext &C, const CallExpr *CE,
   return notNullState->set<RegionState>(Sym, RefState::getReleased(CE));
 }
 
-bool MallocChecker::SummarizeValue(llvm::raw_ostream& os, SVal V) {
+bool MallocChecker::SummarizeValue(raw_ostream& os, SVal V) {
   if (nonloc::ConcreteInt *IntVal = dyn_cast<nonloc::ConcreteInt>(&V))
     os << "an integer (" << IntVal->getValue() << ")";
   else if (loc::ConcreteInt *ConstAddr = dyn_cast<loc::ConcreteInt>(&V))
@@ -377,7 +377,7 @@ bool MallocChecker::SummarizeValue(llvm::raw_ostream& os, SVal V) {
   return true;
 }
 
-bool MallocChecker::SummarizeRegion(llvm::raw_ostream& os,
+bool MallocChecker::SummarizeRegion(raw_ostream& os,
                                     const MemRegion *MR) {
   switch (MR->getKind()) {
   case MemRegion::FunctionTextRegionKind: {
@@ -578,24 +578,31 @@ void MallocChecker::checkDeadSymbols(SymbolReaper &SymReaper,
   RegionStateTy RS = state->get<RegionState>();
   RegionStateTy::Factory &F = state->get_context<RegionState>();
 
+  bool generateReport = false;
+  
   for (RegionStateTy::iterator I = RS.begin(), E = RS.end(); I != E; ++I) {
     if (SymReaper.isDead(I->first)) {
-      if (I->second.isAllocated()) {
-        if (ExplodedNode *N = C.generateNode()) {
-          if (!BT_Leak)
-            BT_Leak.reset(new BuiltinBug("Memory leak",
-                    "Allocated memory never released. Potential memory leak."));
-          // FIXME: where it is allocated.
-          BugReport *R = new BugReport(*BT_Leak, BT_Leak->getDescription(), N);
-          C.EmitReport(R);
-        }
-      }
+      if (I->second.isAllocated())
+        generateReport = true;
 
       // Remove the dead symbol from the map.
       RS = F.remove(RS, I->first);
+
     }
   }
-  C.generateNode(state->set<RegionState>(RS));
+  
+  ExplodedNode *N = C.generateNode(state->set<RegionState>(RS));
+
+  // FIXME: This does not handle when we have multiple leaks at a single
+  // place.
+  if (N && generateReport) {
+    if (!BT_Leak)
+      BT_Leak.reset(new BuiltinBug("Memory leak",
+              "Allocated memory never released. Potential memory leak."));
+    // FIXME: where it is allocated.
+    BugReport *R = new BugReport(*BT_Leak, BT_Leak->getDescription(), N);
+    C.EmitReport(R);
+  }
 }
 
 void MallocChecker::checkEndPath(EndOfFunctionNodeBuilder &B,

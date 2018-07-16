@@ -33,11 +33,11 @@ namespace clang {
   class VarDecl;
   class ObjCInterfaceDecl;
   class ClassTemplateSpecializationDecl;
+  class GlobalDecl;
 
 namespace CodeGen {
   class CodeGenModule;
   class CodeGenFunction;
-  class GlobalDecl;
   class CGBlockInfo;
 
 /// CGDebugInfo - This class gathers all debug information during compilation
@@ -70,7 +70,7 @@ class CGDebugInfo {
   /// DebugInfoNames - This is a storage for names that are
   /// constructed on demand. For example, C++ destructors, C++ operators etc..
   llvm::BumpPtrAllocator DebugInfoNames;
-  llvm::StringRef CWDName;
+  StringRef CWDName;
 
   llvm::DenseMap<const char *, llvm::WeakVH> DIFileCache;
   llvm::DenseMap<const FunctionDecl *, llvm::WeakVH> SPCache;
@@ -98,6 +98,8 @@ class CGDebugInfo {
   llvm::DIType CreateEnumType(const EnumDecl *ED);
   llvm::DIType getOrCreateMethodType(const CXXMethodDecl *Method,
                                      llvm::DIFile F);
+  llvm::DIType getOrCreateFunctionType(const Decl *D, QualType FnType,
+                                       llvm::DIFile F);
   llvm::DIType getOrCreateVTablePtrType(llvm::DIFile F);
   llvm::DINameSpace getOrCreateNameSpace(const NamespaceDecl *N);
   llvm::DIType CreatePointeeType(QualType PointeeTy, llvm::DIFile F);
@@ -111,17 +113,17 @@ class CGDebugInfo {
   
   void CollectCXXMemberFunctions(const CXXRecordDecl *Decl,
                                  llvm::DIFile F,
-                                 llvm::SmallVectorImpl<llvm::Value *> &E,
+                                 SmallVectorImpl<llvm::Value *> &E,
                                  llvm::DIType T);
 
   void CollectCXXFriends(const CXXRecordDecl *Decl,
                        llvm::DIFile F,
-                       llvm::SmallVectorImpl<llvm::Value *> &EltTys,
+                       SmallVectorImpl<llvm::Value *> &EltTys,
                        llvm::DIType RecordTy);
 
   void CollectCXXBases(const CXXRecordDecl *Decl,
                        llvm::DIFile F,
-                       llvm::SmallVectorImpl<llvm::Value *> &EltTys,
+                       SmallVectorImpl<llvm::Value *> &EltTys,
                        llvm::DIType RecordTy);
   
   llvm::DIArray
@@ -134,16 +136,18 @@ class CGDebugInfo {
   CollectCXXTemplateParams(const ClassTemplateSpecializationDecl *TS,
                            llvm::DIFile F);
 
-  llvm::DIType createFieldType(llvm::StringRef name, QualType type,
+  llvm::DIType createFieldType(StringRef name, QualType type,
                                Expr *bitWidth, SourceLocation loc,
                                AccessSpecifier AS, uint64_t offsetInBits,
-                               llvm::DIFile tunit);
+                               llvm::DIFile tunit,
+                               llvm::DIDescriptor scope);
   void CollectRecordFields(const RecordDecl *Decl, llvm::DIFile F,
-                           llvm::SmallVectorImpl<llvm::Value *> &E);
+                           SmallVectorImpl<llvm::Value *> &E,
+                           llvm::DIType RecordTy);
 
   void CollectVTableInfo(const CXXRecordDecl *Decl,
                          llvm::DIFile F,
-                         llvm::SmallVectorImpl<llvm::Value *> &EltTys);
+                         SmallVectorImpl<llvm::Value *> &EltTys);
 
 public:
   CGDebugInfo(CodeGenModule &CGM);
@@ -230,7 +234,7 @@ private:
   llvm::DIDescriptor getContextDescriptor(const Decl *Decl);
 
   /// getCurrentDirname - Return current directory name.
-  llvm::StringRef getCurrentDirname();
+  StringRef getCurrentDirname();
 
   /// CreateCompileUnit - Create new compile unit.
   void CreateCompileUnit();
@@ -251,7 +255,7 @@ private:
 
   /// CreateMemberType - Create new member and increase Offset by FType's size.
   llvm::DIType CreateMemberType(llvm::DIFile Unit, QualType FType,
-                                llvm::StringRef Name, uint64_t *Offset);
+                                StringRef Name, uint64_t *Offset);
 
   /// getFunctionDeclaration - Return debug info descriptor to describe method
   /// declaration for the given method definition.
@@ -260,21 +264,21 @@ private:
   /// getFunctionName - Get function name for the given FunctionDecl. If the
   /// name is constructred on demand (e.g. C++ destructor) then the name
   /// is stored on the side.
-  llvm::StringRef getFunctionName(const FunctionDecl *FD);
+  StringRef getFunctionName(const FunctionDecl *FD);
 
   /// getObjCMethodName - Returns the unmangled name of an Objective-C method.
   /// This is the display name for the debugging info.  
-  llvm::StringRef getObjCMethodName(const ObjCMethodDecl *FD);
+  StringRef getObjCMethodName(const ObjCMethodDecl *FD);
 
   /// getSelectorName - Return selector name. This is used for debugging
   /// info.
-  llvm::StringRef getSelectorName(Selector S);
+  StringRef getSelectorName(Selector S);
 
   /// getClassName - Get class name including template argument list.
-  llvm::StringRef getClassName(RecordDecl *RD);
+  StringRef getClassName(RecordDecl *RD);
 
   /// getVTableName - Get vtable name for the given Class.
-  llvm::StringRef getVTableName(const CXXRecordDecl *Decl);
+  StringRef getVTableName(const CXXRecordDecl *Decl);
 
   /// getLineNumber - Get line number for the location. If location is invalid
   /// then use current location.

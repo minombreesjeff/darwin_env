@@ -38,7 +38,7 @@ static unsigned getDefaultParsingOptions() {
   if (getenv("CINDEXTEST_COMPLETION_CACHING"))
     options |= CXTranslationUnit_CacheCompletionResults;
   if (getenv("CINDEXTEST_NESTED_MACROS"))
-    options |= CXTranslationUnit_NestedMacroInstantiations;
+    options |= CXTranslationUnit_NestedMacroExpansions;
   
   return options;
 }
@@ -158,6 +158,21 @@ int parse_remapped_files(int argc, const char **argv, int start_arg,
 /* Pretty-printing.                                                           */
 /******************************************************************************/
 
+static void PrintRange(CXSourceRange R, const char *str) {
+  CXFile begin_file, end_file;
+  unsigned begin_line, begin_column, end_line, end_column;
+
+  clang_getSpellingLocation(clang_getRangeStart(R),
+                            &begin_file, &begin_line, &begin_column, 0);
+  clang_getSpellingLocation(clang_getRangeEnd(R),
+                            &end_file, &end_line, &end_column, 0);
+  if (!begin_file || !end_file)
+    return;
+
+  printf(" %s=", str);
+  PrintExtent(stdout, begin_line, begin_column, end_line, end_column);
+}
+
 int want_display_name = 0;
 
 static void PrintCursor(CXTranslationUnit TU, CXCursor Cursor) {
@@ -173,6 +188,9 @@ static void PrintCursor(CXTranslationUnit TU, CXCursor Cursor) {
     CXCursor SpecializationOf;
     CXCursor *overridden;
     unsigned num_overridden;
+    unsigned RefNameRangeNr;
+    CXSourceRange CursorExtent;
+    CXSourceRange RefNameRange;
 
     ks = clang_getCursorKindSpelling(Cursor.kind);
     string = want_display_name? clang_getCursorDisplayName(Cursor) 
@@ -287,6 +305,26 @@ static void PrintCursor(CXTranslationUnit TU, CXCursor Cursor) {
       
       if (clang_isFileMultipleIncludeGuarded(TU, File))
         printf("  [multi-include guarded]");
+    }
+    
+    CursorExtent = clang_getCursorExtent(Cursor);
+    RefNameRange = clang_getCursorReferenceNameRange(Cursor, 
+                                                   CXNameRange_WantQualifier
+                                                 | CXNameRange_WantSinglePiece
+                                                 | CXNameRange_WantTemplateArgs,
+                                                     0);
+    if (!clang_equalRanges(CursorExtent, RefNameRange))
+      PrintRange(RefNameRange, "SingleRefName");
+    
+    for (RefNameRangeNr = 0; 1; RefNameRangeNr++) {
+      RefNameRange = clang_getCursorReferenceNameRange(Cursor, 
+                                                   CXNameRange_WantQualifier
+                                                 | CXNameRange_WantTemplateArgs,
+                                                       RefNameRangeNr);
+      if (clang_equalRanges(clang_getNullRange(), RefNameRange))
+        break;
+      if (!clang_equalRanges(CursorExtent, RefNameRange))
+        PrintRange(RefNameRange, "RefName");
     }
   }
 }
@@ -405,18 +443,7 @@ static const char *FileCheckPrefix = "CHECK";
 
 static void PrintCursorExtent(CXCursor C) {
   CXSourceRange extent = clang_getCursorExtent(C);
-  CXFile begin_file, end_file;
-  unsigned begin_line, begin_column, end_line, end_column;
-
-  clang_getSpellingLocation(clang_getRangeStart(extent),
-                            &begin_file, &begin_line, &begin_column, 0);
-  clang_getSpellingLocation(clang_getRangeEnd(extent),
-                            &end_file, &end_line, &end_column, 0);
-  if (!begin_file || !end_file)
-    return;
-
-  printf(" Extent=");
-  PrintExtent(stdout, begin_line, begin_column, end_line, end_column);
+  PrintRange(extent, "Extent");
 }
 
 /* Data used by all of the visitors. */
@@ -1018,6 +1045,79 @@ void print_completion_result(CXCompletionResult *completion_result,
   fprintf(file, "\n");
 }
 
+void print_completion_contexts(unsigned long long contexts, FILE *file) {
+  fprintf(file, "Completion contexts:\n");
+  if (contexts == CXCompletionContext_Unknown) {
+    fprintf(file, "Unknown\n");
+  }
+  if (contexts & CXCompletionContext_AnyType) {
+    fprintf(file, "Any type\n");
+  }
+  if (contexts & CXCompletionContext_AnyValue) {
+    fprintf(file, "Any value\n");
+  }
+  if (contexts & CXCompletionContext_ObjCObjectValue) {
+    fprintf(file, "Objective-C object value\n");
+  }
+  if (contexts & CXCompletionContext_ObjCSelectorValue) {
+    fprintf(file, "Objective-C selector value\n");
+  }
+  if (contexts & CXCompletionContext_CXXClassTypeValue) {
+    fprintf(file, "C++ class type value\n");
+  }
+  if (contexts & CXCompletionContext_DotMemberAccess) {
+    fprintf(file, "Dot member access\n");
+  }
+  if (contexts & CXCompletionContext_ArrowMemberAccess) {
+    fprintf(file, "Arrow member access\n");
+  }
+  if (contexts & CXCompletionContext_ObjCPropertyAccess) {
+    fprintf(file, "Objective-C property access\n");
+  }
+  if (contexts & CXCompletionContext_EnumTag) {
+    fprintf(file, "Enum tag\n");
+  }
+  if (contexts & CXCompletionContext_UnionTag) {
+    fprintf(file, "Union tag\n");
+  }
+  if (contexts & CXCompletionContext_StructTag) {
+    fprintf(file, "Struct tag\n");
+  }
+  if (contexts & CXCompletionContext_ClassTag) {
+    fprintf(file, "Class name\n");
+  }
+  if (contexts & CXCompletionContext_Namespace) {
+    fprintf(file, "Namespace or namespace alias\n");
+  }
+  if (contexts & CXCompletionContext_NestedNameSpecifier) {
+    fprintf(file, "Nested name specifier\n");
+  }
+  if (contexts & CXCompletionContext_ObjCInterface) {
+    fprintf(file, "Objective-C interface\n");
+  }
+  if (contexts & CXCompletionContext_ObjCProtocol) {
+    fprintf(file, "Objective-C protocol\n");
+  }
+  if (contexts & CXCompletionContext_ObjCCategory) {
+    fprintf(file, "Objective-C category\n");
+  }
+  if (contexts & CXCompletionContext_ObjCInstanceMessage) {
+    fprintf(file, "Objective-C instance method\n");
+  }
+  if (contexts & CXCompletionContext_ObjCClassMessage) {
+    fprintf(file, "Objective-C class method\n");
+  }
+  if (contexts & CXCompletionContext_ObjCSelectorName) {
+    fprintf(file, "Objective-C selector name\n");
+  }
+  if (contexts & CXCompletionContext_MacroName) {
+    fprintf(file, "Macro name\n");
+  }
+  if (contexts & CXCompletionContext_NaturalLanguage) {
+    fprintf(file, "Natural language\n");
+  }
+}
+
 int my_stricmp(const char *s1, const char *s2) {
   while (*s1 && *s2) {
     int c1 = tolower((unsigned char)*s1), c2 = tolower((unsigned char)*s2);
@@ -1098,7 +1198,11 @@ int perform_code_completion(int argc, const char **argv, int timing_only) {
   }
 
   if (results) {
-    unsigned i, n = results->NumResults;
+    unsigned i, n = results->NumResults, containerIsIncomplete = 0;
+    unsigned long long contexts;
+    enum CXCursorKind containerKind;
+    CXString objCSelector;
+    const char *selectorString;
     if (!timing_only) {      
       /* Sort the code-completion results based on the typed text. */
       clang_sortCodeCompletionResults(results->Results, results->NumResults);
@@ -1112,6 +1216,39 @@ int perform_code_completion(int argc, const char **argv, int timing_only) {
       PrintDiagnostic(diag);
       clang_disposeDiagnostic(diag);
     }
+    
+    contexts = clang_codeCompleteGetContexts(results);
+    print_completion_contexts(contexts, stdout);
+    
+    containerKind = clang_codeCompleteGetContainerKind(results,
+                                                       &containerIsIncomplete);
+    
+    if (containerKind != CXCursor_InvalidCode) {
+      /* We have found a container */
+      CXString containerUSR, containerKindSpelling;
+      containerKindSpelling = clang_getCursorKindSpelling(containerKind);
+      printf("Container Kind: %s\n", clang_getCString(containerKindSpelling));
+      clang_disposeString(containerKindSpelling);
+      
+      if (containerIsIncomplete) {
+        printf("Container is incomplete\n");
+      }
+      else {
+        printf("Container is complete\n");
+      }
+      
+      containerUSR = clang_codeCompleteGetContainerUSR(results);
+      printf("Container USR: %s\n", clang_getCString(containerUSR));
+      clang_disposeString(containerUSR);
+    }
+    
+    objCSelector = clang_codeCompleteGetObjCSelector(results);
+    selectorString = clang_getCString(objCSelector);
+    if (selectorString && strlen(selectorString) > 0) {
+      printf("Objective-C selector: %s\n", selectorString);
+    }
+    clang_disposeString(objCSelector);
+    
     clang_disposeCodeCompleteResults(results);
   }
   clang_disposeTranslationUnit(TU);
@@ -1196,7 +1333,13 @@ int inspect_cursor_at(int argc, const char **argv) {
                                clang_getLocation(TU, file, Locations[Loc].line,
                                                  Locations[Loc].column));
       if (I + 1 == Repeats) {
+        CXCompletionString completionString = clang_getCursorCompletionString(
+                                                                        Cursor);
         PrintCursor(TU, Cursor);
+        if (completionString != NULL) {
+          printf("\nCompletion string: ");
+          print_completion_string(completionString, stdout);
+        }
         printf("\n");
         free(Locations[Loc].filename);
       }
@@ -1496,6 +1639,7 @@ int write_pch_file(const char *filename, int argc, const char *argv[]) {
   CXTranslationUnit TU;
   struct CXUnsavedFile *unsaved_files = 0;
   int num_unsaved_files = 0;
+  int result = 0;
   
   Idx = clang_createIndex(/* excludeDeclsFromPCH */1, /* displayDiagnosics=*/1);
   
@@ -1517,12 +1661,34 @@ int write_pch_file(const char *filename, int argc, const char *argv[]) {
     return 1;
   }
 
-  if (clang_saveTranslationUnit(TU, filename, clang_defaultSaveOptions(TU)))
-    fprintf(stderr, "Unable to write PCH file %s\n", filename);
+  switch (clang_saveTranslationUnit(TU, filename, 
+                                    clang_defaultSaveOptions(TU))) {
+  case CXSaveError_None:
+    break;
+
+  case CXSaveError_TranslationErrors:
+    fprintf(stderr, "Unable to write PCH file %s: translation errors\n", 
+            filename);
+    result = 2;    
+    break;
+
+  case CXSaveError_InvalidTU:
+    fprintf(stderr, "Unable to write PCH file %s: invalid translation unit\n", 
+            filename);
+    result = 3;    
+    break;
+
+  case CXSaveError_Unknown:
+  default:
+    fprintf(stderr, "Unable to write PCH file %s: unknown error \n", filename);
+    result = 1;
+    break;
+  }
+  
   clang_disposeTranslationUnit(TU);
   free_remapped_files(unsaved_files, num_unsaved_files);
   clang_disposeIndex(Idx);
-  return 0;  
+  return result;
 }
 
 /******************************************************************************/

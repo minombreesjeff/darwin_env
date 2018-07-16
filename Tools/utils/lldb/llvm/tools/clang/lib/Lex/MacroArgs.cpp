@@ -185,7 +185,8 @@ MacroArgs::getPreExpArgument(unsigned Arg, const MacroInfo *MI,
 /// a character literal for the Microsoft charize (#@) extension.
 ///
 Token MacroArgs::StringifyArgument(const Token *ArgToks,
-                                   Preprocessor &PP, bool Charify) {
+                                   Preprocessor &PP, bool Charify,
+                                   SourceLocation hashInstLoc) {
   Token Tok;
   Tok.startToken();
   Tok.setKind(Charify ? tok::char_constant : tok::string_literal);
@@ -207,7 +208,13 @@ Token MacroArgs::StringifyArgument(const Token *ArgToks,
     // by 6.10.3.2p2.
     if (Tok.is(tok::string_literal) ||       // "foo"
         Tok.is(tok::wide_string_literal) ||  // L"foo"
-        Tok.is(tok::char_constant)) {        // 'x' and L'x'.
+        Tok.is(tok::utf8_string_literal) ||  // u8"foo"
+        Tok.is(tok::utf16_string_literal) || // u"foo"
+        Tok.is(tok::utf32_string_literal) || // U"foo"
+        Tok.is(tok::char_constant) ||        // 'x'
+        Tok.is(tok::wide_char_constant) ||   // L'x'.
+        Tok.is(tok::utf16_char_constant) ||  // u'x'.
+        Tok.is(tok::utf32_char_constant)) {  // U'x'.
       bool Invalid = false;
       std::string TokStr = PP.getSpelling(Tok, &Invalid);
       if (!Invalid) {
@@ -273,14 +280,15 @@ Token MacroArgs::StringifyArgument(const Token *ArgToks,
     }
   }
 
-  PP.CreateString(&Result[0], Result.size(), Tok);
+  PP.CreateString(&Result[0], Result.size(), Tok, hashInstLoc);
   return Tok;
 }
 
 /// getStringifiedArgument - Compute, cache, and return the specified argument
 /// that has been 'stringified' as required by the # operator.
 const Token &MacroArgs::getStringifiedArgument(unsigned ArgNo,
-                                               Preprocessor &PP) {
+                                               Preprocessor &PP,
+                                               SourceLocation hashInstLoc) {
   assert(ArgNo < NumUnexpArgTokens && "Invalid argument number!");
   if (StringifiedArgs.empty()) {
     StringifiedArgs.resize(getNumArguments());
@@ -288,6 +296,7 @@ const Token &MacroArgs::getStringifiedArgument(unsigned ArgNo,
            sizeof(StringifiedArgs[0])*getNumArguments());
   }
   if (StringifiedArgs[ArgNo].isNot(tok::string_literal))
-    StringifiedArgs[ArgNo] = StringifyArgument(getUnexpArgument(ArgNo), PP);
+    StringifiedArgs[ArgNo] = StringifyArgument(getUnexpArgument(ArgNo), PP,
+                                               /*Charify=*/false, hashInstLoc);
   return StringifiedArgs[ArgNo];
 }

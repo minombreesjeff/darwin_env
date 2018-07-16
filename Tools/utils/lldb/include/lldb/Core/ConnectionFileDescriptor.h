@@ -11,10 +11,15 @@
 #define liblldb_ConnectionFileDescriptor_h_
 
 // C Includes
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/Connection.h"
+#include "lldb/Host/SocketAddress.h"
 
 namespace lldb_private {
 
@@ -52,6 +57,16 @@ public:
            lldb::ConnectionStatus &status, 
            Error *error_ptr);
 
+    // If the read file descriptor is a socket, then return
+    // the port number that is being used by the socket.
+    in_port_t
+    GetReadPort () const;
+    
+    // If the write file descriptor is a socket, then return
+    // the port number that is being used by the socket.
+    in_port_t
+    GetWritePort () const;
+
 protected:
     
     lldb::ConnectionStatus
@@ -61,8 +76,11 @@ protected:
     SocketListen (uint16_t listen_port_num, Error *error_ptr);
 
     lldb::ConnectionStatus
-    SocketConnect (const char *host_and_port, Error *error_ptr);
-
+    ConnectTCP (const char *host_and_port, Error *error_ptr);
+    
+    lldb::ConnectionStatus
+    ConnectUDP (const char *args, Error *error_ptr);
+    
     lldb::ConnectionStatus
     NamedSocketAccept (const char *socket_name, Error *error_ptr);
 
@@ -72,11 +90,24 @@ protected:
     lldb::ConnectionStatus
     Close (int& fd, Error *error);
 
-    int m_fd;    // Socket we use to communicate once conn established
-    bool m_is_socket;
+    typedef enum
+    {
+        eFDTypeFile,        // Other FD requireing read/write
+        eFDTypeSocket,      // Socket requiring send/recv
+        eFDTypeSocketUDP    // Unconnected UDP socket requiring sendto/recvfrom
+    } FDType;
+    
+    int m_fd_send;
+    int m_fd_recv;
+    FDType m_fd_send_type;
+    FDType m_fd_recv_type;
+    SocketAddress m_udp_send_sockaddr;
     bool m_should_close_fd; // True if this class should close the file descriptor when it goes away.
     uint32_t m_socket_timeout_usec;
     
+    static in_port_t
+    GetSocketPort (int fd);
+
     static int
     GetSocketOption(int fd, int level, int option_name, int &option_value);
 

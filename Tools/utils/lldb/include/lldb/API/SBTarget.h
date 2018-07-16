@@ -11,23 +11,17 @@
 #define LLDB_SBTarget_h_
 
 #include "lldb/API/SBDefines.h"
+#include "lldb/API/SBAddress.h"
 #include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBFileSpec.h"
+#include "lldb/API/SBType.h"
 
 namespace lldb {
 
 class SBBreakpoint;
 
-#ifdef SWIG
-%feature("docstring",
-         "Represents the target program running under the debugger."
-         ) SBTarget;
-#endif
 class SBTarget
 {
-#ifdef SWIG
-    %feature("autodoc", "1");
-#endif
 public:
     //------------------------------------------------------------------
     // Broadcaster bits.
@@ -62,9 +56,6 @@ public:
     lldb::SBProcess
     GetProcess ();
 
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Launch a new process.
     ///
@@ -112,15 +103,15 @@ public:
     ///     Some launch options specified by logical OR'ing 
     ///     lldb::LaunchFlags enumeration values together.
     ///
+    /// @param[in] stop_at_endtry
+    ///     If false do not stop the inferior at the entry point.
+    ///
     /// @param[out]
     ///     An error object. Contains the reason if there is some failure.
     ///
     /// @return
     ///      A process object for the newly created process.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") Launch;
-#endif
     lldb::SBProcess
     Launch (SBListener &listener, 
             char const **argv,
@@ -134,9 +125,6 @@ public:
             lldb::SBError& error);
             
     
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Launch a new process with sensible defaults.
     ///
@@ -163,17 +151,11 @@ public:
     /// @return
     ///      A process object for the newly created process.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") LaunchSimple;
-#endif
     lldb::SBProcess
     LaunchSimple (const char **argv, 
                   const char **envp,
                   const char *working_directory);
     
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Attach to process with pid.
     ///
@@ -192,17 +174,11 @@ public:
     /// @return
     ///      A process object for the attached process.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") AttachToProcessWithID;
-#endif
     lldb::SBProcess
     AttachToProcessWithID (SBListener &listener,
                            lldb::pid_t pid,
                            lldb::SBError& error);
 
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
     /// Attach to process with name.
     ///
@@ -224,20 +200,14 @@ public:
     /// @return
     ///      A process object for the attached process.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") AttachToProcessWithName;
-#endif
     lldb::SBProcess
     AttachToProcessWithName (SBListener &listener,
                              const char *name,
                              bool wait_for,
                              lldb::SBError& error);
 
-#ifdef SWIG
-    %feature("autodoc", "
-#endif
     //------------------------------------------------------------------
-    /// Attach to process with name.
+    /// Connect to a remote debug server with url.
     ///
     /// @param[in] listener
     ///     An optional listener that will receive all process events.
@@ -257,9 +227,6 @@ public:
     /// @return
     ///      A process object for the connected process.
     //------------------------------------------------------------------
-#ifdef SWIG
-    ") ConnectRemote;
-#endif
     lldb::SBProcess
     ConnectRemote (SBListener &listener,
                    const char *url,
@@ -281,12 +248,49 @@ public:
     lldb::SBModule
     FindModule (const lldb::SBFileSpec &file_spec);
 
+    //------------------------------------------------------------------
+    /// Find functions by name.
+    ///
+    /// @param[in] name
+    ///     The name of the function we are looking for.
+    ///
+    /// @param[in] name_type_mask
+    ///     A logical OR of one or more FunctionNameType enum bits that
+    ///     indicate what kind of names should be used when doing the
+    ///     lookup. Bits include fully qualified names, base names,
+    ///     C++ methods, or ObjC selectors. 
+    ///     See FunctionNameType for more details.
+    ///
+    /// @param[in] append
+    ///     If true, any matches will be appended to \a sc_list, else
+    ///     matches replace the contents of \a sc_list.
+    ///
+    /// @param[out] sc_list
+    ///     A symbol context list that gets filled in with all of the
+    ///     matches.
+    ///
+    /// @return
+    ///     The number of matches added to \a sc_list.
+    //------------------------------------------------------------------
     uint32_t
     FindFunctions (const char *name, 
                    uint32_t name_type_mask, // Logical OR one or more FunctionNameType enum bits
                    bool append, 
                    lldb::SBSymbolContextList& sc_list);
 
+    //------------------------------------------------------------------
+    /// Find global and static variables by name.
+    ///
+    /// @param[in] name
+    ///     The name of the global or static variable we are looking
+    ///     for.
+    ///
+    /// @param[in] max_matches
+    ///     Allow the number of matches to be limited to \a max_matches.
+    ///
+    /// @return
+    ///     A list of matched variables in an SBValueList.
+    //------------------------------------------------------------------
     lldb::SBValueList
     FindGlobalVariables (const char *name, 
                          uint32_t max_matches);
@@ -294,9 +298,8 @@ public:
     void
     Clear ();
 
-    bool
-    ResolveLoadAddress (lldb::addr_t vm_addr, 
-                        lldb::SBAddress& addr);
+    lldb::SBAddress
+    ResolveLoadAddress (lldb::addr_t vm_addr);
 
     SBSymbolContext
     ResolveSymbolContextForAddress (const SBAddress& addr, 
@@ -340,6 +343,12 @@ public:
 
     lldb::SBBroadcaster
     GetBroadcaster () const;
+    
+    lldb::SBType
+    FindFirstType (const char* type);
+    
+    lldb::SBTypeList
+    FindTypes (const char* type);
 
 #ifndef SWIG
     bool
@@ -365,6 +374,7 @@ protected:
     friend class SBProcess;
     friend class SBSymbol;
     friend class SBModule;
+    friend class SBValue;
 
     //------------------------------------------------------------------
     // Constructors are private, use static Target::Create function to

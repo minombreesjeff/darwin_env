@@ -19,7 +19,6 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/AST/UnresolvedSet.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
 namespace clang {
@@ -278,9 +277,17 @@ class CXXRecordDecl : public RecordDecl {
     /// user-declared copy constructor.
     bool UserDeclaredCopyConstructor : 1;
 
+    /// UserDeclareMoveConstructor - True when this class has a
+    /// user-declared move constructor.
+    bool UserDeclaredMoveConstructor : 1;
+
     /// UserDeclaredCopyAssignment - True when this class has a
     /// user-declared copy assignment operator.
     bool UserDeclaredCopyAssignment : 1;
+
+    /// UserDeclareMoveAssignment - True when this class has a
+    /// user-declared move assignment.
+    bool UserDeclaredMoveAssignment : 1;
 
     /// UserDeclaredDestructor - True when this class has a
     /// user-declared destructor.
@@ -448,9 +455,15 @@ class CXXRecordDecl : public RecordDecl {
 
     /// \brief Whether we have already declared the copy constructor.
     bool DeclaredCopyConstructor : 1;
+
+    /// \brief Whether we have already declared the move constructor.
+    bool DeclaredMoveConstructor : 1;
     
     /// \brief Whether we have already declared the copy-assignment operator.
     bool DeclaredCopyAssignment : 1;
+
+    /// \brief Whether we have already declared the move-assignment operator.
+    bool DeclaredMoveAssignment : 1;
     
     /// \brief Whether we have already declared a destructor within the class.
     bool DeclaredDestructor : 1;
@@ -695,11 +708,13 @@ public:
 
   /// hasConstCopyConstructor - Determines whether this class has a
   /// copy constructor that accepts a const-qualified argument.
-  bool hasConstCopyConstructor(const ASTContext &Context) const;
+  bool hasConstCopyConstructor() const;
 
   /// getCopyConstructor - Returns the copy constructor for this class
-  CXXConstructorDecl *getCopyConstructor(const ASTContext &Context,
-                                         unsigned TypeQuals) const;
+  CXXConstructorDecl *getCopyConstructor(unsigned TypeQuals) const;
+
+  /// getMoveConstructor - Returns the move constructor for this class
+  CXXConstructorDecl *getMoveConstructor() const; 
 
   /// \brief Retrieve the copy-assignment operator for this class, if available.
   ///
@@ -712,6 +727,10 @@ public:
   /// \returns The copy-assignment operator that can be invoked, or NULL if
   /// a unique copy-assignment operator could not be found.
   CXXMethodDecl *getCopyAssignmentOperator(bool ArgIsConst) const;
+
+  /// getMoveAssignmentOperator - Returns the move assignment operator for this
+  /// class
+  CXXMethodDecl *getMoveAssignmentOperator() const;
   
   /// hasUserDeclaredConstructor - Whether this class has any
   /// user-declared constructors. When true, a default constructor
@@ -740,7 +759,27 @@ public:
   bool hasDeclaredCopyConstructor() const {
     return data().DeclaredCopyConstructor;
   }
-  
+
+  /// hasUserDeclaredMoveOperation - Whether this class has a user-
+  /// declared move constructor or assignment operator. When false, a
+  /// move constructor and assignment operator may be implicitly declared.
+  bool hasUserDeclaredMoveOperation() const {
+    return data().UserDeclaredMoveConstructor ||
+           data().UserDeclaredMoveAssignment;
+  }
+
+  /// \brief Determine whether this class has had a move constructor
+  /// declared by the user.
+  bool hasUserDeclaredMoveConstructor() const {
+    return data().UserDeclaredMoveConstructor;
+  }
+
+  /// \brief Determine whether this class has had a move constructor
+  /// declared.
+  bool hasDeclaredMoveConstructor() const {
+    return data().DeclaredMoveConstructor;
+  }
+
   /// hasUserDeclaredCopyAssignment - Whether this class has a
   /// user-declared copy assignment operator. When false, a copy
   /// assigment operator will be implicitly declared.
@@ -755,7 +794,19 @@ public:
   bool hasDeclaredCopyAssignment() const {
     return data().DeclaredCopyAssignment;
   }
-  
+
+  /// \brief Determine whether this class has had a move assignment
+  /// declared by the user.
+  bool hasUserDeclaredMoveAssignment() const {
+    return data().UserDeclaredMoveAssignment;
+  }
+
+  /// hasDeclaredMoveAssignment - Whether this class has a
+  /// declared move assignment operator.
+  bool hasDeclaredMoveAssignment() const {
+    return data().DeclaredMoveAssignment;
+  }
+
   /// hasUserDeclaredDestructor - Whether this class has a
   /// user-declared destructor. When false, a destructor will be
   /// implicitly declared.
@@ -1225,6 +1276,9 @@ public:
   /// \brief Determine whether this is a copy-assignment operator, regardless
   /// of whether it was declared implicitly or explicitly.
   bool isCopyAssignmentOperator() const;
+
+  /// \brief Determine whether this is a move assignment operator.
+  bool isMoveAssignmentOperator() const;
   
   const CXXMethodDecl *getCanonicalDecl() const {
     return cast<CXXMethodDecl>(FunctionDecl::getCanonicalDecl());
@@ -1279,6 +1333,7 @@ public:
   ///   void g() &&;
   ///   void h();
   /// };
+  /// \endcode
   RefQualifierKind getRefQualifier() const {
     return getType()->getAs<FunctionProtoType>()->getRefQualifier();
   }
@@ -1323,6 +1378,8 @@ class CXXCtorInitializer {
   
   /// \brief The argument used to initialize the base or member, which may
   /// end up constructing an object (when multiple arguments are involved).
+  /// If 0, this is a field initializer, and the in-class member initializer 
+  /// will be used.
   Stmt *Init;
   
   /// LParenLoc - Location of the left paren of the ctor-initializer.
@@ -1395,6 +1452,13 @@ public:
 
   bool isIndirectMemberInitializer() const {
     return Initializee.is<IndirectFieldDecl*>();
+  }
+
+  /// isInClassMemberInitializer - Returns true when this initializer is an
+  /// implicit ctor initializer generated for a field with an initializer
+  /// defined on the member declaration.
+  bool isInClassMemberInitializer() const {
+    return !Init;
   }
 
   /// isDelegatingInitializer - Returns true when this initializer is creating
@@ -1525,7 +1589,14 @@ public:
     reinterpret_cast<VarDecl **>(this + 1)[I] = Index;
   }
   
-  Expr *getInit() const { return static_cast<Expr *>(Init); }
+  /// \brief Get the initializer. This is 0 if this is an in-class initializer
+  /// for a non-static data member which has not yet been parsed.
+  Expr *getInit() const {
+    if (!Init)
+      return getAnyMember()->getInClassInitializer();
+
+    return static_cast<Expr*>(Init);
+  }
 };
 
 /// CXXConstructorDecl - Represents a C++ constructor within a

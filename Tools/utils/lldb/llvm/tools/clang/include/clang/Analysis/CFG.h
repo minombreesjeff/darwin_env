@@ -21,14 +21,12 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/BitVector.h"
+#include "clang/AST/Stmt.h"
 #include "clang/Analysis/Support/BumpVector.h"
 #include "clang/Basic/SourceLocation.h"
 #include <cassert>
 #include <iterator>
-
-namespace llvm {
-  class raw_ostream;
-}
 
 namespace clang {
   class CXXDestructorDecl;
@@ -476,8 +474,8 @@ public:
   unsigned getBlockID() const { return BlockID; }
 
   void dump(const CFG *cfg, const LangOptions &LO) const;
-  void print(llvm::raw_ostream &OS, const CFG* cfg, const LangOptions &LO) const;
-  void printTerminator(llvm::raw_ostream &OS, const LangOptions &LO) const;
+  void print(raw_ostream &OS, const CFG* cfg, const LangOptions &LO) const;
+  void printTerminator(raw_ostream &OS, const LangOptions &LO) const;
   
   void addSuccessor(CFGBlock* Block, BumpVectorContext &C) {
     if (Block)
@@ -533,20 +531,36 @@ public:
   //===--------------------------------------------------------------------===//
 
   class BuildOptions {
+    llvm::BitVector alwaysAddMask;
   public:
     typedef llvm::DenseMap<const Stmt *, const CFGBlock*> ForcedBlkExprs;
     ForcedBlkExprs **forcedBlkExprs;    
 
-    bool PruneTriviallyFalseEdges:1;
-    bool AddEHEdges:1;
-    bool AddInitializers:1;
-    bool AddImplicitDtors:1;
+    bool PruneTriviallyFalseEdges;
+    bool AddEHEdges;
+    bool AddInitializers;
+    bool AddImplicitDtors;
+    
+    bool alwaysAdd(const Stmt *stmt) const {
+      return alwaysAddMask[stmt->getStmtClass()];
+    }
+    
+    BuildOptions &setAlwaysAdd(Stmt::StmtClass stmtClass, bool val = true) {
+      alwaysAddMask[stmtClass] = val;
+      return *this;
+    }
+    
+    BuildOptions &setAllAlwaysAdd() {
+      alwaysAddMask.set();
+      return *this;
+    }
 
     BuildOptions()
-        : forcedBlkExprs(0), PruneTriviallyFalseEdges(true)
-        , AddEHEdges(false)
-        , AddInitializers(false)
-        , AddImplicitDtors(false) {}
+    : alwaysAddMask(Stmt::lastStmtConstant, false)
+      ,forcedBlkExprs(0), PruneTriviallyFalseEdges(true)
+      ,AddEHEdges(false)
+      ,AddInitializers(false)
+      ,AddImplicitDtors(false) {}
   };
 
   /// buildCFG - Builds a CFG from an AST.  The responsibility to free the
@@ -640,7 +654,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   void viewCFG(const LangOptions &LO) const;
-  void print(llvm::raw_ostream& OS, const LangOptions &LO) const;
+  void print(raw_ostream& OS, const LangOptions &LO) const;
   void dump(const LangOptions &LO) const;
 
   //===--------------------------------------------------------------------===//

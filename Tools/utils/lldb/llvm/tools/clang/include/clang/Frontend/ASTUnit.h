@@ -41,6 +41,7 @@ namespace llvm {
 
 namespace clang {
 class ASTContext;
+class ASTReader;
 class CodeCompleteConsumer;
 class CompilerInvocation;
 class Decl;
@@ -143,9 +144,12 @@ private:
   // Critical optimization when using clang_getCursor().
   ASTLocation LastLoc;
 
+  /// \brief The set of diagnostics produced when creating the preamble.
+  SmallVector<StoredDiagnostic, 4> PreambleDiagnostics;
+
   /// \brief The set of diagnostics produced when creating this
   /// translation unit.
-  llvm::SmallVector<StoredDiagnostic, 4> StoredDiagnostics;
+  SmallVector<StoredDiagnostic, 4> StoredDiagnostics;
 
   /// \brief The number of stored diagnostics that come from the driver
   /// itself.
@@ -156,7 +160,7 @@ private:
   
   /// \brief Temporary files that should be removed when the ASTUnit is 
   /// destroyed.
-  llvm::SmallVector<llvm::sys::Path, 4> TemporaryFiles;
+  SmallVector<llvm::sys::Path, 4> TemporaryFiles;
 
   /// \brief A mapping from file IDs to the set of preprocessed entities
   /// stored in that file. 
@@ -230,14 +234,6 @@ private:
   /// when any errors are present.
   unsigned NumWarningsInPreamble;
 
-  /// \brief The number of diagnostics that were stored when parsing
-  /// the precompiled preamble.
-  ///
-  /// This value is used to determine how many of the stored
-  /// diagnostics should be retained when reparsing in the presence of
-  /// a precompiled preamble.
-  unsigned NumStoredDiagnosticsInPreamble;
-
   /// \brief A list of the serialization ID numbers for each of the top-level
   /// declarations parsed within the precompiled preamble.
   std::vector<serialization::DeclID> TopLevelDeclsInPreamble;
@@ -249,13 +245,18 @@ private:
   /// \brief Whether we should be caching code-completion results.
   bool ShouldCacheCodeCompletionResults;
   
-  /// \brief Whether we want to include nested macro instantiations in the
+  /// \brief Whether we want to include nested macro expansions in the
   /// detailed preprocessing record.
-  bool NestedMacroInstantiations;
+  bool NestedMacroExpansions;
   
   static void ConfigureDiags(llvm::IntrusiveRefCntPtr<Diagnostic> &Diags,
                              const char **ArgBegin, const char **ArgEnd,
                              ASTUnit &AST, bool CaptureDiagnostics);
+
+  void TranslateStoredDiagnostics(ASTReader *MMan, StringRef ModName,
+                                  SourceManager &SrcMan,
+                      const SmallVectorImpl<StoredDiagnostic> &Diags,
+                            SmallVectorImpl<StoredDiagnostic> &Out);
 
 public:
   /// \brief A cached code-completion result, which may be introduced in one of
@@ -309,10 +310,24 @@ public:
     return CachedCompletionAllocator;
   }
   
+  /// \brief Retrieve the allocator used to cache global code completions.
+  /// Creates the allocator if it doesn't already exist.
+  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
+  getCursorCompletionAllocator() {
+    if (!CursorCompletionAllocator.getPtr()) {
+      CursorCompletionAllocator = new GlobalCodeCompletionAllocator;
+    }
+    return CursorCompletionAllocator;
+  }
+  
 private:
   /// \brief Allocator used to store cached code completions.
   llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
     CachedCompletionAllocator;
+  
+  /// \brief Allocator used to store code completions for arbitrary cursors.
+  llvm::IntrusiveRefCntPtr<GlobalCodeCompletionAllocator>
+    CursorCompletionAllocator;
 
   /// \brief The set of cached code-completion results.
   std::vector<CachedCodeCompletionResult> CachedCompletionResults;
@@ -363,7 +378,7 @@ private:
                   unsigned MaxLines, bool &CreatedBuffer);
   
   llvm::MemoryBuffer *getMainBufferWithPrecompiledPreamble(
-                                         CompilerInvocation PreambleInvocation,
+                               const CompilerInvocation &PreambleInvocationIn,
                                                      bool AllowRebuild = true,
                                                         unsigned MaxLines = 0);
   void RealizeTopLevelDeclsFromPreamble();
@@ -441,7 +456,7 @@ public:
   ASTLocation getLastASTLocation() const { return LastLoc; }
 
 
-  llvm::StringRef getMainFileName() const;
+  StringRef getMainFileName() const;
 
   typedef std::vector<Decl *>::iterator top_level_iterator;
 
@@ -512,7 +527,7 @@ public:
   }
   unsigned stored_diag_size() const { return StoredDiagnostics.size(); }
   
-  llvm::SmallVector<StoredDiagnostic, 4> &getStoredDiagnostics() { 
+  SmallVector<StoredDiagnostic, 4> &getStoredDiagnostics() { 
     return StoredDiagnostics; 
   }
 
@@ -531,7 +546,7 @@ public:
     return CachedCompletionResults.size(); 
   }
 
-  llvm::MemoryBuffer *getBufferForFile(llvm::StringRef Filename,
+  llvm::MemoryBuffer *getBufferForFile(StringRef Filename,
                                        std::string *ErrorStr = 0);
 
   /// \brief Whether this AST represents a complete translation unit.
@@ -612,7 +627,7 @@ public:
                                              bool PrecompilePreamble = false,
                                           bool CompleteTranslationUnit = true,
                                        bool CacheCodeCompletionResults = false,
-                                       bool NestedMacroInstantiations = true);
+                                       bool NestedMacroExpansions = true);
 
   /// LoadFromCommandLine - Create an ASTUnit from a vector of command line
   /// arguments, which must specify exactly one source file.
@@ -631,7 +646,7 @@ public:
   static ASTUnit *LoadFromCommandLine(const char **ArgBegin,
                                       const char **ArgEnd,
                                     llvm::IntrusiveRefCntPtr<Diagnostic> Diags,
-                                      llvm::StringRef ResourceFilesPath,
+                                      StringRef ResourceFilesPath,
                                       bool OnlyLocalDecls = false,
                                       bool CaptureDiagnostics = false,
                                       RemappedFile *RemappedFiles = 0,
@@ -642,7 +657,7 @@ public:
                                       bool CacheCodeCompletionResults = false,
                                       bool CXXPrecompilePreamble = false,
                                       bool CXXChainedPCH = false,
-                                      bool NestedMacroInstantiations = true);
+                                      bool NestedMacroExpansions = true);
   
   /// \brief Reparse the source files using the same command-line options that
   /// were originally used to produce this translation unit.
@@ -669,24 +684,24 @@ public:
   ///
   /// FIXME: The Diag, LangOpts, SourceMgr, FileMgr, StoredDiagnostics, and
   /// OwnedBuffers parameters are all disgusting hacks. They will go away.
-  void CodeComplete(llvm::StringRef File, unsigned Line, unsigned Column,
+  void CodeComplete(StringRef File, unsigned Line, unsigned Column,
                     RemappedFile *RemappedFiles, unsigned NumRemappedFiles,
                     bool IncludeMacros, bool IncludeCodePatterns,
                     CodeCompleteConsumer &Consumer,
                     Diagnostic &Diag, LangOptions &LangOpts,
                     SourceManager &SourceMgr, FileManager &FileMgr,
-                    llvm::SmallVectorImpl<StoredDiagnostic> &StoredDiagnostics,
-              llvm::SmallVectorImpl<const llvm::MemoryBuffer *> &OwnedBuffers);
+                    SmallVectorImpl<StoredDiagnostic> &StoredDiagnostics,
+              SmallVectorImpl<const llvm::MemoryBuffer *> &OwnedBuffers);
 
   /// \brief Save this translation unit to a file with the given name.
   ///
-  /// \returns True if an error occurred, false otherwise.
-  bool Save(llvm::StringRef File);
+  /// \returns An indication of whether the save was successful or not.
+  CXSaveError Save(StringRef File);
 
   /// \brief Serialize this translation unit with the given output stream.
   ///
   /// \returns True if an error occurred, false otherwise.
-  bool serialize(llvm::raw_ostream &OS);
+  bool serialize(raw_ostream &OS);
 };
 
 } // namespace clang

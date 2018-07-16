@@ -20,6 +20,45 @@
 using namespace lldb;
 using namespace lldb_private;
 
+// Shared pointers to modules track module lifetimes in
+// targets and in the global module, but this collection
+// will track all module objects that are still alive
+typedef std::vector<Module *> ModuleCollection;
+
+static ModuleCollection &
+GetModuleCollection()
+{
+    static ModuleCollection g_module_collection;
+    return g_module_collection;
+}
+
+Mutex &
+Module::GetAllocationModuleCollectionMutex()
+{
+    static Mutex g_module_collection_mutex(Mutex::eMutexTypeRecursive);
+    return g_module_collection_mutex;    
+}
+
+size_t
+Module::GetNumberAllocatedModules ()
+{
+    Mutex::Locker locker (GetAllocationModuleCollectionMutex());
+    return GetModuleCollection().size();
+}
+
+Module *
+Module::GetAllocatedModuleAtIndex (size_t idx)
+{
+    Mutex::Locker locker (GetAllocationModuleCollectionMutex());
+    ModuleCollection &modules = GetModuleCollection();
+    if (idx < modules.size())
+        return modules[idx];
+    return NULL;
+}
+
+
+    
+
 Module::Module(const FileSpec& file_spec, const ArchSpec& arch, const ConstString *object_name, off_t object_offset) :
     m_mutex (Mutex::eMutexTypeRecursive),
     m_mod_time (file_spec.GetModificationTime()),
@@ -38,6 +77,12 @@ Module::Module(const FileSpec& file_spec, const ArchSpec& arch, const ConstStrin
     m_did_init_ast (false),
     m_is_dynamic_loader_module (false)
 {
+    // Scope for locker below...
+    {
+        Mutex::Locker locker (GetAllocationModuleCollectionMutex());
+        GetModuleCollection().push_back(this);
+    }
+
     if (object_name)
         m_object_name = *object_name;
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
@@ -54,6 +99,15 @@ Module::Module(const FileSpec& file_spec, const ArchSpec& arch, const ConstStrin
 
 Module::~Module()
 {
+    // Scope for locker below...
+    {
+        Mutex::Locker locker (GetAllocationModuleCollectionMutex());
+        ModuleCollection &modules = GetModuleCollection();
+        ModuleCollection::iterator end = modules.end();
+        ModuleCollection::iterator pos = std::find(modules.begin(), end, this);
+        if (pos != end)
+            modules.erase(pos);
+    }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p Module::~Module((%s) '%s/%s%s%s%s')",
@@ -160,6 +214,12 @@ Module::CalculateSymbolContext(SymbolContext* sc)
     sc->module_sp = GetSP();
 }
 
+Module *
+Module::CalculateSymbolContextModule ()
+{
+    return this;
+}
+
 void
 Module::DumpSymbolContext(Stream *s)
 {
@@ -192,16 +252,6 @@ Module::GetCompileUnitAtIndex (uint32_t index)
     }
     return cu_sp;
 }
-
-//CompUnitSP
-//Module::FindCompUnit(lldb::user_id_t uid)
-//{
-//  CompUnitSP cu_sp;
-//  SymbolVendor *symbols = GetSymbolVendor ();
-//  if (symbols)
-//      cu_sp = symbols->FindCompUnit(uid);
-//  return cu_sp;
-//}
 
 bool
 Module::ResolveFileAddress (lldb::addr_t vm_addr, Address& so_addr)
@@ -323,6 +373,28 @@ Module::FindGlobalVariables(const RegularExpression& regex, bool append, uint32_
 }
 
 uint32_t
+Module::FindCompileUnits (const FileSpec &path,
+                          bool append,
+                          SymbolContextList &sc_list)
+{
+    if (!append)
+        sc_list.Clear();
+    
+    const uint32_t start_size = sc_list.GetSize();
+    const uint32_t num_compile_units = GetNumCompileUnits();
+    SymbolContext sc;
+    sc.module_sp = GetSP();
+    const bool compare_directory = path.GetDirectory();
+    for (uint32_t i=0; i<num_compile_units; ++i)
+    {
+        sc.comp_unit = GetCompileUnitAtIndex(i).get();
+        if (FileSpec::Equal (*sc.comp_unit, path, compare_directory))
+            sc_list.Append(sc);
+    }
+    return sc_list.GetSize() - start_size;
+}
+
+uint32_t
 Module::FindFunctions (const ConstString &name, 
                        uint32_t name_type_mask, 
                        bool include_symbols, 
@@ -410,7 +482,7 @@ Module::FindFunctions (const RegularExpression& regex,
 }
 
 uint32_t
-Module::FindTypes (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
+Module::FindTypes_Impl (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
 {
     Timer scoped_timer(__PRETTY_FUNCTION__, __PRETTY_FUNCTION__);
     if (sc.module_sp.get() == NULL || sc.module_sp.get() == this)
@@ -420,6 +492,41 @@ Module::FindTypes (const SymbolContext& sc, const ConstString &name, bool append
             return symbols->FindTypes(sc, name, append, max_matches, types);
     }
     return 0;
+}
+
+// depending on implementation details, type lookup might fail because of
+// embedded spurious namespace:: prefixes. this call strips them, paying
+// attention to the fact that a type might have namespace'd type names as
+// arguments to templates, and those must not be stripped off
+static const char*
+StripTypeName(const char* name_cstr)
+{
+    const char* skip_namespace = strstr(name_cstr, "::");
+    const char* template_arg_char = strchr(name_cstr, '<');
+    while (skip_namespace != NULL)
+    {
+        if (template_arg_char != NULL &&
+            skip_namespace > template_arg_char) // but namespace'd template arguments are still good to go
+            break;
+        name_cstr = skip_namespace+2;
+        skip_namespace = strstr(name_cstr, "::");
+    }
+    return name_cstr;
+}
+
+uint32_t
+Module::FindTypes (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
+{
+    uint32_t retval = FindTypes_Impl(sc, name, append, max_matches, types);
+    
+    if (retval == 0)
+    {
+        const char *stripped = StripTypeName(name.GetCString());
+        return FindTypes_Impl(sc, ConstString(stripped), append, max_matches, types);
+    }
+    else
+        return retval;
+    
 }
 
 //uint32_t
@@ -643,6 +750,28 @@ Module::IsExecutable ()
         return GetObjectFile()->IsExecutable();
 }
 
+bool
+Module::IsLoadedInTarget (Target *target)
+{
+    ObjectFile *obj_file = GetObjectFile();
+    if (obj_file)
+    {
+        SectionList *sections = obj_file->GetSectionList();
+        if (sections != NULL)
+        {
+            size_t num_sections = sections->GetSize();
+            for (size_t sect_idx = 0; sect_idx < num_sections; sect_idx++)
+            {
+                SectionSP section_sp = sections->GetSectionAtIndex(sect_idx);
+                if (section_sp->GetLoadBaseAddress(target) != LLDB_INVALID_ADDRESS)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
 bool 
 Module::SetArchitecture (const ArchSpec &new_arch)
 {

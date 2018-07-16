@@ -129,7 +129,7 @@ Parser::ParseTemplateDeclarationOrSpecialization(unsigned Context,
 
     // Parse the '<' template-parameter-list '>'
     SourceLocation LAngleLoc, RAngleLoc;
-    llvm::SmallVector<Decl*, 4> TemplateParams;
+    SmallVector<Decl*, 4> TemplateParams;
     if (ParseTemplateParameters(Depth, TemplateParams, LAngleLoc,
                                 RAngleLoc)) {
       // Skip until the semi-colon or a }.
@@ -289,7 +289,7 @@ Parser::ParseSingleDeclarationAfterTemplate(
 ///
 /// \returns true if an error occurred, false otherwise.
 bool Parser::ParseTemplateParameters(unsigned Depth,
-                               llvm::SmallVectorImpl<Decl*> &TemplateParams,
+                               SmallVectorImpl<Decl*> &TemplateParams,
                                      SourceLocation &LAngleLoc,
                                      SourceLocation &RAngleLoc) {
   // Get the template parameter list.
@@ -322,7 +322,7 @@ bool Parser::ParseTemplateParameters(unsigned Depth,
 ///         template-parameter-list ',' template-parameter
 bool
 Parser::ParseTemplateParameterList(unsigned Depth,
-                             llvm::SmallVectorImpl<Decl*> &TemplateParams) {
+                             SmallVectorImpl<Decl*> &TemplateParams) {
   while (1) {
     if (Decl *TmpParam
           = ParseTemplateParameter(Depth, TemplateParams.size())) {
@@ -516,7 +516,7 @@ Parser::ParseTemplateTemplateParameter(unsigned Depth, unsigned Position) {
 
   // Handle the template <...> part.
   SourceLocation TemplateLoc = ConsumeToken();
-  llvm::SmallVector<Decl*,8> TemplateParams;
+  SmallVector<Decl*,8> TemplateParams;
   SourceLocation LAngleLoc, RAngleLoc;
   {
     ParseScope TemplateParmScope(this, Scope::TemplateParamScope);
@@ -861,8 +861,7 @@ bool Parser::AnnotateTemplateIdToken(TemplateTy Template, TemplateNameKind TNK,
 void Parser::AnnotateTemplateIdTokenAsType() {
   assert(Tok.is(tok::annot_template_id) && "Requires template-id tokens");
 
-  TemplateIdAnnotation *TemplateId
-    = static_cast<TemplateIdAnnotation *>(Tok.getAnnotationValue());
+  TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
   assert((TemplateId->Kind == TNK_Type_template ||
           TemplateId->Kind == TNK_Dependent_template_name) &&
          "Only works for type and dependent templates");
@@ -888,7 +887,6 @@ void Parser::AnnotateTemplateIdTokenAsType() {
   // Replace the template-id annotation token, and possible the scope-specifier
   // that precedes it, with the typename annotation token.
   PP.AnnotateCachedTokens(Tok);
-  TemplateId->Destroy();
 }
 
 /// \brief Determine whether the given token can end a template argument.

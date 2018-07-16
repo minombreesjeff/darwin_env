@@ -70,6 +70,9 @@ dont_do_python_api_test = False
 # By default, both command line and Python API tests are performed.
 just_do_python_api_test = False
 
+# By default, benchmarks tests are not run.
+just_do_benchmarks_test = False
+
 # The blacklist is optional (-b blacklistFile) and allows a central place to skip
 # testclass's and/or testclass.testmethod's.
 blacklist = None
@@ -102,8 +105,8 @@ dumpSysPath = False
 # By default, failfast is False.  Use '-F' to overwrite it.
 failfast = False
 
-# The filter (testclass.testmethod) used to admit tests into our test suite.
-filterspec = None
+# The filters (testclass.testmethod) used to admit tests into our test suite.
+filters = []
 
 # If '-g' is specified, the filterspec is not exclusive.  If a test module does
 # not contain testclass.testmethod which matches the filterspec, the whole test
@@ -162,6 +165,8 @@ where options:
        use @python_api_test to decorate a test case as lldb Python API test
 +a   : just do lldb Python API tests
        do not specify both '-a' and '+a' at the same time
++b   : just do benchmark tests
+       use @benchmark_test to decorate a test case as such
 -b   : read a blacklist file specified after this option
 -c   : read a config file specified after this option
        the architectures and compilers (note the plurals) specified via '-A' and '-C'
@@ -287,6 +292,7 @@ def parseOptionsAndInitTestdirs():
 
     global dont_do_python_api_test
     global just_do_python_api_test
+    global just_do_benchmarks_test
     global blacklist
     global blacklistConfig
     global configFile
@@ -296,7 +302,7 @@ def parseOptionsAndInitTestdirs():
     global delay
     global dumpSysPath
     global failfast
-    global filterspec
+    global filters
     global fs4all
     global ignore
     global skipLongRunningTest
@@ -347,6 +353,9 @@ def parseOptionsAndInitTestdirs():
         elif sys.argv[index].startswith('+a'):
             just_do_python_api_test = True
             index += 1
+        elif sys.argv[index].startswith('+b'):
+            just_do_benchmarks_test = True
+            index += 1
         elif sys.argv[index].startswith('-b'):
             # Increment by 1 to fetch the blacklist file name option argument.
             index += 1
@@ -381,7 +390,7 @@ def parseOptionsAndInitTestdirs():
             index += 1
             if index >= len(sys.argv) or sys.argv[index].startswith('-'):
                 usage()
-            filterspec = sys.argv[index]
+            filters.append(sys.argv[index])
             index += 1
         elif sys.argv[index].startswith('-g'):
             fs4all = False
@@ -512,7 +521,7 @@ def setupSysPath():
     global svn_info
 
     # Get the directory containing the current script.
-    if "DOTEST_PROFILE" in os.environ and "DOTEST_SCRIPT_DIR" in os.environ:
+    if ("DOTEST_PROFILE" in os.environ or "DOTEST_PDB" in os.environ) and "DOTEST_SCRIPT_DIR" in os.environ:
         scriptPath = os.environ["DOTEST_SCRIPT_DIR"]
     else:
         scriptPath = sys.path[0]
@@ -579,6 +588,10 @@ def setupSysPath():
         lldbExec = baiExec
     elif is_exe(baiExec2):
         lldbExec = baiExec2
+
+    if lldbExec:
+        os.environ["LLDB_BUILD_DIR"] = os.path.split(lldbExec)[0]
+        print os.environ["LLDB_BUILD_DIR"]
 
     if not lldbExec:
         lldbExec = which('lldb')
@@ -662,7 +675,7 @@ def visit(prefix, dir, names):
 
     global suite
     global regexp
-    global filterspec
+    global filters
     global fs4all
 
     for name in names:
@@ -689,7 +702,8 @@ def visit(prefix, dir, names):
 
             # Thoroughly check the filterspec against the base module and admit
             # the (base, filterspec) combination only when it makes sense.
-            if filterspec:
+            filterspec = None
+            for filterspec in filters:
                 # Optimistically set the flag to True.
                 filtered = True
                 module = __import__(base)
@@ -702,16 +716,21 @@ def visit(prefix, dir, names):
                         # The filterspec has failed.
                         filtered = False
                         break
-                # Forgo this module if the (base, filterspec) combo is invalid
-                # and no '-g' option is specified
-                if fs4all and not filtered:
+
+                # If filtered, we have a good filterspec.  Add it.
+                if filtered:
+                    #print "adding filter spec %s to module %s" % (filterspec, module)
+                    suite.addTests(
+                        unittest2.defaultTestLoader.loadTestsFromName(filterspec, module))
                     continue
+
+            # Forgo this module if the (base, filterspec) combo is invalid
+            # and no '-g' option is specified
+            if filters and fs4all and not filtered:
+                continue
                 
-            # Add either the filtered test case or the entire test class.
-            if filterspec and filtered:
-                suite.addTests(
-                    unittest2.defaultTestLoader.loadTestsFromName(filterspec, module))
-            else:
+            # Add either the filtered test case(s) (which is done before) or the entire test class.
+            if not filterspec or not filtered:
                 # A simple case of just the module name.  Also the failover case
                 # from the filterspec branch when the (base, filterspec) combo
                 # doesn't make sense.
@@ -808,6 +827,7 @@ lldb.blacklist = blacklist
 # Put dont/just_do_python_api_test in the lldb namespace, too.
 lldb.dont_do_python_api_test = dont_do_python_api_test
 lldb.just_do_python_api_test = just_do_python_api_test
+lldb.just_do_benchmarks_test = just_do_benchmarks_test
 
 # Turn on lldb loggings if necessary.
 lldbLoggings()
@@ -1000,6 +1020,14 @@ for ia in range(len(archs) if iterArchs else 1):
                 sdir_has_content = True
                 super(LLDBTestResult, self).addExpectedFailure(test, err)
                 method = getattr(test, "markExpectedFailure", None)
+                if method:
+                    method()
+
+            def addSkip(self, test, reason):
+                global sdir_has_content
+                sdir_has_content = True
+                super(LLDBTestResult, self).addSkip(test, reason)
+                method = getattr(test, "markSkippedTest", None)
                 if method:
                     method()
 

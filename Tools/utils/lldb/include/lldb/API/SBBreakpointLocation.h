@@ -87,7 +87,9 @@ public:
     SBBreakpoint
     GetBreakpoint ();
 
+#ifndef SWIG
     SBBreakpointLocation (const lldb::BreakpointLocationSP &break_loc_sp);
+#endif
 
 private:
     friend class SBBreakpoint;

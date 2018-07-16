@@ -97,7 +97,7 @@ ValueObjectChild::UpdateValue ()
     ValueObject* parent = m_parent;
     if (parent)
     {
-        if (parent->UpdateValueIfNeeded())
+        if (parent->UpdateValueIfNeeded(false))
         {
             m_value.SetContext(Value::eContextTypeClangType, m_clang_type);
 
@@ -108,10 +108,11 @@ ValueObjectChild::UpdateValue ()
 
             if (ClangASTContext::IsPointerOrReferenceType (parent->GetClangType()))
             {
-                uint32_t offset = 0;
-                m_value.GetScalar() = parent->GetDataExtractor().GetPointer(&offset);
+                const bool scalar_is_load_address = true;
+                AddressType address_type;
 
-                lldb::addr_t addr = m_value.GetScalar().ULongLong(LLDB_INVALID_ADDRESS);
+                lldb::addr_t addr = parent->GetPointerValue (address_type, scalar_is_load_address);
+                m_value.GetScalar() = addr;
 
                 if (addr == LLDB_INVALID_ADDRESS)
                 {
@@ -150,7 +151,7 @@ ValueObjectChild::UpdateValue ()
                         else
                         {
                             // Set this object's scalar value to the address of its
-                            // value be adding its byte offset to the parent address
+                            // value by adding its byte offset to the parent address
                             m_value.GetScalar() += GetByteOffset();
                         }
                     }
@@ -169,7 +170,7 @@ ValueObjectChild::UpdateValue ()
             if (m_error.Success())
             {
                 ExecutionContext exe_ctx (GetExecutionContextScope());
-                m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST (), m_data, 0);
+                m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST (), m_data, 0, GetModule());
             }
         }
         else

@@ -22,11 +22,19 @@
 #include <sys/utsname.h>
 #include <cctype>
 #include <string>
+#include <cstdlib> // ::getenv
 
 using namespace llvm;
 
 static std::string getOSVersion() {
   struct utsname info;
+
+#ifdef __APPLE__
+  // Recognize UNAME_RELEASE environment variable to match Darwin uname.
+  const char *UnameOverride = ::getenv("UNAME_RELEASE");
+  if (UnameOverride && UnameOverride[0] != '\0')
+    return UnameOverride;
+#endif // __APPLE__
 
   if (uname(&info))
     return "";

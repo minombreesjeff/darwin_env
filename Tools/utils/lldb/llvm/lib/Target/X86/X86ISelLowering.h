@@ -94,6 +94,15 @@ namespace llvm {
       // one's or all zero's.
       SETCC_CARRY,  // R = carry_bit ? ~0 : 0
 
+      /// X86 FP SETCC, implemented with CMP{cc}SS/CMP{cc}SD.
+      /// Operands are two FP values to compare; result is a mask of
+      /// 0s or 1s.  Generally DTRT for C/C++ with NaNs.
+      FSETCCss, FSETCCsd,
+
+      /// X86 MOVMSK{pd|ps}, extracts sign bits of two or four FP values,
+      /// result in an integer GPR.  Needs masking for scalar result.
+      FGETSIGNx86,
+
       /// X86 conditional moves. Operand 0 and operand 1 are the two values
       /// to select from. Operand 2 is the condition code, and operand 3 is the
       /// flag operand produced by a CMP or TEST instruction. It also writes a
@@ -160,8 +169,8 @@ namespace llvm {
       /// PSHUFB - Shuffle 16 8-bit values within a vector.
       PSHUFB,
 
-      /// PANDN - and with not'd value.
-      PANDN,
+      /// ANDNP - Bitwise Logical AND NOT of Packed FP values.
+      ANDNP,
 
       /// PSIGNB/W/D - Copy integer sign.
       PSIGNB, PSIGNW, PSIGND,
@@ -248,12 +257,12 @@ namespace llvm {
       MOVSS,
       UNPCKLPS,
       UNPCKLPD,
-      VUNPCKLPS,
-      VUNPCKLPD,
       VUNPCKLPSY,
       VUNPCKLPDY,
       UNPCKHPS,
       UNPCKHPD,
+      VUNPCKHPSY,
+      VUNPCKHPDY,
       PUNPCKLBW,
       PUNPCKLWD,
       PUNPCKLDQ,
@@ -262,6 +271,10 @@ namespace llvm {
       PUNPCKHWD,
       PUNPCKHDQ,
       PUNPCKHQDQ,
+      VPERMILPS,
+      VPERMILPSY,
+      VPERMILPD,
+      VPERMILPDY,
 
       // VASTART_SAVE_XMM_REGS - Save xmm argument registers to the stack,
       // according to %al. An operator is needed so that this can be expanded
@@ -398,19 +411,15 @@ namespace llvm {
 
     /// isMOVSHDUPMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVSHDUP.
-    bool isMOVSHDUPMask(ShuffleVectorSDNode *N);
+    bool isMOVSHDUPMask(ShuffleVectorSDNode *N, const X86Subtarget *Subtarget);
 
     /// isMOVSLDUPMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVSLDUP.
-    bool isMOVSLDUPMask(ShuffleVectorSDNode *N);
+    bool isMOVSLDUPMask(ShuffleVectorSDNode *N, const X86Subtarget *Subtarget);
 
     /// isMOVDDUPMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to MOVDDUP.
     bool isMOVDDUPMask(ShuffleVectorSDNode *N);
-
-    /// isPALIGNRMask - Return true if the specified VECTOR_SHUFFLE operand
-    /// specifies a shuffle of elements that is suitable for input to PALIGNR.
-    bool isPALIGNRMask(ShuffleVectorSDNode *N);
 
     /// isVEXTRACTF128Index - Return true if the specified
     /// EXTRACT_SUBVECTOR operand specifies a vector extract that is
@@ -457,6 +466,12 @@ namespace llvm {
     /// fit into displacement field of the instruction.
     bool isOffsetSuitableForCodeModel(int64_t Offset, CodeModel::Model M,
                                       bool hasSymbolicDisplacement = true);
+
+
+    /// isCalleePop - Determines whether the callee is required to pop its
+    /// own arguments. Callee pop is necessary to support tail calls.
+    bool isCalleePop(CallingConv::ID CallingConv,
+                     bool is64Bit, bool IsVarArg, bool TailCallOpt);
   }
 
   //===--------------------------------------------------------------------===//
@@ -490,7 +505,7 @@ namespace llvm {
     /// function arguments in the caller parameter area. For X86, aggregates
     /// that contains are placed at 16-byte boundaries while the rest are at
     /// 4-byte boundaries.
-    virtual unsigned getByValTypeAlignment(const Type *Ty) const;
+    virtual unsigned getByValTypeAlignment(Type *Ty) const;
 
     /// getOptimalMemOpType - Returns the target specific optimal type for load
     /// and store operations as a result of memset, memcpy, and memmove
@@ -581,10 +596,6 @@ namespace llvm {
     virtual ConstraintWeight getSingleConstraintMatchWeight(
       AsmOperandInfo &info, const char *constraint) const;
 
-    std::vector<unsigned>
-      getRegClassForInlineAsmConstraint(const std::string &Constraint,
-                                        EVT VT) const;
-
     virtual const char *LowerXConstraint(EVT ConstraintVT) const;
 
     /// LowerAsmOperandForConstraint - Lower the specified operand into the Ops
@@ -592,7 +603,7 @@ namespace llvm {
     /// true it means one of the asm constraint of the inline asm instruction
     /// being processed is 'm'.
     virtual void LowerAsmOperandForConstraint(SDValue Op,
-                                              char ConstraintLetter,
+                                              std::string &Constraint,
                                               std::vector<SDValue> &Ops,
                                               SelectionDAG &DAG) const;
 
@@ -606,12 +617,12 @@ namespace llvm {
 
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
-    virtual bool isLegalAddressingMode(const AddrMode &AM, const Type *Ty)const;
+    virtual bool isLegalAddressingMode(const AddrMode &AM, Type *Ty)const;
 
     /// isTruncateFree - Return true if it's free to truncate a value of
     /// type Ty1 to type Ty2. e.g. On x86 it's free to truncate a i32 value in
     /// register EAX to i16 by referencing its sub-register AX.
-    virtual bool isTruncateFree(const Type *Ty1, const Type *Ty2) const;
+    virtual bool isTruncateFree(Type *Ty1, Type *Ty2) const;
     virtual bool isTruncateFree(EVT VT1, EVT VT2) const;
 
     /// isZExtFree - Return true if any actual instruction that defines a
@@ -622,7 +633,7 @@ namespace llvm {
     /// does not necessarily apply to truncate instructions. e.g. on x86-64,
     /// all instructions that define 32-bit values implicit zero-extend the
     /// result out to 64 bits.
-    virtual bool isZExtFree(const Type *Ty1, const Type *Ty2) const;
+    virtual bool isZExtFree(Type *Ty1, Type *Ty2) const;
     virtual bool isZExtFree(EVT VT1, EVT VT2) const;
 
     /// isNarrowingProfitable - Return true if it's profitable to narrow
@@ -679,6 +690,9 @@ namespace llvm {
     /// space, and populates the address space and offset as
     /// appropriate.
     virtual bool getStackCookieLocation(unsigned &AddressSpace, unsigned &Offset) const;
+
+    SDValue BuildFILD(SDValue Op, EVT SrcVT, SDValue Chain, SDValue StackSlot,
+                      SelectionDAG &DAG) const;
 
   protected:
     std::pair<const TargetRegisterClass*, uint8_t>
@@ -771,8 +785,6 @@ namespace llvm {
     SDValue LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerExternalSymbol(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShiftParts(SDValue Op, SelectionDAG &DAG) const;
-    SDValue BuildFILD(SDValue Op, EVT SrcVT, SDValue Chain, SDValue StackSlot,
-                      SelectionDAG &DAG) const;
     SDValue LowerBITCAST(SDValue op, SelectionDAG &DAG) const;
     SDValue LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
@@ -783,6 +795,7 @@ namespace llvm {
     SDValue LowerFABS(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFNEG(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerFGETSIGN(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerToBT(SDValue And, ISD::CondCode CC,
                       DebugLoc dl, SelectionDAG &DAG) const;
     SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
@@ -812,6 +825,8 @@ namespace llvm {
     SDValue LowerLOAD_SUB(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerREADCYCLECOUNTER(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerMEMBARRIER(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerATOMIC_FENCE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
 
     // Utility functions to help LowerVECTOR_SHUFFLE
     SDValue LowerVECTOR_SHUFFLEv8i16(SDValue Op, SelectionDAG &DAG) const;
@@ -847,9 +862,10 @@ namespace llvm {
                              ISD::NodeType ExtendKind) const;
 
     virtual bool
-      CanLowerReturn(CallingConv::ID CallConv, bool isVarArg,
-                     const SmallVectorImpl<ISD::OutputArg> &Outs,
-                     LLVMContext &Context) const;
+    CanLowerReturn(CallingConv::ID CallConv, MachineFunction &MF,
+		   bool isVarArg,
+		   const SmallVectorImpl<ISD::OutputArg> &Outs,
+		   LLVMContext &Context) const;
 
     void ReplaceATOMIC_BINARY_64(SDNode *N, SmallVectorImpl<SDValue> &Results,
                                  SelectionDAG &DAG, unsigned NewOp) const;

@@ -13,7 +13,8 @@
 
 #define DEBUG_TYPE "asm-printer"
 #include "PPCInstPrinter.h"
-#include "PPCPredicates.h"
+#include "MCTargetDesc/PPCBaseInfo.h"
+#include "MCTargetDesc/PPCPredicates.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/raw_ostream.h"
@@ -26,6 +27,9 @@ StringRef PPCInstPrinter::getOpcodeName(unsigned Opcode) const {
   return getInstructionName(Opcode);
 }
 
+void PPCInstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const {
+  OS << getRegisterName(RegNo);
+}
 
 void PPCInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
   // Check for slwi/srwi mnemonics.

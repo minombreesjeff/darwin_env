@@ -34,7 +34,7 @@
 #include "llvm/Pass.h"
 #include "llvm/GlobalValue.h"
 #include "llvm/Metadata.h"
-#include "llvm/CodeGen/MachineLocation.h"
+#include "llvm/MC/MachineLocation.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/DebugLoc.h"
@@ -52,26 +52,12 @@ namespace llvm {
 class Constant;
 class GlobalVariable;
 class MDNode;
+class MMIAddrLabelMap;
 class MachineBasicBlock;
 class MachineFunction;
 class Module;
 class PointerType;
 class StructType;
-
-/// MachineModuleInfoImpl - This class can be derived from and used by targets
-/// to hold private target-specific information for each Module.  Objects of
-/// type are accessed/created with MMI::getInfo and destroyed when the
-/// MachineModuleInfo is destroyed.
-class MachineModuleInfoImpl {
-public:
-  typedef PointerIntPair<MCSymbol*, 1, bool> StubValueTy;
-  virtual ~MachineModuleInfoImpl();
-  typedef std::vector<std::pair<MCSymbol*, StubValueTy> > SymbolListTy;
-protected:
-  static SymbolListTy GetSortedStubs(const DenseMap<MCSymbol*, StubValueTy>&);
-};
-
-
 
 //===----------------------------------------------------------------------===//
 /// LandingPadInfo - This structure is used to retain landing pad info for
@@ -89,7 +75,20 @@ struct LandingPadInfo {
     : LandingPadBlock(MBB), LandingPadLabel(0), Personality(0) {}
 };
 
-class MMIAddrLabelMap;
+//===----------------------------------------------------------------------===//
+/// MachineModuleInfoImpl - This class can be derived from and used by targets
+/// to hold private target-specific information for each Module.  Objects of
+/// type are accessed/created with MMI::getInfo and destroyed when the
+/// MachineModuleInfo is destroyed.
+/// 
+class MachineModuleInfoImpl {
+public:
+  typedef PointerIntPair<MCSymbol*, 1, bool> StubValueTy;
+  virtual ~MachineModuleInfoImpl();
+  typedef std::vector<std::pair<MCSymbol*, StubValueTy> > SymbolListTy;
+protected:
+  static SymbolListTy GetSortedStubs(const DenseMap<MCSymbol*, StubValueTy>&);
+};
 
 //===----------------------------------------------------------------------===//
 /// MachineModuleInfo - This class contains meta information specific to a
@@ -111,6 +110,10 @@ class MachineModuleInfo : public ImmutablePass {
   // FrameMoves - List of moves done by a function's prolog.  Used to construct
   // frame maps by debug and exception handling consumers.
   std::vector<MachineMove> FrameMoves;
+
+  // CompactUnwindEncoding - If the target supports it, this is the compact
+  // unwind encoding. It replaces a function's CIE and FDE.
+  uint32_t CompactUnwindEncoding;
 
   // LandingPads - List of LandingPadInfo describing the landing pad information
   // in the current function.
@@ -171,7 +174,8 @@ public:
 
   MachineModuleInfo();  // DUMMY CONSTRUCTOR, DO NOT CALL.
   // Real constructor.
-  MachineModuleInfo(const MCAsmInfo &MAI, const TargetAsmInfo *TAI);
+  MachineModuleInfo(const MCAsmInfo &MAI, const MCRegisterInfo &MRI,
+                    const MCObjectFileInfo *MOFI);
   ~MachineModuleInfo();
 
   bool doInitialization();
@@ -230,6 +234,15 @@ public:
   /// handling comsumers.
   std::vector<MachineMove> &getFrameMoves() { return FrameMoves; }
 
+  /// getCompactUnwindEncoding - Returns the compact unwind encoding for a
+  /// function if the target supports the encoding. This encoding replaces a
+  /// function's CIE and FDE.
+  uint32_t getCompactUnwindEncoding() const { return CompactUnwindEncoding; }
+
+  /// setCompactUnwindEncoding - Set the compact unwind encoding for a function
+  /// if the target supports the encoding.
+  void setCompactUnwindEncoding(uint32_t Enc) { CompactUnwindEncoding = Enc; }
+
   /// getAddrLabelSymbol - Return the symbol to be used for the specified basic
   /// block when its address is taken.  This cannot be its normal LBB label
   /// because the block may be accessed outside its containing function.
@@ -287,12 +300,12 @@ public:
   /// addCatchTypeInfo - Provide the catch typeinfo for a landing pad.
   ///
   void addCatchTypeInfo(MachineBasicBlock *LandingPad,
-                        std::vector<const GlobalVariable *> &TyInfo);
+                        ArrayRef<const GlobalVariable *> TyInfo);
 
   /// addFilterTypeInfo - Provide the filter typeinfo for a landing pad.
   ///
   void addFilterTypeInfo(MachineBasicBlock *LandingPad,
-                         std::vector<const GlobalVariable *> &TyInfo);
+                         ArrayRef<const GlobalVariable *> TyInfo);
 
   /// addCleanup - Add a cleanup action for a landing pad.
   ///

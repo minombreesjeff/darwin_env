@@ -209,7 +209,7 @@ std::string DeclarationName::getAsString() const {
   return OS.str();
 }
 
-void DeclarationName::printName(llvm::raw_ostream &OS) const {
+void DeclarationName::printName(raw_ostream &OS) const {
   switch (getNameKind()) {
   case Identifier:
     if (const IdentifierInfo *II = getAsIdentifierInfo())
@@ -533,6 +533,28 @@ bool DeclarationNameInfo::containsUnexpandedParameterPack() const {
   llvm_unreachable("All name kinds handled.");
 }
 
+bool DeclarationNameInfo::isInstantiationDependent() const {
+  switch (Name.getNameKind()) {
+  case DeclarationName::Identifier:
+  case DeclarationName::ObjCZeroArgSelector:
+  case DeclarationName::ObjCOneArgSelector:
+  case DeclarationName::ObjCMultiArgSelector:
+  case DeclarationName::CXXOperatorName:
+  case DeclarationName::CXXLiteralOperatorName:
+  case DeclarationName::CXXUsingDirective:
+    return false;
+    
+  case DeclarationName::CXXConstructorName:
+  case DeclarationName::CXXDestructorName:
+  case DeclarationName::CXXConversionFunctionName:
+    if (TypeSourceInfo *TInfo = LocInfo.NamedType.TInfo)
+      return TInfo->getType()->isInstantiationDependentType();
+    
+    return Name.getCXXNameType()->isInstantiationDependentType();
+  }
+  llvm_unreachable("All name kinds handled.");
+}
+
 std::string DeclarationNameInfo::getAsString() const {
   std::string Result;
   llvm::raw_string_ostream OS(Result);
@@ -540,7 +562,7 @@ std::string DeclarationNameInfo::getAsString() const {
   return OS.str();
 }
 
-void DeclarationNameInfo::printName(llvm::raw_ostream &OS) const {
+void DeclarationNameInfo::printName(raw_ostream &OS) const {
   switch (Name.getNameKind()) {
   case DeclarationName::Identifier:
   case DeclarationName::ObjCZeroArgSelector:

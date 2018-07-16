@@ -15,6 +15,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/SymbolManager.h"
 #include "clang/Analysis/Analyses/LiveVariables.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/MemRegion.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/Store.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -24,7 +25,7 @@ void SymExpr::dump() const {
   dumpToStream(llvm::errs());
 }
 
-static void print(llvm::raw_ostream& os, BinaryOperator::Opcode Op) {
+static void print(raw_ostream& os, BinaryOperator::Opcode Op) {
   switch (Op) {
     default:
       assert(false && "operator printing not implemented");
@@ -48,7 +49,7 @@ static void print(llvm::raw_ostream& os, BinaryOperator::Opcode Op) {
   }
 }
 
-void SymIntExpr::dumpToStream(llvm::raw_ostream& os) const {
+void SymIntExpr::dumpToStream(raw_ostream& os) const {
   os << '(';
   getLHS()->dumpToStream(os);
   os << ") ";
@@ -57,7 +58,7 @@ void SymIntExpr::dumpToStream(llvm::raw_ostream& os) const {
   if (getRHS().isUnsigned()) os << 'U';
 }
 
-void SymSymExpr::dumpToStream(llvm::raw_ostream& os) const {
+void SymSymExpr::dumpToStream(raw_ostream& os) const {
   os << '(';
   getLHS()->dumpToStream(os);
   os << ") ";
@@ -66,25 +67,25 @@ void SymSymExpr::dumpToStream(llvm::raw_ostream& os) const {
   os << ')';
 }
 
-void SymbolConjured::dumpToStream(llvm::raw_ostream& os) const {
+void SymbolConjured::dumpToStream(raw_ostream& os) const {
   os << "conj_$" << getSymbolID() << '{' << T.getAsString() << '}';
 }
 
-void SymbolDerived::dumpToStream(llvm::raw_ostream& os) const {
+void SymbolDerived::dumpToStream(raw_ostream& os) const {
   os << "derived_$" << getSymbolID() << '{'
      << getParentSymbol() << ',' << getRegion() << '}';
 }
 
-void SymbolExtent::dumpToStream(llvm::raw_ostream& os) const {
+void SymbolExtent::dumpToStream(raw_ostream& os) const {
   os << "extent_$" << getSymbolID() << '{' << getRegion() << '}';
 }
 
-void SymbolMetadata::dumpToStream(llvm::raw_ostream& os) const {
+void SymbolMetadata::dumpToStream(raw_ostream& os) const {
   os << "meta_$" << getSymbolID() << '{'
      << getRegion() << ',' << T.getAsString() << '}';
 }
 
-void SymbolRegionValue::dumpToStream(llvm::raw_ostream& os) const {
+void SymbolRegionValue::dumpToStream(raw_ostream& os) const {
   os << "reg_$" << getSymbolID() << "<" << R << ">";
 }
 
@@ -252,6 +253,10 @@ void SymbolReaper::markLive(SymbolRef sym) {
   TheDead.erase(sym);
 }
 
+void SymbolReaper::markLive(const MemRegion *region) {
+  RegionRoots.insert(region);
+}
+
 void SymbolReaper::markInUse(SymbolRef sym) {
   if (isa<SymbolMetadata>(sym))
     MetadataInUse.insert(sym);
@@ -265,14 +270,17 @@ bool SymbolReaper::maybeDead(SymbolRef sym) {
   return true;
 }
 
-static bool IsLiveRegion(SymbolReaper &Reaper, const MemRegion *MR) {
+bool SymbolReaper::isLiveRegion(const MemRegion *MR) {
+  if (RegionRoots.count(MR))
+    return true;
+  
   MR = MR->getBaseRegion();
 
   if (const SymbolicRegion *SR = dyn_cast<SymbolicRegion>(MR))
-    return Reaper.isLive(SR->getSymbol());
+    return isLive(SR->getSymbol());
 
   if (const VarRegion *VR = dyn_cast<VarRegion>(MR))
-    return Reaper.isLive(VR);
+    return isLive(VR, true);
 
   // FIXME: This is a gross over-approximation. What we really need is a way to
   // tell if anything still refers to this region. Unlike SymbolicRegions,
@@ -303,7 +311,7 @@ bool SymbolReaper::isLive(SymbolRef sym) {
   }
 
   if (const SymbolExtent *extent = dyn_cast<SymbolExtent>(sym)) {
-    if (IsLiveRegion(*this, extent->getRegion())) {
+    if (isLiveRegion(extent->getRegion())) {
       markLive(sym);
       return true;
     }
@@ -312,7 +320,7 @@ bool SymbolReaper::isLive(SymbolRef sym) {
 
   if (const SymbolMetadata *metadata = dyn_cast<SymbolMetadata>(sym)) {
     if (MetadataInUse.count(sym)) {
-      if (IsLiveRegion(*this, metadata->getRegion())) {
+      if (isLiveRegion(metadata->getRegion())) {
         markLive(sym);
         MetadataInUse.erase(sym);
         return true;
@@ -331,13 +339,35 @@ bool SymbolReaper::isLive(const Stmt* ExprVal) const {
       isLive(Loc, ExprVal);
 }
 
-bool SymbolReaper::isLive(const VarRegion *VR) const {
+bool SymbolReaper::isLive(const VarRegion *VR, bool includeStoreBindings) const{
   const StackFrameContext *VarContext = VR->getStackFrame();
   const StackFrameContext *CurrentContext = LCtx->getCurrentStackFrame();
 
-  if (VarContext == CurrentContext)
-    return LCtx->getAnalysisContext()->getRelaxedLiveVariables()->
-        isLive(Loc, VR->getDecl());
+  if (VarContext == CurrentContext) {
+    if (LCtx->getAnalysisContext()->getRelaxedLiveVariables()->
+          isLive(Loc, VR->getDecl()))
+      return true;
+
+    if (!includeStoreBindings)
+      return false;
+    
+    unsigned &cachedQuery =
+      const_cast<SymbolReaper*>(this)->includedRegionCache[VR];
+
+    if (cachedQuery) {
+      return cachedQuery == 1;
+    }
+
+    // Query the store to see if the region occurs in any live bindings.
+    if (Store store = reapedStore.getStore()) {
+      bool hasRegion = 
+        reapedStore.getStoreManager().includedInBindings(store, VR);
+      cachedQuery = hasRegion ? 1 : 2;
+      return hasRegion;
+    }
+    
+    return false;
+  }
 
   return VarContext->isParentOf(CurrentContext);
 }

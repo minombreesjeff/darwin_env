@@ -29,10 +29,10 @@ using namespace clang;
 PCHGenerator::PCHGenerator(const Preprocessor &PP,
                            const std::string &OutputFile,
                            bool Chaining,
-                           const char *isysroot,
-                           llvm::raw_ostream *OS)
-  : PP(PP), OutputFile(OutputFile), isysroot(isysroot), Out(OS), SemaPtr(0),
-    StatCalls(0), Stream(Buffer), Writer(Stream), Chaining(Chaining) {
+                           StringRef isysroot,
+                           raw_ostream *OS)
+  : PP(PP), OutputFile(OutputFile), isysroot(isysroot.str()), Out(OS), 
+    SemaPtr(0), StatCalls(0), Stream(Buffer), Writer(Stream), Chaining(Chaining) {
   // Install a stat() listener to keep track of all of the stat()
   // calls.
   StatCalls = new MemorizeStatCalls();
@@ -40,6 +40,9 @@ PCHGenerator::PCHGenerator(const Preprocessor &PP,
   // *after* the already installed ASTReader's stat cache.
   PP.getFileManager().addStatCache(StatCalls,
     /*AtBeginning=*/!Chaining);
+}
+
+PCHGenerator::~PCHGenerator() {
 }
 
 void PCHGenerator::HandleTranslationUnit(ASTContext &Ctx) {

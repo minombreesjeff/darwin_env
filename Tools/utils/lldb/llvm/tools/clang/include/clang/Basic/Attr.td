@@ -400,6 +400,16 @@ def ObjCNSObject : InheritableAttr {
   let Spellings = ["NSObject"];
 }
 
+def ObjCPreciseLifetime : Attr {
+  let Spellings = ["objc_precise_lifetime"];
+  let Subjects = [Var];
+}
+
+def ObjCReturnsInnerPointer : Attr {
+  let Spellings = ["objc_returns_inner_pointer"];
+  let Subjects = [ObjCMethod];
+}
+
 def Overloadable : Attr {
   let Spellings = ["overloadable"];
 }
@@ -479,6 +489,10 @@ def Unavailable : InheritableAttr {
   let Args = [StringArgument<"Message">];
 }
 
+def ArcWeakrefUnavailable : InheritableAttr {
+  let Spellings = ["objc_arc_weak_reference_unavailable"];
+}
+
 def Unused : InheritableAttr {
   let Spellings = ["unused"];
 }
@@ -523,4 +537,79 @@ def WeakRef : InheritableAttr {
 
 def X86ForceAlignArgPointer : InheritableAttr {
   let Spellings = [];
+}
+
+
+// C/C++ Thread safety attributes (e.g. for deadlock, data race checking)
+
+def GuardedVar : InheritableAttr {
+  let Spellings = ["guarded_var"];
+}
+
+def PtGuardedVar : InheritableAttr {
+  let Spellings = ["pt_guarded_var"];
+}
+
+def Lockable : InheritableAttr {
+  let Spellings = ["lockable"];
+}
+
+def ScopedLockable : InheritableAttr {
+  let Spellings = ["scoped_lockable"];
+}
+
+def NoThreadSafetyAnalysis : InheritableAttr {
+  let Spellings = ["no_thread_safety_analysis"];
+}
+
+def GuardedBy : InheritableAttr {
+  let Spellings = ["guarded_by"];
+}
+
+def PtGuardedBy : InheritableAttr {
+  let Spellings = ["pt_guarded_by"];
+}
+
+def AcquiredAfter : InheritableAttr {
+  let Spellings = ["acquired_after"];
+}
+
+def AcquiredBefore : InheritableAttr {
+  let Spellings = ["acquired_before"];
+}
+
+def ExclusiveLockFunction : InheritableAttr {
+  let Spellings = ["exclusive_lock_function"];
+}
+
+def SharedLockFunction : InheritableAttr {
+  let Spellings = ["shared_lock_function"];
+}
+
+def ExclusiveTrylockFunction : InheritableAttr {
+  let Spellings = ["exclusive_trylock_function"];
+}
+
+def SharedTrylockFunction : InheritableAttr {
+  let Spellings = ["shared_trylock_function"];
+}
+
+def UnlockFunction : InheritableAttr {
+  let Spellings = ["unlock_function"];
+}
+
+def LockReturned : InheritableAttr {
+  let Spellings = ["lock_returned"];
+}
+
+def LocksExcluded : InheritableAttr {
+  let Spellings = ["locks_excluded"];
+}
+
+def ExclusiveLocksRequired : InheritableAttr {
+  let Spellings = ["exclusive_locks_required"];
+}
+
+def SharedLocksRequired : InheritableAttr {
+  let Spellings = ["shared_locks_required"];
 }

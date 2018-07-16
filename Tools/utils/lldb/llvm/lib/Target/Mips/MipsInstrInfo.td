@@ -37,6 +37,12 @@ def SDT_MipsDivRem       : SDTypeProfile<0, 2,
                                          [SDTCisVT<0, i32>,
                                           SDTCisSameAs<0, 1>]>;
 
+def SDT_MipsThreadPointer : SDTypeProfile<1, 0, [SDTCisPtrTy<0>]>;
+
+def SDT_MipsDynAlloc    : SDTypeProfile<1, 1, [SDTCisVT<0, i32>,
+                                               SDTCisVT<1, iPTR>]>;
+def SDT_Sync             : SDTypeProfile<0, 1, [SDTCisVT<0, i32>]>;
+
 // Call
 def MipsJmpLink : SDNode<"MipsISD::JmpLink",SDT_MipsJmpLink,
                          [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue,
@@ -48,6 +54,16 @@ def MipsJmpLink : SDNode<"MipsISD::JmpLink",SDT_MipsJmpLink,
 def MipsHi    : SDNode<"MipsISD::Hi", SDTIntUnaryOp>;
 def MipsLo    : SDNode<"MipsISD::Lo", SDTIntUnaryOp>;
 def MipsGPRel : SDNode<"MipsISD::GPRel", SDTIntUnaryOp>;
+
+// TlsGd node is used to handle General Dynamic TLS
+def MipsTlsGd : SDNode<"MipsISD::TlsGd", SDTIntUnaryOp>;
+
+// TprelHi and TprelLo nodes are used to handle Local Exec TLS
+def MipsTprelHi    : SDNode<"MipsISD::TprelHi", SDTIntUnaryOp>;
+def MipsTprelLo    : SDNode<"MipsISD::TprelLo", SDTIntUnaryOp>;
+
+// Thread pointer
+def MipsThreadPointer: SDNode<"MipsISD::ThreadPointer", SDT_MipsThreadPointer>;
 
 // Return
 def MipsRet : SDNode<"MipsISD::Ret", SDT_MipsRet, [SDNPHasChain,
@@ -74,6 +90,24 @@ def MipsDivRem    : SDNode<"MipsISD::DivRem", SDT_MipsDivRem,
                            [SDNPOutGlue]>;
 def MipsDivRemU   : SDNode<"MipsISD::DivRemU", SDT_MipsDivRem,
                            [SDNPOutGlue]>;
+
+// Target constant nodes that are not part of any isel patterns and remain
+// unchanged can cause instructions with illegal operands to be emitted.
+// Wrapper node patterns give the instruction selector a chance to replace
+// target constant nodes that would otherwise remain unchanged with ADDiu
+// nodes. Without these wrapper node patterns, the following conditional move
+// instrucion is emitted when function cmov2 in test/CodeGen/Mips/cmov.ll is
+// compiled: 
+//  movn  %got(d)($gp), %got(c)($gp), $4
+// This instruction is illegal since movn can take only register operands.
+
+def MipsWrapperPIC    : SDNode<"MipsISD::WrapperPIC",  SDTIntUnaryOp>;
+
+// Pointer to dynamically allocated stack area.
+def MipsDynAlloc  : SDNode<"MipsISD::DynAlloc", SDT_MipsDynAlloc,
+                           [SDNPHasChain, SDNPInGlue]>;
+
+def MipsSync : SDNode<"MipsISD::Sync", SDT_Sync, [SDNPHasChain]>;
 
 //===----------------------------------------------------------------------===//
 // Mips Instruction Predicate Definitions.
@@ -103,7 +137,12 @@ def uimm16      : Operand<i32> {
 // Address operand
 def mem : Operand<i32> {
   let PrintMethod = "printMemOperand";
-  let MIOperandInfo = (ops simm16, CPURegs);
+  let MIOperandInfo = (ops CPURegs, simm16);
+}
+
+def mem_ea : Operand<i32> {
+  let PrintMethod = "printMemOperandEA";
+  let MIOperandInfo = (ops CPURegs, simm16);
 }
 
 // Transformation Function - get the lower 16 bits.
@@ -153,7 +192,8 @@ class ArithR<bits<6> op, bits<6> func, string instr_asm, SDNode OpNode,
   let isCommutable = isComm;
 }
 
-class ArithOverflowR<bits<6> op, bits<6> func, string instr_asm, bit isComm = 0>:
+class ArithOverflowR<bits<6> op, bits<6> func, string instr_asm,
+                     bit isComm = 0>:
   FR<op, func, (outs CPURegs:$dst), (ins CPURegs:$b, CPURegs:$c),
      !strconcat(instr_asm, "\t$dst, $b, $c"), [], IIAlu> {
   let isCommutable = isComm;
@@ -319,7 +359,7 @@ class MoveToLOHI<bits<6> func, string instr_asm>:
      !strconcat(instr_asm, "\t$src"), [], IIHiLo>;
 
 class EffectiveAddress<string instr_asm> :
-  FI<0x09, (outs CPURegs:$dst), (ins mem:$addr),
+  FI<0x09, (outs CPURegs:$dst), (ins mem_ea:$addr),
      instr_asm, [(set CPURegs:$dst, addr:$addr)], IIAlu>;
 
 // Count Leading Ones/Zeros in Word
@@ -348,6 +388,29 @@ class CondMov<bits<6> func, string instr_asm, PatLeaf MovCode>:
   FR<0x00, func, (outs CPURegs:$dst), (ins CPURegs:$F, CPURegs:$T,
      CPURegs:$cond), !strconcat(instr_asm, "\t$dst, $T, $cond"),
      [], NoItinerary>;
+
+// Read Hardware
+class ReadHardware: FR<0x1f, 0x3b, (outs CPURegs:$dst), (ins HWRegs:$src),
+    "rdhwr\t$dst, $src", [], IIAlu> {
+  let rs = 0;
+  let shamt = 0;
+}
+
+// Atomic instructions with 2 source operands (ATOMIC_SWAP & ATOMIC_LOAD_*).
+class Atomic2Ops<PatFrag Op, string Opstr> :
+  MipsPseudo<(outs CPURegs:$dst), (ins CPURegs:$ptr, CPURegs:$incr),
+             !strconcat("atomic_", Opstr, "\t$dst, $ptr, $incr"),
+             [(set CPURegs:$dst,
+              (Op CPURegs:$ptr, CPURegs:$incr))]>;
+
+// Atomic Compare & Swap.
+class AtomicCmpSwap<PatFrag Op, string Width> :
+  MipsPseudo<(outs CPURegs:$dst), 
+             (ins CPURegs:$ptr, CPURegs:$cmp, CPURegs:$swap),
+             !strconcat("atomic_cmp_swap_", Width, 
+                        "\t$dst, $ptr, $cmp, $swap"),
+             [(set CPURegs:$dst,
+              (Op CPURegs:$ptr, CPURegs:$cmp, CPURegs:$swap))]>;
 
 //===----------------------------------------------------------------------===//
 // Pseudo instructions
@@ -380,7 +443,36 @@ def ATMACRO   : MipsPseudo<(outs), (ins), ".set\tat", []>;
 // are used, we have the same behavior, but get also a bunch of warnings
 // from the assembler.
 def CPLOAD : MipsPseudo<(outs), (ins CPURegs:$picreg), ".cpload\t$picreg", []>;
-def CPRESTORE : MipsPseudo<(outs), (ins uimm16:$loc), ".cprestore\t$loc\n", []>;
+def CPRESTORE : MipsPseudo<(outs), (ins i32imm:$loc), ".cprestore\t$loc", []>;
+
+let usesCustomInserter = 1 in {
+  def ATOMIC_LOAD_ADD_I8   : Atomic2Ops<atomic_load_add_8, "load_add_8">;
+  def ATOMIC_LOAD_ADD_I16  : Atomic2Ops<atomic_load_add_16, "load_add_16">;
+  def ATOMIC_LOAD_ADD_I32  : Atomic2Ops<atomic_load_add_32, "load_add_32">;
+  def ATOMIC_LOAD_SUB_I8   : Atomic2Ops<atomic_load_sub_8, "load_sub_8">;
+  def ATOMIC_LOAD_SUB_I16  : Atomic2Ops<atomic_load_sub_16, "load_sub_16">;
+  def ATOMIC_LOAD_SUB_I32  : Atomic2Ops<atomic_load_sub_32, "load_sub_32">;
+  def ATOMIC_LOAD_AND_I8   : Atomic2Ops<atomic_load_and_8, "load_and_8">;
+  def ATOMIC_LOAD_AND_I16  : Atomic2Ops<atomic_load_and_16, "load_and_16">;
+  def ATOMIC_LOAD_AND_I32  : Atomic2Ops<atomic_load_and_32, "load_and_32">;
+  def ATOMIC_LOAD_OR_I8    : Atomic2Ops<atomic_load_or_8, "load_or_8">;
+  def ATOMIC_LOAD_OR_I16   : Atomic2Ops<atomic_load_or_16, "load_or_16">;
+  def ATOMIC_LOAD_OR_I32   : Atomic2Ops<atomic_load_or_32, "load_or_32">;
+  def ATOMIC_LOAD_XOR_I8   : Atomic2Ops<atomic_load_xor_8, "load_xor_8">;
+  def ATOMIC_LOAD_XOR_I16  : Atomic2Ops<atomic_load_xor_16, "load_xor_16">;
+  def ATOMIC_LOAD_XOR_I32  : Atomic2Ops<atomic_load_xor_32, "load_xor_32">;
+  def ATOMIC_LOAD_NAND_I8  : Atomic2Ops<atomic_load_nand_8, "load_nand_8">;
+  def ATOMIC_LOAD_NAND_I16 : Atomic2Ops<atomic_load_nand_16, "load_nand_16">;
+  def ATOMIC_LOAD_NAND_I32 : Atomic2Ops<atomic_load_nand_32, "load_nand_32">;
+
+  def ATOMIC_SWAP_I8       : Atomic2Ops<atomic_swap_8, "swap_8">;
+  def ATOMIC_SWAP_I16      : Atomic2Ops<atomic_swap_16, "swap_16">;
+  def ATOMIC_SWAP_I32      : Atomic2Ops<atomic_swap_32, "swap_32">;
+
+  def ATOMIC_CMP_SWAP_I8   : AtomicCmpSwap<atomic_cmp_swap_8, "8">;
+  def ATOMIC_CMP_SWAP_I16  : AtomicCmpSwap<atomic_cmp_swap_16, "16">;
+  def ATOMIC_CMP_SWAP_I32  : AtomicCmpSwap<atomic_cmp_swap_32, "32">;
+}
 
 //===----------------------------------------------------------------------===//
 // Instruction definition
@@ -435,6 +527,23 @@ def LW      : LoadM<0x23, "lw",  load>;
 def SB      : StoreM<0x28, "sb", truncstorei8>;
 def SH      : StoreM<0x29, "sh", truncstorei16>;
 def SW      : StoreM<0x2b, "sw", store>;
+
+let hasSideEffects = 1 in
+def SYNC : MipsInst<(outs), (ins i32imm:$stype), "sync $stype",
+                    [(MipsSync imm:$stype)], NoItinerary>
+{
+  let opcode = 0;
+  let Inst{25-11} = 0;
+  let Inst{5-0} = 15;
+}
+
+/// Load-linked, Store-conditional
+let mayLoad = 1, hasDelaySlot = 1 in
+  def LL    : FI<0x30, (outs CPURegs:$dst), (ins mem:$addr),
+              "ll\t$dst, $addr", [], IILoad>;
+let mayStore = 1, Constraints = "$src = $dst" in
+  def SC    : FI<0x38, (outs CPURegs:$dst), (ins CPURegs:$src, mem:$addr),
+              "sc\t$src, $addr", [], IIStore>;
 
 /// Jump and Branch Instructions
 def J       : JumpFJ<0x02, "j">;
@@ -524,7 +633,13 @@ let addr=0 in
 // instructions. The same not happens for stack address copies, so an
 // add op with mem ComplexPattern is used and the stack address copy
 // can be matched. It's similar to Sparc LEA_ADDRi
-def LEA_ADDiu : EffectiveAddress<"addiu\t$dst, ${addr:stackloc}">;
+def LEA_ADDiu : EffectiveAddress<"addiu\t$dst, $addr">;
+
+// DynAlloc node points to dynamically allocated stack space.
+// $sp is added to the list of implicitly used registers to prevent dead code
+// elimination from removing instructions that modify $sp.
+let Uses = [SP] in
+def DynAlloc : EffectiveAddress<"addiu\t$dst, $addr">;
 
 // MADD*/MSUB*
 def MADD  : MArithR<0, "madd", MipsMAdd, 1>;
@@ -535,6 +650,8 @@ def MSUBU : MArithR<5, "msubu", MipsMSubu>;
 // MUL is a assembly macro in the current used ISAs. In recent ISA's
 // it is a real instruction.
 def MUL   : ArithR<0x1c, 0x02, "mul", mul, IIImul, 1>, Requires<[IsMips32]>;
+
+def RDHWR : ReadHardware;
 
 //===----------------------------------------------------------------------===//
 //  Arbitrary patterns that map to one or more instructions
@@ -587,6 +704,26 @@ def : Pat<(add CPURegs:$gp, (MipsGPRel tglobaladdr:$in)),
           (ADDiu CPURegs:$gp, tglobaladdr:$in)>;
 def : Pat<(add CPURegs:$gp, (MipsGPRel tconstpool:$in)),
           (ADDiu CPURegs:$gp, tconstpool:$in)>;
+
+// tlsgd
+def : Pat<(add CPURegs:$gp, (MipsTlsGd tglobaltlsaddr:$in)),
+          (ADDiu CPURegs:$gp, tglobaltlsaddr:$in)>;
+
+// tprel hi/lo
+def : Pat<(MipsTprelHi tglobaltlsaddr:$in), (LUi tglobaltlsaddr:$in)>;
+def : Pat<(add CPURegs:$hi, (MipsTprelLo tglobaltlsaddr:$lo)),
+          (ADDiu CPURegs:$hi, tglobaltlsaddr:$lo)>;
+
+// wrapper_pic
+class WrapperPICPat<SDNode node>:
+      Pat<(MipsWrapperPIC node:$in),
+          (ADDiu GP, node:$in)>;
+
+def : WrapperPICPat<tglobaladdr>;
+def : WrapperPICPat<tconstpool>;
+def : WrapperPICPat<texternalsym>;
+def : WrapperPICPat<tblockaddress>;
+def : WrapperPICPat<tjumptable>;
 
 // Mips does not have "not", so we expand our way
 def : Pat<(not CPURegs:$in),
@@ -655,13 +792,6 @@ multiclass MovnPats<RegisterClass RC, Instruction MOVNInst> {
 defm : MovzPats<CPURegs, MOVZ_I>;
 defm : MovnPats<CPURegs, MOVN_I>;
 
-// select patterns with got access
-let AddedComplexity = 10 in
-  def : Pat<(select (setne CPURegs:$lhs, CPURegs:$rhs),
-                    (i32 tglobaladdr:$T), CPURegs:$F),
-            (MOVN_I CPURegs:$F, (ADDiu GP, tglobaladdr:$T),
-                    (XOR CPURegs:$lhs, CPURegs:$rhs))>;
-
 // setcc patterns
 def : Pat<(seteq CPURegs:$lhs, CPURegs:$rhs),
           (SLTu (XOR CPURegs:$lhs, CPURegs:$rhs), 1)>;
@@ -687,6 +817,9 @@ def : Pat<(setge CPURegs:$lhs, immSExt16:$rhs),
           (XORi (SLTi CPURegs:$lhs, immSExt16:$rhs), 1)>;
 def : Pat<(setuge CPURegs:$lhs, immSExt16:$rhs),
           (XORi (SLTiu CPURegs:$lhs, immSExt16:$rhs), 1)>;
+
+// select MipsDynAlloc
+def : Pat<(MipsDynAlloc addr:$f), (DynAlloc addr:$f)>;
 
 //===----------------------------------------------------------------------===//
 // Floating Point Support

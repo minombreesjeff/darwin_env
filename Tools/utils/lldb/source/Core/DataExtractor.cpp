@@ -13,6 +13,8 @@
 #include <bitset>
 #include <string>
 
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/MathExtras.h"
 
 #include "lldb/Core/DataExtractor.h"
@@ -754,7 +756,7 @@ DataExtractor::GetMaxU64Bitfield (uint32_t *offset_ptr, uint32_t size, uint32_t 
         if (bitfield_bit_offset > 0)
             uval64 >>= bitfield_bit_offset;
         uint64_t bitfield_mask = ((1ul << bitfield_bit_size) - 1);
-        if(!bitfield_mask && bitfield_bit_offset == 0 && bitfield_bit_size == 64)
+        if (!bitfield_mask && bitfield_bit_offset == 0 && bitfield_bit_size == 64)
             return uval64;
         uval64 &= bitfield_mask;
     }
@@ -1306,6 +1308,74 @@ DataExtractor::Skip_LEB128 (uint32_t *offset_ptr) const
     return bytes_consumed;
 }
 
+static uint32_t
+DumpAPInt (Stream *s, const DataExtractor &data, uint32_t offset, uint32_t byte_size, bool is_signed, unsigned radix)
+{
+    llvm::SmallVector<uint64_t, 2> uint64_array;
+    uint32_t bytes_left = byte_size;
+    uint64_t u64;
+    const lldb::ByteOrder byte_order = data.GetByteOrder();
+    if (byte_order == lldb::eByteOrderLittle)
+    {
+        while (bytes_left > 0)
+        {
+            if (bytes_left >= 8)
+            {
+                u64 = data.GetU64(&offset);
+                bytes_left -= 8;
+            }
+            else
+            {
+                u64 = data.GetMaxU64(&offset, bytes_left);
+                bytes_left = 0;
+            }                        
+            uint64_array.push_back(u64);
+        }
+    }
+    else if (byte_order == lldb::eByteOrderBig)
+    {
+        uint32_t be_offset = offset + byte_size;
+        uint32_t temp_offset;
+        while (bytes_left > 0)
+        {
+            if (bytes_left >= 8)
+            {
+                be_offset -= 8;
+                temp_offset = be_offset;
+                u64 = data.GetU64(&temp_offset);
+                bytes_left -= 8;
+            }
+            else
+            {
+                be_offset -= bytes_left;
+                temp_offset = be_offset;
+                u64 = data.GetMaxU64(&temp_offset, bytes_left);
+                bytes_left = 0;
+            }                        
+            uint64_array.push_back(u64);
+        }
+    }
+    else
+        return offset;
+
+    llvm::APInt apint (byte_size * 8, llvm::ArrayRef<uint64_t>(uint64_array));
+ 
+    std::string apint_str(apint.toString(radix, is_signed));
+    switch (radix)
+    {
+        case 2:
+            s->Write ("0b", 2);
+            break;
+        case 8:
+            s->Write ("0", 1);
+            break;
+        case 10:
+            break;
+    }
+    s->Write(apint_str.c_str(), apint_str.size());
+    return offset;
+}
+
 uint32_t
 DataExtractor::Dump
 (
@@ -1370,6 +1440,7 @@ DataExtractor::Dump
             break;
 
         case eFormatBinary:
+            if (item_byte_size <= 8)
             {
                 uint64_t uval64 = GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset);
                 // Avoid std::bitset<64>::to_string() since it is missing in
@@ -1383,6 +1454,12 @@ DataExtractor::Dump
                     s->Printf("0b%s", binary_value.c_str() + 64 - item_bit_size);
                 else if (item_byte_size > 0 && item_byte_size <= 8)
                     s->Printf("0b%s", binary_value.c_str() + 64 - item_byte_size * 8);
+            }
+            else
+            {
+                const bool is_signed = false;
+                const unsigned radix = 2;
+                offset = DumpAPInt (s, *this, offset, item_byte_size, is_signed, radix);
             }
             break;
 
@@ -1445,16 +1522,34 @@ DataExtractor::Dump
         case eFormatDecimal:
             if (item_byte_size <= 8)
                 s->Printf ("%lld", GetMaxS64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
+            else
+            {
+                const bool is_signed = true;
+                const unsigned radix = 10;
+                offset = DumpAPInt (s, *this, offset, item_byte_size, is_signed, radix);
+            }
             break;
 
         case eFormatUnsigned:
             if (item_byte_size <= 8)
                 s->Printf ("%llu", GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
+            else
+            {
+                const bool is_signed = false;
+                const unsigned radix = 10;
+                offset = DumpAPInt (s, *this, offset, item_byte_size, is_signed, radix);
+            }
             break;
 
         case eFormatOctal:
             if (item_byte_size <= 8)
                 s->Printf ("0%llo", GetMaxS64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
+            else
+            {
+                const bool is_signed = false;
+                const unsigned radix = 8;
+                offset = DumpAPInt (s, *this, offset, item_byte_size, is_signed, radix);
+            }
             break;
 
         case eFormatOSType:
@@ -1610,8 +1705,11 @@ DataExtractor::Dump
             s->Printf("0x%8.8x", GetU32 (&offset));
             break;
 
-        case eFormatVectorOfChar:
-            s->PutChar('{');
+// please keep the single-item formats below in sync with FormatManager::GetSingleItemFormat
+// if you fail to do so, users will start getting different outputs depending on internal
+// implementation details they should not care about ||
+        case eFormatVectorOfChar:               //   ||
+            s->PutChar('{');                    //   \/   
             offset = Dump (s, start_offset, eFormatCharArray, 1, item_byte_size, item_byte_size, LLDB_INVALID_ADDRESS, 0, 0);
             s->PutChar('}');
             break;
@@ -1786,4 +1884,20 @@ DataExtractor::DumpUUID (Stream *s, uint32_t offset) const
     }
 }
 
-
+void
+DataExtractor::DumpHexBytes (Stream *s, 
+                             const void *src, 
+                             size_t src_len, 
+                             uint32_t bytes_per_line,
+                             addr_t base_addr)
+{
+    DataExtractor data (src, src_len, eByteOrderLittle, 4);
+    data.Dump (s, 
+               0,               // Offset into "src"
+               eFormatBytes,    // Dump as hex bytes
+               1,               // Size of each item is 1 for single bytes
+               src_len,         // Number of bytes
+               bytes_per_line,  // Num bytes per line
+               base_addr,       // Base address
+               0, 0);           // Bitfield info
+}

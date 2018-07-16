@@ -156,7 +156,7 @@ namespace {
 ///
 class SCCPSolver : public InstVisitor<SCCPSolver> {
   const TargetData *TD;
-  SmallPtrSet<BasicBlock*, 8> BBExecutable;// The BBs that are executable.
+  SmallPtrSet<BasicBlock*, 8> BBExecutable; // The BBs that are executable.
   DenseMap<Value*, LatticeVal> ValueState;  // The state each value is in.
 
   /// StructValueState - This maintains ValueState for values that have
@@ -241,7 +241,7 @@ public:
   /// this method must be called.
   void AddTrackedFunction(Function *F) {
     // Add an entry, F -> undef.
-    if (const StructType *STy = dyn_cast<StructType>(F->getReturnType())) {
+    if (StructType *STy = dyn_cast<StructType>(F->getReturnType())) {
       MRVFunctionsTracked.insert(F);
       for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
         TrackedMultipleRetVals.insert(std::make_pair(std::make_pair(F, i),
@@ -302,7 +302,7 @@ public:
   /// markAnythingOverdefined - Mark the specified value overdefined.  This
   /// works with both scalars and structs.
   void markAnythingOverdefined(Value *V) {
-    if (const StructType *STy = dyn_cast<StructType>(V->getType()))
+    if (StructType *STy = dyn_cast<StructType>(V->getType()))
       for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
         markOverdefined(getStructValueState(V, i), V);
     else
@@ -417,7 +417,7 @@ private:
       else if (ConstantStruct *CS = dyn_cast<ConstantStruct>(C))
         LV.markConstant(CS->getOperand(i));      // Constants are constant.
       else if (isa<ConstantAggregateZero>(C)) {
-        const Type *FieldTy = cast<StructType>(V->getType())->getElementType(i);
+        Type *FieldTy = cast<StructType>(V->getType())->getElementType(i);
         LV.markConstant(Constant::getNullValue(FieldTy));
       } else
         LV.markOverdefined();      // Unknown sort of constant.
@@ -471,9 +471,9 @@ private:
   /// UsersOfOverdefinedPHIs map for PN, remove them now.
   void RemoveFromOverdefinedPHIs(Instruction *I, PHINode *PN) {
     if (UsersOfOverdefinedPHIs.empty()) return;
-    std::multimap<PHINode*, Instruction*>::iterator It, E;
-    tie(It, E) = UsersOfOverdefinedPHIs.equal_range(PN);
-    while (It != E) {
+    typedef std::multimap<PHINode*, Instruction*>::iterator ItTy;
+    std::pair<ItTy, ItTy> Range = UsersOfOverdefinedPHIs.equal_range(PN);
+    for (ItTy It = Range.first, E = Range.second; It != E;) {
       if (It->second == I)
         UsersOfOverdefinedPHIs.erase(It++);
       else
@@ -486,9 +486,9 @@ private:
   /// (Duplicate entries do not break anything directly, but can lead to
   /// exponential growth of the table in rare cases.)
   void InsertInOverdefinedPHIs(Instruction *I, PHINode *PN) {
-    std::multimap<PHINode*, Instruction*>::iterator J, E;
-    tie(J, E) = UsersOfOverdefinedPHIs.equal_range(PN);
-    for (; J != E; ++J)
+    typedef std::multimap<PHINode*, Instruction*>::iterator ItTy;
+    std::pair<ItTy, ItTy> Range = UsersOfOverdefinedPHIs.equal_range(PN);
+    for (ItTy J = Range.first, E = Range.second; J != E; ++J)
       if (J->second == I)
         return;
     UsersOfOverdefinedPHIs.insert(std::make_pair(PN, I));
@@ -528,8 +528,12 @@ private:
     visitTerminatorInst(II);
   }
   void visitCallSite      (CallSite CS);
+  void visitResumeInst    (TerminatorInst &I) { /*returns void*/ }
   void visitUnwindInst    (TerminatorInst &I) { /*returns void*/ }
   void visitUnreachableInst(TerminatorInst &I) { /*returns void*/ }
+  void visitFenceInst     (FenceInst &I) { /*returns void*/ }
+  void visitAtomicCmpXchgInst (AtomicCmpXchgInst &I) { markOverdefined(&I); }
+  void visitAtomicRMWInst (AtomicRMWInst &I) { markOverdefined(&I); }
   void visitAllocaInst    (Instruction &I) { markOverdefined(&I); }
   void visitVAArgInst     (Instruction &I) { markAnythingOverdefined(&I); }
 
@@ -655,7 +659,7 @@ bool SCCPSolver::isEdgeFeasible(BasicBlock *From, BasicBlock *To) {
   
   // Just mark all destinations executable!
   // TODO: This could be improved if the operand is a [cast of a] BlockAddress.
-  if (isa<IndirectBrInst>(&TI))
+  if (isa<IndirectBrInst>(TI))
     return true;
   
 #ifndef NDEBUG
@@ -692,13 +696,14 @@ void SCCPSolver::visitPHINode(PHINode &PN) {
     // There may be instructions using this PHI node that are not overdefined
     // themselves.  If so, make sure that they know that the PHI node operand
     // changed.
-    std::multimap<PHINode*, Instruction*>::iterator I, E;
-    tie(I, E) = UsersOfOverdefinedPHIs.equal_range(&PN);
-    if (I == E)
+    typedef std::multimap<PHINode*, Instruction*>::iterator ItTy;
+    std::pair<ItTy, ItTy> Range = UsersOfOverdefinedPHIs.equal_range(&PN);
+    
+    if (Range.first == Range.second)
       return;
     
     SmallVector<Instruction*, 16> Users;
-    for (; I != E; ++I)
+    for (ItTy I = Range.first, E = Range.second; I != E; ++I)
       Users.push_back(I->second);
     while (!Users.empty())
       visit(Users.pop_back_val());
@@ -772,7 +777,7 @@ void SCCPSolver::visitReturnInst(ReturnInst &I) {
   
   // Handle functions that return multiple values.
   if (!TrackedMultipleRetVals.empty()) {
-    if (const StructType *STy = dyn_cast<StructType>(ResultOp->getType()))
+    if (StructType *STy = dyn_cast<StructType>(ResultOp->getType()))
       if (MRVFunctionsTracked.count(F))
         for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i)
           mergeInValue(TrackedMultipleRetVals[std::make_pair(F, i)], F,
@@ -825,7 +830,7 @@ void SCCPSolver::visitExtractValueInst(ExtractValueInst &EVI) {
 }
 
 void SCCPSolver::visitInsertValueInst(InsertValueInst &IVI) {
-  const StructType *STy = dyn_cast<StructType>(IVI.getType());
+  StructType *STy = dyn_cast<StructType>(IVI.getType());
   if (STy == 0)
     return markOverdefined(&IVI);
   
@@ -925,7 +930,7 @@ void SCCPSolver::visitBinaryOperator(Instruction &I) {
         // Could annihilate value.
         if (I.getOpcode() == Instruction::And)
           markConstant(IV, &I, Constant::getNullValue(I.getType()));
-        else if (const VectorType *PT = dyn_cast<VectorType>(I.getType()))
+        else if (VectorType *PT = dyn_cast<VectorType>(I.getType()))
           markConstant(IV, &I, Constant::getAllOnesValue(PT));
         else
           markConstant(IV, &I,
@@ -1179,8 +1184,8 @@ void SCCPSolver::visitGetElementPtrInst(GetElementPtrInst &I) {
   }
 
   Constant *Ptr = Operands[0];
-  markConstant(&I, ConstantExpr::getGetElementPtr(Ptr, &Operands[0]+1,
-                                                  Operands.size()-1));
+  ArrayRef<Constant *> Indices(Operands.begin() + 1, Operands.end());
+  markConstant(&I, ConstantExpr::getGetElementPtr(Ptr, Indices));
 }
 
 void SCCPSolver::visitStoreInst(StoreInst &SI) {
@@ -1278,7 +1283,7 @@ CallOverdefined:
      
       // If we can constant fold this, mark the result of the call as a
       // constant.
-      if (Constant *C = ConstantFoldCall(F, Operands.data(), Operands.size()))
+      if (Constant *C = ConstantFoldCall(F, Operands))
         return markConstant(I, C);
     }
 
@@ -1303,7 +1308,7 @@ CallOverdefined:
         continue;
       }
       
-      if (const StructType *STy = dyn_cast<StructType>(AI->getType())) {
+      if (StructType *STy = dyn_cast<StructType>(AI->getType())) {
         for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i) {
           LatticeVal CallArg = getStructValueState(*CAI, i);
           mergeInValue(getStructValueState(AI, i), AI, CallArg);
@@ -1315,7 +1320,7 @@ CallOverdefined:
   }
   
   // If this is a single/zero retval case, see if we're tracking the function.
-  if (const StructType *STy = dyn_cast<StructType>(F->getReturnType())) {
+  if (StructType *STy = dyn_cast<StructType>(F->getReturnType())) {
     if (!MRVFunctionsTracked.count(F))
       goto CallOverdefined;  // Not tracking this callee.
     
@@ -1419,7 +1424,7 @@ bool SCCPSolver::ResolvedUndefsIn(Function &F) {
       // Look for instructions which produce undef values.
       if (I->getType()->isVoidTy()) continue;
       
-      if (const StructType *STy = dyn_cast<StructType>(I->getType())) {
+      if (StructType *STy = dyn_cast<StructType>(I->getType())) {
         // Only a few things that can be structs matter for undef.  Just send
         // all their results to overdefined.  We could be more precise than this
         // but it isn't worth bothering.
@@ -1457,7 +1462,7 @@ bool SCCPSolver::ResolvedUndefsIn(Function &F) {
       
       // If this is an instructions whose result is defined even if the input is
       // not fully defined, propagate the information.
-      const Type *ITy = I->getType();
+      Type *ITy = I->getType();
       switch (I->getOpcode()) {
       default: break;          // Leave the instruction as an undef.
       case Instruction::ZExt:

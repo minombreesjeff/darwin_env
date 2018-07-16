@@ -29,7 +29,6 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
-#include <cstdio>
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -76,26 +75,27 @@ bool Decl::CollectingStats(bool Enable) {
 }
 
 void Decl::PrintStats() {
-  fprintf(stderr, "*** Decl Stats:\n");
+  llvm::errs() << "\n*** Decl Stats:\n";
 
   int totalDecls = 0;
 #define DECL(DERIVED, BASE) totalDecls += n##DERIVED##s;
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
-  fprintf(stderr, "  %d decls total.\n", totalDecls);
+  llvm::errs() << "  " << totalDecls << " decls total.\n";
 
   int totalBytes = 0;
 #define DECL(DERIVED, BASE)                                             \
   if (n##DERIVED##s > 0) {                                              \
     totalBytes += (int)(n##DERIVED##s * sizeof(DERIVED##Decl));         \
-    fprintf(stderr, "    %d " #DERIVED " decls, %d each (%d bytes)\n",  \
-            n##DERIVED##s, (int)sizeof(DERIVED##Decl),                  \
-            (int)(n##DERIVED##s * sizeof(DERIVED##Decl)));              \
+    llvm::errs() << "    " << n##DERIVED##s << " " #DERIVED " decls, "  \
+                 << sizeof(DERIVED##Decl) << " each ("                  \
+                 << n##DERIVED##s * sizeof(DERIVED##Decl)               \
+                 << " bytes)\n";                                        \
   }
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
 
-  fprintf(stderr, "Total bytes = %d\n", totalBytes);
+  llvm::errs() << "Total bytes = " << totalBytes << "\n";
 }
 
 void Decl::add(Kind k) {
@@ -148,7 +148,7 @@ bool Decl::isDefinedOutsideFunctionOrMethod() const {
 // PrettyStackTraceDecl Implementation
 //===----------------------------------------------------------------------===//
 
-void PrettyStackTraceDecl::print(llvm::raw_ostream &OS) const {
+void PrettyStackTraceDecl::print(raw_ostream &OS) const {
   SourceLocation TheLoc = Loc;
   if (TheLoc.isInvalid() && TheDecl)
     TheLoc = TheDecl->getLocation();
@@ -265,8 +265,8 @@ bool Decl::isReferenced() const {
 static AvailabilityResult CheckAvailability(ASTContext &Context,
                                             const AvailabilityAttr *A,
                                             std::string *Message) {
-  llvm::StringRef TargetPlatform = Context.Target.getPlatformName();
-  llvm::StringRef PrettyPlatformName
+  StringRef TargetPlatform = Context.Target.getPlatformName();
+  StringRef PrettyPlatformName
     = AvailabilityAttr::getPrettyPlatformName(TargetPlatform);
   if (PrettyPlatformName.empty())
     PrettyPlatformName = TargetPlatform;
@@ -641,12 +641,8 @@ DeclContext *Decl::getNonClosureContext() {
   // This is basically "while (DC->isClosure()) DC = DC->getParent();"
   // except that it's significantly more efficient to cast to a known
   // decl type and call getDeclContext() than to call getParent().
-  do {
-    if (isa<BlockDecl>(DC)) {
-      DC = cast<BlockDecl>(DC)->getDeclContext();
-      continue;
-    }
-  } while (false);
+  while (isa<BlockDecl>(DC))
+    DC = cast<BlockDecl>(DC)->getDeclContext();
 
   assert(!DC->isClosure());
   return DC;
@@ -816,7 +812,7 @@ DeclContext *DeclContext::getNextContext() {
 }
 
 std::pair<Decl *, Decl *>
-DeclContext::BuildDeclChain(const llvm::SmallVectorImpl<Decl*> &Decls) {
+DeclContext::BuildDeclChain(const SmallVectorImpl<Decl*> &Decls) {
   // Build up a chain of declarations via the Decl::NextDeclInContext field.
   Decl *FirstNewDecl = 0;
   Decl *PrevDecl = 0;
@@ -843,12 +839,17 @@ DeclContext::LoadLexicalDeclsFromExternalStorage() const {
   // Notify that we have a DeclContext that is initializing.
   ExternalASTSource::Deserializing ADeclContext(Source);
 
-  llvm::SmallVector<Decl*, 64> Decls;
-  if (Source->FindExternalLexicalDecls(this, Decls))
-    return;
-
-  // There is no longer any lexical storage in this context
+  // Load the external declarations, if any.
+  SmallVector<Decl*, 64> Decls;
   ExternalLexicalStorage = false;
+  switch (Source->FindExternalLexicalDecls(this, Decls)) {
+  case ELR_Success:
+    break;
+    
+  case ELR_Failure:
+  case ELR_AlreadyLoaded:
+    return;
+  }
 
   if (Decls.empty())
     return;
@@ -889,7 +890,7 @@ ExternalASTSource::SetNoExternalVisibleDeclsForName(const DeclContext *DC,
 DeclContext::lookup_result
 ExternalASTSource::SetExternalVisibleDeclsForName(const DeclContext *DC,
                                                   DeclarationName Name,
-                                    llvm::SmallVectorImpl<NamedDecl*> &Decls) {
+                                    SmallVectorImpl<NamedDecl*> &Decls) {
   ASTContext &Context = DC->getParentASTContext();;
 
   StoredDeclsMap *Map;
@@ -909,7 +910,7 @@ ExternalASTSource::SetExternalVisibleDeclsForName(const DeclContext *DC,
 
 void ExternalASTSource::MaterializeVisibleDeclsForName(const DeclContext *DC,
                                                        DeclarationName Name,
-                                     llvm::SmallVectorImpl<NamedDecl*> &Decls) {
+                                     SmallVectorImpl<NamedDecl*> &Decls) {
   assert(DC->LookupPtr);
   StoredDeclsMap &Map = *DC->LookupPtr;
 

@@ -58,6 +58,9 @@
 /* LLVM name for the native TargetInfo init function, if available */
 #cmakedefine LLVM_NATIVE_TARGETINFO LLVMInitialize${LLVM_NATIVE_ARCH}TargetInfo
 
+/* LLVM name for the native TargetMC init function, if available */
+#cmakedefine LLVM_NATIVE_TARGETMC LLVMInitialize${LLVM_NATIVE_ARCH}TargetMC
+
 /* LLVM name for the native AsmPrinter init function, if available */
 #cmakedefine LLVM_NATIVE_ASMPRINTER LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter
 
@@ -95,7 +98,7 @@
 #cmakedefine LLVM_PATH_TWOPI "${LLVM_PATH_TWOPI}"
 
 /* Define to path to xdot.py program if found or 'echo xdot.py' otherwise */
-#cmakedefine LLVM_PATH_XDOT_PY "${LLVM_PATH_XDOT.PY}"
+#cmakedefine LLVM_PATH_XDOT_PY "${LLVM_PATH_XDOT_PY}"
 
 /* Installation prefix directory */
 #cmakedefine LLVM_PREFIX "${LLVM_PREFIX}"

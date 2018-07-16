@@ -123,7 +123,6 @@ static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
         case ASTPrint:               return new ASTPrintAction();
         case ASTDumpXML:             return new ASTDumpXMLAction();
         case ASTView:                return new ASTViewAction();
-        case BoostCon:               return new BoostConAction();
         case DumpRawTokens:          return new DumpRawTokensAction();
         case DumpTokens:             return new DumpTokensAction();
         case EmitAssembly:           return new EmitAssemblyAction();
@@ -199,6 +198,7 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
         InitializeLLVM() {
             llvm::InitializeAllTargets();
             llvm::InitializeAllAsmPrinters();
+            llvm::InitializeAllTargetMCs();
         }
     } InitializeLLVM;
         
@@ -257,7 +257,7 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
         std::string triple = target->GetArchitecture().GetTriple().str();
         
         int dash_count = 0;
-        for (int i = 0; i < triple.size(); ++i)
+        for (size_t i = 0; i < triple.size(); ++i)
         {
             if (triple[i] == '-')
                 dash_count++;
@@ -506,7 +506,7 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
     }
     else
     {
-        if(log)
+        if (log)
             log->Printf("Found function %s for %s", function_name.c_str(), m_expr.FunctionName());
     }
     
@@ -557,25 +557,25 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
     RecordingMemoryManager *jit_memory_manager = new RecordingMemoryManager();
     
     std::string error_string;
-        
-    llvm::TargetMachine::setRelocationModel(llvm::Reloc::PIC_);
-    
+            
 #if defined (USE_STANDARD_JIT)
     m_execution_engine.reset(llvm::ExecutionEngine::createJIT (module, 
                                                                &error_string, 
                                                                jit_memory_manager,
                                                                CodeGenOpt::Less,
                                                                true,
+                                                               Reloc::Default,
                                                                CodeModel::Small));
 #else
     EngineBuilder builder(module);
     builder.setEngineKind(EngineKind::JIT)
         .setErrorStr(&error_string)
+        .setRelocationModel(llvm::Reloc::PIC_)
         .setJITMemoryManager(jit_memory_manager)
         .setOptLevel(CodeGenOpt::Less)
         .setAllocateGVsWithCode(true)
         .setCodeModel(CodeModel::Small)
-        .setUseMCJIT(true);
+    .setUseMCJIT(true);
     m_execution_engine.reset(builder.create());
 #endif
         
@@ -733,7 +733,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
         return ret;
     }
     
-    if(log)
+    if (log)
         log->Printf("Found function, has local address 0x%llx and remote address 0x%llx", (uint64_t)func_local_addr, (uint64_t)func_remote_addr);
     
     std::pair <lldb::addr_t, lldb::addr_t> func_range;
@@ -747,7 +747,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
         return ret;
     }
     
-    if(log)
+    if (log)
         log->Printf("Function's code range is [0x%llx-0x%llx]", func_range.first, func_range.second);
     
     if (!exe_ctx.target)

@@ -44,6 +44,11 @@ public:
     void
     Dump(Stream *s, bool show_context) const;
 
+    bool
+    DumpDeclaration (Stream *s, 
+                     bool show_fullpaths, 
+                     bool show_module);
+    
     const Declaration&
     GetDeclaration() const
     {
@@ -52,6 +57,12 @@ public:
 
     const ConstString&
     GetName() const;
+
+    SymbolContextScope *
+    GetSymbolContextScope() const
+    {
+        return m_owner_scope;
+    }
 
     // Since a variable can have a basename "i" and also a mangled 
     // named "_ZN12_GLOBAL__N_11iE" and a demangled mangled name 
@@ -110,6 +121,10 @@ public:
     {
         return m_location;
     }
+    
+    bool
+    DumpLocationForAddress (Stream *s, 
+                            const Address &address);
 
     size_t
     MemorySize() const;
@@ -124,6 +139,9 @@ public:
     LocationIsValidForFrame (StackFrame *frame);
 
     bool
+    LocationIsValidForAddress (const Address &address);
+    
+    bool
     GetLocationIsConstantValueData () const
     {
         return m_loc_is_const_data;
@@ -134,6 +152,19 @@ public:
     {
         m_loc_is_const_data = b;
     }
+    
+    typedef uint32_t (*GetVariableCallback) (void *baton, 
+                                             const char *name,
+                                             VariableList &var_list);
+
+
+    static Error
+    GetValuesForVariableExpressionPath (const char *variable_expr_path,
+                                        ExecutionContextScope *scope,
+                                        GetVariableCallback callback,
+                                        void *baton,
+                                        VariableList &variable_list,
+                                        ValueObjectList &valobj_list);
 
 protected:
     ConstString m_name;                 // The basename of the variable (no namespaces)

@@ -12,13 +12,11 @@ add_clang_library(clangFrontend
   ASTConsumers.cpp
   ASTMerge.cpp
   ASTUnit.cpp
-  BoostConAction.cpp
   CacheTokens.cpp
   CompilerInstance.cpp
   CompilerInvocation.cpp
   CreateInvocationFromCommandLine.cpp
   DependencyFile.cpp
-  DiagChecker.cpp
   FrontendAction.cpp
   FrontendActions.cpp
   FrontendOptions.cpp

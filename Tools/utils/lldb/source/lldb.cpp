@@ -38,12 +38,13 @@
 
 #if defined (__APPLE__)
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
+#include "Plugins/DynamicLoader/MacOSX-Kernel/DynamicLoaderMacOSXKernel.h"
 #include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV2.h"
 #include "Plugins/ObjectContainer/Universal-Mach-O/ObjectContainerUniversalMachO.h"
 #include "Plugins/ObjectFile/Mach-O/ObjectFileMachO.h"
-#include "Plugins/Process/MacOSX-User/source/ProcessMacOSX.h"
+#include "Plugins/Process/MacOSX-Kernel/ProcessKDP.h"
 #include "Plugins/Process/gdb-remote/ProcessGDBRemote.h"
 #include "Plugins/Platform/MacOSX/PlatformMacOSX.h"
 #include "Plugins/Platform/MacOSX/PlatformRemoteiOS.h"
@@ -53,6 +54,10 @@
 #include "Plugins/DynamicLoader/Linux-DYLD/DynamicLoaderLinuxDYLD.h"
 #include "Plugins/Platform/Linux/PlatformLinux.h"
 #include "Plugins/Process/Linux/ProcessLinux.h"
+#endif
+
+#if defined (__FreeBSD__)
+#include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
 #endif
 
 #include "Plugins/Platform/gdb-server/PlatformRemoteGDBServer.h"
@@ -94,14 +99,15 @@ lldb_private::Initialize ()
         // Apple/Darwin hosted plugins
         //----------------------------------------------------------------------
         DynamicLoaderMacOSXDYLD::Initialize();
+        DynamicLoaderMacOSXKernel::Initialize();
         SymbolFileDWARFDebugMap::Initialize();
         ItaniumABILanguageRuntime::Initialize();
         AppleObjCRuntimeV2::Initialize();
         AppleObjCRuntimeV1::Initialize();
         ObjectContainerUniversalMachO::Initialize();
         ObjectFileMachO::Initialize();
+        ProcessKDP::Initialize();
         ProcessGDBRemote::Initialize();
-        //ProcessMacOSX::Initialize();
         SymbolVendorMacOSX::Initialize();
         PlatformMacOSX::Initialize();
         PlatformRemoteiOS::Initialize();
@@ -113,6 +119,9 @@ lldb_private::Initialize ()
         PlatformLinux::Initialize();
         ProcessLinux::Initialize();
         DynamicLoaderLinuxDYLD::Initialize();
+#endif
+#if defined (__FreeBSD__)
+		PlatformFreeBSD::Initialize();
 #endif
         //----------------------------------------------------------------------
         // Platform agnostic plugins
@@ -158,14 +167,15 @@ lldb_private::Terminate ()
 
 #if defined (__APPLE__)
     DynamicLoaderMacOSXDYLD::Terminate();
+    DynamicLoaderMacOSXKernel::Terminate();
     SymbolFileDWARFDebugMap::Terminate();
     ItaniumABILanguageRuntime::Terminate();
     AppleObjCRuntimeV2::Terminate();
     AppleObjCRuntimeV1::Terminate();
     ObjectContainerUniversalMachO::Terminate();
     ObjectFileMachO::Terminate();
+    ProcessKDP::Terminate();
     ProcessGDBRemote::Terminate();
-    //ProcessMacOSX::Terminate();
     SymbolVendorMacOSX::Terminate();
     PlatformMacOSX::Terminate();
     PlatformRemoteiOS::Terminate();
@@ -177,6 +187,10 @@ lldb_private::Terminate ()
     PlatformLinux::Terminate();
     ProcessLinux::Terminate();
     DynamicLoaderLinuxDYLD::Terminate();
+#endif
+
+#if defined (__FreeBSD__)
+	PlatformFreeBSD::Terminate();
 #endif
     
     DynamicLoaderStatic::Terminate();

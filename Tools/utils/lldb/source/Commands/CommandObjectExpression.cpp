@@ -198,9 +198,12 @@ CommandObjectExpression::MultiLineExpressionCallback
     case eInputReaderActivate:
         if (!batch_mode)
         {
-            StreamSP out_stream = reader.GetDebugger().GetAsyncOutputStream();
-            out_stream->Printf("%s\n", "Enter expressions, then terminate with an empty line to evaluate:");
-            out_stream->Flush();
+            StreamSP async_strm_sp(reader.GetDebugger().GetAsyncOutputStream());
+            if (async_strm_sp)
+            {
+                async_strm_sp->PutCString("Enter expressions, then terminate with an empty line to evaluate:\n");
+                async_strm_sp->Flush();
+            }
         }
         // Fall through
     case eInputReaderReactivate:
@@ -228,9 +231,12 @@ CommandObjectExpression::MultiLineExpressionCallback
         reader.SetIsDone (true);
         if (!batch_mode)
         {
-            StreamSP out_stream = reader.GetDebugger().GetAsyncOutputStream();
-            out_stream->Printf("%s\n", "Expression evaluation cancelled.");
-            out_stream->Flush();
+            StreamSP async_strm_sp (reader.GetDebugger().GetAsyncOutputStream());
+            if (async_strm_sp)
+            {
+                async_strm_sp->PutCString("Expression evaluation cancelled.\n");
+                async_strm_sp->Flush();
+            }
         }
         break;
         
@@ -315,6 +321,9 @@ CommandObjectExpression::EvaluateExpression
         {
             if (result_valobj_sp->GetError().Success())
             {
+                
+                result_valobj_sp.get()->SetIsExpressionResult(true);
+                
                 if (m_options.format != eFormatDefault)
                     result_valobj_sp->SetFormat (m_options.format);
 
@@ -328,8 +337,11 @@ CommandObjectExpression::EvaluateExpression
                                               false,                    // Show locations of variables, no since this is a host address which we don't care to see
                                               m_options.print_object,   // Print the objective C object?
                                               use_dynamic,
+                                              true,                     // Use synthetic children if available
                                               true,                     // Scope is already checked. Const results are always in scope.
-                                              false);                   // Don't flatten output
+                                              false,                    // Don't flatten output
+                                              0,                        // Always use summaries (you might want an option --no-summary like there is for frame variable)
+                                              false);                   // Do not show more children than settings allow
                 if (result)
                     result->SetStatus (eReturnStatusSuccessFinishResult);
             }
@@ -462,14 +474,14 @@ CommandObjectExpression::ExecuteRawCommandString
 OptionDefinition
 CommandObjectExpression::CommandOptions::g_option_table[] =
 {
-  //{ LLDB_OPT_SET_ALL, false, "language",   'l', required_argument, NULL, 0, "[c|c++|objc|objc++]",          "Sets the language to use when parsing the expression."},
+//{ LLDB_OPT_SET_ALL, false, "language",   'l', required_argument, NULL, 0, "[c|c++|objc|objc++]",          "Sets the language to use when parsing the expression."},
 //{ LLDB_OPT_SET_1, false, "format",     'f', required_argument, NULL, 0, "[ [bool|b] | [bin] | [char|c] | [oct|o] | [dec|i|d|u] | [hex|x] | [float|f] | [cstr|s] ]",  "Specify the format that the expression output should use."},
-{ LLDB_OPT_SET_1, false, "format",             'f', required_argument, NULL, 0, eArgTypeExprFormat,  "Specify the format that the expression output should use."},
-{ LLDB_OPT_SET_2, false, "object-description", 'o', no_argument,       NULL, 0, eArgTypeNone, "Print the object description of the value resulting from the expression."},
-{ LLDB_OPT_SET_2, false, "dynamic-value", 'd', required_argument,       NULL, 0, eArgTypeBoolean, "Upcast the value resulting from the expression to its dynamic type if available."},
-{ LLDB_OPT_SET_ALL, false, "unwind-on-error",  'u', required_argument, NULL, 0, eArgTypeBoolean, "Clean up program state if the expression causes a crash, breakpoint hit or signal."},
-{ LLDB_OPT_SET_ALL, false, "debug",            'g', no_argument,       NULL, 0, eArgTypeNone, "Enable verbose debug logging of the expression parsing and evaluation."},
-{ LLDB_OPT_SET_ALL, false, "use-ir",           'i', no_argument,       NULL, 0, eArgTypeNone, "[Temporary] Instructs the expression evaluator to use IR instead of ASTs."},
-{ 0, false, NULL, 0, 0, NULL, NULL, eArgTypeNone, NULL }
+{ LLDB_OPT_SET_1,   false, "format",             'f', required_argument, NULL, 0, eArgTypeExprFormat, "Specify the format that the expression output should use."},
+{ LLDB_OPT_SET_2,   false, "object-description", 'o', no_argument,       NULL, 0, eArgTypeNone,       "Print the object description of the value resulting from the expression."},
+{ LLDB_OPT_SET_2,   false, "dynamic-value",      'd', required_argument, NULL, 0, eArgTypeBoolean,    "Upcast the value resulting from the expression to its dynamic type if available."},
+{ LLDB_OPT_SET_ALL, false, "unwind-on-error",    'u', required_argument, NULL, 0, eArgTypeBoolean,    "Clean up program state if the expression causes a crash, breakpoint hit or signal."},
+{ LLDB_OPT_SET_ALL, false, "debug",              'g', no_argument,       NULL, 0, eArgTypeNone,       "Enable verbose debug logging of the expression parsing and evaluation."},
+{ LLDB_OPT_SET_ALL, false, "use-ir",             'i', no_argument,       NULL, 0, eArgTypeNone,       "[Temporary] Instructs the expression evaluator to use IR instead of ASTs."},
+{ 0,                false, NULL,                 0,   0,                 NULL, 0, eArgTypeNone,       NULL }
 };
 

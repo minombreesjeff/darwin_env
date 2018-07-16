@@ -45,6 +45,7 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     ThreadPlan (ThreadPlan::eKindCallFunction, "Call function plan", thread, eVoteNoOpinion, eVoteNoOpinion),
     m_valid (false),
     m_stop_other_threads (stop_other_threads),
+    m_function_addr (function),
     m_function_sp (NULL),
     m_process (thread.GetProcess()),
     m_thread (thread),
@@ -65,27 +66,30 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     
     m_function_sp = thread.GetRegisterContext()->GetSP() - abi->GetRedZoneSize();
     
-    ModuleSP executableModuleSP (target.GetExecutableModule());
+    Module *exe_module = target.GetExecutableModulePointer();
 
-    if (!executableModuleSP)
+    if (exe_module == NULL)
     {
-        log->Printf ("Can't execute code without an executable module.");
+        if (log)
+            log->Printf ("Can't execute code without an executable module.");
         return;
     }
     else
     {
-        ObjectFile *objectFile = executableModuleSP->GetObjectFile();
+        ObjectFile *objectFile = exe_module->GetObjectFile();
         if (!objectFile)
         {
-            log->Printf ("Could not find object file for module \"%s\".", 
-                         executableModuleSP->GetFileSpec().GetFilename().AsCString());
+            if (log)
+                log->Printf ("Could not find object file for module \"%s\".", 
+                             exe_module->GetFileSpec().GetFilename().AsCString());
             return;
         }
         m_start_addr = objectFile->GetEntryPointAddress();
         if (!m_start_addr.IsValid())
         {
-            log->Printf ("Could not find entry point address for executable module \"%s\".", 
-                         executableModuleSP->GetFileSpec().GetFilename().AsCString());
+            if (log)
+                log->Printf ("Could not find entry point address for executable module \"%s\".", 
+                             exe_module->GetFileSpec().GetFilename().AsCString());
             return;
         }
     }
@@ -105,7 +109,6 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     // Now set the thread state to "no reason" so we don't run with whatever signal was outstanding...
     thread.SetStopInfoToNothing();
     
-    m_function_addr = function;
     addr_t FunctionLoadAddr = m_function_addr.GetLoadAddress(&target);
         
     if (this_arg && cmd_arg)
@@ -158,6 +161,7 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     ThreadPlan (ThreadPlan::eKindCallFunction, "Call function plan", thread, eVoteNoOpinion, eVoteNoOpinion),
     m_valid (false),
     m_stop_other_threads (stop_other_threads),
+    m_function_addr (function),
     m_function_sp(NULL),
     m_process (thread.GetProcess()),
     m_thread (thread),
@@ -178,20 +182,22 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     
     m_function_sp = thread.GetRegisterContext()->GetSP() - abi->GetRedZoneSize();
     
-    ModuleSP executableModuleSP (target.GetExecutableModule());
+    Module *exe_module = target.GetExecutableModulePointer();
     
-    if (!executableModuleSP)
+    if (exe_module == NULL)
     {
-        log->Printf ("Can't execute code without an executable module.");
+        if (log)
+            log->Printf ("Can't execute code without an executable module.");
         return;
     }
     else
     {
-        ObjectFile *objectFile = executableModuleSP->GetObjectFile();
+        ObjectFile *objectFile = exe_module->GetObjectFile();
         if (!objectFile)
         {
-            log->Printf ("Could not find object file for module \"%s\".", 
-                         executableModuleSP->GetFileSpec().GetFilename().AsCString());
+            if (log)
+                log->Printf ("Could not find object file for module \"%s\".", 
+                             exe_module->GetFileSpec().GetFilename().AsCString());
             return;
         }
         m_start_addr = objectFile->GetEntryPointAddress();
@@ -199,7 +205,7 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
         {
             if (log)
                 log->Printf ("Could not find entry point address for executable module \"%s\".", 
-                             executableModuleSP->GetFileSpec().GetFilename().AsCString());
+                             exe_module->GetFileSpec().GetFilename().AsCString());
             return;
         }
     }
@@ -219,7 +225,6 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     // Now set the thread state to "no reason" so we don't run with whatever signal was outstanding...
     thread.SetStopInfoToNothing();
     
-    m_function_addr = function;
     addr_t FunctionLoadAddr = m_function_addr.GetLoadAddress(&target);
     
     if (!abi->PrepareTrivialCall (thread, 
@@ -339,7 +344,7 @@ ThreadPlanCallFunction::PlanExplainsStop ()
     
     // If our subplan knows why we stopped, even if it's done (which would forward the question to us)
     // we answer yes.
-    if(m_subplan_sp.get() != NULL && m_subplan_sp->PlanExplainsStop())
+    if (m_subplan_sp.get() != NULL && m_subplan_sp->PlanExplainsStop())
         return true;
     
     // Check if the breakpoint is one of ours.

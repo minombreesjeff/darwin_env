@@ -30,7 +30,7 @@ class VTTBuilder {
   /// vtable.
   const CXXRecordDecl *MostDerivedClass;
 
-  typedef llvm::SmallVector<llvm::Constant *, 64> VTTComponentsVectorTy;
+  typedef SmallVector<llvm::Constant *, 64> VTTComponentsVectorTy;
   
   /// VTTComponents - The VTT components.
   VTTComponentsVectorTy VTTComponents;
@@ -208,9 +208,9 @@ void VTTBuilder::AddVTablePointer(BaseSubobject Base, llvm::Constant *VTable,
   };
   
   llvm::Constant *Init = 
-    llvm::ConstantExpr::getInBoundsGetElementPtr(VTable, Idxs, 2);
+    llvm::ConstantExpr::getInBoundsGetElementPtr(VTable, Idxs);
   
-  const llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(CGM.getLLVMContext());
+  llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(CGM.getLLVMContext());
   Init = llvm::ConstantExpr::getBitCast(Init, Int8PtrTy);
   
   VTTComponents.push_back(Init);
@@ -385,13 +385,12 @@ CodeGenVTables::EmitVTTDefinition(llvm::GlobalVariable *VTT,
                                   const CXXRecordDecl *RD) {
   VTTBuilder Builder(CGM, RD, /*GenerateDefinition=*/true, Linkage);
 
-  const llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(CGM.getLLVMContext());
-  const llvm::ArrayType *ArrayType = 
+  llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(CGM.getLLVMContext());
+  llvm::ArrayType *ArrayType = 
     llvm::ArrayType::get(Int8PtrTy, Builder.getVTTComponents().size());
   
   llvm::Constant *Init = 
-    llvm::ConstantArray::get(ArrayType, Builder.getVTTComponents().data(),
-                             Builder.getVTTComponents().size());
+    llvm::ConstantArray::get(ArrayType, Builder.getVTTComponents());
 
   VTT->setInitializer(Init);
 
@@ -409,15 +408,15 @@ llvm::GlobalVariable *CodeGenVTables::GetAddrOfVTT(const CXXRecordDecl *RD) {
   llvm::raw_svector_ostream Out(OutName);
   CGM.getCXXABI().getMangleContext().mangleCXXVTT(RD, Out);
   Out.flush();
-  llvm::StringRef Name = OutName.str();
+  StringRef Name = OutName.str();
 
   ComputeVTableRelatedInformation(RD, /*VTableRequired=*/true);
 
   VTTBuilder Builder(CGM, RD, /*GenerateDefinition=*/false);
 
-  const llvm::Type *Int8PtrTy = 
+  llvm::Type *Int8PtrTy = 
     llvm::Type::getInt8PtrTy(CGM.getLLVMContext());
-  const llvm::ArrayType *ArrayType = 
+  llvm::ArrayType *ArrayType = 
     llvm::ArrayType::get(Int8PtrTy, Builder.getVTTComponents().size());
 
   llvm::GlobalVariable *GV =

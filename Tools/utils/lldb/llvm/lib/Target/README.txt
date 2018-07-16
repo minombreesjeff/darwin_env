@@ -870,11 +870,6 @@ rshift_gt (unsigned int a)
    bar ();
 }
 
-void neg_eq_cst(unsigned int a) {
-if (-a == 123)
-bar();
-}
-
 All should simplify to a single comparison.  All of these are
 currently not optimized with "clang -emit-llvm-bc | opt
 -std-compile-opts".
@@ -1767,7 +1762,6 @@ case it choses instead to keep the max operation obvious.
 
 //===---------------------------------------------------------------------===//
 
-Switch lowering generates less than ideal code for the following switch:
 define void @a(i32 %x) nounwind {
 entry:
   switch i32 %x, label %if.end [
@@ -1788,19 +1782,15 @@ declare void @foo()
 Generated code on x86-64 (other platforms give similar results):
 a:
 	cmpl	$5, %edi
-	ja	.LBB0_2
-	movl	%edi, %eax
-	movl	$47, %ecx
-	btq	%rax, %rcx
-	jb	.LBB0_3
+	ja	LBB2_2
+	cmpl	$4, %edi
+	jne	LBB2_3
 .LBB0_2:
 	ret
 .LBB0_3:
 	jmp	foo  # TAILCALL
 
-The movl+movl+btq+jb could be simplified to a cmpl+jne.
-
-Or, if we wanted to be really clever, we could simplify the whole thing to
+If we wanted to be really clever, we could simplify the whole thing to
 something like the following, which eliminates a branch:
 	xorl    $1, %edi
 	cmpl	$4, %edi
@@ -2305,4 +2295,56 @@ The two or/and's should be merged into one each.
 
 //===---------------------------------------------------------------------===//
 
+Machine level code hoisting can be useful in some cases.  For example, PR9408
+is about:
 
+typedef union {
+ void (*f1)(int);
+ void (*f2)(long);
+} funcs;
+
+void foo(funcs f, int which) {
+ int a = 5;
+ if (which) {
+   f.f1(a);
+ } else {
+   f.f2(a);
+ }
+}
+
+which we compile to:
+
+foo:                                    # @foo
+# BB#0:                                 # %entry
+       pushq   %rbp
+       movq    %rsp, %rbp
+       testl   %esi, %esi
+       movq    %rdi, %rax
+       je      .LBB0_2
+# BB#1:                                 # %if.then
+       movl    $5, %edi
+       callq   *%rax
+       popq    %rbp
+       ret
+.LBB0_2:                                # %if.else
+       movl    $5, %edi
+       callq   *%rax
+       popq    %rbp
+       ret
+
+Note that bb1 and bb2 are the same.  This doesn't happen at the IR level
+because one call is passing an i32 and the other is passing an i64.
+
+//===---------------------------------------------------------------------===//
+
+I see this sort of pattern in 176.gcc in a few places (e.g. the start of
+store_bit_field).  The rem should be replaced with a multiply and subtract:
+
+  %3 = sdiv i32 %A, %B
+  %4 = srem i32 %A, %B
+
+Similarly for udiv/urem.  Note that this shouldn't be done on X86 or ARM,
+which can do this in a single operation (instruction or libcall).  It is
+probably best to do this in the code generator.
+
+//===---------------------------------------------------------------------===//

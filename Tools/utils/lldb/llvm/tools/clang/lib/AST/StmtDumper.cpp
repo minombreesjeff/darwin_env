@@ -27,7 +27,7 @@ using namespace clang;
 namespace  {
   class StmtDumper : public StmtVisitor<StmtDumper> {
     SourceManager *SM;
-    llvm::raw_ostream &OS;
+    raw_ostream &OS;
     unsigned IndentLevel;
 
     /// MaxDepth - When doing a normal dump (not dumpAll) we only want to dump
@@ -41,7 +41,7 @@ namespace  {
     unsigned LastLocLine;
 
   public:
-    StmtDumper(SourceManager *sm, llvm::raw_ostream &os, unsigned maxDepth)
+    StmtDumper(SourceManager *sm, raw_ostream &os, unsigned maxDepth)
       : SM(sm), OS(os), IndentLevel(0-1), MaxDepth(maxDepth) {
       LastLocFilename = "";
       LastLocLine = ~0U;
@@ -333,7 +333,7 @@ void StmtDumper::VisitExpr(Expr *Node) {
   DumpExpr(Node);
 }
 
-static void DumpBasePath(llvm::raw_ostream &OS, CastExpr *Node) {
+static void DumpBasePath(raw_ostream &OS, CastExpr *Node) {
   if (Node->path_empty())
     return;
 
@@ -443,8 +443,13 @@ void StmtDumper::VisitStringLiteral(StringLiteral *Str) {
   DumpExpr(Str);
   // FIXME: this doesn't print wstrings right.
   OS << " ";
-  if (Str->isWide())
-    OS << "L";
+  switch (Str->getKind()) {
+  case StringLiteral::Ascii: break; // No prefix
+  case StringLiteral::Wide:  OS << 'L'; break;
+  case StringLiteral::UTF8:  OS << "u8"; break;
+  case StringLiteral::UTF16: OS << 'u'; break;
+  case StringLiteral::UTF32: OS << 'U'; break;
+  }
   OS << '"';
   OS.write_escaped(Str->getString());
   OS << '"';
@@ -674,7 +679,7 @@ void Stmt::dump(SourceManager &SM) const {
   dump(llvm::errs(), SM);
 }
 
-void Stmt::dump(llvm::raw_ostream &OS, SourceManager &SM) const {
+void Stmt::dump(raw_ostream &OS, SourceManager &SM) const {
   StmtDumper P(&SM, OS, 4);
   P.DumpSubTree(const_cast<Stmt*>(this));
   OS << "\n";

@@ -13,10 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86InstComments.h"
-#include "X86GenInstrNames.inc"
+#include "MCTargetDesc/X86MCTargetDesc.h"
+#include "Utils/X86ShuffleDecode.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/raw_ostream.h"
-#include "../Utils/X86ShuffleDecode.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -203,6 +203,26 @@ void llvm::EmitAnyX86InstComments(const MCInst *MI, raw_ostream &OS,
     // FALL THROUGH.
   case X86::UNPCKHPSrm:
     DecodeUNPCKHPMask(4, ShuffleMask);
+    Src1Name = getRegName(MI->getOperand(0).getReg());
+    break;
+  case X86::VPERMILPSri:
+    DecodeVPERMILPSMask(4, MI->getOperand(2).getImm(),
+                        ShuffleMask);
+    Src1Name = getRegName(MI->getOperand(0).getReg());
+    break;
+  case X86::VPERMILPSYri:
+    DecodeVPERMILPSMask(8, MI->getOperand(2).getImm(),
+                        ShuffleMask);
+    Src1Name = getRegName(MI->getOperand(0).getReg());
+    break;
+  case X86::VPERMILPDri:
+    DecodeVPERMILPDMask(2, MI->getOperand(2).getImm(),
+                        ShuffleMask);
+    Src1Name = getRegName(MI->getOperand(0).getReg());
+    break;
+  case X86::VPERMILPDYri:
+    DecodeVPERMILPDMask(4, MI->getOperand(2).getImm(),
+                        ShuffleMask);
     Src1Name = getRegName(MI->getOperand(0).getReg());
     break;
   }

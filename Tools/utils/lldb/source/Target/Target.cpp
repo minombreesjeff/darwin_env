@@ -98,8 +98,9 @@ Target::Dump (Stream *s, lldb::DescriptionLevel description_level)
     }
     else
     {
-        if (GetExecutableModule())
-            s->PutCString (GetExecutableModule()->GetFileSpec().GetFilename().GetCString());
+        Module *exe_module = GetExecutableModulePointer();
+        if (exe_module)
+            s->PutCString (exe_module->GetFileSpec().GetFilename().GetCString());
         else
             s->PutCString ("No executable module.");
     }
@@ -144,6 +145,29 @@ Target::GetSP()
 {
     return m_debugger.GetTargetList().GetTargetSP(this);
 }
+
+void
+Target::Destroy()
+{
+    Mutex::Locker locker (m_mutex);
+    DeleteCurrentProcess ();
+    m_platform_sp.reset();
+    m_arch.Clear();
+    m_images.Clear();
+    m_section_load_list.Clear();
+    const bool notify = false;
+    m_breakpoint_list.RemoveAll(notify);
+    m_internal_breakpoint_list.RemoveAll(notify);
+    m_last_created_breakpoint.reset();
+    m_search_filter_sp.reset();
+    m_image_search_paths.Clear(notify);
+    m_scratch_ast_context_ap.reset();
+    m_persistent_variables.Clear();
+    m_stop_hooks.clear();
+    m_stop_hook_next_id = 0;
+    m_suppress_stop_hooks = false;
+}
+
 
 BreakpointList &
 Target::GetBreakpointList(bool internal)
@@ -213,13 +237,22 @@ Target::CreateBreakpoint (Address &addr, bool internal)
 }
 
 BreakpointSP
-Target::CreateBreakpoint (FileSpec *containingModule, const char *func_name, uint32_t func_name_type_mask, bool internal)
+Target::CreateBreakpoint (const FileSpec *containingModule, 
+                          const char *func_name, 
+                          uint32_t func_name_type_mask, 
+                          bool internal,
+                          LazyBool skip_prologue)
 {
     BreakpointSP bp_sp;
     if (func_name)
     {
         SearchFilterSP filter_sp(GetSearchFilterForModule (containingModule));
-        BreakpointResolverSP resolver_sp (new BreakpointResolverName (NULL, func_name, func_name_type_mask, Breakpoint::Exact));
+        
+        BreakpointResolverSP resolver_sp (new BreakpointResolverName (NULL, 
+                                                                      func_name, 
+                                                                      func_name_type_mask, 
+                                                                      Breakpoint::Exact, 
+                                                                      skip_prologue == eLazyBoolCalculate ? GetSkipPrologue() : skip_prologue));
         bp_sp = CreateBreakpoint (filter_sp, resolver_sp, internal);
     }
     return bp_sp;
@@ -247,10 +280,15 @@ Target::GetSearchFilterForModule (const FileSpec *containingModule)
 }
 
 BreakpointSP
-Target::CreateBreakpoint (FileSpec *containingModule, RegularExpression &func_regex, bool internal)
+Target::CreateBreakpoint (const FileSpec *containingModule, 
+                          RegularExpression &func_regex, 
+                          bool internal,
+                          LazyBool skip_prologue)
 {
     SearchFilterSP filter_sp(GetSearchFilterForModule (containingModule));
-    BreakpointResolverSP resolver_sp(new BreakpointResolverName (NULL, func_regex));
+    BreakpointResolverSP resolver_sp(new BreakpointResolverName (NULL, 
+                                                                 func_regex, 
+                                                                 skip_prologue == eLazyBoolCalculate ? GetSkipPrologue() : skip_prologue));
 
     return CreateBreakpoint (filter_sp, resolver_sp, internal);
 }
@@ -400,10 +438,13 @@ Target::EnableBreakpointByID (break_id_t break_id)
 ModuleSP
 Target::GetExecutableModule ()
 {
-    ModuleSP executable_sp;
-    if (m_images.GetSize() > 0)
-        executable_sp = m_images.GetModuleAtIndex(0);
-    return executable_sp;
+    return m_images.GetModuleAtIndex(0);
+}
+
+Module*
+Target::GetExecutableModulePointer ()
+{
+    return m_images.GetModulePointerAtIndex(0);
 }
 
 void
@@ -444,7 +485,6 @@ Target::SetExecutableModule (ModuleSP& executable_sp, bool get_dependent_files)
                                                           m_arch));
                 if (image_module_sp.get())
                 {
-                    //image_module_sp->Dump(&s);// REMOVE THIS, DEBUG ONLY
                     ObjectFile *objfile = image_module_sp->GetObjectFile();
                     if (objfile)
                         objfile->GetDependentModules(dependent_files);
@@ -452,11 +492,6 @@ Target::SetExecutableModule (ModuleSP& executable_sp, bool get_dependent_files)
             }
         }
         
-        // Now see if we know the target triple, and if so, create our scratch AST context:
-        if (m_arch.IsValid())
-        {
-            m_scratch_ast_context_ap.reset (new ClangASTContext(m_arch.GetTriple().str().c_str()));
-        }
     }
 
     UpdateInstanceName();
@@ -528,7 +563,7 @@ Target::ModuleAdded (ModuleSP &module_sp)
 void
 Target::ModuleUpdated (ModuleSP &old_module_sp, ModuleSP &new_module_sp)
 {
-    // A module is being added to this target for the first time
+    // A module is replacing an already added module
     ModuleList module_list;
     module_list.Append (old_module_sp);
     ModulesDidUnload (module_list);
@@ -595,17 +630,33 @@ Target::ReadMemory (const Address& addr, bool prefer_file_cache, void *dst, size
     bool process_is_valid = m_process_sp && m_process_sp->IsAlive();
 
     size_t bytes_read = 0;
+
+    addr_t load_addr = LLDB_INVALID_ADDRESS;
+    addr_t file_addr = LLDB_INVALID_ADDRESS;
     Address resolved_addr;
     if (!addr.IsSectionOffset())
     {
-        if (process_is_valid)
-            m_section_load_list.ResolveLoadAddress (addr.GetOffset(), resolved_addr);
+        if (m_section_load_list.IsEmpty())
+        {
+            // No sections are loaded, so we must assume we are not running
+            // yet and anything we are given is a file address.
+            file_addr = addr.GetOffset(); // "addr" doesn't have a section, so its offset is the file address
+            m_images.ResolveFileAddress (file_addr, resolved_addr);            
+        }
         else
-            m_images.ResolveFileAddress(addr.GetOffset(), resolved_addr);
+        {
+            // We have at least one section loaded. This can be becuase
+            // we have manually loaded some sections with "target modules load ..."
+            // or because we have have a live process that has sections loaded
+            // through the dynamic loader
+            load_addr = addr.GetOffset(); // "addr" doesn't have a section, so its offset is the load address
+            m_section_load_list.ResolveLoadAddress (load_addr, resolved_addr);
+        }
     }
     if (!resolved_addr.IsValid())
         resolved_addr = addr;
     
+
     if (prefer_file_cache)
     {
         bytes_read = ReadMemoryFromFileCache (resolved_addr, dst, dst_len, error);
@@ -615,7 +666,9 @@ Target::ReadMemory (const Address& addr, bool prefer_file_cache, void *dst, size
     
     if (process_is_valid)
     {
-        lldb::addr_t load_addr = resolved_addr.GetLoadAddress (this);
+        if (load_addr == LLDB_INVALID_ADDRESS)
+            load_addr = resolved_addr.GetLoadAddress (this);
+
         if (load_addr == LLDB_INVALID_ADDRESS)
         {
             if (resolved_addr.GetModule() && resolved_addr.GetModule()->GetFileSpec())
@@ -650,7 +703,7 @@ Target::ReadMemory (const Address& addr, bool prefer_file_cache, void *dst, size
         }
     }
     
-    if (!prefer_file_cache)
+    if (!prefer_file_cache && resolved_addr.IsSectionOffset())
     {
         // If we didn't already try and read from the object file cache, then
         // try it after failing to read from the process.
@@ -659,6 +712,99 @@ Target::ReadMemory (const Address& addr, bool prefer_file_cache, void *dst, size
     return 0;
 }
 
+size_t
+Target::ReadScalarIntegerFromMemory (const Address& addr, 
+                                     bool prefer_file_cache,
+                                     uint32_t byte_size, 
+                                     bool is_signed, 
+                                     Scalar &scalar, 
+                                     Error &error)
+{
+    uint64_t uval;
+    
+    if (byte_size <= sizeof(uval))
+    {
+        size_t bytes_read = ReadMemory (addr, prefer_file_cache, &uval, byte_size, error);
+        if (bytes_read == byte_size)
+        {
+            DataExtractor data (&uval, sizeof(uval), m_arch.GetByteOrder(), m_arch.GetAddressByteSize());
+            uint32_t offset = 0;
+            if (byte_size <= 4)
+                scalar = data.GetMaxU32 (&offset, byte_size);
+            else
+                scalar = data.GetMaxU64 (&offset, byte_size);
+            
+            if (is_signed)
+                scalar.SignExtend(byte_size * 8);
+            return bytes_read;
+        }
+    }
+    else
+    {
+        error.SetErrorStringWithFormat ("byte size of %u is too large for integer scalar type", byte_size);
+    }
+    return 0;
+}
+
+uint64_t
+Target::ReadUnsignedIntegerFromMemory (const Address& addr, 
+                                       bool prefer_file_cache,
+                                       size_t integer_byte_size, 
+                                       uint64_t fail_value, 
+                                       Error &error)
+{
+    Scalar scalar;
+    if (ReadScalarIntegerFromMemory (addr, 
+                                     prefer_file_cache, 
+                                     integer_byte_size, 
+                                     false, 
+                                     scalar, 
+                                     error))
+        return scalar.ULongLong(fail_value);
+    return fail_value;
+}
+
+bool
+Target::ReadPointerFromMemory (const Address& addr, 
+                               bool prefer_file_cache,
+                               Error &error,
+                               Address &pointer_addr)
+{
+    Scalar scalar;
+    if (ReadScalarIntegerFromMemory (addr, 
+                                     prefer_file_cache, 
+                                     m_arch.GetAddressByteSize(), 
+                                     false, 
+                                     scalar, 
+                                     error))
+    {
+        addr_t pointer_vm_addr = scalar.ULongLong(LLDB_INVALID_ADDRESS);
+        if (pointer_vm_addr != LLDB_INVALID_ADDRESS)
+        {
+            if (m_section_load_list.IsEmpty())
+            {
+                // No sections are loaded, so we must assume we are not running
+                // yet and anything we are given is a file address.
+                m_images.ResolveFileAddress (pointer_vm_addr, pointer_addr);
+            }
+            else
+            {
+                // We have at least one section loaded. This can be becuase
+                // we have manually loaded some sections with "target modules load ..."
+                // or because we have have a live process that has sections loaded
+                // through the dynamic loader
+                m_section_load_list.ResolveLoadAddress (pointer_vm_addr, pointer_addr);
+            }
+            // We weren't able to resolve the pointer value, so just return
+            // an address with no section
+            if (!pointer_addr.IsValid())
+                pointer_addr.SetOffset (pointer_vm_addr);
+            return true;
+            
+        }
+    }
+    return false;
+}
 
 ModuleSP
 Target::GetSharedModule
@@ -773,20 +919,20 @@ Target::ImageSearchPathsChanged
 )
 {
     Target *target = (Target *)baton;
-    if (target->m_images.GetSize() > 1)
+    ModuleSP exe_module_sp (target->GetExecutableModule());
+    if (exe_module_sp)
     {
-        ModuleSP exe_module_sp (target->GetExecutableModule());
-        if (exe_module_sp)
-        {
-            target->m_images.Clear();
-            target->SetExecutableModule (exe_module_sp, true);
-        }
+        target->m_images.Clear();
+        target->SetExecutableModule (exe_module_sp, true);
     }
 }
 
 ClangASTContext *
 Target::GetScratchClangASTContext()
 {
+    // Now see if we know the target triple, and if so, create our scratch AST context:
+    if (m_scratch_ast_context_ap.get() == NULL && m_arch.IsValid())
+        m_scratch_ast_context_ap.reset (new ClangASTContext(m_arch.GetTriple().str().c_str()));
     return m_scratch_ast_context_ap.get();
 }
 
@@ -868,14 +1014,13 @@ Target::UpdateInstanceName ()
 {
     StreamString sstr;
     
-    ModuleSP module_sp = GetExecutableModule();
-    if (module_sp)
+    Module *exe_module = GetExecutableModulePointer();
+    if (exe_module)
     {
         sstr.Printf ("%s_%s", 
-                     module_sp->GetFileSpec().GetFilename().AsCString(), 
-                     module_sp->GetArchitecture().GetArchitectureName());
-        GetSettingsController()->RenameInstanceSettings (GetInstanceName().AsCString(),
-                                                         sstr.GetData());
+                     exe_module->GetFileSpec().GetFilename().AsCString(), 
+                     exe_module->GetArchitecture().GetArchitectureName());
+        GetSettingsController()->RenameInstanceSettings (GetInstanceName().AsCString(), sstr.GetData());
     }
 }
 
@@ -913,7 +1058,8 @@ Target::EvaluateExpression
         frame->CalculateExecutionContext(exe_ctx);
         Error error;
         const uint32_t expr_path_options = StackFrame::eExpressionPathOptionCheckPtrVsMember |
-                                           StackFrame::eExpressionPathOptionsNoFragileObjcIvar;
+                                           StackFrame::eExpressionPathOptionsNoFragileObjcIvar |
+                                           StackFrame::eExpressionPathOptionsNoSyntheticChildren;
         lldb::VariableSP var_sp;
         result_valobj_sp = frame->GetValueForVariableExpressionPath (expr_cstr, 
                                                                      use_dynamic, 
@@ -1276,6 +1422,46 @@ Target::RunStopHooks ()
     result.GetImmediateErrorStream()->Flush();
 }
 
+bool 
+Target::LoadModuleWithSlide (Module *module, lldb::addr_t slide)
+{
+    bool changed = false;
+    if (module)
+    {
+        ObjectFile *object_file = module->GetObjectFile();
+        if (object_file)
+        {
+            SectionList *section_list = object_file->GetSectionList ();
+            if (section_list)
+            {
+                // All sections listed in the dyld image info structure will all
+                // either be fixed up already, or they will all be off by a single
+                // slide amount that is determined by finding the first segment
+                // that is at file offset zero which also has bytes (a file size
+                // that is greater than zero) in the object file.
+                
+                // Determine the slide amount (if any)
+                const size_t num_sections = section_list->GetSize();
+                size_t sect_idx = 0;
+                for (sect_idx = 0; sect_idx < num_sections; ++sect_idx)
+                {
+                    // Iterate through the object file sections to find the
+                    // first section that starts of file offset zero and that
+                    // has bytes in the file...
+                    Section *section = section_list->GetSectionAtIndex (sect_idx).get();
+                    if (section)
+                    {
+                        if (m_section_load_list.SetSectionLoadAddress (section, section->GetFileAddress() + slide))
+                            changed = true;
+                    }
+                }
+            }
+        }
+    }
+    return changed;
+}
+
+
 //--------------------------------------------------------------
 // class Target::StopHook
 //--------------------------------------------------------------
@@ -1392,6 +1578,7 @@ Target::SettingsController::CreateInstanceSettings (const char *instance_name)
 #define TSC_PREFER_DYNAMIC    "prefer-dynamic-value"
 #define TSC_SKIP_PROLOGUE     "skip-prologue"
 #define TSC_SOURCE_MAP        "source-map"
+#define TSC_MAX_CHILDREN      "max-children-count"
 
 
 static const ConstString &
@@ -1429,6 +1616,12 @@ GetSettingNameForSkipPrologue ()
     return g_const_string;
 }
 
+static const ConstString &
+GetSettingNameForMaxChildren ()
+{
+    static ConstString g_const_string (TSC_MAX_CHILDREN);
+    return g_const_string;
+}
 
 
 bool
@@ -1482,7 +1675,8 @@ TargetInstanceSettings::TargetInstanceSettings
     m_expr_prefix_contents_sp (),
     m_prefer_dynamic_value (2),
     m_skip_prologue (true, true),
-    m_source_map (NULL, NULL)
+    m_source_map (NULL, NULL),
+    m_max_children_display(256)
 {
     // CopyInstanceSettings is a pure virtual function in InstanceSettings; it therefore cannot be called
     // until the vtables for TargetInstanceSettings are properly set up, i.e. AFTER all the initializers.
@@ -1508,7 +1702,8 @@ TargetInstanceSettings::TargetInstanceSettings (const TargetInstanceSettings &rh
     m_expr_prefix_contents_sp (rhs.m_expr_prefix_contents_sp),
     m_prefer_dynamic_value (rhs.m_prefer_dynamic_value),
     m_skip_prologue (rhs.m_skip_prologue),
-    m_source_map (rhs.m_source_map)
+    m_source_map (rhs.m_source_map),
+    m_max_children_display(rhs.m_max_children_display)
 {
     if (m_instance_name != InstanceSettings::GetDefaultName())
     {
@@ -1585,6 +1780,13 @@ TargetInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_n
     {
         err = UserSettingsController::UpdateBooleanOptionValue (value, op, m_skip_prologue);
     }
+    else if (var_name == GetSettingNameForMaxChildren())
+    {
+        bool ok;
+        uint32_t new_value = Args::StringToUInt32(value, 0, 10, &ok);
+        if (ok)
+            m_max_children_display = new_value;
+    }
     else if (var_name == GetSettingNameForSourcePathMap ())
     {
         switch (op)
@@ -1655,6 +1857,7 @@ TargetInstanceSettings::CopyInstanceSettings (const lldb::InstanceSettingsSP &ne
     m_expr_prefix_contents_sp   = new_settings_ptr->m_expr_prefix_contents_sp;
     m_prefer_dynamic_value      = new_settings_ptr->m_prefer_dynamic_value;
     m_skip_prologue             = new_settings_ptr->m_skip_prologue;
+    m_max_children_display      = new_settings_ptr->m_max_children_display;
 }
 
 bool
@@ -1683,6 +1886,12 @@ TargetInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
     }
     else if (var_name == GetSettingNameForSourcePathMap ())
     {
+    }
+    else if (var_name == GetSettingNameForMaxChildren())
+    {
+        StreamString count_str;
+        count_str.Printf ("%d", m_max_children_display);
+        value.AppendString (count_str.GetData());
     }
     else 
     {
@@ -1737,5 +1946,6 @@ Target::SettingsController::instance_settings_table[] =
     { TSC_PREFER_DYNAMIC, eSetVarTypeEnum   , NULL          , g_dynamic_value_types, false, false, "Should printed values be shown as their dynamic value." },
     { TSC_SKIP_PROLOGUE , eSetVarTypeBoolean, "true"        , NULL,                  false, false, "Skip function prologues when setting breakpoints by name." },
     { TSC_SOURCE_MAP    , eSetVarTypeArray  , NULL          , NULL,                  false, false, "Source path remappings to use when locating source files from debug information." },
+    { TSC_MAX_CHILDREN  , eSetVarTypeInt    , "256"         , NULL,                  true,  false, "Maximum number of children to expand in any level of depth." },
     { NULL              , eSetVarTypeNone   , NULL          , NULL,                  false, false, NULL }
 };

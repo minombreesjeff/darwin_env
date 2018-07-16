@@ -16,6 +16,7 @@
 #include "clang/Lex/Token.h"
 #include "clang/Basic/IdentifierTable.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Capacity.h"
 
 using namespace clang;
 
@@ -24,7 +25,7 @@ ExternalPreprocessingRecordSource::~ExternalPreprocessingRecordSource() { }
 
 InclusionDirective::InclusionDirective(PreprocessingRecord &PPRec,
                                        InclusionKind Kind, 
-                                       llvm::StringRef FileName, 
+                                       StringRef FileName, 
                                        bool InQuotes, const FileEntry *File, 
                                        SourceRange Range)
   : PreprocessingDirective(InclusionDirectiveKind, Range), 
@@ -34,7 +35,7 @@ InclusionDirective::InclusionDirective(PreprocessingRecord &PPRec,
     = (char*)PPRec.Allocate(FileName.size() + 1, llvm::alignOf<char>());
   memcpy(Memory, FileName.data(), FileName.size());
   Memory[FileName.size()] = 0;
-  this->FileName = llvm::StringRef(Memory, FileName.size());
+  this->FileName = StringRef(Memory, FileName.size());
 }
 
 void PreprocessingRecord::MaybeLoadPreallocatedEntities() const {
@@ -45,44 +46,26 @@ void PreprocessingRecord::MaybeLoadPreallocatedEntities() const {
   ExternalSource->ReadPreprocessedEntities();
 }
 
-PreprocessingRecord::PreprocessingRecord(bool IncludeNestedMacroInstantiations)
-  : IncludeNestedMacroInstantiations(IncludeNestedMacroInstantiations),
-    ExternalSource(0), NumPreallocatedEntities(0), 
-    LoadedPreallocatedEntities(false)
+PreprocessingRecord::PreprocessingRecord(bool IncludeNestedMacroExpansions)
+  : IncludeNestedMacroExpansions(IncludeNestedMacroExpansions),
+    ExternalSource(0), LoadedPreallocatedEntities(false)
 {
 }
 
 PreprocessingRecord::iterator 
 PreprocessingRecord::begin(bool OnlyLocalEntities) {
   if (OnlyLocalEntities)
-    return PreprocessedEntities.begin() + NumPreallocatedEntities;
+    return iterator(this, 0);
   
   MaybeLoadPreallocatedEntities();
-  return PreprocessedEntities.begin();
+  return iterator(this, -(int)LoadedPreprocessedEntities.size());
 }
 
 PreprocessingRecord::iterator PreprocessingRecord::end(bool OnlyLocalEntities) {
   if (!OnlyLocalEntities)
     MaybeLoadPreallocatedEntities();
   
-  return PreprocessedEntities.end();
-}
-
-PreprocessingRecord::const_iterator 
-PreprocessingRecord::begin(bool OnlyLocalEntities) const {
-  if (OnlyLocalEntities)
-    return PreprocessedEntities.begin() + NumPreallocatedEntities;
-  
-  MaybeLoadPreallocatedEntities();
-  return PreprocessedEntities.begin();
-}
-
-PreprocessingRecord::const_iterator 
-PreprocessingRecord::end(bool OnlyLocalEntities) const {
-  if (!OnlyLocalEntities)
-    MaybeLoadPreallocatedEntities();
-  
-  return PreprocessedEntities.end();
+  return iterator(this, PreprocessedEntities.size());
 }
 
 void PreprocessingRecord::addPreprocessedEntity(PreprocessedEntity *Entity) {
@@ -90,20 +73,25 @@ void PreprocessingRecord::addPreprocessedEntity(PreprocessedEntity *Entity) {
 }
 
 void PreprocessingRecord::SetExternalSource(
-                                    ExternalPreprocessingRecordSource &Source,
-                                            unsigned NumPreallocatedEntities) {
+                                    ExternalPreprocessingRecordSource &Source) {
   assert(!ExternalSource &&
          "Preprocessing record already has an external source");
   ExternalSource = &Source;
-  this->NumPreallocatedEntities = NumPreallocatedEntities;
-  PreprocessedEntities.insert(PreprocessedEntities.begin(), 
-                              NumPreallocatedEntities, 0);
 }
 
-void PreprocessingRecord::SetPreallocatedEntity(unsigned Index, 
-                                                PreprocessedEntity *Entity) {
-  assert(Index < NumPreallocatedEntities &&"Out-of-bounds preallocated entity");
-  PreprocessedEntities[Index] = Entity;
+unsigned PreprocessingRecord::allocateLoadedEntities(unsigned NumEntities) {
+  unsigned Result = LoadedPreprocessedEntities.size();
+  LoadedPreprocessedEntities.resize(LoadedPreprocessedEntities.size() 
+                                    + NumEntities);
+  return Result;
+}
+
+void 
+PreprocessingRecord::setLoadedPreallocatedEntity(unsigned Index, 
+                                                 PreprocessedEntity *Entity) {
+  assert(Index < LoadedPreprocessedEntities.size() &&
+         "Out-of-bounds preallocated entity");
+  LoadedPreprocessedEntities[Index] = Entity;
 }
 
 void PreprocessingRecord::RegisterMacroDefinition(MacroInfo *Macro, 
@@ -121,14 +109,13 @@ MacroDefinition *PreprocessingRecord::findMacroDefinition(const MacroInfo *MI) {
 }
 
 void PreprocessingRecord::MacroExpands(const Token &Id, const MacroInfo* MI) {
-  if (!IncludeNestedMacroInstantiations && Id.getLocation().isMacroID())
+  if (!IncludeNestedMacroExpansions && Id.getLocation().isMacroID())
     return;
 
   if (MacroDefinition *Def = findMacroDefinition(MI))
     PreprocessedEntities.push_back(
-                       new (*this) MacroInstantiation(Id.getIdentifierInfo(),
-                                                      Id.getLocation(),
-                                                      Def));
+                       new (*this) MacroExpansion(Id.getIdentifierInfo(),
+                                                  Id.getLocation(), Def));
 }
 
 void PreprocessingRecord::MacroDefined(const Token &Id,
@@ -153,12 +140,12 @@ void PreprocessingRecord::MacroUndefined(const Token &Id,
 void PreprocessingRecord::InclusionDirective(
     SourceLocation HashLoc,
     const clang::Token &IncludeTok,
-    llvm::StringRef FileName,
+    StringRef FileName,
     bool IsAngled,
     const FileEntry *File,
     clang::SourceLocation EndLoc,
-    llvm::StringRef SearchPath,
-    llvm::StringRef RelativePath) {
+    StringRef SearchPath,
+    StringRef RelativePath) {
   InclusionDirective::InclusionKind Kind = InclusionDirective::Include;
   
   switch (IncludeTok.getIdentifierInfo()->getPPKeywordID()) {
@@ -187,4 +174,11 @@ void PreprocessingRecord::InclusionDirective(
     = new (*this) clang::InclusionDirective(*this, Kind, FileName, !IsAngled, 
                                             File, SourceRange(HashLoc, EndLoc));
   PreprocessedEntities.push_back(ID);
+}
+
+size_t PreprocessingRecord::getTotalMemory() const {
+  return BumpAlloc.getTotalMemory()
+    + llvm::capacity_in_bytes(MacroDefinitions)
+    + llvm::capacity_in_bytes(PreprocessedEntities)
+    + llvm::capacity_in_bytes(LoadedPreprocessedEntities);
 }

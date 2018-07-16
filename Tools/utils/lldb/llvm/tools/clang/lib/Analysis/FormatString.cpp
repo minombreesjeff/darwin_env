@@ -219,6 +219,7 @@ bool ArgTypeResult::matchesType(ASTContext &C, QualType argTy) const {
       argTy = C.getCanonicalType(argTy).getUnqualifiedType();
       if (T == argTy)
         return true;
+      // Check for "compatible types".
       if (const BuiltinType *BT = argTy->getAs<BuiltinType>())
         switch (BT->getKind()) {
           default:
@@ -227,7 +228,7 @@ bool ArgTypeResult::matchesType(ASTContext &C, QualType argTy) const {
           case BuiltinType::SChar:
             return T == C.UnsignedCharTy;
           case BuiltinType::Char_U:
-          case BuiltinType::UChar:
+          case BuiltinType::UChar:                    
             return T == C.SignedCharTy;
           case BuiltinType::Short:
             return T == C.UnsignedShortTy;
@@ -378,7 +379,7 @@ analyze_format_string::LengthModifier::toString() const {
 // Methods on OptionalAmount.
 //===----------------------------------------------------------------------===//
 
-void OptionalAmount::toString(llvm::raw_ostream &os) const {
+void OptionalAmount::toString(raw_ostream &os) const {
   switch (hs) {
   case Invalid:
   case NotSpecified:

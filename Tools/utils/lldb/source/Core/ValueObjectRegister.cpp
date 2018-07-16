@@ -210,7 +210,7 @@ ValueObjectRegisterSet::UpdateValue ()
 ValueObject *
 ValueObjectRegisterSet::CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int32_t synthetic_index)
 {
-    ValueObject *valobj;
+    ValueObject *valobj = NULL;
     if (m_reg_ctx_sp && m_reg_set)
     {
         const uint32_t num_children = GetNumChildren();
@@ -307,7 +307,7 @@ ValueObjectRegister::GetClangType ()
         Process *process = m_reg_ctx_sp->CalculateProcess ();
         if (process)
         {
-            Module *exe_module = process->GetTarget().GetExecutableModule ().get();
+            Module *exe_module = process->GetTarget().GetExecutableModulePointer();
             if (exe_module)
             {
                 m_clang_type = exe_module->GetClangASTContext().GetBuiltinTypeForEncodingAndBitSize (m_reg_info.encoding, 
@@ -338,7 +338,7 @@ ValueObjectRegister::GetClangAST ()
     Process *process = m_reg_ctx_sp->CalculateProcess ();
     if (process)
     {
-        Module *exe_module = process->GetTarget().GetExecutableModule ().get();
+        Module *exe_module = process->GetTarget().GetExecutableModulePointer();
         if (exe_module)
             return exe_module->GetClangASTContext().getASTContext();
     }
@@ -382,6 +382,33 @@ ValueObjectRegister::UpdateValue ()
     
     SetValueIsValid (false);
     m_error.SetErrorToGenericError ();
+    return false;
+}
+
+bool
+ValueObjectRegister::SetValueFromCString (const char *value_str)
+{
+    // The new value will be in the m_data.  Copy that into our register value.
+    Error error = m_reg_value.SetValueFromCString (&m_reg_info, value_str); 
+    if (error.Success())
+    {
+        if (m_reg_ctx_sp->WriteRegister (&m_reg_info, m_reg_value))
+        {
+            SetNeedsUpdate();
+            return true;
+        }
+        else
+            return false;
+    }
+    else
+        return false;
+}
+
+bool
+ValueObjectRegister::ResolveValue (Scalar &scalar)
+{
+    if (UpdateValueIfNeeded(false)) // make sure that you are up to date before returning anything
+        return m_reg_value.GetScalarValue(scalar);
     return false;
 }
 

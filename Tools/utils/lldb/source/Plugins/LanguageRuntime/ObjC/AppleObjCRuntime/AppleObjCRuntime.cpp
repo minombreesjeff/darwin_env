@@ -167,7 +167,7 @@ AppleObjCRuntime::GetPrintForDebuggerAddr()
         SymbolContextList contexts;
         SymbolContext context;
         
-        if((!modules.FindSymbolsWithNameAndType(ConstString ("_NSPrintForDebugger"), eSymbolTypeCode, contexts)) &&
+        if ((!modules.FindSymbolsWithNameAndType(ConstString ("_NSPrintForDebugger"), eSymbolTypeCode, contexts)) &&
            (!modules.FindSymbolsWithNameAndType(ConstString ("_CFPrintForDebugger"), eSymbolTypeCode, contexts)))
             return NULL;
         
@@ -284,8 +284,7 @@ AppleObjCRuntime::ClearExceptionBreakpoints ()
     
     if (m_objc_exception_bp_sp.get())
     {
-        m_process->GetTarget().RemoveBreakpointByID(m_objc_exception_bp_sp->GetID());
-        m_objc_exception_bp_sp.reset();
+        m_objc_exception_bp_sp->SetEnabled (false);
     }
 }
 

@@ -50,6 +50,47 @@ public:
     ExportFunctionDefinitionToInterpreter (StringList &function_def);
 
     bool
+    GenerateTypeScriptFunction (StringList &input, StringList &output);
+    
+    bool
+    GenerateTypeSynthClass (StringList &input, StringList &output);
+    
+    // use this if the function code is just a one-liner script
+    bool
+    GenerateTypeScriptFunction (const char* oneliner, StringList &output);
+    
+    virtual bool
+    GenerateScriptAliasFunction (StringList &input, StringList &output);
+    
+    void*
+    CreateSyntheticScriptedProvider (std::string class_name,
+                                     lldb::ValueObjectSP valobj);
+    
+    virtual uint32_t
+    CalculateNumChildren (void *implementor);
+    
+    virtual void*
+    GetChildAtIndex (void *implementor, uint32_t idx);
+    
+    virtual int
+    GetIndexOfChildWithName (void *implementor, const char* child_name);
+    
+    virtual void
+    UpdateSynthProviderInstance (void* implementor);
+    
+    virtual lldb::SBValue*
+    CastPyObjectToSBValue (void* data);
+    
+    virtual bool
+    RunScriptBasedCommand(const char* impl_function,
+                          const char* args,
+                          lldb::SBStream& stream,
+                          Error& error);
+    
+    bool
+    GenerateFunction(std::string& signature, StringList &input, StringList &output);
+    
+    bool
     GenerateBreakpointCommandCallbackData (StringList &input, StringList &output);
 
     static size_t
@@ -64,6 +105,10 @@ public:
                                 StoppointCallbackContext *context, 
                                 lldb::user_id_t break_id,
                                 lldb::user_id_t break_loc_id);
+    
+    static std::string
+    CallPythonScriptFunction (const char *python_function_name,
+                              lldb::ValueObjectSP valobj);
 
     void
     CollectDataForBreakpointCommandCallback (BreakpointOptions *bp_options,
@@ -88,7 +133,15 @@ public:
 
     static void
     InitializeInterpreter (SWIGInitCallback python_swig_init_callback,
-                           SWIGBreakpointCallbackFunction python_swig_breakpoint_callback);
+                           SWIGBreakpointCallbackFunction python_swig_breakpoint_callback,
+                           SWIGPythonTypeScriptCallbackFunction python_swig_typescript_callback,
+                           SWIGPythonCreateSyntheticProvider python_swig_synthetic_script,
+                           SWIGPythonCalculateNumChildren python_swig_calc_children,
+                           SWIGPythonGetChildAtIndex python_swig_get_child_index,
+                           SWIGPythonGetIndexOfChildWithName python_swig_get_index_child,
+                           SWIGPythonCastPyObjectToSBValue python_swig_cast_to_sbvalue,
+                           SWIGPythonUpdateSynthProviderInstance python_swig_update_provider,
+                           SWIGPythonCallCommand python_swig_call_command);
 
 protected:
 

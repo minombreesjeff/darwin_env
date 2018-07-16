@@ -67,7 +67,8 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
   SmallVector<ISD::OutputArg, 4> Outs;
   GetReturnInfo(Fn->getReturnType(),
                 Fn->getAttributes().getRetAttributes(), Outs, TLI);
-  CanLowerReturn = TLI.CanLowerReturn(Fn->getCallingConv(), Fn->isVarArg(),
+  CanLowerReturn = TLI.CanLowerReturn(Fn->getCallingConv(), *MF,
+				      Fn->isVarArg(),
                                       Outs, Fn->getContext());
 
   // Initialize the mapping of values to registers.  This is only set up for
@@ -77,7 +78,7 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
   for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I != E; ++I)
     if (const AllocaInst *AI = dyn_cast<AllocaInst>(I))
       if (const ConstantInt *CUI = dyn_cast<ConstantInt>(AI->getArraySize())) {
-        const Type *Ty = AI->getAllocatedType();
+        Type *Ty = AI->getAllocatedType();
         uint64_t TySize = TLI.getTargetData()->getTypeAllocSize(Ty);
         unsigned Align =
           std::max((unsigned)TLI.getTargetData()->getPrefTypeAlignment(Ty),
@@ -215,7 +216,7 @@ unsigned FunctionLoweringInfo::CreateReg(EVT VT) {
 /// In the case that the given value has struct or array type, this function
 /// will assign registers for each member or element.
 ///
-unsigned FunctionLoweringInfo::CreateRegs(const Type *Ty) {
+unsigned FunctionLoweringInfo::CreateRegs(Type *Ty) {
   SmallVector<EVT, 4> ValueVTs;
   ComputeValueVTs(TLI, Ty, ValueVTs);
 
@@ -259,7 +260,7 @@ FunctionLoweringInfo::GetLiveOutRegInfo(unsigned Reg, unsigned BitWidth) {
 /// ComputePHILiveOutRegInfo - Compute LiveOutInfo for a PHI's destination
 /// register based on the LiveOutInfo of its operands.
 void FunctionLoweringInfo::ComputePHILiveOutRegInfo(const PHINode *PN) {
-  const Type *Ty = PN->getType();
+  Type *Ty = PN->getType();
   if (!Ty->isIntegerTy() || Ty->isVectorTy())
     return;
 
@@ -321,7 +322,7 @@ void FunctionLoweringInfo::ComputePHILiveOutRegInfo(const PHINode *PN) {
       APInt Zero(BitWidth, 0);
       DestLOI.KnownZero = Zero;
       DestLOI.KnownOne = Zero;
-      return;      
+      return;
     }
 
     if (ConstantInt *CI = dyn_cast<ConstantInt>(V)) {
@@ -353,18 +354,18 @@ void FunctionLoweringInfo::ComputePHILiveOutRegInfo(const PHINode *PN) {
 /// setByValArgumentFrameIndex - Record frame index for the byval
 /// argument. This overrides previous frame index entry for this argument,
 /// if any.
-void FunctionLoweringInfo::setByValArgumentFrameIndex(const Argument *A, 
+void FunctionLoweringInfo::setByValArgumentFrameIndex(const Argument *A,
                                                       int FI) {
   assert (A->hasByValAttr() && "Argument does not have byval attribute!");
   ByValArgFrameIndexMap[A] = FI;
 }
-  
+
 /// getByValArgumentFrameIndex - Get frame index for the byval argument.
 /// If the argument does not have any assigned frame index then 0 is
 /// returned.
 int FunctionLoweringInfo::getByValArgumentFrameIndex(const Argument *A) {
   assert (A->hasByValAttr() && "Argument does not have byval attribute!");
-  DenseMap<const Argument *, int>::iterator I = 
+  DenseMap<const Argument *, int>::iterator I =
     ByValArgFrameIndexMap.find(A);
   if (I != ByValArgFrameIndexMap.end())
     return I->second;

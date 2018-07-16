@@ -54,6 +54,12 @@ public:
         TypeSLEB128     ///< Format output as SLEB128 numbers
     } Type;
 
+    static void
+    DumpHexBytes (Stream *s, 
+                  const void *src, 
+                  size_t src_len, 
+                  uint32_t bytes_per_line,
+                  lldb::addr_t base_addr); // Pass LLDB_INVALID_ADDRESS to not show address at start of line
     //------------------------------------------------------------------
     /// Default constructor.
     ///

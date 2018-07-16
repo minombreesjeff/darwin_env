@@ -31,8 +31,10 @@ add_clang_library(clangStaticAnalyzerCheckers
   IdempotentOperationChecker.cpp
   IteratorsChecker.cpp
   LLVMConventionsChecker.cpp
+  MacOSKeychainAPIChecker.cpp
   MacOSXAPIChecker.cpp
   MallocChecker.cpp
+  MallocOverflowSecurityChecker.cpp
   NSAutoreleasePoolChecker.cpp
   NSErrorChecker.cpp
   NoReturnFunctionChecker.cpp

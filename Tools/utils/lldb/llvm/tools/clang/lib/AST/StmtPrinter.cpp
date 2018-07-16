@@ -28,14 +28,14 @@ using namespace clang;
 
 namespace  {
   class StmtPrinter : public StmtVisitor<StmtPrinter> {
-    llvm::raw_ostream &OS;
+    raw_ostream &OS;
     ASTContext &Context;
     unsigned IndentLevel;
     clang::PrinterHelper* Helper;
     PrintingPolicy Policy;
 
   public:
-    StmtPrinter(llvm::raw_ostream &os, ASTContext &C, PrinterHelper* helper,
+    StmtPrinter(raw_ostream &os, ASTContext &C, PrinterHelper* helper,
                 const PrintingPolicy &Policy,
                 unsigned Indentation = 0)
       : OS(os), Context(C), IndentLevel(Indentation), Helper(helper),
@@ -76,7 +76,7 @@ namespace  {
         OS << "<null expr>";
     }
 
-    llvm::raw_ostream &Indent(int Delta = 0) {
+    raw_ostream &Indent(int Delta = 0) {
       for (int i = 0, e = IndentLevel+Delta; i < e; ++i)
         OS << "  ";
       return OS;
@@ -124,7 +124,7 @@ void StmtPrinter::PrintRawDecl(Decl *D) {
 
 void StmtPrinter::PrintRawDeclStmt(DeclStmt *S) {
   DeclStmt::decl_iterator Begin = S->decl_begin(), End = S->decl_end();
-  llvm::SmallVector<Decl*, 2> Decls;
+  SmallVector<Decl*, 2> Decls;
   for ( ; Begin != End; ++Begin)
     Decls.push_back(*Begin);
 
@@ -449,6 +449,12 @@ void StmtPrinter::VisitObjCAtSynchronizedStmt(ObjCAtSynchronizedStmt *Node) {
   OS << "\n";
 }
 
+void StmtPrinter::VisitObjCAutoreleasePoolStmt(ObjCAutoreleasePoolStmt *Node) {
+  Indent() << "@autoreleasepool";
+  PrintRawCompoundStmt(dyn_cast<CompoundStmt>(Node->getSubStmt()));
+  OS << "\n";
+}
+
 void StmtPrinter::PrintRawCXXCatchStmt(CXXCatchStmt *Node) {
   OS << "catch (";
   if (Decl *ExDecl = Node->getExceptionDecl())
@@ -593,8 +599,14 @@ void StmtPrinter::VisitPredefinedExpr(PredefinedExpr *Node) {
 
 void StmtPrinter::VisitCharacterLiteral(CharacterLiteral *Node) {
   unsigned value = Node->getValue();
-  if (Node->isWide())
-    OS << "L";
+
+  switch (Node->getKind()) {
+  case CharacterLiteral::Ascii: break; // no prefix.
+  case CharacterLiteral::Wide:  OS << 'L'; break;
+  case CharacterLiteral::UTF16: OS << 'u'; break;
+  case CharacterLiteral::UTF32: OS << 'U'; break;
+  }
+
   switch (value) {
   case '\\':
     OS << "'\\\\'";
@@ -666,12 +678,18 @@ void StmtPrinter::VisitImaginaryLiteral(ImaginaryLiteral *Node) {
 }
 
 void StmtPrinter::VisitStringLiteral(StringLiteral *Str) {
-  if (Str->isWide()) OS << 'L';
+  switch (Str->getKind()) {
+  case StringLiteral::Ascii: break; // no prefix.
+  case StringLiteral::Wide:  OS << 'L'; break;
+  case StringLiteral::UTF8:  OS << "u8"; break;
+  case StringLiteral::UTF16: OS << 'u'; break;
+  case StringLiteral::UTF32: OS << 'U'; break;
+  }
   OS << '"';
 
   // FIXME: this doesn't print wstrings right.
-  llvm::StringRef StrData = Str->getString();
-  for (llvm::StringRef::iterator I = StrData.begin(), E = StrData.end(); 
+  StringRef StrData = Str->getString();
+  for (StringRef::iterator I = StrData.begin(), E = StrData.end(); 
                                                              I != E; ++I) {
     unsigned char Char = *I;
 
@@ -1407,6 +1425,15 @@ void StmtPrinter::VisitSubstNonTypeTemplateParmPackExpr(
   OS << Node->getParameterPack()->getNameAsString();
 }
 
+void StmtPrinter::VisitSubstNonTypeTemplateParmExpr(
+                                       SubstNonTypeTemplateParmExpr *Node) {
+  Visit(Node->getReplacement());
+}
+
+void StmtPrinter::VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *Node){
+  PrintExpr(Node->GetTemporaryExpr());
+}
+
 // Obj-C
 
 void StmtPrinter::VisitObjCStringLiteral(ObjCStringLiteral *Node) {
@@ -1464,6 +1491,17 @@ void StmtPrinter::VisitObjCMessageExpr(ObjCMessageExpr *Mess) {
   OS << "]";
 }
 
+void
+StmtPrinter::VisitObjCIndirectCopyRestoreExpr(ObjCIndirectCopyRestoreExpr *E) {
+  PrintExpr(E->getSubExpr());
+}
+
+void
+StmtPrinter::VisitObjCBridgedCastExpr(ObjCBridgedCastExpr *E) {
+  OS << "(" << E->getBridgeKindName() << E->getType().getAsString(Policy) 
+     << ")";
+  PrintExpr(E->getSubExpr());
+}
 
 void StmtPrinter::VisitBlockExpr(BlockExpr *Node) {
   BlockDecl *BD = Node->getBlockDecl();
@@ -1499,6 +1537,13 @@ void StmtPrinter::VisitBlockDeclRefExpr(BlockDeclRefExpr *Node) {
 
 void StmtPrinter::VisitOpaqueValueExpr(OpaqueValueExpr *Node) {}
 
+void StmtPrinter::VisitAsTypeExpr(AsTypeExpr *Node) {
+  OS << "__builtin_astype(";
+  PrintExpr(Node->getSrcExpr());
+  OS << ", " << Node->getType().getAsString();
+  OS << ")";
+}
+
 //===----------------------------------------------------------------------===//
 // Stmt method implementations
 //===----------------------------------------------------------------------===//
@@ -1508,7 +1553,7 @@ void Stmt::dumpPretty(ASTContext& Context) const {
               PrintingPolicy(Context.getLangOptions()));
 }
 
-void Stmt::printPretty(llvm::raw_ostream &OS, ASTContext& Context,
+void Stmt::printPretty(raw_ostream &OS, ASTContext& Context,
                        PrinterHelper* Helper,
                        const PrintingPolicy &Policy,
                        unsigned Indentation) const {

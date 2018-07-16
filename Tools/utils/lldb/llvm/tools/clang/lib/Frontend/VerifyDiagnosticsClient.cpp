@@ -52,6 +52,10 @@ void VerifyDiagnosticsClient::EndSourceFile() {
 
 void VerifyDiagnosticsClient::HandleDiagnostic(Diagnostic::Level DiagLevel,
                                               const DiagnosticInfo &Info) {
+  if (FirstErrorFID.isInvalid() && Info.hasSourceManager()) {
+    const SourceManager &SM = Info.getSourceManager();
+    FirstErrorFID = SM.getFileID(Info.getLocation());
+  }
   // Send the diagnostic to the buffer, we will check it once we reach the end
   // of the source file (or are destructed).
   Buffer->HandleDiagnostic(DiagLevel, Info);
@@ -163,7 +167,7 @@ public:
     : Begin(Begin), End(End), C(Begin), P(Begin), PEnd(NULL) { }
 
   // Return true if string literal is next.
-  bool Next(llvm::StringRef S) {
+  bool Next(StringRef S) {
     P = C;
     PEnd = C + S.size();
     if (PEnd > End)
@@ -189,7 +193,7 @@ public:
 
   // Return true if string literal is found.
   // When true, P marks begin-position of S in content.
-  bool Search(llvm::StringRef S) {
+  bool Search(StringRef S) {
     P = std::search(C, End, S.begin(), S.end());
     PEnd = P + S.size();
     return P != End;
@@ -296,11 +300,11 @@ static void ParseDirective(const char *CommentStart, unsigned CommentLen,
 
     // build directive text; convert \n to newlines
     std::string Text;
-    llvm::StringRef NewlineStr = "\\n";
-    llvm::StringRef Content(ContentBegin, ContentEnd-ContentBegin);
+    StringRef NewlineStr = "\\n";
+    StringRef Content(ContentBegin, ContentEnd-ContentBegin);
     size_t CPos = 0;
     size_t FPos;
-    while ((FPos = Content.find(NewlineStr, CPos)) != llvm::StringRef::npos) {
+    while ((FPos = Content.find(NewlineStr, CPos)) != StringRef::npos) {
       Text += Content.substr(CPos, FPos-CPos);
       Text += '\n';
       CPos = FPos + NewlineStr.size();
@@ -323,14 +327,12 @@ static void ParseDirective(const char *CommentStart, unsigned CommentLen,
 
 /// FindExpectedDiags - Lex the main source file to find all of the
 //   expected errors and warnings.
-static void FindExpectedDiags(Preprocessor &PP, ExpectedData &ED) {
-  // Create a raw lexer to pull all the comments out of the main file.  We don't
-  // want to look in #include'd headers for expected-error strings.
-  SourceManager &SM = PP.getSourceManager();
-  FileID FID = SM.getMainFileID();
-  if (SM.getMainFileID().isInvalid())
+static void FindExpectedDiags(Preprocessor &PP, ExpectedData &ED, FileID FID) {
+  // Create a raw lexer to pull all the comments out of FID.
+  if (FID.isInvalid())
     return;
 
+  SourceManager& SM = PP.getSourceManager();
   // Create a lexer to lex all the tokens of the main file in raw mode.
   const llvm::MemoryBuffer *FromFile = SM.getBuffer(FID);
   Lexer RawLex(FID, FromFile, SM, PP.getLangOptions());
@@ -481,11 +483,21 @@ void VerifyDiagnosticsClient::CheckDiagnostics() {
   // If we have a preprocessor, scan the source for expected diagnostic
   // markers. If not then any diagnostics are unexpected.
   if (CurrentPreprocessor) {
-    FindExpectedDiags(*CurrentPreprocessor, ED);
+    SourceManager &SM = CurrentPreprocessor->getSourceManager();
+    // Extract expected-error strings from main file.
+    FindExpectedDiags(*CurrentPreprocessor, ED, SM.getMainFileID());
+    // Only check for expectations in other diagnostic locations
+    // if they are not the main file (via ID or FileEntry) - the main
+    // file has already been looked at, and its expectations must not
+    // be added twice.
+    if (!FirstErrorFID.isInvalid() && FirstErrorFID != SM.getMainFileID()
+        && (!SM.getFileEntryForID(FirstErrorFID)
+            || (SM.getFileEntryForID(FirstErrorFID) !=
+                SM.getFileEntryForID(SM.getMainFileID()))))
+      FindExpectedDiags(*CurrentPreprocessor, ED, FirstErrorFID);
 
     // Check that the expected diagnostics occurred.
-    NumErrors += CheckResults(Diags, CurrentPreprocessor->getSourceManager(),
-                              *Buffer, ED);
+    NumErrors += CheckResults(Diags, SM, *Buffer, ED);
   } else {
     NumErrors += (PrintProblem(Diags, 0,
                                Buffer->err_begin(), Buffer->err_end(),

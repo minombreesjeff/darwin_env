@@ -16,12 +16,18 @@ class ObjCDynamicValueTestCase(TestBase):
     @python_api_test
     def test_get_dynamic_objc_vals_with_dsym(self):
         """Test fetching ObjC dynamic values."""
+        if self.getArchitecture() == 'i386':
+            # rdar://problem/9946499
+            self.skipTest("Dynamic types for ObjC V1 runtime not implemented")
         self.buildDsym()
         self.do_get_dynamic_vals()
 
     @python_api_test
     def test_get_objc_dynamic_vals_with_dwarf(self):
         """Test fetching ObjC dynamic values."""
+        if self.getArchitecture() == 'i386':
+            # rdar://problem/9946499
+            self.skipTest("Dynamic types for ObjC V1 runtime not implemented")
         self.buildDwarf()
         self.do_get_dynamic_vals()
 
@@ -93,6 +99,14 @@ class ObjCDynamicValueTestCase(TestBase):
 
         self.expect('frame var -d run-target myObserver->_source', 'frame var finds its way into a child member',
             patterns = ['\(SourceDerived \*\)'])
+        
+        # check that our ObjC GetISA() does a good job at hiding KVO swizzled classes
+        
+        self.expect('frame var -d run-target myObserver->_source -T', 'the KVO-ed class is hidden',
+                    substrs = ['dynamic type: SourceDerived'])
+
+        self.expect('frame var -d run-target myObserver->_source -T', 'the KVO-ed class is hidden', matching = False,
+                    substrs = ['dynamic type: NSKVONotify'])
 
         # This test is not entirely related to the main thrust of this test case, but since we're here,
         # try stepping into setProperty, and make sure we get into the version in Source:

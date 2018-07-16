@@ -22,7 +22,12 @@ class TargetAPITestCase(TestBase):
         self.find_global_variables('a.out')
 
     #rdar://problem/9700873
-    @unittest2.skip("segmentation fault -- skipping")
+    # Find global variable value fails for dwarf if inferior not started
+    # (Was CrashTracer: [USER] 1 crash in Python at _lldb.so: lldb_private::MemoryCache::Read + 94)
+    #
+    # It does not segfaults now.  But for dwarf, the variable value is None if
+    # the inferior process does not exist yet.  The radar has been updated.
+    #@unittest232.skip("segmentation fault -- skipping")
     @python_api_test
     def test_find_global_variables_with_dwarf(self):
         """Exercise SBTarget.FindGlobalVariables() API."""
@@ -30,6 +35,23 @@ class TargetAPITestCase(TestBase):
         self.buildDwarf(dictionary=d)
         self.setTearDownCleanup(dictionary=d)
         self.find_global_variables('b.out')
+
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    @python_api_test
+    def test_find_functions_with_dsym(self):
+        """Exercise SBTaget.FindFunctions() API."""
+        d = {'EXE': 'a.out'}
+        self.buildDsym(dictionary=d)
+        self.setTearDownCleanup(dictionary=d)
+        self.find_functions('a.out')
+
+    @python_api_test
+    def test_find_functions_with_dwarf(self):
+        """Exercise SBTarget.FindFunctions() API."""
+        d = {'EXE': 'b.out'}
+        self.buildDwarf(dictionary=d)
+        self.setTearDownCleanup(dictionary=d)
+        self.find_functions('b.out')
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -85,9 +107,25 @@ class TargetAPITestCase(TestBase):
         target = self.dbg.CreateTarget(exe)
         self.assertTrue(target, VALID_TARGET)
 
+        #rdar://problem/9700873
+        # Find global variable value fails for dwarf if inferior not started
+        # (Was CrashTracer: [USER] 1 crash in Python at _lldb.so: lldb_private::MemoryCache::Read + 94)
+        #
+        # Remove the lines to create a breakpoint and to start the inferior
+        # which are workarounds for the dwarf case.
+
+        breakpoint = target.BreakpointCreateByLocation('main.c', self.line1)
+        self.assertTrue(breakpoint, VALID_BREAKPOINT)
+
+        # Now launch the process, and do not stop at entry point.
+        process = target.LaunchSimple(None, None, os.getcwd())
+        self.assertTrue(process, PROCESS_IS_VALID)
+
         value_list = target.FindGlobalVariables('my_global_var_of_char_type', 3)
         self.assertTrue(value_list.GetSize() == 1)
         my_global_var = value_list.GetValueAtIndex(0)
+        self.DebugSBValue(my_global_var)
+        self.assertTrue(my_global_var)
         self.expect(my_global_var.GetName(), exe=False,
             startstr = "my_global_var_of_char_type")
         self.expect(my_global_var.GetTypeName(), exe=False,
@@ -102,6 +140,22 @@ class TargetAPITestCase(TestBase):
                 self.assertTrue(value_list.GetSize() == 1)
                 self.assertTrue(value_list.GetValueAtIndex(0).GetValue() == "'X'")
                 break
+
+    def find_functions(self, exe_name):
+        """Exercise SBTaget.FindFunctions() API."""
+        exe = os.path.join(os.getcwd(), exe_name)
+
+        # Create a target by the debugger.
+        target = self.dbg.CreateTarget(exe)
+        self.assertTrue(target, VALID_TARGET)
+
+        list = lldb.SBSymbolContextList()
+        num = target.FindFunctions('c', lldb.eFunctionNameTypeAuto, False, list)
+        self.assertTrue(num == 1 and list.GetSize() == 1)
+
+        for sc in list:
+            self.assertTrue(sc.GetModule().GetFileSpec().GetFilename() == exe_name)
+            self.assertTrue(sc.GetSymbol().GetName() == 'c')                
 
     def get_description(self):
         """Exercise SBTaget.GetDescription() API."""

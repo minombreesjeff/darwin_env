@@ -16,16 +16,8 @@
 
 namespace lldb {
 
-#ifdef SWIG
-%feature("docstring",
-         "Represents a generic function, which can be inlined or not."
-         ) SBFunction;
-#endif
 class SBFunction
 {
-#ifdef SWIG
-    %feature("autodoc", "1");
-#endif
 public:
 
     SBFunction ();
@@ -85,6 +77,7 @@ protected:
 #endif
 
 private:
+    friend class SBAddress;
     friend class SBFrame;
     friend class SBSymbolContext;
 

@@ -175,8 +175,7 @@ bool PruneEH::SimplifyFunction(Function *F) {
       if (II->doesNotThrow()) {
         SmallVector<Value*, 8> Args(II->op_begin(), II->op_end() - 3);
         // Insert a call instruction before the invoke.
-        CallInst *Call = CallInst::Create(II->getCalledValue(),
-                                          Args.begin(), Args.end(), "", II);
+        CallInst *Call = CallInst::Create(II->getCalledValue(), Args, "", II);
         Call->takeName(II);
         Call->setCallingConv(II->getCallingConv());
         Call->setAttributes(II->getAttributes());
@@ -239,7 +238,7 @@ void PruneEH::DeleteBasicBlock(BasicBlock *BB) {
   for (BasicBlock::iterator I = BB->end(), E = BB->begin(); I != E; ) {
     --I;
     if (CallInst *CI = dyn_cast<CallInst>(I)) {
-      if (!isa<DbgInfoIntrinsic>(I))
+      if (!isa<IntrinsicInst>(I))
         CGN->removeCallEdgeFor(CI);
     } else if (InvokeInst *II = dyn_cast<InvokeInst>(I))
       CGN->removeCallEdgeFor(II);

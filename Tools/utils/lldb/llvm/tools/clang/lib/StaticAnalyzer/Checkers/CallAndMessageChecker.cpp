@@ -105,7 +105,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
 
     class FindUninitializedField {
     public:
-      llvm::SmallVector<const FieldDecl *, 10> FieldChain;
+      SmallVector<const FieldDecl *, 10> FieldChain;
     private:
       ASTContext &C;
       StoreManager &StoreMgr;
@@ -161,7 +161,7 @@ bool CallAndMessageChecker::PreVisitProcessArg(CheckerContext &C,
         else {
           os << " (e.g., via the field chain: '";
           bool first = true;
-          for (llvm::SmallVectorImpl<const FieldDecl *>::iterator
+          for (SmallVectorImpl<const FieldDecl *>::iterator
                DI = F.FieldChain.begin(), DE = F.FieldChain.end(); DI!=DE;++DI){
             if (first)
               first = false;
@@ -282,7 +282,7 @@ void CallAndMessageChecker::emitNilReceiverBug(CheckerContext &C,
 
 static bool supportsNilWithFloatRet(const llvm::Triple &triple) {
   return triple.getVendor() == llvm::Triple::Apple &&
-         (triple.getDarwinMajorNumber() >= 9 || 
+         (!triple.isMacOSXVersionLT(10,5) ||
           triple.getArch() == llvm::Triple::arm || 
           triple.getArch() == llvm::Triple::thumb);
 }

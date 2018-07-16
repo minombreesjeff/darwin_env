@@ -62,9 +62,9 @@ ValueObjectMemory::ValueObjectMemory (ExecutionContextScope *exe_scope,
 {
     // Do not attempt to construct one of these objects with no variable!
     assert (m_type_sp.get() != NULL);
-    SetName (name);
+    SetName (ConstString(name));
     m_value.SetContext(Value::eContextTypeLLDBType, m_type_sp.get());
-    lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTarget());
+    lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTargetSP().get());
     if (load_address != LLDB_INVALID_ADDRESS)
     {
         m_value.SetValueType(Value::eValueTypeLoadAddress);
@@ -99,9 +99,9 @@ ValueObjectMemory::ValueObjectMemory (ExecutionContextScope *exe_scope,
     assert (m_clang_type.GetASTContext());
     assert (m_clang_type.GetOpaqueQualType());
     
-    SetName (name);
+    SetName (ConstString(name));
     m_value.SetContext(Value::eContextTypeClangType, m_clang_type.GetOpaqueQualType());
-    lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTarget());
+    lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTargetSP().get());
     if (load_address != LLDB_INVALID_ADDRESS)
     {
         m_value.SetValueType(Value::eValueTypeLoadAddress);
@@ -205,7 +205,7 @@ ValueObjectMemory::UpdateValue ()
         case Value::eValueTypeScalar:
             // The variable value is in the Scalar value inside the m_value.
             // We can point our m_data right to it.
-            m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0);
+            m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule());
             break;
 
         case Value::eValueTypeFileAddress:
@@ -247,7 +247,7 @@ ValueObjectMemory::UpdateValue ()
                 else
                     value.SetContext(Value::eContextTypeClangType, m_clang_type.GetOpaqueQualType());
 
-                m_error = value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0);
+                m_error = value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0, GetModule());
             }
             break;
         }
@@ -266,4 +266,12 @@ ValueObjectMemory::IsInScope ()
     // we are in scope?
     return true;
 }
+
+
+Module *
+ValueObjectMemory::GetModule()
+{
+    return m_address.GetModule();
+}
+
 

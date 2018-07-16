@@ -40,7 +40,8 @@ ValueObjectDynamicValue::ValueObjectDynamicValue (ValueObject &parent, lldb::Dyn
     m_type_sp(),
     m_use_dynamic (use_dynamic)
 {
-    SetName (parent.GetName().AsCString());
+    m_last_format_mgr_dynamic = use_dynamic;
+    SetName (parent.GetName());
 }
 
 ValueObjectDynamicValue::~ValueObjectDynamicValue()
@@ -60,7 +61,7 @@ ValueObjectDynamicValue::GetClangType ()
 ConstString
 ValueObjectDynamicValue::GetTypeName()
 {
-    const bool success = UpdateValueIfNeeded();
+    const bool success = UpdateValueIfNeeded(false);
     if (success && m_type_sp)
         return ClangASTType::GetConstTypeName (GetClangType());
     else
@@ -70,7 +71,7 @@ ValueObjectDynamicValue::GetTypeName()
 uint32_t
 ValueObjectDynamicValue::CalculateNumChildren()
 {
-    const bool success = UpdateValueIfNeeded();
+    const bool success = UpdateValueIfNeeded(false);
     if (success && m_type_sp)
         return ClangASTContext::GetNumChildren (GetClangAST (), GetClangType(), true);
     else
@@ -90,7 +91,7 @@ ValueObjectDynamicValue::GetClangAST ()
 size_t
 ValueObjectDynamicValue::GetByteSize()
 {
-    const bool success = UpdateValueIfNeeded();
+    const bool success = UpdateValueIfNeeded(false);
     if (success && m_type_sp)
         return m_value.GetValueByteSize(GetClangAST(), NULL);
     else
@@ -109,7 +110,7 @@ ValueObjectDynamicValue::UpdateValue ()
     SetValueIsValid (false);
     m_error.Clear();
 
-    if (!m_parent->UpdateValueIfNeeded())
+    if (!m_parent->UpdateValueIfNeeded(false))
     {
         // The dynamic value failed to get an error, pass the error along
         if (m_error.Success() && m_parent->GetError().Fail())
@@ -134,7 +135,7 @@ ValueObjectDynamicValue::UpdateValue ()
     }
     
     // First make sure our Type and/or Address haven't changed:
-    Process *process = m_update_point.GetProcess();
+    Process *process = m_update_point.GetProcessSP().get();
     if (!process)
         return false;
     
@@ -159,7 +160,7 @@ ValueObjectDynamicValue::UpdateValue ()
         {
             LanguageRuntime *objc_runtime = process->GetLanguageRuntime (lldb::eLanguageTypeObjC);
             if (objc_runtime)
-                found_dynamic_type = cpp_runtime->GetDynamicTypeAndAddress (*m_parent, m_use_dynamic, class_type_or_name, dynamic_address);
+                found_dynamic_type = objc_runtime->GetDynamicTypeAndAddress (*m_parent, m_use_dynamic, class_type_or_name, dynamic_address);
         }
     }
     
@@ -177,7 +178,7 @@ ValueObjectDynamicValue::UpdateValue ()
         if (m_type_sp)
             SetValueDidChange(true);
         m_value = m_parent->GetValue();
-        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0);
+        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule());
         return m_error.Success();
     }
     
@@ -201,7 +202,7 @@ ValueObjectDynamicValue::UpdateValue ()
             
         // We've moved, so we should be fine...
         m_address = dynamic_address;
-        lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTarget());
+        lldb::addr_t load_address = m_address.GetLoadAddress(m_update_point.GetTargetSP().get());
         m_value.GetScalar() = load_address;
     }
     
@@ -225,7 +226,7 @@ ValueObjectDynamicValue::UpdateValue ()
     {
         // The variable value is in the Scalar value inside the m_value.
         // We can point our m_data right to it.
-        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0);
+        m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule());
         if (m_error.Success())
         {
             if (ClangASTContext::IsAggregateType (GetClangType()))

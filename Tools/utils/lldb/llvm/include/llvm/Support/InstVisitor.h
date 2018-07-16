@@ -163,12 +163,16 @@ public:
   RetTy visitIndirectBrInst(IndirectBrInst &I)      { DELEGATE(TerminatorInst);}
   RetTy visitInvokeInst(InvokeInst &I)              { DELEGATE(TerminatorInst);}
   RetTy visitUnwindInst(UnwindInst &I)              { DELEGATE(TerminatorInst);}
+  RetTy visitResumeInst(ResumeInst &I)              { DELEGATE(TerminatorInst);}
   RetTy visitUnreachableInst(UnreachableInst &I)    { DELEGATE(TerminatorInst);}
   RetTy visitICmpInst(ICmpInst &I)                  { DELEGATE(CmpInst);}
   RetTy visitFCmpInst(FCmpInst &I)                  { DELEGATE(CmpInst);}
   RetTy visitAllocaInst(AllocaInst &I)              { DELEGATE(Instruction); }
   RetTy visitLoadInst(LoadInst     &I)              { DELEGATE(Instruction); }
   RetTy visitStoreInst(StoreInst   &I)              { DELEGATE(Instruction); }
+  RetTy visitAtomicCmpXchgInst(AtomicCmpXchgInst &I){ DELEGATE(Instruction); }
+  RetTy visitAtomicRMWInst(AtomicRMWInst &I)        { DELEGATE(Instruction); }
+  RetTy visitFenceInst(FenceInst   &I)              { DELEGATE(Instruction); }
   RetTy visitGetElementPtrInst(GetElementPtrInst &I){ DELEGATE(Instruction); }
   RetTy visitPHINode(PHINode       &I)              { DELEGATE(Instruction); }
   RetTy visitTruncInst(TruncInst &I)                { DELEGATE(CastInst); }

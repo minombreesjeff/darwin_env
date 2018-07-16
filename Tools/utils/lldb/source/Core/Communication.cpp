@@ -64,6 +64,7 @@ Communication::~Communication()
 void
 Communication::Clear()
 {
+    SetReadThreadBytesReceivedCallback (NULL, NULL);
     StopReadThread (NULL);
     Disconnect (NULL);
 }
@@ -295,7 +296,7 @@ Communication::AppendBytesToCache (const uint8_t * bytes, size_t len, bool broad
         // If the user registered a callback, then call it and do not broadcast
         m_callback (m_callback_baton, bytes, len);
     }
-    else
+    else if (bytes != NULL && len > 0)
     {
         Mutex::Locker locker(m_bytes_mutex);
         m_bytes.append ((const char *)bytes, len);
@@ -368,7 +369,10 @@ Communication::ReadThread (void *p)
         case eConnectionStatusError:            // Check GetError() for details
         case eConnectionStatusTimedOut:         // Request timed out
             if (log)
-                error.LogIfError(log.get(), "%p Communication::ReadFromConnection () => status = %i", p, status);
+                error.LogIfError(log.get(), 
+                                 "%p Communication::ReadFromConnection () => status = %s", 
+                                 p, 
+                                 Communication::ConnectionStatusAsCString (status));
             break;
         }
     }

@@ -1,0 +1,1000 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html;
+      charset=ISO-8859-1">
+    <link href="style.css" rel="stylesheet" type="text/css">
+    <title>LLDB Homepage</title>
+  </head>
+  <body>
+    <div class="www_title"> The <strong>LLDB</strong> Debugger </div>
+    <div id="container">
+      <div id="content">
+        <!--#include virtual="sidebar.incl"-->
+        <div id="middle">
+          <div class="post">
+            <h1 class="postheader">Variable display</h1>
+            <div class="postcontent">
+            
+              <p>LLDB was recently modified to allow users to define custom
+                formatting options for the variables display.</p>
+            
+            <p>Usually, when you type <code>frame variable</code> or
+                run some <code>expression</code> LLDB will
+                automatically choose a format to display your results on
+                a per-type basis, as in the following example:</p>
+            
+            <p> <code> <b>(lldb)</b> frame variable -T sp<br>
+                  (SimpleWithPointers) sp = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(int *) x = 0x0000000100100120<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(float *) y =
+                  0x0000000100100130<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(char *) z =
+                  0x0000000100100140 "6"<br>
+                  }<br>
+                </code> </p>
+            
+            <p>However, in certain cases, you may want to associate a
+                different format to the display for certain datatypes.
+                To do so, you need to give hints to the debugger as to
+                how datatypes should be displayed.<br>
+                A new <b>type</b> command has been introduced in LLDB
+                which allows to do just that.<br>
+              </p>
+            
+            <p>Using it you can obtain a format like this one for <code>sp</code>,
+                instead of the default shown above: </p>
+            
+            <p> <code> <b>(lldb)</b> frame variable sp<br>
+                  (SimpleWithPointers) sp =
+                  (x=0x0000000100100120 -&gt; -1, y=0x0000000100100130
+                  -&gt; -2, z="3")<br>
+                </code> </p>
+            
+            <p>There are two kinds of printing options: <span
+                  style="font-style: italic;">summary</span> and <span
+                  style="font-style: italic;">format</span>. While a
+                detailed description of both will be given below, one
+                can briefly say that a summary is mainly used for
+                aggregate types, while a format is attached to primitive
+                types.</p>
+            
+            <p>To reflect this, the the <b>type</b> command has two
+                subcommands:<br>
+              </p>
+            
+            <p><code>type format</code></p>
+            <p><code>type summary</code></p>
+            
+            <p>These commands are meant to bind printing options to
+                types. When variables are printed, LLDB will first check
+                if custom printing options have been associated to a
+                variable's type and, if so, use them instead of picking
+                the default choices.<br>
+              </p>
+              
+              <p>The two commands <code>type format</code> and <code>type
+                  summary</code> each have four subcommands:<br>
+              </p>
+              <p><code>add</code>: associates a new printing option to one
+              or more types</p>
+              <p><code>delete</code>: deletes an existing association</p>
+              <p><code>list</code>: provides a listing of all
+                associations</p>
+              <p><code>clear</code>: deletes all associations</p>
+            </div>
+          </div>
+          
+          <div class="post">
+            <h1 class="postheader">type format</h1>
+            <div class="postcontent">
+          
+          <p>Type formats enable you to quickly override the default
+                format for displaying primitive types (the usual basic
+                C/C++/ObjC types: int, float, char, ...).</p>
+              
+            <p>If for some reason you want all <code>int</code>
+              variables in your program to print out as hex, you can add
+              a format to the <code>int</code> type.<br></p>
+          
+          <p>This is done by typing
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type format add -f hex int
+                        </td>
+                <table>
+          at the LLDB command line.</p>
+                  
+              <p>The <code>-f</code> option accepts a <a
+                  href="#formatstable">format name</a>, and a list of
+                types to which you want the new format applied.</p>
+                
+              <p>A frequent scenario is that your program has a <code>typedef</code>
+                for a numeric type that you know represents something
+                that must be printed in a certain way. Again, you can
+                add a format just to that typedef by using <code>type
+                  format add</code> with the name alias.</p>
+                  
+              <p>But things can quickly get hierarchical. Let's say you
+                have a situation like the following:</p>
+                
+              <p><code>typedef int A;<br>
+                  typedef A B;<br>
+                  typedef B C;<br>
+                  typedef C D;<br>
+                </code></p>
+                
+              <p>and you want to show all <code>A</code>'s as hex, all
+                <code>C'</code>s as pointers and leave the defaults
+                untouched for other types.</p>
+                
+              <p>If you simply type <br>
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type format add -f hex A<br>
+                            <b>(lldb)</b> type format add -f pointer C
+                        </td>
+                <table>
+              <br>           
+              values of type <code>B</code> will be shown as hex
+                and values of type <code>D</code> as pointers.</p>
+                
+              <p>This is because by default LLDB <i>cascades</i>
+                formats through typedef chains. In order to avoid that
+                you can use the option <code>-C no</code> to prevent
+                cascading, thus making the two commands required to
+                achieve your goal:<br>
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type format add -C no -f hex A<br>
+                            <b>(lldb)</b> type format add -C no -f pointer C
+                        </td>
+                <table>
+                  
+              <p>Two additional options that you will want to look at
+                are <code>-p</code> and <code>-r</code>. These two
+                options prevent LLDB from applying a format for type <code>T</code>
+                to values of type <code>T*</code> and <code>T&amp;</code>
+                respectively.</p>
+                
+              <p> <code> <b>(lldb)</b> type format add -f float32[]
+                  int<br>
+                  <b>(lldb)</b> fr var pointer *pointer -T<br>
+                  (int *) pointer = {1.46991e-39 1.4013e-45}<br>
+                  (int) *pointer = {1.53302e-42}<br>
+                  <b>(lldb)</b> type format add -f float32[] int -p<br>
+                  <b>(lldb)</b> fr var pointer *pointer -T<br>
+                  (int *) pointer = 0x0000000100100180<br>
+                  (int) *pointer = {1.53302e-42}<br>
+                </code> </p>
+                
+              <p>As the previous example highlights, you will most
+                probably want to use <code>-p</code> for your formats.</p>
+
+              <p>If you need to delete a custom format simply type <code>type
+                  format delete</code> followed by the name of the type
+                to which the format applies. To delete ALL formats, use
+                <code>type format clear</code>. To see all the formats
+                defined, type <code>type format list</code>.<br>
+              </p>
+              
+              <p>If all you need to do, however, is display one variable
+                in a custom format, while leaving the others of the same
+                type untouched, you can simply type:<br>
+              <br>
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> frame variable counter -f hex
+                        </td>
+                <table>
+              
+              <p>This has the effect of displaying the value of <code>counter</code>
+                as an hexadecimal number, and will keep showing it this
+                way until you either pick a different format or till you
+                let your program run again.</p>
+                
+              <p>Finally, this is a list of formatting options available
+                out of
+                which you can pick:</p><a name="formatstable"></a>
+              <table border="1">
+                <tbody>
+                  <tr valign="top">
+                    <td width="23%"><b>Format name</b></td>
+                    <td><b>Abbreviation</b></td>
+                    <td><b>Description</b></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>default</b></td>
+                    <td><br>
+                    </td>
+                    <td>the default LLDB algorithm is used to pick a
+                      format</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>boolean</b></td>
+                    <td>B</td>
+                    <td>show this as a true/false boolean, using the
+                      customary rule that 0 is false and everything else
+                      is true</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>binary</b></td>
+                    <td>b</td>
+                    <td>show this as a sequence of bits</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>bytes</b></td>
+                    <td>y</td>
+                    <td>show the bytes one after the other<br>
+                      e.g. <code>(int) s.x = 07 00 00 00</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>bytes with ASCII</b></td>
+                    <td>Y</td>
+                    <td>show the bytes, but try to print them as ASCII
+                      characters<br>
+                      e.g. <code>(int *) c.sp.x = 50 f8 bf 5f ff 7f 00
+                        00 P.._....</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>character</b></td>
+                    <td>c</td>
+                    <td>show the bytes printed as ASCII characters<br>
+                      e.g. <code>(int *) c.sp.x =
+                        P\xf8\xbf_\xff\x7f\0\0</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>printable character</b></td>
+                    <td>C</td>
+                    <td>show the bytes printed as printable ASCII
+                      characters<br>
+                      e.g. <code>(int *) c.sp.x = P.._....</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>complex float</b></td>
+                    <td>F</td>
+                    <td>interpret this value as the real and imaginary
+                      part of a complex floating-point number<br>
+                      e.g. <code>(int *) c.sp.x = 2.76658e+19 +
+                        4.59163e-41i</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>c-string</b></td>
+                    <td>s</td>
+                    <td>show this as a 0-terminated C string</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>signed decimal</b></td>
+                    <td>i</td>
+                    <td>show this as a signed integer number (this does
+                      not perform a cast, it simply shows the bytes as
+                      signed integer)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>enumeration</b></td>
+                    <td>E</td>
+                    <td>show this as an enumeration, printing the
+                      value's name if available or the integer value
+                      otherwise<br>
+                      e.g. <code>(enum enumType) val_type = eValue2</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>hex</b></td>
+                    <td>x</td>
+                    <td>show this as in hexadecimal notation (this does
+                      not perform a cast, it simply shows the bytes as
+                      hex)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>float</b></td>
+                    <td>f</td>
+                    <td>show this as a floating-point number (this does
+                      not perform a cast, it simply interprets the bytes
+                      as an IEEE754 floating-point value)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>octal</b></td>
+                    <td>o</td>
+                    <td>show this in octal notation</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>OSType</b></td>
+                    <td>O</td>
+                    <td>show this as a MacOS OSType<br>
+                      e.g. <code>(float) *c.sp.y = '\n\x1f\xd7\n'</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>unicode16</b></td>
+                    <td>U</td>
+                    <td>show this as UTF-16 characters<br>
+                      e.g. <code>(float) *c.sp.y = 0xd70a 0x411f</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>unicode32</b></td>
+                    <td><br>
+                    </td>
+                    <td>show this as UTF-32 characters<br>
+                      e.g. <code>(float) *c.sp.y = 0x411fd70a</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>unsigned decimal</b></td>
+                    <td>u</td>
+                    <td>show this as an unsigned integer number (this
+                      does not perform a cast, it simply shows the bytes
+                      as unsigned integer)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>pointer</b></td>
+                    <td>p</td>
+                    <td>show this as a native pointer (unless this is
+                      really a pointer, the resulting address will
+                      probably be invalid)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>char[]</b></td>
+                    <td><br>
+                    </td>
+                    <td>show this as an array of characters<br>
+                      e.g. <code>(char) *c.sp.z = {X}</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>int8_t[], uint8_t[]<br>
+                        int16_t[], uint16_t[]<br>
+                        int32_t[], uint32_t[]<br>
+                        int64_t[], uint64_t[]<br>
+                        uint128_t[]</b></td>
+                    <td><br>
+                    </td>
+                    <td>show this as an array of the corresponding
+                      integer type<br>
+                      e.g.<br>
+                      <code>(int) sarray[0].x = {1 0 0 0}</code><br>
+                      <code>(int) sarray[0].x = {0x00000001}</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>float32[], float64[]</b></td>
+                    <td><br>
+                    </td>
+                    <td>show this as an array of the corresponding
+                      floating-point type<br>
+                      e.g. <code>(int *) pointer = {1.46991e-39
+                        1.4013e-45}</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>complex integer</b></td>
+                    <td>I</td>
+                    <td>interpret this value as the real and imaginary
+                      part of a complex integer number<br>
+                      e.g. <code>(int *) pointer = 1048960 + 1i</code></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>character array</b></td>
+                    <td>a</td>
+                    <td>show this as a character array<br>
+                      e.g. <code>(int *) pointer =
+                        \x80\x01\x10\0\x01\0\0\0</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <div class="post">
+            <h1 class="postheader">type summary</h1>
+            <div class="postcontent">
+              <p>Type formats work by showing a different kind of display for
+              the value of a variable. However, they only work for basic types.
+              When you want to display a class or struct in a custom format, you
+              cannot do that using formats.</p>
+              <p>A different feature, type summaries, works by extracting
+                information from classes, structures, ... (<i>aggregate types</i>)
+                and arranging it in a user-defined format, as in the following example:</p>
+              <p> <i>before adding a summary...</i><br>
+                <code> <b>(lldb)</b> fr var -T one<br>
+                  (i_am_cool) one = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(int) integer = 3<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(float) floating = 3.14159<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(char) character = 'E'<br>
+                  }<br>
+                </code> <br>
+                <i>after adding a summary...</i><br>
+                <code> <b>(lldb)</b> fr var one<br>
+                  (i_am_cool) one = int = 3, float = 3.14159, char = 69<br>
+                </code> </p>
+                
+            <p>There are two ways to use type summaries: the first one is to bind a <i>
+            summary string</i> to the datatype; the second is to bind a Python script to the
+            datatype. Both options are enabled by the <code>type summary add</code>
+                command.</p>
+              <p>In the example, the command we type was:</p>
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "int = ${var.integer}, float = ${var.floating}, char = ${var.character%u}" i_am_cool
+                        </td>
+                <table>
+                
+            <p>Initially, we will focus on summary strings, and then describe the Python binding
+            mechanism.</p>
+            
+            </div>
+          </div>
+          <div class="post">
+            <h1 class="postheader">Summary Strings</h1>
+            <div class="postcontent">
+              <p>While you may already have guessed a lot about the format of 
+                summary strings from the above example, a detailed description
+                of their format follows.</p>
+                
+                <p>Summary strings can contain plain text, control characters and
+                special symbols that have access to information about
+                the current object and the overall program state.</p>
+              <p>Normal characters are any text that doesn't contain a <code><b>'{'</b></code>,
+                <code><b>'}'</b></code>, <code><b>'$'</b></code>, or <code><b>'\'</b></code>
+                character.</p>
+              <p>Variable names are found in between a <code><b>"${"</b></code>
+                prefix, and end with a <code><b>"}"</b></code> suffix.
+                In other words, a variable looks like <code>"<b>${frame.pc}</b>"</code>.</p>
+              <p>Basically, all the variables described in <a
+                  href="formats.html">Frame and Thread Formatting</a>
+                are accepted. Also acceptable are the control characters
+                and scoping features described in that page.
+                Additionally, <code>${var</code> and <code>${*var</code>
+                become acceptable symbols in this scenario.</p>
+              <p>The simplest thing you can do is grab a member variable
+                of a class or structure by typing its <i>expression
+                  path</i>. In the previous example, the expression path
+                for the floating member is simply <code>.floating</code>.
+                Thus, to ask the summary string to display <code>floating</code>
+                you would type <code>${var.floating}</code> (<code>${var</code>
+                is a placeholder token replaced with whatever variable
+                is being displayed).</p>
+              <p>If you have code like the following: <br>
+                <code> struct A {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;int x;<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;int y;<br>
+                  };<br>
+                  struct B {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;A x;<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;A y;<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;int z;<br>
+                  };<br>
+                </code> the expression path for the <code>y</code>
+                member of the <code>x</code> member of an object of
+                type <code>B</code> would be <code>.x.y</code> and you
+                would type <code>${var.x.y}</code> to display it in a
+                summary string for type <code>B</code>. </p>
+              <p>As you could be using a summary string for both
+                displaying objects of type <code>T</code> or <code>T*</code>
+                (unless <code>-p</code> is used to prevent this), the
+                expression paths do not differentiate between <code>.</code>
+                and <code>-&gt;</code>, and the above expression path <code>.x.y</code>
+                would be just as good if you were displaying a <code>B*</code>,
+                or even if the actual definition of <code>B</code>
+                were: <code><br>
+                  struct B {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;A *x;<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;A y;<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;int z;<br>
+                  };<br>
+                </code> </p>
+              <p>This is unlike the behaviour of <code>frame variable</code>
+                which, on the contrary, will enforce the distinction. As
+                hinted above, the rationale for this choice is that
+                waiving this distinction enables one to write a summary
+                string once for type <code>T</code> and use it for both
+                <code>T</code> and <code>T*</code> instances. As a
+                summary string is mostly about extracting nested
+                members' information, a pointer to an object is just as
+                good as the object itself for the purpose.</p>
+              <p>Of course, you can have multiple entries in one summary
+                string, as shown in the previous example.</p>
+              <p>As you can see, the last expression path also contains
+                a <code>%u</code> symbol which is nowhere to be found
+                in the actual member variable name. The symbol is
+                reminding of a <code>printf()</code> format symbol, and
+                in fact it has a similar effect. If you add a % sign
+                followed by any one format name or abbreviation from the
+                above table after an expression path, the resulting
+                object will be displyed using the chosen format.</p>
+                
+            <p>You can also use some other special format markers, not available
+            for type formatters, but which carry a special meaning when used in this
+            context:</p>
+            
+            <table border="1">
+                <tbody>
+                  <tr valign="top">
+                    <td width="23%"><b>Symbol</b></td>
+                    <td><b>Description</b></td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>%S</b></td>
+                    <td>Use this object's summary (the default for aggregate types)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>%V</b></td>
+                    <td>Use this object's value (the default for non-aggregate types)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>%@</b></td>
+                    <td>Use a language-runtime specific description (for C++ this does nothing,
+                    for Objective-C it calls the NSPrintForDebugger API)</td>
+                  </tr>
+                  <tr valign="top">
+                    <td><b>%L</b></td>
+                    <td>Use this object's location (memory address, register name, ...)</td>
+                  </tr>
+				</tbody>
+			</table>
+                
+              <p>As previously said, pointers and values are treated the
+                same way when getting to their members in an expression
+                path. However, if your expression path leads to a
+                pointer, LLDB will not automatically dereference it. In
+                order to obtain The deferenced value for a pointer, your
+                expression path must start with <code>${*var</code>
+                instead of <code>${var</code>. Because there is no need
+                to dereference pointers along your way, the
+                dereferencing symbol only applies to the result of the
+                whole expression path traversing. <br>
+                e.g. <code> <br>
+                  <b>(lldb)</b> fr var -T c<br>
+                  (Couple) c = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(SimpleWithPointers) sp = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(int *) x = 0x00000001001000b0<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(float *) y = 0x00000001001000c0<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(char *) z = 0x00000001001000d0 "X"<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;(Simple *) s = 0x00000001001000e0<br>
+                  }<br>
+                  </code><br>
+                  
+                  If one types the following commands:
+                  
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "int = ${*var.sp.x},
+                  float = ${*var.sp.y}, char = ${*var.sp.z%u}, Simple =
+                  ${*var.s}" Couple<br>
+                        	<b>(lldb)</b> type summary add -c -p Simple<br>
+                        </td>
+                <table><br>
+
+				the output becomes: <br><code>
+                  
+                  <b>(lldb)</b> fr var c<br>
+                  (Couple) c = int = 9, float = 9.99, char = 88, Simple
+                  = (x=9, y=9.99, z='X')<br>
+                </code> </p>
+              <p>Option <code>-c</code> to <code>type summary add</code>
+                tells LLDB not to look for a summary string, but instead
+                to just print a listing of all the object's children on
+                one line, as shown in the summary for object Simple.</p>
+                <p> We are using the <code>-p</code> flag here to show that
+                aggregate types can be dereferenced as well as basic types.
+                The following command sequence would work just as well and
+                produce the same output:
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "int = ${*var.sp.x},
+                  float = ${*var.sp.y}, char = ${*var.sp.z%u}, Simple =
+                  ${var.s}" Couple<br>
+                        	<b>(lldb)</b> type summary add -c Simple<br>
+                        </td>
+                <table><br>
+            </div>
+          </div>
+          <div class="post">
+            <h1 class="postheader">Bitfields and array syntax</h1>
+            <div class="postcontent">
+              <p>Sometimes, a basic type's value actually represents
+                several different values packed together in a bitfield.
+                With the classical view, there is no way to look at
+                them. Hexadecimal display can help, but if the bits
+                actually span byte boundaries, the help is limited.
+                Binary view would show it all without ambiguity, but is
+                often too detailed and hard to read for real-life
+                scenarios. To cope with the issue, LLDB supports native
+                bitfield formatting in summary strings. If your
+                expression paths leads to a so-called <i>scalar type</i>
+                (the usual int, float, char, double, short, long, long
+                long, double, long double and unsigned variants), you
+                can ask LLDB to only grab some bits out of the value and
+                display them in any format you like. The syntax is
+                similar to that used for arrays, just you can also give
+                a pair of indices separated by a <code>-</code>. <br>
+                e.g. <br>
+                <code> <b>(lldb)</b> fr var float_point<br>
+                  (float) float_point = -3.14159<br> </code>
+                    <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "Sign: ${var[31]%B}
+                  Exponent: ${var[30-23]%x} Mantissa: ${var[0-22]%u}"
+                  float
+                        </td>
+                <table><br>
+				
+				<code> 
+                  <b>(lldb)</b> fr var float_point<br>
+                  (float) float_point = -3.14159 Sign: true Exponent:
+                  0x00000080 Mantissa: 4788184<br>
+                </code> In this example, LLDB shows the internal
+                representation of a <code>float</code> variable by
+                extracting bitfields out of a float object.</p>
+                
+                <p> As far as the syntax is concerned, it looks
+                much like the normal C array syntax, but also allows you
+                to specify 2 indices, separated by a - symbol (a range).
+                Ranges can be given either with the lower or the higher index
+                first, and range extremes are always included in the bits extracted. </p>
+                
+              <p>LLDB also allows to use a similar syntax to display
+                array members inside a summary string. For instance, you
+                may want to display all arrays of a given type using a
+                more compact notation than the default, and then just
+                delve into individual array members that prove
+                interesting to your debugging task. You can tell
+                LLDB to format arrays in special ways, possibly
+                independent of the way the array members' datatype is formatted. <br>
+                e.g. <br>
+                <code> <b>(lldb)</b> fr var sarray<br>
+                  (Simple [3]) sarray = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;[0] = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x = 1<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;y = 2<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;z = '\x03'<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;[1] = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x = 4<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;y = 5<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;z = '\x06'<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;[2] = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x = 7<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;y = 8<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;z = '\t'<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+                  }<br></code>
+                  
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "${var[].x}" "Simple
+                  [3]"
+                        </td>
+                <table><br>
+                  
+                  <code>
+                  <b>(lldb)</b> fr var sarray<br>
+                  (Simple [3]) sarray = [1,4,7]<br></code></p>
+                  
+                <p>The <code>[]</code> symbol amounts to: <i>if <code>var</code>
+                  is an array and I knows its size, apply this summary
+                  string to every element of the array</i>. Here, we are
+                asking LLDB to display <code>.x</code> for every
+                element of the array, and in fact this is what happens.
+                If you find some of those integers anomalous, you can
+                then inspect that one item in greater detail, without
+                the array format getting in the way: <br>
+                <code> <b>(lldb)</b> fr var sarray[1]<br>
+                  (Simple) sarray[1] = {<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;x = 4<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;y = 5<br>
+                  &nbsp;&nbsp;&nbsp;&nbsp;z = '\x06'<br>
+                  }<br>
+                </code> </p>
+              <p>You can also ask LLDB to only print a subset of the
+                array range by using the same syntax used to extract bit
+                for bitfields:
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "${var[1-2].x}" "Simple
+                  [3]"
+                        </td>
+                <table><br>
+                  <code>
+                  <b>(lldb)</b> fr var sarray<br>
+                  (Simple [3]) sarray = [4,7]<br></code></p>
+
+              <p>The same logic works if you are printing a pointer
+                instead of an array, however in this latter case, the empty
+                square brackets operator <code>[]</code>
+                cannot be used and you need to give exact range limits.</p>
+                
+            <p>In general, LLDB needs the square brackets operator <code>[]</code> in
+            order to handle arrays and pointers correctly, and for pointers it also
+            needs a range. However, a few special cases are defined to make your life easier:
+            <ul>
+				<li>you can print a 0-terminated string (<i>C-string</i>) using the %s format,
+				omitting square brackets, as in:
+				<table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "${var%s}" "char *"
+                        </td>
+                <table>
+                
+                This works for <code>char*</code> and <code>char[]</code> objects, and uses the
+                <code>\0</code> terminator
+                when possible to terminate the string, instead of relying on array length.
+                
+				</li>            </ul>
+            <ul>
+
+				<li>anyone of the array formats (<code>int8_t[]</code>,
+				<code>float32{}</code>, ...), and the <code>y</code>, <code>Y</code>
+				and <code>a</code> formats
+				work to print an array of a non-aggregate
+				type, even if square brackets are omitted.
+				<table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "${var%int32_t[]}" "int [10]"
+                        </td>
+                <table>
+                
+            </ul>
+                This feature, however, is not enabled for pointers because there is no
+                way for LLDB to detect the end of the pointed data.
+                <br>
+                This also does not work for other formats (e.g. <code>boolean</code>), and you must
+                specify the square brackets operator to get the expected output.
+            </p>
+        </div>
+          </div>
+          
+        <div class="post">
+            <h1 class="postheader">Python scripting</h1>
+            <div class="postcontent">
+            
+            <p>Most of the times, summary strings prove good enough for the job of summarizing
+            the contents of a variable. However, as soon as you need to do more than picking
+            some values and rearranging them for display, summary strings stop being an
+            effective tool. This is because summary strings lack the power to actually perform
+            some computation on the value of variables.</p>
+            <p>To solve this issue, you can bind some Python scripting code as a summary for
+            your datatype, and that script has the ability to both extract children variables
+            as the summary strings do and to perform active computation on the extracted
+            values. As a small example, let's say we have a Rectangle class:</p>
+            
+            <code>
+class Rectangle<br/>
+{<br/>
+private:<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;int height;<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;int width;<br/>
+public:<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;Rectangle() : height(3), width(5) {}<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;Rectangle(int H) : height(H), width(H*2-1) {}<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;Rectangle(int H, int W) : height(H), width(W) {}<br/>
+    
+    &nbsp;&nbsp;&nbsp;&nbsp;int GetHeight() { return height; }<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;int GetWidth() { return width; }<br/>
+    
+};<br/>
+</code>
+            
+            <p>Summary strings are effective to reduce the screen real estate used by
+            the default viewing mode, but are not effective if we want to display the
+            area, perimeter and length of diagonal of <code>Rectangle</code> objects</p>
+            
+            <p>To obtain this, we can simply attach a small Python script to the <code>Rectangle</code>
+            class, as shown in this example:</p>
+            
+            	<table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -P Rectangle<br/>
+                            Enter your Python command(s). Type 'DONE' to end.<br/>
+def function (valobj,dict):<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;height_val = valobj.GetChildMemberWithName('height')<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;width_val = valobj.GetChildMemberWithName('width')<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;height_str = height_val.GetValue()<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;width_str = width_val.GetValue()<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;height = int(height_str)<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;width = int(width_str)<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;area = height*width<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;perimeter = 2*height + 2*width<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;diag = sqrt(height*height+width*width)<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;return 'Area: ' + str(area) + ', Perimeter: ' + str(perimeter) + ', Diagonal: ' + str(diag)<br/>
+     &nbsp;&nbsp;&nbsp;&nbsp;DONE<br/>
+<b>(lldb)</b> script<br/>
+Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.<br/>
+>>> from math import sqrt<br/>
+>>> quit()<br/>
+<b>(lldb)</b> frame variable<br/>
+(Rectangle) r1 = Area: 20, Perimeter: 18, Diagonal: 6.40312423743<br/>
+(Rectangle) r2 = Area: 72, Perimeter: 36, Diagonal: 13.416407865<br/>
+(Rectangle) r3 = Area: 16, Perimeter: 16, Diagonal: 5.65685424949<br/>
+                        </td>
+                </table>
+            
+            <p>In this scenario, you need to enter the interactive interpreter to import the
+            function sqrt() from the math library. As the example shows, everything you enter
+            into the interactive interpreter is saved for you to use it in scripts. This way
+            you can define your own utility functions and use them in your summary scripts if
+            necessary.</p>
+            
+            <p>In order to write effective summary scripts, you need to know the LLDB public
+            API, which is the way Python code can access the LLDB object model. For further
+            details on the API you should look at <a href="scripting.html">this page</a>, or at
+            the LLDB <a href="docs.html">doxygen documentation</a> when it becomes available.</p>
+            
+            <p>As a brief introduction, your script is encapsulated into a function that is
+            passed two parameters: <code>valobj</code> and <code>dict</code>.</p>
+            
+            <p><code>dict</code> is an internal support parameter used by LLDB and you should
+            not use it.<br/><code>valobj</code> is the object encapsulating the actual
+            variable being displayed, and its type is SBValue. The most important thing you can
+            do with an SBValue is retrieve its children objects, by calling
+            <code>GetChildMemberWithName()</code>, passing it the child's name as a string, or ask
+            it for its value, by calling <code>GetValue()</code>, which returns a Python string.
+            </p>
+            
+            <p>If you need to delve into several levels of hierarchy, as you can do with summary
+            strings, you must use the method <code>GetValueForExpressionPath()</code>, passing it
+            an expression path just like those you could use for summary strings. However, if you need
+            to access array slices, you cannot do that (yet) via this method call, and you must
+            use <code>GetChildMemberWithName()</code> querying it for the array items one by one.
+            
+            <p>Other than interactively typing a Python script there are two other ways for you
+            to input a Python script as a summary:
+            
+            <ul>
+            <li> using the -s option to <code>type summary add </code> and typing the script
+            code as an option argument; as in:            </ul>
+
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -s "height = 
+                            int(valobj.GetChildMemberWithName('height').GetValue());width = 
+                            int(valobj.GetChildMemberWithName('width').GetValue());
+                            return 'Area: ' + str(height*width)" Rectangle<br/>
+                        </td>
+                </table>
+            <ul>
+            <li> using the -F option to <code>type summary add </code> and giving the name of a 
+            Python function with the correct prototype. Most probably, you will define (or have
+            already defined) the function in the interactive interpreter, or somehow
+            loaded it from a file.
+            </ul>
+            
+            </p>
+            
+            </div>
+        </div>
+
+        <div class="post">
+            <h1 class="postheader">Regular expression typenames</h1>
+            <div class="postcontent">
+              <p>As you noticed, in order to associate the custom
+                summary string to the array types, one must give the
+                array size as part of the typename. This can long become
+                tiresome when using arrays of different sizes, <code>Simple
+
+                  [3]</code>, <code>Simple [9]</code>, <code>Simple
+                  [12]</code>, ...</p>
+              <p>If you use the <code>-x</code> option, type names are
+                treated as regular expressions instead of type names.
+                This would let you rephrase the above example
+                for arrays of type <code>Simple [3]</code> as: <br>
+                
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "${var[].x}"
+                  -x "Simple \[[0-9]+\]"
+                        </td>
+                <table>
+                
+                <code> 
+                  <b>(lldb)</b> fr var sarray<br>
+                  (Simple [3]) sarray = [1,4,7]<br>
+                </code> The above scenario works for <code>Simple [3]</code>
+                as well as for any other array of <code>Simple</code>
+                objects. </p>
+              <p>While this feature is mostly useful for arrays, you
+                could also use regular expressions to catch other type
+                sets grouped by name. However, as regular expression
+                matching is slower than normal name matching, LLDB will
+                first try to match by name in any way it can, and only
+                when this fails, will it resort to regular expression
+                matching. Thus, if your type has a base class with a
+                cascading summary, this will be preferred over any
+                regular expression match for your type itself.</p>
+            </div>
+          </div>
+          
+        <div class="post">
+            <h1 class="postheader">Named summaries</h1>
+            <div class="postcontent">
+            <p>For a given datatype, there may be different meaningful summary
+            representations. However, currently, only one summary can be associated
+            to a given datatype. If you need to temporarily override the association
+            for a variable, without changing the summary string bound to the datatype,
+            you can use named summaries.</p>
+            
+            <p>Named summaries work by attaching a name to a summary string when creating
+            it. Then, when there is a need to attach the summary string to a variable, the
+            <code>frame variable</code> command, supports a <code>--summary</code> option
+            that tells LLDB to use the named summary given instead of the default one.</p>
+            
+                <table class="stats" width="620" cellspacing="0">
+                        <td class="content">
+                            <b>(lldb)</b> type summary add -f "x=${var.integer}" --name NamedSummary
+                        </td>
+                <table>
+                <code> <b>(lldb)</b> fr var one<br>
+                  (i_am_cool) one = int = 3, float = 3.14159, char = 69<br>
+                  <b>(lldb)</b> fr var one --summary NamedSummary<br>
+                  (i_am_cool) one = x=3<br>
+                </code> </p>
+
+			<p>When defining a named summmary, binding it to one or more types becomes optional.
+			Even if you bind the named summary to a type, and later change the summary string
+			for that type, the named summary will not be changed by that. You can delete
+			named summaries by using the <code>type summary delete</code> command, as if the
+			summary name was the datatype that the summary is applied to</p>
+			
+			<p>A summary attached to a variable using the </code>--summary</code> option,
+			has the same semantics that a custom format attached using the <code>-f</code>
+			option has: it stays attached till you attach a new one, or till you let
+			your program run again.</p>
+
+            </div>
+        </div>
+
+          
+          <div class="post">
+            <h1 class="postheader">Finding summaries 101</h1>
+            <div class="postcontent">
+              <p>While the rules for finding an appropriate format for a
+                type are relatively simple (just go through typedef
+                hierarchies), summaries follow a more complicated
+                process in finding the right summary string for a
+                variable. Namely, what happens is:</p>
+              <ul>
+                <li>If there is a summary for the type of the variable,
+                  use it</li>
+                <li>If this object is a pointer, and there is a summary
+                  for the pointee type that does not skip pointers, use
+                  it</li>
+                <li>If this object is a reference, and there is a
+                  summary for the pointee type that does not skip
+                  references, use it</li>
+                <li>If this object is an Objective-C class with a parent
+                  class, look at the parent class (and parent of parent,
+                  ...)</li>
+                <li>If this object is a C++ class with base classes,
+                  look at base classes (and bases of bases, ...)</li>
+                <li>If this object is a C++ class with virtual base
+                  classes, look at the virtual base classes (and bases
+                  of bases, ...)</li>
+                <li>If this object's type is a typedef, go through
+                  typedef hierarchy (LLDB might not be able to do this if
+                  the compiler has not emitted enough information. If the
+                  required information to traverse typedef hierarchies is
+                  missing, type cascading will not work. The
+                  <a href="http://clang.llvm.org/">clang compiler</a>,
+                  part of the LLVM project, emits the correct debugging
+                  information for LLDB to cascade)</li>
+                <li>If everything has failed, repeat the above search,
+                  looking for regular expressions instead of exact
+                  matches</li>
+              </ul>
+            </div>
+          </div>
+          <div class="post">
+            <h1 class="postheader">TODOs</h1>
+            <div class="postcontent">
+              <ul>
+                <li>There's no way to do multiple dereferencing, and you
+                  need to be careful what the dereferencing operation is
+                  binding to in complicated scenarios</li>
+                <li><code>type format add</code> does not support the <code>-x</code>
+                  option</li>
+                <strike><li>Object location cannot be printed in the summary
+                  string</li></strike>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

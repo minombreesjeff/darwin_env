@@ -39,6 +39,13 @@ public:
         eBroadcastBitAsynchronousOutputData = (1 << 3),
         eBroadcastBitAsynchronousErrorData  = (1 << 4)
     };
+    
+    enum ChildrenTruncatedWarningStatus // tristate boolean to manage children truncation warning
+    {
+        eNoTruncation = 0, // never truncated
+        eUnwarnedTruncation = 1, // truncated but did not notify
+        eWarnedTruncation = 2 // truncated and notified
+    };
 
     void
     SourceInitFile (bool in_cwd, 
@@ -195,8 +202,11 @@ public:
     // you want returned.  Otherwise set max_return_elements to -1.
     // If you want to start some way into the match list, then set match_start_point to the desired start
     // point.
-    // Returns the total number of completions, or -1 if the completion character should be inserted, or
+    // Returns:
+    // -1 if the completion character should be inserted
+    // -2 if the entire command line should be deleted and replaced with matches.GetStringAtIndex(0)
     // INT_MAX if the number of matches is > max_return_elements, but it is expensive to compute.
+    // Otherwise, returns the number of matches.
     //
     // FIXME: Only max_return_elements == -1 is supported at present.
 
@@ -238,6 +248,18 @@ public:
 
     void
     OutputFormattedHelpText (Stream &stream,
+                             const char *command_word,
+                             const char *separator,
+                             const char *help_text,
+                             uint32_t max_word_len);
+    
+    // this mimics OutputFormattedHelpText but it does perform a much simpler
+    // formatting, basically ensuring line alignment. This is only good if you have
+    // some complicated layout for your help text and want as little help as reasonable
+    // in properly displaying it. Most of the times, you simply want to type some text
+    // and have it printed in a reasonable way on screen. If so, use OutputFormattedHelpText 
+    void
+    OutputHelpText (Stream &stream,
                              const char *command_word,
                              const char *separator,
                              const char *help_text,
@@ -324,8 +346,24 @@ public:
         m_skip_lldbinit_files = skip_lldbinit_files;
     }
 
+    void
+    SkipAppInitFiles (bool skip_app_init_files)
+    {
+        m_skip_app_init_files = m_skip_lldbinit_files;
+    }
+
     bool
     GetSynchronous ();
+    
+    void
+    DumpHistory (Stream &stream, uint32_t count) const;
+
+    void
+    DumpHistory (Stream &stream, uint32_t start, uint32_t end) const;
+    
+    const char *
+    FindHistoryString (const char *input_str) const;
+
 
 #ifndef SWIG
     void
@@ -360,6 +398,31 @@ public:
     
     void
     SetBatchCommandMode (bool value) { m_batch_command_mode = value; }
+    
+    void
+    ChildrenTruncated()
+    {
+        if (m_truncation_warning == eNoTruncation)
+            m_truncation_warning = eUnwarnedTruncation;
+    }
+    
+    bool
+    TruncationWarningNecessary()
+    {
+        return (m_truncation_warning == eUnwarnedTruncation);
+    }
+    
+    void
+    TruncationWarningGiven()
+    {
+        m_truncation_warning = eWarnedTruncation;
+    }
+    
+    const char *
+    TruncationWarningText()
+    {
+        return "*** Some of your variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to %s or raise the limit by changing the target.max-children-count setting.\n";
+    }
 
 protected:
     friend class Debugger;
@@ -376,6 +439,7 @@ private:
     ExecutionContext m_exe_ctx;                 // The current execution context to use when handling commands
     bool m_synchronous_execution;
     bool m_skip_lldbinit_files;
+    bool m_skip_app_init_files;
     CommandObject::CommandMap m_command_dict;   // Stores basic built-in commands (they cannot be deleted, removed or overwritten).
     CommandObject::CommandMap m_alias_dict;     // Stores user aliases/abbreviations for commands
     CommandObject::CommandMap m_user_dict;      // Stores user-defined commands
@@ -384,7 +448,9 @@ private:
     std::string m_repeat_command;               // Stores the command that will be executed for an empty command string.
     std::auto_ptr<ScriptInterpreter> m_script_interpreter_ap;
     char m_comment_char;
+    char m_repeat_char;
     bool m_batch_command_mode;
+    ChildrenTruncatedWarningStatus m_truncation_warning;    // Whether we truncated children and whether the user has been told
 };
 
 

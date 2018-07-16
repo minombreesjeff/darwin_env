@@ -211,8 +211,7 @@ class FoundationTestCase(TestBase):
         self.assertTrue(break1, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        error = lldb.SBError()
-        process = target.Launch (self.dbg.GetListener(), None, None, os.ctermid(), os.ctermid(), os.ctermid(), None, 0, False, error)
+        process = target.LaunchSimple(None, None, os.getcwd())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 
@@ -241,9 +240,9 @@ class FoundationTestCase(TestBase):
         my_str_var = my_var.GetChildMemberWithName("str")
         self.assertTrue(my_str_var, "Found a str ivar in my")
 
-        str_value = int(str_var.GetValue(cur_frame), 0)
+        str_value = int(str_var.GetValue(), 0)
 
-        my_str_value = int(my_str_var.GetValue(cur_frame), 0)
+        my_str_value = int(my_str_var.GetValue(), 0)
 
         self.assertTrue(str_value == my_str_value, "Got the correct value for my->str")
         

@@ -14,125 +14,110 @@
 
 namespace lldb {
 
-class SBTypeMember;
+class SBTypeList;    
 
 class SBType
 {
 public:
 
-    SBType (void *ast = NULL, void *clang_type = NULL);
-    
     SBType (const SBType &rhs);
 
     ~SBType ();
 
 #ifndef SWIG
-    const SBType &
-    operator =(const SBType &rhs);
+    const lldb::SBType &
+    operator = (const lldb::SBType &rhs);
+    
+    bool
+    operator == (const lldb::SBType &rhs) const;
+    
+    bool
+    operator != (const lldb::SBType &rhs) const;
+    
+    lldb_private::TypeImpl &
+    ref ();
+    
+    const lldb_private::TypeImpl &
+    ref () const;
+    
 #endif
+    
+    bool
+    IsValid() const;
+    
+    size_t
+    GetByteSize() const;
 
     bool
-    IsValid();
-
-    const char *
-    GetName();
-
-    uint64_t
-    GetByteSize();
-
-#ifndef SWIG
-    lldb::Encoding
-    GetEncoding (uint32_t &count);
-#endif
-
-    uint64_t
-    GetNumberChildren (bool omit_empty_base_classes);
-
+    IsPointerType() const;
+    
     bool
-    GetChildAtIndex (bool omit_empty_base_classes, uint32_t idx, SBTypeMember &member);
-
-    uint32_t
-    GetChildIndexForName (bool omit_empty_base_classes, const char *name);
-
-    bool
-    IsAPointerType ();
-
+    IsReferenceType() const;
+    
     SBType
-    GetPointeeType ();
-
+    GetPointerType() const;
+    
+    SBType
+    GetPointeeType() const;
+    
+    SBType
+    GetReferenceType() const;
+    
+    SBType
+    GetDereferencedType() const;
+    
+    SBType
+    GetBasicType(lldb::BasicType type) const;
+        
+    const char*
+    GetName();
+    
+    // DEPRECATED: but needed for Xcode right now
     static bool
-    IsPointerType (void *opaque_type);
-
-    bool
-    GetDescription (lldb::SBStream &description);
-
+    IsPointerType (void * clang_type);
+        
 protected:
-    void *m_ast;
-    void *m_type;
+    lldb::TypeImplSP m_opaque_sp;
+    
+    friend class SBModule;
+    friend class SBTarget;
+    friend class SBValue;
+    friend class SBTypeList;
+        
+    SBType (const lldb_private::ClangASTType &);
+    SBType (const lldb::TypeSP &);
+    SBType (const lldb::TypeImplSP &);
+    SBType();
+    
 };
-
-class SBTypeMember
+    
+class SBTypeList
 {
 public:
-
-    SBTypeMember ();
+    SBTypeList();
     
-    SBTypeMember (const SBTypeMember &rhs);
-
-#ifndef SWIG
-    const SBTypeMember&
-    operator =(const SBTypeMember &rhs);
-#endif
-
-    ~SBTypeMember ();
-
+    SBTypeList(const SBTypeList& rhs);
+    
+    SBTypeList&
+    operator = (const SBTypeList& rhs);
+    
     bool
-    IsBaseClass ();
-
-    bool
-    IsValid ();
+    IsValid() const;
 
     void
-    Clear();
-
-    bool
-    IsBitfield ();
+    Append (const SBType& type);
     
-    size_t
-    GetBitfieldWidth ();
+    SBType
+    GetTypeAtIndex(int index) const;
     
-    size_t
-    GetBitfieldOffset ();
-
-    size_t
-    GetOffset ();
-
-    const char *
-    GetName ();
-
-    SBType
-    GetType();
-
-    SBType
-    GetParentType();
-
-    void
-    SetName (const char *name);
-
-protected:
-    friend class SBType;
-        
-    void *m_ast;
-    void *m_parent_type;
-    void *m_member_type;
-    char *m_member_name;
-    int32_t m_offset;
-    uint32_t m_bit_size;
-    uint32_t m_bit_offset;
-    bool m_is_base_class;
-    bool m_is_deref_of_paremt;
+    int
+    GetSize() const;
+    
+    ~SBTypeList();
+    
+private:
+    std::auto_ptr<lldb_private::TypeListImpl> m_opaque_ap;
 };
-
 
 } // namespace lldb
 

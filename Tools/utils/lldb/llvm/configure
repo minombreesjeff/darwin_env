@@ -9,7 +9,7 @@
 # This configure script is free software; the Free Software Foundation
 # gives unlimited permission to copy, distribute and modify it.
 #
-# Copyright (c) 2003-2010 University of Illinois at Urbana-Champaign.
+# Copyright (c) 2003-2011 University of Illinois at Urbana-Champaign.
 ## --------------------- ##
 ## M4sh Initialization.  ##
 ## --------------------- ##
@@ -707,6 +707,7 @@ CLANGXXPATH
 ENABLE_BUILT_CLANG
 OPTIMIZE_OPTION
 EXTRA_OPTIONS
+EXTRA_LD_OPTIONS
 BINUTILS_INCDIR
 CXX
 CXXFLAGS
@@ -1454,6 +1455,7 @@ Optional Packages:
   --with-optimize-option  Select the compiler options to use for optimized
                           builds
   --with-extra-options    Specify additional options to compile LLVM with
+  --with-extra-ld-options Specify additional options to link LLVM with
   --with-ocaml-libdir     Specify install location for ocaml bindings (default
                           is stdlib)
   --with-clang-resource-dir
@@ -1469,6 +1471,8 @@ Optional Packages:
                           64 bit multilib directory.
   --with-binutils-include Specify path to binutils/include/ containing
                           plugin-api.h file for gold plugin.
+  --with-bug-report-url   Specify the URL where bug reports should be
+                          submitted (default=http://llvm.org)
   --with-tclinclude       directory where tcl headers are
   --with-llvmcc=<name>    Choose the LLVM capable compiler to use (llvm-gcc,
                           clang, or none; default=check)
@@ -1559,7 +1563,7 @@ Copyright (C) 1992, 1993, 1994, 1995, 1996, 1998, 1999, 2000, 2001,
 This configure script is free software; the Free Software Foundation
 gives unlimited permission to copy, distribute and modify it.
 
-Copyright (c) 2003-2010 University of Illinois at Urbana-Champaign.
+Copyright (c) 2003-2011 University of Illinois at Urbana-Champaign.
 _ACEOF
   exit
 fi
@@ -1921,7 +1925,7 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 
-LLVM_COPYRIGHT="Copyright (c) 2003-2010 University of Illinois at Urbana-Champaign."
+LLVM_COPYRIGHT="Copyright (c) 2003-2011 University of Illinois at Urbana-Champaign."
 
 
 
@@ -2335,6 +2339,8 @@ else
     llvm_cv_target_os_type="MingW" ;;
   *-*-haiku*)
     llvm_cv_target_os_type="Haiku" ;;
+  *-*-rtems*)
+    llvm_cv_target_os_type="RTEMS" ;;
   *-unknown-eabi*)
     llvm_cv_target_os_type="Freestanding" ;;
   *)
@@ -4859,7 +4865,7 @@ else
  ;;
     ARM)         TARGET_HAS_JIT=1
  ;;
-    Mips)        TARGET_HAS_JIT=0
+    Mips)        TARGET_HAS_JIT=1
  ;;
     XCore)       TARGET_HAS_JIT=0
  ;;
@@ -5116,6 +5122,7 @@ _ACEOF
 
     LLVM_NATIVE_TARGET="LLVMInitialize${LLVM_NATIVE_ARCH}Target"
     LLVM_NATIVE_TARGETINFO="LLVMInitialize${LLVM_NATIVE_ARCH}TargetInfo"
+    LLVM_NATIVE_TARGETMC="LLVMInitialize${LLVM_NATIVE_ARCH}TargetMC"
     LLVM_NATIVE_ASMPRINTER="LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter"
     if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/AsmParser/Makefile ; then
       LLVM_NATIVE_ASMPARSER="LLVMInitialize${LLVM_NATIVE_ARCH}AsmParser"
@@ -5128,6 +5135,11 @@ _ACEOF
 
 cat >>confdefs.h <<_ACEOF
 #define LLVM_NATIVE_TARGETINFO $LLVM_NATIVE_TARGETINFO
+_ACEOF
+
+
+cat >>confdefs.h <<_ACEOF
+#define LLVM_NATIVE_TARGETMC $LLVM_NATIVE_TARGETMC
 _ACEOF
 
 
@@ -5346,6 +5358,21 @@ esac
 EXTRA_OPTIONS=$EXTRA_OPTIONS
 
 
+
+# Check whether --with-extra-ld-options was given.
+if test "${with_extra_ld_options+set}" = set; then
+  withval=$with_extra_ld_options;
+else
+  withval=default
+fi
+
+case "$withval" in
+  default) EXTRA_LD_OPTIONS= ;;
+  *) EXTRA_LD_OPTIONS=$withval ;;
+esac
+EXTRA_LD_OPTIONS=$EXTRA_LD_OPTIONS
+
+
 # Check whether --enable-bindings was given.
 if test "${enable_bindings+set}" = set; then
   enableval=$enable_bindings;
@@ -5494,6 +5521,20 @@ echo "$as_me: error: Invalid path to directory containing plugin-api.h." >&2;}
    { (exit 1); exit 1; }; };
   fi
 fi
+
+
+# Check whether --with-bug-report-url was given.
+if test "${with_bug_report_url+set}" = set; then
+  withval=$with_bug_report_url;
+else
+  withval="http://llvm.org"
+fi
+
+
+cat >>confdefs.h <<_ACEOF
+#define BUG_REPORT_URL "$withval"
+_ACEOF
+
 
 # Check whether --enable-libffi was given.
 if test "${enable_libffi+set}" = set; then
@@ -11571,7 +11612,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 11574 "configure"
+#line 11621 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -22245,7 +22286,7 @@ echo "${ECHO_T}$llvm_cv_llvmgcc_dragonegg" >&6; }
 
 if test "$llvm_cv_llvmgcc_dragonegg" = "yes" ; then
   LLVMCC_EMITIR_FLAG="-fplugin-arg-dragonegg-emit-ir"
-  LLVMCC_DISABLEOPT_FLAGS="-fplugin-arg-dragonegg-disable-llvm-optzns"
+  LLVMCC_DISABLEOPT_FLAGS="-fplugin-arg-dragonegg-llvm-ir-optimize=0"
 else
   LLVMCC_EMITIR_FLAG="-emit-llvm"
   LLVMCC_DISABLEOPT_FLAGS="-mllvm -disable-llvm-optzns"
@@ -23427,6 +23468,7 @@ CLANGXXPATH!$CLANGXXPATH$ac_delim
 ENABLE_BUILT_CLANG!$ENABLE_BUILT_CLANG$ac_delim
 OPTIMIZE_OPTION!$OPTIMIZE_OPTION$ac_delim
 EXTRA_OPTIONS!$EXTRA_OPTIONS$ac_delim
+EXTRA_LD_OPTIONS!$EXTRA_LD_OPTIONS$ac_delim
 BINUTILS_INCDIR!$BINUTILS_INCDIR$ac_delim
 CXX!$CXX$ac_delim
 CXXFLAGS!$CXXFLAGS$ac_delim
@@ -23515,7 +23557,6 @@ LLVM_MANDIR!$LLVM_MANDIR$ac_delim
 LLVM_CONFIGTIME!$LLVM_CONFIGTIME$ac_delim
 BINDINGS_TO_BUILD!$BINDINGS_TO_BUILD$ac_delim
 ALL_BINDINGS!$ALL_BINDINGS$ac_delim
-OCAML_LIBDIR!$OCAML_LIBDIR$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -23557,6 +23598,7 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+OCAML_LIBDIR!$OCAML_LIBDIR$ac_delim
 ENABLE_VISIBILITY_INLINES_HIDDEN!$ENABLE_VISIBILITY_INLINES_HIDDEN$ac_delim
 RPATH!$RPATH$ac_delim
 RDYNAMIC!$RDYNAMIC$ac_delim
@@ -23564,7 +23606,7 @@ LIBOBJS!$LIBOBJS$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 5; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 6; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5

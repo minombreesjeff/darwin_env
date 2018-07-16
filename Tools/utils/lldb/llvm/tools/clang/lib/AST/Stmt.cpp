@@ -20,7 +20,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTDiagnostic.h"
 #include "clang/Basic/TargetInfo.h"
-#include <cstdio>
+#include "llvm/Support/raw_ostream.h"
 using namespace clang;
 
 static struct StmtClassNameTable {
@@ -54,23 +54,24 @@ void Stmt::PrintStats() {
   getStmtInfoTableEntry(Stmt::NullStmtClass);
 
   unsigned sum = 0;
-  fprintf(stderr, "*** Stmt/Expr Stats:\n");
+  llvm::errs() << "\n*** Stmt/Expr Stats:\n";
   for (int i = 0; i != Stmt::lastStmtConstant+1; i++) {
     if (StmtClassInfo[i].Name == 0) continue;
     sum += StmtClassInfo[i].Counter;
   }
-  fprintf(stderr, "  %d stmts/exprs total.\n", sum);
+  llvm::errs() << "  " << sum << " stmts/exprs total.\n";
   sum = 0;
   for (int i = 0; i != Stmt::lastStmtConstant+1; i++) {
     if (StmtClassInfo[i].Name == 0) continue;
     if (StmtClassInfo[i].Counter == 0) continue;
-    fprintf(stderr, "    %d %s, %d each (%d bytes)\n",
-            StmtClassInfo[i].Counter, StmtClassInfo[i].Name,
-            StmtClassInfo[i].Size,
-            StmtClassInfo[i].Counter*StmtClassInfo[i].Size);
+    llvm::errs() << "    " << StmtClassInfo[i].Counter << " "
+                 << StmtClassInfo[i].Name << ", " << StmtClassInfo[i].Size
+                 << " each (" << StmtClassInfo[i].Counter*StmtClassInfo[i].Size
+                 << " bytes)\n";
     sum += StmtClassInfo[i].Counter*StmtClassInfo[i].Size;
   }
-  fprintf(stderr, "Total bytes = %d\n", sum);
+
+  llvm::errs() << "Total bytes = " << sum << "\n";
 }
 
 void Stmt::addStmtClass(StmtClass s) {
@@ -82,6 +83,18 @@ static bool StatSwitch = false;
 bool Stmt::CollectingStats(bool Enable) {
   if (Enable) StatSwitch = true;
   return StatSwitch;
+}
+
+Stmt *Stmt::IgnoreImplicit() {
+  Stmt *s = this;
+
+  if (ExprWithCleanups *ewc = dyn_cast<ExprWithCleanups>(s))
+    s = ewc->getSubExpr();
+
+  while (ImplicitCastExpr *ice = dyn_cast<ImplicitCastExpr>(s))
+    s = ice->getSubExpr();
+
+  return s;
 }
 
 namespace {
@@ -201,7 +214,7 @@ Expr *AsmStmt::getOutputExpr(unsigned i) {
 /// getOutputConstraint - Return the constraint string for the specified
 /// output operand.  All output constraints are known to be non-empty (either
 /// '=' or '+').
-llvm::StringRef AsmStmt::getOutputConstraint(unsigned i) const {
+StringRef AsmStmt::getOutputConstraint(unsigned i) const {
   return getOutputConstraintLiteral(i)->getString();
 }
 
@@ -225,7 +238,7 @@ void AsmStmt::setInputExpr(unsigned i, Expr *E) {
 
 /// getInputConstraint - Return the specified input constraint.  Unlike output
 /// constraints, these can be empty.
-llvm::StringRef AsmStmt::getInputConstraint(unsigned i) const {
+StringRef AsmStmt::getInputConstraint(unsigned i) const {
   return getInputConstraintLiteral(i)->getString();
 }
 
@@ -264,7 +277,7 @@ void AsmStmt::setOutputsAndInputsAndClobbers(ASTContext &C,
 /// getNamedOperand - Given a symbolic operand reference like %[foo],
 /// translate this into a numeric value needed to reference the same operand.
 /// This returns -1 if the operand name is invalid.
-int AsmStmt::getNamedOperand(llvm::StringRef SymbolicName) const {
+int AsmStmt::getNamedOperand(StringRef SymbolicName) const {
   unsigned NumPlusOperands = 0;
 
   // Check if this is an output operand.
@@ -284,9 +297,9 @@ int AsmStmt::getNamedOperand(llvm::StringRef SymbolicName) const {
 /// AnalyzeAsmString - Analyze the asm string of the current asm, decomposing
 /// it into pieces.  If the asm string is erroneous, emit errors and return
 /// true, otherwise return false.
-unsigned AsmStmt::AnalyzeAsmString(llvm::SmallVectorImpl<AsmStringPiece>&Pieces,
+unsigned AsmStmt::AnalyzeAsmString(SmallVectorImpl<AsmStringPiece>&Pieces,
                                    ASTContext &C, unsigned &DiagOffs) const {
-  llvm::StringRef Str = getAsmString()->getString();
+  StringRef Str = getAsmString()->getString();
   const char *StrStart = Str.begin();
   const char *StrEnd = Str.end();
   const char *CurPtr = StrStart;
@@ -365,6 +378,10 @@ unsigned AsmStmt::AnalyzeAsmString(llvm::SmallVectorImpl<AsmStringPiece>&Pieces,
     // Handle %x4 and %x[foo] by capturing x as the modifier character.
     char Modifier = '\0';
     if (isalpha(EscapedChar)) {
+      if (CurPtr == StrEnd) { // Premature end.
+        DiagOffs = CurPtr-StrStart-1;
+        return diag::err_asm_invalid_escape;
+      }
       Modifier = EscapedChar;
       EscapedChar = *CurPtr++;
     }
@@ -399,7 +416,7 @@ unsigned AsmStmt::AnalyzeAsmString(llvm::SmallVectorImpl<AsmStringPiece>&Pieces,
       if (NameEnd == CurPtr)
         return diag::err_asm_empty_symbolic_operand_name;
 
-      llvm::StringRef SymbolicName(CurPtr, NameEnd - CurPtr);
+      StringRef SymbolicName(CurPtr, NameEnd - CurPtr);
 
       int N = getNamedOperand(SymbolicName);
       if (N == -1) {

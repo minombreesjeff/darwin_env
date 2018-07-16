@@ -1,0 +1,18 @@
+Index: lib/MC/MCDisassembler/EDToken.cpp
+===================================================================
+--- lib/MC/MCDisassembler/EDToken.cpp	(revision 137143)
++++ lib/MC/MCDisassembler/EDToken.cpp	(working copy)
+@@ -93,8 +93,12 @@
+   SmallVector<AsmToken, 10> asmTokens;
+   
+   if (disassembler.parseInst(parsedOperands, asmTokens, str))
++  {
++    for (unsigned i = 0, e = parsedOperands.size(); i != e; ++i)
++      delete parsedOperands[i];
+     return -1;
+-  
++  }
++      
+   SmallVectorImpl<MCParsedAsmOperand*>::iterator operandIterator;
+   unsigned int operandIndex;
+   SmallVectorImpl<AsmToken>::iterator tokenIterator;

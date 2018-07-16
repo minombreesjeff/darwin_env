@@ -395,7 +395,8 @@ def print_stacktrace(thread, string_buffer = False):
             print >> output, "  frame #{num}: {addr:#016x} {mod}`{func} at {file}:{line} {args}".format(
                 num=i, addr=load_addr, mod=mods[i],
                 func='%s [inlined]' % funcs[i] if frame.IsInlined() else funcs[i],
-                file=files[i], line=lines[i], args=get_args_as_string(frame, showFuncName=False))
+                file=files[i], line=lines[i],
+                args=get_args_as_string(frame, showFuncName=False) if not frame.IsInlined() else '()')
 
     if string_buffer:
         return output.getvalue()
@@ -446,7 +447,7 @@ def get_args_as_string(frame, showFuncName=True):
     for var in vars:
         args.append("(%s)%s=%s" % (var.GetTypeName(),
                                    var.GetName(),
-                                   var.GetValue(frame)))
+                                   var.GetValue()))
     if frame.GetFunction():
         name = frame.GetFunction().GetName()
     elif frame.GetSymbol():
@@ -471,7 +472,7 @@ def print_registers(frame, string_buffer = False):
         #print >> output, value 
         print >> output, "%s (number of children = %d):" % (value.GetName(), value.GetNumChildren())
         for child in value:
-            print >> output, "Name: %s, Value: %s" % (child.GetName(), child.GetValue(frame))
+            print >> output, "Name: %s, Value: %s" % (child.GetName(), child.GetValue())
 
     if string_buffer:
         return output.getvalue()
@@ -526,3 +527,79 @@ def get_ESRs(frame):
         ...
     """
     return get_registers(frame, "exception state")
+
+# ======================================
+# Utility classes/functions for SBValues
+# ======================================
+
+class BasicFormatter(object):
+    """The basic formatter inspects the value object and prints the value."""
+    def format(self, value, buffer=None, indent=0):
+        if not buffer:
+            output = StringIO.StringIO()
+        else:
+            output = buffer
+        # If there is a summary, it suffices.
+        val = value.GetSummary()
+        # Otherwise, get the value.
+        if val == None:
+            val = value.GetValue()
+        if val == None and value.GetNumChildren() > 0:
+            val = "%s (location)" % value.GetLocation()
+        print >> output, "{indentation}({type}) {name} = {value}".format(
+            indentation = ' ' * indent,
+            type = value.GetTypeName(),
+            name = value.GetName(),
+            value = val)
+        return output.getvalue()
+
+class ChildVisitingFormatter(BasicFormatter):
+    """The child visiting formatter prints the value and its immediate children.
+
+    The constructor takes a keyword arg: indent_child, which defaults to 2.
+    """
+    def __init__(self, indent_child=2):
+        """Default indentation of 2 SPC's for the children."""
+        self.cindent = indent_child
+    def format(self, value, buffer=None):
+        if not buffer:
+            output = StringIO.StringIO()
+        else:
+            output = buffer
+
+        BasicFormatter.format(self, value, buffer=output)
+        for child in value:
+            BasicFormatter.format(self, child, buffer=output, indent=self.cindent)
+
+        return output.getvalue()
+
+class RecursiveDecentFormatter(BasicFormatter):
+    """The recursive decent formatter prints the value and the decendents.
+
+    The constructor takes two keyword args: indent_level, which defaults to 0,
+    and indent_child, which defaults to 2.  The current indentation level is
+    determined by indent_level, while the immediate children has an additional
+    indentation by inden_child. 
+    """
+    def __init__(self, indent_level=0, indent_child=2):
+        self.lindent = indent_level
+        self.cindent = indent_child
+    def format(self, value, buffer=None):
+        if not buffer:
+            output = StringIO.StringIO()
+        else:
+            output = buffer
+
+        BasicFormatter.format(self, value, buffer=output, indent=self.lindent)
+        new_indent = self.lindent + self.cindent
+        for child in value:
+            if child.GetSummary() != None:
+                BasicFormatter.format(self, child, buffer=output, indent=new_indent)
+            else:
+                if child.GetNumChildren() > 0:
+                    rdf = RecursiveDecentFormatter(indent_level=new_indent)
+                    rdf.format(child, buffer=output)
+                else:
+                    BasicFormatter.format(self, child, buffer=output, indent=new_indent)
+
+        return output.getvalue()

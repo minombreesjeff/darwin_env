@@ -16,16 +16,18 @@
 #define DEBUG_TYPE "arm-disassembler"
 
 #include "ARMDisassemblerCore.h"
-#include "ARMAddressingModes.h"
-#include "ARMMCExpr.h"
+#include "MCTargetDesc/ARMAddressingModes.h"
+#include "MCTargetDesc/ARMMCExpr.h"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
 //#define DEBUG(X) do { X; } while (0)
 
 /// ARMGenInstrInfo.inc - ARMGenInstrInfo.inc contains the static const
-/// TargetInstrDesc ARMInsts[] definition and the TargetOperandInfo[]'s
-/// describing the operand info for each ARMInsts[i].
+/// MCInstrDesc ARMInsts[] definition and the MCOperandInfo[]'s describing the
+/// operand info for each ARMInsts[i].
 ///
 /// Together with an instruction's encoding format, we can take advantage of the
 /// NumOperands and the OpInfo fields of the target instruction description in
@@ -46,10 +48,10 @@
 ///   dag DefaultOps = (ops (i32 14), (i32 zero_reg));
 /// }
 ///
-/// which is manifested by the TargetOperandInfo[] of:
+/// which is manifested by the MCOperandInfo[] of:
 ///
-/// { 0, 0|(1<<TOI::Predicate), 0 },
-/// { ARM::CCRRegClassID, 0|(1<<TOI::Predicate), 0 }
+/// { 0, 0|(1<<MCOI::Predicate), 0 },
+/// { ARM::CCRRegClassID, 0|(1<<MCOI::Predicate), 0 }
 ///
 /// So the first predicate MCOperand corresponds to the immediate part of the
 /// ARM condition field (Inst{31-28}), and the second predicate MCOperand
@@ -66,12 +68,14 @@
 ///   dag DefaultOps = (ops (i32 zero_reg));
 /// }
 ///
-/// which is manifested by the one TargetOperandInfo of:
+/// which is manifested by the one MCOperandInfo of:
 ///
-/// { ARM::CCRRegClassID, 0|(1<<TOI::OptionalDef), 0 }
+/// { ARM::CCRRegClassID, 0|(1<<MCOI::OptionalDef), 0 }
 ///
-/// And this maps to one MCOperand with the regsiter kind of ARM::CPSR.
-#include "ARMGenInstrInfo.inc"
+
+namespace llvm {
+extern MCInstrDesc ARMInsts[];
+}
 
 using namespace llvm;
 
@@ -588,9 +592,9 @@ static bool BadRegsMulFrm(unsigned Opcode, uint32_t insn) {
 static bool DisassembleMulFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  unsigned short NumDefs = TID.getNumDefs();
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  unsigned short NumDefs = MCID.getNumDefs();
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -739,9 +743,9 @@ static bool DisassembleCoprocessor(MCInst &MI, unsigned Opcode, uint32_t insn,
     if (PW) {
       MI.addOperand(MCOperand::CreateReg(0));
       ARM_AM::AddrOpc AddrOpcode = getUBit(insn) ? ARM_AM::add : ARM_AM::sub;
-      const TargetInstrDesc &TID = ARMInsts[Opcode];
+      const MCInstrDesc &MCID = ARMInsts[Opcode];
       unsigned IndexMode =
-                  (TID.TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift;
+                 (MCID.TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift;
       unsigned Offset = ARM_AM::getAM2Opc(AddrOpcode, slice(insn, 7, 0) << 2,
                                           ARM_AM::no_shift, IndexMode);
       MI.addOperand(MCOperand::CreateImm(Offset));
@@ -794,15 +798,15 @@ static bool DisassembleCoprocessor(MCInst &MI, unsigned Opcode, uint32_t insn,
 // MSR/MSRsys: Rm mask=Inst{19-16}
 // BXJ:        Rm
 // MSRi/MSRsysi: so_imm
-// SRSW/SRS: ldstm_mode:$amode mode_imm
-// RFEW/RFE: ldstm_mode:$amode Rn
+// SRS: mode_imm
+// RFE: Rn
 static bool DisassembleBrFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
   if (CoprocessorOpcode(Opcode))
     return DisassembleCoprocessor(MI, Opcode, insn, NumOps, NumOpsAdded, B);
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   if (!OpInfo) return false;
 
   // MRS and MRSsys take one GPR reg Rd.
@@ -854,17 +858,21 @@ static bool DisassembleBrFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     NumOpsAdded = 2;
     return true;
   }
-  if (Opcode == ARM::SRSW || Opcode == ARM::SRS ||
-      Opcode == ARM::RFEW || Opcode == ARM::RFE) {
-    ARM_AM::AMSubMode SubMode = getAMSubModeForBits(getPUBits(insn));
-    MI.addOperand(MCOperand::CreateImm(ARM_AM::getAM4ModeImm(SubMode)));
-
-    if (Opcode == ARM::SRSW || Opcode == ARM::SRS)
-      MI.addOperand(MCOperand::CreateImm(slice(insn, 4, 0)));
-    else
-      MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
-                                                         decodeRn(insn))));
-    NumOpsAdded = 3;
+  if (Opcode == ARM::SRSDA || Opcode == ARM::SRSDB ||
+      Opcode == ARM::SRSIA || Opcode == ARM::SRSIB ||
+      Opcode == ARM::SRSDA_UPD || Opcode == ARM::SRSDB_UPD ||
+      Opcode == ARM::SRSIA_UPD || Opcode == ARM::SRSIB_UPD) {
+    MI.addOperand(MCOperand::CreateImm(slice(insn, 4, 0)));
+    NumOpsAdded = 1;
+    return true;
+  }
+  if (Opcode == ARM::RFEDA || Opcode == ARM::RFEDB ||
+      Opcode == ARM::RFEIA || Opcode == ARM::RFEIB ||
+      Opcode == ARM::RFEDA_UPD || Opcode == ARM::RFEDB_UPD ||
+      Opcode == ARM::RFEIA_UPD || Opcode == ARM::RFEIB_UPD) {
+    MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
+                                                       decodeRn(insn))));
+    NumOpsAdded = 1;
     return true;
   }
 
@@ -895,12 +903,13 @@ static bool DisassembleBrFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 }
 
 // Misc. Branch Instructions.
-// BLX, BLXi, BX
-// BX, BX_RET
+// BX_RET, MOVPCLR
+// BLX, BLX_pred, BX, BX_pred
+// BLXi
 static bool DisassembleBrMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   if (!OpInfo) return false;
 
   unsigned &OpIdx = NumOpsAdded;
@@ -913,7 +922,7 @@ static bool DisassembleBrMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   // BLX and BX take one GPR reg.
   if (Opcode == ARM::BLX || Opcode == ARM::BLX_pred ||
-      Opcode == ARM::BX) {
+      Opcode == ARM::BX || Opcode == ARM::BX_pred) {
     assert(NumOps >= 1 && OpInfo[OpIdx].RegClass == ARM::GPRRegClassID &&
            "Reg operand expected");
     MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
@@ -975,10 +984,10 @@ static bool BadRegsDPFrm(unsigned Opcode, uint32_t insn) {
 static bool DisassembleDPFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  unsigned short NumDefs = TID.getNumDefs();
-  bool isUnary = isUnaryDP(TID.TSFlags);
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  unsigned short NumDefs = MCID.getNumDefs();
+  bool isUnary = isUnaryDP(MCID.TSFlags);
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -1021,7 +1030,7 @@ static bool DisassembleDPFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
                                                        decodeRm(insn))));
     MI.addOperand(MCOperand::CreateImm(slice(insn, 11, 7)));
-    MI.addOperand(MCOperand::CreateImm(slice(insn, 20, 16) + 1));
+    MI.addOperand(MCOperand::CreateImm(slice(insn, 20, 16)));
     OpIdx += 3;
     return true;
   }
@@ -1040,7 +1049,7 @@ static bool DisassembleDPFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
   }
 
   // If this is a two-address operand, skip it, e.g., MOVCCr operand 1.
-  if (isUnary && (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1)) {
+  if (isUnary && (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1)) {
     MI.addOperand(MCOperand::CreateReg(0));
     ++OpIdx;
   }
@@ -1085,13 +1094,13 @@ static bool DisassembleDPFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
   return true;
 }
 
-static bool DisassembleDPSoRegFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
+static bool DisassembleDPSoRegRegFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  unsigned short NumDefs = TID.getNumDefs();
-  bool isUnary = isUnaryDP(TID.TSFlags);
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  unsigned short NumDefs = MCID.getNumDefs();
+  bool isUnary = isUnaryDP(MCID.TSFlags);
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -1117,7 +1126,7 @@ static bool DisassembleDPSoRegFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
   }
 
   // If this is a two-address operand, skip it, e.g., MOVCCs operand 1.
-  if (isUnary && (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1)) {
+  if (isUnary && (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1)) {
     MI.addOperand(MCOperand::CreateReg(0));
     ++OpIdx;
   }
@@ -1174,6 +1183,69 @@ static bool DisassembleDPSoRegFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   return true;
 }
+
+static bool DisassembleDPSoRegImmFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
+    unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
+
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  unsigned short NumDefs = MCID.getNumDefs();
+  bool isUnary = isUnaryDP(MCID.TSFlags);
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
+  unsigned &OpIdx = NumOpsAdded;
+
+  OpIdx = 0;
+
+  // Disassemble register def if there is one.
+  if (NumDefs && (OpInfo[OpIdx].RegClass == ARM::GPRRegClassID)) {
+    MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
+                                                       decodeRd(insn))));
+    ++OpIdx;
+  }
+
+  // Disassemble the src operands.
+  if (OpIdx >= NumOps)
+    return false;
+
+  // BinaryDP has an Rn operand.
+  if (!isUnary) {
+    assert(OpInfo[OpIdx].RegClass == ARM::GPRRegClassID &&
+           "Reg operand expected");
+    MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
+                                                       decodeRn(insn))));
+    ++OpIdx;
+  }
+
+  // If this is a two-address operand, skip it, e.g., MOVCCs operand 1.
+  if (isUnary && (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1)) {
+    MI.addOperand(MCOperand::CreateReg(0));
+    ++OpIdx;
+  }
+
+  // Disassemble operand 2, which consists of two components.
+  if (OpIdx + 1 >= NumOps)
+    return false;
+
+  assert((OpInfo[OpIdx].RegClass == ARM::GPRRegClassID) &&
+         (OpInfo[OpIdx+1].RegClass < 0) &&
+         "Expect 2 reg operands");
+
+  MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
+                                                     decodeRm(insn))));
+
+  // Inst{6-5} encodes the shift opcode.
+  ARM_AM::ShiftOpc ShOp = getShiftOpcForBits(slice(insn, 6, 5));
+  // Inst{11-7} encodes the imm5 shift amount.
+  unsigned ShImm = slice(insn, 11, 7);
+
+  // A8.4.1.  Possible rrx or shift amount of 32...
+  getImmShiftSE(ShOp, ShImm);
+  MI.addOperand(MCOperand::CreateImm(ARM_AM::getSORegOpc(ShOp, ShImm)));
+
+  OpIdx += 2;
+
+  return true;
+}
+
 
 static bool BadRegsLdStFrm(unsigned Opcode, uint32_t insn, bool Store, bool WBack,
                            bool Imm) {
@@ -1243,17 +1315,17 @@ static bool BadRegsLdStFrm(unsigned Opcode, uint32_t insn, bool Store, bool WBac
 static bool DisassembleLdStFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, bool isStore, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  bool isPrePost = isPrePostLdSt(TID.TSFlags);
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  bool isPrePost = isPrePostLdSt(MCID.TSFlags);
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   if (!OpInfo) return false;
 
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
 
-  assert(((!isStore && TID.getNumDefs() > 0) ||
-          (isStore && (TID.getNumDefs() == 0 || isPrePost)))
+  assert(((!isStore && MCID.getNumDefs() > 0) ||
+          (isStore && (MCID.getNumDefs() == 0 || isPrePost)))
          && "Invalid arguments");
 
   // Operand 0 of a pre- and post-indexed store is the address base writeback.
@@ -1290,7 +1362,7 @@ static bool DisassembleLdStFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   assert(OpInfo[OpIdx].RegClass == ARM::GPRRegClassID &&
          "Reg operand expected");
-  assert((!isPrePost || (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1))
+  assert((!isPrePost || (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1))
          && "Index mode or tied_to operand expected");
   MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
                                                      decodeRn(insn))));
@@ -1307,7 +1379,7 @@ static bool DisassembleLdStFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   ARM_AM::AddrOpc AddrOpcode = getUBit(insn) ? ARM_AM::add : ARM_AM::sub;
   unsigned IndexMode =
-               (TID.TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift;
+               (MCID.TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift;
   if (getIBit(insn) == 0) {
     // For pre- and post-indexed case, add a reg0 operand (Addressing Mode #2).
     // Otherwise, skip the reg operand since for addrmode_imm12, Rn has already
@@ -1321,7 +1393,7 @@ static bool DisassembleLdStFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     if (Opcode == ARM::LDRBi12 || Opcode == ARM::LDRi12 ||
         Opcode == ARM::STRBi12 || Opcode == ARM::STRi12) {
       // Disassemble the 12-bit immediate offset, which is the second operand in
-      // $addrmode_imm12 => (ops GPR:$base, i32imm:$offsimm).    
+      // $addrmode_imm12 => (ops GPR:$base, i32imm:$offsimm).
       int Offset = AddrOpcode == ARM_AM::add ? 1 * Imm12 : -1 * Imm12;
       MI.addOperand(MCOperand::CreateImm(Offset));
     } else {
@@ -1378,17 +1450,17 @@ static bool HasDualReg(unsigned Opcode) {
 static bool DisassembleLdStMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, bool isStore, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  bool isPrePost = isPrePostLdSt(TID.TSFlags);
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  bool isPrePost = isPrePostLdSt(MCID.TSFlags);
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   if (!OpInfo) return false;
 
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
 
-  assert(((!isStore && TID.getNumDefs() > 0) ||
-          (isStore && (TID.getNumDefs() == 0 || isPrePost)))
+  assert(((!isStore && MCID.getNumDefs() > 0) ||
+          (isStore && (MCID.getNumDefs() == 0 || isPrePost)))
          && "Invalid arguments");
 
   // Operand 0 of a pre- and post-indexed store is the address base writeback.
@@ -1432,7 +1504,7 @@ static bool DisassembleLdStMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   assert(OpInfo[OpIdx].RegClass == ARM::GPRRegClassID &&
          "Reg operand expected");
-  assert((!isPrePost || (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1))
+  assert((!isPrePost || (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1))
          && "Offset mode or tied_to operand expected");
   MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
                                                      decodeRn(insn))));
@@ -1440,34 +1512,49 @@ static bool DisassembleLdStMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   // For reg/reg form, base reg is followed by +/- reg.
   // For immediate form, it is followed by +/- imm8.
-  // See also ARMAddressingModes.h (Addressing Mode #3).
   if (OpIdx + 1 >= NumOps)
     return false;
 
-  assert((OpInfo[OpIdx].RegClass == ARM::GPRRegClassID) &&
-         (OpInfo[OpIdx+1].RegClass < 0) &&
-         "Expect 1 reg operand followed by 1 imm operand");
-
-  ARM_AM::AddrOpc AddrOpcode = getUBit(insn) ? ARM_AM::add : ARM_AM::sub;
   unsigned IndexMode =
-                  (TID.TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift;
+    (MCID.TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift;
+  ARM_AM::AddrOpc AddrOpcode = getUBit(insn) ? ARM_AM::add : ARM_AM::sub;
   if (getAM3IBit(insn) == 1) {
-    MI.addOperand(MCOperand::CreateReg(0));
+    // FIXME: Conditional while in the midst of refactoring addrmode3. Will
+    // go away entirely when the rest are converted.
+    if (Opcode != ARM::STRHTi && Opcode != ARM::LDRSBTi &&
+        Opcode != ARM::LDRHTi && Opcode != ARM::LDRSHTi) {
+      MI.addOperand(MCOperand::CreateReg(0));
+      ++OpIdx;
+    }
 
-    // Disassemble the 8-bit immediate offset.
+    // Disassemble the 8-bit immediate offset (postidx_imm8).
     unsigned Imm4H = (insn >> ARMII::ImmHiShift) & 0xF;
     unsigned Imm4L = insn & 0xF;
-    unsigned Offset = ARM_AM::getAM3Opc(AddrOpcode, (Imm4H << 4) | Imm4L,
-                                        IndexMode);
+    unsigned Offset;
+    // FIXME: Remove the 'else' once done w/ addrmode3 refactor.
+    if (Opcode == ARM::STRHTi || Opcode == ARM::LDRSBTi ||
+        Opcode == ARM::LDRHTi || Opcode == ARM::LDRSHTi)
+      Offset = (Imm4H << 4) | Imm4L | (getUBit(insn) << 8);
+    else
+      Offset = ARM_AM::getAM3Opc(AddrOpcode, (Imm4H << 4) | Imm4L,
+                                 IndexMode);
+
     MI.addOperand(MCOperand::CreateImm(Offset));
+    ++OpIdx;
   } else {
     // Disassemble the offset reg (Rm).
     MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
                                                        decodeRm(insn))));
-    unsigned Offset = ARM_AM::getAM3Opc(AddrOpcode, 0, IndexMode);
-    MI.addOperand(MCOperand::CreateImm(Offset));
+    // FIXME: Remove the 'else' once done w/ addrmode3 refactor.
+    if (Opcode == ARM::STRHTr || Opcode == ARM::LDRSBTr ||
+        Opcode == ARM::LDRHTr || Opcode == ARM::LDRSHTr)
+      MI.addOperand(MCOperand::CreateImm(getUBit(insn)));
+    else {
+      unsigned Offset = ARM_AM::getAM3Opc(AddrOpcode, 0);
+      MI.addOperand(MCOperand::CreateImm(Offset));
+    }
+    OpIdx += 2;
   }
-  OpIdx += 2;
 
   return true;
 }
@@ -1538,7 +1625,7 @@ static bool DisassembleLdStMulFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleLdStExFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   if (!OpInfo) return false;
 
   unsigned &OpIdx = NumOpsAdded;
@@ -1590,7 +1677,7 @@ static bool DisassembleLdStExFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleArithMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -1629,13 +1716,11 @@ static bool DisassembleArithMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
       && !OpInfo[OpIdx].isPredicate() && !OpInfo[OpIdx].isOptionalDef()) {
     // Extract the 5-bit immediate field Inst{11-7}.
     unsigned ShiftAmt = (insn >> ARMII::ShiftShift) & 0x1F;
-    ARM_AM::ShiftOpc Opc = ARM_AM::no_shift;
-    if (Opcode == ARM::PKHBT)
-      Opc = ARM_AM::lsl;
-    else if (Opcode == ARM::PKHTB)
-      Opc = ARM_AM::asr;
-    getImmShiftSE(Opc, ShiftAmt);
-    MI.addOperand(MCOperand::CreateImm(ARM_AM::getSORegOpc(Opc, ShiftAmt)));
+    if (Opcode == ARM::PKHBT || Opcode == ARM::PKHTB)
+      MI.addOperand(MCOperand::CreateImm(ShiftAmt));
+     else
+      MI.addOperand(MCOperand::CreateImm(ARM_AM::getSORegOpc(ARM_AM::no_shift,
+                                                             ShiftAmt)));
     ++OpIdx;
   }
 
@@ -1652,33 +1737,25 @@ static bool DisassembleSatFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
   if (decodeRd(insn) == 15 || decodeRm(insn) == 15)
     return false;
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  NumOpsAdded = TID.getNumOperands() - 2; // ignore predicate operands
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  NumOpsAdded = MCID.getNumOperands() - 2; // ignore predicate operands
 
   // Disassemble register def.
   MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
                                                      decodeRd(insn))));
 
   unsigned Pos = slice(insn, 20, 16);
-  if (Opcode == ARM::SSAT || Opcode == ARM::SSAT16)
-    Pos += 1;
   MI.addOperand(MCOperand::CreateImm(Pos));
 
   MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
                                                      decodeRm(insn))));
 
   if (NumOpsAdded == 4) {
-    ARM_AM::ShiftOpc Opc = (slice(insn, 6, 6) != 0 ? ARM_AM::asr : ARM_AM::lsl);
+    // Inst{6} encodes the shift type.
+    bool isASR = slice(insn, 6, 6);
     // Inst{11-7} encodes the imm5 shift amount.
     unsigned ShAmt = slice(insn, 11, 7);
-    if (ShAmt == 0) {
-      // A8.6.183.  Possible ASR shift amount of 32...
-      if (Opc == ARM_AM::asr)
-        ShAmt = 32;
-      else
-        Opc = ARM_AM::no_shift;
-    }
-    MI.addOperand(MCOperand::CreateImm(ARM_AM::getSORegOpc(Opc, ShAmt)));
+    MI.addOperand(MCOperand::CreateImm(isASR << 5 | ShAmt));
   }
   return true;
 }
@@ -1695,7 +1772,7 @@ static bool DisassembleExtFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
   if (decodeRd(insn) == 15 || decodeRm(insn) == 15)
     return false;
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -1727,8 +1804,7 @@ static bool DisassembleExtFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
       && !OpInfo[OpIdx].isPredicate() && !OpInfo[OpIdx].isOptionalDef()) {
     // Extract the 2-bit rotate field Inst{11-10}.
     unsigned rot = (insn >> ARMII::ExtRotImmShift) & 3;
-    // Rotation by 8, 16, or 24 bits.
-    MI.addOperand(MCOperand::CreateImm(rot << 3));
+    MI.addOperand(MCOperand::CreateImm(rot));
     ++OpIdx;
   }
 
@@ -1801,7 +1877,7 @@ static bool DisassembleVFPUnaryFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   assert(NumOps >= 1 && "VFPUnaryFrm expects NumOps >= 1");
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -1841,8 +1917,8 @@ static bool DisassembleVFPBinaryFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   assert(NumOps >= 3 && "VFPBinaryFrm expects NumOps >= 3");
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -1857,7 +1933,7 @@ static bool DisassembleVFPBinaryFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
   ++OpIdx;
 
   // Skip tied_to operand constraint.
-  if (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1) {
+  if (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1) {
     assert(NumOps >= 4 && "Expect >=4 operands");
     MI.addOperand(MCOperand::CreateReg(0));
     ++OpIdx;
@@ -1885,8 +1961,8 @@ static bool DisassembleVFPConv1Frm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   assert(NumOps >= 2 && "VFPConv1Frm expects NumOps >= 2");
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   if (!OpInfo) return false;
 
   bool SP = slice(insn, 8, 8) == 0; // A8.6.295 & A8.6.297
@@ -1902,7 +1978,7 @@ static bool DisassembleVFPConv1Frm(MCInst &MI, unsigned Opcode, uint32_t insn,
                     getRegisterEnum(B, RegClassID,
                                     decodeVFPRd(insn, SP))));
 
-    assert(TID.getOperandConstraint(1, TOI::TIED_TO) != -1 &&
+    assert(MCID.getOperandConstraint(1, MCOI::TIED_TO) != -1 &&
            "Tied to operand expected");
     MI.addOperand(MI.getOperand(0));
 
@@ -1960,7 +2036,7 @@ static bool DisassembleVFPConv3Frm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   assert(NumOps >= 3 && "VFPConv3Frm expects NumOps >= 3");
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   MI.addOperand(MCOperand::CreateReg(getRegisterEnum(B, ARM::GPRRegClassID,
@@ -2010,7 +2086,7 @@ static bool DisassembleVFPConv5Frm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   assert(NumOps >= 3 && "VFPConv5Frm expects NumOps >= 3");
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -2135,7 +2211,7 @@ static bool DisassembleVFPLdStMulFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleVFPMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   unsigned &OpIdx = NumOpsAdded;
 
   OpIdx = 0;
@@ -2401,8 +2477,8 @@ static bool DisassembleNLdSt0(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, bool Store, bool DblSpaced,
     unsigned alignment, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
 
   // At least one DPR register plus addressing mode #6.
   assert(NumOps >= 3 && "Expect >= 3 operands");
@@ -2506,7 +2582,7 @@ static bool DisassembleNLdSt0(MCInst &MI, unsigned Opcode, uint32_t insn,
     }
 
     while (OpIdx < NumOps && (unsigned)OpInfo[OpIdx].RegClass == RegClass) {
-      assert(TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1 &&
+      assert(MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1 &&
              "Tied to operand expected");
       MI.addOperand(MCOperand::CreateReg(0));
       ++OpIdx;
@@ -2756,8 +2832,8 @@ static bool DisassembleNLdSt(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleN1RegModImmFrm(MCInst &MI, unsigned Opcode,
     uint32_t insn, unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
 
   assert(NumOps >= 2 &&
          (OpInfo[0].RegClass == ARM::DPRRegClassID ||
@@ -2847,8 +2923,8 @@ enum N2VFlag {
 static bool DisassembleNVdVmOptImm(MCInst &MI, unsigned Opc, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, N2VFlag Flag, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opc];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opc];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
 
   assert(NumOps >= 2 &&
          (OpInfo[0].RegClass == ARM::DPRRegClassID ||
@@ -2877,7 +2953,7 @@ static bool DisassembleNVdVmOptImm(MCInst &MI, unsigned Opc, uint32_t insn,
   ++OpIdx;
 
   // VPADAL...
-  if (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1) {
+  if (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1) {
     // TIED_TO operand.
     MI.addOperand(MCOperand::CreateReg(0));
     ++OpIdx;
@@ -2891,7 +2967,7 @@ static bool DisassembleNVdVmOptImm(MCInst &MI, unsigned Opc, uint32_t insn,
   // VZIP and others have two TIED_TO reg operands.
   int Idx;
   while (OpIdx < NumOps &&
-         (Idx = TID.getOperandConstraint(OpIdx, TOI::TIED_TO)) != -1) {
+         (Idx = MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO)) != -1) {
     // Add TIED_TO operand.
     MI.addOperand(MI.getOperand(Idx));
     ++OpIdx;
@@ -2944,8 +3020,8 @@ static bool DisassembleNVecDupLnFrm(MCInst &MI, unsigned Opc, uint32_t insn,
 static bool DisassembleNVectorShift(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, bool LeftShift, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
 
   assert(NumOps >= 3 &&
          (OpInfo[0].RegClass == ARM::DPRRegClassID ||
@@ -2963,7 +3039,7 @@ static bool DisassembleNVectorShift(MCInst &MI, unsigned Opcode, uint32_t insn,
                                                      decodeNEONRd(insn))));
   ++OpIdx;
 
-  if (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1) {
+  if (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1) {
     // TIED_TO operand.
     MI.addOperand(MCOperand::CreateReg(0));
     ++OpIdx;
@@ -3043,8 +3119,8 @@ enum N3VFlag {
 static bool DisassembleNVdVnVmOptImm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, N3VFlag Flag, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
 
   // No checking for OpInfo[2] because of MOVDneon/MOVQ with only two regs.
   assert(NumOps >= 3 &&
@@ -3075,7 +3151,7 @@ static bool DisassembleNVdVnVmOptImm(MCInst &MI, unsigned Opcode, uint32_t insn,
   ++OpIdx;
 
   // VABA, VABAL, VBSLd, VBSLq, ...
-  if (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1) {
+  if (MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO) != -1) {
     // TIED_TO operand.
     MI.addOperand(MCOperand::CreateReg(0));
     ++OpIdx;
@@ -3089,11 +3165,6 @@ static bool DisassembleNVdVnVmOptImm(MCInst &MI, unsigned Opcode, uint32_t insn,
                                   VdVnVm ? decodeNEONRn(insn)
                                          : decodeNEONRm(insn))));
   ++OpIdx;
-
-  // Special case handling for VMOVDneon and VMOVQ because they are marked as
-  // N3RegFrm.
-  if (Opcode == ARM::VMOVDneon || Opcode == ARM::VMOVQ)
-    return true;
 
   // Dm = Inst{5:3-0} => NEON Rm
   // or
@@ -3162,8 +3233,8 @@ static bool DisassembleNVecMulScalarFrm(MCInst &MI, unsigned Opcode,
 static bool DisassembleNVTBLFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   if (!OpInfo) return false;
 
   assert(NumOps >= 3 &&
@@ -3191,7 +3262,7 @@ static bool DisassembleNVTBLFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 
   // Process tied_to operand constraint.
   int Idx;
-  if ((Idx = TID.getOperandConstraint(OpIdx, TOI::TIED_TO)) != -1) {
+  if ((Idx = MCID.getOperandConstraint(OpIdx, MCOI::TIED_TO)) != -1) {
     MI.addOperand(MI.getOperand(Idx));
     ++OpIdx;
   }
@@ -3220,11 +3291,11 @@ static bool DisassembleNVTBLFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleNGetLnFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   if (!OpInfo) return false;
 
-  assert(TID.getNumDefs() == 1 && NumOps >= 3 &&
+  assert(MCID.getNumDefs() == 1 && NumOps >= 3 &&
          OpInfo[0].RegClass == ARM::GPRRegClassID &&
          OpInfo[1].RegClass == ARM::DPRRegClassID &&
          OpInfo[2].RegClass < 0 &&
@@ -3254,14 +3325,14 @@ static bool DisassembleNGetLnFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleNSetLnFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetInstrDesc &TID = ARMInsts[Opcode];
-  const TargetOperandInfo *OpInfo = TID.OpInfo;
+  const MCInstrDesc &MCID = ARMInsts[Opcode];
+  const MCOperandInfo *OpInfo = MCID.OpInfo;
   if (!OpInfo) return false;
 
-  assert(TID.getNumDefs() == 1 && NumOps >= 3 &&
+  assert(MCID.getNumDefs() == 1 && NumOps >= 3 &&
          OpInfo[0].RegClass == ARM::DPRRegClassID &&
          OpInfo[1].RegClass == ARM::DPRRegClassID &&
-         TID.getOperandConstraint(1, TOI::TIED_TO) != -1 &&
+         MCID.getOperandConstraint(1, MCOI::TIED_TO) != -1 &&
          OpInfo[2].RegClass == ARM::GPRRegClassID &&
          OpInfo[3].RegClass < 0 &&
          "Expect >= 3 operands with one dst operand");
@@ -3293,7 +3364,7 @@ static bool DisassembleNSetLnFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleNDupFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
 
   assert(NumOps >= 2 &&
          (OpInfo[0].RegClass == ARM::DPRRegClassID ||
@@ -3378,7 +3449,7 @@ static bool DisassemblePreLoadFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  if (Opcode == ARM::DMB || Opcode == ARM::DSB) {
+  if (Opcode == ARM::DMB || Opcode == ARM::DSB || Opcode == ARM::ISB) {
     // Inst{3-0} encodes the memory barrier option for the variants.
     unsigned opt = slice(insn, 3, 0);
     switch (opt) {
@@ -3486,7 +3557,7 @@ static const DisassembleFP FuncPtrs[] = {
   &DisassembleBrFrm,
   &DisassembleBrMiscFrm,
   &DisassembleDPFrm,
-  &DisassembleDPSoRegFrm,
+  &DisassembleDPSoRegRegFrm,
   &DisassembleLdFrm,
   &DisassembleStFrm,
   &DisassembleLdMiscFrm,
@@ -3554,6 +3625,9 @@ static const DisassembleFP FuncPtrs[] = {
   // values in a table and generate a new vector.
   &DisassembleNVTBLFrm,
 
+  &DisassembleDPSoRegImmFrm,
+
+
   NULL
 };
 
@@ -3603,11 +3677,11 @@ bool ARMBasicMCBuilder::DoPredicateOperands(MCInst& MI, unsigned Opcode,
 
   assert(NumOpsRemaining > 0 && "Invalid argument");
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   unsigned Idx = MI.getNumOperands();
 
   // First, we check whether this instr specifies the PredicateOperand through
-  // a pair of TargetOperandInfos with isPredicate() property.
+  // a pair of MCOperandInfos with isPredicate() property.
   if (NumOpsRemaining >= 2 &&
       OpInfo[Idx].isPredicate() && OpInfo[Idx+1].isPredicate() &&
       OpInfo[Idx].RegClass < 0 &&
@@ -3635,13 +3709,13 @@ bool ARMBasicMCBuilder::TryPredicateAndSBitModifier(MCInst& MI, unsigned Opcode,
 
   assert(NumOpsRemaining > 0 && "Invalid argument");
 
-  const TargetOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
+  const MCOperandInfo *OpInfo = ARMInsts[Opcode].OpInfo;
   const std::string &Name = ARMInsts[Opcode].Name;
   unsigned Idx = MI.getNumOperands();
   uint64_t TSFlags = ARMInsts[Opcode].TSFlags;
 
   // First, we check whether this instr specifies the PredicateOperand through
-  // a pair of TargetOperandInfos with isPredicate() property.
+  // a pair of MCOperandInfos with isPredicate() property.
   if (NumOpsRemaining >= 2 &&
       OpInfo[Idx].isPredicate() && OpInfo[Idx+1].isPredicate() &&
       OpInfo[Idx].RegClass < 0 &&

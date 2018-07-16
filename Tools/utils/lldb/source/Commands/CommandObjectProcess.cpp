@@ -162,7 +162,7 @@ public:
 
         // If our listener is NULL, users aren't allows to launch
         char filename[PATH_MAX];
-        const Module *exe_module = target->GetExecutableModule().get();
+        const Module *exe_module = target->GetExecutableModulePointer();
 
         if (exe_module == NULL)
         {
@@ -762,22 +762,22 @@ public:
         {
             // Okay, we're done.  Last step is to warn if the executable module has changed:
             char new_path[PATH_MAX];
+            ModuleSP new_exec_module_sp (target->GetExecutableModule());
             if (!old_exec_module_sp)
             {
                 // We might not have a module if we attached to a raw pid...
-                ModuleSP new_module_sp (target->GetExecutableModule());
-                if (new_module_sp)
+                if (new_exec_module_sp)
                 {
-                    new_module_sp->GetFileSpec().GetPath(new_path, PATH_MAX);
+                    new_exec_module_sp->GetFileSpec().GetPath(new_path, PATH_MAX);
                     result.AppendMessageWithFormat("Executable module set to \"%s\".\n", new_path);
                 }
             }
-            else if (old_exec_module_sp->GetFileSpec() != target->GetExecutableModule()->GetFileSpec())
+            else if (old_exec_module_sp->GetFileSpec() != new_exec_module_sp->GetFileSpec())
             {
                 char old_path[PATH_MAX];
                 
-                old_exec_module_sp->GetFileSpec().GetPath(old_path, PATH_MAX);
-                target->GetExecutableModule()->GetFileSpec().GetPath (new_path, PATH_MAX);
+                old_exec_module_sp->GetFileSpec().GetPath (old_path, PATH_MAX);
+                new_exec_module_sp->GetFileSpec().GetPath (new_path, PATH_MAX);
                 
                 result.AppendWarningWithFormat("Executable module changed from \"%s\" to \"%s\".\n",
                                                     old_path, new_path);
@@ -1172,6 +1172,7 @@ public:
             Error error;
             const char *image_path = command.GetArgumentAtIndex(i);
             FileSpec image_spec (image_path, false);
+            process->GetTarget().GetPlatform()->ResolveRemotePath(image_spec, image_spec);
             uint32_t image_token = process->LoadImage(image_spec, error);
             if (image_token != LLDB_INVALID_IMAGE_TOKEN)
             {

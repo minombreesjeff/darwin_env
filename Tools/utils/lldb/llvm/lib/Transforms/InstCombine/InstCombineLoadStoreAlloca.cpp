@@ -26,7 +26,7 @@ Instruction *InstCombiner::visitAllocaInst(AllocaInst &AI) {
   // Ensure that the alloca array size argument has type intptr_t, so that
   // any casting is exposed early.
   if (TD) {
-    const Type *IntPtrTy = TD->getIntPtrType(AI.getContext());
+    Type *IntPtrTy = TD->getIntPtrType(AI.getContext());
     if (AI.getArraySize()->getType() != IntPtrTy) {
       Value *V = Builder->CreateIntCast(AI.getArraySize(),
                                         IntPtrTy, false);
@@ -38,7 +38,7 @@ Instruction *InstCombiner::visitAllocaInst(AllocaInst &AI) {
   // Convert: alloca Ty, C - where C is a constant != 1 into: alloca [C x Ty], 1
   if (AI.isArrayAllocation()) {  // Check C != 1
     if (const ConstantInt *C = dyn_cast<ConstantInt>(AI.getArraySize())) {
-      const Type *NewTy = 
+      Type *NewTy = 
         ArrayType::get(AI.getAllocatedType(), C->getZExtValue());
       assert(isa<AllocaInst>(AI) && "Unknown type of allocation inst!");
       AllocaInst *New = Builder->CreateAlloca(NewTy, 0, AI.getName());
@@ -58,8 +58,7 @@ Instruction *InstCombiner::visitAllocaInst(AllocaInst &AI) {
       Idx[0] = NullIdx;
       Idx[1] = NullIdx;
       Instruction *GEP =
-           GetElementPtrInst::CreateInBounds(New, Idx, Idx + 2,
-                                             New->getName()+".sub");
+           GetElementPtrInst::CreateInBounds(New, Idx, New->getName()+".sub");
       InsertNewInstBefore(GEP, *It);
 
       // Now make everything use the getelementptr instead of the original
@@ -92,28 +91,28 @@ static Instruction *InstCombineLoadCast(InstCombiner &IC, LoadInst &LI,
   User *CI = cast<User>(LI.getOperand(0));
   Value *CastOp = CI->getOperand(0);
 
-  const PointerType *DestTy = cast<PointerType>(CI->getType());
-  const Type *DestPTy = DestTy->getElementType();
-  if (const PointerType *SrcTy = dyn_cast<PointerType>(CastOp->getType())) {
+  PointerType *DestTy = cast<PointerType>(CI->getType());
+  Type *DestPTy = DestTy->getElementType();
+  if (PointerType *SrcTy = dyn_cast<PointerType>(CastOp->getType())) {
 
     // If the address spaces don't match, don't eliminate the cast.
     if (DestTy->getAddressSpace() != SrcTy->getAddressSpace())
       return 0;
 
-    const Type *SrcPTy = SrcTy->getElementType();
+    Type *SrcPTy = SrcTy->getElementType();
 
     if (DestPTy->isIntegerTy() || DestPTy->isPointerTy() || 
          DestPTy->isVectorTy()) {
       // If the source is an array, the code below will not succeed.  Check to
       // see if a trivial 'gep P, 0, 0' will help matters.  Only do this for
       // constants.
-      if (const ArrayType *ASrcTy = dyn_cast<ArrayType>(SrcPTy))
+      if (ArrayType *ASrcTy = dyn_cast<ArrayType>(SrcPTy))
         if (Constant *CSrc = dyn_cast<Constant>(CastOp))
           if (ASrcTy->getNumElements() != 0) {
             Value *Idxs[2];
             Idxs[0] = Constant::getNullValue(Type::getInt32Ty(LI.getContext()));
             Idxs[1] = Idxs[0];
-            CastOp = ConstantExpr::getGetElementPtr(CSrc, Idxs, 2);
+            CastOp = ConstantExpr::getGetElementPtr(CSrc, Idxs);
             SrcTy = cast<PointerType>(CastOp->getType());
             SrcPTy = SrcTy->getElementType();
           }
@@ -256,11 +255,11 @@ static Instruction *InstCombineStoreToCast(InstCombiner &IC, StoreInst &SI) {
   User *CI = cast<User>(SI.getOperand(1));
   Value *CastOp = CI->getOperand(0);
 
-  const Type *DestPTy = cast<PointerType>(CI->getType())->getElementType();
-  const PointerType *SrcTy = dyn_cast<PointerType>(CastOp->getType());
+  Type *DestPTy = cast<PointerType>(CI->getType())->getElementType();
+  PointerType *SrcTy = dyn_cast<PointerType>(CastOp->getType());
   if (SrcTy == 0) return 0;
   
-  const Type *SrcPTy = SrcTy->getElementType();
+  Type *SrcPTy = SrcTy->getElementType();
 
   if (!DestPTy->isIntegerTy() && !DestPTy->isPointerTy())
     return 0;
@@ -280,12 +279,12 @@ static Instruction *InstCombineStoreToCast(InstCombiner &IC, StoreInst &SI) {
     NewGEPIndices.push_back(Zero);
     
     while (1) {
-      if (const StructType *STy = dyn_cast<StructType>(SrcPTy)) {
+      if (StructType *STy = dyn_cast<StructType>(SrcPTy)) {
         if (!STy->getNumElements()) /* Struct can be empty {} */
           break;
         NewGEPIndices.push_back(Zero);
         SrcPTy = STy->getElementType(0);
-      } else if (const ArrayType *ATy = dyn_cast<ArrayType>(SrcPTy)) {
+      } else if (ArrayType *ATy = dyn_cast<ArrayType>(SrcPTy)) {
         NewGEPIndices.push_back(Zero);
         SrcPTy = ATy->getElementType();
       } else {
@@ -314,8 +313,8 @@ static Instruction *InstCombineStoreToCast(InstCombiner &IC, StoreInst &SI) {
   Value *NewCast;
   Value *SIOp0 = SI.getOperand(0);
   Instruction::CastOps opcode = Instruction::BitCast;
-  const Type* CastSrcTy = SIOp0->getType();
-  const Type* CastDstTy = SrcPTy;
+  Type* CastSrcTy = SIOp0->getType();
+  Type* CastDstTy = SrcPTy;
   if (CastDstTy->isPointerTy()) {
     if (CastSrcTy->isIntegerTy())
       opcode = Instruction::IntToPtr;
@@ -327,8 +326,7 @@ static Instruction *InstCombineStoreToCast(InstCombiner &IC, StoreInst &SI) {
   // SIOp0 is a pointer to aggregate and this is a store to the first field,
   // emit a GEP to index into its first field.
   if (!NewGEPIndices.empty())
-    CastOp = IC.Builder->CreateInBoundsGEP(CastOp, NewGEPIndices.begin(),
-                                           NewGEPIndices.end());
+    CastOp = IC.Builder->CreateInBoundsGEP(CastOp, NewGEPIndices);
   
   NewCast = IC.Builder->CreateCast(opcode, SIOp0, CastDstTy,
                                    SIOp0->getName()+".c");
@@ -602,10 +600,12 @@ bool InstCombiner::SimplifyStoreAtEndOfBlock(StoreInst &SI) {
   // Advance to a place where it is safe to insert the new store and
   // insert it.
   BBI = DestBB->getFirstNonPHI();
-  InsertNewInstBefore(new StoreInst(MergedVal, SI.getOperand(1),
-                                    OtherStore->isVolatile(),
-                                    SI.getAlignment()), *BBI);
-  
+  StoreInst *NewSI = new StoreInst(MergedVal, SI.getOperand(1),
+                                   OtherStore->isVolatile(),
+                                   SI.getAlignment());
+  InsertNewInstBefore(NewSI, *BBI);
+  NewSI->setDebugLoc(OtherStore->getDebugLoc()); 
+
   // Nuke the old stores.
   EraseInstFromFunction(SI);
   EraseInstFromFunction(*OtherStore);

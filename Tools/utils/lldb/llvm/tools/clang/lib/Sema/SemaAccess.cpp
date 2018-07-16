@@ -126,11 +126,11 @@ struct EffectiveContext {
     return Inner;
   }
 
-  typedef llvm::SmallVectorImpl<CXXRecordDecl*>::const_iterator record_iterator;
+  typedef SmallVectorImpl<CXXRecordDecl*>::const_iterator record_iterator;
 
   DeclContext *Inner;
-  llvm::SmallVector<FunctionDecl*, 4> Functions;
-  llvm::SmallVector<CXXRecordDecl*, 4> Records;
+  SmallVector<FunctionDecl*, 4> Functions;
+  SmallVector<CXXRecordDecl*, 4> Records;
   bool Dependent;
 };
 
@@ -146,8 +146,10 @@ struct AccessTarget : public AccessedEntity {
                MemberNonce _,
                CXXRecordDecl *NamingClass,
                DeclAccessPair FoundDecl,
-               QualType BaseObjectType)
-    : AccessedEntity(Context, Member, NamingClass, FoundDecl, BaseObjectType) {
+               QualType BaseObjectType,
+               bool IsUsingDecl = false)
+    : AccessedEntity(Context, Member, NamingClass, FoundDecl, BaseObjectType),
+      IsUsingDeclaration(IsUsingDecl) {
     initialize();
   }
 
@@ -216,6 +218,7 @@ private:
     DeclaringClass = DeclaringClass->getCanonicalDecl();
   }
 
+  bool IsUsingDeclaration : 1;
   bool HasInstanceContext : 1;
   mutable bool CalculatedInstanceContext : 1;
   mutable const CXXRecordDecl *InstanceContext;
@@ -257,7 +260,7 @@ static AccessResult IsDerivedFromInclusive(const CXXRecordDecl *Derived,
     return AR_dependent;
 
   AccessResult OnFailure = AR_inaccessible;
-  llvm::SmallVector<const CXXRecordDecl*, 8> Queue; // actually a stack
+  SmallVector<const CXXRecordDecl*, 8> Queue; // actually a stack
 
   while (true) {
     for (CXXRecordDecl::base_class_const_iterator
@@ -418,7 +421,7 @@ static AccessResult MatchesFriend(Sema &S,
 
   // Check whether the friend is the template of a class in the
   // context chain.
-  for (llvm::SmallVectorImpl<CXXRecordDecl*>::const_iterator
+  for (SmallVectorImpl<CXXRecordDecl*>::const_iterator
          I = EC.Records.begin(), E = EC.Records.end(); I != E; ++I) {
     CXXRecordDecl *Record = *I;
 
@@ -469,7 +472,7 @@ static AccessResult MatchesFriend(Sema &S,
                                   FunctionDecl *Friend) {
   AccessResult OnFailure = AR_inaccessible;
 
-  for (llvm::SmallVectorImpl<FunctionDecl*>::const_iterator
+  for (SmallVectorImpl<FunctionDecl*>::const_iterator
          I = EC.Functions.begin(), E = EC.Functions.end(); I != E; ++I) {
     if (Friend == *I)
       return AR_accessible;
@@ -490,7 +493,7 @@ static AccessResult MatchesFriend(Sema &S,
 
   AccessResult OnFailure = AR_inaccessible;
 
-  for (llvm::SmallVectorImpl<FunctionDecl*>::const_iterator
+  for (SmallVectorImpl<FunctionDecl*>::const_iterator
          I = EC.Functions.begin(), E = EC.Functions.end(); I != E; ++I) {
 
     FunctionTemplateDecl *FTD = (*I)->getPrimaryTemplate();
@@ -581,7 +584,7 @@ struct ProtectedFriendContext {
   bool EverDependent;
 
   /// The path down to the current base class.
-  llvm::SmallVector<const CXXRecordDecl*, 20> CurPath;
+  SmallVector<const CXXRecordDecl*, 20> CurPath;
 
   ProtectedFriendContext(Sema &S, const EffectiveContext &EC,
                          const CXXRecordDecl *InstanceContext,
@@ -1129,6 +1132,44 @@ static void DiagnoseBadAccess(Sema &S, SourceLocation Loc,
   DiagnoseAccessPath(S, EC, Entity);
 }
 
+/// MSVC has a bug where if during an using declaration name lookup, 
+/// the declaration found is unaccessible (private) and that declaration 
+/// was bring into scope via another using declaration whose target
+/// declaration is accessible (public) then no error is generated.
+/// Example:
+///   class A {
+///   public:
+///     int f();
+///   };
+///   class B : public A {
+///   private:
+///     using A::f;
+///   };
+///   class C : public B {
+///   private:
+///     using B::f;
+///   };
+///
+/// Here, B::f is private so this should fail in Standard C++, but 
+/// because B::f refers to A::f which is public MSVC accepts it.
+static bool IsMicrosoftUsingDeclarationAccessBug(Sema& S, 
+                                                 SourceLocation AccessLoc,
+                                                 AccessTarget &Entity) {
+  if (UsingShadowDecl *Shadow =
+                         dyn_cast<UsingShadowDecl>(Entity.getTargetDecl())) {
+    const NamedDecl *OrigDecl = Entity.getTargetDecl()->getUnderlyingDecl();
+    if (Entity.getTargetDecl()->getAccess() == AS_private && 
+        (OrigDecl->getAccess() == AS_public ||
+         OrigDecl->getAccess() == AS_protected)) {
+      S.Diag(AccessLoc, diag::war_ms_using_declaration_inaccessible) 
+        << Shadow->getUsingDecl()->getQualifiedNameAsString()
+        << OrigDecl->getQualifiedNameAsString();
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Determines whether the accessed entity is accessible.  Public members
 /// have been weeded out by this point.
 static AccessResult IsAccessible(Sema &S,
@@ -1231,6 +1272,10 @@ static AccessResult CheckEffectiveAccess(Sema &S,
                                          SourceLocation Loc,
                                          AccessTarget &Entity) {
   assert(Entity.getAccess() != AS_public && "called for public access!");
+
+  if (S.getLangOptions().Microsoft &&
+      IsMicrosoftUsingDeclarationAccessBug(S, Loc, Entity))
+    return AR_accessible;
 
   switch (IsAccessible(S, EC, Entity)) {
   case AR_dependent:
@@ -1415,27 +1460,47 @@ Sema::AccessResult Sema::CheckConstructorAccess(SourceLocation UseLoc,
   AccessTarget AccessEntity(Context, AccessTarget::Member, NamingClass,
                             DeclAccessPair::make(Constructor, Access),
                             QualType());
+  PartialDiagnostic PD(PDiag());
   switch (Entity.getKind()) {
   default:
-    AccessEntity.setDiag(IsCopyBindingRefToTemp
-                         ? diag::ext_rvalue_to_reference_access_ctor
-                         : diag::err_access_ctor);
+    PD = PDiag(IsCopyBindingRefToTemp
+                 ? diag::ext_rvalue_to_reference_access_ctor
+                 : diag::err_access_ctor);
+
     break;
 
   case InitializedEntity::EK_Base:
-    AccessEntity.setDiag(PDiag(diag::err_access_base_ctor)
-                          << Entity.isInheritedVirtualBase()
-                          << Entity.getBaseSpecifier()->getType());
+    PD = PDiag(diag::err_access_base_ctor);
+    PD << Entity.isInheritedVirtualBase()
+       << Entity.getBaseSpecifier()->getType() << getSpecialMember(Constructor);
     break;
 
   case InitializedEntity::EK_Member: {
     const FieldDecl *Field = cast<FieldDecl>(Entity.getDecl());
-    AccessEntity.setDiag(PDiag(diag::err_access_field_ctor)
-                          << Field->getType());
+    PD = PDiag(diag::err_access_field_ctor);
+    PD << Field->getType() << getSpecialMember(Constructor);
     break;
   }
 
   }
+
+  return CheckConstructorAccess(UseLoc, Constructor, Access, PD);
+}
+
+/// Checks access to a constructor.
+Sema::AccessResult Sema::CheckConstructorAccess(SourceLocation UseLoc,
+                                                CXXConstructorDecl *Constructor,
+                                                AccessSpecifier Access,
+                                                PartialDiagnostic PD) {
+  if (!getLangOptions().AccessControl ||
+      Access == AS_public)
+    return AR_accessible;
+
+  CXXRecordDecl *NamingClass = Constructor->getParent();
+  AccessTarget AccessEntity(Context, AccessTarget::Member, NamingClass,
+                            DeclAccessPair::make(Constructor, Access),
+                            QualType());
+  AccessEntity.setDiag(PD);
 
   return CheckAccess(*this, UseLoc, AccessEntity);
 }
@@ -1573,9 +1638,8 @@ void Sema::CheckLookupAccess(const LookupResult &R) {
     if (I.getAccess() != AS_public) {
       AccessTarget Entity(Context, AccessedEntity::Member,
                           R.getNamingClass(), I.getPair(),
-                          R.getBaseObjectType());
+                          R.getBaseObjectType(), R.isUsingDeclaration());
       Entity.setDiag(diag::err_access);
-
       CheckAccess(*this, R.getNameLoc(), Entity);
     }
   }

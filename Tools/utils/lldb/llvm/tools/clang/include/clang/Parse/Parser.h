@@ -15,6 +15,7 @@
 #define LLVM_CLANG_PARSE_PARSER_H
 
 #include "clang/Basic/Specifiers.h"
+#include "clang/Basic/DelayedCleanupPool.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/CodeCompletionHandler.h"
 #include "clang/Sema/Sema.h"
@@ -41,7 +42,7 @@ class PrettyStackTraceParserEntry : public llvm::PrettyStackTraceEntry {
   const Parser &P;
 public:
   PrettyStackTraceParserEntry(const Parser &p) : P(p) {}
-  virtual void print(llvm::raw_ostream &OS) const;
+  virtual void print(raw_ostream &OS) const;
 };
 
 /// PrecedenceLevels - These are precedences for the binary/ternary
@@ -170,6 +171,10 @@ class Parser : public CodeCompletionHandler {
   /// Factory object for creating AttributeList objects.
   AttributeFactory AttrFactory;
 
+  /// \brief Gathers and cleans up objects when parsing of a top-level
+  /// declaration is finished.
+  DelayedCleanupPool TopLevelDeclCleanupPool;
+
 public:
   Parser(Preprocessor &PP, Sema &Actions);
   ~Parser();
@@ -193,7 +198,7 @@ public:
   typedef TemplateParameterList TemplateParamsTy;
   typedef OpaquePtr<TemplateName> TemplateTy;
 
-  typedef llvm::SmallVector<TemplateParameterList *, 4> TemplateParameterLists;
+  typedef SmallVector<TemplateParameterList *, 4> TemplateParameterLists;
 
   typedef clang::ExprResult        ExprResult;
   typedef clang::StmtResult        StmtResult;
@@ -260,7 +265,10 @@ private:
   ///
   bool isTokenStringLiteral() const {
     return Tok.getKind() == tok::string_literal ||
-           Tok.getKind() == tok::wide_string_literal;
+           Tok.getKind() == tok::wide_string_literal ||
+           Tok.getKind() == tok::utf8_string_literal ||
+           Tok.getKind() == tok::utf16_string_literal ||
+           Tok.getKind() == tok::utf32_string_literal;
   }
 
   /// \brief Returns true if the current token is a '=' or '==' and
@@ -419,25 +427,7 @@ private:
       Tok.setAnnotationValue(ER.get());
   }
 
-  /// TryAnnotateTypeOrScopeToken - If the current token position is on a
-  /// typename (possibly qualified in C++) or a C++ scope specifier not followed
-  /// by a typename, TryAnnotateTypeOrScopeToken will replace one or more tokens
-  /// with a single annotation token representing the typename or C++ scope
-  /// respectively.
-  /// This simplifies handling of C++ scope specifiers and allows efficient
-  /// backtracking without the need to re-parse and resolve nested-names and
-  /// typenames.
-  /// It will mainly be called when we expect to treat identifiers as typenames
-  /// (if they are typenames). For example, in C we do not expect identifiers
-  /// inside expressions to be treated as typenames so it will not be called
-  /// for expressions in C.
-  ///
-  /// This returns true if the token was annotated.
   bool TryAnnotateTypeOrScopeToken(bool EnteringContext = false);
-
-  /// TryAnnotateCXXScopeToken - Like TryAnnotateTypeOrScopeToken but
-  /// only annotates C++ scope specifiers.  This returns true if there
-  /// was an unrecoverable error.
   bool TryAnnotateCXXScopeToken(bool EnteringContext = false);
 
   /// TryAltiVecToken - Check for context-sensitive AltiVec identifier tokens,
@@ -467,7 +457,12 @@ private:
   bool TryAltiVecTokenOutOfLine(DeclSpec &DS, SourceLocation Loc,
                                 const char *&PrevSpec, unsigned &DiagID,
                                 bool &isInvalid);
-    
+
+  /// \brief Get the TemplateIdAnnotation from the token and put it in the
+  /// cleanup pool so that it gets destroyed when parsing the current top level
+  /// declaration is finished.
+  TemplateIdAnnotation *takeTemplateIdAnnotation(const Token &tok);
+
   /// TentativeParsingAction - An object that is used as a kind of "tentative
   /// parsing transaction". It gets instantiated to mark the token position and
   /// after the token consumption is done, Commit() or Revert() is called to
@@ -507,12 +502,6 @@ private:
   };
 
 
-  /// MatchRHSPunctuation - For punctuation with a LHS and RHS (e.g. '['/']'),
-  /// this helper function matches and consumes the specified RHS token if
-  /// present.  If not present, it emits the specified diagnostic indicating
-  /// that the parser failed to match the RHS of the token at LHSLoc.  LHSName
-  /// should be the name of the unmatched LHS token.  This returns the location
-  /// of the consumed token.
   SourceLocation MatchRHSPunctuation(tok::TokenKind RHSTok,
                                      SourceLocation LHSLoc);
 
@@ -580,6 +569,18 @@ private:
   /// ExitScope - Pop a scope off the scope stack.
   void ExitScope();
 
+  /// \brief RAII object used to modify the scope flags for the current scope.
+  class ParseScopeFlags {
+    Scope *CurScope;
+    unsigned OldFlags;
+    ParseScopeFlags(const ParseScopeFlags &); // do not implement
+    void operator=(const ParseScopeFlags &); // do not implement
+
+  public:
+    ParseScopeFlags(Parser *Self, unsigned ScopeFlags, bool ManageFlags = true);
+    ~ParseScopeFlags();
+  };
+
   //===--------------------------------------------------------------------===//
   // Diagnostic Emission and Error recovery.
 
@@ -621,8 +622,8 @@ private:
   /// - function bodies
   /// - default arguments
   /// - exception-specifications (TODO: C++0x)
-  /// - and brace-or-equal-initializers (TODO: C++0x)
-  /// for non-static data members (including such things in nested classes)."
+  /// - and brace-or-equal-initializers for non-static data members
+  /// (including such things in nested classes)."
   /// LateParsedDeclarations build the tree of those elements so they can
   /// be parsed after parsing the top-level class.
   class LateParsedDeclaration {
@@ -630,6 +631,7 @@ private:
     virtual ~LateParsedDeclaration();
 
     virtual void ParseLexedMethodDeclarations();
+    virtual void ParseLexedMemberInitializers();
     virtual void ParseLexedMethodDefs();
   };
 
@@ -641,6 +643,7 @@ private:
     virtual ~LateParsedClass();
 
     virtual void ParseLexedMethodDeclarations();
+    virtual void ParseLexedMemberInitializers();
     virtual void ParseLexedMethodDefs();
 
   private:
@@ -711,7 +714,26 @@ private:
     /// have a default argument, but all of the parameters of the
     /// method will be stored so that they can be reintroduced into
     /// scope at the appropriate times.
-    llvm::SmallVector<LateParsedDefaultArgument, 8> DefaultArgs;
+    SmallVector<LateParsedDefaultArgument, 8> DefaultArgs;
+  };
+
+  /// LateParsedMemberInitializer - An initializer for a non-static class data
+  /// member whose parsing must to be delayed until the class is completely
+  /// defined (C++11 [class.mem]p2).
+  struct LateParsedMemberInitializer : public LateParsedDeclaration {
+    LateParsedMemberInitializer(Parser *P, Decl *FD)
+      : Self(P), Field(FD) { }
+
+    virtual void ParseLexedMemberInitializers();
+
+    Parser *Self;
+
+    /// Field - The field declaration.
+    Decl *Field;
+
+    /// CachedTokens - The sequence of tokens that comprises the initializer,
+    /// including any leading '='.
+    CachedTokens Toks;
   };
 
   /// LateParsedDeclarationsContainer - During parsing of a top (non-nested)
@@ -719,7 +741,7 @@ private:
   /// parsed until after the definition is completed (C++ [class.mem]p2),
   /// the method declarations and possibly attached inline definitions
   /// will be stored here with the tokens that will be parsed to create those entities.
-  typedef llvm::SmallVector<LateParsedDeclaration*, 2> LateParsedDeclarationsContainer;
+  typedef SmallVector<LateParsedDeclaration*, 2> LateParsedDeclarationsContainer;
 
   /// \brief Representation of a class that has been parsed, including
   /// any member function declarations or definitions that need to be
@@ -974,10 +996,13 @@ private:
   Decl *ParseCXXInlineMethodDef(AccessSpecifier AS, ParsingDeclarator &D,
                                 const ParsedTemplateInfo &TemplateInfo,
                                 const VirtSpecifiers& VS, ExprResult& Init);
+  void ParseCXXNonStaticMemberInitializer(Decl *VarD);
   void ParseLexedMethodDeclarations(ParsingClass &Class);
   void ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM);
   void ParseLexedMethodDefs(ParsingClass &Class);
   void ParseLexedMethodDef(LexedMethod &LM);
+  void ParseLexedMemberInitializers(ParsingClass &Class);
+  void ParseLexedMemberInitializer(LateParsedMemberInitializer &MI);
   bool ConsumeAndStoreUntil(tok::TokenKind T1,
                             CachedTokens &Toks,
                             bool StopAtSemi = true,
@@ -1023,8 +1048,8 @@ private:
   void ParseObjCClassInstanceVariables(Decl *interfaceDecl,
                                        tok::ObjCKeywordKind visibility,
                                        SourceLocation atLoc);
-  bool ParseObjCProtocolReferences(llvm::SmallVectorImpl<Decl *> &P,
-                                   llvm::SmallVectorImpl<SourceLocation> &PLocs,
+  bool ParseObjCProtocolReferences(SmallVectorImpl<Decl *> &P,
+                                   SmallVectorImpl<SourceLocation> &PLocs,
                                    bool WarnOnDeclarations,
                                    SourceLocation &LAngleLoc,
                                    SourceLocation &EndProtoLoc);
@@ -1035,7 +1060,7 @@ private:
                                        ParsedAttributes &prefixAttrs);
 
   Decl *ObjCImpDecl;
-  llvm::SmallVector<Decl *, 4> PendingObjCImpDecl;
+  SmallVector<Decl *, 4> PendingObjCImpDecl;
 
   Decl *ParseObjCAtImplementationDeclaration(SourceLocation atLoc);
   Decl *ParseObjCAtEndDeclaration(SourceRange atEnd);
@@ -1089,10 +1114,10 @@ private:
   ExprResult ParseCastExpression(bool isUnaryExpression,
                                  bool isAddressOfOperand,
                                  bool &NotCastExpr,
-                                 ParsedType TypeOfCast);
+                                 bool isTypeCast);
   ExprResult ParseCastExpression(bool isUnaryExpression,
                                  bool isAddressOfOperand = false,
-                                 ParsedType TypeOfCast = ParsedType());
+                                 bool isTypeCast = false);
 
   /// Returns true if the next token would start a postfix-expression
   /// suffix.
@@ -1112,12 +1137,12 @@ private:
                                                      ParsedType &CastTy,
                                                      SourceRange &CastRange);
 
-  typedef llvm::SmallVector<Expr*, 20> ExprListTy;
-  typedef llvm::SmallVector<SourceLocation, 20> CommaLocsTy;
+  typedef SmallVector<Expr*, 20> ExprListTy;
+  typedef SmallVector<SourceLocation, 20> CommaLocsTy;
 
   /// ParseExpressionList - Used for C/C++ (argument-)expression-list.
-  bool ParseExpressionList(llvm::SmallVectorImpl<Expr*> &Exprs,
-                           llvm::SmallVectorImpl<SourceLocation> &CommaLocs,
+  bool ParseExpressionList(SmallVectorImpl<Expr*> &Exprs,
+                           SmallVectorImpl<SourceLocation> &CommaLocs,
                            void (Sema::*Completer)(Scope *S,
                                                    Expr *Data,
                                                    Expr **Args,
@@ -1133,7 +1158,7 @@ private:
   };
   ExprResult ParseParenExpression(ParenParseOption &ExprType,
                                         bool stopIfCastExpr,
-                                        ParsedType TypeOfCast,
+                                        bool isTypeCast,
                                         ParsedType &CastTy,
                                         SourceLocation &RParenLoc);
 
@@ -1159,6 +1184,17 @@ private:
                                       bool EnteringContext,
                                       bool *MayBePseudoDestructor = 0,
                                       bool IsTypename = false);
+
+  //===--------------------------------------------------------------------===//
+  // C++0x 5.1.2: Lambda expressions
+
+  // [...] () -> type {...}
+  ExprResult ParseLambdaExpression();
+  ExprResult TryParseLambdaExpression();
+  llvm::Optional<unsigned> ParseLambdaIntroducer(LambdaIntroducer &Intro);
+  bool TryParseLambdaIntroducer(LambdaIntroducer &Intro);
+  ExprResult ParseLambdaExpressionAfterIntroducer(
+               LambdaIntroducer &Intro);
 
   //===--------------------------------------------------------------------===//
   // C++ 5.2p1: C++ Casts
@@ -1189,19 +1225,19 @@ private:
 
   ExceptionSpecificationType MaybeParseExceptionSpecification(
                     SourceRange &SpecificationRange,
-                    llvm::SmallVectorImpl<ParsedType> &DynamicExceptions,
-                    llvm::SmallVectorImpl<SourceRange> &DynamicExceptionRanges,
+                    SmallVectorImpl<ParsedType> &DynamicExceptions,
+                    SmallVectorImpl<SourceRange> &DynamicExceptionRanges,
                     ExprResult &NoexceptExpr);
 
   // EndLoc is filled with the location of the last token of the specification.
   ExceptionSpecificationType ParseDynamicExceptionSpecification(
                                   SourceRange &SpecificationRange,
-                                  llvm::SmallVectorImpl<ParsedType> &Exceptions,
-                                  llvm::SmallVectorImpl<SourceRange> &Ranges);
+                                  SmallVectorImpl<ParsedType> &Exceptions,
+                                  SmallVectorImpl<SourceRange> &Ranges);
 
   //===--------------------------------------------------------------------===//
   // C++0x 8: Function declaration trailing-return-type
-  TypeResult ParseTrailingReturnType();
+  TypeResult ParseTrailingReturnType(SourceRange &Range);
 
   //===--------------------------------------------------------------------===//
   // C++ 2.13.5: C++ Boolean Literals
@@ -1222,7 +1258,7 @@ private:
 
   //===--------------------------------------------------------------------===//
   // C++ 5.3.4 and 5.3.5: C++ new and delete
-  bool ParseExpressionListOrTypeId(llvm::SmallVectorImpl<Expr*> &Exprs,
+  bool ParseExpressionListOrTypeId(SmallVectorImpl<Expr*> &Exprs,
                                    Declarator &D);
   void ParseDirectNewDeclarator(Declarator &D);
   ExprResult ParseCXXNewExpression(bool UseGlobal, SourceLocation Start);
@@ -1292,6 +1328,9 @@ private:
   StmtResult ParseDefaultStatement(ParsedAttributes &Attr);
   StmtResult ParseCompoundStatement(ParsedAttributes &Attr,
                                     bool isStmtExpr = false);
+  StmtResult ParseCompoundStatement(ParsedAttributes &Attr,
+                                    bool isStmtExpr,
+                                    unsigned ScopeFlags);
   StmtResult ParseCompoundStatementBody(bool isStmtExpr = false);
   bool ParseParenExprOrCondition(ExprResult &ExprResult,
                                  Decl *&DeclResult,
@@ -1310,10 +1349,12 @@ private:
   StmtResult FuzzyParseMicrosoftAsmStatement(SourceLocation AsmLoc);
   bool ParseMicrosoftIfExistsCondition(bool& Result);
   void ParseMicrosoftIfExistsStatement(StmtVector &Stmts);
-  void ParseMicrosoftIfExistsDeclaration();
-bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
-                           llvm::SmallVectorImpl<ExprTy *> &Constraints,
-                           llvm::SmallVectorImpl<ExprTy *> &Exprs);
+  void ParseMicrosoftIfExistsExternalDeclaration();
+  void ParseMicrosoftIfExistsClassDeclaration(DeclSpec::TST TagType,
+                                              AccessSpecifier& CurAS);
+bool ParseAsmOperandsOpt(SmallVectorImpl<IdentifierInfo *> &Names,
+                           SmallVectorImpl<ExprTy *> &Constraints,
+                           SmallVectorImpl<ExprTy *> &Exprs);
 
   //===--------------------------------------------------------------------===//
   // C++ 6: Statements and Blocks
@@ -1337,6 +1378,7 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
   StmtResult ParseObjCTryStmt(SourceLocation atLoc);
   StmtResult ParseObjCThrowStmt(SourceLocation atLoc);
   StmtResult ParseObjCSynchronizedStmt(SourceLocation atLoc);
+  StmtResult ParseObjCAutoreleasePoolStmt(SourceLocation atLoc);
 
 
   //===--------------------------------------------------------------------===//
@@ -1401,7 +1443,7 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
                const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
                                   bool SuppressDeclarations = false);
 
-  void ParseSpecifierQualifierList(DeclSpec &DS);
+  void ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS = AS_none);
 
   void ParseObjCTypeQualifierList(ObjCDeclSpec &DS, 
                                   ObjCTypeNameContext Context);
@@ -1578,7 +1620,10 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
 
   TypeResult ParseTypeName(SourceRange *Range = 0,
                            Declarator::TheContext Context
-                             = Declarator::TypeNameContext);
+                             = Declarator::TypeNameContext,
+                           ObjCDeclSpec *objcQuals = 0,
+                           AccessSpecifier AS = AS_none,
+                           Decl **OwnedType = 0);
   void ParseBlockId();
 
   void ProhibitAttributes(ParsedAttributesWithRange &attrs) {
@@ -1646,6 +1691,13 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
                                   ParsedAttributes &attrs,
                                   SourceLocation *endLoc);
 
+  bool IsThreadSafetyAttribute(llvm::StringRef AttrName);
+  void ParseThreadSafetyAttribute(IdentifierInfo &AttrName,
+                                  SourceLocation AttrNameLoc,
+                                  ParsedAttributes &Attrs,
+                                  SourceLocation *EndLoc);
+
+
   void ParseTypeofSpecifier(DeclSpec &DS);
   void ParseDecltypeSpecifier(DeclSpec &DS);
   void ParseUnderlyingTypeSpecifier(DeclSpec &DS);
@@ -1704,10 +1756,15 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
   void ParseFunctionDeclarator(SourceLocation LParenLoc, Declarator &D,
                                ParsedAttributes &attrs,
                                bool RequiresArg = false);
-  void ParseFunctionDeclaratorIdentifierList(SourceLocation LParenLoc,
-                                             IdentifierInfo *FirstIdent,
-                                             SourceLocation FirstIdentLoc,
-                                             Declarator &D);
+  bool isFunctionDeclaratorIdentifierList();
+  void ParseFunctionDeclaratorIdentifierList(
+         Declarator &D,
+         SmallVector<DeclaratorChunk::ParamInfo, 16> &ParamInfo);
+  void ParseParameterDeclarationClause(
+         Declarator &D,
+         ParsedAttributes &attrs,
+         SmallVector<DeclaratorChunk::ParamInfo, 16> &ParamInfo,
+         SourceLocation &EllipsisLoc);
   void ParseBracketDeclarator(Declarator &D);
 
   //===--------------------------------------------------------------------===//
@@ -1718,11 +1775,18 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
   
   Decl *ParseNamespace(unsigned Context, SourceLocation &DeclEnd,
                        SourceLocation InlineLoc = SourceLocation());
+  void ParseInnerNamespace(std::vector<SourceLocation>& IdentLoc,
+                           std::vector<IdentifierInfo*>& Ident,
+                           std::vector<SourceLocation>& NamespaceLoc,
+                           unsigned int index, SourceLocation& InlineLoc,
+                           SourceLocation& LBrace, ParsedAttributes& attrs,
+                           SourceLocation& RBraceLoc);
   Decl *ParseLinkage(ParsingDeclSpec &DS, unsigned Context);
   Decl *ParseUsingDirectiveOrDeclaration(unsigned Context,
                                          const ParsedTemplateInfo &TemplateInfo,
                                          SourceLocation &DeclEnd,
-                                         ParsedAttributesWithRange &attrs);
+                                         ParsedAttributesWithRange &attrs,
+                                         Decl **OwnedType = 0);
   Decl *ParseUsingDirective(unsigned Context,
                             SourceLocation UsingLoc,
                             SourceLocation &DeclEnd,
@@ -1731,7 +1795,8 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
                               const ParsedTemplateInfo &TemplateInfo,
                               SourceLocation UsingLoc,
                               SourceLocation &DeclEnd,
-                              AccessSpecifier AS = AS_none);
+                              AccessSpecifier AS = AS_none,
+                              Decl **OwnedType = 0);
   Decl *ParseStaticAssertDeclaration(SourceLocation &DeclEnd);
   Decl *ParseNamespaceAlias(SourceLocation NamespaceLoc,
                             SourceLocation AliasLoc, IdentifierInfo *Alias,
@@ -1747,6 +1812,8 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
                            bool SuppressDeclarations = false);
   void ParseCXXMemberSpecification(SourceLocation StartLoc, unsigned TagType,
                                    Decl *TagDecl);
+  ExprResult ParseCXXMemberInitializer(bool IsFunction,
+                                       SourceLocation &EqualLoc);
   void ParseCXXClassMemberDeclaration(AccessSpecifier AS,
                 const ParsedTemplateInfo &TemplateInfo = ParsedTemplateInfo(),
                                  ParsingDeclRAIIObject *DiagsFromTParams = 0);
@@ -1795,18 +1862,18 @@ bool ParseAsmOperandsOpt(llvm::SmallVectorImpl<IdentifierInfo *> &Names,
                                        SourceLocation &DeclEnd,
                                        AccessSpecifier AS=AS_none);
   bool ParseTemplateParameters(unsigned Depth,
-                               llvm::SmallVectorImpl<Decl*> &TemplateParams,
+                               SmallVectorImpl<Decl*> &TemplateParams,
                                SourceLocation &LAngleLoc,
                                SourceLocation &RAngleLoc);
   bool ParseTemplateParameterList(unsigned Depth,
-                                  llvm::SmallVectorImpl<Decl*> &TemplateParams);
+                                  SmallVectorImpl<Decl*> &TemplateParams);
   bool isStartOfTemplateTypeParameter();
   Decl *ParseTemplateParameter(unsigned Depth, unsigned Position);
   Decl *ParseTypeParameter(unsigned Depth, unsigned Position);
   Decl *ParseTemplateTemplateParameter(unsigned Depth, unsigned Position);
   Decl *ParseNonTypeTemplateParameter(unsigned Depth, unsigned Position);
   // C++ 14.3: Template arguments [temp.arg]
-  typedef llvm::SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
+  typedef SmallVector<ParsedTemplateArgument, 16> TemplateArgList;
 
   bool ParseTemplateIdAfterTemplateName(TemplateTy Template,
                                         SourceLocation TemplateNameLoc,

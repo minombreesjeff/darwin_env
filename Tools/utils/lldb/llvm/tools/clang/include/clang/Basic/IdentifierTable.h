@@ -17,6 +17,7 @@
 
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/TokenKinds.h"
+#include "clang/Basic/LLVM.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallString.h"
@@ -49,8 +50,8 @@ namespace clang {
 /// set, and all tok::identifier tokens have a pointer to one of these.
 class IdentifierInfo {
   // Note: DON'T make TokenID a 'tok::TokenKind'; MSVC will treat it as a
-  //       signed char and TokenKinds > 127 won't be handled correctly.
-  unsigned TokenID            : 8; // Front-end token ID or tok::identifier.
+  //       signed char and TokenKinds > 255 won't be handled correctly.
+  unsigned TokenID            : 9; // Front-end token ID or tok::identifier.
   // Objective-C keyword ('protocol' in '@protocol') or builtin (__builtin_inf).
   // First NUM_OBJC_KEYWORDS values are for Objective-C, the remaining values
   // are for builtins.
@@ -64,7 +65,7 @@ class IdentifierInfo {
                                    // file and wasn't modified since.
   bool RevertedTokenID        : 1; // True if RevertTokenIDToIdentifier was
                                    // called.
-  // 6 bits left in 32-bit word.
+  // 5 bits left in 32-bit word.
   void *FETokenInfo;               // Managed by the language front-end.
   llvm::StringMapEntry<IdentifierInfo*> *Entry;
 
@@ -113,8 +114,8 @@ public:
   }
 
   /// getName - Return the actual identifier string.
-  llvm::StringRef getName() const {
-    return llvm::StringRef(getNameStart(), getLength());
+  StringRef getName() const {
+    return StringRef(getNameStart(), getLength());
   }
 
   /// hasMacroDefinition - Return true if this identifier is #defined to some
@@ -299,8 +300,8 @@ public:
   /// advances the iterator for the following string.
   ///
   /// \returns The next string in the identifier table. If there is
-  /// no such string, returns an empty \c llvm::StringRef.
-  virtual llvm::StringRef Next() = 0;
+  /// no such string, returns an empty \c StringRef.
+  virtual StringRef Next() = 0;
 };
 
 /// IdentifierInfoLookup - An abstract class used by IdentifierTable that
@@ -314,7 +315,7 @@ public:
   ///  Unlike the version in IdentifierTable, this returns a pointer instead
   ///  of a reference.  If the pointer is NULL then the IdentifierInfo cannot
   ///  be found.
-  virtual IdentifierInfo* get(llvm::StringRef Name) = 0;
+  virtual IdentifierInfo* get(StringRef Name) = 0;
 
   /// \brief Retrieve an iterator into the set of all identifiers
   /// known to this identifier lookup source.
@@ -376,7 +377,7 @@ public:
 
   /// get - Return the identifier token info for the specified named identifier.
   ///
-  IdentifierInfo &get(llvm::StringRef Name) {
+  IdentifierInfo &get(StringRef Name) {
     llvm::StringMapEntry<IdentifierInfo*> &Entry =
       HashTable.GetOrCreateValue(Name);
 
@@ -405,18 +406,11 @@ public:
     return *II;
   }
 
-  IdentifierInfo &get(llvm::StringRef Name, tok::TokenKind TokenCode) {
+  IdentifierInfo &get(StringRef Name, tok::TokenKind TokenCode) {
     IdentifierInfo &II = get(Name);
     II.TokenID = TokenCode;
+    assert(II.TokenID == (unsigned) TokenCode && "TokenCode too large");
     return II;
-  }
-
-  IdentifierInfo &get(const char *NameStart, const char *NameEnd) {
-    return get(llvm::StringRef(NameStart, NameEnd-NameStart));
-  }
-
-  IdentifierInfo &get(const char *Name, size_t NameLen) {
-    return get(llvm::StringRef(Name, NameLen));
   }
 
   /// \brief Gets an IdentifierInfo for the given name without consulting
@@ -425,9 +419,9 @@ public:
   /// This is a version of get() meant for external sources that want to
   /// introduce or modify an identifier. If they called get(), they would
   /// likely end up in a recursion.
-  IdentifierInfo &getOwn(const char *NameStart, const char *NameEnd) {
+  IdentifierInfo &getOwn(StringRef Name) {
     llvm::StringMapEntry<IdentifierInfo*> &Entry =
-      HashTable.GetOrCreateValue(NameStart, NameEnd);
+      HashTable.GetOrCreateValue(Name);
 
     IdentifierInfo *II = Entry.getValue();
     if (!II) {
@@ -443,9 +437,6 @@ public:
     }
 
     return *II;
-  }
-  IdentifierInfo &getOwn(llvm::StringRef Name) {
-    return getOwn(Name.begin(), Name.end());
   }
 
   typedef HashTableTy::const_iterator iterator;
@@ -498,7 +489,11 @@ enum ObjCMethodFamily {
   OMF_dealloc,
   OMF_release,
   OMF_retain,
-  OMF_retainCount
+  OMF_retainCount,
+  OMF_self,
+
+  // performSelector families
+  OMF_performSelector
 };
 
 /// Enough bits to store any enumerator in ObjCMethodFamily or
@@ -562,6 +557,11 @@ public:
   bool operator!=(Selector RHS) const {
     return InfoPtr != RHS.InfoPtr;
   }
+
+  bool operator < (Selector RHS) const {
+    return InfoPtr < RHS.InfoPtr;
+  }
+
   void *getAsOpaquePtr() const {
     return reinterpret_cast<void*>(InfoPtr);
   }
@@ -602,7 +602,7 @@ public:
   ///
   /// \returns the name for this slot, which may be the empty string if no
   /// name was supplied.
-  llvm::StringRef getNameForSlot(unsigned argIndex) const;
+  StringRef getNameForSlot(unsigned argIndex) const;
   
   /// getAsString - Derive the full selector name (e.g. "foo:bar:") and return
   /// it as an std::string.

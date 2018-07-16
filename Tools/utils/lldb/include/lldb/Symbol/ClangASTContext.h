@@ -49,7 +49,8 @@ public:
         eTypeIsStructUnion      = (1u << 13),
         eTypeIsTemplate         = (1u << 14),
         eTypeIsTypedef          = (1u << 15),
-        eTypeIsVector           = (1u << 16)
+        eTypeIsVector           = (1u << 16),
+        eTypeIsScalar           = (1u << 17)
     };
 
     typedef void (*CompleteTagDeclCallback)(void *baton, clang::TagDecl *);
@@ -299,6 +300,13 @@ public:
                                                           is_explicit);
     }
     
+    static clang::DeclContext *
+    GetAsDeclContext (clang::CXXMethodDecl *cxx_method_decl);
+
+    static clang::DeclContext *
+    GetAsDeclContext (clang::ObjCMethodDecl *objc_method_decl);
+
+    
     static bool
     CheckOverloadedOperatorKindParameterCount (uint32_t op_kind, 
                                                uint32_t num_params);
@@ -415,6 +423,7 @@ public:
                               uint32_t idx,
                               bool transparent_pointers,
                               bool omit_empty_base_classes,
+                              bool ignore_array_bounds,
                               std::string& child_name,
                               uint32_t &child_byte_size,
                               int32_t &child_byte_offset,
@@ -431,6 +440,7 @@ public:
                               uint32_t idx,
                               bool transparent_pointers,
                               bool omit_empty_base_classes,
+                              bool ignore_array_bounds,
                               std::string& child_name,
                               uint32_t &child_byte_size,
                               int32_t &child_byte_offset,

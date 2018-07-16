@@ -1,13 +1,17 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" 
+          "http://www.w3.org/TR/html4/strict.dtd">
+<!-- Material used from: HTML 4.01 specs: http://www.w3.org/TR/html401/ -->
 <html>
 <head>
-<title>Clang Language Extensions</title>
-<link type="text/css" rel="stylesheet" href="../menu.css" />
-<link type="text/css" rel="stylesheet" href="../content.css" />
-<style type="text/css">
-td {
-	vertical-align: top;
-}
-</style>
+  <META http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+  <title>Clang LanguageExtensions</title>
+  <link type="text/css" rel="stylesheet" href="../menu.css">
+  <link type="text/css" rel="stylesheet" href="../content.css">
+  <style type="text/css">
+    td {
+            vertical-align: top;
+    }
+  </style>
 </head>
 <body>
 
@@ -25,12 +29,12 @@ td {
 <li><a href="#vectors">Vectors and Extended Vectors</a></li>
 <li><a href="#deprecated">Messages on <tt>deprecated</tt> and <tt>unavailable</tt> attributes</a></li>
 <li><a href="#attributes-on-enumerators">Attributes on enumerators</a></li>
-<li><a href="#checking_language_features">Checks for Standard Language Features</a></li>
+<li><a href="#checking_language_features">Checks for Standard Language Features</a>
   <ul>
   <li><a href="#cxx_exceptions">C++ exceptions</a></li>
   <li><a href="#cxx_rtti">C++ RTTI</a></li>
-  </ul>
-<li><a href="#checking_upcoming_features">Checks for Upcoming Standard Language Features</a></li>
+  </ul></li>
+<li><a href="#checking_upcoming_features">Checks for Upcoming Standard Language Features</a>
   <ul>
   <li><a href="#cxx0x">C++0x</a>
     <ul>
@@ -39,7 +43,9 @@ td {
     <li><a href="#cxx_alias_templates">C++0x alias templates</a></li>
     <li><a href="#cxx_attributes">C++0x attributes</a></li>
     <li><a href="#cxx_default_function_template_args">C++0x default template arguments in function templates</a></li>
+    <li><a href="#cxx_delegating_constructor">C++0x delegating constructors</a></li>
     <li><a href="#cxx_deleted_functions">C++0x deleted functions</a></li>
+    <li><a href="#cxx_generalized_initializers">C++0x generalized initializers</a></li>
     <li><a href="#cxx_lambdas">C++0x lambdas</a></li>
     <li><a href="#cxx_nullptr">C++0x nullptr</a></li>
     <li><a href="#cxx_override_control">C++0x override control</a></li>
@@ -53,15 +59,21 @@ td {
     <li><a href="#cxx_strong_enums">C++0x strongly-typed enumerations</a></li>
     <li><a href="#cxx_trailing_return">C++0x trailing return type</a></li>
     <li><a href="#cxx_noexcept">C++0x noexcept specification</a></li>
-    </ul>
+    </ul></li>
   <li><a href="#c1x">C1X</a>
     <ul>
     <li><a href="#c_generic_selections">C1X generic selections</a></li>
     <li><a href="#c_static_assert">C1X <tt>_Static_assert()</tt></a></li>
-    </ul>
-  </ul>
+    </ul></li>
+  </ul> </li>
 <li><a href="#checking_type_traits">Checks for Type Traits</a></li>
 <li><a href="#blocks">Blocks</a></li>
+<li><a href="#objc_features">Objective-C Features</a>
+  <ul>
+    <li><a href="#objc_instancetype">Related result types</a></li>
+    <li><a href="#objc_arc">Automatic reference counting</a></li>
+  </ul>
+</li>
 <li><a href="#overloading-in-c">Function Overloading in C</a></li>
 <li><a href="#builtins">Builtin Functions</a>
   <ul>
@@ -76,6 +88,27 @@ td {
   </ul>
 </li>
 <li><a href="#analyzerspecific">Static Analysis-Specific Extensions</a></li>
+<li><a href="#threadsafety">Thread Safety Annotation Checking</a></li>
+    <ul>
+    <li><a href="#ts_noanal"><tt>no_thread_safety_analysis</tt></a></li>   
+    <li><a href="#ts_lockable"><tt>lockable</tt></a></li>  
+    <li><a href="#ts_scopedlockable"><tt>scoped_lockable</tt></a></li>  
+    <li><a href="#ts_guardedvar"><tt>guarded_var</tt></a></li>
+    <li><a href="#ts_ptguardedvar"><tt>pt_guarded_var</tt></a></li>
+    <li><a href="#ts_guardedby"><tt>guarded_by(l)</tt></a></li>
+    <li><a href="#ts_ptguardedby"><tt>pt_guarded_by(l)</tt></a></li>  
+    <li><a href="#ts_acquiredbefore"><tt>acquired_before(...)</tt></a></li>  
+    <li><a href="#ts_acquiredafter"><tt>acquired_after(...)</tt></a></li>    
+    <li><a href="#ts_elf"><tt>exclusive_lock_function(...)</tt></a></li>   
+    <li><a href="#ts_slf"><tt>shared_lock_function(...)</tt></a></li>   
+    <li><a href="#ts_etf"><tt>exclusive_trylock_function(...)</tt></a></li>   
+    <li><a href="#ts_stf"><tt>shared_trylock_function(...)</tt></a></li>   
+    <li><a href="#ts_uf"><tt>unlock_function(...)</tt></a></li>   
+    <li><a href="#ts_lr"><tt>lock_returned(l)</tt></a></li>   
+    <li><a href="#ts_le"><tt>locks_excluded(...)</tt></a></li>   
+    <li><a href="#ts_elr"><tt>exclusive_locks_required(...)</tt></a></li>   
+    <li><a href="#ts_slr"><tt>shared_locks_required(...)</tt></a></li>   
+    </ul>
 </ul>
 
 <!-- ======================================================================= -->
@@ -99,7 +132,7 @@ code without having to resort to something like autoconf or fragile "compiler
 version checks".</p>
 
 <!-- ======================================================================= -->
-<h3 id="__has_builtin">__has_builtin</h3>
+<h3><a name="__has_builtin">__has_builtin</a></h3>
 <!-- ======================================================================= -->
 
 <p>This function-like macro takes a single identifier argument that is the name
@@ -124,7 +157,7 @@ not.  It can be used like this:</p>
 
 
 <!-- ======================================================================= -->
-<h3 id="__has_feature_extension">__has_feature and __has_extension</h3>
+<h3><a name="__has_feature_extension"> __has_feature and __has_extension</a></h3>
 <!-- ======================================================================= -->
 
 <p>These function-like macros take a single identifier argument that is the
@@ -169,7 +202,7 @@ non-standardized features, i.e. features not prefixed <code>c_</code>,
 <p>The feature tag is described along with the language feature below.</p>
 
 <!-- ======================================================================= -->
-<h3 id="__has_attribute">__has_attribute</h3>
+<h3><a name="__has_attribute">__has_attribute</a></h3>
 <!-- ======================================================================= -->
 
 <p>This function-like macro takes a single identifier argument that is the name
@@ -203,7 +236,7 @@ check for the existence of an include file before doing
 a possibly failing #include directive.</p>
 
 <!-- ======================================================================= -->
-<h3 id="__has_include">__has_include</h3>
+<h3><a name="__has_include">__has_include</a></h3>
 <!-- ======================================================================= -->
 
 <p>This function-like macro takes a single file name string argument that
@@ -213,12 +246,12 @@ be found using the include paths, or 0 otherwise:</p>
 <blockquote>
 <pre>
 // Note the two possible file name string formats.
-#if __has_include("myinclude.h") && __has_include(&lt;stdint.h&gt;)
+#if __has_include("myinclude.h") &amp;&amp; __has_include(&lt;stdint.h&gt;)
 # include "myinclude.h"
 #endif
 
 // To avoid problem with non-clang compilers not having this macro.
-#if defined(__has_include) && __has_include("myinclude.h")
+#if defined(__has_include) &amp;&amp; __has_include("myinclude.h")
 # include "myinclude.h"
 #endif
 </pre>
@@ -227,7 +260,7 @@ be found using the include paths, or 0 otherwise:</p>
 <p>To test for this feature, use #if defined(__has_include).</p>
 
 <!-- ======================================================================= -->
-<h3 id="__has_include_next">__has_include_next</h3>
+<h3><a name="__has_include_next">__has_include_next</a></h3>
 <!-- ======================================================================= -->
 
 <p>This function-like macro takes a single file name string argument that
@@ -239,12 +272,12 @@ be found using the include paths, or 0 otherwise:</p>
 <blockquote>
 <pre>
 // Note the two possible file name string formats.
-#if __has_include_next("myinclude.h") && __has_include_next(&lt;stdint.h&gt;)
+#if __has_include_next("myinclude.h") &amp;&amp; __has_include_next(&lt;stdint.h&gt;)
 # include_next "myinclude.h"
 #endif
 
 // To avoid problem with non-clang compilers not having this macro.
-#if defined(__has_include_next) && __has_include_next("myinclude.h")
+#if defined(__has_include_next) &amp;&amp; __has_include_next("myinclude.h")
 # include_next "myinclude.h"
 #endif
 </pre>
@@ -405,116 +438,127 @@ noted.</p>
 C++0x standard. As a result, all these features are enabled
 with the <tt>-std=c++0x</tt> option when compiling C++ code.</p>
 
-<h4 id="cxx_decltype">C++0x <tt>decltype()</tt></h3>
+<h4 id="cxx_decltype">C++0x <tt>decltype()</tt></h4>
 
 <p>Use <tt>__has_feature(cxx_decltype)</tt> or
 <tt>__has_extension(cxx_decltype)</tt> to determine if support for the
 <tt>decltype()</tt> specifier is enabled.</p>
 
-<h4 id="cxx_access_control_sfinae">C++0x SFINAE includes access control</h3>
+<h4 id="cxx_access_control_sfinae">C++0x SFINAE includes access control</h4>
 
 <p>Use <tt>__has_feature(cxx_access_control_sfinae)</tt> or <tt>__has_extension(cxx_access_control_sfinae)</tt> to determine whether access-control errors (e.g., calling a private constructor) are considered to be template argument deduction errors (aka SFINAE errors), per <a href="http://www.open-std.org/jtc1/sc22/wg21/docs/cwg_defects.html#1170">C++ DR1170</a>.</p>
 
-<h4 id="cxx_alias_templates">C++0x alias templates</h3>
+<h4 id="cxx_alias_templates">C++0x alias templates</h4>
 
 <p>Use <tt>__has_feature(cxx_alias_templates)</tt> or
 <tt>__has_extension(cxx_alias_templates)</tt> to determine if support for
 C++0x's alias declarations and alias templates is enabled.</p>
 
-<h4 id="cxx_attributes">C++0x attributes</h3>
+<h4 id="cxx_attributes">C++0x attributes</h4>
 
 <p>Use <tt>__has_feature(cxx_attributes)</tt> or
 <tt>__has_extension(cxx_attributes)</tt> to determine if support for attribute
 parsing with C++0x's square bracket notation is enabled.</p>
 
-<h4 id="cxx_default_function_template_args">C++0x default template arguments in function templates</h3>
+<h4 id="cxx_default_function_template_args">C++0x default template arguments in function templates</h4>
 
 <p>Use <tt>__has_feature(cxx_default_function_template_args)</tt> or
 <tt>__has_extension(cxx_default_function_template_args)</tt> to determine
 if support for default template arguments in function templates is enabled.</p>
 
-<h4 id="cxx_deleted_functions">C++0x deleted functions</tt></h3>
+<h4 id="cxx_delegating_constructors">C++0x delegating constructors</h4>
+
+<p>Use <tt>__has_feature(cxx_delegating_constructors)</tt> to determine if
+support for delegating constructors is enabled.</p>
+
+<h4 id="cxx_deleted_functions">C++0x <tt>delete</tt>d functions</h4>
 
 <p>Use <tt>__has_feature(cxx_deleted_functions)</tt> or
 <tt>__has_extension(cxx_deleted_functions)</tt> to determine if support for
 deleted function definitions (with <tt>= delete</tt>) is enabled.</p>
 
-<h4 id="cxx_lambdas">C++0x lambdas</h3>
+<h4 id="cxx_generalized_initializers">C++0x generalized initializers</h4>
+
+<p>Use <tt>__has_feature(cxx_generalized_initializers)</tt> to determine if
+support for generalized initializers (using braced lists and
+<tt>std::initializer_list</tt>) is enabled. clang does not currently implement
+this feature.
+
+<h4 id="cxx_lambdas">C++0x lambdas</h4>
 
 <p>Use <tt>__has_feature(cxx_lambdas)</tt> or
 <tt>__has_extension(cxx_lambdas)</tt> to determine if support for lambdas
 is enabled. clang does not currently implement this feature.</p>
 
-<h4 id="cxx_nullptr">C++0x <tt>nullptr</tt></h3>
+<h4 id="cxx_nullptr">C++0x <tt>nullptr</tt></h4>
 
 <p>Use <tt>__has_feature(cxx_nullptr)</tt> or
 <tt>__has_extension(cxx_nullptr)</tt> to determine if support for
-<tt>nullptr</tt> is enabled. clang does not yet fully implement this
-feature.</p>
+<tt>nullptr</tt> is enabled.</p>
 
-<h4 id="cxx_override_control">C++0x <tt>override control</tt></h3>
+<h4 id="cxx_override_control">C++0x <tt>override control</tt></h4>
 
 <p>Use <tt>__has_feature(cxx_override_control)</tt> or
 <tt>__has_extension(cxx_override_control)</tt> to determine if support for
 the override control keywords is enabled.</p>
 
-<h4 id="cxx_reference_qualified_functions">C++0x reference-qualified functions</h3>
+<h4 id="cxx_reference_qualified_functions">C++0x reference-qualified functions</h4>
 <p>Use <tt>__has_feature(cxx_reference_qualified_functions)</tt> or
 <tt>__has_extension(cxx_reference_qualified_functions)</tt> to determine
 if support for reference-qualified functions (e.g., member functions with
 <code>&amp;</code> or <code>&amp;&amp;</code> applied to <code>*this</code>)
 is enabled.</p>
 
-<h4 id="cxx_range_for">C++0x range-based for loop</tt></h3>
+<h4 id="cxx_range_for">C++0x range-based <tt>for</tt> loop</h4>
 
 <p>Use <tt>__has_feature(cxx_range_for)</tt> or
 <tt>__has_extension(cxx_range_for)</tt> to determine if support for the
 range-based for loop is enabled. </p>
 
-<h4 id="cxx_rvalue_references">C++0x rvalue references</tt></h3>
+<h4 id="cxx_rvalue_references">C++0x rvalue references</h4>
 
 <p>Use <tt>__has_feature(cxx_rvalue_references)</tt> or
 <tt>__has_extension(cxx_rvalue_references)</tt> to determine if support for
 rvalue references is enabled. </p>
 
-<h4 id="cxx_static_assert">C++0x <tt>static_assert()</tt></h3>
+<h4 id="cxx_static_assert">C++0x <tt>static_assert()</tt></h4>
 
 <p>Use <tt>__has_feature(cxx_static_assert)</tt> or
 <tt>__has_extension(cxx_static_assert)</tt> to determine if support for
 compile-time assertions using <tt>static_assert</tt> is enabled.</p>
 
-<h4 id="cxx_auto_type">C++0x type inference</h3>
+<h4 id="cxx_auto_type">C++0x type inference</h4>
 
 <p>Use <tt>__has_feature(cxx_auto_type)</tt> or
 <tt>__has_extension(cxx_auto_type)</tt> to determine C++0x type inference is
 supported using the <tt>auto</tt> specifier. If this is disabled, <tt>auto</tt>
 will instead be a storage class specifier, as in C or C++98.</p>
 
-<h4 id="cxx_variadic_templates">C++0x variadic templates</h3>
+<h4 id="cxx_variadic_templates">C++0x variadic templates</h4>
 
 <p>Use <tt>__has_feature(cxx_variadic_templates)</tt> or
 <tt>__has_extension(cxx_variadic_templates)</tt> to determine if support
 for variadic templates is enabled.</p>
 
-<h4 id="cxx_inline_namespaces">C++0x inline namespaces</h3>
+<h4 id="cxx_inline_namespaces">C++0x inline namespaces</h4>
 
 <p>Use <tt>__has_feature(cxx_inline_namespaces)</tt> or
 <tt>__has_extension(cxx_inline_namespaces)</tt> to determine if support for
 inline namespaces is enabled.</p>
 
-<h4 id="cxx_trailing_return">C++0x trailing return type</h3>
+<h4 id="cxx_trailing_return">C++0x trailing return type</h4>
 
 <p>Use <tt>__has_feature(cxx_trailing_return)</tt> or
 <tt>__has_extension(cxx_trailing_return)</tt> to determine if support for the
 alternate function declaration syntax with trailing return type is enabled.</p>
 
-<h4 id="cxx_noexcept">C++0x noexcept</h3>
+<h4 id="cxx_noexcept">C++0x noexcept</h4>
 
 <p>Use <tt>__has_feature(cxx_noexcept)</tt> or
 <tt>__has_extension(cxx_noexcept)</tt> to determine if support for noexcept
 exception specifications is enabled.</p>
 
-<h4 id="cxx_strong_enums">C++0x strongly typed enumerations</h3>
+<h4 id="cxx_strong_enums">C++0x strongly typed enumerations</h4>
 
 <p>Use <tt>__has_feature(cxx_strong_enums)</tt> or
 <tt>__has_extension(cxx_strong_enums)</tt> to determine if support for
@@ -526,7 +570,7 @@ strongly typed, scoped enumerations is enabled.</p>
 C1X standard. As a result, all these features are enabled
 with the <tt>-std=c1x</tt> option when compiling C code.</p>
 
-<h4 id="c_generic_selections">C1X generic selections</h2>
+<h4 id="c_generic_selections">C1X generic selections</h4>
 
 <p>Use <tt>__has_feature(c_generic_selections)</tt> or
 <tt>__has_extension(c_generic_selections)</tt> to determine if support for
@@ -540,7 +584,7 @@ C1X draft standard.</p>
 appropriate standard, but in C++, which lacks the type compatibility rules
 used in C, types are considered compatible only if they are equivalent.</p>
 
-<h4 id="c_static_assert">C1X <tt>_Static_assert()</tt></h3>
+<h4 id="c_static_assert">C1X <tt>_Static_assert()</tt></h4>
 
 <p>Use <tt>__has_feature(c_static_assert)</tt> or
 <tt>__has_extension(c_static_assert)</tt> to determine if support for
@@ -550,7 +594,7 @@ compile-time assertions using <tt>_Static_assert</tt> is enabled.</p>
 <h2 id="checking_type_traits">Checks for Type Traits</h2>
 <!-- ======================================================================= -->
 
-<p>Clang supports the <a hef="http://gcc.gnu.org/onlinedocs/gcc/Type-Traits.html">GNU C++ type traits</a> and a subset of the <a href="http://msdn.microsoft.com/en-us/library/ms177194(v=VS.100).aspx">Microsoft Visual C++ Type traits</a>. For each supported type trait <code>__X</code>, <code>__has_extension(X)</code> indicates the presence of the type trait. For example:
+<p>Clang supports the <a href="http://gcc.gnu.org/onlinedocs/gcc/Type-Traits.html">GNU C++ type traits</a> and a subset of the <a href="http://msdn.microsoft.com/en-us/library/ms177194(v=VS.100).aspx">Microsoft Visual C++ Type traits</a>. For each supported type trait <code>__X</code>, <code>__has_extension(X)</code> indicates the presence of the type trait. For example:
 <blockquote>
 <pre>
 #if __has_extension(is_convertible_to)
@@ -584,6 +628,7 @@ struct is_convertible_to {
   <li><code>__is_polymorphic</code> (GNU, Microsoft)</li>
   <li><code>__is_union</code> (GNU, Microsoft)</li>
   <li><code>__is_literal(type)</code>: Determines whether the given type is a literal type</li>
+  <li><code>__underlying_type(type)</code>: Retrieves the underlying type for a given <code>enum</code> type. This trait is required to implement the C++0x standard library.</li>
 </ul>
 
 <!-- ======================================================================= -->
@@ -597,6 +642,79 @@ href="Block-ABI-Apple.txt">Block-ABI-Apple.txt</a>.</p>
 
 
 <p>Query for this feature with __has_extension(blocks).</p>
+
+<!-- ======================================================================= -->
+<h2 id="objc_features">Objective-C Features</h2>
+<!-- ======================================================================= -->
+
+<h3 id="objc_instancetype">Related result types</h3>
+
+<p>According to Cocoa conventions, Objective-C methods with certain names ("init", "alloc", etc.) always return objects that are an instance of the receiving class's type. Such methods are said to have a "related result type", meaning that a message send to one of these methods will have the same static type as an instance of the receiver class. For example, given the following classes:</p>
+
+<blockquote>
+<pre>
+@interface NSObject
++ (id)alloc;
+- (id)init;
+@end
+
+@interface NSArray : NSObject
+@end
+</pre>
+</blockquote>
+
+<p>and this common initialization pattern</p>
+
+<blockquote>
+<pre>
+NSArray *array = [[NSArray alloc] init];
+</pre>
+</blockquote>
+
+<p>the type of the expression <code>[NSArray alloc]</code> is
+<code>NSArray*</code> because <code>alloc</code> implicitly has a
+related result type. Similarly, the type of the expression
+<code>[[NSArray alloc] init]</code> is <code>NSArray*</code>, since
+<code>init</code> has a related result type and its receiver is known
+to have the type <code>NSArray *</code>. If neither <code>alloc</code> nor <code>init</code> had a related result type, the expressions would have had type <code>id</code>, as declared in the method signature.</p>
+
+<p>To determine whether a method has a related result type, the first
+word in the camel-case selector (e.g., "init" in "initWithObjects") is
+considered, and the method will a related result type if its return
+type is compatible with the type of its class and if</p>
+
+<ul>
+  
+  <li>the first word is "alloc" or "new", and the method is a class
+  method, or</li>
+  
+  <li>the first word is "autorelease", "init", "retain", or "self",
+  and the method is an instance method.</li>
+  
+</ul>
+
+<p>If a method with a related result type is overridden by a subclass
+method, the subclass method must also return a type that is compatible
+with the subclass type. For example:</p>
+
+<blockquote>
+<pre>
+@interface NSString : NSObject
+- (NSUnrelated *)init; // incorrect usage: NSUnrelated is not NSString or a superclass of NSString
+@end
+</pre>
+</blockquote>
+
+<p>Related result types only affect the type of a message send or
+property access via the given method. In all other respects, a method
+with a related result type is treated the same way as method without a
+related result type.</p>
+
+<!-- ======================================================================= -->
+<h2 id="objc_arc">Automatic reference counting </h2>
+<!-- ======================================================================= -->
+
+<p>Clang provides support for <a href="AutomaticReferenceCounting.html">automated reference counting</a> in Objective-C, which eliminates the need for manual retain/release/autorelease message sends. There are two feature macros associated with automatic reference counting: <code>__has_feature(objc_arc)</code> indicates the availability of automated reference counting in general, while <code>__has_feature(objc_arc_weak)</code> indicates that automated reference counting also includes support for <code>__weak</code> pointers to Objective-C objects.</p>
 
 <!-- ======================================================================= -->
 <h2 id="overloading-in-c">Function Overloading in C</h2>
@@ -719,7 +837,7 @@ vector support</a> instead of builtins, in order to reduce the number of
 builtins that we need to implement.</p>
 
 <!-- ======================================================================= -->
-<h3 id="__builtin_shufflevector">__builtin_shufflevector</h3>
+<h3><a name="__builtin_shufflevector">__builtin_shufflevector</a></h3>
 <!-- ======================================================================= -->
 
 <p><tt>__builtin_shufflevector</tt> is used to express generic vector
@@ -771,7 +889,7 @@ the number of indices specified.
 <p>Query for this feature with __has_builtin(__builtin_shufflevector).</p>
 
 <!-- ======================================================================= -->
-<h3 id="__builtin_unreachable">__builtin_unreachable</h3>
+<h3><a name="__builtin_unreachable">__builtin_unreachable</a></h3>
 <!-- ======================================================================= -->
 
 <p><tt>__builtin_unreachable</tt> is used to indicate that a specific point in
@@ -809,7 +927,7 @@ no arguments and produces a void result.
 <p>Query for this feature with __has_builtin(__builtin_unreachable).</p>
 
 <!-- ======================================================================= -->
-<h3 id="__sync_swap">__sync_swap</h3>
+<h3><a name="__sync_swap">__sync_swap</a></h3>
 <!-- ======================================================================= -->
 
 <p><tt>__sync_swap</tt> is used to atomically swap integers or pointers in
@@ -825,7 +943,7 @@ memory.
 <p><b>Example of Use:</b></p>
 
 <pre>
-int old_value = __sync_swap(&value, new_value);
+int old_value = __sync_swap(&amp;value, new_value);
 </pre>
 
 <p><b>Description:</b></p>
@@ -998,6 +1116,149 @@ balance in some way.</p>
 
 <p>Query for these features with <tt>__has_attribute(ns_consumed)</tt>,
 <tt>__has_attribute(ns_returns_retained)</tt>, etc.</p>
+
+
+<!-- ======================================================================= -->
+<h2 id="threadsafety">Thread-Safety Annotation Checking</h2>
+<!-- ======================================================================= -->
+
+<p>Clang supports additional attributes for checking basic locking policies in 
+multithreaded programs.
+Clang currently parses the following list of attributes, although 
+<b>the implementation for these annotations is currently in development.</b> 
+For more details, see the
+<a href="http://gcc.gnu.org/wiki/ThreadSafetyAnnotation">GCC implementation</a>.
+</p>
+
+<h4 id="ts_noanal">no_thread_safety_analysis</h4>
+
+<p>Use <tt>__attribute__((no_thread_safety_analysis))</tt> on a function 
+declaration to specify that the thread safety analysis should not be run on that 
+function. This attribute provides an escape hatch (e.g. for situations when it
+is difficult to annotate the locking policy). </p> 
+
+<h4 id="ts_lockable">lockable</h4>
+
+<p>Use <tt>__attribute__((lockable))</tt> on a class definition to specify 
+that it has a lockable type (e.g. a Mutex class). This annotation is primarily 
+used to check consistency.</p> 
+
+<h4 id="ts_scopedlockable">scoped_lockable</h4>
+
+<p>Use <tt>__attribute__((scoped_lockable))</tt> on a class definition to 
+specify that it has a "scoped" lockable type. Objects of this type will acquire 
+the lock upon construction and release it upon going out of scope.
+ This annotation is primarily used to check 
+consistency.</p> 
+
+<h4 id="ts_guardedvar">guarded_var</h4>
+
+<p>Use <tt>__attribute__((guarded_var))</tt> on a variable declaration to 
+specify that the variable must be accessed while holding some lock.</p>
+
+<h4 id="ts_ptguardedvar">pt_guarded_var</h4>
+
+<p>Use <tt>__attribute__((pt_guarded_var))</tt> on a pointer declaration to 
+specify that the pointer must be dereferenced while holding some lock.</p>
+
+<h4 id="ts_guardedby">guarded_by(l)</h4>
+
+<p>Use <tt>__attribute__((guarded_by(l)))</tt> on a variable declaration to 
+specify that the variable must be accessed while holding lock <tt>l</tt>.</p>
+
+<h4 id="ts_ptguardedby">pt_guarded_by(l)</h4>
+
+<p>Use <tt>__attribute__((pt_guarded_by(l)))</tt> on a pointer declaration to 
+specify that the pointer must be dereferenced while holding lock <tt>l</tt>.</p>
+
+<h4 id="ts_acquiredbefore">acquired_before(...)</h4>
+
+<p>Use <tt>__attribute__((acquired_before(...)))</tt> on a declaration 
+of a lockable variable to specify that the lock must be acquired before all 
+attribute arguments. Arguments must be lockable type, and there must be at 
+least one argument.</p> 
+
+<h4 id="ts_acquiredafter">acquired_after(...)</h4>
+
+<p>Use <tt>__attribute__((acquired_after(...)))</tt> on a declaration 
+of a lockable variable to specify that the lock must be acquired after all 
+attribute arguments. Arguments must be lockable type, and there must be at 
+least one argument.</p> 
+
+<h4 id="ts_elf">exclusive_lock_function(...)</h4>
+
+<p>Use <tt>__attribute__((exclusive_lock_function(...)))</tt> on a function 
+declaration to specify that the function acquires all listed locks 
+exclusively. This attribute takes zero or more arguments: either of lockable 
+type or integers indexing into function parameters of lockable type. If no 
+arguments are given, the acquired lock is implicitly <tt>this</tt> of the 
+enclosing object.</p>
+
+<h4 id="ts_slf">shared_lock_function(...)</h4>
+
+<p>Use <tt>__attribute__((shared_lock_function(...)))</tt> on a function 
+declaration to specify that the function acquires all listed locks, although
+ the locks may be shared (e.g. read locks). This attribute takes zero or more 
+arguments: either of lockable type or integers indexing into function 
+parameters of lockable type. If no arguments are given, the acquired lock is 
+implicitly <tt>this</tt> of the enclosing object.</p>
+
+<h4 id="ts_etf">exclusive_trylock_function(...)</h4>
+
+<p>Use <tt>__attribute__((exclusive_lock_function(...)))</tt> on a function 
+declaration to specify that the function will try (without blocking) to acquire
+all listed locks exclusively. This attribute takes one or more arguments. The 
+first argument is an integer or boolean value specifying the return value of a 
+successful lock acquisition. The remaining arugments are either of lockable type 
+or integers indexing into function parameters of lockable type. If only one 
+argument is given, the acquired lock is implicitly <tt>this</tt> of the 
+enclosing object.</p>
+
+<h4 id="ts_stf">shared_trylock_function(...)</h4>
+
+<p>Use <tt>__attribute__((shared_lock_function(...)))</tt> on a function 
+declaration to specify that the function will try (without blocking) to acquire
+all listed locks, although the locks may be shared (e.g. read locks). This 
+attribute takes one or more arguments. The first argument is an integer or 
+boolean value specifying the return value of a successful lock acquisition. The 
+remaining arugments are either of lockable type or integers indexing into 
+function parameters of lockable type. If only one argument is given, the 
+acquired lock is implicitly <tt>this</tt> of the enclosing object.</p>
+
+<h4 id="ts_uf">unlock_function(...)</h4>
+
+<p>Use <tt>__attribute__((unlock_function(...)))</tt> on a function 
+declaration to specify that the function release all listed locks. This 
+attribute takes zero or more arguments: either of lockable type or integers 
+indexing into function parameters of lockable type. If no arguments are given, 
+the acquired lock is implicitly <tt>this</tt> of the enclosing object.</p>
+
+<h4 id="ts_lr">lock_returned(l)</h4>
+
+<p>Use <tt>__attribute__((lock_returned(l)))</tt> on a function 
+declaration to specify that the function returns lock <tt>l</tt> (<tt>l</tt> 
+must be of lockable type). This annotation is used to aid in resolving lock 
+expressions.</p>
+
+<h4 id="ts_le">locks_excluded(...)</h4>
+
+<p>Use <tt>__attribute__((locks_excluded(...)))</tt> on a function declaration 
+to specify that the function must not be called with the listed locks. Arguments 
+must be lockable type, and there must be at least one argument.</p>
+
+<h4 id="ts_elr">exclusive_locks_required(...)</h4>
+
+<p>Use <tt>__attribute__((exclusive_locks_required(...)))</tt> on a function 
+declaration to specify that the function must be called while holding the listed
+exclusive locks. Arguments must be lockable type, and there must be at 
+least one argument.</p> 
+
+<h4 id="ts_slr">shared_locks_required(...)</h4>
+
+<p>Use <tt>__attribute__((shared_locks_required(...)))</tt> on a function 
+declaration to specify that the function must be called while holding the listed 
+shared locks. Arguments must be lockable type, and there must be at 
+least one argument.</p> 
 
 </div>
 </body>

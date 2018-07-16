@@ -20,7 +20,7 @@ using namespace CodeGen;
 CGCXXABI::~CGCXXABI() { }
 
 static void ErrorUnsupportedABI(CodeGenFunction &CGF,
-                                llvm::StringRef S) {
+                                StringRef S) {
   Diagnostic &Diags = CGF.CGM.getDiags();
   unsigned DiagID = Diags.getCustomDiagID(Diagnostic::Error,
                                           "cannot yet compile %1 in this ABI");
@@ -34,7 +34,7 @@ static llvm::Constant *GetBogusMemberPointer(CodeGenModule &CGM,
   return llvm::Constant::getNullValue(CGM.getTypes().ConvertType(T));
 }
 
-const llvm::Type *
+llvm::Type *
 CGCXXABI::ConvertMemberPointerType(const MemberPointerType *MPT) {
   return CGM.getTypes().ConvertType(CGM.getContext().getPointerDiffType());
 }
@@ -49,7 +49,7 @@ llvm::Value *CGCXXABI::EmitLoadOfMemberFunctionPointer(CodeGenFunction &CGF,
     MPT->getPointeeType()->getAs<FunctionProtoType>();
   const CXXRecordDecl *RD = 
     cast<CXXRecordDecl>(MPT->getClass()->getAs<RecordType>()->getDecl());
-  const llvm::FunctionType *FTy = 
+  llvm::FunctionType *FTy = 
     CGM.getTypes().GetFunctionType(CGM.getTypes().getFunctionInfo(RD, FPT),
                                    FPT->isVariadic());
   return llvm::Constant::getNullValue(FTy->getPointerTo());
@@ -60,7 +60,7 @@ llvm::Value *CGCXXABI::EmitMemberDataPointerAddress(CodeGenFunction &CGF,
                                                     llvm::Value *MemPtr,
                                               const MemberPointerType *MPT) {
   ErrorUnsupportedABI(CGF, "loads of member pointers");
-  const llvm::Type *Ty = CGF.ConvertType(MPT->getPointeeType())->getPointerTo();
+  llvm::Type *Ty = CGF.ConvertType(MPT->getPointeeType())->getPointerTo();
   return llvm::Constant::getNullValue(Ty);
 }
 

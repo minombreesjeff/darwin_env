@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/StringRef.h"
+#include "clang/Basic/LLVM.h"
 
 namespace clang {
   class Diagnostic;
@@ -93,7 +94,7 @@ public:
   /// getCustomDiagID - Return an ID for a diagnostic with the specified message
   /// and level.  If this is the first request for this diagnosic, it is
   /// registered and created, otherwise the existing ID is returned.
-  unsigned getCustomDiagID(Level L, llvm::StringRef Message);
+  unsigned getCustomDiagID(Level L, StringRef Message);
 
   //===--------------------------------------------------------------------===//
   // Diagnostic classification and reporting interfaces.
@@ -101,7 +102,7 @@ public:
 
   /// getDescription - Given a diagnostic ID, return a description of the
   /// issue.
-  const char *getDescription(unsigned DiagID) const;
+  StringRef getDescription(unsigned DiagID) const;
 
   /// isBuiltinWarningOrExtension - Return true if the unmapped diagnostic
   /// level of the specified diagnostic ID is a Warning or Extension.
@@ -132,15 +133,18 @@ public:
   /// getWarningOptionForDiag - Return the lowest-level warning option that
   /// enables the specified diagnostic.  If there is no -Wfoo flag that controls
   /// the diagnostic, this returns null.
-  static const char *getWarningOptionForDiag(unsigned DiagID);
-
+  static StringRef getWarningOptionForDiag(unsigned DiagID);
+  
   /// getCategoryNumberForDiag - Return the category number that a specified
   /// DiagID belongs to, or 0 if no category.
   static unsigned getCategoryNumberForDiag(unsigned DiagID);
 
+  /// getNumberOfCategories - Return the number of categories
+  static unsigned getNumberOfCategories();
+
   /// getCategoryNameFromID - Given a category ID, return the name of the
   /// category.
-  static const char *getCategoryNameFromID(unsigned CategoryID);
+  static StringRef getCategoryNameFromID(unsigned CategoryID);
   
   /// \brief Enumeration describing how the the emission of a diagnostic should
   /// be treated when it occurs during C++ template argument deduction.
@@ -179,24 +183,43 @@ public:
   static SFINAEResponse getDiagnosticSFINAEResponse(unsigned DiagID);
 
   /// getName - Given a diagnostic ID, return its name
-  static const char *getName(unsigned DiagID);
+  static StringRef getName(unsigned DiagID);
   
   /// getIdFromName - Given a diagnostic name, return its ID, or 0
-  static unsigned getIdFromName(char const *Name);
+  static unsigned getIdFromName(StringRef Name);
   
   /// getBriefExplanation - Given a diagnostic ID, return a brief explanation
   /// of the issue
-  static const char *getBriefExplanation(unsigned DiagID);
+  static StringRef getBriefExplanation(unsigned DiagID);
 
   /// getFullExplanation - Given a diagnostic ID, return a full explanation
   /// of the issue
-  static const char *getFullExplanation(unsigned DiagID);
+  static StringRef getFullExplanation(unsigned DiagID);
+  
+  /// Iterator class used for traversing all statically declared
+  /// diagnostics.
+  class diag_iterator {
+    const void *impl;
+
+    friend class DiagnosticIDs;    
+    diag_iterator(const void *im) : impl(im) {};    
+  public:
+    diag_iterator &operator++();
+    bool operator==(const diag_iterator &x) const { return impl == x.impl; }
+    bool operator!=(const diag_iterator &x) const { return impl != x.impl; }
+    
+    llvm::StringRef getDiagName() const;
+    unsigned getDiagID() const;    
+  };
+
+  static diag_iterator diags_begin();
+  static diag_iterator diags_end();
 
 private:
   /// setDiagnosticGroupMapping - Change an entire diagnostic group (e.g.
   /// "unknown-pragmas" to have the specified mapping.  This returns true and
   /// ignores the request if "Group" was unknown, false otherwise.
-  bool setDiagnosticGroupMapping(const char *Group, diag::Mapping Map,
+  bool setDiagnosticGroupMapping(StringRef Group, diag::Mapping Map,
                                  SourceLocation Loc, Diagnostic &Diag) const;
 
   /// \brief Based on the way the client configured the Diagnostic
@@ -223,6 +246,10 @@ private:
   /// \returns true if the diagnostic was emitted, false if it was
   /// suppressed.
   bool ProcessDiag(Diagnostic &Diag) const;
+
+  /// \brief Whether the diagnostic may leave the AST in a state where some
+  /// invariants can break.
+  bool isUnrecoverable(unsigned DiagID) const;
 
   friend class Diagnostic;
 };

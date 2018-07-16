@@ -72,7 +72,7 @@ Parser::Parser(Preprocessor &pp, Sema &actions)
 
 /// If a crash happens while the parser is active, print out a line indicating
 /// what the current token is.
-void PrettyStackTraceParserEntry::print(llvm::raw_ostream &OS) const {
+void PrettyStackTraceParserEntry::print(raw_ostream &OS) const {
   const Token &Tok = P.getCurToken();
   if (Tok.is(tok::eof)) {
     OS << "<eof> parser at end of file\n";
@@ -124,9 +124,8 @@ void Parser::SuggestParentheses(SourceLocation Loc, unsigned DK,
 
 /// MatchRHSPunctuation - For punctuation with a LHS and RHS (e.g. '['/']'),
 /// this helper function matches and consumes the specified RHS token if
-/// present.  If not present, it emits the specified diagnostic indicating
-/// that the parser failed to match the RHS of the token at LHSLoc.  LHSName
-/// should be the name of the unmatched LHS token.
+/// present.  If not present, it emits a corresponding diagnostic indicating
+/// that the parser failed to match the RHS of the token at LHSLoc.
 SourceLocation Parser::MatchRHSPunctuation(tok::TokenKind RHSTok,
                                            SourceLocation LHSLoc) {
 
@@ -299,6 +298,9 @@ bool Parser::SkipUntil(const tok::TokenKind *Toks, unsigned NumToks,
 
     case tok::string_literal:
     case tok::wide_string_literal:
+    case tok::utf8_string_literal:
+    case tok::utf16_string_literal:
+    case tok::utf32_string_literal:
       ConsumeStringToken();
       break;
         
@@ -351,7 +353,23 @@ void Parser::ExitScope() {
     ScopeCache[NumCachedScopes++] = OldScope;
 }
 
+/// Set the flags for the current scope to ScopeFlags. If ManageFlags is false,
+/// this object does nothing.
+Parser::ParseScopeFlags::ParseScopeFlags(Parser *Self, unsigned ScopeFlags,
+                                 bool ManageFlags)
+  : CurScope(ManageFlags ? Self->getCurScope() : 0) {
+  if (CurScope) {
+    OldFlags = CurScope->getFlags();
+    CurScope->setFlags(ScopeFlags);
+  }
+}
 
+/// Restore the flags for the current scope to what they were before this
+/// object overrode them.
+Parser::ParseScopeFlags::~ParseScopeFlags() {
+  if (CurScope)
+    CurScope->setFlags(OldFlags);
+}
 
 
 //===----------------------------------------------------------------------===//
@@ -470,6 +488,7 @@ void Parser::Initialize() {
 /// ParseTopLevelDecl - Parse one top-level declaration, return whatever the
 /// action tells us to.  This returns true if the EOF was encountered.
 bool Parser::ParseTopLevelDecl(DeclGroupPtrTy &Result) {
+  DelayedCleanupPoint CleanupRAII(TopLevelDeclCleanupPool);
 
   while (Tok.is(tok::annot_pragma_unused))
     HandlePragmaUnused();
@@ -532,6 +551,7 @@ void Parser::ParseTranslationUnit() {
 Parser::DeclGroupPtrTy
 Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
                                  ParsingDeclSpec *DS) {
+  DelayedCleanupPoint CleanupRAII(TopLevelDeclCleanupPool);
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
   
   Decl *SingleDecl = 0;
@@ -656,7 +676,7 @@ Parser::ParseExternalDeclaration(ParsedAttributesWithRange &attrs,
 
   case tok::kw___if_exists:
   case tok::kw___if_not_exists:
-    ParseMicrosoftIfExistsDeclaration();
+    ParseMicrosoftIfExistsExternalDeclaration();
     return DeclGroupPtrTy();
 
   default:
@@ -832,78 +852,13 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
   if (FTI.isKNRPrototype())
     ParseKNRParamDeclarations(D);
 
-  if (Tok.is(tok::equal)) {
-    assert(getLang().CPlusPlus && "Only C++ function definitions have '='");
-    ConsumeToken();
-
-    Decl *Decl = 0;
-    // Here we complete the declaration as if it were normal
-    switch (TemplateInfo.Kind) {
-    case ParsedTemplateInfo::NonTemplate:
-      Decl = Actions.ActOnDeclarator(getCurScope(), D, true);
-      break;
-
-    case ParsedTemplateInfo::Template:
-    case ParsedTemplateInfo::ExplicitSpecialization:
-      Decl = Actions.ActOnTemplateDeclarator(getCurScope(),
-                                   MultiTemplateParamsArg(Actions,
-                                          TemplateInfo.TemplateParams->data(),
-                                          TemplateInfo.TemplateParams->size()),
-                                             D);
-      break;
-
-    case ParsedTemplateInfo::ExplicitInstantiation: {
-      DeclResult Result
-        = Actions.ActOnExplicitInstantiation(getCurScope(),
-                                             TemplateInfo.ExternLoc,
-                                             TemplateInfo.TemplateLoc,
-                                             D);
-      if (Result.isInvalid()) {
-        SkipUntil(tok::semi);
-        return 0;
-      }
-
-      Decl = Result.get();
-      break;
-    }
-    }
-      
-    bool Delete = false;
-    SourceLocation KWLoc;
-    if (Tok.is(tok::kw_delete)) {
-      if (!getLang().CPlusPlus0x)
-        Diag(Tok, diag::warn_deleted_function_accepted_as_extension);
-
-      KWLoc = ConsumeToken();
-      Actions.SetDeclDeleted(Decl, KWLoc);
-      Delete = true;
-    } else if (Tok.is(tok::kw_default)) {
-      if (!getLang().CPlusPlus0x)
-        Diag(Tok, diag::warn_defaulted_function_accepted_as_extension);
-
-      KWLoc = ConsumeToken();
-      Actions.SetDeclDefaulted(Decl, KWLoc);
-    } else {
-      llvm_unreachable("function definition after = not 'delete' or 'default'");
-    }
-
-    if (Tok.is(tok::comma)) {
-      Diag(KWLoc, diag::err_default_delete_in_multiple_declaration)
-        << Delete;
-      SkipUntil(tok::semi);
-    } else {
-      ExpectAndConsume(tok::semi, diag::err_expected_semi_after,
-                       Delete ? "delete" : "default", tok::semi);
-    }
-
-    return Decl;
-  }
 
   // We should have either an opening brace or, in a C++ constructor,
   // we may have a colon.
   if (Tok.isNot(tok::l_brace) && 
       (!getLang().CPlusPlus ||
-       (Tok.isNot(tok::colon) && Tok.isNot(tok::kw_try)))) {
+       (Tok.isNot(tok::colon) && Tok.isNot(tok::kw_try) &&
+        Tok.isNot(tok::equal)))) {
     Diag(Tok, diag::err_expected_fn_body);
 
     // Skip over garbage, until we get to '{'.  Don't eat the '{'.
@@ -951,7 +906,6 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
     return DP;
   }
 
-
   // Enter a scope for the function body.
   ParseScope BodyScope(this, Scope::FnScope|Scope::DeclScope);
 
@@ -971,6 +925,43 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
   // Break out of the ParsingDeclSpec context, too.  This const_cast is
   // safe because we're always the sole owner.
   D.getMutableDeclSpec().abort();
+
+  if (Tok.is(tok::equal)) {
+    assert(getLang().CPlusPlus && "Only C++ function definitions have '='");
+    ConsumeToken();
+
+    Actions.ActOnFinishFunctionBody(Res, 0, false);
+ 
+    bool Delete = false;
+    SourceLocation KWLoc;
+    if (Tok.is(tok::kw_delete)) {
+      if (!getLang().CPlusPlus0x)
+        Diag(Tok, diag::warn_deleted_function_accepted_as_extension);
+
+      KWLoc = ConsumeToken();
+      Actions.SetDeclDeleted(Res, KWLoc);
+      Delete = true;
+    } else if (Tok.is(tok::kw_default)) {
+      if (!getLang().CPlusPlus0x)
+        Diag(Tok, diag::warn_defaulted_function_accepted_as_extension);
+
+      KWLoc = ConsumeToken();
+      Actions.SetDeclDefaulted(Res, KWLoc);
+    } else {
+      llvm_unreachable("function definition after = not 'delete' or 'default'");
+    }
+
+    if (Tok.is(tok::comma)) {
+      Diag(KWLoc, diag::err_default_delete_in_multiple_declaration)
+        << Delete;
+      SkipUntil(tok::semi);
+    } else {
+      ExpectAndConsume(tok::semi, diag::err_expected_semi_after,
+                       Delete ? "delete" : "default", tok::semi);
+    }
+
+    return Res;
+  }
 
   if (Tok.is(tok::kw_try))
     return ParseFunctionTryBlock(Res, BodyScope);
@@ -1168,6 +1159,18 @@ Parser::ExprResult Parser::ParseSimpleAsm(SourceLocation *EndLoc) {
   return move(Result);
 }
 
+/// \brief Get the TemplateIdAnnotation from the token and put it in the
+/// cleanup pool so that it gets destroyed when parsing the current top level
+/// declaration is finished.
+TemplateIdAnnotation *Parser::takeTemplateIdAnnotation(const Token &tok) {
+  assert(tok.is(tok::annot_template_id) && "Expected template-id token");
+  TemplateIdAnnotation *
+      Id = static_cast<TemplateIdAnnotation *>(tok.getAnnotationValue());
+  TopLevelDeclCleanupPool.delayMemberFunc< TemplateIdAnnotation,
+                                          &TemplateIdAnnotation::Destroy>(Id);
+  return Id;
+}
+
 /// TryAnnotateTypeOrScopeToken - If the current token position is on a
 /// typename (possibly qualified in C++) or a C++ scope specifier not followed
 /// by a typename, TryAnnotateTypeOrScopeToken will replace one or more tokens
@@ -1222,8 +1225,7 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
                                      *Tok.getIdentifierInfo(),
                                      Tok.getLocation());
     } else if (Tok.is(tok::annot_template_id)) {
-      TemplateIdAnnotation *TemplateId
-        = static_cast<TemplateIdAnnotation *>(Tok.getAnnotationValue());
+      TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
       if (TemplateId->Kind == TNK_Function_template) {
         Diag(Tok, diag::err_typename_refers_to_non_type_template)
           << Tok.getAnnotationRange();
@@ -1241,7 +1243,6 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
                                      TemplateId->LAngleLoc,
                                      TemplateArgsPtr, 
                                      TemplateId->RAngleLoc);
-      TemplateId->Destroy();
     } else {
       Diag(Tok, diag::err_expected_type_name_after_typename)
         << SS.getRange();
@@ -1324,8 +1325,7 @@ bool Parser::TryAnnotateTypeOrScopeToken(bool EnteringContext) {
   }
 
   if (Tok.is(tok::annot_template_id)) {
-    TemplateIdAnnotation *TemplateId
-      = static_cast<TemplateIdAnnotation *>(Tok.getAnnotationValue());
+    TemplateIdAnnotation *TemplateId = takeTemplateIdAnnotation(Tok);
     if (TemplateId->Kind == TNK_Type_template) {
       // A template-id that refers to a type was parsed into a
       // template-id annotation in a context where we weren't allowed
@@ -1503,7 +1503,7 @@ bool Parser::ParseMicrosoftIfExistsCondition(bool& Result) {
   return false;
 }
 
-void Parser::ParseMicrosoftIfExistsDeclaration() {
+void Parser::ParseMicrosoftIfExistsExternalDeclaration() {
   bool Result;
   if (ParseMicrosoftIfExistsCondition(Result))
     return;

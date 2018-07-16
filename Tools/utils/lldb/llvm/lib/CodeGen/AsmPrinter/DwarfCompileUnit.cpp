@@ -439,12 +439,37 @@ void CompileUnit::addBlockByrefAddress(DbgVariable *&DV, DIE *Die,
   addBlock(Die, Attribute, 0, Block);
 }
 
+/// isTypeSigned - Return true if the type is signed.
+static bool isTypeSigned(DIType Ty, int *SizeInBits) {
+  if (Ty.isDerivedType())
+    return isTypeSigned(DIDerivedType(Ty).getTypeDerivedFrom(), SizeInBits);
+  if (Ty.isBasicType())
+    if (DIBasicType(Ty).getEncoding() == dwarf::DW_ATE_signed
+        || DIBasicType(Ty).getEncoding() == dwarf::DW_ATE_signed_char) {
+      *SizeInBits = Ty.getSizeInBits();
+      return true;
+    }
+  return false;
+}
+
 /// addConstantValue - Add constant value entry in variable DIE.
-bool CompileUnit::addConstantValue(DIE *Die, const MachineOperand &MO) {
+bool CompileUnit::addConstantValue(DIE *Die, const MachineOperand &MO,
+                                   DIType Ty) {
   assert (MO.isImm() && "Invalid machine operand!");
   DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
-  unsigned Imm = MO.getImm();
-  addUInt(Block, 0, dwarf::DW_FORM_udata, Imm);
+  int SizeInBits = -1;
+  bool SignedConstant = isTypeSigned(Ty, &SizeInBits);
+  unsigned Form = SignedConstant ? dwarf::DW_FORM_sdata : dwarf::DW_FORM_udata;
+  switch (SizeInBits) {
+    case 8:  Form = dwarf::DW_FORM_data1; break;
+    case 16: Form = dwarf::DW_FORM_data2; break;
+    case 32: Form = dwarf::DW_FORM_data4; break;
+    case 64: Form = dwarf::DW_FORM_data8; break;
+    default: break;
+  }
+  SignedConstant ? addSInt(Block, 0, Form, MO.getImm()) 
+    : addUInt(Block, 0, Form, MO.getImm());
+
   addBlock(Die, dwarf::DW_AT_const_value, 0, Block);
   return true;
 }
@@ -475,15 +500,23 @@ bool CompileUnit::addConstantFPValue(DIE *Die, const MachineOperand &MO) {
 }
 
 /// addConstantValue - Add constant value entry in variable DIE.
-bool CompileUnit::addConstantValue(DIE *Die, ConstantInt *CI,
+bool CompileUnit::addConstantValue(DIE *Die, const ConstantInt *CI,
                                    bool Unsigned) {
-  if (CI->getBitWidth() <= 64) {
+  unsigned CIBitWidth = CI->getBitWidth();
+  if (CIBitWidth <= 64) {
+    unsigned form = 0;
+    switch (CIBitWidth) {
+    case 8: form = dwarf::DW_FORM_data1; break;
+    case 16: form = dwarf::DW_FORM_data2; break;
+    case 32: form = dwarf::DW_FORM_data4; break;
+    case 64: form = dwarf::DW_FORM_data8; break;
+    default: 
+      form = Unsigned ? dwarf::DW_FORM_udata : dwarf::DW_FORM_sdata;
+    }
     if (Unsigned)
-      addUInt(Die, dwarf::DW_AT_const_value, dwarf::DW_FORM_udata,
-              CI->getZExtValue());
+      addUInt(Die, dwarf::DW_AT_const_value, form, CI->getZExtValue());
     else
-      addSInt(Die, dwarf::DW_AT_const_value, dwarf::DW_FORM_sdata,
-              CI->getSExtValue());
+      addSInt(Die, dwarf::DW_AT_const_value, form, CI->getSExtValue());
     return true;
   }
 
@@ -581,8 +614,21 @@ void CompileUnit::addType(DIE *Entity, DIType Ty) {
   // Set up proxy.
   Entry = createDIEEntry(Buffer);
   insertDIEEntry(Ty, Entry);
-
   Entity->addValue(dwarf::DW_AT_type, dwarf::DW_FORM_ref4, Entry);
+
+  // If this is a complete composite type then include it in the
+  // list of global types.
+  addGlobalType(Ty);
+}
+
+/// addGlobalType - Add a new global type to the compile unit.
+///
+void CompileUnit::addGlobalType(DIType Ty) {
+  DIDescriptor Context = Ty.getContext();
+  if (Ty.isCompositeType() && !Ty.getName().empty() && !Ty.isForwardDecl() 
+      && (Context.isCompileUnit() || Context.isFile() || Context.isNameSpace()))
+    if (DIEEntry *Entry = getDIEEntry(Ty))
+      GlobalTypes[Ty.getName()] = Entry->getEntry();
 }
 
 /// addPubTypes - Add type for pubtypes section.
@@ -597,12 +643,7 @@ void CompileUnit::addPubTypes(DISubprogram SP) {
     DIType ATy(Args.getElement(i));
     if (!ATy.Verify())
       continue;
-    DICompositeType CATy = getDICompositeType(ATy);
-    if (DIDescriptor(CATy).Verify() && !CATy.getName().empty()
-        && !CATy.isForwardDecl()) {
-      if (DIEEntry *Entry = getDIEEntry(CATy))
-        addGlobalType(CATy.getName(), Entry->getEntry());
-    }
+    addGlobalType(ATy);
   }
 }
 

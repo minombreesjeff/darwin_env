@@ -47,13 +47,16 @@ public:
     OptionParsingStarting (CommandInterpreter &interpreter);
     
     bool show_types;
-    bool show_summary;
+    uint32_t no_summary_depth;
     bool show_location;
     bool flat_output;
     bool use_objc;
     uint32_t max_depth;
     uint32_t ptr_depth;
     lldb::DynamicValueType use_dynamic;
+    bool use_synth;
+    bool be_raw;
+    bool ignore_cap;
 };
 
 } // namespace lldb_private

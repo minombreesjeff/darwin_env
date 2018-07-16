@@ -14,11 +14,8 @@
 #ifndef LLVM_CLANG_SA_CORE_CHECKERPROVIDER_H
 #define LLVM_CLANG_SA_CORE_CHECKERPROVIDER_H
 
+#include "clang/Basic/LLVM.h"
 #include "llvm/ADT/StringRef.h"
-
-namespace llvm {
-  class raw_ostream;
-}
 
 namespace clang {
 
@@ -48,7 +45,7 @@ public:
   virtual ~CheckerProvider();
   virtual void registerCheckers(CheckerManager &checkerMgr,
                           CheckerOptInfo *checkOpts, unsigned numCheckOpts) = 0;
-  virtual void printHelp(llvm::raw_ostream &OS) = 0;
+  virtual void printHelp(raw_ostream &OS) = 0;
 };
 
 } // end ento namespace

@@ -24,13 +24,14 @@
 #include <string>
 
 namespace llvm {
-  class raw_ostream;
   template<typename T> class ArrayRef;
 }
 namespace clang {
 namespace driver {
   class Action;
+  class Arg;
   class ArgList;
+  class Command;
   class Compilation;
   class DerivedArgList;
   class HostInfo;
@@ -75,7 +76,7 @@ public:
   /// functionality.
   /// FIXME: This type of customization should be removed in favor of the
   /// universal driver when it is ready.
-  typedef llvm::SmallVector<std::string, 4> prefix_list;
+  typedef SmallVector<std::string, 4> prefix_list;
   prefix_list PrefixDirs;
 
   /// sysroot, if present
@@ -134,6 +135,9 @@ public:
   /// format.
   unsigned CCLogDiagnostics : 1;
 
+  /// Whether the driver is generating diagnostics for debugging purposes.
+  unsigned CCGenDiagnostics : 1;
+
 private:
   /// Name to use when invoking gcc/g++.
   std::string CCCGenericGCCName;
@@ -172,10 +176,15 @@ private:
   /// arguments, after applying the standard argument translations.
   DerivedArgList *TranslateInputArgs(const InputArgList &Args) const;
 
+  // getFinalPhase - Determine which compilation mode we are in and record 
+  // which option we used to determine the final phase.
+  phases::ID getFinalPhase(const DerivedArgList &DAL, Arg **FinalPhaseArg = 0)
+    const;
+
 public:
-  Driver(llvm::StringRef _ClangExecutable,
-         llvm::StringRef _DefaultHostTriple,
-         llvm::StringRef _DefaultImageName,
+  Driver(StringRef _ClangExecutable,
+         StringRef _DefaultHostTriple,
+         StringRef _DefaultImageName,
          bool IsProduction, bool CXXIsProduction,
          Diagnostic &_Diags);
   ~Driver();
@@ -209,7 +218,7 @@ public:
       return InstalledDir.c_str();
     return Dir.c_str();
   }
-  void setInstalledDir(llvm::StringRef Value) {
+  void setInstalledDir(StringRef Value) {
     InstalledDir = Value;
   }
 
@@ -224,14 +233,14 @@ public:
   /// argument vector. A null return value does not necessarily
   /// indicate an error condition, the diagnostics should be queried
   /// to determine if an error occurred.
-  Compilation *BuildCompilation(llvm::ArrayRef<const char *> Args);
+  Compilation *BuildCompilation(ArrayRef<const char *> Args);
 
   /// @name Driver Steps
   /// @{
 
   /// ParseArgStrings - Parse the given list of strings into an
   /// ArgList.
-  InputArgList *ParseArgStrings(llvm::ArrayRef<const char *> Args);
+  InputArgList *ParseArgStrings(ArrayRef<const char *> Args);
 
   /// BuildActions - Construct the list of actions to perform for the
   /// given arguments, which are only done for a single architecture.
@@ -263,7 +272,14 @@ public:
   /// This routine handles additional processing that must be done in addition
   /// to just running the subprocesses, for example reporting errors, removing
   /// temporary files, etc.
-  int ExecuteCompilation(const Compilation &C) const;
+  int ExecuteCompilation(const Compilation &C,
+                         const Command *&FailingCommand) const;
+  
+  /// generateCompilationDiagnostics - Generate diagnostics information 
+  /// including preprocessed source file(s).
+  /// 
+  void generateCompilationDiagnostics(Compilation &C,
+                                      const Command *FailingCommand);
 
   /// @}
   /// @name Helper Methods
@@ -281,7 +297,7 @@ public:
   void PrintOptions(const ArgList &Args) const;
 
   /// PrintVersion - Print the driver version.
-  void PrintVersion(const Compilation &C, llvm::raw_ostream &OS) const;
+  void PrintVersion(const Compilation &C, raw_ostream &OS) const;
 
   /// GetFilePath - Lookup \arg Name in the list of file search paths.
   ///
@@ -356,6 +372,8 @@ public:
   /// handle this action.
   bool ShouldUseClangCompiler(const Compilation &C, const JobAction &JA,
                               const llvm::Triple &ArchName) const;
+
+  bool IsUsingLTO(const ArgList &Args) const;
 
   /// @}
 

@@ -151,6 +151,9 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::ObjCForCollectionStmtClass:
     EmitObjCForCollectionStmt(cast<ObjCForCollectionStmt>(*S));
     break;
+  case Stmt::ObjCAutoreleasePoolStmtClass:
+    EmitObjCAutoreleasePoolStmt(cast<ObjCAutoreleasePoolStmt>(*S));
+    break;
       
   case Stmt::CXXTryStmtClass:
     EmitCXXTryStmt(cast<CXXTryStmt>(*S));
@@ -764,7 +767,7 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
   } else if (RV->getType()->isAnyComplexType()) {
     EmitComplexExprIntoAddr(RV, ReturnValue, false);
   } else {
-    EmitAggExpr(RV, AggValueSlot::forAddr(ReturnValue, false, true));
+    EmitAggExpr(RV, AggValueSlot::forAddr(ReturnValue, Qualifiers(), true));
   }
 
   EmitBranchThroughCleanup(ReturnBlock);
@@ -773,10 +776,8 @@ void CodeGenFunction::EmitReturnStmt(const ReturnStmt &S) {
 void CodeGenFunction::EmitDeclStmt(const DeclStmt &S) {
   // As long as debug info is modeled with instructions, we have to ensure we
   // have a place to insert here and write the stop point here.
-  if (getDebugInfo()) {
-    EnsureInsertPoint();
+  if (getDebugInfo() && HaveInsertPoint())
     EmitStopPoint(&S);
-  }
 
   for (DeclStmt::const_decl_iterator I = S.decl_begin(), E = S.decl_end();
        I != E; ++I)
@@ -960,7 +961,7 @@ enum CSFC_Result { CSFC_Failure, CSFC_FallThrough, CSFC_Success };
 static CSFC_Result CollectStatementsForCase(const Stmt *S,
                                             const SwitchCase *Case,
                                             bool &FoundCase,
-                              llvm::SmallVectorImpl<const Stmt*> &ResultStmts) {
+                              SmallVectorImpl<const Stmt*> &ResultStmts) {
   // If this is a null statement, just succeed.
   if (S == 0)
     return Case ? CSFC_Success : CSFC_FallThrough;
@@ -999,7 +1000,7 @@ static CSFC_Result CollectStatementsForCase(const Stmt *S,
       // If we're looking for the case, just see if we can skip each of the
       // substatements.
       for (; Case && I != E; ++I) {
-        HadSkippedDecl |= isa<DeclStmt>(I);
+        HadSkippedDecl |= isa<DeclStmt>(*I);
         
         switch (CollectStatementsForCase(*I, Case, FoundCase, ResultStmts)) {
         case CSFC_Failure: return CSFC_Failure;
@@ -1085,7 +1086,7 @@ static CSFC_Result CollectStatementsForCase(const Stmt *S,
 /// for more details.
 static bool FindCaseStatementsForValue(const SwitchStmt &S,
                                        const llvm::APInt &ConstantCondValue,
-                                llvm::SmallVectorImpl<const Stmt*> &ResultStmts,
+                                SmallVectorImpl<const Stmt*> &ResultStmts,
                                        ASTContext &C) {
   // First step, find the switch case that is being branched to.  We can do this
   // efficiently by scanning the SwitchCase list.
@@ -1146,7 +1147,7 @@ void CodeGenFunction::EmitSwitchStmt(const SwitchStmt &S) {
   // emit the live case statement (if any) of the switch.
   llvm::APInt ConstantCondValue;
   if (ConstantFoldsToSimpleInteger(S.getCond(), ConstantCondValue)) {
-    llvm::SmallVector<const Stmt*, 4> CaseStmts;
+    SmallVector<const Stmt*, 4> CaseStmts;
     if (FindCaseStatementsForValue(S, ConstantCondValue, CaseStmts,
                                    getContext())) {
       RunCleanupsScope ExecutedScope(*this);
@@ -1218,13 +1219,13 @@ void CodeGenFunction::EmitSwitchStmt(const SwitchStmt &S) {
 
 static std::string
 SimplifyConstraint(const char *Constraint, const TargetInfo &Target,
-                 llvm::SmallVectorImpl<TargetInfo::ConstraintInfo> *OutCons=0) {
+                 SmallVectorImpl<TargetInfo::ConstraintInfo> *OutCons=0) {
   std::string Result;
 
   while (*Constraint) {
     switch (*Constraint) {
     default:
-      Result += Target.convertConstraint(*Constraint);
+      Result += Target.convertConstraint(Constraint);
       break;
     // Ignore these
     case '*':
@@ -1275,13 +1276,18 @@ AddVariableConstraints(const std::string &Constraint, const Expr &AsmExpr,
   AsmLabelAttr *Attr = Variable->getAttr<AsmLabelAttr>();
   if (!Attr)
     return Constraint;
-  llvm::StringRef Register = Attr->getLabel();
+  StringRef Register = Attr->getLabel();
   assert(Target.isValidGCCRegisterName(Register));
-  // FIXME: We should check which registers are compatible with "r" or "x".
-  if (Constraint != "r" && Constraint != "x") {
+  // We're using validateOutputConstraint here because we only care if
+  // this is a register constraint.
+  TargetInfo::ConstraintInfo Info(Constraint, "");
+  if (Target.validateOutputConstraint(Info) &&
+      !Info.allowsRegister()) {
     CGM.ErrorUnsupported(&Stmt, "__asm__");
     return Constraint;
   }
+  // Canonicalize the register here before returning it.
+  Register = Target.getNormalizedGCCRegisterName(Register);
   return "{" + Register.str() + "}";
 }
 
@@ -1293,9 +1299,9 @@ CodeGenFunction::EmitAsmInputLValue(const AsmStmt &S,
   llvm::Value *Arg;
   if (Info.allowsRegister() || !Info.allowsMemory()) {
     if (!CodeGenFunction::hasAggregateLLVMType(InputType)) {
-      Arg = EmitLoadOfLValue(InputValue, InputType).getScalarVal();
+      Arg = EmitLoadOfLValue(InputValue).getScalarVal();
     } else {
-      const llvm::Type *Ty = ConvertType(InputType);
+      llvm::Type *Ty = ConvertType(InputType);
       uint64_t Size = CGM.getTargetData().getTypeSizeInBits(Ty);
       if (Size <= 64 && llvm::isPowerOf2_64(Size)) {
         Ty = llvm::IntegerType::get(getLLVMContext(), Size);
@@ -1335,11 +1341,11 @@ llvm::Value* CodeGenFunction::EmitAsmInput(const AsmStmt &S,
 /// asm.
 static llvm::MDNode *getAsmSrcLocInfo(const StringLiteral *Str,
                                       CodeGenFunction &CGF) {
-  llvm::SmallVector<llvm::Value *, 8> Locs;
+  SmallVector<llvm::Value *, 8> Locs;
   // Add the location of the first line to the MDNode.
   Locs.push_back(llvm::ConstantInt::get(CGF.Int32Ty,
                                         Str->getLocStart().getRawEncoding()));
-  llvm::StringRef StrVal = Str->getString();
+  StringRef StrVal = Str->getString();
   if (!StrVal.empty()) {
     const SourceManager &SM = CGF.CGM.getContext().getSourceManager();
     const LangOptions &LangOpts = CGF.CGM.getLangOptions();
@@ -1361,7 +1367,7 @@ static llvm::MDNode *getAsmSrcLocInfo(const StringLiteral *Str,
 void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
   // Analyze the asm string to decompose it into its pieces.  We know that Sema
   // has already done this, so it is guaranteed to be successful.
-  llvm::SmallVector<AsmStmt::AsmStringPiece, 4> Pieces;
+  SmallVector<AsmStmt::AsmStringPiece, 4> Pieces;
   unsigned DiagOffs;
   S.AnalyzeAsmString(Pieces, getContext(), DiagOffs);
 
@@ -1378,8 +1384,8 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
   }
 
   // Get all the output and input constraints together.
-  llvm::SmallVector<TargetInfo::ConstraintInfo, 4> OutputConstraintInfos;
-  llvm::SmallVector<TargetInfo::ConstraintInfo, 4> InputConstraintInfos;
+  SmallVector<TargetInfo::ConstraintInfo, 4> OutputConstraintInfos;
+  SmallVector<TargetInfo::ConstraintInfo, 4> InputConstraintInfos;
 
   for (unsigned i = 0, e = S.getNumOutputs(); i != e; i++) {
     TargetInfo::ConstraintInfo Info(S.getOutputConstraint(i),
@@ -1402,15 +1408,15 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
   std::vector<LValue> ResultRegDests;
   std::vector<QualType> ResultRegQualTys;
-  std::vector<const llvm::Type *> ResultRegTypes;
-  std::vector<const llvm::Type *> ResultTruncRegTypes;
-  std::vector<const llvm::Type*> ArgTypes;
+  std::vector<llvm::Type *> ResultRegTypes;
+  std::vector<llvm::Type *> ResultTruncRegTypes;
+  std::vector<llvm::Type*> ArgTypes;
   std::vector<llvm::Value*> Args;
 
   // Keep track of inout constraints.
   std::string InOutConstraints;
   std::vector<llvm::Value*> InOutArgs;
-  std::vector<const llvm::Type*> InOutArgTypes;
+  std::vector<llvm::Type*> InOutArgTypes;
 
   for (unsigned i = 0, e = S.getNumOutputs(); i != e; i++) {
     TargetInfo::ConstraintInfo &Info = OutputConstraintInfos[i];
@@ -1422,8 +1428,8 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
     const Expr *OutExpr = S.getOutputExpr(i);
     OutExpr = OutExpr->IgnoreParenNoopCasts(getContext());
 
-    OutputConstraint = AddVariableConstraints(OutputConstraint, *OutExpr, Target,
-                                             CGM, S);
+    OutputConstraint = AddVariableConstraints(OutputConstraint, *OutExpr,
+                                              Target, CGM, S);
 
     LValue Dest = EmitLValue(OutExpr);
     if (!Constraints.empty())
@@ -1459,7 +1465,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
           ResultRegTypes.back() = ConvertType(InputTy);
         }
       }
-      if (const llvm::Type* AdjTy = 
+      if (llvm::Type* AdjTy = 
             getTargetHooks().adjustInlineAsmType(*this, OutputConstraint,
                                                  ResultRegTypes.back()))
         ResultRegTypes.back() = AdjTy;
@@ -1524,14 +1530,18 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
         // Use ptrtoint as appropriate so that we can do our extension.
         if (isa<llvm::PointerType>(Arg->getType()))
           Arg = Builder.CreatePtrToInt(Arg, IntPtrTy);
-        const llvm::Type *OutputTy = ConvertType(OutputType);
+        llvm::Type *OutputTy = ConvertType(OutputType);
         if (isa<llvm::IntegerType>(OutputTy))
           Arg = Builder.CreateZExt(Arg, OutputTy);
-        else
+        else if (isa<llvm::PointerType>(OutputTy))
+          Arg = Builder.CreateZExt(Arg, IntPtrTy);
+        else {
+          assert(OutputTy->isFloatingPointTy() && "Unexpected output type");
           Arg = Builder.CreateFPExt(Arg, OutputTy);
+        }
       }
     }
-    if (const llvm::Type* AdjTy = 
+    if (llvm::Type* AdjTy = 
               getTargetHooks().adjustInlineAsmType(*this, InputConstraint,
                                                    Arg->getType()))
       Arg = Builder.CreateBitCast(Arg, AdjTy);
@@ -1550,8 +1560,9 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
 
   // Clobbers
   for (unsigned i = 0, e = S.getNumClobbers(); i != e; i++) {
-    llvm::StringRef Clobber = S.getClobber(i)->getString();
+    StringRef Clobber = S.getClobber(i)->getString();
 
+    if (Clobber != "memory" && Clobber != "cc")
     Clobber = Target.getNormalizedGCCRegisterName(Clobber);
 
     if (i != 0 || NumConstraints != 0)
@@ -1570,7 +1581,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
     Constraints += MachineClobbers;
   }
 
-  const llvm::Type *ResultType;
+  llvm::Type *ResultType;
   if (ResultRegTypes.empty())
     ResultType = llvm::Type::getVoidTy(getLLVMContext());
   else if (ResultRegTypes.size() == 1)
@@ -1578,13 +1589,13 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
   else
     ResultType = llvm::StructType::get(getLLVMContext(), ResultRegTypes);
 
-  const llvm::FunctionType *FTy =
+  llvm::FunctionType *FTy =
     llvm::FunctionType::get(ResultType, ArgTypes, false);
 
   llvm::InlineAsm *IA =
     llvm::InlineAsm::get(FTy, AsmString, Constraints,
                          S.isVolatile() || S.getNumOutputs() == 0);
-  llvm::CallInst *Result = Builder.CreateCall(IA, Args.begin(), Args.end());
+  llvm::CallInst *Result = Builder.CreateCall(IA, Args);
   Result->addAttribute(~0, llvm::Attribute::NoUnwind);
 
   // Slap the source location of the inline asm into a !srcloc metadata on the
@@ -1608,7 +1619,7 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
     // If the result type of the LLVM IR asm doesn't match the result type of
     // the expression, do the conversion.
     if (ResultRegTypes[i] != ResultTruncRegTypes[i]) {
-      const llvm::Type *TruncTy = ResultTruncRegTypes[i];
+      llvm::Type *TruncTy = ResultTruncRegTypes[i];
       
       // Truncate the integer result to the right size, note that TruncTy can be
       // a pointer.
@@ -1631,7 +1642,6 @@ void CodeGenFunction::EmitAsmStmt(const AsmStmt &S) {
       }
     }
 
-    EmitStoreThroughLValue(RValue::get(Tmp), ResultRegDests[i],
-                           ResultRegQualTys[i]);
+    EmitStoreThroughLValue(RValue::get(Tmp), ResultRegDests[i]);
   }
 }

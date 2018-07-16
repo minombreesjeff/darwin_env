@@ -2,10 +2,15 @@ clang_CXCursorSet_contains
 clang_CXCursorSet_insert
 clang_CXXMethod_isStatic
 clang_CXXMethod_isVirtual
+clang_getCursorReferenceNameRange
 clang_annotateTokens
 clang_codeCompleteAt
 clang_codeCompleteGetDiagnostic
 clang_codeCompleteGetNumDiagnostics
+clang_codeCompleteGetContainerKind
+clang_codeCompleteGetContainerUSR
+clang_codeCompleteGetContexts
+clang_codeCompleteGetObjCSelector
 clang_constructUSR_ObjCCategory
 clang_constructUSR_ObjCClass
 clang_constructUSR_ObjCIvar
@@ -33,6 +38,7 @@ clang_disposeTranslationUnit
 clang_enableStackTraces
 clang_equalCursors
 clang_equalLocations
+clang_equalRanges
 clang_equalTypes
 clang_executeOnThread
 clang_formatDiagnostic
@@ -49,6 +55,7 @@ clang_getCompletionChunkText
 clang_getCompletionPriority
 clang_getCursor
 clang_getCursorAvailability
+clang_getCursorCompletionString
 clang_getCursorDefinition
 clang_getCursorDisplayName
 clang_getCursorExtent
@@ -112,6 +119,7 @@ clang_getTranslationUnitSpelling
 clang_getTypeDeclaration
 clang_getTypeKindSpelling
 clang_hashCursor
+clang_isAttribute
 clang_isConstQualifiedType
 clang_isCursorDefinition
 clang_isDeclaration
@@ -135,3 +143,7 @@ clang_toggleCrashRecovery
 clang_tokenize
 clang_visitChildren
 clang_visitChildrenWithBlock
+clang_getRemappings
+clang_remap_getNumFiles
+clang_remap_getFilenames
+clang_remap_dispose

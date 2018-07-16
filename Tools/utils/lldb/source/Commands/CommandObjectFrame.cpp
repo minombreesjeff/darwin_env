@@ -26,6 +26,7 @@
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/OptionGroupValueObjectDisplay.h"
+#include "lldb/Interpreter/OptionGroupVariable.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -72,7 +73,6 @@ public:
         if (exe_ctx.frame)
         {
             exe_ctx.frame->DumpUsingSettingsFormat (&result.GetOutputStream());
-            result.GetOutputStream().EOL();
             result.SetStatus (eReturnStatusSuccessFinishResult);
         }
         else
@@ -378,7 +378,7 @@ public:
                        NULL,
                        eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
         m_option_group (interpreter),
-        m_frame_var_options(),
+        m_option_variable(true), // Include the frame specific options by passing "true"
         m_varobj_options()
     {
         CommandArgumentEntry arg;
@@ -394,7 +394,7 @@ public:
         // Push the data for the first argument into the m_arguments vector.
         m_arguments.push_back (arg);
         
-        m_option_group.Append (&m_frame_var_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_option_variable, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_varobj_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Finalize();
     }
@@ -431,80 +431,41 @@ public:
             Stream &s = result.GetOutputStream();
 
             bool get_file_globals = true;
-            VariableList *variable_list = exe_ctx.frame->GetVariableList (get_file_globals);
+            
+            // Be careful about the stack frame, if any summary formatter runs code, it might clear the StackFrameList
+            // for the thread.  So hold onto a shared pointer to the frame so it stays alive.
+            
+            StackFrameSP frame_sp = exe_ctx.frame->GetSP();
+            
+            VariableList *variable_list = frame_sp->GetVariableList (get_file_globals);
 
             VariableSP var_sp;
             ValueObjectSP valobj_sp;
 
             const char *name_cstr = NULL;
             size_t idx;
-            if (!m_frame_var_options.globals.empty())
-            {
-                uint32_t fail_count = 0;
-                if (exe_ctx.target)
-                {
-                    const size_t num_globals = m_frame_var_options.globals.size();
-                    for (idx = 0; idx < num_globals; ++idx)
-                    {
-                        VariableList global_var_list;
-                        const uint32_t num_matching_globals 
-                                = exe_ctx.target->GetImages().FindGlobalVariables (m_frame_var_options.globals[idx], 
-                                                                                   true, 
-                                                                                   UINT32_MAX, 
-                                                                                   global_var_list);
+            
+            SummaryFormatSP summary_format_sp;
+            if (!m_option_variable.summary.empty())
+                Debugger::Formatting::NamedSummaryFormats::Get(ConstString(m_option_variable.summary.c_str()), summary_format_sp);
+            
+            ValueObject::DumpValueObjectOptions options;
+            
+            options.SetPointerDepth(m_varobj_options.ptr_depth)
+                   .SetMaximumDepth(m_varobj_options.max_depth)
+                   .SetShowTypes(m_varobj_options.show_types)
+                   .SetShowLocation(m_varobj_options.show_location)
+                   .SetUseObjectiveC(m_varobj_options.use_objc)
+                   .SetUseDynamicType(m_varobj_options.use_dynamic)
+                   .SetUseSyntheticValue((lldb::SyntheticValueType)m_varobj_options.use_synth)
+                   .SetFlatOutput(m_varobj_options.flat_output)
+                   .SetOmitSummaryDepth(m_varobj_options.no_summary_depth)
+                   .SetIgnoreCap(m_varobj_options.ignore_cap);
 
-                        if (num_matching_globals == 0)
-                        {
-                            ++fail_count;
-                            result.GetErrorStream().Printf ("error: can't find global variable '%s'\n", 
-                                                            m_frame_var_options.globals[idx].AsCString());
-                        }
-                        else
-                        {
-                            for (uint32_t global_idx=0; global_idx<num_matching_globals; ++global_idx)
-                            {
-                                var_sp = global_var_list.GetVariableAtIndex(global_idx);
-                                if (var_sp)
-                                {
-                                    valobj_sp = exe_ctx.frame->GetValueObjectForFrameVariable (var_sp, 
-                                                                                               m_varobj_options.use_dynamic);
-                                    if (!valobj_sp)
-                                        valobj_sp = exe_ctx.frame->TrackGlobalVariable (var_sp, 
-                                                                                        m_varobj_options.use_dynamic);
-
-                                    if (valobj_sp)
-                                    {
-                                        if (m_frame_var_options.format != eFormatDefault)
-                                            valobj_sp->SetFormat (m_frame_var_options.format);
-
-                                        if (m_frame_var_options.show_decl && var_sp->GetDeclaration ().GetFile())
-                                        {
-                                            var_sp->GetDeclaration ().DumpStopContext (&s, false);
-                                            s.PutCString (": ");
-                                        }
-                                        
-                                        ValueObject::DumpValueObject (result.GetOutputStream(), 
-                                                                      valobj_sp.get(), 
-                                                                      name_cstr, 
-                                                                      m_varobj_options.ptr_depth, 
-                                                                      0, 
-                                                                      m_varobj_options.max_depth, 
-                                                                      m_varobj_options.show_types,
-                                                                      m_varobj_options.show_location,
-                                                                      m_varobj_options.use_objc,
-                                                                      m_varobj_options.use_dynamic,
-                                                                      false,
-                                                                      m_varobj_options.flat_output);                                        
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if (fail_count)
-                    result.SetStatus (eReturnStatusFailed);
-            }
-            else if (variable_list)
+            if (m_varobj_options.be_raw)
+                options.SetRawDisplay(true);
+            
+            if (variable_list)
             {
                 if (command.GetArgumentCount() > 0)
                 {
@@ -514,9 +475,7 @@ public:
                     // variable objects from them...
                     for (idx = 0; (name_cstr = command.GetArgumentAtIndex(idx)) != NULL; ++idx)
                     {
-                        uint32_t ptr_depth = m_varobj_options.ptr_depth;
-                        
-                        if (m_frame_var_options.use_regex)
+                        if (m_option_variable.use_regex)
                         {
                             const uint32_t regex_start_index = regex_var_list.GetSize();
                             RegularExpression regex (name_cstr);
@@ -535,30 +494,24 @@ public:
                                         var_sp = regex_var_list.GetVariableAtIndex (regex_idx);
                                         if (var_sp)
                                         {
-                                            valobj_sp = exe_ctx.frame->GetValueObjectForFrameVariable (var_sp, m_varobj_options.use_dynamic);
+                                            valobj_sp = frame_sp->GetValueObjectForFrameVariable (var_sp, m_varobj_options.use_dynamic);
                                             if (valobj_sp)
                                             {                                        
-                                                if (m_frame_var_options.format != eFormatDefault)
-                                                    valobj_sp->SetFormat (m_frame_var_options.format);
+                                                if (m_option_variable.format != eFormatDefault)
+                                                    valobj_sp->SetFormat (m_option_variable.format);
                                                 
-                                                if (m_frame_var_options.show_decl && var_sp->GetDeclaration ().GetFile())
+                                                if (m_option_variable.show_decl && var_sp->GetDeclaration ().GetFile())
                                                 {
-                                                    var_sp->GetDeclaration ().DumpStopContext (&s, false);
-                                                    s.PutCString (": ");
+                                                    bool show_fullpaths = false;
+                                                    bool show_module = true;
+                                                    if (var_sp->DumpDeclaration(&s, show_fullpaths, show_module))
+                                                        s.PutCString (": ");
                                                 }
-                                                
+                                                if (summary_format_sp)
+                                                    valobj_sp->SetCustomSummaryFormat(summary_format_sp);
                                                 ValueObject::DumpValueObject (result.GetOutputStream(), 
-                                                                              valobj_sp.get(), 
-                                                                              var_sp->GetName().AsCString(), 
-                                                                              m_varobj_options.ptr_depth, 
-                                                                              0, 
-                                                                              m_varobj_options.max_depth, 
-                                                                              m_varobj_options.show_types,
-                                                                              m_varobj_options.show_location,
-                                                                              m_varobj_options.use_objc,
-                                                                              m_varobj_options.use_dynamic, 
-                                                                              false,
-                                                                              m_varobj_options.flat_output);                                        
+                                                                              valobj_sp.get(),
+                                                                              options);                                        
                                             }
                                         }
                                     }
@@ -582,32 +535,26 @@ public:
                             Error error;
                             uint32_t expr_path_options = StackFrame::eExpressionPathOptionCheckPtrVsMember;
                             lldb::VariableSP var_sp;
-                            valobj_sp = exe_ctx.frame->GetValueForVariableExpressionPath (name_cstr, 
+                            valobj_sp = frame_sp->GetValueForVariableExpressionPath (name_cstr, 
                                                                                           m_varobj_options.use_dynamic, 
                                                                                           expr_path_options,
                                                                                           var_sp,
                                                                                           error);
                             if (valobj_sp)
                             {
-                                if (m_frame_var_options.format != eFormatDefault)
-                                    valobj_sp->SetFormat (m_frame_var_options.format);
-                                if (m_frame_var_options.show_decl && var_sp && var_sp->GetDeclaration ().GetFile())
+                                if (m_option_variable.format != eFormatDefault)
+                                    valobj_sp->SetFormat (m_option_variable.format);
+                                if (m_option_variable.show_decl && var_sp && var_sp->GetDeclaration ().GetFile())
                                 {
                                     var_sp->GetDeclaration ().DumpStopContext (&s, false);
                                     s.PutCString (": ");
                                 }
+                                if (summary_format_sp)
+                                    valobj_sp->SetCustomSummaryFormat(summary_format_sp);
                                 ValueObject::DumpValueObject (result.GetOutputStream(), 
                                                               valobj_sp.get(), 
-                                                              valobj_sp->GetParent() ? name_cstr : NULL, 
-                                                              ptr_depth, 
-                                                              0, 
-                                                              m_varobj_options.max_depth, 
-                                                              m_varobj_options.show_types,
-                                                              m_varobj_options.show_location,
-                                                              m_varobj_options.use_objc,
-                                                              m_varobj_options.use_dynamic,
-                                                              false,
-                                                              m_varobj_options.flat_output);
+                                                              valobj_sp->GetParent() ? name_cstr : NULL,
+                                                              options);
                             }
                             else
                             {
@@ -635,26 +582,26 @@ public:
                             switch (var_sp->GetScope())
                             {
                             case eValueTypeVariableGlobal:
-                                dump_variable = m_frame_var_options.show_globals;
-                                if (dump_variable && m_frame_var_options.show_scope)
+                                dump_variable = m_option_variable.show_globals;
+                                if (dump_variable && m_option_variable.show_scope)
                                     s.PutCString("GLOBAL: ");
                                 break;
 
                             case eValueTypeVariableStatic:
-                                dump_variable = m_frame_var_options.show_globals;
-                                if (dump_variable && m_frame_var_options.show_scope)
+                                dump_variable = m_option_variable.show_globals;
+                                if (dump_variable && m_option_variable.show_scope)
                                     s.PutCString("STATIC: ");
                                 break;
                                 
                             case eValueTypeVariableArgument:
-                                dump_variable = m_frame_var_options.show_args;
-                                if (dump_variable && m_frame_var_options.show_scope)
+                                dump_variable = m_option_variable.show_args;
+                                if (dump_variable && m_option_variable.show_scope)
                                     s.PutCString("   ARG: ");
                                 break;
                                 
                             case eValueTypeVariableLocal:
-                                dump_variable = m_frame_var_options.show_locals;
-                                if (dump_variable && m_frame_var_options.show_scope)
+                                dump_variable = m_option_variable.show_locals;
+                                if (dump_variable && m_option_variable.show_scope)
                                     s.PutCString(" LOCAL: ");
                                 break;
 
@@ -668,34 +615,28 @@ public:
                                 // Use the variable object code to make sure we are
                                 // using the same APIs as the the public API will be
                                 // using...
-                                valobj_sp = exe_ctx.frame->GetValueObjectForFrameVariable (var_sp, 
+                                valobj_sp = frame_sp->GetValueObjectForFrameVariable (var_sp, 
                                                                                            m_varobj_options.use_dynamic);
                                 if (valobj_sp)
                                 {
-                                    if (m_frame_var_options.format != eFormatDefault)
-                                        valobj_sp->SetFormat (m_frame_var_options.format);
+                                    if (m_option_variable.format != eFormatDefault)
+                                        valobj_sp->SetFormat (m_option_variable.format);
                                     
                                     // When dumping all variables, don't print any variables
                                     // that are not in scope to avoid extra unneeded output
                                     if (valobj_sp->IsInScope ())
                                     {
-                                        if (m_frame_var_options.show_decl && var_sp->GetDeclaration ().GetFile())
+                                        if (m_option_variable.show_decl && var_sp->GetDeclaration ().GetFile())
                                         {
                                             var_sp->GetDeclaration ().DumpStopContext (&s, false);
                                             s.PutCString (": ");
                                         }
+                                        if (summary_format_sp)
+                                            valobj_sp->SetCustomSummaryFormat(summary_format_sp);
                                         ValueObject::DumpValueObject (result.GetOutputStream(), 
                                                                       valobj_sp.get(), 
-                                                                      name_cstr, 
-                                                                      m_varobj_options.ptr_depth, 
-                                                                      0, 
-                                                                      m_varobj_options.max_depth, 
-                                                                      m_varobj_options.show_types,
-                                                                      m_varobj_options.show_location,
-                                                                      m_varobj_options.use_objc,
-                                                                      m_varobj_options.use_dynamic, 
-                                                                      false,
-                                                                      m_varobj_options.flat_output);                                        
+                                                                      name_cstr,
+                                                                      options);                                        
                                     }
                                 }
                             }
@@ -705,35 +646,23 @@ public:
                 result.SetStatus (eReturnStatusSuccessFinishResult);
             }
         }
+        
+        if (m_interpreter.TruncationWarningNecessary())
+        {
+            result.GetOutputStream().Printf(m_interpreter.TruncationWarningText(),
+                                            m_cmd_name.c_str());
+            m_interpreter.TruncationWarningGiven();
+        }
+        
         return result.Succeeded();
     }
 protected:
 
     OptionGroupOptions m_option_group;
-    OptionGroupFrameVariable m_frame_var_options;
+    OptionGroupVariable m_option_variable;
     OptionGroupValueObjectDisplay m_varobj_options;
 };
 
-OptionDefinition
-CommandObjectFrameVariable::OptionGroupFrameVariable::g_option_table[] =
-{
-{ LLDB_OPT_SET_1, false, "no-args",         'a', no_argument,       NULL, 0, eArgTypeNone,    "Omit function arguments."},
-{ LLDB_OPT_SET_1, false, "show-declaration",'c', no_argument,       NULL, 0, eArgTypeNone,    "Show variable declaration information (source file and line where the variable was declared)."},
-{ LLDB_OPT_SET_1, false, "format",          'f', required_argument, NULL, 0, eArgTypeExprFormat,  "Specify the format that the variable output should use."},
-{ LLDB_OPT_SET_1, false, "show-globals",    'g', no_argument,       NULL, 0, eArgTypeNone,    "Show the current frame source file global and static variables."},
-{ LLDB_OPT_SET_1, false, "find-global",     'G', required_argument, NULL, 0, eArgTypeVarName, "Find a global variable by name (which might not be in the current stack frame source file)."},
-{ LLDB_OPT_SET_1, false, "no-locals",       'l', no_argument,       NULL, 0, eArgTypeNone,    "Omit local variables."},
-{ LLDB_OPT_SET_1, false, "regex",           'r', no_argument,       NULL, 0, eArgTypeRegularExpression,    "The <variable-name> argument for name lookups are regular expressions."},
-{ LLDB_OPT_SET_1, false, "scope",           's', no_argument,       NULL, 0, eArgTypeNone,    "Show variable scope (argument, local, global, static)."},
-{ 0, false, NULL, 0, 0, NULL, NULL, eArgTypeNone, NULL }
-};
-
-uint32_t
-CommandObjectFrameVariable::OptionGroupFrameVariable::GetNumDefinitions ()
-{
-    return sizeof(CommandObjectFrameVariable::OptionGroupFrameVariable::g_option_table)/sizeof(OptionDefinition);
-}
-        
 
 #pragma mark CommandObjectMultiwordFrame
 

@@ -384,7 +384,7 @@ static bool ExtractLoops(BugDriver &BD,
 
     outs() << "*** Loop extraction successful!\n";
 
-    std::vector<std::pair<std::string, const FunctionType*> > MisCompFunctions;
+    std::vector<std::pair<std::string, FunctionType*> > MisCompFunctions;
     for (Module::iterator I = ToOptimizeLoopExtracted->begin(),
            E = ToOptimizeLoopExtracted->end(); I != E; ++I)
       if (!I->isDeclaration())
@@ -569,7 +569,7 @@ static bool ExtractBlocks(BugDriver &BD,
   // together.
   delete ToExtract;
 
-  std::vector<std::pair<std::string, const FunctionType*> > MisCompFunctions;
+  std::vector<std::pair<std::string, FunctionType*> > MisCompFunctions;
   for (Module::iterator I = Extracted->begin(), E = Extracted->end();
        I != E; ++I)
     if (!I->isDeclaration())
@@ -794,8 +794,7 @@ static void CleanupAndPrepareModules(BugDriver &BD, Module *&Test,
 
       // Call the old main function and return its result
       BasicBlock *BB = BasicBlock::Create(Safe->getContext(), "entry", newMain);
-      CallInst *call = CallInst::Create(oldMainProto, args.begin(), args.end(),
-                                        "", BB);
+      CallInst *call = CallInst::Create(oldMainProto, args, "", BB);
 
       // If the type of old function wasn't void, return value of call
       ReturnInst::Create(Safe->getContext(), call, BB);
@@ -835,8 +834,7 @@ static void CleanupAndPrepareModules(BugDriver &BD, Module *&Test,
         // GetElementPtr *funcName, ulong 0, ulong 0
         std::vector<Constant*> GEPargs(2,
                      Constant::getNullValue(Type::getInt32Ty(F->getContext())));
-        Value *GEP =
-                ConstantExpr::getGetElementPtr(funcName, &GEPargs[0], 2);
+        Value *GEP = ConstantExpr::getGetElementPtr(funcName, GEPargs);
         std::vector<Value*> ResolverArgs;
         ResolverArgs.push_back(GEP);
 
@@ -851,7 +849,7 @@ static void CleanupAndPrepareModules(BugDriver &BD, Module *&Test,
                                NullPtr,F->getName()+".fpcache");
 
           // Construct a new stub function that will re-route calls to F
-          const FunctionType *FuncTy = F->getFunctionType();
+          FunctionType *FuncTy = F->getFunctionType();
           Function *FuncWrapper = Function::Create(FuncTy,
                                                    GlobalValue::InternalLinkage,
                                                    F->getName() + "_wrapper",
@@ -873,8 +871,7 @@ static void CleanupAndPrepareModules(BugDriver &BD, Module *&Test,
           //
           // call resolver(GetElementPtr...)
           CallInst *Resolver =
-            CallInst::Create(resolverFunc, ResolverArgs.begin(),
-                             ResolverArgs.end(), "resolver", LookupBB);
+            CallInst::Create(resolverFunc, ResolverArgs, "resolver", LookupBB);
 
           // Cast the result from the resolver to correctly-typed function.
           CastInst *CastedResolver =
@@ -899,10 +896,10 @@ static void CleanupAndPrepareModules(BugDriver &BD, Module *&Test,
 
           // Pass on the arguments to the real function, return its result
           if (F->getReturnType()->isVoidTy()) {
-            CallInst::Create(FuncPtr, Args.begin(), Args.end(), "", DoCallBB);
+            CallInst::Create(FuncPtr, Args, "", DoCallBB);
             ReturnInst::Create(F->getContext(), DoCallBB);
           } else {
-            CallInst *Call = CallInst::Create(FuncPtr, Args.begin(), Args.end(),
+            CallInst *Call = CallInst::Create(FuncPtr, Args,
                                               "retval", DoCallBB);
             ReturnInst::Create(F->getContext(),Call, DoCallBB);
           }

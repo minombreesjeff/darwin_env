@@ -18,6 +18,7 @@ class RegistersIteratorTestCase(TestBase):
         # Find the line number to break inside main().
         self.line1 = line_number('main.cpp', '// Set break point at this line.')
 
+    @python_api_test
     def test_iter_registers(self):
         """Test iterator works correctly for lldbutil.iter_registers()."""
         self.buildDefault()
@@ -33,10 +34,9 @@ class RegistersIteratorTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        rc = lldb.SBError()
-        process = target.Launch (self.dbg.GetListener(), None, None, os.ctermid(), os.ctermid(), os.ctermid(), None, 0, False, rc)
+        process = target.LaunchSimple(None, None, os.getcwd())
 
-        if not rc.Success() or not process:
+        if not process:
             self.fail("SBTarget.LaunchProcess() failed")
 
         import lldbutil
@@ -54,7 +54,7 @@ class RegistersIteratorTestCase(TestBase):
                     for reg in REGs:
                         self.assertTrue(reg)
                         if self.TraceOn():
-                            print "%s => %s" % (reg.GetName(), reg.GetValue(frame))
+                            print "%s => %s" % (reg.GetName(), reg.GetValue())
 
                     REGs = lldbutil.get_FPRs(frame)
                     num = len(REGs)
@@ -63,7 +63,7 @@ class RegistersIteratorTestCase(TestBase):
                     for reg in REGs:
                         self.assertTrue(reg)
                         if self.TraceOn():
-                            print "%s => %s" % (reg.GetName(), reg.GetValue(frame))
+                            print "%s => %s" % (reg.GetName(), reg.GetValue())
 
                     REGs = lldbutil.get_ESRs(frame)
                     num = len(REGs)
@@ -72,7 +72,7 @@ class RegistersIteratorTestCase(TestBase):
                     for reg in REGs:
                         self.assertTrue(reg)
                         if self.TraceOn():
-                            print "%s => %s" % (reg.GetName(), reg.GetValue(frame))
+                            print "%s => %s" % (reg.GetName(), reg.GetValue())
 
                     # And these should also work.
                     for kind in ["General Purpose Registers",

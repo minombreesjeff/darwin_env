@@ -16,6 +16,7 @@
 
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/SourceLocation.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -64,7 +65,7 @@ public:
   /// \brief Create a code modification hint that inserts the given
   /// code string at a specific location.
   static FixItHint CreateInsertion(SourceLocation InsertionLoc,
-                                   llvm::StringRef Code) {
+                                   StringRef Code) {
     FixItHint Hint;
     Hint.RemoveRange =
       CharSourceRange(SourceRange(InsertionLoc, InsertionLoc), false);
@@ -86,7 +87,7 @@ public:
   /// \brief Create a code modification hint that replaces the given
   /// source range with the given code string.
   static FixItHint CreateReplacement(CharSourceRange RemoveRange,
-                                     llvm::StringRef Code) {
+                                     StringRef Code) {
     FixItHint Hint;
     Hint.RemoveRange = RemoveRange;
     Hint.CodeToInsert = Code;
@@ -94,7 +95,7 @@ public:
   }
   
   static FixItHint CreateReplacement(SourceRange RemoveRange,
-                                     llvm::StringRef Code) {
+                                     StringRef Code) {
     return CreateReplacement(CharSourceRange::getTokenRange(RemoveRange), Code);
   }
 };
@@ -251,6 +252,14 @@ private:
   bool ErrorOccurred;
   bool FatalErrorOccurred;
 
+  /// \brief Indicates that an unrecoverable error has occurred.
+  bool UnrecoverableErrorOccurred;
+  
+  /// \brief Counts for DiagnosticErrorTrap to check whether an error occurred
+  /// during a parsing section, e.g. during parsing a function.
+  unsigned TrapNumErrorsOccurred;
+  unsigned TrapNumUnrecoverableErrorsOccurred;
+
   /// LastDiagLevel - This is the level of the last diagnostic emitted.  This is
   /// used to emit continuation diagnostics with the same level as the
   /// diagnostic that they follow.
@@ -269,13 +278,15 @@ private:
   /// can use this information to avoid redundancy across arguments.
   ///
   /// This is a hack to avoid a layering violation between libbasic and libsema.
-  typedef void (*ArgToStringFnTy)(ArgumentKind Kind, intptr_t Val,
-                                  const char *Modifier, unsigned ModifierLen,
-                                  const char *Argument, unsigned ArgumentLen,
-                                  const ArgumentValue *PrevArgs,
-                                  unsigned NumPrevArgs,
-                                  llvm::SmallVectorImpl<char> &Output,
-                                  void *Cookie);
+  typedef void (*ArgToStringFnTy)(
+      ArgumentKind Kind, intptr_t Val,
+      const char *Modifier, unsigned ModifierLen,
+      const char *Argument, unsigned ArgumentLen,
+      const ArgumentValue *PrevArgs,
+      unsigned NumPrevArgs,
+      SmallVectorImpl<char> &Output,
+      void *Cookie,
+      SmallVectorImpl<intptr_t> &QualTypeVals);
   void *ArgToStringCookie;
   ArgToStringFnTy ArgToStringFn;
 
@@ -425,14 +436,19 @@ public:
   ///
   /// 'Loc' is the source location that this change of diagnostic state should
   /// take affect. It can be null if we are setting the state from command-line.
-  bool setDiagnosticGroupMapping(const char *Group, diag::Mapping Map,
+  bool setDiagnosticGroupMapping(StringRef Group, diag::Mapping Map,
                                  SourceLocation Loc = SourceLocation()) {
     return Diags->setDiagnosticGroupMapping(Group, Map, Loc, *this);
   }
 
   bool hasErrorOccurred() const { return ErrorOccurred; }
   bool hasFatalErrorOccurred() const { return FatalErrorOccurred; }
-
+  
+  /// \brief Determine whether any kind of unrecoverable error has occurred.
+  bool hasUnrecoverableErrorOccurred() const {
+    return FatalErrorOccurred || UnrecoverableErrorOccurred;
+  }
+  
   unsigned getNumWarnings() const { return NumWarnings; }
 
   void setNumWarnings(unsigned NumWarnings) {
@@ -442,7 +458,7 @@ public:
   /// getCustomDiagID - Return an ID for a diagnostic with the specified message
   /// and level.  If this is the first request for this diagnosic, it is
   /// registered and created, otherwise the existing ID is returned.
-  unsigned getCustomDiagID(Level L, llvm::StringRef Message) {
+  unsigned getCustomDiagID(Level L, StringRef Message) {
     return Diags->getCustomDiagID((DiagnosticIDs::Level)L, Message);
   }
 
@@ -452,9 +468,11 @@ public:
                           const char *Modifier, unsigned ModLen,
                           const char *Argument, unsigned ArgLen,
                           const ArgumentValue *PrevArgs, unsigned NumPrevArgs,
-                          llvm::SmallVectorImpl<char> &Output) const {
+                          SmallVectorImpl<char> &Output,
+                          SmallVectorImpl<intptr_t> &QualTypeVals) const {
     ArgToStringFn(Kind, Val, Modifier, ModLen, Argument, ArgLen,
-                  PrevArgs, NumPrevArgs, Output, ArgToStringCookie);
+                  PrevArgs, NumPrevArgs, Output, ArgToStringCookie,
+                  QualTypeVals);
   }
 
   void SetArgToStringFn(ArgToStringFnTy Fn, void *Cookie) {
@@ -515,8 +533,8 @@ public:
   /// \param Arg2 A string argument that will be provided to the
   /// diagnostic. A copy of this string will be stored in the
   /// Diagnostic object itself.
-  void SetDelayedDiagnostic(unsigned DiagID, llvm::StringRef Arg1 = "",
-                            llvm::StringRef Arg2 = "");
+  void SetDelayedDiagnostic(unsigned DiagID, StringRef Arg1 = "",
+                            StringRef Arg2 = "");
   
   /// \brief Clear out the current diagnostic.
   void Clear() { CurDiagID = ~0U; }
@@ -597,7 +615,7 @@ private:
   /// only support 10 ranges, could easily be extended if needed.
   CharSourceRange DiagRanges[10];
 
-  enum { MaxFixItHints = 3 };
+  enum { MaxFixItHints = 6 };
 
   /// FixItHints - If valid, provides a hint with some code
   /// to insert, remove, or modify at a particular position.
@@ -621,20 +639,30 @@ private:
 /// queried.
 class DiagnosticErrorTrap {
   Diagnostic &Diag;
-  unsigned PrevErrors;
+  unsigned NumErrors;
+  unsigned NumUnrecoverableErrors;
 
 public:
   explicit DiagnosticErrorTrap(Diagnostic &Diag)
-    : Diag(Diag), PrevErrors(Diag.NumErrors) {}
+    : Diag(Diag) { reset(); }
 
   /// \brief Determine whether any errors have occurred since this
   /// object instance was created.
   bool hasErrorOccurred() const {
-    return Diag.NumErrors > PrevErrors;
+    return Diag.TrapNumErrorsOccurred > NumErrors;
+  }
+
+  /// \brief Determine whether any unrecoverable errors have occurred since this
+  /// object instance was created.
+  bool hasUnrecoverableErrorOccurred() const {
+    return Diag.TrapNumUnrecoverableErrorsOccurred > NumUnrecoverableErrors;
   }
 
   // Set to initial state of "no errors occurred".
-  void reset() { PrevErrors = Diag.NumErrors; }
+  void reset() {
+    NumErrors = Diag.TrapNumErrorsOccurred;
+    NumUnrecoverableErrors = Diag.TrapNumUnrecoverableErrorsOccurred;
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -718,7 +746,7 @@ public:
   /// return Diag(...);
   operator bool() const { return true; }
 
-  void AddString(llvm::StringRef S) const {
+  void AddString(StringRef S) const {
     assert(NumArgs < Diagnostic::MaxArguments &&
            "Too many arguments to diagnostic!");
     if (DiagObj) {
@@ -753,7 +781,7 @@ public:
 };
 
 inline const DiagnosticBuilder &operator<<(const DiagnosticBuilder &DB,
-                                           llvm::StringRef S) {
+                                           StringRef S) {
   DB.AddString(S);
   return DB;
 }
@@ -843,10 +871,10 @@ inline DiagnosticBuilder Diagnostic::Report(unsigned DiagID) {
 /// about the currently in-flight diagnostic.
 class DiagnosticInfo {
   const Diagnostic *DiagObj;
-  llvm::StringRef StoredDiagMessage;
+  StringRef StoredDiagMessage;
 public:
   explicit DiagnosticInfo(const Diagnostic *DO) : DiagObj(DO) {}
-  DiagnosticInfo(const Diagnostic *DO, llvm::StringRef storedDiagMessage)
+  DiagnosticInfo(const Diagnostic *DO, StringRef storedDiagMessage)
     : DiagObj(DO), StoredDiagMessage(storedDiagMessage) {}
 
   const Diagnostic *getDiags() const { return DiagObj; }
@@ -934,12 +962,12 @@ public:
   /// FormatDiagnostic - Format this diagnostic into a string, substituting the
   /// formal arguments into the %0 slots.  The result is appended onto the Str
   /// array.
-  void FormatDiagnostic(llvm::SmallVectorImpl<char> &OutStr) const;
+  void FormatDiagnostic(SmallVectorImpl<char> &OutStr) const;
 
   /// FormatDiagnostic - Format the given format-string into the
   /// output buffer using the arguments stored in this diagnostic.
   void FormatDiagnostic(const char *DiagStr, const char *DiagEnd,
-                        llvm::SmallVectorImpl<char> &OutStr) const;
+                        SmallVectorImpl<char> &OutStr) const;
 };
 
 /**
@@ -958,7 +986,11 @@ public:
   StoredDiagnostic();
   StoredDiagnostic(Diagnostic::Level Level, const DiagnosticInfo &Info);
   StoredDiagnostic(Diagnostic::Level Level, unsigned ID, 
-                   llvm::StringRef Message);
+                   StringRef Message);
+  StoredDiagnostic(Diagnostic::Level Level, unsigned ID, 
+                   StringRef Message, FullSourceLoc Loc,
+                   ArrayRef<CharSourceRange> Ranges,
+                   ArrayRef<FixItHint> Fixits);
   ~StoredDiagnostic();
 
   /// \brief Evaluates true when this object stores a diagnostic.
@@ -967,7 +999,7 @@ public:
   unsigned getID() const { return ID; }
   Diagnostic::Level getLevel() const { return Level; }
   const FullSourceLoc &getLocation() const { return Loc; }
-  llvm::StringRef getMessage() const { return Message; }
+  StringRef getMessage() const { return Message; }
 
   void setLocation(FullSourceLoc Loc) { this->Loc = Loc; }
 

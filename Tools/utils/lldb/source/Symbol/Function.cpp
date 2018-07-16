@@ -14,9 +14,11 @@
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/LineTable.h"
+#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/CanonicalType.h"
+#include "llvm/Support/Casting.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -359,16 +361,14 @@ Function::Dump(Stream *s, bool show_context) const
 
     m_mangled.Dump(s);
 
-//  FunctionInfo::Dump(s);
     if (m_type)
     {
-        *s << ", type = " << (void*)m_type;
-        /// << " (";
-        ///m_type->DumpTypeName(s);
-        ///s->PutChar(')');
+        s->Printf(", type = %.*p", (int)sizeof(void*) * 2, m_type);
     }
     else if (m_type_uid != LLDB_INVALID_UID)
-        *s << ", type_uid = " << m_type_uid;
+    {
+        s->Printf(", type_uid = 0x%8.8x", m_type_uid);
+    }
 
     s->EOL();
     // Dump the root object
@@ -384,6 +384,31 @@ Function::CalculateSymbolContext(SymbolContext* sc)
     m_comp_unit->CalculateSymbolContext(sc);
 }
 
+Module *
+Function::CalculateSymbolContextModule ()
+{
+    return this->GetCompileUnit()->GetModule();
+}
+
+CompileUnit *
+Function::CalculateSymbolContextCompileUnit ()
+{
+    return this->GetCompileUnit();
+}
+
+Function *
+Function::CalculateSymbolContextFunction ()
+{
+    return this;
+}
+
+//Symbol *
+//Function::CalculateSymbolContextSymbol ()
+//{
+//    return // TODO: find the symbol for the function???
+//}
+
+
 void
 Function::DumpSymbolContext(Stream *s)
 {
@@ -396,6 +421,29 @@ Function::MemorySize () const
 {
     size_t mem_size = sizeof(Function) + m_block.MemorySize();
     return mem_size;
+}
+
+clang::DeclContext *
+Function::GetClangDeclContext()
+{
+    SymbolContext sc;
+    
+    CalculateSymbolContext (&sc);
+    
+    if (!sc.module_sp)
+        return NULL;
+    
+    SymbolVendor *sym_vendor = sc.module_sp->GetSymbolVendor();
+    
+    if (!sym_vendor)
+        return NULL;
+    
+    SymbolFile *sym_file = sym_vendor->GetSymbolFile();
+    
+    if (!sym_file)
+        return NULL;
+    
+    return sym_file->GetClangDeclContextForTypeUID (sc, m_uid);
 }
 
 Type*
@@ -414,7 +462,7 @@ clang_type_t
 Function::GetReturnClangType ()
 {
     clang::QualType clang_type (clang::QualType::getFromOpaquePtr(GetType()->GetClangFullType()));
-    const clang::FunctionType *function_type = dyn_cast<clang::FunctionType> (clang_type);
+    const clang::FunctionType *function_type = llvm::dyn_cast<clang::FunctionType> (clang_type);
     if (function_type)
         return function_type->getResultType().getAsOpaquePtr();
     return NULL;
@@ -428,7 +476,7 @@ Function::GetArgumentCount ()
     if (!clang_type->isFunctionProtoType())
         return -1;
 
-    const clang::FunctionProtoType *function_proto_type = dyn_cast<clang::FunctionProtoType>(clang_type);
+    const clang::FunctionProtoType *function_proto_type = llvm::dyn_cast<clang::FunctionProtoType>(clang_type);
     if (function_proto_type != NULL)
         return function_proto_type->getNumArgs();
 
@@ -439,7 +487,7 @@ clang_type_t
 Function::GetArgumentTypeAtIndex (size_t idx)
 {
     clang::QualType clang_type (clang::QualType::getFromOpaquePtr(GetType()->GetClangFullType()));
-    const clang::FunctionProtoType *function_proto_type = dyn_cast<clang::FunctionProtoType>(clang_type);
+    const clang::FunctionProtoType *function_proto_type = llvm::dyn_cast<clang::FunctionProtoType>(clang_type);
     if (function_proto_type)
     {
         unsigned num_args = function_proto_type->getNumArgs();
@@ -459,7 +507,7 @@ Function::IsVariadic ()
    if (!clang_type->isFunctionProtoType())
         return false;
 
-    const clang::FunctionProtoType *function_proto_type = dyn_cast<clang::FunctionProtoType>(clang_type);
+    const clang::FunctionProtoType *function_proto_type = llvm::dyn_cast<clang::FunctionProtoType>(clang_type);
     if (function_proto_type)
         return function_proto_type->isVariadic();
 

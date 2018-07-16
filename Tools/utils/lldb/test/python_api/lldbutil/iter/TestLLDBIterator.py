@@ -19,16 +19,19 @@ class LLDBIteratorTestCase(TestBase):
         self.line1 = line_number('main.cpp', '// Set break point at this line.')
         self.line2 = line_number('main.cpp', '// And that line.')
 
+    @python_api_test
     def test_lldb_iter_module(self):
         """Test module_iter works correctly for SBTarget -> SBModule."""
         self.buildDefault()
         self.lldb_iter_module()
 
+    @python_api_test
     def test_lldb_iter_breakpoint(self):
         """Test breakpoint_iter works correctly for SBTarget -> SBBreakpoint."""
         self.buildDefault()
         self.lldb_iter_breakpoint()
 
+    @python_api_test
     def test_lldb_iter_frame(self):
         """Test iterator works correctly for SBProcess->SBThread->SBFrame."""
         self.buildDefault()
@@ -44,10 +47,9 @@ class LLDBIteratorTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        rc = lldb.SBError()
-        process = target.Launch (self.dbg.GetListener(), None, None, os.ctermid(), os.ctermid(), os.ctermid(), None, 0, False, rc)
+        process = target.LaunchSimple(None, None, os.getcwd())
 
-        if not rc.Success() or not process:
+        if not process:
             self.fail("SBTarget.LaunchProcess() failed")
 
         from lldbutil import get_description
@@ -84,8 +86,8 @@ class LLDBIteratorTestCase(TestBase):
         for i in range(target.GetNumBreakpoints()):
             yours.append(target.GetBreakpointAtIndex(i))
         mine = []
-        for m in target.breakpoint_iter():
-            mine.append(m)
+        for b in target.breakpoint_iter():
+            mine.append(b)
 
         self.assertTrue(len(yours) == len(mine))
         for i in range(len(yours)):
@@ -105,10 +107,9 @@ class LLDBIteratorTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        rc = lldb.SBError()
-        process = target.Launch (self.dbg.GetListener(), None, None, os.ctermid(), os.ctermid(), os.ctermid(), None, 0, False, rc)
+        process = target.LaunchSimple(None, None, os.getcwd())
 
-        if not rc.Success() or not process:
+        if not process:
             self.fail("SBTarget.LaunchProcess() failed")
 
         from lldbutil import print_stacktrace

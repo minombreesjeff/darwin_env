@@ -72,12 +72,32 @@ public:
     {
         return eObjC_VersionUnknown;
     }
+        
+    typedef lldb::addr_t ObjCISA;
+    
+    virtual bool
+    IsValidISA(ObjCISA isa) = 0;
+    
+    virtual ObjCISA
+    GetISA(ValueObject& valobj) = 0;
+    
+    virtual ConstString
+    GetActualTypeName(ObjCISA isa) = 0;
+    
+    virtual ObjCISA
+    GetParentClass(ObjCISA isa) = 0;
     
     // Finds the byte offset of the child_type ivar in parent_type.  If it can't find the
     // offset, returns LLDB_INVALID_IVAR_OFFSET.
     
     virtual size_t
     GetByteOffsetForIvar (ClangASTType &parent_qual_type, const char *ivar_name);
+    
+    // If the passed in "name" is an ObjC method, return true.  Also, fill in any of the
+    // sub-parts that are passed in non-NULL.  The base_name means the name stripped of
+    // category attributes.
+    static bool
+    ParseMethodName (const char *name, ConstString *class_name, ConstString *method_name, ConstString *base_name);
     
 protected:
     //------------------------------------------------------------------
@@ -134,7 +154,9 @@ private:
     typedef std::map<ClassAndSel,lldb::addr_t> MsgImplMap;
     MsgImplMap m_impl_cache;
     
+protected:
     typedef std::map<lldb::addr_t,TypeAndOrName> ClassNameMap;
+    typedef ClassNameMap::iterator ClassNameIterator;
     ClassNameMap m_class_name_cache;
 
     DISALLOW_COPY_AND_ASSIGN (ObjCLanguageRuntime);

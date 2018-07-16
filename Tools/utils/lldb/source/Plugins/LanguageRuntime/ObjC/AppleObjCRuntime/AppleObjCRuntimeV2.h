@@ -12,6 +12,9 @@
 
 // C Includes
 // C++ Includes
+
+#include <map>
+
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-private.h"
@@ -76,12 +79,41 @@ public:
 
     virtual size_t
     GetByteOffsetForIvar (ClangASTType &parent_qual_type, const char *ivar_name);
-
+    
+    virtual bool
+    IsValidISA(ObjCISA isa)
+    {
+        return (isa != 0);
+    }
+    
+    // this is not a valid ISA in the sense that no valid
+    // class pointer can live at address 1. we use it to refer to
+    // tagged types, where the ISA must be dynamically determined
+    static const ObjCISA g_objc_Tagged_ISA = 1;
+    
+    virtual ObjCISA
+    GetISA(ValueObject& valobj);   
+    
+    virtual ConstString
+    GetActualTypeName(ObjCISA isa);
+    
+    virtual ObjCISA
+    GetParentClass(ObjCISA isa);
     
 protected:
     
 private:
+    
+    typedef std::map<ObjCISA,ConstString> ISAToNameCache;
+    typedef std::map<ObjCISA,ObjCISA> ISAToParentCache;
+    
+    typedef ISAToNameCache::iterator ISAToNameIterator;
+    typedef ISAToParentCache::iterator ISAToParentIterator;
+    
     AppleObjCRuntimeV2(Process *process, ModuleSP &objc_module_sp);
+    
+    bool
+    IsTaggedPointer(lldb::addr_t ptr);
     
     bool RunFunctionToFindClassName (lldb::addr_t class_addr, Thread *thread, char *name_dst, size_t max_name_len);
     
@@ -90,6 +122,9 @@ private:
     std::auto_ptr<ClangUtilityFunction> m_get_class_name_code;
     lldb::addr_t                        m_get_class_name_args;
     Mutex                               m_get_class_name_args_mutex;
+    
+    ISAToNameCache                      m_isa_to_name_cache;
+    ISAToParentCache                    m_isa_to_parent_cache;
     
     static const char *g_find_class_name_function_name;
     static const char *g_find_class_name_function_body;

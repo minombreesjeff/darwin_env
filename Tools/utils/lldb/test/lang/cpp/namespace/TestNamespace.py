@@ -12,7 +12,6 @@ class NamespaceTestCase(TestBase):
     mydir = os.path.join("lang", "cpp", "namespace")
 
     # rdar://problem/8668674
-    @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     def test_with_dsym_and_run_command(self):
         """Test that anonymous and named namespace variables display correctly."""
@@ -20,7 +19,6 @@ class NamespaceTestCase(TestBase):
         self.namespace_variable_commands()
 
     # rdar://problem/8668674
-    @unittest2.expectedFailure
     def test_with_dwarf_and_run_command(self):
         """Test that anonymous and named namespace variables display correctly."""
         self.buildDwarf()
@@ -68,12 +66,12 @@ class NamespaceTestCase(TestBase):
             substrs = slist)
 
         # 'frame variable' with basename 'i' should work.
-        self.expect("frame variable -c -G i",
+        self.expect("frame variable -c -g i",
             startstr = "main.cpp:%d: (int) (anonymous namespace)::i = 3" % self.line_var_i)
         # main.cpp:12: (int) (anonymous namespace)::i = 3
 
         # 'frame variable' with basename 'j' should work, too.
-        self.expect("frame variable -c -G j",
+        self.expect("frame variable -c -g j",
             startstr = "main.cpp:%d: (int) A::B::j = 4" % self.line_var_j)
         # main.cpp:19: (int) A::B::j = 4
 
@@ -82,11 +80,13 @@ class NamespaceTestCase(TestBase):
 
         # 'frame variable' with fully qualified name 'A::B::j' should work.
         self.expect("frame variable A::B::j", VARIABLES_DISPLAYED_CORRECTLY,
-            startstr = '(int) A::B::j = 4')
+            startstr = '(int) A::B::j = 4',
+            patterns = [' = 4$'])
 
         # So should the anonymous namespace case.
         self.expect("frame variable '(anonymous namespace)::i'", VARIABLES_DISPLAYED_CORRECTLY,
-            startstr = '(int) (anonymous namespace)::i = 3')
+            startstr = '(int) (anonymous namespace)::i = 3',
+            patterns = [' = 3$'])
 
         # rdar://problem/8660275
         # test/namespace: 'expression -- i+j' not working
@@ -100,10 +100,10 @@ class NamespaceTestCase(TestBase):
 
         # rdar://problem/8668674
         # expression command with fully qualified namespace for a variable does not work
-        self.expect("expression -- '(anonymous namespace)::i'", VARIABLES_DISPLAYED_CORRECTLY,
-            substrs = [" = 3"])
-        self.expect("expression -- 'A::B::j'", VARIABLES_DISPLAYED_CORRECTLY,
-            substrs = [" = 4"])
+        self.expect("expression -- ::i", VARIABLES_DISPLAYED_CORRECTLY,
+            patterns = [' = 3$'])
+        self.expect("expression -- A::B::j", VARIABLES_DISPLAYED_CORRECTLY,
+            patterns = [' = 4$'])
 
 
 if __name__ == '__main__':

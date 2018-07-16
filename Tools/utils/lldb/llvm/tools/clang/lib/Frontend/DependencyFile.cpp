@@ -17,9 +17,11 @@
 #include "clang/Frontend/DependencyOutputOptions.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Lex/DirectoryLookup.h"
+#include "clang/Lex/LexDiagnostic.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
@@ -30,24 +32,35 @@ class DependencyFileCallback : public PPCallbacks {
   llvm::StringSet<> FilesSet;
   const Preprocessor *PP;
   std::vector<std::string> Targets;
-  llvm::raw_ostream *OS;
+  raw_ostream *OS;
   bool IncludeSystemHeaders;
   bool PhonyTarget;
+  bool AddMissingHeaderDeps;
 private:
   bool FileMatchesDepCriteria(const char *Filename,
                               SrcMgr::CharacteristicKind FileType);
+  void AddFilename(StringRef Filename);
   void OutputDependencyFile();
 
 public:
   DependencyFileCallback(const Preprocessor *_PP,
-                         llvm::raw_ostream *_OS,
+                         raw_ostream *_OS,
                          const DependencyOutputOptions &Opts)
     : PP(_PP), Targets(Opts.Targets), OS(_OS),
       IncludeSystemHeaders(Opts.IncludeSystemHeaders),
-      PhonyTarget(Opts.UsePhonyTargets) {}
+      PhonyTarget(Opts.UsePhonyTargets),
+      AddMissingHeaderDeps(Opts.AddMissingHeaderDeps) {}
 
   virtual void FileChanged(SourceLocation Loc, FileChangeReason Reason,
                            SrcMgr::CharacteristicKind FileType);
+  virtual void InclusionDirective(SourceLocation HashLoc,
+                                  const Token &IncludeTok,
+                                  StringRef FileName,
+                                  bool IsAngled,
+                                  const FileEntry *File,
+                                  SourceLocation EndLoc,
+                                  StringRef SearchPath,
+                                  StringRef RelativePath);
 
   virtual void EndOfMainFile() {
     OutputDependencyFile();
@@ -65,11 +78,21 @@ void clang::AttachDependencyFileGen(Preprocessor &PP,
   }
 
   std::string Err;
-  llvm::raw_ostream *OS(new llvm::raw_fd_ostream(Opts.OutputFile.c_str(), Err));
+  raw_ostream *OS(new llvm::raw_fd_ostream(Opts.OutputFile.c_str(), Err));
   if (!Err.empty()) {
     PP.getDiagnostics().Report(diag::err_fe_error_opening)
       << Opts.OutputFile << Err;
     return;
+  }
+
+  // Disable the "file not found" diagnostic if the -MG option was given.
+  // FIXME: Ideally this would live in the driver, but we don't have the ability
+  // to remap individual diagnostics there without creating a DiagGroup, in
+  // which case we would need to prevent the group name from showing up in
+  // diagnostics.
+  if (Opts.AddMissingHeaderDeps) {
+    PP.getDiagnostics().setDiagnosticMapping(diag::warn_pp_file_not_found,
+                                            diag::MAP_IGNORE, SourceLocation());
   }
 
   PP.addPPCallbacks(new DependencyFileCallback(&PP, OS, Opts));
@@ -100,24 +123,44 @@ void DependencyFileCallback::FileChanged(SourceLocation Loc,
   SourceManager &SM = PP->getSourceManager();
 
   const FileEntry *FE =
-    SM.getFileEntryForID(SM.getFileID(SM.getInstantiationLoc(Loc)));
+    SM.getFileEntryForID(SM.getFileID(SM.getExpansionLoc(Loc)));
   if (FE == 0) return;
 
-  const char *Filename = FE->getName();
-  if (!FileMatchesDepCriteria(Filename, FileType))
+  StringRef Filename = FE->getName();
+  if (!FileMatchesDepCriteria(Filename.data(), FileType))
     return;
 
-  // Remove leading "./"
-  if (Filename[0] == '.' && Filename[1] == '/')
-    Filename = &Filename[2];
+  // Remove leading "./" (or ".//" or "././" etc.)
+  while (Filename.size() > 2 && Filename[0] == '.' &&
+         llvm::sys::path::is_separator(Filename[1])) {
+    Filename = Filename.substr(1);
+    while (llvm::sys::path::is_separator(Filename[0]))
+      Filename = Filename.substr(1);
+  }
+    
+  AddFilename(Filename);
+}
 
+void DependencyFileCallback::InclusionDirective(SourceLocation HashLoc,
+                                                const Token &IncludeTok,
+                                                StringRef FileName,
+                                                bool IsAngled,
+                                                const FileEntry *File,
+                                                SourceLocation EndLoc,
+                                                StringRef SearchPath,
+                                                StringRef RelativePath) {
+  if (AddMissingHeaderDeps && !File)
+    AddFilename(FileName);
+}
+
+void DependencyFileCallback::AddFilename(StringRef Filename) {
   if (FilesSet.insert(Filename))
     Files.push_back(Filename);
 }
 
 /// PrintFilename - GCC escapes spaces, but apparently not ' or " or other
 /// scary characters.
-static void PrintFilename(llvm::raw_ostream &OS, llvm::StringRef Filename) {
+static void PrintFilename(raw_ostream &OS, StringRef Filename) {
   for (unsigned i = 0, e = Filename.size(); i != e; ++i) {
     if (Filename[i] == ' ')
       OS << '\\';

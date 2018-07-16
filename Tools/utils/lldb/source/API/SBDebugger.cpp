@@ -71,6 +71,12 @@ SBDebugger::Clear ()
 SBDebugger
 SBDebugger::Create()
 {
+    return SBDebugger::Create(false);
+}
+
+SBDebugger
+SBDebugger::Create(bool source_init_files)
+{
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBDebugger debugger;
@@ -83,6 +89,19 @@ SBDebugger::Create()
         log->Printf ("SBDebugger::Create () => SBDebugger(%p): %s", debugger.m_opaque_sp.get(), sstr.GetData());
     }
 
+    SBCommandInterpreter interp = debugger.GetCommandInterpreter();
+    if (source_init_files)
+    {
+        interp.get()->SkipLLDBInitFiles(false);
+        interp.get()->SkipAppInitFiles (false);
+        SBCommandReturnObject result;
+        interp.SourceInitFileInHomeDirectory(result);
+    }
+    else
+    {
+        interp.get()->SkipLLDBInitFiles(true);
+        interp.get()->SkipAppInitFiles (true);
+    }
     return debugger;
 }
 
@@ -147,6 +166,13 @@ SBDebugger::SkipLLDBInitFiles (bool b)
 {
     if (m_opaque_sp)
         m_opaque_sp->GetCommandInterpreter().SkipLLDBInitFiles (b);
+}
+
+void
+SBDebugger::SkipAppInitFiles (bool b)
+{
+    if (m_opaque_sp)
+        m_opaque_sp->GetCommandInterpreter().SkipAppInitFiles (b);
 }
 
 // Shouldn't really be settable after initialization as this could cause lots of problems; don't want users

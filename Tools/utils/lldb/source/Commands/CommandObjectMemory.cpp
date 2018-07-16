@@ -298,7 +298,7 @@ public:
                        "memory read",
                        "Read from the memory of the process being debugged.",
                        NULL,
-                       eFlagProcessMustBeLaunched),
+                       eFlagProcessMustBePaused),
         m_option_group (interpreter),
         m_format_options (eFormatBytesWithASCII, 0, true),
         m_memory_options (),
@@ -351,9 +351,9 @@ public:
              CommandReturnObject &result)
     {
         ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
-        if (exe_ctx.process == NULL)
+        if (exe_ctx.target == NULL)
         {
-            result.AppendError("need a process to read memory");
+            result.AppendError("need at least a target to read memory");
             result.SetStatus(eReturnStatusFailed);
             return false;
         }
@@ -561,7 +561,8 @@ public:
         if (!clang_ast_type.GetOpaqueQualType())
         {
             data_sp.reset (new DataBufferHeap (total_byte_size, '\0'));
-            bytes_read = exe_ctx.process->ReadMemory(addr, data_sp->GetBytes (), data_sp->GetByteSize(), error);
+            Address address(NULL, addr);
+            bytes_read = exe_ctx.target->ReadMemory(address, false, data_sp->GetBytes (), data_sp->GetByteSize(), error);
             if (bytes_read == 0)
             {
                 result.AppendWarningWithFormat("Read from 0x%llx failed.\n", addr);
@@ -656,8 +657,11 @@ public:
                                                   m_varobj_options.show_location,
                                                   m_varobj_options.use_objc,
                                                   m_varobj_options.use_dynamic,
+                                                  m_varobj_options.be_raw ? false : m_varobj_options.use_synth,
                                                   scope_already_checked,
-                                                  m_varobj_options.flat_output);
+                                                  m_varobj_options.flat_output,
+                                                  m_varobj_options.be_raw ? UINT32_MAX : m_varobj_options.no_summary_depth,
+                                                  m_varobj_options.be_raw ? true : m_varobj_options.ignore_cap);
                 }
                 else
                 {
@@ -692,7 +696,6 @@ public:
     }
 
 protected:
-//    CommandOptions m_options;
     OptionGroupOptions m_option_group;
     OptionGroupFormat m_format_options;
     OptionGroupReadMemory m_memory_options;
@@ -700,26 +703,6 @@ protected:
     OptionGroupValueObjectDisplay m_varobj_options;
 
 };
-
-//OptionDefinition
-//CommandObjectMemoryRead::CommandOptions::g_option_table[] =
-//{
-//{ LLDB_OPT_SET_1, false, "format"       ,'f', required_argument, NULL, 0, eArgTypeFormat        ,"The format that will be used to display the memory. Defaults to bytes with ASCII (--format=Y)."},
-//{ LLDB_OPT_SET_1, false, "size"         ,'s', required_argument, NULL, 0, eArgTypeByteSize      ,"The size in bytes to use when displaying with the selected format."},
-//{ LLDB_OPT_SET_1, false, "num-per-line" ,'l', required_argument, NULL, 0, eArgTypeNumberPerLine ,"The number of items per line to display."},
-//{ LLDB_OPT_SET_1|
-//  LLDB_OPT_SET_2|
-//  LLDB_OPT_SET_3, false, "count"        ,'c', required_argument, NULL, 0, eArgTypeCount         ,"The number of total items to display."},
-//{ LLDB_OPT_SET_1|
-//  LLDB_OPT_SET_2|
-//  LLDB_OPT_SET_3, false, "outfile"      ,'o', required_argument, NULL, 0, eArgTypeFilename      ,"Dump memory read results into a file."},
-//{ LLDB_OPT_SET_1|
-//  LLDB_OPT_SET_2|
-//  LLDB_OPT_SET_3, false, "append"       ,'a', no_argument      , NULL, 0, eArgTypeNone          ,"Append memory read results to 'outfile'."},
-//{ LLDB_OPT_SET_2, false, "binary"       ,'b', no_argument      , NULL, 0, eArgTypeNone          ,"If true, memory will be saved as binary. If false, the memory is saved save as an ASCII dump that uses the format, size, count and number per line settings."},
-//{ LLDB_OPT_SET_3, true , "view-as"      ,'t', required_argument, NULL, 0, eArgTypeNone          ,"The name of a type to view memory as."},
-//{ 0             , false, NULL           , 0 , 0                , NULL, 0, eArgTypeNone          , NULL }
-//};
 
 //----------------------------------------------------------------------
 // Write memory to the inferior process

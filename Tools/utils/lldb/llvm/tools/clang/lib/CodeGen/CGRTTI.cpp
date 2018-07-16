@@ -26,10 +26,10 @@ class RTTIBuilder {
   CodeGenModule &CGM;  // Per-module state.
   llvm::LLVMContext &VMContext;
   
-  const llvm::Type *Int8PtrTy;
+  llvm::Type *Int8PtrTy;
   
   /// Fields - The fields of the RTTI descriptor currently being built.
-  llvm::SmallVector<llvm::Constant *, 16> Fields;
+  SmallVector<llvm::Constant *, 16> Fields;
 
   /// GetAddrOfTypeName - Returns the mangled type name of the given type.
   llvm::GlobalVariable *
@@ -120,7 +120,7 @@ RTTIBuilder::GetAddrOfTypeName(QualType Ty,
   llvm::raw_svector_ostream Out(OutName);
   CGM.getCXXABI().getMangleContext().mangleCXXRTTIName(Ty, Out);
   Out.flush();
-  llvm::StringRef Name = OutName.str();
+  StringRef Name = OutName.str();
 
   // We know that the mangled name of the type starts at index 4 of the
   // mangled name of the typename, so we can just index into it in order to
@@ -141,7 +141,7 @@ llvm::Constant *RTTIBuilder::GetAddrOfExternalRTTIDescriptor(QualType Ty) {
   llvm::raw_svector_ostream Out(OutName);
   CGM.getCXXABI().getMangleContext().mangleCXXRTTI(Ty, Out);
   Out.flush();
-  llvm::StringRef Name = OutName.str();
+  StringRef Name = OutName.str();
 
   // Look for an existing global.
   llvm::GlobalVariable *GV = CGM.getModule().getNamedGlobal(Name);
@@ -479,12 +479,12 @@ void RTTIBuilder::BuildVTablePointer(const Type *Ty) {
   llvm::Constant *VTable = 
     CGM.getModule().getOrInsertGlobal(VTableName, Int8PtrTy);
     
-  const llvm::Type *PtrDiffTy = 
+  llvm::Type *PtrDiffTy = 
     CGM.getTypes().ConvertType(CGM.getContext().getPointerDiffType());
 
   // The vtable address point is 2.
   llvm::Constant *Two = llvm::ConstantInt::get(PtrDiffTy, 2);
-  VTable = llvm::ConstantExpr::getInBoundsGetElementPtr(VTable, &Two, 1);
+  VTable = llvm::ConstantExpr::getInBoundsGetElementPtr(VTable, Two);
   VTable = llvm::ConstantExpr::getBitCast(VTable, Int8PtrTy);
 
   Fields.push_back(VTable);
@@ -533,7 +533,7 @@ maybeUpdateRTTILinkage(CodeGenModule &CGM, llvm::GlobalVariable *GV,
   llvm::raw_svector_ostream Out(OutName);
   CGM.getCXXABI().getMangleContext().mangleCXXRTTIName(Ty, Out);
   Out.flush();
-  llvm::StringRef Name = OutName.str();
+  StringRef Name = OutName.str();
 
   llvm::GlobalVariable *TypeNameGV = CGM.getModule().getNamedGlobal(Name);
 
@@ -553,7 +553,7 @@ llvm::Constant *RTTIBuilder::BuildTypeInfo(QualType Ty, bool Force) {
   llvm::raw_svector_ostream Out(OutName);
   CGM.getCXXABI().getMangleContext().mangleCXXRTTI(Ty, Out);
   Out.flush();
-  llvm::StringRef Name = OutName.str();
+  StringRef Name = OutName.str();
 
   llvm::GlobalVariable *OldGV = CGM.getModule().getNamedGlobal(Name);
   if (OldGV && !OldGV->isDeclaration()) {
@@ -580,7 +580,7 @@ llvm::Constant *RTTIBuilder::BuildTypeInfo(QualType Ty, bool Force) {
   // And the name.
   llvm::GlobalVariable *TypeName = GetAddrOfTypeName(Ty, Linkage);
 
-  const llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(VMContext);
+  llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(VMContext);
   Fields.push_back(llvm::ConstantExpr::getBitCast(TypeName, Int8PtrTy));
 
   switch (Ty->getTypeClass()) {
@@ -658,9 +658,7 @@ llvm::Constant *RTTIBuilder::BuildTypeInfo(QualType Ty, bool Force) {
     break;
   }
 
-  llvm::Constant *Init = 
-    llvm::ConstantStruct::get(VMContext, &Fields[0], Fields.size(), 
-                              /*Packed=*/false);
+  llvm::Constant *Init = llvm::ConstantStruct::getAnon(Fields);
 
   llvm::GlobalVariable *GV = 
     new llvm::GlobalVariable(CGM.getModule(), Init->getType(), 
@@ -824,7 +822,7 @@ static unsigned ComputeVMIClassTypeInfoFlags(const CXXRecordDecl *RD) {
 /// classes with bases that do not satisfy the abi::__si_class_type_info 
 /// constraints, according ti the Itanium C++ ABI, 2.9.5p5c.
 void RTTIBuilder::BuildVMIClassTypeInfo(const CXXRecordDecl *RD) {
-  const llvm::Type *UnsignedIntLTy = 
+  llvm::Type *UnsignedIntLTy = 
     CGM.getTypes().ConvertType(CGM.getContext().UnsignedIntTy);
   
   // Itanium C++ ABI 2.9.5p6c:
@@ -842,7 +840,7 @@ void RTTIBuilder::BuildVMIClassTypeInfo(const CXXRecordDecl *RD) {
   if (!RD->getNumBases())
     return;
   
-  const llvm::Type *LongLTy = 
+  llvm::Type *LongLTy = 
     CGM.getTypes().ConvertType(CGM.getContext().LongTy);
 
   // Now add the base class descriptions.
@@ -918,7 +916,7 @@ void RTTIBuilder::BuildPointerTypeInfo(QualType PointeeTy) {
   if (ContainsIncompleteClassType(UnqualifiedPointeeTy))
     Flags |= PTI_Incomplete;
 
-  const llvm::Type *UnsignedIntLTy = 
+  llvm::Type *UnsignedIntLTy = 
     CGM.getTypes().ConvertType(CGM.getContext().UnsignedIntTy);
   Fields.push_back(llvm::ConstantInt::get(UnsignedIntLTy, Flags));
   
@@ -955,7 +953,7 @@ void RTTIBuilder::BuildPointerToMemberTypeInfo(const MemberPointerType *Ty) {
   if (IsIncompleteClassType(ClassType))
     Flags |= PTI_ContainingClassIncomplete;
   
-  const llvm::Type *UnsignedIntLTy = 
+  llvm::Type *UnsignedIntLTy = 
     CGM.getTypes().ConvertType(CGM.getContext().UnsignedIntTy);
   Fields.push_back(llvm::ConstantInt::get(UnsignedIntLTy, Flags));
   
@@ -979,12 +977,12 @@ llvm::Constant *CodeGenModule::GetAddrOfRTTIDescriptor(QualType Ty,
   // FIXME: should we even be calling this method if RTTI is disabled
   // and it's not for EH?
   if (!ForEH && !getContext().getLangOptions().RTTI) {
-    const llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(VMContext);
+    llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(VMContext);
     return llvm::Constant::getNullValue(Int8PtrTy);
   }
   
   if (ForEH && Ty->isObjCObjectPointerType() && !Features.NeXTRuntime) {
-    return Runtime->GetEHType(Ty);
+    return ObjCRuntime->GetEHType(Ty);
   }
 
   return RTTIBuilder(*this).BuildTypeInfo(Ty);

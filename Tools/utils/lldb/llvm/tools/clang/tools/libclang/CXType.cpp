@@ -366,7 +366,11 @@ unsigned clang_isPODType(CXType X) {
   QualType T = GetQualType(X);
   if (!T.getTypePtrOrNull())
     return 0;
-  return T->isPODType() ? 1 : 0;
+  
+  CXTranslationUnit TU = GetTU(X);
+  ASTUnit *AU = static_cast<ASTUnit*>(TU->TUData);
+
+  return T.isPODType(AU->getASTContext()) ? 1 : 0;
 }
 
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
@@ -379,9 +383,10 @@ CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   ASTContext &Ctx = AU->getASTContext();
   std::string encoding;
 
-  if (ObjCMethodDecl *OMD = dyn_cast<ObjCMethodDecl>(D)) 
-    Ctx.getObjCEncodingForMethodDecl(OMD, encoding);
-  else if (ObjCPropertyDecl *OPD = dyn_cast<ObjCPropertyDecl>(D)) 
+  if (ObjCMethodDecl *OMD = dyn_cast<ObjCMethodDecl>(D))  {
+    if (Ctx.getObjCEncodingForMethodDecl(OMD, encoding))
+      return cxstring::createCXString("?");
+  } else if (ObjCPropertyDecl *OPD = dyn_cast<ObjCPropertyDecl>(D)) 
     Ctx.getObjCEncodingForPropertyDecl(OPD, NULL, encoding);
   else if (FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
     Ctx.getObjCEncodingForFunctionDecl(FD, encoding);

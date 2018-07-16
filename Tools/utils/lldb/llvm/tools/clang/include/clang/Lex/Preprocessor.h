@@ -29,6 +29,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Allocator.h"
 #include <vector>
 
@@ -120,7 +121,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
 
   /// Selectors - This table contains all the selectors in the program. Unlike
   /// IdentifierTable above, this table *isn't* populated by the preprocessor.
-  /// It is declared/instantiated here because it's role/lifetime is
+  /// It is declared/expanded here because it's role/lifetime is
   /// conceptually similar the IdentifierTable. In addition, the current control
   /// flow (in clang::ParseAST()), make it convenient to put here.
   /// FIXME: Make sure the lifetime of Identifiers/Selectors *isn't* tied to
@@ -219,9 +220,9 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   /// previous macro value.
   llvm::DenseMap<IdentifierInfo*, std::vector<MacroInfo*> > PragmaPushMacroInfo;
 
-  /// \brief Instantiation source location for the last macro that expanded
+  /// \brief Expansion source location for the last macro that expanded
   /// to no tokens.
-  SourceLocation LastEmptyMacroInstantiationLoc;
+  SourceLocation LastEmptyMacroExpansionLoc;
 
   // Various statistics we track for performance analysis.
   unsigned NumDirectives, NumIncluded, NumDefined, NumUndefined, NumPragma;
@@ -240,7 +241,15 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   unsigned NumCachedTokenLexers;
   TokenLexer *TokenLexerCache[TokenLexerCacheSize];
 
-  /// \brief A record of the macro definitions and instantiations that
+  /// \brief Keeps macro expanded tokens for TokenLexers.
+  //
+  /// Works like a stack; a TokenLexer adds the macro expanded tokens that is
+  /// going to lex in the cache and when it finishes the tokens are removed
+  /// from the end of the cache.
+  SmallVector<Token, 16> MacroExpandedTokens;
+  std::vector<std::pair<TokenLexer *, size_t> > MacroExpandingLexersStack;
+
+  /// \brief A record of the macro definitions and expansions that
   /// occurred during preprocessing. 
   ///
   /// This is an optional side structure that can be enabled with
@@ -248,7 +257,7 @@ class Preprocessor : public llvm::RefCountedBase<Preprocessor> {
   PreprocessingRecord *Record;
   
 private:  // Cached tokens state.
-  typedef llvm::SmallVector<Token, 1> CachedTokensTy;
+  typedef SmallVector<Token, 1> CachedTokensTy;
 
   /// CachedTokens - Cached tokens are stored here when we do backtracking or
   /// lookahead. They are "lexed" by the CachingLex() method.
@@ -371,10 +380,10 @@ public:
   macro_iterator macro_begin(bool IncludeExternalMacros = true) const;
   macro_iterator macro_end(bool IncludeExternalMacros = true) const;
 
-  /// \brief Instantiation source location for the last macro that expanded
+  /// \brief Expansion source location for the last macro that expanded
   /// to no tokens.
-  SourceLocation getLastEmptyMacroInstantiationLoc() const {
-    return LastEmptyMacroInstantiationLoc;
+  SourceLocation getLastEmptyMacroExpansionLoc() const {
+    return LastEmptyMacroExpansionLoc;
   }
 
   const std::string &getPredefines() const { return Predefines; }
@@ -388,25 +397,25 @@ public:
   /// pointers is preferred unless the identifier is already available as a
   /// string (this avoids allocation and copying of memory to construct an
   /// std::string).
-  IdentifierInfo *getIdentifierInfo(llvm::StringRef Name) const {
+  IdentifierInfo *getIdentifierInfo(StringRef Name) const {
     return &Identifiers.get(Name);
   }
 
   /// AddPragmaHandler - Add the specified pragma handler to the preprocessor.
   /// If 'Namespace' is non-null, then it is a token required to exist on the
   /// pragma line before the pragma string starts, e.g. "STDC" or "GCC".
-  void AddPragmaHandler(llvm::StringRef Namespace, PragmaHandler *Handler);
+  void AddPragmaHandler(StringRef Namespace, PragmaHandler *Handler);
   void AddPragmaHandler(PragmaHandler *Handler) {
-    AddPragmaHandler(llvm::StringRef(), Handler);
+    AddPragmaHandler(StringRef(), Handler);
   }
 
   /// RemovePragmaHandler - Remove the specific pragma handler from
   /// the preprocessor. If \arg Namespace is non-null, then it should
   /// be the namespace that \arg Handler was added to. It is an error
   /// to remove a handler that has not been registered.
-  void RemovePragmaHandler(llvm::StringRef Namespace, PragmaHandler *Handler);
+  void RemovePragmaHandler(StringRef Namespace, PragmaHandler *Handler);
   void RemovePragmaHandler(PragmaHandler *Handler) {
-    RemovePragmaHandler(llvm::StringRef(), Handler);
+    RemovePragmaHandler(StringRef(), Handler);
   }
 
   /// \brief Add the specified comment handler to the preprocessor.
@@ -442,7 +451,7 @@ public:
   
   /// \brief Create a new preprocessing record, which will keep track of 
   /// all macro expansions, macro definitions, etc.
-  void createPreprocessingRecord(bool IncludeNestedMacroInstantiations);
+  void createPreprocessingRecord(bool IncludeNestedMacroExpansions);
   
   /// EnterMainSourceFile - Enter the specified FileID as the main source file,
   /// which implicitly adds the builtin defines etc.
@@ -545,6 +554,14 @@ public:
 
     // Reenable it.
     DisableMacroExpansion = OldVal;
+  }
+
+  /// LexUnexpandedNonComment - Like LexNonComment, but this disables macro
+  /// expansion of identifier tokens.
+  void LexUnexpandedNonComment(Token &Result) {
+    do
+      LexUnexpandedToken(Result);
+    while (Result.getKind() == tok::comment);
   }
 
   /// LookAhead - This peeks ahead N tokens and returns that token without
@@ -658,13 +675,13 @@ public:
 
   /// getSpelling() - Return the 'spelling' of the token at the given
   /// location; does not go up to the spelling location or down to the
-  /// instantiation location.
+  /// expansion location.
   ///
   /// \param buffer A buffer which will be used only if the token requires
   ///   "cleaning", e.g. if it contains trigraphs or escaped newlines
   /// \param invalid If non-null, will be set \c true if an error occurs.
-  llvm::StringRef getSpelling(SourceLocation loc,
-                              llvm::SmallVectorImpl<char> &buffer,
+  StringRef getSpelling(SourceLocation loc,
+                              SmallVectorImpl<char> &buffer,
                               bool *invalid = 0) const {
     return Lexer::getSpelling(loc, buffer, SourceMgr, Features, invalid);
   }
@@ -698,8 +715,8 @@ public:
   /// getSpelling - This method is used to get the spelling of a token into a
   /// SmallVector. Note that the returned StringRef may not point to the
   /// supplied buffer if a copy can be avoided.
-  llvm::StringRef getSpelling(const Token &Tok,
-                              llvm::SmallVectorImpl<char> &Buffer, 
+  StringRef getSpelling(const Token &Tok,
+                              SmallVectorImpl<char> &Buffer, 
                               bool *Invalid = 0) const;
 
   /// getSpellingOfSingleCharacterNumericConstant - Tok is a numeric constant
@@ -721,7 +738,7 @@ public:
 
   /// CreateString - Plop the specified string into a scratch buffer and set the
   /// specified token's location and length to it.  If specified, the source
-  /// location provides a location of the instantiation point of the token.
+  /// location provides a location of the expansion point of the token.
   void CreateString(const char *Buf, unsigned Len,
                     Token &Tok, SourceLocation SourceLoc = SourceLocation());
 
@@ -742,6 +759,18 @@ public:
   /// a source location pointing to the last character in the token, etc.
   SourceLocation getLocForEndOfToken(SourceLocation Loc, unsigned Offset = 0) {
     return Lexer::getLocForEndOfToken(Loc, Offset, SourceMgr, Features);
+  }
+
+  /// \brief Returns true if the given MacroID location points at the first
+  /// token of the macro expansion.
+  bool isAtStartOfMacroExpansion(SourceLocation loc) const {
+    return Lexer::isAtStartOfMacroExpansion(loc, SourceMgr, Features);
+  }
+
+  /// \brief Returns true if the given MacroID location points at the last
+  /// token of the macro expansion.
+  bool isAtEndOfMacroExpansion(SourceLocation loc) const {
+    return Lexer::isAtEndOfMacroExpansion(loc, SourceMgr, Features);
   }
 
   /// DumpToken - Print the token to stderr, used for debugging.
@@ -769,6 +798,8 @@ public:
   }
 
   void PrintStats();
+
+  size_t getTotalMemory() const;
 
   /// HandleMicrosoftCommentPaste - When the macro expander pastes together a
   /// comment (/##/) in microsoft mode, this method handles updating the current
@@ -869,16 +900,16 @@ public:
   /// caller is expected to provide a buffer that is large enough to hold the
   /// spelling of the filename, but is also expected to handle the case when
   /// this method decides to use a different buffer.
-  bool GetIncludeFilenameSpelling(SourceLocation Loc,llvm::StringRef &Filename);
+  bool GetIncludeFilenameSpelling(SourceLocation Loc,StringRef &Filename);
 
   /// LookupFile - Given a "foo" or <foo> reference, look up the indicated file,
   /// return null on failure.  isAngled indicates whether the file reference is
   /// for system #include's or not (i.e. using <> instead of "").
-  const FileEntry *LookupFile(llvm::StringRef Filename,
+  const FileEntry *LookupFile(StringRef Filename,
                               bool isAngled, const DirectoryLookup *FromDir,
                               const DirectoryLookup *&CurDir,
-                              llvm::SmallVectorImpl<char> *SearchPath,
-                              llvm::SmallVectorImpl<char> *RelativePath);
+                              SmallVectorImpl<char> *SearchPath,
+                              SmallVectorImpl<char> *RelativePath);
 
   /// GetCurLookup - The DirectoryLookup structure used to find the current
   /// FileEntry, if CurLexer is non-null and if applicable.  This allows us to
@@ -977,6 +1008,16 @@ private:
   /// the macro should not be expanded return true, otherwise return false.
   bool HandleMacroExpandedIdentifier(Token &Tok, MacroInfo *MI);
 
+  /// \brief Cache macro expanded tokens for TokenLexers.
+  //
+  /// Works like a stack; a TokenLexer adds the macro expanded tokens that is
+  /// going to lex in the cache and when it finishes the tokens are removed
+  /// from the end of the cache.
+  Token *cacheMacroExpandedTokens(TokenLexer *tokLexer,
+                                  ArrayRef<Token> tokens);
+  void removeCachedMacroExpandedTokensOfLastLexer();
+  friend void TokenLexer::ExpandFunctionArguments();
+
   /// isNextPPTokenLParen - Determine whether the next preprocessor token to be
   /// lexed is a '('.  If so, consume the token and return true, if not, this
   /// method should have no observable side-effect on the lexed tokens.
@@ -986,7 +1027,7 @@ private:
   /// invoked to read all of the formal arguments specified for the macro
   /// invocation.  This returns null on error.
   MacroArgs *ReadFunctionLikeMacroArgs(Token &MacroName, MacroInfo *MI,
-                                       SourceLocation &InstantiationEnd);
+                                       SourceLocation &ExpansionEnd);
 
   /// ExpandBuiltinMacro - If an identifier token is read that is to be expanded
   /// as a builtin macro, handle it and return the next token as 'Tok'.

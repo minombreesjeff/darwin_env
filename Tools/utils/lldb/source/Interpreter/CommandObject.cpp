@@ -229,9 +229,13 @@ CommandObject::ExecuteWithOptions (Args& args, CommandReturnObject &result)
         Process *process = m_interpreter.GetExecutionContext().process;
         if (process == NULL)
         {
-            result.AppendError ("Process must exist.");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
+            // A process that is not running is considered paused.
+            if (GetFlags().Test(CommandObject::eFlagProcessMustBeLaunched))
+            {
+                result.AppendError ("Process must exist.");
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
         }
         else
         {
@@ -469,9 +473,20 @@ CommandObject::GetArgumentHelp (Stream &str, CommandArgumentType arg_type, Comma
     StreamString name_str;
     name_str.Printf ("<%s>", entry->arg_name);
 
-    if (entry->help_function != NULL)
-        interpreter.OutputFormattedHelpText (str, name_str.GetData(), "--", (*(entry->help_function)) (),
-                                             name_str.GetSize());
+    if (entry->help_function)
+    {
+        const char* help_text = entry->help_function();
+        if (!entry->help_function.self_formatting)
+        {
+            interpreter.OutputFormattedHelpText (str, name_str.GetData(), "--", help_text,
+                                                 name_str.GetSize());
+        }
+        else
+        {
+            interpreter.OutputHelpText(str, name_str.GetData(), "--", help_text,
+                                       name_str.GetSize());
+        }
+    }
     else
         interpreter.OutputFormattedHelpText (str, name_str.GetData(), "--", entry->help_text, name_str.GetSize());
 }
@@ -608,8 +623,9 @@ CommandObject::LookupArgumentName (const char *arg_name)
         && arg_name[len-1] == '>')
         arg_name_str = arg_name_str.substr (1, len-2);
 
+    const ArgumentTableEntry *table = GetArgumentTable();
     for (int i = 0; i < eArgTypeLastArg; ++i)
-        if (arg_name_str.compare (g_arguments_data[i].arg_name) == 0)
+        if (arg_name_str.compare (table[i].arg_name) == 0)
             return_type = g_arguments_data[i].arg_type;
 
     return return_type;
@@ -630,32 +646,61 @@ BreakpointIDRangeHelpTextCallback ()
 static const char *
 FormatHelpTextCallback ()
 {
+    
+    static char* help_text_ptr = NULL;
+    
+    if (help_text_ptr)
+        return help_text_ptr;
+    
     StreamString sstr;
     sstr << "One of the format names (or one-character names) that can be used to show a variable's value:\n";
     for (Format f = eFormatDefault; f < kNumFormats; f = Format(f+1))
     {
+        if (f != eFormatDefault)
+            sstr.PutChar('\n');
+        
         char format_char = FormatManager::GetFormatAsFormatChar(f);
         if (format_char)
             sstr.Printf("'%c' or ", format_char);
         
-        sstr.Printf ("\"%s\" ; ", FormatManager::GetFormatAsCString(f));
+        sstr.Printf ("\"%s\"", FormatManager::GetFormatAsCString(f));
     }
     
     sstr.Flush();
     
     std::string data = sstr.GetString();
     
-    char* help = new char[data.length()+1];
+    help_text_ptr = new char[data.length()+1];
     
-    data.copy(help, data.length());
+    data.copy(help_text_ptr, data.length());
     
-    return help;
+    return help_text_ptr;
 }
 
 static const char *
-FormatStringHelpTextCallback()
+SummaryStringHelpTextCallback()
 {
-    return "Ask me tomorrow";
+    return
+        "A summary string is a way to extract information from variables in order to present them using a summary.\n"
+        "Summary strings contain static text, variables, scopes and control sequences:\n"
+        "  - Static text can be any sequence of non-special characters, i.e. anything but '{', '}', '$', or '\\'.\n"
+        "  - Variables are sequences of characters beginning with ${, ending with } and that contain symbols in the format described below.\n"
+        "  - Scopes are any sequence of text between { and }. Anything included in a scope will only appear in the output summary if there were no errors.\n"
+        "  - Control sequences are the usual C/C++ '\\a', '\\n', ..., plus '\\$', '\\{' and '\\}'.\n"
+        "A summary string works by copying static text verbatim, turning control sequences into their character counterpart, expanding variables and trying to expand scopes.\n"
+        "A variable is expanded by giving it a value other than its textual representation, and the way this is done depends on what comes after the ${ marker.\n"
+        "The most common sequence if ${var followed by an expression path, which is the text one would type to access a member of an aggregate types, given a variable of that type"
+        " (e.g. if type T has a member named x, which has a member named y, and if t is of type T, the expression path would be .x.y and the way to fit that into a summary string would be"
+        " ${var.x.y}). In expression paths you can use either . or -> without any difference in meaning. You can also use ${*var followed by an expression path and in that case"
+        " the object referred by the path will be dereferenced before being displayed. If the object is not a pointer, doing so will cause an error.\n"
+        "By default, summary strings attempt to display the summary for any variable they reference, and if that fails the value. If neither can be shown, nothing is displayed."
+        "In a summary string, you can also use an array index [n], or a slice-like range [n-m]. This can have two different meanings depending on what kind of object the expression"
+        " path refers to:\n"
+        "  - if it is a scalar type (any basic type like int, float, ...) the expression is a bitfield, i.e. the bits indicated by the indexing operator are extracted out of the number"
+        " and displayed as an individual variable\n"
+        "  - if it is an array or pointer the array items indicated by the indexing operator are shown as the result of the variable. if the expression is an array, real array items are"
+        " printed; if it is a pointer, the pointer-as-array syntax is used to obtain the values (this means, the latter case can have no range checking)\n"
+        "If you are trying to display an array for which the size is known, you can also use [] instead of giving an exact range. This has the effect of showing items 0 thru size - 1.";    
 }
 
 const char * 
@@ -678,68 +723,69 @@ CommandObject::GetArgumentDescriptionAsCString (const lldb::CommandArgumentType 
 CommandObject::ArgumentTableEntry
 CommandObject::g_arguments_data[] =
 {
-    { eArgTypeAddress, "address", CommandCompletions::eNoCompletion, NULL, "A valid address in the target program's execution space." },
-    { eArgTypeAliasName, "alias-name", CommandCompletions::eNoCompletion, NULL, "The name of an abbreviation (alias) for a debugger command." },
-    { eArgTypeAliasOptions, "options-for-aliased-command", CommandCompletions::eNoCompletion, NULL, "Command options to be used as part of an alias (abbreviation) definition.  (See 'help commands alias' for more information.)" },
-    { eArgTypeArchitecture, "arch", CommandCompletions::eArchitectureCompletion, NULL, "The architecture name, e.g. i386 or x86_64." },
-    { eArgTypeBoolean, "boolean", CommandCompletions::eNoCompletion, NULL, "A Boolean value: 'true' or 'false'" },
-    { eArgTypeBreakpointID, "breakpt-id", CommandCompletions::eNoCompletion, BreakpointIDHelpTextCallback, NULL },
-    { eArgTypeBreakpointIDRange, "breakpt-id-list", CommandCompletions::eNoCompletion, BreakpointIDRangeHelpTextCallback, NULL },
-    { eArgTypeByteSize, "byte-size", CommandCompletions::eNoCompletion, NULL, "Number of bytes to use." },
-    { eArgTypeClassName, "class-name", CommandCompletions::eNoCompletion, NULL, "Then name of a class from the debug information in the program." },
-    { eArgTypeCommandName, "cmd-name", CommandCompletions::eNoCompletion, NULL, "A debugger command (may be multiple words), without any options or arguments." },
-    { eArgTypeCount, "count", CommandCompletions::eNoCompletion, NULL, "An unsigned integer." },
-    { eArgTypeEndAddress, "end-address", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeExpression, "expr", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeExprFormat, "expression-format", CommandCompletions::eNoCompletion, NULL, "[ [bool|b] | [bin] | [char|c] | [oct|o] | [dec|i|d|u] | [hex|x] | [float|f] | [cstr|s] ]" },
-    { eArgTypeFilename, "filename", CommandCompletions::eDiskFileCompletion, NULL, "The name of a file (can include path)." },
-    { eArgTypeFormat, "format", CommandCompletions::eNoCompletion, FormatHelpTextCallback, NULL },
-    { eArgTypeFormatString, "format-string", CommandCompletions::eNoCompletion, FormatStringHelpTextCallback, NULL },
-    { eArgTypeFrameIndex, "frame-index", CommandCompletions::eNoCompletion, NULL, "Index into a thread's list of frames." },
-    { eArgTypeFullName, "fullname", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeFunctionName, "function-name", CommandCompletions::eNoCompletion, NULL, "The name of a function." },
-    { eArgTypeIndex, "index", CommandCompletions::eNoCompletion, NULL, "An index into a list." },
-    { eArgTypeLineNum, "linenum", CommandCompletions::eNoCompletion, NULL, "Line number in a source file." },
-    { eArgTypeLogCategory, "log-category", CommandCompletions::eNoCompletion, NULL, "The name of a category within a log channel, e.g. all (try \"log list\" to see a list of all channels and their categories." },
-    { eArgTypeLogChannel, "log-channel", CommandCompletions::eNoCompletion, NULL, "The name of a log channel, e.g. process.gdb-remote (try \"log list\" to see a list of all channels and their categories)." },
-    { eArgTypeMethod, "method", CommandCompletions::eNoCompletion, NULL, "A C++ method name." },
-    { eArgTypeName, "name", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeNewPathPrefix, "new-path-prefix", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeNumLines, "num-lines", CommandCompletions::eNoCompletion, NULL, "The number of lines to use." },
-    { eArgTypeNumberPerLine, "number-per-line", CommandCompletions::eNoCompletion, NULL, "The number of items per line to display." },
-    { eArgTypeOffset, "offset", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeOldPathPrefix, "old-path-prefix", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeOneLiner, "one-line-command", CommandCompletions::eNoCompletion, NULL, "A command that is entered as a single line of text." },
-    { eArgTypePath, "path", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypePid, "pid", CommandCompletions::eNoCompletion, NULL, "The process ID number." },
-    { eArgTypePlugin, "plugin", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeProcessName, "process-name", CommandCompletions::eNoCompletion, NULL, "The name of the process." },
-    { eArgTypeQueueName, "queue-name", CommandCompletions::eNoCompletion, NULL, "The name of the thread queue." },
-    { eArgTypeRegisterName, "register-name", CommandCompletions::eNoCompletion, NULL, "A register name." },
-    { eArgTypeRegularExpression, "regular-expression", CommandCompletions::eNoCompletion, NULL, "A regular expression." },
-    { eArgTypeRunArgs, "run-args", CommandCompletions::eNoCompletion, NULL, "Arguments to be passed to the target program when it starts executing." },
-    { eArgTypeRunMode, "run-mode", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeScriptLang, "script-language", CommandCompletions::eNoCompletion, NULL, "The scripting language to be used for script-based commands.  Currently only Python is valid." },
-    { eArgTypeSearchWord, "search-word", CommandCompletions::eNoCompletion, NULL, "The word for which you wish to search for information about." },
-    { eArgTypeSelector, "selector", CommandCompletions::eNoCompletion, NULL, "An Objective-C selector name." },
-    { eArgTypeSettingIndex, "setting-index", CommandCompletions::eNoCompletion, NULL, "An index into a settings variable that is an array (try 'settings list' to see all the possible settings variables and their types)." },
-    { eArgTypeSettingKey, "setting-key", CommandCompletions::eNoCompletion, NULL, "A key into a settings variables that is a dictionary (try 'settings list' to see all the possible settings variables and their types)." },
-    { eArgTypeSettingPrefix, "setting-prefix", CommandCompletions::eNoCompletion, NULL, "The name of a settable internal debugger variable up to a dot ('.'), e.g. 'target.process.'" },
-    { eArgTypeSettingVariableName, "setting-variable-name", CommandCompletions::eNoCompletion, NULL, "The name of a settable internal debugger variable.  Type 'settings list' to see a complete list of such variables." }, 
-    { eArgTypeShlibName, "shlib-name", CommandCompletions::eNoCompletion, NULL, "The name of a shared library." },
-    { eArgTypeSourceFile, "source-file", CommandCompletions::eSourceFileCompletion, NULL, "The name of a source file.." },
-    { eArgTypeSortOrder, "sort-order", CommandCompletions::eNoCompletion, NULL, "Specify a sort order when dumping lists." },
-    { eArgTypeStartAddress, "start-address", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeSymbol, "symbol", CommandCompletions::eSymbolCompletion, NULL, "Any symbol name (function name, variable, argument, etc.)" },
-    { eArgTypeThreadID, "thread-id", CommandCompletions::eNoCompletion, NULL, "Thread ID number." },
-    { eArgTypeThreadIndex, "thread-index", CommandCompletions::eNoCompletion, NULL, "Index into the process' list of threads." },
-    { eArgTypeThreadName, "thread-name", CommandCompletions::eNoCompletion, NULL, "The thread's name." },
-    { eArgTypeUnixSignal, "unix-signal", CommandCompletions::eNoCompletion, NULL, "A valid Unix signal name or number (e.g. SIGKILL, KILL or 9)." },
-    { eArgTypeVarName, "variable-name", CommandCompletions::eNoCompletion, NULL, "The name of a variable in your program." },
-    { eArgTypeValue, "value", CommandCompletions::eNoCompletion, NULL, "A value could be anything, depending on where and how it is used." },
-    { eArgTypeWidth, "width", CommandCompletions::eNoCompletion, NULL, "Help text goes here." },
-    { eArgTypeNone, "none", CommandCompletions::eNoCompletion, NULL, "No help available for this." },
-    { eArgTypePlatform, "platform-name", CommandCompletions::ePlatformPluginCompletion, NULL, "The name of an installed platform plug-in . Type 'platform list' to see a complete list of installed platforms." }
+    { eArgTypeAddress, "address", CommandCompletions::eNoCompletion, { NULL, false }, "A valid address in the target program's execution space." },
+    { eArgTypeAliasName, "alias-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of an abbreviation (alias) for a debugger command." },
+    { eArgTypeAliasOptions, "options-for-aliased-command", CommandCompletions::eNoCompletion, { NULL, false }, "Command options to be used as part of an alias (abbreviation) definition.  (See 'help commands alias' for more information.)" },
+    { eArgTypeArchitecture, "arch", CommandCompletions::eArchitectureCompletion, { NULL, false }, "The architecture name, e.g. i386 or x86_64." },
+    { eArgTypeBoolean, "boolean", CommandCompletions::eNoCompletion, { NULL, false }, "A Boolean value: 'true' or 'false'" },
+    { eArgTypeBreakpointID, "breakpt-id", CommandCompletions::eNoCompletion, { BreakpointIDHelpTextCallback, false }, NULL },
+    { eArgTypeBreakpointIDRange, "breakpt-id-list", CommandCompletions::eNoCompletion, { BreakpointIDRangeHelpTextCallback, false }, NULL },
+    { eArgTypeByteSize, "byte-size", CommandCompletions::eNoCompletion, { NULL, false }, "Number of bytes to use." },
+    { eArgTypeClassName, "class-name", CommandCompletions::eNoCompletion, { NULL, false }, "Then name of a class from the debug information in the program." },
+    { eArgTypeCommandName, "cmd-name", CommandCompletions::eNoCompletion, { NULL, false }, "A debugger command (may be multiple words), without any options or arguments." },
+    { eArgTypeCount, "count", CommandCompletions::eNoCompletion, { NULL, false }, "An unsigned integer." },
+    { eArgTypeEndAddress, "end-address", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeExpression, "expr", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeExprFormat, "expression-format", CommandCompletions::eNoCompletion, { NULL, false }, "[ [bool|b] | [bin] | [char|c] | [oct|o] | [dec|i|d|u] | [hex|x] | [float|f] | [cstr|s] ]" },
+    { eArgTypeFilename, "filename", CommandCompletions::eDiskFileCompletion, { NULL, false }, "The name of a file (can include path)." },
+    { eArgTypeFormat, "format", CommandCompletions::eNoCompletion, { FormatHelpTextCallback, true }, NULL },
+    { eArgTypeFrameIndex, "frame-index", CommandCompletions::eNoCompletion, { NULL, false }, "Index into a thread's list of frames." },
+    { eArgTypeFullName, "fullname", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeFunctionName, "function-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a function." },
+    { eArgTypeIndex, "index", CommandCompletions::eNoCompletion, { NULL, false }, "An index into a list." },
+    { eArgTypeLineNum, "linenum", CommandCompletions::eNoCompletion, { NULL, false }, "Line number in a source file." },
+    { eArgTypeLogCategory, "log-category", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a category within a log channel, e.g. all (try \"log list\" to see a list of all channels and their categories." },
+    { eArgTypeLogChannel, "log-channel", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a log channel, e.g. process.gdb-remote (try \"log list\" to see a list of all channels and their categories)." },
+    { eArgTypeMethod, "method", CommandCompletions::eNoCompletion, { NULL, false }, "A C++ method name." },
+    { eArgTypeName, "name", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeNewPathPrefix, "new-path-prefix", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeNumLines, "num-lines", CommandCompletions::eNoCompletion, { NULL, false }, "The number of lines to use." },
+    { eArgTypeNumberPerLine, "number-per-line", CommandCompletions::eNoCompletion, { NULL, false }, "The number of items per line to display." },
+    { eArgTypeOffset, "offset", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeOldPathPrefix, "old-path-prefix", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeOneLiner, "one-line-command", CommandCompletions::eNoCompletion, { NULL, false }, "A command that is entered as a single line of text." },
+    { eArgTypePath, "path", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypePid, "pid", CommandCompletions::eNoCompletion, { NULL, false }, "The process ID number." },
+    { eArgTypePlugin, "plugin", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeProcessName, "process-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of the process." },
+    { eArgTypeQueueName, "queue-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of the thread queue." },
+    { eArgTypeRegisterName, "register-name", CommandCompletions::eNoCompletion, { NULL, false }, "A register name." },
+    { eArgTypeRegularExpression, "regular-expression", CommandCompletions::eNoCompletion, { NULL, false }, "A regular expression." },
+    { eArgTypeRunArgs, "run-args", CommandCompletions::eNoCompletion, { NULL, false }, "Arguments to be passed to the target program when it starts executing." },
+    { eArgTypeRunMode, "run-mode", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeScriptLang, "script-language", CommandCompletions::eNoCompletion, { NULL, false }, "The scripting language to be used for script-based commands.  Currently only Python is valid." },
+    { eArgTypeSearchWord, "search-word", CommandCompletions::eNoCompletion, { NULL, false }, "The word for which you wish to search for information about." },
+    { eArgTypeSelector, "selector", CommandCompletions::eNoCompletion, { NULL, false }, "An Objective-C selector name." },
+    { eArgTypeSettingIndex, "setting-index", CommandCompletions::eNoCompletion, { NULL, false }, "An index into a settings variable that is an array (try 'settings list' to see all the possible settings variables and their types)." },
+    { eArgTypeSettingKey, "setting-key", CommandCompletions::eNoCompletion, { NULL, false }, "A key into a settings variables that is a dictionary (try 'settings list' to see all the possible settings variables and their types)." },
+    { eArgTypeSettingPrefix, "setting-prefix", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a settable internal debugger variable up to a dot ('.'), e.g. 'target.process.'" },
+    { eArgTypeSettingVariableName, "setting-variable-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a settable internal debugger variable.  Type 'settings list' to see a complete list of such variables." }, 
+    { eArgTypeShlibName, "shlib-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a shared library." },
+    { eArgTypeSourceFile, "source-file", CommandCompletions::eSourceFileCompletion, { NULL, false }, "The name of a source file.." },
+    { eArgTypeSortOrder, "sort-order", CommandCompletions::eNoCompletion, { NULL, false }, "Specify a sort order when dumping lists." },
+    { eArgTypeStartAddress, "start-address", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeSummaryString, "summary-string", CommandCompletions::eNoCompletion, { SummaryStringHelpTextCallback, true }, NULL },
+    { eArgTypeSymbol, "symbol", CommandCompletions::eSymbolCompletion, { NULL, false }, "Any symbol name (function name, variable, argument, etc.)" },
+    { eArgTypeThreadID, "thread-id", CommandCompletions::eNoCompletion, { NULL, false }, "Thread ID number." },
+    { eArgTypeThreadIndex, "thread-index", CommandCompletions::eNoCompletion, { NULL, false }, "Index into the process' list of threads." },
+    { eArgTypeThreadName, "thread-name", CommandCompletions::eNoCompletion, { NULL, false }, "The thread's name." },
+    { eArgTypeUnsignedInteger, "unsigned-integer", CommandCompletions::eNoCompletion, { NULL, false }, "An unsigned integer." },
+    { eArgTypeUnixSignal, "unix-signal", CommandCompletions::eNoCompletion, { NULL, false }, "A valid Unix signal name or number (e.g. SIGKILL, KILL or 9)." },
+    { eArgTypeVarName, "variable-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a variable in your program." },
+    { eArgTypeValue, "value", CommandCompletions::eNoCompletion, { NULL, false }, "A value could be anything, depending on where and how it is used." },
+    { eArgTypeWidth, "width", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
+    { eArgTypeNone, "none", CommandCompletions::eNoCompletion, { NULL, false }, "No help available for this." },
+    { eArgTypePlatform, "platform-name", CommandCompletions::ePlatformPluginCompletion, { NULL, false }, "The name of an installed platform plug-in . Type 'platform list' to see a complete list of installed platforms." }
 };
 
 const CommandObject::ArgumentTableEntry*

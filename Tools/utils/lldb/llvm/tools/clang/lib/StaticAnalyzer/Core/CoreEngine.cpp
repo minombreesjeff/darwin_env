@@ -19,9 +19,6 @@
 #include "clang/AST/Expr.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/DenseMap.h"
-
-using llvm::cast;
-using llvm::isa;
 using namespace clang;
 using namespace ento;
 
@@ -41,7 +38,7 @@ WorkList::Visitor::~Visitor() {}
 
 namespace {
 class DFS : public WorkList {
-  llvm::SmallVector<WorkListUnit,20> Stack;
+  SmallVector<WorkListUnit,20> Stack;
 public:
   virtual bool hasWork() const {
     return !Stack.empty();
@@ -59,7 +56,7 @@ public:
   }
   
   virtual bool visitItemsInWorkList(Visitor &V) {
-    for (llvm::SmallVectorImpl<WorkListUnit>::iterator
+    for (SmallVectorImpl<WorkListUnit>::iterator
          I = Stack.begin(), E = Stack.end(); I != E; ++I) {
       if (V.visit(*I))
         return true;
@@ -107,7 +104,7 @@ WorkList *WorkList::makeBFS() { return new BFS(); }
 namespace {
   class BFSBlockDFSContents : public WorkList {
     std::deque<WorkListUnit> Queue;
-    llvm::SmallVector<WorkListUnit,20> Stack;
+    SmallVector<WorkListUnit,20> Stack;
   public:
     virtual bool hasWork() const {
       return !Queue.empty() || !Stack.empty();
@@ -136,7 +133,7 @@ namespace {
       return U;
     }
     virtual bool visitItemsInWorkList(Visitor &V) {
-      for (llvm::SmallVectorImpl<WorkListUnit>::iterator
+      for (SmallVectorImpl<WorkListUnit>::iterator
            I = Stack.begin(), E = Stack.end(); I != E; ++I) {
         if (V.visit(*I))
           return true;
@@ -250,7 +247,7 @@ void CoreEngine::ExecuteWorkListWithInitialState(const LocationContext *L,
                                                    const GRState *InitState, 
                                                    ExplodedNodeSet &Dst) {
   ExecuteWorkList(L, Steps, InitState);
-  for (llvm::SmallVectorImpl<ExplodedNode*>::iterator I = G->EndNodes.begin(), 
+  for (SmallVectorImpl<ExplodedNode*>::iterator I = G->EndNodes.begin(), 
                                            E = G->EndNodes.end(); I != E; ++I) {
     Dst.Add(*I);
   }
@@ -305,7 +302,7 @@ void CoreEngine::HandleBlockEdge(const BlockEdge& L, ExplodedNode* Pred) {
     }
   }
 
-  for (llvm::SmallVectorImpl<ExplodedNode*>::const_iterator
+  for (SmallVectorImpl<ExplodedNode*>::const_iterator
        I = nodeBuilder.sinks().begin(), E = nodeBuilder.sinks().end();
        I != E; ++I) {
     blocksExhausted.push_back(std::make_pair(L, *I));
@@ -787,7 +784,7 @@ void CallEnterNodeBuilder::generateNode(const GRState *state) {
 
     // Create a new AnalysisManager with components of the callee's
     // TranslationUnit.
-    // The Diagnostic is actually shared when we create ASTUnits from AST files.
+    // The Diagnostic is  actually shared when we create ASTUnits from AST files.
     AnalysisManager AMgr(TU->getASTContext(), TU->getDiagnostic(), 
                          OldMgr.getLangOptions(), 
                          OldMgr.getPathDiagnosticClient(),
@@ -803,8 +800,10 @@ void CallEnterNodeBuilder::generateNode(const GRState *state) {
                          OldMgr.shouldTrimGraph(),
                          OldMgr.shouldInlineCall(),
                      OldMgr.getAnalysisContextManager().getUseUnoptimizedCFG(),
-                     OldMgr.getAnalysisContextManager().getAddImplicitDtors(),
-                     OldMgr.getAnalysisContextManager().getAddInitializers(),
+                     OldMgr.getAnalysisContextManager().
+                         getCFGBuildOptions().AddImplicitDtors,
+                     OldMgr.getAnalysisContextManager().
+                         getCFGBuildOptions().AddInitializers,
                      OldMgr.shouldEagerlyTrimExplodedGraph());
     llvm::OwningPtr<TransferFuncs> TF(MakeCFRefCountTF(AMgr.getASTContext(),
                                                          /* GCEnabled */ false,

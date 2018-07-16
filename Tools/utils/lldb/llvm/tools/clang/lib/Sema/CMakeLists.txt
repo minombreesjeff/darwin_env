@@ -23,7 +23,9 @@ add_clang_library(clangSema
   SemaExceptionSpec.cpp
   SemaExpr.cpp
   SemaExprCXX.cpp
+  SemaExprMember.cpp
   SemaExprObjC.cpp
+  SemaFixItUtils.cpp
   SemaInit.cpp
   SemaLookup.cpp
   SemaObjCProperty.cpp

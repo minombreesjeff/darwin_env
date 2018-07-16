@@ -50,6 +50,22 @@ public:
     friend class ModuleList;
     friend bool ObjectFile::SetModulesArchitecture (const ArchSpec &new_arch);
 
+	// Static functions that can track the lifetime of moodule objects.
+	// This is handy because we might have Module objects that are in
+	// shared pointers that aren't in the global module list (from 
+	// ModuleList). If this is the case we need to know about it.
+    // The modules in the global list maintained by these functions
+    // can be viewed using the "target modules list" command using the
+    // "--global" (-g for short).
+    static size_t
+    GetNumberAllocatedModules ();
+    
+    static Module *
+    GetAllocatedModuleAtIndex (size_t idx);
+
+    static Mutex &
+    GetAllocationModuleCollectionMutex();
+
     //------------------------------------------------------------------
     /// Construct with file specification and architecture.
     ///
@@ -99,6 +115,9 @@ public:
     //------------------------------------------------------------------
     virtual void
     CalculateSymbolContext (SymbolContext* sc);
+
+    virtual Module *
+    CalculateSymbolContextModule ();
 
     void
     GetDescription (Stream *s);
@@ -157,10 +176,37 @@ public:
                                      SymbolContextList &sc_list);
 
     //------------------------------------------------------------------
+    /// Find compile units by partial or full path.
+    ///
+    /// Finds all compile units that match \a path in all of the modules
+    /// and returns the results in \a sc_list.
+    ///
+    /// @param[in] path
+    ///     The name of the function we are looking for.
+    ///
+    /// @param[in] append
+    ///     If \b true, then append any compile units that were found
+    ///     to \a sc_list. If \b false, then the \a sc_list is cleared
+    ///     and the contents of \a sc_list are replaced.
+    ///
+    /// @param[out] sc_list
+    ///     A symbol context list that gets filled in with all of the
+    ///     matches.
+    ///
+    /// @return
+    ///     The number of matches added to \a sc_list.
+    //------------------------------------------------------------------
+    uint32_t
+    FindCompileUnits (const FileSpec &path,
+                      bool append,
+                      SymbolContextList &sc_list);
+    
+
+    //------------------------------------------------------------------
     /// Find functions by name.
     ///
     /// @param[in] name
-    ///     The name of the function we are looking for.
+    ///     The name of the compile unit we are looking for.
     ///
     /// @param[in] name_type_mask
     ///     A bit mask of bits that indicate what kind of names should
@@ -372,6 +418,20 @@ public:
     //------------------------------------------------------------------
     bool
     IsExecutable ();
+    
+    //------------------------------------------------------------------
+    /// Tells whether this module has been loaded in the target passed in.
+    /// This call doesn't distinguish between whether the module is loaded
+    /// by the dynamic loader, or by a "target module add" type call.
+    ///
+    /// @param[in] target
+    ///    The target to check whether this is loaded in.
+    ///
+    /// @return
+    ///     \b true if it is, \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    IsLoadedInTarget (Target *target);
 
     //------------------------------------------------------------------
     /// Get the number of compile units for this module.
@@ -659,6 +719,15 @@ protected:
     SetArchitecture (const ArchSpec &new_arch);
     
 private:
+
+    uint32_t
+    FindTypes_Impl (const SymbolContext& sc, 
+                    const ConstString &name, 
+                    bool append, 
+                    uint32_t max_matches, 
+                    TypeList& types);
+
+    
     DISALLOW_COPY_AND_ASSIGN (Module);
 };
 

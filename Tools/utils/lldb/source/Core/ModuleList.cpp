@@ -108,6 +108,28 @@ ModuleList::Remove (ModuleSP &module_sp)
     return false;
 }
 
+
+size_t
+ModuleList::RemoveOrphans ()
+{
+    Mutex::Locker locker(m_modules_mutex);
+    collection::iterator pos = m_modules.begin();
+    size_t remove_count = 0;
+    while (pos != m_modules.end())
+    {
+        if (pos->unique())
+        {
+            pos = m_modules.erase (pos);
+            ++remove_count;
+        }
+        else
+        {
+            ++pos;
+        }
+    }
+    return remove_count;
+}
+
 size_t
 ModuleList::Remove (ModuleList &module_list)
 {
@@ -150,7 +172,7 @@ ModuleList::GetModuleAtIndex(uint32_t idx)
     return module_sp;
 }
 
-size_t
+uint32_t
 ModuleList::FindFunctions (const ConstString &name, 
                            uint32_t name_type_mask, 
                            bool include_symbols,
@@ -165,6 +187,24 @@ ModuleList::FindFunctions (const ConstString &name,
     for (pos = m_modules.begin(); pos != end; ++pos)
     {
         (*pos)->FindFunctions (name, name_type_mask, include_symbols, true, sc_list);
+    }
+    
+    return sc_list.GetSize();
+}
+
+uint32_t
+ModuleList::FindCompileUnits (const FileSpec &path, 
+                              bool append, 
+                              SymbolContextList &sc_list)
+{
+    if (!append)
+        sc_list.Clear();
+    
+    Mutex::Locker locker(m_modules_mutex);
+    collection::const_iterator pos, end = m_modules.end();
+    for (pos = m_modules.begin(); pos != end; ++pos)
+    {
+        (*pos)->FindCompileUnits (path, true, sc_list);
     }
     
     return sc_list.GetSize();
@@ -371,7 +411,7 @@ ModuleList::FindModule (const UUID &uuid)
 
 
 uint32_t
-ModuleList::FindTypes (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
+ModuleList::FindTypes_Impl (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
 {
     Mutex::Locker locker(m_modules_mutex);
     
@@ -391,6 +431,40 @@ ModuleList::FindTypes (const SymbolContext& sc, const ConstString &name, bool ap
     return total_matches;
 }
 
+// depending on implementation details, type lookup might fail because of
+// embedded spurious namespace:: prefixes. this call strips them, paying
+// attention to the fact that a type might have namespace'd type names as
+// arguments to templates, and those must not be stripped off
+static const char*
+StripTypeName(const char* name_cstr)
+{
+    const char* skip_namespace = strstr(name_cstr, "::");
+    const char* template_arg_char = strchr(name_cstr, '<');
+    while (skip_namespace != NULL)
+    {
+        if (template_arg_char != NULL &&
+            skip_namespace > template_arg_char) // but namespace'd template arguments are still good to go
+            break;
+        name_cstr = skip_namespace+2;
+        skip_namespace = strstr(name_cstr, "::");
+    }
+    return name_cstr;
+}
+
+uint32_t
+ModuleList::FindTypes (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
+{
+    uint32_t retval = FindTypes_Impl(sc, name, append, max_matches, types);
+    
+    if (retval == 0)
+    {
+        const char *stripped = StripTypeName(name.GetCString());
+        return FindTypes_Impl(sc, ConstString(stripped), append, max_matches, types);
+    }
+    else
+        return retval;
+    
+}
 
 ModuleSP
 ModuleList::FindFirstModuleForFileSpec (const FileSpec &file_spec, 
@@ -628,6 +702,39 @@ ModuleList::FindSharedModules
     return shared_module_list.FindModules (&in_file_spec, &arch, uuid_ptr, object_name_ptr, matching_module_list);
 }
 
+uint32_t
+ModuleList::RemoveOrphanSharedModules ()
+{
+    return GetSharedModuleList ().RemoveOrphans();    
+}
+//#define ENABLE_MODULE_SP_LOGGING
+#if defined (ENABLE_MODULE_SP_LOGGING)
+#include "lldb/Core/StreamFile.h"
+#include "lldb/Host/Host.h"
+static void 
+ModuleSharedPtrLogger(void* p, const ModuleSP& sp, bool will_decrement)
+{
+    if (sp.get())
+    {
+        const char *module_basename = sp->GetFileSpec().GetFilename().GetCString();
+        // If "p" is set, then it is the basename of a module to watch for. This
+        // basename MUST be uniqued first by getting it from a ConstString or this
+        // won't work.
+        if (p && p != module_basename)
+        {
+            return;
+        }
+        long use_count = sp.use_count();
+        if (will_decrement)
+            --use_count;
+
+        printf("\nModuleSP(%p): %c %p {%lu} %s/%s\n", &sp, will_decrement ? '-' : '+', sp.get(), use_count, sp->GetFileSpec().GetDirectory().GetCString(), module_basename);
+        StreamFile stdout_strm(stdout, false);
+        Host::Backtrace (stdout_strm, 512);
+    }
+}
+#endif
+
 Error
 ModuleList::GetSharedModule
 (
@@ -703,8 +810,16 @@ ModuleList::GetSharedModule
             return error;
         else
         {
+#if defined ENABLE_MODULE_SP_LOGGING
+            ModuleSP logging_module_sp (new Module (in_file_spec, arch, object_name_ptr, object_offset), ModuleSharedPtrLogger, (void *)ConstString("a.out").GetCString());
+            module_sp = logging_module_sp;
+#else
             module_sp.reset (new Module (in_file_spec, arch, object_name_ptr, object_offset));
-            if (module_sp)
+#endif
+            // Make sure there are a module and an object file since we can specify
+            // a valid file path with an architecture that might not be in that file.
+            // By getting the object file we can guarantee that the architecture matches
+            if (module_sp && module_sp->GetObjectFile())
             {
                 // If we get in here we got the correct arch, now we just need
                 // to verify the UUID if one was given
@@ -714,7 +829,7 @@ ModuleList::GetSharedModule
                 {
                     if (did_create_ptr)
                         *did_create_ptr = true;
-
+                    
                     shared_module_list.Append(module_sp);
                     return error;
                 }
@@ -728,7 +843,9 @@ ModuleList::GetSharedModule
 
     // Fixup the incoming path in case the path points to a valid file, yet
     // the arch or UUID (if one was passed in) don't match.
-    FileSpec file_spec = Symbols::LocateExecutableObjectFile (&in_file_spec, arch.IsValid() ? &arch : NULL, uuid_ptr);
+    FileSpec file_spec = Symbols::LocateExecutableObjectFile (in_file_spec ? &in_file_spec : NULL, 
+                                                              arch.IsValid() ? &arch : NULL, 
+                                                              uuid_ptr);
 
     // Don't look for the file if it appears to be the same one we already
     // checked for above...
@@ -789,8 +906,16 @@ ModuleList::GetSharedModule
 
         if (module_sp.get() == NULL)
         {
+#if defined ENABLE_MODULE_SP_LOGGING
+            ModuleSP logging_module_sp (new Module (file_spec, arch, object_name_ptr, object_offset), ModuleSharedPtrLogger, 0);
+            module_sp = logging_module_sp;
+#else
             module_sp.reset (new Module (file_spec, arch, object_name_ptr, object_offset));
-            if (module_sp)
+#endif
+            // Make sure there are a module and an object file since we can specify
+            // a valid file path with an architecture that might not be in that file.
+            // By getting the object file we can guarantee that the architecture matches
+            if (module_sp && module_sp->GetObjectFile())
             {
                 if (did_create_ptr)
                     *did_create_ptr = true;

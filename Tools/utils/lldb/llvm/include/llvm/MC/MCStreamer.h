@@ -14,13 +14,15 @@
 #ifndef LLVM_MC_MCSTREAMER_H
 #define LLVM_MC_MCSTREAMER_H
 
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCWin64EH.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace llvm {
+  class MCAsmBackend;
   class MCAsmInfo;
   class MCCodeEmitter;
   class MCContext;
@@ -30,7 +32,6 @@ namespace llvm {
   class MCSection;
   class MCSymbol;
   class StringRef;
-  class TargetAsmBackend;
   class TargetLoweringObjectFile;
   class Twine;
   class raw_ostream;
@@ -58,12 +59,12 @@ namespace llvm {
     MCDwarfFrameInfo *getCurrentFrameInfo();
     void EnsureValidFrame();
 
-    std::vector<MCWin64EHUnwindInfo> W64UnwindInfos;
+    std::vector<MCWin64EHUnwindInfo *> W64UnwindInfos;
     MCWin64EHUnwindInfo *CurrentW64UnwindInfo;
     void setCurrentW64UnwindInfo(MCWin64EHUnwindInfo *Frame);
     void EnsureValidW64UnwindInfo();
 
-    const MCSymbol* LastNonPrivate;
+    MCSymbol* LastSymbol;
 
     /// SectionStack - This is stack of current and previous section
     /// values saved by PushSection.
@@ -76,10 +77,12 @@ namespace llvm {
     const MCExpr *BuildSymbolDiff(MCContext &Context, const MCSymbol *A,
                                   const MCSymbol *B);
 
-    const MCExpr *ForceExpAbs(MCStreamer *Streamer, MCContext &Context,
-                              const MCExpr* Expr);
+    const MCExpr *ForceExpAbs(const MCExpr* Expr);
 
     void EmitFrames(bool usingCFI);
+
+    MCWin64EHUnwindInfo *getCurrentW64UnwindInfo(){return CurrentW64UnwindInfo;}
+    void EmitW64Tables();
 
   public:
     virtual ~MCStreamer();
@@ -92,6 +95,18 @@ namespace llvm {
 
     const MCDwarfFrameInfo &getFrameInfo(unsigned i) {
       return FrameInfos[i];
+    }
+
+    ArrayRef<MCDwarfFrameInfo> getFrameInfos() {
+      return FrameInfos;
+    }
+
+    unsigned getNumW64UnwindInfos() {
+      return W64UnwindInfos.size();
+    }
+
+    MCWin64EHUnwindInfo &getW64UnwindInfo(unsigned i) {
+      return *W64UnwindInfos[i];
     }
 
     /// @name Assembly File Formatting.
@@ -183,6 +198,17 @@ namespace llvm {
         SectionStack.back().first = Section;
         ChangeSection(Section);
       }
+    }
+
+    /// SwitchSectionNoChange - Set the current section where code is being
+    /// emitted to @p Section.  This is required to update CurSection. This
+    /// version does not call ChangeSection.
+    void SwitchSectionNoChange(const MCSection *Section) {
+      assert(Section && "Cannot switch to a null section!");
+      const MCSection *curSection = SectionStack.back().first;
+      SectionStack.back().second = curSection;
+      if (Section != curSection)
+        SectionStack.back().first = Section;
     }
 
     /// InitSections - Create the default sections and set the initial one.
@@ -439,7 +465,8 @@ namespace llvm {
 
     virtual void EmitDwarfAdvanceLineAddr(int64_t LineDelta,
                                           const MCSymbol *LastLabel,
-                                          const MCSymbol *Label) = 0;
+                                          const MCSymbol *Label,
+                                          unsigned PointerSize) = 0;
 
     virtual void EmitDwarfAdvanceFrameAddr(const MCSymbol *LastLabel,
                                            const MCSymbol *Label) {
@@ -448,6 +475,7 @@ namespace llvm {
     void EmitDwarfSetLineAddr(int64_t LineDelta, const MCSymbol *Label,
                               int PointerSize);
 
+    virtual void EmitCompactUnwindEncoding(uint32_t CompactUnwindEncoding);
     virtual void EmitCFISections(bool EH, bool Debug);
     virtual void EmitCFIStartProc();
     virtual void EmitCFIEndProc();
@@ -463,18 +491,18 @@ namespace llvm {
     virtual void EmitCFIRelOffset(int64_t Register, int64_t Offset);
     virtual void EmitCFIAdjustCfaOffset(int64_t Adjustment);
 
-    virtual void EmitWin64EHStartProc(MCSymbol *Symbol);
+    virtual void EmitWin64EHStartProc(const MCSymbol *Symbol);
     virtual void EmitWin64EHEndProc();
     virtual void EmitWin64EHStartChained();
     virtual void EmitWin64EHEndChained();
     virtual void EmitWin64EHHandler(const MCSymbol *Sym, bool Unwind,
                                     bool Except);
     virtual void EmitWin64EHHandlerData();
-    virtual void EmitWin64EHPushReg(int64_t Register);
-    virtual void EmitWin64EHSetFrame(int64_t Register, int64_t Offset);
-    virtual void EmitWin64EHAllocStack(int64_t Size);
-    virtual void EmitWin64EHSaveReg(int64_t Register, int64_t Offset);
-    virtual void EmitWin64EHSaveXMM(int64_t Register, int64_t Offset);
+    virtual void EmitWin64EHPushReg(unsigned Register);
+    virtual void EmitWin64EHSetFrame(unsigned Register, unsigned Offset);
+    virtual void EmitWin64EHAllocStack(unsigned Size);
+    virtual void EmitWin64EHSaveReg(unsigned Register, unsigned Offset);
+    virtual void EmitWin64EHSaveXMM(unsigned Register, unsigned Offset);
     virtual void EmitWin64EHPushFrame(bool Code);
     virtual void EmitWin64EHEndProlog();
 
@@ -526,20 +554,23 @@ namespace llvm {
   ///
   /// \param ShowInst - Whether to show the MCInst representation inline with
   /// the assembly.
+  ///
+  /// \param DecodeLSDA - If true, emit comments that translates the LSDA into a
+  /// human readable format. Only usable with CFI.
   MCStreamer *createAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
                                 bool isVerboseAsm,
                                 bool useLoc,
                                 bool useCFI,
                                 MCInstPrinter *InstPrint = 0,
                                 MCCodeEmitter *CE = 0,
-                                TargetAsmBackend *TAB = 0,
+                                MCAsmBackend *TAB = 0,
                                 bool ShowInst = false);
 
   /// createMachOStreamer - Create a machine code streamer which will generate
   /// Mach-O format object files.
   ///
   /// Takes ownership of \arg TAB and \arg CE.
-  MCStreamer *createMachOStreamer(MCContext &Ctx, TargetAsmBackend &TAB,
+  MCStreamer *createMachOStreamer(MCContext &Ctx, MCAsmBackend &TAB,
                                   raw_ostream &OS, MCCodeEmitter *CE,
                                   bool RelaxAll = false);
 
@@ -548,13 +579,13 @@ namespace llvm {
   ///
   /// Takes ownership of \arg TAB and \arg CE.
   MCStreamer *createWinCOFFStreamer(MCContext &Ctx,
-                                    TargetAsmBackend &TAB,
+                                    MCAsmBackend &TAB,
                                     MCCodeEmitter &CE, raw_ostream &OS,
                                     bool RelaxAll = false);
 
   /// createELFStreamer - Create a machine code streamer which will generate
   /// ELF format object files.
-  MCStreamer *createELFStreamer(MCContext &Ctx, TargetAsmBackend &TAB,
+  MCStreamer *createELFStreamer(MCContext &Ctx, MCAsmBackend &TAB,
 				raw_ostream &OS, MCCodeEmitter *CE,
 				bool RelaxAll, bool NoExecStack);
 
@@ -568,7 +599,7 @@ namespace llvm {
   /// "pure" MC object files, for use with MC-JIT and testing tools.
   ///
   /// Takes ownership of \arg TAB and \arg CE.
-  MCStreamer *createPureStreamer(MCContext &Ctx, TargetAsmBackend &TAB,
+  MCStreamer *createPureStreamer(MCContext &Ctx, MCAsmBackend &TAB,
                                  raw_ostream &OS, MCCodeEmitter *CE);
 
 } // end namespace llvm

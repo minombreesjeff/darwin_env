@@ -40,7 +40,7 @@ namespace {
 
     const TargetLowering *TLI;
 
-    const Type *FunctionContextTy;
+    Type *FunctionContextTy;
     Constant *RegisterFn;
     Constant *UnregisterFn;
     Constant *BuiltinSetjmpFn;
@@ -87,12 +87,10 @@ FunctionPass *llvm::createSjLjEHPass(const TargetLowering *TLI) {
 bool SjLjEHPass::doInitialization(Module &M) {
   // Build the function context structure.
   // builtin_setjmp uses a five word jbuf
-  const Type *VoidPtrTy =
-          Type::getInt8PtrTy(M.getContext());
-  const Type *Int32Ty = Type::getInt32Ty(M.getContext());
+  Type *VoidPtrTy = Type::getInt8PtrTy(M.getContext());
+  Type *Int32Ty = Type::getInt32Ty(M.getContext());
   FunctionContextTy =
-    StructType::get(M.getContext(),
-                    VoidPtrTy,                        // __prev
+    StructType::get(VoidPtrTy,                        // __prev
                     Int32Ty,                          // call_site
                     ArrayType::get(Int32Ty, 4),       // __data
                     VoidPtrTy,                        // __personality
@@ -206,7 +204,7 @@ splitLiveRangesAcrossInvokes(SmallVector<InvokeInst*,16> &Invokes) {
     ++AfterAllocaInsertPt;
   for (Function::arg_iterator AI = F->arg_begin(), E = F->arg_end();
        AI != E; ++AI) {
-    const Type *Ty = AI->getType();
+    Type *Ty = AI->getType();
     // Aggregate types can't be cast, but are legal argument types, so we have
     // to handle them differently. We use an extract/insert pair as a
     // lightweight method to achieve the same goal.
@@ -383,27 +381,25 @@ bool SjLjEHPass::insertSjLjEHSupport(Function &F) {
                    "fcn_context", F.begin()->begin());
 
   Value *Idxs[2];
-  const Type *Int32Ty = Type::getInt32Ty(F.getContext());
+  Type *Int32Ty = Type::getInt32Ty(F.getContext());
   Value *Zero = ConstantInt::get(Int32Ty, 0);
   // We need to also keep around a reference to the call_site field
   Idxs[0] = Zero;
   Idxs[1] = ConstantInt::get(Int32Ty, 1);
-  CallSite = GetElementPtrInst::Create(FunctionContext, Idxs, Idxs+2,
-                                       "call_site",
+  CallSite = GetElementPtrInst::Create(FunctionContext, Idxs, "call_site",
                                        EntryBB->getTerminator());
 
   // The exception selector comes back in context->data[1]
   Idxs[1] = ConstantInt::get(Int32Ty, 2);
-  Value *FCData = GetElementPtrInst::Create(FunctionContext, Idxs, Idxs+2,
-                                            "fc_data",
+  Value *FCData = GetElementPtrInst::Create(FunctionContext, Idxs, "fc_data",
                                             EntryBB->getTerminator());
   Idxs[1] = ConstantInt::get(Int32Ty, 1);
-  Value *SelectorAddr = GetElementPtrInst::Create(FCData, Idxs, Idxs+2,
+  Value *SelectorAddr = GetElementPtrInst::Create(FCData, Idxs,
                                                   "exc_selector_gep",
                                                   EntryBB->getTerminator());
   // The exception value comes back in context->data[0]
   Idxs[1] = Zero;
-  Value *ExceptionAddr = GetElementPtrInst::Create(FCData, Idxs, Idxs+2,
+  Value *ExceptionAddr = GetElementPtrInst::Create(FCData, Idxs,
                                                    "exception_gep",
                                                    EntryBB->getTerminator());
 
@@ -425,7 +421,7 @@ bool SjLjEHPass::insertSjLjEHSupport(Function &F) {
     // instruction hasn't already been removed.
     if (!I->getParent()) continue;
     Value *Val = new LoadInst(ExceptionAddr, "exception", true, I);
-    const Type *Ty = Type::getInt8PtrTy(F.getContext());
+    Type *Ty = Type::getInt8PtrTy(F.getContext());
     Val = CastInst::Create(Instruction::IntToPtr, Val, Ty, "", I);
 
     I->replaceAllUsesWith(Val);
@@ -468,8 +464,7 @@ bool SjLjEHPass::insertSjLjEHSupport(Function &F) {
   Idxs[0] = Zero;
   Idxs[1] = ConstantInt::get(Int32Ty, 4);
   Value *LSDAFieldPtr =
-    GetElementPtrInst::Create(FunctionContext, Idxs, Idxs+2,
-                              "lsda_gep",
+    GetElementPtrInst::Create(FunctionContext, Idxs, "lsda_gep",
                               EntryBB->getTerminator());
   Value *LSDA = CallInst::Create(LSDAAddrFn, "lsda_addr",
                                  EntryBB->getTerminator());
@@ -477,8 +472,7 @@ bool SjLjEHPass::insertSjLjEHSupport(Function &F) {
 
   Idxs[1] = ConstantInt::get(Int32Ty, 3);
   Value *PersonalityFieldPtr =
-    GetElementPtrInst::Create(FunctionContext, Idxs, Idxs+2,
-                              "lsda_gep",
+    GetElementPtrInst::Create(FunctionContext, Idxs, "lsda_gep",
                               EntryBB->getTerminator());
   new StoreInst(PersonalityFn, PersonalityFieldPtr, true,
                 EntryBB->getTerminator());
@@ -486,12 +480,11 @@ bool SjLjEHPass::insertSjLjEHSupport(Function &F) {
   // Save the frame pointer.
   Idxs[1] = ConstantInt::get(Int32Ty, 5);
   Value *JBufPtr
-    = GetElementPtrInst::Create(FunctionContext, Idxs, Idxs+2,
-                                "jbuf_gep",
+    = GetElementPtrInst::Create(FunctionContext, Idxs, "jbuf_gep",
                                 EntryBB->getTerminator());
   Idxs[1] = ConstantInt::get(Int32Ty, 0);
   Value *FramePtr =
-    GetElementPtrInst::Create(JBufPtr, Idxs, Idxs+2, "jbuf_fp_gep",
+    GetElementPtrInst::Create(JBufPtr, Idxs, "jbuf_fp_gep",
                               EntryBB->getTerminator());
 
   Value *Val = CallInst::Create(FrameAddrFn,
@@ -503,7 +496,7 @@ bool SjLjEHPass::insertSjLjEHSupport(Function &F) {
   // Save the stack pointer.
   Idxs[1] = ConstantInt::get(Int32Ty, 2);
   Value *StackPtr =
-    GetElementPtrInst::Create(JBufPtr, Idxs, Idxs+2, "jbuf_sp_gep",
+    GetElementPtrInst::Create(JBufPtr, Idxs, "jbuf_sp_gep",
                               EntryBB->getTerminator());
 
   Val = CallInst::Create(StackAddrFn, "sp", EntryBB->getTerminator());

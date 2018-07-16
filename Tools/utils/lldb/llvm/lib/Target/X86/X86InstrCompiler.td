@@ -532,7 +532,7 @@ def OR32mrLocked  : I<0x09, MRMDestMem, (outs), (ins i32mem:$dst, GR32:$zero),
 let hasSideEffects = 1 in
 def Int_MemBarrier : I<0, Pseudo, (outs), (ins),
                      "#MEMBARRIER",
-                     [(X86MemBarrier)]>, Requires<[HasSSE2]>;
+                     [(X86MemBarrier)]>;
 
 // TODO: Get this to fold the constant into the instruction.
 let hasSideEffects = 1, Defs = [ESP], isCodeGenOnly = 1 in
@@ -997,7 +997,8 @@ def : Pat<(extloadi64i32 addr:$src),
 
 // anyext. Define these to do an explicit zero-extend to
 // avoid partial-register updates.
-def : Pat<(i16 (anyext GR8 :$src)), (MOVZX16rr8  GR8 :$src)>;
+def : Pat<(i16 (anyext GR8 :$src)), (EXTRACT_SUBREG
+                                     (MOVZX32rr8 GR8 :$src), sub_16bit)>;
 def : Pat<(i32 (anyext GR8 :$src)), (MOVZX32rr8  GR8 :$src)>;
 
 // Except for i16 -> i32 since isel expect i16 ops to be promoted to i32.
@@ -1164,9 +1165,9 @@ def : Pat<(and GR32:$src1, 0xff),
       Requires<[In32BitMode]>;
 // r & (2^8-1) ==> movz
 def : Pat<(and GR16:$src1, 0xff),
-          (MOVZX16rr8 (EXTRACT_SUBREG (i16 (COPY_TO_REGCLASS GR16:$src1,
-                                                             GR16_ABCD)),
-                                      sub_8bit))>,
+           (EXTRACT_SUBREG (MOVZX32rr8 (EXTRACT_SUBREG
+            (i16 (COPY_TO_REGCLASS GR16:$src1, GR16_ABCD)), sub_8bit)),
+             sub_16bit)>,
       Requires<[In32BitMode]>;
 
 // r & (2^32-1) ==> movz
@@ -1184,7 +1185,8 @@ def : Pat<(and GR32:$src1, 0xff),
       Requires<[In64BitMode]>;
 // r & (2^8-1) ==> movz
 def : Pat<(and GR16:$src1, 0xff),
-           (MOVZX16rr8 (i8 (EXTRACT_SUBREG GR16:$src1, sub_8bit)))>,
+           (EXTRACT_SUBREG (MOVZX32rr8 (i8
+            (EXTRACT_SUBREG GR16:$src1, sub_8bit))), sub_16bit)>,
       Requires<[In64BitMode]>;
 
 
@@ -1196,10 +1198,11 @@ def : Pat<(sext_inreg GR32:$src, i8),
                                                              GR32_ABCD)),
                                       sub_8bit))>,
       Requires<[In32BitMode]>;
+
 def : Pat<(sext_inreg GR16:$src, i8),
-          (MOVSX16rr8 (EXTRACT_SUBREG (i16 (COPY_TO_REGCLASS GR16:$src,
-                                                             GR16_ABCD)),
-                                      sub_8bit))>,
+           (EXTRACT_SUBREG (i32 (MOVSX32rr8 (EXTRACT_SUBREG
+            (i32 (COPY_TO_REGCLASS GR16:$src, GR16_ABCD)), sub_8bit))),
+             sub_16bit)>,
       Requires<[In32BitMode]>;
 
 def : Pat<(sext_inreg GR64:$src, i32),
@@ -1212,9 +1215,19 @@ def : Pat<(sext_inreg GR32:$src, i8),
           (MOVSX32rr8 (EXTRACT_SUBREG GR32:$src, sub_8bit))>,
       Requires<[In64BitMode]>;
 def : Pat<(sext_inreg GR16:$src, i8),
-          (MOVSX16rr8 (i8 (EXTRACT_SUBREG GR16:$src, sub_8bit)))>,
+           (EXTRACT_SUBREG (MOVSX32rr8
+            (EXTRACT_SUBREG GR16:$src, sub_8bit)), sub_16bit)>,
       Requires<[In64BitMode]>;
 
+// sext, sext_load, zext, zext_load
+def: Pat<(i16 (sext GR8:$src)),
+          (EXTRACT_SUBREG (MOVSX32rr8 GR8:$src), sub_16bit)>;
+def: Pat<(sextloadi16i8 addr:$src),
+          (EXTRACT_SUBREG (MOVSX32rm8 addr:$src), sub_16bit)>;
+def: Pat<(i16 (zext GR8:$src)),
+          (EXTRACT_SUBREG (MOVZX32rr8 GR8:$src), sub_16bit)>;
+def: Pat<(zextloadi16i8 addr:$src),
+          (EXTRACT_SUBREG (MOVZX32rm8 addr:$src), sub_16bit)>;
 
 // trunc patterns
 def : Pat<(i16 (trunc GR32:$src)),
@@ -1355,6 +1368,11 @@ def : Pat<(store (i8 (trunc_su (srl_su GR16:$src, (i8 8)))), addr:$dst),
 
 
 // (shl x, 1) ==> (add x, x)
+// Note that if x is undef (immediate or otherwise), we could theoretically
+// end up with the two uses of x getting different values, producing a result
+// where the least significant bit is not 0. However, the probability of this
+// happening is considered low enough that this is officially not a
+// "real problem".
 def : Pat<(shl GR8 :$src1, (i8 1)), (ADD8rr  GR8 :$src1, GR8 :$src1)>;
 def : Pat<(shl GR16:$src1, (i8 1)), (ADD16rr GR16:$src1, GR16:$src1)>;
 def : Pat<(shl GR32:$src1, (i8 1)), (ADD32rr GR32:$src1, GR32:$src1)>;
@@ -1510,12 +1528,6 @@ def : Pat<(mul (loadi16 addr:$src1), i16immSExt8:$src2),
           (IMUL16rmi8 addr:$src1, i16immSExt8:$src2)>;
 def : Pat<(mul (loadi32 addr:$src1), i32immSExt8:$src2),
           (IMUL32rmi8 addr:$src1, i32immSExt8:$src2)>;
-
-// Optimize multiply by 2 with EFLAGS result.
-let AddedComplexity = 2 in {
-def : Pat<(X86smul_flag GR16:$src1, 2), (ADD16rr GR16:$src1, GR16:$src1)>;
-def : Pat<(X86smul_flag GR32:$src1, 2), (ADD32rr GR32:$src1, GR32:$src1)>;
-}
 
 // Patterns for nodes that do not produce flags, for instructions that do.
 

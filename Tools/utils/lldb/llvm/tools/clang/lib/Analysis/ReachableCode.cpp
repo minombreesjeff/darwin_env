@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/ExprObjC.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/Analysis/Analyses/ReachableCode.h"
 #include "clang/Analysis/CFG.h"
@@ -108,6 +109,11 @@ static SourceLocation GetUnreachableLoc(const CFGBlock &b, SourceRange &R1,
     case Stmt::CXXTryStmtClass: {
       return cast<CXXTryStmt>(S)->getHandler(0)->getCatchLoc();
     }
+    case Expr::ObjCBridgedCastExprClass: {
+      const ObjCBridgedCastExpr *CSC = cast<ObjCBridgedCastExpr>(S);
+      R1 = CSC->getSubExpr()->getSourceRange();
+      return CSC->getLParenLoc();
+    }
     default: ;
   }
   R1 = S->getSourceRange();
@@ -119,7 +125,7 @@ static SourceLocation MarkLiveTop(const CFGBlock *Start,
                                   SourceManager &SM) {
 
   // Prep work worklist.
-  llvm::SmallVector<const CFGBlock*, 32> WL;
+  SmallVector<const CFGBlock*, 32> WL;
   WL.push_back(Start);
 
   SourceRange R1, R2;
@@ -191,7 +197,7 @@ namespace clang { namespace reachable_code {
 unsigned ScanReachableFromBlock(const CFGBlock &Start,
                                 llvm::BitVector &Reachable) {
   unsigned count = 0;
-  llvm::SmallVector<const CFGBlock*, 32> WL;
+  SmallVector<const CFGBlock*, 32> WL;
 
   // Prep work queue
   Reachable.set(Start.getBlockID());
@@ -236,7 +242,7 @@ void FindUnreachableCode(AnalysisContext &AC, Callback &CB) {
 
   SourceRange R1, R2;
 
-  llvm::SmallVector<ErrLoc, 24> lines;
+  SmallVector<ErrLoc, 24> lines;
   bool AddEHEdges = AC.getAddEHEdges();
 
   // First, give warnings for blocks with no predecessors, as they
@@ -281,7 +287,7 @@ void FindUnreachableCode(AnalysisContext &AC, Callback &CB) {
 
   llvm::array_pod_sort(lines.begin(), lines.end(), LineCmp);
 
-  for (llvm::SmallVectorImpl<ErrLoc>::iterator I=lines.begin(), E=lines.end();
+  for (SmallVectorImpl<ErrLoc>::iterator I=lines.begin(), E=lines.end();
        I != E; ++I)
     if (I->Loc.isValid())
       CB.HandleUnreachable(I->Loc, I->R1, I->R2);

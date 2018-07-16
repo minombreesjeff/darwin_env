@@ -23,8 +23,9 @@
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCSectionCOFF.h"
+#include "llvm/MC/MCWin64EH.h"
+#include "llvm/MC/MCAsmBackend.h"
 #include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetAsmBackend.h"
 #include "llvm/ADT/StringMap.h"
 
 #include "llvm/Support/COFF.h"
@@ -39,7 +40,7 @@ public:
   MCSymbol const *CurSymbol;
 
   WinCOFFStreamer(MCContext &Context,
-                  TargetAsmBackend &TAB,
+                  MCAsmBackend &MAB,
                   MCCodeEmitter &CE,
                   raw_ostream &OS);
 
@@ -74,6 +75,7 @@ public:
                                  unsigned MaxBytesToEmit);
   virtual void EmitFileDirective(StringRef Filename);
   virtual void EmitInstruction(const MCInst &Instruction);
+  virtual void EmitWin64EHHandlerData();
   virtual void Finish();
 
 private:
@@ -121,10 +123,10 @@ private:
 } // end anonymous namespace.
 
 WinCOFFStreamer::WinCOFFStreamer(MCContext &Context,
-                                 TargetAsmBackend &TAB,
+                                 MCAsmBackend &MAB,
                                  MCCodeEmitter &CE,
                                  raw_ostream &OS)
-    : MCObjectStreamer(Context, TAB, OS, &CE)
+    : MCObjectStreamer(Context, MAB, OS, &CE)
     , CurSymbol(NULL) {
 }
 
@@ -377,18 +379,27 @@ void WinCOFFStreamer::EmitInstruction(const MCInst &Instruction) {
                                                 Fragment->getFixups());
 }
 
+void WinCOFFStreamer::EmitWin64EHHandlerData() {
+  MCStreamer::EmitWin64EHHandlerData();
+
+  // We have to emit the unwind info now, because this directive
+  // actually switches to the .xdata section!
+  MCWin64EHUnwindEmitter::EmitUnwindInfo(*this, getCurrentW64UnwindInfo());
+}
+
 void WinCOFFStreamer::Finish() {
+  EmitW64Tables();
   MCObjectStreamer::Finish();
 }
 
 namespace llvm
 {
   MCStreamer *createWinCOFFStreamer(MCContext &Context,
-                                    TargetAsmBackend &TAB,
+                                    MCAsmBackend &MAB,
                                     MCCodeEmitter &CE,
                                     raw_ostream &OS,
                                     bool RelaxAll) {
-    WinCOFFStreamer *S = new WinCOFFStreamer(Context, TAB, CE, OS);
+    WinCOFFStreamer *S = new WinCOFFStreamer(Context, MAB, CE, OS);
     S->getAssembler().setRelaxAll(RelaxAll);
     return S;
   }

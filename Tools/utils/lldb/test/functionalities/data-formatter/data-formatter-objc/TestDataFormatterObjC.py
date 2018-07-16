@@ -49,6 +49,7 @@ class DataFormatterTestCase(TestBase):
         def cleanup():
             self.runCmd('type format clear', check=False)
             self.runCmd('type summary clear', check=False)
+            self.runCmd('type synth clear', check=False)
 
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
@@ -98,6 +99,157 @@ class DataFormatterTestCase(TestBase):
         self.expect("frame variable *object",
                     substrs = ['a test']);
 
+        # Now check that the synth for CFString works
+        self.runCmd("script from CFString import *")
+        self.runCmd("type synth add -l CFStringSynthProvider NSString")
+
+        self.expect('frame variable str -P 1 -Y',
+            substrs = ['mutable =',
+                       'inline = ',
+                       'explicit = ',
+                       'content = ',
+                       'A rather short ASCII NSString object is here'])
+
+        self.expect('frame variable str2 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'A rather short UTF8 NSString object is here'])
+
+        self.expect('frame variable str3 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'A string made with the at sign is here'])
+
+        self.expect('frame variable str4 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'This is string number 4 right here'])
+        
+        self.expect('frame variable str5 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               '{{1, 1}, {5, 5}}'])
+                
+        self.expect('frame variable str6 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               '1ST'])
+        
+        self.expect('frame variable str7 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               '\\xcf\\x83xx'])
+        
+        self.expect('frame variable str8 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'hasVeryLongExtensionThisTime'])
+
+        self.expect('frame variable str9 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'a very much boring task to write a string this way!!\\xcf\\x83'])
+        
+        self.expect('frame variable str10 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'This is a Unicode string \\xcf\\x83 number 4 right here'])
+        
+        self.expect('frame variable str11 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               '__NSCFString'])
+        
+        self.expect('frame variable processName -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'a.out'])
+        
+        self.expect('frame variable str12 -P 1 -Y',
+                    substrs = ['mutable =',
+                               'inline = ',
+                               'explicit = ',
+                               'content = ',
+                               'Process Name:  a.out Process Id:'])
+        
+        # check that access to synthetic children by name works
+        self.expect("frame variable str12->mutable",
+            substrs = ['(int) mutable = 0'])
+        
+        # delete the synth and set a summary
+        self.runCmd("type synth delete NSString")
+        self.runCmd("type summary add -F CFString_SummaryProvider NSString")
+
+        self.expect('frame variable str',
+            substrs = ['A rather short ASCII NSString object is here'])
+        self.expect('frame variable str2',
+                    substrs = ['A rather short UTF8 NSString object is here'])
+        self.expect('frame variable str3',
+                    substrs = ['A string made with the at sign is here'])
+        self.expect('frame variable str4',
+                    substrs = ['This is string number 4 right here'])
+        self.expect('frame variable str5',
+                    substrs = ['{{1, 1}, {5, 5}}'])
+        self.expect('frame variable str6',
+                    substrs = ['1ST'])
+        self.expect('frame variable str7',
+                    substrs = ['\\xcf\\x83xx'])
+        self.expect('frame variable str8',
+                    substrs = ['hasVeryLongExtensionThisTime'])
+        self.expect('frame variable str9',
+                    substrs = ['a very much boring task to write a string this way!!\\xcf\\x83'])
+        self.expect('frame variable str10',
+                    substrs = ['This is a Unicode string \\xcf\\x83 number 4 right here'])
+        self.expect('frame variable str11',
+                    substrs = ['__NSCFString'])
+        self.expect('frame variable processName',
+                    substrs = ['a.out'])        
+        self.expect('frame variable str12',
+                    substrs = ['Process Name:  a.out Process Id:'])
+        self.expect('frame variable dyn_test', matching=False,
+                    substrs = ['Process Name:  a.out Process Id:'])
+        self.expect('frame variable dyn_test -d run-target -T',
+                    substrs = ['(id, dynamic type:',
+                               'Process Name:  a.out Process Id:'])
+        self.expect('frame variable dyn_test -d run-target',
+                    substrs = ['(id)',
+                               'Process Name:  a.out Process Id:'])
+
+            
+        # check that we can format stuff out of the expression parser
+        self.expect('expression ((id)@"Hello")', matching=False,
+                    substrs = ['Hello'])
+            
+        self.expect('expression -d true -- ((id)@"Hello")',
+        substrs = ['Hello'])
+
+        self.expect('expr -d true -- label1',
+            substrs = ['Process Name'])
+
+        self.expect('expr -d true -- @"Hello"',
+            substrs = ['Hello'])
 
 if __name__ == '__main__':
     import atexit

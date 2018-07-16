@@ -381,7 +381,24 @@ public:
   attr_iterator attr_end() const {
     return hasAttrs() ? getAttrs().end() : 0;
   }
-
+  
+  template <typename T>
+  void dropAttr() {
+    if (!HasAttrs) return;
+    
+    AttrVec &Attrs = getAttrs();
+    for (unsigned i = 0, e = Attrs.size(); i != e; /* in loop */) {
+      if (isa<T>(Attrs[i])) {
+        Attrs.erase(Attrs.begin() + i);
+        --e;
+      }
+      else
+        ++i;
+    }
+    if (Attrs.empty())
+      HasAttrs = false;
+  }
+    
   template <typename T>
   specific_attr_iterator<T> specific_attr_begin() const {
     return specific_attr_iterator<T>(attr_begin());
@@ -717,15 +734,16 @@ public:
   static DeclContext *castToDeclContext(const Decl *);
   static Decl *castFromDeclContext(const DeclContext *);
 
-  void print(llvm::raw_ostream &Out, unsigned Indentation = 0) const;
-  void print(llvm::raw_ostream &Out, const PrintingPolicy &Policy,
-             unsigned Indentation = 0) const;
+  void print(raw_ostream &Out, unsigned Indentation = 0,
+             bool PrintInstantiation = false) const;
+  void print(raw_ostream &Out, const PrintingPolicy &Policy,
+             unsigned Indentation = 0, bool PrintInstantiation = false) const;
   static void printGroup(Decl** Begin, unsigned NumDecls,
-                         llvm::raw_ostream &Out, const PrintingPolicy &Policy,
+                         raw_ostream &Out, const PrintingPolicy &Policy,
                          unsigned Indentation = 0);
   void dump() const;
   void dumpXML() const;
-  void dumpXML(llvm::raw_ostream &OS) const;
+  void dumpXML(raw_ostream &OS) const;
 
 private:
   const Attr *getAttrsImpl() const;
@@ -746,7 +764,7 @@ public:
                        SourceManager &sm, const char *Msg)
   : TheDecl(theDecl), Loc(L), SM(sm), Message(Msg) {}
 
-  virtual void print(llvm::raw_ostream &OS) const;
+  virtual void print(raw_ostream &OS) const;
 };
 
 class DeclContextLookupResult
@@ -822,7 +840,7 @@ protected:
   ///
   /// \returns the first/last pair of declarations.
   static std::pair<Decl *, Decl *>
-  BuildDeclChain(const llvm::SmallVectorImpl<Decl*> &Decls);
+  BuildDeclChain(const SmallVectorImpl<Decl*> &Decls);
 
    DeclContext(Decl::Kind K)
      : DeclKind(K), ExternalLexicalStorage(false),
@@ -1355,17 +1373,12 @@ struct cast_convert_decl_context<ToTy, true> {
 namespace llvm {
 
 /// isa<T>(DeclContext*)
-template<class ToTy>
-struct isa_impl_wrap<ToTy,
-                     const ::clang::DeclContext,const ::clang::DeclContext> {
+template <typename To>
+struct isa_impl<To, ::clang::DeclContext> {
   static bool doit(const ::clang::DeclContext &Val) {
-    return ToTy::classofKind(Val.getDeclKind());
+    return To::classofKind(Val.getDeclKind());
   }
 };
-template<class ToTy>
-struct isa_impl_wrap<ToTy, ::clang::DeclContext, ::clang::DeclContext>
-  : public isa_impl_wrap<ToTy,
-                      const ::clang::DeclContext,const ::clang::DeclContext> {};
 
 /// cast<T>(DeclContext*)
 template<class ToTy>
