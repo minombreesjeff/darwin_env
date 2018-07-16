@@ -4,7 +4,7 @@ Extra_Configure_Flags = --disable-shared --enable-static \
                         --without-apxs \
                         --with-apr=/usr --with-apr-util=/usr \
                         --with-neon=/usr/local \
-                        --with-swig=/usr/local \
+                        --with-swig=$(shell test -e /usr/bin/swig && echo /usr || echo /usr/local) \
                         --with-ruby-sitedir=$(RBLIBDIR)/ruby \
                         --without-sasl
 
