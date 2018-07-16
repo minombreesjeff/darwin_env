@@ -33,7 +33,7 @@ THIS SOFTWARE.
 #include "awk.h"
 #include "awkgram.h"
 
-#define tempfree(x)	if (istemp(x)) tfree(x); else
+#define tempfree(x)	if (istemp(x)) { tfree(x); }
 
 /*
 #undef tempfree
@@ -124,6 +124,9 @@ int adjbuf(char **pbuf, int *psiz, int minlen, int quantum, char **pbptr,
 
 void run(Node *a)	/* execution of parse tree starts here */
 {
+	extern void stdinit(void);
+
+	stdinit();
 	execute(a);
 	closeall();
 }
@@ -1575,10 +1578,17 @@ struct files {
 	char	*fname;
 	int	mode;	/* '|', 'a', 'w' => LE/LT, GT */
 } files[FOPEN_MAX] ={
-	{ stdin,  "/dev/stdin",  LT },	/* watch out: don't free this! */
-	{ stdout, "/dev/stdout", GT },
-	{ stderr, "/dev/stderr", GT }
+	{ NULL,  "/dev/stdin",  LT },   /* watch out: don't free this! */
+	{ NULL, "/dev/stdout", GT },
+	{ NULL, "/dev/stderr", GT }
 };
+
+void stdinit(void)      /* in case stdin, etc., are not constants */
+{
+	files[0].fp = stdin;
+	files[1].fp = stdout;
+	files[2].fp = stderr;
+}
 
 FILE *openfile(int a, char *us)
 {
