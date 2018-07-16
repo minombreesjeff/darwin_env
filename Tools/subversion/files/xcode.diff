@@ -1,6 +1,6 @@
 --- subversion/libsvn_ra_svn/client.c.orig	2009-09-24 19:40:18.000000000 -0700
 +++ subversion/libsvn_ra_svn/client.c	2009-09-24 19:46:07.000000000 -0700
-@@ -43,6 +43,9 @@
+@@ -54,6 +54,9 @@
  
  #include "ra_svn.h"
  
@@ -10,7 +10,7 @@
  #ifdef SVN_HAVE_SASL
  #define DO_AUTH svn_ra_svn__do_cyrus_auth
  #else
-@@ -365,6 +368,8 @@
+@@ -384,6 +387,8 @@
    apr_size_t len;
    apr_status_t status;
    int n;
@@ -19,7 +19,7 @@
  
    /* Look up the tunnel specification in config. */
    cfg = config ? apr_hash_get(config, SVN_CONFIG_CATEGORY_CONFIG,
-@@ -381,7 +386,11 @@
+@@ -400,7 +405,11 @@
         * versions have it too. If the user is using some other ssh
         * implementation that doesn't accept it, they can override it
         * in the [tunnels] section of the config. */

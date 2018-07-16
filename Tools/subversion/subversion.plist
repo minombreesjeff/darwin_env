@@ -5,17 +5,17 @@
 	<key>OpenSourceProject</key>
 	<string>subversion</string>
 	<key>OpenSourceVersion</key>
-	<string>1.6.18</string>
+	<string>1.7.10</string>
 	<key>OpenSourceWebsiteURL</key>
 	<string>http://subversion.apache.org/</string>
 	<key>OpenSourceURL</key>
-	<string>http://subversion.tigris.org/downloads/subversion-1.6.18.tar.bz2</string>
+	<string>http://archive.apache.org/dist/subversion/subversion-1.7.10.tar.bz2</string>
 	<key>OpenSourceSHA1</key>
-	<string>7f3275ccacc1e793841d9e14da313f57e6ebd160</string>
+	<string>a4f3de0a13b034b0eab4d35512c6c91a4abcf4f5</string>
 	<key>OpenSourceImportDate</key>
-	<string>2012-04-24</string>
+	<string>2013-06-18</string>
 	<key>OpenSourceLicense</key>
-	<string>BSD</string>
+	<string>apache</string>
 	<key>OpenSourceLicenseFile</key>
 	<string>subversion.txt</string>
 </dict>

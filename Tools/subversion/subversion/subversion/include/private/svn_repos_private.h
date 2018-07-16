@@ -37,6 +37,20 @@ extern "C" {
 #endif /* __cplusplus */
 
 
+/** Validate that property @a name is valid for use in a Subversion
+ * repository; return @c SVN_ERR_REPOS_BAD_ARGS if it isn't.  For some
+ * "svn:" properties, also validate the @a value, and return
+ * @c SVN_ERR_BAD_PROPERTY_VALUE if it is not valid.
+ *
+ * Use @a pool for temporary allocations.
+ *
+ * @since New in 1.7.
+ */
+svn_error_t *
+svn_repos__validate_prop(const char *name,
+                         const svn_string_t *value,
+                         apr_pool_t *pool);
+
 /**
  * Given the error @a err from svn_repos_fs_commit_txn(), return an
  * string containing either or both of the svn_fs_commit_txn() error
@@ -58,6 +72,12 @@ extern "C" {
 const char *
 svn_repos__post_commit_error_str(svn_error_t *err,
                                  apr_pool_t *pool);
+
+/* A repos version of svn_fs_type */
+svn_error_t *
+svn_repos__fs_type(const char **fs_type,
+                   const char *repos_path,
+                   apr_pool_t *pool);
 
 #ifdef __cplusplus
 }

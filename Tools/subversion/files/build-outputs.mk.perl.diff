@@ -1,15 +1,15 @@
 --- build-outputs.mk.orig	2012-02-01 17:33:48.000000000 -0800
 +++ build-outputs.mk	2012-02-01 17:37:53.000000000 -0800
-@@ -315,10 +315,10 @@
- 	cd subversion/libsvn_subr && $(LINK) -o libsvn_subr-1.la $(LT_NO_UNDEFINED) $(libsvn_subr_OBJECTS) $(SVN_APRUTIL_LIBS) $(SVN_APR_LIBS) $(SVN_XML_LIBS) $(SVN_ZLIB_LIBS) $(SVN_APR_MEMCACHE_LIBS) $(SVN_SQLITE_LIBS) $(LIBS)
+@@ -385,10 +385,10 @@
+ 	cd subversion/libsvn_subr && $(LINK_LIB) $(libsvn_subr_LDFLAGS) -o libsvn_subr-1.la $(LT_NO_UNDEFINED) $(libsvn_subr_OBJECTS) $(SVN_APRUTIL_LIBS) $(SVN_APR_LIBS) $(SVN_XML_LIBS) $(SVN_ZLIB_LIBS) $(SVN_APR_MEMCACHE_LIBS) $(SVN_SQLITE_LIBS) $(SVN_MAGIC_LIBS) $(LIBS)
  
  libsvn_swig_perl_PATH = subversion/bindings/swig/perl/libsvn_swig_perl
 -libsvn_swig_perl_DEPS =  subversion/bindings/swig/perl/libsvn_swig_perl/swigutil_pl.lo subversion/libsvn_delta/libsvn_delta-1.la subversion/libsvn_subr/libsvn_subr-1.la
 +libsvn_swig_perl_DEPS =  subversion/bindings/swig/perl/libsvn_swig_perl/swigutil_pl.lo
  libsvn_swig_perl_OBJECTS = swigutil_pl.lo
  subversion/bindings/swig/perl/libsvn_swig_perl/libsvn_swig_perl-1.la: $(libsvn_swig_perl_DEPS)
--	cd subversion/bindings/swig/perl/libsvn_swig_perl && $(LINK) -o libsvn_swig_perl-1.la $(LT_NO_UNDEFINED) $(libsvn_swig_perl_OBJECTS) ../../../../../subversion/libsvn_delta/libsvn_delta-1.la ../../../../../subversion/libsvn_subr/libsvn_subr-1.la $(SVN_APRUTIL_LIBS) $(SVN_APR_LIBS) $(LIBS)
-+	cd subversion/bindings/swig/perl/libsvn_swig_perl && $(LINK) -o libsvn_swig_perl-1.la $(LT_NO_UNDEFINED) $(libsvn_swig_perl_OBJECTS) -lsvn_delta-1 -lsvn_subr-1 $(SVN_APRUTIL_LIBS) $(SVN_APR_LIBS) $(LIBS)
+-	cd subversion/bindings/swig/perl/libsvn_swig_perl && $(LINK_LIB) $(libsvn_swig_perl_LDFLAGS) -o libsvn_swig_perl-1.la $(LT_NO_UNDEFINED) $(libsvn_swig_perl_OBJECTS) ../../../../../subversion/libsvn_delta/libsvn_delta-1.la ../../../../../subversion/libsvn_subr/libsvn_subr-1.la $(SVN_APRUTIL_LIBS) $(SVN_APR_LIBS) $(LIBS)
++	cd subversion/bindings/swig/perl/libsvn_swig_perl && $(LINK_LIB) $(libsvn_swig_perl_LDFLAGS) -o libsvn_swig_perl-1.la $(LT_NO_UNDEFINED) $(libsvn_swig_perl_OBJECTS) -L$(DEVELOPER_DIR)/usr/lib -lsvn_delta-1 -lsvn_subr-1 $(SVN_APRUTIL_LIBS) $(SVN_APR_LIBS) $(LIBS)
  
  libsvn_swig_py_PATH = subversion/bindings/swig/python/libsvn_swig_py
  libsvn_swig_py_DEPS =  subversion/bindings/swig/python/libsvn_swig_py/swigutil_py.lo subversion/libsvn_client/libsvn_client-1.la subversion/libsvn_wc/libsvn_wc-1.la subversion/libsvn_ra/libsvn_ra-1.la subversion/libsvn_delta/libsvn_delta-1.la subversion/libsvn_subr/libsvn_subr-1.la

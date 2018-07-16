@@ -1,6 +1,6 @@
 --- configure.orig	2011-07-20 01:18:59.000000000 -0700
 +++ configure	2011-07-20 01:19:32.000000000 -0700
-@@ -24230,7 +24230,7 @@ $as_echo_n "checking perl version... " >
+@@ -21148,7 +21148,7 @@ $as_echo_n "checking perl version... " >
      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PERL_VERSION" >&5
  $as_echo "$PERL_VERSION" >&6; }
      if test "$PERL_VERSION" -ge "5008000"; then
@@ -9,7 +9,7 @@
      else
        { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: perl bindings require perl 5.8.0 or newer." >&5
  $as_echo "$as_me: WARNING: perl bindings require perl 5.8.0 or newer." >&2;}
-@@ -24701,7 +24701,7 @@ $as_echo_n "checking perl version... " >
+@@ -21613,7 +21613,7 @@ $as_echo_n "checking perl version... " >
      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PERL_VERSION" >&5
  $as_echo "$PERL_VERSION" >&6; }
      if test "$PERL_VERSION" -ge "5008000"; then
@@ -18,7 +18,7 @@
      else
        { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: perl bindings require perl 5.8.0 or newer." >&5
  $as_echo "$as_me: WARNING: perl bindings require perl 5.8.0 or newer." >&2;}
-@@ -25172,7 +25172,7 @@ $as_echo_n "checking perl version... " >
+@@ -22078,7 +22078,7 @@ $as_echo_n "checking perl version... " >
      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PERL_VERSION" >&5
  $as_echo "$PERL_VERSION" >&6; }
      if test "$PERL_VERSION" -ge "5008000"; then
@@ -27,7 +27,7 @@
      else
        { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: perl bindings require perl 5.8.0 or newer." >&5
  $as_echo "$as_me: WARNING: perl bindings require perl 5.8.0 or newer." >&2;}
-@@ -25646,7 +25646,7 @@ $as_echo_n "checking perl version... " >
+@@ -22546,7 +22546,7 @@ $as_echo_n "checking perl version... " >
      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $PERL_VERSION" >&5
  $as_echo "$PERL_VERSION" >&6; }
      if test "$PERL_VERSION" -ge "5008000"; then

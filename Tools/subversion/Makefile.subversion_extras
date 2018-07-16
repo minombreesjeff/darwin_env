@@ -1,9 +1,9 @@
-ifndef DEVELOPER_DIR
-DEVELOPER_DIR = /Developer
+ifndef SVN_INSTALL_DIR
+export SVN_INSTALL_DIR = $(DEVELOPER_DIR)/usr
 endif
 
-Install_Prefix = $(DEVELOPER_DIR)/usr
-Install_Man = $(DEVELOPER_DIR)/usr/share/man
+Install_Prefix = $(SVN_INSTALL_DIR)
+Install_Man = $(SVN_INSTALL_DIR)/share/man
 
 GnuAfterInstall       = perl-bindings post-install
 Extra_Configure_Flags = --enable-shared --disable-static \
@@ -51,7 +51,8 @@ ConfigStamp2 = $(ConfigStamp)2
 
 configure:: $(ConfigStamp2)
 
-PERLVERS := $(shell perl -MConfig -e 'print $$Config::Config{version}')
+# 13803426: version includes subversion, we just want revision.patchlevel
+PERLVERS := $(shell perl -MConfig -e 'print $$Config::Config{revision}.".".$$Config::Config{patchlevel}')
 PYTHONVERS := $(shell python -c 'import sys; print("%d.%d" % sys.version_info[:2])')
 MAKEFILEPL := subversion/bindings/swig/perl/native/Makefile.PL
 $(ConfigStamp2): $(ConfigStamp)
@@ -70,6 +71,7 @@ PERLVERSIONS := $(VERSIONERDIR)/perl/versions
 PERLSUBDEFAULT := $(shell sed -n '/^DEFAULT = /s///p' $(PERLVERSIONS))
 PERLDEFAULT := $(shell grep '^$(PERLSUBDEFAULT)' $(PERLVERSIONS))
 PERLUNORDEREDVERS := $(shell grep -v '^DEFAULT' $(PERLVERSIONS))
+PERLUNORDEREDVERS := $(sort $(PERLUNORDEREDVERS) 5.16) # add 5.16 if needed (use sort for uniquing)
 # do default version last
 PERLORDEREDVERS := $(filter-out $(PERLDEFAULT),$(PERLUNORDEREDVERS)) $(PERLDEFAULT)
 PERLTOPDIR := $(BuildDirectory)/subversion/bindings/swig/perl

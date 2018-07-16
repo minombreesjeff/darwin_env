@@ -2,17 +2,22 @@
  * auth.c: authentication support functions for Subversion
  *
  * ====================================================================
- * Copyright (c) 2000-2009 CollabNet.  All rights reserved.
+ *    Licensed to the Apache Software Foundation (ASF) under one
+ *    or more contributor license agreements.  See the NOTICE file
+ *    distributed with this work for additional information
+ *    regarding copyright ownership.  The ASF licenses this file
+ *    to you under the Apache License, Version 2.0 (the
+ *    "License"); you may not use this file except in compliance
+ *    with the License.  You may obtain a copy of the License at
  *
- * This software is licensed as described in the file COPYING, which
- * you should have received as part of this distribution.  The terms
- * are also available at http://subversion.tigris.org/license-1.html.
- * If newer versions of this license are posted there, you may use a
- * newer version instead, at your option.
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * This software consists of voluntary contributions made by many
- * individuals.  For exact contribution history, see the revision
- * history and logs, available at http://subversion.tigris.org/.
+ *    Unless required by applicable law or agreed to in writing,
+ *    software distributed under the License is distributed on an
+ *    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *    KIND, either express or implied.  See the License for the
+ *    specific language governing permissions and limitations
+ *    under the License.
  * ====================================================================
  */
 
@@ -28,6 +33,7 @@
 #include "svn_config.h"
 #include "svn_private_config.h"
 #include "svn_dso.h"
+#include "svn_version.h"
 
 /* The good way to think of this machinery is as a set of tables.
 
@@ -55,7 +61,7 @@
 
 /* This effectively defines a single table.  Every provider in this
    array returns the same kind of credentials. */
-typedef struct
+typedef struct provider_set_t
 {
   /* ordered array of svn_auth_provider_object_t */
   apr_array_header_t *providers;
@@ -96,7 +102,7 @@ struct svn_auth_iterstate_t
 
 void
 svn_auth_open(svn_auth_baton_t **auth_baton,
-              apr_array_header_t *providers,
+              const apr_array_header_t *providers,
               apr_pool_t *pool)
 {
   svn_auth_baton_t *ab;
@@ -178,11 +184,11 @@ svn_auth_first_credentials(void **credentials,
   table = apr_hash_get(auth_baton->tables, cred_kind, APR_HASH_KEY_STRING);
   if (! table)
     return svn_error_createf(SVN_ERR_AUTHN_NO_PROVIDER, NULL,
-                             "No provider registered for '%s' credentials",
+                             _("No provider registered for '%s' credentials"),
                              cred_kind);
 
   /* First, see if we have cached creds in the auth_baton. */
-  cache_key = apr_pstrcat(pool, cred_kind, ":", realmstring, NULL);
+  cache_key = apr_pstrcat(pool, cred_kind, ":", realmstring, (char *)NULL);
   creds = apr_hash_get(auth_baton->creds_cache,
                        cache_key, APR_HASH_KEY_STRING);
   if (creds)
@@ -410,13 +416,14 @@ svn_auth_get_platform_specific_provider
                           dso,
                           version_function_name) == 0)
             {
-              svn_version_func_t version_function;
-              version_function = (svn_version_func_t) version_function_symbol;
-              const svn_version_checklist_t check_list[] =
-                {
-                  { library_label, version_function },
-                  { NULL, NULL }
-                };
+              svn_version_func_t version_function
+                = version_function_symbol;
+              svn_version_checklist_t check_list[2];
+
+              check_list[0].label = library_label;
+              check_list[0].version_query = version_function;
+              check_list[1].label = NULL;
+              check_list[1].version_query = NULL;
               SVN_ERR(svn_ver_check_list(svn_subr_version(), check_list));
             }
           if (apr_dso_sym(&provider_function_symbol,
@@ -425,18 +432,14 @@ svn_auth_get_platform_specific_provider
             {
               if (strcmp(provider_type, "simple") == 0)
                 {
-                  svn_auth_simple_provider_func_t provider_function;
-                  provider_function =
-                    (svn_auth_simple_provider_func_t)
-                    provider_function_symbol;
+                  svn_auth_simple_provider_func_t provider_function
+                    = provider_function_symbol;
                   provider_function(provider, pool);
                 }
               else if (strcmp(provider_type, "ssl_client_cert_pw") == 0)
                 {
-                  svn_auth_ssl_client_cert_pw_provider_func_t provider_function;
-                  provider_function =
-                    (svn_auth_ssl_client_cert_pw_provider_func_t)
-                    provider_function_symbol;
+                  svn_auth_ssl_client_cert_pw_provider_func_t provider_function
+                    = provider_function_symbol;
                   provider_function(provider, pool);
                 }
             }
@@ -491,29 +494,25 @@ svn_auth_get_platform_specific_client_providers
   apr_array_header_t *password_stores;
   int i;
 
-  if (config)
-    {
-      svn_config_get(config,
-                     &password_stores_config_option,
-                     SVN_CONFIG_SECTION_AUTH,
-                     SVN_CONFIG_OPTION_PASSWORD_STORES,
-                     "gnome-keyring,kwallet,keychain,windows-cryptoapi");
-    }
-  else
-    {
-      password_stores_config_option = "gnome-keyring,kwallet,keychain,windows-cryptoapi";
-    }
+#define SVN__MAYBE_ADD_PROVIDER(list, p) \
+  { if (p) APR_ARRAY_PUSH(list, svn_auth_provider_object_t *) = p; }
 
   *providers = apr_array_make(pool, 12, sizeof(svn_auth_provider_object_t *));
 
-  password_stores
-    = svn_cstring_split(password_stores_config_option, " ,", TRUE, pool);
+  /* Fetch the configured list of password stores, and split them into
+     an array. */
+  svn_config_get(config,
+                 &password_stores_config_option,
+                 SVN_CONFIG_SECTION_AUTH,
+                 SVN_CONFIG_OPTION_PASSWORD_STORES,
+                 "gnome-keyring,kwallet,keychain,windows-cryptoapi");
+  password_stores = svn_cstring_split(password_stores_config_option,
+                                      " ,", TRUE, pool);
 
   for (i = 0; i < password_stores->nelts; i++)
     {
       const char *password_store = APR_ARRAY_IDX(password_stores, i,
                                                  const char *);
-
 
       /* GNOME Keyring */
       if (apr_strnatcmp(password_store, "gnome-keyring") == 0)
@@ -522,90 +521,59 @@ svn_auth_get_platform_specific_client_providers
                                                           "gnome_keyring",
                                                           "simple",
                                                           pool));
-
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
 
           SVN_ERR(svn_auth_get_platform_specific_provider(&provider,
                                                           "gnome_keyring",
                                                           "ssl_client_cert_pw",
                                                           pool));
-
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
-
-          continue;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
         }
-
       /* KWallet */
-      if (apr_strnatcmp(password_store, "kwallet") == 0)
+      else if (apr_strnatcmp(password_store, "kwallet") == 0)
         {
           SVN_ERR(svn_auth_get_platform_specific_provider(&provider,
                                                           "kwallet",
                                                           "simple",
                                                           pool));
-
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
 
           SVN_ERR(svn_auth_get_platform_specific_provider(&provider,
                                                           "kwallet",
                                                           "ssl_client_cert_pw",
                                                           pool));
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
-
-          continue;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
         }
-
       /* Keychain */
-      if (apr_strnatcmp(password_store, "keychain") == 0)
+      else if (apr_strnatcmp(password_store, "keychain") == 0)
         {
           SVN_ERR(svn_auth_get_platform_specific_provider(&provider,
                                                           "keychain",
                                                           "simple",
                                                           pool));
-
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
 
           SVN_ERR(svn_auth_get_platform_specific_provider(&provider,
                                                           "keychain",
                                                           "ssl_client_cert_pw",
                                                           pool));
-
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
-
-          continue;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
         }
-
       /* Windows */
-      if (apr_strnatcmp(password_store, "windows-cryptoapi") == 0)
+      else if (apr_strnatcmp(password_store, "windows-cryptoapi") == 0)
         {
           SVN_ERR(svn_auth_get_platform_specific_provider(&provider,
                                                           "windows",
                                                           "simple",
                                                           pool));
-
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
 
           SVN_ERR(svn_auth_get_platform_specific_provider(&provider,
                                                           "windows",
                                                           "ssl_client_cert_pw",
                                                           pool));
-
-          if (provider)
-            APR_ARRAY_PUSH(*providers, svn_auth_provider_object_t *) = provider;
-
-          continue;
+          SVN__MAYBE_ADD_PROVIDER(*providers, provider);
         }
-
-      return svn_error_createf(SVN_ERR_BAD_CONFIG_VALUE, NULL,
-                               _("Invalid config: unknown password store "
-                                 "'%s'"),
-                               password_store);
     }
 
   return SVN_NO_ERROR;

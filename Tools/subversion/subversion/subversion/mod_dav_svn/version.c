@@ -2,17 +2,22 @@
  * version.c: mod_dav_svn versioning provider functions for Subversion
  *
  * ====================================================================
- * Copyright (c) 2000-2007 CollabNet.  All rights reserved.
+ *    Licensed to the Apache Software Foundation (ASF) under one
+ *    or more contributor license agreements.  See the NOTICE file
+ *    distributed with this work for additional information
+ *    regarding copyright ownership.  The ASF licenses this file
+ *    to you under the Apache License, Version 2.0 (the
+ *    "License"); you may not use this file except in compliance
+ *    with the License.  You may obtain a copy of the License at
  *
- * This software is licensed as described in the file COPYING, which
- * you should have received as part of this distribution.  The terms
- * are also available at http://subversion.tigris.org/license-1.html.
- * If newer versions of this license are posted there, you may use a
- * newer version instead, at your option.
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * This software consists of voluntary contributions made by many
- * individuals.  For exact contribution history, see the revision
- * history and logs, available at http://subversion.tigris.org/.
+ *    Unless required by applicable law or agreed to in writing,
+ *    software distributed under the License is distributed on an
+ *    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *    KIND, either express or implied.  See the License for the
+ *    specific language governing permissions and limitations
+ *    under the License.
  * ====================================================================
  */
 
@@ -35,6 +40,7 @@
 #include "private/svn_repos_private.h"
 #include "private/svn_dav_protocol.h"
 #include "private/svn_log.h"
+#include "private/svn_fspath.h"
 
 #include "dav_svn.h"
 
@@ -79,8 +85,8 @@ set_auto_revprops(dav_resource *resource)
 
   if (! (resource->type == DAV_RESOURCE_TYPE_WORKING
          && resource->info->auto_checked_out))
-    return dav_new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                         "Set_auto_revprops called on invalid resource.");
+    return dav_svn__new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
+                              "Set_auto_revprops called on invalid resource.");
 
   if ((serr = dav_svn__attach_auto_revprops(resource->info->root.txn,
                                             resource->info->repos_path,
@@ -138,6 +144,7 @@ get_vsn_options(apr_pool_t *p, apr_text_header *phdr)
   /* Send SVN_RA_CAPABILITY_* capabilities. */
   apr_text_append(p, phdr, SVN_DAV_NS_DAV_SVN_DEPTH);
   apr_text_append(p, phdr, SVN_DAV_NS_DAV_SVN_LOG_REVPROPS);
+  apr_text_append(p, phdr, SVN_DAV_NS_DAV_SVN_ATOMIC_REVPROPS);
   apr_text_append(p, phdr, SVN_DAV_NS_DAV_SVN_PARTIAL_REPLAY);
   /* Mergeinfo is a special case: here we merely say that the server
    * knows how to handle mergeinfo -- whether the repository does too
@@ -162,8 +169,12 @@ get_option(const dav_resource *resource,
            const apr_xml_elem *elem,
            apr_text_header *option)
 {
-  /* ### DAV:version-history-collection-set */
+  request_rec *r = resource->info->r;
+  const char *repos_root_uri =
+    dav_svn__build_uri(resource->info->repos, DAV_SVN__BUILD_URI_PUBLIC,
+                       SVN_IGNORED_REVNUM, "", 0, resource->pool);
 
+  /* ### DAV:version-history-collection-set */
   if (elem->ns == APR_XML_NS_DAV_ID)
     {
       if (strcmp(elem->name, "activity-collection-set") == 0)
@@ -179,6 +190,72 @@ get_option(const dav_resource *resource,
           apr_text_append(resource->pool, option,
                           "</D:activity-collection-set>");
         }
+    }
+
+  if (resource->info->repos->fs)
+    {
+      svn_error_t *serr;
+      svn_revnum_t youngest;
+      const char *uuid;
+
+      /* Got youngest revision? */
+      if ((serr = svn_fs_youngest_rev(&youngest, resource->info->repos->fs,
+                                      resource->pool)))
+        {
+          return dav_svn__convert_err
+            (serr, HTTP_INTERNAL_SERVER_ERROR,
+             "Error fetching youngest revision from repository",
+             resource->pool);
+        }
+      if (SVN_IS_VALID_REVNUM(youngest))
+        {
+          apr_table_set(r->headers_out,
+                        SVN_DAV_YOUNGEST_REV_HEADER,
+                        apr_psprintf(resource->pool, "%ld", youngest));
+        }
+
+      /* Got repository UUID? */
+      if ((serr = svn_fs_get_uuid(resource->info->repos->fs,
+                                  &uuid, resource->pool)))
+        {
+          return dav_svn__convert_err
+            (serr, HTTP_INTERNAL_SERVER_ERROR,
+             "Error fetching repository UUID",
+             resource->pool);
+        }
+      if (uuid)
+        {
+          apr_table_set(r->headers_out,
+                        SVN_DAV_REPOS_UUID_HEADER, uuid);
+        }
+    }
+
+  /* Welcome to the 2nd generation of the svn HTTP protocol, now
+     DeltaV-free!  If we're configured to advise this support, do so.  */
+  if (resource->info->repos->v2_protocol)
+    {
+      apr_table_set(r->headers_out, SVN_DAV_ROOT_URI_HEADER, repos_root_uri);
+      apr_table_set(r->headers_out, SVN_DAV_ME_RESOURCE_HEADER,
+                    apr_pstrcat(resource->pool, repos_root_uri, "/",
+                                dav_svn__get_me_resource_uri(r), (char *)NULL));
+      apr_table_set(r->headers_out, SVN_DAV_REV_ROOT_STUB_HEADER,
+                    apr_pstrcat(resource->pool, repos_root_uri, "/",
+                                dav_svn__get_rev_root_stub(r), (char *)NULL));
+      apr_table_set(r->headers_out, SVN_DAV_REV_STUB_HEADER,
+                    apr_pstrcat(resource->pool, repos_root_uri, "/",
+                                dav_svn__get_rev_stub(r), (char *)NULL));
+      apr_table_set(r->headers_out, SVN_DAV_TXN_ROOT_STUB_HEADER,
+                    apr_pstrcat(resource->pool, repos_root_uri, "/",
+                                dav_svn__get_txn_root_stub(r), (char *)NULL));
+      apr_table_set(r->headers_out, SVN_DAV_TXN_STUB_HEADER,
+                    apr_pstrcat(resource->pool, repos_root_uri, "/",
+                                dav_svn__get_txn_stub(r), (char *)NULL));
+      apr_table_set(r->headers_out, SVN_DAV_VTXN_ROOT_STUB_HEADER,
+                    apr_pstrcat(resource->pool, repos_root_uri, "/",
+                                dav_svn__get_vtxn_root_stub(r), (char *)NULL));
+      apr_table_set(r->headers_out, SVN_DAV_VTXN_STUB_HEADER,
+                    apr_pstrcat(resource->pool, repos_root_uri, "/",
+                                dav_svn__get_vtxn_stub(r), (char *)NULL));
     }
 
   return NULL;
@@ -232,8 +309,9 @@ vsn_control(dav_resource *resource, const char *target)
   /* All mod_dav_svn resources are versioned objects;  so it doesn't
      make sense to call vsn_control on a resource that exists . */
   if (resource->exists)
-    return dav_new_error(resource->pool, HTTP_BAD_REQUEST, 0,
-                         "vsn_control called on already-versioned resource.");
+    return dav_svn__new_error(resource->pool, HTTP_BAD_REQUEST, 0,
+                              "vsn_control called on already-versioned "
+                              "resource.");
 
   /* Only allow a NULL target, which means an create an 'empty' VCR. */
   if (target != NULL)
@@ -270,7 +348,6 @@ dav_svn__checkout(dav_resource *resource,
   /* Auto-Versioning Stuff */
   if (auto_checkout)
     {
-      dav_resource *res; /* ignored */
       const char *uuid_buf;
       void *data;
       const char *shared_activity, *shared_txn_name = NULL;
@@ -320,9 +397,8 @@ dav_svn__checkout(dav_resource *resource,
           uuid_buf = svn_uuid_generate(resource->info->r->pool);
           shared_activity = apr_pstrdup(resource->info->r->pool, uuid_buf);
 
-          derr = dav_svn__create_activity(resource->info->repos,
-                                          &shared_txn_name,
-                                          resource->info->r->pool);
+          derr = dav_svn__create_txn(resource->info->repos, &shared_txn_name,
+                                     resource->info->r->pool);
           if (derr) return derr;
 
           derr = dav_svn__store_activity(resource->info->repos,
@@ -345,15 +421,16 @@ dav_svn__checkout(dav_resource *resource,
           shared_txn_name = dav_svn__get_txn(resource->info->repos,
                                              shared_activity);
           if (! shared_txn_name)
-            return dav_new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                                 "Cannot look up a txn_name by activity");
+            return dav_svn__new_error(resource->pool,
+                                      HTTP_INTERNAL_SERVER_ERROR, 0,
+                                      "Cannot look up a txn_name by activity");
         }
 
       /* Tweak the VCR in-place, making it into a WR.  (Ignore the
          NULL return value.) */
-      res = dav_svn__create_working_resource(resource,
-                                             shared_activity, shared_txn_name,
-                                             TRUE /* tweak in place */);
+      dav_svn__create_working_resource(resource,
+                                       shared_activity, shared_txn_name,
+                                       TRUE /* tweak in place */);
 
       /* Remember that this resource was auto-checked-out, so that
          auto_versionable allows us to do an auto-checkin and
@@ -394,7 +471,7 @@ dav_svn__checkout(dav_resource *resource,
     {
       return dav_svn__new_error_tag(resource->pool, HTTP_NOT_IMPLEMENTED,
                                     SVN_ERR_UNSUPPORTED_FEATURE,
-                                    "CHECKOUT can not create an activity at "
+                                    "CHECKOUT cannot create an activity at "
                                     "this time. Use MKACTIVITY first.",
                                     SVN_DAV_ERROR_NAMESPACE,
                                     SVN_DAV_ERROR_TAG);
@@ -720,7 +797,7 @@ cleanup_deltify(void *data)
      subpool, then destroy it before exiting. */
   apr_pool_t *subpool = svn_pool_create(cdb->pool);
 
-  err = svn_repos_open(&repos, cdb->repos_path, subpool);
+  err = svn_repos_open2(&repos, cdb->repos_path, NULL, subpool);
   if (err)
     {
       ap_log_perror(APLOG_MARK, APLOG_ERR, err->apr_err, cdb->pool,
@@ -821,21 +898,21 @@ dav_svn__checkin(dav_resource *resource,
       shared_txn_name = dav_svn__get_txn(resource->info->repos,
                                          shared_activity);
       if (! shared_txn_name)
-        return dav_new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                             "Cannot look up a txn_name by activity");
+        return dav_svn__new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
+                                  "Cannot look up a txn_name by activity");
 
       /* Sanity checks */
       if (resource->info->root.txn_name
           && (strcmp(shared_txn_name, resource->info->root.txn_name) != 0))
-        return dav_new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                             "Internal txn_name doesn't match"
-                             " autoversioning transaction.");
+        return dav_svn__new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
+                                  "Internal txn_name doesn't match "
+                                  "autoversioning transaction.");
 
       if (! resource->info->root.txn)
         /* should already be open by checkout */
-        return dav_new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                             "Autoversioning txn isn't open "
-                             "when it should be.");
+        return dav_svn__new_error(resource->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
+                                  "Autoversioning txn isn't open "
+                                  "when it should be.");
 
       err = set_auto_revprops(resource);
       if (err)
@@ -892,7 +969,7 @@ dav_svn__checkin(dav_resource *resource,
             }
           else
             {
-              return dav_new_error(resource->pool,
+              return dav_svn__new_error(resource->pool,
                                         HTTP_INTERNAL_SERVER_ERROR,
                                         0,
                                         "Commit failed but there was no error "
@@ -1037,7 +1114,7 @@ can_be_activity(const dav_resource *resource)
    * be an activity URL.  Otherwise, it must be a real activity URL that
    * doesn't already exist.
    */
-  return (resource->info->auto_checked_out == TRUE ||
+  return (resource->info->auto_checked_out ||
           (resource->type == DAV_RESOURCE_TYPE_ACTIVITY &&
            !resource->exists));
 }
@@ -1061,8 +1138,7 @@ make_activity(dav_resource *resource)
                                   SVN_DAV_ERROR_NAMESPACE,
                                   SVN_DAV_ERROR_TAG);
 
-  err = dav_svn__create_activity(resource->info->repos, &txn_name,
-                                 resource->pool);
+  err = dav_svn__create_txn(resource->info->repos, &txn_name, resource->pool);
   if (err != NULL)
     return err;
 
@@ -1164,7 +1240,7 @@ dav_svn__build_lock_hash(apr_hash_t **locks,
                 return derr;
 
               /* Create an absolute fs-path */
-              lockpath = svn_path_join(path_prefix, cdata, pool);
+              lockpath = svn_fspath__join(path_prefix, cdata, pool);
               if (lockpath && locktoken)
                 {
                   apr_hash_set(hash, lockpath, APR_HASH_KEY_STRING, locktoken);
@@ -1294,12 +1370,24 @@ merge(dav_resource *target,
   /* ### what to verify on the target? */
 
   /* ### anything else for the source? */
-  if (source->type != DAV_RESOURCE_TYPE_ACTIVITY)
+  if (! (source->type == DAV_RESOURCE_TYPE_ACTIVITY
+         || (source->type == DAV_RESOURCE_TYPE_PRIVATE
+             && source->info->restype == DAV_SVN_RESTYPE_TXN_COLLECTION)))
     {
       return dav_svn__new_error_tag(pool, HTTP_METHOD_NOT_ALLOWED,
                                     SVN_ERR_INCORRECT_PARAMS,
                                     "MERGE can only be performed using an "
-                                    "activity as the source [at this time].",
+                                    "activity or transaction resource as the "
+                                    "source.",
+                                    SVN_DAV_ERROR_NAMESPACE,
+                                    SVN_DAV_ERROR_TAG);
+    }
+  if (! source->exists)
+    {
+      return dav_svn__new_error_tag(pool, HTTP_METHOD_NOT_ALLOWED,
+                                    SVN_ERR_INCORRECT_PARAMS,
+                                    "MERGE activity or transaction resource "
+                                    "does not exist.",
                                     SVN_DAV_ERROR_NAMESPACE,
                                     SVN_DAV_ERROR_TAG);
     }
@@ -1353,6 +1441,12 @@ merge(dav_resource *target,
           svn_error_clear(serr);
           serr = SVN_NO_ERROR;
         }
+
+      /* HTTPv2 doesn't send DELETE after a successful MERGE so if
+         using the optional vtxn name mapping then delete it here. */
+      if (source->info->root.vtxn_name)
+        dav_svn__delete_activity(source->info->repos,
+                                 source->info->root.vtxn_name);
     }
   else
     {
@@ -1377,7 +1471,7 @@ merge(dav_resource *target,
         }
       else
         {
-          return dav_new_error(pool,
+          return dav_svn__new_error(pool,
                                     HTTP_INTERNAL_SERVER_ERROR,
                                     0,
                                     "Commit failed but there was no error "
@@ -1394,13 +1488,16 @@ merge(dav_resource *target,
                            svn_log__commit(new_rev, target->info->r->pool));
 
   /* Since the commit was successful, the txn ID is no longer valid.
-     Store an empty txn ID in the activity database so that when the
-     client deletes the activity, we don't try to open and abort the
-     transaction. */
-  err = dav_svn__store_activity(source->info->repos,
-                                source->info->root.activity_id, "");
-  if (err != NULL)
-    return err;
+     If we're using activities, store an empty txn ID in the activity
+     database so that when the client deletes the activity, we don't
+     try to open and abort the transaction. */
+  if (source->type == DAV_RESOURCE_TYPE_ACTIVITY)
+    {
+      err = dav_svn__store_activity(source->info->repos,
+                                    source->info->root.activity_id, "");
+      if (err != NULL)
+        return err;
+    }
 
   /* Check the dav_resource->info area for information about the
      special X-SVN-Options: header that may have come in the http

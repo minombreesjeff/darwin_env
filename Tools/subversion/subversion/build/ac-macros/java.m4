@@ -1,3 +1,21 @@
+dnl ===================================================================
+dnl   Licensed to the Apache Software Foundation (ASF) under one
+dnl   or more contributor license agreements.  See the NOTICE file
+dnl   distributed with this work for additional information
+dnl   regarding copyright ownership.  The ASF licenses this file
+dnl   to you under the Apache License, Version 2.0 (the
+dnl   "License"); you may not use this file except in compliance
+dnl   with the License.  You may obtain a copy of the License at
+dnl
+dnl     http://www.apache.org/licenses/LICENSE-2.0
+dnl
+dnl   Unless required by applicable law or agreed to in writing,
+dnl   software distributed under the License is distributed on an
+dnl   "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+dnl   KIND, either express or implied.  See the License for the
+dnl   specific language governing permissions and limitations
+dnl   under the License.
+dnl ===================================================================
 dnl
 dnl java.m4: Locates the JDK and its include files and libraries.
 dnl
@@ -107,13 +125,19 @@ AC_DEFUN(SVN_FIND_JDK,
     JNI_INCLUDEDIR="$OSX_SDK_JAVA_FRAMEWORK/Headers"
     JDK_SUITABLE=yes
   else
-    AC_MSG_WARN([no JNI header files found.])
-    if test "$os_arch" = "Darwin"; then
-      AC_MSG_WARN([You may need to install the latest Java Development package from http://connect.apple.com/.  Apple no longer includes the JNI header files by default on Java updates.])
-    fi
     JDK_SUITABLE=no
   fi
-  AC_MSG_RESULT([$JNI_INCLUDEDIR/jni.h])
+  if test "$JDK_SUITABLE" = "yes"; then
+    AC_MSG_RESULT([$JNI_INCLUDEDIR/jni.h])
+  else
+    AC_MSG_RESULT([no])
+    if test "$where" != "check"; then
+      AC_MSG_WARN([no JNI header files found.])
+      if test "$os_arch" = "Darwin"; then
+        AC_MSG_WARN([You may need to install the latest Java Development package from http://connect.apple.com/.  Apple no longer includes the JNI header files by default on Java updates.])
+      fi
+    fi
+  fi
 
   if test "$JDK_SUITABLE" = "yes"; then
     JAVA_BIN='$(JDK)/bin'
@@ -165,9 +189,11 @@ AC_DEFUN(SVN_FIND_JDK,
     dnl Add javac flags.
     # The release for "-source" could actually be greater than that
     # of "-target", if we want to cross-compile for lesser JVMs.
-    JAVAC_FLAGS="-target $JAVA_OLDEST_WORKING_VER -source 1.3"
-    if test "$enable_debugging" = "yes"; then
-      JAVAC_FLAGS="-g $JAVAC_FLAGS"
+    if test -z "$JAVAC_FLAGS"; then
+      JAVAC_FLAGS="-target $JAVA_OLDEST_WORKING_VER -source 1.5"
+      if test "$enable_debugging" = "yes"; then
+        JAVAC_FLAGS="-g -Xlint:unchecked $JAVAC_FLAGS"
+      fi
     fi
 
     JNI_INCLUDES="-I$JNI_INCLUDEDIR"
@@ -177,7 +203,7 @@ AC_DEFUN(SVN_FIND_JDK,
     done
   fi
 
-  dnl We use JDK in both the swig.m4 macros and the Makefile
+  dnl We use JDK in the Makefile
   AC_SUBST(JDK)
   AC_SUBST(JAVA)
   AC_SUBST(JAVAC)

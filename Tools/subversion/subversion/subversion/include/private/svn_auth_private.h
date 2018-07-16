@@ -1,17 +1,22 @@
 /**
  * @copyright
  * ====================================================================
- * Copyright (c) 2008 CollabNet.  All rights reserved.
+ *    Licensed to the Apache Software Foundation (ASF) under one
+ *    or more contributor license agreements.  See the NOTICE file
+ *    distributed with this work for additional information
+ *    regarding copyright ownership.  The ASF licenses this file
+ *    to you under the Apache License, Version 2.0 (the
+ *    "License"); you may not use this file except in compliance
+ *    with the License.  You may obtain a copy of the License at
  *
- * This software is licensed as described in the file COPYING, which
- * you should have received as part of this distribution.  The terms
- * are also available at http://subversion.tigris.org/license-1.html.
- * If newer versions of this license are posted there, you may use a
- * newer version instead, at your option.
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * This software consists of voluntary contributions made by many
- * individuals.  For exact contribution history, see the revision
- * history and logs, available at http://subversion.tigris.org/.
+ *    Unless required by applicable law or agreed to in writing,
+ *    software distributed under the License is distributed on an
+ *    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *    KIND, either express or implied.  See the License for the
+ *    specific language governing permissions and limitations
+ *    under the License.
  * ====================================================================
  * @endcopyright
  *
@@ -47,9 +52,12 @@ extern "C" {
    from an external store, using REALMSTRING and USERNAME as keys.
    (The behavior is undefined if REALMSTRING or USERNAME are NULL.)
    If NON_INTERACTIVE is set, the user must not be involved in the
-   retrieval process.  POOL is used for any necessary allocation. */
-typedef svn_boolean_t (*svn_auth__password_get_t)
-  (const char **password,
+   retrieval process.  Set *DONE to TRUE if a password was stored
+   in *PASSWORD, to FALSE otherwise. POOL is used for any necessary
+   allocation. */
+typedef svn_error_t * (*svn_auth__password_get_t)
+  (svn_boolean_t *done,
+   const char **password,
    apr_hash_t *creds,
    const char *realmstring,
    const char *username,
@@ -60,10 +68,12 @@ typedef svn_boolean_t (*svn_auth__password_get_t)
 /* A function that stores PASSWORD (or some encrypted version thereof)
    either directly in CREDS, or externally using REALMSTRING and USERNAME
    as keys into the external store.  If NON_INTERACTIVE is set, the user
-   must not be involved in the storage process.  POOL is used for any
-   necessary allocation. */
-typedef svn_boolean_t (*svn_auth__password_set_t)
-  (apr_hash_t *creds,
+   must not be involved in the storage process. Set *DONE to TRUE if the
+   password was store, to FALSE otherwise. POOL is used for any necessary
+   allocation. */
+typedef svn_error_t * (*svn_auth__password_set_t)
+  (svn_boolean_t *done,
+   apr_hash_t *creds,
    const char *realmstring,
    const char *username,
    const char *password,
@@ -105,8 +115,9 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
 /* Implementation of svn_auth__password_get_t that retrieves
    the plaintext password from CREDS when USERNAME matches the stored
    credentials. */
-svn_boolean_t
-svn_auth__simple_password_get(const char **password,
+svn_error_t *
+svn_auth__simple_password_get(svn_boolean_t *done,
+                              const char **password,
                               apr_hash_t *creds,
                               const char *realmstring,
                               const char *username,
@@ -116,8 +127,9 @@ svn_auth__simple_password_get(const char **password,
 
 /* Implementation of svn_auth__password_set_t that stores
    the plaintext password in CREDS. */
-svn_boolean_t
-svn_auth__simple_password_set(apr_hash_t *creds,
+svn_error_t *
+svn_auth__simple_password_set(svn_boolean_t *done,
+                              apr_hash_t *creds,
                               const char *realmstring,
                               const char *username,
                               const char *password,
@@ -163,8 +175,9 @@ svn_auth__ssl_client_cert_pw_file_save_creds_helper
 /* This implements the svn_auth__password_get_t interface.
    Set **PASSPHRASE to the plaintext passphrase retrieved from CREDS;
    ignore other parameters. */
-svn_boolean_t
-svn_auth__ssl_client_cert_pw_get(const char **passphrase,
+svn_error_t *
+svn_auth__ssl_client_cert_pw_get(svn_boolean_t *done,
+                                 const char **passphrase,
                                  apr_hash_t *creds,
                                  const char *realmstring,
                                  const char *username,
@@ -174,8 +187,9 @@ svn_auth__ssl_client_cert_pw_get(const char **passphrase,
 
 /* This implements the svn_auth__password_set_t interface.
    Store PASSPHRASE in CREDS; ignore other parameters. */
-svn_boolean_t
-svn_auth__ssl_client_cert_pw_set(apr_hash_t *creds,
+svn_error_t *
+svn_auth__ssl_client_cert_pw_set(svn_boolean_t *done,
+                                 apr_hash_t *creds,
                                  const char *realmstring,
                                  const char *username,
                                  const char *passphrase,

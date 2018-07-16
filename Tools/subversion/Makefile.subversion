@@ -1,16 +1,17 @@
-ifndef DEVELOPER_DIR
-DEVELOPER_DIR = /Developer
+ifndef SVN_INSTALL_DIR
+export SVN_INSTALL_DIR = $(DEVELOPER_DIR)/usr
 endif
 
-Install_Prefix = $(DEVELOPER_DIR)/usr
-Install_Man = $(DEVELOPER_DIR)/usr/share/man
+Install_Prefix = $(SVN_INSTALL_DIR)
+Install_Man = $(SVN_INSTALL_DIR)/share/man
 
 GnuAfterInstall       = post-install install-plist
 Extra_Configure_Flags = --enable-shared --disable-static \
                         --without-berkeley-db \
                         --without-apxs \
                         --with-apr=/usr --with-apr-util=/usr \
-                        --with-neon=/usr/local \
+                        --with-neon=$(DEVELOPER_DIR)/usr/local \
+                        --with-serf=$(DEVELOPER_DIR)/usr \
                         --with-swig=$(shell test -e /usr/bin/swig && echo /usr || echo /usr/local) \
                         --with-ruby-sitedir=$(RBLIBDIR)/ruby \
                         --without-sasl \
@@ -25,7 +26,7 @@ Install_Flags   = DESTDIR=$(DSTROOT)
 post-install:
 	[ -n "$(DSTROOT)" ] || exit 1
 	/bin/sh $(SRCROOT)/rpath_subversion.sh
-	@for binary in svn svnadmin svndumpfilter svnlook svnserve svnsync svnversion; do \
+	@for binary in svn svnadmin svndumpfilter svnlook svnrdump svnserve svnsync svnversion; do \
 		file=$(DSTROOT)$(Install_Prefix)/bin/$${binary}; \
 		echo $(CP) $${file} $(SYMROOT); \
 		$(CP) $${file} $(SYMROOT); \

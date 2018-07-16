@@ -2,8 +2,12 @@ ifndef RC_ProjectName
 RC_ProjectName = subversion
 endif
 
+ifndef DEVELOPER_DIR
+DEVELOPER_DIR = /Applications/Xcode.app/Contents/Developer
+endif
+
 Project               = subversion
-ProjectVersion        = 1.6.18
+ProjectVersion        = 1.7.10
 
 #-------------------------------------------------------------------------
 # build/get-py-info.py appends "-framework Python" to its --link and --libs
@@ -18,12 +22,15 @@ Patches        = build_get-py-info.py.diff \
                  Makefile.in.diff \
                  spawn.diff \
                  xcode.diff \
-                 swig.diff \
                  configure.noperlppc.diff \
                  PR-11438447.diff \
-                 build-outputs.mk.perl.diff
+                 build-outputs.mk.perl.diff \
+                 serf-1.diff \
+                 PR-13100837.diff
 
 Extra_Make_Flags = 
+Extra_Cxx_Flags = -stdlib=libc++
+Extra_LD_Flags = -headerpad_max_install_names
 
 include Makefile.$(RC_ProjectName)
 
@@ -39,14 +46,14 @@ install_source::
 	done
 	ed - $(SRCROOT)/$(Project)/build-outputs.mk < $(SRCROOT)/files/fix-build-outputs.mk.ed
 
-OSV = $(DSTROOT)/usr/local/OpenSourceVersions
-OSL = $(DSTROOT)/usr/local/OpenSourceLicenses
+OSV = $(DSTROOT)$(DEVELOPER_DIR)/usr/local/OpenSourceVersions
+OSL = $(DSTROOT)$(DEVELOPER_DIR)/usr/local/OpenSourceLicenses
 
 install-plist:
 	$(MKDIR) $(OSV)
 	$(INSTALL_FILE) $(SRCROOT)/$(Project).plist $(OSV)/$(RC_ProjectName).plist
 	$(MKDIR) $(OSL)
-	$(INSTALL_FILE) $(Sources)/COPYING $(OSL)/$(RC_ProjectName).txt
+	$(INSTALL_FILE) $(Sources)/LICENSE $(OSL)/$(RC_ProjectName).txt
 
 # testbots!
 testbots:

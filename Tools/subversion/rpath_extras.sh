@@ -24,4 +24,5 @@ for bundle in "$DSTROOT""$RPATHVERS"/../auto/SVN/*/*.bundle; do
 	# add LC_RPATH entry
 	# eight is right out!
 	install_name_tool -add_rpath @loader_path/../../../../../../.. "$bundle"
+	install_name_tool -add_rpath @loader_path/../../../../../../../usr "$bundle"
 done

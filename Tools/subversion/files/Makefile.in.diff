@@ -1,24 +1,15 @@
 --- Makefile.in.orig	2008-08-26 10:27:56.000000000 -0700
 +++ Makefile.in	2008-12-17 18:04:08.000000000 -0800
-@@ -185,14 +185,15 @@
- COMPILE_JAVAHL_JAVAH = $(JAVAH)
+@@ -205,6 +205,8 @@
  
  LINK = $(LIBTOOL) $(LTFLAGS) --mode=link $(CC) $(LT_LDFLAGS) $(CFLAGS) $(LDFLAGS) -rpath $(libdir)
+ LINK_LIB = $(LINK) $(LT_SO_VERSION)
 +LINKVERS = $(LIBTOOL) $(LTFLAGS) --mode=link $(CC) $(LT_LDFLAGS) $(CFLAGS) $(LDFLAGS) -rpath $(RPATHVERS)
++LINKVERS_LIB = $(LINKVERS) $(LT_SO_VERSION)
  LINK_CXX = $(LIBTOOL) $(LTCXXFLAGS) --mode=link $(CXX) $(LT_LDFLAGS) $(CXXFLAGS) $(LDFLAGS) -rpath $(libdir)
+ LINK_CXX_LIB = $(LINK_CXX) $(LT_SO_VERSION)
  
- # special link rule for mod_dav_svn
- LINK_APACHE_MOD = $(LIBTOOL) $(LTFLAGS) --mode=link $(CC) $(LT_LDFLAGS) $(CFLAGS) $(LDFLAGS) -rpath $(APACHE_LIBEXECDIR) -avoid-version -module $(APACHE_LDFLAGS)
- 
- # Compilation of SWIG-generated C source code
--COMPILE_PY_WRAPPER = $(LIBTOOL) $(LTFLAGS) --mode=compile $(SWIG_PY_COMPILE) $(CPPFLAGS) $(SWIG_PY_INCLUDES) -prefer-pic -c -o $@
--COMPILE_RB_WRAPPER = $(LIBTOOL) $(LTFLAGS) --mode=compile $(SWIG_RB_COMPILE) $(CPPFLAGS) $(SWIG_RB_INCLUDES) -prefer-pic -c -o $@
-+COMPILE_PY_WRAPPER = $(LIBTOOL) $(LTFLAGS) --mode=compile $(SWIG_PY_COMPILE) $(CPPFLAGS) $(CFLAGS) $(SWIG_PY_INCLUDES) -prefer-pic -c -o $@
-+COMPILE_RB_WRAPPER = $(LIBTOOL) $(LTFLAGS) --mode=compile $(SWIG_RB_COMPILE) $(CPPFLAGS) $(CFLAGS) $(SWIG_RB_INCLUDES) -prefer-pic -c -o $@
- 
- # these commands link the wrapper objects into an extension library/module
- LINK_PY_WRAPPER = $(LIBTOOL) $(LTFLAGS) --mode=link $(SWIG_PY_LINK) $(SWIG_LDFLAGS) -rpath $(swig_pydir) -avoid-version -module
-@@ -682,7 +683,7 @@
+@@ -736,7 +738,7 @@
  	./config.status subversion/bindings/swig/perl/native/Makefile.PL
  
  $(SWIG_PL_DIR)/native/Makefile: $(SWIG_PL_DIR)/native/Makefile.PL
@@ -27,7 +18,7 @@
  
  # There is a "readlink -f" command on some systems for the same purpose,
  # but it's not as portable (e.g. Mac OS X doesn't have it).  These should
-@@ -696,13 +697,13 @@
+@@ -750,13 +752,13 @@
  	if test "`$(READLINK_PL) $(SWIG_PL_DIR)`" != "`$(READLINK_PL) $(SWIG_PL_SRC_DIR)`"; then \
  	  ln -sf $(SWIG_PL_SRC_DIR)/native/*.c $(SWIG_PL_DIR)/native; \
  	fi
@@ -44,7 +35,7 @@
  
  EXTRACLEAN_SWIG_PL=rm -f $(SWIG_PL_SRC_DIR)/native/svn_*.c \
                           $(SWIG_PL_SRC_DIR)/native/core.c
-@@ -720,7 +721,7 @@
+@@ -774,7 +776,7 @@
  	  rm -rf *.lo *.la *.o .libs; \
  	done
  	if [ -f "$(SWIG_PL_DIR)/native/Makefile" ]; then \
