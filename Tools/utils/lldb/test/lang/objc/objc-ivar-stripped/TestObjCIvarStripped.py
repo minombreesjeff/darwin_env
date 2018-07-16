@@ -8,7 +8,7 @@ import lldbutil
 
 class TestObjCIvarStripped(TestBase):
 
-    mydir = os.path.join("lang", "objc", "objc-ivar-stripped")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -35,7 +35,7 @@ class TestObjCIvarStripped(TestBase):
         breakpoint = target.BreakpointCreateByLocation(self.main_source, self.stop_line)
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue (process, "Created a process.")
         self.assertTrue (process.GetState() == lldb.eStateStopped, "Stopped it too.")
 

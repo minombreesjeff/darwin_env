@@ -9,7 +9,7 @@ import lldbutil
 
 class ClassTypesTestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "class_types")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -123,7 +123,7 @@ class ClassTypesTestCase(TestBase):
                        str(self.line)])
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.Launch() failed")

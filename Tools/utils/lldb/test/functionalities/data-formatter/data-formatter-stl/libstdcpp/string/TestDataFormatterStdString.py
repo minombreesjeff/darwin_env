@@ -11,7 +11,7 @@ import lldbutil
 
 class StdStringDataFormatterTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "data-formatter-stl", "libstdcpp", "string")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -20,7 +20,6 @@ class StdStringDataFormatterTestCase(TestBase):
         self.buildDsym()
         self.data_formatter_commands()
 
-    @skipIfLinux # No standard locations for libc++ on Linux, so skip for now 
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""

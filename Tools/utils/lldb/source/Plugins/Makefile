@@ -12,15 +12,16 @@ LLDB_LEVEL := ../..
 include $(LLDB_LEVEL)/../../Makefile.config
 
 
-DIRS := ABI/MacOSX-arm ABI/MacOSX-i386 ABI/SysV-x86_64 Disassembler/llvm \
+DIRS := ABI/MacOSX-arm ABI/MacOSX-arm64 ABI/MacOSX-i386 ABI/SysV-x86_64 Disassembler/llvm \
 	ObjectContainer/BSD-Archive ObjectFile/ELF ObjectFile/PECOFF \
 	SymbolFile/DWARF SymbolFile/Symtab Process/Utility \
-	DynamicLoader/Static Platform Process/gdb-remote Instruction/ARM \
+	DynamicLoader/Static Platform Process/gdb-remote Instruction/ARM Instruction/ARM64 \
 	UnwindAssembly/InstEmulation UnwindAssembly/x86 \
 	LanguageRuntime/CPlusPlus/ItaniumABI \
 	LanguageRuntime/ObjC/AppleObjCRuntime \
 	DynamicLoader/POSIX-DYLD \
-	OperatingSystem/Python
+	OperatingSystem/Python \
+	SymbolVendor/ELF
 
 ifeq ($(HOST_OS),Darwin)
 DIRS += Process/MacOSX-Kernel
@@ -34,12 +35,12 @@ endif
 ifeq ($(HOST_OS),Linux)
 DIRS += DynamicLoader/MacOSX-DYLD
 DIRS += Process/Linux Process/POSIX
-DIRS += SymbolVendor/ELF
+DIRS += Process/elf-core
 endif
 
 ifneq (,$(filter $(HOST_OS), FreeBSD GNU/kFreeBSD))
 DIRS += Process/FreeBSD Process/POSIX
-DIRS += SymbolVendor/ELF
+DIRS += Process/elf-core
 endif
 
 include $(LLDB_LEVEL)/Makefile

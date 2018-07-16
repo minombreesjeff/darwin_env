@@ -909,19 +909,19 @@ MachProcess::DisableBreakpoint(nub_addr_t addr, bool remove)
                         }
                         else
                         {
-                            DNBLogError("MachProcess::DisableBreakpoint ( addr = 0x%8.8llx, remove = %d ) memory write failed when restoring original opcode", addr, remove);
+                            DNBLogError("MachProcess::DisableBreakpoint ( addr = 0x%8.8llx, remove = %d ) memory write failed when restoring original opcode", (uint64_t)addr, remove);
                         }
                     }
                     else
                     {
-                        DNBLogWarning("MachProcess::DisableBreakpoint ( addr = 0x%8.8llx, remove = %d ) expected a breakpoint opcode but didn't find one.", addr, remove);
+                        DNBLogWarning("MachProcess::DisableBreakpoint ( addr = 0x%8.8llx, remove = %d ) expected a breakpoint opcode but didn't find one.", (uint64_t)addr, remove);
                         // Set verify to true and so we can check if the original opcode has already been restored
                         verify = true;
                     }
                 }
                 else
                 {
-                    DNBLogThreadedIf(LOG_BREAKPOINTS | LOG_VERBOSE, "MachProcess::DisableBreakpoint ( addr = 0x%8.8llx, remove = %d ) is not enabled", addr, remove);
+                    DNBLogThreadedIf(LOG_BREAKPOINTS | LOG_VERBOSE, "MachProcess::DisableBreakpoint ( addr = 0x%8.8llx, remove = %d ) is not enabled", (uint64_t)addr, remove);
                     // Set verify to true and so we can check if the original opcode is there
                     verify = true;
                 }
@@ -1169,13 +1169,12 @@ MachProcess::ExceptionMessageBundleComplete()
                             uint32_t info_array_count = 0;
                             if (m_task.ReadMemory(info_array_count_addr, 4, &info_array_count) == 4)
                             {
-                                DNBLog ("info_array_count is 0x%x", info_array_count);
                                 if (info_array_count == 0)
                                     m_did_exec = true;
                             }
                             else
                             {
-                                DNBLog ("error: failed to read all_image_infos.infoArrayCount from 0x%8.8llx", info_array_count_addr);
+                                DNBLog ("error: failed to read all_image_infos.infoArrayCount from 0x%8.8llx", (uint64_t)info_array_count_addr);
                             }
                         }
                         break;
@@ -2149,23 +2148,6 @@ MachProcess::PosixSpawnChildForPTraceDebugging
 uint32_t
 MachProcess::GetCPUTypeForLocalProcess (pid_t pid)
 {
-#if defined (__arm64__)
-    // Temporary workaround for <rdar://problem/13563920> 
-    nub_thread_t thread = DNBProcessGetCurrentThreadMachPort (pid);
-    kern_return_t kr;
-    arm_unified_thread_state_t gp_regs;
-    mach_msg_type_number_t gp_count = ARM_UNIFIED_THREAD_STATE_COUNT;
-    kr = thread_get_state (thread, ARM_UNIFIED_THREAD_STATE,
-                           (thread_state_t) &gp_regs, &gp_count);
-    if (kr == KERN_SUCCESS)
-    {
-        if (gp_regs.ash.flavor == ARM_THREAD_STATE64)
-            return CPU_TYPE_ARM64;
-        else
-            return CPU_TYPE_ARM;
-    }
-#endif
-
     int mib[CTL_MAXNAME]={0,};
     size_t len = CTL_MAXNAME;
     if (::sysctlnametomib("sysctl.proc_cputype", mib, &len)) 

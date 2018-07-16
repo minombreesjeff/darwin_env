@@ -10,21 +10,22 @@ from lldbtest import *
 
 class DynamicValueTestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "dynamic-value")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
     @dsym_test
     def test_get_dynamic_vals_with_dsym(self):
         """Test fetching C++ dynamic values from pointers & references."""
-        self.buildDsym()
+        self.buildDsym(dictionary=self.getBuildFlags())
         self.do_get_dynamic_vals()
 
+    @expectedFailureLinux # FIXME: This needs to be root-caused.  It looks like the DWARF info is anticipating the derived class assignment.
     @python_api_test
     @dwarf_test
     def test_get_dynamic_vals_with_dwarf(self):
         """Test fetching C++ dynamic values from pointers & references."""
-        self.buildDwarf()
+        self.buildDwarf(dictionary=self.getBuildFlags())
         self.do_get_dynamic_vals()
 
     def setUp(self):
@@ -38,6 +39,16 @@ class DynamicValueTestCase(TestBase):
                                                  '// Break here and get real addresses of myB and otherB.')
         self.main_second_call_line = line_number('pass-to-base.cpp',
                                                        '// Break here and get real address of reallyA.')
+
+        self.main_third_call_line = line_number('pass-to-base.cpp',
+                                                       '// Break here and check b has 0 children')
+        self.main_fourth_call_line = line_number('pass-to-base.cpp',
+                                                       '// Break here and check b still has 0 children')
+        self.main_fifth_call_line = line_number('pass-to-base.cpp',
+                                                       '// Break here and check b has one child now')
+
+
+
 
     def examine_value_object_of_this_ptr (self, this_static, this_dynamic, dynamic_location):
 
@@ -118,9 +129,18 @@ class DynamicValueTestCase(TestBase):
         second_call_bpt = target.BreakpointCreateByLocation('pass-to-base.cpp', self.main_second_call_line)
         self.assertTrue(second_call_bpt,
                         VALID_BREAKPOINT)
+        third_call_bpt = target.BreakpointCreateByLocation('pass-to-base.cpp', self.main_third_call_line)
+        self.assertTrue(third_call_bpt,
+                        VALID_BREAKPOINT)
+        fourth_call_bpt = target.BreakpointCreateByLocation('pass-to-base.cpp', self.main_fourth_call_line)
+        self.assertTrue(fourth_call_bpt,
+                        VALID_BREAKPOINT)
+        fifth_call_bpt = target.BreakpointCreateByLocation('pass-to-base.cpp', self.main_fifth_call_line)
+        self.assertTrue(fifth_call_bpt,
+                        VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process.GetState() == lldb.eStateStopped,
                         PROCESS_STOPPED)
@@ -230,6 +250,20 @@ class DynamicValueTestCase(TestBase):
         anotherA_loc = int (anotherA_value.GetValue(), 16)
         self.assertTrue (anotherA_loc == reallyA_loc)
         self.assertTrue (anotherA_value.GetTypeName().find ('B') == -1)
+
+        self.runCmd("continue")
+#        self.runCmd("frame select 0")
+#        self.runCmd("frame variable")
+        b = self.frame().FindVariable("b").GetDynamicValue(lldb.eDynamicCanRunTarget)
+        self.assertTrue(b.GetNumChildren() == 0, "b has 0 children")
+        self.runCmd("next")
+#        self.runCmd("frame select 0")
+#        self.runCmd("frame variable")
+        self.assertTrue(b.GetNumChildren() == 0, "b still has 0 children")
+        self.runCmd("continue")
+#        self.runCmd("frame select 0")
+#        self.runCmd("frame variable")
+        self.assertTrue(b.GetNumChildren() != 0, "b now has 1 child")
 
 if __name__ == '__main__':
     import atexit

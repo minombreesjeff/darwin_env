@@ -10,7 +10,7 @@ import lldbutil
 
 class AdvDataFormatterTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "data-formatter-advanced")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -178,7 +178,7 @@ class AdvDataFormatterTestCase(TestBase):
 
         # if the summary has an error, we still display the value
         self.expect("frame variable couple --summary-string \"${*var.sp.foo[0-2]\"",
-            substrs = ['(Couple) couple =  {','sp = {','z =','"X"'])
+            substrs = ['(Couple) couple = {','x = 0x','y = 0x','z = 0x','s = 0x'])
 
 
         self.runCmd("type summary add --summary-string \"${*var.sp.x[0-2]} are low bits of integer ${*var.sp.x}. If I pretend it is an array I get ${var.sp.x[0-5]}\" Couple")

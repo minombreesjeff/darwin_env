@@ -46,11 +46,11 @@ nub_process_t   DNBProcessLaunch        (const char *path,
                                          int disable_aslr,
                                          const char *event_data,
                                          char *err_str, 
-                                         size_t err_len) DNB_EXPORT;
+                                         size_t err_len);
 
-nub_process_t   DNBProcessAttach        (nub_process_t pid, struct timespec *timeout, char *err_str, size_t err_len) DNB_EXPORT;
-nub_process_t   DNBProcessAttachByName  (const char *name, struct timespec *timeout, char *err_str, size_t err_len) DNB_EXPORT;
-nub_process_t   DNBProcessAttachWait    (const char *wait_name, nub_launch_flavor_t launch_flavor, bool ignore_existing, struct timespec *timeout, useconds_t interval, char *err_str, size_t err_len, DNBShouldCancelCallback should_cancel = NULL, void *callback_data = NULL) DNB_EXPORT;
+nub_process_t   DNBProcessAttach        (nub_process_t pid, struct timespec *timeout, char *err_str, size_t err_len);
+nub_process_t   DNBProcessAttachByName  (const char *name, struct timespec *timeout, char *err_str, size_t err_len);
+nub_process_t   DNBProcessAttachWait    (const char *wait_name, nub_launch_flavor_t launch_flavor, bool ignore_existing, struct timespec *timeout, useconds_t interval, char *err_str, size_t err_len, DNBShouldCancelCallback should_cancel = NULL, void *callback_data = NULL);
 // Resume a process with exact instructions on what to do with each thread:
 // - If no thread actions are supplied (actions is NULL or num_actions is zero),
 //   then all threads are continued.
@@ -103,56 +103,58 @@ uint32_t        DNBProcessGetCPUType                    (nub_process_t pid) DNB_
 //----------------------------------------------------------------------
 // Process executable and arguments
 //----------------------------------------------------------------------
-const char *    DNBProcessGetExecutablePath     (nub_process_t pid) DNB_EXPORT;
-const char *    DNBProcessGetArgumentAtIndex    (nub_process_t pid, nub_size_t idx) DNB_EXPORT;
-nub_size_t      DNBProcessGetArgumentCount      (nub_process_t pid) DNB_EXPORT;
+const char *    DNBProcessGetExecutablePath     (nub_process_t pid);
+const char *    DNBProcessGetArgumentAtIndex    (nub_process_t pid, nub_size_t idx);
+nub_size_t      DNBProcessGetArgumentCount      (nub_process_t pid);
 
 //----------------------------------------------------------------------
 // Process events
 //----------------------------------------------------------------------
-nub_event_t     DNBProcessWaitForEvents         (nub_process_t pid, nub_event_t event_mask, bool wait_for_set, struct timespec* timeout) DNB_EXPORT;
-void            DNBProcessResetEvents           (nub_process_t pid, nub_event_t event_mask) DNB_EXPORT;
+nub_event_t     DNBProcessWaitForEvents         (nub_process_t pid, nub_event_t event_mask, bool wait_for_set, struct timespec* timeout);
+void            DNBProcessResetEvents           (nub_process_t pid, nub_event_t event_mask);
 
 //----------------------------------------------------------------------
 // Thread functions
 //----------------------------------------------------------------------
-const char *    DNBThreadGetName                (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
-nub_bool_t      DNBThreadGetIdentifierInfo      (nub_process_t pid, nub_thread_t tid, thread_identifier_info_data_t *ident_info) DNB_EXPORT;
-nub_state_t     DNBThreadGetState               (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
-nub_bool_t      DNBThreadGetRegisterValueByID   (nub_process_t pid, nub_thread_t tid, uint32_t set, uint32_t reg, DNBRegisterValue *value) DNB_EXPORT;
-nub_bool_t      DNBThreadSetRegisterValueByID   (nub_process_t pid, nub_thread_t tid, uint32_t set, uint32_t reg, const DNBRegisterValue *value) DNB_EXPORT;
-nub_size_t      DNBThreadGetRegisterContext     (nub_process_t pid, nub_thread_t tid, void *buf, size_t buf_len) DNB_EXPORT;
-nub_size_t      DNBThreadSetRegisterContext     (nub_process_t pid, nub_thread_t tid, const void *buf, size_t buf_len) DNB_EXPORT;
-nub_bool_t      DNBThreadGetRegisterValueByName (nub_process_t pid, nub_thread_t tid, uint32_t set, const char *name, DNBRegisterValue *value) DNB_EXPORT;
-nub_bool_t      DNBThreadGetStopReason          (nub_process_t pid, nub_thread_t tid, DNBThreadStopInfo *stop_info) DNB_EXPORT;
-const char *    DNBThreadGetInfo                (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
+const char *    DNBThreadGetName                (nub_process_t pid, nub_thread_t tid);
+nub_bool_t      DNBThreadGetIdentifierInfo      (nub_process_t pid, nub_thread_t tid, thread_identifier_info_data_t *ident_info);
+nub_state_t     DNBThreadGetState               (nub_process_t pid, nub_thread_t tid);
+nub_bool_t      DNBThreadGetRegisterValueByID   (nub_process_t pid, nub_thread_t tid, uint32_t set, uint32_t reg, DNBRegisterValue *value);
+nub_bool_t      DNBThreadSetRegisterValueByID   (nub_process_t pid, nub_thread_t tid, uint32_t set, uint32_t reg, const DNBRegisterValue *value);
+nub_size_t      DNBThreadGetRegisterContext     (nub_process_t pid, nub_thread_t tid, void *buf, size_t buf_len);
+nub_size_t      DNBThreadSetRegisterContext     (nub_process_t pid, nub_thread_t tid, const void *buf, size_t buf_len);
+uint32_t        DNBThreadSaveRegisterState      (nub_process_t pid, nub_thread_t tid);
+nub_bool_t      DNBThreadRestoreRegisterState   (nub_process_t pid, nub_thread_t tid, uint32_t save_id);
+nub_bool_t      DNBThreadGetRegisterValueByName (nub_process_t pid, nub_thread_t tid, uint32_t set, const char *name, DNBRegisterValue *value);
+nub_bool_t      DNBThreadGetStopReason          (nub_process_t pid, nub_thread_t tid, DNBThreadStopInfo *stop_info);
+const char *    DNBThreadGetInfo                (nub_process_t pid, nub_thread_t tid);
 //----------------------------------------------------------------------
 // Breakpoint functions
 //----------------------------------------------------------------------
-nub_bool_t      DNBBreakpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, nub_bool_t hardware) DNB_EXPORT;
-nub_bool_t      DNBBreakpointClear              (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
+nub_bool_t      DNBBreakpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, nub_bool_t hardware);
+nub_bool_t      DNBBreakpointClear              (nub_process_t pid, nub_addr_t addr);
 
 //----------------------------------------------------------------------
 // Watchpoint functions
 //----------------------------------------------------------------------
-nub_bool_t      DNBWatchpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, uint32_t watch_flags, nub_bool_t hardware) DNB_EXPORT;
-nub_bool_t      DNBWatchpointClear              (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
-uint32_t        DNBWatchpointGetNumSupportedHWP (nub_process_t pid) DNB_EXPORT; 
+nub_bool_t      DNBWatchpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, uint32_t watch_flags, nub_bool_t hardware);
+nub_bool_t      DNBWatchpointClear              (nub_process_t pid, nub_addr_t addr);
+uint32_t        DNBWatchpointGetNumSupportedHWP (nub_process_t pid); 
 
 const DNBRegisterSetInfo *
-                DNBGetRegisterSetInfo           (nub_size_t *num_reg_sets) DNB_EXPORT;
-nub_bool_t      DNBGetRegisterInfoByName        (const char *reg_name, DNBRegisterInfo* info) DNB_EXPORT;
+                DNBGetRegisterSetInfo           (nub_size_t *num_reg_sets);
+nub_bool_t      DNBGetRegisterInfoByName        (const char *reg_name, DNBRegisterInfo* info);
 
 //----------------------------------------------------------------------
 // Printf style formatting for printing values in the inferior memory
 // space and registers.
 //----------------------------------------------------------------------
-nub_size_t      DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t addr, FILE *file, const char *format) DNB_EXPORT;
+nub_size_t      DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t addr, FILE *file, const char *format);
 
 //----------------------------------------------------------------------
 // Other static nub information calls.
 //----------------------------------------------------------------------
-const char *    DNBStateAsString (nub_state_t state) DNB_EXPORT;
-nub_bool_t      DNBResolveExecutablePath (const char *path, char *resolved_path, size_t resolved_path_size) DNB_EXPORT;
+const char *    DNBStateAsString (nub_state_t state);
+nub_bool_t      DNBResolveExecutablePath (const char *path, char *resolved_path, size_t resolved_path_size);
 
 #endif

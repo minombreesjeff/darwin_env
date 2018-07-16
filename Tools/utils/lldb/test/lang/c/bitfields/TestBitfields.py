@@ -8,7 +8,7 @@ import lldbutil
 
 class BitfieldsTestCase(TestBase):
 
-    mydir = os.path.join("lang", "c", "bitfields")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -119,6 +119,10 @@ class BitfieldsTestCase(TestBase):
         self.expect("expr (more_bits.d)", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['uint8_t', '\\0'])
 
+        self.expect("target modules dump symfile a.out", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['Bits', 'uint32_t b3 : 3',
+                       'MoreBits', 'uint32_t a : 3'])
+
     def bitfields_variable_python(self):
         """Use Python APIs to inspect a bitfields variable."""
         exe = os.path.join(os.getcwd(), "a.out")
@@ -129,7 +133,7 @@ class BitfieldsTestCase(TestBase):
         breakpoint = target.BreakpointCreateByLocation("main.c", self.line)
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue(process, PROCESS_IS_VALID)
 
         # The stop reason of the thread should be breakpoint.

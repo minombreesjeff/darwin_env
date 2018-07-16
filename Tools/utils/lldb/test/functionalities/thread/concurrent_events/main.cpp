@@ -7,10 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-// This test is intended to create a situation in which a watchpoint will be hit
-// while a breakpoint is being handled in another thread.  The expected result is
-// that the watchpoint in the second thread will be hit while the breakpoint handler
-// in the first thread is trying to stop all threads.
+// This test is intended to create a situation in which multiple events
+// (breakpoints, watchpoints, crashes, and signal generation/delivery) happen
+// from multiple threads. The test expects the debugger to set a breakpoint on
+// the main thread (before any worker threads are spawned) and modify variables
+// which control the number of therads that are spawned for each action.
 
 #include <atomic>
 #include <vector>
@@ -72,8 +73,10 @@ signal_func (void *input) {
     pseudo_barrier_wait(g_barrier);
     do_action_args(input);
 
-    // Generate a user-defined signal to current process
-    kill(getpid(), SIGUSR1);
+    // Send a user-defined signal to the current process
+    //kill(getpid(), SIGUSR1);
+    // Send a user-defined signal to the current thread
+    pthread_kill(pthread_self(), SIGUSR1);
 
     return 0;
 }
@@ -129,21 +132,24 @@ void start_threads(thread_vector& threads,
     }
 }
 
-int main ()
+int dotest()
 {
     g_watchme = 0;
 
+    // Actions are triggered immediately after the thread is spawned
     unsigned num_breakpoint_threads = 1;
     unsigned num_watchpoint_threads = 0;
-    unsigned num_signal_threads = 0;
-    unsigned num_crash_threads = 1;
+    unsigned num_signal_threads = 1;
+    unsigned num_crash_threads = 0;
 
+    // Actions below are triggered after a 1-second delay
     unsigned num_delay_breakpoint_threads = 0;
     unsigned num_delay_watchpoint_threads = 0;
     unsigned num_delay_signal_threads = 0;
     unsigned num_delay_crash_threads = 0;
 
-    // Break here and adjust num_[breakpoint|watchpoint|signal|crash]_threads
+    register_signal_handler(SIGUSR1, sigusr1_handler); // Break here and adjust num_[breakpoint|watchpoint|signal|crash]_threads
+
     unsigned total_threads = num_breakpoint_threads \
                              + num_watchpoint_threads \
                              + num_signal_threads \
@@ -155,8 +161,6 @@ int main ()
 
     // Don't let either thread do anything until they're both ready.
     pseudo_barrier_init(g_barrier, total_threads);
-
-    thread_vector threads;
 
     action_counts actions;
     actions.push_back(std::make_pair(num_breakpoint_threads, breakpoint_func));
@@ -170,9 +174,8 @@ int main ()
     actions.push_back(std::make_pair(num_delay_signal_threads, signal_func));
     actions.push_back(std::make_pair(num_delay_crash_threads, crash_func));
 
-    register_signal_handler(SIGUSR1, sigusr1_handler);
-
     // Create threads that handle instant actions
+    thread_vector threads;
     start_threads(threads, actions);
 
     // Create threads that handle delayed actions
@@ -185,6 +188,13 @@ int main ()
     for(thread_iterator t = threads.begin(); t != threads.end(); ++t)
         pthread_join(*t, 0);
 
-    // Break here and verify one thread is active.
     return 0;
 }
+
+int main ()
+{
+    dotest();
+    return 0; // Break here and verify one thread is active.
+}
+
+

@@ -28,21 +28,27 @@ LEVEL := $(LLDB_LEVEL)/../..
 # Include LLVM common makefile.
 include $(LEVEL)/Makefile.common
 
-# Set Python include directory
-PYTHON_INC_DIR = $(shell python-config --includes)
 # Set common LLDB build flags.
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/include 
 CPP.Flags += -I$(PROJ_OBJ_DIR)/$(LLDB_LEVEL)/include
 CPP.Flags += -I$(LLVM_SRC_ROOT)/tools/clang/include
 CPP.Flags += -I$(LLVM_OBJ_ROOT)/tools/clang/include
-CPP.Flags +=   $(PYTHON_INC_DIR)
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Utility
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Plugins/Process/Utility
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Plugins/Process/POSIX
+
+ifeq (,$(findstring -DLLDB_DISABLE_PYTHON,$(CXXFLAGS)))
+# Set Python include directory
+PYTHON_INC_DIR = $(shell python-config --includes)
+CPP.Flags +=   $(PYTHON_INC_DIR)
+endif
+
 ifeq ($(HOST_OS),Darwin)
-CPP.Flags += -F/System/Library/Frameworks -F/System/Library/PrivateFrameworks
-CPP.Flags += -I/usr/include/libxml2
+CPP.Flags += $(subst -I,-I$(SDKROOT),$(PYTHON_INC_DIR))
+CPP.Flags += -F$(SDKROOT)/System/Library/Frameworks
+CPP.Flags += -F$(SDKROOT)/System/Library/PrivateFrameworks
+CPP.Flags += -I$(SDKROOT)/usr/include/libxml2
 endif
 ifdef LLDB_VENDOR
 CPP.Flags += -DLLDB_VENDOR='"$(LLDB_VENDOR) "'

@@ -8,7 +8,7 @@ from lldbtest import *
 
 class TestObjCClassMethod(TestBase):
 
-    mydir = os.path.join("lang", "objc", "objc-class-method")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -30,7 +30,7 @@ class TestObjCClassMethod(TestBase):
         # Call super's setUp().
         TestBase.setUp(self)
         # Find the line numbers to break inside main().
-        self.main_source = "class.m"
+        self.main_source = "test.m"
         self.break_line = line_number(self.main_source, '// Set breakpoint here.')
 
     def objc_class_method(self):
@@ -44,7 +44,7 @@ class TestObjCClassMethod(TestBase):
         self.assertTrue(bpt, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

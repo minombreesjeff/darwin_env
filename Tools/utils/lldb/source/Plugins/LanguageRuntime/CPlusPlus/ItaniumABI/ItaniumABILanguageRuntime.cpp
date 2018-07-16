@@ -23,6 +23,7 @@
 #include "lldb/Symbol/TypeList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
+#include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
@@ -37,9 +38,9 @@ static const char *vtable_demangled_prefix = "vtable for ";
 bool
 ItaniumABILanguageRuntime::CouldHaveDynamicValue (ValueObject &in_value)
 {
-    return ClangASTContext::IsPossibleDynamicType(in_value.GetClangAST(), in_value.GetClangType(), NULL,
-                                                  true, // check for C++
-                                                  false); // do not check for ObjC
+    const bool check_cxx = true;
+    const bool check_objc = false;
+    return in_value.GetClangType().IsPossibleDynamicType (NULL, check_cxx, check_objc);
 }
 
 bool
@@ -188,7 +189,7 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                                 type_sp = class_types.GetTypeAtIndex(i);
                                 if (type_sp)
                                 {
-                                    if (ClangASTContext::IsCXXClassType(type_sp->GetClangFullType()))
+                                    if (type_sp->GetClangFullType().IsCXXClassType())
                                     {
                                         if (log)
                                             log->Printf ("0x%16.16" PRIx64 ": static-type = '%s' has multiple matching dynamic types, picking this one: uid={0x%" PRIx64 "}, type-name='%s'\n",
@@ -220,18 +221,12 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                         // the value we were handed.
                         if (type_sp)
                         {
-                            clang::ASTContext *in_ast_ctx = in_value.GetClangAST ();
-                            clang::ASTContext *this_ast_ctx = type_sp->GetClangAST ();
-                            if (in_ast_ctx == this_ast_ctx)
+                            if (ClangASTContext::AreTypesSame (in_value.GetClangType(),
+                                                               type_sp->GetClangFullType()))
                             {
-                                if (ClangASTContext::AreTypesSame (in_ast_ctx,
-                                                                   in_value.GetClangType(),
-                                                                   type_sp->GetClangFullType()))
-                                {
-                                    // The dynamic type we found was the same type,
-                                    // so we don't have a dynamic type here...
-                                    return false;
-                                }
+                                // The dynamic type we found was the same type,
+                                // so we don't have a dynamic type here...
+                                return false;
                             }
 
                             // The offset_to_top is two pointers above the address.
@@ -408,7 +403,7 @@ ItaniumABILanguageRuntime::CreateExceptionBreakpoint (bool catch_bp,
     FileSpecList filter_modules;
     BreakpointResolverSP exception_resolver_sp = CreateExceptionResolver (NULL, catch_bp, throw_bp, for_expressions);
     SearchFilterSP filter_sp (CreateExceptionSearchFilter ());
-    return target.CreateBreakpoint (filter_sp, exception_resolver_sp, is_internal);
+    return target.CreateBreakpoint (filter_sp, exception_resolver_sp, is_internal, false);
 }
 
 void
@@ -448,6 +443,12 @@ ItaniumABILanguageRuntime::ClearExceptionBreakpoints ()
     {
         m_cxx_exception_bp_sp->SetEnabled (false);
     }    
+}
+
+bool
+ItaniumABILanguageRuntime::ExceptionBreakpointsAreSet ()
+{
+    return m_cxx_exception_bp_sp && m_cxx_exception_bp_sp->IsEnabled();
 }
 
 bool

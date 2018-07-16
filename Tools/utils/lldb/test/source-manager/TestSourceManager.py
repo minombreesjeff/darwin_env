@@ -16,7 +16,7 @@ import lldbutil
 
 class SourceManagerTestCase(TestBase):
 
-    mydir = "source-manager"
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -50,7 +50,7 @@ class SourceManagerTestCase(TestBase):
         self.assertTrue(target, VALID_TARGET)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         #
         # Exercise Python APIs to display source lines.

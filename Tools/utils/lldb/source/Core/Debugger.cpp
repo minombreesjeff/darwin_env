@@ -9,8 +9,6 @@
 
 #include "lldb/lldb-python.h"
 
-#include "lldb/API/SBDebugger.h"
-
 #include "lldb/Core/Debugger.h"
 
 #include <map>
@@ -46,6 +44,7 @@
 #include "lldb/Target/TargetList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
+#include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
@@ -99,12 +98,12 @@ g_language_enumerators[] =
 #define MODULE_WITH_FUNC "{ ${module.file.basename}{`${function.name-with-args}${function.pc-offset}}}"
 #define FILE_AND_LINE "{ at ${line.file.basename}:${line.number}}"
 
-#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id}"\
+#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id%tid}"\
     "{, ${frame.pc}}"\
     MODULE_WITH_FUNC\
     FILE_AND_LINE\
-    "{, name = '${thread.name}}"\
-    "{, queue = '${thread.queue}}"\
+    "{, name = '${thread.name}'}"\
+    "{, queue = '${thread.queue}'}"\
     "{, stop reason = ${thread.stop-reason}}"\
     "{\\nReturn value: ${thread.return-value}}"\
     "\\n"
@@ -132,6 +131,7 @@ g_properties[] =
 {   "thread-format",            OptionValue::eTypeString , true, 0    , DEFAULT_THREAD_FORMAT, NULL, "The default thread format string to use when displaying thread information." },
 {   "use-external-editor",      OptionValue::eTypeBoolean, true, false, NULL, NULL, "Whether to use an external editor or not." },
 {   "use-color",                OptionValue::eTypeBoolean, true, true , NULL, NULL, "Whether to use Ansi color codes or not." },
+{   "auto-one-line-summaries",     OptionValue::eTypeBoolean, true, true, NULL, NULL, "If true, LLDB will automatically display small structs in one-liner format (default: true)." },
 
     {   NULL,                       OptionValue::eTypeInvalid, true, 0    , NULL, NULL, NULL }
 };
@@ -151,21 +151,10 @@ enum
     ePropertyThreadFormat,
     ePropertyUseExternalEditor,
     ePropertyUseColor,
+    ePropertyAutoOneLineSummaries
 };
 
-//
-//const char *
-//Debugger::GetFrameFormat() const
-//{
-//    return m_properties_sp->GetFrameFormat();
-//}
-//const char *
-//Debugger::GetThreadFormat() const
-//{
-//    return m_properties_sp->GetThreadFormat();
-//}
-//
-
+Debugger::LoadPluginCallbackType Debugger::g_load_plugin_callback = NULL;
 
 Error
 Debugger::SetPropertyValue (const ExecutionContext *exe_ctx,
@@ -347,6 +336,14 @@ Debugger::GetDisassemblyLineCount () const
     return m_collection_sp->GetPropertyAtIndexAsSInt64 (NULL, idx, g_properties[idx].default_uint_value);
 }
 
+bool
+Debugger::GetAutoOneLineSummaries () const
+{
+    const uint32_t idx = ePropertyAutoOneLineSummaries;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, true);
+
+}
+
 #pragma mark Debugger
 
 //const DebuggerPropertiesSP &
@@ -363,8 +360,9 @@ Debugger::TestDebuggerRefCount ()
 }
 
 void
-Debugger::Initialize ()
+Debugger::Initialize (LoadPluginCallbackType load_plugin_callback)
 {
+    g_load_plugin_callback = load_plugin_callback;
     if (g_shared_debugger_refcount++ == 0)
         lldb_private::Initialize();
 }
@@ -402,30 +400,22 @@ Debugger::SettingsTerminate ()
 bool
 Debugger::LoadPlugin (const FileSpec& spec, Error& error)
 {
-    lldb::DynamicLibrarySP dynlib_sp(new lldb_private::DynamicLibrary(spec));
-    if (!dynlib_sp || dynlib_sp->IsValid() == false)
+    if (g_load_plugin_callback)
     {
-        if (spec.Exists())
-            error.SetErrorString("this file does not represent a loadable dylib");
-        else
-            error.SetErrorString("no such file");
-        return false;
+        lldb::DynamicLibrarySP dynlib_sp = g_load_plugin_callback (shared_from_this(), spec, error);
+        if (dynlib_sp)
+        {
+            m_loaded_plugins.push_back(dynlib_sp);
+            return true;
+        }
     }
-    lldb::DebuggerSP debugger_sp(shared_from_this());
-    lldb::SBDebugger debugger_sb(debugger_sp);
-    // TODO: mangle this differently for your system - on OSX, the first underscore needs to be removed and the second one stays
-    LLDBCommandPluginInit init_func = dynlib_sp->GetSymbol<LLDBCommandPluginInit>("_ZN4lldb16PluginInitializeENS_10SBDebuggerE");
-    if (!init_func)
+    else
     {
-        error.SetErrorString("cannot find the initialization function lldb::PluginInitialize(lldb::SBDebugger)");
-        return false;
+        // The g_load_plugin_callback is registered in SBDebugger::Initialize()
+        // and if the public API layer isn't available (code is linking against
+        // all of the internal LLDB static libraries), then we can't load plugins
+        error.SetErrorString("Public API layer is not available");
     }
-    if (init_func(debugger_sb))
-    {
-        m_loaded_plugins.push_back(dynlib_sp);
-        return true;
-    }
-    error.SetErrorString("dylib refused to be loaded");
     return false;
 }
 
@@ -440,6 +430,7 @@ LoadPluginCallback
     Error error;
     
     static ConstString g_dylibext("dylib");
+    static ConstString g_solibext("so");
     
     if (!baton)
         return FileSpec::eEnumerateDirectoryResultQuit;
@@ -457,8 +448,11 @@ LoadPluginCallback
         FileSpec plugin_file_spec (file_spec);
         plugin_file_spec.ResolvePath ();
         
-        if (plugin_file_spec.GetFileNameExtension() != g_dylibext)
+        if (plugin_file_spec.GetFileNameExtension() != g_dylibext &&
+            plugin_file_spec.GetFileNameExtension() != g_solibext)
+        {
             return FileSpec::eEnumerateDirectoryResultNext;
+        }
 
         Error plugin_load_error;
         debugger->LoadPlugin (plugin_file_spec, plugin_load_error);
@@ -816,7 +810,6 @@ Debugger::GetSelectedExecutionContext ()
         }
     }
     return exe_ctx;
-
 }
 
 InputReaderSP 
@@ -1321,6 +1314,27 @@ ScanBracketedRange (const char* var_name_begin,
     return true;
 }
 
+template <typename T>
+static bool RunScriptFormatKeyword(Stream &s, ScriptInterpreter *script_interpreter, T t, const std::string& script_name)
+{
+    if (script_interpreter)
+    {
+        Error script_error;
+        std::string script_output;
+
+        if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), t, script_output, script_error) && script_error.Success())
+        {
+            s.Printf("%s", script_output.c_str());
+            return true;
+        }
+        else
+        {
+            s.Printf("<error: %s>",script_error.AsCString());
+        }
+    }
+    return false;
+}
+
 static ValueObjectSP
 ExpandIndexedExpression (ValueObject* valobj,
                          size_t index,
@@ -1359,6 +1373,82 @@ ExpandIndexedExpression (ValueObject* valobj,
                first_unparsed, reason_to_stop, final_value_type);
     }
     return item;
+}
+
+static inline bool
+IsToken(const char *var_name_begin, const char *var)
+{
+    return (::strncmp (var_name_begin, var, strlen(var)) == 0);
+}
+
+static bool
+IsTokenWithFormat(const char *var_name_begin, const char *var, std::string &format, const char *default_format,
+    const ExecutionContext *exe_ctx_ptr, const SymbolContext *sc_ptr)
+{
+    int var_len = strlen(var);
+    if (::strncmp (var_name_begin, var, var_len) == 0)
+    {
+        var_name_begin += var_len;
+        if (*var_name_begin == '}')
+        {
+            format = default_format;
+            return true;
+        }
+        else if (*var_name_begin == '%')
+        {
+            // Allow format specifiers: x|X|u with optional width specifiers.
+            //   ${thread.id%x}    ; hex
+            //   ${thread.id%X}    ; uppercase hex
+            //   ${thread.id%u}    ; unsigned decimal
+            //   ${thread.id%8.8X} ; width.precision + specifier
+            //   ${thread.id%tid}  ; unsigned on FreeBSD/Linux, otherwise default_format (0x%4.4x for thread.id)
+            int dot_count = 0;
+            const char *specifier = NULL;
+            int width_precision_length = 0;
+            const char *width_precision = ++var_name_begin;
+            while (isdigit(*var_name_begin) || *var_name_begin == '.')
+            {
+                dot_count += (*var_name_begin == '.');
+                if (dot_count > 1)
+                    break;
+                var_name_begin++;
+                width_precision_length++;
+            }
+
+            if (IsToken (var_name_begin, "tid}"))
+            {
+                Target *target = Target::GetTargetFromContexts (exe_ctx_ptr, sc_ptr);
+                if (target)
+                {
+                    ArchSpec arch (target->GetArchitecture ());
+                    llvm::Triple::OSType ostype = arch.IsValid() ? arch.GetTriple().getOS() : llvm::Triple::UnknownOS;
+                    if ((ostype == llvm::Triple::FreeBSD) || (ostype == llvm::Triple::Linux))
+                        specifier = PRIu64;
+                }
+                if (!specifier)
+                {
+                    format = default_format;
+                    return true;
+                }
+            }
+            else if (IsToken (var_name_begin, "x}"))
+                specifier = PRIx64;
+            else if (IsToken (var_name_begin, "X}"))
+                specifier = PRIX64;
+            else if (IsToken (var_name_begin, "u}"))
+                specifier = PRIu64;
+
+            if (specifier)
+            {
+                format = "%";
+                if (width_precision_length)
+                    format += std::string(width_precision, width_precision_length);
+                format += specifier;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 static bool
@@ -1444,6 +1534,7 @@ FormatPromptRecurse
                     if (success)
                     {
                         const char *cstr = NULL;
+                        std::string token_format;
                         Address format_addr;
                         bool calculate_format_addr_function_offset = false;
                         // Set reg_kind and reg_num to invalid values
@@ -1517,13 +1608,13 @@ FormatPromptRecurse
 
                                 if (!valobj) break;
                                 // simplest case ${var}, just print valobj's value
-                                if (::strncmp (var_name_begin, "var}", strlen("var}")) == 0)
+                                if (IsToken (var_name_begin, "var}"))
                                 {
                                     was_plain_var = true;
                                     target = valobj;
                                     val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
                                 }
-                                else if (::strncmp(var_name_begin,"var%",strlen("var%")) == 0)
+                                else if (IsToken (var_name_begin,"var%"))
                                 {
                                     was_var_format = true;
                                     // this is a variable with some custom format applied to it
@@ -1538,9 +1629,9 @@ FormatPromptRecurse
                                                           &val_obj_display);
                                 }
                                     // this is ${var.something} or multiple .something nested
-                                else if (::strncmp (var_name_begin, "var", strlen("var")) == 0)
+                                else if (IsToken (var_name_begin, "var"))
                                 {
-                                    if (::strncmp(var_name_begin, "var[", strlen("var[")) == 0)
+                                    if (IsToken (var_name_begin, "var["))
                                         was_var_indexed = true;
                                     const char* percent_position;
                                     ScanFormatDescriptor (var_name_begin,
@@ -1617,7 +1708,6 @@ FormatPromptRecurse
                                     do_deref_pointer = false;
                                 }
                                 
-                                // <rdar://problem/11338654>
                                 // we do not want to use the summary for a bitfield of type T:n
                                 // if we were originally dealing with just a T - that would get
                                 // us into an endless recursion
@@ -1632,9 +1722,10 @@ FormatPromptRecurse
                                 }
                                 
                                 // TODO use flags for these
-                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType(), NULL, NULL, NULL);
-                                bool is_pointer = ClangASTContext::IsPointerType(target->GetClangType());
-                                bool is_aggregate = ClangASTContext::IsAggregateType(target->GetClangType());
+                                const uint32_t type_info_flags = target->GetClangType().GetTypeInfo(NULL);
+                                bool is_array = (type_info_flags & ClangASTType::eTypeIsArray) != 0;
+                                bool is_pointer = (type_info_flags & ClangASTType::eTypeIsPointer) != 0;
+                                bool is_aggregate = target->GetClangType().IsAggregateType();
                                 
                                 if ((is_array || is_pointer) && (!is_array_range) && val_obj_display == ValueObject::eValueObjectRepresentationStyleValue) // this should be wrong, but there are some exceptions
                                 {
@@ -1764,7 +1855,7 @@ FormatPromptRecurse
                             }
                             break;
                         case 'a':
-                            if (::strncmp (var_name_begin, "addr}", strlen("addr}")) == 0)
+                            if (IsToken (var_name_begin, "addr}"))
                             {
                                 if (addr && addr->IsValid())
                                 {
@@ -1775,7 +1866,7 @@ FormatPromptRecurse
                             break;
 
                         case 'p':
-                            if (::strncmp (var_name_begin, "process.", strlen("process.")) == 0)
+                            if (IsToken (var_name_begin, "process."))
                             {
                                 if (exe_ctx)
                                 {
@@ -1783,14 +1874,14 @@ FormatPromptRecurse
                                     if (process)
                                     {
                                         var_name_begin += ::strlen ("process.");
-                                        if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
+                                        if (IsTokenWithFormat (var_name_begin, "id", token_format, "%" PRIu64, exe_ctx, sc))
                                         {
-                                            s.Printf("%" PRIu64, process->GetID());
+                                            s.Printf(token_format.c_str(), process->GetID());
                                             var_success = true;
                                         }
-                                        else if ((::strncmp (var_name_begin, "name}", strlen("name}")) == 0) ||
-                                                 (::strncmp (var_name_begin, "file.basename}", strlen("file.basename}")) == 0) ||
-                                                 (::strncmp (var_name_begin, "file.fullpath}", strlen("file.fullpath}")) == 0))
+                                        else if ((IsToken (var_name_begin, "name}")) ||
+                                                (IsToken (var_name_begin, "file.basename}")) ||
+                                                (IsToken (var_name_begin, "file.fullpath}")))
                                         {
                                             Module *exe_module = process->GetTarget().GetExecutableModulePointer();
                                             if (exe_module)
@@ -1798,32 +1889,22 @@ FormatPromptRecurse
                                                 if (var_name_begin[0] == 'n' || var_name_begin[5] == 'f')
                                                 {
                                                     format_file_spec.GetFilename() = exe_module->GetFileSpec().GetFilename();
-                                                    var_success = format_file_spec;
+                                                    var_success = (bool)format_file_spec;
                                                 }
                                                 else
                                                 {
                                                     format_file_spec = exe_module->GetFileSpec();
-                                                    var_success = format_file_spec;
+                                                    var_success = (bool)format_file_spec;
                                                 }
                                             }
                                         }
-                                        else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                        else if (IsToken (var_name_begin, "script:"))
                                         {
                                             var_name_begin += ::strlen("script:");
                                             std::string script_name(var_name_begin,var_name_end);
                                             ScriptInterpreter* script_interpreter = process->GetTarget().GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
-                                            if (script_interpreter)
-                                            {
-                                                std::string script_output;
-                                                Error script_error;
-                                                if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), process,script_output,script_error) && script_error.Success())
-                                                {
-                                                    s.Printf("%s", script_output.c_str());
-                                                    var_success = true;
-                                                }
-                                                else
-                                                    s.Printf("<error: %s>",script_error.AsCString());
-                                            }
+                                            if (RunScriptFormatKeyword (s, script_interpreter, process, script_name))
+                                                var_success = true;
                                         }
                                     }
                                 }
@@ -1831,7 +1912,7 @@ FormatPromptRecurse
                             break;
                         
                         case 't':
-                            if (::strncmp (var_name_begin, "thread.", strlen("thread.")) == 0)
+                           if (IsToken (var_name_begin, "thread."))
                             {
                                 if (exe_ctx)
                                 {
@@ -1839,36 +1920,36 @@ FormatPromptRecurse
                                     if (thread)
                                     {
                                         var_name_begin += ::strlen ("thread.");
-                                        if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
+                                        if (IsTokenWithFormat (var_name_begin, "id", token_format, "0x%4.4" PRIx64, exe_ctx, sc))
                                         {
-                                            s.Printf("0x%4.4" PRIx64, thread->GetID());
+                                            s.Printf(token_format.c_str(), thread->GetID());
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "protocol_id}", strlen("protocol_id}")) == 0)
+                                        else if (IsTokenWithFormat (var_name_begin, "protocol_id", token_format, "0x%4.4" PRIx64, exe_ctx, sc))
                                         {
-                                            s.Printf("0x%4.4" PRIx64, thread->GetProtocolID());
+                                            s.Printf(token_format.c_str(), thread->GetProtocolID());
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "index}", strlen("index}")) == 0)
+                                        else if (IsTokenWithFormat (var_name_begin, "index", token_format, "%" PRIu64, exe_ctx, sc))
                                         {
-                                            s.Printf("%u", thread->GetIndexID());
+                                            s.Printf(token_format.c_str(), (uint64_t)thread->GetIndexID());
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "name}", strlen("name}")) == 0)
+                                        else if (IsToken (var_name_begin, "name}"))
                                         {
                                             cstr = thread->GetName();
                                             var_success = cstr && cstr[0];
                                             if (var_success)
                                                 s.PutCString(cstr);
                                         }
-                                        else if (::strncmp (var_name_begin, "queue}", strlen("queue}")) == 0)
+                                        else if (IsToken (var_name_begin, "queue}"))
                                         {
                                             cstr = thread->GetQueueName();
                                             var_success = cstr && cstr[0];
                                             if (var_success)
                                                 s.PutCString(cstr);
                                         }
-                                        else if (::strncmp (var_name_begin, "stop-reason}", strlen("stop-reason}")) == 0)
+                                        else if (IsToken (var_name_begin, "stop-reason}"))
                                         {
                                             StopInfoSP stop_info_sp = thread->GetStopInfo ();
                                             if (stop_info_sp && stop_info_sp->IsValid())
@@ -1881,7 +1962,7 @@ FormatPromptRecurse
                                                 }
                                             }
                                         }
-                                        else if (::strncmp (var_name_begin, "return-value}", strlen("return-value}")) == 0)
+                                        else if (IsToken (var_name_begin, "return-value}"))
                                         {
                                             StopInfoSP stop_info_sp = thread->GetStopInfo ();
                                             if (stop_info_sp && stop_info_sp->IsValid())
@@ -1889,33 +1970,23 @@ FormatPromptRecurse
                                                 ValueObjectSP return_valobj_sp = StopInfo::GetReturnValueObject (stop_info_sp);
                                                 if (return_valobj_sp)
                                                 {
-                                                    ValueObject::DumpValueObject (s, return_valobj_sp.get());
+                                                    return_valobj_sp->Dump(s);
                                                     var_success = true;
                                                 }
                                             }
                                         }
-                                        else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                        else if (IsToken (var_name_begin, "script:"))
                                         {
                                             var_name_begin += ::strlen("script:");
                                             std::string script_name(var_name_begin,var_name_end);
                                             ScriptInterpreter* script_interpreter = thread->GetProcess()->GetTarget().GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
-                                            if (script_interpreter)
-                                            {
-                                                std::string script_output;
-                                                Error script_error;
-                                                if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), thread,script_output,script_error) && script_error.Success())
-                                                {
-                                                    s.Printf("%s", script_output.c_str());
-                                                    var_success = true;
-                                                }
-                                                else
-                                                    s.Printf("<error: %s>",script_error.AsCString());
-                                            }
+                                            if (RunScriptFormatKeyword (s, script_interpreter, thread, script_name))
+                                                var_success = true;
                                         }
                                     }
                                 }
                             }
-                            else if (::strncmp (var_name_begin, "target.", strlen("target.")) == 0)
+                            else if (IsToken (var_name_begin, "target."))
                             {
                                 // TODO: hookup properties
 //                                if (!target_properties_sp)
@@ -1944,7 +2015,7 @@ FormatPromptRecurse
                                 if (target)
                                 {
                                     var_name_begin += ::strlen ("target.");
-                                    if (::strncmp (var_name_begin, "arch}", strlen("arch}")) == 0)
+                                    if (IsToken (var_name_begin, "arch}"))
                                     {
                                         ArchSpec arch (target->GetArchitecture ());
                                         if (arch.IsValid())
@@ -1953,23 +2024,13 @@ FormatPromptRecurse
                                             var_success = true;
                                         }
                                     }
-                                    else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                    else if (IsToken (var_name_begin, "script:"))
                                     {
                                         var_name_begin += ::strlen("script:");
                                         std::string script_name(var_name_begin,var_name_end);
                                         ScriptInterpreter* script_interpreter = target->GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
-                                        if (script_interpreter)
-                                        {
-                                            std::string script_output;
-                                            Error script_error;
-                                            if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), target,script_output,script_error) && script_error.Success())
-                                            {
-                                                s.Printf("%s", script_output.c_str());
-                                                var_success = true;
-                                            }
-                                            else
-                                                s.Printf("<error: %s>",script_error.AsCString());
-                                        }
+                                        if (RunScriptFormatKeyword (s, script_interpreter, target, script_name))
+                                            var_success = true;
                                     }
                                 }
                             }
@@ -1977,28 +2038,28 @@ FormatPromptRecurse
                             
                             
                         case 'm':
-                            if (::strncmp (var_name_begin, "module.", strlen("module.")) == 0)
+                           if (IsToken (var_name_begin, "module."))
                             {
                                 if (sc && sc->module_sp.get())
                                 {
                                     Module *module = sc->module_sp.get();
                                     var_name_begin += ::strlen ("module.");
                                     
-                                    if (::strncmp (var_name_begin, "file.", strlen("file.")) == 0)
+                                    if (IsToken (var_name_begin, "file."))
                                     {
                                         if (module->GetFileSpec())
                                         {
                                             var_name_begin += ::strlen ("file.");
                                             
-                                            if (::strncmp (var_name_begin, "basename}", strlen("basename}")) == 0)
+                                            if (IsToken (var_name_begin, "basename}"))
                                             {
                                                 format_file_spec.GetFilename() = module->GetFileSpec().GetFilename();
-                                                var_success = format_file_spec;
+                                                var_success = (bool)format_file_spec;
                                             }
-                                            else if (::strncmp (var_name_begin, "fullpath}", strlen("fullpath}")) == 0)
+                                            else if (IsToken (var_name_begin, "fullpath}"))
                                             {
                                                 format_file_spec = module->GetFileSpec();
-                                                var_success = format_file_spec;
+                                                var_success = (bool)format_file_spec;
                                             }
                                         }
                                     }
@@ -2008,25 +2069,25 @@ FormatPromptRecurse
                             
                         
                         case 'f':
-                            if (::strncmp (var_name_begin, "file.", strlen("file.")) == 0)
+                           if (IsToken (var_name_begin, "file."))
                             {
                                 if (sc && sc->comp_unit != NULL)
                                 {
                                     var_name_begin += ::strlen ("file.");
                                     
-                                    if (::strncmp (var_name_begin, "basename}", strlen("basename}")) == 0)
+                                    if (IsToken (var_name_begin, "basename}"))
                                     {
                                         format_file_spec.GetFilename() = sc->comp_unit->GetFilename();
-                                        var_success = format_file_spec;
+                                        var_success = (bool)format_file_spec;
                                     }
-                                    else if (::strncmp (var_name_begin, "fullpath}", strlen("fullpath}")) == 0)
+                                    else if (IsToken (var_name_begin, "fullpath}"))
                                     {
                                         format_file_spec = *sc->comp_unit;
-                                        var_success = format_file_spec;
+                                        var_success = (bool)format_file_spec;
                                     }
                                 }
                             }
-                            else if (::strncmp (var_name_begin, "frame.", strlen("frame.")) == 0)
+                           else if (IsToken (var_name_begin, "frame."))
                             {
                                 if (exe_ctx)
                                 {
@@ -2034,36 +2095,36 @@ FormatPromptRecurse
                                     if (frame)
                                     {
                                         var_name_begin += ::strlen ("frame.");
-                                        if (::strncmp (var_name_begin, "index}", strlen("index}")) == 0)
+                                        if (IsToken (var_name_begin, "index}"))
                                         {
                                             s.Printf("%u", frame->GetFrameIndex());
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "pc}", strlen("pc}")) == 0)
+                                        else if (IsToken (var_name_begin, "pc}"))
                                         {
                                             reg_kind = eRegisterKindGeneric;
                                             reg_num = LLDB_REGNUM_GENERIC_PC;
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "sp}", strlen("sp}")) == 0)
+                                        else if (IsToken (var_name_begin, "sp}"))
                                         {
                                             reg_kind = eRegisterKindGeneric;
                                             reg_num = LLDB_REGNUM_GENERIC_SP;
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "fp}", strlen("fp}")) == 0)
+                                        else if (IsToken (var_name_begin, "fp}"))
                                         {
                                             reg_kind = eRegisterKindGeneric;
                                             reg_num = LLDB_REGNUM_GENERIC_FP;
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "flags}", strlen("flags}")) == 0)
+                                        else if (IsToken (var_name_begin, "flags}"))
                                         {
                                             reg_kind = eRegisterKindGeneric;
                                             reg_num = LLDB_REGNUM_GENERIC_FLAGS;
                                             var_success = true;
                                         }
-                                        else if (::strncmp (var_name_begin, "reg.", strlen ("reg.")) == 0)
+                                        else if (IsToken (var_name_begin, "reg."))
                                         {
                                             reg_ctx = frame->GetRegisterContext().get();
                                             if (reg_ctx)
@@ -2078,33 +2139,23 @@ FormatPromptRecurse
                                                 }
                                             }
                                         }
-                                        else if (::strncmp(var_name_begin, "script:", strlen("script:")) == 0)
+                                        else if (IsToken (var_name_begin, "script:"))
                                         {
                                             var_name_begin += ::strlen("script:");
                                             std::string script_name(var_name_begin,var_name_end);
                                             ScriptInterpreter* script_interpreter = frame->GetThread()->GetProcess()->GetTarget().GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
-                                            if (script_interpreter)
-                                            {
-                                                std::string script_output;
-                                                Error script_error;
-                                                if (script_interpreter->RunScriptFormatKeyword(script_name.c_str(), frame,script_output,script_error) && script_error.Success())
-                                                {
-                                                    s.Printf("%s", script_output.c_str());
-                                                    var_success = true;
-                                                }
-                                                else
-                                                    s.Printf("<error: %s>",script_error.AsCString());
-                                            }
+                                            if (RunScriptFormatKeyword (s, script_interpreter, frame, script_name))
+                                                var_success = true;
                                         }
                                     }
                                 }
                             }
-                            else if (::strncmp (var_name_begin, "function.", strlen("function.")) == 0)
+                            else if (IsToken (var_name_begin, "function."))
                             {
                                 if (sc && (sc->function != NULL || sc->symbol != NULL))
                                 {
                                     var_name_begin += ::strlen ("function.");
-                                    if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
+                                    if (IsToken (var_name_begin, "id}"))
                                     {
                                         if (sc->function)
                                             s.Printf("function{0x%8.8" PRIx64 "}", sc->function->GetID());
@@ -2113,7 +2164,7 @@ FormatPromptRecurse
 
                                         var_success = true;
                                     }
-                                    else if (::strncmp (var_name_begin, "name}", strlen("name}")) == 0)
+                                    else if (IsToken (var_name_begin, "name}"))
                                     {
                                         if (sc->function)
                                             cstr = sc->function->GetName().AsCString (NULL);
@@ -2139,7 +2190,7 @@ FormatPromptRecurse
                                             var_success = true;
                                         }
                                     }
-                                    else if (::strncmp (var_name_begin, "name-with-args}", strlen("name-with-args}")) == 0)
+                                    else if (IsToken (var_name_begin, "name-with-args}"))
                                     {
                                         // Print the function name with arguments in it
 
@@ -2187,7 +2238,7 @@ FormatPromptRecurse
                                                     const char *close_paren = NULL;
                                                     if (open_paren)
                                                     {
-                                                        if (strncmp(open_paren, "(anonymous namespace)", strlen("(anonymous namespace)")) == 0)
+                                                        if (IsToken (open_paren, "(anonymous namespace)"))
                                                         {
                                                             open_paren = strchr (open_paren + strlen("(anonymous namespace)"), '(');
                                                             if (open_paren)
@@ -2246,7 +2297,7 @@ FormatPromptRecurse
                                             }
                                         }
                                     }
-                                    else if (::strncmp (var_name_begin, "addr-offset}", strlen("addr-offset}")) == 0)
+                                    else if (IsToken (var_name_begin, "addr-offset}"))
                                     {
                                         var_success = addr != NULL;
                                         if (var_success)
@@ -2255,7 +2306,7 @@ FormatPromptRecurse
                                             calculate_format_addr_function_offset = true;
                                         }
                                     }
-                                    else if (::strncmp (var_name_begin, "line-offset}", strlen("line-offset}")) == 0)
+                                    else if (IsToken (var_name_begin, "line-offset}"))
                                     {
                                         var_success = sc->line_entry.range.GetBaseAddress().IsValid();
                                         if (var_success)
@@ -2264,7 +2315,7 @@ FormatPromptRecurse
                                             calculate_format_addr_function_offset = true;
                                         }
                                     }
-                                    else if (::strncmp (var_name_begin, "pc-offset}", strlen("pc-offset}")) == 0)
+                                    else if (IsToken (var_name_begin, "pc-offset}"))
                                     {
                                         StackFrame *frame = exe_ctx->GetFramePtr();
                                         var_success = frame != NULL;
@@ -2279,33 +2330,33 @@ FormatPromptRecurse
                             break;
 
                         case 'l':
-                            if (::strncmp (var_name_begin, "line.", strlen("line.")) == 0)
+                            if (IsToken (var_name_begin, "line."))
                             {
                                 if (sc && sc->line_entry.IsValid())
                                 {
                                     var_name_begin += ::strlen ("line.");
-                                    if (::strncmp (var_name_begin, "file.", strlen("file.")) == 0)
+                                    if (IsToken (var_name_begin, "file."))
                                     {
                                         var_name_begin += ::strlen ("file.");
                                         
-                                        if (::strncmp (var_name_begin, "basename}", strlen("basename}")) == 0)
+                                        if (IsToken (var_name_begin, "basename}"))
                                         {
                                             format_file_spec.GetFilename() = sc->line_entry.file.GetFilename();
-                                            var_success = format_file_spec;
+                                            var_success = (bool)format_file_spec;
                                         }
-                                        else if (::strncmp (var_name_begin, "fullpath}", strlen("fullpath}")) == 0)
+                                        else if (IsToken (var_name_begin, "fullpath}"))
                                         {
                                             format_file_spec = sc->line_entry.file;
-                                            var_success = format_file_spec;
+                                            var_success = (bool)format_file_spec;
                                         }
                                     }
-                                    else if (::strncmp (var_name_begin, "number}", strlen("number}")) == 0)
+                                    else if (IsTokenWithFormat (var_name_begin, "number", token_format, "%" PRIu64, exe_ctx, sc))
                                     {
                                         var_success = true;
-                                        s.Printf("%u", sc->line_entry.line);
+                                        s.Printf(token_format.c_str(), (uint64_t)sc->line_entry.line);
                                     }
-                                    else if ((::strncmp (var_name_begin, "start-addr}", strlen("start-addr}")) == 0) ||
-                                             (::strncmp (var_name_begin, "end-addr}", strlen("end-addr}")) == 0))
+                                    else if ((IsToken (var_name_begin, "start-addr}")) ||
+                                             (IsToken (var_name_begin, "end-addr}")))
                                     {
                                         var_success = sc && sc->line_entry.range.GetBaseAddress().IsValid();
                                         if (var_success)

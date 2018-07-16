@@ -234,109 +234,80 @@ DNBArchMachARM64::GetVFPState(bool force)
     if (DNBLogEnabledForAny (LOG_THREAD))
     {
 #if defined (__arm64__)
-        uint64_t d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15, d16, d17, d18, d19, d20, d21, d22, d23, d24, d25, d26, d27, d28, d29, d30, d31;
-        memcpy (&d0, &m_state.context.vfp.__v[0], 8);
-        memcpy (&d1, &m_state.context.vfp.__v[1], 8);
-        memcpy (&d2, &m_state.context.vfp.__v[2], 8);
-        memcpy (&d3, &m_state.context.vfp.__v[3], 8);
-        memcpy (&d4, &m_state.context.vfp.__v[4], 8);
-        memcpy (&d5, &m_state.context.vfp.__v[5], 8);
-        memcpy (&d6, &m_state.context.vfp.__v[6], 8);
-        memcpy (&d7, &m_state.context.vfp.__v[7], 8);
-        memcpy (&d8, &m_state.context.vfp.__v[8], 8);
-        memcpy (&d9, &m_state.context.vfp.__v[9], 8);
-        memcpy (&d10, &m_state.context.vfp.__v[10], 8);
-        memcpy (&d11, &m_state.context.vfp.__v[11], 8);
-        memcpy (&d12, &m_state.context.vfp.__v[12], 8);
-        memcpy (&d13, &m_state.context.vfp.__v[13], 8);
-        memcpy (&d14, &m_state.context.vfp.__v[14], 8);
-        memcpy (&d15, &m_state.context.vfp.__v[15], 8);
-        memcpy (&d16, &m_state.context.vfp.__v[16], 8);
-        memcpy (&d17, &m_state.context.vfp.__v[17], 8);
-        memcpy (&d18, &m_state.context.vfp.__v[18], 8);
-        memcpy (&d19, &m_state.context.vfp.__v[19], 8);
-        memcpy (&d20, &m_state.context.vfp.__v[20], 8);
-        memcpy (&d21, &m_state.context.vfp.__v[21], 8);
-        memcpy (&d22, &m_state.context.vfp.__v[22], 8);
-        memcpy (&d23, &m_state.context.vfp.__v[23], 8);
-        memcpy (&d24, &m_state.context.vfp.__v[24], 8);
-        memcpy (&d25, &m_state.context.vfp.__v[25], 8);
-        memcpy (&d26, &m_state.context.vfp.__v[26], 8);
-        memcpy (&d27, &m_state.context.vfp.__v[27], 8);
-        memcpy (&d28, &m_state.context.vfp.__v[28], 8);
-        memcpy (&d29, &m_state.context.vfp.__v[29], 8);
-        memcpy (&d30, &m_state.context.vfp.__v[30], 8);
-        memcpy (&d31, &m_state.context.vfp.__v[31], 8);
         DNBLogThreaded("thread_get_state(0x%4.4x, %u, &vfp, %u) => 0x%8.8x (count = %u) regs"
-                       "\n   d0=%16.16llx"
-                       "\n   d1=%16.16llx"
-                       "\n   d2=%16.16llx"
-                       "\n   d3=%16.16llx"
-                       "\n   d4=%16.16llx"
-                       "\n   d5=%16.16llx"
-                       "\n   d6=%16.16llx"
-                       "\n   d7=%16.16llx"
-                       "\n   d8=%16.16llx"
-                       "\n   d9=%16.16llx"
-                       "\n   d10=%16.16llx"
-                       "\n   d11=%16.16llx"
-                       "\n   d12=%16.16llx"
-                       "\n   d13=%16.16llx"
-                       "\n   d14=%16.16llx"
-                       "\n   d15=%16.16llx"
-                       "\n   d16=%16.16llx"
-                       "\n   d17=%16.16llx"
-                       "\n   d18=%16.16llx"
-                       "\n   d19=%16.16llx"
-                       "\n   d20=%16.16llx"
-                       "\n   d21=%16.16llx"
-                       "\n   d22=%16.16llx"
-                       "\n   d23=%16.16llx"
-                       "\n   d24=%16.16llx"
-                       "\n   d25=%16.16llx"
-                       "\n   d26=%16.16llx"
-                       "\n   d27=%16.16llx"
-                       "\n   d28=%16.16llx"
-                       "\n   d29=%16.16llx"
-                       "\n   d30=%16.16llx"
-                       "\n   d31=%16.16llx",
-                       m_thread->MachPortNumber(), 
+                       "\n   q0  = 0x%16.16llx%16.16llx"
+                       "\n   q1  = 0x%16.16llx%16.16llx"
+                       "\n   q2  = 0x%16.16llx%16.16llx"
+                       "\n   q3  = 0x%16.16llx%16.16llx"
+                       "\n   q4  = 0x%16.16llx%16.16llx"
+                       "\n   q5  = 0x%16.16llx%16.16llx"
+                       "\n   q6  = 0x%16.16llx%16.16llx"
+                       "\n   q7  = 0x%16.16llx%16.16llx"
+                       "\n   q8  = 0x%16.16llx%16.16llx"
+                       "\n   q9  = 0x%16.16llx%16.16llx"
+                       "\n   q10 = 0x%16.16llx%16.16llx"
+                       "\n   q11 = 0x%16.16llx%16.16llx"
+                       "\n   q12 = 0x%16.16llx%16.16llx"
+                       "\n   q13 = 0x%16.16llx%16.16llx"
+                       "\n   q14 = 0x%16.16llx%16.16llx"
+                       "\n   q15 = 0x%16.16llx%16.16llx"
+                       "\n   q16 = 0x%16.16llx%16.16llx"
+                       "\n   q17 = 0x%16.16llx%16.16llx"
+                       "\n   q18 = 0x%16.16llx%16.16llx"
+                       "\n   q19 = 0x%16.16llx%16.16llx"
+                       "\n   q20 = 0x%16.16llx%16.16llx"
+                       "\n   q21 = 0x%16.16llx%16.16llx"
+                       "\n   q22 = 0x%16.16llx%16.16llx"
+                       "\n   q23 = 0x%16.16llx%16.16llx"
+                       "\n   q24 = 0x%16.16llx%16.16llx"
+                       "\n   q25 = 0x%16.16llx%16.16llx"
+                       "\n   q26 = 0x%16.16llx%16.16llx"
+                       "\n   q27 = 0x%16.16llx%16.16llx"
+                       "\n   q28 = 0x%16.16llx%16.16llx"
+                       "\n   q29 = 0x%16.16llx%16.16llx"
+                       "\n   q30 = 0x%16.16llx%16.16llx"
+                       "\n   q31 = 0x%16.16llx%16.16llx"
+                       "\n  fpsr = 0x%8.8x"
+                       "\n  fpcr = 0x%8.8x\n\n",
+                       m_thread->MachPortNumber(),
                        e_regSetVFP, 
                        e_regSetVFPCount, 
                        kret,
                        count,
-                       d0,
-                       d1, 
-                       d2,
-                       d3,
-                       d4,
-                       d5,
-                       d6,
-                       d7,
-                       d8,
-                       d9,
-                       d10,
-                       d11,
-                       d12,
-                       d13,
-                       d14,
-                       d15,
-                       d16,
-                       d17,
-                       d18,
-                       d19,
-                       d20,
-                       d21,
-                       d22,
-                       d23,
-                       d24,
-                       d25,
-                       d26,
-                       d27,
-                       d28,
-                       d29,
-                       d30,
-                       d31);
+                       ((uint64_t *)&m_state.context.vfp.__v[0])[0] , ((uint64_t *)&m_state.context.vfp.__v[0])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[1])[0] , ((uint64_t *)&m_state.context.vfp.__v[1])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[2])[0] , ((uint64_t *)&m_state.context.vfp.__v[2])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[3])[0] , ((uint64_t *)&m_state.context.vfp.__v[3])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[4])[0] , ((uint64_t *)&m_state.context.vfp.__v[4])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[5])[0] , ((uint64_t *)&m_state.context.vfp.__v[5])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[6])[0] , ((uint64_t *)&m_state.context.vfp.__v[6])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[7])[0] , ((uint64_t *)&m_state.context.vfp.__v[7])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[8])[0] , ((uint64_t *)&m_state.context.vfp.__v[8])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[9])[0] , ((uint64_t *)&m_state.context.vfp.__v[9])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[10])[0], ((uint64_t *)&m_state.context.vfp.__v[10])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[11])[0], ((uint64_t *)&m_state.context.vfp.__v[11])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[12])[0], ((uint64_t *)&m_state.context.vfp.__v[12])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[13])[0], ((uint64_t *)&m_state.context.vfp.__v[13])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[14])[0], ((uint64_t *)&m_state.context.vfp.__v[14])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[15])[0], ((uint64_t *)&m_state.context.vfp.__v[15])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[16])[0], ((uint64_t *)&m_state.context.vfp.__v[16])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[17])[0], ((uint64_t *)&m_state.context.vfp.__v[17])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[18])[0], ((uint64_t *)&m_state.context.vfp.__v[18])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[19])[0], ((uint64_t *)&m_state.context.vfp.__v[19])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[20])[0], ((uint64_t *)&m_state.context.vfp.__v[20])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[21])[0], ((uint64_t *)&m_state.context.vfp.__v[21])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[22])[0], ((uint64_t *)&m_state.context.vfp.__v[22])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[23])[0], ((uint64_t *)&m_state.context.vfp.__v[23])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[24])[0], ((uint64_t *)&m_state.context.vfp.__v[24])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[25])[0], ((uint64_t *)&m_state.context.vfp.__v[25])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[26])[0], ((uint64_t *)&m_state.context.vfp.__v[26])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[27])[0], ((uint64_t *)&m_state.context.vfp.__v[27])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[28])[0], ((uint64_t *)&m_state.context.vfp.__v[28])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[29])[0], ((uint64_t *)&m_state.context.vfp.__v[29])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[30])[0], ((uint64_t *)&m_state.context.vfp.__v[30])[1],
+                       ((uint64_t *)&m_state.context.vfp.__v[31])[0], ((uint64_t *)&m_state.context.vfp.__v[31])[1],
+                       m_state.context.vfp.__fpsr,
+                       m_state.context.vfp.__fpcr);
 #endif
     }
     m_state.SetError(set, Read, kret);
@@ -408,8 +379,6 @@ DNBArchMachARM64::SetVFPState()
 kern_return_t
 DNBArchMachARM64::SetEXCState()
 {
-    return KERN_SUCCESS;                        // skip everything <rdar://problem/12443935>
-    
     int set = e_regSetEXC;
     kern_return_t kret = ::thread_set_state (m_thread->MachPortNumber(), ARM_EXCEPTION_STATE64, (thread_state_t)&m_state.context.exc, e_regSetEXCCount);
     m_state.SetError(set, Write, kret);         // Set the current write error for this register set
@@ -870,7 +839,7 @@ DNBArchMachARM64::DisableHardwareWatchpoint_helper (uint32_t hw_index, bool also
         return false;
 
     m_disabled_watchpoints[hw_index].addr = m_state.dbg.__wvr[hw_index];
-    m_disabled_watchpoints[hw_index].control = m_state.dbg.__wcr[hw_index];
+    m_disabled_watchpoints[hw_index].control = (uint32_t) m_state.dbg.__wcr[hw_index];
 
     m_state.dbg.__wcr[hw_index] &= ~((nub_addr_t)WCR_ENABLE);
     DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchMachARM64::DisableHardwareWatchpoint( %u ) - WVR%u = 0x%8.8llx  WCR%u = 0x%8.8llx",
@@ -1017,8 +986,7 @@ enum gpr_regnums
     gpr_sp,	gpr_x31 = gpr_sp,
     gpr_pc,
     gpr_cpsr,
-
-    gpr_w0 = 132,   // the number 132 is used to match the w0 register number in RNBRemote.cpp
+    gpr_w0,
     gpr_w1,
     gpr_w2,
     gpr_w3,
@@ -1052,7 +1020,7 @@ enum gpr_regnums
 
 enum 
 {
-    vfp_v0 = 34, // the number 34 is to match the v0 register number in RNBRemote.cpp
+    vfp_v0 = 0,
     vfp_v1,
     vfp_v2,
     vfp_v3,
@@ -1088,7 +1056,7 @@ enum
     vfp_fpcr,
 
     // lower 32 bits of the corresponding vfp_v<n> reg.
-    vfp_s0 = 68, // the number 68 is to match the s0 register number in RNBRemote.cpp
+    vfp_s0,
     vfp_s1,
     vfp_s2,
     vfp_s3,
@@ -1122,7 +1090,7 @@ enum
     vfp_s31,
 
     // lower 64 bits of the corresponding vfp_v<n> reg.
-    vfp_d0 = 100,    // the number 100 is to match the d0 register number in RNBRemote.cpp
+    vfp_d0,
     vfp_d1,
     vfp_d2,
     vfp_d3,
@@ -1315,65 +1283,65 @@ enum
     gdb_vfp_fpcr
 };
 
-uint32_t g_contained_x0[] {gpr_x0, INVALID_NUB_REGNUM };
-uint32_t g_contained_x1[] {gpr_x1, INVALID_NUB_REGNUM };
-uint32_t g_contained_x2[] {gpr_x2, INVALID_NUB_REGNUM };
-uint32_t g_contained_x3[] {gpr_x3, INVALID_NUB_REGNUM };
-uint32_t g_contained_x4[] {gpr_x4, INVALID_NUB_REGNUM };
-uint32_t g_contained_x5[] {gpr_x5, INVALID_NUB_REGNUM };
-uint32_t g_contained_x6[] {gpr_x6, INVALID_NUB_REGNUM };
-uint32_t g_contained_x7[] {gpr_x7, INVALID_NUB_REGNUM };
-uint32_t g_contained_x8[] {gpr_x8, INVALID_NUB_REGNUM };
-uint32_t g_contained_x9[] {gpr_x9, INVALID_NUB_REGNUM };
-uint32_t g_contained_x10[] {gpr_x10, INVALID_NUB_REGNUM };
-uint32_t g_contained_x11[] {gpr_x11, INVALID_NUB_REGNUM };
-uint32_t g_contained_x12[] {gpr_x12, INVALID_NUB_REGNUM };
-uint32_t g_contained_x13[] {gpr_x13, INVALID_NUB_REGNUM };
-uint32_t g_contained_x14[] {gpr_x14, INVALID_NUB_REGNUM };
-uint32_t g_contained_x15[] {gpr_x15, INVALID_NUB_REGNUM };
-uint32_t g_contained_x16[] {gpr_x16, INVALID_NUB_REGNUM };
-uint32_t g_contained_x17[] {gpr_x17, INVALID_NUB_REGNUM };
-uint32_t g_contained_x18[] {gpr_x18, INVALID_NUB_REGNUM };
-uint32_t g_contained_x19[] {gpr_x19, INVALID_NUB_REGNUM };
-uint32_t g_contained_x20[] {gpr_x20, INVALID_NUB_REGNUM };
-uint32_t g_contained_x21[] {gpr_x21, INVALID_NUB_REGNUM };
-uint32_t g_contained_x22[] {gpr_x22, INVALID_NUB_REGNUM };
-uint32_t g_contained_x23[] {gpr_x23, INVALID_NUB_REGNUM };
-uint32_t g_contained_x24[] {gpr_x24, INVALID_NUB_REGNUM };
-uint32_t g_contained_x25[] {gpr_x25, INVALID_NUB_REGNUM };
-uint32_t g_contained_x26[] {gpr_x26, INVALID_NUB_REGNUM };
-uint32_t g_contained_x27[] {gpr_x27, INVALID_NUB_REGNUM };
-uint32_t g_contained_x28[] {gpr_x28, INVALID_NUB_REGNUM };
+const char *g_contained_x0[] {"x0", NULL };
+const char *g_contained_x1[] {"x1", NULL };
+const char *g_contained_x2[] {"x2", NULL };
+const char *g_contained_x3[] {"x3", NULL };
+const char *g_contained_x4[] {"x4", NULL };
+const char *g_contained_x5[] {"x5", NULL };
+const char *g_contained_x6[] {"x6", NULL };
+const char *g_contained_x7[] {"x7", NULL };
+const char *g_contained_x8[] {"x8", NULL };
+const char *g_contained_x9[] {"x9", NULL };
+const char *g_contained_x10[] {"x10", NULL };
+const char *g_contained_x11[] {"x11", NULL };
+const char *g_contained_x12[] {"x12", NULL };
+const char *g_contained_x13[] {"x13", NULL };
+const char *g_contained_x14[] {"x14", NULL };
+const char *g_contained_x15[] {"x15", NULL };
+const char *g_contained_x16[] {"x16", NULL };
+const char *g_contained_x17[] {"x17", NULL };
+const char *g_contained_x18[] {"x18", NULL };
+const char *g_contained_x19[] {"x19", NULL };
+const char *g_contained_x20[] {"x20", NULL };
+const char *g_contained_x21[] {"x21", NULL };
+const char *g_contained_x22[] {"x22", NULL };
+const char *g_contained_x23[] {"x23", NULL };
+const char *g_contained_x24[] {"x24", NULL };
+const char *g_contained_x25[] {"x25", NULL };
+const char *g_contained_x26[] {"x26", NULL };
+const char *g_contained_x27[] {"x27", NULL };
+const char *g_contained_x28[] {"x28", NULL };
 
-uint32_t g_invalidate_x0[] {gpr_x0, gpr_w0, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x1[] {gpr_x1, gpr_w1, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x2[] {gpr_x2, gpr_w2, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x3[] {gpr_x3, gpr_w3, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x4[] {gpr_x4, gpr_w4, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x5[] {gpr_x5, gpr_w5, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x6[] {gpr_x6, gpr_w6, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x7[] {gpr_x7, gpr_w7, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x8[] {gpr_x8, gpr_w8, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x9[] {gpr_x9, gpr_w9, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x10[] {gpr_x10, gpr_w10, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x11[] {gpr_x11, gpr_w11, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x12[] {gpr_x12, gpr_w12, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x13[] {gpr_x13, gpr_w13, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x14[] {gpr_x14, gpr_w14, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x15[] {gpr_x15, gpr_w15, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x16[] {gpr_x16, gpr_w16, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x17[] {gpr_x17, gpr_w17, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x18[] {gpr_x18, gpr_w18, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x19[] {gpr_x19, gpr_w19, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x20[] {gpr_x20, gpr_w20, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x21[] {gpr_x21, gpr_w21, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x22[] {gpr_x22, gpr_w22, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x23[] {gpr_x23, gpr_w23, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x24[] {gpr_x24, gpr_w24, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x25[] {gpr_x25, gpr_w25, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x26[] {gpr_x26, gpr_w26, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x27[] {gpr_x27, gpr_w27, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_x28[] {gpr_x28, gpr_w28, INVALID_NUB_REGNUM };
+const char *g_invalidate_x0[] {"x0", "w0", NULL };
+const char *g_invalidate_x1[] {"x1", "w1", NULL };
+const char *g_invalidate_x2[] {"x2", "w2", NULL };
+const char *g_invalidate_x3[] {"x3", "w3", NULL };
+const char *g_invalidate_x4[] {"x4", "w4", NULL };
+const char *g_invalidate_x5[] {"x5", "w5", NULL };
+const char *g_invalidate_x6[] {"x6", "w6", NULL };
+const char *g_invalidate_x7[] {"x7", "w7", NULL };
+const char *g_invalidate_x8[] {"x8", "w8", NULL };
+const char *g_invalidate_x9[] {"x9", "w9", NULL };
+const char *g_invalidate_x10[] {"x10", "w10", NULL };
+const char *g_invalidate_x11[] {"x11", "w11", NULL };
+const char *g_invalidate_x12[] {"x12", "w12", NULL };
+const char *g_invalidate_x13[] {"x13", "w13", NULL };
+const char *g_invalidate_x14[] {"x14", "w14", NULL };
+const char *g_invalidate_x15[] {"x15", "w15", NULL };
+const char *g_invalidate_x16[] {"x16", "w16", NULL };
+const char *g_invalidate_x17[] {"x17", "w17", NULL };
+const char *g_invalidate_x18[] {"x18", "w18", NULL };
+const char *g_invalidate_x19[] {"x19", "w19", NULL };
+const char *g_invalidate_x20[] {"x20", "w20", NULL };
+const char *g_invalidate_x21[] {"x21", "w21", NULL };
+const char *g_invalidate_x22[] {"x22", "w22", NULL };
+const char *g_invalidate_x23[] {"x23", "w23", NULL };
+const char *g_invalidate_x24[] {"x24", "w24", NULL };
+const char *g_invalidate_x25[] {"x25", "w25", NULL };
+const char *g_invalidate_x26[] {"x26", "w26", NULL };
+const char *g_invalidate_x27[] {"x27", "w27", NULL };
+const char *g_invalidate_x28[] {"x28", "w28", NULL };
 
 #define GPR_OFFSET_IDX(idx) (offsetof (DNBArchMachARM64::GPR, __x[idx]))
 
@@ -1385,7 +1353,7 @@ uint32_t g_invalidate_x28[] {gpr_x28, gpr_w28, INVALID_NUB_REGNUM };
 // sizes and offsets.
 #define DEFINE_GPR_IDX(idx, reg, alt, gen) { e_regSetGPR, gpr_##reg, #reg, alt, Uint, Hex, 8, GPR_OFFSET_IDX(idx) , dwarf_##reg, dwarf_##reg, gen, gdb_gpr_##reg, NULL, g_invalidate_x##idx }
 #define DEFINE_GPR_NAME(reg, alt, gen)     { e_regSetGPR, gpr_##reg, #reg, alt, Uint, Hex, 8, GPR_OFFSET_NAME(reg), dwarf_##reg, dwarf_##reg, gen, gdb_gpr_##reg, NULL, NULL }
-#define DEFINE_PSEUDO_GPR_IDX(idx, reg) { e_regSetGPR, gpr_##reg, #reg, NULL, Uint, Hex, 8, GPR_OFFSET_IDX(idx) , INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, g_contained_x##idx, g_invalidate_x##idx }
+#define DEFINE_PSEUDO_GPR_IDX(idx, reg)    { e_regSetGPR, gpr_##reg, #reg, NULL, Uint, Hex, 4, 0, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, g_contained_x##idx, g_invalidate_x##idx }
 
 //_STRUCT_ARM_THREAD_STATE64
 //{
@@ -1472,71 +1440,71 @@ DNBArchMachARM64::g_gpr_registers[] =
     DEFINE_PSEUDO_GPR_IDX (28, w28)
 };
 
-uint32_t g_contained_v0[] {vfp_v0, INVALID_NUB_REGNUM };
-uint32_t g_contained_v1[] {vfp_v1, INVALID_NUB_REGNUM };
-uint32_t g_contained_v2[] {vfp_v2, INVALID_NUB_REGNUM };
-uint32_t g_contained_v3[] {vfp_v3, INVALID_NUB_REGNUM };
-uint32_t g_contained_v4[] {vfp_v4, INVALID_NUB_REGNUM };
-uint32_t g_contained_v5[] {vfp_v5, INVALID_NUB_REGNUM };
-uint32_t g_contained_v6[] {vfp_v6, INVALID_NUB_REGNUM };
-uint32_t g_contained_v7[] {vfp_v7, INVALID_NUB_REGNUM };
-uint32_t g_contained_v8[] {vfp_v8, INVALID_NUB_REGNUM };
-uint32_t g_contained_v9[] {vfp_v9, INVALID_NUB_REGNUM };
-uint32_t g_contained_v10[] {vfp_v10, INVALID_NUB_REGNUM };
-uint32_t g_contained_v11[] {vfp_v11, INVALID_NUB_REGNUM };
-uint32_t g_contained_v12[] {vfp_v12, INVALID_NUB_REGNUM };
-uint32_t g_contained_v13[] {vfp_v13, INVALID_NUB_REGNUM };
-uint32_t g_contained_v14[] {vfp_v14, INVALID_NUB_REGNUM };
-uint32_t g_contained_v15[] {vfp_v15, INVALID_NUB_REGNUM };
-uint32_t g_contained_v16[] {vfp_v16, INVALID_NUB_REGNUM };
-uint32_t g_contained_v17[] {vfp_v17, INVALID_NUB_REGNUM };
-uint32_t g_contained_v18[] {vfp_v18, INVALID_NUB_REGNUM };
-uint32_t g_contained_v19[] {vfp_v19, INVALID_NUB_REGNUM };
-uint32_t g_contained_v20[] {vfp_v20, INVALID_NUB_REGNUM };
-uint32_t g_contained_v21[] {vfp_v21, INVALID_NUB_REGNUM };
-uint32_t g_contained_v22[] {vfp_v22, INVALID_NUB_REGNUM };
-uint32_t g_contained_v23[] {vfp_v23, INVALID_NUB_REGNUM };
-uint32_t g_contained_v24[] {vfp_v24, INVALID_NUB_REGNUM };
-uint32_t g_contained_v25[] {vfp_v25, INVALID_NUB_REGNUM };
-uint32_t g_contained_v26[] {vfp_v26, INVALID_NUB_REGNUM };
-uint32_t g_contained_v27[] {vfp_v27, INVALID_NUB_REGNUM };
-uint32_t g_contained_v28[] {vfp_v28, INVALID_NUB_REGNUM };
-uint32_t g_contained_v29[] {vfp_v29, INVALID_NUB_REGNUM };
-uint32_t g_contained_v30[] {vfp_v30, INVALID_NUB_REGNUM };
-uint32_t g_contained_v31[] {vfp_v31, INVALID_NUB_REGNUM };
+const char *g_contained_v0[] {"v0", NULL };
+const char *g_contained_v1[] {"v1", NULL };
+const char *g_contained_v2[] {"v2", NULL };
+const char *g_contained_v3[] {"v3", NULL };
+const char *g_contained_v4[] {"v4", NULL };
+const char *g_contained_v5[] {"v5", NULL };
+const char *g_contained_v6[] {"v6", NULL };
+const char *g_contained_v7[] {"v7", NULL };
+const char *g_contained_v8[] {"v8", NULL };
+const char *g_contained_v9[] {"v9", NULL };
+const char *g_contained_v10[] {"v10", NULL };
+const char *g_contained_v11[] {"v11", NULL };
+const char *g_contained_v12[] {"v12", NULL };
+const char *g_contained_v13[] {"v13", NULL };
+const char *g_contained_v14[] {"v14", NULL };
+const char *g_contained_v15[] {"v15", NULL };
+const char *g_contained_v16[] {"v16", NULL };
+const char *g_contained_v17[] {"v17", NULL };
+const char *g_contained_v18[] {"v18", NULL };
+const char *g_contained_v19[] {"v19", NULL };
+const char *g_contained_v20[] {"v20", NULL };
+const char *g_contained_v21[] {"v21", NULL };
+const char *g_contained_v22[] {"v22", NULL };
+const char *g_contained_v23[] {"v23", NULL };
+const char *g_contained_v24[] {"v24", NULL };
+const char *g_contained_v25[] {"v25", NULL };
+const char *g_contained_v26[] {"v26", NULL };
+const char *g_contained_v27[] {"v27", NULL };
+const char *g_contained_v28[] {"v28", NULL };
+const char *g_contained_v29[] {"v29", NULL };
+const char *g_contained_v30[] {"v30", NULL };
+const char *g_contained_v31[] {"v31", NULL };
 
-uint32_t g_invalidate_v0[] {vfp_v0, vfp_d0, vfp_s0, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v1[] {vfp_v1, vfp_d1, vfp_s1, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v2[] {vfp_v2, vfp_d2, vfp_s2, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v3[] {vfp_v3, vfp_d3, vfp_s3, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v4[] {vfp_v4, vfp_d4, vfp_s4, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v5[] {vfp_v5, vfp_d5, vfp_s5, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v6[] {vfp_v6, vfp_d6, vfp_s6, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v7[] {vfp_v7, vfp_d7, vfp_s7, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v8[] {vfp_v8, vfp_d8, vfp_s8, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v9[] {vfp_v9, vfp_d9, vfp_s9, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v10[] {vfp_v10, vfp_d10, vfp_s10, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v11[] {vfp_v11, vfp_d11, vfp_s11, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v12[] {vfp_v12, vfp_d12, vfp_s12, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v13[] {vfp_v13, vfp_d13, vfp_s13, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v14[] {vfp_v14, vfp_d14, vfp_s14, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v15[] {vfp_v15, vfp_d15, vfp_s15, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v16[] {vfp_v16, vfp_d16, vfp_s16, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v17[] {vfp_v17, vfp_d17, vfp_s17, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v18[] {vfp_v18, vfp_d18, vfp_s18, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v19[] {vfp_v19, vfp_d19, vfp_s19, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v20[] {vfp_v20, vfp_d20, vfp_s20, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v21[] {vfp_v21, vfp_d21, vfp_s21, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v22[] {vfp_v22, vfp_d22, vfp_s22, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v23[] {vfp_v23, vfp_d23, vfp_s23, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v24[] {vfp_v24, vfp_d24, vfp_s24, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v25[] {vfp_v25, vfp_d25, vfp_s25, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v26[] {vfp_v26, vfp_d26, vfp_s26, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v27[] {vfp_v27, vfp_d27, vfp_s27, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v28[] {vfp_v28, vfp_d28, vfp_s28, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v29[] {vfp_v29, vfp_d29, vfp_s29, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v30[] {vfp_v30, vfp_d30, vfp_s30, INVALID_NUB_REGNUM };
-uint32_t g_invalidate_v31[] {vfp_v31, vfp_d31, vfp_s31, INVALID_NUB_REGNUM };
+const char *g_invalidate_v0[] {"v0", "d0", "s0", NULL };
+const char *g_invalidate_v1[] {"v1", "d1", "s1", NULL };
+const char *g_invalidate_v2[] {"v2", "d2", "s2", NULL };
+const char *g_invalidate_v3[] {"v3", "d3", "s3", NULL };
+const char *g_invalidate_v4[] {"v4", "d4", "s4", NULL };
+const char *g_invalidate_v5[] {"v5", "d5", "s5", NULL };
+const char *g_invalidate_v6[] {"v6", "d6", "s6", NULL };
+const char *g_invalidate_v7[] {"v7", "d7", "s7", NULL };
+const char *g_invalidate_v8[] {"v8", "d8", "s8", NULL };
+const char *g_invalidate_v9[] {"v9", "d9", "s9", NULL };
+const char *g_invalidate_v10[] {"v10", "d10", "s10", NULL };
+const char *g_invalidate_v11[] {"v11", "d11", "s11", NULL };
+const char *g_invalidate_v12[] {"v12", "d12", "s12", NULL };
+const char *g_invalidate_v13[] {"v13", "d13", "s13", NULL };
+const char *g_invalidate_v14[] {"v14", "d14", "s14", NULL };
+const char *g_invalidate_v15[] {"v15", "d15", "s15", NULL };
+const char *g_invalidate_v16[] {"v16", "d16", "s16", NULL };
+const char *g_invalidate_v17[] {"v17", "d17", "s17", NULL };
+const char *g_invalidate_v18[] {"v18", "d18", "s18", NULL };
+const char *g_invalidate_v19[] {"v19", "d19", "s19", NULL };
+const char *g_invalidate_v20[] {"v20", "d20", "s20", NULL };
+const char *g_invalidate_v21[] {"v21", "d21", "s21", NULL };
+const char *g_invalidate_v22[] {"v22", "d22", "s22", NULL };
+const char *g_invalidate_v23[] {"v23", "d23", "s23", NULL };
+const char *g_invalidate_v24[] {"v24", "d24", "s24", NULL };
+const char *g_invalidate_v25[] {"v25", "d25", "s25", NULL };
+const char *g_invalidate_v26[] {"v26", "d26", "s26", NULL };
+const char *g_invalidate_v27[] {"v27", "d27", "s27", NULL };
+const char *g_invalidate_v28[] {"v28", "d28", "s28", NULL };
+const char *g_invalidate_v29[] {"v29", "d29", "s29", NULL };
+const char *g_invalidate_v30[] {"v30", "d30", "s30", NULL };
+const char *g_invalidate_v31[] {"v31", "d31", "s31", NULL };
 
 #if defined (__arm64__)
 #define VFP_V_OFFSET_IDX(idx) (offsetof (DNBArchMachARM64::FPU, __v) + (idx * 16) + offsetof (DNBArchMachARM64::Context, vfp))
@@ -1547,17 +1515,9 @@ uint32_t g_invalidate_v31[] {vfp_v31, vfp_d31, vfp_s31, INVALID_NUB_REGNUM };
 #define EXC_OFFSET(reg)      (offsetof (DNBArchMachARM64::EXC, reg)  + offsetof (DNBArchMachARM64::Context, exc))
 
 //#define FLOAT_FORMAT Float
-#define DEFINE_VFP_V_IDX(idx) { e_regSetVFP, vfp_v##idx - vfp_v0, "v" #idx, "q" #idx, Vector, VectorOfUInt8, 16, VFP_V_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_v##idx, INVALID_NUB_REGNUM, gdb_vfp_v##idx, NULL, g_invalidate_v##idx }
-#define DEFINE_PSEUDO_VFP_S_IDX(idx) { e_regSetVFP, vfp_s##idx - vfp_v0, "s" #idx, NULL, IEEE754, Float, 4, VFP_V_OFFSET_IDX(idx), INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, g_contained_v##idx, g_invalidate_v##idx }
-#define DEFINE_PSEUDO_VFP_D_IDX(idx) { e_regSetVFP, vfp_d##idx - vfp_v0, "d" #idx, NULL, IEEE754, Float, 8, VFP_V_OFFSET_IDX(idx), INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, g_contained_v##idx, g_invalidate_v##idx }
-
-//_STRUCT_ARM_VFP_STATE64
-//{
-//	uint128_t       v[32];
-//	uint32_t        fpsr;
-//	uint32_t        fpcr;
-//};
-
+#define DEFINE_VFP_V_IDX(idx) { e_regSetVFP, vfp_v##idx, "v" #idx, "q" #idx, Vector, VectorOfUInt8, 16, VFP_V_OFFSET_IDX(idx), INVALID_NUB_REGNUM, dwarf_v##idx, INVALID_NUB_REGNUM, gdb_vfp_v##idx, NULL, g_invalidate_v##idx }
+#define DEFINE_PSEUDO_VFP_S_IDX(idx) { e_regSetVFP, vfp_s##idx, "s" #idx, NULL, IEEE754, Float, 4, 0, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, g_contained_v##idx, g_invalidate_v##idx }
+#define DEFINE_PSEUDO_VFP_D_IDX(idx) { e_regSetVFP, vfp_d##idx, "d" #idx, NULL, IEEE754, Float, 8, 0, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, g_contained_v##idx, g_invalidate_v##idx }
 
 // Floating point registers
 const DNBRegisterInfo
@@ -1595,8 +1555,8 @@ DNBArchMachARM64::g_vfp_registers[] =
     DEFINE_VFP_V_IDX (29),
     DEFINE_VFP_V_IDX (30),
     DEFINE_VFP_V_IDX (31),
-    { e_regSetVFP, vfp_fpsr, "fpsr", NULL, Uint, Hex, 4, 32 * 16 + 0, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, NULL, NULL },
-    { e_regSetVFP, vfp_fpcr, "fpcr", NULL, Uint, Hex, 4, 32 * 16 + 4, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, NULL, NULL },
+    { e_regSetVFP, vfp_fpsr, "fpsr", NULL, Uint, Hex, 4, VFP_V_OFFSET_IDX (32) + 0, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, NULL, NULL },
+    { e_regSetVFP, vfp_fpcr, "fpcr", NULL, Uint, Hex, 4, VFP_V_OFFSET_IDX (32) + 4, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, INVALID_NUB_REGNUM, NULL, NULL },
 
     DEFINE_PSEUDO_VFP_S_IDX (0),
     DEFINE_PSEUDO_VFP_S_IDX (1),
@@ -1790,12 +1750,11 @@ DNBArchMachARM64::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
             break;
 
         case e_regSetVFP:
-            reg += vfp_v0;
 
             if (reg >= vfp_v0 && reg <= vfp_v31)
             {
 #if defined (__arm64__)
-                memcpy (&value->value.v_uint8, ((uint8_t *) &m_state.context.vfp.__v) + ((reg - vfp_v0) * 16), 16);
+                memcpy (&value->value.v_uint8, &m_state.context.vfp.__v[reg - vfp_v0], 16);
 #else
                 memcpy (&value->value.v_uint8, ((uint8_t *) &m_state.context.vfp.opaque) + ((reg - vfp_v0) * 16), 16);
 #endif
@@ -1804,7 +1763,7 @@ DNBArchMachARM64::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
             else if (reg == vfp_fpsr)
             {
 #if defined (__arm64__)
-                memcpy (&value->value.uint32, ((uint8_t *) &m_state.context.vfp.__v) + (32 * 16) + 0, 4);
+                memcpy (&value->value.uint32, &m_state.context.vfp.__fpsr, 4);
 #else
                 memcpy (&value->value.uint32, ((uint8_t *) &m_state.context.vfp.opaque) + (32 * 16) + 0, 4);
 #endif
@@ -1813,7 +1772,7 @@ DNBArchMachARM64::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
             else if (reg == vfp_fpcr)
             {
 #if defined (__arm64__)
-                memcpy (&value->value.uint32, ((uint8_t *) &m_state.context.vfp.__v) + (32 * 16) + 4, 4);
+                memcpy (&value->value.uint32, &m_state.context.vfp.__fpcr, 4);
 #else
                 memcpy (&value->value.uint32, ((uint8_t *) &m_state.context.vfp.opaque) + (32 * 16) + 4, 4);
 #endif
@@ -1822,7 +1781,7 @@ DNBArchMachARM64::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
             else if (reg >= vfp_s0 && reg <= vfp_s31)
             {
 #if defined (__arm64__)
-                memcpy (&value->value.v_uint8, ((uint8_t *) &m_state.context.vfp.__v) + ((reg - vfp_s0) * 16), 4);
+                memcpy (&value->value.v_uint8, &m_state.context.vfp.__v[reg - vfp_s0], 4);
 #else
                 memcpy (&value->value.v_uint8, ((uint8_t *) &m_state.context.vfp.opaque) + ((reg - vfp_s0) * 16), 4);
 #endif
@@ -1831,7 +1790,7 @@ DNBArchMachARM64::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
             else if (reg >= vfp_d0 && reg <= vfp_d31)
             {
 #if defined (__arm64__)
-                memcpy (&value->value.v_uint8, ((uint8_t *) &m_state.context.vfp.__v) + ((reg - vfp_d0) * 16), 8);
+                memcpy (&value->value.v_uint8, &m_state.context.vfp.__v[reg - vfp_d0], 8);
 #else
                 memcpy (&value->value.v_uint8, ((uint8_t *) &m_state.context.vfp.opaque) + ((reg - vfp_d0) * 16), 8);
 #endif
@@ -1847,7 +1806,7 @@ DNBArchMachARM64::GetRegisterValue(int set, int reg, DNBRegisterValue *value)
             }
             else if (reg == exc_esr)
             {
-                value->value.uint64 = m_state.context.exc.__esr;
+                value->value.uint32 = m_state.context.exc.__esr;
                 return true;
             }
             else if (reg == exc_exception)
@@ -1890,12 +1849,10 @@ DNBArchMachARM64::SetRegisterValue(int set, int reg, const DNBRegisterValue *val
             break;
             
         case e_regSetVFP:
-            reg += vfp_v0;
-
             if (reg >= vfp_v0 && reg <= vfp_v31)
             {
 #if defined (__arm64__)
-                memcpy (((uint8_t *) &m_state.context.vfp.__v) + ((reg - vfp_v0) * 16), &value->value.v_uint8, 16);
+                memcpy (&m_state.context.vfp.__v[reg - vfp_v0], &value->value.v_uint8, 16);
 #else
                 memcpy (((uint8_t *) &m_state.context.vfp.opaque) + ((reg - vfp_v0) * 16), &value->value.v_uint8, 16);
 #endif
@@ -1904,7 +1861,7 @@ DNBArchMachARM64::SetRegisterValue(int set, int reg, const DNBRegisterValue *val
             else if (reg == vfp_fpsr)
             {
 #if defined (__arm64__)
-                memcpy (((uint8_t *) &m_state.context.vfp.__v) + (32 * 16) + 0, &value->value.uint32, 4);
+                memcpy (&m_state.context.vfp.__fpsr, &value->value.uint32, 4);
 #else
                 memcpy (((uint8_t *) &m_state.context.vfp.opaque) + (32 * 16) + 0, &value->value.uint32, 4);
 #endif
@@ -1913,7 +1870,7 @@ DNBArchMachARM64::SetRegisterValue(int set, int reg, const DNBRegisterValue *val
             else if (reg == vfp_fpcr)
             {
 #if defined (__arm64__)
-                memcpy (((uint8_t *) m_state.context.vfp.__v) + (32 * 16) + 4, &value->value.uint32, 4);
+                memcpy (&m_state.context.vfp.__fpcr, &value->value.uint32, 4);
 #else
                 memcpy (((uint8_t *) m_state.context.vfp.opaque) + (32 * 16) + 4, &value->value.uint32, 4);
 #endif
@@ -1922,7 +1879,7 @@ DNBArchMachARM64::SetRegisterValue(int set, int reg, const DNBRegisterValue *val
             else if (reg >= vfp_s0 && reg <= vfp_s31)
             {
 #if defined (__arm64__)
-                memcpy (((uint8_t *) &m_state.context.vfp.__v) + ((reg - vfp_s0) * 16), &value->value.v_uint8, 4);
+                memcpy (&m_state.context.vfp.__v[reg - vfp_s0], &value->value.v_uint8, 4);
 #else
                 memcpy (((uint8_t *) &m_state.context.vfp.opaque) + ((reg - vfp_s0) * 16), &value->value.v_uint8, 4);
 #endif
@@ -1931,7 +1888,7 @@ DNBArchMachARM64::SetRegisterValue(int set, int reg, const DNBRegisterValue *val
             else if (reg >= vfp_d0 && reg <= vfp_d31)
             {
 #if defined (__arm64__)
-                memcpy (((uint8_t *) &m_state.context.vfp.__v) + ((reg - vfp_d0) * 16), &value->value.v_uint8, 8);
+                memcpy (&m_state.context.vfp.__v[reg - vfp_d0], &value->value.v_uint8, 8);
 #else
                 memcpy (((uint8_t *) &m_state.context.vfp.opaque) + ((reg - vfp_d0) * 16), &value->value.v_uint8, 8);
 #endif
@@ -1947,7 +1904,7 @@ DNBArchMachARM64::SetRegisterValue(int set, int reg, const DNBRegisterValue *val
             }
             else if (reg == exc_esr)
             {
-                m_state.context.exc.__esr = value->value.uint64;
+                m_state.context.exc.__esr = value->value.uint32;
                 success = true;
             }
             else if (reg == exc_exception)
@@ -2015,7 +1972,9 @@ DNBArchMachARM64::RegisterSetStateIsValid (int set) const
 nub_size_t
 DNBArchMachARM64::GetRegisterContext (void *buf, nub_size_t buf_len)
 {
-    nub_size_t size = sizeof (m_state.context);
+    nub_size_t size = sizeof (m_state.context.gpr) +
+                      sizeof (m_state.context.vfp) +
+                      sizeof (m_state.context.exc);
     
     if (buf && buf_len)
     {
@@ -2025,7 +1984,18 @@ DNBArchMachARM64::GetRegisterContext (void *buf, nub_size_t buf_len)
         bool force = false;
         if (GetGPRState(force) | GetVFPState(force) | GetEXCState(force))
             return 0;
-        ::memcpy (buf, &m_state.context, size);
+
+        // Copy each struct individually to avoid any padding that might be between the structs in m_state.context
+        uint8_t *p = (uint8_t *)buf;
+        ::memcpy (p, &m_state.context.gpr, sizeof(m_state.context.gpr));
+        p += sizeof(m_state.context.gpr);
+        ::memcpy (p, &m_state.context.vfp, sizeof(m_state.context.vfp));
+        p += sizeof(m_state.context.vfp);
+        ::memcpy (p, &m_state.context.exc, sizeof(m_state.context.exc));
+        p += sizeof(m_state.context.exc);
+        
+        size_t bytes_written = p - (uint8_t *)buf;
+        assert (bytes_written == size);
     }
     DNBLogThreadedIf (LOG_THREAD, "DNBArchMachARM64::GetRegisterContext (buf = %p, len = %zu) => %zu", buf, buf_len, size);
     // Return the size of the register context even if NULL was passed in
@@ -2035,7 +2005,10 @@ DNBArchMachARM64::GetRegisterContext (void *buf, nub_size_t buf_len)
 nub_size_t
 DNBArchMachARM64::SetRegisterContext (const void *buf, nub_size_t buf_len)
 {
-    nub_size_t size = sizeof (m_state.context);
+    nub_size_t size = sizeof (m_state.context.gpr) +
+                      sizeof (m_state.context.vfp) +
+                      sizeof (m_state.context.exc);
+
     if (buf == NULL || buf_len == 0)
         size = 0;
     
@@ -2044,7 +2017,17 @@ DNBArchMachARM64::SetRegisterContext (const void *buf, nub_size_t buf_len)
         if (size > buf_len)
             size = buf_len;
 
-        ::memcpy (&m_state.context, buf, size);
+        // Copy each struct individually to avoid any padding that might be between the structs in m_state.context
+        uint8_t *p = (uint8_t *)buf;
+        ::memcpy (&m_state.context.gpr, p, sizeof(m_state.context.gpr));
+        p += sizeof(m_state.context.gpr);
+        ::memcpy (&m_state.context.vfp, p, sizeof(m_state.context.vfp));
+        p += sizeof(m_state.context.vfp);
+        ::memcpy (&m_state.context.exc, p, sizeof(m_state.context.exc));
+        p += sizeof(m_state.context.exc);
+        
+        size_t bytes_written = p - (uint8_t *)buf;
+        assert (bytes_written == size);
         SetGPRState();
         SetVFPState();
         SetEXCState();
@@ -2053,6 +2036,57 @@ DNBArchMachARM64::SetRegisterContext (const void *buf, nub_size_t buf_len)
     return size;
 }
 
+uint32_t
+DNBArchMachARM64::SaveRegisterState ()
+{
+    kern_return_t kret = ::thread_abort_safely(m_thread->MachPortNumber());
+    DNBLogThreadedIf (LOG_THREAD, "thread = 0x%4.4x calling thread_abort_safely (tid) => %u (SetGPRState() for stop_count = %u)", m_thread->MachPortNumber(), kret, m_thread->Process()->StopCount());
+    
+    // Always re-read the registers because above we call thread_abort_safely();
+    bool force = true;
+    
+    if ((kret = GetGPRState(force)) != KERN_SUCCESS)
+    {
+        DNBLogThreadedIf (LOG_THREAD, "DNBArchMachARM64::SaveRegisterState () error: GPR regs failed to read: %u ", kret);
+    }
+    else if ((kret = GetVFPState(force)) != KERN_SUCCESS)
+    {
+        DNBLogThreadedIf (LOG_THREAD, "DNBArchMachARM64::SaveRegisterState () error: %s regs failed to read: %u", "VFP", kret);
+    }
+    else
+    {
+        const uint32_t save_id = GetNextRegisterStateSaveID ();
+        m_saved_register_states[save_id] = m_state.context;
+        return save_id;
+    }
+    return UINT32_MAX;
+}
+
+bool
+DNBArchMachARM64::RestoreRegisterState (uint32_t save_id)
+{
+    SaveRegisterStates::iterator pos = m_saved_register_states.find(save_id);
+    if (pos != m_saved_register_states.end())
+    {
+        m_state.context.gpr = pos->second.gpr;
+        m_state.context.vfp = pos->second.vfp;
+        kern_return_t kret;
+        bool success = true;
+        if ((kret = SetGPRState()) != KERN_SUCCESS)
+        {
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchMachARM64::RestoreRegisterState (save_id = %u) error: GPR regs failed to write: %u", save_id, kret);
+            success = false;
+        }
+        else if ((kret = SetVFPState()) != KERN_SUCCESS)
+        {
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchMachARM64::RestoreRegisterState (save_id = %u) error: %s regs failed to write: %u", save_id, "VFP", kret);
+            success = false;
+        }
+        m_saved_register_states.erase(pos);
+        return success;
+    }
+    return false;
+}
 
 #endif  // #if defined (ARM_THREAD_STATE64_COUNT)
 #endif  // #if defined (__arm__)

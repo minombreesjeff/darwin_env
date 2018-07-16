@@ -8,7 +8,7 @@ import lldbutil
 
 class FunctionTypesTestCase(TestBase):
 
-    mydir = os.path.join("lang", "c", "function_types")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -29,7 +29,7 @@ class FunctionTypesTestCase(TestBase):
         """Test that a function pointer to 'printf' works and can be called."""
         self.buildDsym()
         self.function_pointers()
-    
+
     @dwarf_test
     def test_pointers_with_dwarf(self):
         """Test that a function pointer to 'printf' works and can be called."""

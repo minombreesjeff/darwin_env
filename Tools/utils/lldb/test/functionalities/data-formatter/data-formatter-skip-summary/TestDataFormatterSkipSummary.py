@@ -10,7 +10,7 @@ import lldbutil
 
 class SkipSummaryDataFormatterTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "data-formatter-skip-summary")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -158,9 +158,7 @@ class SkipSummaryDataFormatterTestCase(TestBase):
         self.expect('frame variable data1.m_child1->m_child2.m_child1.m_child2 --no-summary-depth=2',
             substrs = ['(DeepData_5) data1.m_child1->m_child2.m_child1.m_child2 = {',
                        'm_some_text = {',
-                       '_M_dataplus = {',
-                       '_M_p = 0x',
-                       '"Just a test"'])
+                       '_M_dataplus = (_M_p = "Just a test")'])
 
         # Repeat the above, but only skip 1 level of summaries
         self.expect('frame variable data1.m_child1->m_child2.m_child1.m_child2 --no-summary-depth=1',

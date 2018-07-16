@@ -92,7 +92,8 @@ TargetList::CreateTarget (Debugger &debugger,
         ModuleSpec module_spec;
         module_spec.GetFileSpec().SetFile(user_exe_path, true);
         lldb::offset_t file_offset = 0;
-        const size_t num_specs = ObjectFile::GetModuleSpecifications (module_spec.GetFileSpec(), file_offset, module_specs);
+        lldb::offset_t file_size = 0;
+        const size_t num_specs = ObjectFile::GetModuleSpecifications (module_spec.GetFileSpec(), file_offset, file_size, module_specs);
         if (num_specs > 0)
         {
             ModuleSpec matching_module_spec;
@@ -221,8 +222,19 @@ TargetList::CreateTarget (Debugger &debugger,
     FileSpec file (user_exe_path, false);
     if (!file.Exists() && user_exe_path && user_exe_path[0] == '~')
     {
-        file = FileSpec(user_exe_path, true);
+        // we want to expand the tilde but we don't want to resolve any symbolic links
+        // so we can't use the FileSpec constructor's resolve flag
+        char unglobbed_path[PATH_MAX];
+        unglobbed_path[0] = '\0';
+
+        size_t return_count = FileSpec::ResolveUsername(user_exe_path, unglobbed_path, sizeof(unglobbed_path));
+
+        if (return_count == 0 || return_count >= sizeof(unglobbed_path))
+            ::snprintf (unglobbed_path, sizeof(unglobbed_path), "%s", user_exe_path);
+
+        file = FileSpec(unglobbed_path, false);
     }
+
     bool user_exe_path_is_bundle = false;
     char resolved_bundle_exe_path[PATH_MAX];
     resolved_bundle_exe_path[0] = '\0';
@@ -304,8 +316,8 @@ TargetList::CreateTarget (Debugger &debugger,
             }
             else
             {
-                // Just use what the user typed
-                target_sp->SetArg0 (user_exe_path);
+                // Use resolved path
+                target_sp->SetArg0 (file.GetPath().c_str());
             }
         }
         if (file.GetDirectory())
@@ -351,7 +363,7 @@ TargetList::FindTargetWithExecutableAndArchitecture
 {
     Mutex::Locker locker (m_target_list_mutex);
     TargetSP target_sp;
-    bool full_match = exe_file_spec.GetDirectory();
+    bool full_match = (bool)exe_file_spec.GetDirectory();
 
     collection::const_iterator pos, end = m_target_list.end();
     for (pos = m_target_list.begin(); pos != end; ++pos)

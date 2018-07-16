@@ -10,16 +10,19 @@ import lldbutil
 
 class ThreadStateTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "thread", "state")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
+    @expectedFailureDarwin("rdar://15367566")
     def test_state_after_breakpoint_with_dsym(self):
         """Test thread state after breakpoint."""
         self.buildDsym(dictionary=self.getBuildFlags(use_cpp11=False))
         self.thread_state_after_breakpoint_test()
 
+    @expectedFailureFreeBSD('llvm.org/pr15824')
     @dwarf_test
+    @expectedFailureDarwin("rdar://15367566")
     def test_state_after_breakpoint_with_dwarf(self):
         """Test thread state after breakpoint."""
         self.buildDwarf(dictionary=self.getBuildFlags(use_cpp11=False))

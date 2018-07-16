@@ -28,7 +28,6 @@
 #include "lldb/Core/ClangForward.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/dwarf.h"
-#include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/Flags.h"
 #include "lldb/Core/UniqueCStringMap.h"
 #include "lldb/Symbol/ClangASTContext.h"
@@ -37,6 +36,7 @@
 
 // Project includes
 #include "DWARFDefines.h"
+#include "DWARFDataExtractor.h"
 #include "HashedNameToDIE.h"
 #include "NameToDIE.h"
 #include "UniqueDWARFASTType.h"
@@ -107,7 +107,7 @@ public:
     virtual size_t          ParseVariablesForContext (const lldb_private::SymbolContext& sc);
 
     virtual lldb_private::Type* ResolveTypeUID(lldb::user_id_t type_uid);
-    virtual lldb::clang_type_t ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_opaque_type);
+    virtual bool            ResolveClangOpaqueTypeDefinition (lldb_private::ClangASTType& clang_type);
 
     virtual lldb_private::Type* ResolveType (DWARFCompileUnit* dwarf_cu, const DWARFDebugInfoEntry* type_die, bool assert_not_being_parsed = true);
     virtual clang::DeclContext* GetClangDeclContextContainingTypeUID (lldb::user_id_t type_uid);
@@ -199,18 +199,18 @@ public:
     //virtual size_t        GetCompUnitCount() = 0;
     //virtual CompUnitSP    GetCompUnitAtIndex(size_t cu_idx) = 0;
 
-    const lldb_private::DataExtractor&      get_debug_abbrev_data ();
-    const lldb_private::DataExtractor&      get_debug_aranges_data ();
-    const lldb_private::DataExtractor&      get_debug_frame_data ();
-    const lldb_private::DataExtractor&      get_debug_info_data ();
-    const lldb_private::DataExtractor&      get_debug_line_data ();
-    const lldb_private::DataExtractor&      get_debug_loc_data ();
-    const lldb_private::DataExtractor&      get_debug_ranges_data ();
-    const lldb_private::DataExtractor&      get_debug_str_data ();
-    const lldb_private::DataExtractor&      get_apple_names_data ();
-    const lldb_private::DataExtractor&      get_apple_types_data ();
-    const lldb_private::DataExtractor&      get_apple_namespaces_data ();
-    const lldb_private::DataExtractor&      get_apple_objc_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_abbrev_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_aranges_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_frame_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_info_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_line_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_loc_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_ranges_data ();
+    const lldb_private::DWARFDataExtractor&     get_debug_str_data ();
+    const lldb_private::DWARFDataExtractor&     get_apple_names_data ();
+    const lldb_private::DWARFDataExtractor&     get_apple_types_data ();
+    const lldb_private::DWARFDataExtractor&     get_apple_namespaces_data ();
+    const lldb_private::DWARFDataExtractor&     get_apple_objc_data ();
 
 
     DWARFDebugAbbrev*       DebugAbbrev();
@@ -222,10 +222,10 @@ public:
     DWARFDebugRanges*       DebugRanges();
     const DWARFDebugRanges* DebugRanges() const;
 
-    const lldb_private::DataExtractor&
+    const lldb_private::DWARFDataExtractor&
     GetCachedSectionData (uint32_t got_flag, 
                           lldb::SectionType sect_type, 
-                          lldb_private::DataExtractor &data);
+                          lldb_private::DWARFDataExtractor &data);
 
     static bool
     SupportedVersion(uint16_t version);
@@ -275,7 +275,7 @@ public:
     }
 
     bool
-    HasForwardDeclForClangType (lldb::clang_type_t clang_type);
+    HasForwardDeclForClangType (const lldb_private::ClangASTType &clang_type);
 
 protected:
 
@@ -347,7 +347,7 @@ protected:
                                 const lldb_private::SymbolContext& sc,
                                 DWARFCompileUnit* dwarf_cu,
                                 const DWARFDebugInfoEntry *die,
-                                lldb::clang_type_t class_clang_type,
+                                lldb_private::ClangASTType &class_clang_type,
                                 const lldb::LanguageType class_language,
                                 std::vector<clang::CXXBaseSpecifier *>& base_classes,
                                 std::vector<int>& member_accessibilities,
@@ -365,14 +365,14 @@ protected:
                                 bool skip_artificial,
                                 bool &is_static,
                                 lldb_private::TypeList* type_list,
-                                std::vector<lldb::clang_type_t>& function_args,
+                                std::vector<lldb_private::ClangASTType>& function_args,
                                 std::vector<clang::ParmVarDecl*>& function_param_decls,
                                 unsigned &type_quals,
                                 lldb_private::ClangASTContext::TemplateParameterInfos &template_param_infos);
 
     size_t                  ParseChildEnumerators(
                                 const lldb_private::SymbolContext& sc,
-                                lldb::clang_type_t enumerator_qual_type,
+                                lldb_private::ClangASTType &clang_type,
                                 bool is_signed,
                                 uint32_t enumerator_byte_size,
                                 DWARFCompileUnit* dwarf_cu,
@@ -560,23 +560,23 @@ protected:
               uint32_t type_mask,
               TypeSet &type_set);
 
-    lldb::ModuleWP                  m_debug_map_module_wp;
-    SymbolFileDWARFDebugMap *       m_debug_map_symfile;
-    clang::TranslationUnitDecl *    m_clang_tu_decl;
-    lldb_private::Flags             m_flags;
-    lldb_private::DataExtractor     m_dwarf_data; 
-    lldb_private::DataExtractor     m_data_debug_abbrev;
-    lldb_private::DataExtractor     m_data_debug_aranges;
-    lldb_private::DataExtractor     m_data_debug_frame;
-    lldb_private::DataExtractor     m_data_debug_info;
-    lldb_private::DataExtractor     m_data_debug_line;
-    lldb_private::DataExtractor     m_data_debug_loc;
-    lldb_private::DataExtractor     m_data_debug_ranges;
-    lldb_private::DataExtractor     m_data_debug_str;
-    lldb_private::DataExtractor     m_data_apple_names;
-    lldb_private::DataExtractor     m_data_apple_types;
-    lldb_private::DataExtractor     m_data_apple_namespaces;
-    lldb_private::DataExtractor     m_data_apple_objc;
+    lldb::ModuleWP                        m_debug_map_module_wp;
+    SymbolFileDWARFDebugMap *             m_debug_map_symfile;
+    clang::TranslationUnitDecl *          m_clang_tu_decl;
+    lldb_private::Flags                   m_flags;
+    lldb_private::DWARFDataExtractor      m_dwarf_data; 
+    lldb_private::DWARFDataExtractor      m_data_debug_abbrev;
+    lldb_private::DWARFDataExtractor      m_data_debug_aranges;
+    lldb_private::DWARFDataExtractor      m_data_debug_frame;
+    lldb_private::DWARFDataExtractor      m_data_debug_info;
+    lldb_private::DWARFDataExtractor      m_data_debug_line;
+    lldb_private::DWARFDataExtractor      m_data_debug_loc;
+    lldb_private::DWARFDataExtractor      m_data_debug_ranges;
+    lldb_private::DWARFDataExtractor      m_data_debug_str;
+    lldb_private::DWARFDataExtractor      m_data_apple_names;
+    lldb_private::DWARFDataExtractor      m_data_apple_types;
+    lldb_private::DWARFDataExtractor      m_data_apple_namespaces;
+    lldb_private::DWARFDataExtractor      m_data_apple_objc;
 
     // The unique pointer items below are generated on demand if and when someone accesses
     // them through a non const version of this class.

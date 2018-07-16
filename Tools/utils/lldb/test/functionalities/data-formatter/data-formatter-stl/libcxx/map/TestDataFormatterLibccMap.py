@@ -10,7 +10,7 @@ import lldbutil
 
 class LibcxxMapDataFormatterTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "data-formatter-stl", "libcxx", "map")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -19,6 +19,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         self.buildDsym()
         self.data_formatter_commands()
 
+    @skipIfFreeBSD # llvm.org/pr17231
     @skipIfLinux # No standard locations for libc++ on Linux, so skip for now 
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
@@ -55,7 +56,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.expect('image list',substrs=['libc++.1.dylib','libc++abi.dylib'])
+        self.expect('image list', substrs = self.getLibcPlusPlusLibs())
 
         self.runCmd("frame variable ii --show-types")
                 
@@ -67,10 +68,10 @@ class LibcxxMapDataFormatterTestCase(TestBase):
 
         self.expect('frame variable ii',
                     substrs = ['size=2',
-                               '[0] = {',
+                               '[0] = ',
                                'first = 0',
                                'second = 0',
-                               '[1] = {',
+                               '[1] = ',
                                'first = 1',
                                'second = 1'])
 
@@ -78,10 +79,10 @@ class LibcxxMapDataFormatterTestCase(TestBase):
 
         self.expect('frame variable ii',
                     substrs = ['size=4',
-                               '[2] = {',
+                               '[2] = ',
                                'first = 2',
                                'second = 0',
-                               '[3] = {',
+                               '[3] = ',
                                'first = 3',
                                'second = 1'])
 
@@ -89,19 +90,19 @@ class LibcxxMapDataFormatterTestCase(TestBase):
 
         self.expect("frame variable ii",
                     substrs = ['size=8',
-                               '[5] = {',
+                               '[5] = ',
                                'first = 5',
                                'second = 0',
-                               '[7] = {',
+                               '[7] = ',
                                'first = 7',
                                'second = 1'])
 
         self.expect("p ii",
                     substrs = ['size=8',
-                               '[5] = {',
+                               '[5] = ',
                                'first = 5',
                                'second = 0',
-                               '[7] = {',
+                               '[7] = ',
                                'first = 7',
                                'second = 1'])
 

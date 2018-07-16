@@ -30,20 +30,16 @@ my $os_release = 11;
 
 my $original_env_path = $ENV{PATH};
 
-# Added 2012-02-10.  XBS in Innsbruck is setting these to YES so llvm gets built that way.
-# but lldb builds with them set to NO.  If I switch lldb to build with YES, it fails for i386
-# at least.  So try forcing everyone to "NO" to work around this for now.
-# Some other part of the build system is building part of lldb with GCC_INLINES_ARE_PRIVATE_EXTERN=YES
-# don't disable that setting here.
 #$ENV{GCC_INLINES_ARE_PRIVATE_EXTERN} = "NO";
 $ENV{GCC_SYMBOLS_PRIVATE_EXTERN} = "NO";
+my $common_configure_options = "--disable-terminfo";
 
 our %llvm_config_info = (
-    'Debug'         => { configure_options => '--disable-optimized --disable-assertions --enable-libcpp', make_options => 'DEBUG_SYMBOLS=1'},
-    'Debug+Asserts' => { configure_options => '--disable-optimized --enable-assertions --enable-libcpp' , make_options => 'DEBUG_SYMBOLS=1'},
-    'Release'       => { configure_options => '--enable-optimized --disable-assertions --enable-libcpp' , make_options => ''},
-    'Release+Debug' => { configure_options => '--enable-optimized --disable-assertions --enable-libcpp' , make_options => 'DEBUG_SYMBOLS=1'},
-    'Release+Asserts' => { configure_options => '--enable-optimized --enable-assertions --enable-libcpp' , make_options => ''},
+    'Debug'         => { configure_options => '--disable-optimized --disable-assertions --enable-cxx11 --enable-libcpp', make_options => 'DEBUG_SYMBOLS=1'},
+    'Debug+Asserts' => { configure_options => '--disable-optimized --enable-assertions --enable-cxx11 --enable-libcpp' , make_options => 'DEBUG_SYMBOLS=1'},
+    'Release'       => { configure_options => '--enable-optimized --disable-assertions --enable-cxx11 --enable-libcpp' , make_options => ''},
+    'Release+Debug' => { configure_options => '--enable-optimized --disable-assertions --enable-cxx11 --enable-libcpp' , make_options => 'DEBUG_SYMBOLS=1'},
+    'Release+Asserts' => { configure_options => '--enable-optimized --enable-assertions --enable-cxx11 --enable-libcpp' , make_options => ''},
 );
 
 our $llvm_config_href = undef;
@@ -70,7 +66,6 @@ our @archive_files = (
     "$llvm_configuration/lib/libclangSema.a",
     "$llvm_configuration/lib/libclangSerialization.a",
     "$llvm_configuration/lib/libLLVMAnalysis.a",
-    "$llvm_configuration/lib/libLLVMArchive.a",
     "$llvm_configuration/lib/libLLVMARMAsmParser.a",
     "$llvm_configuration/lib/libLLVMARMAsmPrinter.a",
     "$llvm_configuration/lib/libLLVMARMCodeGen.a",
@@ -126,10 +121,9 @@ if (-e "$llvm_srcroot/lib")
 else
 {
     print "Checking out llvm sources...\n";
-    do_command ("cd '$SRCROOT' && git clone -b clang-500.2-branch git:/git/puzzlebox/llvm.git/", "checking out llvm from repository", 1); 
-
+    do_command ("cd '$SRCROOT' && git clone -b clang-503.2-branch git:/git/puzzlebox/llvm.git/", "checking out llvm from repository", 1); 
     print "Checking out clang sources...\n";
-    do_command ("cd '$SRCROOT/llvm/tools' && git clone -b clang-500.2-branch git:/git/puzzlebox/clang.git/", "checking out clang from repository", 1);
+    do_command ("cd '$SRCROOT/llvm/tools' && git clone -b clang-503.2-branch git:/git/puzzlebox/clang.git/", "checking out clang from repository", 1);
 
     print "Applying any local patches to LLVM/Clang...";
 
@@ -159,7 +153,7 @@ our $debug = 1;
 
 sub parallel_guess
 {
-    my $cpus = `sysctl -n hw.availcpu`;
+    my $cpus = `sysctl -n hw.ncpu`;
     chomp ($cpus);
     my $memsize = `sysctl -n hw.memsize`;
     chomp ($memsize);
@@ -219,7 +213,7 @@ sub build_llvm
                 if (!-d $llvm_dstroot_arch_bin)
                 {
                     do_command ("mkdir -p '$llvm_dstroot_arch_bin'", "making llvm build arch bin directory '$llvm_dstroot_arch_bin'", 1);
-                    my @tools = ("ar", "nm", "ranlib", "strip", "lipo", "ld", "as");
+                    my @tools = ("ar", "nm", "strip", "lipo", "ld", "as");
                     my $script_mode = 0755;
                     my $prog;
                     for $prog (@tools)
@@ -255,7 +249,7 @@ sub build_llvm
         {
             # Build llvm and clang
             print "Configuring clang ($arch) in '$llvm_dstroot_arch'...\n";
-            my $lldb_configuration_options = "--enable-targets=x86_64,arm,arm64 $llvm_config_href->{configure_options}";
+            my $lldb_configuration_options = "--enable-targets=x86_64,arm,arm64 $common_configure_options $llvm_config_href->{configure_options}";
 
             if ($is_arm)
             {
@@ -404,7 +398,6 @@ sub create_single_llvm_archive_for_arch
     }
     close (FILES);
     do_command ("libtool -static -o '$arch_output_file' -filelist '$files'");
-    do_command ("ranlib '$arch_output_file'");
 
     foreach $object_dir (@object_dirs)
     {

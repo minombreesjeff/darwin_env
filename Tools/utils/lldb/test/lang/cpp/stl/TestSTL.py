@@ -10,7 +10,7 @@ from lldbtest import *
 
 class STLTestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "stl")
+    mydir = TestBase.compute_mydir(__file__)
 
     # rdar://problem/10400981
     @unittest2.expectedFailure
@@ -37,6 +37,7 @@ class STLTestCase(TestBase):
         self.sbtype_template_apis()
 
     @skipIfGcc # llvm.org/pr15036: crashes during DWARF parsing when built with GCC
+    @expectedFailureIcc # icc 13.1 and 14-beta do not emit DW_TAG_template_type_parameter
     @python_api_test
     @dwarf_test
     def test_SBType_template_aspects_with_dwarf(self):
@@ -105,7 +106,7 @@ class STLTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue(process, PROCESS_IS_VALID)
 
         # Get Frame #0.

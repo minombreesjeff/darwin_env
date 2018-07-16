@@ -127,6 +127,28 @@ private:
     bool 
     GetDynamicLoaderAddress (lldb::addr_t addr);
 
+    typedef enum CorefilePreference { eUserProcessCorefile, eKernelCorefile } CorefilePreferences;
+
+    //------------------------------------------------------------------
+    /// If a core file can be interpreted multiple ways, this establishes
+    /// which style wins.
+    ///
+    /// If a core file contains both a kernel binary and a user-process
+    /// dynamic loader, lldb needs to pick one over the other.  This could
+    /// be a kernel corefile that happens to have a coyp of dyld in its
+    /// memory.  Or it could be a user process coredump of lldb while doing
+    /// kernel debugging - so a copy of the kernel is in its heap.  This
+    /// should become a setting so it can be over-ridden when necessary.
+    //------------------------------------------------------------------
+    CorefilePreference
+    GetCorefilePreference ()
+    {
+        // For now, if both user process and kernel binaries a present,
+        // assume this is a kernel coredump which has a copy of a user
+        // process dyld in one of its pages.
+        return eKernelCorefile;
+    }
+
     //------------------------------------------------------------------
     // For ProcessMachCore only
     //------------------------------------------------------------------
@@ -137,6 +159,7 @@ private:
     lldb::ModuleSP m_core_module_sp;
     lldb_private::FileSpec m_core_file;
     lldb::addr_t m_dyld_addr;
+    lldb::addr_t m_mach_kernel_addr;
     lldb_private::ConstString m_dyld_plugin_name;
     DISALLOW_COPY_AND_ASSIGN (ProcessMachCore);
     

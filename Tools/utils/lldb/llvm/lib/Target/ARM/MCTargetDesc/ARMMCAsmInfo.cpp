@@ -24,7 +24,7 @@ EnableARMEHABI("arm-enable-ehabi", cl::Hidden,
 
 void ARMMCAsmInfoDarwin::anchor() { }
 
-ARMMCAsmInfoDarwin::ARMMCAsmInfoDarwin() {
+ARMMCAsmInfoDarwin::ARMMCAsmInfoDarwin(bool UsesSjLjEH) {
   Data64bitsDirective = 0;
   CommentString = "@";
   Code16Directive = ".code\t16";
@@ -34,7 +34,8 @@ ARMMCAsmInfoDarwin::ARMMCAsmInfoDarwin() {
   SupportsDebugInformation = true;
 
   // Exceptions handling
-  ExceptionsType = ExceptionHandling::SjLj;
+  ExceptionsType = UsesSjLjEH ?
+    ExceptionHandling::SjLj : ExceptionHandling::DwarfCFI;
 }
 
 void ARMELFMCAsmInfo::anchor() { }
@@ -48,8 +49,6 @@ ARMELFMCAsmInfo::ARMELFMCAsmInfo() {
   PrivateGlobalPrefix = ".L";
   Code16Directive = ".code\t16";
   Code32Directive = ".code\t32";
-
-  WeakRefDirective = "\t.weak\t";
 
   HasLEB128 = true;
   SupportsDebugInformation = true;

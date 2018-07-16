@@ -10,7 +10,7 @@ from lldbtest import *
 
 class SingleQuoteInCommandLineTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "single-quote-in-filename-to-lldb")
+    mydir = TestBase.compute_mydir(__file__)
     myexe = "path with '09/a.out"
 
     @classmethod
@@ -23,7 +23,6 @@ class SingleQuoteInCommandLineTestCase(TestBase):
         except:
             pass
 
-    @skipIfLinux # llvm.org/pr14637: this test case fails sometimes because the input prompt "(lldb)" is missing
     def test_lldb_invocation_with_single_quote_in_filename(self):
         """Test that 'lldb my_file_name' works where my_file_name is a string with a single quote char in it."""
         self.buildDefault()

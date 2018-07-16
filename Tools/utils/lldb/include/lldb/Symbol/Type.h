@@ -16,6 +16,7 @@
 #include "lldb/Core/UserID.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/Declaration.h"
+
 #include <set>
 
 namespace lldb_private {
@@ -84,7 +85,7 @@ public:
           lldb::user_id_t encoding_uid,
           EncodingDataType encoding_uid_type,
           const Declaration& decl,
-          lldb::clang_type_t clang_qual_type,
+          const ClangASTType &clang_qual_type,
           ResolveState clang_type_resolve_state);
     
     // This makes an invalid type.  Used for functions that return a Type when they
@@ -226,22 +227,19 @@ public:
 
     // Get the clang type, and resolve definitions for any 
     // class/struct/union/enum types completely.
-    lldb::clang_type_t 
+    ClangASTType
     GetClangFullType ();
 
     // Get the clang type, and resolve definitions enough so that the type could
     // have layout performed. This allows ptrs and refs to class/struct/union/enum 
     // types remain forward declarations.
-    lldb::clang_type_t 
+    ClangASTType
     GetClangLayoutType ();
 
     // Get the clang type and leave class/struct/union/enum types as forward
     // declarations if they haven't already been fully defined.
-    lldb::clang_type_t 
+    ClangASTType 
     GetClangForwardType ();
-
-    clang::ASTContext *
-    GetClangAST ();
 
     ClangASTContext &
     GetClangASTContext ();
@@ -264,21 +262,10 @@ public:
 
     uint32_t
     GetEncodingMask ();
-
-    void *
-    CreateClangPointerType (Type *type);
-
-    void *
+    
+    ClangASTType
     CreateClangTypedefType (Type *typedef_type, Type *base_type);
 
-    // For C++98 references (&)
-    void *
-    CreateClangLValueReferenceType (Type *type);
-
-    // For C++0x references (&&)
-    void *
-    CreateClangRValueReferenceType (Type *type);
-    
     bool
     IsRealObjCClass();
     
@@ -303,7 +290,7 @@ protected:
     EncodingDataType m_encoding_uid_type;
     uint64_t m_byte_size;
     Declaration m_decl;
-    lldb::clang_type_t m_clang_type;
+    ClangASTType m_clang_type;
     
     struct Flags {
         ResolveState    clang_type_resolve_state : 2;
@@ -317,147 +304,236 @@ protected:
     ResolveClangType (ResolveState clang_type_resolve_state);
 };
 
+// these classes are used to back the SBType* objects
 
-///
-/// Sometimes you can find the name of the type corresponding to an object, but we don't have debug
-/// information for it.  If that is the case, you can return one of these objects, and then if it
-/// has a full type, you can use that, but if not at least you can print the name for informational
-/// purposes.
-///
-
-class TypeAndOrName
-{
-public:
-    TypeAndOrName ();
-    TypeAndOrName (lldb::TypeSP &type_sp);
-    TypeAndOrName (const char *type_str);
-    TypeAndOrName (const TypeAndOrName &rhs);
-    TypeAndOrName (ConstString &type_const_string);
-    
-    TypeAndOrName &
-    operator= (const TypeAndOrName &rhs);
-    
-    bool
-    operator==(const TypeAndOrName &other) const;
-    
-    bool
-    operator!=(const TypeAndOrName &other) const;
-    
-    ConstString GetName () const;
-
-    lldb::TypeSP
-    GetTypeSP () const 
-    {
-        return m_type_sp;
-    }
-    
-    void
-    SetName (const ConstString &type_name);
-    
-    void 
-    SetName (const char *type_name_cstr);
-    
-    void
-    SetTypeSP (lldb::TypeSP type_sp);
-    
-    bool
-    IsEmpty ();
-    
-    bool
-    HasName ();
-    
-    bool
-    HasTypeSP ();
-    
-    void
-    Clear ();
-    
-    operator
-    bool ()
-    {
-        return !IsEmpty();
-    }
-    
+class TypePair {
 private:
-    lldb::TypeSP m_type_sp;
-    ConstString m_type_name;
+    ClangASTType clang_type;
+    lldb::TypeSP type_sp;
+    
+public:
+    TypePair () : clang_type(), type_sp() {}
+    TypePair (ClangASTType type) :
+    clang_type(type),
+    type_sp()
+    {
+    }
+    
+    TypePair (lldb::TypeSP type) :
+    clang_type(),
+    type_sp(type)
+    {
+        clang_type = type_sp->GetClangForwardType();
+    }
+    
+    bool
+    IsValid () const
+    {
+        return clang_type.IsValid() || (type_sp.get() != nullptr);
+    }
+    
+    explicit operator bool () const
+    {
+        return IsValid();
+    }
+    
+    bool
+    operator == (const TypePair& rhs) const
+    {
+        return clang_type == rhs.clang_type &&
+        type_sp.get() == rhs.type_sp.get();
+    }
+    
+    bool
+    operator != (const TypePair& rhs) const
+    {
+        return clang_type != rhs.clang_type ||
+        type_sp.get() != rhs.type_sp.get();
+    }
+    
+    void
+    Clear ()
+    {
+        clang_type.Clear();
+        type_sp.reset();
+    }
+    
+    ConstString
+    GetName () const
+    {
+        if (type_sp)
+            return type_sp->GetName();
+        if (clang_type)
+            return clang_type.GetTypeName();
+        return ConstString ();
+    }
+    
+    void
+    SetType (ClangASTType type)
+    {
+        type_sp.reset();
+        clang_type = type;
+    }
+    
+    void
+    SetType (lldb::TypeSP type)
+    {
+        type_sp = type;
+        clang_type = type_sp->GetClangForwardType();
+    }
+    
+    lldb::TypeSP
+    GetTypeSP () const
+    {
+        return type_sp;
+    }
+    
+    ClangASTType
+    GetClangASTType () const
+    {
+        return clang_type;
+    }
+    
+    ClangASTType
+    GetPointerType () const
+    {
+        if (type_sp)
+            return type_sp->GetClangLayoutType().GetPointerType();
+        return clang_type.GetPointerType();
+    }
+    
+    ClangASTType
+    GetPointeeType () const
+    {
+        if (type_sp)
+            return type_sp->GetClangFullType().GetPointeeType();
+        return clang_type.GetPointeeType();
+    }
+    
+    ClangASTType
+    GetReferenceType () const
+    {
+        if (type_sp)
+            return type_sp->GetClangLayoutType().GetLValueReferenceType();
+        return clang_type.GetLValueReferenceType();
+    }
+    
+    ClangASTType
+    GetDereferencedType () const
+    {
+        if (type_sp)
+            return type_sp->GetClangFullType().GetNonReferenceType();
+        return clang_type.GetNonReferenceType();
+    }
+    
+    ClangASTType
+    GetUnqualifiedType () const
+    {
+        if (type_sp)
+            return type_sp->GetClangLayoutType().GetFullyUnqualifiedType();
+        return clang_type.GetFullyUnqualifiedType();
+    }
+    
+    ClangASTType
+    GetCanonicalType () const
+    {
+        if (type_sp)
+            return type_sp->GetClangFullType().GetCanonicalType();
+        return clang_type.GetCanonicalType();
+    }
+    
+    clang::ASTContext *
+    GetClangASTContext () const
+    {
+        return clang_type.GetASTContext();
+    }
 };
-
-// the two classes here are used by the public API as a backend to
-// the SBType and SBTypeList classes
     
 class TypeImpl
 {
 public:
     
-    TypeImpl() :
-        m_clang_ast_type(),
-        m_type_sp()
-    {
-    }
+    TypeImpl();
     
-    TypeImpl(const TypeImpl& rhs) :
-        m_clang_ast_type(rhs.m_clang_ast_type),
-        m_type_sp(rhs.m_type_sp)
-    {
-    }
+    ~TypeImpl () {}
     
-    TypeImpl(const lldb_private::ClangASTType& type);
+    TypeImpl(const TypeImpl& rhs);
     
-    TypeImpl(const lldb::TypeSP& type);
+    TypeImpl (lldb::TypeSP type_sp);
+    
+    TypeImpl (ClangASTType clang_type);
+    
+    TypeImpl (lldb::TypeSP type_sp, ClangASTType dynamic);
+    
+    TypeImpl (ClangASTType clang_type, ClangASTType dynamic);
+    
+    TypeImpl (TypePair pair, ClangASTType dynamic);
+
+    void
+    SetType (lldb::TypeSP type_sp);
+    
+    void
+    SetType (ClangASTType clang_type);
+    
+    void
+    SetType (lldb::TypeSP type_sp, ClangASTType dynamic);
+    
+    void
+    SetType (ClangASTType clang_type, ClangASTType dynamic);
+    
+    void
+    SetType (TypePair pair, ClangASTType dynamic);
     
     TypeImpl&
     operator = (const TypeImpl& rhs);
     
     bool
-    operator == (const TypeImpl& rhs)
-    {
-        return m_clang_ast_type == rhs.m_clang_ast_type && m_type_sp.get() == rhs.m_type_sp.get();
-    }
-
-    bool
-    operator != (const TypeImpl& rhs)
-    {
-        return m_clang_ast_type != rhs.m_clang_ast_type || m_type_sp.get() != rhs.m_type_sp.get();
-    }
+    operator == (const TypeImpl& rhs) const;
     
     bool
-    IsValid()
-    {
-        return m_type_sp.get() != NULL || m_clang_ast_type.IsValid();
-    }
+    operator != (const TypeImpl& rhs) const;
     
-    const lldb_private::ClangASTType &
-    GetClangASTType() const
-    {
-        return m_clang_ast_type;
-    }
+    bool
+    IsValid() const;
     
-    clang::ASTContext*
-    GetASTContext();
+    explicit operator bool () const;
     
-    lldb::clang_type_t
-    GetOpaqueQualType();    
-
-    lldb::TypeSP
-    GetTypeSP ()
-    {
-        return m_type_sp;
-    }
+    void Clear();
     
     ConstString
-    GetName ();
-
+    GetName ()  const;
+    
+    TypeImpl
+    GetPointerType () const;
+    
+    TypeImpl
+    GetPointeeType () const;
+    
+    TypeImpl
+    GetReferenceType () const;
+    
+    TypeImpl
+    GetDereferencedType () const;
+    
+    TypeImpl
+    GetUnqualifiedType() const;
+    
+    TypeImpl
+    GetCanonicalType() const;
+    
+    ClangASTType
+    GetClangASTType (bool prefer_dynamic);
+    
+    clang::ASTContext *
+    GetClangASTContext (bool prefer_dynamic);
+    
     bool
     GetDescription (lldb_private::Stream &strm, 
                     lldb::DescriptionLevel description_level);
     
-    void
-    SetType (const lldb::TypeSP &type_sp);
-
 private:
-    ClangASTType m_clang_ast_type;
-    lldb::TypeSP m_type_sp;
+    TypePair m_static_type;
+    ClangASTType m_dynamic_type;
 };
 
 class TypeListImpl
@@ -602,6 +678,89 @@ protected:
     bool m_is_bitfield;
 };
 
+    
+///
+/// Sometimes you can find the name of the type corresponding to an object, but we don't have debug
+/// information for it.  If that is the case, you can return one of these objects, and then if it
+/// has a full type, you can use that, but if not at least you can print the name for informational
+/// purposes.
+///
+
+class TypeAndOrName
+{
+public:
+    TypeAndOrName ();
+    TypeAndOrName (lldb::TypeSP &type_sp);
+    TypeAndOrName (const ClangASTType &clang_type);
+    TypeAndOrName (const char *type_str);
+    TypeAndOrName (const TypeAndOrName &rhs);
+    TypeAndOrName (ConstString &type_const_string);
+    
+    TypeAndOrName &
+    operator= (const TypeAndOrName &rhs);
+    
+    bool
+    operator==(const TypeAndOrName &other) const;
+    
+    bool
+    operator!=(const TypeAndOrName &other) const;
+    
+    ConstString GetName () const;
+    
+    lldb::TypeSP
+    GetTypeSP () const
+    {
+        return m_type_pair.GetTypeSP();
+    }
+    
+    ClangASTType
+    GetClangASTType () const
+    {
+        return m_type_pair.GetClangASTType();
+    }
+    
+    void
+    SetName (const ConstString &type_name);
+    
+    void
+    SetName (const char *type_name_cstr);
+    
+    void
+    SetTypeSP (lldb::TypeSP type_sp);
+    
+    void
+    SetClangASTType (ClangASTType clang_type);
+    
+    bool
+    IsEmpty () const;
+    
+    bool
+    HasName () const;
+    
+    bool
+    HasTypeSP () const;
+    
+    bool
+    HasClangASTType () const;
+    
+    bool
+    HasType () const
+    {
+        return HasTypeSP() || HasClangASTType();
+    }
+    
+    void
+    Clear ();
+    
+    explicit operator bool ()
+    {
+        return !IsEmpty();
+    }
+    
+private:
+    TypePair m_type_pair;
+    ConstString m_type_name;
+};
     
 } // namespace lldb_private
 

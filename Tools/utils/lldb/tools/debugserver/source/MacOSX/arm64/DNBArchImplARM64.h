@@ -13,6 +13,7 @@
 
 #if defined (__arm__) || defined (__arm64__)
 
+#include <map>
 #include <mach/thread_status.h>
 
 #if defined (ARM_THREAD_STATE64_COUNT)
@@ -32,7 +33,8 @@ public:
         m_disabled_watchpoints(),
         m_watchpoint_hw_index(-1),
         m_watchpoint_did_occur(false),
-        m_watchpoint_resume_single_step_enabled(false)
+        m_watchpoint_resume_single_step_enabled(false),
+        m_saved_register_states()
     {
         m_disabled_watchpoints.resize (16);
         memset(&m_dbg_save, 0, sizeof(m_dbg_save));
@@ -50,6 +52,8 @@ public:
     virtual bool            SetRegisterValue(int set, int reg, const DNBRegisterValue *value);
     virtual nub_size_t      GetRegisterContext (void *buf, nub_size_t buf_len);
     virtual nub_size_t      SetRegisterContext (const void *buf, nub_size_t buf_len);
+    virtual uint32_t        SaveRegisterState ();
+    virtual bool            RestoreRegisterState (uint32_t save_id);
 
     virtual kern_return_t   GetRegisterState  (int set, bool force);
     virtual kern_return_t   SetRegisterState  (int set);
@@ -258,6 +262,9 @@ protected:
     int32_t         m_watchpoint_hw_index;
     bool            m_watchpoint_did_occur;
     bool            m_watchpoint_resume_single_step_enabled;
+    
+    typedef std::map<uint32_t, Context> SaveRegisterStates;
+    SaveRegisterStates m_saved_register_states;
 };
 
 #endif  // #if defined (ARM_THREAD_STATE64_COUNT)

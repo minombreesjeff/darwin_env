@@ -8,7 +8,7 @@ from lldbtest import *
 
 class TestWatchpointEvents (TestBase):
 
-    mydir = os.path.join("functionalities", "watchpoint", "watchpoint_events")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -18,6 +18,7 @@ class TestWatchpointEvents (TestBase):
         self.buildDsym()
         self.step_over_stepping()
 
+    @expectedFailureFreeBSD('llvm.org/pr16706') # Watchpoints fail on FreeBSD
     @python_api_test
     @dwarf_test
     def test_with_dwarf_and_python_api(self):
@@ -59,7 +60,7 @@ class TestWatchpointEvents (TestBase):
         self.assertTrue(break_in_main, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

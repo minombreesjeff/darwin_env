@@ -10,7 +10,7 @@ import lldbutil
 
 class AliasTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "alias")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -109,16 +109,16 @@ class AliasTestCase(TestBase):
 
 
         self.expect ("help run",
-                     substrs = [ "'run' is an abbreviation for 'process launch -c /bin/bash --'" ])
+                     substrs = [ "'run' is an abbreviation for 'process launch -c /bin/sh --'" ])
 
         self.expect ("help -a run",
-                     substrs = [ "'run' is an abbreviation for 'process launch -c /bin/bash --'" ])
+                     substrs = [ "'run' is an abbreviation for 'process launch -c /bin/sh --'" ])
 
         self.expect ("help -a",
-                     substrs = [ 'run', 'process launch -c /bin/bash' ])
+                     substrs = [ 'run', 'process launch -c /bin/sh' ])
 
         self.expect ("help", matching=False,
-                     substrs = [ "'run'", 'process launch -c /bin/bash' ])
+                     substrs = [ "'run'", 'process launch -c /bin/sh' ])
 
         self.expect ("run",
                      patterns = [ "Process .* launched: .*a.out" ])

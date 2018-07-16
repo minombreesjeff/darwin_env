@@ -1,3 +1,11 @@
+if ( CMAKE_SYSTEM_NAME MATCHES "Windows" )
+  set(LLDB_DEFAULT_DISABLE_PYTHON 1)
+else()
+  set(LLDB_DEFAULT_DISABLE_PYTHON 0)
+endif()
+set(LLDB_DISABLE_PYTHON ${LLDB_DEFAULT_DISABLE_PYTHON} CACHE BOOL
+  "Disables the Python scripting integration.")
+
 # If we are not building as a part of LLVM, build LLDB as an
 # standalone project, using LLVM as an external library:
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -13,8 +21,6 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     "Path to Clang source code. Not necessary if using an installed Clang.")
   set(LLDB_PATH_TO_CLANG_BUILD "" CACHE PATH
     "Path to the directory where Clang was built or installed.")    
-
-  set(LLDB_DISABLE_PYTHON 1 BOOL "Disables the Python scripting integration.")
 
   if (LLDB_PATH_TO_LLVM_SOURCE)
     if (NOT EXISTS "${LLDB_PATH_TO_LLVM_SOURCE}/cmake/config-ix.cmake")
@@ -65,10 +71,10 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
   set(LLDB_BUILT_STANDALONE 1)
-  
-  if (LLDB_DISABLE_PYTHON)
-    add_definitions( -DLLDB_DISABLE_PYTHON )
-  endif() 
+endif()
+
+if (LLDB_DISABLE_PYTHON)
+  add_definitions( -DLLDB_DISABLE_PYTHON )
 endif()
 
 macro(add_lldb_definitions)
@@ -79,15 +85,16 @@ macro(add_lldb_definitions)
   add_definitions( ${ARGN} )
 endmacro(add_lldb_definitions)
 
-include_directories(/usr/include/python2.7)
+if (NOT LLDB_DISABLE_PYTHON)
+  find_package(PythonLibs REQUIRED)
+  include_directories(${PYTHON_INCLUDE_DIRS})
+endif()
 include_directories(../clang/include)
 include_directories("${CMAKE_CURRENT_BINARY_DIR}/../clang/include")
 
 # lldb requires c++11 to build. Make sure that we have a compiler and standard
 # library combination that can do that.
-if (MSVC11)
-  # Do nothing, we're good.
-elseif (NOT MSVC)
+if (NOT MSVC)
   # gcc and clang require the -std=c++0x or -std=c++11 flag.
   if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU" OR
       "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
@@ -106,7 +113,7 @@ elseif (NOT MSVC)
       endif()
     endif()
   endif()
-else()
+elseif (MSVC_VERSION LESS 1700)
   message(FATAL_ERROR "The selected compiler does not support c++11 which is "
           "required to build lldb.")
 endif()
@@ -182,7 +189,7 @@ macro(add_lldb_library name)
   #endif()
 
   if(LLDB_USED_LIBS)
-    if (CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+    if (CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "FreeBSD" OR CMAKE_SYSTEM_NAME MATCHES "Windows")
       target_link_libraries(${name} -Wl,--start-group ${LLDB_USED_LIBS} -Wl,--end-group)
     else()
       target_link_libraries(${name} ${LLDB_USED_LIBS})
@@ -260,7 +267,9 @@ endif()
 
 #add_subdirectory(include)
 add_subdirectory(docs)
-add_subdirectory(scripts)
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Windows")
+  add_subdirectory(scripts)
+endif()
 add_subdirectory(source)
 add_subdirectory(test)
 add_subdirectory(tools)

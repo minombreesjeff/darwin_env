@@ -8,6 +8,7 @@
 #include <ctype.h>
 #include <libproc.h>
 #include <errno.h>
+#include <dispatch/dispatch.h>
 
 /* Step through the process table, find a matching process name, return
    the pid of that matched process.
@@ -293,7 +294,7 @@ main (int argc, char **argv)
           if (strcmp (argv[i], "-v") == 0)
             verbose = 1;
           if (strcmp (argv[i], "-r") == 0)
-            resume_when_done = 1;
+            resume_when_done++;
           i++;
         }
     }
@@ -419,20 +420,23 @@ main (int argc, char **argv)
             case TH_STATE_HALTED: puts ("halted"); break;
             default: puts ("");
           }
+
+          printf ("           pthread handle id 0x%llx (not the same value as pthread_self() returns)\n", (uint64_t) identifier_info.thread_handle);
+
+          struct proc_threadinfo pth;
+          int proc_threadinfo_succeeded = get_proc_threadinfo (pid, identifier_info.thread_handle, &pth);
+
+          if (proc_threadinfo_succeeded && pth.pth_name[0] != '\0')
+            printf ("           thread name '%s'\n", pth.pth_name);
+
+          printf ("           libdispatch qaddr 0x%llx (not the same as the dispatch_queue_t token)\n", (uint64_t) identifier_info.dispatch_qaddr);
+
           if (verbose)
             {
               printf ("           (examine-threads port namespace) mach port # 0x%4.4x\n", (int) thread_list[i]);
               thread_t mach_port_inferior_namespace;
               if (inferior_namespace_mach_port_num (task, thread_list[i], &mach_port_inferior_namespace))
                   printf ("           (inferior port namepsace) mach port # 0x%4.4x\n", (int) mach_port_inferior_namespace);
-              printf ("           pthread handle id 0x%llx\n", (uint64_t) identifier_info.thread_handle);
-
-              struct proc_threadinfo pth;
-              int proc_threadinfo_succeeded = get_proc_threadinfo (pid, identifier_info.thread_handle, &pth);
-
-              if (proc_threadinfo_succeeded && pth.pth_name[0] != '\0')
-                printf ("           thread name '%s' ", pth.pth_name);
-
               printf ("           user %d.%06ds, system %d.%06ds", 
                               basic_info->user_time.seconds, basic_info->user_time.microseconds, 
                               basic_info->system_time.seconds, basic_info->system_time.microseconds);
@@ -470,12 +474,16 @@ main (int argc, char **argv)
       nanosleep (rqtp, NULL);
     } while (do_loop);
   
-  kern_return_t err = task_resume (task);
-  if (err != KERN_SUCCESS)
-    printf ("Error resuming task: %d.", err);
+    while (resume_when_done > 0)
+    {
+        kern_return_t err = task_resume (task);
+        if (err != KERN_SUCCESS)
+          printf ("Error resuming task: %d.", err);
+        resume_when_done--;
+    }
 
-  vm_deallocate (mytask, (vm_address_t) task, sizeof (task_t));
-  free ((void *) process_name);
+    vm_deallocate (mytask, (vm_address_t) task, sizeof (task_t));
+    free ((void *) process_name);
 
   return 0;
 }

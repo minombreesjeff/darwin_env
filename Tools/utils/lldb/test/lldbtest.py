@@ -296,6 +296,8 @@ def getsource_if_available(obj):
         return repr(obj)
 
 def builder_module():
+    if sys.platform.startswith("freebsd"):
+        return __import__("builder_freebsd")
     return __import__("builder_" + sys.platform)
 
 #
@@ -369,6 +371,23 @@ def dwarf_test(func):
 
     # Mark this function as such to separate them from the regular tests.
     wrapper.__dwarf_test__ = True
+    return wrapper
+
+def not_remote_testsuite_ready(func):
+    """Decorate the item as a test which is not ready yet for remote testsuite."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@not_remote_testsuite_ready can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            if lldb.lldbtest_remote_sandbox:
+                self.skipTest("not ready for remote testsuite")
+        except AttributeError:
+            pass
+        return func(self, *args, **kwargs)
+
+    # Mark this function as such to separate them from the regular tests.
+    wrapper.__not_ready_for_remote_testsuite_test__ = True
     return wrapper
 
 def expectedFailureGcc(bugnumber=None, compiler_version=["=", None]):
@@ -516,6 +535,78 @@ def expectedFailurei386(bugnumber=None):
               return wrapper
         return expectedFailurei386_impl
 
+def expectedFailurex86_64(bugnumber=None):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailurex86_64_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            arch = self.getArchitecture()
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "x86_64" in arch:
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
+            if "x86_64" in arch:
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailurex86_64_easy_wrapper
+     else:
+        def expectedFailurex86_64_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                arch = self.getArchitecture()
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "x86_64" in arch:
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "x86_64" in arch:
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailurex86_64_impl
+
+def expectedFailureFreeBSD(bugnumber=None, compilers=None):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailureFreeBSD_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            platform = sys.platform
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "freebsd" in platform and self.expectedCompiler(compilers):
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
+            if "freebsd" in platform and self.expectedCompiler(compilers):
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailureFreeBSD_easy_wrapper
+     else:
+        def expectedFailureFreeBSD_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                platform = sys.platform
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "freebsd" in platform and self.expectedCompiler(compilers):
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "freebsd" in platform and self.expectedCompiler(compilers):
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailureFreeBSD_impl
+
 def expectedFailureLinux(bugnumber=None, compilers=None):
      if callable(bugnumber):
         @wraps(bugnumber)
@@ -587,6 +678,34 @@ def expectedFailureDarwin(bugnumber=None):
                     raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
               return wrapper
         return expectedFailureDarwin_impl
+
+def skipIfRemote(func):
+    """Decorate the item to skip tests if testing remotely."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfRemote can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        if lldb.remote_platform:
+            self = args[0]
+            self.skipTest("skip on remote platform")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
+def skipIfRemoteDueToDeadlock(func):
+    """Decorate the item to skip tests if testing remotely due to the test deadlocking."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfRemote can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        if lldb.remote_platform:
+            self = args[0]
+            self.skipTest("skip on remote platform (deadlocks)")
+        else:
+            func(*args, **kwargs)
+    return wrapper
 
 def skipIfFreeBSD(func):
     """Decorate the item to skip tests that should be skipped on FreeBSD."""
@@ -710,11 +829,19 @@ class Base(unittest2.TestCase):
 
     # Keep track of the old current working directory.
     oldcwd = None
-
+    
+    @staticmethod
+    def compute_mydir(test_file):
+        '''Subclasses should call this function to correctly calculate the required "mydir" attribute as follows: 
+            
+            mydir = TestBase.compute_mydir(__file__)'''
+        test_dir = os.path.dirname(test_file)
+        return test_dir[len(os.environ["LLDB_TEST"])+1:]
+    
     def TraceOn(self):
         """Returns True if we are in trace mode (tracing detailed test execution)."""
         return traceAlways
-
+    
     @classmethod
     def setUpClass(cls):
         """
@@ -782,6 +909,11 @@ class Base(unittest2.TestCase):
         initializations."""
         #import traceback
         #traceback.print_stack()
+
+        if "LIBCXX_PATH" in os.environ:
+            self.libcxxPath = os.environ["LIBCXX_PATH"]
+        else:
+            self.libcxxPath = None
 
         if "LLDB_EXEC" in os.environ:
             self.lldbExec = os.environ["LLDB_EXEC"]
@@ -1212,6 +1344,10 @@ class Base(unittest2.TestCase):
                 version = m.group(1)
         return version
 
+    def isIntelCompiler(self):
+        """ Returns true if using an Intel (ICC) compiler, false otherwise. """
+        return any([x in self.getCompiler() for x in ["icc", "icpc", "icl"]])
+
     def expectedCompilerVersion(self, compiler_version):
         """Returns True iff compiler_version[1] matches the current compiler version.
            Use compiler_version[0] to specify the operator used to determine if a match has occurred.
@@ -1265,14 +1401,20 @@ class Base(unittest2.TestCase):
     # Build methods supported through a plugin interface
     # ==================================================
 
-    def buildDriver(self, sources, exe_name):
-        """ Platform-specific way to build a program that links with LLDB (via the liblldb.so
-            or LLDB.framework).
-        """
+    def getstdFlag(self):
+        """ Returns the proper stdflag. """
         if "gcc" in self.getCompiler() and "4.6" in self.getCompilerVersion():
           stdflag = "-std=c++0x"
         else:
           stdflag = "-std=c++11"
+        return stdflag
+
+    def buildDriver(self, sources, exe_name):
+        """ Platform-specific way to build a program that links with LLDB (via the liblldb.so
+            or LLDB.framework).
+        """
+
+        stdflag = self.getstdFlag()
 
         if sys.platform.startswith("darwin"):
             dsym = os.path.join(self.lib_dir, 'LLDB.framework', 'LLDB')
@@ -1280,15 +1422,38 @@ class Base(unittest2.TestCase):
                  'EXE' : exe_name,
                  'CFLAGS_EXTRAS' : "%s -stdlib=libc++" % stdflag,
                  'FRAMEWORK_INCLUDES' : "-F%s" % self.lib_dir,
-                 'LD_EXTRAS' : "%s -rpath %s" % (dsym, self.lib_dir),
+                 'LD_EXTRAS' : "%s -Wl,-rpath,%s" % (dsym, self.lib_dir),
                 }
-        elif sys.platform.startswith("linux") or os.environ.get('LLDB_BUILD_TYPE') == 'Makefile':
+        elif sys.platform.startswith('freebsd') or sys.platform.startswith("linux") or os.environ.get('LLDB_BUILD_TYPE') == 'Makefile':
             d = {'CXX_SOURCES' : sources, 
                  'EXE' : exe_name,
                  'CFLAGS_EXTRAS' : "%s -I%s" % (stdflag, os.path.join(os.environ["LLDB_SRC"], "include")),
                  'LD_EXTRAS' : "-L%s -llldb" % self.lib_dir}
         if self.TraceOn():
             print "Building LLDB Driver (%s) from sources %s" % (exe_name, sources)
+
+        self.buildDefault(dictionary=d)
+
+    def buildLibrary(self, sources, lib_name):
+        """Platform specific way to build a default library. """
+
+        stdflag = self.getstdFlag()
+
+        if sys.platform.startswith("darwin"):
+            dsym = os.path.join(self.lib_dir, 'LLDB.framework', 'LLDB')
+            d = {'DYLIB_CXX_SOURCES' : sources,
+                 'DYLIB_NAME' : lib_name,
+                 'CFLAGS_EXTRAS' : "%s -stdlib=libc++" % stdflag,
+                 'FRAMEWORK_INCLUDES' : "-F%s" % self.lib_dir,
+                 'LD_EXTRAS' : "%s -Wl,-rpath,%s -dynamiclib" % (dsym, self.lib_dir),
+                }
+        elif sys.platform.startswith('freebsd') or sys.platform.startswith("linux") or os.environ.get('LLDB_BUILD_TYPE') == 'Makefile':
+            d = {'DYLIB_CXX_SOURCES' : sources,
+                 'DYLIB_NAME' : lib_name,
+                 'CFLAGS_EXTRAS' : "%s -I%s -fPIC" % (stdflag, os.path.join(os.environ["LLDB_SRC"], "include")),
+                 'LD_EXTRAS' : "-shared -L%s -llldb" % self.lib_dir}
+        if self.TraceOn():
+            print "Building LLDB Library (%s) from sources %s" % (lib_name, sources)
 
         self.buildDefault(dictionary=d)
 
@@ -1322,11 +1487,24 @@ class Base(unittest2.TestCase):
         if not module.buildDwarf(self, architecture, compiler, dictionary, clean):
             raise Exception("Don't know how to build binary with dwarf")
 
-    def getBuildFlags(self, use_cpp11=True, use_pthreads=True):
+    def getBuildFlags(self, use_cpp11=True, use_libcxx=False, use_libstdcxx=False, use_pthreads=True):
         """ Returns a dictionary (which can be provided to build* functions above) which
             contains OS-specific build flags.
         """
         cflags = ""
+
+        # On Mac OS X, unless specifically requested to use libstdc++, use libc++
+        if not use_libstdcxx and sys.platform.startswith('darwin'):
+            use_libcxx = True
+
+        if use_libcxx and self.libcxxPath:
+            cflags += "-stdlib=libc++ "
+            if self.libcxxPath:
+                libcxxInclude = os.path.join(self.libcxxPath, "include")
+                libcxxLib = os.path.join(self.libcxxPath, "lib")
+                if os.path.isdir(libcxxInclude) and os.path.isdir(libcxxLib):
+                    cflags += "-nostdinc++ -I%s -L%s -Wl,-rpath,%s " % (libcxxInclude, libcxxLib, libcxxLib)
+
         if use_cpp11:
             cflags += "-std="
             if "gcc" in self.getCompiler() and "4.6" in self.getCompilerVersion():
@@ -1366,6 +1544,12 @@ class Base(unittest2.TestCase):
             return os.path.join(self.lib_dir, 'LLDB.framework')
         else:
             return self.lib_dir
+
+    def getLibcPlusPlusLibs(self):
+        if sys.platform.startswith('freebsd'):
+            return ['libc++.so.1']
+        else:
+            return ['libc++.1.dylib','libc++abi.dylib']
 
 class TestBase(Base):
     """
@@ -1496,6 +1680,31 @@ class TestBase(Base):
         if not self.dbg:
             raise Exception('Invalid debugger instance')
 
+        #
+        # Warning: MAJOR HACK AHEAD!
+        # If we are running testsuite remotely (by checking lldb.lldbtest_remote_sandbox),
+        # redefine the self.dbg.CreateTarget(filename) method to execute a "file filename"
+        # command, instead.  See also runCmd() where it decorates the "file filename" call
+        # with additional functionality when running testsuite remotely.
+        #
+        if lldb.lldbtest_remote_sandbox:
+            def DecoratedCreateTarget(arg):
+                self.runCmd("file %s" % arg)
+                target = self.dbg.GetSelectedTarget()
+                #
+                # SBtarget.LaunchSimple () currently not working for remote platform?
+                # johnny @ 04/23/2012
+                #
+                def DecoratedLaunchSimple(argv, envp, wd):
+                    self.runCmd("run")
+                    return target.GetProcess()
+                target.LaunchSimple = DecoratedLaunchSimple
+
+                return target
+            self.dbg.CreateTarget = DecoratedCreateTarget
+            if self.TraceOn():
+                print "self.dbg.Create is redefined to:\n%s" % getsource_if_available(DecoratedCreateTarget)
+
         # We want our debugger to be synchronous.
         self.dbg.SetAsync(False)
 
@@ -1511,6 +1720,18 @@ class TestBase(Base):
         if lldb.pre_flight:
             lldb.pre_flight(self)
 
+        if lldb.remote_platform:
+            #remote_test_dir = os.path.join(lldb.remote_platform_working_dir, self.mydir)
+            remote_test_dir = os.path.join(lldb.remote_platform_working_dir, 
+                                           self.getArchitecture(), 
+                                           str(self.test_number), 
+                                           self.mydir)
+            error = lldb.remote_platform.MakeDirectory(remote_test_dir, 0700)
+            if error.Success():
+                lldb.remote_platform.SetWorkingDirectory(remote_test_dir)
+            else:
+                print "error: making remote directory '%s': %s" % (remote_test_dir, error)
+    
     # utility methods that tests can use to access the current objects
     def target(self):
         if not self.dbg:
@@ -1532,6 +1753,15 @@ class TestBase(Base):
             raise Exception('Invalid debugger instance')
         return self.dbg.GetSelectedTarget().GetProcess().GetSelectedThread().GetSelectedFrame()
 
+    def get_process_working_directory(self):
+        '''Get the working directory that should be used when launching processes for local or remote processes.'''
+        if lldb.remote_platform:
+            # Remote tests set the platform working directory up in TestBase.setUp()
+            return lldb.remote_platform.GetWorkingDirectory()
+        else:
+            # local tests change directory into each test subdirectory
+            return os.getcwd() 
+    
     def tearDown(self):
         #import traceback
         #traceback.print_stack()
@@ -1584,6 +1814,38 @@ class TestBase(Base):
             raise Exception("Bad 'cmd' parameter encountered")
 
         trace = (True if traceAlways else trace)
+
+        # This is an opportunity to insert the 'platform target-install' command if we are told so
+        # via the settig of lldb.lldbtest_remote_sandbox.
+        if cmd.startswith("target create "):
+            cmd = cmd.replace("target create ", "file ")
+        if cmd.startswith("file ") and lldb.lldbtest_remote_sandbox:
+            with recording(self, trace) as sbuf:
+                the_rest = cmd.split("file ")[1]
+                # Split the rest of the command line.
+                atoms = the_rest.split()
+                #
+                # NOTE: This assumes that the options, if any, follow the file command,
+                # instead of follow the specified target.
+                #
+                target = atoms[-1]
+                # Now let's get the absolute pathname of our target.
+                abs_target = os.path.abspath(target)
+                print >> sbuf, "Found a file command, target (with absolute pathname)=%s" % abs_target
+                fpath, fname = os.path.split(abs_target)
+                parent_dir = os.path.split(fpath)[0]
+                platform_target_install_command = 'platform target-install %s %s' % (fpath, lldb.lldbtest_remote_sandbox)
+                print >> sbuf, "Insert this command to be run first: %s" % platform_target_install_command
+                self.ci.HandleCommand(platform_target_install_command, self.res)
+                # And this is the file command we want to execute, instead.
+                #
+                # Warning: SIDE EFFECT AHEAD!!!
+                # Populate the remote executable pathname into the lldb namespace,
+                # so that test cases can grab this thing out of the namespace.
+                #
+                lldb.lldbtest_remote_sandboxed_executable = abs_target.replace(parent_dir, lldb.lldbtest_remote_sandbox)
+                cmd = "file -P %s %s %s" % (lldb.lldbtest_remote_sandboxed_executable, the_rest.replace(target, ''), abs_target)
+                print >> sbuf, "And this is the replaced file command: %s" % cmd
 
         running = (cmd.startswith("run") or cmd.startswith("process launch"))
 

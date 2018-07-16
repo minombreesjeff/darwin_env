@@ -67,7 +67,7 @@ ResolveIPV4HostName (const char *hostname, in_addr_t &addr)
 }
 
 rnb_err_t
-RNBSocket::Listen (const char *listen_host, in_port_t port, PortBoundCallback callback, const void *callback_baton)
+RNBSocket::Listen (const char *listen_host, uint16_t port, PortBoundCallback callback, const void *callback_baton)
 {
     //DNBLogThreadedIf(LOG_RNB_COMM, "%8u RNBSocket::%s called", (uint32_t)m_timer.ElapsedMicroSeconds(true), __FUNCTION__);
     // Disconnect without saving errno
@@ -120,20 +120,6 @@ RNBSocket::Listen (const char *listen_host, in_port_t port, PortBoundCallback ca
         return rnb_err;
     }
 
-    if (callback && port == 0)
-    {
-        // We were asked to listen on port zero which means we
-        // must now read the actual port that was given to us 
-        // as port zero is a special code for "find an open port
-        // for me".
-        socklen_t sa_len = sizeof (sa);
-        if (getsockname(listen_fd, (struct sockaddr *)&sa, &sa_len) == 0)
-        {
-            port = ntohs (sa.sin_port);
-            callback (callback_baton, port);
-        }
-    }
-
     error = ::listen (listen_fd, 5);
     if (error == -1)
         err.SetError(errno, DNBError::POSIX);
@@ -145,6 +131,27 @@ RNBSocket::Listen (const char *listen_host, in_port_t port, PortBoundCallback ca
     {
         ClosePort (listen_fd, false);
         return rnb_err;
+    }
+    
+    if (callback)
+    {
+        // We were asked to listen on port zero which means we
+        // must now read the actual port that was given to us
+        // as port zero is a special code for "find an open port
+        // for me".
+        if (port == 0)
+        {
+            socklen_t sa_len = sizeof (sa);
+            if (getsockname(listen_fd, (struct sockaddr *)&sa, &sa_len) == 0)
+            {
+                port = ntohs (sa.sin_port);
+                callback (callback_baton, port);
+            }
+        }
+        else
+        {
+            callback (callback_baton, port);
+        }
     }
 
     struct sockaddr_in accept_addr;

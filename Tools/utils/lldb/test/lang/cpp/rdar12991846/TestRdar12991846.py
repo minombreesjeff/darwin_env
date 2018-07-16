@@ -24,7 +24,7 @@ import lldbutil
 
 class Rdar12991846TestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "rdar12991846")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
@@ -63,7 +63,7 @@ class Rdar12991846TestCase(TestBase):
         lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.Launch() failed")

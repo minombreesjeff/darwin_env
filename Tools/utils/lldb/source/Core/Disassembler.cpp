@@ -35,6 +35,7 @@
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 
@@ -235,7 +236,8 @@ Disassembler::DisassembleRange
     const char *plugin_name,
     const char *flavor,
     const ExecutionContext &exe_ctx,
-    const AddressRange &range
+    const AddressRange &range,
+    bool prefer_file_cache
 )
 {
     lldb::DisassemblerSP disasm_sp;
@@ -245,7 +247,6 @@ Disassembler::DisassembleRange
 
         if (disasm_sp)
         {
-            const bool prefer_file_cache = false;
             size_t bytes_disassembled = disasm_sp->ParseInstructions (&exe_ctx, range, NULL, prefer_file_cache);
             if (bytes_disassembled == 0)
                 disasm_sp.reset();
@@ -611,8 +612,8 @@ Instruction::Dump (lldb_private::Stream *s,
         }
         else
         {
-            // Else, we have ARM which can show up to a uint32_t 0x00000000 (10 spaces)
-            // plus two for padding...
+            // Else, we have ARM or MIPS which can show up to a uint32_t
+            // 0x00000000 (10 spaces) plus two for padding...
             if (max_opcode_byte_size > 0)
                 m_opcode.Dump (&ss, max_opcode_byte_size * 3 + 1);
             else
@@ -1235,25 +1236,25 @@ PseudoInstruction::SetOpcode (size_t opcode_size, void *opcode_data)
         case 8:
         {
             uint8_t value8 = *((uint8_t *) opcode_data);
-            m_opcode.SetOpcode8 (value8);
+            m_opcode.SetOpcode8 (value8, eByteOrderInvalid);
             break;
          }   
         case 16:
         {
             uint16_t value16 = *((uint16_t *) opcode_data);
-            m_opcode.SetOpcode16 (value16);
+            m_opcode.SetOpcode16 (value16, eByteOrderInvalid);
             break;
          }   
         case 32:
         {
             uint32_t value32 = *((uint32_t *) opcode_data);
-            m_opcode.SetOpcode32 (value32);
+            m_opcode.SetOpcode32 (value32, eByteOrderInvalid);
             break;
          }   
         case 64:
         {
             uint64_t value64 = *((uint64_t *) opcode_data);
-            m_opcode.SetOpcode64 (value64);
+            m_opcode.SetOpcode64 (value64, eByteOrderInvalid);
             break;
          }   
         default:

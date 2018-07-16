@@ -10,7 +10,7 @@ import lldbutil
 
 class Radar9673644TestCase(TestBase):
 
-    mydir = os.path.join("expression_command", "radar_9673664")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -19,8 +19,7 @@ class Radar9673644TestCase(TestBase):
         self.main_source = "main.c"
         self.line = line_number(self.main_source, '// Set breakpoint here.')
 
-    # rdar://problem/9673664
-    @skipIfLinux # llvm.org/pr14805: expressions that require memory allocation evaluate incorrectly on Linux
+    @expectedFailureDarwin(15641319)
     def test_expr_commands(self):
         """The following expression commands should just work."""
         self.buildDefault()

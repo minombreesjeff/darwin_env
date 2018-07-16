@@ -102,7 +102,7 @@ ThreadPlanStepOut::ThreadPlanStepOut
         if (m_return_addr == LLDB_INVALID_ADDRESS)
             return;
         
-        Breakpoint *return_bp = m_thread.CalculateTarget()->CreateBreakpoint (m_return_addr, true).get();
+        Breakpoint *return_bp = m_thread.CalculateTarget()->CreateBreakpoint (m_return_addr, true, false).get();
         if (return_bp != NULL)
         {
             return_bp->SetThreadID(m_thread.GetID());
@@ -464,17 +464,12 @@ ThreadPlanStepOut::CalculateReturnValue ()
         
     if (m_immediate_step_from_function != NULL)
     {
-        Type *return_type = m_immediate_step_from_function->GetType();
-        lldb::clang_type_t return_clang_type = m_immediate_step_from_function->GetReturnClangType();
-        if (return_type && return_clang_type)
+        ClangASTType return_clang_type = m_immediate_step_from_function->GetClangType().GetFunctionReturnType();
+        if (return_clang_type)
         {
-            ClangASTType ast_type (return_type->GetClangAST(), return_clang_type);
-            
             lldb::ABISP abi_sp = m_thread.GetProcess()->GetABI();
             if (abi_sp)
-            {
-                m_return_valobj_sp = abi_sp->GetReturnValueObject(m_thread, ast_type);
-            }
+                m_return_valobj_sp = abi_sp->GetReturnValueObject(m_thread, return_clang_type);
         }
     }
 }

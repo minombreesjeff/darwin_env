@@ -13,7 +13,7 @@ class ExprDoesntDeadlockTestCase(TestBase):
     def getCategories(self):
         return ['basic_process']
 
-    mydir = os.path.join("functionalities", "expr-doesnt-deadlock")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -23,6 +23,7 @@ class ExprDoesntDeadlockTestCase(TestBase):
         self.expr_doesnt_deadlock()
 
     @dwarf_test
+    @expectedFailureFreeBSD('llvm.org/pr17946')
     @skipIfLinux # llvm.org/pr15258: disabled due to assertion failure in ProcessMonitor::GetCrashReasonForSIGSEGV:
     def test_with_dwarf_and_run_command(self):
         """Test that expr will time out and allow other threads to run if it blocks."""
@@ -52,7 +53,7 @@ class ExprDoesntDeadlockTestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue(process, PROCESS_IS_VALID)
 
         # Frame #0 should be on self.line1 and the break condition should hold.

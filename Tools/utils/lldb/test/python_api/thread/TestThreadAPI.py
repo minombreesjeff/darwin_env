@@ -10,7 +10,7 @@ from lldbtest import *
 
 class ThreadAPITestCase(TestBase):
 
-    mydir = os.path.join("python_api", "thread")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -74,6 +74,7 @@ class ThreadAPITestCase(TestBase):
         self.setTearDownCleanup(dictionary=d)
         self.step_out_of_malloc_into_function_b(self.exe_name)
 
+    @expectedFailureFreeBSD('llvm.org/pr17944')
     @expectedFailureLinux # llvm.org/pr14416
     @python_api_test
     @dwarf_test
@@ -130,7 +131,7 @@ class ThreadAPITestCase(TestBase):
         self.runCmd("breakpoint list")
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
         self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint")
@@ -152,7 +153,7 @@ class ThreadAPITestCase(TestBase):
         #self.runCmd("breakpoint list")
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
         self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint")
@@ -177,7 +178,7 @@ class ThreadAPITestCase(TestBase):
         self.runCmd("breakpoint list")
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         while True:
             thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
@@ -210,7 +211,7 @@ class ThreadAPITestCase(TestBase):
         self.runCmd("breakpoint list")
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 
@@ -251,7 +252,7 @@ class ThreadAPITestCase(TestBase):
         self.runCmd("breakpoint list")
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

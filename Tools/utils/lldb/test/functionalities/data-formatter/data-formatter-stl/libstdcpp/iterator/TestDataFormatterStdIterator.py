@@ -10,7 +10,7 @@ import lldbutil
 
 class StdIteratorDataFormatterTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "data-formatter-stl", "libstdcpp", "iterator")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -21,6 +21,7 @@ class StdIteratorDataFormatterTestCase(TestBase):
 
     @dwarf_test
     @expectedFailureGcc # llvm.org/pr15301 LLDB prints incorrect sizes of STL containers
+    @expectedFailureIcc # llvm.org/pr15301 LLDB prints incorrect sizes of STL containers
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()

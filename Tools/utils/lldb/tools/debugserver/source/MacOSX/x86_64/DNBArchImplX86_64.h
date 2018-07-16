@@ -19,16 +19,20 @@
 #include "../HasAVX.h"
 #include "MachRegisterStatesX86_64.h"
 
+#include <map>
+
 class MachThread;
 
 class DNBArchImplX86_64 : public DNBArchProtocol
 {
 public:
     DNBArchImplX86_64(MachThread *thread) :
+        DNBArchProtocol(),
         m_thread(thread),
         m_state(),
         m_2pc_dbg_checkpoint(),
-        m_2pc_trans_state(Trans_Done)
+        m_2pc_trans_state(Trans_Done),
+        m_saved_register_states()
     {
     }
     virtual ~DNBArchImplX86_64()
@@ -36,10 +40,13 @@ public:
     }
 
     static  void            Initialize();
+    
     virtual bool            GetRegisterValue(int set, int reg, DNBRegisterValue *value);
     virtual bool            SetRegisterValue(int set, int reg, const DNBRegisterValue *value);
     virtual nub_size_t      GetRegisterContext (void *buf, nub_size_t buf_len);
     virtual nub_size_t      SetRegisterContext (const void *buf, nub_size_t buf_len);
+    virtual uint32_t        SaveRegisterState ();
+    virtual bool            RestoreRegisterState (uint32_t save_id);
 
     virtual kern_return_t   GetRegisterState  (int set, bool force);
     virtual kern_return_t   SetRegisterState  (int set);
@@ -227,6 +234,8 @@ protected:
     static const DNBRegisterSetInfo *
     GetRegisterSetInfo(nub_size_t *num_reg_sets);
     
+    static uint32_t GetRegisterContextSize();
+
     // Helper functions for watchpoint manipulations.
     static void SetWatchpoint(DBG &debug_state, uint32_t hw_index, nub_addr_t addr, nub_size_t size, bool read, bool write);
     static void ClearWatchpoint(DBG &debug_state, uint32_t hw_index);
@@ -244,6 +253,8 @@ protected:
     State       m_state;
     DBG         m_2pc_dbg_checkpoint;
     uint32_t    m_2pc_trans_state; // Is transaction of DBG state change: Pedning (0), Done (1), or Rolled Back (2)?
+    typedef std::map<uint32_t, Context> SaveRegisterStates;
+    SaveRegisterStates m_saved_register_states;
 };
 
 #endif    // #if defined (__i386__) || defined (__x86_64__)

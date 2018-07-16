@@ -10,7 +10,7 @@ import lldbutil
 
 class WatchpointPythonCommandTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "watchpoint", "watchpoint_commands", "command")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -33,6 +33,7 @@ class WatchpointPythonCommandTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.watchpoint_command()
 
+    @expectedFailureFreeBSD('llvm.org/pr16706') # Watchpoints fail on FreeBSD
     @dwarf_test
     def test_watchpoint_command_with_dwarf(self):
         """Test 'watchpoint command'."""

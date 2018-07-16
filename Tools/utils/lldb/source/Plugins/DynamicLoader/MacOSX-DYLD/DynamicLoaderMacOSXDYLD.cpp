@@ -290,10 +290,10 @@ DynamicLoaderMacOSXDYLD::LocateDYLD()
                 uint32_t magic = data.GetU32 (&offset);
                 switch (magic)
                 {
-                case llvm::MachO::HeaderMagic32:
-                case llvm::MachO::HeaderMagic64:
-                case llvm::MachO::HeaderMagic32Swapped:
-                case llvm::MachO::HeaderMagic64Swapped:
+                case llvm::MachO::MH_MAGIC:
+                case llvm::MachO::MH_MAGIC_64:
+                case llvm::MachO::MH_CIGAM:
+                case llvm::MachO::MH_CIGAM_64:
                     m_process_image_addr_is_all_images_infos = false;
                     return ReadDYLDInfoFromMemoryAndSetNotificationCallback(shlib_addr);
                     
@@ -385,7 +385,7 @@ DynamicLoaderMacOSXDYLD::ReadDYLDInfoFromMemoryAndSetNotificationCallback(lldb::
     DataExtractor data; // Load command data
     if (ReadMachHeader (addr, &m_dyld.header, &data))
     {
-        if (m_dyld.header.filetype == llvm::MachO::HeaderFileTypeDynamicLinkEditor)
+        if (m_dyld.header.filetype == llvm::MachO::MH_DYLINKER)
         {
             m_dyld.address = addr;
             ModuleSP dyld_module_sp;
@@ -484,13 +484,7 @@ DynamicLoaderMacOSXDYLD::UpdateImageLoadAddress (Module *module, DYLDImageInfo& 
                             // "Section" objects, and "true" for all other sections.
                             const bool warn_multiple = section_sp->GetName() != g_section_name_LINKEDIT;
 
-                            const addr_t old_section_load_addr = m_process->GetTarget().GetSectionLoadList().GetSectionLoadAddress (section_sp);
-                            if (old_section_load_addr == LLDB_INVALID_ADDRESS ||
-                                old_section_load_addr != new_section_load_addr)
-                            {
-                                if (m_process->GetTarget().GetSectionLoadList().SetSectionLoadAddress (section_sp, new_section_load_addr, warn_multiple))
-                                    changed = true;
-                            }
+                            changed = m_process->GetTarget().SetSectionLoadAddress (section_sp, new_section_load_addr, warn_multiple);
                         }
                         else
                         {
@@ -568,7 +562,7 @@ DynamicLoaderMacOSXDYLD::UnloadImageLoadAddress (Module *module, DYLDImageInfo& 
                     if (section_sp)
                     {
                         const addr_t old_section_load_addr = info.segments[i].vmaddr + info.slide;
-                        if (m_process->GetTarget().GetSectionLoadList().SetSectionUnloaded (section_sp, old_section_load_addr))
+                        if (m_process->GetTarget().SetSectionUnloaded (section_sp, old_section_load_addr))
                             changed = true;
                     }
                     else
@@ -627,13 +621,15 @@ DynamicLoaderMacOSXDYLD::NotifyBreakpointHit (void *baton,
         ValueList argument_values;
         Value input_value;
         
-        void *clang_void_ptr_type = clang_ast_context->GetVoidPtrType(false);
-        void *clang_uint32_type   = clang_ast_context->GetBuiltinTypeForEncodingAndBitSize(lldb::eEncodingUint, 32);
+        ClangASTType clang_void_ptr_type = clang_ast_context->GetBasicType(eBasicTypeVoid).GetPointerType();
+        ClangASTType clang_uint32_type = clang_ast_context->GetBuiltinTypeForEncodingAndBitSize(lldb::eEncodingUint, 32);
         input_value.SetValueType (Value::eValueTypeScalar);
-        input_value.SetContext (Value::eContextTypeClangType, clang_uint32_type);
-        argument_values.PushValue(input_value);
-        argument_values.PushValue(input_value);
-        input_value.SetContext (Value::eContextTypeClangType, clang_void_ptr_type);
+        input_value.SetClangType (clang_uint32_type);
+//        input_value.SetContext (Value::eContextTypeClangType, clang_uint32_type);
+        argument_values.PushValue (input_value);
+        argument_values.PushValue (input_value);
+        input_value.SetClangType (clang_void_ptr_type);
+        //        input_value.SetContext (Value::eContextTypeClangType, clang_void_ptr_type);
         argument_values.PushValue (input_value);
         
         if (abi->GetArgumentValues (exe_ctx.GetThreadRef(), argument_values))
@@ -838,7 +834,7 @@ DynamicLoaderMacOSXDYLD::AddModulesUsingImageInfos (DYLDImageInfo::collection &i
 
         if (image_module_sp)
         {
-            if (image_infos[idx].header.filetype == llvm::MachO::HeaderFileTypeDynamicLinkEditor)
+            if (image_infos[idx].header.filetype == llvm::MachO::MH_DYLINKER)
                 image_module_sp->SetIsDynamicLinkEditor (true);
 
             ObjectFile *objfile = image_module_sp->GetObjectFile ();
@@ -1159,14 +1155,14 @@ DynamicLoaderMacOSXDYLD::ReadMachHeader (lldb::addr_t addr, llvm::MachO::mach_he
         data.SetByteOrder(DynamicLoaderMacOSXDYLD::GetByteOrderFromMagic(header->magic));
         switch (header->magic)
         {
-        case llvm::MachO::HeaderMagic32:
-        case llvm::MachO::HeaderMagic32Swapped:
+        case llvm::MachO::MH_MAGIC:
+        case llvm::MachO::MH_CIGAM:
             data.SetAddressByteSize(4);
             load_cmd_addr += sizeof(llvm::MachO::mach_header);
             break;
 
-        case llvm::MachO::HeaderMagic64:
-        case llvm::MachO::HeaderMagic64Swapped:
+        case llvm::MachO::MH_MAGIC_64:
+        case llvm::MachO::MH_CIGAM_64:
             data.SetAddressByteSize(8);
             load_cmd_addr += sizeof(llvm::MachO::mach_header_64);
             break;
@@ -1229,7 +1225,7 @@ DynamicLoaderMacOSXDYLD::ParseLoadCommands (const DataExtractor& data, DYLDImage
             load_cmd.cmdsize = data.GetU32 (&offset);
             switch (load_cmd.cmd)
             {
-            case llvm::MachO::LoadCommandSegment32:
+            case llvm::MachO::LC_SEGMENT:
                 {
                     segment.name.SetTrimmedCStringWithLength ((const char *)data.GetData(&offset, 16), 16);
                     // We are putting 4 uint32_t values 4 uint64_t values so
@@ -1244,7 +1240,7 @@ DynamicLoaderMacOSXDYLD::ParseLoadCommands (const DataExtractor& data, DYLDImage
                 }
                 break;
 
-            case llvm::MachO::LoadCommandSegment64:
+            case llvm::MachO::LC_SEGMENT_64:
                 {
                     segment.name.SetTrimmedCStringWithLength ((const char *)data.GetData(&offset, 16), 16);
                     // Extract vmaddr, vmsize, fileoff, and filesize all at once
@@ -1255,7 +1251,7 @@ DynamicLoaderMacOSXDYLD::ParseLoadCommands (const DataExtractor& data, DYLDImage
                 }
                 break;
 
-            case llvm::MachO::LoadCommandDynamicLinkerIdent:
+            case llvm::MachO::LC_ID_DYLINKER:
                 if (lc_id_dylinker)
                 {
                     const lldb::offset_t name_offset = load_cmd_offset + data.GetU32 (&offset);
@@ -1264,7 +1260,7 @@ DynamicLoaderMacOSXDYLD::ParseLoadCommands (const DataExtractor& data, DYLDImage
                 }
                 break;
 
-            case llvm::MachO::LoadCommandUUID:
+            case llvm::MachO::LC_UUID:
                 dylib_info.uuid.SetBytes(data.GetData (&offset, 16));
                 break;
 
@@ -1322,7 +1318,7 @@ DynamicLoaderMacOSXDYLD::UpdateImageInfosHeaderAndLoadCommands(DYLDImageInfo::co
 
             ParseLoadCommands (data, image_infos[i], NULL);
 
-            if (image_infos[i].header.filetype == llvm::MachO::HeaderFileTypeExecutable)
+            if (image_infos[i].header.filetype == llvm::MachO::MH_EXECUTE)
                 exe_idx = i;
             
         }
@@ -1522,7 +1518,7 @@ DynamicLoaderMacOSXDYLD::PrivateInitialize(Process *process)
     DEBUG_PRINTF("DynamicLoaderMacOSXDYLD::%s() process state = %s\n", __FUNCTION__, StateAsCString(m_process->GetState()));
     Clear(true);
     m_process = process;
-    m_process->GetTarget().GetSectionLoadList().Clear();
+    m_process->GetTarget().ClearAllLoadedSections();
 }
 
 bool
@@ -1538,10 +1534,20 @@ DynamicLoaderMacOSXDYLD::SetNotificationBreakpoint ()
             // callback function that will get called each time the
             // breakpoint gets hit. We will use this to track when shared
             // libraries get loaded/unloaded.
-
-            if (m_process->GetTarget().GetSectionLoadList().ResolveLoadAddress(m_dyld_all_image_infos.notification, so_addr))
+            bool resolved = m_process->GetTarget().ResolveLoadAddress(m_dyld_all_image_infos.notification, so_addr);
+            if (!resolved)
             {
-                Breakpoint *dyld_break = m_process->GetTarget().CreateBreakpoint (so_addr, true).get();
+                ModuleSP dyld_module_sp = m_dyld_module_wp.lock();
+                if (dyld_module_sp)
+                {
+                    UpdateImageLoadAddress (dyld_module_sp.get(), m_dyld);
+                    resolved = m_process->GetTarget().ResolveLoadAddress(m_dyld_all_image_infos.notification, so_addr);
+                }
+            }
+
+            if (resolved)
+            {
+                Breakpoint *dyld_break = m_process->GetTarget().CreateBreakpoint (so_addr, true, false).get();
                 dyld_break->SetCallback (DynamicLoaderMacOSXDYLD::NotifyBreakpointHit, this, true);
                 dyld_break->SetBreakpointKind ("shared-library-event");
                 m_break_id = dyld_break->GetID();
@@ -1807,12 +1813,12 @@ DynamicLoaderMacOSXDYLD::AddrByteSize()
 {
     switch (m_dyld.header.magic)
     {
-        case llvm::MachO::HeaderMagic32:
-        case llvm::MachO::HeaderMagic32Swapped:
+        case llvm::MachO::MH_MAGIC:
+        case llvm::MachO::MH_CIGAM:
             return 4;
             
-        case llvm::MachO::HeaderMagic64:
-        case llvm::MachO::HeaderMagic64Swapped:
+        case llvm::MachO::MH_MAGIC_64:
+        case llvm::MachO::MH_CIGAM_64:
             return 8;
             
         default:
@@ -1826,12 +1832,12 @@ DynamicLoaderMacOSXDYLD::GetByteOrderFromMagic (uint32_t magic)
 {
     switch (magic)
     {
-        case llvm::MachO::HeaderMagic32:
-        case llvm::MachO::HeaderMagic64:
+        case llvm::MachO::MH_MAGIC:
+        case llvm::MachO::MH_MAGIC_64:
             return lldb::endian::InlHostByteOrder();
             
-        case llvm::MachO::HeaderMagic32Swapped:
-        case llvm::MachO::HeaderMagic64Swapped:
+        case llvm::MachO::MH_CIGAM:
+        case llvm::MachO::MH_CIGAM_64:
             if (lldb::endian::InlHostByteOrder() == lldb::eByteOrderBig)
                 return lldb::eByteOrderLittle;
             else

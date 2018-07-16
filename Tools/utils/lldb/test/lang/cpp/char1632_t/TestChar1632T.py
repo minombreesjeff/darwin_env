@@ -11,7 +11,7 @@ import lldbutil
 
 class Char1632TestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "char1632_t")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -20,6 +20,7 @@ class Char1632TestCase(TestBase):
         self.buildDsym()
         self.char1632()
 
+    @expectedFailureIcc # ICC (13.1) does not emit the DW_TAG_base_type for char16_t and char32_t.
     @dwarf_test
     def test_with_dwarf(self):
         """Test that the C++11 support for char16_t and char32_t works correctly."""
@@ -45,7 +46,7 @@ class Char1632TestCase(TestBase):
         lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.Launch() failed")

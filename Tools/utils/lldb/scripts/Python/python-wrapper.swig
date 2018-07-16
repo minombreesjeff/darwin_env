@@ -354,9 +354,7 @@ LLDBSwigPythonCallTypeScript
                     *pyfunct_wrapper = pfunc_impl;
             }
         }
-        /*else
-            printf("caching works!!!!\n");*/
-        
+
         PyCallable pfunc = PyCallable::FindWithPythonObject(pfunc_impl);
         
         if (!pfunc)
@@ -713,6 +711,30 @@ LLDBSWIGPythonCreateOSPlugin
         Py_RETURN_NONE;
 }
 
+SWIGEXPORT void*
+LLDBSWIGPython_GetDynamicSetting (void* module, const char* setting, const lldb::TargetSP& target_sp)
+{
+
+    if (!module || !setting)
+        Py_RETURN_NONE;
+
+    lldb::SBTarget target_sb(target_sp);
+    
+    PyObject *pvalue = NULL;
+
+    {
+        PyErr_Cleaner py_err_cleaner(true);
+        PyCallable pfunc = PyCallable::FindWithFunctionName("get_dynamic_setting",(PyObject *)module);
+        
+        if (!pfunc)
+            Py_RETURN_NONE;
+        
+        pvalue = pfunc(target_sb, setting);
+    }
+    
+    return pvalue;
+}
+
 SWIGEXPORT bool
 LLDBSWIGPythonRunScriptKeywordProcess
 (const char* python_function_name,
@@ -912,6 +934,19 @@ LLDBSwigPythonCallModuleInit
 // typemaps and in the extensions (SBInputReader.__del__()).
 #include "lldb/API/SBInputReader.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBValue.h"
+ 
+SWIGEXPORT lldb::ValueObjectSP
+LLDBSWIGPython_GetValueObjectSPFromSBValue (void* data)
+{
+    lldb::ValueObjectSP valobj_sp;
+    if (data)
+    {
+        lldb::SBValue* sb_ptr = (lldb::SBValue *)data;
+        valobj_sp = sb_ptr->GetSP();
+    }
+    return valobj_sp;
+}
 
 #ifdef __cplusplus
 extern "C" {

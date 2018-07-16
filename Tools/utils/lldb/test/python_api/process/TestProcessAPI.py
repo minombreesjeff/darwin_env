@@ -10,7 +10,7 @@ from lldbtest import *
 
 class ProcessAPITestCase(TestBase):
 
-    mydir = os.path.join("python_api", "process")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -78,7 +78,6 @@ class ProcessAPITestCase(TestBase):
     def read_memory(self):
         """Test Python SBProcess.ReadMemory() API."""
         exe = os.path.join(os.getcwd(), "a.out")
-        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         target = self.dbg.CreateTarget(exe)
         self.assertTrue(target, VALID_TARGET)
@@ -87,7 +86,7 @@ class ProcessAPITestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
         self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint")
@@ -160,7 +159,6 @@ class ProcessAPITestCase(TestBase):
     def write_memory(self):
         """Test Python SBProcess.WriteMemory() API."""
         exe = os.path.join(os.getcwd(), "a.out")
-        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         target = self.dbg.CreateTarget(exe)
         self.assertTrue(target, VALID_TARGET)
@@ -169,7 +167,7 @@ class ProcessAPITestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
         self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint")
@@ -211,7 +209,6 @@ class ProcessAPITestCase(TestBase):
     def access_my_int(self):
         """Test access 'my_int' using Python SBProcess.GetByteOrder() and other APIs."""
         exe = os.path.join(os.getcwd(), "a.out")
-        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         target = self.dbg.CreateTarget(exe)
         self.assertTrue(target, VALID_TARGET)
@@ -220,7 +217,7 @@ class ProcessAPITestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
         self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint")
@@ -300,13 +297,12 @@ class ProcessAPITestCase(TestBase):
     def remote_launch_should_fail(self):
         """Test SBProcess.RemoteLaunch() API with a process not in eStateConnected, and it should fail."""
         exe = os.path.join(os.getcwd(), "a.out")
-        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         target = self.dbg.CreateTarget(exe)
         self.assertTrue(target, VALID_TARGET)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if self.TraceOn():
             print "process state:", state_type_to_str(process.GetState())
@@ -328,7 +324,7 @@ class ProcessAPITestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         error = lldb.SBError();
         num = process.GetNumSupportedHardwareWatchpoints(error)

@@ -162,6 +162,27 @@ SBModule::SetPlatformFileSpec (const lldb::SBFileSpec &platform_file)
     return result;
 }
 
+lldb::SBFileSpec
+SBModule::GetRemoteInstallFileSpec ()
+{
+    SBFileSpec sb_file_spec;
+    ModuleSP module_sp (GetSP ());
+    if (module_sp)
+        sb_file_spec.SetFileSpec (module_sp->GetRemoteInstallFileSpec());
+    return sb_file_spec;
+}
+
+bool
+SBModule::SetRemoteInstallFileSpec (lldb::SBFileSpec &file)
+{
+    ModuleSP module_sp (GetSP ());
+    if (module_sp)
+    {
+        module_sp->SetRemoteInstallFileSpec(file.ref());
+        return true;
+    }
+    return false;
+}
 
 
 const uint8_t *
@@ -506,7 +527,7 @@ SBModule::FindFirstType (const char *name_cstr)
         sb_type = SBType (module_sp->FindFirstType(sc, name, exact_match));
         
         if (!sb_type.IsValid())
-            sb_type = SBType (ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
+            sb_type = SBType (ClangASTContext::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
     }
     return sb_type;
 }
@@ -516,7 +537,7 @@ SBModule::GetBasicType(lldb::BasicType type)
 {
     ModuleSP module_sp (GetSP ());
     if (module_sp)
-        return SBType (ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), type));
+        return SBType (ClangASTContext::GetBasicType (module_sp->GetClangASTContext().getASTContext(), type));
     return SBType();
 }
 
@@ -549,7 +570,7 @@ SBModule::FindTypes (const char *type)
         }
         else
         {
-            SBType sb_type(ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
+            SBType sb_type(ClangASTContext::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
             if (sb_type.IsValid())
                 retval.Append(sb_type);
         }

@@ -393,6 +393,17 @@ AppleObjCRuntimeV2::GetDynamicTypeAndAddress (ValueObject &in_value,
                     objc_class_sp->SetType (type_sp);
                     class_type_or_name.SetTypeSP (type_sp);
                 }
+                else
+                {
+                    // try to go for a ClangASTType at least
+                    TypeVendor* vendor = GetTypeVendor();
+                    if (vendor)
+                    {
+                        std::vector<ClangASTType> types;
+                        if (vendor->FindTypes(class_name, false, 1, types) && types.size() && types.at(0).IsValid())
+                            class_type_or_name.SetClangASTType(types.at(0));
+                    }
+                }
             }
         }
     }    
@@ -1596,7 +1607,7 @@ private:
 };
 
 ObjCLanguageRuntime::ClassDescriptorSP
-AppleObjCRuntimeV2::GetClassDescriptor (ObjCISA isa)
+AppleObjCRuntimeV2::GetClassDescriptorFromISA (ObjCISA isa)
 {
     ObjCLanguageRuntime::ClassDescriptorSP class_descriptor_sp;
     if (m_non_pointer_isa_cache_ap.get())
@@ -1613,7 +1624,7 @@ AppleObjCRuntimeV2::GetClassDescriptor (ValueObject& valobj)
     // if we get an invalid VO (which might still happen when playing around
     // with pointers returned by the expression parser, don't consider this
     // a valid ObjC object)
-    if (valobj.GetValue().GetContextType() != Value::eContextTypeInvalid)
+    if (valobj.GetClangType().IsValid())
     {
         addr_t isa_pointer = valobj.GetPointerValue();
         
@@ -1633,7 +1644,7 @@ AppleObjCRuntimeV2::GetClassDescriptor (ValueObject& valobj)
                 ObjCISA isa = process->ReadPointerFromMemory(isa_pointer, error);
                 if (isa != LLDB_INVALID_ADDRESS)
                 {
-                    objc_class_sp = ObjCLanguageRuntime::GetClassDescriptorFromISA (isa);
+                    objc_class_sp = GetClassDescriptorFromISA (isa);
                     if (isa && !objc_class_sp)
                     {
                         Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
@@ -1719,8 +1730,8 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(RemoteNXMapTable &hash_table
     }
     
     // Make some types for our arguments
-    clang_type_t clang_uint32_t_type = ast->GetBuiltinTypeForEncodingAndBitSize(eEncodingUint, 32);
-    clang_type_t clang_void_pointer_type = ast->CreatePointerType(ast->GetBuiltInType_void());
+    ClangASTType clang_uint32_t_type = ast->GetBuiltinTypeForEncodingAndBitSize(eEncodingUint, 32);
+    ClangASTType clang_void_pointer_type = ast->GetBasicType(eBasicTypeVoid).GetPointerType();
     
     if (!m_get_class_info_code.get())
     {
@@ -1749,19 +1760,17 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(RemoteNXMapTable &hash_table
     {
         Value value;
         value.SetValueType (Value::eValueTypeScalar);
-        value.SetContext (Value::eContextTypeClangType, clang_void_pointer_type);
+//        value.SetContext (Value::eContextTypeClangType, clang_void_pointer_type);
+        value.SetClangType (clang_void_pointer_type);
+        arguments.PushValue (value);
         arguments.PushValue (value);
         
         value.SetValueType (Value::eValueTypeScalar);
-        value.SetContext (Value::eContextTypeClangType, clang_void_pointer_type);
-        arguments.PushValue (value);
-        
-        value.SetValueType (Value::eValueTypeScalar);
-        value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+//        value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+        value.SetClangType (clang_uint32_t_type);
         arguments.PushValue (value);
         
         m_get_class_info_function.reset(new ClangFunction (*m_process,
-                                                           ast,
                                                            clang_uint32_t_type,
                                                            function_address,
                                                            arguments));
@@ -1820,14 +1829,17 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(RemoteNXMapTable &hash_table
                                                            arguments,
                                                            errors))
     {
-        bool stop_others = true;
-        bool try_all_threads = false;
-        bool unwind_on_error = true;
-        bool ignore_breakpoints = true;
+        EvaluateExpressionOptions options;
+        options.SetUnwindOnError(true);
+        options.SetTryAllThreads(false);
+        options.SetStopOthers(true);
+        options.SetIgnoreBreakpoints(true);
+        options.SetTimeoutUsec(UTILITY_FUNCTION_TIMEOUT_USEC);
         
         Value return_value;
         return_value.SetValueType (Value::eValueTypeScalar);
-        return_value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+        //return_value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+        return_value.SetClangType (clang_uint32_t_type);
         return_value.GetScalar() = 0;
         
         errors.Clear();
@@ -1835,12 +1847,8 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapDynamic(RemoteNXMapTable &hash_table
         // Run the function
         ExecutionResults results = m_get_class_info_function->ExecuteFunction (exe_ctx,
                                                                                &m_get_class_info_args,
+                                                                               options,
                                                                                errors,
-                                                                               stop_others,
-                                                                               UTILITY_FUNCTION_TIMEOUT_USEC,
-                                                                               try_all_threads,
-                                                                               unwind_on_error,
-                                                                               ignore_breakpoints,
                                                                                return_value);
         
         if (results == eExecutionCompleted)
@@ -1971,8 +1979,8 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache()
     }
     
     // Make some types for our arguments
-    clang_type_t clang_uint32_t_type = ast->GetBuiltinTypeForEncodingAndBitSize(eEncodingUint, 32);
-    clang_type_t clang_void_pointer_type = ast->CreatePointerType(ast->GetBuiltInType_void());
+    ClangASTType clang_uint32_t_type = ast->GetBuiltinTypeForEncodingAndBitSize(eEncodingUint, 32);
+    ClangASTType clang_void_pointer_type = ast->GetBasicType(eBasicTypeVoid).GetPointerType();
     
     if (!m_get_shared_cache_class_info_code.get())
     {
@@ -2001,19 +2009,17 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache()
     {
         Value value;
         value.SetValueType (Value::eValueTypeScalar);
-        value.SetContext (Value::eContextTypeClangType, clang_void_pointer_type);
+        //value.SetContext (Value::eContextTypeClangType, clang_void_pointer_type);
+        value.SetClangType (clang_void_pointer_type);
+        arguments.PushValue (value);
         arguments.PushValue (value);
         
         value.SetValueType (Value::eValueTypeScalar);
-        value.SetContext (Value::eContextTypeClangType, clang_void_pointer_type);
-        arguments.PushValue (value);
-        
-        value.SetValueType (Value::eValueTypeScalar);
-        value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+        //value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+        value.SetClangType (clang_uint32_t_type);
         arguments.PushValue (value);
         
         m_get_shared_cache_class_info_function.reset(new ClangFunction (*m_process,
-                                                                        ast,
                                                                         clang_uint32_t_type,
                                                                         function_address,
                                                                         arguments));
@@ -2072,14 +2078,17 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache()
                                                                         arguments,
                                                                         errors))
     {
-        bool stop_others = true;
-        bool try_all_threads = false;
-        bool unwind_on_error = true;
-        bool ignore_breakpoints = true;
+        EvaluateExpressionOptions options;
+        options.SetUnwindOnError(true);
+        options.SetTryAllThreads(false);
+        options.SetStopOthers(true);
+        options.SetIgnoreBreakpoints(true);
+        options.SetTimeoutUsec(UTILITY_FUNCTION_TIMEOUT_USEC);
         
         Value return_value;
         return_value.SetValueType (Value::eValueTypeScalar);
-        return_value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+        //return_value.SetContext (Value::eContextTypeClangType, clang_uint32_t_type);
+        return_value.SetClangType (clang_uint32_t_type);
         return_value.GetScalar() = 0;
         
         errors.Clear();
@@ -2087,12 +2096,8 @@ AppleObjCRuntimeV2::UpdateISAToDescriptorMapSharedCache()
         // Run the function
         ExecutionResults results = m_get_shared_cache_class_info_function->ExecuteFunction (exe_ctx,
                                                                                             &m_get_shared_cache_class_info_args,
+                                                                                            options,
                                                                                             errors,
-                                                                                            stop_others,
-                                                                                            UTILITY_FUNCTION_TIMEOUT_USEC,
-                                                                                            try_all_threads,
-                                                                                            unwind_on_error,
-                                                                                            ignore_breakpoints,
                                                                                             return_value);
         
         if (results == eExecutionCompleted)
@@ -2600,7 +2605,7 @@ AppleObjCRuntimeV2::TaggedPointerVendorRuntimeAssisted::GetClassDescriptor (lldb
         uintptr_t slot_data = process->ReadPointerFromMemory(slot_ptr, error);
         if (error.Fail() || slot_data == 0 || slot_data == LLDB_INVALID_ADDRESS)
             return nullptr;
-        actual_class_descriptor_sp = m_runtime.GetClassDescriptor(slot_data);
+        actual_class_descriptor_sp = m_runtime.GetClassDescriptorFromISA((ObjCISA)slot_data);
         if (!actual_class_descriptor_sp)
             return ObjCLanguageRuntime::ClassDescriptorSP();
         m_cache[slot] = actual_class_descriptor_sp;

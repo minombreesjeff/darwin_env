@@ -28,6 +28,7 @@
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
@@ -136,8 +137,7 @@ ThreadPlanAssemblyTracer::GetIntPointerType()
         
             if (exe_module)
             {
-                m_intptr_type = TypeFromUser(exe_module->GetClangASTContext().GetBuiltinTypeForEncodingAndBitSize(eEncodingUint, target_sp->GetArchitecture().GetAddressByteSize() * 8),
-                                             exe_module->GetClangASTContext().getASTContext());
+                m_intptr_type = TypeFromUser(exe_module->GetClangASTContext().GetBuiltinTypeForEncodingAndBitSize(eEncodingUint, target_sp->GetArchitecture().GetAddressByteSize() * 8));
             }
         }        
     }
@@ -243,7 +243,8 @@ ThreadPlanAssemblyTracer::Log ()
         {
             Value value;
             value.SetValueType (Value::eValueTypeScalar);
-            value.SetContext (Value::eContextTypeClangType, intptr_type.GetOpaqueQualType());
+//            value.SetContext (Value::eContextTypeClangType, intptr_type.GetOpaqueQualType());
+            value.SetClangType (intptr_type);
             value_list.PushValue (value);
         }
         

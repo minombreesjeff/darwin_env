@@ -8,7 +8,7 @@ import lldbutil
 
 class TestObjCIvarsInBlocks(TestBase):
 
-    mydir = os.path.join("lang", "objc", "blocks")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     # This test requires the 2.0 runtime, so it will fail on i386.
@@ -51,7 +51,7 @@ class TestObjCIvarsInBlocks(TestBase):
         breakpoint_two = target.BreakpointCreateBySourceRegex ('// Break here inside the class method block.', self.class_source_file_spec)
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue (process, "Created a process.")
         self.assertTrue (process.GetState() == lldb.eStateStopped, "Stopped it too.")
 
@@ -111,7 +111,9 @@ class TestObjCIvarsInBlocks(TestBase):
         expr = frame.EvaluateExpression("(ret)")
         self.assertTrue (expr, "Successfully got a local variable in a block in a class method.")
 
-        self.assertTrue (expr.GetValueAsSigned (error) == 5, "The local variable in the block was what we expected.")
+        ret_value_signed = expr.GetValueAsSigned (error)
+        # print 'ret_value_signed = %i' % (ret_value_signed)
+        self.assertTrue (ret_value_signed == 5, "The local variable in the block was what we expected.")
         
 if __name__ == '__main__':
     import atexit

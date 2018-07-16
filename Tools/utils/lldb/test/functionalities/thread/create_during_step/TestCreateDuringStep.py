@@ -10,7 +10,7 @@ import lldbutil
 
 class CreateDuringStepTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "thread", "create_during_step")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @expectedFailureDarwin("llvm.org/pr15824") # thread states not properly maintained
@@ -37,6 +37,7 @@ class CreateDuringStepTestCase(TestBase):
         self.create_during_step_in_test()
 
     @expectedFailureDarwin("llvm.org/pr15824") # thread states not properly maintained
+    @expectedFailureFreeBSD("llvm.org/pr18190") # thread states not properly maintained
     @dwarf_test
     def test_step_inst_with_dwarf(self):
         """Test thread creation during step-inst handling."""
@@ -44,6 +45,7 @@ class CreateDuringStepTestCase(TestBase):
         self.create_during_step_inst_test()
 
     @expectedFailureDarwin("llvm.org/pr15824") # thread states not properly maintained
+    @expectedFailureFreeBSD("llvm.org/pr18190") # thread states not properly maintained
     @dwarf_test
     def test_step_over_with_dwarf(self):
         """Test thread creation during step-over handling."""
@@ -51,6 +53,7 @@ class CreateDuringStepTestCase(TestBase):
         self.create_during_step_over_test()
 
     @expectedFailureDarwin("llvm.org/pr15824") # thread states not properly maintained
+    @expectedFailureFreeBSD("llvm.org/pr18190") # thread states not properly maintained
     @dwarf_test
     def test_step_in_with_dwarf(self):
         """Test thread creation during step-in handling."""
@@ -82,7 +85,7 @@ class CreateDuringStepTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # This should create a breakpoint in the stepping thread.
-        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.breakpoint, num_expected_locations=1)
+        self.bp_num = lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.breakpoint, num_expected_locations=1)
 
         # The breakpoint list should show 1 location.
         self.expect("breakpoint list -f", "Breakpoint location shown correctly",
@@ -114,16 +117,21 @@ class CreateDuringStepTestCase(TestBase):
         self.assertTrue(thread1.IsStopped(), "Thread 1 didn't stop during breakpoint")
         self.assertTrue(thread2.IsStopped(), "Thread 2 didn't stop during breakpoint")
 
-        # Keep stepping until we've reached our designated continue point
-        stepping_thread = process.GetSelectedThread()
+        # Find the thread that is stopped at the breakpoint
+        stepping_thread = None
+        for thread in process:
+            expected_bp_desc = "breakpoint %s." % self.bp_num
+            if expected_bp_desc in thread.GetStopDescription(100):
+                stepping_thread = thread
+                break
+        self.assertTrue(stepping_thread != None, "unable to find thread stopped at %s" % expected_bp_desc)
         current_line = self.breakpoint
+        # Keep stepping until we've reached our designated continue point
         while current_line != self.continuepoint:
-            self.runCmd(step_cmd)
-
-            # The thread creation may change the selected thread.
-            # If it does, we just change it back here.
             if stepping_thread != process.GetSelectedThread():
                 process.SetSelectedThread(stepping_thread)
+
+            self.runCmd(step_cmd)
 
             frame = stepping_thread.GetFrameAtIndex(0)
             current_line = frame.GetLineEntry().GetLine()

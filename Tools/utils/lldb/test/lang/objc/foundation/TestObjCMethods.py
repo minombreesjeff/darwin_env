@@ -12,7 +12,7 @@ import lldbutil
 @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
 class FoundationTestCase(TestBase):
 
-    mydir = os.path.join("lang", "objc", "foundation")
+    mydir = TestBase.compute_mydir(__file__)
 
     @dsym_test
     def test_break_with_dsym(self):
@@ -219,7 +219,7 @@ class FoundationTestCase(TestBase):
         self.assertTrue(break1, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

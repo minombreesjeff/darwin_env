@@ -15,7 +15,7 @@ from lldbtest import *
 
 class ConditionalBreakTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "conditional_break")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -40,7 +40,6 @@ class ConditionalBreakTestCase(TestBase):
         self.simulate_conditional_break_by_user()
 
     @dwarf_test
-    @skipIfLinux # due to two assertion failures introduced by r174793: ProcessPOSIX.cpp:223 (assertion 'state == eStateStopped || state == eStateCrashed') and POSIXThread.cpp:254 (assertion 'bp_site')
     def test_with_dwarf_command(self):
         """Simulate a user using lldb commands to break on c() if called from a()."""
         self.buildDwarf()
@@ -57,7 +56,7 @@ class ConditionalBreakTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 
@@ -114,6 +113,10 @@ class ConditionalBreakTestCase(TestBase):
 
         if not self.TraceOn():
             self.HideStdout()
+
+        # Separate out the "file a.out" command from .lldb file, for the sake of
+        # remote testsuite.
+        self.runCmd("file a.out")
         self.runCmd("command source .lldb")
 
         self.runCmd ("break list")

@@ -9,7 +9,7 @@ from lldbtest import *
 
 class ExprCommandWithTimeoutsTestCase(TestBase):
 
-    mydir = os.path.join("expression_command", "call-restarts")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -26,6 +26,7 @@ class ExprCommandWithTimeoutsTestCase(TestBase):
         self.buildDsym()
         self.call_function()
 
+    @skipIfFreeBSD # llvm.org/pr15278
     @skipIfLinux # llvm.org/pr15278: handle expressions that generate signals on Linux
     @dwarf_test
     def test_with_dwarf(self):
@@ -55,7 +56,7 @@ class ExprCommandWithTimeoutsTestCase(TestBase):
         self.assertTrue(breakpoint.GetNumLocations() > 0, VALID_BREAKPOINT)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

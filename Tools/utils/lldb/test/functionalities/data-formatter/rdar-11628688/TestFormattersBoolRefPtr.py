@@ -11,7 +11,7 @@ import lldbutil
 
 class DataFormatterOSTypeTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "rdar-11628688")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -58,7 +58,7 @@ class DataFormatterOSTypeTestCase(TestBase):
 
         # Now check that we use the right summary for OSType
         self.expect('frame variable',
-                    substrs = ["(OSType) a = 1952805748 'test'","(OSType) b = 1650815860 'best'"])
+                    substrs = ["'test'","'best'"])
 
 
 if __name__ == '__main__':

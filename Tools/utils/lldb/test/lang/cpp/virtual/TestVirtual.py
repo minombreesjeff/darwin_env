@@ -13,7 +13,7 @@ def Msg(expr, val):
 
 class CppVirtualMadness(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "virtual")
+    mydir = TestBase.compute_mydir(__file__)
 
     # This is the pattern by design to match the "my_expr = 'value'" output from
     # printf() stmts (see main.cpp).
@@ -28,6 +28,7 @@ class CppVirtualMadness(TestBase):
         self.buildDsym()
         self.virtual_madness_test()
 
+    @expectedFailureIcc('llvm.org/pr16808') # lldb does not call the correct virtual function with icc
     def test_virtual_madness_dwarf(self):
         """Test that expression works correctly with virtual inheritance as well as virtual function."""
         self.buildDwarf()

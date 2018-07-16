@@ -142,7 +142,7 @@ public:
                     DWARFDebugAranges* debug_aranges) const;
 
     bool        FastExtract(
-                    const lldb_private::DataExtractor& debug_info_data,
+                    const lldb_private::DWARFDataExtractor& debug_info_data,
                     const DWARFCompileUnit* cu,
                     const uint8_t *fixed_form_sizes,
                     lldb::offset_t* offset_ptr);
@@ -197,11 +197,24 @@ public:
                     const dw_attr_t attr,
                     int64_t fail_value) const;
 
+    dw_addr_t   GetAttributeHighPC(
+                    SymbolFileDWARF* dwarf2Data,
+                    const DWARFCompileUnit* cu,
+                    dw_addr_t lo_pc,
+                    uint64_t fail_value) const;
+
+    bool        GetAttributeAddressRange(
+                    SymbolFileDWARF* dwarf2Data,
+                    const DWARFCompileUnit* cu,
+                    dw_addr_t& lo_pc,
+                    dw_addr_t& hi_pc,
+                    uint64_t fail_value) const;
+
     dw_offset_t GetAttributeValueAsLocation(
                     SymbolFileDWARF* dwarf2Data,
                     const DWARFCompileUnit* cu,
                     const dw_attr_t attr,
-                    lldb_private::DataExtractor& data,
+                    lldb_private::DWARFDataExtractor& data,
                     uint32_t &block_size) const;
 
     const char* GetName(
@@ -276,7 +289,7 @@ public:
     static void DumpAttribute(
                     SymbolFileDWARF* dwarf2Data,
                     const DWARFCompileUnit* cu,
-                    const lldb_private::DataExtractor& debug_info_data,
+                    const lldb_private::DWARFDataExtractor& debug_info_data,
                     lldb::offset_t *offset_ptr,
                     lldb_private::Stream &s,
                     dw_attr_t attr,

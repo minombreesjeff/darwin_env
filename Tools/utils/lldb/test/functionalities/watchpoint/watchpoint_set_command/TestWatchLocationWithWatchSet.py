@@ -10,7 +10,7 @@ import lldbutil
 
 class WatchLocationUsingWatchpointSetTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "watchpoint", "watchpoint_set_command")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -20,6 +20,7 @@ class WatchLocationUsingWatchpointSetTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.watchlocation_using_watchpoint_set()
 
+    @expectedFailureFreeBSD('llvm.org/pr16706') # Watchpoints fail on FreeBSD
     @dwarf_test
     def test_watchlocation_with_dwarf_using_watchpoint_set(self):
         """Test watching a location with 'watchpoint set expression -w write -x size' option."""

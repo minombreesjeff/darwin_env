@@ -37,6 +37,7 @@
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/ExecutionContextScope.h"
+#include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
@@ -777,24 +778,12 @@ DataExtractor::GetDouble (offset_t *offset_ptr) const
 long double
 DataExtractor::GetLongDouble (offset_t *offset_ptr) const
 {
-    typedef long double float_type;
-    float_type val = 0.0;
-    const size_t src_size = sizeof(float_type);
-    const float_type *src = (const float_type *)GetData (offset_ptr, src_size);
-    if (src)
-    {
-        if (m_byte_order != lldb::endian::InlHostByteOrder())
-        {
-            const uint8_t *src_data = (const uint8_t *)src;
-            uint8_t *dst_data = (uint8_t *)&val;
-            for (size_t i=0; i<sizeof(float_type); ++i)
-                dst_data[sizeof(float_type) - 1 - i] = src_data[i];
-        }
-        else
-        {
-            val = *src;
-        }
-    }
+    long double val = 0.0;
+#if defined (__i386__) || defined (__amd64__) || defined (__x86_64__) || defined(_M_IX86) || defined(_M_IA64) || defined(_M_X64)
+    *offset_ptr += CopyByteOrderedData (*offset_ptr, 10, &val, sizeof(val), lldb::endian::InlHostByteOrder());
+#else
+    *offset_ptr += CopyByteOrderedData (*offset_ptr, sizeof(val), &val, sizeof(val), lldb::endian::InlHostByteOrder());
+#endif
     return val;
 }
 
@@ -947,11 +936,30 @@ DataExtractor::ExtractBytes (offset_t offset, offset_t length, ByteOrder dst_byt
     {
         if (dst_byte_order != GetByteOrder())
         {
+            // Validate that only a word- or register-sized dst is byte swapped
+            assert (length == 1 || length == 2 || length == 4 || length == 8 ||
+                    length == 10 || length == 16 || length == 32);
+
             for (uint32_t i=0; i<length; ++i)
                 ((uint8_t*)dst)[i] = src[length - i - 1];
         }
         else
             ::memcpy (dst, src, length);
+        return length;
+    }
+    return 0;
+}
+
+// Extract data as it exists in target memory
+lldb::offset_t
+DataExtractor::CopyData (offset_t offset,
+                         offset_t length,
+                         void *dst) const
+{
+    const uint8_t *src = PeekData (offset, length);
+    if (src)
+    {
+        ::memcpy (dst, src, length);
         return length;
     }
     return 0;
@@ -975,7 +983,12 @@ DataExtractor::CopyByteOrderedData (offset_t src_offset,
     assert (dst_void_ptr != NULL);
     assert (dst_len > 0);
     assert (dst_byte_order == eByteOrderBig || dst_byte_order == eByteOrderLittle);
-    
+
+    // Validate that only a word- or register-sized dst is byte swapped
+    assert (dst_byte_order == m_byte_order || dst_len == 1 || dst_len == 2 ||
+            dst_len == 4 || dst_len == 8 || dst_len == 10 || dst_len == 16 ||
+            dst_len == 32);
+
     // Must have valid byte orders set in this object and for destination
     if (!(dst_byte_order == eByteOrderBig || dst_byte_order == eByteOrderLittle) ||
         !(m_byte_order == eByteOrderBig || m_byte_order == eByteOrderLittle))
@@ -1069,14 +1082,10 @@ DataExtractor::CopyByteOrderedData (offset_t src_offset,
 
 
 //----------------------------------------------------------------------
-// Extracts a AsCString (fixed length, or variable length) from
-// the data at the offset pointed to by "offset_ptr". If
-// "length" is zero, then a variable length NULL terminated C
-// string will be extracted from the data the "offset_ptr" will be
-// updated with the offset of the byte that follows the NULL
-// terminator byte. If "length" is greater than zero, then
-// the function will make sure there are "length" bytes
-// available in the current data and if so, return a valid pointer.
+// Extracts a variable length NULL terminated C string from
+// the data at the offset pointed to by "offset_ptr".  The
+// "offset_ptr" will be updated with the offset of the byte that
+// follows the NULL terminator byte.
 //
 // If the offset pointed to by "offset_ptr" is out of bounds, or if
 // "length" is non-zero and there aren't enough avaialable
@@ -1107,6 +1116,33 @@ DataExtractor::GetCStr (offset_t *offset_ptr) const
         // terminator. Fall through and return NULL otherwise anyone that
         // would have used the result as a C string can wonder into
         // unknown memory...
+    }
+    return NULL;
+}
+
+//----------------------------------------------------------------------
+// Extracts a NULL terminated C string from the fixed length field of
+// length "len" at the offset pointed to by "offset_ptr".
+// The "offset_ptr" will be updated with the offset of the byte that
+// follows the fixed length field.
+//
+// If the offset pointed to by "offset_ptr" is out of bounds, or if
+// the offset plus the length of the field is out of bounds, or if the
+// field does not contain a NULL terminator byte, NULL will be returned
+// and "offset_ptr" will not be updated.
+//----------------------------------------------------------------------
+const char*
+DataExtractor::GetCStr (offset_t *offset_ptr, offset_t len) const
+{
+    const char *cstr = (const char *)PeekData (*offset_ptr, len);
+    if (cstr)
+    {
+        if (memchr (cstr, '\0', len) == NULL)
+        {
+            return NULL;
+        }
+        *offset_ptr += len;
+        return cstr;
     }
     return NULL;
 }
@@ -1319,18 +1355,22 @@ DumpAPInt (Stream *s, const DataExtractor &data, lldb::offset_t offset, lldb::of
 
 static float half2float (uint16_t half)
 {
+#ifdef _MSC_VER
+    llvm_unreachable("half2float not implemented for MSVC");
+#else
     union{ float       f; uint32_t    u;}u;
     int32_t v = (int16_t) half;
     
     if( 0 == (v & 0x7c00))
     {
         u.u = v & 0x80007FFFU;
-        return u.f * 0x1.0p125f;
+        return u.f * ldexpf(1, 125);
     }
     
     v <<= 13;
     u.u = v | 0x70000000U;
-    return u.f * 0x1.0p-112f;
+    return u.f * ldexpf(1, -112);
+#endif
 }
 
 lldb::offset_t
@@ -1692,29 +1732,35 @@ DataExtractor::Dump (Stream *s,
         case eFormatHexUppercase:
             {
                 bool wantsuppercase  = (item_format == eFormatHexUppercase);
-                if (item_byte_size <= 8)
+                switch (item_byte_size)
                 {
+                case 1:
+                case 2:
+                case 4:
+                case 8:
                     s->Printf(wantsuppercase ? "0x%*.*" PRIX64 : "0x%*.*" PRIx64, (int)(2 * item_byte_size), (int)(2 * item_byte_size), GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
-                }
-                else
-                {
-                    assert (item_bit_size == 0 && item_bit_offset == 0);
-                    s->PutCString("0x");
-                    const uint8_t *bytes = (const uint8_t* )GetData(&offset, item_byte_size);
-                    if (bytes)
+                    break;
+                default:
                     {
-                        uint32_t idx;
-                        if (m_byte_order == eByteOrderBig)
+                        assert (item_bit_size == 0 && item_bit_offset == 0);
+                        const uint8_t *bytes = (const uint8_t* )GetData(&offset, item_byte_size);
+                        if (bytes)
                         {
-                            for (idx = 0; idx < item_byte_size; ++idx)
-                                s->Printf(wantsuppercase ? "%2.2X" : "%2.2x", bytes[idx]);
-                        }
-                        else
-                        {
-                            for (idx = 0; idx < item_byte_size; ++idx)
-                                s->Printf(wantsuppercase ? "%2.2X" : "%2.2x", bytes[item_byte_size - 1 - idx]);
+                            s->PutCString("0x");
+                            uint32_t idx;
+                                if (m_byte_order == eByteOrderBig)
+                            {
+                                for (idx = 0; idx < item_byte_size; ++idx)
+                                    s->Printf(wantsuppercase ? "%2.2X" : "%2.2x", bytes[idx]);
+                            }
+                            else
+                            {
+                                for (idx = 0; idx < item_byte_size; ++idx)
+                                    s->Printf(wantsuppercase ? "%2.2X" : "%2.2x", bytes[item_byte_size - 1 - idx]);
+                            }
                         }
                     }
+                    break;
                 }
             }
             break;
@@ -1819,7 +1865,7 @@ DataExtractor::Dump (Stream *s,
                         ss.precision(std::numeric_limits<double>::digits10);
                         ss << GetDouble(&offset);
                     }
-                    else if (item_byte_size == sizeof(long double))
+                    else if (item_byte_size == sizeof(long double) || item_byte_size == 10)
                     {
                         ss.precision(std::numeric_limits<long double>::digits10);
                         ss << GetLongDouble(&offset);

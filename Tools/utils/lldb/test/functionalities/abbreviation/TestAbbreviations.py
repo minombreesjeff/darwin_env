@@ -10,7 +10,7 @@ import lldbutil
 
 class AbbreviationsTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "abbreviation")
+    mydir = TestBase.compute_mydir(__file__)
 
     def test_nonrunning_command_abbreviations (self):
         self.expect("ap script",
@@ -90,7 +90,10 @@ class AbbreviationsTestCase(TestBase):
 
     def running_abbreviations (self):
         exe = os.path.join (os.getcwd(), "a.out")
-        self.expect("fil " + exe,
+        # Use "file", i.e., no abbreviation.  We're exactly matching the command
+        # verbatim when dealing with remote testsuite execution.
+        # For more details, see TestBase.runCmd().
+        self.expect("file " + exe,
                     patterns = [ "Current executable set to .*a.out.*" ])
 
         # By default, the setting interpreter.expand-regex-aliases is false.

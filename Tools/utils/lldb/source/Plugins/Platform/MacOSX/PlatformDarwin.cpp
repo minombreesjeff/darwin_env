@@ -18,6 +18,7 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Error.h"
+#include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/Timer.h"
@@ -36,9 +37,10 @@ using namespace lldb_private;
 /// Default Constructor
 //------------------------------------------------------------------
 PlatformDarwin::PlatformDarwin (bool is_host) :
-    Platform(is_host),  // This is the local host platform
-    m_remote_platform_sp (),
-    m_developer_directory ()
+    PlatformPOSIX(is_host),  // This is the local host platform
+    m_developer_directory (),
+    m_dispatch_queue_offsets_addr (LLDB_INVALID_ADDRESS),
+    m_libdispatch_offsets()
 {
 }
 
@@ -209,11 +211,11 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
             StreamString arch_names;
             for (uint32_t idx = 0; GetSupportedArchitectureAtIndex (idx, module_spec.GetArchitecture()); ++idx)
             {
-                error = ModuleList::GetSharedModule (module_spec, 
-                                                     exe_module_sp, 
-                                                     module_search_paths_ptr,
-                                                     NULL, 
-                                                     NULL);
+                error = GetSharedModule (module_spec, 
+                                         exe_module_sp, 
+                                         module_search_paths_ptr,
+                                         NULL, 
+                                         NULL);
                 // Did we find an executable using one of the 
                 if (error.Success())
                 {
@@ -268,7 +270,138 @@ PlatformDarwin::ResolveSymbolFile (Target &target,
     
 }
 
+static lldb_private::Error
+MakeCacheFolderForFile (const FileSpec& module_cache_spec)
+{
+    FileSpec module_cache_folder = module_cache_spec.CopyByRemovingLastPathComponent();
+    return Host::MakeDirectory(module_cache_folder.GetPath().c_str(), eFilePermissionsDirectoryDefault);
+}
 
+static lldb_private::Error
+BringInRemoteFile (Platform* platform,
+                   const lldb_private::ModuleSpec &module_spec,
+                   const FileSpec& module_cache_spec)
+{
+    MakeCacheFolderForFile(module_cache_spec);
+    Error err = platform->GetFile(module_spec.GetFileSpec(), module_cache_spec);
+    return err;
+}
+
+lldb_private::Error
+PlatformDarwin::GetSharedModuleWithLocalCache (const lldb_private::ModuleSpec &module_spec,
+                                               lldb::ModuleSP &module_sp,
+                                               const lldb_private::FileSpecList *module_search_paths_ptr,
+                                               lldb::ModuleSP *old_module_sp_ptr,
+                                               bool *did_create_ptr)
+{
+
+    Log *log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM));
+    if (log)
+        log->Printf("[%s] Trying to find module %s/%s - platform path %s/%s symbol path %s/%s",
+                     (IsHost() ? "host" : "remote"),
+                     module_spec.GetFileSpec().GetDirectory().AsCString(),
+                     module_spec.GetFileSpec().GetFilename().AsCString(),
+                     module_spec.GetPlatformFileSpec().GetDirectory().AsCString(),
+                     module_spec.GetPlatformFileSpec().GetFilename().AsCString(),
+                     module_spec.GetSymbolFileSpec().GetDirectory().AsCString(),
+                     module_spec.GetSymbolFileSpec().GetFilename().AsCString());
+
+    std::string cache_path(GetLocalCacheDirectory());
+    std::string module_path (module_spec.GetFileSpec().GetPath());
+    cache_path.append(module_path);
+    FileSpec module_cache_spec(cache_path.c_str(),false);
+    
+    // if rsync is supported, always bring in the file - rsync will be very efficient
+    // when files are the same on the local and remote end of the connection
+    if (this->GetSupportsRSync())
+    {
+        Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
+        if (err.Fail())
+            return err;
+        if (module_cache_spec.Exists())
+        {
+            Log *log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM));
+            if (log)
+                log->Printf("[%s] module %s/%s was rsynced and is now there",
+                             (IsHost() ? "host" : "remote"),
+                             module_spec.GetFileSpec().GetDirectory().AsCString(),
+                             module_spec.GetFileSpec().GetFilename().AsCString());
+            ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
+            module_sp.reset(new Module(local_spec));
+            module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
+            return Error();
+        }
+    }
+
+    if (module_spec.GetFileSpec().Exists() && !module_sp)
+    {
+        module_sp.reset(new Module(module_spec));
+        return Error();
+    }
+    
+    // try to find the module in the cache
+    if (module_cache_spec.Exists())
+    {
+        // get the local and remote MD5 and compare
+        if (m_remote_platform_sp)
+        {
+            // when going over the *slow* GDB remote transfer mechanism we first check
+            // the hashes of the files - and only do the actual transfer if they differ
+            uint64_t high_local,high_remote,low_local,low_remote;
+            Host::CalculateMD5 (module_cache_spec, low_local, high_local);
+            m_remote_platform_sp->CalculateMD5(module_spec.GetFileSpec(), low_remote, high_remote);
+            if (low_local != low_remote || high_local != high_remote)
+            {
+                // bring in the remote file
+                Log *log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM));
+                if (log)
+                    log->Printf("[%s] module %s/%s needs to be replaced from remote copy",
+                                 (IsHost() ? "host" : "remote"),
+                                 module_spec.GetFileSpec().GetDirectory().AsCString(),
+                                 module_spec.GetFileSpec().GetFilename().AsCString());
+                Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
+                if (err.Fail())
+                    return err;
+            }
+        }
+        
+        ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
+        module_sp.reset(new Module(local_spec));
+        module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
+        Log *log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM));
+            if (log)
+                log->Printf("[%s] module %s/%s was found in the cache",
+                             (IsHost() ? "host" : "remote"),
+                             module_spec.GetFileSpec().GetDirectory().AsCString(),
+                             module_spec.GetFileSpec().GetFilename().AsCString());
+        return Error();
+    }
+    
+    // bring in the remote module file
+    if (log)
+        log->Printf("[%s] module %s/%s needs to come in remotely",
+                     (IsHost() ? "host" : "remote"),
+                     module_spec.GetFileSpec().GetDirectory().AsCString(),
+                     module_spec.GetFileSpec().GetFilename().AsCString());
+    Error err = BringInRemoteFile (this, module_spec, module_cache_spec);
+    if (err.Fail())
+        return err;
+    if (module_cache_spec.Exists())
+    {
+        Log *log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_PLATFORM));
+        if (log)
+            log->Printf("[%s] module %s/%s is now cached and fine",
+                         (IsHost() ? "host" : "remote"),
+                         module_spec.GetFileSpec().GetDirectory().AsCString(),
+                         module_spec.GetFileSpec().GetFilename().AsCString());
+        ModuleSpec local_spec(module_cache_spec, module_spec.GetArchitecture());
+        module_sp.reset(new Module(local_spec));
+        module_sp->SetPlatformFileSpec(module_spec.GetFileSpec());
+        return Error();
+    }
+    else
+        return Error("unable to obtain valid module file");
+}
 
 Error
 PlatformDarwin::GetSharedModule (const ModuleSpec &module_spec,
@@ -519,25 +652,38 @@ PlatformDarwin::ConnectRemote (Args& args)
         if (!m_remote_platform_sp)
             m_remote_platform_sp = Platform::Create ("remote-gdb-server", error);
 
-        if (m_remote_platform_sp)
-        {
-            if (error.Success())
-            {
-                if (m_remote_platform_sp)
-                {
-                    error = m_remote_platform_sp->ConnectRemote (args);
-                }
-                else
-                {
-                    error.SetErrorString ("\"platform connect\" takes a single argument: <connect-url>");
-                }
-            }
-        }
+        if (m_remote_platform_sp && error.Success())
+            error = m_remote_platform_sp->ConnectRemote (args);
         else
             error.SetErrorString ("failed to create a 'remote-gdb-server' platform");
         
         if (error.Fail())
             m_remote_platform_sp.reset();
+    }
+    
+    if (error.Success() && m_remote_platform_sp)
+    {
+        if (m_options.get())
+        {
+            OptionGroupOptions* options = m_options.get();
+            OptionGroupPlatformRSync* m_rsync_options = (OptionGroupPlatformRSync*)options->GetGroupWithOption('r');
+            OptionGroupPlatformSSH* m_ssh_options = (OptionGroupPlatformSSH*)options->GetGroupWithOption('s');
+            OptionGroupPlatformCaching* m_cache_options = (OptionGroupPlatformCaching*)options->GetGroupWithOption('c');
+            
+            if (m_rsync_options->m_rsync)
+            {
+                SetSupportsRSync(true);
+                SetRSyncOpts(m_rsync_options->m_rsync_opts.c_str());
+                SetRSyncPrefix(m_rsync_options->m_rsync_prefix.c_str());
+                SetIgnoresRemoteHostname(m_rsync_options->m_ignores_remote_hostname);
+            }
+            if (m_ssh_options->m_ssh)
+            {
+                SetSupportsSSH(true);
+                SetSSHOpts(m_ssh_options->m_ssh_opts.c_str());
+            }
+            SetLocalCacheDirectory(m_cache_options->m_cache_dir.c_str());
+        }
     }
 
     return error;
@@ -618,6 +764,31 @@ PlatformDarwin::LaunchProcess (ProcessLaunchInfo &launch_info)
     }
     return error;
 }
+
+lldb::ProcessSP
+PlatformDarwin::DebugProcess (ProcessLaunchInfo &launch_info,
+                              Debugger &debugger,
+                              Target *target,       // Can be NULL, if NULL create a new target, else use existing one
+                              Listener &listener,
+                              Error &error)
+{
+    ProcessSP process_sp;
+    
+    if (IsHost())
+    {
+        process_sp = Platform::DebugProcess (launch_info, debugger, target, listener, error);
+    }
+    else
+    {
+        if (m_remote_platform_sp)
+            process_sp = m_remote_platform_sp->DebugProcess (launch_info, debugger, target, listener, error);
+        else
+            error.SetErrorString ("the platform is not currently connected");
+    }
+    return process_sp;
+    
+}
+
 
 lldb::ProcessSP
 PlatformDarwin::Attach (ProcessAttachInfo &attach_info,
@@ -707,6 +878,113 @@ PlatformDarwin::ModuleIsExcludedForNonModuleSpecificSearches (lldb_private::Targ
         return false;
 }
 
+std::string
+PlatformDarwin::GetQueueNameForThreadQAddress (Process *process, addr_t thread_dispatch_qaddr)
+{
+    std::string dispatch_queue_name;
+    if (thread_dispatch_qaddr == LLDB_INVALID_ADDRESS || thread_dispatch_qaddr == 0 || process == NULL)
+        return "";
+
+    ReadLibdispatchOffsets (process);
+    if (m_libdispatch_offsets.IsValid ())
+    {
+        Error error;
+        addr_t queue_addr = process->ReadPointerFromMemory (thread_dispatch_qaddr, error);
+        if (error.Success())
+        {
+            if (m_libdispatch_offsets.dqo_version >= 4)
+            {
+                // libdispatch versions 4+, pointer to dispatch name is in the
+                // queue structure.
+                addr_t pointer_to_label_address = queue_addr + m_libdispatch_offsets.dqo_label;
+                addr_t label_addr = process->ReadPointerFromMemory (pointer_to_label_address, error);
+                if (error.Success())
+                {
+                    process->ReadCStringFromMemory (label_addr, dispatch_queue_name, error);
+                }
+            }
+            else
+            {
+                // libdispatch versions 1-3, dispatch name is a fixed width char array
+                // in the queue structure.
+                addr_t label_addr = queue_addr + m_libdispatch_offsets.dqo_label;
+                dispatch_queue_name.resize (m_libdispatch_offsets.dqo_label_size, '\0');
+                size_t bytes_read = process->ReadMemory (label_addr, &dispatch_queue_name[0], m_libdispatch_offsets.dqo_label_size, error);
+                if (bytes_read < m_libdispatch_offsets.dqo_label_size)
+                    dispatch_queue_name.erase (bytes_read);
+            }
+        }
+    }
+    return dispatch_queue_name;
+}
+
+void
+PlatformDarwin::ReadLibdispatchOffsetsAddress (Process *process)
+{
+    if (m_dispatch_queue_offsets_addr != LLDB_INVALID_ADDRESS)
+        return;
+
+    static ConstString g_dispatch_queue_offsets_symbol_name ("dispatch_queue_offsets");
+    const Symbol *dispatch_queue_offsets_symbol = NULL;
+
+    // libdispatch symbols were in libSystem.B.dylib up through Mac OS X 10.6 ("Snow Leopard")
+    ModuleSpec libSystem_module_spec (FileSpec("libSystem.B.dylib", false));
+    ModuleSP module_sp(process->GetTarget().GetImages().FindFirstModule (libSystem_module_spec));
+    if (module_sp)
+        dispatch_queue_offsets_symbol = module_sp->FindFirstSymbolWithNameAndType (g_dispatch_queue_offsets_symbol_name, eSymbolTypeData);
+    
+    // libdispatch symbols are in their own dylib as of Mac OS X 10.7 ("Lion") and later
+    if (dispatch_queue_offsets_symbol == NULL)
+    {
+        ModuleSpec libdispatch_module_spec (FileSpec("libdispatch.dylib", false));
+        module_sp = process->GetTarget().GetImages().FindFirstModule (libdispatch_module_spec);
+        if (module_sp)
+            dispatch_queue_offsets_symbol = module_sp->FindFirstSymbolWithNameAndType (g_dispatch_queue_offsets_symbol_name, eSymbolTypeData);
+    }
+    if (dispatch_queue_offsets_symbol)
+        m_dispatch_queue_offsets_addr = dispatch_queue_offsets_symbol->GetAddress().GetLoadAddress(&process->GetTarget());
+}
+
+void
+PlatformDarwin::ReadLibdispatchOffsets (Process *process)
+{
+    if (m_libdispatch_offsets.IsValid())
+        return;
+
+    ReadLibdispatchOffsetsAddress (process);
+
+    uint8_t memory_buffer[sizeof (struct LibdispatchOffsets)];
+    DataExtractor data (memory_buffer, 
+                        sizeof(memory_buffer), 
+                        process->GetTarget().GetArchitecture().GetByteOrder(), 
+                        process->GetTarget().GetArchitecture().GetAddressByteSize());
+
+    Error error;
+    if (process->ReadMemory (m_dispatch_queue_offsets_addr, memory_buffer, sizeof(memory_buffer), error) == sizeof(memory_buffer))
+    {
+        lldb::offset_t data_offset = 0;
+
+        // The struct LibdispatchOffsets is a series of uint16_t's - extract them all
+        // in one big go.
+        data.GetU16 (&data_offset, &m_libdispatch_offsets.dqo_version, sizeof (struct LibdispatchOffsets) / sizeof (uint16_t));
+    }
+}
+
+lldb::queue_id_t
+PlatformDarwin::GetQueueIDForThreadQAddress (Process *process, lldb::addr_t dispatch_qaddr)
+{
+    if (dispatch_qaddr == LLDB_INVALID_ADDRESS || dispatch_qaddr == 0 || process == NULL)
+        return LLDB_INVALID_QUEUE_ID;
+
+    Error error;
+    uint32_t ptr_size = process->GetTarget().GetArchitecture().GetAddressByteSize();
+    uint64_t this_thread_queue_id = process->ReadUnsignedIntegerFromMemory (dispatch_qaddr, ptr_size, LLDB_INVALID_QUEUE_ID, error);
+    if (!error.Success())
+        return LLDB_INVALID_QUEUE_ID;
+
+    return this_thread_queue_id;
+}
+
 
 bool
 PlatformDarwin::x86GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
@@ -752,21 +1030,23 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
             case  3: arch.SetTriple ("armv7k-apple-ios");   return true;
             case  4: arch.SetTriple ("armv7s-apple-ios");   return true;
             case  5: arch.SetTriple ("armv7m-apple-ios");   return true;
-            case  6: arch.SetTriple ("armv7em-apple-ios");   return true;
-            case  7: arch.SetTriple ("armv6-apple-ios");    return true;
-            case  8: arch.SetTriple ("armv5-apple-ios");    return true;
-            case  9: arch.SetTriple ("armv4-apple-ios");    return true;
-            case 10: arch.SetTriple ("arm-apple-ios");      return true;
-            case 11: arch.SetTriple ("thumbv7-apple-ios");  return true;
-            case 12: arch.SetTriple ("thumbv7f-apple-ios"); return true;
-            case 13: arch.SetTriple ("thumbv7k-apple-ios"); return true;
-            case 14: arch.SetTriple ("thumbv7s-apple-ios"); return true;
-            case 15: arch.SetTriple ("thumbv7m-apple-ios"); return true;
-            case 16: arch.SetTriple ("thumbv7em-apple-ios"); return true;
-            case 17: arch.SetTriple ("thumbv6-apple-ios");  return true;
-            case 18: arch.SetTriple ("thumbv5-apple-ios");  return true;
-            case 19: arch.SetTriple ("thumbv4t-apple-ios"); return true;
-            case 20: arch.SetTriple ("thumb-apple-ios");    return true;
+            case  6: arch.SetTriple ("armv7em-apple-ios");  return true;
+            case  7: arch.SetTriple ("armv6m-apple-ios");   return true;
+            case  8: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  9: arch.SetTriple ("armv5-apple-ios");    return true;
+            case 10: arch.SetTriple ("armv4-apple-ios");    return true;
+            case 11: arch.SetTriple ("arm-apple-ios");      return true;
+            case 12: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case 13: arch.SetTriple ("thumbv7f-apple-ios"); return true;
+            case 14: arch.SetTriple ("thumbv7k-apple-ios"); return true;
+            case 15: arch.SetTriple ("thumbv7s-apple-ios"); return true;
+            case 16: arch.SetTriple ("thumbv7m-apple-ios"); return true;
+            case 17: arch.SetTriple ("thumbv7em-apple-ios"); return true;
+            case 18: arch.SetTriple ("thumbv6m-apple-ios"); return true;
+            case 19: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 20: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 21: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 22: arch.SetTriple ("thumb-apple-ios");    return true;
             default: break;
         }
         break;
@@ -778,19 +1058,25 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
             case  1: arch.SetTriple ("armv7s-apple-ios");   return true;
             case  2: arch.SetTriple ("armv7f-apple-ios");   return true;
             case  3: arch.SetTriple ("armv7m-apple-ios");   return true;
-            case  4: arch.SetTriple ("armv7em-apple-ios");   return true;
+            case  4: arch.SetTriple ("armv7em-apple-ios");  return true;
             case  5: arch.SetTriple ("armv7-apple-ios");    return true;
-            case  6: arch.SetTriple ("armv6-apple-ios");    return true;
-            case  7: arch.SetTriple ("armv5-apple-ios");    return true;
-            case  8: arch.SetTriple ("armv4-apple-ios");    return true;
-            case  9: arch.SetTriple ("arm-apple-ios");      return true;
-            case 10: arch.SetTriple ("thumbv7s-apple-ios"); return true;
+            case  6: arch.SetTriple ("armv6m-apple-ios");   return true;
+            case  7: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  8: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  9: arch.SetTriple ("armv4-apple-ios");    return true;
+            case 10: arch.SetTriple ("arm-apple-ios");      return true;
             case 11: arch.SetTriple ("thumbv7-apple-ios");  return true;
-            case 12: arch.SetTriple ("thumbv6-apple-ios");  return true;
-            case 13: arch.SetTriple ("thumbv5-apple-ios");  return true;
-            case 14: arch.SetTriple ("thumbv4t-apple-ios"); return true;
-            case 15: arch.SetTriple ("thumb-apple-ios");    return true;
-            default: break;
+            case 12: arch.SetTriple ("thumbv7f-apple-ios"); return true;
+            case 13: arch.SetTriple ("thumbv7k-apple-ios"); return true;
+            case 14: arch.SetTriple ("thumbv7s-apple-ios"); return true;
+            case 15: arch.SetTriple ("thumbv7m-apple-ios"); return true;
+            case 16: arch.SetTriple ("thumbv7em-apple-ios"); return true;
+            case 17: arch.SetTriple ("thumbv6m-apple-ios"); return true;
+            case 18: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 19: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 20: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 21: arch.SetTriple ("thumb-apple-ios");    return true;
+        default: break;
         }
         break;
 
@@ -799,16 +1085,18 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
         {
             case  0: arch.SetTriple ("armv7f-apple-ios");   return true;
             case  1: arch.SetTriple ("armv7-apple-ios");    return true;
-            case  2: arch.SetTriple ("armv6-apple-ios");    return true;
-            case  3: arch.SetTriple ("armv5-apple-ios");    return true;
-            case  4: arch.SetTriple ("armv4-apple-ios");    return true;
-            case  5: arch.SetTriple ("arm-apple-ios");      return true;
-            case  6: arch.SetTriple ("thumbv7f-apple-ios"); return true;
-            case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
-            case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
-            case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
-            case 10: arch.SetTriple ("thumbv4t-apple-ios"); return true;
-            case 11: arch.SetTriple ("thumb-apple-ios");    return true;
+            case  2: arch.SetTriple ("armv6m-apple-ios");   return true;
+            case  3: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  5: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  6: arch.SetTriple ("arm-apple-ios");      return true;
+            case  7: arch.SetTriple ("thumbv7f-apple-ios"); return true;
+            case  8: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  9: arch.SetTriple ("thumbv6m-apple-ios"); return true;
+            case 10: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 11: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 12: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 13: arch.SetTriple ("thumb-apple-ios");    return true;
             default: break;
         }
         break;
@@ -818,16 +1106,18 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
         {
             case  0: arch.SetTriple ("armv7k-apple-ios");   return true;
             case  1: arch.SetTriple ("armv7-apple-ios");    return true;
-            case  2: arch.SetTriple ("armv6-apple-ios");    return true;
-            case  3: arch.SetTriple ("armv5-apple-ios");    return true;
-            case  4: arch.SetTriple ("armv4-apple-ios");    return true;
-            case  5: arch.SetTriple ("arm-apple-ios");      return true;
-            case  6: arch.SetTriple ("thumbv7k-apple-ios"); return true;
-            case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
-            case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
-            case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
-            case 10: arch.SetTriple ("thumbv4t-apple-ios"); return true;
-            case 11: arch.SetTriple ("thumb-apple-ios");    return true;
+            case  2: arch.SetTriple ("armv6m-apple-ios");   return true;
+            case  3: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  5: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  6: arch.SetTriple ("arm-apple-ios");      return true;
+            case  7: arch.SetTriple ("thumbv7k-apple-ios"); return true;
+            case  8: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  9: arch.SetTriple ("thumbv6m-apple-ios"); return true;
+            case 10: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 11: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 12: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 13: arch.SetTriple ("thumb-apple-ios");    return true;
             default: break;
         }
         break;
@@ -837,16 +1127,18 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
         {
             case  0: arch.SetTriple ("armv7s-apple-ios");   return true;
             case  1: arch.SetTriple ("armv7-apple-ios");    return true;
-            case  2: arch.SetTriple ("armv6-apple-ios");    return true;
-            case  3: arch.SetTriple ("armv5-apple-ios");    return true;
-            case  4: arch.SetTriple ("armv4-apple-ios");    return true;
-            case  5: arch.SetTriple ("arm-apple-ios");      return true;
-            case  6: arch.SetTriple ("thumbv7s-apple-ios"); return true;
-            case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
-            case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
-            case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
-            case 10: arch.SetTriple ("thumbv4t-apple-ios"); return true;
-            case 11: arch.SetTriple ("thumb-apple-ios");    return true;
+            case  2: arch.SetTriple ("armv6m-apple-ios");   return true;
+            case  3: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  5: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  6: arch.SetTriple ("arm-apple-ios");      return true;
+            case  7: arch.SetTriple ("thumbv7s-apple-ios"); return true;
+            case  8: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  9: arch.SetTriple ("thumbv6m-apple-ios"); return true;
+            case 10: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 11: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 12: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 13: arch.SetTriple ("thumb-apple-ios");    return true;
             default: break;
         }
         break;
@@ -856,16 +1148,18 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
         {
             case  0: arch.SetTriple ("armv7m-apple-ios");   return true;
             case  1: arch.SetTriple ("armv7-apple-ios");    return true;
-            case  2: arch.SetTriple ("armv6-apple-ios");    return true;
-            case  3: arch.SetTriple ("armv5-apple-ios");    return true;
-            case  4: arch.SetTriple ("armv4-apple-ios");    return true;
-            case  5: arch.SetTriple ("arm-apple-ios");      return true;
-            case  6: arch.SetTriple ("thumbv7m-apple-ios"); return true;
-            case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
-            case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
-            case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
-            case 10: arch.SetTriple ("thumbv4t-apple-ios"); return true;
-            case 11: arch.SetTriple ("thumb-apple-ios");    return true;
+            case  2: arch.SetTriple ("armv6m-apple-ios");   return true;
+            case  3: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  5: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  6: arch.SetTriple ("arm-apple-ios");      return true;
+            case  7: arch.SetTriple ("thumbv7m-apple-ios"); return true;
+            case  8: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  9: arch.SetTriple ("thumbv6m-apple-ios"); return true;
+            case 10: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 11: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 12: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 13: arch.SetTriple ("thumb-apple-ios");    return true;
             default: break;
         }
         break;
@@ -873,14 +1167,35 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
     case ArchSpec::eCore_arm_armv7em:
         switch (idx)
         {
-            case  0: arch.SetTriple ("armv7em-apple-ios");   return true;
+            case  0: arch.SetTriple ("armv7em-apple-ios");  return true;
             case  1: arch.SetTriple ("armv7-apple-ios");    return true;
+            case  2: arch.SetTriple ("armv6m-apple-ios");   return true;
+            case  3: arch.SetTriple ("armv6-apple-ios");    return true;
+            case  4: arch.SetTriple ("armv5-apple-ios");    return true;
+            case  5: arch.SetTriple ("armv4-apple-ios");    return true;
+            case  6: arch.SetTriple ("arm-apple-ios");      return true;
+            case  7: arch.SetTriple ("thumbv7em-apple-ios"); return true;
+            case  8: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  9: arch.SetTriple ("thumbv6m-apple-ios"); return true;
+            case 10: arch.SetTriple ("thumbv6-apple-ios");  return true;
+            case 11: arch.SetTriple ("thumbv5-apple-ios");  return true;
+            case 12: arch.SetTriple ("thumbv4t-apple-ios"); return true;
+            case 13: arch.SetTriple ("thumb-apple-ios");    return true;
+            default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv7:
+        switch (idx)
+        {
+            case  0: arch.SetTriple ("armv7-apple-ios");    return true;
+            case  1: arch.SetTriple ("armv6m-apple-ios");   return true;
             case  2: arch.SetTriple ("armv6-apple-ios");    return true;
             case  3: arch.SetTriple ("armv5-apple-ios");    return true;
             case  4: arch.SetTriple ("armv4-apple-ios");    return true;
             case  5: arch.SetTriple ("arm-apple-ios");      return true;
-            case  6: arch.SetTriple ("thumbv7em-apple-ios"); return true;
-            case  7: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  6: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case  7: arch.SetTriple ("thumbv6m-apple-ios"); return true;
             case  8: arch.SetTriple ("thumbv6-apple-ios");  return true;
             case  9: arch.SetTriple ("thumbv5-apple-ios");  return true;
             case 10: arch.SetTriple ("thumbv4t-apple-ios"); return true;
@@ -889,15 +1204,15 @@ PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch
         }
         break;
 
-    case ArchSpec::eCore_arm_armv7:
+    case ArchSpec::eCore_arm_armv6m:
         switch (idx)
         {
-            case 0: arch.SetTriple ("armv7-apple-ios");    return true;
+            case 0: arch.SetTriple ("armv6m-apple-ios");   return true;
             case 1: arch.SetTriple ("armv6-apple-ios");    return true;
             case 2: arch.SetTriple ("armv5-apple-ios");    return true;
             case 3: arch.SetTriple ("armv4-apple-ios");    return true;
             case 4: arch.SetTriple ("arm-apple-ios");      return true;
-            case 5: arch.SetTriple ("thumbv7-apple-ios");  return true;
+            case 5: arch.SetTriple ("thumbv6m-apple-ios"); return true;
             case 6: arch.SetTriple ("thumbv6-apple-ios");  return true;
             case 7: arch.SetTriple ("thumbv5-apple-ios");  return true;
             case 8: arch.SetTriple ("thumbv4t-apple-ios"); return true;
@@ -1086,6 +1401,7 @@ PlatformDarwin::SetThreadCreationBreakpoint (Target &target)
     }
 
     bool internal = true;
+    bool hardware = false;
     LazyBool skip_prologue = eLazyBoolNo;
     bp_sp = target.CreateBreakpoint (&bp_modules,
                                      NULL,
@@ -1093,7 +1409,8 @@ PlatformDarwin::SetThreadCreationBreakpoint (Target &target)
                                      sizeof(g_bp_names)/sizeof(const char *),
                                      eFunctionNameTypeFull,
                                      skip_prologue,
-                                     internal);
+                                     internal,
+                                     hardware);
     bp_sp->SetBreakpointKind("thread-creation");
 
     return bp_sp;
@@ -1109,4 +1426,44 @@ PlatformDarwin::GetEnvironment (StringList &env)
         return 0;
     }
     return Host::GetEnvironment(env);
+}
+
+int32_t
+PlatformDarwin::GetResumeCountForLaunchInfo (ProcessLaunchInfo &launch_info)
+{
+    const char *shell = launch_info.GetShell();
+    if (shell == NULL)
+        return 1;
+        
+    const char *shell_name = strrchr (shell, '/');
+    if (shell_name == NULL)
+        shell_name = shell;
+    else
+        shell_name++;
+    
+    if (strcmp (shell_name, "sh") == 0)
+    {
+        // /bin/sh re-exec's itself as /bin/bash requiring another resume.
+        // But it only does this if the COMMAND_MODE environment variable
+        // is set to "legacy".
+        char * const *envp = (char * const*)launch_info.GetEnvironmentEntries().GetConstArgumentVector();
+        if (envp != NULL)
+        {
+            for (int i = 0; envp[i] != NULL; i++)
+            {
+                if (strcmp (envp[i], "COMMAND_MODE=legacy" ) == 0)
+                    return 2;
+            }
+        }
+        return 1;
+    }
+    else if (strcmp (shell_name, "csh") == 0
+            || strcmp (shell_name, "tcsh") == 0
+            || strcmp (shell_name, "zsh") == 0)
+    {
+        // csh and tcsh always seem to re-exec themselves.
+        return 2;
+    }
+    else
+        return 1;
 }

@@ -12,7 +12,7 @@ import lldbutil
 
 class StructTypesTestCase(TestBase):
 
-    mydir = os.path.join("lang", "c", "struct_types")
+    mydir = TestBase.compute_mydir(__file__)
 
     # rdar://problem/12566646
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
@@ -23,6 +23,9 @@ class StructTypesTestCase(TestBase):
         self.struct_types()
 
     # rdar://problem/12566646
+    @expectedFailureIcc # llvm.org/pr16793
+                        # ICC generates DW_AT_byte_size zero with a zero-length 
+                        # array and LLDB doesn't process it correctly.
     @dwarf_test
     def test_with_dwarf(self):
         """Test that break on a struct declaration has no effect."""
@@ -52,7 +55,7 @@ class StructTypesTestCase(TestBase):
         lldbutil.run_break_set_by_file_and_line (self, "main.c", self.return_line, num_expected_locations=1, loc_exact=True)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.Launch() failed")
@@ -75,14 +78,14 @@ class StructTypesTestCase(TestBase):
         # Test zero length array access and make sure it succeeds with "frame variable"
         self.expect("frame variable pt.padding[0]",
             DATA_TYPES_DISPLAYED_CORRECTLY,
-            substrs = ["pt.padding[0] = '"])
+            substrs = ["pt.padding[0] = "])
         self.expect("frame variable pt.padding[1]",
             DATA_TYPES_DISPLAYED_CORRECTLY,
-            substrs = ["pt.padding[1] = '"])
+            substrs = ["pt.padding[1] = "])
         # Test zero length array access and make sure it succeeds with "expression"
         self.expect("expression -- (pt.padding[0])",
             DATA_TYPES_DISPLAYED_CORRECTLY,
-            substrs = ["(char)", " = '"])
+            substrs = ["(char)", " = "])
 
         # The padding should be an array of size 0
         self.expect("image lookup -t point_tag",

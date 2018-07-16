@@ -10,7 +10,7 @@ from lldbtest import *
 
 class ObjCCheckerTestCase(TestBase):
 
-    mydir = os.path.join("lang", "objc", "objc-checker")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -58,7 +58,7 @@ class ObjCCheckerTestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process.GetState() == lldb.eStateStopped,
                         PROCESS_STOPPED)

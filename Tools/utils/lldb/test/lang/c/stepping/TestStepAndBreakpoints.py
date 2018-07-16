@@ -6,9 +6,9 @@ import lldb
 import lldbutil
 from lldbtest import *
 
-class TestObjCStepping(TestBase):
+class TestCStepping(TestBase):
 
-    mydir = os.path.join("lang", "c", "stepping")
+    mydir = TestBase.compute_mydir(__file__)
 
     def getCategories(self):
         return ['basic_process']
@@ -21,6 +21,7 @@ class TestObjCStepping(TestBase):
         self.buildDsym()
         self.step_over_stepping()
 
+    @expectedFailureFreeBSD('llvm.org/pr17932')
     @expectedFailureLinux # llvm.org/pr14437
     @python_api_test
     @dwarf_test
@@ -63,7 +64,7 @@ class TestObjCStepping(TestBase):
         breakpoints_to_disable.append (break_in_c)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

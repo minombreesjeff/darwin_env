@@ -2,14 +2,14 @@
 Test lldb settings command.
 """
 
-import os, time
+import os, time, re
 import unittest2
 import lldb
 from lldbtest import *
 
 class SettingsCommandTestCase(TestBase):
 
-    mydir = "settings"
+    mydir = TestBase.compute_mydir(__file__)
 
     @classmethod
     def classCleanup(cls):
@@ -116,13 +116,20 @@ class SettingsCommandTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         def cleanup():
-            format_string = "frame #${frame.index}: ${frame.pc}{ ${module.file.basename}{`${function.name}${function.pc-offset}}}{ at ${line.file.basename}:${line.number}}\n"
-            self.runCmd("settings set frame-format %s" % format_string, check=False)
+            self.runCmd("settings set frame-format %s" % self.format_string, check=False)
 
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        format_string = "frame #${frame.index}: ${frame.pc}{ ${module.file.basename}`${function.name-with-args}{${function.pc-offset}}}{ at ${line.file.fullpath}:${line.number}}\n"
+        self.runCmd("settings show frame-format")
+        m = re.match(
+                '^frame-format \(string\) = "(.*)\"$',
+                self.res.GetOutput())
+        self.assertTrue(m, "Bad settings string")
+        self.format_string = m.group(1)
+
+        # Change the default format to print function.name rather than function.name-with-args
+        format_string = "frame #${frame.index}: ${frame.pc}{ ${module.file.basename}`${function.name}{${function.pc-offset}}}{ at ${line.file.fullpath}:${line.number}}\n"
         self.runCmd("settings set frame-format %s" % format_string)
 
         # Immediately test the setting.
@@ -158,6 +165,40 @@ class SettingsCommandTestCase(TestBase):
         self.expect("settings show auto-confirm", SETTING_MSG("auto-confirm"),
             startstr = "auto-confirm (boolean) = false")
 
+    @unittest2.skipUnless(os.uname()[4] in ['amd64', 'i386', 'x86_64'], "requires x86 or x86_64")
+    def test_disassembler_settings(self):
+        """Test that user options for the disassembler take effect."""
+        self.buildDefault()
+
+        exe = os.path.join(os.getcwd(), "a.out")
+        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
+
+        # AT&T syntax
+        self.runCmd("settings set target.x86-disassembly-flavor att")
+        self.runCmd("settings set target.use-hex-immediates false")
+        self.expect("disassemble -n numberfn",
+            substrs = ["$90"])
+        self.runCmd("settings set target.use-hex-immediates true")
+        self.runCmd("settings set target.hex-immediate-style c")
+        self.expect("disassemble -n numberfn",
+            substrs = ["$0x5a"])
+        self.runCmd("settings set target.hex-immediate-style asm")
+        self.expect("disassemble -n numberfn",
+            substrs = ["$5ah"])
+
+        # Intel syntax
+        self.runCmd("settings set target.x86-disassembly-flavor intel")
+        self.runCmd("settings set target.use-hex-immediates false")
+        self.expect("disassemble -n numberfn",
+            substrs = ["90"])
+        self.runCmd("settings set target.use-hex-immediates true")
+        self.runCmd("settings set target.hex-immediate-style c")
+        self.expect("disassemble -n numberfn",
+            substrs = ["0x5a"])
+        self.runCmd("settings set target.hex-immediate-style asm")
+        self.expect("disassemble -n numberfn",
+            substrs = ["5ah"])
+
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_run_args_and_env_vars_with_dsym(self):
@@ -171,6 +212,7 @@ class SettingsCommandTestCase(TestBase):
         self.buildDwarf()
         self.pass_run_args_and_env_vars()
 
+    @not_remote_testsuite_ready
     def pass_run_args_and_env_vars(self):
         """Test that run-args and env-vars are passed to the launched process."""
         exe = os.path.join(os.getcwd(), "a.out")
@@ -197,6 +239,7 @@ class SettingsCommandTestCase(TestBase):
                        "argv[3] matches",
                        "Environment variable 'MY_ENV_VAR' successfully passed."])
 
+    @not_remote_testsuite_ready
     def test_pass_host_env_vars(self):
         """Test that the host env vars are passed to the launched process."""
         self.buildDefault()
@@ -228,6 +271,7 @@ class SettingsCommandTestCase(TestBase):
             substrs = ["The host environment variable 'MY_HOST_ENV_VAR1' successfully passed.",
                        "The host environment variable 'MY_HOST_ENV_VAR2' successfully passed."])
 
+    @not_remote_testsuite_ready
     def test_set_error_output_path(self):
         """Test that setting target.error/output-path for the launched process works."""
         self.buildDefault()
@@ -332,7 +376,7 @@ class SettingsCommandTestCase(TestBase):
         self.runCmd ("settings set target.output-path /bin/ls")   # Set to known value
         self.runCmd ("settings set target.output-path /bin/cat ") # Set to new value with trailing whitespaces
         self.expect ("settings show target.output-path", SETTING_MSG("target.output-path"),
-            startstr = 'target.output-path (file) = "/bin/cat"')
+            startstr = 'target.output-path (file) = ', substrs=['/bin/cat"'])
         self.runCmd("settings clear target.output-path", check=False)
         # enum
         self.runCmd ("settings set stop-disassembly-display never")   # Set to known value
@@ -390,6 +434,9 @@ class SettingsCommandTestCase(TestBase):
                                  "target.error-path",
                                  "target.disable-aslr",
                                  "target.disable-stdio",
+                                 "target.x86-disassembly-flavor",
+                                 "target.use-hex-immediates",
+                                 "target.hex-immediate-style",
                                  "target.process.disable-memory-cache",
                                  "target.process.extra-startup-command",
                                  "target.process.thread.step-avoid-regexp",

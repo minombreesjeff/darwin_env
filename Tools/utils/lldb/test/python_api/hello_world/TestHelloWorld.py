@@ -3,11 +3,12 @@
 import os, sys, time
 import unittest2
 import lldb
+import time
 from lldbtest import *
 
 class HelloWorldTestCase(TestBase):
 
-    mydir = os.path.join("python_api", "hello_world")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -32,6 +33,7 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_python()
 
+    @not_remote_testsuite_ready
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
     @dsym_test
@@ -44,8 +46,10 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_attach_with_id_api()
 
+    @not_remote_testsuite_ready
     @python_api_test
     @dwarf_test
+    @expectedFailurei386 # llvm.org/pr17384: lldb needs to be aware of linux-vdso.so to unwind stacks properly
     def test_with_dwarf_and_attach_to_process_with_id_api(self):
         """Create target, spawn a process, and attach to it with process id.
 
@@ -55,6 +59,7 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_attach_with_id_api()
 
+    @not_remote_testsuite_ready
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
     @dsym_test
@@ -67,8 +72,10 @@ class HelloWorldTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_world_attach_with_name_api()
 
+    @not_remote_testsuite_ready
     @python_api_test
     @dwarf_test
+    @expectedFailurei386 # llvm.org/pr17384: lldb needs to be aware of linux-vdso.so to unwind stacks properly
     def test_with_dwarf_and_attach_to_process_with_name_api(self):
         """Create target, spawn a process, and attach to it with process name.
 
@@ -110,7 +117,7 @@ class HelloWorldTestCase(TestBase):
         # rdar://problem/8364687
         # SBTarget.Launch() issue (or is there some race condition)?
 
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         # The following isn't needed anymore, rdar://8364687 is fixed.
         #
         # Apply some dances after LaunchProcess() in order to break at "main".
@@ -138,6 +145,9 @@ class HelloWorldTestCase(TestBase):
         popen = self.spawnSubprocess(self.exe, ["abc", "xyz"])
         self.addTearDownHook(self.cleanupSubprocesses)
 
+        # Give the subprocess time to start and wait for user input
+        time.sleep(0.25)
+
         listener = lldb.SBListener("my.attach.listener")
         error = lldb.SBError()
         process = target.AttachToProcessWithID(listener, popen.pid, error)
@@ -159,6 +169,9 @@ class HelloWorldTestCase(TestBase):
         # Spawn a new process
         popen = self.spawnSubprocess(self.exe, ["abc", "xyz"])
         self.addTearDownHook(self.cleanupSubprocesses)
+
+        # Give the subprocess time to start and wait for user input
+        time.sleep(0.25)
 
         listener = lldb.SBListener("my.attach.listener")
         error = lldb.SBError()

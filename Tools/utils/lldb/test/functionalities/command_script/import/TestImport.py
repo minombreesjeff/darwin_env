@@ -7,10 +7,9 @@ from lldbtest import *
 
 class ImportTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "command_script", "import")
+    mydir = TestBase.compute_mydir(__file__)
 
     @python_api_test
-    @skipIfLinux # causes buildbot failures, skip until we can investigate it
     def test_import_command(self):
         """Import some Python scripts by path and test them"""
         self.run_test()

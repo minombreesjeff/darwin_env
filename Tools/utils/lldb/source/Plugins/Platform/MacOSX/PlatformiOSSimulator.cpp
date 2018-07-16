@@ -162,7 +162,7 @@ void
 PlatformiOSSimulator::GetStatus (Stream &strm)
 {
     Platform::GetStatus (strm);
-    const char *sdk_directory = GetSDKDirectory();
+    const char *sdk_directory = GetSDKsDirectory();
     if (sdk_directory)
         strm.Printf ("  SDK Path: \"%s\"\n", sdk_directory);
     else
@@ -268,7 +268,7 @@ EnumerateDirectoryCallback (void *baton, FileSpec::FileType file_type, const Fil
 
 
 const char *
-PlatformiOSSimulator::GetSDKDirectory()
+PlatformiOSSimulator::GetSDKsDirectory()
 {
     if (m_sdk_directory.empty())
     {
@@ -315,9 +315,9 @@ PlatformiOSSimulator::GetSDKDirectory()
 }
 
 Error
-PlatformiOSSimulator::GetFile (const FileSpec &platform_file, 
-                               const UUID *uuid_ptr,
-                               FileSpec &local_file)
+PlatformiOSSimulator::GetSymbolFile (const FileSpec &platform_file, 
+                                     const UUID *uuid_ptr,
+                                     FileSpec &local_file)
 {
     Error error;
     char platform_file_path[PATH_MAX];
@@ -325,7 +325,7 @@ PlatformiOSSimulator::GetFile (const FileSpec &platform_file,
     {
         char resolved_path[PATH_MAX];
     
-        const char * sdk_dir = GetSDKDirectory();
+        const char * sdk_dir = GetSDKsDirectory();
         if (sdk_dir)
         {
             ::snprintf (resolved_path, 
@@ -370,7 +370,7 @@ PlatformiOSSimulator::GetSharedModule (const ModuleSpec &module_spec,
     Error error;
     FileSpec local_file;
     const FileSpec &platform_file = module_spec.GetFileSpec();
-    error = GetFile (platform_file, module_spec.GetUUIDPtr(), local_file);
+    error = GetSymbolFile (platform_file, module_spec.GetUUIDPtr(), local_file);
     if (error.Success())
     {
         error = ResolveExecutable (local_file, module_spec.GetArchitecture(), module_sp, module_search_paths_ptr);

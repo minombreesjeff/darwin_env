@@ -10,9 +10,10 @@ import lldbutil
 
 class Radar9531204TestCase(TestBase):
 
-    mydir = os.path.join("expression_command", "radar_9531204")
+    mydir = TestBase.compute_mydir(__file__)
 
     # rdar://problem/9531204
+    @expectedFailureFreeBSD('llvm.org/pr17183')
     def test_expr_commands(self):
         """The evaluating printf(...) after break stop and then up a stack frame."""
         self.buildDefault()

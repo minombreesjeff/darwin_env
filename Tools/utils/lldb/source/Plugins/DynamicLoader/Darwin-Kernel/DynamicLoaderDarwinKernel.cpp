@@ -394,10 +394,10 @@ DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress (lldb::addr_t addr, Proc
 
     Error read_error;
     uint64_t result = process->ReadUnsignedIntegerFromMemory (addr, 4, LLDB_INVALID_ADDRESS, read_error);
-    if (result != llvm::MachO::HeaderMagic64
-        && result != llvm::MachO::HeaderMagic32
-        && result != llvm::MachO::HeaderMagic32Swapped 
-        && result != llvm::MachO::HeaderMagic64Swapped)
+    if (result != llvm::MachO::MH_MAGIC_64
+        && result != llvm::MachO::MH_MAGIC
+        && result != llvm::MachO::MH_CIGAM
+        && result != llvm::MachO::MH_CIGAM_64)
     {
         return UUID();
     }
@@ -407,8 +407,8 @@ DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress (lldb::addr_t addr, Proc
     if (process->DoReadMemory (addr, &header, sizeof(header), read_error) != sizeof(header))
         return UUID();
 
-    if (header.magic == llvm::MachO::HeaderMagic32Swapped ||
-        header.magic == llvm::MachO::HeaderMagic64Swapped)
+    if (header.magic == llvm::MachO::MH_CIGAM ||
+        header.magic == llvm::MachO::MH_CIGAM_64)
     {
         header.magic        = llvm::ByteSwap_32(header.magic);
         header.cputype      = llvm::ByteSwap_32(header.cputype);
@@ -420,8 +420,8 @@ DynamicLoaderDarwinKernel::CheckForKernelImageAtAddress (lldb::addr_t addr, Proc
     }
 
     // A kernel is an executable which does not have the dynamic link object flag set.
-    if (header.filetype == llvm::MachO::HeaderFileTypeExecutable
-        && (header.flags & llvm::MachO::HeaderFlagBitIsDynamicLinkObject) == 0)
+    if (header.filetype == llvm::MachO::MH_EXECUTE
+        && (header.flags & llvm::MachO::MH_DYLDLINK) == 0)
     {
         // Create a full module to get the UUID
         ModuleSP memory_module_sp = process->ReadModuleFromMemory (FileSpec ("temp_mach_kernel", false), addr);
@@ -921,7 +921,7 @@ DynamicLoaderDarwinKernel::KextImageInfo::LoadImageUsingMemoryModule (Process *p
                             const Section *memory_section = memory_section_list->FindSectionByName(ondisk_section_sp->GetName()).get();
                             if (memory_section)
                             {
-                                target.GetSectionLoadList().SetSectionLoadAddress (ondisk_section_sp, memory_section->GetFileAddress());
+                                target.SetSectionLoadAddress (ondisk_section_sp, memory_section->GetFileAddress());
                                 ++num_sections_loaded;
                             }
                         }
@@ -1335,7 +1335,7 @@ DynamicLoaderDarwinKernel::ParseKextSummaries (const Address &kext_summary_addr,
                     // the to_be_removed bool vector; leaving it in place once Cleared() is relatively harmless.
                 }
             }
-            m_process->GetTarget().ModulesDidUnload (unloaded_module_list);
+            m_process->GetTarget().ModulesDidUnload (unloaded_module_list, false);
         }
     }
 
@@ -1503,6 +1503,7 @@ DynamicLoaderDarwinKernel::SetNotificationBreakpointIfNeeded ()
 
         
         const bool internal_bp = true;
+        const bool hardware = false;
         const LazyBool skip_prologue = eLazyBoolNo;
         FileSpecList module_spec_list;
         module_spec_list.Append (m_kernel.GetModule()->GetFileSpec());
@@ -1511,7 +1512,8 @@ DynamicLoaderDarwinKernel::SetNotificationBreakpointIfNeeded ()
                                                                   "OSKextLoadedKextSummariesUpdated",
                                                                   eFunctionNameTypeFull,
                                                                   skip_prologue,
-                                                                  internal_bp).get();
+                                                                  internal_bp,
+                                                                  hardware).get();
 
         bp->SetCallback (DynamicLoaderDarwinKernel::BreakpointHitCallback, this, true);
         m_break_id = bp->GetID();
@@ -1629,12 +1631,12 @@ DynamicLoaderDarwinKernel::GetByteOrderFromMagic (uint32_t magic)
 {
     switch (magic)
     {
-        case llvm::MachO::HeaderMagic32:
-        case llvm::MachO::HeaderMagic64:
+        case llvm::MachO::MH_MAGIC:
+        case llvm::MachO::MH_MAGIC_64:
             return lldb::endian::InlHostByteOrder();
             
-        case llvm::MachO::HeaderMagic32Swapped:
-        case llvm::MachO::HeaderMagic64Swapped:
+        case llvm::MachO::MH_CIGAM:
+        case llvm::MachO::MH_CIGAM_64:
             if (lldb::endian::InlHostByteOrder() == lldb::eByteOrderBig)
                 return lldb::eByteOrderLittle;
             else

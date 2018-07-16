@@ -8,7 +8,7 @@ from lldbtest import *
 
 class TestObjCClassMethod(TestBase):
 
-    mydir = os.path.join("lang", "objc", "objc-class-method")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -48,7 +48,7 @@ class TestObjCClassMethod(TestBase):
         self.assertTrue(bpt, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

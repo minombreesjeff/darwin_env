@@ -11,7 +11,7 @@ import lldbutil
 
 class WatchpointForMultipleThreadsTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "watchpoint", "multiple_threads")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -21,6 +21,7 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_multiple_threads()
 
+    @expectedFailureFreeBSD('llvm.org/pr16706') # Watchpoints fail on FreeBSD
     @skipIfGcc # causes intermittent gcc debian buildbot failures, skip until we can investigate
     @dwarf_test
     def test_watchpoint_multiple_threads_with_dwarf(self):
@@ -37,6 +38,7 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_multiple_threads_wp_set_and_then_delete()
 
+    @expectedFailureFreeBSD('llvm.org/pr16706') # Watchpoints fail on FreeBSD
     @skipIfGcc # causes intermittent gcc debian buildbot failures, skip until we can investigate 
     @dwarf_test
     def test_watchpoint_multiple_threads_wp_set_and_then_delete_with_dwarf(self):
@@ -85,7 +87,6 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.expect("watchpoint list -v",
             substrs = ['hit_count = 0'])
 
-        breakpoint_stops = 0
         while True:
             self.runCmd("process continue")
 
@@ -131,7 +132,6 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.expect("watchpoint list -v",
             substrs = ['hit_count = 0'])
 
-        breakpoint_stops = 0
         watchpoint_stops = 0
         while True:
             self.runCmd("process continue")

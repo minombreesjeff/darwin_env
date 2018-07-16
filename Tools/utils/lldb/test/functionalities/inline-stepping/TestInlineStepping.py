@@ -8,7 +8,7 @@ from lldbtest import *
 
 class TestInlineStepping(TestBase):
 
-    mydir = os.path.join("functionalities", "inline-stepping")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -20,6 +20,8 @@ class TestInlineStepping(TestBase):
 
     @python_api_test
     @dwarf_test
+    @expectedFailureFreeBSD('llvm.org/pr17214')
+    @expectedFailureIcc # Not really a bug.  ICC combines two inlined functions.
     def test_with_dwarf_and_python_api(self):
         """Test stepping over and into inlined functions."""
         self.buildDwarf()
@@ -120,7 +122,7 @@ class TestInlineStepping(TestBase):
         self.assertTrue(break_1_in_main, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        self.process = target.LaunchSimple (None, None, os.getcwd())
+        self.process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(self.process, PROCESS_IS_VALID)
 
@@ -216,7 +218,7 @@ class TestInlineStepping(TestBase):
         self.assertTrue(break_1_in_main, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        self.process = target.LaunchSimple (None, None, os.getcwd())
+        self.process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(self.process, PROCESS_IS_VALID)
 

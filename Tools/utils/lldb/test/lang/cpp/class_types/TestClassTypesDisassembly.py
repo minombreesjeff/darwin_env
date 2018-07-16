@@ -10,7 +10,8 @@ import lldbutil
 
 class IterateFrameAndDisassembleTestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "class_types")
+    mydir = TestBase.compute_mydir(__file__)
+    failing_compilers = ['clang', 'gcc']
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -20,7 +21,8 @@ class IterateFrameAndDisassembleTestCase(TestBase):
         self.disassemble_call_stack()
 
     @dwarf_test
-    @expectedFailureLinux # due to llvm.org/pr14540
+    @expectedFailureFreeBSD('llvm.org/pr14540')
+    @expectedFailureLinux('llvm.org/pr14540', failing_compilers)
     def test_with_dwarf_and_run_command(self):
         """Disassemble each call frame when stopped on C's constructor."""
         self.buildDwarf()
@@ -36,7 +38,8 @@ class IterateFrameAndDisassembleTestCase(TestBase):
 
     @python_api_test
     @dwarf_test
-    @expectedFailureLinux # due to llvm.org/pr14540
+    @expectedFailureFreeBSD('llvm.org/pr14540')
+    @expectedFailureLinux('llvm.org/pr14540', failing_compilers)
     def test_with_dwarf_and_python_api(self):
         """Disassemble each call frame when stopped on C's constructor."""
         self.buildDwarf()

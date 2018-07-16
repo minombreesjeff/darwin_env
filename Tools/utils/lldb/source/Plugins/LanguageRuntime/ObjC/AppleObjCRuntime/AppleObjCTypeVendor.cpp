@@ -60,7 +60,7 @@ public:
 
             if (!m_type_vendor.FinishDecl(non_const_interface_decl))
                 break;
-                        
+            
             clang::DeclContext::lookup_const_result result = non_const_interface_decl->lookup(name);
             
             return (result.size() != 0);
@@ -403,7 +403,6 @@ public:
                                                            arg_type,
                                                            NULL,
                                                            clang::SC_None,
-                                                           clang::SC_None,
                                                            NULL));
         }
         
@@ -529,6 +528,9 @@ AppleObjCTypeVendor::FinishDecl(clang::ObjCInterfaceDecl *interface_decl)
     
     auto instance_method_func = [log, interface_decl, this](const char *name, const char *types) -> bool
     {        
+        if (!name || !types)
+            return false; // skip this one
+
         ObjCRuntimeMethodType method_type(types);
         
         clang::ObjCMethodDecl *method_decl = method_type.BuildMethod (interface_decl, name, true);
@@ -544,6 +546,9 @@ AppleObjCTypeVendor::FinishDecl(clang::ObjCInterfaceDecl *interface_decl)
     
     auto class_method_func = [log, interface_decl, this](const char *name, const char *types) -> bool
     {
+        if (!name || !types)
+            return false; // skip this one
+        
         ObjCRuntimeMethodType method_type(types);
         
         clang::ObjCMethodDecl *method_decl = method_type.BuildMethod (interface_decl, name, false);

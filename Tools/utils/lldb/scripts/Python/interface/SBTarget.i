@@ -273,6 +273,25 @@ public:
 
     %feature("docstring", "
     //------------------------------------------------------------------
+    /// Install any binaries that need to be installed.
+    ///
+    /// This function does nothing when debugging on the host system.
+    /// When connected to remote platforms, the target's main executable
+    /// and any modules that have their install path set will be
+    /// installed on the remote platform. If the main executable doesn't
+    /// have an install location set, it will be installed in the remote
+    /// platform's working directory.
+    ///
+    /// @return
+    ///     An error describing anything that went wrong during
+    ///     installation.
+    //------------------------------------------------------------------
+    ") Install;
+    lldb::SBError
+    Install();
+
+    %feature("docstring", "
+    //------------------------------------------------------------------
     /// Launch a new process.
     ///
     /// Launch a new process by spawning a new process using the
@@ -637,6 +656,9 @@ public:
 
     lldb::SBAddress
     ResolveLoadAddress (lldb::addr_t vm_addr);
+              
+    lldb::SBAddress
+    ResolvePastLoadAddress (uint32_t stop_id, lldb::addr_t vm_addr);
 
     SBSymbolContext
     ResolveSymbolContextForAddress (const SBAddress& addr, 
@@ -730,6 +752,9 @@ public:
 
     lldb::SBBroadcaster
     GetBroadcaster () const;
+              
+    lldb::SBValue
+    CreateValueFromAddress (const char *name, lldb::SBAddress addr, lldb::SBType type);
     
     lldb::SBInstructionList
     ReadInstructions (lldb::SBAddress base_addr, uint32_t count);    

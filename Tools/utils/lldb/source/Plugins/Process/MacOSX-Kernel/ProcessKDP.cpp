@@ -33,6 +33,8 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 
+#define USEC_PER_SEC 1000000
+
 // Project includes
 #include "ProcessKDP.h"
 #include "ProcessKDPLog.h"
@@ -358,7 +360,7 @@ ProcessKDP::DoConnectRemote (Stream *strm, const char *remote_url)
 //----------------------------------------------------------------------
 Error
 ProcessKDP::DoLaunch (Module *exe_module, 
-                      const ProcessLaunchInfo &launch_info)
+                      ProcessLaunchInfo &launch_info)
 {
     Error error;
     error.SetErrorString ("launching not supported in kdp-remote plug-in");
@@ -383,7 +385,7 @@ ProcessKDP::DoAttachToProcessWithID (lldb::pid_t attach_pid, const ProcessAttach
 }
 
 Error
-ProcessKDP::DoAttachToProcessWithName (const char *process_name, bool wait_for_launch, const ProcessAttachInfo &attach_info)
+ProcessKDP::DoAttachToProcessWithName (const char *process_name, const ProcessAttachInfo &attach_info)
 {
     Error error;
     error.SetErrorString ("attach to process by name is not suppported in kdp remote debugging");

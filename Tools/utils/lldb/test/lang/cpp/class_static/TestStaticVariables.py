@@ -10,7 +10,8 @@ import lldbutil
 
 class StaticVariableTestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "class_static")
+    mydir = TestBase.compute_mydir(__file__)
+    failing_compilers = ['clang', 'gcc']
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -19,7 +20,8 @@ class StaticVariableTestCase(TestBase):
         self.buildDsym()
         self.static_variable_commands()
 
-    @expectedFailureLinux # llvm.org/pr15261: lldb on Linux does not display the size of (class or file)static arrays
+    @expectedFailureFreeBSD('llvm.org/pr15261', failing_compilers) # lldb on FreeBSD does not display the size of (class or file)static arrays
+    @expectedFailureLinux('llvm.org/pr15261', failing_compilers) # lldb on Linux does not display the size of (class or file)static arrays
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test that file and class static variables display correctly."""
@@ -86,7 +88,7 @@ class StaticVariableTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue(process, PROCESS_IS_VALID)
 
         # The stop reason of the thread should be breakpoint.

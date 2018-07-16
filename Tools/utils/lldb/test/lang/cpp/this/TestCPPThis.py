@@ -7,7 +7,7 @@ import lldbutil
 
 class CPPThisTestCase(TestBase):
     
-    mydir = os.path.join("lang", "cpp", "this")
+    mydir = TestBase.compute_mydir(__file__)
     
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     #rdar://problem/9962849
@@ -20,6 +20,7 @@ class CPPThisTestCase(TestBase):
 
     #rdar://problem/9962849
     @expectedFailureGcc # llvm.org/pr15439 The 'this' pointer isn't available during expression evaluation when stopped in an inlined member function.
+    @expectedFailureIcc # ICC doesn't emit correct DWARF inline debug info for inlined member functions
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test that the appropriate member variables are available when stopped in C++ static, inline, and const methods"""

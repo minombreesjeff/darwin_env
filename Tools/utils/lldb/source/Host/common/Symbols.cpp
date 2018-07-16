@@ -61,9 +61,9 @@ Symbols::LocateExecutableSymbolFile (const ModuleSpec &module_spec)
         uuid_str = uuid_str + ".debug";
     }
 
-    // Get full path to our module. Needed to check debug files like this:
-    //   /usr/lib/debug/usr/lib/libboost_date_time.so.1.46.1
-    std::string module_filename = module_spec.GetFileSpec().GetPath();
+    // Get directory of our module. Needed to check debug files like this:
+    //   /usr/lib/debug/usr/lib/library.so.debug
+    std::string module_directory = module_spec.GetFileSpec().GetDirectory().AsCString();
 
     size_t num_directories = debug_file_search_paths.GetSize();
     for (size_t idx = 0; idx < num_directories; ++idx)
@@ -79,7 +79,7 @@ Symbols::LocateExecutableSymbolFile (const ModuleSpec &module_spec)
         files.push_back (dirname + "/" + symbol_filename);
         files.push_back (dirname + "/.debug/" + symbol_filename);
         files.push_back (dirname + "/.build-id/" + uuid_str);
-        files.push_back (dirname + module_filename);
+        files.push_back (dirname + module_directory + "/" + symbol_filename);
 
         const uint32_t num_files = files.size();
         for (size_t idx_file = 0; idx_file < num_files; ++idx_file)
@@ -93,7 +93,7 @@ Symbols::LocateExecutableSymbolFile (const ModuleSpec &module_spec)
             if (file_spec.Exists())
             {
                 lldb_private::ModuleSpecList specs;
-                const size_t num_specs = ObjectFile::GetModuleSpecifications (file_spec, 0, specs);
+                const size_t num_specs = ObjectFile::GetModuleSpecifications (file_spec, 0, 0, specs);
                 assert (num_specs <= 1 && "Symbol Vendor supports only a single architecture");
                 if (num_specs == 1)
                 {

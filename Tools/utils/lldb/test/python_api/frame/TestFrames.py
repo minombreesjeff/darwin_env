@@ -11,7 +11,7 @@ from lldbtest import *
 
 class FrameAPITestCase(TestBase):
 
-    mydir = os.path.join("python_api", "frame")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -56,7 +56,7 @@ class FrameAPITestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         process = target.GetProcess()
         self.assertTrue(process.GetState() == lldb.eStateStopped,
@@ -100,7 +100,9 @@ class FrameAPITestCase(TestBase):
                 gpr_reg_set = lldbutil.get_GPRs(frame)
                 pc_value = gpr_reg_set.GetChildMemberWithName("pc")
                 self.assertTrue (pc_value, "We should have a valid PC.")
-                self.assertTrue (int(pc_value.GetValue(), 0) == frame.GetPC(), "PC gotten as a value should equal frame's GetPC")
+                pc_value_str = pc_value.GetValue()
+                self.assertTrue (pc_value_str, "We should have a valid PC string.")
+                self.assertTrue (int(pc_value_str, 0) == frame.GetPC(), "PC gotten as a value should equal frame's GetPC")
                 sp_value = gpr_reg_set.GetChildMemberWithName("sp")
                 self.assertTrue (sp_value, "We should have a valid Stack Pointer.")
                 self.assertTrue (int(sp_value.GetValue(), 0) == frame.GetSP(), "SP gotten as a value should equal frame's GetSP")
@@ -140,7 +142,7 @@ class FrameAPITestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         process = target.GetProcess()
         self.assertTrue(process.GetState() == lldb.eStateStopped,
@@ -177,7 +179,7 @@ class FrameAPITestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         process = target.GetProcess()
         self.assertTrue(process.GetState() == lldb.eStateStopped,

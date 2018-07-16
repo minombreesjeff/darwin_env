@@ -11,7 +11,7 @@ import lldbutil
 
 class UnsignedTypesTestCase(TestBase):
 
-    mydir = os.path.join("lang", "cpp", "unsigned_types")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -41,7 +41,7 @@ class UnsignedTypesTestCase(TestBase):
         # if GCC is the target compiler, we cannot rely on an exact line match.
         need_exact = "gcc" not in self.getCompiler()
         # Break on line 19 in main() aftre the variables are assigned values.
-        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=need_exact)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1, loc_exact=need_exact)
 
         self.runCmd("run", RUN_SUCCEEDED)
 

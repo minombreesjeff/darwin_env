@@ -48,7 +48,11 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
                         user_id_t frame_idx, 
                         user_id_t unwind_frame_index, 
                         addr_t cfa, 
+                        bool cfa_is_valid,
                         addr_t pc, 
+                        uint32_t stop_id,
+                        bool stop_id_is_valid,
+                        bool is_history_frame,
                         const SymbolContext *sc_ptr) :
     m_thread_wp (thread_sp),
     m_frame_index (frame_idx),
@@ -60,10 +64,21 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_flags (),
     m_frame_base (),
     m_frame_base_error (),
+    m_cfa_is_valid (cfa_is_valid),
+    m_stop_id  (stop_id),
+    m_stop_id_is_valid (stop_id_is_valid),
+    m_is_history_frame (is_history_frame),
     m_variable_list_sp (),
     m_variable_list_value_objects (),
     m_disassembly ()
 {
+    // If we don't have a CFA value, use the frame index for our StackID so that recursive
+    // functions properly aren't confused with one another on a history stack.
+    if (m_is_history_frame && m_cfa_is_valid == false)
+    {
+        m_id.SetCFA (m_frame_index);
+    }
+
     if (sc_ptr != NULL)
     {
         m_sc = *sc_ptr;
@@ -88,6 +103,10 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_flags (),
     m_frame_base (),
     m_frame_base_error (),
+    m_cfa_is_valid (true),
+    m_stop_id  (0),
+    m_stop_id_is_valid (false),
+    m_is_history_frame (false),
     m_variable_list_sp (),
     m_variable_list_value_objects (),
     m_disassembly ()
@@ -123,6 +142,10 @@ StackFrame::StackFrame (const ThreadSP &thread_sp,
     m_flags (),
     m_frame_base (),
     m_frame_base_error (),
+    m_cfa_is_valid (true),
+    m_stop_id  (0),
+    m_stop_id_is_valid (false),
+    m_is_history_frame (false),
     m_variable_list_sp (),
     m_variable_list_value_objects (),
     m_disassembly ()
@@ -246,15 +269,19 @@ StackFrame::GetFrameCodeAddress()
     return m_frame_code_addr;
 }
 
-void
+bool
 StackFrame::ChangePC (addr_t pc)
 {
+    // We can't change the pc value of a history stack frame - it is immutable.
+    if (m_is_history_frame)
+        return false;
     m_frame_code_addr.SetRawAddress(pc);
     m_sc.Clear(false);
     m_flags.Reset(0);
     ThreadSP thread_sp (GetThread());
     if (thread_sp)
         thread_sp->ClearStackFrames ();
+    return true;
 }
 
 const char *
@@ -517,6 +544,10 @@ StackFrame::GetVariableList (bool get_file_globals)
 VariableListSP
 StackFrame::GetInScopeVariableList (bool get_file_globals)
 {
+    // We can't fetch variable information for a history stack frame.
+    if (m_is_history_frame)
+        return VariableListSP();
+
     VariableListSP var_list_sp(new VariableList);
     GetSymbolContext (eSymbolContextCompUnit | eSymbolContextBlock);
 
@@ -549,6 +580,9 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                                VariableSP &var_sp,
                                                Error &error)
 {
+    // We can't fetch variable information for a history stack frame.
+    if (m_is_history_frame)
+        return ValueObjectSP();
 
     if (var_expr_cstr && var_expr_cstr[0])
     {
@@ -645,9 +679,9 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                         {
                             // Make sure we aren't trying to deref an objective
                             // C ivar if this is not allowed
-                            const uint32_t pointer_type_flags = ClangASTContext::GetTypeInfo (valobj_sp->GetClangType(), NULL, NULL);
-                            if ((pointer_type_flags & ClangASTContext::eTypeIsObjC) &&
-                                (pointer_type_flags & ClangASTContext::eTypeIsPointer))
+                            const uint32_t pointer_type_flags = valobj_sp->GetClangType().GetTypeInfo (NULL);
+                            if ((pointer_type_flags & ClangASTType::eTypeIsObjC) &&
+                                (pointer_type_flags & ClangASTType::eTypeIsPointer))
                             {
                                 // This was an objective C object pointer and 
                                 // it was requested we skip any fragile ivars
@@ -759,7 +793,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             if (end && *end == ']'
                                 && *(end-1) != '[') // this code forces an error in the case of arr[]. as bitfield[] is not a good syntax we're good to go
                             {
-                                if (ClangASTContext::IsPointerToScalarType(valobj_sp->GetClangType()) && deref)
+                                if (valobj_sp->GetClangType().IsPointerToScalarType() && deref)
                                 {
                                     // what we have is *ptr[low]. the most similar C++ syntax is to deref ptr
                                     // and extract bit low out of it. reading array item low
@@ -777,7 +811,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                     valobj_sp = temp;
                                     deref = false;
                                 }
-                                else if (ClangASTContext::IsArrayOfScalarType(valobj_sp->GetClangType()) && deref)
+                                else if (valobj_sp->GetClangType().IsArrayOfScalarType() && deref)
                                 {
                                     // what we have is *arr[low]. the most similar C++ syntax is to get arr[0]
                                     // (an operation that is equivalent to deref-ing arr)
@@ -802,9 +836,9 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 {
                                     bool is_objc_pointer = true;
                                     
-                                    if (ClangASTType::GetMinimumLanguage(valobj_sp->GetClangAST(), valobj_sp->GetClangType()) != eLanguageTypeObjC)
+                                    if (valobj_sp->GetClangType().GetMinimumLanguage() != eLanguageTypeObjC)
                                         is_objc_pointer = false;
-                                    else if (!ClangASTContext::IsPointerType(valobj_sp->GetClangType()))
+                                    else if (!valobj_sp->GetClangType().IsPointerType())
                                         is_objc_pointer = false;
 
                                     if (no_synth_child && is_objc_pointer)
@@ -861,7 +895,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         }
                                     }
                                 }
-                                else if (ClangASTContext::IsArrayType (valobj_sp->GetClangType(), NULL, NULL, &is_incomplete_array))
+                                else if (valobj_sp->GetClangType().IsArrayType (NULL, NULL, &is_incomplete_array))
                                 {
                                     // Pass false to dynamic_value here so we can tell the difference between
                                     // no dynamic value and no member of this type...
@@ -878,7 +912,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                                                         var_expr_path_strm.GetString().c_str());
                                     }
                                 }
-                                else if (ClangASTContext::IsScalarType(valobj_sp->GetClangType()))
+                                else if (valobj_sp->GetClangType().IsScalarType())
                                 {
                                     // this is a bitfield asking to display just one bit
                                     child_valobj_sp = valobj_sp->GetSyntheticBitFieldChild(child_index, child_index, true);
@@ -961,7 +995,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         final_index = temp;
                                     }
                                     
-                                    if (ClangASTContext::IsPointerToScalarType(valobj_sp->GetClangType()) && deref)
+                                    if (valobj_sp->GetClangType().IsPointerToScalarType() && deref)
                                     {
                                         // what we have is *ptr[low-high]. the most similar C++ syntax is to deref ptr
                                         // and extract bits low thru high out of it. reading array items low thru high
@@ -979,7 +1013,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         valobj_sp = temp;
                                         deref = false;
                                     }
-                                    else if (ClangASTContext::IsArrayOfScalarType(valobj_sp->GetClangType()) && deref)
+                                    else if (valobj_sp->GetClangType().IsArrayOfScalarType() && deref)
                                     {
                                         // what we have is *arr[low-high]. the most similar C++ syntax is to get arr[0]
                                         // (an operation that is equivalent to deref-ing arr)
@@ -1108,6 +1142,12 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
 bool
 StackFrame::GetFrameBaseValue (Scalar &frame_base, Error *error_ptr)
 {
+    if (m_cfa_is_valid == false)
+    {
+        m_frame_base_error.SetErrorString("No frame base available for this historical stack frame.");
+        return false;
+    }
+
     if (m_flags.IsClear(GOT_FRAME_BASE))
     {
         if (m_sc.function)
@@ -1122,7 +1162,7 @@ StackFrame::GetFrameBaseValue (Scalar &frame_base, Error *error_ptr)
             if (m_sc.function->GetFrameBaseExpression().IsLocationList())
                 loclist_base_addr = m_sc.function->GetAddressRange().GetBaseAddress().GetLoadAddress (exe_ctx.GetTargetPtr());
 
-            if (m_sc.function->GetFrameBaseExpression().Evaluate(&exe_ctx, NULL, NULL, NULL, NULL, loclist_base_addr, NULL, expr_value, &m_frame_base_error) == false)
+            if (m_sc.function->GetFrameBaseExpression().Evaluate(&exe_ctx, NULL, NULL, NULL, loclist_base_addr, NULL, expr_value, &m_frame_base_error) == false)
             {
                 // We should really have an error if evaluate returns, but in case
                 // we don't, lets set the error to something at least.
@@ -1131,7 +1171,7 @@ StackFrame::GetFrameBaseValue (Scalar &frame_base, Error *error_ptr)
             }
             else
             {
-                m_frame_base = expr_value.ResolveValue(&exe_ctx, NULL);
+                m_frame_base = expr_value.ResolveValue(&exe_ctx);
             }
         }
         else
@@ -1172,6 +1212,10 @@ ValueObjectSP
 StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, DynamicValueType use_dynamic)
 {
     ValueObjectSP valobj_sp;
+    if (m_is_history_frame)
+    {
+        return valobj_sp;
+    }
     VariableList *var_list = GetVariableList (true);
     if (var_list)
     {
@@ -1202,6 +1246,9 @@ StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, Dynam
 ValueObjectSP
 StackFrame::TrackGlobalVariable (const VariableSP &variable_sp, DynamicValueType use_dynamic)
 {
+    if (m_is_history_frame)
+        return ValueObjectSP();
+
     // Check to make sure we aren't already tracking this variable?
     ValueObjectSP valobj_sp (GetValueObjectForFrameVariable (variable_sp, use_dynamic));
     if (!valobj_sp)
@@ -1275,7 +1322,7 @@ StackFrame::CalculateExecutionContext (ExecutionContext &exe_ctx)
 }
 
 void
-StackFrame::DumpUsingSettingsFormat (Stream *strm)
+StackFrame::DumpUsingSettingsFormat (Stream *strm, const char *frame_marker)
 {
     if (strm == NULL)
         return;
@@ -1283,6 +1330,10 @@ StackFrame::DumpUsingSettingsFormat (Stream *strm)
     GetSymbolContext(eSymbolContextEverything);
     ExecutionContext exe_ctx (shared_from_this());
     StreamString s;
+    
+    if (frame_marker)
+        s.PutCString(frame_marker);
+
     const char *frame_format = NULL;
     Target *target = exe_ctx.GetTargetPtr();
     if (target)
@@ -1370,13 +1421,14 @@ StackFrame::HasCachedData () const
 bool
 StackFrame::GetStatus (Stream& strm,
                        bool show_frame_info,
-                       bool show_source)
+                       bool show_source,
+                       const char *frame_marker)
 {
     
     if (show_frame_info)
     {
         strm.Indent();
-        DumpUsingSettingsFormat (&strm);
+        DumpUsingSettingsFormat (&strm, frame_marker);
     }
     
     if (show_source)

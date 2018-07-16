@@ -10,7 +10,7 @@ from lldbtest import *
 
 class TargetAPITestCase(TestBase):
 
-    mydir = os.path.join("python_api", "target")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -128,7 +128,7 @@ class TargetAPITestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue(process, PROCESS_IS_VALID)
         # Make sure we hit our breakpoint:
         thread_list = lldbutil.get_threads_stopped_at_breakpoint (process, breakpoint)
@@ -195,7 +195,7 @@ class TargetAPITestCase(TestBase):
         self.expect(desc, exe=False,
             substrs = ['a.out', 'Target', 'Module', 'Breakpoint'])
 
-
+    @not_remote_testsuite_ready
     def launch_new_process_and_redirect_stdout(self):
         """Exercise SBTaget.Launch() API with redirected stdout."""
         exe = os.path.join(os.getcwd(), "a.out")
@@ -256,7 +256,7 @@ class TargetAPITestCase(TestBase):
                         VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue(process, PROCESS_IS_VALID)
 
         # Frame #0 should be on self.line1.

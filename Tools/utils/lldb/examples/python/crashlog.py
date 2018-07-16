@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-#---------------------------------------------------------------------
+#----------------------------------------------------------------------
 # Be sure to add the python path that points to the LLDB shared library.
 #
 # To use this in the embedded python interpreter using "lldb":
@@ -174,10 +174,6 @@ class CrashLog(symbolication.Symbolicator):
                         if plist:
                             if 'DBGArchitecture' in plist:
                                 self.arch = plist['DBGArchitecture']
-                                # FIXME TOT svn supports ArchSpecs in numeric form but we haven't
-                                # merged that in yet; this should be removed once that's in.
-                                if self.arch == '16777228-0':
-                                    self.arch = 'arm64'
                             if 'DBGDSYMPath' in plist:
                                 self.symfile = os.path.realpath(plist['DBGDSYMPath'])
                             if 'DBGSymbolRichExecutable' in plist:

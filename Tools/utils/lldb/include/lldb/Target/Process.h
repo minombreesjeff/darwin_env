@@ -10,9 +10,10 @@
 #ifndef liblldb_Process_h_
 #define liblldb_Process_h_
 
+#include "lldb/Host/Config.h"
+
 // C Includes
 #include <limits.h>
-#include <spawn.h>
 
 // C++ Includes
 #include <list>
@@ -37,11 +38,12 @@
 #include "lldb/Expression/IRDynamicChecks.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Host.h"
-#include "lldb/Host/ReadWriteLock.h"
+#include "lldb/Host/ProcessRunLock.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/Memory.h"
+#include "lldb/Target/QueueList.h"
 #include "lldb/Target/ThreadList.h"
 #include "lldb/Target/UnixSignals.h"
 #include "lldb/Utility/PseudoTerminal.h"
@@ -237,6 +239,12 @@ public:
     GetArchitecture () const
     {
         return m_arch;
+    }
+    
+    void
+    SetArchitecture (ArchSpec arch)
+    {
+        m_arch = arch;
     }
     
     lldb::pid_t
@@ -475,11 +483,13 @@ public:
         bool
         Open (int fd, const char *path, bool read, bool write);
         
+#ifndef LLDB_DISABLE_POSIX
         static bool
-        AddPosixSpawnFileAction (posix_spawn_file_actions_t *file_actions,
+        AddPosixSpawnFileAction (void *file_actions,
                                  const FileAction *info,
                                  Log *log, 
                                  Error& error);
+#endif
 
         int
         GetFD () const
@@ -777,7 +787,8 @@ public:
     ConvertArgumentsForLaunchingInShell (Error &error,
                                          bool localhost,
                                          bool will_debug,
-                                         bool first_arg_is_full_shell_command);
+                                         bool first_arg_is_full_shell_command,
+                                         int32_t num_resumes);
     
     void
     SetMonitorProcessCallback (Host::MonitorChildProcessCallback callback, 
@@ -1371,9 +1382,7 @@ class Process :
 {
 friend class ThreadList;
 friend class ClangFunction; // For WaitForStateChangeEventsPrivate
-friend class CommandObjectProcessLaunch;
 friend class ProcessEventData;
-friend class CommandObjectBreakpointCommand;
 friend class StopInfo;
 
 public:
@@ -1405,8 +1414,7 @@ public:
     // stopped can block waiting for the process to stop, or just
     // try to lock it to see if they can immediately access the stopped
     // process. If the try read lock fails, then the process is running.
-    typedef ReadWriteLock::ReadLocker StopLocker;
-    typedef ReadWriteLock::WriteLocker RunLocker;
+    typedef ProcessRunLock::ProcessRunLocker StopLocker;
 
     // These two functions fill out the Broadcaster interface:
     
@@ -1751,7 +1759,7 @@ public:
     ///     the error object is success.
     //------------------------------------------------------------------
     virtual Error
-    Launch (const ProcessLaunchInfo &launch_info);
+    Launch (ProcessLaunchInfo &launch_info);
 
     virtual Error
     LoadCore ();
@@ -1763,7 +1771,7 @@ public:
         error.SetErrorStringWithFormat("error: %s does not support loading core files.", GetPluginName().GetCString());
         return error;
     }
-    
+
     //------------------------------------------------------------------
     /// Get the dynamic loader plug-in for this process. 
     ///
@@ -1775,6 +1783,16 @@ public:
     //------------------------------------------------------------------
     virtual DynamicLoader *
     GetDynamicLoader ();
+
+    //------------------------------------------------------------------
+    /// Get the system runtime plug-in for this process. 
+    ///
+    /// @return
+    ///   Returns a pointer to the SystemRuntime plugin for this Process
+    ///   if one is available.  Else returns NULL.
+    //------------------------------------------------------------------
+    virtual SystemRuntime *
+    GetSystemRuntime ();
 
     //------------------------------------------------------------------
     /// Attach to an existing process using the process attach info.
@@ -2108,21 +2126,15 @@ public:
     /// @param[in] process_name
     ///     The name of the process to attach to.
     ///
-    /// @param[in] wait_for_launch
-    ///     If \b true, wait for the process to be launched and attach
-    ///     as soon as possible after it does launch. If \b false, then
-    ///     search for a matching process the currently exists.
-    ///
     /// @param[in] attach_info
     ///     Information on how to do the attach. For example, GetUserID()
     ///     will return the uid to attach as.
     ///
     /// @return
-    ///     Returns \a pid if attaching was successful, or
-    ///     LLDB_INVALID_PROCESS_ID if attaching fails.
+    ///     Returns an error object.
     //------------------------------------------------------------------
     virtual Error
-    DoAttachToProcessWithName (const char *process_name, bool wait_for_launch, const ProcessAttachInfo &attach_info) 
+    DoAttachToProcessWithName (const char *process_name, const ProcessAttachInfo &attach_info)
     {
         Error error;
         error.SetErrorString("attach by name is not supported");
@@ -2221,7 +2233,7 @@ public:
     //------------------------------------------------------------------
     virtual Error
     DoLaunch (Module *exe_module,
-              const ProcessLaunchInfo &launch_info)
+              ProcessLaunchInfo &launch_info)
     {
         Error error;
         error.SetErrorStringWithFormat("error: %s does not support launching processes", GetPluginName().GetCString());
@@ -2498,11 +2510,7 @@ public:
     ExecutionResults
     RunThreadPlan (ExecutionContext &exe_ctx,    
                     lldb::ThreadPlanSP &thread_plan_sp,
-                    bool stop_others,
-                    bool run_others,
-                    bool unwind_on_error,
-                    bool ignore_breakpoints,
-                    uint32_t timeout_usec,
+                    const EvaluateExpressionOptions &options,
                     Stream &errors);
 
     static const char *
@@ -3300,10 +3308,27 @@ public:
     {
         return m_thread_list;
     }
-    
+
+    // When ExtendedBacktraces are requested, the HistoryThreads that are
+    // created need an owner -- they're saved here in the Process.  The
+    // threads in this list are not iterated over - driver programs need to
+    // request the extended backtrace calls starting from a root concrete
+    // thread one by one.
+    ThreadList &
+    GetExtendedThreadList ()
+    {
+        return m_extended_thread_list;
+    }
+
+    ThreadList::ThreadIterable
+    Threads ()
+    {
+        return m_thread_list.Threads();
+    }
+
     uint32_t
     GetNextThreadIndexID (uint64_t thread_id);
-    
+
     lldb::ThreadSP
     CreateOSPluginThread (lldb::tid_t tid, lldb::addr_t context);
     
@@ -3316,14 +3341,47 @@ public:
     uint32_t
     AssignIndexIDToThread(uint64_t thread_id);
 
+    // Returns true if an index id has been assigned to a queue.
+    bool
+    HasAssignedIndexIDToQueue(lldb::queue_id_t queue_id);
+
+    // Given a queue_id, it will assign a more reasonable index id for display to the user.
+    // If the queue_id has previously been assigned, the same index id will be used.
+    uint32_t
+    AssignIndexIDToQueue(lldb::queue_id_t queue_id);
+
+    //------------------------------------------------------------------
+    // Queue Queries
+    //------------------------------------------------------------------
+
+    void
+    UpdateQueueListIfNeeded ();
+
+    QueueList &
+    GetQueueList ()
+    {
+        UpdateQueueListIfNeeded();
+        return m_queue_list;
+    }
+
+    QueueList::QueueIterable
+    Queues ()
+    {
+        UpdateQueueListIfNeeded();
+        return m_queue_list.Queues();
+    }
+
     //------------------------------------------------------------------
     // Event Handling
     //------------------------------------------------------------------
     lldb::StateType
     GetNextEvent (lldb::EventSP &event_sp);
 
+    // Returns the process state when it is stopped. If specified, event_sp_ptr
+    // is set to the event which triggered the stop. If wait_always = false,
+    // and the process is already stopped, this function returns immediately.
     lldb::StateType
-    WaitForProcessToStop (const TimeValue *timeout, lldb::EventSP *event_sp_ptr = NULL);
+    WaitForProcessToStop (const TimeValue *timeout, lldb::EventSP *event_sp_ptr = NULL, bool wait_always = true);
 
     lldb::StateType
     WaitForStateChangedEvents (const TimeValue *timeout, lldb::EventSP &event_sp);
@@ -3530,7 +3588,7 @@ public:
     void
     ClearPreResumeActions ();
                               
-    ReadWriteLock &
+    ProcessRunLock &
     GetRunLock ()
     {
         if (Host::GetCurrentThread() == m_private_state_thread)
@@ -3665,13 +3723,19 @@ protected:
     ProcessModID                m_mod_id;               ///< Tracks the state of the process over stops and other alterations.
     uint32_t                    m_process_unique_id;    ///< Each lldb_private::Process class that is created gets a unique integer ID that increments with each new instance
     uint32_t                    m_thread_index_id;      ///< Each thread is created with a 1 based index that won't get re-used.
+    uint32_t                    m_queue_index_id;       ///< Each queue is created with a 1 based index that won't get re-used.
     std::map<uint64_t, uint32_t> m_thread_id_to_index_id_map;
+    std::map<uint64_t, uint32_t> m_queue_id_to_index_id_map;
     int                         m_exit_status;          ///< The exit status of the process, or -1 if not set.
     std::string                 m_exit_string;          ///< A textual description of why a process exited.
     Mutex                       m_thread_mutex;
     ThreadList                  m_thread_list_real;     ///< The threads for this process as are known to the protocol we are debugging with
     ThreadList                  m_thread_list;          ///< The threads for this process as the user will see them. This is usually the same as
                                                         ///< m_thread_list_real, but might be different if there is an OS plug-in creating memory threads
+    ThreadList                  m_extended_thread_list; ///< Owner for extended threads that may be generated, cleared on natural stops
+    uint32_t                    m_extended_thread_stop_id; ///< The natural stop id when extended_thread_list was last updated
+    QueueList                   m_queue_list;           ///< The list of libdispatch queues at a given stop point
+    uint32_t                    m_queue_list_stop_id;   ///< The natural stop id when queue list was last fetched
     std::vector<Notifications>  m_notifications;        ///< The list of notifications that this process can deliver.
     std::vector<lldb::addr_t>   m_image_tokens;
     Listener                    &m_listener;
@@ -3679,6 +3743,7 @@ protected:
     std::unique_ptr<DynamicLoader> m_dyld_ap;
     std::unique_ptr<DynamicCheckerFunctions> m_dynamic_checkers_ap; ///< The functions used by the expression parser to validate data that expressions use.
     std::unique_ptr<OperatingSystem> m_os_ap;
+    std::unique_ptr<SystemRuntime> m_system_runtime_ap;
     UnixSignals                 m_unix_signals;         /// This is the current signal set for this process.
     lldb::ABISP                 m_abi_sp;
     lldb::InputReaderSP         m_process_input_reader;
@@ -3694,8 +3759,8 @@ protected:
     LanguageRuntimeCollection   m_language_runtimes;
     std::unique_ptr<NextEventAction> m_next_event_action_ap;
     std::vector<PreResumeCallbackAndBaton> m_pre_resume_actions;
-    ReadWriteLock               m_public_run_lock;
-    ReadWriteLock               m_private_run_lock;
+    ProcessRunLock              m_public_run_lock;
+    ProcessRunLock              m_private_run_lock;
     Predicate<bool>             m_currently_handling_event; // This predicate is set in HandlePrivateEvent while all its business is being done.
     bool                        m_currently_handling_do_on_removals;
     bool                        m_resume_requested;         // If m_currently_handling_event or m_currently_handling_do_on_removals are true, Resume will only request a resume, using this flag to check.
@@ -3734,10 +3799,10 @@ protected:
     void
     ResumePrivateStateThread ();
 
-    static void *
+    static lldb::thread_result_t
     PrivateStateThread (void *arg);
 
-    void *
+    lldb::thread_result_t
     RunPrivateStateThread ();
 
     void

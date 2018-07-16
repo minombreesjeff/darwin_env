@@ -93,6 +93,9 @@ public:
     virtual bool
     SetData (DataExtractor &data, Error &error);
     
+    virtual TypeImpl
+    GetTypeImpl ();
+    
 protected:
     virtual bool
     UpdateValue ();
@@ -109,16 +112,14 @@ protected:
         return true;
     }
     
-    virtual clang::ASTContext *
-    GetClangASTImpl ();
-    
-    virtual lldb::clang_type_t
+    virtual ClangASTType
     GetClangTypeImpl ();
 
     Address  m_address;  ///< The variable that this value object is based upon
     TypeAndOrName m_dynamic_type_info; // We can have a type_sp or just a name
     lldb::ValueObjectSP m_owning_valobj_sp;
     lldb::DynamicValueType m_use_dynamic;
+    TypeImpl m_type_impl;
 
 private:
     friend class ValueObject;

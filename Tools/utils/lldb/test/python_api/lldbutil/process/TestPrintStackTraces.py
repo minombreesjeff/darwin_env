@@ -10,7 +10,7 @@ from lldbtest import *
 
 class ThreadsStackTracesTestCase(TestBase):
 
-    mydir = "python_api/lldbutil/process"
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -18,7 +18,7 @@ class ThreadsStackTracesTestCase(TestBase):
         # Find the line number to break inside main().
         self.line = line_number('main.cpp', '// Set break point at this line.')
 
-    @expectedFailureLinux # llvm.org/pr14323
+    @expectedFailureLinux # llvm.org/pr15415 -- partial stack trace in thread 1 (while stopped inside a read() call)
     @python_api_test
     def test_stack_traces(self):
         """Test SBprocess and SBThread APIs with printing of the stack traces."""
@@ -36,7 +36,7 @@ class ThreadsStackTracesTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(["abc", "xyz"], None, os.getcwd())
+        process = target.LaunchSimple (["abc", "xyz"], None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.LaunchProcess() failed")

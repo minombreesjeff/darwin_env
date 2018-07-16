@@ -17,8 +17,13 @@
 int
 main (int argc, char const *argv[])
 {
-    const char *a_name = "@executable_path/liba.dylib";
-    const char *c_name = "@executable_path/libc.dylib";
+#if defined (__APPLE__)
+    const char *a_name = "@executable_path/libloadunload_a.dylib";
+    const char *c_name = "@executable_path/libloadunload_c.dylib";
+#else
+    const char *a_name = "libloadunload_a.so";
+    const char *c_name = "libloadunload_c.so";
+#endif
     void *a_dylib_handle = NULL;
     void *c_dylib_handle = NULL;
     int (*a_function) (void);

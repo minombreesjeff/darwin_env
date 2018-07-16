@@ -44,7 +44,7 @@ SBModuleSpec::~SBModuleSpec ()
 bool
 SBModuleSpec::IsValid () const
 {
-    return *m_opaque_ap;
+    return m_opaque_ap->operator bool();
 }
 
 void
@@ -175,7 +175,7 @@ SBModuleSpecList::GetModuleSpecifications (const char *path)
     SBModuleSpecList specs;
     FileSpec file_spec(path, true);
     Host::ResolveExecutableInBundle(file_spec);
-    ObjectFile::GetModuleSpecifications(file_spec, 0, *specs.m_opaque_ap);
+    ObjectFile::GetModuleSpecifications(file_spec, 0, 0, *specs.m_opaque_ap);
     return specs;
 }
 

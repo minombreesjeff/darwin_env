@@ -9,7 +9,7 @@ from lldbtest import *
 
 class ExprCommandWithTimeoutsTestCase(TestBase):
 
-    mydir = os.path.join("expression_command", "timeout")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -26,6 +26,7 @@ class ExprCommandWithTimeoutsTestCase(TestBase):
         self.buildDsym()
         self.call_function()
 
+    @skipIfFreeBSD # llvm.org/pr17233
     @dwarf_test
     def test_with_dwarf(self):
         """Test calling std::String member function."""
@@ -45,7 +46,7 @@ class ExprCommandWithTimeoutsTestCase(TestBase):
         self.runCmd("breakpoint list")
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

@@ -10,7 +10,7 @@ from lldbtest import *
 
 class ReturnValueTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "return-value")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @expectedFailurei386
@@ -95,7 +95,7 @@ class ReturnValueTestCase(TestBase):
         self.assertTrue(inner_sint_bkpt, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        self.process = self.target.LaunchSimple(None, None, os.getcwd())
+        self.process = self.target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(self.process, PROCESS_IS_VALID)
 
@@ -211,8 +211,10 @@ class ReturnValueTestCase(TestBase):
         #self.return_and_test_struct_value ("return_one_int_one_double_packed")
         self.return_and_test_struct_value ("return_one_int_one_long")
 
-        self.return_and_test_struct_value ("return_vector_size_float32")
-        self.return_and_test_struct_value ("return_ext_vector_size_float32")
+        # icc and gcc don't support this extension.
+        if self.getCompiler().endswith('clang'):
+            self.return_and_test_struct_value ("return_vector_size_float32")
+            self.return_and_test_struct_value ("return_ext_vector_size_float32")
 
         
 if __name__ == '__main__':

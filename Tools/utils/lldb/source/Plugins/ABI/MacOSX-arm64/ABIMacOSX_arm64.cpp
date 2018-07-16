@@ -11,6 +11,7 @@
 
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/Error.h"
+#include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegisterValue.h"
@@ -228,60 +229,48 @@ ABIMacOSX_arm64::CreateInstance (const ArchSpec &arch)
 }
 
 bool
-ABIMacOSX_arm64::PrepareTrivialCall (Thread &thread, 
-                                     addr_t sp, 
-                                     addr_t func_addr, 
-                                     addr_t return_addr, 
-                                     addr_t *arg1_ptr,
-                                     addr_t *arg2_ptr,
-                                     addr_t *arg3_ptr,
-                                     addr_t *arg4_ptr,
-                                     addr_t *arg5_ptr,
-                                     addr_t *arg6_ptr) const
+ABIMacOSX_arm64::PrepareTrivialCall (Thread &thread,
+                                     lldb::addr_t sp,
+                                     lldb::addr_t func_addr,
+                                     lldb::addr_t return_addr,
+                                     llvm::ArrayRef<lldb::addr_t> args) const
 {
     RegisterContext *reg_ctx = thread.GetRegisterContext().get();
     if (!reg_ctx)
         return false;    
     
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    
+    if (log)
+    {
+        StreamString s;
+        s.Printf("ABISysV_x86_64::PrepareTrivialCall (tid = 0x%" PRIx64 ", sp = 0x%" PRIx64 ", func_addr = 0x%" PRIx64 ", return_addr = 0x%" PRIx64,
+                 thread.GetID(),
+                 (uint64_t)sp,
+                 (uint64_t)func_addr,
+                 (uint64_t)return_addr);
+        
+        for (int i = 0; i < args.size(); ++i)
+            s.Printf (", arg%d = 0x%" PRIx64, i + 1, args[i]);
+        s.PutCString (")");
+        log->PutCString(s.GetString().c_str());
+    }
+
     const uint32_t pc_reg_num = reg_ctx->ConvertRegisterKindToRegisterNumber (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC);
     const uint32_t sp_reg_num = reg_ctx->ConvertRegisterKindToRegisterNumber (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP);
     const uint32_t ra_reg_num = reg_ctx->ConvertRegisterKindToRegisterNumber (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_RA);
     
     // x0 - x7 contain first 8 simple args
-    if (arg1_ptr)
+    if (args.size() > 8) // TODO handle more than 6 arguments
+        return false;
+    
+    for (int i = 0; i < args.size(); ++i)
     {
-        if (!reg_ctx->WriteRegisterFromUnsigned (reg_ctx->GetRegisterInfoByName("x0"), *arg1_ptr))
+        const RegisterInfo *reg_info = reg_ctx->GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG1 + i);
+        if (log)
+            log->Printf("About to write arg%d (0x%" PRIx64 ") into %s", i + 1, args[i], reg_info->name);
+        if (!reg_ctx->WriteRegisterFromUnsigned(reg_info, args[i]))
             return false;
-
-        if (arg2_ptr)
-        {
-            if (!reg_ctx->WriteRegisterFromUnsigned (reg_ctx->GetRegisterInfoByName("x1"), *arg2_ptr))
-                return false;
-
-            if (arg3_ptr)
-            {
-                if (!reg_ctx->WriteRegisterFromUnsigned (reg_ctx->GetRegisterInfoByName("x2"), *arg3_ptr))
-                    return false;
-
-                if (arg4_ptr)
-                {
-                    if (!reg_ctx->WriteRegisterFromUnsigned (reg_ctx->GetRegisterInfoByName("x3"), *arg4_ptr))
-                        return false;
-
-                    if (arg5_ptr)
-                    {
-                        if (!reg_ctx->WriteRegisterFromUnsigned (reg_ctx->GetRegisterInfoByName("x4"), *arg5_ptr))
-                            return false;
-
-                        if (arg6_ptr)
-                        {
-                            if (!reg_ctx->WriteRegisterFromUnsigned (reg_ctx->GetRegisterInfoByName("x5"), *arg6_ptr))
-                                return false;
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // Set "lr" to the return address
@@ -305,12 +294,7 @@ ABIMacOSX_arm64::GetArgumentValues (Thread &thread, ValueList &values) const
 {
     uint32_t num_values = values.GetSize();
     
-    
     ExecutionContext exe_ctx (thread.shared_from_this());
-    // For now, assume that the types in the AST values come from the Target's
-    // scratch AST.
-    
-    clang::ASTContext *ast = exe_ctx.GetTargetRef().GetScratchClangASTContext()->getASTContext();
     
     // Extract the register context so we can read arguments from registers
     
@@ -330,18 +314,18 @@ ABIMacOSX_arm64::GetArgumentValues (Thread &thread, ValueList &values) const
         if (!value)
             return false;
         
-        void *value_type = value->GetClangType();
+        ClangASTType value_type = value->GetClangType();
         if (value_type)
         {
             bool is_signed = false;
             size_t bit_width = 0;
-            if (ClangASTContext::IsIntegerType (value_type, is_signed))
+            if (value_type.IsIntegerType (is_signed))
             {
-                bit_width = ClangASTType::GetClangTypeBitWidth(ast, value_type);
+                bit_width = value_type.GetBitSize();
             }
-            else if (ClangASTContext::IsPointerOrReferenceType (value_type))
+            else if (value_type.IsPointerOrReferenceType ())
             {
-                bit_width = ClangASTType::GetClangTypeBitWidth(ast, value_type);
+                bit_width = value_type.GetBitSize();
             }
             else
             {
@@ -432,19 +416,13 @@ ABIMacOSX_arm64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueO
         return error;
     }
     
-    clang_type_t return_value_type = new_value_sp->GetClangType();
+    ClangASTType return_value_type = new_value_sp->GetClangType();
     if (!return_value_type)
     {
         error.SetErrorString ("Null clang type for return value.");
         return error;
     }
-    
-    clang::ASTContext *ast = new_value_sp->GetClangAST();
-    if (!ast)
-    {
-        error.SetErrorString ("Null clang AST for return value.");
-        return error;
-    }
+
     Thread *thread = frame_sp->GetThread().get();
     
     RegisterContext *reg_ctx = thread->GetRegisterContext().get();
@@ -454,12 +432,12 @@ ABIMacOSX_arm64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueO
         DataExtractor data;
         const size_t byte_size = new_value_sp->GetData(data);
 
-        const uint32_t type_flags = ClangASTContext::GetTypeInfo (return_value_type, ast, NULL);
-        if (type_flags & ClangASTContext::eTypeIsScalar ||
-            type_flags & ClangASTContext::eTypeIsPointer)
+        const uint32_t type_flags = return_value_type.GetTypeInfo (NULL);
+        if (type_flags & ClangASTType::eTypeIsScalar ||
+            type_flags & ClangASTType::eTypeIsPointer)
         {
-            if (type_flags & ClangASTContext::eTypeIsInteger ||
-                type_flags & ClangASTContext::eTypeIsPointer )
+            if (type_flags & ClangASTType::eTypeIsInteger ||
+                type_flags & ClangASTType::eTypeIsPointer )
             {
                 // Extract the register context so we can read arguments from registers
                 lldb::offset_t offset = 0;
@@ -492,9 +470,9 @@ ABIMacOSX_arm64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueO
                     error.SetErrorString("We don't support returning longer than 128 bit integer values at present.");
                 }
             }
-            else if (type_flags & ClangASTContext::eTypeIsFloat)
+            else if (type_flags & ClangASTType::eTypeIsFloat)
             {
-                if (type_flags & ClangASTContext::eTypeIsComplex)
+                if (type_flags & ClangASTType::eTypeIsComplex)
                 {
                     // Don't handle complex yet.
                     error.SetErrorString ("returning complex float values are not supported");
@@ -534,7 +512,7 @@ ABIMacOSX_arm64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueO
                 }
             }
         }
-        else if (type_flags & ClangASTContext::eTypeIsVector)
+        else if (type_flags & ClangASTType::eTypeIsVector)
         {
             if (byte_size > 0)
             {
@@ -718,14 +696,13 @@ ABIMacOSX_arm64::RegisterIsVolatile (const RegisterInfo *reg_info)
 static bool
 LoadValueFromConsecutiveGPRRegisters (ExecutionContext &exe_ctx,
                                       RegisterContext *reg_ctx,
-                                      clang::ASTContext *ast,
-                                      clang_type_t value_type,
+                                      const ClangASTType &value_type,
                                       bool is_return_value, // false => parameter, true => return value
                                       uint32_t &NGRN,       // NGRN (see ABI documentation)
                                       uint32_t &NSRN,       // NSRN (see ABI documentation)
                                       DataExtractor &data)
 {
-    const size_t byte_size = ClangASTType::GetClangTypeByteSize(ast, value_type);
+    const size_t byte_size = value_type.GetByteSize();
     
     if (byte_size == 0)
         return false;
@@ -734,17 +711,17 @@ LoadValueFromConsecutiveGPRRegisters (ExecutionContext &exe_ctx,
     const ByteOrder byte_order = exe_ctx.GetProcessRef().GetByteOrder();
     Error error;
 
-    clang_type_t base_type = NULL;
-    const uint32_t homogeneous_count = ClangASTContext::IsHomogeneousAggregate (ast, value_type, &base_type);
+    ClangASTType base_type;
+    const uint32_t homogeneous_count = value_type.IsHomogeneousAggregate (&base_type);
     if (homogeneous_count > 0 && homogeneous_count <= 8)
     {
         printf ("ClangASTContext::IsHomogeneousAggregate() => %u\n", homogeneous_count);
         // Make sure we have enough registers
         if (NSRN < 8 && (8-NSRN) >= homogeneous_count)
         {
-            if (base_type == NULL)
+            if (!base_type)
                 return false;
-            const size_t base_byte_size = ClangASTType::GetClangTypeByteSize(ast, base_type);
+            const size_t base_byte_size = base_type.GetByteSize();
             printf ("ClangASTContext::IsHomogeneousAggregate() => base_byte_size = %zu\n", base_byte_size);
             uint32_t data_offset = 0;
 
@@ -871,7 +848,7 @@ LoadValueFromConsecutiveGPRRegisters (ExecutionContext &exe_ctx,
 }
 
 ValueObjectSP
-ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type) const
+ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &return_clang_type) const
 {
     ValueObjectSP return_valobj_sp;
     Value value;
@@ -880,31 +857,24 @@ ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_typ
     if (exe_ctx.GetTargetPtr() == NULL || exe_ctx.GetProcessPtr() == NULL)
         return return_valobj_sp;
 
-    clang_type_t return_value_type = ast_type.GetOpaqueQualType();
-    if (!return_value_type)
-        return return_valobj_sp;
-    
-    clang::ASTContext *ast = ast_type.GetASTContext();
-    if (!ast)
-        return return_valobj_sp;
-    
-    value.SetContext (Value::eContextTypeClangType, return_value_type);
+    //value.SetContext (Value::eContextTypeClangType, return_clang_type);
+    value.SetClangType(return_clang_type);
     
     RegisterContext *reg_ctx = thread.GetRegisterContext().get();
     if (!reg_ctx)
         return return_valobj_sp;
     
-    const size_t byte_size = ClangASTType::GetClangTypeByteSize(ast, return_value_type);
+    const size_t byte_size = return_clang_type.GetByteSize();
 
-    const uint32_t type_flags = ClangASTContext::GetTypeInfo (return_value_type, ast, NULL);
-    if (type_flags & ClangASTContext::eTypeIsScalar ||
-        type_flags & ClangASTContext::eTypeIsPointer)
+    const uint32_t type_flags = return_clang_type.GetTypeInfo (NULL);
+    if (type_flags & ClangASTType::eTypeIsScalar ||
+        type_flags & ClangASTType::eTypeIsPointer)
     {
         value.SetValueType(Value::eValueTypeScalar);
         
         bool success = false;
-        if (type_flags & ClangASTContext::eTypeIsInteger ||
-            type_flags & ClangASTContext::eTypeIsPointer )
+        if (type_flags & ClangASTType::eTypeIsInteger ||
+            type_flags & ClangASTType::eTypeIsPointer )
         {
             // Extract the register context so we can read arguments from registers
             if (byte_size <= 8)
@@ -913,7 +883,7 @@ ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_typ
                 if (x0_reg_info)
                 {
                     uint64_t raw_value = thread.GetRegisterContext()->ReadRegisterAsUnsigned(x0_reg_info, 0);
-                    const bool is_signed = (type_flags & ClangASTContext::eTypeIsSigned) != 0;
+                    const bool is_signed = (type_flags & ClangASTType::eTypeIsSigned) != 0;
                     switch (byte_size)
                     {
                         default:
@@ -943,8 +913,7 @@ ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_typ
                                                                     exe_ctx.GetProcessRef().GetAddressByteSize());
                                                 
                                                 return_valobj_sp = ValueObjectConstResult::Create (&thread,
-                                                                                                   ast,
-                                                                                                   return_value_type,
+                                                                                                   return_clang_type,
                                                                                                    ConstString(""),
                                                                                                    data);
                                                 return return_valobj_sp;
@@ -989,9 +958,9 @@ ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_typ
                 }
             }
         }
-        else if (type_flags & ClangASTContext::eTypeIsFloat)
+        else if (type_flags & ClangASTType::eTypeIsFloat)
         {
-            if (type_flags & ClangASTContext::eTypeIsComplex)
+            if (type_flags & ClangASTType::eTypeIsComplex)
             {
                 // Don't handle complex yet.
             }
@@ -1030,12 +999,11 @@ ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_typ
         
         if (success)
             return_valobj_sp = ValueObjectConstResult::Create (thread.GetStackFrameAtIndex(0).get(),
-                                                               ast_type.GetASTContext(),
                                                                value,
                                                                ConstString(""));
         
     }
-    else if (type_flags & ClangASTContext::eTypeIsVector)
+    else if (type_flags & ClangASTType::eTypeIsVector)
     {
         if (byte_size > 0)
         {
@@ -1062,8 +1030,7 @@ ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_typ
                                                 byte_order,
                                                 exe_ctx.GetProcessRef().GetAddressByteSize());
                             return_valobj_sp = ValueObjectConstResult::Create (&thread,
-                                                                               ast,
-                                                                               return_value_type,
+                                                                               return_clang_type,
                                                                                ConstString(""),
                                                                                data);
                         }
@@ -1072,19 +1039,18 @@ ABIMacOSX_arm64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_typ
             }
         }
     }
-    else if (type_flags & ClangASTContext::eTypeIsStructUnion ||
-             type_flags & ClangASTContext::eTypeIsClass)
+    else if (type_flags & ClangASTType::eTypeIsStructUnion ||
+             type_flags & ClangASTType::eTypeIsClass)
     {
         DataExtractor data;
         
         uint32_t NGRN = 0;  // Search ABI docs for NGRN
         uint32_t NSRN = 0;  // Search ABI docs for NSRN
         const bool is_return_value = true;
-        if (LoadValueFromConsecutiveGPRRegisters (exe_ctx, reg_ctx, ast, return_value_type, is_return_value, NGRN, NSRN, data))
+        if (LoadValueFromConsecutiveGPRRegisters (exe_ctx, reg_ctx, return_clang_type, is_return_value, NGRN, NSRN, data))
         {
             return_valobj_sp = ValueObjectConstResult::Create (&thread,
-                                                               ast,
-                                                               return_value_type,
+                                                               return_clang_type,
                                                                ConstString(""),
                                                                data);            
         }

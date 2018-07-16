@@ -411,6 +411,31 @@ public:
     GetCStr (lldb::offset_t *offset_ptr) const;
 
     //------------------------------------------------------------------
+    /// Extract a C string from \a *offset_ptr with field size \a len.
+    ///
+    /// Returns a pointer to a C String from the data at the offset
+    /// pointed to by \a offset_ptr, with a field length of \a len.
+    /// A NULL terminated C string will be extracted and the \a offset_ptr
+    /// will be updated with the offset of the byte that follows the fixed
+    /// length field.
+    ///
+    /// @param[in,out] offset_ptr
+    ///     A pointer to an offset within the data that will be advanced
+    ///     by the appropriate number of bytes if the value is extracted
+    ///     correctly. If the offset is out of bounds or there are not
+    ///     enough bytes to extract this value, the offset will be left
+    ///     unmodified.
+    ///
+    /// @return
+    ///     A pointer to the C string value in the data. If the offset
+    ///     pointed to by \a offset_ptr is out of bounds, or if the
+    ///     offset plus the length of the field is out of bounds, or if
+    ///     the field does not contain a NULL terminator byte, NULL will
+    ///     be returned.
+    const char *
+    GetCStr (lldb::offset_t *offset_ptr, lldb::offset_t len) const;
+
+    //------------------------------------------------------------------
     /// Extract \a length bytes from \a *offset_ptr.
     ///
     /// Returns a pointer to a bytes in this object's data at the offset
@@ -442,6 +467,27 @@ public:
         return ptr;
     }
     
+    //------------------------------------------------------------------
+    /// Copy \a length bytes from \a *offset, without swapping bytes.
+    ///
+    /// @param[in] offset
+    ///     The offset into this data from which to start copying
+    ///
+    /// @param[in] length
+    ///     The length of the data to copy from this object
+    ///
+    /// @param[out] dst
+    ///     The buffer to place the output data.
+    ///
+    /// @return
+    ///     Returns the number of bytes that were copied, or zero if 
+    ///     anything goes wrong.
+    //------------------------------------------------------------------
+    lldb::offset_t
+    CopyData (lldb::offset_t offset,
+              lldb::offset_t length,
+              void *dst) const;
+
     //------------------------------------------------------------------
     /// Copy \a dst_len bytes from \a *offset_ptr and ensure the copied
     /// data is treated as a value that can be swapped to match the

@@ -200,7 +200,7 @@ ProcessPOSIX::GetFilePath(
 
 Error
 ProcessPOSIX::DoLaunch (Module *module,
-                       const ProcessLaunchInfo &launch_info)
+                        ProcessLaunchInfo &launch_info)
 {
     Error error;
     assert(m_monitor == NULL);
@@ -269,6 +269,9 @@ ProcessPOSIX::DoResume()
     SetPrivateState(eStateRunning);
 
     bool did_resume = false;
+
+    Mutex::Locker lock(m_thread_list.GetMutex());
+
     uint32_t thread_count = m_thread_list.GetSize(false);
     for (uint32_t i = 0; i < thread_count; ++i)
     {
@@ -286,12 +289,11 @@ ProcessPOSIX::GetImageInfoAddress()
 {
     Target *target = &GetTarget();
     ObjectFile *obj_file = target->GetExecutableModule()->GetObjectFile();
-    Address addr = obj_file->GetImageInfoAddress();
+    Address addr = obj_file->GetImageInfoAddress(target);
 
-    if (addr.IsValid()) 
+    if (addr.IsValid())
         return addr.GetLoadAddress(target);
-    else
-        return LLDB_INVALID_ADDRESS;
+    return LLDB_INVALID_ADDRESS;
 }
 
 Error
@@ -312,32 +314,6 @@ ProcessPOSIX::DoHalt(bool &caused_stop)
     {
         caused_stop = true;
     }
-    return error;
-}
-
-Error
-ProcessPOSIX::DoDetach(bool keep_stopped)
-{
-    Error error;
-    if (keep_stopped)
-    {
-        // FIXME: If you want to implement keep_stopped,
-        // this would be the place to do it.
-        error.SetErrorString("Detaching with keep_stopped true is not currently supported on this platform.");
-        return error;
-    }
-
-    uint32_t thread_count = m_thread_list.GetSize(false);
-    for (uint32_t i = 0; i < thread_count; ++i)
-    {
-        POSIXThread *thread = static_cast<POSIXThread*>(
-            m_thread_list.GetThreadAtIndex(i, false).get());
-        error = m_monitor->Detach(thread->GetID());
-    }
-
-    if (error.Success())
-        SetPrivateState(eStateDetached);
-
     return error;
 }
 
@@ -376,9 +352,36 @@ ProcessPOSIX::DoDestroy()
 }
 
 void
+ProcessPOSIX::DoDidExec()
+{
+    Target *target = &GetTarget();
+    if (target)
+    {
+        PlatformSP platform_sp (target->GetPlatform());
+        assert (platform_sp.get());
+        if (platform_sp)
+        {
+            ProcessInstanceInfo process_info;
+            platform_sp->GetProcessInfo(GetID(), process_info);
+            ModuleSP exe_module_sp;
+            FileSpecList executable_search_paths (Target::GetDefaultExecutableSearchPaths());
+            Error error = platform_sp->ResolveExecutable(process_info.GetExecutableFile(),
+                                                   target->GetArchitecture(),
+                                                   exe_module_sp,
+                                                   executable_search_paths.GetSize() ? &executable_search_paths : NULL);
+            if (!error.Success())
+                return;
+            target->SetExecutableModule(exe_module_sp, true);
+        }
+    }
+}
+
+void
 ProcessPOSIX::SendMessage(const ProcessMessage &message)
 {
     Mutex::Locker lock(m_message_mutex);
+
+    Mutex::Locker thread_lock(m_thread_list.GetMutex());
 
     POSIXThread *thread = static_cast<POSIXThread*>(
         m_thread_list.FindThreadByID(message.GetTID(), false).get());
@@ -386,6 +389,10 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
     switch (message.GetKind())
     {
     case ProcessMessage::eInvalidMessage:
+        return;
+
+    case ProcessMessage::eAttachMessage:
+        SetPrivateState(eStateStopped);
         return;
 
     case ProcessMessage::eLimboMessage:
@@ -425,12 +432,6 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
             SetPrivateState(eStateStopped);
         break;
 
-        assert(thread);
-        thread->SetState(eStateStopped);
-        StopAllThreads(message.GetTID());
-        SetPrivateState(eStateStopped);
-        break;
-
     case ProcessMessage::eSignalMessage:
     case ProcessMessage::eSignalDeliveredMessage:
         if (message.GetSignal() == SIGSTOP &&
@@ -441,14 +442,37 @@ ProcessPOSIX::SendMessage(const ProcessMessage &message)
     case ProcessMessage::eBreakpointMessage:
     case ProcessMessage::eTraceMessage:
     case ProcessMessage::eWatchpointMessage:
-    case ProcessMessage::eNewThreadMessage:
     case ProcessMessage::eCrashMessage:
         assert(thread);
         thread->SetState(eStateStopped);
         StopAllThreads(message.GetTID());
         SetPrivateState(eStateStopped);
         break;
+
+    case ProcessMessage::eNewThreadMessage:
+    {
+        lldb::tid_t  new_tid = message.GetChildTID();
+        if (WaitingForInitialStop(new_tid))
+        {
+            m_monitor->WaitForInitialTIDStop(new_tid);
+        }
+        assert(thread);
+        thread->SetState(eStateStopped);
+        StopAllThreads(message.GetTID());
+        SetPrivateState(eStateStopped);
+        break;
     }
+
+    case ProcessMessage::eExecMessage:
+    {
+        assert(thread);
+        thread->SetState(eStateStopped);
+        StopAllThreads(message.GetTID());
+        SetPrivateState(eStateStopped);
+        break;
+    }
+    }
+
 
     m_message_queue.push(message);
 }
@@ -472,6 +496,18 @@ ProcessPOSIX::AddThreadForInitialStopIfNeeded(lldb::tid_t stop_tid)
     return added_to_set;
 }
 
+bool
+ProcessPOSIX::WaitingForInitialStop(lldb::tid_t stop_tid)
+{
+    return (m_seen_initial_stop.find(stop_tid) == m_seen_initial_stop.end());
+}
+
+POSIXThread *
+ProcessPOSIX::CreateNewPOSIXThread(lldb_private::Process &process, lldb::tid_t tid)
+{
+    return new POSIXThread(process, tid);
+}
+
 void
 ProcessPOSIX::RefreshStateAfterStop()
 {
@@ -492,8 +528,6 @@ ProcessPOSIX::RefreshStateAfterStop()
         lldb::tid_t tid = message.GetTID();
         if (log)
             log->Printf ("ProcessPOSIX::%s(), message_queue size = %d, pid = %" PRIi64, __FUNCTION__, (int)m_message_queue.size(), tid);
-        POSIXThread *thread = static_cast<POSIXThread*>(
-            GetThreadList().FindThreadByID(tid, false).get());
 
         if (message.GetKind() == ProcessMessage::eNewThreadMessage)
         {
@@ -501,16 +535,17 @@ ProcessPOSIX::RefreshStateAfterStop()
                 log->Printf ("ProcessPOSIX::%s() adding thread, tid = %" PRIi64, __FUNCTION__, message.GetChildTID());
             lldb::tid_t child_tid = message.GetChildTID();
             ThreadSP thread_sp;
-            thread_sp.reset(new POSIXThread(*this, child_tid));
+            thread_sp.reset(CreateNewPOSIXThread(*this, child_tid));
 
-            POSIXThread *thread = static_cast<POSIXThread*>(thread_sp.get());
-            thread->SetName(Host::GetThreadName(GetID(), child_tid).c_str());
+            Mutex::Locker lock(m_thread_list.GetMutex());
 
             m_thread_list.AddThread(thread_sp);
         }
 
         m_thread_list.RefreshStateAfterStop();
 
+        POSIXThread *thread = static_cast<POSIXThread*>(
+            GetThreadList().FindThreadByID(tid, false).get());
         if (thread)
             thread->Notify(message);
 
@@ -519,6 +554,9 @@ ProcessPOSIX::RefreshStateAfterStop()
             // FIXME: We should tell the user about this, but the limbo message is probably better for that.
             if (log)
                 log->Printf ("ProcessPOSIX::%s() removing thread, tid = %" PRIi64, __FUNCTION__, tid);
+
+            Mutex::Locker lock(m_thread_list.GetMutex());
+
             ThreadSP thread_sp = m_thread_list.RemoveThreadByID(tid, false);
             thread_sp.reset();
             m_seen_initial_stop.erase(tid);
@@ -669,6 +707,7 @@ ProcessPOSIX::EnableWatchpoint(Watchpoint *wp, bool notify)
 
         // Try to find a vacant watchpoint slot in the inferiors' main thread
         uint32_t wp_hw_index = LLDB_INVALID_INDEX32;
+        Mutex::Locker lock(m_thread_list.GetMutex());
         POSIXThread *thread = static_cast<POSIXThread*>(
                                m_thread_list.GetThreadAtIndex(0, false).get());
 
@@ -738,6 +777,7 @@ ProcessPOSIX::DisableWatchpoint(Watchpoint *wp, bool notify)
         if (wp->IsHardware())
         {
             bool wp_disabled = true;
+            Mutex::Locker lock(m_thread_list.GetMutex());
             uint32_t thread_count = m_thread_list.GetSize(false);
             for (uint32_t i = 0; i < thread_count; ++i)
             {
@@ -767,6 +807,7 @@ Error
 ProcessPOSIX::GetWatchpointSupportInfo(uint32_t &num)
 {
     Error error;
+    Mutex::Locker lock(m_thread_list.GetMutex());
     POSIXThread *thread = static_cast<POSIXThread*>(
                           m_thread_list.GetThreadAtIndex(0, false).get());
     if (thread)
@@ -789,6 +830,7 @@ ProcessPOSIX::GetWatchpointSupportInfo(uint32_t &num, bool &after)
 uint32_t
 ProcessPOSIX::UpdateThreadListIfNeeded()
 {
+    Mutex::Locker lock(m_thread_list.GetMutex());
     // Do not allow recursive updates.
     return m_thread_list.GetSize(false);
 }
@@ -800,19 +842,21 @@ ProcessPOSIX::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
         log->Printf ("ProcessPOSIX::%s() (pid = %" PRIi64 ")", __FUNCTION__, GetID());
 
+    bool has_updated = false;
     // Update the process thread list with this new thread.
     // FIXME: We should be using tid, not pid.
     assert(m_monitor);
     ThreadSP thread_sp (old_thread_list.FindThreadByID (GetID(), false));
     if (!thread_sp) {
-        thread_sp.reset(new POSIXThread(*this, GetID()));
+        thread_sp.reset(CreateNewPOSIXThread(*this, GetID()));
+        has_updated = true;
     }
 
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
         log->Printf ("ProcessPOSIX::%s() updated pid = %" PRIi64, __FUNCTION__, GetID());
     new_thread_list.AddThread(thread_sp);
 
-    return new_thread_list.GetSize(false) > 0;
+    return has_updated; // the list has been updated
 }
 
 ByteOrder
@@ -881,6 +925,7 @@ bool
 ProcessPOSIX::IsAThreadRunning()
 {
     bool is_running = false;
+    Mutex::Locker lock(m_thread_list.GetMutex());
     uint32_t thread_count = m_thread_list.GetSize(false);
     for (uint32_t i = 0; i < thread_count; ++i)
     {

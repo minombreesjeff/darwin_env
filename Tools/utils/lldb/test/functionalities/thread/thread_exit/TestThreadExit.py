@@ -10,7 +10,7 @@ import lldbutil
 
 class ThreadExitTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "thread", "thread_exit")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @expectedFailureDarwin("llvm.org/pr15824") # thread states not properly maintained
@@ -21,6 +21,7 @@ class ThreadExitTestCase(TestBase):
         self.thread_exit_test()
 
     @expectedFailureDarwin("llvm.org/pr15824") # thread states not properly maintained
+    @expectedFailureFreeBSD("llvm.org/pr18190") # thread states not properly maintained
     @dwarf_test
     def test_with_dwarf(self):
         """Test thread exit handling."""
@@ -80,7 +81,7 @@ class ThreadExitTestCase(TestBase):
         self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT + " 2",
             substrs = ['stopped',
                        'thread #1',
-                       '* thread #2',
+                       'thread #2',
                        'stop reason = breakpoint 2',
                        'thread #3'])
 
@@ -95,7 +96,7 @@ class ThreadExitTestCase(TestBase):
         # The stop reason of the thread should be breakpoint 3.
         self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT + " 3",
             substrs = ['stopped',
-                       '* thread #1',
+                       'thread #1',
                        'stop reason = breakpoint 3',
                        'thread #3',
                        ])
@@ -111,7 +112,7 @@ class ThreadExitTestCase(TestBase):
         # The stop reason of the thread should be breakpoint 4.
         self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT + " 4",
             substrs = ['stopped',
-                       '* thread #1',
+                       'thread #1',
                        'stop reason = breakpoint 4'])
 
         # Update the number of threads

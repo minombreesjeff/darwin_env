@@ -86,7 +86,7 @@ public:
 
     virtual lldb_private::Error
     DoLaunch (lldb_private::Module *exe_module, 
-              const lldb_private::ProcessLaunchInfo &launch_info);
+              lldb_private::ProcessLaunchInfo &launch_info);
 
     virtual void
     DidLaunch ();
@@ -111,7 +111,6 @@ public:
     
     virtual lldb_private::Error
     DoAttachToProcessWithName (const char *process_name,
-                               bool wait_for_launch,
                                const lldb_private::ProcessAttachInfo &attach_info);
 
     virtual void
@@ -226,6 +225,11 @@ public:
     virtual lldb_private::Error
     SendEventData(const char *data);
 
+    //----------------------------------------------------------------------
+    // Override SetExitStatus so we can disconnect from the remote GDB server
+    //----------------------------------------------------------------------
+    virtual bool
+    SetExitStatus (int exit_status, const char *cstr);
 
 protected:
     friend class ThreadGDBRemote;
@@ -281,10 +285,7 @@ protected:
                       lldb_private::ThreadList &new_thread_list);
 
     lldb_private::Error
-    StartDebugserverProcess (const char *debugserver_url);
-    
-    lldb_private::Error
-    StartDebugserverProcess (const char *debugserver_url, const lldb_private::ProcessInfo &process_info);
+    LaunchAndConnectToDebugserver (const lldb_private::ProcessInfo &process_info);
 
     void
     KillDebugserverProcess ();
@@ -294,6 +295,12 @@ protected:
 
     void
     SetLastStopPacket (const StringExtractorGDBRemote &response);
+
+    bool
+    ParsePythonTargetDefinition(const lldb_private::FileSpec &target_definition_fspec);
+    
+    bool
+    ParseRegisters(lldb_private::ScriptInterpreterObject *registers_array);
 
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
@@ -330,13 +337,13 @@ protected:
     tid_sig_collection m_continue_C_tids; // 'C' for continue with signal
     tid_collection m_continue_s_tids;                  // 's' for step
     tid_sig_collection m_continue_S_tids; // 'S' for step with signal
-    lldb::addr_t m_dispatch_queue_offsets_addr;
     size_t m_max_memory_size;       // The maximum number of bytes to read/write when reading and writing memory
     MMapMap m_addr_to_mmap_size;
     lldb::BreakpointSP m_thread_create_bp_sp;
     bool m_waiting_for_attach;
     bool m_destroy_tried_resuming;
     lldb::CommandObjectSP m_command_sp;
+    int64_t m_breakpoint_pc_offset;
     
     bool
     StartAsyncThread ();
@@ -344,7 +351,7 @@ protected:
     void
     StopAsyncThread ();
 
-    static void *
+    static lldb::thread_result_t
     AsyncThread (void *arg);
 
     static bool

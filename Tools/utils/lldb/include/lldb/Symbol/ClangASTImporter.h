@@ -14,7 +14,6 @@
 #include <set>
 
 #include "lldb/lldb-types.h"
-
 #include "clang/AST/ASTImporter.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/FileSystemOptions.h"
@@ -278,6 +277,8 @@ private:
         void ImportDefinitionTo (clang::Decl *to, clang::Decl *from);
         
         clang::Decl *Imported (clang::Decl *from, clang::Decl *to);
+        
+        clang::Decl *GetOriginalDecl (clang::Decl *To);
         
         std::set<clang::NamedDecl *>   *m_decls_to_deport;
         std::set<clang::NamedDecl *>   *m_decls_already_deported;

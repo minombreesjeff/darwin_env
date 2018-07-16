@@ -303,85 +303,42 @@ ABISysV_x86_64::PrepareTrivialCall (Thread &thread,
                                     addr_t sp, 
                                     addr_t func_addr, 
                                     addr_t return_addr, 
-                                    addr_t *arg1_ptr,
-                                    addr_t *arg2_ptr,
-                                    addr_t *arg3_ptr,
-                                    addr_t *arg4_ptr,
-                                    addr_t *arg5_ptr,
-                                    addr_t *arg6_ptr) const
+                                    llvm::ArrayRef<addr_t> args) const
 {
     Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     if (log)
-        log->Printf("ABISysV_x86_64::PrepareTrivialCall\n(\n  thread = %p\n  sp = 0x%" PRIx64 "\n  func_addr = 0x%" PRIx64 "\n  return_addr = 0x%" PRIx64 "\n  arg1_ptr = %p (0x%" PRIx64 ")\n  arg2_ptr = %p (0x%" PRIx64 ")\n  arg3_ptr = %p (0x%" PRIx64 ")\n)",
-                    (void*)&thread,
+    {
+        StreamString s;
+        s.Printf("ABISysV_x86_64::PrepareTrivialCall (tid = 0x%" PRIx64 ", sp = 0x%" PRIx64 ", func_addr = 0x%" PRIx64 ", return_addr = 0x%" PRIx64,
+                    thread.GetID(),
                     (uint64_t)sp,
                     (uint64_t)func_addr,
-                    (uint64_t)return_addr,
-                    arg1_ptr, arg1_ptr ? (uint64_t)*arg1_ptr : (uint64_t) 0,
-                    arg2_ptr, arg2_ptr ? (uint64_t)*arg2_ptr : (uint64_t) 0,
-                    arg3_ptr, arg3_ptr ? (uint64_t)*arg3_ptr : (uint64_t) 0);
+                    (uint64_t)return_addr);
+
+        for (int i = 0; i < args.size(); ++i)
+            s.Printf (", arg%d = 0x%" PRIx64, i + 1, args[i]);
+        s.PutCString (")");
+        log->PutCString(s.GetString().c_str());
+    }
     
     RegisterContext *reg_ctx = thread.GetRegisterContext().get();
     if (!reg_ctx)
         return false;
     
     const RegisterInfo *reg_info = NULL;
-    if (arg1_ptr)
+    
+    if (args.size() > 6) // TODO handle more than 6 arguments
+        return false;
+    
+    for (int i = 0; i < args.size(); ++i)
     {
-        reg_info = reg_ctx->GetRegisterInfoByName("rdi", 0);
+        reg_info = reg_ctx->GetRegisterInfo(eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG1 + i);
         if (log)
-            log->Printf("About to write arg1 (0x%" PRIx64 ") into %s", (uint64_t)*arg1_ptr, reg_info->name);
-
-        if (!reg_ctx->WriteRegisterFromUnsigned (reg_info, *arg1_ptr))
+            log->Printf("About to write arg%d (0x%" PRIx64 ") into %s", i + 1, args[i], reg_info->name);
+        if (!reg_ctx->WriteRegisterFromUnsigned(reg_info, args[i]))
             return false;
-
-        if (arg2_ptr)
-        {
-            reg_info = reg_ctx->GetRegisterInfoByName("rsi", 0);
-            if (log)
-                log->Printf("About to write arg2 (0x%" PRIx64 ") into %s", (uint64_t)*arg2_ptr, reg_info->name);
-            if (!reg_ctx->WriteRegisterFromUnsigned (reg_info, *arg2_ptr))
-                return false;
-
-            if (arg3_ptr)
-            {
-                reg_info = reg_ctx->GetRegisterInfoByName("rdx", 0);
-                if (log)
-                    log->Printf("About to write arg3 (0x%" PRIx64 ") into %s", (uint64_t)*arg3_ptr, reg_info->name);
-                if (!reg_ctx->WriteRegisterFromUnsigned (reg_info, *arg3_ptr))
-                    return false;
-
-                if (arg4_ptr)
-                {
-                    reg_info = reg_ctx->GetRegisterInfoByName("rcx", 0);
-                    if (log)
-                        log->Printf("About to write arg4 (0x%" PRIx64 ") into %s", (uint64_t)*arg4_ptr, reg_info->name);
-                    if (!reg_ctx->WriteRegisterFromUnsigned (reg_info, *arg4_ptr))
-                        return false;
-
-                    if (arg5_ptr)
-                    {
-                        reg_info = reg_ctx->GetRegisterInfoByName("r8", 0);
-                        if (log)
-                            log->Printf("About to write arg5 (0x%" PRIx64 ") into %s", (uint64_t)*arg5_ptr, reg_info->name);
-                        if (!reg_ctx->WriteRegisterFromUnsigned (reg_info, *arg5_ptr))
-                            return false;
-
-                        if (arg6_ptr)
-                        {
-                            reg_info = reg_ctx->GetRegisterInfoByName("r9", 0);
-                            if (log)
-                                log->Printf("About to write arg6 (0x%" PRIx64 ") into %s", (uint64_t)*arg6_ptr, reg_info->name);
-                            if (!reg_ctx->WriteRegisterFromUnsigned (reg_info, *arg6_ptr))
-                                return false;
-                        }
-                    }
-                }
-            }
-        }
     }
-
 
     // First, align the SP
 
@@ -390,32 +347,75 @@ ABISysV_x86_64::PrepareTrivialCall (Thread &thread,
 
     sp &= ~(0xfull); // 16-byte alignment
 
-    // The return address is pushed onto the stack (yes after the alignment...)
     sp -= 8;
 
+    Error error;
+    const RegisterInfo *pc_reg_info = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC);
+    const RegisterInfo *sp_reg_info = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP);
+    ProcessSP process_sp (thread.GetProcess());
+
     RegisterValue reg_value;
-    reg_value.SetUInt64 (return_addr);
 
+#if 0
+    // This code adds an extra frame so that we don't lose the function that we came from
+    // by pushing the PC and the FP and then writing the current FP to point to the FP value
+    // we just pushed. It is disabled for now until the stack backtracing code can be debugged.
+
+    // Save current PC
+    const RegisterInfo *fp_reg_info = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_FP);
+    if (reg_ctx->ReadRegister(pc_reg_info, reg_value))
+    {
+        if (log)
+            log->Printf("Pushing the current PC onto the stack: 0x%" PRIx64 ": 0x%" PRIx64, (uint64_t)sp, reg_value.GetAsUInt64());
+        
+        if (!process_sp->WritePointerToMemory(sp, reg_value.GetAsUInt64(), error))
+            return false;
+
+        sp -= 8;
+        
+        // Save current FP
+        if (reg_ctx->ReadRegister(fp_reg_info, reg_value))
+        {
+            if (log)
+                log->Printf("Pushing the current FP onto the stack: 0x%" PRIx64 ": 0x%" PRIx64, (uint64_t)sp, reg_value.GetAsUInt64());
+            
+            if (!process_sp->WritePointerToMemory(sp, reg_value.GetAsUInt64(), error))
+                return false;
+        }
+        // Setup FP backchain
+        reg_value.SetUInt64 (sp);
+        
+        if (log)
+            log->Printf("Writing FP:  0x%" PRIx64 " (for FP backchain)", reg_value.GetAsUInt64());
+
+        if (!reg_ctx->WriteRegister(fp_reg_info, reg_value))
+        {
+            return false;
+        }
+        
+        sp -= 8;
+    }
+#endif 
+    
     if (log)
-        log->Printf("Pushing the return address onto the stack: new SP 0x%" PRIx64 ", return address 0x%" PRIx64, (uint64_t)sp, (uint64_t)return_addr);
+        log->Printf("Pushing the return address onto the stack: 0x%" PRIx64 ": 0x%" PRIx64, (uint64_t)sp, (uint64_t)return_addr);
 
-    const RegisterInfo *pc_reg_info = reg_ctx->GetRegisterInfoByName("rip");
-    Error error (reg_ctx->WriteRegisterValueToMemory(pc_reg_info, sp, pc_reg_info->byte_size, reg_value));
-    if (error.Fail())
+    // Save return address onto the stack
+    if (!process_sp->WritePointerToMemory(sp, return_addr, error))
         return false;
 
     // %rsp is set to the actual stack value.
 
     if (log)
-        log->Printf("Writing SP (0x%" PRIx64 ") down", (uint64_t)sp);
+        log->Printf("Writing SP: 0x%" PRIx64, (uint64_t)sp);
     
-    if (!reg_ctx->WriteRegisterFromUnsigned (reg_ctx->GetRegisterInfoByName("rsp"), sp))
+    if (!reg_ctx->WriteRegisterFromUnsigned (sp_reg_info, sp))
         return false;
 
     // %rip is set to the address of the called function.
     
     if (log)
-        log->Printf("Writing new IP (0x%" PRIx64 ") down", (uint64_t)func_addr);
+        log->Printf("Writing IP: 0x%" PRIx64, (uint64_t)func_addr);
 
     if (!reg_ctx->WriteRegisterFromUnsigned (pc_reg_info, func_addr))
         return false;
@@ -461,12 +461,7 @@ ABISysV_x86_64::GetArgumentValues (Thread &thread,
 {
     unsigned int num_values = values.GetSize();
     unsigned int value_index;
-    
-    // For now, assume that the types in the AST values come from the Target's 
-    // scratch AST.    
-    
-    clang::ASTContext *ast = thread.CalculateTarget()->GetScratchClangASTContext()->getASTContext();
-    
+        
     // Extract the register context so we can read arguments from registers
     
     RegisterContext *reg_ctx = thread.GetRegisterContext().get();
@@ -486,12 +481,12 @@ ABISysV_x86_64::GetArgumentValues (Thread &thread,
     
     uint32_t argument_register_ids[6];
     
-    argument_register_ids[0] = reg_ctx->GetRegisterInfoByName("rdi", 0)->kinds[eRegisterKindLLDB];
-    argument_register_ids[1] = reg_ctx->GetRegisterInfoByName("rsi", 0)->kinds[eRegisterKindLLDB];
-    argument_register_ids[2] = reg_ctx->GetRegisterInfoByName("rdx", 0)->kinds[eRegisterKindLLDB];
-    argument_register_ids[3] = reg_ctx->GetRegisterInfoByName("rcx", 0)->kinds[eRegisterKindLLDB];
-    argument_register_ids[4] = reg_ctx->GetRegisterInfoByName("r8", 0)->kinds[eRegisterKindLLDB];
-    argument_register_ids[5] = reg_ctx->GetRegisterInfoByName("r9", 0)->kinds[eRegisterKindLLDB];
+    argument_register_ids[0] = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG1)->kinds[eRegisterKindLLDB];
+    argument_register_ids[1] = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG2)->kinds[eRegisterKindLLDB];
+    argument_register_ids[2] = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG3)->kinds[eRegisterKindLLDB];
+    argument_register_ids[3] = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG4)->kinds[eRegisterKindLLDB];
+    argument_register_ids[4] = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG5)->kinds[eRegisterKindLLDB];
+    argument_register_ids[5] = reg_ctx->GetRegisterInfo (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_ARG6)->kinds[eRegisterKindLLDB];
     
     unsigned int current_argument_register = 0;
     
@@ -506,39 +501,30 @@ ABISysV_x86_64::GetArgumentValues (Thread &thread,
         
         // We currently only support extracting values with Clang QualTypes.
         // Do we care about others?
-        switch (value->GetContextType())
-        {
-        default:
+        ClangASTType clang_type = value->GetClangType();
+        if (!clang_type)
             return false;
-        case Value::eContextTypeClangType:
-            {
-                void *value_type = value->GetClangType();
-                bool is_signed;
-                
-                if (ClangASTContext::IsIntegerType (value_type, is_signed))
-                {
-                    size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast, value_type);
-                    
-                    ReadIntegerArgument(value->GetScalar(),
-                                        bit_width, 
-                                        is_signed,
-                                        thread, 
-                                        argument_register_ids, 
-                                        current_argument_register,
-                                        current_stack_argument);
-                }
-                else if (ClangASTContext::IsPointerType (value_type))
-                {
-                    ReadIntegerArgument(value->GetScalar(),
-                                        64,
-                                        false,
-                                        thread,
-                                        argument_register_ids, 
-                                        current_argument_register,
-                                        current_stack_argument);
-                }
-            }
-            break;
+        bool is_signed;
+        
+        if (clang_type.IsIntegerType (is_signed))
+        {
+            ReadIntegerArgument(value->GetScalar(),
+                                clang_type.GetBitSize(),
+                                is_signed,
+                                thread, 
+                                argument_register_ids, 
+                                current_argument_register,
+                                current_stack_argument);
+        }
+        else if (clang_type.IsPointerType ())
+        {
+            ReadIntegerArgument(value->GetScalar(),
+                                clang_type.GetBitSize(),
+                                false,
+                                thread,
+                                argument_register_ids, 
+                                current_argument_register,
+                                current_stack_argument);
         }
     }
     
@@ -555,19 +541,13 @@ ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
         return error;
     }
     
-    clang_type_t value_type = new_value_sp->GetClangType();
-    if (!value_type)
+    ClangASTType clang_type = new_value_sp->GetClangType();
+    if (!clang_type)
     {
         error.SetErrorString ("Null clang type for return value.");
         return error;
     }
     
-    clang::ASTContext *ast = new_value_sp->GetClangAST();
-    if (!ast)
-    {
-        error.SetErrorString ("Null clang AST for return value.");
-        return error;
-    }
     Thread *thread = frame_sp->GetThread().get();
     
     bool is_signed;
@@ -577,7 +557,7 @@ ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
     RegisterContext *reg_ctx = thread->GetRegisterContext().get();
 
     bool set_it_simple = false;
-    if (ClangASTContext::IsIntegerType (value_type, is_signed) || ClangASTContext::IsPointerType(value_type))
+    if (clang_type.IsIntegerType (is_signed) || clang_type.IsPointerType())
     {
         const RegisterInfo *reg_info = reg_ctx->GetRegisterInfoByName("rax", 0);
 
@@ -597,13 +577,13 @@ ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
         }
 
     }
-    else if (ClangASTContext::IsFloatingPointType (value_type, count, is_complex))
+    else if (clang_type.IsFloatingPointType (count, is_complex))
     {
         if (is_complex)
             error.SetErrorString ("We don't support returning complex values at present");
         else
         {
-            size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast, value_type);
+            size_t bit_width = clang_type.GetBitSize();
             if (bit_width <= 64)
             {
                 const RegisterInfo *xmm0_info = reg_ctx->GetRegisterInfoByName("xmm0", 0);
@@ -640,38 +620,34 @@ ABISysV_x86_64::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
 
 ValueObjectSP
 ABISysV_x86_64::GetReturnValueObjectSimple (Thread &thread,
-                                            ClangASTType &ast_type) const
+                                            ClangASTType &return_clang_type) const
 {
     ValueObjectSP return_valobj_sp;
     Value value;
     
-    clang_type_t return_value_type = ast_type.GetOpaqueQualType();
-    if (!return_value_type)
-        return return_valobj_sp;
-    
-    clang::ASTContext *ast = ast_type.GetASTContext();
-    if (!ast)
+    if (!return_clang_type)
         return return_valobj_sp;
 
-    value.SetContext (Value::eContextTypeClangType, return_value_type);
+    //value.SetContext (Value::eContextTypeClangType, return_value_type);
+    value.SetClangType (return_clang_type);
     
     RegisterContext *reg_ctx = thread.GetRegisterContext().get();
     if (!reg_ctx)
         return return_valobj_sp;
     
-    const uint32_t type_flags = ClangASTContext::GetTypeInfo (return_value_type, ast, NULL);
-    if (type_flags & ClangASTContext::eTypeIsScalar)
+    const uint32_t type_flags = return_clang_type.GetTypeInfo ();
+    if (type_flags & ClangASTType::eTypeIsScalar)
     {
         value.SetValueType(Value::eValueTypeScalar);
 
         bool success = false;
-        if (type_flags & ClangASTContext::eTypeIsInteger)
+        if (type_flags & ClangASTType::eTypeIsInteger)
         {
             // Extract the register context so we can read arguments from registers
             
-            const size_t byte_size = ClangASTType::GetClangTypeByteSize(ast, return_value_type);
+            const size_t byte_size = return_clang_type.GetByteSize();
             uint64_t raw_value = thread.GetRegisterContext()->ReadRegisterAsUnsigned(reg_ctx->GetRegisterInfoByName("rax", 0), 0);
-            const bool is_signed = (type_flags & ClangASTContext::eTypeIsSigned) != 0;
+            const bool is_signed = (type_flags & ClangASTType::eTypeIsSigned) != 0;
             switch (byte_size)
             {
             default:
@@ -710,15 +686,15 @@ ABISysV_x86_64::GetReturnValueObjectSimple (Thread &thread,
                 break;
             }
         }
-        else if (type_flags & ClangASTContext::eTypeIsFloat)
+        else if (type_flags & ClangASTType::eTypeIsFloat)
         {
-            if (type_flags & ClangASTContext::eTypeIsComplex)
+            if (type_flags & ClangASTType::eTypeIsComplex)
             {
                 // Don't handle complex yet.
             }
             else
             {
-                const size_t byte_size = ClangASTType::GetClangTypeByteSize(ast, return_value_type);
+                const size_t byte_size = return_clang_type.GetByteSize();
                 if (byte_size <= sizeof(long double))
                 {
                     const RegisterInfo *xmm0_info = reg_ctx->GetRegisterInfoByName("xmm0", 0);
@@ -751,24 +727,22 @@ ABISysV_x86_64::GetReturnValueObjectSimple (Thread &thread,
         
         if (success)
             return_valobj_sp = ValueObjectConstResult::Create (thread.GetStackFrameAtIndex(0).get(),
-                                                               ast_type.GetASTContext(),
                                                                value,
                                                                ConstString(""));
 
     }
-    else if (type_flags & ClangASTContext::eTypeIsPointer)
+    else if (type_flags & ClangASTType::eTypeIsPointer)
     {
         unsigned rax_id = reg_ctx->GetRegisterInfoByName("rax", 0)->kinds[eRegisterKindLLDB];
         value.GetScalar() = (uint64_t)thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0);
         value.SetValueType(Value::eValueTypeScalar);
         return_valobj_sp = ValueObjectConstResult::Create (thread.GetStackFrameAtIndex(0).get(),
-                                                           ast_type.GetASTContext(),
                                                            value,
                                                            ConstString(""));
     }
-    else if (type_flags & ClangASTContext::eTypeIsVector)
+    else if (type_flags & ClangASTType::eTypeIsVector)
     {
-        const size_t byte_size = ClangASTType::GetClangTypeByteSize(ast, return_value_type);
+        const size_t byte_size = return_clang_type.GetByteSize();
         if (byte_size > 0)
         {
 
@@ -803,8 +777,7 @@ ABISysV_x86_64::GetReturnValueObjectSimple (Thread &thread,
                                                     byte_order,
                                                     process_sp->GetTarget().GetArchitecture().GetAddressByteSize());
                                 return_valobj_sp = ValueObjectConstResult::Create (&thread,
-                                                                                   ast,
-                                                                                   return_value_type,
+                                                                                   return_clang_type,
                                                                                    ConstString(""),
                                                                                    data);
                             }
@@ -819,29 +792,24 @@ ABISysV_x86_64::GetReturnValueObjectSimple (Thread &thread,
 }
 
 ValueObjectSP
-ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type) const
+ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &return_clang_type) const
 {
     ValueObjectSP return_valobj_sp;
+
+    if (!return_clang_type)
+        return return_valobj_sp;
     
     ExecutionContext exe_ctx (thread.shared_from_this());
-    return_valobj_sp = GetReturnValueObjectSimple(thread, ast_type);
+    return_valobj_sp = GetReturnValueObjectSimple(thread, return_clang_type);
     if (return_valobj_sp)
         return return_valobj_sp;
     
-    clang_type_t return_value_type = ast_type.GetOpaqueQualType();
-    if (!return_value_type)
-        return return_valobj_sp;
-    
-    clang::ASTContext *ast = ast_type.GetASTContext();
-    if (!ast)
-        return return_valobj_sp;
-        
     RegisterContextSP reg_ctx_sp = thread.GetRegisterContext();
     if (!reg_ctx_sp)
         return return_valobj_sp;
         
-    const size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast, return_value_type);
-    if (ClangASTContext::IsAggregateType(return_value_type))
+    const size_t bit_width = return_clang_type.GetBitSize();
+    if (return_clang_type.IsAggregateType())
     {
         Target *target = exe_ctx.GetTargetPtr();
         bool is_memory = true;
@@ -874,7 +842,7 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
             uint32_t fp_bytes = 0;       // Tracks how much of the xmm registers we've consumed so far
             uint32_t integer_bytes = 0;  // Tracks how much of the rax/rds registers we've consumed so far
             
-            uint32_t num_children = ClangASTContext::GetNumFields (ast, return_value_type);
+            const uint32_t num_children = return_clang_type.GetNumFields ();
             
             // Since we are in the small struct regime, assume we are not in memory.
             is_memory = false;
@@ -887,8 +855,8 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
                 bool is_complex;
                 uint32_t count;
                 
-                clang_type_t field_clang_type = ClangASTContext::GetFieldAtIndex (ast, return_value_type, idx, name, &field_bit_offset, NULL, NULL);
-                size_t field_bit_width = ClangASTType::GetClangTypeBitWidth(ast, field_clang_type);
+                ClangASTType field_clang_type = return_clang_type.GetFieldAtIndex (idx, name, &field_bit_offset, NULL, NULL);
+                const size_t field_bit_width = field_clang_type.GetBitSize();
 
                 // If there are any unaligned fields, this is stored in memory.
                 if (field_bit_offset % field_bit_width != 0)
@@ -904,7 +872,7 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
                 DataExtractor *copy_from_extractor = NULL;
                 uint32_t       copy_from_offset    = 0;
                 
-                if (ClangASTContext::IsIntegerType (field_clang_type, is_signed) || ClangASTContext::IsPointerType (field_clang_type))
+                if (field_clang_type.IsIntegerType (is_signed) || field_clang_type.IsPointerType ())
                 {
                     if (integer_bytes < 8)
                     {
@@ -937,7 +905,7 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
                         return return_valobj_sp;
                     }
                 }
-                else if (ClangASTContext::IsFloatingPointType (field_clang_type, count, is_complex))
+                else if (field_clang_type.IsFloatingPointType (count, is_complex))
                 {
                     // Structs with long doubles are always passed in memory.
                     if (field_bit_width == 128)
@@ -970,14 +938,12 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
                             else
                             {
                                 uint64_t next_field_bit_offset = 0;
-                                clang_type_t next_field_clang_type = ClangASTContext::GetFieldAtIndex (ast,
-                                                                                                       return_value_type,
-                                                                                                       idx + 1, 
-                                                                                                       name, 
-                                                                                                       &next_field_bit_offset,
-                                                                                                       NULL,
-                                                                                                       NULL);
-                                if (ClangASTContext::IsIntegerType (next_field_clang_type, is_signed))
+                                ClangASTType next_field_clang_type = return_clang_type.GetFieldAtIndex (idx + 1,
+                                                                                                        name,
+                                                                                                        &next_field_bit_offset,
+                                                                                                        NULL,
+                                                                                                        NULL);
+                                if (next_field_clang_type.IsIntegerType (is_signed))
                                     in_gpr = true;
                                 else
                                 {
@@ -996,14 +962,12 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
                             else
                             {
                                 uint64_t prev_field_bit_offset = 0;
-                                clang_type_t prev_field_clang_type = ClangASTContext::GetFieldAtIndex (ast,
-                                                                                                       return_value_type,
-                                                                                                       idx - 1, 
-                                                                                                       name, 
-                                                                                                       &prev_field_bit_offset,
-                                                                                                       NULL,
-                                                                                                       NULL);
-                                if (ClangASTContext::IsIntegerType (prev_field_clang_type, is_signed))
+                                ClangASTType prev_field_clang_type = return_clang_type.GetFieldAtIndex (idx - 1,
+                                                                                                        name,
+                                                                                                        &prev_field_bit_offset,
+                                                                                                        NULL,
+                                                                                                        NULL);
+                                if (prev_field_clang_type.IsIntegerType (is_signed))
                                     in_gpr = true;
                                 else
                                 {
@@ -1067,8 +1031,7 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
             {
                 // The result is in our data buffer.  Let's make a variable object out of it:
                 return_valobj_sp = ValueObjectConstResult::Create (&thread, 
-                                                                   ast,
-                                                                   return_value_type,
+                                                                   return_clang_type,
                                                                    ConstString(""),
                                                                    return_ext);
             }
@@ -1087,7 +1050,7 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
             return_valobj_sp = ValueObjectMemory::Create (&thread,
                                                           "",
                                                           Address (storage_addr, NULL),
-                                                          ast_type); 
+                                                          return_clang_type); 
         }
     }
         
@@ -1097,33 +1060,12 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
 bool
 ABISysV_x86_64::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
 {
-    uint32_t reg_kind = unwind_plan.GetRegisterKind();
-    uint32_t sp_reg_num = LLDB_INVALID_REGNUM;
-    uint32_t pc_reg_num = LLDB_INVALID_REGNUM;
+    unwind_plan.Clear();
+    unwind_plan.SetRegisterKind (eRegisterKindDWARF);
     
-    switch (reg_kind)
-    {
-    case eRegisterKindDWARF:
-    case eRegisterKindGCC:
-        sp_reg_num = gcc_dwarf_rsp;
-        pc_reg_num = gcc_dwarf_rip;
-        break;
-
-    case eRegisterKindGDB:
-        sp_reg_num = gdb_rsp;
-        pc_reg_num = gdb_rip;
-        break;
-
-    case eRegisterKindGeneric:
-        sp_reg_num = LLDB_REGNUM_GENERIC_SP;
-        pc_reg_num = LLDB_REGNUM_GENERIC_PC;
-        break;
-    }
-
-    if (sp_reg_num == LLDB_INVALID_REGNUM ||
-        pc_reg_num == LLDB_INVALID_REGNUM)
-        return false;
-
+    uint32_t sp_reg_num = gcc_dwarf_rsp;
+    uint32_t pc_reg_num = gcc_dwarf_rip;
+    
     UnwindPlan::RowSP row(new UnwindPlan::Row);
     row->SetCFARegister (sp_reg_num);
     row->SetCFAOffset (8);
@@ -1137,48 +1079,23 @@ ABISysV_x86_64::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
 bool
 ABISysV_x86_64::CreateDefaultUnwindPlan (UnwindPlan &unwind_plan)
 {
-    uint32_t reg_kind = unwind_plan.GetRegisterKind();
-    uint32_t fp_reg_num = LLDB_INVALID_REGNUM;
-    uint32_t sp_reg_num = LLDB_INVALID_REGNUM;
-    uint32_t pc_reg_num = LLDB_INVALID_REGNUM;
+    unwind_plan.Clear();
+    unwind_plan.SetRegisterKind (eRegisterKindDWARF);
+
+    uint32_t fp_reg_num = gcc_dwarf_rbp;
+    uint32_t sp_reg_num = gcc_dwarf_rsp;
+    uint32_t pc_reg_num = gcc_dwarf_rip;
     
-    switch (reg_kind)
-    {
-        case eRegisterKindDWARF:
-        case eRegisterKindGCC:
-            fp_reg_num = gcc_dwarf_rbp;
-            sp_reg_num = gcc_dwarf_rsp;
-            pc_reg_num = gcc_dwarf_rip;
-            break;
-            
-        case eRegisterKindGDB:
-            fp_reg_num = gdb_rbp;
-            sp_reg_num = gdb_rsp;
-            pc_reg_num = gdb_rip;
-            break;
-            
-        case eRegisterKindGeneric:
-            fp_reg_num = LLDB_REGNUM_GENERIC_FP;
-            sp_reg_num = LLDB_REGNUM_GENERIC_SP;
-            pc_reg_num = LLDB_REGNUM_GENERIC_PC;
-            break;
-    }
-
-    if (fp_reg_num == LLDB_INVALID_REGNUM ||
-        sp_reg_num == LLDB_INVALID_REGNUM ||
-        pc_reg_num == LLDB_INVALID_REGNUM)
-        return false;
-
     UnwindPlan::RowSP row(new UnwindPlan::Row);
 
     const int32_t ptr_size = 8;
-    row->SetCFARegister (LLDB_REGNUM_GENERIC_FP);
+    row->SetCFARegister (gcc_dwarf_rbp);
     row->SetCFAOffset (2 * ptr_size);
     row->SetOffset (0);
     
     row->SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, ptr_size * -2, true);
     row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, ptr_size * -1, true);
-    row->SetRegisterLocationToAtCFAPlusOffset(sp_reg_num, ptr_size *  0, true);
+    row->SetRegisterLocationToIsCFAPlusOffset(sp_reg_num, 0, true);
 
     unwind_plan.AppendRow (row);
     unwind_plan.SetSourceName ("x86_64 default unwind plan");
@@ -1199,8 +1116,9 @@ ABISysV_x86_64::RegisterIsVolatile (const RegisterInfo *reg_info)
 // "System V Application Binary Interface"
 // "AMD64 Architecture Processor Supplement" 
 // (or "x86-64(tm) Architecture Processor Supplement" in earlier revisions)
+// (this doc is also commonly referred to as the x86-64/AMD64 psABI)
 // Edited by Michael Matz, Jan Hubicka, Andreas Jaeger, and Mark Mitchell
-// current version is 0.99.6 released 2012-05-15 at http://x86-64.org/documentation/abi.pdf
+// current version is 0.99.6 released 2012-07-02 at http://refspecs.linuxfoundation.org/elf/x86-64-abi-0.99.pdf
 
 bool
 ABISysV_x86_64::RegisterIsCalleeSaved (const RegisterInfo *reg_info)

@@ -10,7 +10,7 @@ import lldbutil
 
 class StdMapDataFormatterTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "data-formatter-stl", "libstdcpp", "map")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -23,6 +23,8 @@ class StdMapDataFormatterTestCase(TestBase):
                           # libstdc++ containers
     @skipIfGcc # llvm.org/pr15036: When built with GCC, this test causes lldb to crash with
                # assert DeclCXX.h:554 queried property of class with no definition
+    @expectedFailureIcc   # llvm.org/pr15301: LLDB prints incorrect size of
+                          # libstdc++ containers
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
@@ -72,10 +74,10 @@ class StdMapDataFormatterTestCase(TestBase):
 
         self.expect('frame variable ii',
                     substrs = ['map has 2 items',
-                               '[0] = {',
+                               '[0] = ',
                                'first = 0',
                                'second = 0',
-                               '[1] = {',
+                               '[1] = ',
                                'first = 1',
                                'second = 1'])
 
@@ -83,10 +85,10 @@ class StdMapDataFormatterTestCase(TestBase):
 
         self.expect('frame variable ii',
                     substrs = ['map has 4 items',
-                               '[2] = {',
+                               '[2] = ',
                                'first = 2',
                                'second = 0',
-                               '[3] = {',
+                               '[3] = ',
                                'first = 3',
                                'second = 1'])
 
@@ -94,19 +96,19 @@ class StdMapDataFormatterTestCase(TestBase):
 
         self.expect("frame variable ii",
                     substrs = ['map has 9 items',
-                               '[5] = {',
+                               '[5] = ',
                                'first = 5',
                                'second = 0',
-                               '[7] = {',
+                               '[7] = ',
                                'first = 7',
                                'second = 1'])
         
         self.expect("p ii",
                     substrs = ['map has 9 items',
-                               '[5] = {',
+                               '[5] = ',
                                'first = 5',
                                'second = 0',
-                               '[7] = {',
+                               '[7] = ',
                                'first = 7',
                                'second = 1'])
 

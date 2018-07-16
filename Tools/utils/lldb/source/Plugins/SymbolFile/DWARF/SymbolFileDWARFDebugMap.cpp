@@ -780,11 +780,11 @@ SymbolFileDWARFDebugMap::ResolveTypeUID(lldb::user_id_t type_uid)
     return NULL;
 }
 
-lldb::clang_type_t
-SymbolFileDWARFDebugMap::ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_type)
+bool
+SymbolFileDWARFDebugMap::ResolveClangOpaqueTypeDefinition (ClangASTType& clang_type)
 {
     // We have a struct/union/class/enum that needs to be fully resolved.
-    return NULL;
+    return false;
 }
 
 uint32_t
@@ -847,7 +847,7 @@ SymbolFileDWARFDebugMap::ResolveSymbolContext (const FileSpec& file_spec, uint32
             if (GetFileSpecForSO (i, so_file_spec))
             {
                 // Match the full path if the incoming file_spec has a directory (not just a basename)
-                const bool full_match = file_spec.GetDirectory();
+                const bool full_match = (bool)file_spec.GetDirectory();
                 resolve = FileSpec::Equal (file_spec, so_file_spec, full_match);
             }
         }
@@ -1385,7 +1385,7 @@ void
 SymbolFileDWARFDebugMap::CompleteTagDecl (void *baton, clang::TagDecl *decl)
 {
     SymbolFileDWARFDebugMap *symbol_file_dwarf = (SymbolFileDWARFDebugMap *)baton;
-    clang_type_t clang_type = symbol_file_dwarf->GetClangASTContext().GetTypeForDecl (decl);
+    ClangASTType clang_type = symbol_file_dwarf->GetClangASTContext().GetTypeForDecl (decl);
     if (clang_type)
     {
         SymbolFileDWARF *oso_dwarf;
@@ -1405,7 +1405,7 @@ void
 SymbolFileDWARFDebugMap::CompleteObjCInterfaceDecl (void *baton, clang::ObjCInterfaceDecl *decl)
 {
     SymbolFileDWARFDebugMap *symbol_file_dwarf = (SymbolFileDWARFDebugMap *)baton;
-    clang_type_t clang_type = symbol_file_dwarf->GetClangASTContext().GetTypeForDecl (decl);
+    ClangASTType clang_type = symbol_file_dwarf->GetClangASTContext().GetTypeForDecl (decl);
     if (clang_type)
     {
         SymbolFileDWARF *oso_dwarf;

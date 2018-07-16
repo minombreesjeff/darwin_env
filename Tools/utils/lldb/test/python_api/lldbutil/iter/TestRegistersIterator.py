@@ -10,7 +10,7 @@ from lldbtest import *
 
 class RegistersIteratorTestCase(TestBase):
 
-    mydir = os.path.join("python_api", "lldbutil", "iter")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -18,6 +18,7 @@ class RegistersIteratorTestCase(TestBase):
         # Find the line number to break inside main().
         self.line1 = line_number('main.cpp', '// Set break point at this line.')
 
+    @expectedFailureFreeBSD # llvm.org/pr14600 - Exception state registers not supported on FreeBSD
     @expectedFailureLinux # llvm.org/pr14600 - Exception state registers not supported on Linux
     @python_api_test
     def test_iter_registers(self):
@@ -35,7 +36,7 @@ class RegistersIteratorTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.LaunchProcess() failed")

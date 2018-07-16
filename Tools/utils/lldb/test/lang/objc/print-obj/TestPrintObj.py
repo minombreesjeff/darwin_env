@@ -10,7 +10,7 @@ from lldbtest import *
 @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
 class PrintObjTestCase(TestBase):
 
-    mydir = os.path.join("lang", "objc", "print-obj")
+    mydir = TestBase.compute_mydir(__file__)
 
     @dsym_test
     def test_print_obj_with_dsym(self):
@@ -55,7 +55,7 @@ class PrintObjTestCase(TestBase):
         self.runCmd("breakpoint list")
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.runCmd("thread backtrace all")
 

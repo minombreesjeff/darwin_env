@@ -10,7 +10,7 @@ import lldbutil
 
 class WatchedVariableHitWhenInScopeTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "watchpoint", "variable_out_of_scope")
+    mydir = TestBase.compute_mydir(__file__)
 
     #
     # This test depends on not tracking watchpoint expression hits if we have
@@ -20,8 +20,8 @@ class WatchedVariableHitWhenInScopeTestCase(TestBase):
     # clearer API to express this.
     #
 
-    @unittest2.expectedFailure
     @dsym_test
+    @unittest2.expectedFailure
     def test_watched_var_should_only_hit_when_in_scope_with_dsym(self):
         """Test that a variable watchpoint should only hit when in scope."""
         self.buildDsym(dictionary=self.d)

@@ -95,6 +95,7 @@ public:
         query_vattachorwait_supported,  // 'qVAttachOrWaitSupported'
         query_sync_thread_state_supported,// 'QSyncThreadState'
         query_host_info,                // 'qHostInfo'
+        query_gdb_server_version,       // 'qGDBServerVersion'
         query_process_info,             // 'qProcessInfo'
         pass_signals_to_inferior,       // 'QPassSignals'
         start_noack_mode,               // 'QStartNoAckMode'
@@ -119,6 +120,9 @@ public:
         allocate_memory,                // '_M'
         deallocate_memory,              // '_m'
         set_process_event,               // 'QSetProcessEvent:'
+        save_register_state,            // '_g'
+        restore_register_state,         // '_G'
+        
         unknown_type
     } PacketEnum;
 
@@ -178,6 +182,7 @@ public:
     rnb_err_t HandlePacket_qThreadExtraInfo (const char *p);
     rnb_err_t HandlePacket_qThreadStopInfo (const char *p);
     rnb_err_t HandlePacket_qHostInfo (const char *p);
+    rnb_err_t HandlePacket_qGDBServerVersion (const char *p);
     rnb_err_t HandlePacket_qProcessInfo (const char *p);
     rnb_err_t HandlePacket_QStartNoAckMode (const char *p);
     rnb_err_t HandlePacket_QThreadSuffixSupported (const char *p);
@@ -215,6 +220,8 @@ public:
     rnb_err_t HandlePacket_ILLFORMED (const char *file, int line, const char *p, const char *description);
     rnb_err_t HandlePacket_AllocateMemory (const char *p);
     rnb_err_t HandlePacket_DeallocateMemory (const char *p);
+    rnb_err_t HandlePacket_SaveRegisterState (const char *p);
+    rnb_err_t HandlePacket_RestoreRegisterState (const char *p);
     rnb_err_t HandlePacket_MemoryRegionInfo (const char *p);
     rnb_err_t HandlePacket_GetProfileData(const char *p);
     rnb_err_t HandlePacket_SetEnableAsyncProfiling(const char *p);
@@ -233,11 +240,6 @@ public:
     RNBContext&     Context() { return m_ctx; }
     RNBSocket&      Comm() { return m_comm; }
 
-    void
-    SetUseNativeRegisters (bool b)
-    {
-        m_use_native_regs = b;
-    }
 private:
     // Outlaw some contructors
     RNBRemote (const RNBRemote &);
@@ -316,7 +318,6 @@ protected:
     uint32_t        m_max_payload_size;  // the maximum sized payload we should send to gdb
     bool            m_extended_mode;   // are we in extended mode?
     bool            m_noack_mode;      // are we in no-ack mode?
-    bool            m_use_native_regs; // Use native registers by querying DNB layer for register definitions?
     bool            m_thread_suffix_supported; // Set to true if the 'p', 'P', 'g', and 'G' packets should be prefixed with the thread ID and colon:
                                                                 // "$pRR;thread:TTTT;" instead of "$pRR"
                                                                 // "$PRR=VVVVVVVV;thread:TTTT;" instead of "$PRR=VVVVVVVV"

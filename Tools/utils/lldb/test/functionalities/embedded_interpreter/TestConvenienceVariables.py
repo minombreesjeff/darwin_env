@@ -8,7 +8,7 @@ from lldbtest import *
 
 class ConvenienceVariablesCase(TestBase):
 
-    mydir = os.path.join("functionalities", "embedded_interpreter")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -18,7 +18,7 @@ class ConvenienceVariablesCase(TestBase):
         self.convenience_variables()
 
     @dwarf_test
-    @skipIfLinux # llvm.org/pr14637: this test case fails sometimes because the input prompt "(lldb)" is missing
+    @skipIfFreeBSD # llvm.org/pr17228
     def test_with_dwarf_and_run_commands(self):
         """Test convenience variables lldb.debugger, lldb.target, lldb.process, lldb.thread, and lldb.frame."""
         self.buildDwarf()
@@ -49,6 +49,7 @@ class ConvenienceVariablesCase(TestBase):
         child.sendline('breakpoint set -f main.c -l %d' % self.line)
         child.expect_exact(prompt)
         child.sendline('run')
+        child.expect_exact("stop reason = breakpoint 1.1")
         child.expect_exact(prompt)
         child.sendline('script')
         child.expect_exact(python_prompt)

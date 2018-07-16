@@ -7,7 +7,7 @@ from lldbtest import *
 
 class CrashingInferiorTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "inferior-crashing")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     def test_inferior_crashing_dsym(self):
@@ -65,6 +65,7 @@ class CrashingInferiorTestCase(TestBase):
         self.buildDsym()
         self.inferior_crashing_step_after_break()
 
+    @skipIfFreeBSD # llvm.org/pr16684
     @expectedFailureLinux # due to llvm.org/pr15988 -- step over misbehaves after crash
     def test_inferior_crashing_step_after_break_dwarf(self):
         """Test that lldb functions correctly after stepping through a crash."""
@@ -77,6 +78,7 @@ class CrashingInferiorTestCase(TestBase):
         self.buildDsym()
         self.inferior_crashing_expr_step_expr()
 
+    @expectedFailureFreeBSD('llvm.org/pr15989') # Couldn't allocate space for the stack frame
     @expectedFailureLinux # due to llvm.org/pr15989 -- expression fails after crash and step
     def test_inferior_crashing_expr_step_and_expr_dwarf(self):
         """Test that lldb expressions work before and after stepping after a crash."""
@@ -127,7 +129,7 @@ class CrashingInferiorTestCase(TestBase):
 
         # Now launch the process, and do not stop at entry point.
         # Both argv and envp are null.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if process.GetState() != lldb.eStateStopped:
             self.fail("Process should be in the 'stopped' state, "

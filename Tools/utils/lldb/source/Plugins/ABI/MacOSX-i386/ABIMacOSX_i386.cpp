@@ -235,12 +235,22 @@ ABIMacOSX_i386::GetRedZoneSize () const
 ABISP
 ABIMacOSX_i386::CreateInstance (const ArchSpec &arch)
 {
-    static ABISP g_abi_sp;
+    static ABISP g_abi_mac_sp;
+    static ABISP g_abi_other_sp;
     if (arch.GetTriple().getArch() == llvm::Triple::x86)
     {
-        if (!g_abi_sp)
-            g_abi_sp.reset (new ABIMacOSX_i386);
-        return g_abi_sp;
+        if (arch.GetTriple().isOSDarwin())
+        {
+            if (!g_abi_mac_sp)
+                g_abi_mac_sp.reset (new ABIMacOSX_i386(true));
+            return g_abi_mac_sp;
+        }
+        else
+        {
+            if (!g_abi_other_sp)
+                g_abi_other_sp.reset (new ABIMacOSX_i386(false));
+            return g_abi_other_sp;
+        }
     }
     return ABISP();
 }
@@ -250,12 +260,7 @@ ABIMacOSX_i386::PrepareTrivialCall (Thread &thread,
                                     addr_t sp, 
                                     addr_t func_addr, 
                                     addr_t return_addr, 
-                                    addr_t *arg1_ptr,
-                                    addr_t *arg2_ptr,
-                                    addr_t *arg3_ptr,
-                                    addr_t *arg4_ptr,
-                                    addr_t *arg5_ptr,
-                                    addr_t *arg6_ptr) const
+                                    llvm::ArrayRef<addr_t> args) const
 {
     RegisterContext *reg_ctx = thread.GetRegisterContext().get();
     if (!reg_ctx)
@@ -277,113 +282,24 @@ ABIMacOSX_i386::PrepareTrivialCall (Thread &thread,
     RegisterValue reg_value;
     
     // Write any arguments onto the stack
-    if (arg1_ptr)
-    {
-        sp -= 4;
-        if (arg2_ptr)
-        {
-            sp -= 4;
-            if (arg3_ptr)
-            {
-                sp -= 4;
-                if (arg4_ptr)
-                {
-                    sp -= 4;
-                    if (arg5_ptr)
-                    {
-                        sp -= 4;
-                        if (arg6_ptr)
-                        {
-                            sp -= 4;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
+    sp -= 4 * args.size();
+    
     // Align the SP    
     sp &= ~(16ull-1ull); // 16-byte alignment
     
-    if (arg1_ptr)
+    addr_t arg_pos = sp;
+    
+    for (addr_t arg : args)
     {
-        reg_value.SetUInt32(*arg1_ptr);
-        error = reg_ctx->WriteRegisterValueToMemory (reg_info_32, 
-                                                     sp, 
-                                                     reg_info_32->byte_size, 
+        reg_value.SetUInt32(arg);
+        error = reg_ctx->WriteRegisterValueToMemory (reg_info_32,
+                                                     arg_pos,
+                                                     reg_info_32->byte_size,
                                                      reg_value);
         if (error.Fail())
             return false;
-
-        if (arg2_ptr)
-        {
-            reg_value.SetUInt32(*arg2_ptr);
-            // The register info used to write memory just needs to have the correct
-            // size of a 32 bit register, the actual register it pertains to is not
-            // important, just the size needs to be correct. Here we use "eax"...
-            error = reg_ctx->WriteRegisterValueToMemory (reg_info_32, 
-                                                         sp + 4, 
-                                                         reg_info_32->byte_size, 
-                                                         reg_value);
-            if (error.Fail())
-                return false;
-            
-            if (arg3_ptr)
-            {
-                reg_value.SetUInt32(*arg3_ptr);
-                // The register info used to write memory just needs to have the correct
-                // size of a 32 bit register, the actual register it pertains to is not
-                // important, just the size needs to be correct. Here we use "eax"...
-                error = reg_ctx->WriteRegisterValueToMemory (reg_info_32, 
-                                                             sp + 8, 
-                                                             reg_info_32->byte_size, 
-                                                             reg_value);
-                if (error.Fail())
-                    return false;
-
-                if (arg4_ptr)
-                {
-                    reg_value.SetUInt32(*arg4_ptr);
-                    // The register info used to write memory just needs to have the correct
-                    // size of a 32 bit register, the actual register it pertains to is not
-                    // important, just the size needs to be correct. Here we use "eax"...
-                    error = reg_ctx->WriteRegisterValueToMemory (reg_info_32, 
-                                                                 sp + 12, 
-                                                                 reg_info_32->byte_size, 
-                                                                 reg_value);
-                    if (error.Fail())
-                        return false;
-                    if (arg5_ptr)
-                    {
-                        reg_value.SetUInt32(*arg5_ptr);
-                        // The register info used to write memory just needs to have the correct
-                        // size of a 32 bit register, the actual register it pertains to is not
-                        // important, just the size needs to be correct. Here we use "eax"...
-                        error = reg_ctx->WriteRegisterValueToMemory (reg_info_32, 
-                                                                     sp + 16, 
-                                                                     reg_info_32->byte_size, 
-                                                                     reg_value);
-                        if (error.Fail())
-                            return false;
-                        if (arg6_ptr)
-                        {
-                            reg_value.SetUInt32(*arg6_ptr);
-                            // The register info used to write memory just needs to have the correct
-                            // size of a 32 bit register, the actual register it pertains to is not
-                            // important, just the size needs to be correct. Here we use "eax"...
-                            error = reg_ctx->WriteRegisterValueToMemory (reg_info_32, 
-                                                                         sp + 20, 
-                                                                         reg_info_32->byte_size, 
-                                                                         reg_value);
-                            if (error.Fail())
-                                return false;
-                        }
-                    }
-                }
-            }
-        }
+        arg_pos += 4;
     }
-    
     
     // The return address is pushed onto the stack (yes after we just set the
     // alignment above!).
@@ -510,16 +426,12 @@ ABIMacOSX_i386::PrepareNormalCall (Thread &thread,
             }
             break;
         case Value::eValueTypeHostAddress:
-            switch (val->GetContextType()) 
             {
-            default:
-                return false;
-            case Value::eContextTypeClangType:
+                ClangASTType clang_type (val->GetClangType());
+                if (clang_type)
                 {
-                    void *val_type = val->GetClangType();
-                    uint32_t cstr_length;
-                    
-                    if (ClangASTContext::IsCStringType (val_type, cstr_length))
+                    uint32_t cstr_length = 0;
+                    if (clang_type.IsCStringType (cstr_length))
                     {
                         const char *cstr = (const char*)val->GetScalar().ULongLong();
                         cstr_length = strlen(cstr);
@@ -616,11 +528,6 @@ ABIMacOSX_i386::GetArgumentValues (Thread &thread,
     unsigned int num_values = values.GetSize();
     unsigned int value_index;
     
-    // Extract the Clang AST context from the PC so that we can figure out type
-    // sizes
-    
-    clang::ASTContext *ast_context = thread.CalculateTarget()->GetScratchClangASTContext()->getASTContext();
-    
     // Get the pointer to the first stack argument so we have a place to start 
     // when reading data
     
@@ -647,35 +554,27 @@ ABIMacOSX_i386::GetArgumentValues (Thread &thread,
         
         // We currently only support extracting values with Clang QualTypes.
         // Do we care about others?
-        switch (value->GetContextType())
+        ClangASTType clang_type (value->GetClangType());
+        if (clang_type)
         {
-            default:
-                return false;
-            case Value::eContextTypeClangType:
-                {
-                    void *value_type = value->GetClangType();
-                    bool is_signed;
-                    
-                    if (ClangASTContext::IsIntegerType (value_type, is_signed))
-                    {
-                        size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, value_type);
-                        
-                        ReadIntegerArgument(value->GetScalar(),
-                                            bit_width, 
-                                            is_signed,
-                                            thread.GetProcess().get(), 
-                                            current_stack_argument);
-                    }
-                    else if (ClangASTContext::IsPointerType (value_type))
-                    {
-                        ReadIntegerArgument(value->GetScalar(),
-                                            32,
-                                            false,
-                                            thread.GetProcess().get(),
-                                            current_stack_argument);
-                    }
-                }
-                break;
+            bool is_signed;
+            
+            if (clang_type.IsIntegerType (is_signed))
+            {
+                ReadIntegerArgument(value->GetScalar(),
+                                    clang_type.GetBitSize(),
+                                    is_signed,
+                                    thread.GetProcess().get(), 
+                                    current_stack_argument);
+            }
+            else if (clang_type.IsPointerType())
+            {
+                ReadIntegerArgument(value->GetScalar(),
+                                    clang_type.GetBitSize(),
+                                    false,
+                                    thread.GetProcess().get(),
+                                    current_stack_argument);
+            }
         }
     }
     
@@ -692,19 +591,13 @@ ABIMacOSX_i386::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
         return error;
     }
     
-    clang_type_t value_type = new_value_sp->GetClangType();
-    if (!value_type)
+    ClangASTType clang_type = new_value_sp->GetClangType();
+    if (!clang_type)
     {
         error.SetErrorString ("Null clang type for return value.");
         return error;
     }
     
-    clang::ASTContext *ast_context = new_value_sp->GetClangAST();
-    if (!ast_context)
-    {
-        error.SetErrorString ("Null clang AST for return value.");
-        return error;
-    }
     Thread *thread = frame_sp->GetThread().get();
     
     bool is_signed;
@@ -714,7 +607,7 @@ ABIMacOSX_i386::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
     RegisterContext *reg_ctx = thread->GetRegisterContext().get();
 
     bool set_it_simple = false;
-    if (ClangASTContext::IsIntegerType (value_type, is_signed) || ClangASTContext::IsPointerType(value_type))
+    if (clang_type.IsIntegerType (is_signed) || clang_type.IsPointerType())
     {
         DataExtractor data;
         size_t num_bytes = new_value_sp->GetData(data);
@@ -748,7 +641,7 @@ ABIMacOSX_i386::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
             error.SetErrorString("We don't support returning longer than 64 bit integer values at present.");
         }
     }
-    else if (ClangASTContext::IsFloatingPointType (value_type, count, is_complex))
+    else if (clang_type.IsFloatingPointType (count, is_complex))
     {
         if (is_complex)
             error.SetErrorString ("We don't support returning complex values at present");
@@ -764,20 +657,16 @@ ABIMacOSX_i386::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
 
 ValueObjectSP
 ABIMacOSX_i386::GetReturnValueObjectImpl (Thread &thread,
-                                ClangASTType &ast_type) const
+                                          ClangASTType &clang_type) const
 {
     Value value;
     ValueObjectSP return_valobj_sp;
     
-    void *value_type = ast_type.GetOpaqueQualType();
-    if (!value_type) 
+    if (!clang_type)
         return return_valobj_sp;
     
-    clang::ASTContext *ast_context = ast_type.GetASTContext();
-    if (!ast_context)
-        return return_valobj_sp;
-
-    value.SetContext (Value::eContextTypeClangType, value_type);
+    //value.SetContext (Value::eContextTypeClangType, clang_type.GetOpaqueQualType());
+    value.SetClangType (clang_type);
     
     RegisterContext *reg_ctx = thread.GetRegisterContext().get();
         if (!reg_ctx)
@@ -785,9 +674,9 @@ ABIMacOSX_i386::GetReturnValueObjectImpl (Thread &thread,
         
     bool is_signed;
             
-    if (ClangASTContext::IsIntegerType (value_type, is_signed))
+    if (clang_type.IsIntegerType (is_signed))
     {
-        size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, value_type);
+        size_t bit_width = clang_type.GetBitSize();
         
         unsigned eax_id = reg_ctx->GetRegisterInfoByName("eax", 0)->kinds[eRegisterKindLLDB];
         unsigned edx_id = reg_ctx->GetRegisterInfoByName("edx", 0)->kinds[eRegisterKindLLDB];
@@ -827,7 +716,7 @@ ABIMacOSX_i386::GetReturnValueObjectImpl (Thread &thread,
                 break;
         }
     }
-    else if (ClangASTContext::IsPointerType (value_type))
+    else if (clang_type.IsPointerType ())
     {
         unsigned eax_id = reg_ctx->GetRegisterInfoByName("eax", 0)->kinds[eRegisterKindLLDB];
         uint32_t ptr = thread.GetRegisterContext()->ReadRegisterAsUnsigned(eax_id, 0) & 0xffffffff;
@@ -841,48 +730,21 @@ ABIMacOSX_i386::GetReturnValueObjectImpl (Thread &thread,
     
     // If we get here, we have a valid Value, so make our ValueObject out of it:
     
-    return_valobj_sp = ValueObjectConstResult::Create(
-                                    thread.GetStackFrameAtIndex(0).get(),
-                                    ast_type.GetASTContext(),
-                                    value,
-                                    ConstString(""));
+    return_valobj_sp = ValueObjectConstResult::Create(thread.GetStackFrameAtIndex(0).get(),
+                                                      value,
+                                                      ConstString(""));
     return return_valobj_sp;
 }
 
 bool
 ABIMacOSX_i386::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
 {
-    uint32_t reg_kind = unwind_plan.GetRegisterKind();
-    uint32_t sp_reg_num = LLDB_INVALID_REGNUM;
-    uint32_t pc_reg_num = LLDB_INVALID_REGNUM;
-    
-    switch (reg_kind)
-    {
-        case eRegisterKindDWARF:
-            sp_reg_num = dwarf_esp;
-            pc_reg_num = dwarf_eip;
-            break;
+    unwind_plan.Clear();
+    unwind_plan.SetRegisterKind (eRegisterKindDWARF);
 
-        case eRegisterKindGCC:
-            sp_reg_num = gcc_esp;
-            pc_reg_num = gcc_eip;
-            break;
-            
-        case eRegisterKindGDB:
-            sp_reg_num = gdb_esp;
-            pc_reg_num = gdb_eip;
-            break;
-            
-        case eRegisterKindGeneric:
-            sp_reg_num = LLDB_REGNUM_GENERIC_SP;
-            pc_reg_num = LLDB_REGNUM_GENERIC_PC;
-            break;
-    }
+    uint32_t sp_reg_num = dwarf_esp;
+    uint32_t pc_reg_num = dwarf_eip;
     
-    if (sp_reg_num == LLDB_INVALID_REGNUM ||
-        pc_reg_num == LLDB_INVALID_REGNUM)
-        return false;
-
     UnwindPlan::RowSP row(new UnwindPlan::Row);
     row->SetCFARegister (sp_reg_num);
     row->SetCFAOffset (4);
@@ -896,6 +758,9 @@ ABIMacOSX_i386::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
 bool
 ABIMacOSX_i386::CreateDefaultUnwindPlan (UnwindPlan &unwind_plan)
 {
+    unwind_plan.Clear ();
+    unwind_plan.SetRegisterKind (eRegisterKindDWARF);
+
     uint32_t fp_reg_num = dwarf_ebp;
     uint32_t sp_reg_num = dwarf_esp;
     uint32_t pc_reg_num = dwarf_eip;
@@ -903,15 +768,13 @@ ABIMacOSX_i386::CreateDefaultUnwindPlan (UnwindPlan &unwind_plan)
     UnwindPlan::RowSP row(new UnwindPlan::Row);
     const int32_t ptr_size = 4;
 
-    unwind_plan.Clear ();
-    unwind_plan.SetRegisterKind (eRegisterKindDWARF);
     row->SetCFARegister (fp_reg_num);
     row->SetCFAOffset (2 * ptr_size);
     row->SetOffset (0);
     
     row->SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, ptr_size * -2, true);
     row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, ptr_size * -1, true);
-    row->SetRegisterLocationToAtCFAPlusOffset(sp_reg_num, ptr_size *  0, true);
+    row->SetRegisterLocationToIsCFAPlusOffset(sp_reg_num, 0, true);
 
     unwind_plan.AppendRow (row);
     unwind_plan.SetSourceName ("i386 default unwind plan");

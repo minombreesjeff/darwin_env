@@ -35,7 +35,7 @@ public:
                     lldb_private::InstructionType inst_type);
     
     static bool
-    SupportsEmulatingIntructionsOfTypeStatic (lldb_private::InstructionType inst_type)
+    SupportsEmulatingInstructionsOfTypeStatic (lldb_private::InstructionType inst_type)
     {
         switch (inst_type)
         {
@@ -80,9 +80,9 @@ public:
     }
 
     virtual bool
-    SupportsEmulatingIntructionsOfType (lldb_private::InstructionType inst_type)
+    SupportsEmulatingInstructionsOfType (lldb_private::InstructionType inst_type)
     {
-        return SupportsEmulatingIntructionsOfTypeStatic (inst_type);
+        return SupportsEmulatingInstructionsOfTypeStatic (inst_type);
     }
 
     virtual bool 

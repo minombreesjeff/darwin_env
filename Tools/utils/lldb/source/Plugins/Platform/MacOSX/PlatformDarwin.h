@@ -14,9 +14,9 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Target/Platform.h"
+#include "Plugins/Platform/POSIX/PlatformPOSIX.h"
 
-class PlatformDarwin : public lldb_private::Platform
+class PlatformDarwin : public PlatformPOSIX
 {
 public:
     PlatformDarwin (bool is_host);
@@ -99,6 +99,13 @@ public:
     LaunchProcess (lldb_private::ProcessLaunchInfo &launch_info);
 
     virtual lldb::ProcessSP
+    DebugProcess (lldb_private::ProcessLaunchInfo &launch_info,
+                  lldb_private::Debugger &debugger,
+                  lldb_private::Target *target,       // Can be NULL, if NULL create a new target, else use existing one
+                  lldb_private::Listener &listener,
+                  lldb_private::Error &error);
+
+    virtual lldb::ProcessSP
     Attach (lldb_private::ProcessAttachInfo &attach_info,
             lldb_private::Debugger &debugger,
             lldb_private::Target *target,       // Can be NULL, if NULL create a new target, else use existing one
@@ -111,19 +118,83 @@ public:
     virtual size_t
     GetEnvironment (lldb_private::StringList &environment);
 
+    std::string
+    GetQueueNameForThreadQAddress (lldb_private::Process *process, lldb::addr_t dispatch_qaddr);
+
+    lldb::queue_id_t
+    GetQueueIDForThreadQAddress (lldb_private::Process *process, lldb::addr_t dispatch_qaddr);
+
     bool
     ARMGetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
     
     bool 
     x86GetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
+    
+    virtual int32_t
+    GetResumeCountForLaunchInfo (lldb_private::ProcessLaunchInfo &launch_info);
 
 protected:
-    lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote darwin OS
-    std::string m_developer_directory;
-    
+
+    void
+    ReadLibdispatchOffsetsAddress (lldb_private::Process *process);
+
+    void
+    ReadLibdispatchOffsets (lldb_private::Process *process);
+
+    virtual lldb_private::Error
+    GetSharedModuleWithLocalCache (const lldb_private::ModuleSpec &module_spec,
+                                   lldb::ModuleSP &module_sp,
+                                   const lldb_private::FileSpecList *module_search_paths_ptr,
+                                   lldb::ModuleSP *old_module_sp_ptr,
+                                   bool *did_create_ptr);
+
+    // Based on libdispatch src/queue_private.h, struct dispatch_queue_offsets_s
+    // With dqo_version 1-3, the dqo_label field is a per-queue value and cannot be cached.
+    // With dqo_version 4 (Mac OS X 10.9 / iOS 7), dqo_label is a constant value that can be cached.
+    struct LibdispatchOffsets
+    {
+        uint16_t dqo_version;
+        uint16_t dqo_label;
+        uint16_t dqo_label_size;
+        uint16_t dqo_flags;
+        uint16_t dqo_flags_size;
+        uint16_t dqo_serialnum;
+        uint16_t dqo_serialnum_size;
+        uint16_t dqo_width;
+        uint16_t dqo_width_size;
+        uint16_t dqo_running;
+        uint16_t dqo_running_size;
+
+        LibdispatchOffsets ()
+        {
+            dqo_version = UINT16_MAX;
+            dqo_flags  = UINT16_MAX;
+            dqo_serialnum = UINT16_MAX;
+            dqo_label = UINT16_MAX;
+            dqo_width = UINT16_MAX;
+            dqo_running = UINT16_MAX;
+        };
+
+        bool
+        IsValid ()
+        {
+            return dqo_version != UINT16_MAX;
+        }
+
+        bool
+        LabelIsValid ()
+        {
+            return dqo_label != UINT16_MAX;
+        }
+    };
+
+    std::string                 m_developer_directory;
+    lldb::addr_t                m_dispatch_queue_offsets_addr;
+    struct LibdispatchOffsets   m_libdispatch_offsets;
+
     const char *
     GetDeveloperDirectory();
-
+    
 private:
     DISALLOW_COPY_AND_ASSIGN (PlatformDarwin);
 

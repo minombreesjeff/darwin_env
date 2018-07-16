@@ -8,7 +8,7 @@ from lldbtest import *
 
 class TestObjCBuiltinTypes(TestBase):
 
-    mydir = os.path.join("lang", "objc", "objc-builtin-types")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -45,7 +45,7 @@ class TestObjCBuiltinTypes(TestBase):
         self.assertTrue(bpt, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple (None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         self.assertTrue(process, PROCESS_IS_VALID)
 

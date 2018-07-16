@@ -7,7 +7,7 @@ from lldbtest import *
 
 class ProcessIOTestCase(TestBase):
 
-    mydir = os.path.join("python_api", "process", "io")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
@@ -38,7 +38,7 @@ class ProcessIOTestCase(TestBase):
         # Perform synchronous interaction with the debugger.
         self.setAsync(True)
 
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         if self.TraceOn():
             print "process launched."
 

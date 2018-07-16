@@ -10,6 +10,7 @@
 #include "lldb/Core/Section.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Symbol/ObjectFile.h"
+#include "lldb/Target/SectionLoadList.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
@@ -96,6 +97,24 @@ Section::GetFileAddress () const
     }
     // This section has no parent, so m_file_addr is the file base address
     return m_file_addr;
+}
+
+bool
+Section::SetFileAddress (lldb::addr_t file_addr)
+{
+    SectionSP parent_sp (GetParent ());
+    if (parent_sp)
+    {
+        if (m_file_addr >= file_addr)
+            return parent_sp->SetFileAddress (m_file_addr - file_addr);
+        return false;
+    }
+    else
+    {
+        // This section has no parent, so m_file_addr is the file base address
+        m_file_addr = file_addr;
+        return true;
+    }
 }
 
 lldb::addr_t

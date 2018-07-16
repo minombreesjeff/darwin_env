@@ -96,12 +96,6 @@ LDFLAGS += $(LD_EXTRAS)
 OBJECTS =
 EXE ?= a.out
 
-ifneq (,$(findstring g++,$(CXX)))
-	# GCC 4.6 cannot handle -std=c++11, so replace it with -std=c++0x
-	# instead. FIXME: remove once GCC version is upgraded.
-	override CXXFLAGS := $(subst -std=c++11,-std=c++0x,$(CXXFLAGS))
-endif
-
 ifneq "$(DYLIB_NAME)" ""
 	ifeq "$(OS)" "Darwin"
 		DYLIB_FILENAME = lib$(DYLIB_NAME).dylib
@@ -111,10 +105,12 @@ ifneq "$(DYLIB_NAME)" ""
 endif
 
 # Function that returns the counterpart C++ compiler, given $(CC) as arg.
-cxx_compiler = $(if $(findstring clang,$(1)), $(subst clang,clang++,$(1)), $(if $(findstring icc,$(1)), $(subst icc,icpc,$(1)), $(if $(findstring llvm-gcc,$(1)), $(subst llvm-gcc,llvm-g++,$(1)), $(subst gcc,g++,$(1)))))
+cxx_compiler_notdir = $(if $(findstring clang,$(1)), $(subst clang,clang++,$(1)), $(if $(findstring icc,$(1)), $(subst icc,icpc,$(1)), $(if $(findstring llvm-gcc,$(1)), $(subst llvm-gcc,llvm-g++,$(1)), $(subst gcc,g++,$(1)))))
+cxx_compiler = $(if $(findstring /,$(1)),$(join $(dir $(1)), $(call cxx_compiler_notdir,$(notdir $(1)))),$(call cxx_compiler_notdir,$(1)))
 
 # Function that returns the C++ linker, given $(CC) as arg.
-cxx_linker = $(if $(findstring clang,$(1)), $(subst clang,clang++,$(1)), $(if $(findstring icc,$(1)), $(subst icc,icpc,$(1)), $(if $(findstring llvm-gcc,$(1)), $(subst llvm-gcc,llvm-g++,$(1)), $(subst gcc,g++,$(1)))))
+cxx_linker_notdir = $(if $(findstring clang,$(1)), $(subst clang,clang++,$(1)), $(if $(findstring icc,$(1)), $(subst icc,icpc,$(1)), $(if $(findstring llvm-gcc,$(1)), $(subst llvm-gcc,llvm-g++,$(1)), $(subst gcc,g++,$(1)))))
+cxx_linker = $(if $(findstring /,$(1)),$(join $(dir $(1)), $(call cxx_linker_notdir,$(notdir $(1)))),$(call cxx_linker_notdir,$(1)))
 
 #----------------------------------------------------------------------
 # C++ standard library options
@@ -224,6 +220,17 @@ ifneq "$(strip $(ARCHIVE_OBJCXX_SOURCES))" ""
 	endif
 endif
 
+#----------------------------------------------------------------------
+# Check if we are compiling with gcc 4.6
+#----------------------------------------------------------------------
+ifneq (,$(filter g++,$(CXX)))
+	CXXVERSION = $(shell g++ -dumpversion | cut -b 1-3)
+	ifeq "$(CXXVERSION)" "4.6"
+                # GCC 4.6 cannot handle -std=c++11, so replace it with -std=c++0x
+                # instead. FIXME: remove once GCC version is upgraded.
+		override CXXFLAGS := $(subst -std=c++11,-std=c++0x,$(CXXFLAGS))
+	endif
+endif
 
 #----------------------------------------------------------------------
 # DYLIB_ONLY variable can be used to skip the building of a.out.
@@ -234,16 +241,14 @@ endif
 #----------------------------------------------------------------------
 # Make the dSYM file from the executable if $(MAKE_DSYM) != "NO"
 #----------------------------------------------------------------------
+ifneq "$(DYLIB_ONLY)" "YES"
 $(DSYM) : $(EXE)
 ifeq "$(OS)" "Darwin"
 ifneq "$(MAKE_DSYM)" "NO"
-ifeq "$(DYLIB_ONLY)" ""
 	$(DS) $(DSFLAGS) -o "$(DSYM)" "$(EXE)"
-endif
 endif
 else
 ifeq "$(SPLIT_DEBUG_SYMBOLS)" "YES"
-ifeq "$(DYLIB_ONLY)" ""
 	objcopy --only-keep-debug "$(EXE)" "$(DSYM)"
 	objcopy --strip-debug --add-gnu-debuglink="$(DSYM)" "$(EXE)" "$(EXE)"
 endif
@@ -256,7 +261,7 @@ endif
 ifneq "$(DYLIB_NAME)" ""
 ifeq "$(DYLIB_ONLY)" ""
 $(EXE) : $(OBJECTS) $(ARCHIVE_NAME) $(DYLIB_FILENAME)
-	$(LD) $(LDFLAGS) $(OBJECTS) $(ARCHIVE_NAME) -L. -l$(DYLIB_NAME) -o "$(EXE)"
+	$(LD) $(OBJECTS) $(ARCHIVE_NAME) -L. -l$(DYLIB_NAME) $(LDFLAGS) -o "$(EXE)"
 else
 EXE = $(DYLIB_FILENAME)
 endif
@@ -321,7 +326,7 @@ endif
 
 %.d: %.cpp
 	@set -e; rm -f $@; \
-	$(CC) -M $(CXXFLAGS) $< > $@.$$$$; \
+	$(CXX) -M $(CXXFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 
@@ -333,7 +338,7 @@ endif
 
 %.d: %.mm
 	@set -e; rm -f $@; \
-	$(CC) -M $(CXXFLAGS) $< > $@.$$$$; \
+	$(CXX) -M $(CXXFLAGS) $< > $@.$$$$; \
 	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 

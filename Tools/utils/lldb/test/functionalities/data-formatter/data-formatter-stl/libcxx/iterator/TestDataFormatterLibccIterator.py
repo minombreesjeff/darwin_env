@@ -10,7 +10,7 @@ import lldbutil
 
 class LibcxxIteratorDataFormatterTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "data-formatter", "data-formatter-stl", "libcxx", "iterator")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -20,6 +20,7 @@ class LibcxxIteratorDataFormatterTestCase(TestBase):
         self.data_formatter_commands()
 
     @skipIfLinux # No standard locations for libc++ on Linux, so skip for now 
+    @expectedFailureFreeBSD('llvm.org/pr17499') # introduced by r191996
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
@@ -57,7 +58,7 @@ class LibcxxIteratorDataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.expect('image list',substrs=['libc++.1.dylib','libc++abi.dylib'])
+        self.expect('image list', substrs = self.getLibcPlusPlusLibs())
 
         self.expect('frame variable ivI', substrs = ['item = 3'])
         self.expect('expr ivI', substrs = ['item = 3'])

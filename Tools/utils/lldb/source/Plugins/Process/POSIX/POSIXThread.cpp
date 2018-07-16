@@ -16,21 +16,25 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Breakpoint/Watchpoint.h"
+#include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/State.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Target/ThreadSpec.h"
 #include "POSIXStopInfo.h"
 #include "POSIXThread.h"
 #include "ProcessPOSIX.h"
 #include "ProcessPOSIXLog.h"
 #include "ProcessMonitor.h"
-#include "RegisterContext_i386.h"
-#include "RegisterContext_x86_64.h"
-#include "RegisterContextPOSIX.h"
+#include "RegisterContextPOSIXProcessMonitor_mips64.h"
+#include "RegisterContextPOSIXProcessMonitor_x86.h"
+#include "RegisterContextLinux_i386.h"
 #include "RegisterContextLinux_x86_64.h"
+#include "RegisterContextFreeBSD_i386.h"
+#include "RegisterContextFreeBSD_mips64.h"
 #include "RegisterContextFreeBSD_x86_64.h"
 
 #include "UnwindLLDB.h"
@@ -43,7 +47,9 @@ POSIXThread::POSIXThread(Process &process, lldb::tid_t tid)
     : Thread(process, tid),
       m_frame_ap (),
       m_breakpoint (),
-      m_thread_name ()
+      m_thread_name_valid (false),
+      m_thread_name (),
+      m_posix_thread(NULL)
 {
     Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
@@ -77,6 +83,7 @@ POSIXThread::GetMonitor()
     return process.GetMonitor();
 }
 
+// Overridden by FreeBSDThread; this is used only on Linux.
 void
 POSIXThread::RefreshStateAfterStop()
 {
@@ -109,7 +116,8 @@ POSIXThread::GetInfo()
 void
 POSIXThread::SetName (const char *name)
 {
-    if (name && name[0])
+    m_thread_name_valid = (name && name[0]);
+    if (m_thread_name_valid)
         m_thread_name.assign (name);
     else
         m_thread_name.clear();
@@ -118,6 +126,12 @@ POSIXThread::SetName (const char *name)
 const char *
 POSIXThread::GetName ()
 {
+    if (!m_thread_name_valid)
+    {
+        SetName(Host::GetThreadName(GetProcess()->GetID(), GetID()).c_str());
+        m_thread_name_valid = true;
+    }
+
     if (m_thread_name.empty())
         return NULL;
     return m_thread_name.c_str();
@@ -128,30 +142,66 @@ POSIXThread::GetRegisterContext()
 {
     if (!m_reg_context_sp)
     {
-        ArchSpec arch = Host::GetArchitecture();
+        m_posix_thread = NULL;
 
-        switch (arch.GetCore())
+        RegisterInfoInterface *reg_interface = NULL;
+        const ArchSpec &target_arch = GetProcess()->GetTarget().GetArchitecture();
+
+        switch (target_arch.GetCore())
         {
-        default:
-            assert(false && "CPU type not supported!");
-            break;
+            case ArchSpec::eCore_mips64:
+            {
+                RegisterInfoInterface *reg_interface = NULL;
 
-        case ArchSpec::eCore_x86_32_i386:
-        case ArchSpec::eCore_x86_32_i486:
-        case ArchSpec::eCore_x86_32_i486sx:
-            m_reg_context_sp.reset(new RegisterContext_i386(*this, 0));
-            break;
+                switch (target_arch.GetTriple().getOS())
+                {
+                    case llvm::Triple::FreeBSD:
+                        reg_interface = new RegisterContextFreeBSD_mips64(target_arch);
+                        break;
+                    default:
+                        assert(false && "OS not supported");
+                        break;
+                }
 
-        case ArchSpec::eCore_x86_64_x86_64:
-// TODO: Use target OS/architecture detection rather than ifdefs so that
-// lldb built on FreeBSD can debug on Linux and vice-versa.
-#ifdef __linux__
-            m_reg_context_sp.reset(new RegisterContextLinux_x86_64(*this, 0));
-#endif
-#ifdef __FreeBSD__
-            m_reg_context_sp.reset(new RegisterContextFreeBSD_x86_64(*this, 0));
-#endif
-            break;
+                if (reg_interface)
+                {
+                    RegisterContextPOSIXProcessMonitor_mips64 *reg_ctx = new RegisterContextPOSIXProcessMonitor_mips64(*this, 0, reg_interface);
+                    m_posix_thread = reg_ctx;
+                    m_reg_context_sp.reset(reg_ctx);
+                }
+                break;
+            }
+
+            case ArchSpec::eCore_x86_32_i386:
+            case ArchSpec::eCore_x86_32_i486:
+            case ArchSpec::eCore_x86_32_i486sx:
+            case ArchSpec::eCore_x86_64_x86_64:
+            {
+                switch (target_arch.GetTriple().getOS())
+                {
+                    case llvm::Triple::FreeBSD:
+                        reg_interface = new RegisterContextFreeBSD_x86_64(target_arch);
+                        break;
+                    case llvm::Triple::Linux:
+                        reg_interface = new RegisterContextLinux_x86_64(target_arch);
+                        break;
+                    default:
+                        assert(false && "OS not supported");
+                        break;
+                }
+
+                if (reg_interface)
+                {
+                    RegisterContextPOSIXProcessMonitor_x86_64 *reg_ctx = new RegisterContextPOSIXProcessMonitor_x86_64(*this, 0, reg_interface);
+                    m_posix_thread = reg_ctx;
+                    m_reg_context_sp.reset(reg_ctx);
+                }
+                break;
+            }
+
+            default:
+                assert(false && "CPU type not supported!");
+                break;
         }
     }
     return m_reg_context_sp;
@@ -181,6 +231,17 @@ POSIXThread::CreateRegisterContextForFrame(lldb_private::StackFrame *frame)
     return reg_ctx_sp;
 }
 
+lldb::addr_t
+POSIXThread::GetThreadPointer ()
+{
+    ProcessMonitor &monitor = GetMonitor();
+    addr_t addr;
+    if (monitor.ReadThreadPointer (GetID(), addr))
+        return addr;
+    else
+        return LLDB_INVALID_ADDRESS;
+}
+
 bool
 POSIXThread::CalculateStopInfo()
 {
@@ -197,6 +258,7 @@ POSIXThread::GetUnwinder()
     return m_unwinder_ap.get();
 }
 
+// Overridden by FreeBSDThread; this is used only on Linux.
 void
 POSIXThread::WillResume(lldb::StateType resume_state)
 {
@@ -300,6 +362,10 @@ POSIXThread::Notify(const ProcessMessage &message)
     case ProcessMessage::eNewThreadMessage:
         ThreadNotify(message);
         break;
+
+    case ProcessMessage::eExecMessage:
+        ExecNotify(message);
+        break;
     }
 }
 
@@ -314,7 +380,7 @@ POSIXThread::EnableHardwareWatchpoint(Watchpoint *wp)
         bool wp_read = wp->WatchpointRead();
         bool wp_write = wp->WatchpointWrite();
         uint32_t wp_hw_index = wp->GetHardwareIndex();
-        RegisterContextPOSIX* reg_ctx = GetRegisterContextPOSIX();
+        POSIXBreakpointProtocol* reg_ctx = GetPOSIXBreakpointProtocol();
         if (reg_ctx)
             wp_set = reg_ctx->SetHardwareWatchpointWithIndex(wp_addr, wp_size,
                                                              wp_read, wp_write,
@@ -351,7 +417,7 @@ POSIXThread::FindVacantWatchpointIndex()
     uint32_t hw_index = LLDB_INVALID_INDEX32;
     uint32_t num_hw_wps = NumSupportedHardwareWatchpoints();
     uint32_t wp_idx;
-    RegisterContextPOSIX* reg_ctx = GetRegisterContextPOSIX();
+    POSIXBreakpointProtocol* reg_ctx = GetPOSIXBreakpointProtocol();
     if (reg_ctx)
     {
         for (wp_idx = 0; wp_idx < num_hw_wps; wp_idx++)
@@ -373,7 +439,7 @@ POSIXThread::BreakNotify(const ProcessMessage &message)
     Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
 
     assert(GetRegisterContext());
-    status = GetRegisterContextPOSIX()->UpdateAfterBreakpoint();
+    status = GetPOSIXBreakpointProtocol()->UpdateAfterBreakpoint();
     assert(status && "Breakpoint update failed!");
 
     // With our register state restored, resolve the breakpoint object
@@ -383,15 +449,24 @@ POSIXThread::BreakNotify(const ProcessMessage &message)
     if (log)
         log->Printf ("POSIXThread::%s () PC=0x%8.8" PRIx64, __FUNCTION__, pc);
     lldb::BreakpointSiteSP bp_site(GetProcess()->GetBreakpointSiteList().FindByAddress(pc));
-    assert(bp_site);
-    lldb::break_id_t bp_id = bp_site->GetID();
-    assert(bp_site && bp_site->ValidForThisThread(this));
 
-    // Make this thread the selected thread
-    GetProcess()->GetThreadList().SetSelectedThreadByID(GetID());
-
-    m_breakpoint = bp_site;
-    SetStopInfo (StopInfo::CreateStopReasonWithBreakpointSiteID(*this, bp_id));
+    // If the breakpoint is for this thread, then we'll report the hit, but if it is for another thread,
+    // we create a stop reason with should_stop=false.  If there is no breakpoint location, then report
+    // an invalid stop reason. We don't need to worry about stepping over the breakpoint here, that will
+    // be taken care of when the thread resumes and notices that there's a breakpoint under the pc.
+    if (bp_site)
+    {
+        lldb::break_id_t bp_id = bp_site->GetID();
+        if (bp_site->ValidForThisThread(this))
+            SetStopInfo (StopInfo::CreateStopReasonWithBreakpointSiteID(*this, bp_id));
+        else
+        {
+            const bool should_stop = false;
+            SetStopInfo (StopInfo::CreateStopReasonWithBreakpointSiteID(*this, bp_id, should_stop));
+        }
+    }
+    else
+        SetStopInfo(StopInfoSP());
 }
 
 void
@@ -404,7 +479,7 @@ POSIXThread::WatchNotify(const ProcessMessage &message)
         log->Printf ("POSIXThread::%s () Hardware Watchpoint Address = 0x%8.8"
                      PRIx64, __FUNCTION__, halt_addr);
 
-    RegisterContextPOSIX* reg_ctx = GetRegisterContextPOSIX();
+    POSIXBreakpointProtocol* reg_ctx = GetPOSIXBreakpointProtocol();
     if (reg_ctx)
     {
         uint32_t num_hw_wps = reg_ctx->NumSupportedHardwareWatchpoints();
@@ -436,22 +511,6 @@ POSIXThread::WatchNotify(const ProcessMessage &message)
 void
 POSIXThread::TraceNotify(const ProcessMessage &message)
 {
-#ifndef __FreeBSD__
-    RegisterContextPOSIX* reg_ctx = GetRegisterContextPOSIX();
-    if (reg_ctx)
-    {
-        uint32_t num_hw_wps = reg_ctx->NumSupportedHardwareWatchpoints();
-        uint32_t wp_idx;
-        for (wp_idx = 0; wp_idx < num_hw_wps; wp_idx++)
-        {
-            if (reg_ctx->IsWatchpointHit(wp_idx))
-            {
-                WatchNotify(message);
-                return;
-            }
-        }
-    }
-#endif
     SetStopInfo (StopInfo::CreateStopReasonToTrace(*this));
 }
 
@@ -516,20 +575,24 @@ POSIXThread::GetRegisterIndexFromOffset(unsigned offset)
         llvm_unreachable("CPU type not supported!");
         break;
 
+    case ArchSpec::eCore_mips64:
     case ArchSpec::eCore_x86_32_i386:
     case ArchSpec::eCore_x86_32_i486:
     case ArchSpec::eCore_x86_32_i486sx:
     case ArchSpec::eCore_x86_64_x86_64:
         {
-            RegisterContextSP base = GetRegisterContext();
-            if (base) {
-                RegisterContextPOSIX &context = static_cast<RegisterContextPOSIX &>(*base);
-                reg = context.GetRegisterIndexFromOffset(offset);
-            }
+            POSIXBreakpointProtocol* reg_ctx = GetPOSIXBreakpointProtocol();
+            reg = reg_ctx->GetRegisterIndexFromOffset(offset);
         }
         break;
     }
     return reg;
+}
+
+void
+POSIXThread::ExecNotify(const ProcessMessage &message)
+{
+    SetStopInfo (StopInfo::CreateStopReasonWithExec(*this));
 }
 
 const char *
@@ -544,6 +607,7 @@ POSIXThread::GetRegisterName(unsigned reg)
         assert(false && "CPU type not supported!");
         break;
 
+    case ArchSpec::eCore_mips64:
     case ArchSpec::eCore_x86_32_i386:
     case ArchSpec::eCore_x86_32_i486:
     case ArchSpec::eCore_x86_32_i486sx:

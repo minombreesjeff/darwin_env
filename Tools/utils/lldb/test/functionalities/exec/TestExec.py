@@ -19,7 +19,7 @@ def execute_command (command):
 
 class ExecTestCase(TestBase):
 
-    mydir = os.path.join("functionalities", "exec")
+    mydir = TestBase.compute_mydir(__file__)
 
         
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
@@ -60,7 +60,7 @@ class ExecTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Launch the process
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
         self.assertTrue(process, PROCESS_IS_VALID)
         
         for i in range(6):

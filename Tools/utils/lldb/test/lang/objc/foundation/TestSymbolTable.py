@@ -10,7 +10,7 @@ from lldbtest import *
 @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
 class FoundationSymtabTestCase(TestBase):
 
-    mydir = os.path.join("lang", "objc", "foundation")
+    mydir = TestBase.compute_mydir(__file__)
 
     symbols_list = ['-[MyString initWithNSString:]',
                     '-[MyString dealloc]',
@@ -47,7 +47,7 @@ class FoundationSymtabTestCase(TestBase):
         self.assertTrue(target, VALID_TARGET)
 
         # Launch the process, and do not stop at the entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         #
         # Exercise Python APIs to access the symbol table entries.

@@ -21,6 +21,8 @@
 #include "launcherXPCService/LauncherXPCService.h"
 #endif
 
+#include "llvm/Support/Host.h"
+
 #include <asl.h>
 #include <crt_externs.h>
 #include <execinfo.h>
@@ -55,8 +57,6 @@
 #include "cfcpp/CFCReleaser.h"
 #include "cfcpp/CFCString.h"
 
-#include "llvm/Support/Host.h"
-#include "llvm/Support/MachO.h"
 
 #include <objc/objc-auto.h>
 
@@ -364,7 +364,7 @@ WaitForProcessToSIGSTOP (const lldb::pid_t pid, const int timeout_in_seconds)
 //    StreamFile command_file;
 //    command_file.GetFile().Open (temp_file_path, 
 //                                 File::eOpenOptionWrite | File::eOpenOptionCanCreate,
-//                                 File::ePermissionsDefault);
+//                                 lldb::eFilePermissionsDefault);
 //    
 //    if (!command_file.GetFile().IsValid())
 //        return LLDB_INVALID_PROCESS_ID;
@@ -995,9 +995,6 @@ Host::GetOSKernelDescription (std::string &s)
     s.clear();
     return false;
 }
-    
-#include <libxml/parser.h>
-#include <libxml/tree.h>
 
 bool
 Host::GetOSVersion 
@@ -1007,61 +1004,69 @@ Host::GetOSVersion
     uint32_t &update
 )
 {
-    static const char *version_plist_file = "/System/Library/CoreServices/SystemVersion.plist";
-    char buffer[256];
-    const char *product_version_str = NULL;
-    
-    CFCReleaser<CFURLRef> plist_url(CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
-                                                                            (UInt8 *) version_plist_file,
-                                                                            strlen (version_plist_file), NO));
-    if (plist_url.get())
+    static uint32_t g_major = 0;
+    static uint32_t g_minor = 0;
+    static uint32_t g_update = 0;
+
+    if (g_major == 0)
     {
-        CFCReleaser<CFPropertyListRef> property_list;
-        CFCReleaser<CFStringRef>       error_string;
-        CFCReleaser<CFDataRef>         resource_data;
-        SInt32                         error_code;
- 
-        // Read the XML file.
-        if (CFURLCreateDataAndPropertiesFromResource (kCFAllocatorDefault,
-                                                      plist_url.get(),
-                                                      resource_data.ptr_address(),
-                                                      NULL,
-                                                      NULL,
-                                                      &error_code))
+        static const char *version_plist_file = "/System/Library/CoreServices/SystemVersion.plist";
+        char buffer[256];
+        const char *product_version_str = NULL;
+        
+        CFCReleaser<CFURLRef> plist_url(CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
+                                                                                (UInt8 *) version_plist_file,
+                                                                                strlen (version_plist_file), NO));
+        if (plist_url.get())
         {
-               // Reconstitute the dictionary using the XML data.
-            property_list = CFPropertyListCreateFromXMLData (kCFAllocatorDefault,
-                                                              resource_data.get(),
-                                                              kCFPropertyListImmutable,
-                                                              error_string.ptr_address());
-            if (CFGetTypeID(property_list.get()) == CFDictionaryGetTypeID())
+            CFCReleaser<CFPropertyListRef> property_list;
+            CFCReleaser<CFStringRef>       error_string;
+            CFCReleaser<CFDataRef>         resource_data;
+            SInt32                         error_code;
+     
+            // Read the XML file.
+            if (CFURLCreateDataAndPropertiesFromResource (kCFAllocatorDefault,
+                                                          plist_url.get(),
+                                                          resource_data.ptr_address(),
+                                                          NULL,
+                                                          NULL,
+                                                          &error_code))
             {
-                CFDictionaryRef property_dict = (CFDictionaryRef) property_list.get();
-                CFStringRef product_version_key = CFSTR("ProductVersion");
-                CFPropertyListRef product_version_value;
-                product_version_value = CFDictionaryGetValue(property_dict, product_version_key);
-                if (product_version_value && CFGetTypeID(product_version_value) == CFStringGetTypeID())
+                   // Reconstitute the dictionary using the XML data.
+                property_list = CFPropertyListCreateFromXMLData (kCFAllocatorDefault,
+                                                                  resource_data.get(),
+                                                                  kCFPropertyListImmutable,
+                                                                  error_string.ptr_address());
+                if (CFGetTypeID(property_list.get()) == CFDictionaryGetTypeID())
                 {
-                    CFStringRef product_version_cfstr = (CFStringRef) product_version_value;
-                    product_version_str = CFStringGetCStringPtr(product_version_cfstr, kCFStringEncodingUTF8);
-                    if (product_version_str == NULL) {
-                        if (CFStringGetCString(product_version_cfstr, buffer, 256, kCFStringEncodingUTF8))
-                            product_version_str = buffer;
+                    CFDictionaryRef property_dict = (CFDictionaryRef) property_list.get();
+                    CFStringRef product_version_key = CFSTR("ProductVersion");
+                    CFPropertyListRef product_version_value;
+                    product_version_value = CFDictionaryGetValue(property_dict, product_version_key);
+                    if (product_version_value && CFGetTypeID(product_version_value) == CFStringGetTypeID())
+                    {
+                        CFStringRef product_version_cfstr = (CFStringRef) product_version_value;
+                        product_version_str = CFStringGetCStringPtr(product_version_cfstr, kCFStringEncodingUTF8);
+                        if (product_version_str != NULL) {
+                            if (CFStringGetCString(product_version_cfstr, buffer, 256, kCFStringEncodingUTF8))
+                                product_version_str = buffer;
+                        }
                     }
                 }
             }
         }
+        if (product_version_str)
+            Args::StringToVersion(product_version_str, g_major, g_minor, g_update);
     }
     
-
-    if (product_version_str)
+    if (g_major != 0)
     {
-        Args::StringToVersion(product_version_str, major, minor, update);
+        major = g_major;
+        minor = g_minor;
+        update = g_update;
         return true;
     }
-    else
-        return false;
-
+    return false;
 }
 
 static bool
@@ -1108,14 +1113,14 @@ GetMacOSXProcessCPUType (ProcessInstanceInfo &process_info)
         {
             switch (cpu)
             {
-                case llvm::MachO::CPUTypeI386:      sub = llvm::MachO::CPUSubType_I386_ALL;     break;
-                case llvm::MachO::CPUTypeX86_64:    sub = llvm::MachO::CPUSubType_X86_64_ALL;   break;
+                case CPU_TYPE_I386:      sub = CPU_SUBTYPE_I386_ALL;     break;
+                case CPU_TYPE_X86_64:    sub = CPU_SUBTYPE_X86_64_ALL;   break;
 
-                // FIXME should be llvm::MachO::CPUSubType_ARM64_ALL but that doesn't exist and
-                // it ends up the same value...
-                case llvm::MachO::CPUTypeARM64:     sub = llvm::MachO::CPUSubType_ARM_ALL;      break;
+#if defined (CPU_TYPE_ARM64) && defined (CPU_SUBTYPE_ARM64_ALL)
+                case CPU_TYPE_ARM64:     sub = CPU_SUBTYPE_ARM64_ALL;      break;
+#endif
 
-                case llvm::MachO::CPUTypeARM:
+                case CPU_TYPE_ARM:
                     {
                         bool host_cpu_is_64bit;
                         uint32_t is64bit_capable;
@@ -1132,7 +1137,7 @@ GetMacOSXProcessCPUType (ProcessInstanceInfo &process_info)
 
                         if (host_cpu_is_64bit)
                         {
-                            sub = llvm::MachO::CPUSubType_ARM_V7;
+                            sub = CPU_SUBTYPE_ARM_V7;
                         }
                     }
                     break;
@@ -1348,10 +1353,31 @@ GetPosixspawnFlags (ProcessLaunchInfo &launch_info)
     if (launch_info.GetLaunchInSeparateProcessGroup())
         flags |= POSIX_SPAWN_SETPGROUP;
     
-//#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
-//    // Close all files exception those with file actions if this is supported.
-//    flags |= POSIX_SPAWN_CLOEXEC_DEFAULT;       
-//#endif
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+#if defined (__APPLE__) && (defined (__x86_64__) || defined (__i386__))
+    static LazyBool g_use_close_on_exec_flag = eLazyBoolCalculate;
+    if (g_use_close_on_exec_flag == eLazyBoolCalculate)
+    {
+        g_use_close_on_exec_flag = eLazyBoolNo;
+        
+        uint32_t major, minor, update;
+        if (Host::GetOSVersion(major, minor, update))
+        {
+            // Kernel panic if we use the POSIX_SPAWN_CLOEXEC_DEFAULT on 10.7 or earlier
+            if (major > 10 || (major == 10 && minor > 7))
+            {
+                // Only enable for 10.8 and later OS versions
+                g_use_close_on_exec_flag = eLazyBoolYes;
+            }
+        }
+    }
+#else
+    static LazyBool g_use_close_on_exec_flag = eLazyBoolYes;
+#endif
+    // Close all files exception those with file actions if this is supported.
+    if (g_use_close_on_exec_flag == eLazyBoolYes)
+        flags |= POSIX_SPAWN_CLOEXEC_DEFAULT;
+#endif
     
     return flags;
 }
@@ -1537,6 +1563,21 @@ LaunchProcessXPC (const char *exe_path, ProcessLaunchInfo &launch_info, ::pid_t 
     // Posix spawn stuff.
     xpc_dictionary_set_int64(message, LauncherXPCServiceCPUTypeKey, launch_info.GetArchitecture().GetMachOCPUType());
     xpc_dictionary_set_int64(message, LauncherXPCServicePosixspawnFlagsKey, GetPosixspawnFlags(launch_info));
+    const ProcessLaunchInfo::FileAction *file_action = launch_info.GetFileActionForFD(STDIN_FILENO);
+    if (file_action && file_action->GetPath())
+    {
+        xpc_dictionary_set_string(message, LauncherXPCServiceStdInPathKeyKey, file_action->GetPath());
+    }
+    file_action = launch_info.GetFileActionForFD(STDOUT_FILENO);
+    if (file_action && file_action->GetPath())
+    {
+        xpc_dictionary_set_string(message, LauncherXPCServiceStdOutPathKeyKey, file_action->GetPath());
+    }
+    file_action = launch_info.GetFileActionForFD(STDERR_FILENO);
+    if (file_action && file_action->GetPath())
+    {
+        xpc_dictionary_set_string(message, LauncherXPCServiceStdErrPathKeyKey, file_action->GetPath());
+    }
     
     xpc_object_t reply = xpc_connection_send_message_with_reply_sync(conn, message);
     xpc_type_t returnType = xpc_get_type(reply);
@@ -1750,28 +1791,18 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
 }
 
 static bool
-ShouldLaunchUsingXPC(const char *exe_path, ProcessLaunchInfo &launch_info)
+ShouldLaunchUsingXPC(ProcessLaunchInfo &launch_info)
 {
     bool result = false;
 
 #if !NO_XPC_SERVICES    
-    const char *debugserver = "/debugserver";
-    int len = strlen(debugserver);
-    int exe_len = strlen(exe_path);
-    if (exe_len >= len)
+    bool launchingAsRoot = launch_info.GetUserID() == 0;
+    bool currentUserIsRoot = Host::GetEffectiveUserID() == 0;
+    
+    if (launchingAsRoot && !currentUserIsRoot)
     {
-        const char *part = exe_path + (exe_len - len);
-        if (strcmp(part, debugserver) == 0)
-        {
-            // We are dealing with debugserver.
-            uid_t requested_uid = launch_info.GetUserID();
-            if (requested_uid == 0)
-            {
-                // Launching XPC works for root. It also works for the non-attaching case for current login
-                // but unfortunately, we can't detect it here.
-                result = true;
-            }
-        }
+        // If current user is already root, we don't need XPC's help.
+        result = true;
     }
 #endif
     
@@ -1828,7 +1859,7 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
     
     ::pid_t pid = LLDB_INVALID_PROCESS_ID;
     
-    if (ShouldLaunchUsingXPC(exe_path, launch_info))
+    if (ShouldLaunchUsingXPC(launch_info))
     {
         error = LaunchProcessXPC(exe_path, launch_info, pid);
     }

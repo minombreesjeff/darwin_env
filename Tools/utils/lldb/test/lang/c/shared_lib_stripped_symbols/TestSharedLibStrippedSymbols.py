@@ -8,7 +8,7 @@ import lldbutil
 
 class SharedLibTestCase(TestBase):
 
-    mydir = os.path.join("lang", "c", "shared_lib")
+    mydir = TestBase.compute_mydir(__file__)
 
     @dsym_test
     def test_expr_with_dsym(self):
@@ -39,8 +39,11 @@ class SharedLibTestCase(TestBase):
         TestBase.setUp(self)
         # Find the line number to break inside main().
         self.line = line_number('main.c', '// Set breakpoint 0 here.')
-        if sys.platform.startswith("linux"):
-            self.runCmd("settings set target.env-vars " + self.dylibPath + "=" + os.getcwd())
+        if sys.platform.startswith("freebsd") or sys.platform.startswith("linux"):
+            if "LD_LIBRARY_PATH" in os.environ:
+                self.runCmd("settings set target.env-vars " + self.dylibPath + "=" + os.environ["LD_LIBRARY_PATH"] + ":" + os.getcwd())
+            else:
+                self.runCmd("settings set target.env-vars " + self.dylibPath + "=" + os.getcwd())
             self.addTearDownHook(lambda: self.runCmd("settings remove target.env-vars " + self.dylibPath))
 
     def common_setup(self):

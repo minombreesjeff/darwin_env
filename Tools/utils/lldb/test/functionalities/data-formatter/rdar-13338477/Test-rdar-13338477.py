@@ -11,7 +11,7 @@ import lldbutil
 class Radar13338477DataFormatterTestCase(TestBase):
 
     # test for rdar://problem/13338477 ()
-    mydir = os.path.join("functionalities", "data-formatter", "rdar-13338477")
+    mydir = TestBase.compute_mydir(__file__)
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
@@ -55,7 +55,7 @@ class Radar13338477DataFormatterTestCase(TestBase):
         self.addTearDownHook(cleanup)
 
         self.expect('p *(int (*)[3])foo',
-            substrs = ['(int [3]) $',' = {','[0] = 1','[1] = 2','[2] = 3'])
+            substrs = ['(int [3]) $','[0] = 1','[1] = 2','[2] = 3'])
 
         self.expect('p *(int (*)[3])foo', matching=False,
             substrs = ['01 00 00 00 02 00 00 00 03 00 00 00'])

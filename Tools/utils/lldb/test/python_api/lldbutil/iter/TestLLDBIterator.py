@@ -10,7 +10,7 @@ from lldbtest import *
 
 class LLDBIteratorTestCase(TestBase):
 
-    mydir = os.path.join("python_api", "lldbutil", "iter")
+    mydir = TestBase.compute_mydir(__file__)
 
     def setUp(self):
         # Call super's setUp().
@@ -47,7 +47,7 @@ class LLDBIteratorTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.LaunchProcess() failed")
@@ -107,7 +107,7 @@ class LLDBIteratorTestCase(TestBase):
         self.assertTrue(breakpoint, VALID_BREAKPOINT)
 
         # Now launch the process, and do not stop at entry point.
-        process = target.LaunchSimple(None, None, os.getcwd())
+        process = target.LaunchSimple (None, None, self.get_process_working_directory())
 
         if not process:
             self.fail("SBTarget.LaunchProcess() failed")

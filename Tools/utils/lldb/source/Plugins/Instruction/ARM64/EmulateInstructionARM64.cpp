@@ -168,7 +168,7 @@ EmulateInstructionARM64::GetPluginDescriptionStatic ()
 EmulateInstruction *
 EmulateInstructionARM64::CreateInstance (const ArchSpec &arch, InstructionType inst_type)
 {
-    if (EmulateInstructionARM64::SupportsEmulatingIntructionsOfTypeStatic(inst_type))
+    if (EmulateInstructionARM64::SupportsEmulatingInstructionsOfTypeStatic(inst_type))
     {
         if (arch.GetTriple().getArch() == llvm::Triple::arm64)
         {
@@ -280,7 +280,7 @@ EmulateInstructionARM64::ReadInstruction ()
         Context read_inst_context;
         read_inst_context.type = eContextReadOpcode;
         read_inst_context.SetNoArgs ();
-        m_opcode.SetOpcode32 (ReadMemoryUnsigned (read_inst_context, m_addr, 4, 0, &success));
+        m_opcode.SetOpcode32 (ReadMemoryUnsigned (read_inst_context, m_addr, 4, 0, &success), GetByteOrder());
     }
     if (!success)
         m_addr = LLDB_INVALID_ADDRESS;
@@ -565,7 +565,7 @@ EmulateInstructionARM64::Emulate_ldstpair (const uint32_t opcode, AddrMode a_mod
         switch (ConstrainUnpredictable(Unpredictable_LDPOVERLAP))
         {
             case Constraint_UNKNOWN:
-                rt_unknown = TRUE;  // result is UNKNOWN
+                rt_unknown = true;  // result is UNKNOWN
                 break;
                 
             case Constraint_NOP:

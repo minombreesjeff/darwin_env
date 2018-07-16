@@ -11,6 +11,7 @@ add_lldb_library(lldbDataFormatters
   LibCxx.cpp
   LibCxxList.cpp
   LibCxxMap.cpp
+  LibCxxUnorderedMap.cpp
   LibStdcpp.cpp
   NSArray.cpp
   NSDictionary.cpp
@@ -20,4 +21,5 @@ add_lldb_library(lldbDataFormatters
   TypeFormat.cpp
   TypeSummary.cpp
   TypeSynthetic.cpp
+  ValueObjectPrinter.cpp
   )

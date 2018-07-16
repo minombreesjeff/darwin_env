@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <execinfo.h>
 
 // C++ Includes
 // Other libraries and framework includes
@@ -102,13 +103,6 @@ ReadProcPseudoFile (lldb::pid_t pid, const char *name)
     }
 
     return buf_sp;
-}
-
-lldb::DataBufferSP
-ReadProcPseudoFile (lldb::pid_t pid, lldb::tid_t tid, const char *name)
-{
-    std::string process_thread_pseudo_file = "task/" + std::to_string(tid) + "/" + name;
-    return ReadProcPseudoFile(pid, process_thread_pseudo_file.c_str());
 }
 
 } // anonymous namespace
@@ -219,15 +213,14 @@ Host::GetOSVersion(uint32_t &major,
         return false;
 
     status = sscanf(un.release, "%u.%u.%u", &major, &minor, &update);
-    return status == 3;
-}
+    if (status == 3)
+        return true;
 
-Error
-Host::LaunchProcess (ProcessLaunchInfo &launch_info)
-{
-    Error error;
-    assert(!"Not implemented yet!!!");
-    return error;
+    // Some kernels omit the update version, so try looking for just "X.Y" and
+    // set update to 0.
+    update = 0;
+    status = sscanf(un.release, "%u.%u", &major, &minor);
+    return status == 2;
 }
 
 lldb::DataBufferSP
@@ -341,7 +334,7 @@ GetELFProcessCPUType (const char *exe_path, ProcessInstanceInfo &process_info)
 
     ModuleSpecList specs;
     FileSpec filespec (exe_path, false);
-    const size_t num_specs = ObjectFile::GetModuleSpecifications (filespec, 0, specs);
+    const size_t num_specs = ObjectFile::GetModuleSpecifications (filespec, 0, 0, specs);
     // GetModuleSpecifications() could fail if the executable has been deleted or is locked.
     // But it shouldn't return more than 1 architecture.
     assert(num_specs <= 1 && "Linux plugin supports only a single architecture");
@@ -410,18 +403,21 @@ GetProcessAndStatInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info, Proce
     // Get the commond line used to start the process.
     buf_sp = ReadProcPseudoFile(pid, "cmdline");
 
-    // Grab Arg0 first.
+    // Grab Arg0 first, if there is one.
     char *cmd = (char *)buf_sp->GetBytes();
-    process_info.SetArg0(cmd);
-
-    // Now process any remaining arguments.
-    Args &info_args = process_info.GetArguments();
-    char *next_arg = cmd + strlen(cmd) + 1;
-    end_buf = cmd + buf_sp->GetByteSize();
-    while (next_arg < end_buf && 0 != *next_arg)
+    if (cmd)
     {
-        info_args.AppendArgument(next_arg);
-        next_arg += strlen(next_arg) + 1;
+        process_info.SetArg0(cmd);
+
+        // Now process any remaining arguments.
+        Args &info_args = process_info.GetArguments();
+        char *next_arg = cmd + strlen(cmd) + 1;
+        end_buf = cmd + buf_sp->GetByteSize();
+        while (next_arg < end_buf && 0 != *next_arg)
+        {
+            info_args.AppendArgument(next_arg);
+            next_arg += strlen(next_arg) + 1;
+        }
     }
 
     // Read /proc/$PID/stat to get our parent pid.
@@ -450,71 +446,51 @@ Host::ThreadCreated (const char *thread_name)
 {
     if (!Host::SetThreadName (LLDB_INVALID_PROCESS_ID, LLDB_INVALID_THREAD_ID, thread_name))
     {
-        // pthread_setname_np_func can fail if the thread name is longer than
-        //  the supported limit on Linux. When this occurs, the error ERANGE is returned
-        // and SetThreadName will fail. Let's drop it down to 16 characters and try again.
-        char namebuf[16];
-
-        // Thread names are coming in like '<lldb.comm.debugger.edit>' and '<lldb.comm.debugger.editline>'
-        // So just chopping the end of the string off leads to a lot of similar named threads.
-        // Go through the thread name and search for the last dot and use that.
-        const char *lastdot = ::strrchr( thread_name, '.' );
-
-        if (lastdot && lastdot != thread_name)
-            thread_name = lastdot + 1;
-        ::strncpy (namebuf, thread_name, sizeof(namebuf));
-        namebuf[ sizeof(namebuf) - 1 ] = 0;
-
-        int namebuflen = strlen(namebuf);
-        if (namebuflen > 0)
-        {
-            if (namebuf[namebuflen - 1] == '(' || namebuf[namebuflen - 1] == '>')
-            {
-                // Trim off trailing '(' and '>' characters for a bit more cleanup.
-                namebuflen--;
-                namebuf[namebuflen] = 0;
-            }
-            Host::SetThreadName (LLDB_INVALID_PROCESS_ID, LLDB_INVALID_THREAD_ID, namebuf);
-        }
+        Host::SetShortThreadName (LLDB_INVALID_PROCESS_ID, LLDB_INVALID_THREAD_ID, thread_name, 16);
     }
 }
 
 std::string
 Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
 {
-    const size_t thread_name_max_size = 16;
-    char pthread_name[thread_name_max_size];
-    std::string thread_name;
-    // Read the /proc/$PID/stat file.
-    lldb::DataBufferSP buf_sp = ReadProcPseudoFile (pid, tid, "stat");
+    assert(pid != LLDB_INVALID_PROCESS_ID);
+    assert(tid != LLDB_INVALID_THREAD_ID);
 
-    // The file/thread name of the executable is stored in parenthesis. Search for the first
-    // '(' and last ')' and copy everything in between.
-    const char *filename_start = ::strchr ((const char *)buf_sp->GetBytes(), '(');
-    const char *filename_end = ::strrchr ((const char *)buf_sp->GetBytes(), ')');
+    // Read /proc/$TID/comm file.
+    lldb::DataBufferSP buf_sp = ReadProcPseudoFile (tid, "comm");
+    const char *comm_str = (const char *)buf_sp->GetBytes();
+    const char *cr_str = ::strchr(comm_str, '\n');
+    size_t length = cr_str ? (cr_str - comm_str) : strlen(comm_str);
 
-    if (filename_start && filename_end)
-    {
-        ++filename_start;
-        size_t length = filename_end - filename_start;
-        if (length > thread_name_max_size)
-            length = thread_name_max_size;
-        strncpy(pthread_name, filename_start, length);
-        thread_name = std::string(pthread_name, length);
-    }
-
+    std::string thread_name(comm_str, length);
     return thread_name;
 }
 
 void
 Host::Backtrace (Stream &strm, uint32_t max_frames)
 {
-    // TODO: Is there a way to backtrace the current process on linux?
+    if (max_frames > 0)
+    {
+        std::vector<void *> frame_buffer (max_frames, NULL);
+        int num_frames = ::backtrace (&frame_buffer[0], frame_buffer.size());
+        char** strs = ::backtrace_symbols (&frame_buffer[0], num_frames);
+        if (strs)
+        {
+            // Start at 1 to skip the "Host::Backtrace" frame
+            for (int i = 1; i < num_frames; ++i)
+                strm.Printf("%s\n", strs[i]);
+            ::free (strs);
+        }
+    }
 }
 
 size_t
 Host::GetEnvironment (StringList &env)
 {
-    // TODO: Is there a way to the host environment for this process on linux?
-    return 0;
+    char **host_env = environ;
+    char *env_entry;
+    size_t i;
+    for (i=0; (env_entry = host_env[i]) != NULL; ++i)
+        env.AppendString(env_entry);
+    return i;
 }
