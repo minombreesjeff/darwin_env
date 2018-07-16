@@ -1148,6 +1148,30 @@ def server_enforces_date_syntax():
 def server_has_atomic_revprop():
   return options.server_minor_version >= 7
 
+
+# https://issues.apache.org/bugzilla/show_bug.cgi?id=56480
+# https://issues.apache.org/bugzilla/show_bug.cgi?id=55397
+__mod_dav_url_quoting_broken_versions = frozenset([
+    '2.2.27',
+    '2.2.26',
+    '2.2.25',
+    '2.4.9',
+    '2.4.8',
+    '2.4.7',
+    '2.4.6',
+    '2.4.5',
+])
+def is_mod_dav_url_quoting_broken():
+    if is_ra_type_dav():
+        return (options.httpd_version in __mod_dav_url_quoting_broken_versions)
+    return None
+
+def is_httpd_authz_provider_enabled():
+    if is_ra_type_dav():
+      v = options.httpd_version.split('.')
+      return (v[0] == '2' and int(v[1]) >= 3) or int(v[0]) > 2
+    return None
+
 ######################################################################
 
 
@@ -1194,6 +1218,8 @@ class TestSpawningThread(threading.Thread):
       args.append('--mode-filter=' + options.mode_filter)
     if options.milestone_filter:
       args.append('--milestone-filter=' + options.milestone_filter)
+    if options.httpd_version:
+      args.append('--httpd-version=' + options.httpd_version)
 
     result, stdout_lines, stderr_lines = spawn_process(command, 0, 0, None,
                                                        *args)
@@ -1361,6 +1387,36 @@ class TestRunner:
       sandbox.cleanup_test_paths()
     return exit_code
 
+
+# https://issues.apache.org/bugzilla/show_bug.cgi?id=56480
+# https://issues.apache.org/bugzilla/show_bug.cgi?id=55397
+__mod_dav_url_quoting_broken_versions = frozenset([
+    '2.2.27',
+    '2.2.26',
+    '2.2.25',
+    '2.4.9',
+    '2.4.8',
+    '2.4.7',
+    '2.4.6',
+    '2.4.5',
+])
+def is_mod_dav_url_quoting_broken():
+    if is_ra_type_dav():
+        return (options.httpd_version in __mod_dav_url_quoting_broken_versions)
+    return None
+
+def is_httpd_authz_provider_enabled():
+    if is_ra_type_dav():
+      v = options.httpd_version.split('.')
+      return (v[0] == '2' and int(v[1]) >= 3) or int(v[0]) > 2
+    return None
+
+def is_httpd_authz_provider_enabled():
+    if is_ra_type_dav():
+      v = options.httpd_version.split('.')
+      return (v[0] == '2' and int(v[1]) >= 3) or int(v[0]) > 2
+    return None
+
 ######################################################################
 # Main testing functions
 
@@ -1526,6 +1582,8 @@ def _create_parser():
                          'useful during test development!')
   parser.add_option('--srcdir', action='store', dest='srcdir',
                     help='Source directory.')
+  parser.add_option('--httpd-version', action='store',
+                    help='Assume HTTPD is this version.')
 
   # most of the defaults are None, but some are other values, set them here
   parser.set_defaults(

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: dev@subversion.apache.org\n"
-"POT-Creation-Date: 2015-03-18 13:54+0000\n"
+"POT-Creation-Date: 2015-08-05 09:43+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1353,8 +1353,8 @@ msgid "Path '%s' does not exist"
 msgstr ""
 
 #: ../libsvn_client/commit.c:799 ../libsvn_client/copy.c:525
-#: ../libsvn_client/copy.c:1056 ../libsvn_client/copy.c:1313
-#: ../libsvn_client/copy.c:1937
+#: ../libsvn_client/copy.c:1059 ../libsvn_client/copy.c:1316
+#: ../libsvn_client/copy.c:1940
 #, c-format
 msgid "Path '%s' already exists"
 msgstr ""
@@ -1364,7 +1364,7 @@ msgstr ""
 msgid "'%s' is a reserved name and cannot be imported"
 msgstr ""
 
-#: ../libsvn_client/commit.c:852 ../libsvn_client/copy.c:1473
+#: ../libsvn_client/commit.c:852 ../libsvn_client/copy.c:1476
 msgid "Commit failed (details follow):"
 msgstr ""
 
@@ -1480,7 +1480,7 @@ msgstr ""
 msgid "Standard properties can't be set explicitly as revision properties"
 msgstr ""
 
-#: ../libsvn_client/copy.c:544 ../libsvn_client/copy.c:1953
+#: ../libsvn_client/copy.c:544 ../libsvn_client/copy.c:1956
 #, c-format
 msgid "Path '%s' is not a directory"
 msgstr ""
@@ -1494,68 +1494,68 @@ msgstr ""
 msgid "Source and destination URLs appear not to point to the same repository."
 msgstr ""
 
-#: ../libsvn_client/copy.c:1044 ../libsvn_client/prop_commands.c:186
+#: ../libsvn_client/copy.c:1047 ../libsvn_client/prop_commands.c:186
 #, c-format
 msgid "Path '%s' does not exist in revision %ld"
 msgstr ""
 
-#: ../libsvn_client/copy.c:1611
+#: ../libsvn_client/copy.c:1614
 #, c-format
 msgid "Source URL '%s' is from foreign repository; leaving it as a disjoint WC"
 msgstr ""
 
-#: ../libsvn_client/copy.c:1714 ../libsvn_client/copy.c:1727
+#: ../libsvn_client/copy.c:1717 ../libsvn_client/copy.c:1730
 #: ../libsvn_wc/adm_ops.c:946 ../libsvn_wc/copy.c:727
 #, c-format
 msgid "'%s' is already under version control"
 msgstr ""
 
-#: ../libsvn_client/copy.c:1748
+#: ../libsvn_client/copy.c:1751
 #, c-format
 msgid "Entry for '%s' exists (though the working file is missing)"
 msgstr ""
 
-#: ../libsvn_client/copy.c:1921
+#: ../libsvn_client/copy.c:1924
 #, c-format
 msgid "Path '%s' not found in revision %ld"
 msgstr ""
 
-#: ../libsvn_client/copy.c:1926
+#: ../libsvn_client/copy.c:1929
 #, c-format
 msgid "Path '%s' not found in head revision"
 msgstr ""
 
-#: ../libsvn_client/copy.c:2048
+#: ../libsvn_client/copy.c:2051
 msgid "Cannot mix repository and working copy sources"
 msgstr ""
 
-#: ../libsvn_client/copy.c:2100
+#: ../libsvn_client/copy.c:2103
 #, c-format
 msgid "Cannot copy path '%s' into its own child '%s'"
 msgstr ""
 
-#: ../libsvn_client/copy.c:2136
+#: ../libsvn_client/copy.c:2139
 #, c-format
 msgid ""
 "Cannot move the external at '%s'; please edit the svn:externals property on "
 "'%s'."
 msgstr ""
 
-#: ../libsvn_client/copy.c:2151
+#: ../libsvn_client/copy.c:2154
 msgid "Moves between the working copy and the repository are not supported"
 msgstr ""
 
-#: ../libsvn_client/copy.c:2166
+#: ../libsvn_client/copy.c:2169
 #, c-format
 msgid "Cannot move URL '%s' into itself"
 msgstr ""
 
-#: ../libsvn_client/copy.c:2167
+#: ../libsvn_client/copy.c:2170
 #, c-format
 msgid "Cannot move path '%s' into itself"
 msgstr ""
 
-#: ../libsvn_client/copy.c:2234
+#: ../libsvn_client/copy.c:2237
 #, c-format
 msgid "'%s' does not have a URL associated with it"
 msgstr ""
@@ -2896,7 +2896,7 @@ msgstr ""
 msgid "Transaction is dead: '%s'"
 msgstr ""
 
-#: ../libsvn_fs_base/revs-txns.c:273 ../libsvn_fs_fs/fs_fs.c:7575
+#: ../libsvn_fs_base/revs-txns.c:273 ../libsvn_fs_fs/fs_fs.c:7578
 #, c-format
 msgid "revprop '%s' has unexpected value in filesystem"
 msgstr ""
@@ -3342,39 +3342,39 @@ msgstr ""
 msgid "Recovery encountered a deltified directory representation"
 msgstr ""
 
-#: ../libsvn_fs_fs/fs_fs.c:6993 ../libsvn_fs_fs/fs_fs.c:7002
-#: ../libsvn_fs_fs/fs_fs.c:7008
+#: ../libsvn_fs_fs/fs_fs.c:6996 ../libsvn_fs_fs/fs_fs.c:7005
+#: ../libsvn_fs_fs/fs_fs.c:7011
 msgid "Directory entry corrupt"
 msgstr ""
 
-#: ../libsvn_fs_fs/fs_fs.c:7107
+#: ../libsvn_fs_fs/fs_fs.c:7110
 #, c-format
 msgid "Expected current rev to be <= %ld but found %ld"
 msgstr ""
 
-#: ../libsvn_fs_fs/fs_fs.c:7161
+#: ../libsvn_fs_fs/fs_fs.c:7164
 #, c-format
 msgid "Revision %ld has a revs file but no revprops file"
 msgstr ""
 
-#: ../libsvn_fs_fs/fs_fs.c:7169
+#: ../libsvn_fs_fs/fs_fs.c:7172
 #, c-format
 msgid "Revision %ld has a non-file where its revprops file should be"
 msgstr ""
 
-#: ../libsvn_fs_fs/fs_fs.c:7351
+#: ../libsvn_fs_fs/fs_fs.c:7354
 #, c-format
 msgid ""
 "Node origin for '%s' exists with a different value (%s) than what we were "
 "about to store (%s)"
 msgstr ""
 
-#: ../libsvn_fs_fs/fs_fs.c:7457
+#: ../libsvn_fs_fs/fs_fs.c:7460
 #, c-format
 msgid "No such transaction '%s'"
 msgstr ""
 
-#: ../libsvn_fs_fs/fs_fs.c:7870
+#: ../libsvn_fs_fs/fs_fs.c:7873
 #, c-format
 msgid "FSFS format (%d) too old to pack; please upgrade the filesystem."
 msgstr ""
@@ -4987,7 +4987,7 @@ msgid ""
 "ask the administrator to create a pre-revprop-change hook"
 msgstr ""
 
-#: ../libsvn_repos/load-fs-vtable.c:539 ../svnrdump/load_editor.c:643
+#: ../libsvn_repos/load-fs-vtable.c:539 ../svnrdump/load_editor.c:696
 #, c-format
 msgid "Relative source revision %ld is not available in current repository"
 msgstr ""
@@ -5218,7 +5218,7 @@ msgstr ""
 msgid "Unreadable path encountered; access denied"
 msgstr ""
 
-#: ../libsvn_repos/rev_hunt.c:1158
+#: ../libsvn_repos/rev_hunt.c:1155
 #, c-format
 msgid "'%s' is not a file in revision %ld"
 msgstr ""
@@ -6019,7 +6019,7 @@ msgstr ""
 
 #: ../libsvn_subr/opt.c:1091
 msgid ""
-"Copyright (C) 2014 The Apache Software Foundation.\n"
+"Copyright (C) 2015 The Apache Software Foundation.\n"
 "This software consists of contributions made by many people; see the NOTICE\n"
 "file for more information.\n"
 "Subversion is open source software, see http://subversion.apache.org/\n"
@@ -11598,12 +11598,12 @@ msgstr ""
 msgid "Try 'svnlook help' for more info"
 msgstr ""
 
-#: ../svnrdump/load_editor.c:382 ../svnsync/main.c:318
+#: ../svnrdump/load_editor.c:401 ../svnsync/main.c:318
 #, c-format
 msgid "Failed to get lock on destination repos, currently held by '%s'\n"
 msgstr ""
 
-#: ../svnrdump/load_editor.c:412
+#: ../svnrdump/load_editor.c:431
 msgid ""
 "Target server does not support atomic revision property edits; consider "
 "upgrading it to 1.7."

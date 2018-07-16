@@ -5,15 +5,15 @@
 	<key>OpenSourceProject</key>
 	<string>subversion</string>
 	<key>OpenSourceVersion</key>
-	<string>1.7.20</string>
+	<string>1.7.22</string>
 	<key>OpenSourceWebsiteURL</key>
 	<string>http://subversion.apache.org/</string>
 	<key>OpenSourceURL</key>
-	<string>http://archive.apache.org/dist/subversion/subversion-1.7.20.tar.bz2</string>
+	<string>http://archive.apache.org/dist/subversion/subversion-1.7.22.tar.bz2</string>
 	<key>OpenSourceSHA1</key>
-	<string>f600c68010d2fd9a23fc8c6b659099aedac12900</string>
+	<string>6b883a0e970262f6485fc20fef68a2afcffe0875</string>
 	<key>OpenSourceImportDate</key>
-	<string>2015-04-01</string>
+	<string>2016-01-08</string>
 	<key>OpenSourceLicense</key>
 	<string>apache</string>
 	<key>OpenSourceLicenseFile</key>

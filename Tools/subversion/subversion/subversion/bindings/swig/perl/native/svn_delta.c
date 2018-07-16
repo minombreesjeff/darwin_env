@@ -2475,10 +2475,9 @@ XS(_wrap_svn_txdelta_window_t_sview_offset_get) {
     arg1 = (svn_txdelta_window_t *)(argp1);
     result =  ((arg1)->sview_offset);
     {
-      char temp[256];
+      char temp[30];
       sprintf(temp, "%" APR_INT64_T_FMT, (apr_int64_t) result);
-      ST(argvi) = sv_newmortal();
-      sv_setpv((SV*)ST(argvi++), temp);
+      if (argvi >= items) EXTEND(sp,1);  ST(argvi) = sv_2mortal(newSVpv(temp, 0)); argvi++  ;
     }
     
     XSRETURN(argvi);
@@ -3600,7 +3599,7 @@ XS(_wrap_svn_txdelta_send_stream) {
       }
     }
     {
-      /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,59,%append_output@*/ if (argvi >= items) EXTEND(sp,1); /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,56,%set_output@*/ ST(argvi) = sv_2mortal(newSVpv(svn_md5_digest_to_cstring(arg4,
+      /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,59,%append_output@*/ if (argvi >= items) EXTEND(sp,1); /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,56,%set_output@*/ ST(argvi) = sv_2mortal(newSVpv(svn_md5_digest_to_cstring(arg4,
             _global_pool),
           0)); argvi++ /*@SWIG@*/
       
@@ -3751,11 +3750,7 @@ XS(_wrap_svn_txdelta_apply) {
     }
     ST(argvi) = sv_newmortal();
     {
-      /* FIXME: This code is clearly buggy. The return value of sv_newmortal()
-           is immediately overwritten by the return value
-           of svn_swig_pl_from_md5(). */
-      ST(argvi) = sv_newmortal();
-      ST(argvi++) = svn_swig_pl_from_md5(arg3);
+      if (argvi >= items) EXTEND(sp,1);  ST(argvi) = svn_swig_pl_from_md5(arg3); argvi++  ;
     }
     {
       if (argvi >= items) EXTEND(sp,1);  ST(argvi) = SWIG_NewPointerObj(*arg6, SWIGTYPE_p_f_p_svn_txdelta_window_t_p_void__p_svn_error_t, 0); argvi++  ;
@@ -8391,32 +8386,32 @@ XS(SWIG_init) {
     SvREADONLY_on(sv);
   }
   
-  /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
+  /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "SVN_DELTA_COMPRESSION_LEVEL_NONE", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(0)));
     SvREADONLY_on(sv);
   } while(0) /*@SWIG@*/;
-  /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
+  /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "SVN_DELTA_COMPRESSION_LEVEL_MAX", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(9)));
     SvREADONLY_on(sv);
   } while(0) /*@SWIG@*/;
-  /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
+  /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "SVN_DELTA_COMPRESSION_LEVEL_DEFAULT", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(5)));
     SvREADONLY_on(sv);
   } while(0) /*@SWIG@*/;
-  /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
+  /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "svn_txdelta_source", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(svn_txdelta_source)));
     SvREADONLY_on(sv);
   } while(0) /*@SWIG@*/;
-  /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
+  /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "svn_txdelta_target", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(svn_txdelta_target)));
     SvREADONLY_on(sv);
   } while(0) /*@SWIG@*/;
-  /*@SWIG:/tmp/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
+  /*@SWIG:/opt/svnrm/prefix/share/swig/2.0.4/perl5/perltypemaps.swg,65,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "svn_txdelta_new", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(svn_txdelta_new)));
     SvREADONLY_on(sv);

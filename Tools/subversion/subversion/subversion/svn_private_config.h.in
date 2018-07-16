@@ -97,6 +97,9 @@
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
+/* Defined to allow building against httpd 2.4 with broken auth */
+#undef SVN_ALLOW_BROKEN_HTTPD_AUTH
+
 /* Define to the Python/C API format character suitable for apr_int64_t */
 #undef SVN_APR_INT64_T_PYCFMT
 
