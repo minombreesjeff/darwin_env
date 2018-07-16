@@ -1,0 +1,11 @@
+#!/bin/sh
+
+if [ `uname` = "Darwin" ]; then
+	cp -r qtssPackageMetaData darwinPackageMetaData
+	./deleteCVSdirs darwinPackageMetaData
+	./deleteCVSdirs darwinPackageMetaData
+	/Developer/Applications/PackageMaker.app/Contents/MacOS/PackageMaker -build -p /Users/Shared/DarwinStreamingServer.pkg -f /tmp/StreamingServer.dst -r darwinPackageMetaData/qtssPackageMetaData/QuickTimeStreamingServer.pkg/Contents/Resources -i darwinPackageMetaData/qtssPackageMetaData/QuickTimeStreamingServer.pkg/Contents/Info.plist -d darwinPackageMetaData/DarwinDescription.plist
+	cp -r darwinPackageMetaData/qtssPackageMetaData/QuickTimeStreamingServer.pkg/Contents/Resources/* /Users/Shared/DarwinStreamingServer.pkg/Contents/Resources/
+	rm -rf darwinPackageMetaData
+	echo "Package created at /Users/Shared/DarwinStreamingServer.pkg."
+fi
