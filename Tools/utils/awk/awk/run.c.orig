@@ -1119,7 +1119,6 @@ Cell *assign(Node **a, int n)	/* a[0] = a[1], a[0] += a[1], etc. */
 			FATAL("division by zero in %%=");
 		modf(xf/yf, &v);
 		xf = xf - yf * v;
-		if (xf == -0) xf = 0;
 		break;
 	case POWEQ:
 		if (yf >= 0 && modf(yf, &v) == 0.0)	/* pos integer exponent */
