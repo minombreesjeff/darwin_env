@@ -20,7 +20,7 @@
  * ====================================================================
  * @endcopyright
  *
- * @file svn_compat.h
+ * @file svn_dep_compat.h
  * @brief Compatibility macros and functions.
  * @since New in 1.5.0.
  */
@@ -35,56 +35,63 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
- * Check at compile time if the APR version is at least a certain
- * level.
- * @param major The major version component of the version checked
- * for (e.g., the "1" of "1.3.0").
- * @param minor The minor version component of the version checked
- * for (e.g., the "3" of "1.3.0").
- * @param patch The patch level component of the version checked
- * for (e.g., the "0" of "1.3.0").
+ * We assume that 'int' and 'unsigned' are at least 32 bits wide.
+ * This also implies that long (rev numbers) is 32 bits or wider.
  *
- * @since New in 1.5.
+ * @since New in 1.9.
  */
-#ifndef APR_VERSION_AT_LEAST /* Introduced in APR 1.3.0 */
-#define APR_VERSION_AT_LEAST(major,minor,patch)                  \
-(((major) < APR_MAJOR_VERSION)                                       \
- || ((major) == APR_MAJOR_VERSION && (minor) < APR_MINOR_VERSION)    \
- || ((major) == APR_MAJOR_VERSION && (minor) == APR_MINOR_VERSION && \
-     (patch) <= APR_PATCH_VERSION))
-#endif /* APR_VERSION_AT_LEAST */
+#if    defined(APR_HAVE_LIMITS_H) \
+    && !defined(SVN_ALLOW_SHORT_INTS) \
+    && (INT_MAX < 0x7FFFFFFFl)
+#error int is shorter than 32 bits and may break Subversion. Define SVN_ALLOW_SHORT_INTS to skip this check.
+#endif
 
 /**
- * If we don't have a recent enough APR, emulate the behavior of the
- * apr_array_clear() API.
+ * We assume that 'char' is 8 bits wide.  The critical interfaces are
+ * our repository formats and RA encodings.  E.g. a 32 bit wide char may
+ * mess up UTF8 parsing, how we interpret size values etc.
+ *
+ * @since New in 1.9.
  */
-#if !APR_VERSION_AT_LEAST(1,3,0)
-#define apr_array_clear(arr)         (arr)->nelts = 0
+#if    defined(CHAR_BIT) \
+    && !defined(SVN_ALLOW_NON_8_BIT_CHARS) \
+    && (CHAR_BIT != 8)
+#error char is not 8 bits and may break Subversion. Define SVN_ALLOW_NON_8_BIT_CHARS to skip this check.
 #endif
 
-#if !APR_VERSION_AT_LEAST(1,0,0)
-#define APR_UINT64_C(val) UINT64_C(val)
-#define APR_FPROT_OS_DEFAULT APR_OS_DEFAULT
-#endif
-
-#if !APR_VERSION_AT_LEAST(1,3,0)
-#define APR_UINT16_MAX  0xFFFFU
-#define APR_INT16_MAX   0x7FFF
-#define APR_INT16_MIN   (-APR_INT16_MAX-1)
-#define APR_UINT32_MAX 0xFFFFFFFFU
-#define APR_INT32_MAX  0x7FFFFFFF
-#define APR_INT32_MIN (-APR_INT32_MAX-1)
-#define APR_UINT64_MAX APR_UINT64_C(0xFFFFFFFFFFFFFFFF)
-#define APR_INT64_MAX   APR_INT64_C(0x7FFFFFFFFFFFFFFF)
-#define APR_INT64_MIN (-APR_INT64_MAX-1)
-#define APR_SIZE_MAX (~(apr_size_t)0)
-
-#if APR_SIZEOF_VOIDP == 8
-typedef apr_uint64_t apr_uintptr_t;
+/**
+ * Work around a platform dependency issue. apr_thread_rwlock_trywrlock()
+ * will make APR_STATUS_IS_EBUSY() return TRUE if the lock could not be
+ * acquired under Unix. Under Windows, this will not work. So, provide
+ * a more portable substitute.
+ *
+ * @since New in 1.8.
+ */
+#ifdef WIN32
+#define SVN_LOCK_IS_BUSY(x) \
+    (APR_STATUS_IS_EBUSY(x) || (x) == APR_FROM_OS_ERROR(WAIT_TIMEOUT))
 #else
-typedef apr_uint32_t apr_uintptr_t;
+#define SVN_LOCK_IS_BUSY(x) APR_STATUS_IS_EBUSY(x)
 #endif
-#endif /* !APR_VERSION_AT_LEAST(1,3,0) */
+
+/**
+ * APR keeps a few interesting defines hidden away in its private
+ * headers apr_arch_file_io.h, so we redefined them here.
+ *
+ * @since New in 1.9
+ */
+#ifndef APR_FREADONLY
+#define APR_FREADONLY 0x10000000
+#endif
+#ifndef APR_OPENINFO
+#define APR_OPENINFO  0x00100000
+#endif
+
+#if !APR_VERSION_AT_LEAST(1,4,0)
+#ifndef apr_time_from_msec
+#define apr_time_from_msec(msec) ((apr_time_t)(msec) * 1000)
+#endif
+#endif
 
 /**
  * Check at compile time if the Serf version is at least a certain
@@ -107,6 +114,32 @@ typedef apr_uint32_t apr_uintptr_t;
 #endif /* SERF_VERSION_AT_LEAST */
 
 /**
+ * By default, if libsvn is built against one version of SQLite
+ * and then run using an older version, svn will error out:
+ *
+ *     svn: Couldn't perform atomic initialization
+ *     svn: SQLite compiled for 3.7.4, but running with 3.7.3
+ *
+ * That can be annoying when building on a modern system in order
+ * to deploy on a less modern one.  So these constants allow one
+ * to specify how old the system being deployed on might be.
+ * For example,
+ *
+ *     EXTRA_CFLAGS += -DSVN_SQLITE_MIN_VERSION_NUMBER=3007003
+ *     EXTRA_CFLAGS += '-DSVN_SQLITE_MIN_VERSION="3.7.3"'
+ *
+ * turns on code that works around infelicities in older versions
+ * as far back as 3.7.3 and relaxes the check at initialization time
+ * to permit them.
+ *
+ * @since New in 1.8.
+ */
+#ifndef SVN_SQLITE_MIN_VERSION_NUMBER
+#define SVN_SQLITE_MIN_VERSION_NUMBER SQLITE_VERSION_NUMBER
+#define SVN_SQLITE_MIN_VERSION SQLITE_VERSION
+#endif /* SVN_SQLITE_MIN_VERSION_NUMBER */
+
+/**
  * Check at compile time if the SQLite version is at least a certain
  * level.
  * @param major The major version component of the version checked
@@ -120,7 +153,7 @@ typedef apr_uint32_t apr_uintptr_t;
  */
 #ifndef SQLITE_VERSION_AT_LEAST
 #define SQLITE_VERSION_AT_LEAST(major,minor,patch)                     \
-((major*1000000 + minor*1000 + patch) <= SQLITE_VERSION_NUMBER)
+((major*1000000 + minor*1000 + patch) <= SVN_SQLITE_MIN_VERSION_NUMBER)
 #endif /* SQLITE_VERSION_AT_LEAST */
 
 #ifdef __cplusplus

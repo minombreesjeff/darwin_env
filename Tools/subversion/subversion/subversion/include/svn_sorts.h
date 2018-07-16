@@ -52,16 +52,7 @@ extern "C" {
 /** This structure is used to hold a key/value from a hash table.
  * @note Private. For use by Subversion's own code only. See issue #1644.
  */
-typedef struct svn_sort__item_t {
-  /** pointer to the key */
-  const void *key;
-
-  /** size of the key */
-  apr_ssize_t klen;
-
-  /** pointer to the value */
-  void *value;
-} svn_sort__item_t;
+typedef struct svn_sort__item_t svn_sort__item_t;
 
 
 /** Compare two @c svn_sort__item_t's, returning an integer greater than,
@@ -80,6 +71,13 @@ typedef struct svn_sort__item_t {
      apr_array_header_t *array;
      array = svn_sort__hash(hsh, svn_sort_compare_items_as_paths, pool);
    @endcode
+ *
+ * This function works like svn_sort_compare_items_lexically() except that it
+ * orders children in subdirectories directly after their parents. This allows
+ * using the given ordering for a depth first walk, but at a performance
+ * penalty. Code that doesn't need this special behavior for children, e.g. when
+ * sorting files at a single directory level should use
+ * svn_sort_compare_items_lexically() instead.
  */
 int
 svn_sort_compare_items_as_paths(const svn_sort__item_t *a,
@@ -112,9 +110,9 @@ svn_sort_compare_revisions(const void *a,
 
 
 /**
- * Compare two @c const char * paths, returning an integer greater
- * than, equal to, or less than 0, using the same comparison rules as
- * are used by svn_path_compare_paths().
+ * Compare two @c const char * paths, @a *a and @a *b, returning an
+ * integer greater than, equal to, or less than 0, using the same
+ * comparison rules as are used by svn_path_compare_paths().
  *
  * This function is compatible for use with qsort().
  *
@@ -125,13 +123,13 @@ svn_sort_compare_paths(const void *a,
                        const void *b);
 
 /**
- * Compare two @c svn_merge_range_t *'s, returning an integer greater
- * than, equal to, or less than 0 if the first range is greater than,
- * equal to, or less than, the second range.
+ * Compare two @c svn_merge_range_t *'s, @a *a and @a *b, returning an
+ * integer greater than, equal to, or less than 0 if the first range is
+ * greater than, equal to, or less than, the second range.
  *
  * Both @c svn_merge_range_t *'s must describe forward merge ranges.
  *
- * If @a a and @a b intersect then the range with the lower start revision
+ * If @a *a and @a *b intersect then the range with the lower start revision
  * is considered the lesser range.  If the ranges' start revisions are
  * equal then the range with the lower end revision is considered the
  * lesser range.
@@ -141,56 +139,6 @@ svn_sort_compare_paths(const void *a,
 int
 svn_sort_compare_ranges(const void *a,
                         const void *b);
-
-/** Sort @a ht according to its keys, return an @c apr_array_header_t
- * containing @c svn_sort__item_t structures holding those keys and values
- * (i.e. for each @c svn_sort__item_t @a item in the returned array,
- * @a item->key and @a item->size are the hash key, and @a item->data points to
- * the hash value).
- *
- * Storage is shared with the original hash, not copied.
- *
- * @a comparison_func should take two @c svn_sort__item_t's and return an
- * integer greater than, equal to, or less than 0, according as the first item
- * is greater than, equal to, or less than the second.
- *
- * @note Private. For use by Subversion's own code only. See issue #1644.
- *
- * @note This function and the @c svn_sort__item_t should go over to APR.
- */
-apr_array_header_t *
-svn_sort__hash(apr_hash_t *ht,
-               int (*comparison_func)(const svn_sort__item_t *,
-                                      const svn_sort__item_t *),
-               apr_pool_t *pool);
-
-/* Return the lowest index at which the element *KEY should be inserted into
-   the array ARRAY, according to the ordering defined by COMPARE_FUNC.
-   The array must already be sorted in the ordering defined by COMPARE_FUNC.
-   COMPARE_FUNC is defined as for the C stdlib function bsearch(). */
-int
-svn_sort__bsearch_lower_bound(const void *key,
-                              const apr_array_header_t *array,
-                              int (*compare_func)(const void *, const void *));
-
-/* Insert a shallow copy of *NEW_ELEMENT into the array ARRAY at the index
-   INSERT_INDEX, growing the array and shuffling existing elements along to
-   make room. */
-void
-svn_sort__array_insert(const void *new_element,
-                       apr_array_header_t *array,
-                       int insert_index);
-
-
-/* Remove ELEMENTS_TO_DELETE elements starting  at DELETE_INDEX from the
-   array ARR. If DELETE_INDEX is not a valid element of ARR,
-   ELEMENTS_TO_DELETE is not greater than zero, or
-   DELETE_INDEX + ELEMENTS_TO_DELETE is greater than ARR->NELTS, then do
-   nothing. */
-void
-svn_sort__array_delete(apr_array_header_t *arr,
-                       int delete_index,
-                       int elements_to_delete);
 
 #ifdef __cplusplus
 }

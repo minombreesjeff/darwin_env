@@ -29,17 +29,19 @@
 
 #include <apr_pools.h>
 #include <apr_strings.h>
+#include <glib.h>
+#include <gnome-keyring.h>
+
 #include "svn_auth.h"
 #include "svn_config.h"
 #include "svn_error.h"
+#include "svn_hash.h"
 #include "svn_pools.h"
 
 #include "private/svn_auth_private.h"
 
 #include "svn_private_config.h"
 
-#include <glib.h>
-#include <gnome-keyring.h>
 
 
 /*-----------------------------------------------------------------------*/
@@ -121,13 +123,11 @@ ensure_gnome_keyring_is_unlocked(svn_boolean_t non_interactive,
   if (! non_interactive)
     {
       svn_auth_gnome_keyring_unlock_prompt_func_t unlock_prompt_func =
-        apr_hash_get(parameters,
-                     SVN_AUTH_PARAM_GNOME_KEYRING_UNLOCK_PROMPT_FUNC,
-                     APR_HASH_KEY_STRING);
+        svn_hash_gets(parameters,
+                      SVN_AUTH_PARAM_GNOME_KEYRING_UNLOCK_PROMPT_FUNC);
       void *unlock_prompt_baton =
-        apr_hash_get(parameters,
-                     SVN_AUTH_PARAM_GNOME_KEYRING_UNLOCK_PROMPT_BATON,
-                     APR_HASH_KEY_STRING);
+        svn_hash_gets(parameters,
+                      SVN_AUTH_PARAM_GNOME_KEYRING_UNLOCK_PROMPT_BATON);
 
       char *keyring_password;
 
@@ -169,7 +169,6 @@ password_get_gnome_keyring(svn_boolean_t *done,
                            svn_boolean_t non_interactive,
                            apr_pool_t *pool)
 {
-  char *default_keyring = NULL;
   GnomeKeyringResult result;
   GList *items;
 
@@ -177,11 +176,7 @@ password_get_gnome_keyring(svn_boolean_t *done,
 
   SVN_ERR(ensure_gnome_keyring_is_unlocked(non_interactive, parameters, pool));
 
-  default_keyring = get_default_keyring_name(pool);
-
-  if (! apr_hash_get(parameters,
-                     "gnome-keyring-opening-failed",
-                     APR_HASH_KEY_STRING))
+  if (! svn_hash_gets(parameters, "gnome-keyring-opening-failed"))
     {
       result = gnome_keyring_find_network_password_sync(username, realmstring,
                                                         NULL, NULL, NULL, NULL,
@@ -211,13 +206,8 @@ password_get_gnome_keyring(svn_boolean_t *done,
     }
   else
     {
-      apr_hash_set(parameters,
-                   "gnome-keyring-opening-failed",
-                   APR_HASH_KEY_STRING,
-                   "");
+      svn_hash_sets(parameters, "gnome-keyring-opening-failed", "");
     }
-
-  free(default_keyring);
 
   return SVN_NO_ERROR;
 }
@@ -234,7 +224,6 @@ password_set_gnome_keyring(svn_boolean_t *done,
                            svn_boolean_t non_interactive,
                            apr_pool_t *pool)
 {
-  char *default_keyring = NULL;
   GnomeKeyringResult result;
   guint32 item_id;
 
@@ -242,11 +231,7 @@ password_set_gnome_keyring(svn_boolean_t *done,
 
   SVN_ERR(ensure_gnome_keyring_is_unlocked(non_interactive, parameters, pool));
 
-  default_keyring = get_default_keyring_name(pool);
-
-  if (! apr_hash_get(parameters,
-                     "gnome-keyring-opening-failed",
-                     APR_HASH_KEY_STRING))
+  if (! svn_hash_gets(parameters, "gnome-keyring-opening-failed"))
     {
       result = gnome_keyring_set_network_password_sync(NULL, /* default keyring */
                                                        username, realmstring,
@@ -260,13 +245,8 @@ password_set_gnome_keyring(svn_boolean_t *done,
     }
   if (result != GNOME_KEYRING_RESULT_OK)
     {
-      apr_hash_set(parameters,
-                   "gnome-keyring-opening-failed",
-                   APR_HASH_KEY_STRING,
-                   "");
+      svn_hash_sets(parameters, "gnome-keyring-opening-failed", "");
     }
-
-  free(default_keyring);
 
   *done = (result == GNOME_KEYRING_RESULT_OK);
   return SVN_NO_ERROR;
@@ -281,13 +261,12 @@ simple_gnome_keyring_first_creds(void **credentials,
                                  const char *realmstring,
                                  apr_pool_t *pool)
 {
-  return svn_auth__simple_first_creds_helper
-           (credentials,
-            iter_baton, provider_baton,
-            parameters, realmstring,
-            password_get_gnome_keyring,
-            SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
-            pool);
+  return svn_auth__simple_creds_cache_get(credentials,
+                                          iter_baton, provider_baton,
+                                          parameters, realmstring,
+                                          password_get_gnome_keyring,
+                                          SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
+                                          pool);
 }
 
 /* Save encrypted credentials to the simple provider's cache. */
@@ -299,13 +278,12 @@ simple_gnome_keyring_save_creds(svn_boolean_t *saved,
                                 const char *realmstring,
                                 apr_pool_t *pool)
 {
-  return svn_auth__simple_save_creds_helper
-           (saved, credentials,
-            provider_baton, parameters,
-            realmstring,
-            password_set_gnome_keyring,
-            SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
-            pool);
+  return svn_auth__simple_creds_cache_set(saved, credentials,
+                                          provider_baton, parameters,
+                                          realmstring,
+                                          password_set_gnome_keyring,
+                                          SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
+                                          pool);
 }
 
 #if GLIB_CHECK_VERSION(2,6,0)
@@ -373,13 +351,10 @@ ssl_client_cert_pw_gnome_keyring_first_creds(void **credentials,
                                              const char *realmstring,
                                              apr_pool_t *pool)
 {
-  return svn_auth__ssl_client_cert_pw_file_first_creds_helper
-           (credentials,
-            iter_baton, provider_baton,
-            parameters, realmstring,
-            password_get_gnome_keyring,
-            SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
-            pool);
+  return svn_auth__ssl_client_cert_pw_cache_get(
+             credentials, iter_baton, provider_baton, parameters, realmstring,
+             password_get_gnome_keyring, SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
+             pool);
 }
 
 /* Save encrypted credentials to the ssl client cert password provider's
@@ -392,13 +367,10 @@ ssl_client_cert_pw_gnome_keyring_save_creds(svn_boolean_t *saved,
                                             const char *realmstring,
                                             apr_pool_t *pool)
 {
-  return svn_auth__ssl_client_cert_pw_file_save_creds_helper
-           (saved, credentials,
-            provider_baton, parameters,
-            realmstring,
-            password_set_gnome_keyring,
-            SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
-            pool);
+  return svn_auth__ssl_client_cert_pw_cache_set(
+             saved, credentials, provider_baton, parameters, realmstring,
+             password_set_gnome_keyring, SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE,
+             pool);
 }
 
 static const svn_auth_provider_t gnome_keyring_ssl_client_cert_pw_provider = {

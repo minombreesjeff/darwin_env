@@ -1,5 +1,6 @@
 /* Proxy classes for svn_config.h
- * DO NOT EDIT -- AUTOMATICALLY GENERATED */
+ * DO NOT EDIT -- AUTOMATICALLY GENERATED
+ * BY build/generator/swig/header_wrappers.py */
 
 /* No default constructors for opaque structs */
 #ifdef SWIGPYTHON
@@ -12,20 +13,23 @@
   svn_config_section_enumerator_t,
   svn_config_section_enumerator2_t,
   svn_config_enumerator_t,
-  svn_config_enumerator2_t
+  svn_config_enumerator2_t,
+  svn_config_auth_walk_func_t
 };
 %apply CALLABLE_CALLBACK * {
   svn_config_section_enumerator_t *,
   svn_config_section_enumerator2_t *,
   svn_config_enumerator_t *,
-  svn_config_enumerator2_t *
+  svn_config_enumerator2_t *,
+  svn_config_auth_walk_func_t *
 };
 #endif
 
 /* Baton typemaps */
 #ifdef SWIGPYTHON
 %apply void *PY_AS_VOID {
-  void *baton
+  void *baton,
+  void *walk_baton
 };
 #endif
 
@@ -63,6 +67,11 @@ static svn_boolean_t svn_config_invoke_enumerator2(
   return _obj(name, value, baton, pool);
 }
 
+static svn_error_t * svn_config_invoke_auth_walk_func(
+  svn_config_auth_walk_func_t _obj, svn_boolean_t *delete_cred, void *walk_baton, const char *cred_kind, const char *realmstring, apr_hash_t *hash, apr_pool_t *scratch_pool) {
+  return _obj(delete_cred, walk_baton, cred_kind, realmstring, hash, scratch_pool);
+}
+
 %}
 
 #ifdef SWIGPYTHON
@@ -70,5 +79,6 @@ static svn_boolean_t svn_config_invoke_enumerator2(
 %funcptr_proxy(svn_config_section_enumerator2_t, svn_config_invoke_section_enumerator2);
 %funcptr_proxy(svn_config_enumerator_t, svn_config_invoke_enumerator);
 %funcptr_proxy(svn_config_enumerator2_t, svn_config_invoke_enumerator2);
+%funcptr_proxy(svn_config_auth_walk_func_t, svn_config_invoke_auth_walk_func);
 
 #endif

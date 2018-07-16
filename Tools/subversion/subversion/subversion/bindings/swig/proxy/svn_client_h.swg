@@ -1,5 +1,6 @@
 /* Proxy classes for svn_client.h
- * DO NOT EDIT -- AUTOMATICALLY GENERATED */
+ * DO NOT EDIT -- AUTOMATICALLY GENERATED
+ * BY build/generator/swig/header_wrappers.py */
 
 /* No default constructors for opaque structs */
 #ifdef SWIGPYTHON
@@ -8,6 +9,7 @@
 /* Callback typemaps */
 #ifdef SWIGPYTHON
 %apply CALLABLE_CALLBACK {
+  svn_proplist_receiver2_t,
   svn_proplist_receiver_t,
   svn_client_get_commit_log3_t,
   svn_client_get_commit_log2_t,
@@ -16,13 +18,16 @@
   svn_client_blame_receiver2_t,
   svn_client_blame_receiver_t,
   svn_client_diff_summarize_func_t,
+  svn_client_import_filter_func_t,
   svn_client_status_func_t,
+  svn_client_list_func2_t,
   svn_client_list_func_t,
   svn_info_receiver_t,
   svn_client_info_receiver2_t,
   svn_client_patch_func_t
 };
 %apply CALLABLE_CALLBACK * {
+  svn_proplist_receiver2_t *,
   svn_proplist_receiver_t *,
   svn_client_get_commit_log3_t *,
   svn_client_get_commit_log2_t *,
@@ -31,7 +36,9 @@
   svn_client_blame_receiver2_t *,
   svn_client_blame_receiver_t *,
   svn_client_diff_summarize_func_t *,
+  svn_client_import_filter_func_t *,
   svn_client_status_func_t *,
+  svn_client_list_func2_t *,
   svn_client_list_func_t *,
   svn_info_receiver_t *,
   svn_client_info_receiver2_t *,
@@ -53,7 +60,9 @@
   void *log_msg_baton3,
   void *conflict_baton,
   void *conflict_baton2,
+  void *tunnel_baton,
   void *commit_baton,
+  void *filter_baton,
   void *backwards_compatibility_baton,
   void *status_baton,
   void *receiver_baton,
@@ -87,6 +96,11 @@
 /* Callbacks */
 
 %inline %{
+static svn_error_t * svn_proplist_invoke_receiver2(
+  svn_proplist_receiver2_t _obj, void *baton, const char *path, apr_hash_t *prop_hash, apr_array_header_t *inherited_props, apr_pool_t *scratch_pool) {
+  return _obj(baton, path, prop_hash, inherited_props, scratch_pool);
+}
+
 static svn_error_t * svn_proplist_invoke_receiver(
   svn_proplist_receiver_t _obj, void *baton, const char *path, apr_hash_t *prop_hash, apr_pool_t *pool) {
   return _obj(baton, path, prop_hash, pool);
@@ -127,9 +141,19 @@ static svn_error_t * svn_client_invoke_diff_summarize_func(
   return _obj(diff, baton, pool);
 }
 
+static svn_error_t * svn_client_invoke_import_filter_func(
+  svn_client_import_filter_func_t _obj, void *baton, svn_boolean_t *filtered, const char *local_abspath, const svn_io_dirent2_t *dirent, apr_pool_t *scratch_pool) {
+  return _obj(baton, filtered, local_abspath, dirent, scratch_pool);
+}
+
 static svn_error_t * svn_client_invoke_status_func(
   svn_client_status_func_t _obj, void *baton, const char *path, const svn_client_status_t *status, apr_pool_t *scratch_pool) {
   return _obj(baton, path, status, scratch_pool);
+}
+
+static svn_error_t * svn_client_invoke_list_func2(
+  svn_client_list_func2_t _obj, void *baton, const char *path, const svn_dirent_t *dirent, const svn_lock_t *lock, const char *abs_path, const char *external_parent_url, const char *external_target, apr_pool_t *scratch_pool) {
+  return _obj(baton, path, dirent, lock, abs_path, external_parent_url, external_target, scratch_pool);
 }
 
 static svn_error_t * svn_client_invoke_list_func(
@@ -155,6 +179,7 @@ static svn_error_t * svn_client_invoke_patch_func(
 %}
 
 #ifdef SWIGPYTHON
+%funcptr_proxy(svn_proplist_receiver2_t, svn_proplist_invoke_receiver2);
 %funcptr_proxy(svn_proplist_receiver_t, svn_proplist_invoke_receiver);
 %funcptr_proxy(svn_client_get_commit_log3_t, svn_client_invoke_get_commit_log3);
 %funcptr_proxy(svn_client_get_commit_log2_t, svn_client_invoke_get_commit_log2);
@@ -163,7 +188,9 @@ static svn_error_t * svn_client_invoke_patch_func(
 %funcptr_proxy(svn_client_blame_receiver2_t, svn_client_invoke_blame_receiver2);
 %funcptr_proxy(svn_client_blame_receiver_t, svn_client_invoke_blame_receiver);
 %funcptr_proxy(svn_client_diff_summarize_func_t, svn_client_invoke_diff_summarize_func);
+%funcptr_proxy(svn_client_import_filter_func_t, svn_client_invoke_import_filter_func);
 %funcptr_proxy(svn_client_status_func_t, svn_client_invoke_status_func);
+%funcptr_proxy(svn_client_list_func2_t, svn_client_invoke_list_func2);
 %funcptr_proxy(svn_client_list_func_t, svn_client_invoke_list_func);
 %funcptr_proxy(svn_info_receiver_t, svn_info_invoke_receiver);
 %funcptr_proxy(svn_client_info_receiver2_t, svn_client_invoke_info_receiver2);

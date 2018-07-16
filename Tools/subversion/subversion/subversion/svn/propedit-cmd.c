@@ -27,6 +27,7 @@
 
 /*** Includes. ***/
 
+#include "svn_hash.h"
 #include "svn_cmdline.h"
 #include "svn_wc.h"
 #include "svn_pools.h"
@@ -39,8 +40,7 @@
 #include "svn_props.h"
 #include "cl.h"
 
-#include "private/svn_wc_private.h"
-
+#include "private/svn_cmdline_private.h"
 #include "svn_private_config.h"
 
 
@@ -86,6 +86,10 @@ svn_cl__propedit(apr_getopt_t *os,
     return svn_error_createf(SVN_ERR_CLIENT_PROPERTY_NAME, NULL,
                              _("'%s' is not a valid Subversion property name"),
                              pname_utf8);
+  if (!opt_state->force)
+    SVN_ERR(svn_cl__check_svn_prop_name(pname_utf8, opt_state->revprop,
+                                        svn_cl__prop_use_edit, pool));
+
   if (opt_state->encoding && !svn_prop_needs_translation(pname_utf8))
       return svn_error_create
           (SVN_ERR_UNSUPPORTED_FEATURE, NULL,
@@ -122,7 +126,7 @@ svn_cl__propedit(apr_getopt_t *os,
 
       if (! propval)
         {
-          propval = svn_string_create("", pool);
+          propval = svn_string_create_empty(pool);
           /* This is how we signify to svn_client_revprop_set2() that
              we want it to check that the original value hasn't
              changed, but that that original value was non-existent: */
@@ -136,8 +140,8 @@ svn_cl__propedit(apr_getopt_t *os,
       /* Run the editor on a temporary file which contains the
          original property value... */
       SVN_ERR(svn_io_temp_dir(&temp_dir, pool));
-      SVN_ERR(svn_cl__edit_string_externally
-              (&propval, NULL,
+      SVN_ERR(svn_cmdline__edit_string_externally(
+               &propval, NULL,
                opt_state->editor_cmd, temp_dir,
                propval, "svn-prop",
                ctx->config,
@@ -212,7 +216,7 @@ svn_cl__propedit(apr_getopt_t *os,
           svn_string_t *propval, *edited_propval;
           const char *base_dir = target;
           const char *target_local;
-          const char *local_abspath;
+          const char *abspath_or_url;
           svn_node_kind_t kind;
           svn_opt_revision_t peg_revision;
           svn_revnum_t base_rev = SVN_INVALID_REVNUM;
@@ -221,28 +225,25 @@ svn_cl__propedit(apr_getopt_t *os,
           SVN_ERR(svn_cl__check_cancel(ctx->cancel_baton));
 
           if (!svn_path_is_url(target))
-            SVN_ERR(svn_dirent_get_absolute(&local_abspath, target, subpool));
+            SVN_ERR(svn_dirent_get_absolute(&abspath_or_url, target, subpool));
+          else
+            abspath_or_url = target;
 
           /* Propedits can only happen on HEAD or the working copy, so
              the peg revision can be as unspecified. */
           peg_revision.kind = svn_opt_revision_unspecified;
 
           /* Fetch the current property. */
-          SVN_ERR(svn_client_propget4(&props, pname_utf8,
-                                      svn_path_is_url(target)
-                                        ? target : local_abspath,
+          SVN_ERR(svn_client_propget5(&props, NULL, pname_utf8, abspath_or_url,
                                       &peg_revision,
                                       &(opt_state->start_revision),
                                       &base_rev, svn_depth_empty,
                                       NULL, ctx, subpool, subpool));
 
           /* Get the property value. */
-          propval = apr_hash_get(props,
-                                 svn_path_is_url(target)
-                                    ? target : local_abspath,
-                                 APR_HASH_KEY_STRING);
+          propval = svn_hash_gets(props, abspath_or_url);
           if (! propval)
-            propval = svn_string_create("", subpool);
+            propval = svn_string_create_empty(subpool);
 
           if (svn_path_is_url(target))
             {
@@ -261,8 +262,8 @@ svn_cl__propedit(apr_getopt_t *os,
                 }
 
               /* Split the path if it is a file path. */
-              SVN_ERR(svn_wc_read_kind(&kind, ctx->wc_ctx, local_abspath, FALSE,
-                                       subpool));
+              SVN_ERR(svn_wc_read_kind2(&kind, ctx->wc_ctx, abspath_or_url,
+                                        FALSE, FALSE, subpool));
 
               if (kind == svn_node_none)
                 return svn_error_createf(
@@ -274,16 +275,16 @@ svn_cl__propedit(apr_getopt_t *os,
 
           /* Run the editor on a temporary file which contains the
              original property value... */
-          SVN_ERR(svn_cl__edit_string_externally(&edited_propval, NULL,
-                                                 opt_state->editor_cmd,
-                                                 base_dir,
-                                                 propval,
-                                                 "svn-prop",
-                                                 ctx->config,
-                                                 svn_prop_needs_translation
-                                                 (pname_utf8),
-                                                 opt_state->encoding,
-                                                 subpool));
+          SVN_ERR(svn_cmdline__edit_string_externally(&edited_propval, NULL,
+                                                      opt_state->editor_cmd,
+                                                      base_dir,
+                                                      propval,
+                                                      "svn-prop",
+                                                      ctx->config,
+                                                      svn_prop_needs_translation
+                                                      (pname_utf8),
+                                                      opt_state->encoding,
+                                                      subpool));
 
           target_local = svn_path_is_url(target) ? target
             : svn_dirent_local_style(target, subpool);
@@ -316,6 +317,10 @@ svn_cl__propedit(apr_getopt_t *os,
                                                     sizeof(const char *));
 
                   APR_ARRAY_PUSH(targs, const char *) = target;
+
+                  SVN_ERR(svn_cl__propset_print_binary_mime_type_warning(
+                      targs, pname_utf8, propval, subpool));
+
                   err = svn_client_propset_local(pname_utf8, edited_propval,
                                                  targs, svn_depth_empty,
                                                  opt_state->force, NULL,
@@ -329,7 +334,7 @@ svn_cl__propedit(apr_getopt_t *os,
                 return svn_error_trace(err);
 
               /* Print a message if we successfully committed or if it
-                 was just a wc propset (but not if the user aborted an URL
+                 was just a wc propset (but not if the user aborted a URL
                  propedit). */
               if (!svn_path_is_url(target))
                 SVN_ERR(svn_cmdline_printf(

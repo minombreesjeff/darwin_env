@@ -32,6 +32,7 @@
 #include "svn_config.h"
 #include "svn_user.h"
 
+#include "auth.h"
 #include "private/svn_auth_private.h"
 
 #include "svn_private_config.h"
@@ -160,14 +161,14 @@ keychain_simple_first_creds(void **credentials,
                             const char *realmstring,
                             apr_pool_t *pool)
 {
-  return svn_auth__simple_first_creds_helper(credentials,
-                                             iter_baton,
-                                             provider_baton,
-                                             parameters,
-                                             realmstring,
-                                             keychain_password_get,
-                                             SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
-                                             pool);
+  return svn_auth__simple_creds_cache_get(credentials,
+                                          iter_baton,
+                                          provider_baton,
+                                          parameters,
+                                          realmstring,
+                                          keychain_password_get,
+                                          SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
+                                          pool);
 }
 
 /* Save encrypted credentials to the simple provider's cache. */
@@ -179,13 +180,13 @@ keychain_simple_save_creds(svn_boolean_t *saved,
                            const char *realmstring,
                            apr_pool_t *pool)
 {
-  return svn_auth__simple_save_creds_helper(saved, credentials,
-                                            provider_baton,
-                                            parameters,
-                                            realmstring,
-                                            keychain_password_set,
-                                            SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
-                                            pool);
+  return svn_auth__simple_creds_cache_set(saved, credentials,
+                                          provider_baton,
+                                          parameters,
+                                          realmstring,
+                                          keychain_password_set,
+                                          SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
+                                          pool);
 }
 
 static const svn_auth_provider_t keychain_simple_provider = {
@@ -205,13 +206,12 @@ keychain_ssl_client_cert_pw_first_creds(void **credentials,
                                         const char *realmstring,
                                         apr_pool_t *pool)
 {
-  return svn_auth__ssl_client_cert_pw_file_first_creds_helper
-           (credentials,
-            iter_baton, provider_baton,
-            parameters, realmstring,
-            keychain_password_get,
-            SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
-            pool);
+  return svn_auth__ssl_client_cert_pw_cache_get(credentials,
+                                                iter_baton, provider_baton,
+                                                parameters, realmstring,
+                                                keychain_password_get,
+                                                SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
+                                                pool);
 }
 
 /* Save encrypted credentials to the ssl client cert password provider's
@@ -224,13 +224,12 @@ keychain_ssl_client_cert_pw_save_creds(svn_boolean_t *saved,
                                        const char *realmstring,
                                        apr_pool_t *pool)
 {
-  return svn_auth__ssl_client_cert_pw_file_save_creds_helper
-           (saved, credentials,
-            provider_baton, parameters,
-            realmstring,
-            keychain_password_set,
-            SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
-            pool);
+  return svn_auth__ssl_client_cert_pw_cache_set(saved, credentials,
+                                                provider_baton, parameters,
+                                                realmstring,
+                                                keychain_password_set,
+                                                SVN_AUTH__KEYCHAIN_PASSWORD_TYPE,
+                                                pool);
 }
 
 static const svn_auth_provider_t keychain_ssl_client_cert_pw_provider = {
@@ -243,7 +242,7 @@ static const svn_auth_provider_t keychain_ssl_client_cert_pw_provider = {
 
 /* Public API */
 void
-svn_auth_get_keychain_simple_provider(svn_auth_provider_object_t **provider,
+svn_auth__get_keychain_simple_provider(svn_auth_provider_object_t **provider,
                                       apr_pool_t *pool)
 {
   svn_auth_provider_object_t *po = apr_pcalloc(pool, sizeof(*po));
@@ -253,7 +252,7 @@ svn_auth_get_keychain_simple_provider(svn_auth_provider_object_t **provider,
 }
 
 void
-svn_auth_get_keychain_ssl_client_cert_pw_provider
+svn_auth__get_keychain_ssl_client_cert_pw_provider
   (svn_auth_provider_object_t **provider,
    apr_pool_t *pool)
 {

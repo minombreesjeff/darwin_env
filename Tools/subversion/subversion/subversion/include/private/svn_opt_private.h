@@ -46,10 +46,6 @@ extern "C" {
  * UTF8_TARGET need not be canonical. *TRUE_TARGET will not be canonical
  * unless UTF8_TARGET is.
  *
- * It is an error if *TRUE_TARGET results in the empty string after the
- * split, which happens in case UTF8_TARGET has a leading '@' character
- * with no additional '@' characters to escape the first '@'.
- *
  * Note that *PEG_REVISION will still contain the '@' symbol as the first
  * character if a peg revision was found. If a trailing '@' symbol was
  * used to escape other '@' characters in UTF8_TARGET, *PEG_REVISION will
@@ -128,6 +124,26 @@ svn_opt__args_to_target_array(apr_array_header_t **targets_p,
 const char *
 svn_opt__revision_to_string(const svn_opt_revision_t *revision,
                             apr_pool_t *result_pool);
+
+/**
+ * Create a revision range structure from two revisions.  Return a new range
+ * allocated in @a result_pool with the start and end initialized to
+ * (deep copies of) @a *start_revision and @a *end_revision.
+ */
+svn_opt_revision_range_t *
+svn_opt__revision_range_create(const svn_opt_revision_t *start_revision,
+                               const svn_opt_revision_t *end_revision,
+                               apr_pool_t *result_pool);
+
+/**
+ * Create a revision range structure from two revnums.  Return a new range
+ * allocated in @a result_pool with the start and end kinds initialized to
+ * #svn_opt_revision_number and values @a start_revnum and @a end_revnum.
+ */
+svn_opt_revision_range_t *
+svn_opt__revision_range_from_revnums(svn_revnum_t start_revnum,
+                                     svn_revnum_t end_revnum,
+                                     apr_pool_t *result_pool);
 
 #ifdef __cplusplus
 }

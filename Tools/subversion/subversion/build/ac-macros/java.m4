@@ -62,10 +62,13 @@ AC_DEFUN(SVN_FIND_JDK,
   JDK_SUITABLE=no
   AC_MSG_CHECKING([for JDK])
   if test $where = check; then
-    dnl Prefer /Library/Java/Home first to try to be nice on Darwin.
-    dnl We'll correct later if we get caught in the tangled web of JAVA_HOME.
+    dnl Prefer /usr/libexec/java_home, then /Library/Java/Home first
+    dnl to try to be nice on Darwin.  We'll correct later if we get
+    dnl caught in the tangled web of JAVA_HOME.
     if test -x "$JAVA_HOME/bin/java"; then
       JDK="$JAVA_HOME"
+    elif test -x "/usr/libexec/java_home"; then
+      JDK=`/usr/libexec/java_home`
     elif test -x "/Library/Java/Home/bin/java"; then
       JDK="/Library/Java/Home"
     elif test -x "/usr/bin/java"; then
@@ -190,9 +193,12 @@ AC_DEFUN(SVN_FIND_JDK,
     # The release for "-source" could actually be greater than that
     # of "-target", if we want to cross-compile for lesser JVMs.
     if test -z "$JAVAC_FLAGS"; then
-      JAVAC_FLAGS="-target $JAVA_OLDEST_WORKING_VER -source 1.5"
+      JAVAC_FLAGS="-target $JAVA_OLDEST_WORKING_VER -source 1.6"
       if test "$enable_debugging" = "yes"; then
-        JAVAC_FLAGS="-g -Xlint:unchecked $JAVAC_FLAGS"
+        JAVAC_FLAGS="-g -Xlint -Xlint:unchecked -Xlint:serial -Xlint:path $JAVAC_FLAGS"
+        if test -z "$JAVAC_COMPAT_FLAGS"; then
+          JAVAC_COMPAT_FLAGS="$JAVAC_FLAGS -Xlint:-unchecked -Xlint:-deprecation -Xlint:-dep-ann -Xlint:-rawtypes"
+        fi
       fi
     fi
 
@@ -208,6 +214,7 @@ AC_DEFUN(SVN_FIND_JDK,
   AC_SUBST(JAVA)
   AC_SUBST(JAVAC)
   AC_SUBST(JAVAC_FLAGS)
+  AC_SUBST(JAVAC_COMPAT_FLAGS)
   AC_SUBST(JAVADOC)
   AC_SUBST(JAVAH)
   AC_SUBST(JAR)

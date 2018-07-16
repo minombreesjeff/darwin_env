@@ -32,6 +32,7 @@ import datetime
 # Our testing module
 import svntest
 from svntest import wc, actions
+import logging
 
 # (abbreviation)
 Skip = svntest.testcase.Skip_deco
@@ -42,6 +43,8 @@ Issue = svntest.testcase.Issue_deco
 Wimp = svntest.testcase.Wimp_deco
 Item = wc.StateItem
 
+logger = logging.getLogger()
+
 #----------------------------------------------------------------------
 # Helper function for testing stderr from co.
 # If none of the strings in STDERR list matches the regular expression
@@ -51,10 +54,9 @@ def test_stderr(re_string, stderr):
   for line in stderr:
     if exp_err_re.search(line):
       return
-  if svntest.main.options.verbose:
-    for x in stderr:
-      sys.stdout.write(x)
-    print("Expected stderr reg-ex: '" + re_string + "'")
+  for x in stderr:
+    logger.debug(x[:-1])
+  logger.info("Expected stderr reg-ex: '" + re_string + "'")
   raise svntest.Failure("Checkout failed but not in the expected way")
 
 #----------------------------------------------------------------------
@@ -204,8 +206,8 @@ def checkout_with_obstructions(sbox):
     'A/B/lambda', 'A/D', 'A/D/G', 'A/D/G/rho', 'A/D/G/pi', 'A/D/G/tau',
     'A/D/H', 'A/D/H/psi', 'A/D/H/omega', 'A/D/H/chi', 'A/D/gamma', 'A/C')
 
-  actions.run_and_verify_checkout2(False, url, wc_dir, expected_output,
-    expected_disk, None, None, None, None)
+  actions.run_and_verify_checkout(url, wc_dir, expected_output,
+                                  expected_disk)
 
   # svn status
   expected_status = actions.get_virginal_state(wc_dir, 1)
@@ -241,7 +243,7 @@ def checkout_with_obstructions(sbox):
   expected_status = actions.get_virginal_state(wc_dir, 1)
 
   actions.run_and_verify_update(wc_dir, expected_output, expected_disk,
-    expected_status, None, None, None, None, None, False, wc_dir)
+                                expected_status,)
 
 
 
@@ -289,7 +291,7 @@ def forced_checkout_of_file_with_dir_obstructions(sbox):
   expected_disk.tweak('iota', contents=None)
 
   actions.run_and_verify_checkout(url, wc_dir_other, expected_output,
-    expected_disk, None, None, None, None, '--force')
+    expected_disk, [], '--force')
 
 
 #----------------------------------------------------------------------
@@ -354,7 +356,7 @@ def forced_checkout_of_dir_with_file_obstructions(sbox):
   expected_disk.tweak('A', contents='The file A\n')
 
   actions.run_and_verify_checkout(url, wc_dir_other, expected_output,
-    expected_disk, None, None, None, None, '--force')
+    expected_disk, [], '--force')
 
 
   # Now see to it that we can recover from the obstructions.
@@ -372,7 +374,7 @@ def forced_checkout_of_dir_with_file_obstructions(sbox):
   svntest.main.run_svn(None, 'revert', '-R', os.path.join(wc_dir_other, 'A'))
 
   actions.run_and_verify_update(wc_dir_other, expected_output, expected_disk,
-    expected_status, None, None, None, None, None, False, wc_dir_other)
+                                expected_status)
 
 
 #----------------------------------------------------------------------
@@ -388,8 +390,7 @@ def forced_checkout_with_faux_obstructions(sbox):
 
   svntest.actions.run_and_verify_checkout(sbox.repo_url,
                                           sbox.wc_dir, expected_output,
-                                          expected_wc, None, None, None,
-                                          None, '--force')
+                                          expected_wc, [], '--force')
 
 #----------------------------------------------------------------------
 
@@ -409,8 +410,7 @@ def forced_checkout_with_real_obstructions(sbox):
 
   svntest.actions.run_and_verify_checkout(sbox.repo_url,
                                           sbox.wc_dir, expected_output,
-                                          expected_wc, None, None, None,
-                                          None, '--force')
+                                          expected_wc, [], '--force')
 
 #----------------------------------------------------------------------
 
@@ -434,8 +434,7 @@ def forced_checkout_with_real_obstructions_and_unversioned_files(sbox):
 
   svntest.actions.run_and_verify_checkout(sbox.repo_url,
                                           sbox.wc_dir, expected_output,
-                                          expected_wc, None, None, None,
-                                          None, '--force')
+                                          expected_wc, [], '--force')
 
 #----------------------------------------------------------------------
 
@@ -460,14 +459,12 @@ def forced_checkout_with_versioned_obstruction(sbox):
   os.mkdir(other_wc_dir)
 
   # Checkout "A" from the first repos to a fresh dir.
-  svntest.actions.run_and_verify_svn("Unexpected error during co",
-                                     svntest.verify.AnyOutput, [],
+  svntest.actions.run_and_verify_svn(svntest.verify.AnyOutput, [],
                                      "co", repo_url + "/A",
                                      fresh_wc_dir_A)
 
   # Checkout "A" from the second repos to the other dir.
-  svntest.actions.run_and_verify_svn("Unexpected error during co",
-                                     svntest.verify.AnyOutput, [],
+  svntest.actions.run_and_verify_svn(svntest.verify.AnyOutput, [],
                                      "co", other_repo_url + "/A",
                                      other_wc_dir_A)
 
@@ -481,8 +478,7 @@ def forced_checkout_with_versioned_obstruction(sbox):
   expected_wc = svntest.main.greek_state.copy()
   svntest.actions.run_and_verify_checkout(repo_url, fresh_wc_dir,
                                           expected_output, expected_wc,
-                                          None, None, None, None,
-                                          '--force')
+                                          [], '--force')
 
   # Checkout the entire first repos into the other dir.  This should
   # fail because it's a different repository.
@@ -493,14 +489,13 @@ def forced_checkout_with_versioned_obstruction(sbox):
   expected_wc = svntest.main.greek_state.copy()
   svntest.actions.run_and_verify_checkout(repo_url, other_wc_dir,
                                           expected_output, expected_wc,
-                                          None, None, None, None,
-                                          '--force')
+                                          [], '--force')
 
   #ensure that other_wc_dir_A is not affected by this forced checkout.
-  svntest.actions.run_and_verify_svn("empty status output", None,
+  svntest.actions.run_and_verify_svn(None,
                                      [], "st", other_wc_dir_A)
   exit_code, sout, serr = svntest.actions.run_and_verify_svn(
-    "it should still point to other_repo_url/A", None, [], "info",
+    None, [], "info",
     other_wc_dir_A)
 
   #TODO rename test_stderr to test_regex or something.
@@ -509,7 +504,7 @@ def forced_checkout_with_versioned_obstruction(sbox):
   #ensure that other_wc_dir is in a consistent state though it may be
   #missing few items.
   exit_code, sout, serr = svntest.actions.run_and_verify_svn(
-    "it should still point to other_repo_url", None, [], "info",
+    None, [], "info",
     other_wc_dir)
   #TODO rename test_stderr to test_regex or something.
   test_stderr("URL: " + sbox.repo_url + '$', sout)
@@ -542,7 +537,7 @@ def import_and_checkout(sbox):
   # Import import_from_dir to the other repos
   expected_output = svntest.wc.State(sbox.wc_dir, {})
 
-  svntest.actions.run_and_verify_svn(None, None, [], 'import',
+  svntest.actions.run_and_verify_svn(None, [], 'import',
                                      '-m', 'import', import_from_dir,
                                      other_repo_url)
 
@@ -573,8 +568,7 @@ def import_and_checkout(sbox):
 
   svntest.actions.run_and_verify_checkout(other_repo_url, import_from_dir,
                                           expected_output, expected_wc,
-                                          None, None, None, None,
-                                          '--force')
+                                          [], '--force')
 
 #----------------------------------------------------------------------
 # Issue #2529.
@@ -584,7 +578,8 @@ def checkout_broken_eol(sbox):
 
   svntest.actions.load_repo(sbox, os.path.join(os.path.dirname(sys.argv[0]),
                                                'update_tests_data',
-                                               'checkout_broken_eol.dump'))
+                                               'checkout_broken_eol.dump'),
+                            create_wc=False)
 
   URL = sbox.repo_url
 
@@ -631,7 +626,7 @@ def checkout_peg_rev(sbox):
   mu_path = os.path.join(wc_dir, 'A', 'mu')
   svntest.main.file_append(mu_path, 'appended mu text')
 
-  svntest.actions.run_and_verify_svn(None, None, [],
+  svntest.actions.run_and_verify_svn(None, [],
                                      'ci', '-m', 'changed file mu', wc_dir)
 
   # now checkout the repo@1 in another folder, this should create our initial
@@ -662,7 +657,7 @@ def checkout_peg_rev_date(sbox):
   ## Get svn:date.
   exit_code, output, errput = svntest.main.run_svn(None, 'propget', 'svn:date',
                                                    '--revprop', '-r1',
-                                                   '--strict',
+                                                   '--no-newline',
                                                    sbox.repo_url)
   if exit_code or errput != [] or len(output) != 1:
     raise svntest.Failure("svn:date propget failed")
@@ -686,7 +681,7 @@ def checkout_peg_rev_date(sbox):
   mu_path = os.path.join(wc_dir, 'A', 'mu')
   svntest.main.file_append(mu_path, 'appended mu text')
 
-  svntest.actions.run_and_verify_svn(None, None, [],
+  svntest.actions.run_and_verify_svn(None, [],
                                      'ci', '-m', 'changed file mu', wc_dir)
 
   # now checkout the repo@peg_string in another folder, this should create our
@@ -707,7 +702,7 @@ def checkout_peg_rev_date(sbox):
                                           expected_output,
                                           expected_wc)
 
-  # now try another checkout with repo@r1_string 
+  # now try another checkout with repo@r1_string
   checkout_target = sbox.add_wc_path('checkout2')
   os.mkdir(checkout_target)
 
@@ -807,7 +802,7 @@ def co_with_obstructing_local_adds(sbox):
 
   # Commit.
   svntest.actions.run_and_verify_commit(wc_dir, expected_output,
-                                        expected_status, None, wc_dir)
+                                        expected_status)
 
   # Create various paths scheduled for addition which will obstruct
   # the adds coming from the repos.
@@ -856,6 +851,7 @@ def co_with_obstructing_local_adds(sbox):
     'A/D/H/I/K/xi'  : Item("This is file 'xi'\n"),
     'A/D/H/I/K/eta' : Item("\n".join(["<<<<<<< .mine",
                                       "This is WC file 'eta'",
+                                      "||||||| .r0",
                                       "=======",
                                       "This is REPOS file 'eta'",
                                       ">>>>>>> .r2",
@@ -863,6 +859,7 @@ def co_with_obstructing_local_adds(sbox):
     'A/D/H/I/L'     : Item(),
     'A/D/kappa'     : Item("\n".join(["<<<<<<< .mine",
                                       "This is WC file 'kappa'",
+                                      "||||||| .r0",
                                       "=======",
                                       "This is REPOS file 'kappa'",
                                       ">>>>>>> .r2",
@@ -893,9 +890,8 @@ def co_with_obstructing_local_adds(sbox):
   # wc_backup before performing the checkout otherwise.
   svntest.actions.run_and_verify_checkout(sbox.repo_url, wc_backup,
                                           expected_output, expected_disk,
-                                          svntest.tree.detect_conflict_files,
-                                          extra_files, None, None,
-                                          '--force')
+                                          [], '--force',
+                                          extra_files=extra_files)
 
   svntest.actions.run_and_verify_status(wc_backup, expected_status)
 
@@ -907,7 +903,7 @@ def co_with_obstructing_local_adds(sbox):
   # URL to URL copy of A/D/G to A/D/M.
   G_URL = sbox.repo_url + '/A/D/G'
   M_URL = sbox.repo_url + '/A/D/M'
-  svntest.actions.run_and_verify_svn("Copy error:", None, [],
+  svntest.actions.run_and_verify_svn(None, [],
                                      'cp', G_URL, M_URL, '-m', '')
 
   # WC to WC copy of A/D/H to A/D/M.  (M is now scheduled for addition
@@ -916,13 +912,13 @@ def co_with_obstructing_local_adds(sbox):
   H_path = os.path.join(wc_dir, 'A', 'D', 'H')
   M_path = os.path.join(wc_dir, 'A', 'D', 'M')
 
-  svntest.actions.run_and_verify_svn("Copy error:", None, [],
+  svntest.actions.run_and_verify_svn(None, [],
                                      'cp', H_path, M_path)
 
   # URL to URL copy of A/B/E/alpha to A/B/F/omicron.
   omega_URL = sbox.repo_url + '/A/B/E/alpha'
   omicron_URL = sbox.repo_url + '/A/B/F/omicron'
-  svntest.actions.run_and_verify_svn("Copy error:", None, [],
+  svntest.actions.run_and_verify_svn(None, [],
                                      'cp', omega_URL, omicron_URL,
                                      '-m', '')
 
@@ -933,7 +929,7 @@ def co_with_obstructing_local_adds(sbox):
   omicron_path = os.path.join(wc_dir, 'A', 'B', 'F', 'omicron')
   chi_path = os.path.join(wc_dir, 'A', 'D', 'H', 'chi')
 
-  svntest.actions.run_and_verify_svn("Copy error:", None, [],
+  svntest.actions.run_and_verify_svn(None, [],
                                      'cp', chi_path,
                                      omicron_path)
 
@@ -999,8 +995,7 @@ def co_with_obstructing_local_adds(sbox):
                                           D_path,
                                           expected_output,
                                           expected_disk,
-                                          None, None, None, None,
-                                          '--force')
+                                          [], '--force')
 
   expected_status.tweak('A/D/M', treeconflict='C', status='R ')
   expected_status.tweak(
@@ -1039,8 +1034,7 @@ def co_with_obstructing_local_adds(sbox):
                                           F_path,
                                           expected_output,
                                           expected_disk,
-                                          None, None, None, None,
-                                          '--force')
+                                          [], '--force')
 
   expected_status.tweak('A/B/F/omicron', treeconflict='C', status='R ')
   expected_status.add({
@@ -1120,8 +1114,7 @@ def checkout_wc_from_drive(sbox):
       'iota'              : Item(status='A '),
     })
     svntest.actions.run_and_verify_checkout(repo_url, wc_dir,
-                                            expected_output, expected_wc,
-                                            None, None, None, None)
+                                            expected_output, expected_wc)
 
     wc2_dir = sbox.add_wc_path('2')
     expected_output = wc.State(wc2_dir, {
@@ -1158,12 +1151,11 @@ def checkout_wc_from_drive(sbox):
       'D/G/tau'   : Item(contents="This is the file 'tau'.\n"),
       'D/G/pi'    : Item(contents="This is the file 'pi'.\n"),
       'D/gamma'   : Item(contents="This is the file 'gamma'.\n"),
-      'mu'        : Item(contents="This is the file 'mu'.\n"),    
+      'mu'        : Item(contents="This is the file 'mu'.\n"),
     })
-    
+
     svntest.actions.run_and_verify_checkout(repo_url + '/A', wc2_dir,
-                                            expected_output, expected_wc,
-                                            None, None, None, None)
+                                            expected_output, expected_wc)
 
     wc3_dir = sbox.add_wc_path('3')
     expected_output = wc.State(wc3_dir, {
@@ -1185,12 +1177,11 @@ def checkout_wc_from_drive(sbox):
       'G/pi'    : Item(contents="This is the file 'pi'.\n"),
       'G/tau'   : Item(contents="This is the file 'tau'.\n"),
       'G/rho'   : Item(contents="This is the file 'rho'.\n"),
-      'gamma'   : Item(contents="This is the file 'gamma'.\n"),    
+      'gamma'   : Item(contents="This is the file 'gamma'.\n"),
     })
 
     svntest.actions.run_and_verify_checkout(repo_url + '/A/D', wc3_dir,
-                                            expected_output, expected_wc,
-                                            None, None, None, None)
+                                            expected_output, expected_wc)
 
   finally:
     os.chdir(was_cwd)

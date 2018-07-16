@@ -65,6 +65,10 @@ struct log_receiver_baton
 
   /* whether the client can handle encoded binary property values */
   svn_boolean_t encode_binary_props;
+
+  /* Helper variables to force early bucket brigade flushes */
+  int result_count;
+  int next_forced_flush;
 };
 
 
@@ -84,6 +88,43 @@ maybe_send_header(struct log_receiver_baton *lrb)
                                     "xmlns:D=\"DAV:\">" DEBUG_CR));
       lrb->needs_header = FALSE;
     }
+  return SVN_NO_ERROR;
+}
+
+/* Utility for log_receiver opening a new XML element in LRB's brigade
+   for LOG_ITEM and return the element's name in *ELEMENT.  Use POOL for
+   temporary allocations.
+
+   Call this function for items that may have a copy-from */
+static svn_error_t *
+start_path_with_copy_from(const char **element,
+                          struct log_receiver_baton *lrb,
+                          svn_log_changed_path2_t *log_item,
+                          apr_pool_t *pool)
+{
+  switch (log_item->action)
+    {
+      case 'A': *element = "S:added-path";
+                break;
+      case 'R': *element = "S:replaced-path";
+                break;
+      default:  /* Caller, you did wrong! */
+                SVN_ERR_MALFUNCTION();
+    }
+
+  if (log_item->copyfrom_path
+      && SVN_IS_VALID_REVNUM(log_item->copyfrom_rev))
+    SVN_ERR(dav_svn__brigade_printf
+            (lrb->bb, lrb->output,
+             "<%s copyfrom-path=\"%s\" copyfrom-rev=\"%ld\"",
+             *element,
+             apr_xml_quote_string(pool,
+                                  log_item->copyfrom_path,
+                                  1), /* escape quotes */
+             log_item->copyfrom_rev));
+  else
+    SVN_ERR(dav_svn__brigade_printf(lrb->bb, lrb->output, "<%s", *element));
+
   return SVN_NO_ERROR;
 }
 
@@ -203,39 +244,9 @@ log_receiver(void *baton,
           switch (log_item->action)
             {
             case 'A':
-              if (log_item->copyfrom_path
-                  && SVN_IS_VALID_REVNUM(log_item->copyfrom_rev))
-                SVN_ERR(dav_svn__brigade_printf
-                        (lrb->bb, lrb->output,
-                         "<S:added-path copyfrom-path=\"%s\""
-                         " copyfrom-rev=\"%ld\"",
-                         apr_xml_quote_string(iterpool,
-                                              log_item->copyfrom_path,
-                                              1), /* escape quotes */
-                         log_item->copyfrom_rev));
-              else
-                SVN_ERR(dav_svn__brigade_puts(lrb->bb, lrb->output,
-                                              "<S:added-path"));
-
-              close_element = "S:added-path";
-              break;
-
             case 'R':
-              if (log_item->copyfrom_path
-                  && SVN_IS_VALID_REVNUM(log_item->copyfrom_rev))
-                SVN_ERR(dav_svn__brigade_printf
-                        (lrb->bb, lrb->output,
-                         "<S:replaced-path copyfrom-path=\"%s\""
-                         " copyfrom-rev=\"%ld\"",
-                         apr_xml_quote_string(iterpool,
-                                              log_item->copyfrom_path,
-                                              1), /* escape quotes */
-                         log_item->copyfrom_rev));
-              else
-                SVN_ERR(dav_svn__brigade_puts(lrb->bb, lrb->output,
-                                              "<S:replaced-path"));
-
-              close_element = "S:replaced-path";
+              SVN_ERR(start_path_with_copy_from(&close_element, lrb,
+                                                log_item, iterpool));
               break;
 
             case 'D':
@@ -275,6 +286,41 @@ log_receiver(void *baton,
   SVN_ERR(dav_svn__brigade_puts(lrb->bb, lrb->output,
                                 "</S:log-item>" DEBUG_CR));
 
+  /* In general APR will flush the brigade every 8000 bytes through the filter
+     stack, but log items may not be generated that fast, especially in
+     combination with authz and busy servers. We now explictly flush after
+     log-item 4, 16, 64 and 256 to produce a few results fast.
+
+     This introduces 4 full flushes of our brigade and the installed output
+     filters at growing intervals and then falls back to the standard
+     buffering of 8000 bytes + whatever buffers are added in output filters. */
+  lrb->result_count++;
+  if (lrb->result_count == lrb->next_forced_flush)
+    {
+      apr_status_t apr_err;
+
+      /* This flush is similar to that in dav_svn__final_flush_or_error().
+
+         Compared to using ap_filter_flush(), which we use in other place
+         this adds a flush frame before flushing the brigade, to make output
+         filters perform a flush as well */
+
+      /* No brigade empty check. We want output filters to flush anyway */
+      apr_err = ap_fflush(lrb->output, lrb->bb);
+      if (apr_err)
+        return svn_error_create(apr_err, NULL, NULL);
+
+      /* Check for an aborted connection, just like our brigade write
+         helper functions, since the brigade functions don't appear to
+         be return useful errors when the connection is dropped. */
+      if (lrb->output->c->aborted)
+        return svn_error_create(SVN_ERR_APMOD_CONNECTION_ABORTED,
+                                NULL, NULL);
+
+      if (lrb->result_count < 256)
+        lrb->next_forced_flush = lrb->next_forced_flush * 4;
+    }
+
   return SVN_NO_ERROR;
 }
 
@@ -301,6 +347,7 @@ dav_svn__log_report(const dav_resource *resource,
   svn_boolean_t discover_changed_paths = FALSE;      /* off by default */
   svn_boolean_t strict_node_history = FALSE;         /* off by default */
   svn_boolean_t include_merged_revisions = FALSE;    /* off by default */
+
   apr_array_header_t *revprops = apr_array_make(resource->pool, 3,
                                                 sizeof(const char *));
   apr_array_header_t *paths
@@ -313,12 +360,10 @@ dav_svn__log_report(const dav_resource *resource,
   ns = dav_svn__find_ns(doc->namespaces, SVN_XML_NAMESPACE);
   if (ns == -1)
     {
-      return dav_svn__new_error_tag(resource->pool, HTTP_BAD_REQUEST, 0,
+      return dav_svn__new_error_svn(resource->pool, HTTP_BAD_REQUEST, 0,
                                     "The request does not contain the 'svn:' "
                                     "namespace, so it is not going to have "
-                                    "certain required elements.",
-                                    SVN_DAV_ERROR_NAMESPACE,
-                                    SVN_DAV_ERROR_TAG);
+                                    "certain required elements");
     }
 
   /* If this is still FALSE after the loop, we haven't seen either of
@@ -421,6 +466,9 @@ dav_svn__log_report(const dav_resource *resource,
   lrb.stack_depth = 0;
   /* lrb.requested_custom_revprops set above */
 
+  lrb.result_count = 0;
+  lrb.next_forced_flush = 4;
+
   /* Our svn_log_entry_receiver_t sends the <S:log-report> header in
      a lazy fashion.  Before writing the first log message, it assures
      that the header has already been sent (checking the needs_header
@@ -443,7 +491,7 @@ dav_svn__log_report(const dav_resource *resource,
                              resource->pool);
   if (serr)
     {
-      derr = dav_svn__convert_err(serr, HTTP_BAD_REQUEST, serr->message,
+      derr = dav_svn__convert_err(serr, HTTP_BAD_REQUEST, NULL,
                                   resource->pool);
       goto cleanup;
     }

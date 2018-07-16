@@ -1,5 +1,7 @@
 /*
- * deadprops.c: mod_dav_svn dead property provider functions for Subversion
+ * deadprops.c: mod_dav_svn provider functions for "dead properties"
+ *              (properties implemented by Subversion or its users,
+ *              not as part of the WebDAV specification).
  *
  * ====================================================================
  *    Licensed to the Apache Software Foundation (ASF) under one
@@ -26,6 +28,7 @@
 #include <httpd.h>
 #include <mod_dav.h>
 
+#include "svn_hash.h"
 #include "svn_xml.h"
 #include "svn_pools.h"
 #include "svn_dav.h"
@@ -134,7 +137,7 @@ get_value(dav_db *db, const dav_prop_name *name, svn_string_t **pvalue)
                                propname, db->p);
       else
         serr = svn_repos_fs_revision_prop(pvalue,
-                                          db->resource->info-> repos->repos,
+                                          db->resource->info->repos->repos,
                                           db->resource->info->root.rev,
                                           propname, db->authz_read_func,
                                           db->authz_read_baton, db->p);
@@ -192,7 +195,7 @@ save_value(dav_db *db, const dav_prop_name *name,
 
   if (propname == NULL)
     {
-      if (db->resource->info->repos->autoversioning)
+      if (resource->info->repos->autoversioning)
         /* ignore the unknown namespace of the incoming prop. */
         propname = name->name;
       else
@@ -222,10 +225,10 @@ save_value(dav_db *db, const dav_prop_name *name,
 
   /* A subpool to cope with mod_dav making multiple calls, e.g. during
      PROPPATCH with multiple values. */
-  subpool = svn_pool_create(db->resource->pool);
-  if (db->resource->baselined)
+  subpool = svn_pool_create(resource->pool);
+  if (resource->baselined)
     {
-      if (db->resource->working)
+      if (resource->working)
         {
           serr = change_txn_prop(resource->info->root.txn, propname,
                                  value, subpool);
@@ -336,7 +339,7 @@ db_open(apr_pool_t *p,
   db->p = svn_pool_create(p);
 
   /* ### temp hack */
-  db->work = svn_stringbuf_ncreate("", 0, db->p);
+  db->work = svn_stringbuf_create_empty(db->p);
 
   /* make our path-based authz callback available to svn_repos_* funcs. */
   arb = apr_pcalloc(p, sizeof(*arb));
@@ -533,10 +536,6 @@ db_store(dav_db *db,
   /* ### namespace check? */
   if (elem->first_child && !strcmp(elem->first_child->name, SVN_DAV__OLD_VALUE))
     {
-      const char *propname;
-
-      get_repos_propname(db, name, &propname);
-
       /* Parse OLD_PROPVAL. */
       old_propval = svn_string_create(dav_xml_get_cdata(elem->first_child, pool,
                                                         0 /* strip_white */),
@@ -655,16 +654,14 @@ static void get_name(dav_db *db, dav_prop_name *pname)
     }
   else
     {
-      const void *name;
-
-      apr_hash_this(db->hi, &name, NULL, NULL);
+      const char *name = apr_hash_this_key(db->hi);
 
 #define PREFIX_LEN (sizeof(SVN_PROP_PREFIX) - 1)
       if (strncmp(name, SVN_PROP_PREFIX, PREFIX_LEN) == 0)
 #undef PREFIX_LEN
         {
           pname->ns = SVN_DAV_PROP_NS_SVN;
-          pname->name = (const char *)name + 4;
+          pname->name = name + 4;
         }
       else
         {

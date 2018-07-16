@@ -22,8 +22,6 @@
  */
 
 -- STMT_CREATE_SCHEMA
-PRAGMA AUTO_VACUUM = 1;
-
 /* A table mapping representation hashes to locations in a rev file. */
 CREATE TABLE rep_cache (
   hash TEXT NOT NULL PRIMARY KEY,
@@ -41,11 +39,30 @@ SELECT revision, offset, size, expanded_size
 FROM rep_cache
 WHERE hash = ?1
 
-
 -- STMT_SET_REP
 INSERT OR FAIL INTO rep_cache (hash, revision, offset, size, expanded_size)
 VALUES (?1, ?2, ?3, ?4, ?5)
 
+-- STMT_GET_REPS_FOR_RANGE
+SELECT hash, revision, offset, size, expanded_size
+FROM rep_cache
+WHERE revision >= ?1 AND revision <= ?2
+
+-- STMT_GET_MAX_REV
+SELECT MAX(revision)
+FROM rep_cache
+
 -- STMT_DEL_REPS_YOUNGER_THAN_REV
 DELETE FROM rep_cache
 WHERE revision > ?1
+
+/* An INSERT takes an SQLite reserved lock that prevents other writes
+   but doesn't block reads.  The incomplete transaction means that no
+   permanent change is made to the database and the transaction is
+   removed when the database is closed.  */
+-- STMT_LOCK_REP
+BEGIN TRANSACTION;
+INSERT INTO rep_cache VALUES ('dummy', 0, 0, 0, 0)
+
+-- STMT_UNLOCK_REP
+ROLLBACK TRANSACTION;

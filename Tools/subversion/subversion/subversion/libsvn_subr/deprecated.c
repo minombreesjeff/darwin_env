@@ -28,21 +28,29 @@
 
 #include <assert.h>
 
+#include <apr_md5.h>
+
 /* We define this here to remove any further warnings about the usage of
    deprecated functions in this file. */
 #define SVN_DEPRECATED
 
+#include "svn_hash.h"
 #include "svn_subst.h"
 #include "svn_path.h"
 #include "svn_opt.h"
 #include "svn_cmdline.h"
+#include "svn_version.h"
 #include "svn_pools.h"
 #include "svn_dso.h"
 #include "svn_mergeinfo.h"
+#include "svn_utf.h"
 #include "svn_xml.h"
+#include "svn_auth.h"
 
 #include "opt.h"
+#include "auth.h"
 #include "private/svn_opt_private.h"
+#include "private/svn_mergeinfo_private.h"
 
 #include "svn_private_config.h"
 
@@ -69,38 +77,28 @@ kwstruct_to_kwhash(const svn_subst_keywords_t *kwstruct,
 
   if (kwstruct->revision)
     {
-      apr_hash_set(kwhash, SVN_KEYWORD_REVISION_LONG,
-                   APR_HASH_KEY_STRING, kwstruct->revision);
-      apr_hash_set(kwhash, SVN_KEYWORD_REVISION_MEDIUM,
-                   APR_HASH_KEY_STRING, kwstruct->revision);
-      apr_hash_set(kwhash, SVN_KEYWORD_REVISION_SHORT,
-                   APR_HASH_KEY_STRING, kwstruct->revision);
+      svn_hash_sets(kwhash, SVN_KEYWORD_REVISION_LONG, kwstruct->revision);
+      svn_hash_sets(kwhash, SVN_KEYWORD_REVISION_MEDIUM, kwstruct->revision);
+      svn_hash_sets(kwhash, SVN_KEYWORD_REVISION_SHORT, kwstruct->revision);
     }
   if (kwstruct->date)
     {
-      apr_hash_set(kwhash, SVN_KEYWORD_DATE_LONG,
-                   APR_HASH_KEY_STRING, kwstruct->date);
-      apr_hash_set(kwhash, SVN_KEYWORD_DATE_SHORT,
-                   APR_HASH_KEY_STRING, kwstruct->date);
+      svn_hash_sets(kwhash, SVN_KEYWORD_DATE_LONG, kwstruct->date);
+      svn_hash_sets(kwhash, SVN_KEYWORD_DATE_SHORT, kwstruct->date);
     }
   if (kwstruct->author)
     {
-      apr_hash_set(kwhash, SVN_KEYWORD_AUTHOR_LONG,
-                   APR_HASH_KEY_STRING, kwstruct->author);
-      apr_hash_set(kwhash, SVN_KEYWORD_AUTHOR_SHORT,
-                   APR_HASH_KEY_STRING, kwstruct->author);
+      svn_hash_sets(kwhash, SVN_KEYWORD_AUTHOR_LONG, kwstruct->author);
+      svn_hash_sets(kwhash, SVN_KEYWORD_AUTHOR_SHORT, kwstruct->author);
     }
   if (kwstruct->url)
     {
-      apr_hash_set(kwhash, SVN_KEYWORD_URL_LONG,
-                   APR_HASH_KEY_STRING, kwstruct->url);
-      apr_hash_set(kwhash, SVN_KEYWORD_URL_SHORT,
-                   APR_HASH_KEY_STRING, kwstruct->url);
+      svn_hash_sets(kwhash, SVN_KEYWORD_URL_LONG, kwstruct->url);
+      svn_hash_sets(kwhash, SVN_KEYWORD_URL_SHORT, kwstruct->url);
     }
   if (kwstruct->id)
     {
-      apr_hash_set(kwhash, SVN_KEYWORD_ID,
-                   APR_HASH_KEY_STRING, kwstruct->id);
+      svn_hash_sets(kwhash, SVN_KEYWORD_ID, kwstruct->id);
     }
 
   return kwhash;
@@ -361,7 +359,7 @@ print_command_info(const svn_opt_subcommand_desc_t *cmd,
         {
           if (cmd->valid_options[i])
             {
-              if (have_options == FALSE)
+              if (!have_options)
                 {
                   SVN_ERR(svn_cmdline_fputs(_("\nValid options:\n"),
                                             stream, pool));
@@ -523,6 +521,33 @@ svn_opt_args_to_target_array(apr_array_header_t **targets_p,
 }
 
 svn_error_t *
+svn_opt_print_help3(apr_getopt_t *os,
+                    const char *pgm_name,
+                    svn_boolean_t print_version,
+                    svn_boolean_t quiet,
+                    const char *version_footer,
+                    const char *header,
+                    const svn_opt_subcommand_desc2_t *cmd_table,
+                    const apr_getopt_option_t *option_table,
+                    const int *global_options,
+                    const char *footer,
+                    apr_pool_t *pool)
+{
+  return svn_error_trace(svn_opt_print_help4(os,
+                                             pgm_name,
+                                             print_version,
+                                             quiet,
+                                             FALSE,
+                                             version_footer,
+                                             header,
+                                             cmd_table,
+                                             option_table,
+                                             global_options,
+                                             footer,
+                                             pool));
+}
+
+svn_error_t *
 svn_opt_print_help2(apr_getopt_t *os,
                     const char *pgm_name,
                     svn_boolean_t print_version,
@@ -534,10 +559,11 @@ svn_opt_print_help2(apr_getopt_t *os,
                     const char *footer,
                     apr_pool_t *pool)
 {
-  return svn_error_trace(svn_opt_print_help3(os,
+  return svn_error_trace(svn_opt_print_help4(os,
                                              pgm_name,
                                              print_version,
                                              quiet,
+                                             FALSE,
                                              version_footer,
                                              header,
                                              cmd_table,
@@ -575,8 +601,11 @@ svn_opt_print_help(apr_getopt_t *os,
         }
     }
   else if (print_version)   /* just --version */
-    SVN_ERR(svn_opt__print_version_info(pgm_name, version_footer, quiet,
-                                        pool));
+    {
+      SVN_ERR(svn_opt__print_version_info(pgm_name, version_footer,
+                                          svn_version_extended(FALSE, pool),
+                                          quiet, FALSE, pool));
+    }
   else if (os && !targets->nelts)            /* `-h', `--help', or `help' */
     svn_opt_print_generic_help(header,
                                cmd_table,
@@ -766,6 +795,25 @@ svn_io_get_dirents(apr_hash_t **dirents,
 }
 
 svn_error_t *
+svn_io_start_cmd2(apr_proc_t *cmd_proc,
+                  const char *path,
+                  const char *cmd,
+                  const char *const *args,
+                  svn_boolean_t inherit,
+                  svn_boolean_t infile_pipe,
+                  apr_file_t *infile,
+                  svn_boolean_t outfile_pipe,
+                  apr_file_t *outfile,
+                  svn_boolean_t errfile_pipe,
+                  apr_file_t *errfile,
+                  apr_pool_t *pool)
+{
+  return svn_io_start_cmd3(cmd_proc, path, cmd, args, NULL, inherit,
+                           infile_pipe, infile, outfile_pipe, outfile,
+                           errfile_pipe, errfile, pool);
+}
+
+svn_error_t *
 svn_io_start_cmd(apr_proc_t *cmd_proc,
                  const char *path,
                  const char *cmd,
@@ -823,6 +871,22 @@ svn_io_dir_walk(const char *dirname,
   return svn_error_trace(svn_io_dir_walk2(dirname, wanted,
                                           walk_func_filter_func,
                                           &baton, pool));
+}
+
+svn_error_t *
+svn_io_stat_dirent(const svn_io_dirent2_t **dirent_p,
+                   const char *path,
+                   svn_boolean_t ignore_enoent,
+                   apr_pool_t *result_pool,
+                   apr_pool_t *scratch_pool)
+{
+  return svn_error_trace(
+            svn_io_stat_dirent2(dirent_p,
+                                path,
+                                FALSE,
+                                ignore_enoent,
+                                result_pool,
+                                scratch_pool));
 }
 
 /*** From constructors.c ***/
@@ -1006,6 +1070,119 @@ svn_stream_contents_same(svn_boolean_t *same,
                            pool));
 }
 
+void
+svn_stream_set_read(svn_stream_t *stream,
+                    svn_read_fn_t read_fn)
+{
+  svn_stream_set_read2(stream, NULL /* only full read support */,
+                       read_fn);
+}
+
+svn_error_t *
+svn_stream_read(svn_stream_t *stream,
+                char *buffer,
+                apr_size_t *len)
+{
+  return svn_error_trace(svn_stream_read_full(stream, buffer, len));
+}
+
+struct md5_stream_baton
+{
+  const unsigned char **read_digest;
+  const unsigned char **write_digest;
+  svn_checksum_t *read_checksum;
+  svn_checksum_t *write_checksum;
+  svn_stream_t *proxy;
+  apr_pool_t *pool;
+};
+
+static svn_error_t *
+read_handler_md5(void *baton, char *buffer, apr_size_t *len)
+{
+  struct md5_stream_baton *btn = baton;
+  return svn_error_trace(svn_stream_read2(btn->proxy, buffer, len));
+}
+
+static svn_error_t *
+read_full_handler_md5(void *baton, char *buffer, apr_size_t *len)
+{
+  struct md5_stream_baton *btn = baton;
+  return svn_error_trace(svn_stream_read_full(btn->proxy, buffer, len));
+}
+
+static svn_error_t *
+skip_handler_md5(void *baton, apr_size_t len)
+{
+  struct md5_stream_baton *btn = baton;
+  return svn_error_trace(svn_stream_skip(btn->proxy, len));
+}
+
+static svn_error_t *
+write_handler_md5(void *baton, const char *buffer, apr_size_t *len)
+{
+  struct md5_stream_baton *btn = baton;
+  return svn_error_trace(svn_stream_write(btn->proxy, buffer, len));
+}
+
+static svn_error_t *
+close_handler_md5(void *baton)
+{
+  struct md5_stream_baton *btn = baton;
+
+  SVN_ERR(svn_stream_close(btn->proxy));
+
+  if (btn->read_digest)
+    *btn->read_digest
+      = apr_pmemdup(btn->pool, btn->read_checksum->digest,
+                    APR_MD5_DIGESTSIZE);
+
+  if (btn->write_digest)
+    *btn->write_digest
+      = apr_pmemdup(btn->pool, btn->write_checksum->digest,
+                    APR_MD5_DIGESTSIZE);
+
+  return SVN_NO_ERROR;
+}
+
+
+svn_stream_t *
+svn_stream_checksummed(svn_stream_t *stream,
+                       const unsigned char **read_digest,
+                       const unsigned char **write_digest,
+                       svn_boolean_t read_all,
+                       apr_pool_t *pool)
+{
+  svn_stream_t *s;
+  struct md5_stream_baton *baton;
+
+  if (! read_digest && ! write_digest)
+    return stream;
+
+  baton = apr_palloc(pool, sizeof(*baton));
+  baton->read_digest = read_digest;
+  baton->write_digest = write_digest;
+  baton->pool = pool;
+
+  /* Set BATON->proxy to a stream that will fill in BATON->read_checksum
+   * and BATON->write_checksum (if we want them) when it is closed. */
+  baton->proxy
+    = svn_stream_checksummed2(stream,
+                              read_digest ? &baton->read_checksum : NULL,
+                              write_digest ? &baton->write_checksum : NULL,
+                              svn_checksum_md5,
+                              read_all, pool);
+
+  /* Create a stream that will forward its read/write/close operations to
+   * BATON->proxy and will fill in *READ_DIGEST and *WRITE_DIGEST (if we
+   * want them) after it closes BATON->proxy. */
+  s = svn_stream_create(baton, pool);
+  svn_stream_set_read2(s, read_handler_md5, read_full_handler_md5);
+  svn_stream_set_skip(s, skip_handler_md5);
+  svn_stream_set_write(s, write_handler_md5);
+  svn_stream_set_close(s, close_handler_md5);
+  return s;
+}
+
 /*** From path.c ***/
 
 const char *
@@ -1036,14 +1213,6 @@ svn_path_canonicalize(const char *path, apr_pool_t *pool)
     return svn_dirent_canonicalize(path, pool);
 }
 
-svn_boolean_t
-svn_path_is_canonical(const char *path, apr_pool_t *pool)
-{
-  return svn_uri_is_canonical(path, pool) ||
-      svn_dirent_is_canonical(path, pool) ||
-      svn_relpath_is_canonical(path);
-}
-
 
 /*** From mergeinfo.c ***/
 
@@ -1061,8 +1230,8 @@ svn_mergeinfo_inheritable(svn_mergeinfo_t *output,
 }
 
 svn_error_t *
-svn_rangelist_inheritable(apr_array_header_t **inheritable_rangelist,
-                          const apr_array_header_t *rangelist,
+svn_rangelist_inheritable(svn_rangelist_t **inheritable_rangelist,
+                          const svn_rangelist_t *rangelist,
                           svn_revnum_t start,
                           svn_revnum_t end,
                           apr_pool_t *pool)
@@ -1073,17 +1242,90 @@ svn_rangelist_inheritable(apr_array_header_t **inheritable_rangelist,
                                                     pool, pool));
 }
 
+svn_error_t *
+svn_rangelist_merge(svn_rangelist_t **rangelist,
+                    const svn_rangelist_t *changes,
+                    apr_pool_t *pool)
+{
+  SVN_ERR(svn_rangelist_merge2(*rangelist, changes,
+                               pool, pool));
+
+  return svn_error_trace(
+            svn_rangelist__combine_adjacent_ranges(*rangelist, pool));
+}
+
+svn_error_t *
+svn_mergeinfo_diff(svn_mergeinfo_t *deleted, svn_mergeinfo_t *added,
+                   svn_mergeinfo_t from, svn_mergeinfo_t to,
+                   svn_boolean_t consider_inheritance,
+                   apr_pool_t *pool)
+{
+  return svn_error_trace(svn_mergeinfo_diff2(deleted, added, from, to,
+                                             consider_inheritance, pool,
+                                             pool));
+}
+
+svn_error_t *
+svn_mergeinfo_merge(svn_mergeinfo_t mergeinfo,
+                    svn_mergeinfo_t changes,
+                    apr_pool_t *pool)
+{
+  return svn_error_trace(svn_mergeinfo_merge2(mergeinfo, changes, pool,
+                         pool));
+}
+
+svn_error_t *
+svn_mergeinfo_remove(svn_mergeinfo_t *mergeinfo, svn_mergeinfo_t eraser,
+                     svn_mergeinfo_t whiteboard, apr_pool_t *pool)
+{
+  return svn_mergeinfo_remove2(mergeinfo, eraser, whiteboard, TRUE, pool,
+                               pool);
+}
+
+svn_error_t *
+svn_mergeinfo_intersect(svn_mergeinfo_t *mergeinfo,
+                        svn_mergeinfo_t mergeinfo1,
+                        svn_mergeinfo_t mergeinfo2,
+                        apr_pool_t *pool)
+{
+  return svn_mergeinfo_intersect2(mergeinfo, mergeinfo1, mergeinfo2,
+                                  TRUE, pool, pool);
+}
+
 /*** From config.c ***/
+svn_error_t *
+svn_config_create(svn_config_t **cfgp,
+                  svn_boolean_t section_names_case_sensitive,
+                  apr_pool_t *result_pool)
+{
+  return svn_error_trace(svn_config_create2(cfgp,
+                                            section_names_case_sensitive,
+                                            FALSE,
+                                            result_pool));
+}
+
+svn_error_t *
+svn_config_read2(svn_config_t **cfgp, const char *file,
+                 svn_boolean_t must_exist,
+                 svn_boolean_t section_names_case_sensitive,
+                 apr_pool_t *result_pool)
+{
+  return svn_error_trace(svn_config_read3(cfgp, file,
+                                          must_exist,
+                                          section_names_case_sensitive,
+                                          FALSE,
+                                          result_pool));
+}
 
 svn_error_t *
 svn_config_read(svn_config_t **cfgp, const char *file,
                 svn_boolean_t must_exist,
-                apr_pool_t *pool)
+                apr_pool_t *result_pool)
 {
-  return svn_error_trace(svn_config_read2(cfgp, file,
+  return svn_error_trace(svn_config_read3(cfgp, file,
                                           must_exist,
-                                          FALSE,
-                                          pool));
+                                          FALSE, FALSE,
+                                          result_pool));
 }
 
 #ifdef SVN_DISABLE_FULL_VERSION_MATCH
@@ -1125,4 +1367,174 @@ void
 svn_xml_make_header(svn_stringbuf_t **str, apr_pool_t *pool)
 {
   svn_xml_make_header2(str, NULL, pool);
+}
+
+
+/*** From utf.c ***/
+void
+svn_utf_initialize(apr_pool_t *pool)
+{
+  svn_utf_initialize2(FALSE, pool);
+}
+
+svn_error_t *
+svn_utf_cstring_from_utf8_ex(const char **dest,
+                             const char *src,
+                             const char *topage,
+                             const char *convset_key,
+                             apr_pool_t *pool)
+{
+  return svn_utf_cstring_from_utf8_ex2(dest, src, topage, pool);
+}
+
+/*** From error.c ***/
+void
+svn_handle_error(svn_error_t *err, FILE *stream, svn_boolean_t fatal)
+{
+  svn_handle_error2(err, stream, fatal, "svn: ");
+}
+
+void
+svn_handle_warning(FILE *stream, svn_error_t *err)
+{
+  svn_handle_warning2(stream, err, "svn: ");
+}
+
+
+/*** From subst.c ***/
+svn_error_t *
+svn_subst_build_keywords(svn_subst_keywords_t *kw,
+                         const char *keywords_val,
+                         const char *rev,
+                         const char *url,
+                         apr_time_t date,
+                         const char *author,
+                         apr_pool_t *pool)
+{
+  apr_hash_t *kwhash;
+  const svn_string_t *val;
+
+  SVN_ERR(svn_subst_build_keywords2(&kwhash, keywords_val, rev,
+                                    url, date, author, pool));
+
+  /* The behaviour of pre-1.3 svn_subst_build_keywords, which we are
+   * replicating here, is to write to a slot in the svn_subst_keywords_t
+   * only if the relevant keyword was present in keywords_val, otherwise
+   * leaving that slot untouched. */
+
+  val = svn_hash_gets(kwhash, SVN_KEYWORD_REVISION_LONG);
+  if (val)
+    kw->revision = val;
+
+  val = svn_hash_gets(kwhash, SVN_KEYWORD_DATE_LONG);
+  if (val)
+    kw->date = val;
+
+  val = svn_hash_gets(kwhash, SVN_KEYWORD_AUTHOR_LONG);
+  if (val)
+    kw->author = val;
+
+  val = svn_hash_gets(kwhash, SVN_KEYWORD_URL_LONG);
+  if (val)
+    kw->url = val;
+
+  val = svn_hash_gets(kwhash, SVN_KEYWORD_ID);
+  if (val)
+    kw->id = val;
+
+  return SVN_NO_ERROR;
+}
+
+/*** From version.c ***/
+svn_error_t *
+svn_ver_check_list(const svn_version_t *my_version,
+                   const svn_version_checklist_t *checklist)
+{
+  return svn_ver_check_list2(my_version, checklist, svn_ver_compatible);
+}
+
+/*** From win32_crypto.c ***/
+#if defined(WIN32) && !defined(__MINGW32__)
+void
+svn_auth_get_windows_simple_provider(svn_auth_provider_object_t **provider,
+                                     apr_pool_t *pool)
+{
+  svn_auth__get_windows_simple_provider(provider, pool);
+}
+
+void
+svn_auth_get_windows_ssl_client_cert_pw_provider
+   (svn_auth_provider_object_t **provider,
+    apr_pool_t *pool)
+{
+  svn_auth__get_windows_ssl_client_cert_pw_provider(provider, pool);
+}
+
+void
+svn_auth_get_windows_ssl_server_trust_provider
+  (svn_auth_provider_object_t **provider, apr_pool_t *pool)
+{
+  svn_auth__get_windows_ssl_server_trust_provider(provider, pool);
+}
+#endif /* WIN32 && !__MINGW32__ */
+
+/*** From macos_keychain.c ***/
+#if defined(DARWIN)
+void
+svn_auth_get_keychain_simple_provider(svn_auth_provider_object_t **provider,
+                                      apr_pool_t *pool)
+{
+  svn_auth__get_keychain_simple_provider(provider, pool);
+}
+
+void
+svn_auth_get_keychain_ssl_client_cert_pw_provider
+  (svn_auth_provider_object_t **provider,
+   apr_pool_t *pool)
+{
+  svn_auth__get_keychain_ssl_client_cert_pw_provider(provider, pool);
+}
+#endif /* DARWIN */
+
+#if !defined(WIN32)
+void
+svn_auth_get_gpg_agent_simple_provider(svn_auth_provider_object_t **provider,
+                                       apr_pool_t *pool)
+{
+#ifdef SVN_HAVE_GPG_AGENT
+  svn_auth__get_gpg_agent_simple_provider(provider, pool);
+#else
+  svn_auth__get_dummmy_simple_provider(provider, pool);
+#endif /* SVN_HAVE_GPG_AGENT */
+}
+#endif /* !WIN32 */
+
+svn_error_t *
+svn_cmdline_create_auth_baton(svn_auth_baton_t **ab,
+                              svn_boolean_t non_interactive,
+                              const char *auth_username,
+                              const char *auth_password,
+                              const char *config_dir,
+                              svn_boolean_t no_auth_cache,
+                              svn_boolean_t trust_server_cert,
+                              svn_config_t *cfg,
+                              svn_cancel_func_t cancel_func,
+                              void *cancel_baton,
+                              apr_pool_t *pool)
+{
+  return svn_error_trace(svn_cmdline_create_auth_baton2(ab,
+                                                        non_interactive,
+                                                        auth_username,
+                                                        auth_password,
+                                                        config_dir,
+                                                        no_auth_cache,
+                                                        trust_server_cert,
+                                                        FALSE,
+                                                        FALSE,
+                                                        FALSE,
+                                                        FALSE,
+                                                        cfg,
+                                                        cancel_func,
+                                                        cancel_baton,
+                                                        pool));
 }

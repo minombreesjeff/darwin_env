@@ -38,6 +38,23 @@ class Generator(gen_win.WinGeneratorBase):
   def quote(self, str):
     return '"%s"' % str
 
+  def gen_proj_names(self, install_targets):
+    "Generate project file names for the targets"
+
+    if float(self.vcproj_version) < 11.0:
+      gen_win.WinGeneratorBase.gen_proj_names(self, install_targets)
+      return
+
+    # With VS2012 we can assume that even the light versions
+    # support proper project nesting in the UI
+
+    for target in install_targets:
+      if target.msvc_name:
+        target.proj_name = target.msvc_name
+        continue
+
+      target.proj_name = target.name
+
   def get_external_project(self, target, proj_ext):
     "Link project files: prefer vcproj's, but if don't exist, try dsp's."
     vcproj = gen_win.WinGeneratorBase.get_external_project(self, target,
@@ -100,7 +117,6 @@ class Generator(gen_win.WinGeneratorBase):
       'platforms' : self.platforms,
       'config_type' : config_type,
       'configs' : configs,
-      'includes' : self.get_win_includes(target),
       'sources' : sources,
       'default_platform' : self.platforms[0],
       'default_config' : configs[0].name,
@@ -124,10 +140,6 @@ class Generator(gen_win.WinGeneratorBase):
       self.write_with_template(fname, 'templates/vcnet_vcxproj.ezt', data)
       self.write_with_template(fname + '.filters', 'templates/vcnet_vcxproj_filters.ezt', data)
 
-  def find_rootpath(self):
-    "Gets the root path as understand by the project system"
-    return "$(SolutionDir)"
-
   def write(self):
     "Write a Solution (.sln)"
 
@@ -142,14 +154,14 @@ class Generator(gen_win.WinGeneratorBase):
                                    key=lambda t: t[0]):
       sql.append(_eztdata(header=hdrfile.replace('/', '\\'),
                           source=sqlfile[0].replace('/', '\\'),
-                          dependencies=[x.replace('/', '\\') for x in sqlfile[1:]],
-                          svn_python=sys.executable))
+                          dependencies=[x.replace('/', '\\') for x in sqlfile[1:]]))
 
     # apr doesn't supply vcproj files, the user must convert them
     # manually before loading the generated solution
     self.move_proj_file(self.projfilesdir,
                         'svn_config' + self.vcproj_extension,
                           (
+                            ('svn_python', sys.executable),
                             ('sql', sql),
                             ('project_guid', self.makeguid('__CONFIG__')),
                           )
@@ -159,9 +171,6 @@ class Generator(gen_win.WinGeneratorBase):
                         (
                           ('project_guid', self.makeguid('svn_locale')),
                         ))
-    self.write_zlib_project_file('zlib' + self.vcproj_extension)
-    self.write_neon_project_file('neon' + self.vcproj_extension)
-    self.write_serf_project_file('serf' + self.vcproj_extension)
 
     install_targets = self.get_install_targets()
 
@@ -202,10 +211,9 @@ class Generator(gen_win.WinGeneratorBase):
       for i in range(len(depends)):
         if depends[i].fname.startswith(self.projfilesdir):
           path = depends[i].fname[len(self.projfilesdir) + 1:]
-        elif os.path.isabs(depends[i].fname):
-          path = depends[i].fname
         else:
-          path = '$(SolutionDir)' + depends[i].fname
+          path = os.path.join(os.path.relpath('.', self.projfilesdir),
+                              depends[i].fname)
         deplist.append(gen_win.ProjectItem(guid=guids[depends[i].name],
                                            index=i,
                                            path=path,

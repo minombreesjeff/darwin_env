@@ -43,51 +43,6 @@
 
 #define DEFAULT_ARRAY_SIZE 5
 
-/* Return true iff ARG is a repository-relative URL: specifically that
- * it starts with the characters "^/".
- * ARG is in UTF-8 encoding.
- * Do not check whether ARG is properly URI-encoded, canonical, or valid
- * in any other way. */
-static svn_boolean_t
-arg_is_repos_relative_url(const char *arg)
-{
-  return (0 == strncmp("^/", arg, 2));
-}
-
-/* Set *ABSOLUTE_URL to the absolute URL represented by RELATIVE_URL
- * relative to REPOS_ROOT_URL.
- * *ABSOLUTE_URL will end with a peg revision specifier if RELATIVE_URL did.
- * RELATIVE_URL is in repository-relative syntax:
- * "^/[REL-URL][@PEG]",
- * REPOS_ROOT_URL is the absolute URL of the repository root.
- * All strings are in UTF-8 encoding.
- * Allocate *ABSOLUTE_URL in POOL.
- *
- * REPOS_ROOT_URL and RELATIVE_URL do not have to be properly URI-encoded,
- * canonical, or valid in any other way.  The caller is expected to perform
- * canonicalization on *ABSOLUTE_URL after the call to the function.
- */
-static svn_error_t *
-resolve_repos_relative_url(const char **absolute_url,
-                           const char *relative_url,
-                           const char *repos_root_url,
-                           apr_pool_t *pool)
-{
-  if (! arg_is_repos_relative_url(relative_url))
-    return svn_error_createf(SVN_ERR_BAD_URL, NULL,
-                             _("Improper relative URL '%s'"),
-                             relative_url);
-
-  /* No assumptions are made about the canonicalization of the input
-   * arguments, it is presumed that the output will be canonicalized after
-   * this function, which will remove any duplicate path separator.
-   */
-  *absolute_url = apr_pstrcat(pool, repos_root_url, relative_url + 1,
-                              (char *)NULL);
-
-  return SVN_NO_ERROR;
-}
-
 
 /* Attempt to find the repository root url for TARGET, possibly using CTX for
  * authentication.  If one is found and *ROOT_URL is not NULL, then just check
@@ -114,8 +69,8 @@ check_root_url_of_target(const char **root_url,
   if (!svn_path_is_url(truepath))
     SVN_ERR(svn_dirent_get_absolute(&truepath, truepath, pool));
 
-  err =  svn_client__get_repos_root(&tmp_root_url, truepath,
-                                    ctx, pool, pool);
+  err = svn_client_get_repos_root(&tmp_root_url, NULL, truepath,
+                                  ctx, pool, pool);
 
   if (err)
     {
@@ -125,14 +80,14 @@ check_root_url_of_target(const char **root_url,
        *
        * If the target itself is a URL to a repository that does not exist,
        * that's fine, too. The callers will deal with this argument in an
-       * appropriate manter if it does not make any sense.
+       * appropriate manner if it does not make any sense.
        *
        * Also tolerate locally added targets ("bad revision" error).
        */
       if ((err->apr_err == SVN_ERR_ENTRY_NOT_FOUND)
           || (err->apr_err == SVN_ERR_WC_PATH_NOT_FOUND)
           || (err->apr_err == SVN_ERR_WC_NOT_WORKING_COPY)
-          || (err->apr_err == SVN_ERR_RA_LOCAL_REPOS_OPEN_FAILED)
+          || (err->apr_err == SVN_ERR_RA_CANNOT_CREATE_SESSION)
           || (err->apr_err == SVN_ERR_CLIENT_BAD_REVISION))
         {
           svn_error_clear(err);
@@ -168,7 +123,6 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
   int i;
   svn_boolean_t rel_url_found = FALSE;
   const char *root_url = NULL;
-  svn_error_t *err = SVN_NO_ERROR;
   apr_array_header_t *input_targets =
     apr_array_make(pool, DEFAULT_ARRAY_SIZE, sizeof(const char *));
   apr_array_header_t *output_targets =
@@ -190,7 +144,7 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
       SVN_ERR(svn_utf_cstring_to_utf8(&utf8_target,
                                       raw_target, pool));
 
-      if (arg_is_repos_relative_url(utf8_target))
+      if (svn_path_is_repos_relative_url(utf8_target))
         rel_url_found = TRUE;
 
       APR_ARRAY_PUSH(input_targets, const char *) = utf8_target;
@@ -205,7 +159,7 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
           const char *utf8_target = APR_ARRAY_IDX(known_targets,
                                                   i, const char *);
 
-          if (arg_is_repos_relative_url(utf8_target))
+          if (svn_path_is_repos_relative_url(utf8_target))
             rel_url_found = TRUE;
 
           APR_ARRAY_PUSH(input_targets, const char *) = utf8_target;
@@ -221,7 +175,7 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
       /* Relative urls will be canonicalized when they are resolved later in
        * the function
        */
-      if (arg_is_repos_relative_url(utf8_target))
+      if (svn_path_is_repos_relative_url(utf8_target))
         {
           APR_ARRAY_PUSH(output_targets, const char *) = utf8_target;
         }
@@ -245,6 +199,15 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
            */
           SVN_ERR(svn_opt__split_arg_at_peg_revision(&true_target, &peg_rev,
                                                      utf8_target, pool));
+
+          /* Reject the form "@abc", a peg specifier with no path. */
+          if (true_target[0] == '\0' && peg_rev[0] != '\0')
+            {
+              return svn_error_createf(SVN_ERR_BAD_FILENAME, NULL,
+                                       _("'%s' is just a peg revision. "
+                                         "Maybe try '%s@' instead?"),
+                                       utf8_target, utf8_target);
+            }
 
           /* URLs and wc-paths get treated differently. */
           if (svn_path_is_url(true_target))
@@ -290,8 +253,8 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
 
                   SVN_ERR(svn_dirent_get_absolute(&target_abspath,
                                                   original_target, pool));
-                  err2 = svn_wc_read_kind(&kind, ctx->wc_ctx, target_abspath,
-                                          FALSE, pool);
+                  err2 = svn_wc_read_kind2(&kind, ctx->wc_ctx, target_abspath,
+                                           TRUE, FALSE, pool);
                   if (err2
                       && (err2->apr_err == SVN_ERR_WC_NOT_WORKING_COPY
                           || err2->apr_err == SVN_ERR_WC_UPGRADE_REQUIRED))
@@ -324,7 +287,7 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
                 }
             }
 
-          target = apr_pstrcat(pool, true_target, peg_rev, (char *)NULL);
+          target = apr_pstrcat(pool, true_target, peg_rev, SVN_VA_NULL);
 
           if (rel_url_found)
             {
@@ -347,7 +310,12 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
        */
       if (root_url == NULL)
         {
-          err = svn_client_root_url_from_path(&root_url, "", ctx, pool);
+          const char *current_abspath;
+          svn_error_t *err;
+
+          SVN_ERR(svn_dirent_get_absolute(&current_abspath, "", pool));
+          err = svn_client_get_repos_root(&root_url, NULL /* uuid */,
+                                          current_abspath, ctx, pool, pool);
           if (err || root_url == NULL)
             return svn_error_create(SVN_ERR_WC_NOT_WORKING_COPY, err,
                                     _("Resolving '^/': no repository root "
@@ -363,7 +331,7 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
           const char *target = APR_ARRAY_IDX(output_targets, i,
                                              const char *);
 
-          if (arg_is_repos_relative_url(target))
+          if (svn_path_is_repos_relative_url(target))
             {
               const char *abs_target;
               const char *true_target;
@@ -372,13 +340,14 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
               SVN_ERR(svn_opt__split_arg_at_peg_revision(&true_target, &peg_rev,
                                                          target, pool));
 
-              SVN_ERR(resolve_repos_relative_url(&abs_target, true_target,
-                                                 root_url, pool));
+              SVN_ERR(svn_path_resolve_repos_relative_url(&abs_target,
+                                                          true_target,
+                                                          root_url, pool));
 
               SVN_ERR(svn_opt__arg_canonicalize_url(&true_target, abs_target,
                                                     pool));
 
-              target = apr_pstrcat(pool, true_target, peg_rev, (char *)NULL);
+              target = apr_pstrcat(pool, true_target, peg_rev, SVN_VA_NULL);
             }
 
           APR_ARRAY_PUSH(*targets_p, const char *) = target;
@@ -387,11 +356,17 @@ svn_client_args_to_target_array2(apr_array_header_t **targets_p,
   else
     *targets_p = output_targets;
 
-  if (reserved_names && ! err)
-    for (i = 0; i < reserved_names->nelts; ++i)
-      err = svn_error_createf(SVN_ERR_RESERVED_FILENAME_SPECIFIED, err,
-                              _("'%s' ends in a reserved name"),
-                              APR_ARRAY_IDX(reserved_names, i, const char *));
+  if (reserved_names)
+    {
+      svn_error_t *err = SVN_NO_ERROR;
 
-  return svn_error_trace(err);
+      for (i = 0; i < reserved_names->nelts; ++i)
+        err = svn_error_createf(SVN_ERR_RESERVED_FILENAME_SPECIFIED, err,
+                                _("'%s' ends in a reserved name"),
+                                APR_ARRAY_IDX(reserved_names, i,
+                                              const char *));
+      return svn_error_trace(err);
+    }
+
+  return SVN_NO_ERROR;
 }

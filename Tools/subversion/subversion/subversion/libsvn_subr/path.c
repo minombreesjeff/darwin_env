@@ -91,16 +91,33 @@ is_canonical(const char *path,
 #endif
 
 
-char *svn_path_join(const char *base,
-                    const char *component,
-                    apr_pool_t *pool)
+/* functionality of svn_path_is_canonical but without the deprecation */
+static svn_boolean_t
+svn_path_is_canonical_internal(const char *path, apr_pool_t *pool)
+{
+  return svn_uri_is_canonical(path, pool) ||
+      svn_dirent_is_canonical(path, pool) ||
+      svn_relpath_is_canonical(path);
+}
+
+svn_boolean_t
+svn_path_is_canonical(const char *path, apr_pool_t *pool)
+{
+  return svn_path_is_canonical_internal(path, pool);
+}
+
+/* functionality of svn_path_join but without the deprecation */
+static char *
+svn_path_join_internal(const char *base,
+                       const char *component,
+                       apr_pool_t *pool)
 {
   apr_size_t blen = strlen(base);
   apr_size_t clen = strlen(component);
   char *path;
 
-  assert(svn_path_is_canonical(base, pool));
-  assert(svn_path_is_canonical(component, pool));
+  assert(svn_path_is_canonical_internal(base, pool));
+  assert(svn_path_is_canonical_internal(component, pool));
 
   /* If the component is absolute, then return it.  */
   if (*component == '/')
@@ -124,6 +141,13 @@ char *svn_path_join(const char *base,
   return path;
 }
 
+char *svn_path_join(const char *base,
+                    const char *component,
+                    apr_pool_t *pool)
+{
+  return svn_path_join_internal(base, component, pool);
+}
+
 char *svn_path_join_many(apr_pool_t *pool, const char *base, ...)
 {
 #define MAX_SAVED_LENGTHS 10
@@ -140,7 +164,7 @@ char *svn_path_join_many(apr_pool_t *pool, const char *base, ...)
 
   total_len = strlen(base);
 
-  assert(svn_path_is_canonical(base, pool));
+  assert(svn_path_is_canonical_internal(base, pool));
 
   if (total_len == 1 && *base == '/')
     base_is_root = TRUE;
@@ -160,7 +184,7 @@ char *svn_path_join_many(apr_pool_t *pool, const char *base, ...)
     {
       len = strlen(s);
 
-      assert(svn_path_is_canonical(s, pool));
+      assert(svn_path_is_canonical_internal(s, pool));
 
       if (SVN_PATH_IS_EMPTY(s))
         continue;
@@ -353,7 +377,7 @@ svn_path_dirname(const char *path, apr_pool_t *pool)
 {
   apr_size_t len = strlen(path);
 
-  assert(svn_path_is_canonical(path, pool));
+  assert(svn_path_is_canonical_internal(path, pool));
 
   return apr_pstrmemdup(pool, path, previous_segment(path, len));
 }
@@ -365,7 +389,7 @@ svn_path_basename(const char *path, apr_pool_t *pool)
   apr_size_t len = strlen(path);
   apr_size_t start;
 
-  assert(svn_path_is_canonical(path, pool));
+  assert(svn_path_is_canonical_internal(path, pool));
 
   if (len == 1 && path[0] == '/')
     start = 0;
@@ -399,8 +423,8 @@ svn_path_compare_paths(const char *path1,
   apr_size_t min_len = ((path1_len < path2_len) ? path1_len : path2_len);
   apr_size_t i = 0;
 
-  assert(is_canonical(path1, strlen(path1)));
-  assert(is_canonical(path2, strlen(path2)));
+  assert(is_canonical(path1, path1_len));
+  assert(is_canonical(path2, path2_len));
 
   /* Skip past common prefix. */
   while (i < min_len && path1[i] == path2[i])
@@ -593,7 +617,7 @@ svn_path_decompose(const char *path,
   apr_array_header_t *components =
     apr_array_make(pool, 1, sizeof(const char *));
 
-  assert(svn_path_is_canonical(path, pool));
+  assert(svn_path_is_canonical_internal(path, pool));
 
   if (SVN_PATH_IS_EMPTY(path))
     return components;  /* ### Should we return a "" component? */
@@ -1058,7 +1082,7 @@ svn_path_url_add_component2(const char *url,
   /* = svn_path_uri_encode() but without always copying */
   component = uri_escape(component, svn_uri__char_validity, pool);
 
-  return svn_path_join(url, component, pool);
+  return svn_path_join_internal(url, component, pool);
 }
 
 svn_error_t *
@@ -1076,7 +1100,7 @@ svn_path_get_absolute(const char **pabsolute,
 }
 
 
-
+#if !defined(WIN32) && !defined(DARWIN)
 /** Get APR's internal path encoding. */
 static svn_error_t *
 get_path_encoding(svn_boolean_t *path_is_utf8, apr_pool_t *pool)
@@ -1095,6 +1119,7 @@ get_path_encoding(svn_boolean_t *path_is_utf8, apr_pool_t *pool)
   *path_is_utf8 = (encoding_style == APR_FILEPATH_ENCODING_UTF8);
   return SVN_NO_ERROR;
 }
+#endif
 
 
 svn_error_t *
@@ -1102,15 +1127,19 @@ svn_path_cstring_from_utf8(const char **path_apr,
                            const char *path_utf8,
                            apr_pool_t *pool)
 {
+#if !defined(WIN32) && !defined(DARWIN)
   svn_boolean_t path_is_utf8;
   SVN_ERR(get_path_encoding(&path_is_utf8, pool));
   if (path_is_utf8)
+#endif
     {
       *path_apr = apr_pstrdup(pool, path_utf8);
       return SVN_NO_ERROR;
     }
+#if !defined(WIN32) && !defined(DARWIN)
   else
     return svn_utf_cstring_from_utf8(path_apr, path_utf8, pool);
+#endif
 }
 
 
@@ -1119,23 +1148,24 @@ svn_path_cstring_to_utf8(const char **path_utf8,
                          const char *path_apr,
                          apr_pool_t *pool)
 {
+#if !defined(WIN32) && !defined(DARWIN)
   svn_boolean_t path_is_utf8;
   SVN_ERR(get_path_encoding(&path_is_utf8, pool));
   if (path_is_utf8)
+#endif
     {
       *path_utf8 = apr_pstrdup(pool, path_apr);
       return SVN_NO_ERROR;
     }
+#if !defined(WIN32) && !defined(DARWIN)
   else
     return svn_utf_cstring_to_utf8(path_utf8, path_apr, pool);
+#endif
 }
 
 
-/* Return a copy of PATH, allocated from POOL, for which control
-   characters have been escaped using the form \NNN (where NNN is the
-   octal representation of the byte's ordinal value).  */
-static const char *
-illegal_path_escape(const char *path, apr_pool_t *pool)
+const char *
+svn_path_illegal_path_escape(const char *path, apr_pool_t *pool)
 {
   svn_stringbuf_t *retstr;
   apr_size_t i, copied = 0;
@@ -1160,7 +1190,7 @@ illegal_path_escape(const char *path, apr_pool_t *pool)
         svn_stringbuf_appendbytes(retstr, path + copied,
                                   i - copied);
 
-      /* Make sure buffer is big enough for '\' 'N' 'N' 'N' null */
+      /* Make sure buffer is big enough for '\' 'N' 'N' 'N' (and NUL) */
       svn_stringbuf_ensure(retstr, retstr->len + 5);
       /*### The backslash separator doesn't work too great with Windows,
          but it's what we'll use for consistency with invalid utf8
@@ -1195,11 +1225,11 @@ svn_path_check_valid(const char *path, apr_pool_t *pool)
     {
       if (svn_ctype_iscntrl(*c))
         {
-          return svn_error_createf
-            (SVN_ERR_FS_PATH_SYNTAX, NULL,
+          return svn_error_createf(SVN_ERR_FS_PATH_SYNTAX, NULL,
              _("Invalid control character '0x%02x' in path '%s'"),
              (unsigned char)*c,
-             illegal_path_escape(svn_dirent_local_style(path, pool), pool));
+             svn_path_illegal_path_escape(svn_dirent_local_style(path, pool),
+                                          pool));
         }
     }
 
@@ -1222,7 +1252,7 @@ svn_path_splitext(const char **path_root,
      anything after it?  We look for the "rightmost" period in the
      string. */
   last_dot = strrchr(path, '.');
-  if (last_dot && (last_dot + 1 != '\0'))
+  if (last_dot && (*(last_dot + 1) != '\0'))
     {
       /* If we have a period, we need to make sure it occurs in the
          final path component -- that there's no path separator
@@ -1248,3 +1278,34 @@ svn_path_splitext(const char **path_root,
   if (path_ext)
     *path_ext = "";
 }
+
+
+/* Repository relative URLs (^/). */
+
+svn_boolean_t
+svn_path_is_repos_relative_url(const char *path)
+{
+  return (0 == strncmp("^/", path, 2));
+}
+
+svn_error_t *
+svn_path_resolve_repos_relative_url(const char **absolute_url,
+                                    const char *relative_url,
+                                    const char *repos_root_url,
+                                    apr_pool_t *pool)
+{
+  if (! svn_path_is_repos_relative_url(relative_url))
+    return svn_error_createf(SVN_ERR_BAD_URL, NULL,
+                             _("Improper relative URL '%s'"),
+                             relative_url);
+
+  /* No assumptions are made about the canonicalization of the input
+   * arguments, it is presumed that the output will be canonicalized after
+   * this function, which will remove any duplicate path separator.
+   */
+  *absolute_url = apr_pstrcat(pool, repos_root_url, relative_url + 1,
+                              SVN_VA_NULL);
+
+  return SVN_NO_ERROR;
+}
+

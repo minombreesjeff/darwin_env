@@ -34,6 +34,7 @@
 #include <apr_lib.h>
 #include <apr_file_info.h>
 
+#include "svn_hash.h"
 #include "svn_cmdline.h"
 #include "svn_version.h"
 #include "svn_types.h"
@@ -185,7 +186,7 @@ format_option(const char **string,
     opts = apr_psprintf(pool, "--%s", opt->name);
 
   if (opt->has_arg)
-    opts = apr_pstrcat(pool, opts, _(" ARG"), (char *)NULL);
+    opts = apr_pstrcat(pool, opts, _(" ARG"), SVN_VA_NULL);
 
   if (doc)
     opts = apr_psprintf(pool, "%-24s : %s", opts, _(opt->description));
@@ -296,7 +297,7 @@ print_command_info2(const svn_opt_subcommand_desc2_t *cmd,
         {
           if (cmd->valid_options[i])
             {
-              if (have_options == FALSE)
+              if (!have_options)
                 {
                   SVN_ERR(svn_cmdline_fputs(_("\nValid options:\n"),
                                             stream, pool));
@@ -416,7 +417,9 @@ svn_opt_subcommand_help3(const char *subcommand,
                               _("\"%s\": unknown command.\n\n"), subcommand);
 
   if (err) {
-    svn_handle_error2(err, stderr, FALSE, "svn: ");
+    /* Issue #3014: Don't print anything on broken pipes. */
+    if (err->apr_err != SVN_ERR_IO_PIPE_WRITE_ERROR)
+      svn_handle_error2(err, stderr, FALSE, "svn: ");
     svn_error_clear(err);
   }
 }
@@ -644,6 +647,32 @@ svn_opt__revision_to_string(const svn_opt_revision_t *revision,
     }
 }
 
+svn_opt_revision_range_t *
+svn_opt__revision_range_create(const svn_opt_revision_t *start_revision,
+                               const svn_opt_revision_t *end_revision,
+                               apr_pool_t *result_pool)
+{
+  svn_opt_revision_range_t *range = apr_palloc(result_pool, sizeof(*range));
+
+  range->start = *start_revision;
+  range->end = *end_revision;
+  return range;
+}
+
+svn_opt_revision_range_t *
+svn_opt__revision_range_from_revnums(svn_revnum_t start_revnum,
+                                     svn_revnum_t end_revnum,
+                                     apr_pool_t *result_pool)
+{
+  svn_opt_revision_range_t *range = apr_palloc(result_pool, sizeof(*range));
+
+  range->start.kind = svn_opt_revision_number;
+  range->start.value.number = start_revnum;
+  range->end.kind = svn_opt_revision_number;
+  range->end.value.number = end_revnum;
+  return range;
+}
+
 
 
 /*** Parsing arguments. ***/
@@ -754,7 +783,7 @@ svn_opt_parse_path(svn_opt_revision_t *rev,
           if (svn_path_is_url(path))
             {
               /* URLs are URI-encoded, so we look for dates with
-                 URI-encoded delimeters.  */
+                 URI-encoded delimiters.  */
               size_t rev_len = strlen(rev_str);
               if (rev_len > 6
                   && rev_str[0] == '%'
@@ -906,7 +935,7 @@ svn_opt__args_to_target_array(apr_array_header_t **targets_p,
             }
         }
 
-      target = apr_pstrcat(pool, true_target, peg_rev, (char *)NULL);
+      target = apr_pstrcat(pool, true_target, peg_rev, SVN_VA_NULL);
 
       APR_ARRAY_PUSH(output_targets, const char *) = target;
     }
@@ -944,7 +973,7 @@ svn_opt_parse_revprop(apr_hash_t **revprop_table_p, const char *revprop_spec,
   else
     {
       SVN_ERR(svn_utf_cstring_to_utf8(&propname, revprop_spec, pool));
-      propval = svn_string_create("", pool);
+      propval = svn_string_create_empty(pool);
     }
 
   if (!svn_prop_name_is_valid(propname))
@@ -952,7 +981,7 @@ svn_opt_parse_revprop(apr_hash_t **revprop_table_p, const char *revprop_spec,
                              _("'%s' is not a valid Subversion property name"),
                              propname);
 
-  apr_hash_set(*revprop_table_p, propname, APR_HASH_KEY_STRING, propval);
+  svn_hash_sets(*revprop_table_p, propname, propval);
 
   return SVN_NO_ERROR;
 }
@@ -983,13 +1012,6 @@ svn_opt__split_arg_at_peg_revision(const char **true_target,
 
   if (peg_start)
     {
-      /* Error out if target is the empty string. */
-      if (ptr == utf8_target)
-        return svn_error_createf(SVN_ERR_BAD_FILENAME, NULL,
-                                 _("'%s' is just a peg revision. "
-                                   "Maybe try '%s@' instead?"),
-                                 utf8_target, utf8_target);
-
       *true_target = apr_pstrmemdup(pool, utf8_target, ptr - utf8_target);
       if (peg_revision)
         *peg_revision = apr_pstrdup(pool, peg_start);
@@ -1075,41 +1097,99 @@ svn_opt__arg_canonicalize_path(const char **path_out, const char *path_in,
   return SVN_NO_ERROR;
 }
 
+
 svn_error_t *
 svn_opt__print_version_info(const char *pgm_name,
                             const char *footer,
+                            const svn_version_extended_t *info,
                             svn_boolean_t quiet,
+                            svn_boolean_t verbose,
                             apr_pool_t *pool)
 {
   if (quiet)
     return svn_cmdline_printf(pool, "%s\n", SVN_VER_NUMBER);
 
   SVN_ERR(svn_cmdline_printf(pool, _("%s, version %s\n"
-                                     "   compiled %s, %s\n\n"), pgm_name,
-                             SVN_VERSION, __DATE__, __TIME__));
-  SVN_ERR(svn_cmdline_fputs(
-             _("Copyright (C) 2015 The Apache Software Foundation.\n"
-               "This software consists of contributions made by many "
-               "people; see the NOTICE\n"
-               "file for more information.\n"
-               "Subversion is open source software, see "
-               "http://subversion.apache.org/\n\n"),
-             stdout, pool));
+                                     "   compiled %s, %s on %s\n\n"),
+                             pgm_name, SVN_VERSION,
+                             svn_version_ext_build_date(info),
+                             svn_version_ext_build_time(info),
+                             svn_version_ext_build_host(info)));
+  SVN_ERR(svn_cmdline_printf(pool, "%s\n", svn_version_ext_copyright(info)));
 
   if (footer)
     {
       SVN_ERR(svn_cmdline_printf(pool, "%s\n", footer));
     }
 
+  if (verbose)
+    {
+      const apr_array_header_t *libs;
+
+      SVN_ERR(svn_cmdline_fputs(_("System information:\n\n"), stdout, pool));
+      SVN_ERR(svn_cmdline_printf(pool, _("* running on %s\n"),
+                                 svn_version_ext_runtime_host(info)));
+      if (svn_version_ext_runtime_osname(info))
+        {
+          SVN_ERR(svn_cmdline_printf(pool, _("  - %s\n"),
+                                     svn_version_ext_runtime_osname(info)));
+        }
+
+      libs = svn_version_ext_linked_libs(info);
+      if (libs && libs->nelts)
+        {
+          const svn_version_ext_linked_lib_t *lib;
+          int i;
+
+          SVN_ERR(svn_cmdline_fputs(_("* linked dependencies:\n"),
+                                    stdout, pool));
+          for (i = 0; i < libs->nelts; ++i)
+            {
+              lib = &APR_ARRAY_IDX(libs, i, svn_version_ext_linked_lib_t);
+              if (lib->runtime_version)
+                SVN_ERR(svn_cmdline_printf(pool,
+                                           "  - %s %s (compiled with %s)\n",
+                                           lib->name,
+                                           lib->runtime_version,
+                                           lib->compiled_version));
+              else
+                SVN_ERR(svn_cmdline_printf(pool,
+                                           "  - %s %s (static)\n",
+                                           lib->name,
+                                           lib->compiled_version));
+            }
+        }
+
+      libs = svn_version_ext_loaded_libs(info);
+      if (libs && libs->nelts)
+        {
+          const svn_version_ext_loaded_lib_t *lib;
+          int i;
+
+          SVN_ERR(svn_cmdline_fputs(_("* loaded shared libraries:\n"),
+                                    stdout, pool));
+          for (i = 0; i < libs->nelts; ++i)
+            {
+              lib = &APR_ARRAY_IDX(libs, i, svn_version_ext_loaded_lib_t);
+              if (lib->version)
+                SVN_ERR(svn_cmdline_printf(pool,
+                                           "  - %s   (%s)\n",
+                                           lib->name, lib->version));
+              else
+                SVN_ERR(svn_cmdline_printf(pool, "  - %s\n", lib->name));
+            }
+        }
+    }
+
   return SVN_NO_ERROR;
 }
 
-
 svn_error_t *
-svn_opt_print_help3(apr_getopt_t *os,
+svn_opt_print_help4(apr_getopt_t *os,
                     const char *pgm_name,
                     svn_boolean_t print_version,
                     svn_boolean_t quiet,
+                    svn_boolean_t verbose,
                     const char *version_footer,
                     const char *header,
                     const svn_opt_subcommand_desc2_t *cmd_table,
@@ -1135,8 +1215,11 @@ svn_opt_print_help3(apr_getopt_t *os,
         }
     }
   else if (print_version)   /* just --version */
-    SVN_ERR(svn_opt__print_version_info(pgm_name, version_footer, quiet,
-                                        pool));
+    {
+      SVN_ERR(svn_opt__print_version_info(pgm_name, version_footer,
+                                          svn_version_extended(verbose, pool),
+                                          quiet, verbose, pool));
+    }
   else if (os && !targets->nelts)            /* `-h', `--help', or `help' */
     svn_opt_print_generic_help2(header,
                                 cmd_table,

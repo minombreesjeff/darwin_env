@@ -1,7 +1,7 @@
 #
 # mailer.conf: example configuration file for mailer.py
 #
-# $Id: mailer.conf.example 885511 2009-11-30 17:30:17Z julianfoad $
+# $Id: mailer.conf.example 1439592 2013-01-28 19:20:53Z danielsh $
 
 [general]
 
@@ -145,6 +145,15 @@
 # set to "no_author". Thus, you might define a line like:
 #
 #   from_addr = %(author)s@example.com
+#
+# The substitution variable "repos_basename" is provided, and is set to
+# the directory name of the repository. This can be useful to set
+# a custom subject that can be re-used in multiple repositories:
+#
+#   commit_subject_prefix = [svn-%(repos_basename)s]
+#
+# For example if the repository is at /path/to/repo/project-x then
+# the subject of commit emails will be prefixed with [svn-project-x]
 #
 #
 # SUMMARY

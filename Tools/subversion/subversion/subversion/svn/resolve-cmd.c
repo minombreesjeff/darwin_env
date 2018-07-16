@@ -26,9 +26,6 @@
 
 
 /*** Includes. ***/
-#define APR_WANT_STDIO
-#include <apr_want.h>
-
 #include "svn_path.h"
 #include "svn_client.h"
 #include "svn_error.h"
@@ -54,6 +51,7 @@ svn_cl__resolve(apr_getopt_t *os,
   apr_array_header_t *targets;
   int i;
   apr_pool_t *iterpool;
+  svn_boolean_t had_error = FALSE;
 
   switch (opt_state->accept_which)
     {
@@ -76,8 +74,11 @@ svn_cl__resolve(apr_getopt_t *os,
       conflict_choice = svn_wc_conflict_choose_mine_full;
       break;
     case svn_cl__accept_unspecified:
-      return svn_error_create(SVN_ERR_CL_ARG_PARSING_ERROR, NULL,
-                              _("missing --accept option"));
+      if (opt_state->non_interactive)
+        return svn_error_create(SVN_ERR_CL_ARG_PARSING_ERROR, NULL,
+                                _("missing --accept option"));
+      conflict_choice = svn_wc_conflict_choose_unspecified;
+      break;
     default:
       return svn_error_create(SVN_ERR_CL_ARG_PARSING_ERROR, NULL,
                               _("invalid 'accept' ARG"));
@@ -88,10 +89,15 @@ svn_cl__resolve(apr_getopt_t *os,
                                                       ctx, FALSE,
                                                       scratch_pool));
   if (! targets->nelts)
-    return svn_error_create(SVN_ERR_CL_INSUFFICIENT_ARGS, 0, NULL);
+    svn_opt_push_implicit_dot_target(targets, scratch_pool);
 
   if (opt_state->depth == svn_depth_unknown)
-    opt_state->depth = svn_depth_empty;
+    {
+      if (opt_state->accept_which == svn_cl__accept_unspecified)
+        opt_state->depth = svn_depth_infinity;
+      else
+        opt_state->depth = svn_depth_empty;
+    }
 
   SVN_ERR(svn_cl__eat_peg_revisions(&targets, targets, scratch_pool));
 
@@ -111,9 +117,15 @@ svn_cl__resolve(apr_getopt_t *os,
         {
           svn_handle_warning2(stderr, err, "svn: ");
           svn_error_clear(err);
+          had_error = TRUE;
         }
     }
   svn_pool_destroy(iterpool);
+
+  if (had_error)
+    return svn_error_create(SVN_ERR_WC_CONFLICT_RESOLVER_FAILURE, NULL,
+                            _("Failure occurred resolving one or more "
+                              "conflicts"));
 
   return SVN_NO_ERROR;
 }

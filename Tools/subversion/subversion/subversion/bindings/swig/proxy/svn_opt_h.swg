@@ -1,5 +1,6 @@
 /* Proxy classes for svn_opt.h
- * DO NOT EDIT -- AUTOMATICALLY GENERATED */
+ * DO NOT EDIT -- AUTOMATICALLY GENERATED
+ * BY build/generator/swig/header_wrappers.py */
 
 /* No default constructors for opaque structs */
 #ifdef SWIGPYTHON

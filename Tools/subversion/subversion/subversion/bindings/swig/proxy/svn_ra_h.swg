@@ -1,5 +1,6 @@
 /* Proxy classes for svn_ra.h
- * DO NOT EDIT -- AUTOMATICALLY GENERATED */
+ * DO NOT EDIT -- AUTOMATICALLY GENERATED
+ * BY build/generator/swig/header_wrappers.py */
 
 /* No default constructors for opaque structs */
 #ifdef SWIGPYTHON
@@ -13,6 +14,7 @@
   svn_ra_set_wc_prop_func_t,
   svn_ra_push_wc_prop_func_t,
   svn_ra_invalidate_wc_props_func_t,
+  svn_ra_get_wc_contents_func_t,
   svn_ra_get_latest_revnum_func_t,
   svn_ra_get_client_string_func_t,
   svn_ra_file_rev_handler_t,
@@ -20,6 +22,9 @@
   svn_ra_progress_notify_func_t,
   svn_ra_replay_revstart_callback_t,
   svn_ra_replay_revfinish_callback_t,
+  svn_ra_check_tunnel_func_t,
+  svn_ra_close_tunnel_func_t,
+  svn_ra_open_tunnel_func_t,
   svn_ra_init_func_t
 };
 %apply CALLABLE_CALLBACK * {
@@ -27,6 +32,7 @@
   svn_ra_set_wc_prop_func_t *,
   svn_ra_push_wc_prop_func_t *,
   svn_ra_invalidate_wc_props_func_t *,
+  svn_ra_get_wc_contents_func_t *,
   svn_ra_get_latest_revnum_func_t *,
   svn_ra_get_client_string_func_t *,
   svn_ra_file_rev_handler_t *,
@@ -34,6 +40,9 @@
   svn_ra_progress_notify_func_t *,
   svn_ra_replay_revstart_callback_t *,
   svn_ra_replay_revfinish_callback_t *,
+  svn_ra_check_tunnel_func_t *,
+  svn_ra_close_tunnel_func_t *,
+  svn_ra_open_tunnel_func_t *,
   svn_ra_init_func_t *
 };
 #endif
@@ -45,9 +54,13 @@
   void *session_baton,
   void *replay_baton,
   void *edit_baton,
+  void *tunnel_baton,
+  void *close_baton,
+  void *cancel_baton,
   void *report_baton,
   void *callback_baton,
   void *progress_baton,
+  void *commit_baton,
   void *update_baton,
   void *switch_baton,
   void *status_baton,
@@ -284,6 +297,11 @@ static svn_error_t * svn_ra_invoke_invalidate_wc_props_func(
   return _obj(baton, path, name, pool);
 }
 
+static svn_error_t * svn_ra_invoke_get_wc_contents_func(
+  svn_ra_get_wc_contents_func_t _obj, void *baton, svn_stream_t **contents, const svn_checksum_t *checksum, apr_pool_t *pool) {
+  return _obj(baton, contents, checksum, pool);
+}
+
 static svn_error_t * svn_ra_invoke_get_latest_revnum_func(
   svn_ra_get_latest_revnum_func_t _obj, void *session_baton, svn_revnum_t *latest_revnum) {
   return _obj(session_baton, latest_revnum);
@@ -317,6 +335,21 @@ static svn_error_t * svn_ra_invoke_replay_revstart_callback(
 static svn_error_t * svn_ra_invoke_replay_revfinish_callback(
   svn_ra_replay_revfinish_callback_t _obj, svn_revnum_t revision, void *replay_baton, const svn_delta_editor_t *editor, void *edit_baton, apr_hash_t *rev_props, apr_pool_t *pool) {
   return _obj(revision, replay_baton, editor, edit_baton, rev_props, pool);
+}
+
+static svn_boolean_t svn_ra_invoke_check_tunnel_func(
+  svn_ra_check_tunnel_func_t _obj, void *tunnel_baton, const char *tunnel_name) {
+  return _obj(tunnel_baton, tunnel_name);
+}
+
+static void svn_ra_invoke_close_tunnel_func(
+  svn_ra_close_tunnel_func_t _obj, void *close_baton, void *tunnel_baton) {
+  _obj(close_baton, tunnel_baton);
+}
+
+static svn_error_t * svn_ra_invoke_open_tunnel_func(
+  svn_ra_open_tunnel_func_t _obj, svn_stream_t **request, svn_stream_t **response, svn_ra_close_tunnel_func_t *close_func, void **close_baton, void *tunnel_baton, const char *tunnel_name, const char *user, const char *hostname, int port, svn_cancel_func_t cancel_func, void *cancel_baton, apr_pool_t *pool) {
+  return _obj(request, response, close_func, close_baton, tunnel_baton, tunnel_name, user, hostname, port, cancel_func, cancel_baton, pool);
 }
 
 static svn_error_t * svn_ra_invoke_init_func(
@@ -368,6 +401,7 @@ static svn_error_t * svn_ra_invoke_init_func(
 %funcptr_proxy(svn_ra_set_wc_prop_func_t, svn_ra_invoke_set_wc_prop_func);
 %funcptr_proxy(svn_ra_push_wc_prop_func_t, svn_ra_invoke_push_wc_prop_func);
 %funcptr_proxy(svn_ra_invalidate_wc_props_func_t, svn_ra_invoke_invalidate_wc_props_func);
+%funcptr_proxy(svn_ra_get_wc_contents_func_t, svn_ra_invoke_get_wc_contents_func);
 %funcptr_proxy(svn_ra_get_latest_revnum_func_t, svn_ra_invoke_get_latest_revnum_func);
 %funcptr_proxy(svn_ra_get_client_string_func_t, svn_ra_invoke_get_client_string_func);
 %funcptr_proxy(svn_ra_file_rev_handler_t, svn_ra_invoke_file_rev_handler);
@@ -375,6 +409,9 @@ static svn_error_t * svn_ra_invoke_init_func(
 %funcptr_proxy(svn_ra_progress_notify_func_t, svn_ra_invoke_progress_notify_func);
 %funcptr_proxy(svn_ra_replay_revstart_callback_t, svn_ra_invoke_replay_revstart_callback);
 %funcptr_proxy(svn_ra_replay_revfinish_callback_t, svn_ra_invoke_replay_revfinish_callback);
+%funcptr_proxy(svn_ra_check_tunnel_func_t, svn_ra_invoke_check_tunnel_func);
+%funcptr_proxy(svn_ra_close_tunnel_func_t, svn_ra_invoke_close_tunnel_func);
+%funcptr_proxy(svn_ra_open_tunnel_func_t, svn_ra_invoke_open_tunnel_func);
 %funcptr_proxy(svn_ra_init_func_t, svn_ra_invoke_init_func);
 
 #endif

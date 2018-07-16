@@ -26,6 +26,7 @@
 #include "bdb_compat.h"
 
 #include "svn_pools.h"
+#include "svn_path.h"
 #include "private/svn_skel.h"
 
 #include "dbt.h"
@@ -89,7 +90,7 @@ svn_fs_bdb__lock_add(svn_fs_t *fs,
   svn_fs_base__str_to_dbt(&key, lock_token);
   svn_fs_base__skel_to_dbt(&value, lock_skel, pool);
   svn_fs_base__trail_debug(trail, "lock", "add");
-  return BDB_WRAP(fs, "storing lock record",
+  return BDB_WRAP(fs, N_("storing lock record"),
                   bfd->locks->put(bfd->locks, trail->db_txn,
                                   &key, &value, 0));
 }
@@ -112,7 +113,7 @@ svn_fs_bdb__lock_delete(svn_fs_t *fs,
 
   if (db_err == DB_NOTFOUND)
     return svn_fs_base__err_bad_lock_token(fs, lock_token);
-  return BDB_WRAP(fs, "deleting lock from 'locks' table", db_err);
+  return BDB_WRAP(fs, N_("deleting lock from 'locks' table"), db_err);
 }
 
 
@@ -139,7 +140,7 @@ svn_fs_bdb__lock_get(svn_lock_t **lock_p,
 
   if (db_err == DB_NOTFOUND)
     return svn_fs_base__err_bad_lock_token(fs, lock_token);
-  SVN_ERR(BDB_WRAP(fs, "reading lock", db_err));
+  SVN_ERR(BDB_WRAP(fs, N_("reading lock"), db_err));
 
   /* Parse TRANSACTION skel */
   skel = svn_skel__parse(value.data, value.size, pool);
@@ -153,7 +154,7 @@ svn_fs_bdb__lock_get(svn_lock_t **lock_p,
   if (lock->expiration_date && (apr_time_now() > lock->expiration_date))
     {
       SVN_ERR(svn_fs_bdb__lock_delete(fs, lock_token, trail, pool));
-      return SVN_FS__ERR_LOCK_EXPIRED(fs, lock_token, pool);
+      return SVN_FS__ERR_LOCK_EXPIRED(fs, lock_token);
     }
 
   *lock_p = lock;
@@ -242,7 +243,8 @@ svn_fs_bdb__locks_get(svn_fs_t *fs,
   svn_fs_base__trail_debug(trail, "lock-tokens", "cursor");
   db_err = bfd->lock_tokens->cursor(bfd->lock_tokens, trail->db_txn,
                                     &cursor, 0);
-  SVN_ERR(BDB_WRAP(fs, "creating cursor for reading lock tokens", db_err));
+  SVN_ERR(BDB_WRAP(fs, N_("creating cursor for reading lock tokens"),
+                   db_err));
 
   /* Since the key is going to be returned as well as the value make
      sure BDB malloc's the returned key.  */
@@ -254,12 +256,12 @@ svn_fs_bdb__locks_get(svn_fs_t *fs,
   db_err = svn_bdb_dbc_get(cursor, &key, svn_fs_base__result_dbt(&value),
                            DB_SET_RANGE);
 
-  /* As long as the prefix of the returned KEY matches LOOKUP_PATH we
-     know it is either LOOKUP_PATH or a decendant thereof.  */
   if (!svn_fspath__is_root(path, strlen(path)))
-    lookup_path = apr_pstrcat(pool, path, "/", (char *)NULL);
+    lookup_path = apr_pstrcat(pool, path, "/", SVN_VA_NULL);
   lookup_len = strlen(lookup_path);
 
+  /* As long as the prefix of the returned KEY matches LOOKUP_PATH we
+     know it is either LOOKUP_PATH or a decendant thereof.  */
   while ((! db_err)
          && lookup_len < key.size
          && strncmp(lookup_path, key.data, lookup_len) == 0)
@@ -282,7 +284,7 @@ svn_fs_bdb__locks_get(svn_fs_t *fs,
              same set of results.  So just see if CHILD_PATH is an
              immediate child of PATH.  If not, we don't care about
              this item.   */
-          const char *rel_path = svn_fspath__is_child(path, child_path, subpool);
+          const char *rel_path = svn_fspath__skip_ancestor(path, child_path);
           if (!rel_path || (svn_path_component_count(rel_path) != 1))
             goto loop_it;
         }
@@ -316,9 +318,10 @@ svn_fs_bdb__locks_get(svn_fs_t *fs,
   db_c_err = svn_bdb_dbc_close(cursor);
 
   if (db_err && (db_err != DB_NOTFOUND))
-    SVN_ERR(BDB_WRAP(fs, "fetching lock tokens", db_err));
+    SVN_ERR(BDB_WRAP(fs, N_("fetching lock tokens"), db_err));
   if (db_c_err)
-    SVN_ERR(BDB_WRAP(fs, "fetching lock tokens (closing cursor)", db_c_err));
+    SVN_ERR(BDB_WRAP(fs, N_("fetching lock tokens (closing cursor)"),
+                     db_c_err));
 
   return SVN_NO_ERROR;
 }

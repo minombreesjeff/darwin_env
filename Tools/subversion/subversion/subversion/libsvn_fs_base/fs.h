@@ -43,7 +43,11 @@ extern "C" {
    repository format number, and independent of any other FS back
    ends.  See the SVN_FS_BASE__MIN_*_FORMAT defines to get a sense of
    what changes and features were added in which versions of this
-   back-end's format.  */
+   back-end's format.
+
+   Note: If you bump this, please update the switch statement in
+         base_create() as well.
+ */
 #define SVN_FS_BASE__FORMAT_NUMBER                4
 
 /* Minimum format number that supports representation sharing.  This
@@ -107,9 +111,6 @@ typedef struct base_fs_data_t
   /* A boolean for tracking when we have a live Berkeley DB
      transaction trail alive. */
   svn_boolean_t in_txn_trail;
-
-  /* The filesystem UUID (or NULL if not-yet-known; see svn_fs_get_uuid). */
-  const char *uuid;
 
   /* The format number of this FS. */
   int format;

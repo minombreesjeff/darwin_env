@@ -29,6 +29,9 @@
 
 #include <apr_pools.h>
 #include "svn_auth.h"
+#include "svn_dirent_uri.h"
+#include "svn_hash.h"
+#include "svn_pools.h"
 #include "svn_error.h"
 #include "svn_utf.h"
 #include "svn_config.h"
@@ -37,16 +40,12 @@
 #include "private/svn_auth_private.h"
 
 #include "svn_private_config.h"
+
+#include "auth.h"
 
 /*-----------------------------------------------------------------------*/
 /* File provider                                                         */
 /*-----------------------------------------------------------------------*/
-
-/* The keys that will be stored on disk.  These serve the same role as
-   similar constants in other providers. */
-#define AUTHN_USERNAME_KEY            "username"
-#define AUTHN_PASSWORD_KEY            "password"
-#define AUTHN_PASSTYPE_KEY            "passtype"
 
 /* Baton type for the simple provider. */
 typedef struct simple_provider_baton_t
@@ -76,10 +75,10 @@ svn_auth__simple_password_get(svn_boolean_t *done,
 
   *done = FALSE;
 
-  str = apr_hash_get(creds, AUTHN_USERNAME_KEY, APR_HASH_KEY_STRING);
+  str = svn_hash_gets(creds, SVN_CONFIG_AUTHN_USERNAME_KEY);
   if (str && username && strcmp(str->data, username) == 0)
     {
-      str = apr_hash_get(creds, AUTHN_PASSWORD_KEY, APR_HASH_KEY_STRING);
+      str = svn_hash_gets(creds, SVN_CONFIG_AUTHN_PASSWORD_KEY);
       if (str && str->data)
         {
           *password = str->data;
@@ -102,8 +101,8 @@ svn_auth__simple_password_set(svn_boolean_t *done,
                               svn_boolean_t non_interactive,
                               apr_pool_t *pool)
 {
-  apr_hash_set(creds, AUTHN_PASSWORD_KEY, APR_HASH_KEY_STRING,
-               svn_string_create(password, pool));
+  svn_hash_sets(creds, SVN_CONFIG_AUTHN_PASSWORD_KEY,
+                svn_string_create(password, pool));
   *done = TRUE;
 
   return SVN_NO_ERROR;
@@ -118,7 +117,7 @@ simple_username_get(const char **username,
                     svn_boolean_t non_interactive)
 {
   svn_string_t *str;
-  str = apr_hash_get(creds, AUTHN_USERNAME_KEY, APR_HASH_KEY_STRING);
+  str = svn_hash_gets(creds, SVN_CONFIG_AUTHN_USERNAME_KEY);
   if (str && str->data)
     {
       *username = str->data;
@@ -127,39 +126,29 @@ simple_username_get(const char **username,
   return FALSE;
 }
 
-/* Common implementation for simple_first_creds. Uses PARAMETERS, REALMSTRING
-   and the simple auth provider's username and password cache to fill a set of
-   CREDENTIALS. PASSWORD_GET is used to obtain the password value.
-   PASSTYPE identifies the type of the cached password. CREDENTIALS are
-   allocated from POOL. */
+
 svn_error_t *
-svn_auth__simple_first_creds_helper(void **credentials,
-                                    void **iter_baton,
-                                    void *provider_baton,
-                                    apr_hash_t *parameters,
-                                    const char *realmstring,
-                                    svn_auth__password_get_t password_get,
-                                    const char *passtype,
-                                    apr_pool_t *pool)
+svn_auth__simple_creds_cache_get(void **credentials,
+                                 void **iter_baton,
+                                 void *provider_baton,
+                                 apr_hash_t *parameters,
+                                 const char *realmstring,
+                                 svn_auth__password_get_t password_get,
+                                 const char *passtype,
+                                 apr_pool_t *pool)
 {
-  const char *config_dir = apr_hash_get(parameters,
-                                        SVN_AUTH_PARAM_CONFIG_DIR,
-                                        APR_HASH_KEY_STRING);
-  svn_config_t *cfg = apr_hash_get(parameters,
-                                   SVN_AUTH_PARAM_CONFIG_CATEGORY_SERVERS,
-                                   APR_HASH_KEY_STRING);
-  const char *server_group = apr_hash_get(parameters,
-                                          SVN_AUTH_PARAM_SERVER_GROUP,
-                                          APR_HASH_KEY_STRING);
-  const char *username = apr_hash_get(parameters,
-                                      SVN_AUTH_PARAM_DEFAULT_USERNAME,
-                                      APR_HASH_KEY_STRING);
-  const char *password = apr_hash_get(parameters,
-                                      SVN_AUTH_PARAM_DEFAULT_PASSWORD,
-                                      APR_HASH_KEY_STRING);
-  svn_boolean_t non_interactive = apr_hash_get(parameters,
-                                               SVN_AUTH_PARAM_NON_INTERACTIVE,
-                                               APR_HASH_KEY_STRING) != NULL;
+  const char *config_dir = svn_hash_gets(parameters, SVN_AUTH_PARAM_CONFIG_DIR);
+  svn_config_t *cfg = svn_hash_gets(parameters,
+                                    SVN_AUTH_PARAM_CONFIG_CATEGORY_SERVERS);
+  const char *server_group = svn_hash_gets(parameters,
+                                           SVN_AUTH_PARAM_SERVER_GROUP);
+  const char *username = svn_hash_gets(parameters,
+                                       SVN_AUTH_PARAM_DEFAULT_USERNAME);
+  const char *password = svn_hash_gets(parameters,
+                                       SVN_AUTH_PARAM_DEFAULT_PASSWORD);
+  svn_boolean_t non_interactive = svn_hash_gets(parameters,
+                                                SVN_AUTH_PARAM_NON_INTERACTIVE)
+      != NULL;
   const char *default_username = NULL; /* Default username from cache. */
   const char *default_password = NULL; /* Default password from cache. */
 
@@ -190,7 +179,7 @@ svn_auth__simple_first_creds_helper(void **credentials,
       /* The password type in the auth data must match the
          mangler's type, otherwise the password must be
          interpreted by another provider. */
-      str = apr_hash_get(creds_hash, AUTHN_PASSTYPE_KEY, APR_HASH_KEY_STRING);
+      str = svn_hash_gets(creds_hash, SVN_CONFIG_AUTHN_PASSTYPE_KEY);
       if (str && str->data)
         if (passtype && (0 == strcmp(str->data, passtype)))
           have_passtype = TRUE;
@@ -206,9 +195,7 @@ svn_auth__simple_first_creds_helper(void **credentials,
             }
           else
             {
-              if (0 == strcmp(default_username, username))
-                need_to_save = FALSE;
-              else
+              if (strcmp(default_username, username) != 0)
                 need_to_save = TRUE;
             }
         }
@@ -230,9 +217,7 @@ svn_auth__simple_first_creds_helper(void **credentials,
                 }
               else
                 {
-                  if (0 == strcmp(default_password, password))
-                    need_to_save = FALSE;
-                  else
+                  if (strcmp(default_password, password) != 0)
                     need_to_save = TRUE;
                 }
             }
@@ -307,41 +292,29 @@ svn_auth__simple_first_creds_helper(void **credentials,
 }
 
 
-/* Common implementation for simple_save_creds. Uses PARAMETERS and
-   REALMSTRING to save a set of CREDENTIALS to the simple auth provider's
-   username and password cache. PASSWORD_SET is used to store the password.
-   PASSTYPE identifies the type of the cached password. Allocates from POOL. */
 svn_error_t *
-svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
-                                   void *credentials,
-                                   void *provider_baton,
-                                   apr_hash_t *parameters,
-                                   const char *realmstring,
-                                   svn_auth__password_set_t password_set,
-                                   const char *passtype,
-                                   apr_pool_t *pool)
+svn_auth__simple_creds_cache_set(svn_boolean_t *saved,
+                                 void *credentials,
+                                 void *provider_baton,
+                                 apr_hash_t *parameters,
+                                 const char *realmstring,
+                                 svn_auth__password_set_t password_set,
+                                 const char *passtype,
+                                 apr_pool_t *pool)
 {
   svn_auth_cred_simple_t *creds = credentials;
   apr_hash_t *creds_hash = NULL;
   const char *config_dir;
   svn_error_t *err;
   svn_boolean_t dont_store_passwords =
-    apr_hash_get(parameters,
-                 SVN_AUTH_PARAM_DONT_STORE_PASSWORDS,
-                 APR_HASH_KEY_STRING) != NULL;
-  const char *store_plaintext_passwords =
-    apr_hash_get(parameters,
-                 SVN_AUTH_PARAM_STORE_PLAINTEXT_PASSWORDS,
-                 APR_HASH_KEY_STRING);
-  svn_boolean_t non_interactive = apr_hash_get(parameters,
-                                               SVN_AUTH_PARAM_NON_INTERACTIVE,
-                                               APR_HASH_KEY_STRING) != NULL;
-  simple_provider_baton_t *b = (simple_provider_baton_t *)provider_baton;
-
+    svn_hash_gets(parameters, SVN_AUTH_PARAM_DONT_STORE_PASSWORDS) != NULL;
+  svn_boolean_t non_interactive = svn_hash_gets(parameters,
+                                                SVN_AUTH_PARAM_NON_INTERACTIVE)
+      != NULL;
   svn_boolean_t no_auth_cache =
-    (! creds->may_save) || (apr_hash_get(parameters,
-                                         SVN_AUTH_PARAM_NO_AUTH_CACHE,
-                                         APR_HASH_KEY_STRING) != NULL);
+    (! creds->may_save) || (svn_hash_gets(parameters,
+                                          SVN_AUTH_PARAM_NO_AUTH_CACHE)
+                            != NULL);
 
   /* Make sure we've been passed a passtype. */
   SVN_ERR_ASSERT(passtype != NULL);
@@ -351,14 +324,12 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
   if (no_auth_cache)
     return SVN_NO_ERROR;
 
-  config_dir = apr_hash_get(parameters,
-                            SVN_AUTH_PARAM_CONFIG_DIR,
-                            APR_HASH_KEY_STRING);
+  config_dir = svn_hash_gets(parameters, SVN_AUTH_PARAM_CONFIG_DIR);
 
   /* Put the username into the credentials hash. */
   creds_hash = apr_hash_make(pool);
-  apr_hash_set(creds_hash, AUTHN_USERNAME_KEY, APR_HASH_KEY_STRING,
-               svn_string_create(creds->username, pool));
+  svn_hash_sets(creds_hash, SVN_CONFIG_AUTHN_USERNAME_KEY,
+                svn_string_create(creds->username, pool));
 
   /* Don't store passwords in any form if the user has told
    * us not to do so. */
@@ -373,14 +344,24 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
            (strcmp(passtype, SVN_AUTH__WINCRYPT_PASSWORD_TYPE) == 0
             || strcmp(passtype, SVN_AUTH__KEYCHAIN_PASSWORD_TYPE) == 0
             || strcmp(passtype, SVN_AUTH__KWALLET_PASSWORD_TYPE) == 0
-            || strcmp(passtype, SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE) == 0) )
+            || strcmp(passtype, SVN_AUTH__GNOME_KEYRING_PASSWORD_TYPE) == 0
+            || strcmp(passtype, SVN_AUTH__GPG_AGENT_PASSWORD_TYPE) == 0))
         {
           may_save_password = TRUE;
         }
       else
         {
-          if (svn_cstring_casecmp(store_plaintext_passwords,
-                                  SVN_CONFIG_ASK) == 0)
+#ifdef SVN_DISABLE_PLAINTEXT_PASSWORD_STORAGE
+          may_save_password = FALSE;
+#else
+          const char *store_plaintext_passwords =
+            svn_hash_gets(parameters, SVN_AUTH_PARAM_STORE_PLAINTEXT_PASSWORDS);
+          simple_provider_baton_t *b =
+            (simple_provider_baton_t *)provider_baton;
+
+          if (store_plaintext_passwords
+              && svn_cstring_casecmp(store_plaintext_passwords,
+                                     SVN_CONFIG_ASK) == 0)
             {
               if (non_interactive)
                 /* In non-interactive mode, the default behaviour is
@@ -394,9 +375,8 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
                    *
                    * Check for a cached answer before prompting. */
                   svn_boolean_t *cached_answer;
-                  cached_answer = apr_hash_get(b->plaintext_answers,
-                                               realmstring,
-                                               APR_HASH_KEY_STRING);
+                  cached_answer = svn_hash_gets(b->plaintext_answers,
+                                                realmstring);
                   if (cached_answer != NULL)
                     may_save_password = *cached_answer;
                   else
@@ -422,8 +402,8 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
                       cached_answer = apr_palloc(cached_answer_pool,
                                                  sizeof(svn_boolean_t));
                       *cached_answer = may_save_password;
-                      apr_hash_set(b->plaintext_answers, realmstring,
-                                   APR_HASH_KEY_STRING, cached_answer);
+                      svn_hash_sets(b->plaintext_answers, realmstring,
+                                    cached_answer);
                     }
                 }
               else
@@ -445,13 +425,15 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
                   may_save_password = TRUE;
                 }
             }
-          else if (svn_cstring_casecmp(store_plaintext_passwords,
-                                       SVN_CONFIG_FALSE) == 0)
+          else if (store_plaintext_passwords
+                   && svn_cstring_casecmp(store_plaintext_passwords,
+                                          SVN_CONFIG_FALSE) == 0)
             {
               may_save_password = FALSE;
             }
-          else if (svn_cstring_casecmp(store_plaintext_passwords,
-                                       SVN_CONFIG_TRUE) == 0)
+          else if (!store_plaintext_passwords
+                   || svn_cstring_casecmp(store_plaintext_passwords,
+                                          SVN_CONFIG_TRUE) == 0)
             {
               may_save_password = TRUE;
             }
@@ -463,6 +445,7 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
                 store_plaintext_passwords,
                 SVN_AUTH_PARAM_STORE_PLAINTEXT_PASSWORDS);
             }
+#endif
         }
 
       if (may_save_password)
@@ -473,14 +456,18 @@ svn_auth__simple_save_creds_helper(svn_boolean_t *saved,
           if (*saved && passtype)
             /* Store the password type with the auth data, so that we
                know which provider owns the password. */
-            apr_hash_set(creds_hash, AUTHN_PASSTYPE_KEY, APR_HASH_KEY_STRING,
-                         svn_string_create(passtype, pool));
+            svn_hash_sets(creds_hash, SVN_CONFIG_AUTHN_PASSTYPE_KEY,
+                          svn_string_create(passtype, pool));
         }
     }
 
   /* Save credentials to disk. */
   err = svn_config_write_auth_data(creds_hash, SVN_AUTH_CRED_SIMPLE,
                                    realmstring, config_dir, pool);
+  if (err)
+    *saved = FALSE;
+
+  /* ### return error? */
   svn_error_clear(err);
 
   return SVN_NO_ERROR;
@@ -495,14 +482,12 @@ simple_first_creds(void **credentials,
                    const char *realmstring,
                    apr_pool_t *pool)
 {
-  return svn_auth__simple_first_creds_helper(credentials,
-                                             iter_baton,
-                                             provider_baton,
-                                             parameters,
-                                             realmstring,
-                                             svn_auth__simple_password_get,
-                                             SVN_AUTH__SIMPLE_PASSWORD_TYPE,
-                                             pool);
+  return svn_auth__simple_creds_cache_get(credentials, iter_baton,
+                                          provider_baton, parameters,
+                                          realmstring,
+                                          svn_auth__simple_password_get,
+                                          SVN_AUTH__SIMPLE_PASSWORD_TYPE,
+                                          pool);
 }
 
 /* Save (unencrypted) credentials to the simple provider's cache. */
@@ -514,13 +499,11 @@ simple_save_creds(svn_boolean_t *saved,
                   const char *realmstring,
                   apr_pool_t *pool)
 {
-  return svn_auth__simple_save_creds_helper(saved, credentials,
-                                            provider_baton,
-                                            parameters,
-                                            realmstring,
-                                            svn_auth__simple_password_set,
-                                            SVN_AUTH__SIMPLE_PASSWORD_TYPE,
-                                            pool);
+  return svn_auth__simple_creds_cache_set(saved, credentials, provider_baton,
+                                          parameters, realmstring,
+                                          svn_auth__simple_password_set,
+                                          SVN_AUTH__SIMPLE_PASSWORD_TYPE,
+                                          pool);
 }
 
 static const svn_auth_provider_t simple_provider = {
@@ -595,16 +578,14 @@ prompt_for_simple_creds(svn_auth_cred_simple_t **cred_p,
      so. */
   if (first_time)
     {
-      default_username = apr_hash_get(parameters,
-                                      SVN_AUTH_PARAM_DEFAULT_USERNAME,
-                                      APR_HASH_KEY_STRING);
+      default_username = svn_hash_gets(parameters,
+                                       SVN_AUTH_PARAM_DEFAULT_USERNAME);
 
       /* No default username?  Try the auth cache. */
       if (! default_username)
         {
-          const char *config_dir = apr_hash_get(parameters,
-                                                SVN_AUTH_PARAM_CONFIG_DIR,
-                                                APR_HASH_KEY_STRING);
+          const char *config_dir = svn_hash_gets(parameters,
+                                                 SVN_AUTH_PARAM_CONFIG_DIR);
           apr_hash_t *creds_hash = NULL;
           svn_string_t *str;
           svn_error_t *err;
@@ -614,8 +595,7 @@ prompt_for_simple_creds(svn_auth_cred_simple_t **cred_p,
           svn_error_clear(err);
           if (! err && creds_hash)
             {
-              str = apr_hash_get(creds_hash, AUTHN_USERNAME_KEY,
-                                 APR_HASH_KEY_STRING);
+              str = svn_hash_gets(creds_hash, SVN_CONFIG_AUTHN_USERNAME_KEY);
               if (str && str->data)
                 default_username = str->data;
             }
@@ -624,12 +604,10 @@ prompt_for_simple_creds(svn_auth_cred_simple_t **cred_p,
       /* Still no default username?  Try the 'servers' file. */
       if (! default_username)
         {
-          svn_config_t *cfg = apr_hash_get(parameters,
-                                           SVN_AUTH_PARAM_CONFIG_CATEGORY_SERVERS,
-                                           APR_HASH_KEY_STRING);
-          const char *server_group = apr_hash_get(parameters,
-                                                  SVN_AUTH_PARAM_SERVER_GROUP,
-                                                  APR_HASH_KEY_STRING);
+          svn_config_t *cfg = svn_hash_gets(parameters,
+                                            SVN_AUTH_PARAM_CONFIG_CATEGORY_SERVERS);
+          const char *server_group = svn_hash_gets(parameters,
+                                                   SVN_AUTH_PARAM_SERVER_GROUP);
           default_username =
             svn_config_get_server_setting(cfg, server_group,
                                           SVN_CONFIG_OPTION_USERNAME,
@@ -640,9 +618,8 @@ prompt_for_simple_creds(svn_auth_cred_simple_t **cred_p,
       if (! default_username)
         default_username = svn_user_get_name(pool);
 
-      default_password = apr_hash_get(parameters,
-                                      SVN_AUTH_PARAM_DEFAULT_PASSWORD,
-                                      APR_HASH_KEY_STRING);
+      default_password = svn_hash_gets(parameters,
+                                       SVN_AUTH_PARAM_DEFAULT_PASSWORD);
     }
 
   /* If we have defaults, just build the cred here and return it.
@@ -680,9 +657,8 @@ simple_prompt_first_creds(void **credentials_p,
 {
   simple_prompt_provider_baton_t *pb = provider_baton;
   simple_prompt_iter_baton_t *ibaton = apr_pcalloc(pool, sizeof(*ibaton));
-  const char *no_auth_cache = apr_hash_get(parameters,
-                                           SVN_AUTH_PARAM_NO_AUTH_CACHE,
-                                           APR_HASH_KEY_STRING);
+  const char *no_auth_cache = svn_hash_gets(parameters,
+                                            SVN_AUTH_PARAM_NO_AUTH_CACHE);
 
   SVN_ERR(prompt_for_simple_creds((svn_auth_cred_simple_t **) credentials_p,
                                   pb, parameters, realmstring, TRUE,
@@ -707,9 +683,8 @@ simple_prompt_next_creds(void **credentials_p,
 {
   simple_prompt_iter_baton_t *ib = iter_baton;
   simple_prompt_provider_baton_t *pb = provider_baton;
-  const char *no_auth_cache = apr_hash_get(parameters,
-                                           SVN_AUTH_PARAM_NO_AUTH_CACHE,
-                                           APR_HASH_KEY_STRING);
+  const char *no_auth_cache = svn_hash_gets(parameters,
+                                            SVN_AUTH_PARAM_NO_AUTH_CACHE);
 
   if ((pb->retry_limit >= 0) && (ib->retries >= pb->retry_limit))
     {
@@ -723,7 +698,6 @@ simple_prompt_next_creds(void **credentials_p,
                                  pb, parameters, realmstring, FALSE,
                                  ! no_auth_cache, pool);
 }
-
 
 static const svn_auth_provider_t simple_prompt_provider = {
   SVN_AUTH_CRED_SIMPLE,

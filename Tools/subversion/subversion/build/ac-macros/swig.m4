@@ -92,12 +92,13 @@ AC_DEFUN(SVN_FIND_SWIG,
     #   packages/rpm/redhat-7.x/subversion.spec
     #   packages/rpm/rhel-3/subversion.spec
     #   packages/rpm/rhel-4/subversion.spec
-    if test -n "$SWIG_VERSION" && test "$SWIG_VERSION" -ge "103024"; then
+    if test -n "$SWIG_VERSION" && test "$SWIG_VERSION" -ge "103024" && \
+       test "$SWIG_VERSION" -lt "300000"; then
       SWIG_SUITABLE=yes
     else
       SWIG_SUITABLE=no
       AC_MSG_WARN([Detected SWIG version $SWIG_VERSION_RAW])
-      AC_MSG_WARN([Subversion requires SWIG 1.3.24 or later])
+      AC_MSG_WARN([Subversion requires SWIG >= 1.3.24 and < 3.0.0 ])
     fi
   fi
  
@@ -185,9 +186,9 @@ AC_DEFUN(SVN_FIND_SWIG,
     rbconfig="$RUBY -rrbconfig -e "
 
     for var_name in arch archdir CC LDSHARED DLEXT LIBS LIBRUBYARG \
-                    rubyhdrdir sitedir sitelibdir sitearchdir libdir
+                    rubyhdrdir rubyarchhdrdir sitedir sitelibdir sitearchdir libdir
     do
-      rbconfig_tmp=`$rbconfig "print Config::CONFIG@<:@'$var_name'@:>@"`
+      rbconfig_tmp=`$rbconfig "print RbConfig::CONFIG@<:@'$var_name'@:>@"`
       eval "rbconfig_$var_name=\"$rbconfig_tmp\""
     done
 
@@ -196,7 +197,13 @@ AC_DEFUN(SVN_FIND_SWIG,
     AC_CACHE_CHECK([for Ruby include path], [svn_cv_ruby_includes],[
     if test -d "$rbconfig_rubyhdrdir"; then
       dnl Ruby >=1.9
-      svn_cv_ruby_includes="-I. -I$rbconfig_rubyhdrdir -I$rbconfig_rubyhdrdir/ruby -I$rbconfig_rubyhdrdir/ruby/backward -I$rbconfig_rubyhdrdir/$rbconfig_arch"
+      svn_cv_ruby_includes="-I. -I$rbconfig_rubyhdrdir -I$rbconfig_rubyhdrdir/ruby -I$rbconfig_rubyhdrdir/ruby/backward"
+      if test -d "$rbconfig_rubyarchhdrdir"; then
+        dnl Ruby >=2.0
+        svn_cv_ruby_includes="$svn_cv_ruby_includes -I$rbconfig_rubyarchhdrdir"
+      else
+        svn_cv_ruby_includes="$svn_cv_ruby_includes -I$rbconfig_rubyhdrdir/$rbconfig_arch"
+      fi
     else
       dnl Ruby 1.8
       svn_cv_ruby_includes="-I. -I$rbconfig_archdir"
@@ -205,10 +212,14 @@ AC_DEFUN(SVN_FIND_SWIG,
     SWIG_RB_INCLUDES="\$(SWIG_INCLUDES) $svn_cv_ruby_includes"
 
     AC_CACHE_CHECK([how to compile Ruby extensions], [svn_cv_ruby_compile],[
-      # Ruby doesn't like '-ansi', so strip that out of CFLAGS
-      svn_cv_ruby_compile="$rbconfig_CC `echo $CFLAGS | $SED -e "s/ -ansi//g;s/ -std=c89//g"`"
+      svn_cv_ruby_compile="$rbconfig_CC $CFLAGS"
     ])
     SWIG_RB_COMPILE="$svn_cv_ruby_compile"
+    SVN_STRIP_FLAG([SWIG_RB_COMPILE], [-ansi])
+    SVN_STRIP_FLAG([SWIG_RB_COMPILE], [-std=c89])
+    SVN_STRIP_FLAG([SWIG_RB_COMPILE], [-std=c90])
+    dnl FIXME: Check that the compiler for Ruby actually supports this flag
+    SWIG_RB_COMPILE="$SWIG_RB_COMPILE -Wno-int-to-pointer-cast"
 
     AC_CACHE_CHECK([how to link Ruby extensions], [svn_cv_ruby_link],[
       svn_cv_ruby_link="`$RUBY -e 'ARGV.shift; print ARGV.join(%q( ))' \
@@ -226,7 +237,10 @@ AC_DEFUN(SVN_FIND_SWIG,
     AC_MSG_CHECKING([for rb_errinfo])
     old_CFLAGS="$CFLAGS"
     old_LIBS="$LIBS"
-    CFLAGS="`echo $CFLAGS | $SED -e "s/ -ansi//g;s/ -std=c89//g"` $svn_cv_ruby_includes"
+    CFLAGS="$CFLAGS $svn_cv_ruby_includes"
+    SVN_STRIP_FLAG([CFLAGS], [-ansi])
+    SVN_STRIP_FLAG([CFLAGS], [-std=c89])
+    SVN_STRIP_FLAG([CFLAGS], [-std=c90])
     LIBS="$SWIG_RB_LIBS"
     AC_LINK_IFELSE([AC_LANG_SOURCE([[
 #include <ruby.h>

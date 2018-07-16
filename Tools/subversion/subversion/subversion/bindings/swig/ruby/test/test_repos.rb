@@ -94,15 +94,16 @@ class SvnReposTest < Test::Unit::TestCase
   end
 
   def test_create
-    tmp_repos_path = File.join(@tmp_path, "repos")
+    tmp_repos_path = File.join(@tmp_path, "repos2")
     fs_type = Svn::Fs::TYPE_FSFS
     fs_config = {Svn::Fs::CONFIG_FS_TYPE => fs_type}
     repos = nil
-    Svn::Repos.create(tmp_repos_path, {}, fs_config) do |repos|
+    Svn::Repos.create(tmp_repos_path, {}, fs_config) do |t_repos|
       assert(File.exist?(tmp_repos_path))
-      fs_type_path = File.join(repos.fs.path, Svn::Fs::CONFIG_FS_TYPE)
+      fs_type_path = File.join(t_repos.fs.path, Svn::Fs::CONFIG_FS_TYPE)
       assert_equal(fs_type, File.open(fs_type_path) {|f| f.read.chop})
-      repos.fs.set_warning_func(&warning_func)
+      t_repos.fs.set_warning_func(&warning_func)
+      repos = t_repos
     end
 
     assert(repos.closed?)

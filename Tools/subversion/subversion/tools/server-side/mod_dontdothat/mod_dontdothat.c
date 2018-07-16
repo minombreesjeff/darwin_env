@@ -40,7 +40,7 @@
 #include "svn_path.h"
 #include "private/svn_fspath.h"
 
-module AP_MODULE_DECLARE_DATA dontdothat_module;
+extern module AP_MODULE_DECLARE_DATA dontdothat_module;
 
 typedef struct dontdothat_config_rec {
   const char *config_file;
@@ -332,7 +332,7 @@ dontdothat_filter(ap_filter_t *f,
             return rv;
         }
 
-      if (! XML_Parse(ctx->xmlp, str, len, last))
+      if (! XML_Parse(ctx->xmlp, str, (int)len, last))
         {
           /* let_it_go so we clean up our parser, no_soup_for_you so that we
            * bail out before bothering to parse this stuff a second time. */
@@ -645,7 +645,8 @@ dontdothat_insert_filters(request_rec *r)
 
       /* XXX is there a way to error out from this point?  Would be nice... */
 
-      err = svn_config_read(&config, cfg->config_file, TRUE, r->pool);
+      err = svn_config_read3(&config, cfg->config_file, TRUE,
+                             FALSE, TRUE, r->pool);
       if (err)
         {
           char buff[256];

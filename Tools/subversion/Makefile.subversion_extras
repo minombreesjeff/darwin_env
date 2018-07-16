@@ -99,6 +99,7 @@ perl-bindings:
 	    for module in Client Core Delta Fs Ra Repos Wc; do\
 		    $(CP) $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bundle $(SYMROOT) && \
 		    $(STRIP) -x $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bundle && \
+		    $(CODESIGN) $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bundle && \
 		    $(RM) $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bs || exit 1; \
 	    done && \
 	    $(RM) $(DSTROOT)$${installarchlib}/perllocal.pod && \
@@ -111,7 +112,8 @@ post-install:
 	@set -x && \
 	for library in `find $(DSTROOT) -type f -name \*.dylib`; do \
 		$(CP) $${library} $(SYMROOT) && \
-		$(STRIP) -x $${library} || exit 1; \
+		$(STRIP) -x $${library} && \
+		$(CODESIGN) $${library} || exit 1; \
 	done
 	find $(DSTROOT) -name \*.la -delete
 	find $(DSTROOT)$(DEVELOPER_DIR)/Library/Perl -name .packlist -delete

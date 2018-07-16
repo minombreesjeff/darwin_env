@@ -106,15 +106,15 @@ svn_path_local_style(const char *path, apr_pool_t *pool);
  * for the base.
  *
  * @deprecated Provided for backward compatibility with the 1.6 API.
- * New code should use svn_dirent_join(), svn_uri_join(),
- * svn_relpath_join() or svn_fspath__join().
+ * New code should use svn_dirent_join(), svn_relpath_join() or
+ * svn_fspath__join().
  */
 SVN_DEPRECATED
 char *
 svn_path_join(const char *base, const char *component, apr_pool_t *pool);
 
 /** Join multiple components onto a @a base path, allocated in @a pool. The
- * components are terminated by a @c NULL.
+ * components are terminated by a @c SVN_VA_NULL.
  *
  * If any component is the empty string, it will be ignored.
  *
@@ -131,7 +131,9 @@ svn_path_join(const char *base, const char *component, apr_pool_t *pool);
  */
 SVN_DEPRECATED
 char *
-svn_path_join_many(apr_pool_t *pool, const char *base, ...);
+svn_path_join_many(apr_pool_t *pool,
+                   const char *base,
+                   ...) SVN_NEEDS_SENTINEL_NULL;
 
 
 /** Get the basename of the specified canonicalized @a path.  The
@@ -296,6 +298,10 @@ svn_path_is_canonical(const char *path, apr_pool_t *pool);
 
 /** Return an integer greater than, equal to, or less than 0, according
  * as @a path1 is greater than, equal to, or less than @a path2.
+ *
+ * This function works like strcmp() except that it orders children in
+ * subdirectories directly after their parents. This allows using the
+ * given ordering for a depth first walk.
  */
 int
 svn_path_compare_paths(const char *path1, const char *path2);
@@ -509,8 +515,9 @@ svn_path_is_dotpath_present(const char *path);
  *       identify the remainder path.
  *
  * @deprecated Provided for backward compatibility with the 1.6 API.
- * New code should use svn_dirent_is_child(), svn_uri_is_child(),
- * svn_relpath_is_child() or svn_fspath__is_child().
+ * For replacement functionality, see svn_dirent_skip_ancestor(),
+ * svn_dirent_is_child(), svn_uri_skip_ancestor(), and
+ * svn_relpath_skip_ancestor().
  */
 SVN_DEPRECATED
 const char *
@@ -522,8 +529,8 @@ svn_path_is_child(const char *path1, const char *path2, apr_pool_t *pool);
  * @since New in 1.3.
  *
  * @deprecated Provided for backward compatibility with the 1.6 API.
- * New code should use svn_dirent_is_ancestor(), svn_uri_is_ancestor(),
- * svn_relpath_is_ancestor() or svn_fspath__is_ancestor().
+ * For replacement functionality, see svn_dirent_skip_ancestor(),
+ * svn_uri_skip_ancestor(), and svn_relpath_skip_ancestor().
  */
 SVN_DEPRECATED
 svn_boolean_t
@@ -662,6 +669,62 @@ svn_path_cstring_to_utf8(const char **path_utf8,
                          const char *path_apr,
                          apr_pool_t *pool);
 
+
+/** @} */
+
+
+/** Repository relative URLs
+ *
+ * @defgroup svn_path_repos_relative_urls Repository relative URLs
+ * @{
+ */
+
+/**
+ * Return @c TRUE iff @a path is a repository-relative URL:  specifically
+ * that it starts with the characters "^/"
+ *
+ * @a path is in UTF-8 encoding.
+ *
+ * Does not check whether @a path is a properly URI-encoded, canonical, or
+ * valid in any other way.
+ *
+ * @since New in 1.8.
+ */
+svn_boolean_t
+svn_path_is_repos_relative_url(const char *path);
+
+/**
+ * Set @a absolute_url to the absolute URL represented by @a relative_url
+ * relative to @a repos_root_url, preserving any peg revision
+ * specifier present in @a relative_url.  Allocate @a absolute_url
+ * from @a pool.
+ *
+ * @a relative_url is in repository-relative syntax: "^/[REL-URL][@PEG]"
+ *
+ * @a repos_root_url is the absolute URL of the repository root.
+ *
+ * All strings are in UTF-8 encoding.
+ *
+ * @a repos_root_url and @a relative_url do not have to be properly
+ * URI-encoded, canonical, or valid in any other way.  The caller is
+ * expected to perform canonicalization on @a absolute_url after the
+ * call to the function.
+ *
+ * @since New in 1.8.
+ */
+svn_error_t *
+svn_path_resolve_repos_relative_url(const char **absolute_url,
+                                    const char *relative_url,
+                                    const char *repos_root_url,
+                                    apr_pool_t *pool);
+
+/** Return a copy of @a path, allocated from @a pool, for which control
+ * characters have been escaped using the form "\NNN" (where NNN is the
+ * octal representation of the byte's ordinal value).
+ *
+ * @since New in 1.8. */
+const char *
+svn_path_illegal_path_escape(const char *path, apr_pool_t *pool);
 
 /** @} */
 

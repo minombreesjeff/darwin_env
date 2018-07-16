@@ -30,13 +30,48 @@ usage: 1. log [PATH][@REV]
   The --depth option is only valid in combination with the --diff option
   and limits the scope of the displayed diff to the specified depth.
 
+  If the --search option is used, log messages are displayed only if the
+  provided search pattern matches any of the author, date, log message
+  text (unless --quiet is used), or, if the --verbose option is also
+  provided, a changed path.
+  The search pattern may include "glob syntax" wildcards:
+      ?      matches any single character
+      *      matches a sequence of arbitrary characters
+      [abc]  matches any of the characters listed inside the brackets
+  If multiple --search options are provided, a log message is shown if
+  it matches any of the provided search patterns. If the --search-and
+  option is used, that option's argument is combined with the pattern
+  from the previous --search or --search-and option, and a log message
+  is shown only if it matches the combined search pattern.
+  If --limit is used in combination with --search, --limit restricts the
+  number of log messages searched, rather than restricting the output
+  to a particular number of matching log messages.
+
   Examples:
-    svn log
-    svn log foo.c
-    svn log bar.c@42
-    svn log http://www.example.com/repo/project/foo.c
-    svn log http://www.example.com/repo/project foo.c bar.c
-    svn log http://www.example.com/repo/project@50 foo.c bar.c
+
+    Show the latest 5 log messages for the current working copy
+    directory and display paths changed in each commit:
+      svn log -l 5 -v
+
+    Show the log for bar.c as of revision 42:
+      svn log bar.c@42
+
+    Show log messages and diffs for each commit to foo.c:
+      svn log --diff http://www.example.com/repo/project/foo.c
+    (Because the above command uses a full URL it does not require
+     a working copy.)
+
+    Show log messages for the children foo.c and bar.c of the directory
+    '/trunk' as it appeared in revision 50, using the ^/ URL shortcut:
+      svn log ^/trunk@50 foo.c bar.c
+
+    Show the log messages for any incoming changes to foo.c during the
+    next 'svn update':
+      svn log -r BASE:HEAD foo.c
+
+    Show the log message for the revision in which /branches/foo
+    was created:
+      svn log --stop-on-copy --limit 1 -r0:HEAD ^/branches/foo
 
 Valid options:
   -r [--revision] ARG      : ARG (some commands also take ARG1:ARG2 range)
@@ -47,11 +82,11 @@ Valid options:
                                 'BASE'       base rev of item's working copy
                                 'COMMITTED'  last commit at or before BASE
                                 'PREV'       revision just before COMMITTED
-  -q [--quiet]             : print nothing, or only summary information
-  -v [--verbose]           : print extra information
+  -c [--change] ARG        : the change made in revision ARG
+  -q [--quiet]             : do not print the log message
+  -v [--verbose]           : also print all affected paths
   -g [--use-merge-history] : use/display additional information from merge
                              history
-  -c [--change] ARG        : the change made in revision ARG
   --targets ARG            : pass contents of file ARG as additional args
   --stop-on-copy           : do not cross copies while traversing history
   --incremental            : give output suitable for concatenation
@@ -65,31 +100,37 @@ Valid options:
   --diff                   : produce diff output
   --diff-cmd ARG           : use ARG as diff command
   --internal-diff          : override diff-cmd specified in config file
-  -x [--extensions] ARG    : Default: '-u'. When Subversion is invoking an
-                             external diff program, ARG is simply passed along
-                             to the program. But when Subversion is using its
-                             default internal diff implementation, or when
-                             Subversion is displaying blame annotations, ARG
-                             could be any of the following:
-                                -u (--unified):
-                                   Output 3 lines of unified context.
-                                -b (--ignore-space-change):
-                                   Ignore changes in the amount of white space.
-                                -w (--ignore-all-space):
-                                   Ignore all white space.
-                                --ignore-eol-style:
-                                   Ignore changes in EOL style.
-                                -p (--show-c-function):
-                                   Show C function name in diff output.
+  -x [--extensions] ARG    : Specify differencing options for external diff or
+                             internal diff or blame. Default: '-u'. Options are
+                             separated by spaces. Internal diff and blame take:
+                               -u, --unified: Show 3 lines of unified context
+                               -b, --ignore-space-change: Ignore changes in
+                                 amount of white space
+                               -w, --ignore-all-space: Ignore all white space
+                               --ignore-eol-style: Ignore changes in EOL style
+                               -U ARG, --context ARG: Show ARG lines of context
+                               -p, --show-c-function: Show C function name
+  --search ARG             : use ARG as search pattern (glob syntax)
+  --search-and ARG         : combine ARG with the previous search pattern
 
 Global options:
   --username ARG           : specify a username ARG
-  --password ARG           : specify a password ARG
+  --password ARG           : specify a password ARG (caution: on many operating
+                             systems, other users will be able to see this)
   --no-auth-cache          : do not cache authentication tokens
-  --non-interactive        : do no interactive prompting
-  --trust-server-cert      : accept SSL server certificates from unknown
-                             certificate authorities without prompting (but only
-                             with '--non-interactive')
+  --non-interactive        : do no interactive prompting (default is to prompt
+                             only if standard input is a terminal device)
+  --force-interactive      : do interactive prompting even if standard input
+                             is not a terminal device
+  --trust-server-cert      : deprecated; same as
+                             --trust-server-cert-failures=unknown-ca
+  --trust-server-cert-failures ARG : with --non-interactive, accept SSL server
+                             certificates with failures; ARG is comma-separated
+                             list of 'unknown-ca' (Unknown Authority),
+                             'cn-mismatch' (Hostname mismatch), 'expired'
+                             (Expired certificate), 'not-yet-valid' (Not yet
+                             valid certificate) and 'other' (all other not
+                             separately classified certificate errors).
   --config-dir ARG         : read user configuration files from directory ARG
   --config-option ARG      : set user configuration option in the format:
                                  FILE:SECTION:OPTION=[VALUE]
@@ -154,8 +195,8 @@ Valid options:
   --diff3-cmd ARG          : use ARG as merge command
   --relocate               : relocate via URL-rewriting
   --ignore-externals       : ignore externals definitions
-  --ignore-ancestry        : ignore ancestry when calculating merges
-  --force                  : force operation to run
+  --ignore-ancestry        : allow switching to a node with no common ancestor
+  --force                  : handle unversioned obstructions as changes
   --accept ARG             : specify automatic conflict resolution action
                              ('postpone', 'working', 'base', 'mine-conflict',
                              'theirs-conflict', 'mine-full', 'theirs-full',
@@ -164,12 +205,22 @@ Valid options:
 
 Global options:
   --username ARG           : specify a username ARG
-  --password ARG           : specify a password ARG
+  --password ARG           : specify a password ARG (caution: on many operating
+                             systems, other users will be able to see this)
   --no-auth-cache          : do not cache authentication tokens
-  --non-interactive        : do no interactive prompting
-  --trust-server-cert      : accept SSL server certificates from unknown
-                             certificate authorities without prompting (but only
-                             with '--non-interactive')
+  --non-interactive        : do no interactive prompting (default is to prompt
+                             only if standard input is a terminal device)
+  --force-interactive      : do interactive prompting even if standard input
+                             is not a terminal device
+  --trust-server-cert      : deprecated; same as
+                             --trust-server-cert-failures=unknown-ca
+  --trust-server-cert-failures ARG : with --non-interactive, accept SSL server
+                             certificates with failures; ARG is comma-separated
+                             list of 'unknown-ca' (Unknown Authority),
+                             'cn-mismatch' (Hostname mismatch), 'expired'
+                             (Expired certificate), 'not-yet-valid' (Not yet
+                             valid certificate) and 'other' (all other not
+                             separately classified certificate errors).
   --config-dir ARG         : read user configuration files from directory ARG
   --config-option ARG      : set user configuration option in the format:
                                  FILE:SECTION:OPTION=[VALUE]

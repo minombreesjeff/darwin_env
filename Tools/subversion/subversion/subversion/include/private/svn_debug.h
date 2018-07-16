@@ -23,6 +23,34 @@
 #ifndef SVN_DEBUG_H
 #define SVN_DEBUG_H
 
+#ifdef SVN_DEBUG
+#define SVN_DBG__PROTOTYPES
+#endif
+
+#ifdef SVN_DBG__PROTOTYPES
+#define APR_WANT_STDIO
+#include <apr_want.h>
+#include <apr_hash.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
+#ifdef SVN_DBG__PROTOTYPES
+/* A few helper functions for the macros below.  */
+void
+svn_dbg__preamble(const char *file, long line, FILE *output);
+void
+svn_dbg__printf(const char *fmt, ...)
+  __attribute__((format(printf, 1, 2)));
+void
+svn_dbg__print_props(apr_hash_t *props,
+                     const char *header_fmt,
+                     ...)
+  __attribute__((format(printf, 2, 3)));
+#endif
+
 /* Only available when SVN_DEBUG is defined (ie. svn developers). Note that
    we do *not* provide replacement macros/functions for proper releases.
    The debug stuff should be removed before a commit.
@@ -30,20 +58,6 @@
    ### maybe we will eventually decide to allow certain debug stuff to
    ### remain in the code. at that point, we can rejigger this header.  */
 #ifdef SVN_DEBUG
-
-#include <stdio.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif /* __cplusplus */
-
-/* A couple helper functions for the macros below.  */
-void
-svn_dbg__preamble(const char *file, long line, FILE *output);
-void
-svn_dbg__printf(const char *fmt, ...)
-  __attribute__((format(printf, 1, 2)));
-
 
 /* Print to stdout. Edit this line if you need stderr.  */
 #define SVN_DBG_OUTPUT stdout
@@ -55,6 +69,7 @@ svn_dbg__printf(const char *fmt, ...)
 #ifdef SVN_DBG_QUIET
 
 #define SVN_DBG(ARGS) svn_dbg__preamble(__FILE__, __LINE__, NULL)
+#define SVN_DBG_PROPS(ARGS) svn_dbg__preamble(__FILE__, __LINE__, NULL)
 
 #else
 
@@ -63,7 +78,7 @@ svn_dbg__printf(const char *fmt, ...)
  * usage:
  *
  * <pre>
- *   SVN_DBG(("rev=%ld kind=%s\n", revnum, svn_kind_to_word(kind)));
+ *   SVN_DBG(("rev=%ld kind=%s\n", revnum, svn_node_kind_to_word(kind)));
  * </pre>
  *
  * outputs:
@@ -77,17 +92,16 @@ svn_dbg__printf(const char *fmt, ...)
  */
 #define SVN_DBG(ARGS) (svn_dbg__preamble(__FILE__, __LINE__, SVN_DBG_OUTPUT), \
                        svn_dbg__printf ARGS)
+#define SVN_DBG_PROPS(ARGS) (svn_dbg__preamble(__FILE__, __LINE__, \
+                                               SVN_DBG_OUTPUT), \
+                             svn_dbg__print_props ARGS)
 
 #endif
 
+#endif /* SVN_DEBUG */
 
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
-#else /* SVN_DEBUG */
-
-/* We DON'T define SVN_DBG in release mode. See top of this file. */
-
-#endif /* SVN_DEBUG */
 #endif /* SVN_DEBUG_H */

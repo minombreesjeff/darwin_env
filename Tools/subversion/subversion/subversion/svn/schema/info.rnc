@@ -27,8 +27,8 @@ info = element info { entry* }
 
 entry =
   element entry {
-    attlist.entry, url?, repository?, wc-info?, commit?, conflict?, lock?,
-    tree-conflict?
+    attlist.entry, url?, relative-url?, repository?, wc-info?,
+    commit?, conflict?, lock?, tree-conflict?
   }
 attlist.entry &=
   ## Local path.
@@ -40,6 +40,9 @@ attlist.entry &=
 
 ## URL of this item in the repository.
 url = element url { xsd:anyURI }
+
+## Repository relative URL (^/...) of this item in the repository.
+relative-url = element relative-url { string }
 
 ## Information of this item's repository.
 repository = element repository { root?, uuid? }
@@ -61,7 +64,9 @@ wc-info =
     depth?,
     text-updated?,
     prop-updated?,
-    checksum?
+    checksum?,
+    moved-from?,
+    moved-to?
   }
 
 wcroot-abspath = element wcroot-abspath { string }
@@ -83,6 +88,10 @@ text-updated = element text-updated { xsd:dateTime }
 prop-updated = element prop-updated { xsd:dateTime }
 
 checksum = element checksum { md5sum.type }
+
+moved-from = element moved-from { string }
+
+moved-to = element moved-to { string }
 
 conflict =
   element conflict {
@@ -118,7 +127,8 @@ attlist.tree-conflict &=
   ## Operation causing the tree conflict.
   attribute operation { "update" | "merge" | "switch" },
   ## Operation's action on the victim.
-  attribute action { "edit" | "add" | "delete" },
+  attribute action { "edit" | "add" | "delete" | "replace" },
   ## Local reason for the conflict.
   attribute reason { "edit" | "obstruction" | "delete" | "add" |
-                     "missing" | "unversioned" }
+                     "missing" | "unversioned" | "replace" |
+                     "moved-away" | "moved-here" }

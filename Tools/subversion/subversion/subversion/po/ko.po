@@ -19,7 +19,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: subversion 1.7\n"
+"Project-Id-Version: subversion 1.9\n"
 "Report-Msgid-Bugs-To: dev@subversion.apache.org\n"
 "POT-Creation-Date: 2011-03-07 00:53+0900\n"
 "PO-Revision-Date: 2011-03-03 18:16+0900\n"
@@ -10530,10 +10530,8 @@ msgstr "  '%s' 을(를) r%ld 로 업데이트함.\n"
 #: ../svn/util.c:75
 #, c-format
 msgid ""
-"\n"
 "Committed revision %ld%s.\n"
 msgstr ""
-"\n"
 "커밋된 리비전 %ld%s.\n"
 
 #: ../svn/util.c:79

@@ -66,10 +66,11 @@
 #endif
 #include "svn_private_config.h"
 
-extern module AP_MODULE_DECLARE_DATA authz_svn_module;
-
 #ifdef APLOG_USE_MODULE
 APLOG_USE_MODULE(authz_svn);
+#else
+/* This is part of the APLOG_USE_MODULE() macro in httpd-2.3 */
+extern module AP_MODULE_DECLARE_DATA authz_svn_module;
 #endif
 
 typedef struct authz_svn_config_rec {
@@ -79,23 +80,22 @@ typedef struct authz_svn_config_rec {
   const char *base_path;
   const char *access_file;
   const char *repo_relative_access_file;
+  const char *groups_file;
   const char *force_username_case;
 } authz_svn_config_rec;
 
-#if AP_MODULE_MAGIC_AT_LEAST(20060110,0) /* version where
-                                            ap_some_auth_required breaks */
-#  if AP_MODULE_MAGIC_AT_LEAST(20120211,47) /* first version with
-                                               force_authn hook and
-                                               ap_some_authn_required() which
-                                               allows us to work without
-                                               ap_some_auth_required() */
+/* version where ap_some_auth_required breaks */
+#if AP_MODULE_MAGIC_AT_LEAST(20060110,0)
+/* first version with force_authn hook and ap_some_authn_required()
+   which allows us to work without ap_some_auth_required() */
+#  if AP_MODULE_MAGIC_AT_LEAST(20120211,47) || defined(SVN_USE_FORCE_AUTHN)
 #    define USE_FORCE_AUTHN 1
 #    define IN_SOME_AUTHN_NOTE "authz_svn-in-some-authn"
 #    define FORCE_AUTHN_NOTE "authz_svn-force-authn"
-#  else
+#  else 
      /* ap_some_auth_required() is busted and no viable alternative exists */
 #    ifndef SVN_ALLOW_BROKEN_HTTPD_AUTH
-#      error This version of httpd has a security hole with mod_authz_svn
+#      error This Apache httpd has broken auth (CVE-2015-3184)
 #    else
        /* user wants to build anyway */
 #      define USE_FORCE_AUTHN 0
@@ -127,6 +127,39 @@ create_authz_svn_dir_config(apr_pool_t *p, char *d)
   return conf;
 }
 
+/* canonicalize ACCESS_FILE based on the type of argument.
+ * If SERVER_RELATIVE is true, ACCESS_FILE is a relative
+ * path then ACCESS_FILE is converted to an absolute
+ * path rooted at the server root.
+ * Returns NULL if path is not valid.*/
+static const char *
+canonicalize_access_file(const char *access_file,
+                         svn_boolean_t server_relative,
+                         apr_pool_t *pool)
+{
+  if (svn_path_is_url(access_file))
+    {
+      access_file = svn_uri_canonicalize(access_file, pool);
+    }
+  else if (!svn_path_is_repos_relative_url(access_file))
+    {
+      if (server_relative)
+        {
+          access_file = ap_server_root_relative(pool, access_file);
+          if (access_file == NULL)
+            return NULL;
+        }
+
+      access_file = svn_dirent_internal_style(access_file, pool);
+    }
+
+  /* We don't canonicalize repos relative urls since they get
+   * canonicalized before calling svn_repos_authz_read2() when they
+   * are resolved. */
+
+  return access_file;
+}
+
 static const char *
 AuthzSVNAccessFile_cmd(cmd_parms *cmd, void *config, const char *arg1)
 {
@@ -136,7 +169,9 @@ AuthzSVNAccessFile_cmd(cmd_parms *cmd, void *config, const char *arg1)
     return "AuthzSVNAccessFile and AuthzSVNReposRelativeAccessFile "
            "directives are mutually exclusive.";
 
-  conf->access_file = ap_server_root_relative(cmd->pool, arg1);
+  conf->access_file = canonicalize_access_file(arg1, TRUE, cmd->pool);
+  if (!conf->access_file)
+    return apr_pstrcat(cmd->pool, "Invalid file path ", arg1, SVN_VA_NULL);
 
   return NULL;
 }
@@ -153,7 +188,24 @@ AuthzSVNReposRelativeAccessFile_cmd(cmd_parms *cmd,
     return "AuthzSVNAccessFile and AuthzSVNReposRelativeAccessFile "
            "directives are mutually exclusive.";
 
-  conf->repo_relative_access_file = arg1;
+  conf->repo_relative_access_file = canonicalize_access_file(arg1, FALSE,
+                                                             cmd->pool);
+
+  if (!conf->repo_relative_access_file)
+    return apr_pstrcat(cmd->pool, "Invalid file path ", arg1, SVN_VA_NULL);
+
+  return NULL;
+}
+
+static const char *
+AuthzSVNGroupsFile_cmd(cmd_parms *cmd, void *config, const char *arg1)
+{
+  authz_svn_config_rec *conf = config;
+
+  conf->groups_file = canonicalize_access_file(arg1, TRUE, cmd->pool);
+
+  if (!conf->groups_file)
+    return apr_pstrcat(cmd->pool, "Invalid file path ", arg1, SVN_VA_NULL);
 
   return NULL;
 }
@@ -170,13 +222,25 @@ static const command_rec authz_svn_cmds[] =
                 NULL,
                 OR_AUTHCFG,
                 "Path to text file containing permissions of repository "
-                "paths."),
+                "paths.  Path may be an repository relative URL (^/) or "
+                "absolute file:// URL to a text file in a Subversion "
+                "repository."),
   AP_INIT_TAKE1("AuthzSVNReposRelativeAccessFile",
                 AuthzSVNReposRelativeAccessFile_cmd,
                 NULL,
                 OR_AUTHCFG,
                 "Path (relative to repository 'conf' directory) to text "
-                "file containing permissions of repository paths. "),
+                "file containing permissions of repository paths. Path may "
+                "be an repository relative URL (^/) or absolute file:// URL "
+                "to a text file in a Subversion repository."),
+  AP_INIT_TAKE1("AuthzSVNGroupsFile",
+                AuthzSVNGroupsFile_cmd,
+                NULL,
+                OR_AUTHCFG,
+                "Path to text file containing group definitions for all "
+                "repositories.  Path may be an repository relative URL (^/) "
+                "or absolute file:// URL to a text file in a Subversion "
+                "repository."),
   AP_INIT_FLAG("AuthzSVNAnonymous", ap_set_flag_slot,
                (void *)APR_OFFSETOF(authz_svn_config_rec, anonymous),
                OR_AUTHCFG,
@@ -201,6 +265,135 @@ static const command_rec authz_svn_cmds[] =
   { NULL }
 };
 
+
+/* The macros LOG_ARGS_SIGNATURE and LOG_ARGS_CASCADE are expanded as formal
+ * and actual parameters to log_access_verdict with respect to HTTPD version.
+ */
+#if AP_MODULE_MAGIC_AT_LEAST(20100606,0)
+#define LOG_ARGS_SIGNATURE const char *file, int line, int module_index
+#define LOG_ARGS_CASCADE file, line, module_index
+#else
+#define LOG_ARGS_SIGNATURE const char *file, int line
+#define LOG_ARGS_CASCADE file, line
+#endif
+
+/* Log a message indicating the access control decision made about a
+ * request.  The macro LOG_ARGS_SIGNATURE expands to FILE, LINE and
+ * MODULE_INDEX in HTTPD 2.3 as APLOG_MARK macro has been changed for
+ * per-module loglevel configuration.  It expands to FILE and LINE
+ * in older server versions.  ALLOWED is boolean.
+ * REPOS_PATH and DEST_REPOS_PATH are information
+ * about the request.  DEST_REPOS_PATH may be NULL.
+ * Non-zero IS_SUBREQ_BYPASS means that this authorization check was
+ * implicitly requested using 'subrequest bypass' callback from
+ * mod_dav_svn.
+ */
+static void
+log_access_verdict(LOG_ARGS_SIGNATURE,
+                   const request_rec *r, int allowed, int is_subreq_bypass,
+                   const char *repos_path, const char *dest_repos_path)
+{
+  int level = allowed ? APLOG_INFO : APLOG_ERR;
+  const char *verdict = allowed ? "granted" : "denied";
+
+  /* Use less important log level for implicit sub-request authorization
+     checks. */
+  if (is_subreq_bypass)
+    level = APLOG_INFO;
+  else if (r->main && r->method_number == M_GET)
+    level = APLOG_INFO;
+
+  if (r->user)
+    {
+      if (dest_repos_path)
+        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
+                      "Access %s: '%s' %s %s %s", verdict, r->user,
+                      r->method, repos_path, dest_repos_path);
+      else
+        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
+                      "Access %s: '%s' %s %s", verdict, r->user,
+                      r->method, repos_path);
+    }
+  else
+    {
+      if (dest_repos_path)
+        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
+                      "Access %s: - %s %s %s", verdict,
+                      r->method, repos_path, dest_repos_path);
+      else
+        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
+                      "Access %s: - %s %s", verdict,
+                      r->method, repos_path);
+    }
+}
+
+/* Log a message indiciating the ERR encountered during the request R.
+ * LOG_ARGS_SIGNATURE expands as in log_access_verdict() above.
+ * PREFIX is inserted at the start of the message.  The rest of the
+ * message is generated by combining the message for each error in the
+ * chain of ERR, excluding for trace errors.  ERR will be cleared
+ * when finished. */
+static void
+log_svn_error(LOG_ARGS_SIGNATURE,
+              request_rec *r, const char *prefix,
+              svn_error_t *err, apr_pool_t *scratch_pool)
+{
+  svn_error_t *err_pos = svn_error_purge_tracing(err);
+  svn_stringbuf_t *buff = svn_stringbuf_create(prefix, scratch_pool);
+
+  /* Build the error chain into a space separated stringbuf. */
+  while (err_pos)
+    {
+      svn_stringbuf_appendbyte(buff, ' ');
+      if (err_pos->message)
+        {
+          svn_stringbuf_appendcstr(buff, err_pos->message);
+        }
+      else
+        {
+          char strerr[256];
+
+          svn_stringbuf_appendcstr(buff, svn_strerror(err->apr_err, strerr,
+                                                       sizeof(strerr)));
+        }
+
+      err_pos = err_pos->child;
+    }
+
+  ap_log_rerror(LOG_ARGS_CASCADE, APLOG_ERR,
+                /* If it is an error code that APR can make sense of, then
+                   show it, otherwise, pass zero to avoid putting "APR does
+                   not understand this error code" in the error log. */
+                ((err->apr_err >= APR_OS_START_USERERR &&
+                  err->apr_err < APR_OS_START_CANONERR) ?
+                 0 : err->apr_err),
+                r, "%s", buff->data);
+
+  svn_error_clear(err);
+}
+
+/* Resolve *PATH into an absolute canonical URL iff *PATH is a repos-relative
+ * URL.  If *REPOS_URL is NULL convert REPOS_PATH into a file URL stored
+ * in *REPOS_URL, if *REPOS_URL is not null REPOS_PATH is ignored.  The
+ * resulting *REPOS_URL will be used as the root of the repos-relative URL.
+ * The result will be stored in *PATH. */
+static svn_error_t *
+resolve_repos_relative_url(const char **path, const char **repos_url,
+                           const char *repos_path, apr_pool_t *pool)
+{
+  if (svn_path_is_repos_relative_url(*path))
+    {
+      if (!*repos_url)
+        SVN_ERR(svn_uri_get_file_url_from_dirent(repos_url, repos_path, pool));
+
+      SVN_ERR(svn_path_resolve_repos_relative_url(path, *path,
+                                                  *repos_url, pool));
+      *path = svn_uri_canonicalize(*path, pool);
+    }
+
+  return SVN_NO_ERROR;
+}
+
 /*
  * Get the, possibly cached, svn_authz_t for this request.
  */
@@ -210,53 +403,85 @@ get_access_conf(request_rec *r, authz_svn_config_rec *conf,
 {
   const char *cache_key = NULL;
   const char *access_file;
+  const char *groups_file;
   const char *repos_path;
+  const char *repos_url = NULL;
   void *user_data = NULL;
   svn_authz_t *access_conf = NULL;
-  svn_error_t *svn_err;
+  svn_error_t *svn_err = SVN_NO_ERROR;
   dav_error *dav_err;
-  char errbuf[256];
+
+  dav_err = dav_svn_get_repos_path2(r, conf->base_path, &repos_path, scratch_pool);
+  if (dav_err)
+    {
+      ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", dav_err->desc);
+      return NULL;
+    }
 
   if (conf->repo_relative_access_file)
     {
-      dav_err = dav_svn_get_repos_path(r, conf->base_path, &repos_path);
-      if (dav_err) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "%s", dav_err->desc);
-        return NULL;
-      }
-      access_file = svn_dirent_join_many(scratch_pool, repos_path, "conf",
-                                         conf->repo_relative_access_file,
-                                         NULL);
+      access_file = conf->repo_relative_access_file;
+      if (!svn_path_is_repos_relative_url(access_file) &&
+          !svn_path_is_url(access_file))
+        {
+          access_file = svn_dirent_join_many(scratch_pool, repos_path, "conf",
+                                             conf->repo_relative_access_file,
+                                             SVN_VA_NULL);
+        }
     }
   else
     {
       access_file = conf->access_file;
     }
+  groups_file = conf->groups_file;
+
+  svn_err = resolve_repos_relative_url(&access_file, &repos_url, repos_path,
+                                       scratch_pool);
+  if (svn_err)
+    {
+      log_svn_error(APLOG_MARK, r,
+                    conf->repo_relative_access_file ?
+                    "Failed to load the AuthzSVNReposRelativeAccessFile:" :
+                    "Failed to load the AuthzSVNAccessFile:",
+                    svn_err, scratch_pool);
+      return NULL;
+    }
 
   ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
                 "Path to authz file is %s", access_file);
 
+  if (groups_file)
+    {
+      svn_err = resolve_repos_relative_url(&groups_file, &repos_url, repos_path,
+                                           scratch_pool);
+      if (svn_err)
+        {
+          log_svn_error(APLOG_MARK, r,
+                        "Failed to load the AuthzSVNGroupsFile:",
+                        svn_err, scratch_pool);
+          return NULL;
+        }
+
+      ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                    "Path to groups file is %s", groups_file);
+    }
+
   cache_key = apr_pstrcat(scratch_pool, "mod_authz_svn:",
-                          access_file, (char *)NULL);
+                          access_file, groups_file, SVN_VA_NULL);
   apr_pool_userdata_get(&user_data, cache_key, r->connection->pool);
   access_conf = user_data;
   if (access_conf == NULL)
     {
-      svn_err = svn_repos_authz_read(&access_conf, access_file,
-                                     TRUE, r->connection->pool);
+
+      svn_err = svn_repos_authz_read2(&access_conf, access_file,
+                                      groups_file, TRUE,
+                                      r->connection->pool);
+
       if (svn_err)
         {
-          ap_log_rerror(APLOG_MARK, APLOG_ERR,
-                        /* If it is an error code that APR can make sense
-                           of, then show it, otherwise, pass zero to avoid
-                           putting "APR does not understand this error code"
-                           in the error log. */
-                        ((svn_err->apr_err >= APR_OS_START_USERERR &&
-                          svn_err->apr_err < APR_OS_START_CANONERR) ?
-                         0 : svn_err->apr_err),
-                        r, "Failed to load the AuthzSVNAccessFile: %s",
-                        svn_err_best_message(svn_err, errbuf, sizeof(errbuf)));
-          svn_error_clear(svn_err);
+          log_svn_error(APLOG_MARK, r,
+                        "Failed to load the mod_authz_svn config:",
+                        svn_err, scratch_pool);
           access_conf = NULL;
         }
       else
@@ -277,7 +502,7 @@ convert_case(char *text, svn_boolean_t to_uppercase)
   char *c = text;
   while (*c)
     {
-      *c = (to_uppercase ? apr_toupper(*c) : apr_tolower(*c));
+      *c = (char)(to_uppercase ? apr_toupper(*c) : apr_tolower(*c));
       ++c;
     }
 }
@@ -325,7 +550,6 @@ req_check_access(request_rec *r,
   svn_boolean_t authz_access_granted = FALSE;
   svn_authz_t *access_conf = NULL;
   svn_error_t *svn_err;
-  char errbuf[256];
   const char *username_to_authorize = get_username_to_authorize(r, conf,
                                                                 r->pool);
 
@@ -411,10 +635,12 @@ req_check_access(request_rec *r,
     repos_path = svn_fspath__canonicalize(repos_path, r->pool);
 
   *repos_path_ref = apr_pstrcat(r->pool, repos_name, ":", repos_path,
-                                (char *)NULL);
+                                SVN_VA_NULL);
 
   if (r->method_number == M_MOVE || r->method_number == M_COPY)
     {
+      apr_status_t status;
+
       dest_uri = apr_table_get(r->headers_in, "Destination");
 
       /* Decline MOVE or COPY when there is no Destination uri, this will
@@ -423,7 +649,19 @@ req_check_access(request_rec *r,
       if (!dest_uri)
         return DECLINED;
 
-      apr_uri_parse(r->pool, dest_uri, &parsed_dest_uri);
+      status = apr_uri_parse(r->pool, dest_uri, &parsed_dest_uri);
+      if (status)
+        {
+          ap_log_rerror(APLOG_MARK, APLOG_ERR, status, r,
+                        "Invalid URI in Destination header");
+          return HTTP_BAD_REQUEST;
+        }
+      if (!parsed_dest_uri.path)
+        {
+          ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                        "Invalid URI in Destination header");
+          return HTTP_BAD_REQUEST;
+        }
 
       ap_unescape_url(parsed_dest_uri.path);
       dest_uri = parsed_dest_uri.path;
@@ -459,7 +697,7 @@ req_check_access(request_rec *r,
         dest_repos_path = svn_fspath__canonicalize(dest_repos_path, r->pool);
 
       *dest_repos_path_ref = apr_pstrcat(r->pool, dest_repos_name, ":",
-                                         dest_repos_path, (char *)NULL);
+                                         dest_repos_path, SVN_VA_NULL);
     }
 
   /* Retrieve/cache authorization file */
@@ -498,19 +736,9 @@ req_check_access(request_rec *r,
                                              r->pool);
       if (svn_err)
         {
-          ap_log_rerror(APLOG_MARK, APLOG_ERR,
-                        /* If it is an error code that APR can make
-                           sense of, then show it, otherwise, pass
-                           zero to avoid putting "APR does not
-                           understand this error code" in the error
-                           log. */
-                        ((svn_err->apr_err >= APR_OS_START_USERERR &&
-                          svn_err->apr_err < APR_OS_START_CANONERR) ?
-                          0 : svn_err->apr_err),
-                         r, "Failed to perform access control: %s",
-                         svn_err_best_message(svn_err, errbuf,
-                                              sizeof(errbuf)));
-          svn_error_clear(svn_err);
+          log_svn_error(APLOG_MARK, r,
+                        "Failed to perform access control:",
+                        svn_err, r->pool);
 
           return DECLINED;
         }
@@ -545,17 +773,9 @@ req_check_access(request_rec *r,
                                              r->pool);
       if (svn_err)
         {
-          ap_log_rerror(APLOG_MARK, APLOG_ERR,
-                        /* If it is an error code that APR can make sense
-                           of, then show it, otherwise, pass zero to avoid
-                           putting "APR does not understand this error code"
-                           in the error log. */
-                        ((svn_err->apr_err >= APR_OS_START_USERERR &&
-                          svn_err->apr_err < APR_OS_START_CANONERR) ?
-                         0 : svn_err->apr_err),
-                        r, "Failed to perform access control: %s",
-                        svn_err_best_message(svn_err, errbuf, sizeof(errbuf)));
-          svn_error_clear(svn_err);
+          log_svn_error(APLOG_MARK, r,
+                        "Failed to perform access control:",
+                        svn_err, r->pool);
 
           return DECLINED;
         }
@@ -568,56 +788,6 @@ req_check_access(request_rec *r,
    */
 
   return OK;
-}
-
-/* The macros LOG_ARGS_SIGNATURE and LOG_ARGS_CASCADE are expanded as formal
- * and actual parameters to log_access_verdict with respect to HTTPD version.
- */
-#if AP_MODULE_MAGIC_AT_LEAST(20100606,0)
-#define LOG_ARGS_SIGNATURE const char *file, int line, int module_index
-#define LOG_ARGS_CASCADE file, line, module_index
-#else
-#define LOG_ARGS_SIGNATURE const char *file, int line
-#define LOG_ARGS_CASCADE file, line
-#endif
-
-/* Log a message indicating the access control decision made about a
- * request.  The macro LOG_ARGS_SIGNATURE expands to FILE, LINE and
- * MODULE_INDEX in HTTPD 2.3 as APLOG_MARK macro has been changed for
- * per-module loglevel configuration.  It expands to FILE and LINE
- * in older server versions.  ALLOWED is boolean.
- * REPOS_PATH and DEST_REPOS_PATH are information
- * about the request.  DEST_REPOS_PATH may be NULL. */
-static void
-log_access_verdict(LOG_ARGS_SIGNATURE,
-                   const request_rec *r, int allowed,
-                   const char *repos_path, const char *dest_repos_path)
-{
-  int level = allowed ? APLOG_INFO : APLOG_ERR;
-  const char *verdict = allowed ? "granted" : "denied";
-
-  if (r->user)
-    {
-      if (dest_repos_path)
-        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
-                      "Access %s: '%s' %s %s %s", verdict, r->user,
-                      r->method, repos_path, dest_repos_path);
-      else
-        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
-                      "Access %s: '%s' %s %s", verdict, r->user,
-                      r->method, repos_path);
-    }
-  else
-    {
-      if (dest_repos_path)
-        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
-                      "Access %s: - %s %s %s", verdict,
-                      r->method, repos_path, dest_repos_path);
-      else
-        ap_log_rerror(LOG_ARGS_CASCADE, level, 0, r,
-                      "Access %s: - %s %s", verdict,
-                      r->method, repos_path);
-    }
 }
 
 /*
@@ -633,7 +803,6 @@ subreq_bypass2(request_rec *r,
   svn_authz_t *access_conf = NULL;
   authz_svn_config_rec *conf = NULL;
   svn_boolean_t authz_access_granted = FALSE;
-  char errbuf[256];
   const char *username_to_authorize;
 
   conf = ap_get_module_config(r->per_dir_config,
@@ -644,7 +813,7 @@ subreq_bypass2(request_rec *r,
   if (!conf->anonymous
       || (! (conf->access_file || conf->repo_relative_access_file)))
     {
-      log_access_verdict(APLOG_MARK, r, 0, repos_path, NULL);
+      log_access_verdict(APLOG_MARK, r, 0, TRUE, repos_path, NULL);
       return HTTP_FORBIDDEN;
     }
 
@@ -666,28 +835,19 @@ subreq_bypass2(request_rec *r,
                                              scratch_pool);
       if (svn_err)
         {
-          ap_log_rerror(APLOG_MARK, APLOG_ERR,
-                        /* If it is an error code that APR can make
-                           sense of, then show it, otherwise, pass
-                           zero to avoid putting "APR does not
-                           understand this error code" in the error
-                           log. */
-                        ((svn_err->apr_err >= APR_OS_START_USERERR &&
-                          svn_err->apr_err < APR_OS_START_CANONERR) ?
-                         0 : svn_err->apr_err),
-                        r, "Failed to perform access control: %s",
-                        svn_err_best_message(svn_err, errbuf, sizeof(errbuf)));
-          svn_error_clear(svn_err);
+          log_svn_error(APLOG_MARK, r,
+                        "Failed to perform access control:",
+                        svn_err, scratch_pool);
           return HTTP_FORBIDDEN;
         }
       if (!authz_access_granted)
         {
-          log_access_verdict(APLOG_MARK, r, 0, repos_path, NULL);
+          log_access_verdict(APLOG_MARK, r, 0, TRUE, repos_path, NULL);
           return HTTP_FORBIDDEN;
         }
     }
 
-  log_access_verdict(APLOG_MARK, r, 1, repos_path, NULL);
+  log_access_verdict(APLOG_MARK, r, 1, TRUE, repos_path, NULL);
 
   return OK;
 }
@@ -772,7 +932,8 @@ access_checker(request_rec *r)
       || (! (conf->access_file || conf->repo_relative_access_file)))
     return DECLINED;
 
-  if (ap_some_auth_required(r))
+  authn_required = ap_some_auth_required(r);
+  if (authn_required)
     {
       /* It makes no sense to check if a location is both accessible
        * anonymous and by an authenticated user (in the same request!).
@@ -807,24 +968,26 @@ access_checker(request_rec *r)
 #if USE_FORCE_AUTHN
       if (authn_configured) {
           /* We have to check to see if authn is required because if so we must
-           * return UNAUTHORIZED (401) rather than FORBIDDEN (403) since returning
+           * return DECLINED rather than FORBIDDEN (403) since returning
            * the 403 leaks information about what paths may exist to
-           * unauthenticated users.  We must set a note here in order
-           * to use ap_some_authn_rquired() without triggering an infinite
-           * loop since the call will trigger this function to be called again. */
+           * unauthenticated users.  Returning DECLINED means apache's request
+           * handling will continue until the authn module itself generates
+           * UNAUTHORIZED (401).
+
+           * We must set a note here in order to use
+           * ap_some_authn_rquired() without triggering an infinite
+           * loop since the call will trigger this function to be
+           * called again. */
           apr_table_setn(r->notes, IN_SOME_AUTHN_NOTE, (const char*)1);
           authn_required = ap_some_authn_required(r);
           apr_table_unset(r->notes, IN_SOME_AUTHN_NOTE);
           if (authn_required)
-            {
-              ap_note_auth_failure(r);
-              return HTTP_UNAUTHORIZED;
-            }
+            return DECLINED;
       }
 #else
-      if (!ap_some_auth_required(r))
+      if (!authn_required)
 #endif
-        log_access_verdict(APLOG_MARK, r, 0, repos_path, dest_repos_path);
+        log_access_verdict(APLOG_MARK, r, 0, FALSE, repos_path, dest_repos_path);
 
       return HTTP_FORBIDDEN;
     }
@@ -832,7 +995,7 @@ access_checker(request_rec *r)
   if (status != OK)
     return status;
 
-  log_access_verdict(APLOG_MARK, r, 1, repos_path, dest_repos_path);
+  log_access_verdict(APLOG_MARK, r, 1, FALSE, repos_path, dest_repos_path);
 
   return OK;
 }
@@ -859,7 +1022,7 @@ check_user_id(request_rec *r)
   if (status == OK)
     {
       apr_table_setn(r->notes, "authz_svn-anon-ok", (const char*)1);
-      log_access_verdict(APLOG_MARK, r, 1, repos_path, dest_repos_path);
+      log_access_verdict(APLOG_MARK, r, 1, FALSE, repos_path, dest_repos_path);
       return OK;
     }
 
@@ -889,7 +1052,7 @@ auth_checker(request_rec *r)
     {
       if (conf->authoritative)
         {
-          log_access_verdict(APLOG_MARK, r, 0, repos_path, dest_repos_path);
+          log_access_verdict(APLOG_MARK, r, 0, FALSE, repos_path, dest_repos_path);
           ap_note_auth_failure(r);
           return HTTP_FORBIDDEN;
         }
@@ -899,7 +1062,7 @@ auth_checker(request_rec *r)
   if (status != OK)
     return status;
 
-  log_access_verdict(APLOG_MARK, r, 1, repos_path, dest_repos_path);
+  log_access_verdict(APLOG_MARK, r, 1, FALSE, repos_path, dest_repos_path);
 
   return OK;
 }

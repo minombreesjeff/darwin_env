@@ -22,7 +22,7 @@
 
 # USAGE: ./dist.sh -v VERSION -r REVISION -pr REPOS-PATH
 #                  [-alpha ALPHA_NUM|-beta BETA_NUM|-rc RC_NUM|pre PRE_NUM]
-#                  [-apr PATH-TO-APR ] [-apru PATH-TO-APR-UTIL] 
+#                  [-apr PATH-TO-APR ] [-apru PATH-TO-APR-UTIL]
 #                  [-apri PATH-TO-APR-ICONV] [-neon PATH-TO-NEON]
 #                  [-serf PATH-TO-SERF] [-zlib PATH-TO-ZLIB]
 #                  [-sqlite PATH-TO-SQLITE] [-zip] [-sign]
@@ -47,13 +47,13 @@
 #   working copy, so you may wish to create a dist-resources directory
 #   containing the apr/, apr-util/, neon/, serf/, zlib/ and sqlite/
 #   dependencies, and run dist.sh from that.
-#  
+#
 #   When building alpha, beta or rc tarballs pass the appropriate flag
 #   followed by a number.  For example "-alpha 5", "-beta 3", "-rc 2".
-# 
+#
 #   If neither an -alpha, -beta, -pre or -rc option is specified, a release
 #   tarball will be built.
-#  
+#
 #   To build a Windows zip file package, additionally pass -zip and the
 #   path to apr-iconv with -apri.
 
@@ -119,7 +119,7 @@ if [ -n "$ALPHA" ] && [ -n "$BETA" ] && [ -n "$NIGHTLY" ] && [ -n "$PRE" ] ||
   exit 1
 elif [ -n "$ALPHA" ] ; then
   VER_TAG="Alpha $ALPHA"
-  VER_NUMTAG="-alpha$ALPHA" 
+  VER_NUMTAG="-alpha$ALPHA"
 elif [ -n "$BETA" ] ; then
   VER_TAG="Beta $BETA"
   VER_NUMTAG="-beta$BETA"
@@ -183,20 +183,6 @@ if [ $? -ne 0 ] && [ -z "$ZIP" ]; then
   exit 1
 fi
 
-# Default to 'wget', but allow 'curl' to be used if available.
-HTTP_FETCH=wget
-HTTP_FETCH_OUTPUT="-O"
-type wget > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-  type curl > /dev/null 2>&1
-  if [ $? -ne 0 ]; then
-    echo "Neither curl or wget found."
-    exit 2
-  fi
-  HTTP_FETCH=curl
-  HTTP_FETCH_OUTPUT="-o"
-fi
-
 DISTNAME="subversion-${VERSION}${VER_NUMTAG}"
 DIST_SANDBOX=.dist_sandbox
 DISTPATH="$DIST_SANDBOX/$DISTNAME"
@@ -224,18 +210,33 @@ echo "Exporting $REPOS_PATH r$REVISION into sandbox..."
 
 rm -f "$DISTPATH/STATUS"
 
+ver_major=`echo $VERSION | cut -d '.' -f 1`
+ver_minor=`echo $VERSION | cut -d '.' -f 2`
+ver_patch=`echo $VERSION | cut -d '.' -f 3`
+
 # Remove contrib/ from our distribution tarball.  Some of it is of
 # unknown license, and usefulness.
 # (See http://svn.haxx.se/dev/archive-2009-04/0166.shtml for discussion.)
-rm -rf "$DISTPATH/contrib"
+if [ "$ver_major" -eq "1" -a "$ver_minor" -ge "7" ]; then
+  rm -rf "$DISTPATH/contrib"
+fi
 
 # Remove notes/ from our distribution tarball.  It's large, but largely
 # blue-sky and out-of-date, and of questionable use to end users.
-rm -rf "$DISTPATH/notes"
+if [ "$ver_major" -eq "1" -a "$ver_minor" -ge "7" ]; then
+  rm -rf "$DISTPATH/notes"
+fi
 
 # Remove packages/ from the tarball.
 # (See http://svn.haxx.se/dev/archive-2009-12/0205.shtml)
-rm -rf "$DISTPATH/packages"
+if [ "$ver_major" -eq "1" -a "$ver_minor" -ge "7" ]; then
+  rm -rf "$DISTPATH/packages"
+fi
+
+# Remove www/ from the tarball for 1.6.x and earlier releases
+if [ "$ver_major" -eq "1" -a "$ver_minor" -le "6" ]; then
+  rm -rf "$DISTPATH/www"
+fi
 
 # Check for a recent enough Python
 # Instead of attempting to deal with various line ending issues, just export
@@ -260,30 +261,24 @@ find "$DISTPATH" -name config.nice -print | xargs rm -f
 # on end-user's systems, when they should just be compiled by the
 # Release Manager and left at that.
 
-ver_major=`echo $VERSION | cut -d '.' -f 1`
-ver_minor=`echo $VERSION | cut -d '.' -f 2`
-ver_patch=`echo $VERSION | cut -d '.' -f 3`
-
 vsn_file="$DISTPATH/subversion/include/svn_version.h"
-
-if [ "$VERSION" != "trunk" ]; then
+if [ "$VERSION" != "trunk" ] && [ "$VERSION" != "nightly" ]; then
   sed \
-   -e "/#define *SVN_VER_MAJOR/s/[0-9]\+/$ver_major/" \
-   -e "/#define *SVN_VER_MINOR/s/[0-9]\+/$ver_minor/" \
-   -e "/#define *SVN_VER_PATCH/s/[0-9]\+/$ver_patch/" \
+   -e "/#define *SVN_VER_MAJOR/s/[0-9][0-9]*/$ver_major/" \
+   -e "/#define *SVN_VER_MINOR/s/[0-9][0-9]*/$ver_minor/" \
+   -e "/#define *SVN_VER_PATCH/s/[0-9][0-9]*/$ver_patch/" \
    -e "/#define *SVN_VER_TAG/s/\".*\"/\" ($VER_TAG)\"/" \
    -e "/#define *SVN_VER_NUMTAG/s/\".*\"/\"$VER_NUMTAG\"/" \
-   -e "/#define *SVN_VER_REVISION/s/[0-9]\+/$REVISION/" \
+   -e "/#define *SVN_VER_REVISION/s/[0-9][0-9]*/$REVISION/" \
     < "$vsn_file" > "$vsn_file.tmp"
 else
   # Don't munge the version number if we are creating a nightly trunk tarball
   sed \
    -e "/#define *SVN_VER_TAG/s/\".*\"/\" ($VER_TAG)\"/" \
    -e "/#define *SVN_VER_NUMTAG/s/\".*\"/\"$VER_NUMTAG\"/" \
-   -e "/#define *SVN_VER_REVISION/s/[0-9]\+/$REVISION/" \
+   -e "/#define *SVN_VER_REVISION/s/[0-9]\\+/$REVISION/" \
     < "$vsn_file" > "$vsn_file.tmp"
 fi
-
 mv -f "$vsn_file.tmp" "$vsn_file"
 
 echo "Creating svn_version.h.dist, for use in tagging matching tarball..."
@@ -296,6 +291,15 @@ if [ -z "$ZIP" ] ; then
   echo "Running ./autogen.sh in sandbox, to create ./configure ..."
   (cd "$DISTPATH" && ./autogen.sh --release) || exit 1
 fi
+
+# Generate the .pot file, for use by translators.
+echo "Running po-update.sh in sandbox, to create subversion.pot..."
+# Can't use the po-update.sh in the packaged export since it might have CRLF
+# line endings, in which case it won't run.  So first we export it again.
+${svn:-svn} export -q -r "$REVISION"  \
+     "http://svn.apache.org/repos/asf/subversion/$REPOS_PATH/tools/po/po-update.sh" \
+     --username none --password none "$DIST_SANDBOX/po-update.sh"
+(cd "$DISTPATH" && ../po-update.sh pot) || exit 1
 
 # Pre-translate the various sql-derived header files
 echo "Generating SQL-derived headers..."
@@ -365,6 +369,10 @@ sign_file()
   fi
 }
 
+# allow md5sum and sha1sum tool names to be overridden
+[ -n "$MD5SUM" ] || MD5SUM=md5sum
+[ -n "$SHA1SUM" ] || SHA1SUM=sha1sum
+
 echo ""
 echo "Done:"
 if [ -z "$ZIP" ]; then
@@ -372,23 +380,23 @@ if [ -z "$ZIP" ]; then
   sign_file $DISTNAME.tar.gz $DISTNAME.tar.bz2
   echo ""
   echo "md5sums:"
-  md5sum "$DISTNAME.tar.bz2" "$DISTNAME.tar.gz"
-  type sha1sum > /dev/null 2>&1
+  $MD5SUM "$DISTNAME.tar.bz2" "$DISTNAME.tar.gz"
+  type $SHA1SUM > /dev/null 2>&1
   if [ $? -eq 0 ]; then
     echo ""
     echo "sha1sums:"
-    sha1sum "$DISTNAME.tar.bz2" "$DISTNAME.tar.gz"
+    $SHA1SUM "$DISTNAME.tar.bz2" "$DISTNAME.tar.gz"
   fi
 else
   ls -l "$DISTNAME.zip"
   sign_file $DISTNAME.zip
   echo ""
   echo "md5sum:"
-  md5sum "$DISTNAME.zip"
-  type sha1sum > /dev/null 2>&1
+  $MD5SUM "$DISTNAME.zip"
+  type $SHA1SUM > /dev/null 2>&1
   if [ $? -eq 0 ]; then
     echo ""
     echo "sha1sum:"
-    sha1sum "$DISTNAME.zip"
+    $SHA1SUM "$DISTNAME.zip"
   fi
 fi

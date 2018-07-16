@@ -67,13 +67,13 @@ test_stream_from_string(apr_pool_t *pool)
       apr_size_t len;
 
       inbuf = svn_stringbuf_create(strings[i], subpool);
-      outbuf = svn_stringbuf_create("", subpool);
+      outbuf = svn_stringbuf_create_empty(subpool);
       stream = svn_stream_from_stringbuf(inbuf, subpool);
       len = TEST_BUF_SIZE;
       while (len == TEST_BUF_SIZE)
         {
           /* Read a chunk ... */
-          SVN_ERR(svn_stream_read(stream, buffer, &len));
+          SVN_ERR(svn_stream_read_full(stream, buffer, &len));
 
           /* ... and append the chunk to the stringbuf. */
           svn_stringbuf_appendbytes(outbuf, buffer, len);
@@ -94,7 +94,7 @@ test_stream_from_string(apr_pool_t *pool)
       apr_size_t amt_read, len;
 
       inbuf = svn_stringbuf_create(strings[i], subpool);
-      outbuf = svn_stringbuf_create("", subpool);
+      outbuf = svn_stringbuf_create_empty(subpool);
       stream = svn_stream_from_stringbuf(outbuf, subpool);
       amt_read = 0;
       while (amt_read < inbuf->len)
@@ -125,7 +125,7 @@ test_stream_from_string(apr_pool_t *pool)
 static svn_stringbuf_t *
 generate_test_bytes(int num_bytes, apr_pool_t *pool)
 {
-  svn_stringbuf_t *buffer = svn_stringbuf_create("", pool);
+  svn_stringbuf_t *buffer = svn_stringbuf_create_empty(pool);
   int total, repeat, repeat_iter;
   char c;
 
@@ -138,7 +138,7 @@ generate_test_bytes(int num_bytes, apr_pool_t *pool)
         {
           if (c == 127)
             repeat++;
-          c = (c + 1) % 127;
+          c = (char)((c + 1) % 127);
           repeat_iter = repeat;
         }
     }
@@ -189,8 +189,8 @@ test_stream_compressed(apr_pool_t *pool)
       apr_size_t len;
 
       origbuf = bufs[i];
-      inbuf = svn_stringbuf_create("", subpool);
-      outbuf = svn_stringbuf_create("", subpool);
+      inbuf = svn_stringbuf_create_empty(subpool);
+      outbuf = svn_stringbuf_create_empty(subpool);
 
       stream = svn_stream_compressed(svn_stream_from_stringbuf(outbuf,
                                                                subpool),
@@ -206,7 +206,7 @@ test_stream_compressed(apr_pool_t *pool)
       while (len >= TEST_BUF_SIZE)
         {
           len = TEST_BUF_SIZE;
-          SVN_ERR(svn_stream_read(stream, buf, &len));
+          SVN_ERR(svn_stream_read_full(stream, buf, &len));
           if (len > 0)
             svn_stringbuf_appendbytes(inbuf, buf, len);
         }
@@ -232,8 +232,8 @@ static svn_error_t *
 test_stream_tee(apr_pool_t *pool)
 {
   svn_stringbuf_t *test_bytes = generate_test_bytes(100, pool);
-  svn_stringbuf_t *output_buf1 = svn_stringbuf_create("", pool);
-  svn_stringbuf_t *output_buf2 = svn_stringbuf_create("", pool);
+  svn_stringbuf_t *output_buf1 = svn_stringbuf_create_empty(pool);
+  svn_stringbuf_t *output_buf2 = svn_stringbuf_create_empty(pool);
   svn_stream_t *source_stream = svn_stream_from_stringbuf(test_bytes, pool);
   svn_stream_t *output_stream1 = svn_stream_from_stringbuf(output_buf1, pool);
   svn_stream_t *output_stream2 = svn_stream_from_stringbuf(output_buf2, pool);
@@ -332,17 +332,17 @@ test_stream_seek_stringbuf(apr_pool_t *pool)
   stringbuf = svn_stringbuf_create("OneTwo", pool);
   stream = svn_stream_from_stringbuf(stringbuf, pool);
   len = 3;
-  SVN_ERR(svn_stream_read(stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(stream, buf, &len));
   buf[3] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "One");
   SVN_ERR(svn_stream_mark(stream, &mark, pool));
   len = 3;
-  SVN_ERR(svn_stream_read(stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(stream, buf, &len));
   buf[3] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "Two");
   SVN_ERR(svn_stream_seek(stream, mark));
   len = 3;
-  SVN_ERR(svn_stream_read(stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(stream, buf, &len));
   buf[3] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "Two");
 
@@ -351,7 +351,7 @@ test_stream_seek_stringbuf(apr_pool_t *pool)
   SVN_ERR(svn_stream_skip(stream, 2));
   /* The remaining line should be empty */
   len = 3;
-  SVN_ERR(svn_stream_read(stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(stream, buf, &len));
   buf[len] = '\0';
   SVN_TEST_ASSERT(len == 1);
   SVN_TEST_STRING_ASSERT(buf, "o");
@@ -381,7 +381,7 @@ test_stream_seek_translated(apr_pool_t *pool)
                                                   FALSE, keywords, TRUE, pool);
   /* Seek from outside of keyword to inside of keyword. */
   len = 25;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 25);
   buf[25] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "One$MyKeyword: my keyword");
@@ -389,7 +389,7 @@ test_stream_seek_translated(apr_pool_t *pool)
   SVN_ERR(svn_stream_reset(translated_stream));
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   len = 4;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 4);
   buf[4] = '\0';
   SVN_TEST_STRING_ASSERT(buf, " was");
@@ -397,7 +397,7 @@ test_stream_seek_translated(apr_pool_t *pool)
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   SVN_ERR(svn_stream_skip(translated_stream, 2));
   len = 2;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 2);
   buf[len] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "as");
@@ -405,13 +405,13 @@ test_stream_seek_translated(apr_pool_t *pool)
   /* Seek from inside of keyword to inside of keyword. */
   SVN_ERR(svn_stream_mark(translated_stream, &mark, pool));
   len = 9;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 9);
   buf[9] = '\0';
   SVN_TEST_STRING_ASSERT(buf, " expanded");
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   len = 9;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 9);
   buf[9] = '\0';
   SVN_TEST_STRING_ASSERT(buf, " expanded");
@@ -419,7 +419,7 @@ test_stream_seek_translated(apr_pool_t *pool)
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   SVN_ERR(svn_stream_skip(translated_stream, 6));
   len = 3;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 3);
   buf[len] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "ded");
@@ -427,13 +427,13 @@ test_stream_seek_translated(apr_pool_t *pool)
   /* Seek from inside of keyword to outside of keyword. */
   SVN_ERR(svn_stream_mark(translated_stream, &mark, pool));
   len = 4;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 4);
   buf[4] = '\0';
   SVN_TEST_STRING_ASSERT(buf, " $Tw");
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   len = 4;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 4);
   buf[4] = '\0';
   SVN_TEST_STRING_ASSERT(buf, " $Tw");
@@ -441,7 +441,7 @@ test_stream_seek_translated(apr_pool_t *pool)
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   SVN_ERR(svn_stream_skip(translated_stream, 2));
   len = 2;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 2);
   buf[len] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "Tw");
@@ -449,13 +449,13 @@ test_stream_seek_translated(apr_pool_t *pool)
   /* Seek from outside of keyword to outside of keyword. */
   SVN_ERR(svn_stream_mark(translated_stream, &mark, pool));
   len = 1;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 1);
   buf[1] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "o");
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   len = 1;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 1);
   buf[1] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "o");
@@ -463,7 +463,7 @@ test_stream_seek_translated(apr_pool_t *pool)
   SVN_ERR(svn_stream_seek(translated_stream, mark));
   SVN_ERR(svn_stream_skip(translated_stream, 2));
   len = 1;
-  SVN_ERR(svn_stream_read(translated_stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(translated_stream, buf, &len));
   SVN_TEST_ASSERT(len == 0);
   buf[len] = '\0';
   SVN_TEST_STRING_ASSERT(buf, "");
@@ -490,7 +490,7 @@ test_readonly(apr_pool_t *pool)
   /* File should be writable */
   SVN_ERR(svn_io_stat(&finfo, path, wanted, pool));
   SVN_ERR(svn_io__is_finfo_read_only(&read_only, &finfo, pool));
-  SVN_TEST_ASSERT(read_only == FALSE);
+  SVN_TEST_ASSERT(!read_only);
 
   /* Set read only */
   SVN_ERR(svn_io_set_file_read_only(path, FALSE, pool));
@@ -506,7 +506,7 @@ test_readonly(apr_pool_t *pool)
   /* File should be writable */
   SVN_ERR(svn_io_stat(&finfo, path, wanted, pool));
   SVN_ERR(svn_io__is_finfo_read_only(&read_only, &finfo, pool));
-  SVN_TEST_ASSERT(read_only == FALSE);
+  SVN_TEST_ASSERT(!read_only);
 
   return SVN_NO_ERROR;
 }
@@ -524,7 +524,7 @@ test_stream_compressed_empty_file(apr_pool_t *pool)
                                  pool, pool));
   stream = svn_stream_compressed(empty_file_stream, pool);
   len = sizeof(buf);
-  SVN_ERR(svn_stream_read(stream, buf, &len));
+  SVN_ERR(svn_stream_read_full(stream, buf, &len));
   if (len > 0)
     return svn_error_create(SVN_ERR_TEST_FAILED, NULL,
                             "Got unexpected result.");
@@ -538,8 +538,8 @@ static svn_error_t *
 test_stream_base64(apr_pool_t *pool)
 {
   svn_stream_t *stream;
-  svn_stringbuf_t *actual = svn_stringbuf_create("", pool);
-  svn_stringbuf_t *expected = svn_stringbuf_create("", pool);
+  svn_stringbuf_t *actual = svn_stringbuf_create_empty(pool);
+  svn_stringbuf_t *expected = svn_stringbuf_create_empty(pool);
   int i;
   static const char *strings[] = {
     "fairly boring test data... blah blah",
@@ -568,9 +568,246 @@ test_stream_base64(apr_pool_t *pool)
   return SVN_NO_ERROR;
 }
 
+/* This test doesn't test much unless run under valgrind when it
+   triggers the problem reported here:
+
+   http://mail-archives.apache.org/mod_mbox/subversion-dev/201202.mbox/%3C87sjik3m8q.fsf@stat.home.lan%3E
+
+   The two data writes caused the base 64 code to allocate a buffer
+   that was a byte short but exactly matched a stringbuf blocksize.
+   That meant the stringbuf didn't overallocate and a write beyond
+   the end of the buffer occurred.
+ */
+static svn_error_t *
+test_stream_base64_2(apr_pool_t *pool)
+{
+  const struct data_t {
+    const char *encoded1;
+    const char *encoded2;
+  } data[] = {
+    {
+      "MTI",
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "A23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "B23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "C23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "D23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "E23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "F23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "G23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "H23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "I23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D123456789E"
+      "623456789A123456789B123456789C123456789D123456789E"
+      "723456789A123456789B123456789C123456789D123456789E"
+      "823456789A123456789B123456789C123456789D123456789E"
+      "923456789A123456789B123456789C123456789D123456789E"
+      "J23456789A123456789B123456789C123456789D123456789E"
+      "123456789A123456789B123456789C123456789D123456789E"
+      "223456789A123456789B123456789C123456789D123456789E"
+      "323456789A123456789B123456789C123456789D123456789E"
+      "423456789A123456789B123456789C123456789D123456789E"
+      "523456789A123456789B123456789C123456789D12345"
+    },
+    {
+      NULL,
+      NULL,
+    },
+  };
+  int i;
+
+  for (i = 0; data[i].encoded1; i++)
+    {
+      apr_size_t len1 = strlen(data[i].encoded1);
+
+      svn_stringbuf_t *actual = svn_stringbuf_create_empty(pool);
+      svn_stringbuf_t *expected = svn_stringbuf_create_empty(pool);
+      svn_stream_t *stream = svn_stream_from_stringbuf(actual, pool);
+
+      stream = svn_base64_encode(stream, pool);
+      stream = svn_base64_decode(stream, pool);
+
+      SVN_ERR(svn_stream_write(stream, data[i].encoded1, &len1));
+      svn_stringbuf_appendbytes(expected, data[i].encoded1, len1);
+
+      if (data[i].encoded2)
+        {
+          apr_size_t len2 = strlen(data[i].encoded2);
+          SVN_ERR(svn_stream_write(stream, data[i].encoded2, &len2));
+          svn_stringbuf_appendbytes(expected, data[i].encoded2, len2);
+        }
+
+      SVN_ERR(svn_stream_close(stream));
+    }
+
+  return SVN_NO_ERROR;
+}
+
+static svn_error_t *
+test_stringbuf_from_stream(apr_pool_t *pool)
+{
+  const char *test_cases[] =
+    {
+      "",
+      "x",
+      "this string is longer than the default 64 minimum block size used"
+      "by the function under test",
+      NULL
+    };
+
+  const char **test_case;
+  for (test_case = test_cases; *test_case; ++test_case)
+    {
+      svn_stringbuf_t *result1, *result2, *result3, *result4;
+      svn_stringbuf_t *original = svn_stringbuf_create(*test_case, pool);
+
+      svn_stream_t *stream1 = svn_stream_from_stringbuf(original, pool);
+      svn_stream_t *stream2 = svn_stream_from_stringbuf(original, pool);
+
+      SVN_ERR(svn_stringbuf_from_stream(&result1, stream1, 0, pool));
+      SVN_ERR(svn_stringbuf_from_stream(&result2, stream1, 0, pool));
+      SVN_ERR(svn_stringbuf_from_stream(&result3, stream2, original->len,
+                                        pool));
+      SVN_ERR(svn_stringbuf_from_stream(&result4, stream2, original->len,
+                                        pool));
+
+      /* C-string contents must match */
+      SVN_TEST_STRING_ASSERT(result1->data, original->data);
+      SVN_TEST_STRING_ASSERT(result2->data, "");
+      SVN_TEST_STRING_ASSERT(result3->data, original->data);
+      SVN_TEST_STRING_ASSERT(result4->data, "");
+
+      /* assumed length must match */
+      SVN_TEST_ASSERT(result1->len == original->len);
+      SVN_TEST_ASSERT(result2->len == 0);
+      SVN_TEST_ASSERT(result3->len == original->len);
+      SVN_TEST_ASSERT(result4->len == 0);
+    }
+
+  return SVN_NO_ERROR;
+}
+
+static svn_error_t *
+empty_read_full_fn(void *baton, char *buffer, apr_size_t *len)
+{
+    *len = 0;
+    return SVN_NO_ERROR;
+}
+
+static svn_error_t *
+test_stream_compressed_read_full(apr_pool_t *pool)
+{
+  svn_stream_t *stream, *empty_stream;
+  char buf[1];
+  apr_size_t len;
+
+  /* Reading an empty stream with read_full only support should not error. */
+  empty_stream = svn_stream_create(NULL, pool);
+
+  /* Create stream with only full read support. */
+  svn_stream_set_read2(empty_stream, NULL, empty_read_full_fn);
+
+  stream = svn_stream_compressed(empty_stream, pool);
+  len = sizeof(buf);
+  SVN_ERR(svn_stream_read_full(stream, buf, &len));
+  if (len > 0)
+    return svn_error_create(SVN_ERR_TEST_FAILED, NULL,
+                            "Got unexpected result.");
+
+  SVN_ERR(svn_stream_close(stream));
+
+  return SVN_NO_ERROR;
+}
+
 /* The test table.  */
 
-struct svn_test_descriptor_t test_funcs[] =
+static int max_threads = 1;
+
+static struct svn_test_descriptor_t test_funcs[] =
   {
     SVN_TEST_NULL,
     SVN_TEST_PASS2(test_stream_from_string,
@@ -591,5 +828,13 @@ struct svn_test_descriptor_t test_funcs[] =
                    "test compressed streams with empty files"),
     SVN_TEST_PASS2(test_stream_base64,
                    "test base64 encoding/decoding streams"),
+    SVN_TEST_PASS2(test_stream_base64_2,
+                   "base64 decoding allocation problem"),
+    SVN_TEST_PASS2(test_stringbuf_from_stream,
+                   "test svn_stringbuf_from_stream"),
+    SVN_TEST_PASS2(test_stream_compressed_read_full,
+                   "test compression for streams without partial read"),
     SVN_TEST_NULL
   };
+
+SVN_TEST_MAIN

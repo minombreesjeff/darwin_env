@@ -29,22 +29,35 @@
 
 #include "svn_types.h"
 #include "svn_error.h"
+#include "svn_version.h"
 #include "svn_fs.h"
-#include "svn_dirent_uri.h"
-#include "svn_path.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 
-/* Return a canonicalized version of a filesystem PATH, allocated in
-   POOL.  While the filesystem API is pretty flexible about the
-   incoming paths (they must be UTF-8 with '/' as separators, but they
-   don't have to begin with '/', and multiple contiguous '/'s are
-   ignored) we want any paths that are physically stored in the
-   underlying database to look consistent.  Specifically, absolute
-   filesystem paths should begin with '/', and all redundant and trailing '/'
-   characters be removed.  */
+/* Get libsvn_fs_util version information. */
+const svn_version_t *
+svn_fs_util__version(void);
+
+/* Returns whether PATH is in canonical form as defined by
+   svn_fs__canonicalize_abspath().
+ */
+svn_boolean_t
+svn_fs__is_canonical_abspath(const char *path);
+
+/* Return a canonicalized version of a filesystem PATH, allocated in POOL.
+
+   While the filesystem API is pretty flexible about the incoming paths
+   (they must be UTF-8 with '/' as separators, but they don't have to
+   begin with '/', and multiple contiguous '/'s are ignored) we want any
+   paths that are physically stored in the underlying database to look
+   consistent.  Specifically, absolute filesystem paths should begin with
+   '/', and all redundant and trailing '/' characters be removed.
+
+   This is similar to svn_fspath__canonicalize() but doesn't treat "."
+   segments as special.
+*/
 const char *
 svn_fs__canonicalize_abspath(const char *path, apr_pool_t *pool);
 
@@ -54,6 +67,13 @@ svn_fs__canonicalize_abspath(const char *path, apr_pool_t *pool);
    reality.  */
 svn_error_t *
 svn_fs__check_fs(svn_fs_t *fs, svn_boolean_t expect_open);
+
+/* An identifier for FS to be used in the text of error messages.
+   (Not used anywhere but in this header.)
+
+   Note: we log the UUID, rather than (fs)->path, since some of these
+   errors are marshalled to the client. */
+#define svn_fs__identifier(fs) ((fs)->uuid)
 
 /* Constructing nice error messages for roots.  */
 
@@ -75,17 +95,17 @@ svn_fs__check_fs(svn_fs_t *fs, svn_boolean_t expect_open);
 
 /* Build a detailed `file already exists' message for PATH in ROOT.
    ROOT is of type svn_fs_root_t *. */
-#define SVN_FS__ALREADY_EXISTS(root, path_str, pool) (                         \
+#define SVN_FS__ALREADY_EXISTS(root, path_str) (                               \
   root->is_txn_root ?                                                          \
     svn_error_createf                                                          \
       (SVN_ERR_FS_ALREADY_EXISTS, 0,                                           \
        _("File already exists: filesystem '%s', transaction '%s', path '%s'"), \
-       svn_dirent_local_style(root->fs->path, pool), root->txn, path_str)      \
+       svn_fs__identifier(root->fs), root->txn, path_str)      \
   :                                                                            \
     svn_error_createf                                                          \
       (SVN_ERR_FS_ALREADY_EXISTS, 0,                                           \
        _("File already exists: filesystem '%s', revision %ld, path '%s'"),     \
-       svn_dirent_local_style(root->fs->path, pool), root->rev, path_str)      \
+       svn_fs__identifier(root->fs), root->rev, path_str)      \
   )
 
 /* ROOT is of type svn_fs_root_t *. */
@@ -96,64 +116,64 @@ svn_fs__check_fs(svn_fs_t *fs, svn_boolean_t expect_open);
 
 /* SVN_FS__ERR_NOT_MUTABLE: the caller attempted to change a node
    outside of a transaction. FS is of type "svn_fs_t *". */
-#define SVN_FS__ERR_NOT_MUTABLE(fs, rev, path_in_repo, scratch_pool)     \
+#define SVN_FS__ERR_NOT_MUTABLE(fs, rev, path_in_repo)                   \
   svn_error_createf(                                                     \
      SVN_ERR_FS_NOT_MUTABLE, 0,                                          \
      _("File is not mutable: filesystem '%s', revision %ld, path '%s'"), \
-     svn_dirent_local_style(fs->path, scratch_pool), rev, path_in_repo)
+     svn_fs__identifier(fs), rev, path_in_repo)
 
-/* FS is of type "svn fs_t *".*/
-#define SVN_FS__ERR_NOT_DIRECTORY(fs, path_in_repo, scratch_pool) \
+/* FS is of type "svn_fs_t *".*/
+#define SVN_FS__ERR_NOT_DIRECTORY(fs, path_in_repo)               \
   svn_error_createf(                                              \
      SVN_ERR_FS_NOT_DIRECTORY, 0,                                 \
      _("'%s' is not a directory in filesystem '%s'"),             \
-     path_in_repo, svn_dirent_local_style(fs->path, scratch_pool))
+     path_in_repo, svn_fs__identifier(fs))
 
-/* FS is of type "svn fs_t *".   */
-#define SVN_FS__ERR_NOT_FILE(fs, path_in_repo, scratch_pool)      \
+/* FS is of type "svn_fs_t *".   */
+#define SVN_FS__ERR_NOT_FILE(fs, path_in_repo)                    \
   svn_error_createf(                                              \
      SVN_ERR_FS_NOT_FILE, 0,                                      \
      _("'%s' is not a file in filesystem '%s'"),                  \
-     path_in_repo, svn_dirent_local_style(fs->path, scratch_pool))
+     path_in_repo, svn_fs__identifier(fs))
 
 
-/* FS is of type "svn fs_t *", LOCK is of type "svn_lock_t *".   */
-#define SVN_FS__ERR_PATH_ALREADY_LOCKED(fs, lock, scratch_pool)             \
+/* FS is of type "svn_fs_t *", LOCK is of type "svn_lock_t *".   */
+#define SVN_FS__ERR_PATH_ALREADY_LOCKED(fs, lock)                           \
   svn_error_createf(                                                        \
      SVN_ERR_FS_PATH_ALREADY_LOCKED, 0,                                     \
      _("Path '%s' is already locked by user '%s' in filesystem '%s'"),      \
-     lock->path, lock->owner, svn_dirent_local_style(fs->path, scratch_pool))
+     (lock)->path, (lock)->owner, svn_fs__identifier(fs))
 
-/* FS is of type "svn fs_t *". */
-#define SVN_FS__ERR_NO_SUCH_LOCK(fs, path_in_repo, scratch_pool)  \
+/* FS is of type "svn_fs_t *". */
+#define SVN_FS__ERR_NO_SUCH_LOCK(fs, path_in_repo)                \
   svn_error_createf(                                              \
      SVN_ERR_FS_NO_SUCH_LOCK, 0,                                  \
      _("No lock on path '%s' in filesystem '%s'"),                \
-     path_in_repo, svn_dirent_local_style(fs->path, scratch_pool))
+     path_in_repo, svn_fs__identifier(fs))
 
-/* FS is of type "svn fs_t *". */
-#define SVN_FS__ERR_LOCK_EXPIRED(fs, token, scratch_pool)        \
+/* FS is of type "svn_fs_t *". */
+#define SVN_FS__ERR_LOCK_EXPIRED(fs, token)                      \
   svn_error_createf(                                             \
      SVN_ERR_FS_LOCK_EXPIRED, 0,                                 \
      _("Lock has expired: lock-token '%s' in filesystem '%s'"),  \
-     token, svn_dirent_local_style(fs->path, scratch_pool))
+     token, svn_fs__identifier(fs))
 
-/* FS is of type "svn fs_t *". */
-#define SVN_FS__ERR_NO_USER(fs, scratch_pool)                       \
+/* FS is of type "svn_fs_t *". */
+#define SVN_FS__ERR_NO_USER(fs)                                     \
   svn_error_createf(                                                \
      SVN_ERR_FS_NO_USER, 0,                                         \
      _("No username is currently associated with filesystem '%s'"), \
-     svn_dirent_local_style(fs->path, scratch_pool))
+     svn_fs__identifier(fs))
 
 /* SVN_FS__ERR_LOCK_OWNER_MISMATCH: trying to use a lock whose
    LOCK_OWNER doesn't match the USERNAME associated with FS.
-   FS is of type "svn fs_t *". */
-#define SVN_FS__ERR_LOCK_OWNER_MISMATCH(fs, username, lock_owner, pool) \
+   FS is of type "svn_fs_t *". */
+#define SVN_FS__ERR_LOCK_OWNER_MISMATCH(fs, username, lock_owner)       \
   svn_error_createf(                                                    \
      SVN_ERR_FS_LOCK_OWNER_MISMATCH, 0,                                 \
      _("User '%s' is trying to use a lock owned by '%s' in "            \
        "filesystem '%s'"),                                              \
-     username, lock_owner, svn_dirent_local_style(fs->path, pool))
+     username, lock_owner, svn_fs__identifier(fs))
 
 /* Return a NULL-terminated copy of the first component of PATH,
    allocated in POOL.  If path is empty, or consists entirely of
@@ -194,6 +214,26 @@ svn_fs__append_to_merged_froms(svn_mergeinfo_t *output,
                                svn_mergeinfo_t input,
                                const char *rel_path,
                                apr_pool_t *pool);
+
+/* Given the FS creation options in CONFIG, return the oldest version that
+   we shall be compatible with in *COMPATIBLE_VERSION.  The patch level
+   is always set to 0 and the tag to "".   Allocate the result in POOL.
+
+   Note that the result will always be compatible to the current tool
+   version, i.e. will be a version number not more recent than this tool. */
+svn_error_t *
+svn_fs__compatible_version(svn_version_t **compatible_version,
+                           apr_hash_t *config,
+                           apr_pool_t *pool);
+
+/* Compare the property lists A and B using POOL for temporary allocations.
+   Return true iff both lists contain the same properties with the same
+   values.  A and B may be NULL in which case they will be equal to and
+   empty list. */
+svn_boolean_t
+svn_fs__prop_lists_equal(apr_hash_t *a,
+                         apr_hash_t *b,
+                         apr_pool_t *pool);
 
 #ifdef __cplusplus
 }

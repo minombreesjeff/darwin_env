@@ -61,11 +61,9 @@ BlameCallback::callback(void *baton,
                         apr_pool_t *pool)
 {
   if (baton)
-    return ((BlameCallback *)baton)->singleLine(start_revnum, end_revnum,
-                                                line_no, revision, rev_props,
-                                                merged_revision,
-                                                merged_rev_props, merged_path,
-                                                line, local_change, pool);
+    return static_cast<BlameCallback *>(baton)->singleLine(start_revnum,
+        end_revnum, line_no, revision, rev_props, merged_revision,
+        merged_rev_props, merged_path, line, local_change, pool);
 
   return SVN_NO_ERROR;
 }
@@ -94,7 +92,7 @@ BlameCallback::singleLine(svn_revnum_t start_revnum, svn_revnum_t end_revnum,
   static jmethodID mid = 0;
   if (mid == 0)
     {
-      jclass clazz = env->FindClass(JAVA_PACKAGE"/callback/BlameCallback");
+      jclass clazz = env->FindClass(JAVAHL_CLASS("/callback/BlameCallback"));
       if (JNIUtil::isJavaExceptionThrown())
         POP_AND_RETURN(SVN_NO_ERROR);
 
@@ -106,14 +104,14 @@ BlameCallback::singleLine(svn_revnum_t start_revnum, svn_revnum_t end_revnum,
     }
 
   // convert the parameters to their Java relatives
-  jobject jrevProps = CreateJ::PropertyMap(revProps);
+  jobject jrevProps = CreateJ::PropertyMap(revProps, pool);
   if (JNIUtil::isJavaExceptionThrown())
     POP_AND_RETURN(SVN_NO_ERROR);
 
   jobject jmergedRevProps = NULL;
   if (mergedRevProps != NULL)
     {
-      jmergedRevProps = CreateJ::PropertyMap(mergedRevProps);
+      jmergedRevProps = CreateJ::PropertyMap(mergedRevProps, pool);
       if (JNIUtil::isJavaExceptionThrown())
         POP_AND_RETURN(SVN_NO_ERROR);
     }
@@ -130,8 +128,6 @@ BlameCallback::singleLine(svn_revnum_t start_revnum, svn_revnum_t end_revnum,
   env->CallVoidMethod(m_callback, mid, (jlong)line_no, (jlong)revision,
                       jrevProps, (jlong)mergedRevision, jmergedRevProps,
                       jmergedPath, jline, (jboolean)localChange);
-  // No need to check for an exception here, because we return anyway.
 
-  env->PopLocalFrame(NULL);
-  return SVN_NO_ERROR;
+  POP_AND_RETURN_EXCEPTION_AS_SVNERROR();
 }

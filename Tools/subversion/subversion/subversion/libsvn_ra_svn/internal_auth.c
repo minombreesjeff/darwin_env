@@ -57,7 +57,7 @@ static svn_error_t *read_success(svn_ra_svn_conn_t *conn, apr_pool_t *pool)
 {
   const char *status, *arg;
 
-  SVN_ERR(svn_ra_svn_read_tuple(conn, pool, "w(?c)", &status, &arg));
+  SVN_ERR(svn_ra_svn__read_tuple(conn, pool, "w(?c)", &status, &arg));
   if (strcmp(status, "failure") == 0 && arg)
     return svn_error_createf(SVN_ERR_RA_NOT_AUTHORIZED, NULL,
                              _("Authentication error from server: %s"), arg);
@@ -95,7 +95,7 @@ svn_ra_svn__do_internal_auth(svn_ra_svn__session_baton_t *sess,
     {
       SVN_ERR(svn_auth_first_credentials(&creds, &iterstate,
                                          SVN_AUTH_CRED_SIMPLE, realmstring,
-                                         sess->callbacks->auth_baton, pool));
+                                         sess->auth_baton, pool));
       if (!creds)
         return svn_error_create(SVN_ERR_RA_NOT_AUTHORIZED, NULL,
                                 _("Can't get password"));

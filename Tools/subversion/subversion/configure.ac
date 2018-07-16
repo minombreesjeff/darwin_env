@@ -49,10 +49,14 @@ SVN_CONFIG_NICE(config.nice)
 # ==== Check for programs ====================================================
 
 # Look for a C compiler (before anything can set CFLAGS)
+CUSERFLAGS="$CFLAGS"
 AC_PROG_CC
+SVN_CC_MODE_SETUP
 
-# Look for a C++ compiler
+# Look for a C++ compiler (before anything can set CXXFLAGS)
+CXXUSERFLAGS="$CXXFLAGS"
 AC_PROG_CXX
+SVN_CXX_MODE_SETUP
 
 # Look for a C pre-processor
 AC_PROG_CPP
@@ -86,72 +90,42 @@ AC_SUBST([MKDIR])
 
 dnl verify apr version and set apr flags
 dnl These regular expressions should not contain "\(" and "\)".
-dnl The specific reason we require APR 0.9.7 is:
-dnl   It contains fixes to its file writing routines
-dnl   now generating errors instead of silently ignoring
-dnl   them.  Only .7 and later can guarantee repository
-dnl   integrity with FSFS.
 
-APR_VER_REGEXES=["0\.9\.[7-9] 0\.9\.1[0-9] 1\. 2\."]
+APR_VER_REGEXES=["1\.[3-9]\. 2\."]
 
 SVN_LIB_APR($APR_VER_REGEXES)
 
 if test `expr $apr_version : 2` -ne 0; then
   dnl Bump the library so-version to 2 if using APR-2
   dnl (Debian uses so-version 1 for APR-1-with-largefile)
-  SVN_LT_SOVERSION="-version-info 2"
+  svn_lib_ver=2
   dnl APR-2 provides APRUTIL
   apu_config=$apr_config
   AC_SUBST(SVN_APRUTIL_INCLUDES)
   AC_SUBST(SVN_APRUTIL_CONFIG, ["$apu_config"])
   AC_SUBST(SVN_APRUTIL_LIBS)
-  AC_SUBST(SVN_APRUTIL_PREFIX)
+  SVN_APR_MAJOR_VERSION=2
 else
-  SVN_LT_SOVERSION="-version-info 0"
-  APU_VER_REGEXES=["0\.9\.[7-9] 0\.9\.1[0-9] 1\."]
+  svn_lib_ver=0
+  APU_VER_REGEXES=["1\.[3-9]\."]
   SVN_LIB_APRUTIL($APU_VER_REGEXES)
+  SVN_APR_MAJOR_VERSION=1
 fi
+AC_SUBST(SVN_APR_MAJOR_VERSION)
+SVN_LT_SOVERSION="-version-info $svn_lib_ver"
 AC_SUBST(SVN_LT_SOVERSION)
+AC_DEFINE_UNQUOTED(SVN_SOVERSION, $svn_lib_ver,
+                   [Subversion library major verson])
 
 dnl Search for pkg-config
 AC_PATH_PROG(PKG_CONFIG, pkg-config)
 
-# Either a space-separated list of allowable Neon versions, or "any" to
-# mean allow anything.
-NEON_ALLOWED_LIST="0\.25 0\.26 0\.27\.2 0\.28 0\.29 0\.30"
-NEON_RECOMMENDED_VER="0.29.6"
-NEON_URL="http://www.webdav.org/neon/neon-${NEON_RECOMMENDED_VER}.tar.gz"
-dnl You can skip the neon version check only if you know what you are doing 
-AC_ARG_ENABLE(neon-version-check,
-  AS_HELP_STRING([--disable-neon-version-check],
-                 [do not check the Neon version]),
-  [
-    if test "$enableval" = "no" ; then
-      NEON_ALLOWED_LIST="any"
-    fi
-  ],
-  [])
-SVN_LIB_NEON($NEON_ALLOWED_LIST, $NEON_RECOMMENDED_VER, $NEON_URL)
-
-if test "$svn_lib_neon" = "yes"; then
-  AC_DEFINE([SVN_HAVE_NEON], 1,
-            [Defined if support for Neon is enabled])
-fi
-
-dnl Search for serf as an alternative to neon
-SVN_LIB_SERF(0,7,1)
+dnl Search for serf
+SVN_LIB_SERF(1,3,4)
 
 if test "$svn_lib_serf" = "yes"; then
   AC_DEFINE([SVN_HAVE_SERF], 1,
             [Defined if support for Serf is enabled])
-fi
-
-dnl Search for GSSAPI
-SVN_LIB_RA_SERF_GSSAPI
-
-if test "$svn_lib_gssapi" = "yes"; then
-  AC_DEFINE([SVN_RA_SERF_HAVE_GSSAPI], 1,
-            [Defined if support for GSSAPI is enabled])
 fi
 
 dnl Search for apr_memcache (only affects fs_fs)
@@ -164,14 +138,34 @@ fi
 
 
 dnl Find Apache with a recent-enough magic module number
-SVN_FIND_APACHE(20020903)
+SVN_FIND_APACHE(20051115)
 
-dnl Search for SQLite
-SQLITE_MINIMUM_VER="3.6.18"
-SQLITE_RECOMMENDED_VER="3.7.6.3"
-SQLITE_URL="http://www.sqlite.org/sqlite-amalgamation-${SQLITE_RECOMMENDED_VER}.tar.gz"
+dnl Search for SQLite.  If you change SQLITE_URL from a .zip to
+dnl something else also update build/ac-macros/sqlite.m4 to reflect
+dnl the correct command to unpack the downloaded file.
+SQLITE_MINIMUM_VER="3.7.12"
+SQLITE_RECOMMENDED_VER="3.7.15.1"
+SQLITE_URL="http://www.sqlite.org/sqlite-amalgamation-$(printf %d%02d%02d%02d $(echo ${SQLITE_RECOMMENDED_VER} | sed -e 's/\./ /g')).zip"
+
 SVN_LIB_SQLITE(${SQLITE_MINIMUM_VER}, ${SQLITE_RECOMMENDED_VER},
                ${SQLITE_URL})
+
+AC_ARG_ENABLE(sqlite-compatibility-version,
+  AS_HELP_STRING([--enable-sqlite-compatibility-version=X.Y.Z],
+                 [Allow binary to run against SQLite as old as ARG]),
+  [sqlite_compat_ver=$enableval],[sqlite_compat_ver=no])
+
+if test -n "$sqlite_compat_ver" && test "$sqlite_compat_ver" != no; then
+  SVN_SQLITE_VERNUM_PARSE([$sqlite_compat_ver],
+                          [sqlite_compat_ver_num])
+  CFLAGS="-DSVN_SQLITE_MIN_VERSION='\"$sqlite_compat_ver\"' $CFLAGS"
+  CFLAGS="-DSVN_SQLITE_MIN_VERSION_NUMBER=$sqlite_compat_ver_num $CFLAGS"
+fi
+
+SVN_CHECK_FOR_ATOMIC_BUILTINS
+if test "$svn_cv_atomic_builtins" = "yes"; then
+    AC_DEFINE(SVN_HAS_ATOMIC_BUILTINS, 1, [Define if compiler provides atomic builtins])
+fi
 
 dnl Set up a number of directories ---------------------
 
@@ -228,7 +222,7 @@ if test "$experimental_libtool" = "yes"; then
   SVN_LIBTOOL="$sh_libtool"
 else
   sh_libtool="$abs_builddir/libtool"
-  SVN_LIBTOOL="\$(SHELL) $sh_libtool"
+  SVN_LIBTOOL="\$(SHELL) \"$sh_libtool\""
 fi
 AC_SUBST(SVN_LIBTOOL)
 
@@ -325,18 +319,6 @@ case $host in
 esac
 AC_SUBST(LT_NO_UNDEFINED)
 
-AC_MSG_CHECKING([whether to avoid circular linkage at all costs])
-case $host in
-  *-*-cygwin*)
-    AC_MSG_RESULT([yes])
-    AC_DEFINE([SVN_AVOID_CIRCULAR_LINKAGE_AT_ALL_COSTS_HACK], 1,
-              [Define if circular linkage is not possible on this platform.])
-    ;;
-  *)
-    AC_MSG_RESULT([no])
-    ;;
-esac
-
 dnl Check for trang.
 trang=yes
 AC_ARG_WITH(trang,
@@ -377,6 +359,11 @@ AC_ARG_WITH(expat,
                  [Specify location of Expat]),
                  [svn_lib_expat="$withval"],
                  [svn_lib_expat="::expat"])
+
+# APR-util accepts "builtin" as an argument to this option so if the user
+# passed "builtin" pretend the user didn't specify the --with-expat option
+# at all. Expat will (hopefully) be found in apr-util.
+test "_$svn_lib_expat" = "_builtin" && svn_lib_expat="::expat"
 
 AC_MSG_CHECKING([for Expat])
 if test -n "`echo "$svn_lib_expat" | $EGREP ":.*:"`"; then
@@ -456,6 +443,7 @@ powerpc-apple-darwin*)
     SVN_FS_WANT_DB_PATCH=14
     ;;
 esac
+db_alt_version="5.x"
 # Look for libdb4.so first:
 SVN_LIB_BERKELEY_DB($SVN_FS_WANT_DB_MAJOR, $SVN_FS_WANT_DB_MINOR,
                     $SVN_FS_WANT_DB_PATCH, [db4 db])
@@ -477,43 +465,11 @@ if test "$svn_lib_sasl" = "yes"; then
             [Defined if Cyrus SASL v2 is present on the system])
 fi
 
-dnl Mac OS KeyChain -------------------
+dnl Mac OS specific features -------------------
 
-AC_ARG_ENABLE(keychain,
-  AS_HELP_STRING([--disable-keychain], 
-  [Disable use of Mac OS KeyChain for auth credentials]),
-  [enable_keychain=$enableval],[enable_keychain=yes])
-
-AC_MSG_CHECKING([for Mac OS KeyChain Services])
-
-if test "$enable_keychain" = "yes"; then
-  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <AvailabilityMacros.h>
-#if !DARWIN || (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_2)
-#error KeyChain API unavailable.
-#endif]], [[]])],[],[enable_keychain=no])
-fi
-
-if test "$enable_keychain" = "yes"; then
-  dnl ### Hack.  We should only need to pass the -framework options when
-  dnl linking libsvn_subr, since it is the only library that uses Keychain.
-  dnl
-  dnl Unfortunately, libtool 1.5.x doesn't track transitive dependencies for
-  dnl OS X frameworks like it does for normal libraries, so we need to
-  dnl explicitly pass the option to all the users of libsvn_subr to allow
-  dnl static builds to link successfully.
-  dnl
-  dnl This does mean that all executables we link will be linked directly
-  dnl to these frameworks - even when building shared libraries - but that
-  dnl shouldn't cause any problems.
-  LIBS="$LIBS -framework Security"
-  LIBS="$LIBS -framework CoreFoundation"
-  LIBS="$LIBS -framework CoreServices"
-  AC_DEFINE([SVN_HAVE_KEYCHAIN_SERVICES], [1], [Is Mac OS KeyChain support enabled?])
-  AC_MSG_RESULT([yes])
-else
-  AC_MSG_RESULT([no])
-fi
-
+SVN_LIB_MACHO_ITERATE
+SVN_LIB_MACOS_PLIST
+SVN_LIB_MACOS_KEYCHAIN
 
 dnl APR_HAS_DSO -------------------
 
@@ -568,56 +524,140 @@ int main()
   fi
 fi
 
+dnl GPG Agent -------------------
+
+AC_ARG_WITH(gpg_agent,
+AS_HELP_STRING([--without-gpg-agent], 
+               [Disable support for GPG-Agent]),
+               [], [with_gpg_agent=yes])
+AC_MSG_CHECKING([whether to support GPG-Agent])
+if test "$with_gpg_agent" = "yes"; then
+  AC_MSG_RESULT([yes])
+  AC_DEFINE([SVN_HAVE_GPG_AGENT], [1], 
+            [Is GPG Agent support enabled?])
+else
+  AC_MSG_RESULT([no])
+fi
+
+AC_SUBST(SVN_HAVE_GPG_AGENT)
+
 dnl GNOME Keyring -------------------
 
 AC_ARG_WITH(gnome_keyring,
   AS_HELP_STRING([--with-gnome-keyring], 
-                 [Enable use of GNOME Keyring for auth credentials]),
+                 [Enable use of GNOME Keyring for auth credentials (enabled by default if found)]),
                  [with_gnome_keyring="$withval"],
-                 [with_gnome_keyring=no])
+                 [with_gnome_keyring=auto])
 
+found_gnome_keyring=no
 AC_MSG_CHECKING([whether to look for GNOME Keyring])
 if test "$with_gnome_keyring" != "no"; then
   AC_MSG_RESULT([yes])
-  if test "$svn_enable_shared" = "yes"; then
-    if test "$APR_HAS_DSO" = "yes"; then
-      if test -n "$PKG_CONFIG"; then
-        AC_MSG_CHECKING([for GLib and GNOME Keyring .pc files])
-        if $PKG_CONFIG --exists glib-2.0 gnome-keyring-1; then
-          AC_MSG_RESULT([yes])
-          old_CPPFLAGS="$CPPFLAGS"
-          SVN_GNOME_KEYRING_INCLUDES="`$PKG_CONFIG --cflags glib-2.0 gnome-keyring-1`"
-          CPPFLAGS="$CPPFLAGS $SVN_GNOME_KEYRING_INCLUDES"
-          AC_CHECK_HEADER(gnome-keyring.h, with_gnome_keyring=yes, with_gnome_keyring=no)
-          AC_MSG_CHECKING([for GNOME Keyring])
-          if test "$with_gnome_keyring" = "yes"; then
+  case "$host" in
+  *-*-darwin*)
+    if test "$with_gnome_keyring" = "yes"; then
+      AC_MSG_ERROR([--with-gnome-keyring is not supported on Mac OS X.])
+    else
+      with_gnome_keyring=no
+    fi
+    ;;
+  *)
+    if test "$svn_enable_shared" = "yes"; then
+      if test "$APR_HAS_DSO" = "yes"; then
+        if test -n "$PKG_CONFIG"; then
+          AC_MSG_CHECKING([for GLib and GNOME Keyring .pc files])
+          if $PKG_CONFIG --exists glib-2.0 gnome-keyring-1; then
             AC_MSG_RESULT([yes])
-            AC_DEFINE([SVN_HAVE_GNOME_KEYRING], [1], 
-                      [Is GNOME Keyring support enabled?])
-            CPPFLAGS="$old_CPPFLAGS"
-            SVN_GNOME_KEYRING_LIBS="`$PKG_CONFIG --libs glib-2.0 gnome-keyring-1`"
+            old_CPPFLAGS="$CPPFLAGS"
+            SVN_GNOME_KEYRING_INCLUDES="`$PKG_CONFIG --cflags glib-2.0 gnome-keyring-1`"
+            CPPFLAGS="$CPPFLAGS $SVN_GNOME_KEYRING_INCLUDES"
+            AC_CHECK_HEADER(gnome-keyring.h, found_gnome_keyring=yes, found_gnome_keyring=no)
+            AC_MSG_CHECKING([for GNOME Keyring])
+            if test "$found_gnome_keyring" = "yes"; then
+              AC_MSG_RESULT([yes])
+              AC_DEFINE([SVN_HAVE_GNOME_KEYRING], [1], 
+                        [Is GNOME Keyring support enabled?])
+              CPPFLAGS="$old_CPPFLAGS"
+              SVN_GNOME_KEYRING_LIBS="`$PKG_CONFIG --libs glib-2.0 gnome-keyring-1`"
+            else
+              AC_MSG_RESULT([no])
+              if test "$with_gnome_keyring" = "yes"; then
+                AC_MSG_ERROR([cannot find GNOME Keyring])
+              fi
+            fi
           else
             AC_MSG_RESULT([no])
-            AC_MSG_ERROR([cannot find GNOME Keyring])
+            if test "$with_gnome_keyring" = "yes"; then
+              AC_MSG_ERROR([cannot find GLib and GNOME Keyring .pc files.])
+            else
+              with_gnome_keyring=no
+            fi
           fi
         else
-          AC_MSG_RESULT([no])
-          AC_MSG_ERROR([cannot find GLib and GNOME Keyring .pc files])
+          if test "$with_gnome_keyring" = "yes"; then
+            AC_MSG_ERROR([cannot find pkg-config. GNOME Keyring requires this.])
+          else
+            with_gnome_keyring=no
+          fi
         fi
       else
-        AC_MSG_ERROR([cannot find pkg-config])
+        if test "$with_gnome_keyring" = "yes"; then
+          AC_MSG_ERROR([APR does not have support for DSOs. GNOME Keyring requires this.])
+        else
+          with_gnome_keyring=no
+        fi
       fi
     else
-      AC_MSG_ERROR([APR does not have support for DSOs])
+      if test "$with_gnome_keyring" = "yes"; then
+        AC_MSG_ERROR([--with-gnome-keyring conflicts with --disable-shared])
+      else
+        with_gnome_keyring=no
+      fi
     fi
-  else
-    AC_MSG_ERROR([--with-gnome-keyring conflicts with --disable-shared])
-  fi
+    ;;
+  esac
 else
   AC_MSG_RESULT([no])
 fi
 AC_SUBST(SVN_GNOME_KEYRING_INCLUDES)
 AC_SUBST(SVN_GNOME_KEYRING_LIBS)
+
+dnl Googlemock -----------------
+AC_ARG_ENABLE([gmock],
+  AS_HELP_STRING([--disable-gmock],
+                 [Do not use the Googlemock testing framework]),
+  [],
+  [enable_gmock=yes])
+
+AC_SUBST([GMOCK_SRCDIR], [$abs_srcdir/gmock-fused])
+AC_MSG_CHECKING([whether use Googlemock])
+if test "$enable_gmock" != "no"; then
+  if test -d "$GMOCK_SRCDIR"; then
+    AC_MSG_RESULT([yes])
+    SVN_USE_GMOCK=true
+  else
+    AC_MSG_RESULT([no])
+    SVN_USE_GMOCK=false
+  fi
+else
+  AC_MSG_RESULT([no])
+  SVN_USE_GMOCK_SOURCES=false
+fi
+AC_SUBST([SVN_USE_GMOCK])
+
+dnl Ev2 experimental features ----------------------
+dnl Note: The Ev2 implementations will be built unconditionally, but by
+dnl providing this flag, users can choose to use the currently-shimmed Ev2
+dnl editor implementations for various operations.  This will probably
+dnl negatively impact performance, but is useful for testing.
+AC_ARG_ENABLE(ev2-impl,
+  AS_HELP_STRING([--enable-ev2-impl],
+                 [Use Ev2 implementations, where available [EXPERIMENTAL]]),
+  [enable_ev2_impl=$enableval],[enable_ev2_impl=no])
+if test "$enable_ev2_impl" = "yes"; then
+  AC_DEFINE(ENABLE_EV2_IMPL, 1,
+            [Define to 1 if Ev2 implementations should be used.])
+fi
 
 
 dnl I18n -------------------
@@ -627,13 +667,22 @@ AC_ARG_ENABLE(nls,
   [enable_nls=$enableval],[enable_nls=yes])
 
 USE_NLS="no"
+SVN_INTL_LIBS=""
 if test "$enable_nls" = "yes"; then
   dnl First, check to see if there is a working msgfmt.
   AC_PATH_PROG(MSGFMT, msgfmt, none)
   AC_PATH_PROG(MSGMERGE, msgmerge, none)
   AC_PATH_PROG(XGETTEXT, xgettext, none)
   if test "$MSGFMT" != "none"; then
-    AC_SEARCH_LIBS(bindtextdomain, [intl], [],
+    AC_SEARCH_LIBS(bindtextdomain, [intl],
+                   [
+                      # in case libintl needs to be linked explicitly,
+                      # $ac_cv_search_bindtextdomain contains -l linker flags
+                      if echo "$ac_cv_search_bindtextdomain" | grep '^-l' >/dev/null
+                      then
+                        SVN_INTL_LIBS="$ac_cv_search_bindtextdomain"
+                      fi
+                   ],
                    [
                     enable_nls="no"
                    ])
@@ -645,6 +694,10 @@ if test "$enable_nls" = "yes"; then
       AC_SEARCH_LIBS(bindtextdomain, [intl],
                      [
                       enable_nls="yes"
+                      if echo "$ac_cv_search_bindtextdomain" | grep '^-l' >/dev/null
+                      then
+                        SVN_INTL_LIBS="$ac_cv_search_bindtextdomain"
+                      fi
                       # This is here so that -liconv ends up in LIBS
                       # if it worked with -liconv.
                       AC_CHECK_LIB(iconv, libiconv_open)
@@ -663,13 +716,25 @@ if test "$enable_nls" = "yes"; then
   fi
 fi
 
-AH_BOTTOM(
+AC_SUBST(SVN_INTL_LIBS)
+
+AH_BOTTOM([
+/* Indicate to translators that string X should be translated.  Do not look
+   up the translation at run time; just expand to X.  This macro is suitable
+   for use where a constant string is required at compile time. */
 #define N_(x) x
+/* Indicate to translators that we have decided the string X should not be
+   translated.  Expand to X. */
 #define U_(x) x
 #ifdef ENABLE_NLS
 #include <locale.h>
 #include <libintl.h>
+/* Indicate to translators that string X should be translated.  At run time,
+   look up and return the translation of X. */
 #define _(x) dgettext(PACKAGE_NAME, x)
+/* Indicate to translators that strings X1 and X2 are singular and plural
+   forms of the same message, and should be translated.  At run time, return
+   an appropriate translation depending on the number N. */
 #define Q_(x1, x2, n) dngettext(PACKAGE_NAME, x1, x2, n)
 #else
 #define _(x) (x)
@@ -677,7 +742,31 @@ AH_BOTTOM(
 #define gettext(x) (x)
 #define dgettext(domain, x) (x)
 #endif
-)
+
+/* compiler hints */
+#if defined(__GNUC__) && (__GNUC__ >= 3)
+# define SVN__PREDICT_FALSE(x) (__builtin_expect(x, 0))
+# define SVN__PREDICT_TRUE(x) (__builtin_expect(!!(x), 1))
+#else
+# define SVN__PREDICT_FALSE(x) (x)
+# define SVN__PREDICT_TRUE(x) (x)
+#endif
+
+#if defined(SVN_DEBUG)
+# define SVN__FORCE_INLINE
+# define SVN__PREVENT_INLINE
+#elif defined(__GNUC__)
+# define SVN__FORCE_INLINE APR_INLINE __attribute__ ((always_inline))
+# define SVN__PREVENT_INLINE __attribute__ ((noinline))
+#else
+# define SVN__FORCE_INLINE APR_INLINE
+# define SVN__PREVENT_INLINE
+#endif
+
+/* Macro used to specify that a variable is intentionally left unused.
+   Supresses compiler warnings about the variable being unused.  */
+#define SVN_UNUSED(v) ( (void)(v) )
+])
 
 dnl Used to simulate makefile conditionals.
 GETTEXT_CODESET=\#
@@ -758,13 +847,27 @@ if test "$svn_lib_kwallet" = "yes"; then
             [Defined if KWallet support is enabled])
 fi
 
+dnl plaintext passwords -------------------
+AC_ARG_ENABLE(plaintext-password-storage,
+AS_HELP_STRING([--disable-plaintext-password-storage],
+               [Disable on-disk caching of plaintext passwords and passphrases.
+                (Leaving this functionality enabled will not force Subversion
+                to store passwords in plaintext, but does permit users to
+                explicitly allow that behavior via runtime configuration.)]),
+[
+   if test "$enableval" = "no"; then
+      AC_MSG_NOTICE([Disabling plaintext password/passphrase storage])
+      AC_DEFINE(SVN_DISABLE_PLAINTEXT_PASSWORD_STORAGE, 1,
+                [Defined if plaintext password/passphrase storage is disabled])
+   fi
+])
 
 dnl Build and install rules -------------------
 
 INSTALL_STATIC_RULES="install-bin install-docs"
 INSTALL_RULES="install-fsmod-lib install-ramod-lib install-lib install-include install-static"
 INSTALL_RULES="$INSTALL_RULES $INSTALL_APACHE_RULE"
-BUILD_RULES="fsmod-lib ramod-lib lib bin test $BUILD_APACHE_RULE tools"
+BUILD_RULES="fsmod-lib ramod-lib lib bin test sub-test $BUILD_APACHE_RULE tools"
 
 if test "$svn_lib_berkeley_db" = "yes"; then
   BUILD_RULES="$BUILD_RULES bdb-lib bdb-test"
@@ -772,12 +875,6 @@ if test "$svn_lib_berkeley_db" = "yes"; then
   INSTALL_STATIC_RULES="$INSTALL_STATIC_RULES install-bdb-lib"
   BDB_TEST_DEPS="\$(BDB_TEST_DEPS)"
   BDB_TEST_PROGRAMS="\$(BDB_TEST_PROGRAMS)"
-fi
-  
-if test "$svn_lib_neon" = "yes"; then
-  BUILD_RULES="$BUILD_RULES neon-lib"
-  INSTALL_RULES="`echo $INSTALL_RULES | $SED 's/install-ramod-lib/install-ramod-lib install-neon-lib/'`"
-  INSTALL_STATIC_RULES="$INSTALL_STATIC_RULES install-neon-lib"
 fi
 
 if test "$svn_lib_serf" = "yes"; then
@@ -792,7 +889,7 @@ if test "$svn_lib_kwallet" = "yes"; then
   INSTALL_STATIC_RULES="$INSTALL_STATIC_RULES install-kwallet-lib"
 fi
 
-if test "$with_gnome_keyring" = "yes"; then
+if test "$found_gnome_keyring" = "yes"; then
   BUILD_RULES="$BUILD_RULES gnome-keyring-lib"
   INSTALL_RULES="`echo $INSTALL_RULES | $SED 's/install-lib/install-lib install-gnome-keyring-lib/'`"
   INSTALL_STATIC_RULES="$INSTALL_STATIC_RULES install-gnome-keyring-lib"
@@ -833,35 +930,17 @@ AC_FUNC_VPRINTF
 dnl check for functions needed in special file handling
 AC_CHECK_FUNCS(symlink readlink)
 
+dnl check for uname
+AC_CHECK_HEADERS(sys/utsname.h, [AC_CHECK_FUNCS(uname)], [])
+
+dnl check for termios
+AC_CHECK_HEADER(termios.h,[
+  AC_CHECK_FUNCS(tcgetattr tcsetattr,[
+    AC_DEFINE(HAVE_TERMIOS_H,1,[Defined if we have a usable termios library.])
+  ])
+])
 
 dnl Process some configuration options ----------
-
-AC_ARG_WITH(ssl,
-AS_HELP_STRING([--with-ssl],
-               [This option does NOT affect the Subversion build process in any
-                way. It enables OpenSSL support in the Neon HTTP client
-                library. If and only if you are building Neon as an integrated
-                part of the Subversion build process, rather than linking to
-                an already installed version of Neon, you probably want to pass
-                this option so that Neon (and so indirectly, Subversion) will
-                be capable of https:// access via that library. (Note that
-                Subversion may also or alternatively be configured to use
-                the Serf library for http:// and https:// access; see the
-                --with-serf and --with-openssl options.)]),
-[])
-
-AC_ARG_WITH(openssl,
-AS_HELP_STRING([--with-openssl],
-               [This option does NOT affect the Subversion build process in any
-                way. It tells an integrated Serf HTTP client library build
-                process where to locate the OpenSSL library when (and only when)
-                building Serf as an integrated part of the Subversion build
-                process. When linking to a previously installed version of Serf
-                instead, you do not need to use this option. (Note that
-                Subversion may also or alternatively be configured to use the
-                Neon library for http:// and https:// access; see the
-                --with-neon and --with-ssl options.)]),
-[])
 
 AC_ARG_ENABLE(debug,
 AS_HELP_STRING([--enable-debug],
@@ -876,22 +955,22 @@ AS_HELP_STRING([--enable-debug],
 [
     # Neither --enable-debug nor --disable-debug was passed.
     enable_debugging="maybe"
-
-        # We leave this as 'maybe' because setting it to 'no' would modify the
-        # CFLAGS/CXXFLAGS later (just after the --enable-maintainer-mode block),
-        # and we don't want to force that.
-    #
-    # TODO: set enable_debugging='no' here, and provide another way to disable
-    #       the CFLAGS/CXXFLAGS munging.
 ])
 
-
-dnl Add -Werror=implicit-function-declaration to CFLAGS
-CFLAGS_KEEP="$CFLAGS"
-CFLAGS="$CFLAGS_KEEP -Werror=implicit-function-declaration"
-AC_COMPILE_IFELSE([AC_LANG_SOURCE([[]])], [CFLAGS_KEEP="$CFLAGS"])
-CFLAGS="$CFLAGS_KEEP"
-
+AC_ARG_ENABLE(optimize,
+AS_HELP_STRING([--enable-optimize],
+               [Turn on optimizations]),
+[
+    if test "$enableval" = "yes" ; then
+      enable_optimization="yes"
+    else
+      enable_optimization="no"
+    fi
+],
+[
+    # Neither --enable-optimize nor --disable-optimize was passed.
+    enable_optimization="maybe"
+])
 
 dnl Use -Wl,--no-undefined during linking of some libraries
 AC_ARG_ENABLE(disallowing-of-undefined-references,
@@ -929,7 +1008,6 @@ AC_SUBST([libsvn_fs_fs_LDFLAGS])
 AC_SUBST([libsvn_fs_util_LDFLAGS])
 AC_SUBST([libsvn_ra_LDFLAGS])
 AC_SUBST([libsvn_ra_local_LDFLAGS])
-AC_SUBST([libsvn_ra_neon_LDFLAGS])
 AC_SUBST([libsvn_ra_serf_LDFLAGS])
 AC_SUBST([libsvn_ra_svn_LDFLAGS])
 AC_SUBST([libsvn_repos_LDFLAGS])
@@ -946,66 +1024,151 @@ AS_HELP_STRING([--enable-maintainer-mode],
         AC_MSG_ERROR([Can't have --disable-debug and --enable-maintainer-mode])
       fi
       enable_debugging=yes
+
+      dnl Enable some extra warnings. Put these before the user's flags
+      dnl so the user can specify flags that override these.
       if test "$GCC" = "yes"; then
         AC_MSG_NOTICE([maintainer-mode: adding GCC warning flags])
-        dnl Enable some extra warnings. Put these before the user's flags
-        dnl so the user can specify flags that override these.
-        CFLAGS="-Wpointer-arith -Wwrite-strings -Wshadow -ansi -Wall -Wformat=2 -Wunused -Waggregate-return -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wno-multichar -Wredundant-decls -Wnested-externs -Wunreachable-code -Winline -Wno-long-long $CFLAGS"
-        CXXFLAGS="-Wpointer-arith -Wwrite-strings -Wshadow $CXXFLAGS"
 
         dnl some additional flags that can be handy for an occasional review,
         dnl but throw too many warnings in svn code, of too little importance,
         dnl to keep these enabled. Remove the "dnl" to do a run with these
         dnl switches enabled.
-        dnl CFLAGS="-Wswitch-enum -Wswitch-default $CFLAGS"
+        dnl ./configure CFLAGS="-Wswitch-enum -Wswitch-default"
 
-        dnl Add each of the following flags only if the compiler accepts it.
-
+        dnl Add each of the following flags only if the C compiler accepts it.
         CFLAGS_KEEP="$CFLAGS"
-        AC_LANG_PUSH([C])
+        CFLAGS=""
 
-        CFLAGS="-Werror=declaration-after-statement $CFLAGS_KEEP"
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[]])], [CFLAGS_KEEP="$CFLAGS"])
+        SVN_CFLAGS_ADD_IFELSE([-Werror=implicit-function-declaration])
+        SVN_CFLAGS_ADD_IFELSE([-Werror=declaration-after-statement])
+        SVN_CFLAGS_ADD_IFELSE([-Wextra-tokens])
+        SVN_CFLAGS_ADD_IFELSE([-Wnewline-eof])
+        SVN_CFLAGS_ADD_IFELSE([-Wshorten-64-to-32])
+        SVN_CFLAGS_ADD_IFELSE([-Wold-style-definition])
+        SVN_CFLAGS_ADD_IFELSE([-Wno-system-headers])
+        SVN_CFLAGS_ADD_IFELSE([-Wno-format-nonliteral])
+        SVN_CFLAGS_ADD_IFELSE([-Wmissing-variable-declarations])
 
-        CFLAGS="-Wextra-tokens $CFLAGS_KEEP"
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[]])], [CFLAGS_KEEP="$CFLAGS"])
-
-        CFLAGS="-Wnewline-eof $CFLAGS_KEEP"
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[]])], [CFLAGS_KEEP="$CFLAGS"])
-
-        CFLAGS="-Wshorten-64-to-32 $CFLAGS_KEEP"
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[]])], [CFLAGS_KEEP="$CFLAGS"])
-
-        CFLAGS="-Wold-style-definition $CFLAGS_KEEP"
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[]])], [CFLAGS_KEEP="$CFLAGS"])
-
-        CFLAGS="-Wno-system-headers $CFLAGS_KEEP"
-        AC_COMPILE_IFELSE([AC_LANG_SOURCE([[]])], [CFLAGS_KEEP="$CFLAGS"])
-
-        AC_LANG_POP([C])
+        CMAINTAINERFLAGS="$CFLAGS"
         CFLAGS="$CFLAGS_KEEP"
+
+        dnl Add flags that all versions of GCC (should) support
+        CMAINTAINERFLAGS="-Wall -Wpointer-arith -Wwrite-strings -Wshadow -Wformat=2 -Wunused -Waggregate-return -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wno-multichar -Wredundant-decls -Wnested-externs -Winline -Wno-long-long -Wbad-function-cast $CMAINTAINERFLAGS"
+      fi
+      if test "$GXX" = "yes"; then
+        AC_MSG_NOTICE([maintainer-mode: adding G++ warning flags])
+
+        dnl Add each of the following flags only if the C++ compiler accepts it.
+        CXXFLAGS_KEEP="$CXXFLAGS"
+        CXXFLAGS=""
+
+        SVN_CXXFLAGS_ADD_IFELSE([-Wextra-tokens])
+        SVN_CXXFLAGS_ADD_IFELSE([-Wnewline-eof])
+        SVN_CXXFLAGS_ADD_IFELSE([-Wshorten-64-to-32])
+        SVN_CXXFLAGS_ADD_IFELSE([-Wno-system-headers])
+
+        CXXMAINTAINERFLAGS="$CXXFLAGS"
+        CXXFLAGS="$CXXFLAGS_KEEP"
+
+        dnl Add flags that all versions of G++ (should) support
+        CXXMAINTAINERFLAGS="-Wall -Wpointer-arith -Wwrite-strings -Wshadow -Wunused -Wunreachable-code $CXXMAINTAINERFLAGS"
       fi
     fi
 ])
 
 if test "$enable_debugging" = "yes" ; then
   dnl At the moment, we don't want optimization, because we're
-  dnl debugging.
-  CFLAGS=["`echo $CFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
-  CXXFLAGS=["`echo $CXXFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
+  dnl debugging. Unless optiization was explicitly enabled.
+  if test "$enable_optimization" != "yes"; then
+    AC_MSG_NOTICE([Disabling optimizations for debugging])
+    CFLAGS=["`echo $CFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
+    CXXFLAGS=["`echo $CXXFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
+  fi
+  dnl Add debugging flags, unless they were set by the user
+  if test -z ["`echo $CUSERFLAGS' ' | $EGREP -- '-g[0-9]? '`"]; then
+    AC_MSG_NOTICE([Enabling debugging for C])
+    CFLAGS=["`echo $CFLAGS' ' | $SED -e 's/-g[0-9] //g' -e 's/-g //g'`"]
+    SVN_CFLAGS_ADD_IFELSE([-fno-inline])
+    SVN_CFLAGS_ADD_IFELSE([-fno-omit-frame-pointer])
+    SVN_CFLAGS_ADD_IFELSE([-g3],[],[
+      SVN_CFLAGS_ADD_IFELSE([-g2],[],[
+        SVN_CFLAGS_ADD_IFELSE([-g])])])
+  fi
+  if test -z ["`echo $CXXUSERFLAGS' ' | $EGREP -- '-g[0-9]? '`"]; then
+    AC_MSG_NOTICE([Enabling debugging for C++])
+    CXXFLAGS=["`echo $CXXFLAGS' ' | $SED -e 's/-g[0-9] //g' -e 's/-g //g'`"]
+    SVN_CXXFLAGS_ADD_IFELSE([-fno-inline])
+    SVN_CXXFLAGS_ADD_IFELSE([-fno-omit-frame-pointer])
+    SVN_CXXFLAGS_ADD_IFELSE([-g3],[],[
+      SVN_CXXFLAGS_ADD_IFELSE([-g2],[],[
+        SVN_CXXFLAGS_ADD_IFELSE([-g])])])
+  fi
   dnl SVN_DEBUG enables specific features for developer builds
   dnl AP_DEBUG enables specific (Apache) features for developer builds
   CFLAGS="$CFLAGS -DSVN_DEBUG -DAP_DEBUG"
   CXXFLAGS="$CXXFLAGS -DSVN_DEBUG -DAP_DEBUG"
 elif test "$enable_debugging" = "no" ; then
-    CFLAGS=["`echo $CFLAGS' ' | $SED -e 's/-g[0-9] //g' | $SED -e 's/-g//g'`"]
-    CXXFLAGS=["`echo $CXXFLAGS' ' | $SED -e 's/-g[0-9] //g' | $SED -e 's/-g//g'`"]
-    dnl Compile with NDEBUG to get rid of assertions
-    CFLAGS="$CFLAGS -DNDEBUG"
-    CXXFLAGS="$CXXFLAGS -DNDEBUG"
+  AC_MSG_NOTICE([Disabling debugging])
+  CFLAGS=["`echo $CFLAGS' ' | $SED -e 's/-g[0-9] //g' -e 's/-g //g'`"]
+  CXXFLAGS=["`echo $CXXFLAGS' ' | $SED -e 's/-g[0-9] //g' -e 's/-g //g'`"]
+  dnl Compile with NDEBUG to get rid of assertions
+  CFLAGS="$CFLAGS -DNDEBUG"
+  CXXFLAGS="$CXXFLAGS -DNDEBUG"
 # elif test "$enable_debugging" = "maybe" ; then
 #   # do nothing
 fi
+
+if test "$enable_optimization" = "yes"; then
+  dnl Add optimization flags, unless they were set by the user
+  if test -z ["`echo $CUSERFLAGS' ' | $EGREP -- '-O[^ ]* '`"]; then
+    CFLAGS=["`echo $CFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
+    if test "$enable_debugging" = "yes"; then
+      AC_MSG_NOTICE([Enabling optimizations for C (with debugging enabled)])
+      SVN_CFLAGS_ADD_IFELSE([-O1],[],[
+        SVN_CFLAGS_ADD_IFELSE([-O])])
+    else
+      AC_MSG_NOTICE([Enabling optimizations for C])
+      SVN_CFLAGS_ADD_IFELSE([-O3],[],[
+        SVN_CFLAGS_ADD_IFELSE([-O2],[],[
+          SVN_CFLAGS_ADD_IFELSE([-O1],[],[
+            SVN_CFLAGS_ADD_IFELSE([-O])])])])
+      SVN_CFLAGS_ADD_IFELSE([-Wno-clobbered])
+      SVN_CFLAGS_ADD_IFELSE([-flto])
+    fi
+  fi
+  if test -z ["`echo $CXXUSERFLAGS' ' | $EGREP -- '-O[^ ]* '`"]; then
+    CXXFLAGS=["`echo $CXXFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
+    if test "$enable_debugging" = "yes"; then
+      AC_MSG_NOTICE([Enabling optimizations for C++ (with debugging enabled)])
+      SVN_CXXFLAGS_ADD_IFELSE([-O1],[],[
+        SVN_CXXFLAGS_ADD_IFELSE([-O])])
+    else
+      AC_MSG_NOTICE([Enabling optimizations for C++])
+      SVN_CXXFLAGS_ADD_IFELSE([-O3],[],[
+        SVN_CXXFLAGS_ADD_IFELSE([-O2],[],[
+          SVN_CXXFLAGS_ADD_IFELSE([-O1],[],[
+            SVN_CXXFLAGS_ADD_IFELSE([-O])])])])
+      SVN_CXXFLAGS_ADD_IFELSE([-Wno-clobbered])
+      SVN_CXXFLAGS_ADD_IFELSE([-flto])
+    fi
+  fi
+elif test "$enable_optimization" = "no"; then
+  dnl Remove all optimization flags
+  AC_MSG_NOTICE([Disabling optimizations])
+  CFLAGS=["`echo $CFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
+  CXXFLAGS=["`echo $CXXFLAGS' ' | $SED -e 's/-O[^ ]* //g'`"]
+# elif test "$enable_optimization" = "maybe" ; then
+#   # do nothing
+fi
+
+dnl Dump the current compiler options
+AC_MSG_NOTICE([C compiler flags: $CFLAGS])
+AC_MSG_NOTICE([    user-defined: $CUSERFLAGS])
+AC_MSG_NOTICE([ maintainer-mode: $CMAINTAINERFLAGS])
+AC_MSG_NOTICE([C++ compiler flags: $CXXFLAGS])
+AC_MSG_NOTICE([      user-defined: $CXXUSERFLAGS])
+AC_MSG_NOTICE([   maintainer-mode: $CXXMAINTAINERFLAGS])
 
 AC_ARG_ENABLE(full-version-match,
 AS_HELP_STRING([--disable-full-version-match],
@@ -1053,6 +1216,30 @@ AC_SUBST(MOD_ACTIVATION)
 
 
 
+AC_ARG_ENABLE(gcov,
+AC_HELP_STRING([--enable-gcov],
+               [Turn on gcov coverage testing (GCC only).]),
+[
+    if test "$enableval" = "yes" ; then
+      dnl Probably other compilers support something similar;
+      dnl feel free to extend this to include them.
+      if test "$GCC" = "yes"; then
+        if test "$svn_enable_shared" = "yes" ; then
+          AC_MSG_ERROR([Can't have --enable-gcov without --disable-shared (we
+                        recommend also using --enable-all-static).])
+        fi
+        if test ! "$enable_all_static" = "yes" ; then
+          AC_MSG_WARN(We recommend --enable-all-static with --enable-gcov.)
+        fi
+        AC_MSG_NOTICE([Enabling gcov coverage testing.])
+        CFLAGS="$CFLAGS -fprofile-arcs -ftest-coverage"
+        CXXFLAGS="$CXXFLAGS -fprofile-arcs -ftest-coverage"
+      else
+        AC_MSG_ERROR([We only support --enable-gcov with GCC right now.])
+      fi
+    fi
+])
+
 AC_ARG_ENABLE(gprof,
 AS_HELP_STRING([--enable-gprof],
                [Produce gprof profiling data in 'gmon.out' (GCC only).]),
@@ -1086,7 +1273,7 @@ AS_HELP_STRING([--enable-gprof],
 
 PYTHON="`$abs_srcdir/build/find_python.sh`"
 if test -z "$PYTHON"; then
-  AC_MSG_WARN([Python 2.4 or later is required to run the testsuite])
+  AC_MSG_WARN([Python 2.7 or later is required to run the testsuite])
   AC_MSG_WARN([or to use the Subversion Python bindings])
   AC_MSG_WARN([])
   AC_MSG_WARN([If you have a suitable Python installed, but not on the])
@@ -1096,7 +1283,7 @@ fi
 AC_PATH_PROGS(PYTHON, "$PYTHON", none)
 
 # The minimum version for the JVM runtime for our Java bytecode.
-JAVA_OLDEST_WORKING_VER='1.5'
+JAVA_OLDEST_WORKING_VER='1.6'
 # SVN_CHECK_JDK sets $JAVA_CLASSPATH
 SVN_CHECK_JDK($JAVA_OLDEST_WORKING_VER)
 
@@ -1105,7 +1292,7 @@ AC_PATH_PROG(PERL, perl, none)
 if test -n "$RUBY"; then
   AC_PATH_PROG(RUBY, "$RUBY", none)
 else
-  AC_PATH_PROGS(RUBY, ruby ruby1.8 ruby18, none)
+  AC_PATH_PROGS(RUBY, ruby ruby1.8 ruby18 ruby1.9 ruby1 ruby1.9.3 ruby193 ruby2.0 ruby2.1, none)
 fi
 if test "$RUBY" != "none"; then
   AC_MSG_CHECKING([rb_hash_foreach])
@@ -1114,26 +1301,31 @@ if test "$RUBY" != "none"; then
     if test -n "$RDOC"; then
       AC_PATH_PROG(RDOC, "$RDOC", none)
     else
-      AC_PATH_PROGS(RDOC, rdoc rdoc1.8 rdoc18, none)
+      AC_PATH_PROGS(RDOC, rdoc rdoc1.8 rdoc18 rdoc1.9 rdoc19 rdoc1.9.3 rdoc193 rdoc2.0 rdoc2.1, none)
     fi
     AC_CACHE_CHECK([for Ruby major version], [svn_cv_ruby_major],[
-    svn_cv_ruby_major="`$RUBY -rrbconfig -e 'print Config::CONFIG.fetch(%q(MAJOR))'`"
+    svn_cv_ruby_major="`$RUBY -rrbconfig -e 'print RbConfig::CONFIG.fetch(%q(MAJOR))'`"
     ])
     RUBY_MAJOR="$svn_cv_ruby_major"
 
     AC_CACHE_CHECK([for Ruby minor version], [svn_cv_ruby_minor],[
-    svn_cv_ruby_minor="`$RUBY -rrbconfig -e 'print Config::CONFIG.fetch(%q(MINOR))'`"
+    svn_cv_ruby_minor="`$RUBY -rrbconfig -e 'print RbConfig::CONFIG.fetch(%q(MINOR))'`"
     ])
     RUBY_MINOR="$svn_cv_ruby_minor"
 
+    AC_CACHE_CHECK([for Ruby teeny version], [svn_cv_ruby_teeny],[
+    svn_cv_ruby_teeny="`$RUBY -rrbconfig -e 'major, minor, teeny = RUBY_VERSION.split("."); print teeny;'`"
+    ])
+    RUBY_TEENY="$svn_cv_ruby_teeny"
+    
     AC_SUBST(RUBY_MAJOR)
     AC_SUBST(RUBY_MINOR)
-    if test ! \( "$RUBY_MAJOR" -eq "1" -a "$RUBY_MINOR" -eq "8" \); then
-      # Disallow Ruby 1.9 or later until the binding tests get fixed
-      # to run with those versions.
+    AC_SUBST(RUBY_TEENY)
+    if test \( "$RUBY_MAJOR" -eq "1" -a "$RUBY_MINOR" -gt "8" -a "$RUBY_TEENY" -lt "3" \); then
+      # Disallow Ruby between 1.8.7 and 1.9.3
       RUBY="none"
-      AC_MSG_WARN([The detected Ruby is too new for Subversion to use])
-      AC_MSG_WARN([Only 1.8.x releases are supported at this time])
+      AC_MSG_WARN([The detected Ruby is between 1.9 and 1.9.3])
+      AC_MSG_WARN([Only 1.8.x and 1.9.3 releases are supported at this time])
     fi
   else
     AC_MSG_RESULT([no])
@@ -1152,7 +1344,8 @@ SVN_CHECK_CTYPESGEN
 dnl decide whether we want to link against the RA/FS libraries
 AC_ARG_ENABLE(runtime-module-search,
 AS_HELP_STRING([--enable-runtime-module-search],
-               [Turn on dynamic loading of RA/FS libraries]),
+               [Turn on dynamic loading of RA/FS libraries including
+                third-party FS libraries]),
 [
     if test "$enableval" = "yes"; then
       use_dso=yes
@@ -1165,11 +1358,6 @@ AS_HELP_STRING([--enable-runtime-module-search],
 ])
 
 if test "$svn_enable_shared" = "no" || test "$use_dso" != "yes"; then
-  ### We want ra_local first to handle the following scenario:
-  ### user has neon and db3 in /usr/local, and db4 in
-  ### /usr/local/BerkeleyDB.4.0.  If libsvn_ra_neon.la comes before 
-  ### libsvn_fs.la then libtool ends up linking libsvn_fs to the db3
-  ### in /usr/local/lib
   AC_DEFINE(SVN_LIBSVN_CLIENT_LINKS_RA_LOCAL, 1,
       [Defined if libsvn_client should link against libsvn_ra_local])
   svn_ra_lib_deps="\$(RA_LOCAL_DEPS)"
@@ -1180,14 +1368,6 @@ if test "$svn_enable_shared" = "no" || test "$use_dso" != "yes"; then
       [Defined if libsvn_client should link against libsvn_ra_svn])
   svn_ra_lib_deps="$svn_ra_lib_deps \$(RA_SVN_DEPS)"
   svn_ra_lib_link="$svn_ra_lib_link \$(RA_SVN_LINK)"
-
-  if test "$svn_lib_neon" = "yes"; then
-    AC_DEFINE(SVN_LIBSVN_CLIENT_LINKS_RA_NEON, 1,
-          [Defined if libsvn_client should link against libsvn_ra_neon])
-    svn_ra_lib_deps="$svn_ra_lib_deps \$(RA_NEON_DEPS)"
-    svn_ra_lib_install_deps="$svn_ra_lib_install_deps install-neon-lib"
-    svn_ra_lib_link="$svn_ra_lib_link \$(RA_NEON_LINK)"
-  fi
 
   if test "$svn_lib_serf" = "yes"; then
     AC_DEFINE(SVN_LIBSVN_CLIENT_LINKS_RA_SERF, 1,
@@ -1206,6 +1386,13 @@ if test "$svn_enable_shared" = "no" || test "$use_dso" != "yes"; then
   svn_fs_lib_deps="\$(FS_FS_DEPS)"
   svn_fs_lib_install_deps="install-fsmod-lib"
   svn_fs_lib_link="\$(FS_FS_LINK)"
+
+  AC_DEFINE(SVN_LIBSVN_FS_LINKS_FS_X, 1,
+      [Defined if libsvn_fs should link against libsvn_fs_x])
+  svn_fs_lib_deps="$svn_fs_lib_deps \$(FS_X_DEPS)"
+  svn_fs_lib_link="$svn_fs_lib_link \$(FS_X_LINK)"
+dnl  FSFS already installs fsmod
+dnl  svn_fs_lib_install_deps="$svn_fs_lib_install_deps install-fsmod-lib"
 
   if test "$svn_lib_berkeley_db" = "yes"; then
   AC_DEFINE(SVN_LIBSVN_FS_LINKS_FS_BASE, 1,
@@ -1268,8 +1455,15 @@ if test "$do_javahl_build" = "yes"; then
   # it.
   AC_MSG_CHECKING([for additional flags to link C++ libraries])
   if test "x$ac_compiler_gnu" = "xyes"; then
-    LT_CXX_LIBADD="-lstdc++"
-    AC_MSG_RESULT([$LT_CXX_LIBADD])
+    case "$host" in
+      *freebsd10*)
+        AC_MSG_RESULT([none needed])
+      ;;
+      *)
+        LT_CXX_LIBADD="-lstdc++"
+        AC_MSG_RESULT([$LT_CXX_LIBADD])
+      ;;
+    esac
   else
     AC_MSG_RESULT([none needed])
   fi
@@ -1299,6 +1493,19 @@ AC_SUBST(JAVAHL_COMPAT_TESTS_TARGET)
 
 # ==== Miscellaneous bits ====================================================
 
+AC_CHECK_HEADERS([stdbool.h inttypes.h])
+
+# Strip '-no-cpp-precomp' from CPPFLAGS for the clang compiler
+### I think we get this flag from APR, so the fix probably belongs there
+if test "$CC" = "clang"; then
+  SVN_STRIP_FLAG(CPPFLAGS, [-no-cpp-precomp ])
+fi
+
+# Need to strip '-no-cpp-precomp' from CPPFLAGS for SWIG as well.
+SWIG_CPPFLAGS="$CPPFLAGS"
+SVN_STRIP_FLAG(SWIG_CPPFLAGS, [-no-cpp-precomp ])
+AC_SUBST([SWIG_CPPFLAGS])
+
 dnl Since this is used only on Unix-y systems, define the path separator as '/'
 AC_DEFINE_UNQUOTED(SVN_PATH_LOCAL_SEPARATOR, '/',
         [Defined to be the path separator used on your local filesystem])
@@ -1310,7 +1517,7 @@ DEFAULT_FS_TYPE="fsfs"
 AC_DEFINE_UNQUOTED(DEFAULT_FS_TYPE, "$DEFAULT_FS_TYPE",
                    [The fs type to use by default])
 
-DEFAULT_HTTP_LIBRARY="neon"
+DEFAULT_HTTP_LIBRARY="serf"
 AC_DEFINE_UNQUOTED(DEFAULT_HTTP_LIBRARY, "$DEFAULT_HTTP_LIBRARY",
                    [The http library to use by default])
 
@@ -1339,6 +1546,13 @@ AC_CONFIG_COMMANDS([svn_private_config.h.tmp],
                     SVN_DB_HEADER="$SVN_DB_HEADER"])
 AC_CONFIG_FILES([Makefile])
 
+# Create pkg-config .pc files from .pc.in files
+for pc_in_file in "${abs_srcdir}"/subversion/libsvn_*/*.pc.in; do
+  pc_file=${pc_in_file#${abs_srcdir}/}
+  pc_file=${pc_file%.in}
+  AC_CONFIG_FILES([${pc_file}])
+done
+
 SVN_CONFIG_SCRIPT(tools/backup/hot-backup.py)
 SVN_CONFIG_SCRIPT(tools/hook-scripts/commit-access-control.pl)
 SVN_CONFIG_SCRIPT(subversion/bindings/swig/perl/native/Makefile.PL)
@@ -1350,6 +1564,14 @@ AC_SUBST(SVN_CONFIG_SCRIPT_FILES)
 # Ensure that SWIG is checked after reconfiguration.
 rm -f .swig_checked
 
+dnl Provide ${host} for use in compiled code (for svn --version)
+AC_DEFINE_UNQUOTED([SVN_BUILD_HOST], "${host}",
+                   [Defined to the config.guess name of the build system])
+
+dnl Provide ${target} for use in compiled code (for user-agent string)
+AC_DEFINE_UNQUOTED([SVN_BUILD_TARGET], "${target}",
+                   [Defined to the config.guess name of the build target])
+
 AC_OUTPUT
 
 # ==== Print final messages to user ==========================================
@@ -1358,15 +1580,28 @@ dnl Configure is long - users tend to miss warnings printed during it.
 dnl Hence, print a warnings about what we did and didn't configure at the 
 dnl end, where people will actually see them.
 
-if test "$svn_lib_berkeley_db" = "no" && test "$with_berkeley_db" != "no"; then
-  db_version="$SVN_FS_WANT_DB_MAJOR.$SVN_FS_WANT_DB_MINOR.$SVN_FS_WANT_DB_PATCH"
-  AC_MSG_WARN([we have configured without BDB filesystem support
+if test "$svn_have_berkeley_db" = "no6" && test "$enable_bdb6" != "no"; then
+  AC_MSG_WARN([We have configured without BDB filesystem support
 
 
-You don't seem to have Berkeley DB version $db_version or newer
-installed and linked to APR-UTIL.  We have created Makefile which will build
-Subversion without support for the Berkeley DB back-end.  You can find the
-latest version of Berkeley DB here:
-  http://www.oracle.com/technology/software/products/berkeley-db/index.html
+Berkeley DB 6 was found, but not used.  Please re-run configure (see
+./config.nice) with the '--enable-bdb6' flag to use it,
+or explicitly specify '--disable-bdb6' or '--without-berkeley-db'
+to silence this warning.
+
+Please note that some versions of Berkeley DB 6+ are under the GNU Affero
+General Public License, version 3:
+https://oss.oracle.com/pipermail/bdb/2013-June/000056.html
+
+The AGPL-3.0 licence may impose special requirements for making available
+source code of server-side software.  The text of the licence is:
+https://www.gnu.org/licenses/agpl-3.0.html
+http://opensource.org/licenses/AGPL-3.0
+
+The Berkeley DB backend to Subversion is deprecated; see
+http://subversion.apache.org/docs/release-notes/1.8#bdb-deprecated
+
+The Subversion developers have not tested Subversion with Berkeley DB 6 for
+technical problems or bugs.
 ])
 fi

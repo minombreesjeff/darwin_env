@@ -1,6 +1,6 @@
---- Makefile.in.orig	2008-08-26 10:27:56.000000000 -0700
-+++ Makefile.in	2008-12-17 18:04:08.000000000 -0800
-@@ -205,6 +205,8 @@
+--- Makefile.in.orig	2016-05-11 10:17:07.000000000 -0700
++++ Makefile.in	2016-05-11 10:16:16.000000000 -0700
+@@ -257,6 +257,8 @@
  
  LINK = $(LIBTOOL) $(LTFLAGS) --mode=link $(CC) $(LT_LDFLAGS) $(CFLAGS) $(LDFLAGS) -rpath $(libdir)
  LINK_LIB = $(LINK) $(LT_SO_VERSION)
@@ -9,16 +9,16 @@
  LINK_CXX = $(LIBTOOL) $(LTCXXFLAGS) --mode=link $(CXX) $(LT_LDFLAGS) $(CXXFLAGS) $(LDFLAGS) -rpath $(libdir)
  LINK_CXX_LIB = $(LINK_CXX) $(LT_SO_VERSION)
  
-@@ -736,7 +738,7 @@
+@@ -836,7 +838,7 @@
  	./config.status subversion/bindings/swig/perl/native/Makefile.PL
  
  $(SWIG_PL_DIR)/native/Makefile: $(SWIG_PL_DIR)/native/Makefile.PL
--	cd $(SWIG_PL_DIR)/native; $(PERL) Makefile.PL
-+	cd $(SWIG_PL_DIR)/native; $(PERL) Makefile.PL $(PLARGS)
+-	cd $(SWIG_PL_DIR)/native; $(PERL) Makefile.PL PREFIX=$(prefix)
++	cd $(SWIG_PL_DIR)/native; $(PERL) Makefile.PL PREFIX=$(prefix) $(PLARGS)
  
  # There is a "readlink -f" command on some systems for the same purpose,
  # but it's not as portable (e.g. Mac OS X doesn't have it).  These should
-@@ -750,13 +752,13 @@
+@@ -850,13 +852,13 @@
  	if test "`$(READLINK_PL) $(SWIG_PL_DIR)`" != "`$(READLINK_PL) $(SWIG_PL_SRC_DIR)`"; then \
  	  ln -sf $(SWIG_PL_SRC_DIR)/native/*.c $(SWIG_PL_DIR)/native; \
  	fi
@@ -35,7 +35,7 @@
  
  EXTRACLEAN_SWIG_PL=rm -f $(SWIG_PL_SRC_DIR)/native/svn_*.c \
                           $(SWIG_PL_SRC_DIR)/native/core.c
-@@ -774,7 +776,7 @@
+@@ -874,7 +876,7 @@
  	  rm -rf *.lo *.la *.o .libs; \
  	done
  	if [ -f "$(SWIG_PL_DIR)/native/Makefile" ]; then \

@@ -68,7 +68,42 @@ svn_cl__copy(apr_getopt_t *os,
       svn_opt_revision_t *peg_revision = apr_palloc(pool,
                                                     sizeof(*peg_revision));
 
-      SVN_ERR(svn_opt_parse_path(peg_revision, &src, target, pool));
+      err = svn_opt_parse_path(peg_revision, &src, target, pool);
+
+      if (err)
+        {
+          /* Issue #3606: 'svn cp .@HEAD target' gives
+             svn: '@HEAD' is just a peg revision. Maybe try '@HEAD@' instead?
+
+             This is caused by a first round of canonicalization in
+             svn_cl__args_to_target_array_print_reserved(). Undo that in an
+             attempt to fix this issue without revving many apis.
+           */
+          if (*target == '@' && err->apr_err == SVN_ERR_BAD_FILENAME)
+            {
+              svn_error_t *err2;
+
+              err2 = svn_opt_parse_path(peg_revision, &src,
+                                        apr_pstrcat(pool, ".", target,
+                                                    (const char *)NULL), pool);
+
+              if (err2)
+                {
+                  /* Fix attempt failed; return original error */
+                  svn_error_clear(err2);
+                }
+              else
+                {
+                  /* Error resolved. Use path */
+                  svn_error_clear(err);
+                  err = NULL;
+                }
+            }
+
+          if (err)
+              return svn_error_trace(err);
+        }
+
       source->path = src;
       source->revision = &(opt_state->start_revision);
       source->peg_revision = peg_revision;
@@ -76,7 +111,18 @@ svn_cl__copy(apr_getopt_t *os,
       APR_ARRAY_PUSH(sources, svn_client_copy_source_t *) = source;
     }
 
-  SVN_ERR(svn_cl__eat_peg_revisions(&targets, targets, pool));
+  /* Get DST_PATH (the target path or URL) and check that no peg revision is
+   * specified for it. */
+  {
+    const char *tgt = APR_ARRAY_IDX(targets, targets->nelts - 1, const char *);
+    svn_opt_revision_t peg;
+
+    SVN_ERR(svn_opt_parse_path(&peg, &dst_path, tgt, pool));
+    if (peg.kind != svn_opt_revision_unspecified)
+      return svn_error_createf(SVN_ERR_ILLEGAL_TARGET, NULL,
+                               _("'%s': a peg revision is not allowed here"),
+                               tgt);
+  }
 
   /* Figure out which type of notification to use.
      (There is no need to check that the src paths are homogeneous;
@@ -84,8 +130,6 @@ svn_cl__copy(apr_getopt_t *os,
      error if they are not.) */
   src_path = APR_ARRAY_IDX(targets, 0, const char *);
   srcs_are_urls = svn_path_is_url(src_path);
-  dst_path = APR_ARRAY_IDX(targets, targets->nelts - 1, const char *);
-  apr_array_pop(targets);
   dst_is_url = svn_path_is_url(dst_path);
 
   if ((! srcs_are_urls) && (! dst_is_url))
@@ -106,8 +150,7 @@ svn_cl__copy(apr_getopt_t *os,
     }
   else
     {
-      /* URL -> URL, meaning that no notification is needed. */
-      ctx->notify_func2 = NULL;
+      /* URL -> URL */
     }
 
   if (! dst_is_url)
@@ -124,8 +167,11 @@ svn_cl__copy(apr_getopt_t *os,
     SVN_ERR(svn_cl__make_log_msg_baton(&(ctx->log_msg_baton3), opt_state,
                                        NULL, ctx->config, pool));
 
-  err = svn_client_copy6(sources, dst_path, TRUE,
+  err = svn_client_copy7(sources, dst_path, TRUE,
                          opt_state->parents, opt_state->ignore_externals,
+                         FALSE /* metadata_only */,
+                         opt_state->pin_externals,
+                         NULL, /* pin all externals */
                          opt_state->revprop_table,
                          (opt_state->quiet ? NULL : svn_cl__print_commit_info),
                          NULL,

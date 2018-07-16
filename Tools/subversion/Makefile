@@ -3,11 +3,11 @@ RC_ProjectName = subversion
 endif
 
 ifndef DEVELOPER_DIR
-DEVELOPER_DIR = /Applications/Xcode.app/Contents/Developer
+DEVELOPER_DIR := $(shell xcode-select -p)
 endif
 
 Project               = subversion
-ProjectVersion        = 1.7.22
+ProjectVersion        = 1.9.4
 
 #-------------------------------------------------------------------------
 # build/get-py-info.py appends "-framework Python" to its --link and --libs
@@ -26,11 +26,20 @@ Patches        = build_get-py-info.py.diff \
                  PR-11438447.diff \
                  build-outputs.mk.perl.diff \
                  serf-1.diff \
-                 PR-13100837.diff
+                 PR-13100837.diff \
+                 apr14.diff
 
 Extra_Make_Flags = 
 Extra_Cxx_Flags = -stdlib=libc++
 Extra_LD_Flags = -headerpad_max_install_names
+
+ifndef SDKROOT
+SDKROOT := $(shell xcrun --sdk macosx.internal --show-sdk-path)
+endif
+
+include $(DEVELOPER_DIR)/AppleInternal/Makefiles/DT_Signing.mk
+export CODESIGN_ALLOCATE :=  $(shell xcrun -find -sdk $(SDKROOT) codesign_allocate)
+CODESIGN = /usr/bin/codesign --force --sign - $(DVT_CODE_SIGN_FLAGS) --timestamp=none
 
 include Makefile.$(RC_ProjectName)
 

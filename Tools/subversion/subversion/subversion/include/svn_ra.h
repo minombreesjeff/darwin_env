@@ -120,8 +120,24 @@ typedef svn_error_t *(*svn_ra_invalidate_wc_props_func_t)(void *baton,
                                                           const char *name,
                                                           apr_pool_t *pool);
 
+/** This is a function type which allows the RA layer to fetch the
+ * cached pristine file contents whose checksum is @a checksum, if
+ * any.  @a *contents will be a read stream containing those contents
+ * if they are found; NULL otherwise.
+ *
+ * @since New in 1.8.
+ */
+typedef svn_error_t *
+(*svn_ra_get_wc_contents_func_t)(void *baton,
+                                 svn_stream_t **contents,
+                                 const svn_checksum_t *checksum,
+                                 apr_pool_t *pool);
 
-/** A function type for retrieving the youngest revision from a repos. */
+
+/** A function type for retrieving the youngest revision from a repos.
+ * @deprecated Provided for backward compatibility with the 1.8 API.
+ */
+/* ### It seems this type was never used by the API, since 1.0.0. */
 typedef svn_error_t *(*svn_ra_get_latest_revnum_func_t)(
   void *session_baton,
   svn_revnum_t *latest_revnum);
@@ -136,6 +152,7 @@ typedef svn_error_t *(*svn_ra_get_latest_revnum_func_t)(
 typedef svn_error_t *(*svn_ra_get_client_string_func_t)(void *baton,
                                                         const char **name,
                                                         apr_pool_t *pool);
+
 
 
 /**
@@ -252,6 +269,64 @@ typedef svn_error_t *(*svn_ra_replay_revfinish_callback_t)(
   void *edit_baton,
   apr_hash_t *rev_props,
   apr_pool_t *pool);
+
+
+/**
+ * Callback function that checks if an ra_svn tunnel called
+ * @a tunnel_name is handled by the callbakcs or the default
+ * implementation.
+ *
+ * @a tunnel_baton is the baton as originally passed to ra_open.
+ *
+ * @since New in 1.9.
+ */
+typedef svn_boolean_t (*svn_ra_check_tunnel_func_t)(
+    void *tunnel_baton, const char *tunnel_name);
+
+/**
+ * Callback function for closing a tunnel in ra_svn.
+ *
+ * This function will be called when the pool that owns the tunnel
+ * connection is cleared or destroyed.
+ *
+ * @a close_baton is the baton as returned from the
+ * svn_ra_open_tunnel_func_t.
+ *
+ * @a tunnel_baton was returned by the open-tunnel callback.
+ *
+ * @since New in 1.9.
+ */
+typedef void (*svn_ra_close_tunnel_func_t)(
+    void *close_baton, void *tunnel_baton);
+
+/**
+ * Callback function for opening a tunnel in ra_svn.
+ *
+ * Given the @a tunnel_name, tunnel @a user and server @a hostname and
+ * @a port, open a tunnel to the server and return its file handles,
+ * which are owned by @a pool, in @a request and @a response.
+ *
+ * @a request and @a response represent the standard input and output,
+ * respectively, of the process on the other end of the tunnel.
+ *
+ * If @a *close_func is set it will be called with @a close_baton when
+ * the tunnel is closed.
+ *
+ * The optional @a cancel_func callback can be invoked as usual to allow
+ * the user to preempt potentially lengthy operations.
+ *
+ * @a tunnel_baton is the baton as set in the callbacks.
+ *
+ * @since New in 1.9.
+ */
+typedef svn_error_t *(*svn_ra_open_tunnel_func_t)(
+    svn_stream_t **request, svn_stream_t **response,
+    svn_ra_close_tunnel_func_t *close_func, void **close_baton,
+    void *tunnel_baton,
+    const char *tunnel_name, const char *user,
+    const char *hostname, int port,
+    svn_cancel_func_t cancel_func, void *cancel_baton,
+    apr_pool_t *pool);
 
 
 /**
@@ -516,6 +591,36 @@ typedef struct svn_ra_callbacks2_t
    */
   svn_ra_get_client_string_func_t get_client_string;
 
+  /** Working copy file content fetching function.
+   * @since New in 1.8.
+   */
+  svn_ra_get_wc_contents_func_t get_wc_contents;
+
+  /** Check-tunnel callback
+   *
+   * If not @c NULL, and open_tunnel_func is also not @c NULL, this
+   * callback will be invoked to check if open_tunnel_func should be
+   * used to create a specific tunnel, or if the default tunnel
+   * implementation (either built-in or configured in the client
+   * configuration file) should be used instead.
+   * @since New in 1.9.
+   */
+  svn_ra_check_tunnel_func_t check_tunnel_func;
+
+  /** Open-tunnel callback
+   *
+   * If not @c NULL, this callback will be invoked to create a tunnel
+   * for a ra_svn connection that needs one, overriding any tunnel
+   * definitions in the client config file. This callback is used only
+   * for ra_svn and ignored by the other RA modules.
+   * @since New in 1.9.
+   */
+  svn_ra_open_tunnel_func_t open_tunnel_func;
+
+  /** A baton used with open_tunnel_func and close_tunnel_func.
+   * @since New in 1.9.
+   */
+  void *tunnel_baton;
 } svn_ra_callbacks2_t;
 
 /** Similar to svn_ra_callbacks2_t, except that the progress
@@ -573,7 +678,7 @@ svn_ra_create_callbacks(svn_ra_callbacks2_t **callbacks,
 
 /**
  * A repository access session.  This object is used to perform requests
- * to a repository, identified by an URL.
+ * to a repository, identified by a URL.
  *
  * @since New in 1.2.
  */
@@ -594,6 +699,17 @@ typedef struct svn_ra_session_t svn_ra_session_t;
  * corrected_url is NULL, return an #SVN_ERR_RA_SESSION_URL_MISMATCH
  * error.  Allocate all returned items in @a pool.
  *
+ * The @a repos_URL need not point to the root of the repository: subject
+ * to authorization, it may point to any path within the repository, even
+ * a path at which no node exists in the repository.  The session will
+ * remember this URL as its "session URL" (also called "session root URL"),
+ * until changed by svn_ra_reparent().  Many RA functions take or return
+ * paths that are relative to the session URL.
+ *
+ * If a @a corrected_url is returned, it will point to the same path
+ * within the new repository root URL that @a repos_URL pointed to within
+ * the old repository root URL.
+ *
  * Return @c SVN_ERR_RA_UUID_MISMATCH if @a uuid is non-NULL and not equal
  * to the UUID of the repository at @c repos_URL.
  *
@@ -602,7 +718,10 @@ typedef struct svn_ra_session_t svn_ra_session_t;
  *
  * @a config is a hash mapping <tt>const char *</tt> keys to
  * @c svn_config_t * values.  For example, the @c svn_config_t for the
- * "~/.subversion/config" file is under the key "config".
+ * "~/.subversion/config" file is under the key "config".  @a config may
+ * be NULL.  This function examines some config settings under the
+ * "servers" key (if present) before loading the required RA module, and
+ * the RA module may also examine any config settings.
  *
  * All RA requests require a session; they will continue to
  * use @a pool for memory allocation.
@@ -680,7 +799,7 @@ svn_ra_reparent(svn_ra_session_t *ra_session,
                 const char *url,
                 apr_pool_t *pool);
 
-/** Set @a *url to the repository URL to which @a ra_session was
+/** Set @a *url to the session URL -- the URL to which @a ra_session was
  * opened or most recently reparented.
  *
  * @since New in 1.5.
@@ -691,8 +810,8 @@ svn_ra_get_session_url(svn_ra_session_t *ra_session,
                        apr_pool_t *pool);
 
 
-/** Convert @a url into a path relative to the URL at which @a ra_session
- * is parented, setting @a *rel_path to that value.  If @a url is not
+/** Convert @a url into a path relative to the session URL of @a ra_session,
+ * setting @a *rel_path to that value.  If @a url is not
  * a child of the session URL, return @c SVN_ERR_RA_ILLEGAL_URL.
  *
  * The returned path is uri decoded to allow using it with the ra or other
@@ -841,12 +960,12 @@ svn_ra_rev_prop(svn_ra_session_t *session,
  * or @c SVN_PROP_REVISION_AUTHOR.
  *
  * Before @c close_edit returns, but after the commit has succeeded,
- * it will invoke @a callback (if non-NULL) with the new revision number,
- * the commit date (as a <tt>const char *</tt>), commit author (as a
- * <tt>const char *</tt>), and @a callback_baton as arguments.  If
- * @a callback returns an error, that error will be returned from @c
- * close_edit, otherwise @c close_edit will return successfully
- * (unless it encountered an error before invoking @a callback).
+ * it will invoke @a commit_callback (if non-NULL) with filled-in
+ * #svn_commit_info_t *, @a commit_baton, and @a pool or some subpool
+ * thereof as arguments.  If @a commit_callback returns an error, that error
+ * will be returned from @c * close_edit, otherwise @c close_edit will return
+ * successfully (unless it encountered an error before invoking
+ * @a commit_callback).
  *
  * The callback will not be called if the commit was a no-op
  * (i.e. nothing was committed);
@@ -866,14 +985,18 @@ svn_ra_rev_prop(svn_ra_session_t *session,
  * Use @a pool for memory allocation.
  *
  * @since New in 1.5.
+ *
+ * @note Like most commit editors, the returned editor requires that the
+ * @c copyfrom_path parameter passed to its @c add_file and @c add_directory
+ * methods is a URL, not a relative path.
  */
 svn_error_t *
 svn_ra_get_commit_editor3(svn_ra_session_t *session,
                           const svn_delta_editor_t **editor,
                           void **edit_baton,
                           apr_hash_t *revprop_table,
-                          svn_commit_callback2_t callback,
-                          void *callback_baton,
+                          svn_commit_callback2_t commit_callback,
+                          void *commit_baton,
                           apr_hash_t *lock_tokens,
                           svn_boolean_t keep_locks,
                           apr_pool_t *pool);
@@ -893,8 +1016,8 @@ svn_ra_get_commit_editor2(svn_ra_session_t *session,
                           const svn_delta_editor_t **editor,
                           void **edit_baton,
                           const char *log_msg,
-                          svn_commit_callback2_t callback,
-                          void *callback_baton,
+                          svn_commit_callback2_t commit_callback,
+                          void *commit_baton,
                           apr_hash_t *lock_tokens,
                           svn_boolean_t keep_locks,
                           apr_pool_t *pool);
@@ -971,11 +1094,10 @@ svn_ra_get_file(svn_ra_session_t *session,
  * callers want to know, and some don't.)
  *
  * If @a props is non @c NULL, set @a *props to contain the properties of
- * the directory.  This means @em all properties: not just ones controlled by
- * the user and stored in the repository fs, but non-tweakable ones
- * generated by the SCM system itself (e.g. 'wcprops', 'entryprops',
- * etc.)  The keys are <tt>const char *</tt>, values are
- * <tt>@c svn_string_t *</tt>.
+ * the directory, including properties that are non-tweakable and
+ * generated by the SCM system itself (such as #svn_prop_wc_kind and
+ * #svn_prop_entry_kind properties).  The keys are <tt>const char *</tt>,
+ * values are <tt>@c svn_string_t *</tt>.
  *
  * @since New in 1.4.
  */
@@ -1045,7 +1167,7 @@ svn_ra_get_mergeinfo(svn_ra_session_t *session,
                      apr_pool_t *pool);
 
 /**
- * Ask the RA layer to update a working copy.
+ * Ask the RA layer to update a working copy to a new revision.
  *
  * The client initially provides an @a update_editor/@a update_baton to the
  * RA layer; this editor contains knowledge of where the change will
@@ -1071,6 +1193,12 @@ svn_ra_get_mergeinfo(svn_ra_session_t *session,
  * (Note: this means that any subsequent txdeltas coming from the
  * server are presumed to apply against the copied file!)
  *
+ * Use @a ignore_ancestry to control whether or not items being
+ * updated will be checked for relatedness first.  Unrelated items
+ * are typically transmitted to the editor as a deletion of one thing
+ * and the addition of another, but if this flag is @c TRUE,
+ * unrelated items will be diffed as if they were related.
+ *
  * The working copy will be updated to @a revision_to_update_to, or the
  * "latest" revision if this arg is invalid.
  *
@@ -1078,7 +1206,8 @@ svn_ra_get_mergeinfo(svn_ra_session_t *session,
  * finishing the report, and may not perform any RA operations using
  * @a session from within the editing operations of @a update_editor.
  *
- * Use @a pool for memory allocation.
+ * Allocate @a *reporter and @a *report_baton in @a result_pool.  Use
+ * @a scratch_pool for temporary allocations.
  *
  * @note The reporter provided by this function does NOT supply copy-
  * from information to the diff editor callbacks.
@@ -1087,8 +1216,36 @@ svn_ra_get_mergeinfo(svn_ra_session_t *session,
  * needed, and sending too much data back, a pre-1.5 'recurse'
  * directive may be sent to the server, based on @a depth.
  *
- * @since New in 1.5.
+ * @note Pre Subversion 1.8 svnserve based servers never ignore ancestry.
+ *
+ * @note This differs from calling svn_ra_do_switch3() with the current
+ * URL of the target node.  Update changes only the revision numbers,
+ * leaving any switched subtrees still switched, whereas switch changes
+ * every node in the tree to a child of the same URL.
+ *
+ * @since New in 1.8.
  */
+svn_error_t *
+svn_ra_do_update3(svn_ra_session_t *session,
+                  const svn_ra_reporter3_t **reporter,
+                  void **report_baton,
+                  svn_revnum_t revision_to_update_to,
+                  const char *update_target,
+                  svn_depth_t depth,
+                  svn_boolean_t send_copyfrom_args,
+                  svn_boolean_t ignore_ancestry,
+                  const svn_delta_editor_t *update_editor,
+                  void *update_baton,
+                  apr_pool_t *result_pool,
+                  apr_pool_t *scratch_pool);
+
+/**
+ * Similar to svn_ra_do_update3(), but always ignoring ancestry.
+ *
+ * @since New in 1.5.
+ * @deprecated Provided for compatibility with the 1.4 API.
+ */
+SVN_DEPRECATED
 svn_error_t *
 svn_ra_do_update2(svn_ra_session_t *session,
                   const svn_ra_reporter3_t **reporter,
@@ -1123,47 +1280,41 @@ svn_ra_do_update(svn_ra_session_t *session,
 
 
 /**
- * Ask the RA layer to 'switch' a working copy to a new
- * @a switch_url;  it's another form of svn_ra_do_update().
+ * Ask the RA layer to switch a working copy to a new revision and URL.
  *
- * The client initially provides a @a switch_editor/@a switch_baton to the RA
- * layer; this editor contains knowledge of where the change will
- * begin in the working copy (when open_root() is called).
+ * This is similar to svn_ra_do_update3(), but also changes the URL of
+ * every node in the target tree to a child of the @a switch_url.  In
+ * contrast, update changes only the revision numbers, leaving any
+ * switched subtrees still switched.
  *
- * In return, the client receives a @a reporter/@a report_baton.  The
- * client then describes its working copy by making calls into the
- * @a reporter.
+ * @note Pre Subversion 1.8 svnserve based servers always ignore ancestry
+ * and never send copyfrom data.
  *
- * When finished, the client calls @a reporter->finish_report().  The
- * RA layer then does a complete drive of @a switch_editor, ending with
- * close_edit(), to switch the working copy.
- *
- * @a switch_target is an optional single path component will restrict
- * the scope of things affected by the switch to an entry in the
- * directory represented by the @a session's URL, or empty if the
- * entire directory is meant to be switched.
- *
- * Switch the target only as deeply as @a depth indicates.
- *
- * The working copy will be switched to @a revision_to_switch_to, or the
- * "latest" revision if this arg is invalid.
- *
- * The caller may not perform any RA operations using
- * @a session before finishing the report, and may not perform
- * any RA operations using @a session from within the editing
- * operations of @a switch_editor.
- *
- * Use @a pool for memory allocation.
- *
- * @note The reporter provided by this function does NOT supply copy-
- * from information to the diff editor callbacks.
- *
- * @note In order to prevent pre-1.5 servers from doing more work than
- * needed, and sending too much data back, a pre-1.5 'recurse'
- * directive may be sent to the server, based on @a depth.
+ * @since New in 1.8.
+ */
+svn_error_t *
+svn_ra_do_switch3(svn_ra_session_t *session,
+                  const svn_ra_reporter3_t **reporter,
+                  void **report_baton,
+                  svn_revnum_t revision_to_switch_to,
+                  const char *switch_target,
+                  svn_depth_t depth,
+                  const char *switch_url,
+                  svn_boolean_t send_copyfrom_args,
+                  svn_boolean_t ignore_ancestry,
+                  const svn_delta_editor_t *switch_editor,
+                  void *switch_baton,
+                  apr_pool_t *result_pool,
+                  apr_pool_t *scratch_pool);
+
+/**
+ * Similar to svn_ra_do_switch3(), but always ignoring ancestry and
+ * never sending copyfrom_args.
  *
  * @since New in 1.5.
+ * @deprecated Provided for compatibility with the 1.7 API.
  */
+SVN_DEPRECATED
 svn_error_t *
 svn_ra_do_switch2(svn_ra_session_t *session,
                   const svn_ra_reporter3_t **reporter,
@@ -1277,7 +1428,7 @@ svn_ra_do_status(svn_ra_session_t *session,
  * it's another form of svn_ra_do_update2().
  *
  * @note This function cannot be used to diff a single file, only a
- * working copy directory.  See the svn_ra_do_switch2() function
+ * working copy directory.  See the svn_ra_do_switch3() function
  * for more details.
  *
  * The client initially provides a @a diff_editor/@a diff_baton to the RA
@@ -1401,13 +1552,14 @@ svn_ra_do_diff(svn_ra_session_t *session,
  * was added or deleted).  Each path is an <tt>const char *</tt>, relative
  * to the @a session's common parent.
  *
- * If @a limit is non-zero only invoke @a receiver on the first @a limit
- * logs.
+ * If @a limit is greater than zero only invoke @a receiver on the first
+ * @a limit logs.
  *
  * If @a discover_changed_paths, then each call to @a receiver passes a
  * <tt>const apr_hash_t *</tt> for the receiver's @a changed_paths argument;
- * the hash's keys are all the paths committed in that revision.
- * Otherwise, each call to receiver passes NULL for @a changed_paths.
+ * the hash's keys are all the paths committed in that revision, the hash's
+ * values are <tt>const svn_log_changed_path2_t *</tt> for each committed
+ * path. Otherwise, each call to receiver passes NULL for @a changed_paths.
  *
  * If @a strict_node_history is set, copy history will not be traversed
  * (if any exists) when harvesting the revision logs for each path.
@@ -1415,8 +1567,9 @@ svn_ra_do_diff(svn_ra_session_t *session,
  * If @a include_merged_revisions is set, log information for revisions
  * which have been merged to @a targets will also be returned.
  *
- * If @a revprops is NULL, retrieve all revprops; else, retrieve only the
- * revprops named in the array (i.e. retrieve none if the array is empty).
+ * If @a revprops is NULL, retrieve all revision properties; else, retrieve
+ * only the revision properties named by the (const char *) array elements
+ * (i.e. retrieve none if the array is empty).
  *
  * If any invocation of @a receiver returns error, return that error
  * immediately and without wrapping it.
@@ -1443,7 +1596,6 @@ svn_ra_do_diff(svn_ra_session_t *session,
  *
  * @since New in 1.5.
  */
-
 svn_error_t *
 svn_ra_get_log2(svn_ra_session_t *session,
                 const apr_array_header_t *paths,
@@ -1640,6 +1792,16 @@ svn_ra_get_location_segments(svn_ra_session_t *session,
  * server doesn't implement it, an alternative (but much slower)
  * implementation based on svn_ra_get_log2() is used.
  *
+ * On subversion 1.8 and newer servers this function has been enabled
+ * to support reversion of the revision range for @a include_merged_revision
+ * @c FALSE reporting by switching  @a end with @a start.
+ *
+ * @note Prior to Subversion 1.9, this function may request delta handlers
+ * from @a handler even for empty text deltas.  Starting with 1.9, the
+ * delta handler / baton return arguments passed to @a handler will be
+ * #NULL unless there is an actual difference in the file contents between
+ * the current and the previous call.
+ *
  * @since New in 1.5.
  */
 svn_error_t *
@@ -1672,7 +1834,8 @@ svn_ra_get_file_revs(svn_ra_session_t *session,
 /**
  * Lock each path in @a path_revs, which is a hash whose keys are the
  * paths to be locked, and whose values are the corresponding base
- * revisions for each path.
+ * revisions for each path.  The keys are (const char *) and the
+ * revisions are (svn_revnum_t *).
  *
  * Note that locking is never anonymous, so any server implementing
  * this function will have to "pull" a username from the client, if
@@ -1742,8 +1905,12 @@ svn_ra_unlock(svn_ra_session_t *session,
 
 /**
  * If @a path is locked, set @a *lock to an svn_lock_t which
- * represents the lock, allocated in @a pool.  If @a path is not
- * locked, set @a *lock to NULL.
+ * represents the lock, allocated in @a pool.
+ *
+ * If @a path is not locked or does not exist in HEAD, set @a *lock to NULL.
+ *
+ * @note Before 1.9, this function could return SVN_ERR_FS_NOT_FOUND
+ * when @a path didn't exist in HEAD on specific ra layers.
  *
  * @since New in 1.2.
  */
@@ -1886,6 +2053,33 @@ svn_ra_get_deleted_rev(svn_ra_session_t *session,
                        apr_pool_t *pool);
 
 /**
+ * Set @a *inherited_props to a depth-first ordered array of
+ * #svn_prop_inherited_item_t * structures representing the properties
+ * inherited by @a path at @a revision (or the 'head' revision if
+ * @a revision is @c SVN_INVALID_REVNUM).  Interpret @a path relative to
+ * the URL in @a session.  Use @a pool for all allocations.  If no
+ * inheritable properties are found, then set @a *inherited_props to
+ * an empty array.
+ *
+ * The #svn_prop_inherited_item_t->path_or_url members of the
+ * #svn_prop_inherited_item_t * structures in @a *inherited_props are
+ * paths relative to the repository root URL (of the repository which
+ * @a ra_session is associated).
+ *
+ * Allocate @a *inherited_props in @a result_pool.  Use @a scratch_pool
+ * for temporary allocations.
+ *
+ * @since New in 1.8.
+ */
+svn_error_t *
+svn_ra_get_inherited_props(svn_ra_session_t *session,
+                           apr_array_header_t **inherited_props,
+                           const char *path,
+                           svn_revnum_t revision,
+                           apr_pool_t *result_pool,
+                           apr_pool_t *scratch_pool);
+
+/**
  * @defgroup Capabilities Dynamically query the server's capabilities.
  *
  * @{
@@ -1957,6 +2151,30 @@ svn_ra_has_capability(svn_ra_session_t *session,
  */
 #define SVN_RA_CAPABILITY_ATOMIC_REVPROPS "atomic-revprops"
 
+/**
+ * The capability to get inherited properties.
+ *
+ * @since New in 1.8.
+ */
+#define SVN_RA_CAPABILITY_INHERITED_PROPS "inherited-props"
+
+/**
+ * The capability of a server to automatically remove transaction
+ * properties prefixed with SVN_PROP_EPHEMERAL_PREFIX.
+ *
+ * @since New in 1.8.
+ */
+#define SVN_RA_CAPABILITY_EPHEMERAL_TXNPROPS "ephemeral-txnprops"
+
+/**
+ * The capability of a server to walk revisions backwards in
+ * svn_ra_get_file_revs2
+ *
+ * @since New in 1.8.
+ */
+#define SVN_RA_CAPABILITY_GET_FILE_REVS_REVERSE "get-file-revs-reversed"
+
+
 /*       *** PLEASE READ THIS IF YOU ADD A NEW CAPABILITY ***
  *
  * RA layers generally fetch all capabilities when asked about any
@@ -2005,7 +2223,7 @@ svn_ra_print_ra_libraries(svn_stringbuf_t **descriptions,
  */
 typedef struct svn_ra_plugin_t
 {
-  /** The proper name of the RA library, (like "ra_neon" or "ra_local") */
+  /** The proper name of the RA library, (like "ra_serf" or "ra_local") */
   const char *name;
 
   /** Short doc string printed out by `svn --version` */
@@ -2276,7 +2494,7 @@ typedef svn_error_t *(*svn_ra_init_func_t)(int abi_version,
 
 /* Public RA implementations. */
 
-/** Initialize libsvn_ra_neon.
+/** Initialize libsvn_ra_serf.
  *
  * @deprecated Provided for backward compatibility with the 1.1 API. */
 SVN_DEPRECATED

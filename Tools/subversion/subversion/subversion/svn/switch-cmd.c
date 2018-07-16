@@ -93,7 +93,8 @@ svn_cl__switch(apr_getopt_t *os,
                void *baton,
                apr_pool_t *scratch_pool)
 {
-  svn_error_t *err;
+  svn_error_t *err = SVN_NO_ERROR;
+  svn_error_t *externals_err = SVN_NO_ERROR;
   svn_cl__opt_state_t *opt_state = ((svn_cl__cmd_baton_t *) baton)->opt_state;
   svn_client_ctx_t *ctx = ((svn_cl__cmd_baton_t *) baton)->ctx;
   apr_array_header_t *targets;
@@ -172,16 +173,27 @@ svn_cl__switch(apr_getopt_t *os,
                                    "disable this check."),
                                    svn_dirent_local_style(target,
                                                           scratch_pool));
+      if (err->apr_err == SVN_ERR_RA_UUID_MISMATCH
+          || err->apr_err == SVN_ERR_WC_INVALID_SWITCH)
+        return svn_error_quick_wrap(
+                 err,
+                 _("'svn switch' does not support switching a working copy to "
+                   "a different repository"));
       return err;
     }
 
-  if (! opt_state->quiet)
-    SVN_ERR(svn_cl__print_conflict_stats(nwb.wrapped_baton, scratch_pool));
-
   if (nwb.had_externals_error)
-    return svn_error_create(SVN_ERR_CL_ERROR_PROCESSING_EXTERNALS, NULL,
-                            _("Failure occurred processing one or more "
-                              "externals definitions"));
+    externals_err = svn_error_create(SVN_ERR_CL_ERROR_PROCESSING_EXTERNALS,
+                                     NULL,
+                                     _("Failure occurred processing one or "
+                                       "more externals definitions"));
 
-  return SVN_NO_ERROR;
+  if (! opt_state->quiet)
+    {
+      err = svn_cl__notifier_print_conflict_stats(nwb.wrapped_baton, scratch_pool);
+      if (err)
+        return svn_error_compose_create(externals_err, err);
+    }
+
+  return svn_error_compose_create(externals_err, err);
 }

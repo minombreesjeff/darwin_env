@@ -23,26 +23,42 @@
 # get-deps.sh -- download the dependencies useful for building Subversion
 #
 
-APR=apr-1.4.5
-APR_UTIL=apr-util-1.3.12
-NEON=neon-0.29.6
-SERF=serf-0.7.2
-ZLIB=zlib-1.2.8
-SQLITE_VERSION=3.7.6.3
+# If changing this file please take care to try to make your changes as
+# portable as possible.  That means at a minimum only use POSIX supported
+# features and functions.  However, it may be desirable to use an even
+# more narrow set of features than POSIX, e.g. Solaris /bin/sh only has
+# a subset of the POSIX shell features.  If in doubt, limit yourself to
+# features already used in the file.  Reviewing the history of changes
+# may be useful as well.
+
+APR_VERSION=${APR_VERSION:-"1.4.6"}
+APU_VERSION=${APU_VERSION:-"1.5.1"}
+SERF_VERSION=${SERF_VERSION:-"1.3.8"}
+ZLIB_VERSION=${ZLIB_VERSION:-"1.2.8"}
+SQLITE_VERSION=${SQLITE_VERSION:-"3.7.15.1"}
+GMOCK_VERSION=${GMOCK_VERSION:-"1.6.0"}
+HTTPD_VERSION=${HTTPD_VERSION:-"2.4.10"}
+APR_ICONV_VERSION=${APR_ICONV_VERSION:-"1.2.1"}
+
+APR=apr-${APR_VERSION}
+APR_UTIL=apr-util-${APU_VERSION}
+SERF=serf-${SERF_VERSION}
+ZLIB=zlib-${ZLIB_VERSION}
 SQLITE_VERSION_LIST=`echo $SQLITE_VERSION | sed -e 's/\./ /g'`
 SQLITE=sqlite-amalgamation-`printf %d%02d%02d%02d $SQLITE_VERSION_LIST`
+GMOCK=gmock-${GMOCK_VERSION}
+GMOCK_URL=https://googlemock.googlecode.com/files/
 
-
-HTTPD=httpd-2.2.25
-APR_ICONV=apr-iconv-1.2.1
+HTTPD=httpd-${HTTPD_VERSION}
+APR_ICONV=apr-iconv-${APR_ICONV_VERSION}
 
 BASEDIR=`pwd`
 TEMPDIR=$BASEDIR/temp
 
 HTTP_FETCH=
-[ -z "$HTTP_FETCH" ] && type wget  >/dev/null 2>&1 && HTTP_FETCH="wget -nc"
-[ -z "$HTTP_FETCH" ] && type curl  >/dev/null 2>&1 && HTTP_FETCH="curl -O"
-[ -z "$HTTP_FETCH" ] && type fetch >/dev/null 2>&1 && HTTP_FETCH="fetch"
+[ -z "$HTTP_FETCH" ] && type wget  >/dev/null 2>&1 && HTTP_FETCH="wget -q -nc"
+[ -z "$HTTP_FETCH" ] && type curl  >/dev/null 2>&1 && HTTP_FETCH="curl -sOL"
+[ -z "$HTTP_FETCH" ] && type fetch >/dev/null 2>&1 && HTTP_FETCH="fetch -q"
 
 # Need this uncommented if any of the specific versions of the ASF tarballs to
 # be downloaded are no longer available on the general mirrors.
@@ -51,37 +67,29 @@ APACHE_MIRROR=http://archive.apache.org/dist
 # helpers
 usage() {
     echo "Usage: $0"
-    echo "Usage: $0 [ apr | neon | serf | zlib | sqlite ] ..."
+    echo "Usage: $0 [ apr | serf | zlib | sqlite | gmock ] ..."
     exit $1
 }
 
 # getters
 get_apr() {
     cd $TEMPDIR
-    $HTTP_FETCH $APACHE_MIRROR/apr/$APR.tar.bz2
-    $HTTP_FETCH $APACHE_MIRROR/apr/$APR_UTIL.tar.bz2
+    test -d $BASEDIR/apr      || $HTTP_FETCH $APACHE_MIRROR/apr/$APR.tar.bz2
+    test -d $BASEDIR/apr-util || $HTTP_FETCH $APACHE_MIRROR/apr/$APR_UTIL.tar.bz2
     cd $BASEDIR
 
-    bzip2 -dc $TEMPDIR/$APR.tar.bz2 | tar -xf -
-    bzip2 -dc $TEMPDIR/$APR_UTIL.tar.bz2 | tar -xf -
+    test -d $BASEDIR/apr      || bzip2 -dc $TEMPDIR/$APR.tar.bz2 | tar -xf -
+    test -d $BASEDIR/apr-util || bzip2 -dc $TEMPDIR/$APR_UTIL.tar.bz2 | tar -xf -
 
-    mv $APR apr
-    mv $APR_UTIL apr-util
-}
-
-get_neon() {
-    cd $TEMPDIR
-    $HTTP_FETCH http://webdav.org/neon/$NEON.tar.gz
-    cd $BASEDIR
-
-    gzip  -dc $TEMPDIR/$NEON.tar.gz | tar -xf -
-
-    mv $NEON neon
+    test -d $BASEDIR/apr      || mv $APR apr
+    test -d $BASEDIR/apr-util || mv $APR_UTIL apr-util
 }
 
 get_serf() {
+    test -d $BASEDIR/serf && return
+
     cd $TEMPDIR
-    $HTTP_FETCH http://serf.googlecode.com/files/$SERF.tar.bz2
+    $HTTP_FETCH http://serf.googlecode.com/svn/src_releases/$SERF.tar.bz2
     cd $BASEDIR
 
     bzip2 -dc $TEMPDIR/$SERF.tar.bz2 | tar -xf -
@@ -90,8 +98,10 @@ get_serf() {
 }
 
 get_zlib() {
+    test -d $BASEDIR/zlib && return
+
     cd $TEMPDIR
-    $HTTP_FETCH http://www.zlib.net/$ZLIB.tar.gz
+    $HTTP_FETCH http://sourceforge.net/projects/libpng/files/zlib/$ZLIB_VERSION/$ZLIB.tar.gz
     cd $BASEDIR
 
     gzip -dc $TEMPDIR/$ZLIB.tar.gz | tar -xf -
@@ -100,6 +110,8 @@ get_zlib() {
 }
 
 get_sqlite() {
+    test -d $BASEDIR/sqlite-amalgamation && return
+
     cd $TEMPDIR
     $HTTP_FETCH http://www.sqlite.org/$SQLITE.zip
     cd $BASEDIR
@@ -110,11 +122,24 @@ get_sqlite() {
 
 }
 
+get_gmock() {
+    test -d $BASEDIR/gmock-fused && return
+
+    cd $TEMPDIR
+    $HTTP_FETCH ${GMOCK_URL}/${GMOCK}.zip
+    cd $BASEDIR
+
+    unzip -q $TEMPDIR/$GMOCK.zip
+
+    mv $GMOCK/fused-src gmock-fused
+    rm -fr $GMOCK
+}
+
 # main()
 get_deps() {
     mkdir -p $TEMPDIR
 
-    for i in neon zlib serf sqlite-amalgamation apr apr-util; do
+    for i in zlib serf sqlite-amalgamation apr apr-util gmock-fused; do
       if [ -d $i ]; then
         echo "Local directory '$i' already exists; the downloaded copy won't be used" >&2
       fi
@@ -130,7 +155,6 @@ get_deps() {
       done
     else
       get_apr
-      get_neon
       get_serf
       get_zlib
       get_sqlite

@@ -51,12 +51,12 @@ print_update_summary(apr_array_header_t *targets,
   int i;
   const char *path_prefix;
   apr_pool_t *iterpool;
+  svn_boolean_t printed_header = FALSE;
 
   if (targets->nelts < 2)
     return SVN_NO_ERROR;
 
   SVN_ERR(svn_dirent_get_absolute(&path_prefix, "", scratch_pool));
-  SVN_ERR(svn_cmdline_printf(scratch_pool, _("Summary of updates:\n")));
 
   iterpool = svn_pool_create(scratch_pool);
 
@@ -87,6 +87,13 @@ print_update_summary(apr_array_header_t *targets,
       /* Print an update summary for this target, removing the current
          working directory prefix from PATH (if PATH is at or under
          $CWD), and converting the path to local style for display. */
+      if (! printed_header)
+        {
+          SVN_ERR(svn_cmdline_printf(scratch_pool,
+                                     _("Summary of updates:\n")));
+          printed_header = TRUE;
+        }
+
       SVN_ERR(svn_cmdline_printf(iterpool, _("  Updated '%s' to r%ld.\n"),
                                  svn_cl__local_style_skip_ancestor(
                                    path_prefix, path, iterpool),
@@ -110,6 +117,8 @@ svn_cl__update(apr_getopt_t *os,
   svn_boolean_t depth_is_sticky;
   struct svn_cl__check_externals_failed_notify_baton nwb;
   apr_array_header_t *result_revs;
+  svn_error_t *err = SVN_NO_ERROR;
+  svn_error_t *externals_err = SVN_NO_ERROR;
 
   SVN_ERR(svn_cl__args_to_target_array_print_reserved(&targets, os,
                                                       opt_state->targets,
@@ -162,20 +171,26 @@ svn_cl__update(apr_getopt_t *os,
                              opt_state->parents,
                              ctx, scratch_pool));
 
+  if (nwb.had_externals_error)
+    externals_err = svn_error_create(SVN_ERR_CL_ERROR_PROCESSING_EXTERNALS,
+                                     NULL,
+                                     _("Failure occurred processing one or "
+                                       "more externals definitions"));
+
   if (! opt_state->quiet)
     {
-      SVN_ERR(print_update_summary(targets, result_revs, scratch_pool));
+      err = print_update_summary(targets, result_revs, scratch_pool);
+      if (err)
+        return svn_error_compose_create(externals_err, err);
 
       /* ### Layering problem: This call assumes that the baton we're
        * passing is the one that was originally provided by
        * svn_cl__get_notifier(), but that isn't promised. */
-      SVN_ERR(svn_cl__print_conflict_stats(nwb.wrapped_baton, scratch_pool));
+      err = svn_cl__notifier_print_conflict_stats(nwb.wrapped_baton,
+                                                  scratch_pool);
+      if (err)
+        return svn_error_compose_create(externals_err, err);
     }
 
-  if (nwb.had_externals_error)
-    return svn_error_create(SVN_ERR_CL_ERROR_PROCESSING_EXTERNALS, NULL,
-                            _("Failure occurred processing one or more "
-                              "externals definitions"));
-
-  return SVN_NO_ERROR;
+  return svn_error_compose_create(externals_err, err);
 }

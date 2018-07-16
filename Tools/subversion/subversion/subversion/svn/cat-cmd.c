@@ -76,15 +76,16 @@ svn_cl__cat(apr_getopt_t *os,
       SVN_ERR(svn_opt_parse_path(&peg_revision, &truepath, target,
                                  subpool));
 
-      SVN_ERR(svn_cl__try(svn_client_cat2(out, truepath, &peg_revision,
+      SVN_ERR(svn_cl__try(svn_client_cat3(NULL, out, truepath, &peg_revision,
                                           &(opt_state->start_revision),
-                                          ctx, subpool),
+                                          !opt_state->ignore_keywords,
+                                          ctx, subpool, subpool),
                            errors, opt_state->quiet,
                            SVN_ERR_UNVERSIONED_RESOURCE,
                            SVN_ERR_ENTRY_NOT_FOUND,
                            SVN_ERR_CLIENT_IS_DIRECTORY,
                            SVN_ERR_FS_NOT_FOUND,
-                           SVN_NO_ERROR));
+                           0));
     }
   svn_pool_destroy(subpool);
 
@@ -98,7 +99,7 @@ svn_cl__cat(apr_getopt_t *os,
 
           if (status == SVN_ERR_ENTRY_NOT_FOUND ||
               status == SVN_ERR_FS_NOT_FOUND)
-            err = svn_error_quick_wrap(err, 
+            err = svn_error_quick_wrap(err,
                                        _("Could not cat all targets because "
                                          "some targets don't exist"));
           else if (status == SVN_ERR_UNVERSIONED_RESOURCE)
@@ -113,6 +114,6 @@ svn_cl__cat(apr_getopt_t *os,
 
       return svn_error_trace(err);
     }
-  
+
   return SVN_NO_ERROR;
 }

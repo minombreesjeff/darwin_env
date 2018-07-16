@@ -84,6 +84,7 @@ perl-bindings:
 	    for module in Client Core Delta Fs Ra Repos Wc; do\
 		    $(CP) $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bundle $(SYMROOT) && \
 		    $(STRIP) -x $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bundle && \
+		    $(CODESIGN) $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bundle && \
 		    $(RM) $(DSTROOT)$${installarchlib}/auto/SVN/_$${module}/_$${module}.bs || exit 1; \
 	    done && \
 	    $(RM) $(DSTROOT)$${installarchlib}/perllocal.pod && \
@@ -116,7 +117,8 @@ python-bindings:
 	    make $(Extra_Make_Flags) install-swig-py swig_pydir="$${PYDIR}" swig_pydir_extra="$${PYDIR_EXTRA}" DESTDIR="$(DSTROOT)" && \
 	    for module in client core delta diff fs ra repos wc; do \
 		    $(CP) $(DSTROOT)$${PYDIR}/_$${module}.so $(SYMROOT) && \
-		    $(STRIP) -x $(DSTROOT)$${PYDIR}/_$${module}.so || exit 1; \
+		    $(STRIP) -x $(DSTROOT)$${PYDIR}/_$${module}.so && \
+		    $(CODESIGN) $(DSTROOT)$${PYDIR}/_$${module}.so || exit 1; \
 	    done && \
 	    mv $(PYTHONTOPDIR) $(PYTHONTOPDIR).$${vers} || exit 1; \
 	done
@@ -130,6 +132,7 @@ ruby-bindings:
 	@for module in client core delta diff fs ra repos wc; do \
 		$(CP) $(DSTROOT)$(RBARCHDIR)/svn/ext/$${module}.bundle $(SYMROOT); \
 		$(STRIP) -x $(DSTROOT)$(RBARCHDIR)/svn/ext/$${module}.bundle; \
+		$(CODESIGN) $(DSTROOT)$(RBARCHDIR)/svn/ext/$${module}.bundle; \
 	done
 
 LIBEXECDIR = $(shell apxs -q LIBEXECDIR)
@@ -144,11 +147,13 @@ post-install:
 	@set -x && \
 	for library in `find $(DSTROOT) -type f -name \*.dylib`; do \
 		$(CP) $${library} $(SYMROOT) && \
-		$(STRIP) -x $${library} || exit 1; \
+		$(STRIP) -x $${library} && \
+		$(CODESIGN) $${library} || exit 1; \
 	done
 	find $(DSTROOT) -name \*.la -delete
 	find $(DSTROOT)/System/Library/Perl -name .packlist -delete
 	@for module in authz dav; do \
 		$(CP) $(DSTROOT)$(LIBEXECDIR)/mod_$${module}_svn.so $(SYMROOT); \
 		$(STRIP) -x $(DSTROOT)$(LIBEXECDIR)/mod_$${module}_svn.so; \
+		$(CODESIGN) $(DSTROOT)$(LIBEXECDIR)/mod_$${module}_svn.so; \
 	done

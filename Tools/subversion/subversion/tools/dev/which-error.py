@@ -23,12 +23,13 @@
 #    under the License.
 # ====================================================================
 #
-# $HeadURL: http://svn.apache.org/repos/asf/subversion/branches/1.7.x/tools/dev/which-error.py $
-# $LastChangedDate: 2011-07-08 13:53:27 +0000 (Fri, 08 Jul 2011) $
-# $LastChangedBy: philip $
-# $LastChangedRevision: 1144315 $
+# $HeadURL: http://svn.apache.org/repos/asf/subversion/branches/1.9.x/tools/dev/which-error.py $
+# $LastChangedDate: 2013-12-05 00:42:34 +0000 (Thu, 05 Dec 2013) $
+# $LastChangedBy: breser $
+# $LastChangedRevision: 1547977 $
 #
 
+import errno
 import sys
 import os.path
 import re
@@ -68,6 +69,17 @@ codes.  This can be done in variety of ways:
 
 def get_errors():
   errs = {}
+  ## errno values.
+  errs.update(errno.errorcode)
+  ## APR-defined errors, from apr_errno.h.
+  dirname = os.path.dirname(os.path.realpath(__file__))
+  for line in open(os.path.join(dirname, 'aprerr.txt')):
+    # aprerr.txt parsing duplicated in gen_base.py:write_errno_table()
+    if line.startswith('#'):
+       continue
+    key, _, val = line.split()
+    errs[int(val)] = key
+  ## Subversion errors, from svn_error_codes.h.
   for key in vars(core):
     if key.find('SVN_ERR_') == 0:
       try:
@@ -81,7 +93,10 @@ def print_error(code):
   try:
     print('%08d  %s' % (code, __svn_error_codes[code]))
   except KeyError:
-    print('%08d  *** UNKNOWN ERROR CODE ***' % (code))
+    if code == -41:
+      print("Sit by a lake.")
+    else:
+      print('%08d  *** UNKNOWN ERROR CODE ***' % (code))
 
 if __name__ == "__main__":
   global __svn_error_codes

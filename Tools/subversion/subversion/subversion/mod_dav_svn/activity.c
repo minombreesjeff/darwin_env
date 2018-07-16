@@ -28,6 +28,7 @@
 #include <httpd.h>
 #include <mod_dav.h>
 
+#include "svn_hash.h"
 #include "svn_checksum.h"
 #include "svn_error.h"
 #include "svn_io.h"
@@ -192,7 +193,6 @@ dav_svn__store_activity(const dav_svn_repos *repos,
                         const char *txn_name)
 {
   const char *final_path;
-  const char *tmp_path;
   const char *activity_contents;
   svn_error_t *err;
 
@@ -208,11 +208,9 @@ dav_svn__store_activity(const dav_svn_repos *repos,
   activity_contents = apr_psprintf(repos->pool, "%s\n%s\n",
                                    txn_name, activity_id);
 
-  /* ### is there another directory we already have and can write to? */
-  err = svn_io_write_unique(&tmp_path,
-                            svn_dirent_dirname(final_path, repos->pool),
+  err = svn_io_write_atomic(final_path,
                             activity_contents, strlen(activity_contents),
-                            svn_io_file_del_none, repos->pool);
+                            NULL /* copy_perms path */, repos->pool);
   if (err)
     {
       svn_error_t *serr = svn_error_quick_wrap(err,
@@ -224,15 +222,6 @@ dav_svn__store_activity(const dav_svn_repos *repos,
                                   repos->pool);
     }
 
-  err = svn_io_file_rename(tmp_path, final_path, repos->pool);
-  if (err)
-    {
-      svn_error_clear(svn_io_remove_file2(tmp_path, TRUE, repos->pool));
-      return dav_svn__convert_err(err, HTTP_INTERNAL_SERVER_ERROR,
-                                  "could not replace files.",
-                                  repos->pool);
-    }
-
   return NULL;
 }
 
@@ -240,17 +229,23 @@ dav_svn__store_activity(const dav_svn_repos *repos,
 dav_error *
 dav_svn__create_txn(const dav_svn_repos *repos,
                     const char **ptxn_name,
+                    apr_hash_t *revprops,
                     apr_pool_t *pool)
 {
   svn_revnum_t rev;
   svn_fs_txn_t *txn;
   svn_error_t *serr;
-  apr_hash_t *revprop_table = apr_hash_make(pool);
+
+  if (! revprops)
+    {
+      revprops = apr_hash_make(pool);
+    }
 
   if (repos->username)
     {
-      apr_hash_set(revprop_table, SVN_PROP_REVISION_AUTHOR, APR_HASH_KEY_STRING,
-                   svn_string_create(repos->username, pool));
+      svn_hash_sets(revprops,
+                    SVN_PROP_REVISION_AUTHOR,
+                    svn_string_create(repos->username, pool));
     }
 
   serr = svn_fs_youngest_rev(&rev, repos->fs, pool);
@@ -262,8 +257,7 @@ dav_svn__create_txn(const dav_svn_repos *repos,
     }
 
   serr = svn_repos_fs_begin_txn_for_commit2(&txn, repos->repos, rev,
-                                            revprop_table,
-                                            repos->pool);
+                                            revprops, repos->pool);
   if (serr != NULL)
     {
       return dav_svn__convert_err(serr, HTTP_INTERNAL_SERVER_ERROR,

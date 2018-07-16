@@ -265,6 +265,27 @@
 
 #endif
 
+#ifdef SWIGPERL
+%typemap(in) apr_hash_t *PROPHASH
+  (apr_pool_t *_global_pool = NULL)
+{
+  if (_global_pool == NULL)
+    _global_pool = svn_swig_pl_make_pool((SV *)NULL);
+  $1 = svn_swig_pl_hash_to_prophash($input, _global_pool);  
+}
+%typemap(out) apr_hash_t *PROPHASH
+{
+  %append_output(svn_swig_pl_prophash_to_hash($1));
+}
+
+%typemap(out) apr_hash_t *changed_paths2
+{
+  %append_output(
+    ($1) ? svn_swig_pl_convert_hash($1, $descriptor(svn_log_changed_path2_t *))
+         : &PL_sv_undef);
+}
+#endif
+
 #ifdef SWIGRUBY
 %typemap(in) apr_hash_t *PROPHASH
 {
@@ -291,7 +312,6 @@
 }
 #endif
 
-#if defined(SWIGPYTHON) || defined(SWIGRUBY)
 %apply apr_hash_t *PROPHASH {
   apr_hash_t *target_props,
   apr_hash_t *source_props,
@@ -300,7 +320,6 @@
   apr_hash_t *revprop_table,
   apr_hash_t *revprops
 };
-#endif
 
 #ifdef SWIGRUBY
 %typemap(out) apr_hash_t *CHANGED_PATH_HASH
@@ -407,6 +426,25 @@
 {
   $1 = svn_swig_py_path_revs_hash_from_dict($input, _global_pool);
 }
+%typemap(in) apr_hash_t *unlock_targets
+{
+  $1 = svn_swig_py_stringhash_from_dict($input, _global_pool);
+}
+%typemap(in) apr_hash_t *lock_targets
+  (apr_pool_t *_global_pool, PyObject *_global_pool = NULL)
+{
+  if (_global_pool == NULL)
+  {
+    if (svn_swig_py_get_parent_pool(args, $descriptor(apr_pool_t *),
+                                    &_global_py_pool, &_global_pool))
+      SWIG_fail;
+  }
+  $1 = svn_swig_py_struct_ptr_hash_from_dict($input,
+     $descriptor(svn_fs_lock_target_t *), _global_pool);
+  if (PyErr_Occurred()) {
+    SWIG_fail;
+  }
+}
 #endif
 
 #ifdef SWIGPERL
@@ -419,6 +457,19 @@
 /* =======================================================================
    %typemap(argout) apr_array_header_t **
 */
+
+/* -----------------------------------------------------------------------
+   Output of apr_array_header_t * <svn_prop_inherited_item_t *>
+*/
+#ifdef SWIGPYTHON
+%typemap(argout) apr_array_header_t **OUTPUT_OF_PROP_INHERITED_ITEM {
+  %append_output(svn_swig_py_propinheriteditemarray_to_dict(*$1));
+}
+
+%apply apr_array_header_t **OUTPUT_OF_PROP_INHERITED_ITEM {
+  apr_array_header_t **inherited_props
+};
+#endif
 
 /* -----------------------------------------------------------------------
    Output of apr_array_header_t * <svn_prop_t *>
@@ -482,6 +533,22 @@
    svn_wc_parse_externals_description3()
 */
 
+#ifdef SWIGPYTHON
+%typemap(argout) apr_array_header_t **externals_p {
+  %append_output
+    (svn_swig_py_pointerlist_to_list(*$1, $descriptor(svn_wc_external_item2_t *),
+                                     _global_py_pool));
+  if (PyErr_Occurred()) {
+    SWIG_fail;
+  }
+}
+#endif
+#ifdef SWIGPERL
+%typemap(argout) apr_array_header_t **externals_p {
+  %append_output
+    (svn_swig_pl_convert_array(*$1, $descriptor(svn_wc_external_item2_t *)));
+}
+#endif
 #ifdef SWIGRUBY
 %typemap(argout) apr_array_header_t **externals_p {
   %append_output(svn_swig_rb_apr_array_to_array_external_item2(*$1));
@@ -497,7 +564,11 @@
   }
 }
 #endif
-
+#ifdef SWIGPERL
+%typemap(argout) apr_array_header_t **result_revs {
+  %append_output(svn_swig_pl_revnums_to_list(*$1));
+}
+#endif
 #ifdef SWIGRUBY
 %typemap(argout) apr_array_header_t **result_revs {
   %append_output(svn_swig_rb_apr_array_to_array_svn_rev(*$1));
@@ -548,8 +619,12 @@
 #endif
 #ifdef SWIGPERL
 %typemap(in) const apr_array_header_t *STRINGLIST {
-    $1 = (apr_array_header_t *) svn_swig_pl_strings_to_array($input,
+    $1 = svn_swig_pl_strings_to_array($input,
                                                              _global_pool);
+}
+%typemap(in) const apr_array_header_t *STRINGLIST_MAY_BE_NULL {
+    $1 = SvOK($input) ? svn_swig_pl_strings_to_array(
+        $input, _global_pool) : NULL;
 }
 #endif
 #ifdef SWIGRUBY
@@ -579,7 +654,7 @@
   apr_array_header_t *preserved_exts
 };
 
-#ifdef SWIGRUBY
+#if defined(SWIGPERL) || defined(SWIGRUBY)
 %apply const apr_array_header_t *STRINGLIST_MAY_BE_NULL {
   apr_array_header_t *revprops
 };
@@ -590,7 +665,7 @@
 */
 #ifdef SWIGPERL
 %typemap(in) apr_array_header_t *providers {
-    $1 = (apr_array_header_t *) svn_swig_pl_objs_to_array($input,
+    $1 = svn_swig_pl_objs_to_array($input,
       $descriptor(svn_auth_provider_object_t *), _global_pool);
 }
 #endif
@@ -682,10 +757,11 @@
 
 /* -----------------------------------------------------------------------
    Input of apr_array_header_t * <svn_merge_range_t *>
+   (that is: svn_rangelist_t *)
 */
 #ifdef SWIGPYTHON
-%typemap(in) apr_array_header_t *RANGELIST {
-    $1 = (apr_array_header_t *) svn_swig_py_seq_to_array($input,
+%typemap(in) svn_rangelist_t *RANGELIST {
+    $1 = (svn_rangelist_t *) svn_swig_py_seq_to_array($input,
       sizeof(const svn_merge_range_t *),
       svn_swig_py_unwrap_struct_ptr,
       $descriptor(svn_merge_range_t *),
@@ -697,7 +773,7 @@
 #endif
 
 #ifdef SWIGRUBY
-%typemap(in) apr_array_header_t *RANGELIST {
+%typemap(in) svn_rangelist_t *RANGELIST {
   $1 = svn_swig_rb_array_to_apr_array_merge_range($input, _global_pool);
 }
 #endif
@@ -727,6 +803,12 @@
 }
 #endif
 
+#ifdef SWIGPERL
+%typemap(in) apr_array_header_t *REVISION_RANGE_LIST {
+  $1 = svn_swig_pl_array_to_apr_array_revision_range($input, _global_pool);
+}
+#endif
+
 #ifdef SWIGRUBY
 %typemap(in) apr_array_header_t *REVISION_RANGE_LIST {
   $1 = svn_swig_rb_array_to_apr_array_revision_range($input, _global_pool);
@@ -738,7 +820,16 @@
    apr_hash_t * <const char *, apr_array_header_t * <svn_merge_range_t *>>
 */
 #ifdef SWIGPYTHON
-%typemap(in) apr_hash_t *MERGEINFO {
+%typemap(in) apr_hash_t *MERGEINFO
+  (apr_pool_t *_global_pool = NULL, PyObject *_global_py_pool = NULL)
+{
+  if (_global_pool == NULL)
+  {
+    if (svn_swig_py_get_parent_pool(args, $descriptor(apr_pool_t *),
+                                    &_global_py_pool, &_global_pool))
+      SWIG_fail;
+  }
+
   $1 = svn_swig_py_mergeinfo_from_dict($input, _global_pool);
   if (PyErr_Occurred()) {
     SWIG_fail;
@@ -799,7 +890,7 @@
    Output of
    apr_hash_t * <const char *,
                  apr_hash_t * <const char *,
-                               array_header_t * <svn_merge_range_t *>>>
+                               apr_array_header_t * <svn_merge_range_t *>>>
 */
 #ifdef SWIGRUBY
 %typemap(argout) apr_hash_t **MERGEINFO_CATALOG
@@ -821,9 +912,10 @@
 
 /* -----------------------------------------------------------------------
    Output of apr_array_header_t * <svn_merge_range_t *>
+   (that is: svn_rangelist_t *)
 */
 #ifdef SWIGPYTHON
-%typemap(argout) apr_array_header_t **RANGELIST {
+%typemap(argout) svn_rangelist_t **RANGELIST {
   %append_output
     (svn_swig_py_pointerlist_to_list(*$1, $descriptor(svn_merge_range_t *),
                                      _global_py_pool));
@@ -832,10 +924,10 @@
   }
 }
 
-%typemap(in) apr_array_header_t **RANGELIST_INOUT ($*1_ltype temp)
+%typemap(in) svn_rangelist_t **RANGELIST_INOUT ($*1_ltype temp)
 {
   $1 = &temp;
-  *$1 = (apr_array_header_t *) svn_swig_py_seq_to_array($input,
+  *$1 = (svn_rangelist_t *) svn_swig_py_seq_to_array($input,
     sizeof(const svn_merge_range_t *),
     svn_swig_py_unwrap_struct_ptr,
     $descriptor(svn_merge_range_t *),
@@ -848,11 +940,11 @@
 #endif
 
 #ifdef SWIGRUBY
-%typemap(argout) apr_array_header_t **RANGELIST {
+%typemap(argout) svn_rangelist_t **RANGELIST {
   %append_output(svn_swig_rb_apr_array_to_array_merge_range(*$1));
 }
 
-%typemap(in) apr_array_header_t **RANGELIST_INOUT ($*1_ltype temp)
+%typemap(in) svn_rangelist_t **RANGELIST_INOUT ($*1_ltype temp)
 {
   $1 = &temp;
   *$1 = svn_swig_rb_array_to_apr_array_merge_range($input, _global_pool);
@@ -860,8 +952,8 @@
 #endif
 
 #if defined(SWIGPYTHON) || defined(SWIGRUBY)
-%typemap(argout) apr_array_header_t **RANGELIST_INOUT =
-   apr_array_header_t **RANGELIST;
+%typemap(argout) svn_rangelist_t **RANGELIST_INOUT =
+   svn_rangelist_t **RANGELIST;
 #endif
 
 /* -----------------------------------------------------------------------
@@ -888,5 +980,18 @@
 #ifdef SWIGRUBY
 %typemap(argout) apr_array_header_t **providers {
   %append_output(svn_swig_rb_apr_array_to_array_auth_provider_object(*$1));
+}
+#endif
+
+/* -----------------------------------------------------------------------
+   Output of apr_array_header_t * <svn_diff_hunk_t *>
+*/
+#ifdef SWIGPYTHON
+%typemap(out) apr_array_header_t *hunks {
+  %append_output(svn_swig_py_pointerlist_to_list($1, $descriptor(svn_diff_hunk_t *),
+                                                 _global_py_pool));
+  if (PyErr_Occurred()) {
+    SWIG_fail;
+  }
 }
 #endif

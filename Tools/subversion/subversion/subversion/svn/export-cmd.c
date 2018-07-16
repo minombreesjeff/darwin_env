@@ -85,7 +85,15 @@ svn_cl__export(apr_getopt_t *os,
 
       if (strcmp("", to) != 0)
         /* svn_cl__eat_peg_revisions() but only on one target */
-        SVN_ERR(svn_opt__split_arg_at_peg_revision(&to, NULL, to, pool));
+        {
+          const char *peg;
+
+          SVN_ERR(svn_opt__split_arg_at_peg_revision(&to, &peg, to, pool));
+          if (peg[0] && peg[1])
+            return svn_error_createf(SVN_ERR_ILLEGAL_TARGET, NULL,
+                                     _("'%s': a peg revision is not allowed here"),
+                                     APR_ARRAY_IDX(targets, 1, const char *));
+        }
     }
 
   SVN_ERR(svn_cl__check_target_is_local_path(to));
@@ -114,9 +122,15 @@ svn_cl__export(apr_getopt_t *os,
                 "the directory or use --force to overwrite"));
 
   if (nwb.had_externals_error)
-    return svn_error_create(SVN_ERR_CL_ERROR_PROCESSING_EXTERNALS, NULL,
-                            _("Failure occurred processing one or more "
-                              "externals definitions"));
+    {
+      svn_error_t *externals_err;
+
+      externals_err = svn_error_create(SVN_ERR_CL_ERROR_PROCESSING_EXTERNALS,
+                                       NULL,
+                                       _("Failure occurred processing one or "
+                                         "more externals definitions"));
+      return svn_error_compose_create(externals_err, err);
+    }
 
   return svn_error_trace(err);
 }

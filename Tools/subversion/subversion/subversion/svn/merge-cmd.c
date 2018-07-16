@@ -33,12 +33,117 @@
 #include "svn_error.h"
 #include "svn_types.h"
 #include "cl.h"
+#include "private/svn_client_private.h"
 
 #include "svn_private_config.h"
 
 
 /*** Code. ***/
 
+/* Throw an error if PATH_OR_URL is a path and REVISION isn't a repository
+ * revision. */
+static svn_error_t *
+ensure_wc_path_has_repo_revision(const char *path_or_url,
+                                 const svn_opt_revision_t *revision,
+                                 apr_pool_t *scratch_pool)
+{
+  if (revision->kind != svn_opt_revision_number
+      && revision->kind != svn_opt_revision_date
+      && revision->kind != svn_opt_revision_head
+      && ! svn_path_is_url(path_or_url))
+    return svn_error_createf(
+      SVN_ERR_CLIENT_BAD_REVISION, NULL,
+      _("Invalid merge source '%s'; a working copy path can only be "
+        "used with a repository revision (a number, a date, or head)"),
+      svn_dirent_local_style(path_or_url, scratch_pool));
+  return SVN_NO_ERROR;
+}
+
+/* Run a merge.
+ *
+ * (No docs yet, as this code was just hoisted out of svn_cl__merge().)
+ *
+ * Having FIRST_RANGE_START/_END params is ugly -- we should be able to use
+ * PEG_REVISION1/2 and/or RANGES_TO_MERGE instead, maybe adjusting the caller.
+ */
+static svn_error_t *
+run_merge(svn_boolean_t two_sources_specified,
+          const char *sourcepath1,
+          svn_opt_revision_t peg_revision1,
+          const char *sourcepath2,
+          const char *targetpath,
+          apr_array_header_t *ranges_to_merge,
+          svn_opt_revision_t first_range_start,
+          svn_opt_revision_t first_range_end,
+          svn_cl__opt_state_t *opt_state,
+          apr_array_header_t *options,
+          svn_client_ctx_t *ctx,
+          apr_pool_t *scratch_pool)
+{
+  svn_error_t *merge_err;
+
+  if (opt_state->reintegrate)
+    {
+      merge_err = svn_cl__deprecated_merge_reintegrate(
+                    sourcepath1, &peg_revision1, targetpath,
+                    opt_state->dry_run, options, ctx, scratch_pool);
+    }
+  else if (! two_sources_specified)
+    {
+      /* If we don't have at least one valid revision range, pick a
+         good one that spans the entire set of revisions on our
+         source. */
+      if ((first_range_start.kind == svn_opt_revision_unspecified)
+          && (first_range_end.kind == svn_opt_revision_unspecified))
+        {
+          ranges_to_merge = NULL;
+        }
+
+      if (opt_state->verbose)
+        SVN_ERR(svn_cmdline_printf(scratch_pool, _("--- Merging\n")));
+      merge_err = svn_client_merge_peg5(sourcepath1,
+                                        ranges_to_merge,
+                                        &peg_revision1,
+                                        targetpath,
+                                        opt_state->depth,
+                                        opt_state->ignore_ancestry,
+                                        opt_state->ignore_ancestry,
+                                        opt_state->force, /* force_delete */
+                                        opt_state->record_only,
+                                        opt_state->dry_run,
+                                        opt_state->allow_mixed_rev,
+                                        options,
+                                        ctx,
+                                        scratch_pool);
+    }
+  else
+    {
+      if (svn_path_is_url(sourcepath1) != svn_path_is_url(sourcepath2))
+        return svn_error_create(SVN_ERR_CL_ARG_PARSING_ERROR, NULL,
+                                _("Merge sources must both be "
+                                  "either paths or URLs"));
+
+      if (opt_state->verbose)
+        SVN_ERR(svn_cmdline_printf(scratch_pool, _("--- Merging\n")));
+      merge_err = svn_client_merge5(sourcepath1,
+                                    &first_range_start,
+                                    sourcepath2,
+                                    &first_range_end,
+                                    targetpath,
+                                    opt_state->depth,
+                                    opt_state->ignore_ancestry,
+                                    opt_state->ignore_ancestry,
+                                    opt_state->force, /* force_delete */
+                                    opt_state->record_only,
+                                    opt_state->dry_run,
+                                    opt_state->allow_mixed_rev,
+                                    options,
+                                    ctx,
+                                    scratch_pool);
+    }
+
+  return merge_err;
+}
 
 /* This implements the `svn_opt_subcommand_t' interface. */
 svn_error_t *
@@ -51,10 +156,11 @@ svn_cl__merge(apr_getopt_t *os,
   apr_array_header_t *targets;
   const char *sourcepath1 = NULL, *sourcepath2 = NULL, *targetpath = "";
   svn_boolean_t two_sources_specified = TRUE;
-  svn_error_t *err;
+  svn_error_t *merge_err;
   svn_opt_revision_t first_range_start, first_range_end, peg_revision1,
     peg_revision2;
   apr_array_header_t *options, *ranges_to_merge = opt_state->revision_ranges;
+  svn_boolean_t has_explicit_target = FALSE;
 
   /* Merge doesn't support specifying a revision or revision range
      when using --reintegrate. */
@@ -175,28 +281,22 @@ svn_cl__merge(apr_getopt_t *os,
                                 _("Too many arguments given"));
 
       /* Set the default value for unspecified paths and peg revision. */
-      if (targets->nelts == 0)
-        {
-          peg_revision1.kind = svn_opt_revision_head;
-        }
-      else
-        {
-          /* targets->nelts is 1 ("svn merge SOURCE") or 2 ("svn merge
-             SOURCE WCPATH") here. */
-          sourcepath2 = sourcepath1;
+      /* targets->nelts is 1 ("svn merge SOURCE") or 2 ("svn merge
+         SOURCE WCPATH") here. */
+      sourcepath2 = sourcepath1;
 
-          if (peg_revision1.kind == svn_opt_revision_unspecified)
-            peg_revision1.kind = svn_path_is_url(sourcepath1)
-              ? svn_opt_revision_head : svn_opt_revision_working;
+      if (peg_revision1.kind == svn_opt_revision_unspecified)
+        peg_revision1.kind = svn_path_is_url(sourcepath1)
+          ? svn_opt_revision_head : svn_opt_revision_working;
 
-          if (targets->nelts == 2)
-            {
-              targetpath = APR_ARRAY_IDX(targets, 1, const char *);
-              if (svn_path_is_url(targetpath))
-                return svn_error_create(SVN_ERR_CL_ARG_PARSING_ERROR, NULL,
-                                        _("Cannot specify a revision range "
-                                          "with two URLs"));
-            }
+      if (targets->nelts == 2)
+        {
+          targetpath = APR_ARRAY_IDX(targets, 1, const char *);
+          has_explicit_target = TRUE;
+          if (svn_path_is_url(targetpath))
+            return svn_error_create(SVN_ERR_CL_ARG_PARSING_ERROR, NULL,
+                                    _("Cannot specify a revision range "
+                                      "with two URLs"));
         }
     }
   else /* using @rev syntax */
@@ -212,16 +312,13 @@ svn_cl__merge(apr_getopt_t *os,
 
       /* Catch 'svn merge wc_path1 wc_path2 [target]' without explicit
          revisions--since it ignores local modifications it may not do what
-         the user expects.  Forcing the user to specify a repository
+         the user expects.  That is, it doesn't read from the WC itself, it
+         reads from the WC's URL.  Forcing the user to specify a repository
          revision should avoid any confusion. */
-      if ((first_range_start.kind == svn_opt_revision_unspecified
-           && ! svn_path_is_url(sourcepath1))
-          ||
-          (first_range_end.kind == svn_opt_revision_unspecified
-           && ! svn_path_is_url(sourcepath2)))
-        return svn_error_create
-          (SVN_ERR_CLIENT_BAD_REVISION, 0,
-           _("A working copy merge source needs an explicit revision"));
+      SVN_ERR(ensure_wc_path_has_repo_revision(sourcepath1, &first_range_start,
+                                               pool));
+      SVN_ERR(ensure_wc_path_has_repo_revision(sourcepath2, &first_range_end,
+                                               pool));
 
       /* Default peg revisions to each URL's youngest revision. */
       if (first_range_start.kind == svn_opt_revision_unspecified)
@@ -231,17 +328,22 @@ svn_cl__merge(apr_getopt_t *os,
 
       /* Decide where to apply the delta (defaulting to "."). */
       if (targets->nelts == 3)
-        targetpath = APR_ARRAY_IDX(targets, 2, const char *);
+        {
+          targetpath = APR_ARRAY_IDX(targets, 2, const char *);
+          has_explicit_target = TRUE;
+        }
     }
 
   /* If no targetpath was specified, see if we can infer it from the
      sourcepaths. */
-  if (sourcepath1 && sourcepath2 && strcmp(targetpath, "") == 0)
+  if (! has_explicit_target
+      && sourcepath1 && sourcepath2
+      && strcmp(targetpath, "") == 0)
     {
       /* If the sourcepath is a URL, it can only refer to a target in
-         the current working directory.  However, if the sourcepath is
-         a local path, it can refer to a target somewhere deeper in
-         the directory structure. */
+         the current working directory or which is the current working
+         directory.  However, if the sourcepath is a local path, it can
+         refer to a target somewhere deeper in the directory structure. */
       if (svn_path_is_url(sourcepath1))
         {
           const char *sp1_basename = svn_uri_basename(sourcepath1, pool);
@@ -249,23 +351,40 @@ svn_cl__merge(apr_getopt_t *os,
 
           if (strcmp(sp1_basename, sp2_basename) == 0)
             {
-              svn_node_kind_t kind;
+              const char *target_url;
+              const char *target_base;
 
-              SVN_ERR(svn_io_check_path(sp1_basename, &kind, pool));
-              if (kind == svn_node_file)
+              SVN_ERR(svn_client_url_from_path2(&target_url, targetpath, ctx,
+                                                pool, pool));
+              target_base = svn_uri_basename(target_url, pool);
+
+              /* If the basename of the source is the same as the basename of
+                 the cwd assume the cwd is the target. */
+              if (strcmp(sp1_basename, target_base) != 0)
                 {
-                  targetpath = sp1_basename;
+                  svn_node_kind_t kind;
+
+                  /* If the basename of the source differs from the basename
+                     of the target.  We still might assume the cwd is the
+                     target, but first check if there is a file in the cwd
+                     with the same name as the source basename.  If there is,
+                     then assume that file is the target. */
+                  SVN_ERR(svn_io_check_path(sp1_basename, &kind, pool));
+                  if (kind == svn_node_file)
+                    {
+                      targetpath = sp1_basename;
+                    }
                 }
             }
         }
       else if (strcmp(sourcepath1, sourcepath2) == 0)
         {
           svn_node_kind_t kind;
-          const char *decoded_path = svn_path_uri_decode(sourcepath1, pool);
-          SVN_ERR(svn_io_check_path(decoded_path, &kind, pool));
+
+          SVN_ERR(svn_io_check_path(sourcepath1, &kind, pool));
           if (kind == svn_node_file)
             {
-              targetpath = decoded_path;
+              targetpath = sourcepath1;
             }
         }
     }
@@ -278,6 +397,16 @@ svn_cl__merge(apr_getopt_t *os,
   /* More input validation. */
   if (opt_state->reintegrate)
     {
+      if (opt_state->ignore_ancestry)
+        return svn_error_create(SVN_ERR_CL_MUTUALLY_EXCLUSIVE_ARGS, NULL,
+                                _("--reintegrate cannot be used with "
+                                  "--ignore-ancestry"));
+
+      if (opt_state->record_only)
+        return svn_error_create(SVN_ERR_CL_MUTUALLY_EXCLUSIVE_ARGS, NULL,
+                                _("--reintegrate cannot be used with "
+                                  "--record-only"));
+
       if (opt_state->depth != svn_depth_unknown)
         return svn_error_create(SVN_ERR_CL_MUTUALLY_EXCLUSIVE_ARGS, NULL,
                                 _("--depth cannot be used with "
@@ -298,86 +427,28 @@ svn_cl__merge(apr_getopt_t *os,
                                   "with --reintegrate"));
     }
 
-  if (! two_sources_specified) /* TODO: Switch order of if */
+  merge_err = run_merge(two_sources_specified,
+                        sourcepath1, peg_revision1,
+                        sourcepath2,
+                        targetpath,
+                        ranges_to_merge, first_range_start, first_range_end,
+                        opt_state, options, ctx, pool);
+  if (merge_err && merge_err->apr_err
+                   == SVN_ERR_CLIENT_INVALID_MERGEINFO_NO_MERGETRACKING)
     {
-      /* If we don't have a source, use the target as the source. */
-      if (! sourcepath1)
-        sourcepath1 = targetpath;
-
-      /* If we don't have at least one valid revision range, pick a
-         good one that spans the entire set of revisions on our
-         source. */
-      if ((first_range_start.kind == svn_opt_revision_unspecified)
-          && (first_range_end.kind == svn_opt_revision_unspecified))
-        {
-          svn_opt_revision_range_t *range = apr_pcalloc(pool, sizeof(*range));
-          ranges_to_merge = apr_array_make(pool, 1, sizeof(range));
-          range->start.kind = svn_opt_revision_number;
-          range->start.value.number = 1;
-          range->end = peg_revision1;
-          APR_ARRAY_PUSH(ranges_to_merge, svn_opt_revision_range_t *) = range;
-        }
-
-      if (opt_state->reintegrate)
-        err = svn_client_merge_reintegrate(sourcepath1,
-                                           &peg_revision1,
-                                           targetpath,
-                                           opt_state->dry_run,
-                                           options, ctx, pool);
-      else
-        err = svn_client_merge_peg4(sourcepath1,
-                                    ranges_to_merge,
-                                    &peg_revision1,
-                                    targetpath,
-                                    opt_state->depth,
-                                    opt_state->ignore_ancestry,
-                                    opt_state->force,
-                                    opt_state->record_only,
-                                    opt_state->dry_run,
-                                    opt_state->allow_mixed_rev,
-                                    options,
-                                    ctx,
-                                    pool);
-    }
-  else
-    {
-      if (svn_path_is_url(sourcepath1) != svn_path_is_url(sourcepath2))
-        return svn_error_create(SVN_ERR_CL_ARG_PARSING_ERROR, NULL,
-                                _("Merge sources must both be "
-                                  "either paths or URLs"));
-      err = svn_client_merge4(sourcepath1,
-                              &first_range_start,
-                              sourcepath2,
-                              &first_range_end,
-                              targetpath,
-                              opt_state->depth,
-                              opt_state->ignore_ancestry,
-                              opt_state->force,
-                              opt_state->record_only,
-                              opt_state->dry_run,
-                              opt_state->allow_mixed_rev,
-                              options,
-                              ctx,
-                              pool);
+      return svn_error_quick_wrap(
+               merge_err,
+               _("Merge tracking not possible, use --ignore-ancestry or\n"
+                 "fix invalid mergeinfo in target with 'svn propset'"));
     }
 
-  if (! opt_state->quiet)
-    SVN_ERR(svn_cl__print_conflict_stats(ctx->notify_baton2, pool));
-
-  if (err)
+  if (!opt_state->quiet)
     {
-      if(err->apr_err == SVN_ERR_CLIENT_INVALID_MERGEINFO_NO_MERGETRACKING)
-        {
-          err = svn_error_quick_wrap(
-            err,
-            _("Merge tracking not possible, use --ignore-ancestry or\n"
-              "fix invalid mergeinfo in target with 'svn propset'"));
-        }
-      else if (! opt_state->reintegrate)
-        {
-          return svn_cl__may_need_force(err);
-        }
+      svn_error_t *err = svn_cl__notifier_print_conflict_stats(
+                           ctx->notify_baton2, pool);
+
+      merge_err = svn_error_compose_create(merge_err, err);
     }
 
-  return svn_error_trace(err);
+  return svn_cl__may_need_force(merge_err);
 }

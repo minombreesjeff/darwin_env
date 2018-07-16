@@ -82,7 +82,6 @@ class Generator(gen_win.WinGeneratorBase):
       'rootpath' : self.rootpath,
       'platforms' : self.platforms,
       'configs' : configs,
-      'includes' : self.get_win_includes(target),
       'sources' : sources,
       'default_platform' : self.platforms[0],
       'default_config' : configs[0].name,
@@ -128,9 +127,6 @@ class Generator(gen_win.WinGeneratorBase):
                         (
                           ('project_guid', self.makeguid('svn_locale')),
                         ))
-    self.write_zlib_project_file('zlib.dsp')
-    self.write_neon_project_file('neon.dsp')
-    self.write_serf_project_file('serf.dsp')
     install_targets = self.get_install_targets()
 
     targets = [ ]
@@ -152,9 +148,9 @@ class Generator(gen_win.WinGeneratorBase):
       depends = [ ]
       if not isinstance(target, gen_base.TargetI18N):
         depends = self.adjust_win_depends(target, name)
-	#print name
-	#for dep in depends:
-	#  print "	",dep.name
+        #print name
+        #for dep in depends:
+        #  print "	",dep.name
 
       dep_names = [ ]
       for dep in depends:

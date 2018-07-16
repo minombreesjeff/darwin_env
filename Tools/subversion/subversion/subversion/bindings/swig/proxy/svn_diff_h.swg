@@ -1,5 +1,6 @@
 /* Proxy classes for svn_diff.h
- * DO NOT EDIT -- AUTOMATICALLY GENERATED */
+ * DO NOT EDIT -- AUTOMATICALLY GENERATED
+ * BY build/generator/swig/header_wrappers.py */
 
 /* No default constructors for opaque structs */
 #ifdef SWIGPYTHON
@@ -14,7 +15,8 @@
 #ifdef SWIGPYTHON
 %apply void *PY_AS_VOID {
   void *diff_baton,
-  void *output_baton
+  void *output_baton,
+  void *cancel_baton
 };
 #endif
 
