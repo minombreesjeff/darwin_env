@@ -40,7 +40,8 @@
 #include "SDPUtils.h"
 #include "OSArrayObjectDeleter.h"
 
-static StrPtrLen    sCLine("c=IN IP4 0.0.0.0\r\na=control:*\r\n");
+static StrPtrLen    sCLine("c=IN IP4 0.0.0.0");
+static StrPtrLen    sControlLine("a=control:*");
 static StrPtrLen    sVideoStr("video");
 static StrPtrLen    sAudioStr("audio");
 static StrPtrLen    sRtpMapStr("rtpmap");
@@ -84,7 +85,7 @@ char* SDPSourceInfo::GetLocalSDP(UInt32* newSDPLen)
     // Only generate our own trackIDs if this file doesn't have 'em.
     // Our assumption here is that either the file has them, or it doesn't.
     // A file with some trackIDs, and some not, won't work.
-    Bool16 hasTrackIDs = false;
+    Bool16 hasControlLine = false;
 
     while (sdpParser.GetDataRemaining() > 0)
     {
@@ -103,10 +104,18 @@ char* SDPSourceInfo::GetLocalSDP(UInt32* newSDPLen)
                 if (appendCLine)
                 {
                     localSDPFormatter.Put(sCLine);
+                    localSDPFormatter.PutEOL();
+                   
+                    if (!hasControlLine)
+                    { 
+                      localSDPFormatter.Put(sControlLine);
+                      localSDPFormatter.PutEOL();
+                    }
+                    
                     appendCLine = false;
                 }
                 //the last "a=" for each m should be the control a=
-                if ((trackIndex > 0) && (!hasTrackIDs))
+                if ((trackIndex > 0) && (!hasControlLine))
                 {
                     qtss_sprintf(trackIndexBuffer, "a=control:trackID=%ld\r\n",trackIndex);
                     localSDPFormatter.Put(trackIndexBuffer, ::strlen(trackIndexBuffer));
@@ -133,7 +142,7 @@ char* SDPSourceInfo::GetLocalSDP(UInt32* newSDPLen)
                 StrPtrLen aLineType;
                 aParser.ConsumeWord(&aLineType);
                 if (aLineType.Equal(sControlStr))
-                    hasTrackIDs = true;
+                    hasControlLine = true;
                 break;
             }
             default:
@@ -144,7 +153,7 @@ char* SDPSourceInfo::GetLocalSDP(UInt32* newSDPLen)
         }
     }
     
-    if ((trackIndex > 0) && (!hasTrackIDs))
+    if ((trackIndex > 0) && (!hasControlLine))
     {
         qtss_sprintf(trackIndexBuffer, "a=control:trackID=%ld\r\n",trackIndex);
         localSDPFormatter.Put(trackIndexBuffer, ::strlen(trackIndexBuffer));

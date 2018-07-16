@@ -149,6 +149,7 @@ RTPStream::RTPStream(UInt32 inSSRC, RTPSessionInterface* inSession)
     fTrackID(0),
     fSsrc(inSSRC),
     fSsrcStringPtr(fSsrcString, 0),
+    fEnableSSRC(false),
     fPayloadType(qtssUnknownPayloadType),
     fFirstSeqNumber(0),
     fFirstTimeStamp(0),
@@ -208,6 +209,7 @@ RTPStream::RTPStream(UInt32 inSSRC, RTPSessionInterface* inSession)
     fNetworkMode(qtssRTPNetworkModeDefault),
     fStreamStartTimeOSms(OS::Milliseconds())
 {
+
     fStreamRef = this;
 #if DEBUG
     fNumPacketsDroppedOnTCPFlowControl = 0;
@@ -352,6 +354,7 @@ void  RTPStream::SetOverBufferState(RTSPRequestInterface* request)
 
 QTSS_Error RTPStream::Setup(RTSPRequestInterface* request, QTSS_AddStreamFlags inFlags)
 {
+
     //Get the URL for this track
     fStreamURLPtr.Len = kMaxStreamURLSizeInBytes;
     if (request->GetValue(qtssRTSPReqFileName, 0, fStreamURLPtr.Ptr, &fStreamURLPtr.Len) != QTSS_NoErr)
@@ -414,7 +417,7 @@ QTSS_Error RTPStream::Setup(RTSPRequestInterface* request, QTSS_AddStreamFlags i
     fRemoteAddr = request->GetSession()->GetSocket()->GetRemoteAddr();
     if (request->GetDestAddr() != INADDR_ANY)
     {
-        // Sending data to other addresses could be used in malicious ways, therefore
+       // Sending data to other addresses could be used in malicious ways, therefore
         // it is up to the module as to whether this sort of request might be allowed
         if (!(inFlags & qtssASFlagsAllowDestination))
             return QTSSModuleUtils::SendErrorResponse(request, qtssClientBadRequest, qtssMsgAltDestNotAllowed);
@@ -430,9 +433,10 @@ QTSS_Error RTPStream::Setup(RTSPRequestInterface* request, QTSS_AddStreamFlags i
     //and that the RTCP port is actually one greater than the RTP port
     if ((fRemoteRTPPort & 1) != 0)
         return QTSSModuleUtils::SendErrorResponse(request, qtssClientBadRequest, qtssMsgRTPPortMustBeEven);     
-        
-    if (fRemoteRTCPPort != (fRemoteRTPPort + 1))
-        return QTSSModuleUtils::SendErrorResponse(request, qtssClientBadRequest, qtssMsgRTCPPortMustBeOneBigger);       
+ 
+ // comment out check below. This allows the rtcp port to be non-contiguous with the rtp port.
+ //   if (fRemoteRTCPPort != (fRemoteRTPPort + 1))
+ //       return QTSSModuleUtils::SendErrorResponse(request, qtssClientBadRequest, qtssMsgRTCPPortMustBeOneBigger);       
     
     // Find the right source address for this stream. If it isn't specified in the
     // RTSP request, assume it is the same interface as for the RTSP request.
@@ -560,6 +564,11 @@ void RTPStream::SendSetupResponse( RTSPRequestInterface* inRequest )
 
 void RTPStream::AppendTransport(RTSPRequestInterface* request)
 {
+
+    StrPtrLen* ssrcPtr = NULL;
+    if (fEnableSSRC)
+        ssrcPtr = &fSsrcStringPtr;
+
     // We are either going to append the RTP / RTCP port numbers (UDP),
     // or the channel numbers (TCP, interleaved)
     if (!fIsTCP)
@@ -586,20 +595,20 @@ void RTPStream::AppendTransport(RTSPRequestInterface* request)
             StrPtrLen rtpSPL(rtpPortStr);
             StrPtrLen rtcpSPL(rtcpPortStr);
             // Append UDP socket port numbers.
-            request->AppendTransportHeader(&rtpSPL, &rtcpSPL, NULL, NULL, &theSrcIPAddress,&fSsrcStringPtr);
+            request->AppendTransportHeader(&rtpSPL, &rtcpSPL, NULL, NULL, &theSrcIPAddress,ssrcPtr);
         }       
         else
         {
             // Append UDP socket port numbers.
             UDPSocket* theRTPSocket = fSockets->GetSocketA();
             UDPSocket* theRTCPSocket = fSockets->GetSocketB();
-            request->AppendTransportHeader(theRTPSocket->GetLocalPortStr(), theRTCPSocket->GetLocalPortStr(), NULL, NULL, &theSrcIPAddress,&fSsrcStringPtr);
+            request->AppendTransportHeader(theRTPSocket->GetLocalPortStr(), theRTCPSocket->GetLocalPortStr(), NULL, NULL, &theSrcIPAddress,ssrcPtr);
         }
     }
     else if (fRTCPChannel < kNumPrebuiltChNums)
         // We keep a certain number of channel number strings prebuilt, so most of the time
         // we won't have to call qtss_sprintf
-        request->AppendTransportHeader(NULL, NULL, &sChannelNums[fRTPChannel],  &sChannelNums[fRTCPChannel],NULL,&fSsrcStringPtr);
+        request->AppendTransportHeader(NULL, NULL, &sChannelNums[fRTPChannel],  &sChannelNums[fRTCPChannel],NULL,ssrcPtr);
     else
     {
         // If these channel numbers fall outside prebuilt range, we will have to call qtss_sprintf.
@@ -611,7 +620,7 @@ void RTPStream::AppendTransport(RTSPRequestInterface* request)
         StrPtrLen rtpChannel(rtpChannelBuf);
         StrPtrLen rtcpChannel(rtcpChannelBuf);
 
-        request->AppendTransportHeader(NULL, NULL, &rtpChannel, &rtcpChannel,NULL,&fSsrcStringPtr);
+        request->AppendTransportHeader(NULL, NULL, &rtpChannel, &rtcpChannel,NULL,ssrcPtr);
     }
 }
 
@@ -636,18 +645,12 @@ void    RTPStream::AppendRTPInfo(QTSS_RTSPHeader inHeader, RTSPRequestInterface*
         Assert(seqNumberBufPtr.Len < 20);
     }
 
-/*  not in rtsp spec and unnecessary since ssrc is in transport header of setup response
-    //only advertise our ssrc to the client if we are in fact sending RTCP
-    //sender reports. Otherwise, this ssrc is invalid!
-    UInt32 theSsrcStringLen = fSsrcStringPtr.Len;
-    if (!(inFlags & qtssPlayRespWriteTrackInfo))
-        fSsrcStringPtr.Len = 0;
-    
-    request->AppendRTPInfoHeader(inHeader, &fStreamURLPtr, &seqNumberBufPtr,
-                                    &fSsrcStringPtr, &rtpTimeBufPtr,lastInfo);
-    fSsrcStringPtr.Len = theSsrcStringLen;
-*/
-    request->AppendRTPInfoHeader(inHeader, &fStreamURLPtr, &seqNumberBufPtr, NULL, &rtpTimeBufPtr,lastInfo);
+    Bool16 fullURL = QTSServerInterface::GetServer()->GetPrefs()->GetRTSPPlayInfoFullURL(); // get the default setting
+    if (inFlags & qtssPlayFlagsRTPInfoFullURL) // allow api to over-ride default to force full url.
+        fullURL = true;
+        
+    StrPtrLen *nullSSRCPtr = NULL; // There is no SSRC in RTP-Info header, it goes in the transport header.
+    request->AppendRTPInfoHeader(inHeader, &fStreamURLPtr, &seqNumberBufPtr, nullSSRCPtr, &rtpTimeBufPtr,lastInfo, fullURL);
 
 }
 

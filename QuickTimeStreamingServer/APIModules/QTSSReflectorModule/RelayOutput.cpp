@@ -498,6 +498,9 @@ SInt64 RelayOutput::RunAnnounce()
         fAnnounceTask = NULL;
     }
     
+   if ( (-1 == result) && (NULL != fClientSocket) && (NULL != fClientSocket->GetSocket() ) )
+   	fClientSocket->GetSocket()->SetTask(NULL); //remove fAnnounceTask from event handling code. The task can be safely deleted after detaching from the socket. 
+
     return result;
 }
 

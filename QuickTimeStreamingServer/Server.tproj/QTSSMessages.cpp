@@ -121,7 +121,7 @@ char*       QTSSMessages::sMessagesKeyStrings[] =
 
 char*       QTSSMessages::sMessages[] =
 {
-/* 0 */ "No Message",
+/* 0 */ "%s%s",
 /* 1 */ "There was no URL contained in the following request: %s",
 /* 2 */ "The following RTSP method: %s, was not understood by the server",
 /* 3 */ "There is no RTSP version in the following request: %s",
@@ -164,7 +164,7 @@ char*       QTSSMessages::sMessages[] =
 /* 40*/ "The following pref, %s, has the wrong type. Using a default value of: %s",
 /* 41*/ "Couldn't re-write server prefs file",
 /* 42*/ "Couldn't set desired UDP receive socket buffer size. Using size of %s K",
-/* 43*/ "The request is incorrectly formatted",
+/* 43*/ "The request is incorrectly formatted.",
 
 // module specific messages follow (these are dynamically numbered)
 

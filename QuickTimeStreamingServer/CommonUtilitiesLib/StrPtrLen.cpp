@@ -340,6 +340,13 @@ void StrPtrLen::PrintStrEOL(char* stopStr, char *appendStr)
        
     } 
 
+    for (i = 0; thestr[i] != 0 ; i ++) 
+    { 
+       if (thestr[i] == '%' && thestr[i+1] != '%' ) 
+       {   thestr[i] = '$';
+       }       
+    } 
+
     SInt32 stopLen = 0;
     if (stopStr != NULL)
         stopLen = ::strlen(stopStr);

@@ -240,8 +240,9 @@ void  SDPContainer::PrintAllLines()
 char SDPLineSorter::sSessionOrderedLines[] = "vosiuepcbtrzka"; // chars are order dependent: declared by rfc 2327
 char SDPLineSorter::sessionSingleLines[]  = "vosiuepcbzk";    // return only 1 of each of these session field types
 StrPtrLen  SDPLineSorter::sEOL("\r\n");
+StrPtrLen  SDPLineSorter::sMaxBandwidthTag("b=AS:");
 
-SDPLineSorter::SDPLineSorter(SDPContainer *rawSDPContainerPtr) : fSessionLineCount(0),fSDPSessionHeaders(NULL,0), fSDPMediaHeaders(NULL,0)
+SDPLineSorter::SDPLineSorter(SDPContainer *rawSDPContainerPtr, Float32 adjustMediaBandwidthPercent) : fSessionLineCount(0),fSDPSessionHeaders(NULL,0), fSDPMediaHeaders(NULL,0)
 {
 
 	Assert(rawSDPContainerPtr != NULL);
@@ -260,7 +261,25 @@ SDPLineSorter::SDPLineSorter(SDPContainer *rawSDPContainerPtr) : fSessionLineCou
         while (sdpParser.GetDataRemaining() > 0)
         {
             sdpParser.GetThruEOL(&sdpLine);
-            fSDPMediaHeaders.Put(sdpLine);
+            
+            if ( ( 'b' == sdpLine.Ptr[0]) && (1.0 != adjustMediaBandwidthPercent) )
+            {   
+                StringParser bLineParser(&sdpLine);
+                bLineParser.ConsumeUntilDigit();
+                UInt32 bandwidth = (UInt32) (.5 + (adjustMediaBandwidthPercent * (Float32) bLineParser.ConsumeInteger() ) );
+                if (bandwidth < 1) 
+                    bandwidth = 1;
+                
+                char bandwidthStr[10];
+                qtss_snprintf(bandwidthStr,sizeof(bandwidthStr) -1, "%lu", bandwidth);
+                bandwidthStr[sizeof(bandwidthStr) -1] = 0;
+                
+                fSDPMediaHeaders.Put(sMaxBandwidthTag);
+                fSDPMediaHeaders.Put(bandwidthStr);
+            }
+            else
+                fSDPMediaHeaders.Put(sdpLine);
+
             fSDPMediaHeaders.Put(SDPLineSorter::sEOL);
         }       
         fMediaHeaders.Set(fSDPMediaHeaders.GetBufPtr(),fSDPMediaHeaders.GetBytesWritten());

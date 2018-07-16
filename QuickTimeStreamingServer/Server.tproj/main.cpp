@@ -272,8 +272,8 @@ int main(int argc, char * argv[])
                 ::exit(0);  
             case 'd':
                 dontFork = true;
-                
                 #if __linux__ || __MacOSX__
+                    (void) setvbuf(stdout, NULL, _IOLBF, 0);
                     OSThread::WrapSleep(true);
                 #endif
                 

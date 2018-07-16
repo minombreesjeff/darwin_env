@@ -145,8 +145,15 @@ static Bool16               sRecordMovieFileSDP = false;
 static Bool16               sEnableMovieFileSDP = false;
 static Float64              sDefaultStartTime = 0.0;
 
+static Bool16               sPlayerCompatibility = true;
+static UInt32               sAdjustMediaBandwidthPercent = 50;
+
 static const StrPtrLen              kCacheControlHeader("must-revalidate");
 static const QTSS_RTSPStatusCode    kNotModifiedStatus          = qtssRedirectNotModified;
+
+
+
+  
 // FUNCTIONS
 
 static QTSS_Error QTSSFileModuleDispatch(QTSS_Role inRole, QTSS_RoleParamPtr inParamBlock);
@@ -479,10 +486,24 @@ QTSS_Error RereadPrefs()
     sEnableMovieFileSDP = false;
     QTSSModuleUtils::GetIOAttribute(sPrefs, "enable_movie_file_sdp", qtssAttrDataTypeBool16, &sEnableMovieFileSDP, sizeof(sEnableMovieFileSDP));
     
+    sPlayerCompatibility = true;
+    QTSSModuleUtils::GetIOAttribute(sPrefs, "enable_player_compatibility", qtssAttrDataTypeBool16, &sPlayerCompatibility, sizeof(sPlayerCompatibility));
+
+    sAdjustMediaBandwidthPercent = 50;
+    QTSSModuleUtils::GetIOAttribute(sPrefs, "compatibility_adjust_sdp_media_bandwidth_percent", qtssAttrDataTypeUInt32, &sAdjustMediaBandwidthPercent, sizeof(sAdjustMediaBandwidthPercent));
+
+    if (sAdjustMediaBandwidthPercent > 100)
+        sAdjustMediaBandwidthPercent = 100;
+        
+    if (sAdjustMediaBandwidthPercent < 1)
+        sAdjustMediaBandwidthPercent = 1;
+        
     BuildPrefBasedHeaders();
     
     return QTSS_NoErr;
 }
+
+
 
 QTSS_Error ProcessRTSPRequest(QTSS_StandardRTSP_Params* inParamBlock)
 {
@@ -820,8 +841,15 @@ QTSS_Error DoDescribe(QTSS_StandardRTSP_Params* inParamBlock)
         }
 		
 // ------------ reorder the sdp headers to make them proper.
-		
-		SDPLineSorter sortedSDP(&rawSDPContainer);
+        Float32 adjustMediaBandwidthPercent = 1.0;
+        Bool16 adjustMediaBandwidth = false;
+        if (sPlayerCompatibility )
+            adjustMediaBandwidth = QTSSModuleUtils::HavePlayerProfile(inParamBlock,QTSSModuleUtils::kAdjustBandwidth);
+		    
+		if (adjustMediaBandwidth)
+		    adjustMediaBandwidthPercent = (Float32) sAdjustMediaBandwidthPercent / 100.0;
+		    
+		SDPLineSorter sortedSDP(&rawSDPContainer,adjustMediaBandwidthPercent);
 		StrPtrLen *theSessionHeadersPtr = sortedSDP.GetSessionHeaders();
 		StrPtrLen *theMediaHeadersPtr = sortedSDP.GetMediaHeaders();
 		

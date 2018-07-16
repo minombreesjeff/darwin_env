@@ -52,6 +52,9 @@ class RTSPSession : public RTSPSessionInterface
         // Call this before using this object
         static void Initialize();
 
+        Bool16 IsPlaying() {if (fRTPSession == NULL) return false; if (fRTPSession->GetSessionState() == qtssPlayingState) return true; return false; }
+        
+        
     private:
 
         SInt64 Run();

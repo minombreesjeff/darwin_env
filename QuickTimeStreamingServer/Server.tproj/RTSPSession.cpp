@@ -864,7 +864,7 @@ SInt64 RTSPSession::Run()
                     // no modules took this one so send back a parameter error
                     if (fRequest->GetMethod() == qtssSetParameterMethod) // keep session
                     {
-                        QTSS_RTSPStatusCode statusCode = qtssClientParameterNotUnderstood;
+                        QTSS_RTSPStatusCode statusCode = qtssSuccessOK; //qtssClientParameterNotUnderstood;
                         fRequest->SetValue(qtssRTSPReqStatusCode, 0, &statusCode, sizeof(statusCode));
                         fRequest->SendHeader();
                     }
@@ -1535,9 +1535,11 @@ void RTSPSession::SetupRequest()
 
     QTSS_RTSPStatusCode statusCode = qtssSuccessOK;
 
+    // These RTSP method handlers are here because some new code and features need to be added to properly support
+    // the methods through a module API.  The code below may one day need to be moved and processed after the module request handlers.
     //
     // If this is an OPTIONS request, don't even bother letting modules see it. Just
-    // send a standard OPTIONS response, and bedone.
+    // send a standard OPTIONS response, and bedone. 
     if (fRequest->GetMethod() == qtssOptionsMethod)
     {
         StrPtrLen* cSeqPtr = fRequest->GetHeaderDictionary()->GetValue(qtssCSeqHeader);
@@ -1548,14 +1550,14 @@ void RTSPSession::SetupRequest()
             fRequest->SendHeader();
             return;
         }
-            
+        
         // If this is an options request, just return a very simple response
         fRequest->AppendHeader(qtssPublicHeader, QTSServerInterface::GetPublicHeader());
         fRequest->SendHeader();
 
         return;
     }
-    
+     
     //
 	// If this is a SET_PARAMETER request, don't let modules see it.
 	if (fRequest->GetMethod() == qtssSetParameterMethod)

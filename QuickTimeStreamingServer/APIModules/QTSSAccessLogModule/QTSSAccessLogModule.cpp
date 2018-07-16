@@ -341,9 +341,12 @@ void ReplaceSpaces(StrPtrLen *sourcePtr, StrPtrLen *destPtr, char *replaceStr)
         do
         {   sourceStringParser.ConsumeUntil(&preStopChars, StringParser::sEOLWhitespaceMask);
             if (preStopChars.Len > 0)
-            {   formattedString.Put(preStopChars);
-                if ( sourceStringParser.Expect(' ') )
+            {   formattedString.Put(preStopChars);// copy the string up to the space or eol. it will be truncated if there's not enough room.
+                if ( sourceStringParser.Expect(' ') && (formattedString.GetSpaceLeft() > replaceValue.Len) )
                 {   formattedString.Put(replaceValue.Ptr, replaceValue.Len);
+                }
+                else //no space character or no room for replacement
+                {    break; 
                 }
             }
 

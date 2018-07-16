@@ -566,7 +566,15 @@ QTSS_Error QTSSCallbacks::QTSS_SendStandardRTSPResponse(QTSS_RTSPRequestObject i
             if (((RTSPRequestInterface*)inRTSPRequest)->GetStatus() == qtssRedirectNotModified)
                 (void)((RTPSession*)inRTPInfo)->DoSessionSetupResponse((RTSPRequestInterface*)inRTSPRequest);
             else
+            {
+                if (inFlags & qtssSetupRespDontWriteSSRC)
+                    ((RTPStream*)inRTPInfo)->DisableSSRC();
+                else
+                    ((RTPStream*)inRTPInfo)->EnableSSRC();
+                
                 ((RTPStream*)inRTPInfo)->SendSetupResponse((RTSPRequestInterface*)inRTSPRequest);
+            }
+            
             return QTSS_NoErr;
         }
         case qtssPlayMethod:

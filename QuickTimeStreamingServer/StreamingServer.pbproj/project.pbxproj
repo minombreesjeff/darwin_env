@@ -194,7 +194,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -5458,15 +5458,11 @@
 			children = (
 				68C395D300C567B77F000001,
 				68C395D800C567B77F000001,
-				68C395D400C567B77F000001,
-				68C395D900C567B77F000001,
 				68C395D600C567B77F000001,
 				68C395DD00C567B77F000001,
 				003D3EDC0132F64000DD292F,
 				003D3EDD0132F64000DD292F,
 				68C395DB00C567B77F000001,
-				68C395DF00C567B77F000001,
-				68C395DA00C567B77F000001,
 			);
 			isa = PBXGroup;
 			path = PrefsSourceLib;
@@ -5476,12 +5472,6 @@
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = FilePrefsSource.cpp;
-			refType = 4;
-		};
-		68C395D400C567B77F000001 = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			path = NetInfoPrefsSource.cpp;
 			refType = 4;
 		};
 		68C395D600C567B77F000001 = {
@@ -5496,18 +5486,6 @@
 			path = FilePrefsSource.h;
 			refType = 4;
 		};
-		68C395D900C567B77F000001 = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			path = NetInfoPrefsSource.h;
-			refType = 4;
-		};
-		68C395DA00C567B77F000001 = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			path = nilib2.h;
-			refType = 4;
-		};
 		68C395DB00C567B77F000001 = {
 			fileEncoding = 30;
 			isa = PBXFileReference;
@@ -5518,12 +5496,6 @@
 			fileEncoding = 30;
 			isa = PBXFileReference;
 			path = XMLPrefsParser.h;
-			refType = 4;
-		};
-		68C395DF00C567B77F000001 = {
-			fileEncoding = 30;
-			isa = PBXFileReference;
-			path = nilib2.c;
 			refType = 4;
 		};
 		68C395E600C567B77F000001 = {
@@ -10088,7 +10060,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -10212,7 +10184,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -10335,7 +10307,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -10460,7 +10432,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -10679,7 +10651,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -11245,8 +11217,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				68C399DA00C567B77F000001,
-				68C399DB00C567B77F000001,
-				68C399DC00C567B77F000001,
 				68C399DD00C567B77F000001,
 				68C399DF00C567B77F000001,
 				003D3EDF0132F64100DD292F,
@@ -11261,21 +11231,6 @@
 				ATTRIBUTES = (
 					Project,
 				);
-			};
-		};
-		68C399DB00C567B77F000001 = {
-			fileRef = 68C395D900C567B77F000001;
-			isa = PBXBuildFile;
-			settings = {
-				ATTRIBUTES = (
-					Project,
-				);
-			};
-		};
-		68C399DC00C567B77F000001 = {
-			fileRef = 68C395DA00C567B77F000001;
-			isa = PBXBuildFile;
-			settings = {
 			};
 		};
 		68C399DD00C567B77F000001 = {
@@ -11300,9 +11255,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				68C399E100C567B77F000001,
-				68C399E200C567B77F000001,
 				68C399E400C567B77F000001,
-				68C399E500C567B77F000001,
 				003D3EE00132F64100DD292F,
 			);
 			isa = PBXSourcesBuildPhase;
@@ -11316,24 +11269,8 @@
 				);
 			};
 		};
-		68C399E200C567B77F000001 = {
-			fileRef = 68C395D400C567B77F000001;
-			isa = PBXBuildFile;
-			settings = {
-				ATTRIBUTES = (
-				);
-			};
-		};
 		68C399E400C567B77F000001 = {
 			fileRef = 68C395D600C567B77F000001;
-			isa = PBXBuildFile;
-			settings = {
-				ATTRIBUTES = (
-				);
-			};
-		};
-		68C399E500C567B77F000001 = {
-			fileRef = 68C395DF00C567B77F000001;
 			isa = PBXBuildFile;
 			settings = {
 				ATTRIBUTES = (
@@ -12961,7 +12898,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -14241,7 +14178,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.2</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -16550,7 +16487,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -16687,7 +16624,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -16816,7 +16753,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -16934,7 +16871,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -17080,7 +17017,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -17196,7 +17133,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -17316,7 +17253,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -17439,7 +17376,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -17572,7 +17509,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -17712,7 +17649,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
@@ -17832,7 +17769,7 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>5.0.3</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>

@@ -111,7 +111,7 @@ class SDPLineSorter {
 
 public:
 	SDPLineSorter(): fSessionLineCount(0),fSDPSessionHeaders(NULL,0), fSDPMediaHeaders(NULL,0) {};
-	SDPLineSorter(SDPContainer *rawSDPContainerPtr);
+	SDPLineSorter(SDPContainer *rawSDPContainerPtr, Float32 adjustMediaBandwidthPercent = 1.0);
 	
 	StrPtrLen* GetSessionHeaders() { return &fSessionHeaders; }
 	StrPtrLen* GetMediaHeaders() { return &fMediaHeaders; }
@@ -127,6 +127,7 @@ public:
 	static char sSessionOrderedLines[];// = "vosiuepcbtrzka"; // chars are order dependent: declared by rfc 2327
 	static char sessionSingleLines[];//  = "vosiuepcbzk";    // return only 1 of each of these session field types
 	static StrPtrLen sEOL;
+    static StrPtrLen sMaxBandwidthTag;
 };
 
 

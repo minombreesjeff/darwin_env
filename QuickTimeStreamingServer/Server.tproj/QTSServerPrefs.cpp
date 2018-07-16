@@ -132,7 +132,8 @@ QTSServerPrefs::PrefInfo QTSServerPrefs::sPrefInfo[] =
     { kDontAllowMultipleValues, "true",     NULL                    },  //RTSP_server_info
 	{ kDontAllowMultipleValues, "0",        NULL                    },  //run_num_threads
     { kDontAllowMultipleValues, DEFAULTPATHS_PID_DIR PLATFORM_SERVER_BIN_NAME ".pid",	NULL	},	//pid_file
-    { kDontAllowMultipleValues, "false",    NULL                    }   //force_logs_close_on_write
+    { kDontAllowMultipleValues, "false",    NULL                    },   //force_logs_close_on_write
+    { kDontAllowMultipleValues, "true",    NULL                     }   //enable_rtsp_play_info_full_url
 
 };
 
@@ -208,7 +209,8 @@ QTSSAttrInfoDict::AttrInfo  QTSServerPrefs::sAttributes[] =
     /* 65 */ { "RTSP_server_info",                      NULL,                   qtssAttrDataTypeBool16,     qtssAttrModeRead | qtssAttrModeWrite },
 	/* 66 */ { "run_num_threads",                       NULL,                   qtssAttrDataTypeUInt32,     qtssAttrModeRead | qtssAttrModeWrite },
 	/* 67 */ { "pid_file",								NULL,					qtssAttrDataTypeCharArray,	qtssAttrModeRead | qtssAttrModeWrite },
-    /* 68 */ { "force_logs_close_on_write",             NULL,                   qtssAttrDataTypeBool16,     qtssAttrModeRead | qtssAttrModeWrite }
+    /* 68 */ { "force_logs_close_on_write",             NULL,                   qtssAttrDataTypeBool16,     qtssAttrModeRead | qtssAttrModeWrite },
+    /* 69 */ { "enable_rtsp_play_info_full_url",        NULL,                   qtssAttrDataTypeBool16,     qtssAttrModeRead | qtssAttrModeWrite }
 
 };
 
@@ -275,7 +277,8 @@ QTSServerPrefs::QTSServerPrefs(XMLPrefsParser* inPrefsSource, Bool16 inWriteMiss
 	fOverbufferRate(0.0),
     fEnablePacketHeaderPrintfs(false),   
     fPacketHeaderPrintfOptions(kRTPALL | kRTCPSR | kRTCPRR | kRTCPAPP | kRTCPACK),
-    fCloseLogsOnWrite(false)
+    fCloseLogsOnWrite(false),
+    fRTSPPlayInfoFullURL(false)    
 {
     SetupAttributes();
     RereadServerPreferences(inWriteMissingPrefs);
@@ -353,6 +356,7 @@ void QTSServerPrefs::SetupAttributes()
     this->SetVal(qtssPrefsEnablePacketHeaderPrintfs,    &fEnablePacketHeaderPrintfs,    sizeof(fEnablePacketHeaderPrintfs));
     this->SetVal(qtssPrefsCloseLogsOnWrite,             &fCloseLogsOnWrite,             sizeof(fCloseLogsOnWrite));
 	this->SetVal(qtssPrefsOverbufferRate,				&fOverbufferRate,				sizeof(fOverbufferRate));
+    this->SetVal(qtssPrefsRTSPPlayInfoFullURL,          &fRTSPPlayInfoFullURL,          sizeof(fRTSPPlayInfoFullURL));
 
 }
 

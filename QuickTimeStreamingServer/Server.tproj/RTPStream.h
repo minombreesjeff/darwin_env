@@ -131,6 +131,9 @@ class RTPStream : public QTSSDictionary, public UDPDemuxerTask
 		
 		void SetLateTolerance(Float32 inLateToleranceInSec) { fLateToleranceInSec = inLateToleranceInSec; }
 		
+		void EnableSSRC() { fEnableSSRC = true; }
+		void DisableSSRC() { fEnableSSRC = false; }
+		
     private:
         
         enum
@@ -183,6 +186,7 @@ class RTPStream : public QTSSDictionary, public UDPDemuxerTask
         UInt32      fSsrc;
         char        fSsrcString[kMaxSsrcSizeInBytes];
         StrPtrLen   fSsrcStringPtr;
+        Bool16      fEnableSSRC;
         
         //Payload name and codec type.
         char                fPayloadNameBuf[kDefaultPayloadBufSize];

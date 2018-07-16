@@ -42,7 +42,12 @@
 class QTSSModuleUtils
 {
     public:
+        enum    {  
+                    kRequiresRTPInfoSeqAndTime  = 0, 
+                    kAdjustBandwidth            = 1 
+                };
     
+      
         static void     Initialize( QTSS_TextMessagesObject inMessages,
                                     QTSS_ServerObject inServer,
                                     QTSS_StreamRef inErrorLog);
@@ -210,6 +215,8 @@ class QTSSModuleUtils
         static void SetMisingPrefLogVerbosity(QTSS_ErrorVerbosity verbosityLevel) { QTSSModuleUtils::sMissingPrefVerbosity = verbosityLevel;}
         static QTSS_ErrorVerbosity GetMisingPrefLogVerbosity() { return QTSSModuleUtils::sMissingPrefVerbosity;}
   
+        static Bool16 HavePlayerProfile(QTSS_StandardRTSP_Params* inParams, UInt32 feature);
+        
     private:
     
         //

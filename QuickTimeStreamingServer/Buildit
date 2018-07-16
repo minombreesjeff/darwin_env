@@ -162,7 +162,13 @@ case $PLAT in
  		;;
 
 	"Darwin.Power Macintosh")
-         echo "Configuring for "$OSNAME" on "$HARDWARENAME". This is a pbxbuild of the QuickTimeStreamingServer."
+        if [ -e /usr/bin/xcodebuild ] ; then
+            BUILDTOOL="xcodebuild"
+        else
+            BUILDTOOL="pbxbuild"
+        fi
+        
+        echo "Configuring for "$OSNAME" on "$HARDWARENAME". This is a $BUILDTOOL of the QuickTimeStreamingServer."
  	
  		;;
 
@@ -209,19 +215,19 @@ echo Building for $PLAT with $CPLUS
 if [ "${PLAT}" = "Darwin.Power Macintosh" ]; then
 	
 	if [ "$1" = "" ] ; then
-           echo "pbxbuild DarwinStreamingServer"
-           pbxbuild -target DSS
+           echo "$BUILDTOOL DarwinStreamingServer"
+           $BUILDTOOL -target DSS
     else
 	    if [ "$1" = "dss" ] ; then
-           echo "pbxbuild DarwinStreamingServer $1"
-           pbxbuild -target DSS -buildstyle Deployment $2
+           echo "$BUILDTOOL DarwinStreamingServer $1"
+           $BUILDTOOL -target DSS -buildstyle Deployment $2
         else
             if [ "$1" = "qtss" ] ; then
-                echo "pbxbuild QuickTimeStreamingServer $*"
-                pbxbuild -target QTSS -buildstyle Deployment $2
+                echo "$BUILDTOOL QuickTimeStreamingServer $*"
+                $BUILDTOOL -target QTSS -buildstyle Deployment $2
             else
                 echo "build $*"
-                pbxbuild $*
+                $BUILDTOOL $*
             fi
         fi
     fi

@@ -39,7 +39,7 @@
 
 static const SInt64 kMaxWaitTimeInMsec = 5000;
 static const SInt64 kIdleTimeoutInMsec = 20000; // Time out in 20 seconds if nothing's doing
-static const SInt16 kSanitySeqNumDifference = 300;
+static const SInt16 kSanitySeqNumDifference = 3000;
 
 UInt32          ClientSession::sActiveConnections = 0;
 UInt32          ClientSession::sPlayingConnections = 0;
@@ -285,7 +285,7 @@ SInt64 ClientSession::Run()
                 else if (fTransportType == kTCPTransportType)
                 {
                     fSocket->SetRcvSockBufSize(fSockRcvBufSize); // Make the rcv buf really big
-                    theErr = fClient->SendTCPSetup(fSDPParser.GetStreamInfo(fNumSetups)->fTrackID);
+                    theErr = fClient->SendTCPSetup(fSDPParser.GetStreamInfo(fNumSetups)->fTrackID,fNumSetups * 2, (fNumSetups * 2) +1);
                 }
                 else if (fTransportType == kReliableUDPTransportType)
                 {
@@ -615,7 +615,7 @@ void    ClientSession::ProcessMediaPacket(  char* inPacket, UInt32 inLength,
                 
             fStats[x].fNumPacketsReceived++;
             fStats[x].fNumBytesReceived += inLength;
-            
+
             // Check if this packet is out of order
             if (fStats[x].fHighestSeqNumValid)
             {                       
@@ -654,11 +654,15 @@ void    ClientSession::ProcessMediaPacket(  char* inPacket, UInt32 inLength,
             UInt32 debugblah = 0;
             
             // Put this sequence number into the map to track packet loss
-            while ((theSeqNum - fStats[x].fWrapSeqNum) > TrackStats::kSeqNumMapSize)
+            while ( (SInt32)  ( (SInt32) theSeqNum - (SInt32) fStats[x].fWrapSeqNum) > TrackStats::kSeqNumMapSize)
             {
                 debugblah++;
-                Assert(debugblah < 10);
-
+#if CLIENT_SESSION_DEBUG
+                if (debugblah > 10)
+                    printf("theSeqNum= %u fStats[x].fWrapSeqNum =%u debugblah=%lu\n", theSeqNum,fStats[x].fWrapSeqNum,  debugblah);
+#endif              
+                if (debugblah > 100)
+                    break;
                 // We've cycled through the entire map. Calculate packet
                 // loss on the lowest 50 indexes in the map (don't get too
                 // close to where we are lest we mistake out of order packets
@@ -684,10 +688,12 @@ void    ClientSession::ProcessMediaPacket(  char* inPacket, UInt32 inLength,
                 fStats[x].fWrapSeqNum += halfSeqNumMap;
 
 #if CLIENT_SESSION_DEBUG
-                qtss_printf("Got %lu packets for trackID %lu. %lu packets lost, %lu packets out of order\n", fStats[x].fNumPacketsReceived, inTrackID, fStats[x].fNumLostPackets, fStats[x].fNumOutOfOrderPackets);
+                if ( (fStats[x].fNumOutOfOrderPackets > 0) || (fStats[x].fNumLostPackets > 0) )
+                    qtss_printf("Got %lu packets for trackID %lu. %lu packets lost, %lu packets out of order\n", fStats[x].fNumPacketsReceived, inTrackID, fStats[x].fNumLostPackets, fStats[x].fNumOutOfOrderPackets);
 #endif              
+           
             }
-            
+           
             //
             // Track duplicate packets
             if (fStats[x].fSequenceNumberMap[theSeqNum % 100])
@@ -695,7 +701,7 @@ void    ClientSession::ProcessMediaPacket(  char* inPacket, UInt32 inLength,
                 
             fStats[x].fSequenceNumberMap[theSeqNum % 100] = 1;
             theSeqNum = 0;
-            
+
             RTPMetaInfoPacket::FieldID* theMetaInfoFields = fClient->GetFieldIDArrayByTrack(inTrackID);
             if (theMetaInfoFields != NULL)
             {
@@ -719,7 +725,7 @@ void    ClientSession::ProcessMediaPacket(  char* inPacket, UInt32 inLength,
             }
         }
     }
-    Assert(theSeqNum == 0); // We should always find a track with this track ID
+  //  Assert(theSeqNum == 0); // We should always find a track with this track ID
 }
 
 void ClientSession::AckPackets(UInt32 inTrackIndex, UInt16 inCurSeqNum, Bool16 inCurSeqNumValid)
@@ -735,7 +741,7 @@ void ClientSession::AckPackets(UInt32 inTrackIndex, UInt16 inCurSeqNum, Bool16 i
     *(theWriter++) = htonl(FOUR_CHARS_TO_INT('q', 't', 'a', 'k'));
     *(theWriter++) = htonl(0);
     
-    SInt16 theSeqNumDifference = inCurSeqNum - fStats[inTrackIndex].fHighestSeqNum;
+    SInt32 theSeqNumDifference = inCurSeqNum - fStats[inTrackIndex].fHighestSeqNum;
     
     if (!inCurSeqNumValid)
     {

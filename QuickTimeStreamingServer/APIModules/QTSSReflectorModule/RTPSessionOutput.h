@@ -73,10 +73,12 @@ class RTPSessionOutput : public ReflectorOutput
         Bool16                  fIsUDP;
         Bool16                  fTransportInitialized;
         Bool16                  fMustSynch;
+        Bool16                  fPreFilter;
         
         UInt16 GetPacketSeqNumber(StrPtrLen* inPacket);
         void SetPacketSeqNumber(StrPtrLen* inPacket, UInt16 inSeqNumber);
         Bool16 PacketShouldBeThinned(QTSS_RTPStreamObject inStream, StrPtrLen* inPacket);
+        Bool16  FilterPacket(QTSS_RTPStreamObject *theStreamPtr, StrPtrLen* inPacket);
         
         UInt32 GetPacketRTPTime(StrPtrLen* packetStrPtr);
 inline  Bool16 PacketMatchesStream(void* inStreamCookie, QTSS_RTPStreamObject *theStreamPtr);

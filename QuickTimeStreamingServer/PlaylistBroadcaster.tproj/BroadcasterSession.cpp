@@ -471,7 +471,7 @@ SInt64 BroadcasterSession::Run()
                 }
                 else if (fTransportType == kTCPTransportType)
                 {   
-                    theErr = fRTSPClient->SendTCPSetup(fSDPParser.GetStreamInfo(fNumSetups)->fTrackID);                 
+                    theErr = fRTSPClient->SendTCPSetup(fSDPParser.GetStreamInfo(fNumSetups)->fTrackID,fNumSetups * 2, (fNumSetups * 2) +1);                 
 #if BROADCAST_SESSION_DEBUG
                     qtss_printf("Sending SETUP #%lu. Result = %lu. Response code = %lu\n", fNumSetups, theErr, fRTSPClient->GetStatus());
                     if (theErr == EAGAIN || theErr == EINPROGRESS)

@@ -935,6 +935,45 @@ Bool16 QTSSModuleUtils::AddressInList(QTSS_Object inObject, QTSS_AttributeID lis
     return false;
 }
 
+Bool16 QTSSModuleUtils::HavePlayerProfile(QTSS_StandardRTSP_Params* inParams, UInt32 feature)
+{
+    char* userAgent = NULL;	    
+    (void)QTSS_GetValueAsString(inParams->inClientSession, qtssCliSesFirstUserAgent, 0, &userAgent);
+    OSCharArrayDeleter userStrDeleter(userAgent);    
+    StrPtrLen userAgentStr(userAgent);    	
+    
+    switch (feature)
+    {
+        case QTSSModuleUtils::kRequiresRTPInfoSeqAndTime:
+        {           
+            if (NULL != userAgentStr.FindString("Nokia7600") )
+            {  
+               return true;
+            }
+  
+        }
+        break;
+        
+        case QTSSModuleUtils::kAdjustBandwidth:
+        {
+            if (NULL != userAgentStr.FindString("Nokia7600"))
+            {  
+               return true;
+            }
+            
+            if (NULL != userAgentStr.FindString("Real"))
+            {
+               return true;
+            }
+           
+        }
+        break;
+    }
+    
+    return false;
+}
+
+
 IPComponentStr IPComponentStr::sLocalIPCompStr("127.0.0.*");
 
 IPComponentStr::IPComponentStr(char *theAddressPtr)

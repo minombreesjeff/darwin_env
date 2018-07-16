@@ -58,9 +58,9 @@ static QTSS_AttributeID         sCantJoinMulticastGroupErr  = qtssIllegalAttrID;
 
 static UInt32                   sDefaultOverBufferInSec             = 10; 
 static UInt32                   sDefaultBucketDelayInMsec           = 73;
-static Bool16                   sDefaultUsePacketReceiveTime      = false; 
-static UInt32                   sDefaultMaxFuturePacketTimeSec       = 60;
- 
+static Bool16                   sDefaultUsePacketReceiveTime        = false; 
+static UInt32                   sDefaultMaxFuturePacketTimeSec      = 60;
+static UInt32                   sDefaultFirstPacketOffsetMsec       = 500;
 
 UInt32                          ReflectorStream::sBucketSize  = 16;
 UInt32                          ReflectorStream::sOverBufferInMsec = 10000; // more or less what the client over buffer will be
@@ -71,6 +71,7 @@ UInt32                          ReflectorStream::sMaxFuturePacketSec = 60; // ma
 UInt32                          ReflectorStream::sOverBufferInSec = 10;
 UInt32                          ReflectorStream::sBucketDelayInMsec = 73;
 Bool16                          ReflectorStream::sUsePacketReceiveTime = false;
+UInt32                          ReflectorStream::sFirstPacketOffsetMsec = 500;
 
 void ReflectorStream::Register()
 {
@@ -99,6 +100,9 @@ void ReflectorStream::Initialize(QTSS_ModulePrefsObject inPrefs)
 
     QTSSModuleUtils::GetAttribute(inPrefs, "reflector_in_packet_max_receive_sec", qtssAttrDataTypeUInt32,
                               &ReflectorStream::sMaxFuturePacketSec, &sDefaultMaxFuturePacketTimeSec, sizeof(sDefaultMaxFuturePacketTimeSec));
+
+    QTSSModuleUtils::GetAttribute(inPrefs, "reflector_rtp_info_offset_msec", qtssAttrDataTypeUInt32,
+                              &ReflectorStream::sFirstPacketOffsetMsec, &sDefaultFirstPacketOffsetMsec, sizeof(sDefaultFirstPacketOffsetMsec));
 
     ReflectorStream::sOverBufferInMsec = sOverBufferInSec * 1000;
     ReflectorStream::sMaxFuturePacketMSec = sMaxFuturePacketSec * 1000;
@@ -135,7 +139,9 @@ ReflectorStream::ReflectorStream(SourceInfo::StreamInfo* inInfo)
     fHasFirstRTCPPacket(false),
     fHasFirstRTPPacket(false),
     fEnableBuffer(false),
-    fEyeCount(0)
+    fEyeCount(0),
+    fFirst_RTCP_RTP_Time(0),
+    fFirst_RTCP_Arrival_Time(0)
 {
 
     fRTPSender.fStream = this;
@@ -585,10 +591,76 @@ UInt16 ReflectorSender::GetFirstPacketRTPSeqNum(Bool16 *foundPtr)
    return resultSeqNum;
 }
 
+OSQueueElem*    ReflectorSender::GetClientBufferNextPacketTime(UInt32 inRTPTime)
+{
+        
+    OSQueueIter qIter(&fPacketQueue);// start at oldest packet in q
+    OSQueueElem* requestedPacket = NULL;
+    OSQueueElem* elem =  NULL;
+    
+    while ( !qIter.IsDone() ) // start at oldest packet in q
+    {
+        elem = qIter.GetCurrent();
+        
+        if (requestedPacket == NULL)
+            requestedPacket = elem;
+        
+        if (requestedPacket == NULL)
+            break;
+            
+        ReflectorPacket* thePacket = (ReflectorPacket*)elem->GetEnclosingObject();      
+        Assert( thePacket );
+                 
+        if (thePacket->GetPacketRTPTime() > inRTPTime)
+        {
+            requestedPacket = elem; // return the first packet we have that has a later time
+            break; // found the packet we need: done processing
+        }
+        qIter.Next();
+        
+        
+    }
+
+    return requestedPacket;
+}
+
+Bool16 ReflectorSender::GetFirstRTPTimePacket(UInt16* outSeqNumPtr, UInt32* outRTPTimePtr, SInt64* outArrivalTimePtr) 
+{
+    OSMutexLocker locker(&fStream->fBucketMutex);
+    OSQueueElem* packetElem = this->GetClientBufferStartPacketOffset(ReflectorStream::sFirstPacketOffsetMsec);
+            
+    if (packetElem == NULL)
+        return false;
+        
+    ReflectorPacket* thePacket = (ReflectorPacket*)packetElem->GetEnclosingObject();
+    if (thePacket == NULL)
+        return false;
+    
+    packetElem = GetClientBufferNextPacketTime(thePacket->GetPacketRTPTime());
+    if (packetElem == NULL)
+        return false;
+
+    thePacket = (ReflectorPacket*)packetElem->GetEnclosingObject();
+    if (thePacket == NULL)
+        return false;
+    
+    if (outSeqNumPtr)
+        *outSeqNumPtr = thePacket->GetPacketRTPSeqNum();
+        
+    if (outRTPTimePtr)
+        *outRTPTimePtr = thePacket->GetPacketRTPTime();
+
+    if (outArrivalTimePtr)
+        *outArrivalTimePtr = thePacket->fTimeArrived;
+        
+   return true;
+}
+
 Bool16 ReflectorSender::GetFirstPacketInfo(UInt16* outSeqNumPtr, UInt32* outRTPTimePtr, SInt64* outArrivalTimePtr) 
 {
     OSMutexLocker locker(&fStream->fBucketMutex);
-    OSQueueElem* packetElem = this->GetClientBufferStartPacket();
+    OSQueueElem* packetElem = this->GetClientBufferStartPacketOffset(ReflectorStream::sFirstPacketOffsetMsec);
+//    OSQueueElem* packetElem = this->GetClientBufferStartPacket();
             
     if (packetElem == NULL)
         return false;
@@ -608,6 +680,7 @@ Bool16 ReflectorSender::GetFirstPacketInfo(UInt16* outSeqNumPtr, UInt32* outRTPT
         
    return true;
 }
+
 
 #if REFLECTOR_STREAM_DEBUGGING
 static UInt16 DGetPacketSeqNumber(StrPtrLen* inPacket)
@@ -907,7 +980,18 @@ void ReflectorSender::ReflectPackets(SInt64* ioWakeupTime, OSQueue* inFreeQueue)
     fStream->UpdateBitRate(currentTime);
 
     // where to start new clients in the q
-    fFirstPacketInQueueForNewOutput = this->GetClientBufferStartPacket(); 
+    fFirstPacketInQueueForNewOutput = this->GetClientBufferStartPacketOffset(ReflectorStream::sFirstPacketOffsetMsec); 
+  
+/*
+ReflectorPacket* thePacket = NULL;
+if (fFirstPacketInQueueForNewOutput != NULL)
+    thePacket = fFirstPacketInQueueForNewOutput->GetEnclosingObject();
+if (thePacket == NULL)
+    return;
+  
+
+    fFirstPacketInQueueForNewOutput = GetClientBufferNextPacketTime(thePacket->GetPacketRTPTime());
+*/
 
     for (UInt32 bucketIndex = 0; bucketIndex < fStream->fNumBuckets; bucketIndex++)
     {   
@@ -984,7 +1068,7 @@ OSQueueElem*    ReflectorSender::SendPacketsToOutput(ReflectorOutput* theOutput,
     return lastPacket;
 }
 
-OSQueueElem*    ReflectorSender::GetClientBufferStartPacket()
+OSQueueElem*    ReflectorSender::GetClientBufferStartPacketOffset(SInt64 offsetMsec)
 {
         
     OSQueueIter qIter(&fPacketQueue);// start at oldest packet in q
@@ -1002,8 +1086,11 @@ OSQueueElem*    ReflectorSender::GetClientBufferStartPacket()
         ReflectorPacket* thePacket = (ReflectorPacket*)elem->GetEnclosingObject();      
         Assert( thePacket );
              
-        packetDelay = theCurrentTime - thePacket->fTimeArrived;       
-        if ( packetDelay <= ReflectorStream::sOverBufferInMsec ) 
+        packetDelay = theCurrentTime - thePacket->fTimeArrived;
+        if (offsetMsec > ReflectorStream::sOverBufferInMsec)
+            offsetMsec = ReflectorStream::sOverBufferInMsec;
+            
+        if ( packetDelay <= (ReflectorStream::sOverBufferInMsec - offsetMsec) ) 
         {   
             oldestPacketInClientBufferTime = &thePacket->fQueueElem;
             break; // found the packet we need: done processing
@@ -1170,9 +1257,9 @@ SInt64 ReflectorSocket::Run()
     fSleepTime = 0;
     //Now that we've gotten all available packets, have the streams reflect
     for (OSQueueIter iter2(&fSenderQueue); !iter2.IsDone(); iter2.Next())
-    {
-        ReflectorSender* theSender2 = (ReflectorSender*)iter2.GetCurrent()->GetEnclosingObject();
-        if (theSender2->ShouldReflectNow(theMilliseconds, &fSleepTime))
+    {            
+        ReflectorSender* theSender2 = (ReflectorSender*)iter2.GetCurrent()->GetEnclosingObject();            
+        if (theSender2 != NULL && theSender2->ShouldReflectNow(theMilliseconds, &fSleepTime))
             theSender2->ReflectPackets(&fSleepTime, &fFreeQueue);
     }
     
@@ -1336,6 +1423,8 @@ Bool16 ReflectorSocket::ProcessPacket(const SInt64& inMilliseconds,ReflectorPack
              {
                 //printf("ReflectorSocket::ProcessPacket received RTCP id=%qu\n", thePacket->fStreamCountID); 
                 theSender->fStream->SetHasFirstRTCP(true);
+                theSender->fStream->SetFirst_RTCP_RTP_Time(thePacket->GetPacketRTPTime());
+                theSender->fStream->SetFirst_RTCP_Arrival_Time(thePacket->fTimeArrived);
              }
 
              

@@ -36,6 +36,7 @@
 #include "RTSPProtocol.h"
 #include "QTSServerInterface.h"
 
+#include "RTSPSession.h"
 #include "RTSPSessionInterface.h"
 #include "StringParser.h"
 #include "StringTranslator.h"
@@ -190,6 +191,23 @@ QTSS_Error RTSPRequest::ParseURI(StringParser &parser)
         urlParser.ConsumeUntil(&theHost, '/');
         fHeaderDictionary.SetVal(qtssHostHeader, &theHost);
     }
+    
+    // don't allow non-aggregate operations indicated by a url/media track=id
+    if (qtssSetupMethod != fMethod) // any method not a setup is not allowed to have a "/trackID=" in the url.
+    {
+        StrPtrLenDel tempCStr(theAbsURL.GetAsCString()); 
+        StrPtrLen nonaggregate(tempCStr.FindString("/trackID="));
+        if (nonaggregate.Len > 0) // check for non-aggregate method and return error
+            return QTSSModuleUtils::SendErrorResponse(this, qtssClientAggregateOptionAllowed, qtssMsgBadRTSPMethod, &theAbsURL);
+    }
+
+    // don't allow non-aggregate operations like a setup on a playing session
+    if (qtssSetupMethod == fMethod) // if it is a setup but we are playing don't allow it
+    {
+        RTSPSession*  theSession =  (RTSPSession*)this->GetSession();
+        if (theSession != NULL && theSession->IsPlaying())
+            return QTSSModuleUtils::SendErrorResponse(this, qtssClientAggregateOptionAllowed, qtssMsgBadRTSPMethod, &theAbsURL);
+    }
 
     //
     // In case there is no URI at all... we have to fake it.
@@ -225,7 +243,8 @@ QTSS_Error RTSPRequest::ParseURI(StringParser &parser)
             this->SetVal(qtssRTSPReqQueryString, queryString.Ptr, queryString.Len);
         }
     }
-    
+ 
+ 
     //
     // If the is a '*', return right now because '*' is not a path
     // so the below functions don't make any sense.
@@ -235,8 +254,7 @@ QTSS_Error RTSPRequest::ParseURI(StringParser &parser)
 		
         return QTSS_NoErr;
     }
-
-
+    
     //path strings are statically allocated. Therefore, if they are longer than
     //this length we won't be able to handle the request.
     StrPtrLen* theURLParam = this->GetValue(qtssRTSPReqURI);
@@ -261,6 +279,9 @@ QTSS_Error RTSPRequest::ParseURI(StringParser &parser)
     fFilePath[theBytesWritten] = '\0';
     //this->SetVal(qtssRTSPReqFilePath, fFilePath, theBytesWritten);
 	this->SetValue(qtssRTSPReqFilePath, 0, fFilePath, theBytesWritten, QTSSDictionary::kDontObeyReadOnly);
+
+
+
     return QTSS_NoErr;
 }
 
@@ -691,6 +712,7 @@ void RTSPRequest::ParseModeSubHeader(StrPtrLen* inModeSubHeader)
 void RTSPRequest::ParseClientPortSubHeader(StrPtrLen* inClientPortSubHeader)
 {
     static StrPtrLen sClientPortSubHeader("client_port");
+    static StrPtrLen sErrorMessage("Received invalid client_port field: ");
     StringParser theSubHeaderParser(inClientPortSubHeader);
 
     // Skip over to the first port
@@ -708,6 +730,23 @@ void RTSPRequest::ParseClientPortSubHeader(StrPtrLen* inClientPortSubHeader)
     theSubHeaderParser.GetThru(NULL,'-');
     theSubHeaderParser.ConsumeWhitespace();
     fClientPortB = (UInt16)theSubHeaderParser.ConsumeInteger(NULL);
+    if (fClientPortB != fClientPortA + 1) // an error in the port values
+    {
+        // The following to setup and log the error as a message level 2.
+        StrPtrLen *userAgentPtr = fHeaderDictionary.GetValue(qtssUserAgentHeader);
+        ResizeableStringFormatter errorPortMessage;
+        errorPortMessage.Put(sErrorMessage);
+        if (userAgentPtr != NULL)
+            errorPortMessage.Put(*userAgentPtr);
+        errorPortMessage.PutSpace();
+        errorPortMessage.Put(*inClientPortSubHeader);
+        errorPortMessage.PutTerminator(); 
+        QTSSModuleUtils::LogError(qtssMessageVerbosity,qtssMsgNoMessage, 0, errorPortMessage.GetBufPtr(), NULL);
+        
+        
+        //fix the rtcp port and hope it works.
+        fClientPortB = fClientPortA + 1;
+    }
 }
 
 void RTSPRequest::ParseTimeToLiveSubHeader(StrPtrLen* inTimeToLiveSubHeader)

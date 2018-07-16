@@ -1004,6 +1004,15 @@ OS_Error RTSPClient::SendOptions()
     return this->DoTransaction();
 }
 
+OS_Error RTSPClient::SendOptionsWithRandomDataRequest(SInt32 dataSize)
+{
+    if (!fTransactionStarted)
+    {
+        qtss_sprintf(fMethod,"%s","OPTIONS");
+        qtss_sprintf(fSendBuffer, "OPTIONS * RTSP/1.0\r\nCSeq:%lu\r\nUser-agent: %s\r\nRequire: x-Random-Data-Size\r\nx-Random-Data-Size: %ld\r\n\r\n", fCSeq, fUserAgent, dataSize);
+     }
+    return this->DoTransaction();
+}
 
 
 OS_Error RTSPClient::SendReliableUDPSetup(UInt32 inTrackID, UInt16 inClientPort)
@@ -1038,7 +1047,7 @@ OS_Error RTSPClient::SendUDPSetup(UInt32 inTrackID, UInt16 inClientPort)
     return this->DoTransaction();
 }
 
-OS_Error RTSPClient::SendTCPSetup(UInt32 inTrackID)
+OS_Error RTSPClient::SendTCPSetup(UInt32 inTrackID, UInt16 inClientRTPid, UInt16 inClientRTCPid)
 {
     fSetupTrackID = inTrackID; // Needed when SETUP response is received.
     
@@ -1047,9 +1056,9 @@ OS_Error RTSPClient::SendTCPSetup(UInt32 inTrackID)
         qtss_sprintf(fMethod,"%s","SETUP");
         
         if (fTransportMode == kPushMode)
-            qtss_sprintf(fSendBuffer, "SETUP %s/%s=%lu RTSP/1.0\r\nCSeq: %lu\r\n%sTransport: RTP/AVP/TCP;unicast;mode=record\r\nUser-agent: %s\r\n\r\n", fURL.Ptr,fControlID, inTrackID, fCSeq, fSessionID.Ptr, fUserAgent);
+            qtss_sprintf(fSendBuffer, "SETUP %s/%s=%lu RTSP/1.0\r\nCSeq: %lu\r\n%sTransport: RTP/AVP/TCP;unicast;mode=record;interleaved=%u-%u\r\nUser-agent: %s\r\n\r\n", fURL.Ptr,fControlID, inTrackID, fCSeq, fSessionID.Ptr,inClientRTPid, inClientRTCPid, fUserAgent);
         else 
-            qtss_sprintf(fSendBuffer, "SETUP %s/%s=%lu RTSP/1.0\r\nCSeq: %lu\r\n%sTransport: RTP/AVP/TCP;unicast\r\n%sUser-agent: %s\r\n\r\n", fURL.Ptr,fControlID, inTrackID, fCSeq, fSessionID.Ptr, fSetupHeaders, fUserAgent);
+            qtss_sprintf(fSendBuffer, "SETUP %s/%s=%lu RTSP/1.0\r\nCSeq: %lu\r\n%sTransport: RTP/AVP/TCP;unicast;interleaved=%u-%u\r\n%sUser-agent: %s\r\n\r\n", fURL.Ptr,fControlID, inTrackID, fCSeq, fSessionID.Ptr, inClientRTPid, inClientRTCPid,fSetupHeaders, fUserAgent);
     }
 
     return this->DoTransaction();

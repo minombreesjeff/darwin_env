@@ -267,8 +267,13 @@ class ReflectorSender : public UDPDemuxerTask
     UInt32      GetOldestPacketRTPTime(Bool16 *foundPtr);          
     UInt16      GetFirstPacketRTPSeqNum(Bool16 *foundPtr);             
     Bool16      GetFirstPacketInfo(UInt16* outSeqNumPtr, UInt32* outRTPTimePtr, SInt64* outArrivalTimePtr);
+
+    OSQueueElem*GetClientBufferNextPacketTime(UInt32 inRTPTime);
+    Bool16      GetFirstRTPTimePacket(UInt16* outSeqNumPtr, UInt32* outRTPTimePtr, SInt64* outArrivalTimePtr);
+
     void        RemoveOldPackets(OSQueue* inFreeQueue);
-    OSQueueElem* GetClientBufferStartPacket();
+    OSQueueElem* GetClientBufferStartPacketOffset(SInt64 offsetMsec); 
+    OSQueueElem* GetClientBufferStartPacket() { return this->GetClientBufferStartPacketOffset(0); };
 
     ReflectorStream*    fStream;
     UInt32              fWriteFlag;
@@ -369,6 +374,13 @@ class ReflectorStream
         void                    SetHasFirstRTCP(Bool16 hasPacket)       { fHasFirstRTCPPacket = hasPacket; }
         Bool16                  HasFirstRTCP()                          { return fHasFirstRTCPPacket; }
         
+        void                    SetFirst_RTCP_RTP_Time(UInt32 time)     { fFirst_RTCP_RTP_Time = time; }
+        UInt32                  GetFirst_RTCP_RTP_Time()                { return fFirst_RTCP_RTP_Time; }
+        
+        void                    SetFirst_RTCP_Arrival_Time(SInt64 time)     { fFirst_RTCP_Arrival_Time = time; }
+        SInt64                  GetFirst_RTCP_Arrival_Time()                { return fFirst_RTCP_Arrival_Time; }
+        
+        
         void                    SetHasFirstRTP(Bool16 hasPacket)        { fHasFirstRTPPacket = hasPacket; }
         Bool16                  HasFirstRTP()                           { return fHasFirstRTPPacket; }
                 
@@ -387,7 +399,7 @@ inline  void                    UpdateBitRate(SInt64 currentTime);
 
     private:
     
-        //Sends an RTCP receiver report to the broadcast source
+         //Sends an RTCP receiver report to the broadcast source
         void    SendReceiverReport();
         void    AllocateBucketArray(UInt32 inNumBuckets);
         SInt32  FindBucket();
@@ -452,6 +464,9 @@ inline  void                    UpdateBitRate(SInt64 currentTime);
         Bool16              fEnableBuffer;
         UInt32              fEyeCount;
         
+        UInt32              fFirst_RTCP_RTP_Time;
+        SInt64              fFirst_RTCP_Arrival_Time;
+    
         static UInt32       sBucketSize;
         static UInt32       sMaxPacketAgeMSec;
         static UInt32       sMaxFuturePacketSec;
@@ -460,7 +475,8 @@ inline  void                    UpdateBitRate(SInt64 currentTime);
         static UInt32       sOverBufferInSec;
         static UInt32       sBucketDelayInMsec;
         static Bool16       sUsePacketReceiveTime;
-              
+        static UInt32       sFirstPacketOffsetMsec;
+        
         friend class ReflectorSocket;
         friend class ReflectorSender;
 };

@@ -90,7 +90,8 @@ typedef UInt32 QTSS_AddStreamFlags;
 enum 
 {
     qtssPlayFlagsSendRTCP           = 0x00000001,   // have the server generate RTCP Sender Reports 
-    qtssPlayFlagsAppendServerInfo   = 0x00000002    // have the server append the server info APP packet to your RTCP Sender Reports
+    qtssPlayFlagsAppendServerInfo   = 0x00000002,    // have the server append the server info APP packet to your RTCP Sender Reports
+    qtssPlayFlagsRTPInfoFullURL     = 0x00000004,    // have the server append the full URL with track ID in the RTP-Info
 };
 typedef UInt32 QTSS_PlayFlags;
 
@@ -108,7 +109,8 @@ typedef UInt32 QTSS_WriteFlags;
 // Flags for QTSS_SendStandardRTSPResponse
 enum
 {
-    qtssPlayRespWriteTrackInfo      = 0x00000001
+    qtssPlayRespWriteTrackInfo      = 0x00000001,
+    qtssSetupRespDontWriteSSRC      = 0x00000002
 };
 
 
@@ -729,9 +731,9 @@ enum
     qtssPrefsRunNumThreads                  = 66,   //"run_num_threads" //UInt32 // if value is non-zero, will  create that many threads; otherwise a thread will be created for each processor
 	qtssPrefsPidFile						= 67,	//"pid_file" //Char Array //path to pid file
     qtssPrefsCloseLogsOnWrite               = 68,   // "force_logs_close_on_write" //Bool16 // force log files to close after each write.
+    qtssPrefsRTSPPlayInfoFullURL            = 69,   // "enable_rtsp_play_info_full_url" //Bool16 // put the full url in the rtp-info header of the PLAY response.
 
-
-    qtssPrefsNumParams                      = 69
+    qtssPrefsNumParams                      = 70
 };
 
 typedef UInt32 QTSS_PrefsAttributes;

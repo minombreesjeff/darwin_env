@@ -287,6 +287,29 @@ void RTSPRequestInterface::AppendSessionHeaderWithTimeout( StrPtrLen* inSessionI
 
 }
 
+void RTSPRequestInterface::PutTransportStripped(StrPtrLen &fullTransportHeader, StrPtrLen &fieldToStrip)
+{
+       
+        // skip the fieldToStrip and echo the rest back
+        UInt32 offset = (UInt32) (fieldToStrip.Ptr - fullTransportHeader.Ptr);        
+        StrPtrLen transportStart(fullTransportHeader.Ptr,offset);
+        while (transportStart.Len > 0) // back up removing chars up to and including ;
+        {  
+            transportStart.Len --;
+            if (transportStart[transportStart.Len] == ';')
+                break;
+        }
+    
+        StrPtrLen transportRemainder(fieldToStrip.Ptr,fullTransportHeader.Len - offset);        
+        StringParser transportParser(&transportRemainder);
+        transportParser.ConsumeUntil(&fieldToStrip, ';'); //remainder starts with ;       
+        transportRemainder.Set(transportParser.GetCurrentPosition(),transportParser.GetDataRemaining());
+        
+        fOutputStream->Put(transportStart);	
+        fOutputStream->Put(transportRemainder);	
+
+}
+
 void RTSPRequestInterface::AppendTransportHeader(StrPtrLen* serverPortA,
                                                     StrPtrLen* serverPortB,
                                                     StrPtrLen* channelA,
@@ -299,6 +322,8 @@ void RTSPRequestInterface::AppendTransportHeader(StrPtrLen* serverPortA,
     static StrPtrLen    sInterleavedString(";interleaved=");
     static StrPtrLen    sSSRC(";ssrc=");
     static StrPtrLen    sInterLeaved("interleaved");//match the interleaved tag
+    static StrPtrLen    sClientPort("client_port");
+    static StrPtrLen    sClientPortString(";client_port=");
     
     if (!fStandardHeadersWritten)
         this->WriteStandardHeaders();
@@ -313,38 +338,40 @@ void RTSPRequestInterface::AppendTransportHeader(StrPtrLen* serverPortA,
     while (outFirstTransport[outFirstTransport.Len - 1] == ';')
         outFirstTransport.Len --;
 
-    // see if it already contains an interleaved field
-    StrPtrLen outResultStr;
-    if (NULL != outFirstTransport.FindStringIgnoreCase(sInterLeaved, &outResultStr))
-    {	
-        // skip the interleaved info and echo the rest back
-        UInt32 offset = (UInt32) (outResultStr.Ptr - outFirstTransport.Ptr);        
-        StrPtrLen transportStart(outFirstTransport.Ptr,offset);
-        while (transportStart.Len > 0) // back up removing chars up to and including ;
-        {  
-            transportStart.Len --;
-            if (transportStart[transportStart.Len] == ';')
-                break;
-        }
+    // see if it contains an interleaved field or client port field
+    StrPtrLen stripClientPortStr;
+    StrPtrLen stripInterleavedStr;
+    (void) outFirstTransport.FindStringIgnoreCase(sClientPort, &stripClientPortStr);
+    (void) outFirstTransport.FindStringIgnoreCase(sInterLeaved, &stripInterleavedStr);
     
-        StrPtrLen transportRemainder(outResultStr.Ptr,outFirstTransport.Len - offset);        
-        StringParser transportParser(&transportRemainder);
-        transportParser.ConsumeUntil(&outResultStr, ';'); //remainder starts with ;       
-        transportRemainder.Set(transportParser.GetCurrentPosition(),transportParser.GetDataRemaining());
-        
-        fOutputStream->Put(transportStart);	
-        fOutputStream->Put(transportRemainder);	
-    }
+    // echo back the transport without the interleaved or client ports fields we will add those in ourselves
+    if (stripClientPortStr.Len != 0)
+        PutTransportStripped(outFirstTransport, stripClientPortStr);
+    else if (stripInterleavedStr.Len != 0) 
+        PutTransportStripped(outFirstTransport, stripInterleavedStr);
     else
-    {
         fOutputStream->Put(outFirstTransport);
-    }
+         
      
     //The source IP addr is optional, only append it if it is provided
     if (serverIPAddr != NULL)
     {
         fOutputStream->Put(sSourceString);
         fOutputStream->Put(*serverIPAddr);
+    }
+    
+    // Append the client ports,
+    if (stripClientPortStr.Len != 0)
+    {
+        fOutputStream->Put(sClientPortString);
+        UInt16 portA = this->GetClientPortA();
+        UInt16 portB = this->GetClientPortB();
+        StrPtrLenDel clientPortA(QTSSDataConverter::ValueToString( &portA, sizeof(portA), qtssAttrDataTypeUInt16));
+        StrPtrLenDel clientPortB(QTSSDataConverter::ValueToString( &portB, sizeof(portB), qtssAttrDataTypeUInt16));
+        
+        fOutputStream->Put(clientPortA);
+        fOutputStream->PutChar('-');
+        fOutputStream->Put(clientPortB);        
     }
     
     // Append the server ports, if provided.
@@ -365,7 +392,7 @@ void RTSPRequestInterface::AppendTransportHeader(StrPtrLen* serverPortA,
         fOutputStream->Put(*channelB);
     }
     
-    if (ssrc != NULL && ssrc->Ptr != NULL && fNetworkMode == qtssRTPNetworkModeUnicast && fTransportMode == qtssRTPTransportModePlay)
+    if (ssrc != NULL && ssrc->Ptr != NULL && ssrc->Len != 0 && fNetworkMode == qtssRTPNetworkModeUnicast && fTransportMode == qtssRTPTransportModePlay)
     {
         char* theCString = ssrc->GetAsCString();
         OSCharArrayDeleter cStrDeleter(theCString);
@@ -422,7 +449,7 @@ void RTSPRequestInterface::AppendRetransmitHeader(UInt32 inAckTimeout)
 
 void RTSPRequestInterface::AppendRTPInfoHeader(QTSS_RTSPHeader inHeader,
                                                 StrPtrLen* url, StrPtrLen* seqNumber,
-                                                StrPtrLen* ssrc, StrPtrLen* rtpTime, Bool16 lastRTPInfo)
+                                                StrPtrLen* ssrc, StrPtrLen* rtpTime, Bool16 lastRTPInfo, Bool16 absURL)
 {
     static StrPtrLen sURL("url=", 4);
     static StrPtrLen sSeq(";seq=", 5);
@@ -441,6 +468,19 @@ void RTSPRequestInterface::AppendRTPInfoHeader(QTSS_RTSPHeader inHeader,
     if ((url != NULL) && (url->Len > 0))
     {
         fOutputStream->Put(sURL);
+
+if (absURL) //3gpp
+{
+    RTSPRequestInterface* theRequest = (RTSPRequestInterface*)this;
+    StrPtrLen *path = (StrPtrLen *) theRequest->GetValue(qtssRTSPReqAbsoluteURL);
+    
+    if (path != NULL && path->Len > 0)
+    {   fOutputStream->Put(*path);
+        if(path->Ptr[path->Len-1] != '/')
+            fOutputStream->PutChar('/');
+    }
+}
+
         fOutputStream->Put(*url);
     }
     if ((seqNumber != NULL) && (seqNumber->Len > 0))

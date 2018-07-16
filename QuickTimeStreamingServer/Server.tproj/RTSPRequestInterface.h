@@ -85,7 +85,7 @@ class RTSPRequestInterface : public QTSSDictionary
         void    AppendContentBaseHeader(StrPtrLen* theURL);
         void    AppendRTPInfoHeader(QTSS_RTSPHeader inHeader,
                                     StrPtrLen* url, StrPtrLen* seqNumber,
-                                    StrPtrLen* ssrc, StrPtrLen* rtpTime, Bool16 lastRTPInfo);
+                                    StrPtrLen* ssrc, StrPtrLen* rtpTime, Bool16 lastRTPInfo, Bool16 absURL);
 
         void    AppendDateAndExpires();
         void    AppendSessionHeaderWithTimeout( StrPtrLen* inSessionID, StrPtrLen* inTimeout );
@@ -281,7 +281,8 @@ class RTSPRequestInterface : public QTSSDictionary
         };
         
         Bool16                  fStandardHeadersWritten;
-            
+        
+        void                    PutTransportStripped(StrPtrLen &outFirstTransport, StrPtrLen &outResultStr);
         void                    WriteStandardHeaders();
         static void             PutStatusLine(  StringFormatter* putStream,
                                                 QTSS_RTSPStatusCode status,

@@ -41,8 +41,8 @@
 class ResizeableStringFormatter : public StringFormatter
 {
     public:
-    
-        ResizeableStringFormatter(char* inBuffer, UInt32 inBufSize)
+        // Pass in inBuffer=NULL and inBufSize=0 to dynamically allocate the initial buffer.
+        ResizeableStringFormatter(char* inBuffer = NULL, UInt32 inBufSize = 0)
             : StringFormatter(inBuffer, inBufSize), fOriginalBuffer(inBuffer) {}
         
         //If we've been forced to increase the buffer size, fStartPut WILL be a dynamically allocated

@@ -242,7 +242,7 @@ class RTSPClient
         
         OS_Error    SendReliableUDPSetup(UInt32 inTrackID, UInt16 inClientPort);
         OS_Error    SendUDPSetup(UInt32 inTrackID, UInt16 inClientPort);
-        OS_Error    SendTCPSetup(UInt32 inTrackID);
+        OS_Error    SendTCPSetup(UInt32 inTrackID, UInt16 inClientRTPid, UInt16 inClientRTCPid);
         OS_Error    SendPlay(UInt32 inStartPlayTimeInSec, Float32 inSpeed = 1);
         OS_Error    SendPacketRangePlay(char* inPacketRangeHeader, Float32 inSpeed = 1);
         OS_Error    SendReceive(UInt32 inStartPlayTimeInSec);       
@@ -252,6 +252,7 @@ class RTSPClient
                 
         OS_Error    SendSetParameter();
         OS_Error    SendOptions();
+        OS_Error    SendOptionsWithRandomDataRequest(SInt32 dataSize);
         //
         // If you just want to send a generic request, do it this way
         OS_Error    SendRTSPRequest(iovec* inRequest, UInt32 inNumVecs);
@@ -297,6 +298,7 @@ class RTSPClient
         char*       GetResponse()           { return fRecvHeaderBuffer; }
         UInt32      GetResponseLen()        { return fHeaderLen; }
         Bool16      IsTransactionInProgress() { return fTransactionStarted; }
+        Bool16      IsVerbose()             { return fVerbose; }
         
         // If available, returns the SSRC associated with the track in the PLAY response.
         // Returns 0 if SSRC is not available.

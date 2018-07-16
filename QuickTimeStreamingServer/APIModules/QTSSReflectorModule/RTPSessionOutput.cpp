@@ -80,7 +80,8 @@ RTPSessionOutput::RTPSessionOutput(QTSS_ClientSessionObject inClientSession, Ref
     fBaseArrivalTime(0),
     fIsUDP(false),
     fTransportInitialized(false),
-    fMustSynch(true)
+    fMustSynch(true),
+    fPreFilter(true)
 {
     // create a bookmark for each stream we'll reflect
     this->InititializeBookmarks( inReflectorSession->GetNumStreams() );
@@ -214,6 +215,28 @@ Bool16 RTPSessionOutput::IsUDP()
 }
 
 
+
+Bool16  RTPSessionOutput::FilterPacket(QTSS_RTPStreamObject *theStreamPtr, StrPtrLen* inPacket)
+{ 
+    if (fPreFilter == false)
+        return false;
+
+    Assert(theStreamPtr);
+    Assert(inPacket);
+    
+    UInt16 seqnum = this->GetPacketSeqNumber(inPacket);
+    UInt16 firstSeqNum = 0;            
+    UInt32 theLen = sizeof(firstSeqNum); 
+        
+    if (    QTSS_NoErr != QTSS_GetValue(*theStreamPtr, qtssRTPStrFirstSeqNumber, 0, &firstSeqNum, &theLen)  )
+        return true;
+
+    if ( seqnum < firstSeqNum ) 
+        return true;
+        
+    fPreFilter = false;    
+    return fPreFilter;
+}
 
 
 Bool16  RTPSessionOutput::PacketAlreadySent(QTSS_RTPStreamObject *theStreamPtr, UInt32 inFlags, UInt64* packetIDPtr)
@@ -541,6 +564,9 @@ QTSS_Error  RTPSessionOutput::WritePacket(StrPtrLen* inPacket, void* inStreamCoo
     {
         if (this->PacketMatchesStream(inStreamCookie, theStreamPtr))
         { 
+            if ( this->FilterPacket(theStreamPtr, inPacket) )
+                return  QTSS_NoErr; // keep looking at packets
+                
             if (this->PacketAlreadySent(theStreamPtr,inFlags, packetIDPtr)) 
                 return QTSS_NoErr; // keep looking at packets
                 

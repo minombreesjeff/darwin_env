@@ -41,6 +41,7 @@
 #include "MyAssert.h"
 
 
+//Use a class like the ResizeableStringFormatter if you want a buffer that will dynamically grow
 class StringFormatter
 {
     public:
@@ -68,6 +69,7 @@ class StringFormatter
             { fCurrentPut = fStartPut + inNumBytesToLeave; }
 
         //Object does no bounds checking on the buffer. That is your responsibility!
+        //Put truncates to the buffer size
         void        Put(const SInt32 num);
         void        Put(char* buffer, UInt32 bufferSize);
         void        Put(char* str)      { Put(str, strlen(str)); }
@@ -95,7 +97,8 @@ class StringFormatter
 
         //If you fill up the StringFormatter buffer, this function will get called. By
         //default, no action is taken. But derived objects can clear out the data and reset the buffer
-        virtual void    BufferIsFull(char* /*inBuffer*/, UInt32 /*inBufferLen*/) { Assert(0); }
+        //Use the ResizeableStringFormatter if you want a buffer that will dynamically grow
+        virtual void    BufferIsFull(char* /*inBuffer*/, UInt32 /*inBufferLen*/) { }
 
         char*       fCurrentPut;
         char*       fStartPut;

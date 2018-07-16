@@ -1,71 +1,57 @@
-About Darwin Streaming Server 4.1.3
+About Darwin Streaming Server 
 
 Contents
 
-What's New with Darwin Streaming Server 4.1.3
-What's New with Darwin Streaming Server 4.1.2
-What's New with Darwin Streaming Server 4.1
-What's New with Darwin Streaming Server 4.0
-System Requirements
-Installing On UNIX-based platforms
-Installing On Windows 2000/NT
-Set Up
-Troubleshooting
-Public Mailing Lists
+Welcome to Darwin Streaming Server, Apple's open source version of the QuickTime Streaming Server technology allowing you to send streaming media across the Internet using the industry standard RTP and RTSP protocols. Based on the same code base as QuickTime Streaming Server, Darwin Streaming Server provides a high level of customizability and runs on a variety of platforms allowing you to manipulate the code to fit your needs. 
 
-What's New with Darwin Steaming Server 4.1.3
+What's New with Darwin Streaming Server 5.0.3
 
-This release adds the latest security fixes and support for large mpeg4 hinted files.
+- Improved 3GPP mobile client compatibility
 
-What's New with Darwin Steaming Server 4.1.2
+What's New with Darwin Streaming Server 5.0.2
 
-This release adds web-based administration on Mac OS X for the QuickTime Broadcaster.
-It also adds playback of QuickTime Broadcaster recorded movies in the PlaylistBroadcaster.
+- Live 3GPP stream support
 
-What's New with Darwin Steaming Server 4.1
+What's New with Darwin Streaming Server 5.0.1.1
 
-This release adds support for Instant-On streaming with QuickTime 6, provides user interface for setting the user name and password for the QuickTime Broadcaster, and provides updated user documentation.
+Darwin Streaming Server 5.0.1.1 includes the following enhancements to 5.0:
 
-What's New with Darwin Steaming Server 4.0
+- Latest security update changes
+- Improved Safari compatibility
 
-Darwin Streaming Server 4, which is the complete open source code for the QuickTime Streaming Server, allows you to stream QuickTime media to clients across the Internet using industry-standard RTP and RTSP protocols.  Darwin Streaming Server 4 includes all QuickTime Streaming Server 4 features. Key enhancements include:
+Darwin Streaming Server 5.0
 
-- Administration Enhancements:
-Provides a new Setup Assistant where you can configure basic settings.
-Provides the capability to configure and manage relays in the web admin. 
+Darwin Streaming Server 5 includes the following enhancements:
 
-- Native Hinted MPEG-4 Streaming Ð support for native MPEG-4 Hinted files as defined by the technical standard for interoperability proposed by the Internet Streaming Media Alliance (ISMA).
-
-- Quality of Service Enhancements - tuning improvements to the congestion control, retransmit, and thinning server algorithms on reliable UDP streams.
-
-- Native MP3/Icecast Streaming Support Ð http style streaming of native MP3 files including the ability to broadcast MP3 play lists, reflect Icecast streams, parsing and sending of MP3 ID tags.
-
-- PlaylistBroadcaster User Interface Enhancements 
-
-Darwin Streaming Server allows the highest level of customizability and community involvement.
+- Enhanced multithread support 
+- Home directory streaming (UNIX-based platforms only)
+- Broadcast directory streaming
+- HTTP to RTSP url redirection using QuickTime HREF support.
+- Improved security through non-root user execution (UNIX-based platforms only)
+- 3GPP streaming enhancements - As we constantly improve our support for streaming the latest digital media standards, DSS 5 includes a number of enhancements for 3GPP streaming
 
 It can be ported to other platforms by modifying a handful of platform-specific source files. For more information about the source code and how to port to other platforms, see the files AboutTheSource.html and SourceFAQ.html provided with the Darwin Streaming Server source code.
 
-For more information about the Darwin Streaming Server project and to obtain the Darwin Streaming Server 4.1.3 release, see Apple's Open Source Web site at: <http://developer.apple.com/darwin>.
+For more information about the Darwin Streaming Server project and to obtain the Darwin Streaming Server 5.0 source, see Apple's Open Source Web site at: <http://developer.apple.com/darwin>.
 
 
 System Requirements
 
 Darwin Streaming Server is currently available on the following platforms:
 
-*Mac OS X (version 10.1 or later)
-*Linux (RedHat 7.1, Intel)
-*Solaris 8 (SPARC)
-*Windows 2000 Server/NT
+*Mac OS X (version 10.2.8 or later)
+*Linux (RedHat 8/9, Intel)
+*Solaris 9 (SPARC)
+*Windows 2000 Server/2003 Server
 
 Darwin Streaming Server is compatible with QuickTime 4 or later client software. Digest mode Authentication and Skip Protection (first introduced in QuickTime Streaming Server 3.0) require QuickTime 5 or later client software.
 
 Installing Darwin Streaming Server (Mac OS X)
 
-To install Darwin Streaming Server 4.1.3 software, follow these 
+To install Darwin Streaming Server 5.0 software, follow these 
 steps:
 
-1. After downloading Darwin Streaming Server 4.1.3, double-click the DarwinStreamingServer_4_1_3.dmg file. DarwinStreamingServer_4_1_3 will mount a desktop image that contains DarwinStreamingServer.pkg.  
+1. After downloading Darwin Streaming Server, double-click the DarwinStreamingServer.dmg file. DarwinStreamingServer will mount a desktop image that contains DarwinStreamingServer.pkg.  
 
 2. Double-click the DarwinStreamingServer.pkg file. This will launch the installer.
 
@@ -73,10 +59,14 @@ steps:
 
 4. Follow the onscreen instructions. After you have read and agreed to the license, you can proceed with the installation.
 
-Set Up 
+5. If you are installing for the first time, after the install completes, you will be asked to create a user name and password for administering the server.  You must complete this step to administer the server from a remote system using a web browser.
+    
+   If you are upgrading, you will be presented with a web browser login window.
 
-From a server machine with Darwin Streaming Server installed, launch your web browser.
+Set Up (Mac OS X)
 
+    After creating an administrator user name and password,  you can connect to the Darwin Streaming Server from your web browser.
+   
    Enter the URL for your Darwin Streaming Server:
 http://myserver.com:1220
 
@@ -86,30 +76,41 @@ Replace "myserver.com" with the name of your Darwin Streaming Server computer.
 
 Installing Darwin Streaming Server (Linux, Solaris)
 
-To install Darwin Streaming Server 4.1.3 software, follow these steps on the server computer:
+    To install Darwin Streaming Server 5.0 software, follow these steps on the server computer:
 
-Stop any Darwin Streaming Server related processes.
+    Stop any Darwin Streaming Server related processes.
 
-IMPORTANT: Installing Darwin Streaming Server will remove older version of Darwin Streaming Server. 
+    IMPORTANT: Installing Darwin Streaming Server will remove older version of Darwin Streaming Server. 
  
-Expand the compressed (.gz) tar file and "cd" into one of the following directories, depending on the platform: 
+    Expand the compressed (.gz) tar file and "cd" into one of the following directories, depending on the platform: 
 
-DarwinStreamingSrvr4.1.3-Linux 
-DarwinStreamingSrvr4.1.3-SunOS
+DarwinStreamingSrvr5.0-Linux 
+DarwinStreamingSrvr5.0-SunOS
 
-Then type: 
+    Then type: 
 
 ./Install
 
-During the install, the streamingadminserver.pl application will automatically launch. To avoid the need to manually relaunch streamingadminserver.pl following reboots, you may want to configure your server machine to launch it automatically at boot time.
+    During the install, the streamingadminserver.pl application will automatically launch. To avoid the need to manually relaunch streamingadminserver.pl following reboots, you may want to configure your server machine to launch it automatically at boot time.
+
+Set Up (Linux, Solaris)
+	During the install, you will be asked to create a user name and password for administering the server.  You must complete this step to administer the server from a remote system using a web browser.
+
+    After creating an administrator user name and password,  you can connect to the Darwin Streaming Server from your web browser.
+
+   Enter the URL for your Darwin Streaming Server:
+http://myserver.com:1220
+
+Replace "myserver.com" with the name of your Darwin Streaming Server computer. 
+1220 is the port number.
 
 
-Installing Darwin Streaming Server (Windows 2000/NT/)
+Installing Darwin Streaming Server (Windows 2000/2003 Server)
 
-The Streaming Admin requires ActivePerl 5.6 (or later) to be running on the server machine. You must install a Perl interpreter in order to use the web-based administration software. 
+The Streaming Admin requires ActivePerl 5.8 (or later) to be running on the server machine. You must install a Perl interpreter in order to use the web-based administration software. 
 
 
-To install Darwin Streaming Server 4.1.3 software, follow these steps on the server computer:
+To install Darwin Streaming Server software, follow these steps on the server computer:
 
 Stop any Darwin Streaming Server related processes.
 
@@ -147,34 +148,30 @@ C:\> perlpath "C:\Program Files\Darwin Streaming Server\streamingadminserver.pl"
 where perlpath is the path to the Perl interpreter on your machine.
 
 
-Set Up 
+    If you are installing for the first time,  you will be asked to create a user name and password for administering the server.  You must complete this step to administer the server from a remote system using a web browser.
+    
 
-To configure and administer your server from either the server machine or a remote client machine, follow these steps: 
+Set Up (Windows 2000/2003 Server)
 
-1. From a server machine with Darwin Streaming Server installed, launch your web browser.
+    After creating an administrator user name and password,  you can connect to the Darwin Streaming Server from your web browser.
 
-OR 
+   Enter the URL for your Darwin Streaming Server:
+http://localhost:1220 on the same local system or
+http://myserver.com:1220 from a remote system
 
-From a remote machine launch Microsoft Internet Explorer, versions 4.5 or later, Netscape Navigator or Netscape Communicator (Netscape Communicator versions 6.0 and 6.1 are not supported at this time):
-
-2. Enter the URL for your Streaming Server Admin:
-http://myserver.com:1220
-Replace "myserver.com" with the name of your Streaming Server computer.  1220 is the port number.
-
-3. The first time you run the Streaming Server admin, Setup Assistant will prompt for your username and password.
-
-For help on using Streaming Server Admin, setting up secure administration (SSL), and setting up your server to stream hinted media, refer to the online Help by selecting the Question Mark button from the Streaming Server Admin.
-
-To configure and administer your server from either the server machine or a remote client machine, follow the steps in above section.
+Replace "myserver.com" with the name of your Darwin Streaming Server computer. 
+1220 is the port number.
+	For help on using Streaming Server Admin, setting up secure administration (SSL), and setting up your server to stream hinted media, refer to the online Help by selecting the Question Mark button from the Streaming Server Admin.
 
 
 Troubleshooting
+
 
 * File Locations
 
 
 Darwin Streaming Server (Mac OS X)
-/usr/sbin/DarwinStreamingServer - Streaming Server app
+/usr/sbin/QuickTimeStreamingServer - Streaming Server app
 /usr/sbin/streamingadminserver.pl - QTSS Web Admin server
 /Library/QuickTimeStreaming/Modules/ - QTSS plug-ins
 /usr/bin/PlaylistBroadcaster - The PlaylistBroadcaster

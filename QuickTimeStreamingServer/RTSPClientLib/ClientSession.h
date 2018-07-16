@@ -79,12 +79,13 @@ class ClientSession : public Task
         // States. Find out what the object is currently doing
         enum
         {
-            kSendingDescribe    = 0,
-            kSendingSetup       = 1,
-            kSendingPlay        = 2,
-            kPlaying            = 3,
-            kSendingTeardown    = 4,
-            kDone               = 5
+            kSendingOptions     = 0,
+            kSendingDescribe    = 1,
+            kSendingSetup       = 2,
+            kSendingPlay        = 3,
+            kPlaying            = 4,
+            kSendingTeardown    = 5,
+            kDone               = 6
         };
         //
         // Why did this session die?
@@ -136,11 +137,14 @@ class ClientSession : public Task
         UInt32                  GetNumAcks(UInt32 inTrackIndex)
                                     { return fStats[inTrackIndex].fNumAcks; }
                 
+        UInt32   GetSessionPacketsReceived()  { UInt32 result = fNumPacketsReceived; fNumPacketsReceived = 0; return result; }
         //
         // Global stats
         static UInt32   GetActiveConnections()          { return sActiveConnections; }
         static UInt32   GetPlayingConnections()         { return sPlayingConnections; }
         static UInt32   GetConnectionAttempts()         { return sTotalConnectionAttempts; }
+        static UInt32   GetConnectionBytesReceived()    { UInt32 result = sBytesReceived; sBytesReceived = 0; return result; }
+        static UInt32   GetConnectionPacketsReceived()  { UInt32 result = sPacketsReceived; sPacketsReceived = 0; return result; }
         
         
     private:
@@ -173,6 +177,11 @@ class ClientSession : public Task
         UInt32          fRTCPIntervalInSec;
         UInt32          fOptionsIntervalInSec;
         
+        Bool16          fOptions;
+        Bool16          fOptionsRequestRandomData;
+        SInt32          fOptionsRandomDataSize;
+        SInt64          fTransactionStartTimeMilli;
+
         UInt32          fState;     // For managing the state machine
         UInt32          fDeathReason;
         UInt32          fNumSetups;
@@ -223,13 +232,14 @@ class ClientSession : public Task
         TrackStats*         fStats;
         UInt32              fOverbufferWindowSizeInK;
         UInt32              fCurRTCPTrack;
-        
+        UInt32              fNumPacketsReceived;
         //
         // Global stats
         static UInt32           sActiveConnections;
         static UInt32           sPlayingConnections;
         static UInt32           sTotalConnectionAttempts;
-        
+        static UInt32           sBytesReceived;
+        static UInt32           sPacketsReceived;
         //
         // Helper functions for Run()
         void    SetupUDPSockets();

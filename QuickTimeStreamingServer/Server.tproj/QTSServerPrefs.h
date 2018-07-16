@@ -137,6 +137,8 @@ class QTSServerPrefs : public QTSSPrefs
         Bool16  GetCloseLogsOnWrite()           { return fCloseLogsOnWrite; }
         void    SetCloseLogsOnWrite(Bool16 closeLogsOnWrite);
         
+        Bool16  GetRTSPPlayInfoFullURL()        { return fRTSPPlayInfoFullURL; }
+        
         //
         // Optionally require that reliable UDP content be in certain folders
         Bool16 IsPathInsideReliableUDPDir(StrPtrLen* inPath);
@@ -150,7 +152,7 @@ class QTSServerPrefs : public QTSSPrefs
         // Transport addr pref. Caller must provide a buffer big enough for an IP addr
         void    GetTransportSrcAddr(StrPtrLen* ioBuf);
                 
-        // String preferences. Note that the pointers returned here is allocated
+        // String preferences. Note that the pointers returned here are allocated
         // memory that you must delete!
         
         char*   GetErrorLogDir()
@@ -261,7 +263,7 @@ class QTSServerPrefs : public QTSSPrefs
         Bool16  fEnablePacketHeaderPrintfs;
         UInt32  fPacketHeaderPrintfOptions;
         Bool16  fCloseLogsOnWrite;
-        
+        Bool16  fRTSPPlayInfoFullURL;
         enum //fPacketHeaderPrintfOptions
         {
             kRTPALL = 1 << 0,

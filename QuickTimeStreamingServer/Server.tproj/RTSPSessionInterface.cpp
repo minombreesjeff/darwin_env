@@ -83,6 +83,9 @@ void    RTSPSessionInterface::Initialize()
 	::srand((unsigned int) OS::Microseconds());
 	for (int i = 0; i < 350; i++)
 		RTSPSessionInterface::sOptionsRequestBody[i] = ::rand();
+    
+    char* valCheck = (char*) &RTSPSessionInterface::sOptionsRequestBody;
+    valCheck[0] = '\0';
 }
 
 
@@ -253,7 +256,8 @@ QTSS_Error RTSPSessionInterface::InterleavedWrite(void* inBuffer, UInt32 inLen, 
 {
 
     if ( inLen == 0 && fNumInCoalesceBuffer == 0 )
-    {   *outLenWritten = 0;
+    {   if ( outLenWritten != NULL )
+            *outLenWritten = 0;
         return QTSS_NoErr;
     }
         

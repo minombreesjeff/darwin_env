@@ -87,7 +87,7 @@ static QTSS_AttributeID         sStaticPortsConflictErr  = qtssIllegalAttrID;
 static QTSS_AttributeID         sInvalidPortRangeErr  = qtssIllegalAttrID;
 
 static QTSS_AttributeID         sKillClientsEnabledAttr  = qtssIllegalAttrID;
-
+static QTSS_AttributeID         sRTPInfoWaitTimeAttr  =   qtssIllegalAttrID;
 
 // STATIC DATA
 
@@ -103,8 +103,8 @@ static QTSS_ModulePrefsObject       sPrefs = NULL;
 static Bool16   sAllowNonSDPURLs = true;
 static Bool16   sDefaultAllowNonSDPURLs = true;
 
-static Bool16   sRTPInfoEnabled = false;
-static Bool16   sDefaultRTPInfoEnabledeEnabled = false;
+static Bool16   sRTPInfoDisabled = false;
+static Bool16   sDefaultRTPInfoDisabled = false;
 
 static Bool16   sAnnounceEnabled = true;
 static Bool16   sDefaultAnnounceEnabled = true;
@@ -159,6 +159,21 @@ static Bool16   sDefaultReflectBroadcasts = true;
 static Bool16   sAnnouncedKill = true;
 static Bool16   sDefaultAnnouncedKill = true;
 
+static Bool16   sRTPInfoFullURL = true;
+static Bool16   sDefaultRTPInfoFullURL = true;
+
+static Bool16   sPlayResponseRangeHeader = true;
+static Bool16   sDefaultPlayResponseRangeHeader = true;
+
+static Bool16   sPlayerCompatibility = true;
+static Bool16   sDefaultPlayerCompatibility = true;
+
+static UInt32   sAdjustMediaBandwidthPercent = 50;
+static UInt32   sAdjustMediaBandwidthPercentDefault = 50;
+
+static Bool16   sForceRTPInfoSeqAndTime = false;
+static Bool16   sDefaultForceRTPInfoSeqAndTime = false;
+
 static char*	sRedirectBroadcastsKeyword = NULL;
 static char*    sDefaultRedirectBroadcastsKeyword = "";
 static char*    sBroadcastsRedirectDir = NULL;
@@ -169,6 +184,8 @@ static StrPtrLen sBroadcasterGroup;
 
 static QTSS_AttributeID sBroadcastDirListID = qtssIllegalAttrID;
                                 
+static SInt32   sWaitTimeLoopCount = 10;  
+
 // Important strings
 static StrPtrLen    sSDPKillSuffix(".kill");
 static StrPtrLen    sSDPSuffix(".sdp");
@@ -178,6 +195,8 @@ static StrPtrLen    sSDPNotValidMessage("Announced SDP is not a valid SDP");
 static StrPtrLen    sKILLNotValidMessage("Announced .kill is not a valid SDP");
 static StrPtrLen    sSDPTimeNotValidMessage("SDP time is not valid or movie not available at this time.");
 static StrPtrLen    sBroadcastNotAllowed("Broadcast is not allowed.");
+static StrPtrLen    sBroadcastNotActive("Broadcast is not active.");
+static StrPtrLen    sTheNowRangeHeader("npt=now-");
 
 const int kBuffLen = 512;
 
@@ -213,9 +232,8 @@ inline void KeepSession(QTSS_RTSPRequestObject theRequest,Bool16 keep)
 {
     (void)QTSS_SetValue(theRequest, qtssRTSPReqRespKeepAlive, 0, &keep, sizeof(keep));
 }
+
     
-
-
 
 // FUNCTION IMPLEMENTATIONS
 
@@ -316,6 +334,9 @@ QTSS_Error Register(QTSS_Register_Params* inParams)
     static char*        sBroadcasterSessionName= "QTSSReflectorModuleBroadcasterSession";
     static char*        sKillClientsEnabledName= "QTSSReflectorModuleTearDownClients";
 
+    static char*        sRTPInfoWaitTime         = "QTSSReflectorModuleRTPInfoWaitTime";
+    (void)QTSS_AddStaticAttribute(qtssClientSessionObjectType, sRTPInfoWaitTime, NULL, qtssAttrDataTypeSInt32);
+    (void)QTSS_IDForAttr(qtssClientSessionObjectType, sRTPInfoWaitTime, &sRTPInfoWaitTimeAttr);
 
     (void)QTSS_AddStaticAttribute(qtssClientSessionObjectType, sOutputName, NULL, qtssAttrDataTypeVoidPointer);
     (void)QTSS_IDForAttr(qtssClientSessionObjectType, sOutputName, &sOutputAttr);
@@ -441,8 +462,8 @@ QTSS_Error RereadPrefs()
 {
     //
     // Use the standard GetPref routine to retrieve the correct values for our preferences
-    QTSSModuleUtils::GetAttribute(sPrefs, "enable_rtp_play_info",  qtssAttrDataTypeBool16,
-                                &sRTPInfoEnabled, &sDefaultRTPInfoEnabledeEnabled, sizeof(sDefaultRTPInfoEnabledeEnabled));
+    QTSSModuleUtils::GetAttribute(sPrefs, "disable_rtp_play_info",  qtssAttrDataTypeBool16,
+                                &sRTPInfoDisabled, &sDefaultRTPInfoDisabled, sizeof(sDefaultRTPInfoDisabled));
 
     QTSSModuleUtils::GetAttribute(sPrefs, "allow_non_sdp_urls",     qtssAttrDataTypeBool16,
                                 &sAllowNonSDPURLs, &sDefaultAllowNonSDPURLs, sizeof(sDefaultAllowNonSDPURLs));
@@ -484,6 +505,27 @@ QTSS_Error RereadPrefs()
     
 	QTSSModuleUtils::GetAttribute(sPrefs, "allow_announced_kill", 	qtssAttrDataTypeBool16,
 								&sAnnouncedKill, &sDefaultAnnouncedKill, sizeof(sDefaultAnnouncedKill));
+
+	QTSSModuleUtils::GetAttribute(sPrefs, "force_rtp_info_full_url", 	qtssAttrDataTypeBool16,
+								&sRTPInfoFullURL, &sDefaultRTPInfoFullURL, sizeof(sDefaultRTPInfoFullURL));
+
+	QTSSModuleUtils::GetAttribute(sPrefs, "enable_play_response_range_header", 	qtssAttrDataTypeBool16,
+								&sPlayResponseRangeHeader, &sDefaultPlayResponseRangeHeader, sizeof(sDefaultPlayResponseRangeHeader));
+
+    QTSSModuleUtils::GetAttribute(sPrefs, "enable_player_compatibility",   qtssAttrDataTypeBool16,
+                                &sPlayerCompatibility, &sDefaultPlayerCompatibility, sizeof(sDefaultPlayerCompatibility));
+
+    QTSSModuleUtils::GetAttribute(sPrefs, "compatibility_adjust_sdp_media_bandwidth_percent",   qtssAttrDataTypeUInt32,
+                                &sAdjustMediaBandwidthPercent, &sAdjustMediaBandwidthPercentDefault, sizeof(sAdjustMediaBandwidthPercentDefault));
+                                
+    if (sAdjustMediaBandwidthPercent > 100)
+        sAdjustMediaBandwidthPercent = 100;
+        
+    if (sAdjustMediaBandwidthPercent < 1)
+        sAdjustMediaBandwidthPercent = 1;
+
+    QTSSModuleUtils::GetAttribute(sPrefs, "force_rtp_info_sequence_and_time",   qtssAttrDataTypeBool16,
+                                &sForceRTPInfoSeqAndTime, &sDefaultForceRTPInfoSeqAndTime, sizeof(sDefaultForceRTPInfoSeqAndTime));
 
     sBroadcasterGroup.Delete();
     sBroadcasterGroup.Set(QTSSModuleUtils::GetStringAttribute(sPrefs, "BroadcasterGroup", sDefaultsBroadcasterGroup)); 
@@ -1014,7 +1056,7 @@ QTSS_Error DoAnnounce(QTSS_StandardRTSP_Params* inParams)
 
 // ------------ reorder the sdp headers to make them proper.
 		
-    SDPLineSorter sortedSDP(&checkedSDPContainer);
+    SDPLineSorter sortedSDP(&checkedSDPContainer );
 
 // ------------ Write the SDP 
 
@@ -1169,8 +1211,16 @@ QTSS_Error DoDescribe(QTSS_StandardRTSP_Params* inParams)
             
  
 // ------------ Put SDP header lines in correct order
+    Float32 adjustMediaBandwidthPercent = 1.0;
+    Bool16 adjustMediaBandwidth = false;
 
-    SDPLineSorter sortedSDP(&checkedSDPContainer);
+    if (sPlayerCompatibility )
+        adjustMediaBandwidth = QTSSModuleUtils::HavePlayerProfile(inParams,QTSSModuleUtils::kAdjustBandwidth);
+
+    if (adjustMediaBandwidth)
+        adjustMediaBandwidthPercent = (Float32) sAdjustMediaBandwidthPercent / 100.0;
+
+    SDPLineSorter sortedSDP(&checkedSDPContainer,adjustMediaBandwidthPercent);
 
 // ------------ Write the SDP 
 
@@ -1675,9 +1725,12 @@ QTSS_Error DoSetup(QTSS_StandardRTSP_Params* inParams)
     QTSS_RTPPayloadType thePayloadType = theStreamInfo->fPayloadType;
 
     StringParser parser(thePayloadName);
-    parser.ConsumeUntil(NULL, StringParser::sDigitMask);
-    theStreamInfo->fTimeScale = parser.ConsumeInteger(NULL);
     
+    parser.GetThru(NULL, '/');
+    theStreamInfo->fTimeScale = parser.ConsumeInteger(NULL);
+    if (theStreamInfo->fTimeScale == 0)
+        theStreamInfo->fTimeScale = 90000;
+
     QTSS_RTPStreamObject newStream = NULL;
     {
         // Ok, this is completely crazy but I can't think of a better way to do this that's
@@ -1729,7 +1782,7 @@ QTSS_Error DoSetup(QTSS_StandardRTSP_Params* inParams)
     //send the setup response
     (void)QTSS_AppendRTSPHeader(inParams->inRTSPRequest, qtssCacheControlHeader,
                                 kCacheControlHeader.Ptr, kCacheControlHeader.Len);
-    (void)QTSS_SendStandardRTSPResponse(inParams->inRTSPRequest, newStream, 0);
+    (void)QTSS_SendStandardRTSPResponse(inParams->inRTSPRequest, newStream, qtssSetupRespDontWriteSSRC);
     return QTSS_NoErr;
 }
 
@@ -1742,69 +1795,89 @@ Bool16 SessionSupportsPlayInfo(QTSS_Object inClientSession)
    return playInfoOK;
 }
 
+
+
 Bool16 HaveStreamBuffers(QTSS_StandardRTSP_Params* inParams, ReflectorSession* inSession)
 {
-    Bool16 haveBufferedStreams = false; 
-    
-    if ( inSession != NULL && SessionSupportsPlayInfo(inParams->inClientSession) )
-    {        
-        UInt32 firstTimeStamp = 0;
-        UInt16 firstSeqNum = 0;            
-        ReflectorSender* theSender = NULL;
-        ReflectorStream* theReflectorStream = NULL;
-        QTSS_RTPStreamObject* theRef = NULL;
-        UInt32 theStreamIndex = 0;
-        UInt32 theLen = 0; 
-        QTSS_Error theErr = QTSS_NoErr;
-        haveBufferedStreams = true; // set to false and return if we can't set the packets
-        UInt32 y = 0;
-		
-        //lock all streams
-        for (y = 0; y < inSession->GetNumStreams(); y++)
-            inSession->GetStreamByIndex(y)->GetMutex()->Lock();
+    if (inSession == NULL || inParams == NULL)
+        return false;
         
-        for (   theStreamIndex = 0;
-                QTSS_GetValuePtr(inParams->inClientSession, qtssCliSesStreamObjects, theStreamIndex, (void**)&theRef, &theLen) == QTSS_NoErr;
-                theStreamIndex++)
-        {        
-            theReflectorStream = inSession->GetStreamByIndex(theStreamIndex);
-            if (!theReflectorStream->HasFirstRTP() )
-            {    
-                haveBufferedStreams = false;
-                break;
-            }                
-            
-            theSender = theReflectorStream->GetRTPSender();                
-            theSender->GetFirstPacketInfo(&firstSeqNum, &firstTimeStamp, NULL);
-            
-            theErr = QTSS_SetValue(*theRef, qtssRTPStrFirstSeqNumber, 0, &firstSeqNum, sizeof(firstSeqNum));
-            Assert(theErr == QTSS_NoErr);
-            
-            theErr = QTSS_SetValue(*theRef, qtssRTPStrFirstTimestamp, 0, &firstTimeStamp, sizeof(firstTimeStamp));
-            Assert(theErr == QTSS_NoErr);
-            
-        }
-         
-        //unlock all streams
-        for (y = 0; y < inSession->GetNumStreams(); y++)
-            inSession->GetStreamByIndex(y)->GetMutex()->Unlock();
-            
-        if ( theStreamIndex != inSession->GetNumStreams() )
-            haveBufferedStreams = false;
-
-    }
+    UInt32 firstTimeStamp = 0;
+    UInt16 firstSeqNum = 0;            
+    ReflectorSender* theSender = NULL;
+    ReflectorStream* theReflectorStream = NULL;
+    QTSS_RTPStreamObject* theRef = NULL;
+    UInt32 theStreamIndex = 0;
+    UInt32 theLen = 0; 
+    QTSS_Error theErr = QTSS_NoErr;
+    Bool16 haveBufferedStreams = true; // set to false and return if we can't set the packets
+    UInt32 y = 0;
     
+    
+    SInt64 currentTime = OS::Milliseconds();
+    SInt64 packetArrivalTime = 0;
+
+    //lock all streams
+    for (y = 0; y < inSession->GetNumStreams(); y++)
+        inSession->GetStreamByIndex(y)->GetMutex()->Lock();
+
+           
+    for (   theStreamIndex = 0;
+            QTSS_GetValuePtr(inParams->inClientSession, qtssCliSesStreamObjects, theStreamIndex, (void**)&theRef, &theLen) == QTSS_NoErr;
+            theStreamIndex++)
+    {        
+        theReflectorStream = inSession->GetStreamByIndex(theStreamIndex);
+
+      //  if (!theReflectorStream->HasFirstRTCP())
+      //      printf("theStreamIndex =%lu no rtcp\n", theStreamIndex);
+        
+      //  if (!theReflectorStream->HasFirstRTP())
+      //      printf("theStreamIndex = %lu no rtp\n", theStreamIndex);
+            
+        if ((theReflectorStream == NULL) || (false == theReflectorStream->HasFirstRTP()) )
+        {    
+            haveBufferedStreams = false;
+            //printf("1 breaking no buffered streams\n");
+             break;
+        }                
+        
+        theSender = theReflectorStream->GetRTPSender();                
+        haveBufferedStreams =  theSender->GetFirstPacketInfo(&firstSeqNum, &firstTimeStamp, &packetArrivalTime);
+        //printf("theStreamIndex= %lu haveBufferedStreams=%d, seqnum=%d, timestamp=%lu\n", theStreamIndex, haveBufferedStreams, firstSeqNum, firstTimeStamp);
+       
+       if (!haveBufferedStreams)
+        {    
+            //printf("2 breaking no buffered streams\n");
+            break;
+        }                        
+        
+        theErr = QTSS_SetValue(*theRef, qtssRTPStrFirstSeqNumber, 0, &firstSeqNum, sizeof(firstSeqNum));
+        Assert(theErr == QTSS_NoErr);
+        
+        theErr = QTSS_SetValue(*theRef, qtssRTPStrFirstTimestamp, 0, &firstTimeStamp, sizeof(firstTimeStamp));
+        Assert(theErr == QTSS_NoErr);
+        
+   
+    }     
+    //unlock all streams
+    for (y = 0; y < inSession->GetNumStreams(); y++)
+        inSession->GetStreamByIndex(y)->GetMutex()->Unlock();
+            
     return haveBufferedStreams;
 }
 
 QTSS_Error DoPlay(QTSS_StandardRTSP_Params* inParams, ReflectorSession* inSession)
 {
     QTSS_Error theErr = QTSS_NoErr;
+    UInt32 flags = 0;
+    UInt32 theLen = 0;
+    Bool16 rtpInfoEnabled = false; 
+    
     if (inSession == NULL) // it is a broadcast session so store the broadcast session.
     {   if (!sDefaultBroadcastPushEnabled)
             return QTSS_RequestFailed;
 
-        UInt32 theLen = sizeof(inSession);
+        theLen = sizeof(inSession);
         theErr = QTSS_GetValue(inParams->inClientSession, sClientBroadcastSessionAttr, 0, &inSession, &theLen);
         if (theErr != QTSS_NoErr)
             return QTSS_RequestFailed;
@@ -1874,18 +1947,77 @@ QTSS_Error DoPlay(QTSS_StandardRTSP_Params* inParams, ReflectorSession* inSessio
         // server can use it from within QTSS_Play
         UInt32 bitsPerSecond =  inSession->GetBitRate();
         (void)QTSS_SetValue(inParams->inClientSession, qtssCliSesMovieAverageBitRate, 0, &bitsPerSecond, sizeof(bitsPerSecond));
+   
+        if (sPlayResponseRangeHeader)
+        {
+            StrPtrLen temp;
+            theErr = QTSS_GetValuePtr(inParams->inClientSession, sRTPInfoWaitTimeAttr, 0, &temp.Ptr, &temp.Len);
+            if (theErr != QTSS_NoErr)
+                QTSS_AppendRTSPHeader(inParams->inRTSPRequest, qtssRangeHeader,sTheNowRangeHeader.Ptr, sTheNowRangeHeader.Len);
+  
+        }
+        
+     
+        if (sPlayerCompatibility )
+            rtpInfoEnabled = QTSSModuleUtils::HavePlayerProfile(inParams, QTSSModuleUtils::kRequiresRTPInfoSeqAndTime);
 
-        //Server shouldn't send RTCP (reflector does it), but the server should append the server info app packet
-        QTSS_Error theErr = QTSS_Play(inParams->inClientSession, inParams->inRTSPRequest, qtssPlayFlagsAppendServerInfo);
-        if (theErr != QTSS_NoErr)
-            return theErr;
+        if (sForceRTPInfoSeqAndTime)
+            rtpInfoEnabled = true;
+
+        if (sRTPInfoDisabled )
+            rtpInfoEnabled = false; 
+
+        if (rtpInfoEnabled)
+        {
+            flags = qtssPlayRespWriteTrackInfo; //write first timestampe and seq num to rtpinfo
+        
+            Bool16 haveBufferedStreams = HaveStreamBuffers(inParams,inSession);
+            if (haveBufferedStreams) // send the cached rtp time and seq number in the response.
+            {    
+ 
+                QTSS_Error theErr = QTSS_Play(inParams->inClientSession, inParams->inRTSPRequest, qtssPlayRespWriteTrackInfo);
+                if (theErr != QTSS_NoErr)
+                    return theErr;
+            
+            }
+            else
+            {   
+                SInt32 waitTimeLoopCount = 0;
+                theLen = sizeof(waitTimeLoopCount);
+                theErr = QTSS_GetValue(inParams->inClientSession, sRTPInfoWaitTimeAttr, 0, &waitTimeLoopCount, &theLen);
+                if (theErr != QTSS_NoErr)
+                    (void)QTSS_SetValue(inParams->inClientSession, sRTPInfoWaitTimeAttr, 0, &sWaitTimeLoopCount, sizeof(sWaitTimeLoopCount));
+                else
+                {
+                    if (waitTimeLoopCount < 1)
+                        return QTSSModuleUtils::SendErrorResponseWithMessage(inParams->inRTSPRequest, qtssClientNotFound, &sBroadcastNotActive); 
+                    
+                    waitTimeLoopCount --; 
+                    (void)QTSS_SetValue(inParams->inClientSession, sRTPInfoWaitTimeAttr, 0, &waitTimeLoopCount, sizeof(waitTimeLoopCount));
+                
+                }
+                
+                SInt64 interval = 1 * 1000; // 1 second
+                QTSS_SetIdleTimer( interval );
+                return QTSS_NoErr;
+            }
+            
+ 
+        }
+        else
+        {
+            QTSS_Error theErr = QTSS_Play(inParams->inClientSession, inParams->inRTSPRequest, qtssPlayFlagsAppendServerInfo);
+            if (theErr != QTSS_NoErr)
+                return theErr;
+                
+        }
+  
     }
+    
+    if (sRTPInfoFullURL)
+        flags |= qtssPlayFlagsRTPInfoFullURL;
 
-    Bool16 haveBufferedStreams = HaveStreamBuffers(inParams,inSession);
-    if (haveBufferedStreams && sRTPInfoEnabled) // send the cached rtp time and seq number in the response.
-        (void)QTSS_SendStandardRTSPResponse(inParams->inRTSPRequest, inParams->inClientSession, qtssPlayRespWriteTrackInfo);
-    else    //and send a standard play response
-        (void)QTSS_SendStandardRTSPResponse(inParams->inRTSPRequest, inParams->inClientSession, 0);
+    (void)QTSS_SendStandardRTSPResponse(inParams->inRTSPRequest, inParams->inClientSession, flags);
     return QTSS_NoErr;
 }
 
@@ -1915,8 +2047,8 @@ void KillCommandPathInList()
         OSRef* theRef = theIter.GetCurrent();
         if (theRef == NULL)
             continue;
-                  
-        commandPath.ResetBytesWritten();
+        
+        commandPath.Reset();
         commandPath.Put(*(theRef->GetString()));
         commandPath.Put(sSDPKillSuffix);
         commandPath.PutTerminator();

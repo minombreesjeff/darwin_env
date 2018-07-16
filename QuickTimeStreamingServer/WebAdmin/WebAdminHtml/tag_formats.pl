@@ -14,32 +14,11 @@
 @weekdayStr = ( "SunStr", "MonStr", "TueStr", "WedStr", "ThuStr", "FriStr", "SatStr" );
 @monthStr = ( "JanStr", "FebStr", "MarStr", "AprStr", "MayStr", "JunStr", "JulStr", "AugStr", "SepStr", "OctStr", "NovStr", "DecStr" );
 
-$enMessageHash = $ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"};
-$deMessageHash = $ENV{"QTSSADMINSERVER_DE_MESSAGEHASH"};
-$jaMessageHash = $ENV{"QTSSADMINSERVER_JA_MESSAGEHASH"};
-$frMessageHash = $ENV{"QTSSADMINSERVER_FR_MESSAGEHASH"};
-
 # GetMessageHash()
 # Returns the messages hash given the language
 sub GetMessageHash 
 {
-	my $lang = $ENV{"LANGUAGE"};
-	my $messageHash = $enMessageHash;
-	
-	if($lang eq "en") {
-		$messageHash = $enMessageHash;
-	}
-	elsif($lang eq "de") {
-		$messageHash = $deMessageHash;
-	}
-	elsif($lang eq "ja") {
-		$messageHash = $jaMessageHash;
-	}
-	elsif($lang eq "fr") {
-		$messageHash = $frMessageHash;
-	}
-	
-	return $messageHash;  
+	return $ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"};  
 }
 
 sub runFormatter {
