@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -38,6 +39,7 @@
 #include "OSArrayObjectDeleter.h"
 #include "QTSS_Private.h"
 
+#include "defaultPaths.h"
 #include "OSMemory.h"
 #include "OSRef.h"
 #include "IdleTask.h"
@@ -92,14 +94,7 @@ static int                  sRelayPrefModDate = -1;
 
 static QTSS_AttributeID     sRelayModulePrefParseErr  = qtssIllegalAttrID;
 
-
-#ifdef __Win32__
-static char*    sDefaultRelayPrefs              = "c:\\Program Files\\Darwin Streaming Server\\relayconfig.xml";
-#elif __MacOSX__
-static char*    sDefaultRelayPrefs              = "/Library/QuickTimeStreaming/Config/relayconfig.xml";
-#else
-static char*    sDefaultRelayPrefs              = "/etc/streaming/relayconfig.xml";
-#endif
+static char* sDefaultRelayPrefs = DEFAULTPATHS_ETC_DIR "relayconfig.xml";
 
 #ifdef __MacOSX__
 #define kResponseHeader	"HTTP/1.0 200 OK\r\nServer: QuickTimeStreamingServer/%s/%s\r\nConnection: Close\r\nContent-Type: text/html\r\n\r\n<HTML><TITLE>Relay Stats</TITLE><BODY>"
@@ -123,9 +118,9 @@ Bool16              sDoResolveAgain = false;
 // This struct is used when Rereading Relay Prefs
 struct SourceInfoQueueElem
 {
-    SourceInfoQueueElem(SourceInfo* inInfo, Bool16 inRTSPInfo) :fElem(this), fSourceInfo(inInfo),
+    SourceInfoQueueElem(SourceInfo* inInfo, Bool16 inRTSPInfo) :fElem(), fSourceInfo(inInfo),
                                                                 fIsRTSPSourceInfo(inRTSPInfo),
-                                                                fShouldDelete(true) {}
+                                                                fShouldDelete(true) { fElem.SetEnclosingObject(this); }
     ~SourceInfoQueueElem() {}
     
     OSQueueElem fElem;
@@ -137,7 +132,7 @@ struct SourceInfoQueueElem
 // This struct is used when setting up announced source relays
 struct RTSPSessionIDQueueElem
 {
-    RTSPSessionIDQueueElem(UInt32 rtspSessionID) :fElem(this), fRTSPSessionID(rtspSessionID) {}
+    RTSPSessionIDQueueElem(UInt32 rtspSessionID) :fElem(), fRTSPSessionID(rtspSessionID) { fElem.SetEnclosingObject(this); }
     ~RTSPSessionIDQueueElem() {}
     
     OSQueueElem fElem;
@@ -190,29 +185,32 @@ class DNSResolverThread : public OSThread
 {
     class RereadPrefsTask : public Task
     {
-    public:
-        virtual SInt64 Run()
-        {
-            RereadRelayPrefs(sRelayPrefsFile);
-            delete sResolverThread;
-            sResolverThread = NULL;
-            delete sRelayPrefsFile;
-            
-            // we need to see if reread prefs has been called again while we were resolving.
-            // If so, it just exited without doing anything, and we need to start over to pick
-            // up whatever changed.
-            sResolverMutex.Lock();
-            sRelayPrefsFile = NULL;
-            if (sDoResolveAgain)
-            {
-                sDoResolveAgain = false;
-                sResolverMutex.Unlock();
-                ReadRelayPrefsFile();
-            }
-            else sResolverMutex.Unlock();
+        
 
-            return -1;
-        }
+        public:
+            RereadPrefsTask() : Task () {this->SetTaskName("DNSResolverThread::RereadPrefsTask");}
+            virtual SInt64 Run()
+            {
+                RereadRelayPrefs(sRelayPrefsFile);
+                delete sResolverThread;
+                sResolverThread = NULL;
+                delete sRelayPrefsFile;
+                
+                // we need to see if reread prefs has been called again while we were resolving.
+                // If so, it just exited without doing anything, and we need to start over to pick
+                // up whatever changed.
+                sResolverMutex.Lock();
+                sRelayPrefsFile = NULL;
+                if (sDoResolveAgain)
+                {
+                    sDoResolveAgain = false;
+                    sResolverMutex.Unlock();
+                    ReadRelayPrefsFile();
+                }
+                else sResolverMutex.Unlock();
+    
+                return -1;
+            }
     };
 
 public:
@@ -226,10 +224,12 @@ public:
             sResolverThread = new DNSResolverThread();
             sResolverThread->Start();
         }
-        else 
-        {   sDoResolveAgain = true;    // it's already resolving, tell it to try again when it's done
+        else
+        {
+            sDoResolveAgain = true;    // it's already resolving, tell it to try again when it's done
             delete relayPrefs;
         }
+        
         sResolverMutex.Unlock();
     }
     
@@ -322,7 +322,9 @@ QTSS_Error Initialize(QTSS_Initialize_Params* inParams)
     sPrefs = QTSSModuleUtils::GetModulePrefsObject(inParams->inModule);
     sServer = inParams->inServer;
     sAttributes = QTSSModuleUtils::GetModuleAttributesObject(inParams->inModule);
-        
+    
+    qtss_sprintf(sResponseHeader, kResponseHeader, kVersionString, kBuildString);
+    
     // Call helper class initializers
     // this function calls the ReflectorSession base class Initialize function
     RelaySession::Initialize(sAttributes);
@@ -443,7 +445,7 @@ void RemoveAllOutputs(RelaySession* inSession)
         iter.Next();
                 if(theOutput->GetRelaySession() == inSession)
                 {   
-                    inSession->RemoveOutput(theOutput, false);
+                    inSession->RemoveOutput(theOutput,false);
                     delete theOutput;
                 }
     }
@@ -473,8 +475,7 @@ QTSS_Error Filter(QTSS_StandardRTSP_Params* inParams)
     Bool16 theFalse = false;
     (void)QTSS_SetValue(inParams->inRTSPRequest, qtssRTSPReqRespKeepAlive, 0, &theFalse, sizeof(theFalse));
 
-	static StrPtrLen	sResponseHeader("HTTP/1.0 200 OK\r\nServer: QTSSReflectorModule/4.0.2\r\nConnection: Close\r\nContent-Type: text/html\r\n\r\n<HTML><TITLE>Relay Stats</TITLE><BODY>");
-	(void)QTSS_Write(inParams->inRTSPRequest, sResponseHeader.Ptr, sResponseHeader.Len, NULL, 0);
+    (void)QTSS_Write(inParams->inRTSPRequest, sResponseHeader, ::strlen(sResponseHeader), NULL, 0);
     
     // First build up a queue of all RelaySessions with RelayOutputs. This way,
     // we can present a list that's sorted.
@@ -501,7 +502,7 @@ QTSS_Error Filter(QTSS_StandardRTSP_Params* inParams)
 
                 // Write current stats for this output
                 char theStatsBuf[1024];
-                sprintf(theStatsBuf, "Current stats for this relay: %lu packets per second. %lu bits per second. %"_64BITARG_"d packets since it started. %"_64BITARG_"d bits since it started<P>", theOutput->GetCurPacketsPerSecond(), theOutput->GetCurBitsPerSecond(), theOutput->GetTotalPacketsSent(), theOutput->GetTotalBytesSent());
+                qtss_sprintf(theStatsBuf, "Current stats for this relay: %lu packets per second. %lu bits per second. %"_64BITARG_"d packets since it started. %"_64BITARG_"d bits since it started<P>", theOutput->GetCurPacketsPerSecond(), theOutput->GetCurBitsPerSecond(), theOutput->GetTotalPacketsSent(), theOutput->GetTotalBytesSent());
                 (void)QTSS_Write(inParams->inRTSPRequest, &theStatsBuf[0], ::strlen(theStatsBuf), NULL, 0);
             }
         }
@@ -570,7 +571,7 @@ QTSS_Error SetupAnnouncedSessions(QTSS_StandardRTSP_Params* inParams)
     {
         Assert(0);
         return QTSS_NoErr; 
-    }
+    }   
         
     if ( (*theMethod == qtssSetupMethod) && (*theMode == qtssRTPTransportModeRecord) )
         setup = true;
@@ -1149,6 +1150,7 @@ void ReadRelayPrefsFile()
         delete xmlFile;
         return;     // just return with no error logged
     }
+      
     char errorBuffer[1000];
     if (!xmlFile->ParseFile(errorBuffer, sizeof(errorBuffer)))
     {

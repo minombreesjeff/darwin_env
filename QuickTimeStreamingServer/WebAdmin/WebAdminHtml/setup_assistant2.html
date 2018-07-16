@@ -49,13 +49,15 @@
 			}
 			return true;
 		}
-		
+	
 		function prePopulatePasswords() {
 			var oldPass = document.forms[0].elements['qtssMP3BroadcastPassword'].value;
 			if ((oldPass != ' ') && (oldPass != '')) {
 				document.forms[0].elements['assistMP3Pass'].value = oldPass;
 				document.forms[0].elements['new_password2'].value = oldPass;
 			}
+			document.forms[0].elements['assistMP3Pass'].focus();
+			document.forms[0].elements['assistMP3Pass'].select();
 		}
 	
 	</script>

@@ -4,21 +4,22 @@
 #
 # @APPLE_LICENSE_HEADER_START@
 #
-# Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
-# contents of this file constitute Original Code as defined in and are
-# subject to the Apple Public Source License Version 1.2 (the 'License').
-# You may not use this file except in compliance with the License.  Please
-# obtain a copy of the License at http://www.apple.com/publicsource and
-# read it before using this file.
+# Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
 #
-# This Original Code and all software distributed under the License are
+# This file contains Original Code and/or Modifications of Original Code
+# as defined in and that are subject to the Apple Public Source License
+# Version 2.0 (the 'License'). You may not use this file except in
+# compliance with the License. Please obtain a copy of the License at
+# http://www.opensource.apple.com/apsl/ and read it before using this
+# file.
+#
+# The Original Code and all software distributed under the License are
 # distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
 # EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
-# INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
-# FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
-# see the License for the specific language governing rights and
+# INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+# Please see the License for the specific language governing rights and
 # limitations under the License.
-#
 #
 # @APPLE_LICENSE_HEADER_END@
 #
@@ -37,31 +38,15 @@ use Socket;
 @monthStr = ( "JanStr", "FebStr", "MarStr", "AprStr", "MayStr", "JunStr", "JulStr", "AugStr", "SepStr", "OctStr", "NovStr", "DecStr" );
 
 $enMessageHash = $ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"};
-$deMessageHash = $ENV{"QTSSADMINSERVER_DE_MESSAGEHASH"};
-$jaMessageHash = $ENV{"QTSSADMINSERVER_JA_MESSAGEHASH"};
-$frMessageHash = $ENV{"QTSSADMINSERVER_FR_MESSAGEHASH"};
+$deMessageHash = $ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"};
+$jaMessageHash = $ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"};
+$frMessageHash = $ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"};
 
 # GetMessageHash()
 # Returns the messages hash given the language
 sub GetMessageHash 
 {
-	my $lang = $ENV{"LANGUAGE"};
-	my $messageHash = $enMessageHash;
-	
-	if($lang eq "en") {
-		$messageHash = $enMessageHash;
-	}
-	elsif($lang eq "de") {
-		$messageHash = $deMessageHash;
-	}
-	elsif($lang eq "ja") {
-		$messageHash = $jaMessageHash;
-	}
-	elsif($lang eq "fr") {
-		$messageHash = $frMessageHash;
-	}
-	
-	return $messageHash;  
+	return $ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"};  
 }
 
 # GetGenreArray()
@@ -70,7 +55,7 @@ sub GetGenreArray
 {
 	my $lang = $ENV{"LANGUAGE"};
 	@genreArray = ();
-	my $genreFilename = $ENV{'SERVER_ROOT'} . "/html_$lang/" . $ENV{"GENREFILE"};
+	my $genreFilename = $ENV{'SERVER_ROOT'} . "/html_en/" . $ENV{"GENREFILE"};
 	
 	open(GENRES, $genreFilename) or die "Couldn't find the $lang genre file $genreFilename!";
 	while($genreLine = <GENRES>) {

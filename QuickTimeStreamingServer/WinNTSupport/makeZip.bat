@@ -1,17 +1,33 @@
-mkdir DarwinStreamingServer
-copy DarwinStreamingServer.exe DarwinStreamingServer\DarwinStreamingServer.exe
+
+IF EXIST DarwinStreamingServer ( RMDIR /Q /S DarwinStreamingServer) 
+MKDIR DarwinStreamingServer
+
+IF EXIST build ( RMDIR /Q /S build )
+MKDIR build 
+
+DEL /Q dynmodules_disabled\*.dll
+
+IF option%1 EQU optiondebug ( copy /Y Debug\*.exe build\*.exe
+copy /Y dynmodules_disabled\Debug\*.dll dynmodules_disabled\*.dll
+) ELSE (
+ copy /Y Release\*.exe build\
+ copy /Y dynmodules_disabled\Release\*.dll dynmodules_disabled\
+)
+
+
+copy build\DarwinStreamingServer.exe DarwinStreamingServer\DarwinStreamingServer.exe
+copy build\RegistrySystemPathEditor.exe DarwinStreamingServer\RegistrySystemPathEditor.exe
+copy build\StreamingLoadTool.exe DarwinStreamingServer\StreamingLoadTool.exe
+copy build\MP3Broadcaster.exe DarwinStreamingServer\MP3Broadcaster.exe
+copy build\PlaylistBroadcaster.exe DarwinStreamingServer\PlaylistBroadcaster.exe
+copy build\qtpasswd.exe DarwinStreamingServer\qtpasswd.exe
+
 copy streamingserver.xml DarwinStreamingServer\streamingserver.xml
 copy relayconfig.xml-Sample DarwinStreamingServer\relayconfig.xml-Sample
 copy qtusers DarwinStreamingServer\qtusers
 copy ..\qtgroups DarwinStreamingServer\qtgroups
-copy PlaylistBroadcaster.exe DarwinStreamingServer\PlaylistBroadcaster.exe
-copy MP3Broadcaster.exe DarwinStreamingServer\MP3Broadcaster.exe
 copy ..\WebAdmin\src\streamingadminserver.pl DarwinStreamingServer\streamingadminserver.pl
-REM copy ..\WebAdmin\streamingadminserver.pem DarwinStreamingServer\streamingadminserver.pem
-copy qtpasswd.exe DarwinStreamingServer\qtpasswd.exe
-copy StreamingLoadTool.exe DarwinStreamingServer\StreamingLoadTool.exe
-copy ..\SpamPro.tproj\streamingloadtool.cfg DarwinStreamingServer\streamingloadtool.cfg
-copy RegistrySystemPathEditor.exe DarwinStreamingServer\RegistrySystemPathEditor.exe
+copy ..\StreamingLoadTool\streamingloadtool.cfg DarwinStreamingServer\streamingloadtool.cfg
 copy WinPasswdAssistant.pl DarwinStreamingServer\WinPasswdAssistant.pl
 copy Install.bat DarwinStreamingServer\Install.bat
 
@@ -23,8 +39,7 @@ copy ..\sample.mp3 DarwinStreamingServer\sample.mp3
 
 copy dynmodules_disabled\QTSSSpamDefenseModule.dll DarwinStreamingServer\QTSSSpamDefenseModule.dll
 copy dynmodules_disabled\QTSSRawFileModule.dll DarwinStreamingServer\QTSSRawFileModule.dll
-copy ReadMeNT.txt DarwinStreamingServer\ReadMeNT.txt
-copy ..\Documentation\AboutDarwinStreamingSvr.pdf DarwinStreamingServer\AboutDarwinStreamingSvr.pdf
+copy ..\Documentation\ReadMe.rtf DarwinStreamingServer\ReadMe.rtf
 
 mkdir DarwinStreamingServer\AdminHtml
 copy ..\WebAdmin\WebAdminHtml\*.pl DarwinStreamingServer\AdminHtml

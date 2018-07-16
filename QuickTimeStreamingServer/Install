@@ -26,7 +26,7 @@ if [ $USERID = 0 ]; then
 		ps -ax | awk '/streamingadminserver.pl/ {print $1}' | xargs -r kill -9  
 	fi
 
-	if [ `uname` = "SunOS" ]; then
+	if [ `uname` = "SunOS" -o `uname` = "IRIX" -o `uname` = "IRIX64" ]; then
 		ps -aef | awk '/DarwinStreamingServer/ {print $2}' | xargs -n 2 kill -9  
 		ps -aef | awk '/streamingadminserver.pl/ {print $2}' | xargs -n 1 kill -9 
 	fi
@@ -114,10 +114,12 @@ if [ $USERID = 0 ]; then
 ## CHANGE PERL PATH IN streamingadminserver.pl AND parse_xml.cgi ##
 
 # Look for perl in the default locations
-if [ -x /usr/bin/perl ]; then
-	perldef=/usr/bin/perl
+if [ -x /usr/freeware/bin/perl ]; then
+	perldef=/usr/freeware/bin/perl
 elif [ -x /usr/local/bin/perl ]; then
 	perldef=/usr/local/bin/perl
+elif [ -x /usr/bin/perl ]; then
+	perldef=/usr/bin/perl
 else
 	perldef=""
 fi
@@ -268,21 +270,21 @@ fi
 		mkdir -p /var/streaming/playlists
 		chmod 777 /var/streaming/playlists
 	fi
-		
-        echo copying "sample_100kbit.mov" into "/usr/local/movies/sample_100kbit.mov"
-        cp -f sample_100kbit.mov /usr/local/movies/
+	
+    echo copying "sample_100kbit.mov" into "/usr/local/movies/sample_100kbit.mov"
+    cp -f sample_100kbit.mov /usr/local/movies/
 
-        echo copying "sample_300kbit.mov" into "/usr/local/movies/sample_300kbit.mov"
-        cp -f sample_300kbit.mov /usr/local/movies/
+    echo copying "sample_300kbit.mov" into "/usr/local/movies/sample_300kbit.mov"
+    cp -f sample_300kbit.mov /usr/local/movies/
 
-        echo copying "sample_100kbit.mp4" into "/usr/local/movies/sample_100kbit.mp4"
-        cp -f sample_100kbit.mp4 /usr/local/movies/
+    echo copying "sample_100kbit.mp4" into "/usr/local/movies/sample_100kbit.mp4"
+    cp -f sample_100kbit.mp4 /usr/local/movies/
 
-        echo copying "sample_300kbit.mp4" into "/usr/local/movies/sample_300kbit.mp4"
-        cp -f sample_300kbit.mp4 /usr/local/movies/
+    echo copying "sample_300kbit.mp4" into "/usr/local/movies/sample_300kbit.mp4"
+    cp -f sample_300kbit.mp4 /usr/local/movies/
 
-        echo copying "sample.mp3" into "/usr/local/movies/sample.mp3"
-        cp -f sample.mp3 /usr/local/movies/
+    echo copying "sample.mp3" into "/usr/local/movies/sample.mp3"
+    cp -f sample.mp3 /usr/local/movies/
 
 	echo copying "StreamingLoadTool" to "/usr/local/bin/StreamingLoadTool"
 	cp -f StreamingLoadTool /usr/local/bin/
@@ -318,12 +320,13 @@ fi
 	
 	# prompt the user to enter the admin username
 	while [ "$username" = "" ]; do
-		printf "DSS Administrator Username cannot contain spaces, or quotes, either single or double, and cannot be more than 255 characters long\n"
-		printf "Enter DSS Administrator Username : "
+		printf "In order to administer the Darwin Streaming Server you must create an administrator user [Note: The administrator user name cannot contain spaces, or single or double quote characters, and cannot be more than 255 characters long].\n"
+		
+		printf "Please enter a new administrator user name: "
 		read username
 		if [ "$username" = "" ]; then
 			echo ""
-			echo "Error: No Username entered!"
+			echo "Error: No username entered!"
 			echo ""
 		fi
 	done
@@ -331,24 +334,25 @@ fi
 	
 	# prompt the user to enter the admin password
 	while [ "$password" = "" ]; do
-		printf "DSS Administrator Password cannot contain spaces, or quotes, either single or double, and cannot be more than 80 characters long\n"
-		printf "Enter DSS Administrator Password: "
+		printf "\nYou must also enter a password for the administrator user [Note: The administrator password cannot contain spaces, or quotes, either single or double, and cannot be more than 80 characters long].\n"
+
+		printf "Please enter a new administrator Password: "
 		stty -echo
 		read password
 		stty echo
 		echo ""
-		printf "Re-enter DSS Administrator Password: "
+		printf "Re-enter the new administrator password: "
 		stty -echo
 		read password1
 		stty echo
 		if [ "$password" = "" ]; then
 			echo ""
-			echo "Error: No Password entered!"
+			echo "Error: No password entered!"
 			echo ""
 		fi
 		if [ "$password" != "$password1" ]; then
 			echo ""
-			echo "Error: Passwords entered do not match!"
+			echo "Error: passwords entered do not match!"
 			echo ""
 			password=""
 		fi

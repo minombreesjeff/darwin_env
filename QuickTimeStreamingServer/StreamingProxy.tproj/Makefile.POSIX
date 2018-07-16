@@ -27,8 +27,10 @@ CFILES = 	get_opt.c \
 all: StreamingProxy 
 
 StreamingProxy: $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
-	$(LINK) -o $@ $(CFILES:.c=.o) $(CPPFILES:.cpp=.o) $(COMPILER_FLAGS) $(LINKOPTS) $(LIBS) 
-
+	$(LINK) -o $@ $(CFILES:.c=.o) $(CPPFILES:.cpp=.o) $(COMPILER_FLAGS) $(LINKOPTS) $(LIBS)
+	
+install: StreamingProxy
+	
 clean:
 	rm -f StreamingProxy $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
 

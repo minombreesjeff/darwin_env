@@ -1,48 +1,67 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
 /*
-	File:		RTPFileSession.h
+    File:       RTPFileSession.h
 
-	Contains:	
-					
-	$Log: RTPFileSession.h,v $
-	Revision 1.4  2001/11/22 00:48:29  murata
-	Expand 'hinf' atom support to include 8 byte atom values used by some mpeg4 files.
-	Bug #:
-	Submitted by:
-	Reviewed by:
-	
-	Revision 1.3  2001/07/16 08:09:53  mythili
-	added newline to fix warnings for solaris compile
-	
-	Revision 1.2  2001/03/20 02:19:19  mythili
-	updated/added APSL 1.2
-	
-	Revision 1.1  2000/10/20 07:24:52  serenyi
-	Created
-	
-	
+    Contains:   
+                    
+    $Log: RTPFileSession.h,v $
+    Revision 1.7  2003/08/15 23:52:45  sbasu
+    3370815 Need to update to the APSL 2
+    Bug #:
+    Submitted by:
+    Reviewed by:
+
+    Revision 1.6  2002/03/13 19:22:23  murata
+    Remove warnings.
+    Bug #:
+    Submitted by:
+    Reviewed by:
+
+    Revision 1.5  2002/02/26 00:18:25  murata
+    Convert tabs to spaces in .cpp .c and .h files.
+    Bug #:
+    Submitted by:
+    Reviewed by:
+
+    Revision 1.4  2001/11/22 00:48:29  murata
+    Expand 'hinf' atom support to include 8 byte atom values used by some mpeg4 files.
+    Bug #:
+    Submitted by:
+    Reviewed by:
+    
+    Revision 1.3  2001/07/16 08:09:53  mythili
+    added newline to fix warnings for solaris compile
+    
+    Revision 1.2  2001/03/20 02:19:19  mythili
+    updated/added APSL 1.2
+    
+    Revision 1.1  2000/10/20 07:24:52  serenyi
+    Created
+    
+    
 */
 
 #ifndef __RTPFILESESSIONH__
@@ -58,182 +77,182 @@ class RTPFile;
 
 class RTPFileSession
 {
-	public:
+    public:
 
-		// One per client
-		
-		RTPFileSession();
-		~RTPFileSession();
-		
-		//
-		// Class error codes
-		enum ErrorCode
-		{
-			errNoError					= 0,
-			errFileNotFound				= 1,
-			errTrackAlreadyAdded		= 2,
-			errTrackDoesntExist			= 3,
-			errSeekToNonexistentTime	= 4
-		};
+        // One per client
+        
+        RTPFileSession();
+        ~RTPFileSession();
+        
+        //
+        // Class error codes
+        enum ErrorCode
+        {
+            errNoError                  = 0,
+            errFileNotFound             = 1,
+            errTrackAlreadyAdded        = 2,
+            errTrackDoesntExist         = 3,
+            errSeekToNonexistentTime    = 4
+        };
 
-		//
-		// INITIALIZE
-		ErrorCode	Initialize(const StrPtrLen& inFilePath, Float32 inBufferSeconds);
-		
-		//
-		// ACCESSORS
-		
-		//
-		// Global information
-		inline Float64			GetMovieDuration();
-		inline StrPtrLen*		GetSDPFile();
-		inline SourceInfo*		GetSourceInfo();
-		inline StrPtrLen*		GetMoviePath();
-		UInt64 GetAddedTracksRTPBytes()	{ return fAddedTracksRTPBytes; }
-		
-		
-		//
-		// Track functions
-		inline Float64		GetTrackDuration(UInt32 inTrackID);
-		inline UInt32		GetTrackTimeScale(UInt32 inTrackID);
+        //
+        // INITIALIZE
+        ErrorCode   Initialize(StrPtrLen& inFilePath, Float32 inBufferSeconds);
+        
+        //
+        // ACCESSORS
+        
+        //
+        // Global information
+        inline Float64          GetMovieDuration();
+        inline StrPtrLen*       GetSDPFile();
+        inline SourceInfo*      GetSourceInfo();
+        inline StrPtrLen*       GetMoviePath();
+        UInt64 GetAddedTracksRTPBytes() { return fAddedTracksRTPBytes; }
+        
+        
+        //
+        // Track functions
+        inline Float64      GetTrackDuration(UInt32 inTrackID);
+        inline UInt32       GetTrackTimeScale(UInt32 inTrackID);
 
-		UInt16		GetNextTrackSequenceNumber(UInt32 inTrackID);
-		UInt32		GetSeekTimestamp(UInt32 TrackID);
-		
-		//
-		// MODIFIERS
-		
-		//
-		// Track modifiers
-		ErrorCode	AddTrack(UInt32 inTrackID);
-		void		SetTrackSSRC(UInt32 inTrackID, UInt32 inSSRC) 	{ fTrackInfo[inTrackID].fSSRC = inSSRC; }
-		void		SetTrackCookie(UInt32 inTrackID, void *inCookie){ fTrackInfo[inTrackID].fCookie = inCookie; }
-		
-		// Seek to a time
-		ErrorCode	Seek(Float64 inTime);
+        UInt16      GetNextTrackSequenceNumber(UInt32 inTrackID);
+        UInt32      GetSeekTimestamp(UInt32 TrackID);
+        
+        //
+        // MODIFIERS
+        
+        //
+        // Track modifiers
+        ErrorCode   AddTrack(UInt32 inTrackID);
+        void        SetTrackSSRC(UInt32 inTrackID, UInt32 inSSRC)   { fTrackInfo[inTrackID].fSSRC = inSSRC; }
+        void        SetTrackCookie(UInt32 inTrackID, void *inCookie){ fTrackInfo[inTrackID].fCookie = inCookie; }
+        
+        // Seek to a time
+        ErrorCode   Seek(Float64 inTime);
 
-		// GetNextPacket. Returns the transmit time for this packet
-		Float64		GetNextPacket(UInt8** outPacket, UInt32* outPacketLength, void** outCookie);
+        // GetNextPacket. Returns the transmit time for this packet
+        Float64     GetNextPacket(UInt8** outPacket, UInt32* outPacketLength, void** outCookie);
 
-	private:
-		
-		// Utility functions
-		void SkipToNextPacket(RTPFilePacket* inCurPacket);
-		void ReadAndAdvise();
-		UInt32 PowerOf2Floor(UInt32 inNumToFloor);
-		
-		enum
-		{
-			kMaxDataBufferSize = 262144
-		};
+    private:
+        
+        // Utility functions
+        void SkipToNextPacket(RTPFilePacket* inCurPacket);
+        void ReadAndAdvise();
+        UInt32 PowerOf2Floor(UInt32 inNumToFloor);
+        
+        enum
+        {
+            kMaxDataBufferSize = 262144
+        };
 
-		struct RTPFileSessionTrackInfo
-		{
-			Bool16	fEnabled;
-			Bool16	fMarked; // is the seek timestamp, seq num recorded?
-			UInt32	fSSRC;
-			UInt32	fSeekTimestamp;
-			UInt16	fSeekSeqNumber;
-			void*	fCookie;
-		};
-		
-		QTSS_Object					fFileSource;
-		//OSFileSource 				fFileSource;
-		UInt64						fFileLength;
-		UInt64						fCurrentPosition;
-		
-		RTPFile*					fFile;
-		RTPFileSessionTrackInfo*	fTrackInfo;
-		UInt32						fNumTracksEnabled;
-		
-		UInt8*						fReadBuffer; 	// Buffer that file data gets read into.
-													// Usually same as fDataBuffer
-		UInt32						fReadBufferOffset;
-		
-		UInt8*						fDataBuffer; // Buffer for file data
-		UInt32						fDataBufferSize;
-		UInt32						fDataBufferLen;
-		UInt8*						fCurrentPacket;
-		UInt64						fAddedTracksRTPBytes;
-		
-		friend class RTPFile;
+        struct RTPFileSessionTrackInfo
+        {
+            Bool16  fEnabled;
+            Bool16  fMarked; // is the seek timestamp, seq num recorded?
+            UInt32  fSSRC;
+            UInt32  fSeekTimestamp;
+            UInt16  fSeekSeqNumber;
+            void*   fCookie;
+        };
+        
+        QTSS_Object                 fFileSource;
+        //OSFileSource              fFileSource;
+        UInt64                      fFileLength;
+        UInt64                      fCurrentPosition;
+        
+        RTPFile*                    fFile;
+        RTPFileSessionTrackInfo*    fTrackInfo;
+        UInt32                      fNumTracksEnabled;
+        
+        UInt8*                      fReadBuffer;    // Buffer that file data gets read into.
+                                                    // Usually same as fDataBuffer
+        UInt32                      fReadBufferOffset;
+        
+        UInt8*                      fDataBuffer; // Buffer for file data
+        UInt32                      fDataBufferSize;
+        UInt32                      fDataBufferLen;
+        UInt8*                      fCurrentPacket;
+        UInt64                      fAddedTracksRTPBytes;
+        
+        friend class RTPFile;
 };
 
 
 
 class RTPFile
 {
-	public:
+    public:
 
-		// One per file
-		
-		RTPFile();
-		~RTPFile();
-		
-		RTPFileSession::ErrorCode	Initialize(const StrPtrLen& inFilePath);
+        // One per file
+        
+        RTPFile();
+        ~RTPFile();
+        
+        RTPFileSession::ErrorCode   Initialize(const StrPtrLen& inFilePath);
 
-		Float64		GetMovieDuration() 	{ return fHeader.fMovieDuration; }
-		
-		Float64		GetTrackDuration(UInt32 inTrackID);
-		UInt32		GetTrackTimeScale(UInt32 inTrackID);
-		UInt64		GetTrackBytes(UInt32 inTrackID);
-		Bool16		TrackExists(UInt32 inTrackID);
-		UInt32		GetBytesPerSecond() { return fBytesPerSecond; }
-		UInt32		GetMaxTrackNumber() { return fMaxTrackNumber; }
+        Float64     GetMovieDuration()  { return fHeader.fMovieDuration; }
+        
+        Float64     GetTrackDuration(UInt32 inTrackID);
+        UInt32      GetTrackTimeScale(UInt32 inTrackID);
+        UInt64      GetTrackBytes(UInt32 inTrackID);
+        Bool16      TrackExists(UInt32 inTrackID);
+        UInt32      GetBytesPerSecond() { return fBytesPerSecond; }
+        UInt32      GetMaxTrackNumber() { return fMaxTrackNumber; }
 
-		StrPtrLen*	GetSDPFile()	{ return &fSDPData; }
-		SourceInfo*	GetSourceInfo()	{ return &fSourceInfo; }
-		OSRef*		GetRef()		{ return &fRef; }
-		
-		// Returns the location in the file corresponding to this time,
-		// rounded to the nearest start of block.
-		SInt64		GetBlockLocation(Float64 inTimeInSecs);
+        StrPtrLen*  GetSDPFile()    { return &fSDPData; }
+        SourceInfo* GetSourceInfo() { return &fSourceInfo; }
+        OSRef*      GetRef()        { return &fRef; }
+        
+        // Returns the location in the file corresponding to this time,
+        // rounded to the nearest start of block.
+        SInt64      GetBlockLocation(Float64 inTimeInSecs);
 
-	private:
-		
-		RTPFileTrackInfo*	fTrackInfo;
-		RTPFileHeader		fHeader;
-		UInt8*				fBlockMap;
-		StrPtrLen			fSDPData;
-		SDPSourceInfo		fSourceInfo;
-		UInt32				fBytesPerSecond;
-		UInt32				fMaxTrackNumber;
-		
-		OSRef 		fRef;
-		StrPtrLen 	fFilePath;
+    private:
+        
+        RTPFileTrackInfo*   fTrackInfo;
+        RTPFileHeader       fHeader;
+        UInt8*              fBlockMap;
+        StrPtrLen           fSDPData;
+        SDPSourceInfo       fSourceInfo;
+        UInt32              fBytesPerSecond;
+        UInt32              fMaxTrackNumber;
+        
+        OSRef       fRef;
+        StrPtrLen   fFilePath;
 
-		friend class RTPFileSession;
+        friend class RTPFileSession;
 };
 
 
-inline StrPtrLen*	RTPFileSession::GetSDPFile()
+inline StrPtrLen*   RTPFileSession::GetSDPFile()
 {
-	return fFile->GetSDPFile();
+    return fFile->GetSDPFile();
 }
 
 inline SourceInfo* RTPFileSession::GetSourceInfo()
 {
-	return &fFile->fSourceInfo;
+    return &fFile->fSourceInfo;
 }
 
 inline StrPtrLen* RTPFileSession::GetMoviePath()
 {
-	return &fFile->fFilePath;
+    return &fFile->fFilePath;
 }
 
-inline Float64	RTPFileSession::GetMovieDuration() 
+inline Float64  RTPFileSession::GetMovieDuration() 
 {
-	return fFile->fHeader.fMovieDuration;
+    return fFile->fHeader.fMovieDuration;
 }
 
-inline Float64	RTPFileSession::GetTrackDuration(UInt32 inTrackID)
+inline Float64  RTPFileSession::GetTrackDuration(UInt32 inTrackID)
 {
-	return fFile->GetTrackDuration(inTrackID);
+    return fFile->GetTrackDuration(inTrackID);
 }
 
-inline UInt32	RTPFileSession::GetTrackTimeScale(UInt32 inTrackID)
+inline UInt32   RTPFileSession::GetTrackTimeScale(UInt32 inTrackID)
 {
-	return fFile->GetTrackTimeScale(inTrackID);
+    return fFile->GetTrackTimeScale(inTrackID);
 }
 
 

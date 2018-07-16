@@ -56,11 +56,7 @@
 	}
 	
 	function clickedViewButton() {
-		var dns = document.forms[0].elements['qtssSvrDefaultDNSName'].value;
-		var remote = document.forms[0].elements['qtbHostname'].value;
-		if (remote != '') dns = remote;
-		var path = '/view_broadcast.cgi?url=' + dns + '/' + escape(document.forms[0].elements['qtbNetworkPresetSDPFilename'].value);
-		location.href = path;
+		location.href = '/view_broadcast.mov';
 	}
 	
 	function clickedQuitButton() {

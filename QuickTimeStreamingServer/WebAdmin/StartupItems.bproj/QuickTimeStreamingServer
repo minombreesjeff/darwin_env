@@ -6,8 +6,14 @@
 /bin/rm -f /Library/QuickTimeStreaming/Playlists/*/*.current
 /bin/rm -f /Library/QuickTimeStreaming/Playlists/*/*.upcoming
 
-if [ "${QTSSERVER}" = "-YES-" ]; then
-    ConsoleMessage "Starting QuickTime Streaming Server Admin"
+if [ "${QTSSRUNSERVER}" = "-YES-" ]; then
+    ConsoleMessage "Starting QuickTime Streaming Services"
+
+    /usr/sbin/QuickTimeStreamingServer
+fi
+
+if [ "${QTSSWEBADMIN}" = "-YES-" ]; then
+    ConsoleMessage "Starting QuickTime Streaming Services"
 
     /usr/sbin/streamingadminserver.pl
 fi

@@ -633,4 +633,27 @@ cvs tag: qtssServer-405
 *	Fixed PLB segmentation fault bug (if sdp reference movie is not given in config)
 
 -------------------------------------------------------------------------------------------------
+Date: 2/27/01
+Version: 4.0 [v412]
+cvs tag: qtssServer-412
+
+*   General bug fixes.
+
+-------------------------------------------------------------------------------------------------
+Date: 3/21/2002
+Version: 4.0+ [v415]
+cvs tag: qtssServer-415
+
+* First submission to new build train
+
+-------------------------------------------------------------------------------------------------
+Date: 4/24/2002
+Version: 4.0+ [v419]
+cvs tag: qtssServer-419
+
+* QTSSHomeDirectoryModule installed in /Library/QuickTimeStreaming/Modules, and enabled.
+  Supports serving movies from users' home directories
+
+-------------------------------------------------------------------------------------------------
+Date: 3/12/2003
 

@@ -46,7 +46,7 @@ case $PLAT in
 		COMPILER_FLAGS="-D_REENTRANT -D__USE_POSIX -D__linux__ -pipe"
         INCLUDE_FLAG="-include"
 		
-		CORE_LINK_LIBS="-lpthread -ldl -lm -lcrypt -lstdc++"
+		CORE_LINK_LIBS="-lpthread -ldl -lstdc++ -lm -lcrypt"
 
 		SHARED=-shared
 		MODULE_LIBS=
@@ -112,10 +112,43 @@ case $PLAT in
 		MODULE_LIBS=
 		;;
 		
+	IRIX*.*)
+# IRIX with MipsPro compiler
+# Change all references of Makefile.POSIX below to Makefile.IRIX
+	echo "Configuring for the "$OSNAME" "$HARDWARENAME" SGI platform"
+		CPLUS=CC
+		CCOMP=cc
+		LINKER="CC"
+# GNU make is required. Obtain from freeware.sgi.com
+		MAKE=/usr/freeware/bin/gmake
+# defines from PlatformHeader.h defined here as MipsPro does not support -include pre-processor directive		
+		COMPILER_FLAGS="-D__sgi__ -DirixMipsPro -D_SGI_REENTRANT_FUNCTIONS -DASSERT -D__PTHREADS__ -D__PTHREADS_MUTEXES__ -DBIGENDIAN -DUSE_THREAD -DEXPORT -D_REENTRANT"
+		INCLUDE_FLAG=
+		CORE_LINK_LIBS="-ldl -lm -lcrypt -lpthread"
+		SHARED=-shared
+		MODULE_LIBS=
+		;;
+		
+    HP-UX.*)
+        echo "Configuring for the "$OSNAME" "$HARDWARENAME" platform"
+        CPLUS=gcc
+        CCOMP=gcc
+        LINKER=gcc
+        MAKE=make
+ 
+        COMPILER_FLAGS="-D__hpux__ -g -fPIC"
+        INCLUDE_FLAG="-include"
+ 
+        CORE_LINK_LIBS="-lpthread -lnsl -lm -lcrypt -lstdc++"
+ 
+        SHARED=-shared
+        MODULE_LIBS="-lgcc -lstdc++"
+        ;;
+ 
  	OSF1.alpha)
          echo "Configuring for the "$OSNAME" "$HARDWARENAME" Tru64 UNIX platform"
  		CPLUS=`pwd`/my_tru64_cxx
- 		CCOMP=cc
+ 		CCOMP=`pwd`/my_tru64_cc
 		LINKER="cxx"
 		MAKE=/usr/local/bin/make
 
@@ -157,18 +190,42 @@ case $PLAT in
 		;;
 esac
 
+if [ "$*" = "install" ] ; then
+
+        if [ `uname` != "SunOS" ]; then
+                USERID=`id -u`
+        else
+                USERID=`/usr/xpg4/bin/id -u`
+        fi
+
+        if [ $USERID != 0 ]; then
+                echo "You must be root to perform an \"install\" build"
+                exit 1
+        fi
+fi
+
 echo Building for $PLAT with $CPLUS
 
 if [ "${PLAT}" = "Darwin.Power Macintosh" ]; then
-
-	## just need to call "pbxbuild" for Mac OS X
-	if [$1 = ""]; then
-		echo "Darwin build for OS X"
-		pbxbuild -target DSSAll
-	else
-		pbxbuild $*
-	fi
 	
+	if [ "$1" = "" ] ; then
+           echo "pbxbuild DarwinStreamingServer"
+           pbxbuild -target DSS
+    else
+	    if [ "$1" = "dss" ] ; then
+           echo "pbxbuild DarwinStreamingServer $1"
+           pbxbuild -target DSS -buildstyle Deployment $2
+        else
+            if [ "$1" = "qtss" ] ; then
+                echo "pbxbuild QuickTimeStreamingServer $*"
+                pbxbuild -target QTSS -buildstyle Deployment $2
+            else
+                echo "build $*"
+                pbxbuild $*
+            fi
+        fi
+    fi
+
 else
 	export CPLUS
 	export CCOMP
@@ -179,88 +236,106 @@ else
 	export SHARED
 	export MODULE_LIBS
 	
-echo Building CommonUtilitiesLib for $PLAT with $CPLUS
+	echo Building CommonUtilitiesLib for $PLAT with $CPLUS
 	cd CommonUtilitiesLib/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTFileLib for $PLAT with $CPLUS
+	echo Building QTFileLib internal for $PLAT with $CPLUS
 	cd ../QTFileLib/
-	$MAKE -f Makefile.POSIX $*
-
-echo Building StreamingServer for $PLAT with $CPLUS
+	
+	if [ "$*" = "clean" ] ; then
+		$MAKE -f Makefile.POSIX $*
+	else
+		$MAKE -f Makefile.POSIX all $*
+	fi
+	
+	echo Building StreamingServer for $PLAT with $CPLUS
 	cd ..
-	$MAKE -f Makefile.POSIX $*
-
-echo Building DemoAuthorizationModule for $PLAT with $CPLUS
-	cd APIModules/QTSSDemoAuthorizationModule.bproj/
+	
 	$MAKE -f Makefile.POSIX $*
 	
-echo Building RawFileModule for $PLAT with $CPLUS
+	echo Building RefMovieModule for $PLAT with $CPLUS
+	cd APIModules/QTSSRefMovieModule/
+	$MAKE -f Makefile.POSIX $*
+	
+	echo Building DemoAuthorizationModule for $PLAT with $CPLUS
+	cd ../QTSSDemoAuthorizationModule.bproj/
+	$MAKE -f Makefile.POSIX $*
+	
+	echo Building RawFileModule for $PLAT with $CPLUS
 	cd ../QTSSRawFileModule.bproj/
 	$MAKE -f Makefile.POSIX $*
 	
-echo Building SpamDefenseModule for $PLAT with $CPLUS
+	echo Building SpamDefenseModule for $PLAT with $CPLUS
 	cd ../QTSSSpamDefenseModule.bproj/
 	$MAKE -f Makefile.POSIX $*
 	
 	cd ..
 	
-echo Building StreamingProxy for $PLAT with $CPLUS
+	echo Building StreamingProxy for $PLAT with $CPLUS
 	cd ../StreamingProxy.tproj/
 	$MAKE -f Makefile.POSIX $*
 	
-echo Building qtpasswd for $PLAT with $CPLUS
+	echo Building qtpasswd for $PLAT with $CPLUS
 	cd ../qtpasswd.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building PlaylistBroadcaster for $PLAT with $CPLUS
+	echo Building PlaylistBroadcaster for $PLAT with $CPLUS
 	cd ../PlaylistBroadcaster.tproj/
 	$MAKE -f Makefile.POSIX $*
 	
-echo Building MP3Broadcaster for $PLAT with $CPLUS
+	echo Building MP3Broadcaster for $PLAT with $CPLUS
 	cd ../MP3Broadcaster/
 	$MAKE -f Makefile.POSIX $*
 	
-echo Building QTFileTools for $PLAT with $CPLUS
+	echo Building QTFileTools for $PLAT with $CPLUS
         cd ../QTFileTools/
 
-echo Building QTBroadcaster for $PLAT with $CPLUS
+	echo Building QTBroadcaster for $PLAT with $CPLUS
 	cd QTBroadcaster.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTFileInfo for $PLAT with $CPLUS
+	echo Building QTFileInfo for $PLAT with $CPLUS
 	cd ../QTFileInfo.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTFileTest for $PLAT with $CPLUS
+	echo Building QTFileTest for $PLAT with $CPLUS
 	cd ../QTFileTest.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTRTPFileTest for $PLAT with $CPLUS
+	echo Building QTRTPFileTest for $PLAT with $CPLUS
 	cd ../QTRTPFileTest.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTRTPGen for $PLAT with $CPLUS
+	echo Building QTRTPGen for $PLAT with $CPLUS
 	cd ../QTRTPGen.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTSDPGen for $PLAT with $CPLUS
+	echo Building QTSDPGen for $PLAT with $CPLUS
 	cd ../QTSDPGen.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTSampleLister for $PLAT with $CPLUS
+	echo Building QTSampleLister for $PLAT with $CPLUS
 	cd ../QTSampleLister.tproj/
 	$MAKE -f Makefile.POSIX $*
 
-echo Building QTTrackInfo for $PLAT with $CPLUS
+	echo Building QTTrackInfo for $PLAT with $CPLUS
 	cd ../QTTrackInfo.tproj/
 	$MAKE -f Makefile.POSIX $*
+	
+	cd ..
+	
+	if [ -d ../StreamingLoadTool ]; then
+		echo Building StreamingLoadTool for $PLAT with $CPLUS
+			cd ../StreamingLoadTool/
+			$MAKE -f Makefile.POSIX $*
+	fi
 
-if [ -d ../../SpamPro.tproj ]; then
-	echo Building StreamingLoadTool for $PLAT with $CPLUS
-		cd ../../SpamPro.tproj/
-		$MAKE -f Makefile.POSIX $*
-fi
-
+	if [ "$*" = "install" ] ; then
+		cd ..
+		pwdi
+		echo
+		./DSS_MakeRoot /
+	fi
 
 fi

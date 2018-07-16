@@ -24,10 +24,18 @@
 			}
 		}
 		
+		function validateFormData() {
+			if (document.forms[0].elements['qtssIsStreamingOn80'].checked) {
+				return confirm("<qtssstring name=PortChangeRestartServerConfirm>");
+			}
+			else
+				return true;
+		}
+		
 	</script>
 </head>
 <body bgcolor="#FFFFFF" background="images/stripes_gray.gif" onload="showConfirmMessage()">
-<qtssobject type=form param=_self>
+<qtssobject type=validatedform param=_self>
 	<input type=hidden name="filename" value=ports.html> <input type=hidden name="action" value="SavePortSettings"> 
 	<table border=0 cellspacing=0 cellpadding=0 width=620>
 		<tr>
@@ -68,6 +76,10 @@
 								<qtssstring name="PortSetDesc2"/>
 							</p>
 						</td>
+					</tr>
+					<tr>
+						<td colspan=3></td>
+						<td><b><qtssobject name="getNotBoundPort80Msg"/></b></td>
 					</tr>
 				</table>
 				<br>

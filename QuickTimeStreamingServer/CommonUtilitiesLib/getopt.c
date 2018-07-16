@@ -1,3 +1,27 @@
+/*
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ *
+ * @APPLE_LICENSE_HEADER_START@
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
+ * @APPLE_LICENSE_HEADER_END@
+ */
 /* ====================================================================
  * The Apache Software License, Version 1.1
  *
@@ -62,7 +86,7 @@
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
-
+#include "SafeStdLib.h"
 #define OPTERRCOLON (1)
 #define OPTERRNF (2)
 #define OPTERRARG (3)
@@ -79,20 +103,20 @@ optiserr(int argc, char * const *argv, int oint, const char *optstr,
 {
     if(opterr)
     {
-        fprintf(stderr, "Error in argument %d, char %d: ", oint, optchr+1);
+        qtss_fprintf(stderr, "Error in argument %d, char %d: ", oint, optchr+1);
         switch(err)
         {
         case OPTERRCOLON:
-            fprintf(stderr, ": in flags\n");
+            qtss_fprintf(stderr, ": in flags\n");
             break;
         case OPTERRNF:
-            fprintf(stderr, "option not found %c\n", argv[oint][optchr]);
+            qtss_fprintf(stderr, "option not found %c\n", argv[oint][optchr]);
             break;
         case OPTERRARG:
-            fprintf(stderr, "no argument for option %c\n", argv[oint][optchr]);
+            qtss_fprintf(stderr, "no argument for option %c\n", argv[oint][optchr]);
             break;
         default:
-            fprintf(stderr, "unknown\n");
+            qtss_fprintf(stderr, "unknown\n");
             break;
         }
     }
@@ -211,18 +235,18 @@ int
                 break;
            case 'o':
                 ofile = optarg;
-                (void)printf("ofile = %s\n", ofile);
+                (void)qtss_printf("ofile = %s\n", ofile);
                 break;
            case '?':
                 errflg++;
            }
       if (errflg) {
-           (void)fprintf(stderr,
+           (void)qtss_fprintf(stderr,
                 "usage: cmd [-a|-b] [-o <filename>] files...\n");
            exit (2);
       }
       for ( ; optind < argc; optind++)
-           (void)printf("%s\n", argv[optind]);
+           (void)qtss_printf("%s\n", argv[optind]);
       return 0;
  }
 

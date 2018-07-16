@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -39,8 +40,8 @@
 
 SequenceNumberMap::SequenceNumberMap(UInt32 inSlidingWindowSize)
 :   fSlidingWindow(NULL),
-    fWindowSize(inSlidingWindowSize),
-    fNegativeWindowSize(inSlidingWindowSize - (2 * inSlidingWindowSize)),
+    fWindowSize( (SInt32) inSlidingWindowSize),
+    fNegativeWindowSize( (SInt32) inSlidingWindowSize - (SInt32) (2 * inSlidingWindowSize)),
     fHighestSeqIndex(0),
     fHighestSeqNumber(0)
 {
@@ -88,7 +89,7 @@ Bool16 SequenceNumberMap::AddSequenceNumber(UInt16 inSeqNumber)
     // Find the right entry in the sliding window for this sequence number, taking
     // into account that we may need to wrap.
     
-    SInt16 theWindowIndex = fHighestSeqIndex + theWindowOffset;
+    SInt32 theWindowIndex = fHighestSeqIndex + theWindowOffset;
     if (theWindowIndex < 0)
         theWindowIndex += fWindowSize;
         
@@ -100,7 +101,7 @@ Bool16 SequenceNumberMap::AddSequenceNumber(UInt16 inSeqNumber)
     fSlidingWindow[theWindowIndex] = true;
 #if SEQUENCENUMBERMAPTESTING
     //if (alreadyAdded)
-    //  printf("Found a duplicate seq num. Num = %d\n", inSeqNumber);
+    //  qtss_printf("Found a duplicate seq num. Num = %d\n", inSeqNumber);
 #endif
     return alreadyAdded;
 }
@@ -119,34 +120,34 @@ void SequenceNumberMap::Test()
     Assert(retval == false);
     
     retval = theMap1.AddSequenceNumber(64582);
-    Assert(retval == true);
+    Assert(retval == TRUE);
     
     retval = theMap1.AddSequenceNumber(64674);
-    Assert(retval == true);
+    Assert(retval == TRUE);
     
     retval = theMap1.AddSequenceNumber(1);
-    Assert(retval == false);
+    Assert(retval == FALSE);
 
     retval = theMap1.AddSequenceNumber(65500);
-    Assert(retval == false);
+    Assert(retval == FALSE);
 
     retval = theMap1.AddSequenceNumber(65500);
-    Assert(retval == true);
+    Assert(retval == FALSE);
 
     retval = theMap1.AddSequenceNumber(32768);
-    Assert(retval == false);
+    Assert(retval == FALSE);
 
     retval = theMap1.AddSequenceNumber(1024);
-    Assert(retval == false);
+    Assert(retval == FALSE);
 
     retval = theMap1.AddSequenceNumber(32757);
-    Assert(retval == false);
+    Assert(retval == FALSE);
 
     retval = theMap1.AddSequenceNumber(32799);
-    Assert(retval == false);
+    Assert(retval == FALSE);
 
     retval = theMap1.AddSequenceNumber(32768);
-    Assert(retval == false);
+    Assert(retval == FALSE);
 
 }
 #endif

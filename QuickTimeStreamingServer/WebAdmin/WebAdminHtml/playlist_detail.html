@@ -5,36 +5,282 @@
 <meta http-equiv="content-type" content="text/html; charset=utf-8">
 <meta http-equiv="imagetoolbar" content="no">
 	<style type="text/css">
-		td { font-family: Arial, Helvetica, Geneva, Swiss, sans-serif; font-size: 12px; line-height: 12px; }
-		.large { font-weight: bold; font-size: 14px; line-height: 12px;  }
-		.small { font-size: 10px }
-		.reallysmall { font-size: 10px; color:#333333 }
-		.tooltiptext { font-family: Arial, Helvetica, Geneva, Swiss, sans-serif; font-size: 9px; background: #FFFFCC; }
-		.header { font-size: 18px; color:#666699; line-height: 18px; }
+		td		
+		{
+			font-family: Arial, Helvetica, Geneva, Swiss, sans-serif;
+			font-size: 12px;
+			line-height: 12px;
+		}
+		.large		
+		{
+			font-weight: bold;
+			font-size: 14px;
+			line-height: 12px;
+		}
+		.small { font-size: 10px; }
+		.reallysmall		
+		{
+			font-size: 10px;
+			color: #333;
+		}
+		.tooltiptext		
+		{
+			font-family: Arial, Helvetica, Geneva, Swiss, sans-serif;
+			font-size: 9px;
+			background: #FFFFCC;
+		}
+		.header		
+		{
+			font-size: 18px;
+			color: #669;
+			line-height: 18px;
+		}
 		.white { color: #FFFFFF }
-		.listing { font-family: Monaco, monospace; font-size: 10px; }
-		#libbackground { position: absolute; z-index: 1; top: 222px; left: 35px; visibility: visible }
-		#libfiles { position: absolute; z-index: 3; top: 237px; left: 37px; width: 218px; line-height: 20px; <qtssobject name=monospaceIfNotJapanese/>visibility: visible }
-		#libscrollbardisabled { position: absolute; z-index: 1; top: 236px; left: 254px; width: 16px; visibility: visible }
-		#libscrollbar { position: absolute; z-index: 1; top: 236px; left: 254px; width: 16px; visibility: hidden }
-		#libscrollthumb { position: absolute; z-index: 3; top: 251px; left: 254px; width: 16px; height: 16px; visibility: hidden }
-		#plfileorders { position: absolute; z-index: 3; top: 237px; left: 284px; width: 39px; line-height: 20px; <qtssobject name=monospaceIfNotJapanese/>visibility: visible }
-		#plfiles { position: absolute; z-index: 3; top: 237px; left: 323px; width: 210px; line-height: 20px; <qtssobject name=monospaceIfNotJapanese/>visibility: visible }
-		#plfileweights { position: absolute; z-index: 3; top: 237px; left: 547px; width: 15px; <qtssobject name=monospaceIfNotJapanese/>visibility: visible }
-		#plfileweightadjs { position: absolute; z-index: 3; top: 237px; left: 565px; width: 7px; line-height: 20px; <qtssobject name=monospaceIfNotJapanese/>visibility: visible }
-		#libhighlight { position: absolute; z-index: 2; top: 223px; left: 36px; width: 218px; height: 20px; visibility: hidden }
-		#libsinglehighlight { position: absolute; z-index: 2; top: 223px; left: 36px; width: 218px; height: 20px; visibility: hidden }
-		#plbackground { position: absolute; z-index: 1; top: 222px; left: 283px; visibility: visible }
-		#plscrollbardisabled { position: absolute; z-index: 1; top: 236px; left: 589px; width: 16px; visibility: visible }
-		#plscrollbar { position: absolute; z-index: 1; top: 236px; left: 589px; width: 16px; visibility: hidden }
-		#plscrollthumb { position: absolute; z-index: 3; top: 251px; left: 589px; width: 16px; height: 16px; visibility: hidden }
-		#draglayer { position: absolute; z-index: 4; top: 10px; left: 10px; width: 240px; height: 20px; line-height: 20px; <qtssobject name=monospaceIfNotJapanese/>visibility: hidden }
-		#inserthere { position: absolute; z-index: 2; top: 20px; left: 240px; width: 170px; height: 20px; visibility: hidden }
-		#openFolderButton { position: absolute; z-index: 3; top: 570px; left: 35px; width: 380px; height:40px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: hidden }
-		#openFolderButtonDisabled { position: absolute; z-index: 3; top: 570px; left: 35px; width: 380px; height:40px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: visible }
-		#removeItemButton { position: absolute; z-index: 5; top: 570px; left: 283px; width: 380px; height:40px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: hidden }
-		#removeItemButtonDisabled { position: absolute; z-index: 5; top: 570px; left: 283px; width: 380px; height:40px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: visible }
-		#tooltip { position: absolute; z-index: 10; top: 30px; left: 323px; visibility: hidden }
+		.listing		
+		{
+			font-family: Monaco, monospace;
+			font-size: 10px;
+		}
+		#libbackground		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 222px;
+			left: 35px;
+			visibility: visible;
+		}
+		#libfiles		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 237px;
+			left: 37px;
+			width: 218px;
+			line-height: 18px;
+			<qtssobject name=monospaceIfNotJapanese/>visibility: visible;
+		}
+		#libscrollbardisabled		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 236px;
+			left: 254px;
+			width: 16px;
+			visibility: visible;
+		}
+		#libscrollbar		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 236px;
+			left: 254px;
+			width: 16px;
+			visibility: hidden;
+		}
+		#libscrollthumb		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 251px;
+			left: 254px;
+			width: 16px;
+			height: 16px;
+			visibility: hidden;
+		}
+		#plfileorders		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 237px;
+			left: 284px;
+			width: 39px;
+			line-height: 18px;
+			<qtssobject name=monospaceIfNotJapanese/>visibility: visible;
+		}
+		#plfiles		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 237px;
+			left: 323px;
+			width: 210px;
+			line-height: 18px;
+			<qtssobject name=monospaceIfNotJapanese/>visibility: visible;
+		}
+		#plfileweights		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 237px;
+			left: 547px;
+			width: 15px;
+			<qtssobject name=monospaceIfNotJapanese/>visibility: visible;
+		}
+		#plfileweightadjs		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 237px;
+			left: 565px;
+			width: 7px;
+			line-height: 20px;
+			<qtssobject name=monospaceIfNotJapanese/>
+			visibility: visible;
+		}
+		#libhighlight		
+		{
+			position: absolute;
+			z-index: 2;
+			top: 223px;
+			left: 36px;
+			width: 218px;
+			height: 20px;
+			visibility: hidden;
+		}
+		#libsinglehighlight		
+		{
+			position: absolute;
+			z-index: 2;
+			top: 223px;
+			left: 36px;
+			width: 218px;
+			height: 20px;
+			visibility: hidden;
+		}
+		#plbackground		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 222px;
+			left: 283px;
+			visibility: visible;
+		}
+		#plscrollbardisabled		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 236px;
+			left: 589px;
+			width: 16px;
+			visibility: visible;
+		}
+		#plscrollbar		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 236px;
+			left: 589px;
+			width: 16px;
+			visibility: hidden;
+		}
+		#plscrollthumb		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 251px;
+			left: 589px;
+			width: 16px;
+			height: 16px;
+			visibility: hidden;
+		}
+		#draglayer		
+		{
+			position: absolute;
+			z-index: 4;
+			top: 10px;
+			left: 10px;
+			width: 240px;
+			height: 20px;
+			line-height: 20px;
+			<qtssobject name=monospaceIfNotJapanese/>
+			visibility: hidden;
+		}
+		#inserthere		
+		{
+			position: absolute;
+			z-index: 2;
+			top: 20px;
+			left: 240px;
+			width: 170px;
+			height: 20px;
+			visibility: hidden;
+		}
+		#plhighlight		
+		{
+			position: absolute;
+			z-index: 2;
+			top: 20px;
+			left: 240px;
+			width: 170px;
+			height: 20px;
+			visibility: hidden;
+		}
+		#plsinglehighlight		
+		{
+			position: absolute;
+			z-index: 2;
+			top: 20px;
+			left: 240px;
+			width: 170px;
+			height: 20px;
+			visibility: hidden;
+		}
+		#openFolderButton		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 566px;
+			left: 35px;
+			width: 380px;
+			height: 40px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: hidden;
+		}
+		#openFolderButtonDisabled		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 566px;
+			left: 35px;
+			width: 380px;
+			height: 40px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: visible;
+		}
+		#removeItemButton		
+		{
+			position: absolute;
+			z-index: 5;
+			top: 566px;
+			left: 283px;
+			width: 380px;
+			height: 40px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: hidden;
+		}
+		#removeItemButtonDisabled		
+		{
+			position: absolute;
+			z-index: 5;
+			top: 566px;
+			left: 283px;
+			width: 380px;
+			height: 40px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: visible;
+		}
+		#tooltip		
+		{
+			position: absolute;
+			z-index: 10;
+			top: 30px;
+			left: 323px;
+			visibility: hidden;
+		}
 	</style>
 	<script src="includes/encode_unicode.js" type="text/javascript" language="Javascript" charset="utf-8"></script>
 	<script src="includes/standardNav.js" type="text/javascript" language="javascript"></script>
@@ -842,6 +1088,9 @@
 		function fixMountPoint() {
 			if ((document.forms[0].elements['isMP3'].value == '0') && (document.forms[0].elements['qtssCurPlaylistURL'].value.indexOf('.sdp') < 0) && (document.forms[0].elements['qtssCurPlaylistURL'].value != '')) {
 				document.forms[0].elements['qtssCurPlaylistURL'].value = document.forms[0].elements['qtssCurPlaylistURL'].value + '.sdp';
+			}
+			else if ((document.forms[0].elements['isMP3'].value == '1') && (document.forms[0].elements['qtssCurPlaylistURL'].value.indexOf('/') != 0)) {
+				document.forms[0].elements['qtssCurPlaylistURL'].value = '/' + document.forms[0].elements['qtssCurPlaylistURL'].value;
 			}
 		}
 		

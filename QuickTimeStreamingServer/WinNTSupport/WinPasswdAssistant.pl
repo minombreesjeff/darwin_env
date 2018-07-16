@@ -8,14 +8,14 @@ $username = '';
 
 while ($username eq '') {
 
-	print "\n\nDarwinStreaming Server Setup\n\n";
-	print "DSS Administrator Username cannot contain spaces, or quotes, either single or double, and cannot be more than 255 characters long\n";
-	print "Enter DSS Administrator Username: ";
+	print "\n\nDarwin Streaming Server Setup\n\n";
+	print "In order to administer the Darwin Streaming Server you must create an administrator user [Note: The administrator user name cannot contain spaces, or single or double quote characters, and cannot be more than 255 characters long].\n";
+	print "Please enter a new administrator user name: ";
 	
 	$username = readline STDIN;
 	
 	if ($username eq '') {
-		print "\n\nError: No Username entered!";
+		print "\n\nError: No username entered!";
 	}
 }
 
@@ -23,21 +23,21 @@ $password = '';
 
 while ($password eq '') {
 
-	print "\n\nDSS Administrator Password cannot contain spaces, or quotes, either single or double, and cannot be more than 80 characters long\n";
-	print "Enter DSS Administrator Password: ";
+	print "\n\nYou must also enter a password for the administrator user [Note: The administrator password cannot contain spaces, or quotes, either single or double, and cannot be more than 80 characters long].\n";
+	print "Please enter a new administrator Password: ";
 	
 	$password = readline STDIN;
 	
-	print "\nRe-enter DSS Administrator Password: ";
+	print "\nRe-enter the new administrator password: ";
 	
 	$password1 = readline STDIN;
 	
 	if ($password eq '') {
-		print "\n\nError: No Password entered!\n\n";
+		print "\n\nError: No password entered!\n\n";
 	}
 	
 	if ($password ne $password1) {
-		print "\n\nError: Passwords entered do not match!";
+		print "\n\nError: passwords entered do not match!";
 		$password = '';
 	}
 

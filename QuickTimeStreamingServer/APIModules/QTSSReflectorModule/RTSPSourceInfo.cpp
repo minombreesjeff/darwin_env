@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -38,6 +39,7 @@
 #include "SocketUtils.h"
 #include "RelayOutput.h"
 #include "StringTranslator.h"
+#include "SDPUtils.h"
 #include "OSArrayObjectDeleter.h"
 
 StrPtrLen RTSPSourceInfo::sKeyString("rtsp_source");
@@ -48,8 +50,6 @@ static StrPtrLen sOutAddr("out_addr");
 static StrPtrLen sDestAddr("dest_addr");
 static StrPtrLen sDestPorts("dest_ports");
 static StrPtrLen sTtl("ttl");
-
-static StrPtrLen	sBroadcastControlStr("a=x-broadcastcontrol");
 
 char* RTSPOutputInfo::CopyString(const char* srcStr)
 {
@@ -83,8 +83,9 @@ RTSPSourceInfo::RTSPSourceInfo(const RTSPSourceInfo& copy)
     :RCFSourceInfo(copy), 
     fHostAddr(copy.fHostAddr), fHostPort(copy.fHostPort), fLocalAddr(copy.fLocalAddr),
     fNumSetupsComplete(copy.fNumSetupsComplete), fDescribeComplete(copy.fDescribeComplete), 
-    fAnnounce(copy.fAnnounce), fAnnounceIP(copy.fAnnounceIP), fAnnounceActualIP(copy.fAnnounceIP),fQueueElem(this)
+    fAnnounce(copy.fAnnounce), fAnnounceIP(copy.fAnnounceIP), fAnnounceActualIP(copy.fAnnounceIP),fQueueElem()
 {
+    fQueueElem.SetEnclosingObject(this);
     fSourceURL = RTSPOutputInfo::CopyString(copy.fSourceURL);
     fUserName = RTSPOutputInfo::CopyString(copy.fUserName);
     fPassword = RTSPOutputInfo::CopyString(copy.fPassword);
@@ -110,8 +111,8 @@ RTSPSourceInfo::~RTSPSourceInfo()
 {
     OSMutexLocker locker(RelayOutput::GetQueueMutex());
 
-        if (fRelaySessionCreatorTask != NULL)
-                fRelaySessionCreatorTask->fInfo = NULL;
+    if (fRelaySessionCreatorTask != NULL)
+            fRelaySessionCreatorTask->fInfo = NULL;
         
     if (fDescribeComplete)
     {
@@ -303,12 +304,12 @@ QTSS_Error  RTSPSourceInfo::Describe()
     if (outputFile != NULL)
     {
         fLocalSDP.Ptr[fLocalSDP.Len] = '\0';
-        fprintf(outputFile, "%s", fLocalSDP.Ptr);
+        qtss_fprintf(outputFile, "%s", fLocalSDP.Ptr);
         ::fclose(outputFile);
-        printf("Wrote sdp to rtspclient.sdp\n");
+        qtss_printf("Wrote sdp to rtspclient.sdp\n");
     }
     else
-        printf("Failed to write sdp\n");
+        qtss_printf("Failed to write sdp\n");
 #endif
     fDescribeComplete = true;
     return QTSS_NoErr;
@@ -372,20 +373,6 @@ char*   RTSPSourceInfo::GetAnnounceSDP(UInt32 ipAddr, UInt32* newSDPLen)
         {
             case 'c':
                 break;  // remove any existing c lines
-                
-            case 'a':
-            {
-                StrPtrLen controlWord(sdpLine.Ptr,sdpLine.Len);
-                if (controlWord.Len > sBroadcastControlStr.Len)
-                    controlWord.Len = sBroadcastControlStr.Len;
-                if (sBroadcastControlStr.EqualIgnoreCase(controlWord)) // dont add broadcaster control to the file
-                    break;
-                       
-                announceSDPFormatter.Put(sdpLine);
-                announceSDPFormatter.PutEOL();
-            }
-            break;
-                       
             case 'm':
             {
                 if (!added)
@@ -400,7 +387,7 @@ char*   RTSPSourceInfo::GetAnnounceSDP(UInt32 ipAddr, UInt32* newSDPLen)
                     theIPAddr.s_addr = htonl(ipAddr);
                     SocketUtils::ConvertAddrToString(theIPAddr, &temp);
                    
-                    sprintf(ipStr, "c=IN IP4 %s", buff);
+                    qtss_sprintf(ipStr, "c=IN IP4 %s", buff);
                     StrPtrLen tempLine(ipStr);
                     announceSDPFormatter.Put(tempLine);
                     announceSDPFormatter.PutEOL();
@@ -420,7 +407,15 @@ char*   RTSPSourceInfo::GetAnnounceSDP(UInt32 ipAddr, UInt32* newSDPLen)
     
     *newSDPLen = (UInt32)announceSDPFormatter.GetCurrentOffset();
     announceSDP[*newSDPLen] = 0;
-    return announceSDP; 
+    
+    StrPtrLen theSDPStr(announceSDP);
+    SDPContainer rawSDPContainer; 
+    if (!rawSDPContainer.SetSDPBuffer( &theSDPStr ))
+    {    return NULL; // it is screwed up do nothing the sdp will be deleted automatically
+    }
+    
+    SDPLineSorter sortedSDP(&rawSDPContainer);
+    return sortedSDP.GetSortedSDPCopy(); // return a new copy of the sorted SDP
 }
 
 void RTSPSourceInfo::ParseAnnouncedDestination(XMLTag* destTag, UInt32 index)
@@ -620,12 +615,12 @@ SInt64 RTSPSourceInfo::RunCreateSession()
             if (outputFile != NULL)
             {
                 fLocalSDP.Ptr[fLocalSDP.Len] = '\0';
-                fprintf(outputFile, "%s", fLocalSDP.Ptr);
+                qtss_fprintf(outputFile, "%s", fLocalSDP.Ptr);
                 ::fclose(outputFile);
-                printf("Wrote sdp to rtspclient.sdp\n");
+                qtss_printf("Wrote sdp to rtspclient.sdp\n");
             }
             else
-                printf("Failed to write sdp\n");
+                qtss_printf("Failed to write sdp\n");
 #endif
             fDescribeComplete = true;
                         
@@ -694,7 +689,7 @@ SInt64 RTSPSourceInfo::RunCreateSession()
                     delete theOutput;
             }
         }
-    
+        fClientSocket->GetSocket()->SetTask(NULL); //detach the task from the socket
         result = -1;    // let the task die
         fRelaySessionCreatorTask = NULL;
     }
@@ -715,7 +710,8 @@ SInt64 RTSPSourceInfo::RunCreateSession()
             delete fSession;
             fSession = NULL;
         }
-        fClientSocket->GetSocket()->SetTask(NULL);
+        
+        fClientSocket->GetSocket()->SetTask(NULL); //detach the task from the socket
         result = -1;    // let the task die
         fRelaySessionCreatorTask = NULL;
     }
@@ -726,6 +722,7 @@ SInt64 RTSPSourceInfo::RunCreateSession()
 
 RTSPSourceInfo::TeardownTask::TeardownTask(TCPClientSocket* clientSocket, RTSPClient* client)
 {
+    this->SetTaskName("RTSPSourceInfo::TeardownTask");
     fClientSocket = clientSocket;
     fClient = client;
 }
@@ -747,7 +744,7 @@ SInt64 RTSPSourceInfo::TeardownTask::Run()
         fClientSocket->GetSocket()->RequestEvent(fClientSocket->GetEventMask() );
         return 250;
     }
-    
+    fClientSocket->GetSocket()->SetTask(NULL); //detach the task from the socket
     return -1;  // we're out of here, this will cause the destructor to be called
 }
 

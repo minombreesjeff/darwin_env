@@ -4,28 +4,190 @@
 <meta name="generator" content="BBEdit 6.1.1">
 <meta http-equiv="imagetoolbar" content="no">
 <style type="text/css">
-		td { font-family: Arial, Helvetica, Geneva, Swiss, sans-serif; font-size: 12px }
-		div { font-family: Arial, Helvetica, Geneva, Swiss, sans-serif; font-size: 12px }
-		.large { font-weight: bold; font-size: 14px  }
+		td		
+		{
+			font-family: Arial, Helvetica, Geneva, Swiss, sans-serif;
+			font-size: 12px;
+		}
+		div		
+		{
+			font-family: Arial, Helvetica, Geneva, Swiss, sans-serif;
+			font-size: 12px;
+		}
+		.large		
+		{
+			font-weight: bold;
+			font-size: 14px;
+		}
 		.small { font-size: 10px }
-		.reallysmall { font-size: 10px; color:#333333 }
-		.header { font-size: 18px; color:#666699 }
+		.reallysmall		
+		{
+			font-size: 10px;
+			color: #333;
+		}
+		.header		
+		{
+			font-size: 18px;
+			color: #669;
+		}
 		.white { color: #FFFFFF }
-		#availpllabel { position: absolute; z-index: 1; top: 71px; left: 78px; height: 19px; visibility: visible }
-		#newMP3Button { position: absolute; z-index: 3; top: 93px; left: 430px; width: 120px; height: 284px; font-familyf: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: visible }
-		#newMovieButton { position: absolute; z-index: 3; top: 127px; left: 430px; width: 120px; height: 284px; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: visible }
-		#deleteButton { position: absolute; z-index: 6; top: 195px; left: 430px; width: 120px; height: 284px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: hidden }
-		#deleteButtonDisabled { position: absolute; z-index: 6; top: 195px; left: 430px; width: 120px; height: 284px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: visible }
-		#editButton { position: absolute; z-index: 5; top: 161px; left: 430px; width: 120px; height: 284px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: hidden }
-		#editButtonDisabled { position: absolute; z-index: 5; top: 161px; left: 430px; width: 120px; height: 284px; color: #999999; font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif; visibility: visible }
-		#libbackground { position: absolute; z-index: 1; top: 93px; left: 78px; width: 324px; height: 284px; visibility: visible }
-		#libfiles { position: absolute; z-index: 3; top: 108px; left: 80px; width: 216px; line-height: 20px; visibility: visible }
-		#libstatus { position: absolute; z-index: 3; top: 108px; left: 302px; width: 84px; line-height: 20px; visibility: visible }
-		#libcontrols { position: absolute; z-index: 3; top: 108px; left: 383px; width: 56px; line-height: 20px; visibility: visible }
-		#libscrollbar { position: absolute; z-index: 3; top: 107px; left: 404px; width: 16px; visibility: hidden }
-		#libscrollbardisabled { position: absolute; z-index: 3; top: 107px; left: 404px; width: 16px; visibility: visible }
-		#libscrollthumb { position: absolute; z-index: 4; top: 122px; left: 404px; width: 14px; height: 16px; visibility: hidden }
-		#libhighlight { position: absolute; z-index: 2; top: 94px; left: 79px; width: 322px; height: 20px; visibility: hidden }
+		#availpllabel		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 71px;
+			left: 78px;
+			height: 19px;
+			visibility: visible;
+		}
+		#newMP3Button		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 93px;
+			left: 430px;
+			width: 120px;
+			height: 284px;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: visible;
+		}
+		#newMovieButton		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 124px;
+			left: 430px;
+			width: 120px;
+			height: 284px;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: visible;
+		}
+		#editButton		
+		{
+			position: absolute;
+			z-index: 5;
+			top: 167px;
+			left: 430px;
+			width: 120px;
+			height: 284px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: hidden;
+		}
+		#editButtonDisabled		
+		{
+			position: absolute;
+			z-index: 5;
+			top: 167px;
+			left: 430px;
+			width: 120px;
+			height: 284px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: visible;
+		}
+		#deleteButton		
+		{
+			position: absolute;
+			z-index: 7;
+			top: 210px;
+			left: 430px;
+			width: 120px;
+			height: 284px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: hidden;
+		}
+		#deleteButtonDisabled		
+		{
+			position: absolute;
+			z-index: 7;
+			top: 210px;
+			left: 430px;
+			width: 120px;
+			height: 284px;
+			color: #999999;
+			font-family: Lucida Grande, Arial, Helvetica, Geneva, Swiss, sans-serif;
+			visibility: visible;
+		}
+		#libbackground		
+		{
+			position: absolute;
+			z-index: 1;
+			top: 93px;
+			left: 78px;
+			width: 324px;
+			height: 284px;
+			visibility: visible;
+		}
+		#libfiles		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 108px;
+			left: 80px;
+			width: 216px;
+			line-height: 18px;
+			visibility: visible;
+		}
+		#libstatus		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 108px;
+			left: 302px;
+			width: 84px;
+			line-height: 18px;
+			visibility: visible;
+		}
+		#libcontrols		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 108px;
+			left: 383px;
+			width: 56px;
+			line-height: 18px;
+			visibility: visible;
+		}
+		#libscrollbar		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 107px;
+			left: 404px;
+			width: 16px;
+			visibility: hidden;
+		}
+		#libscrollbardisabled		
+		{
+			position: absolute;
+			z-index: 3;
+			top: 107px;
+			left: 404px;
+			width: 16px;
+			visibility: visible;
+		}
+		#libscrollthumb		
+		{
+			position: absolute;
+			z-index: 4;
+			top: 122px;
+			left: 404px;
+			width: 14px;
+			height: 16px;
+			visibility: hidden;
+		}
+		#libhighlight		
+		{
+			position: absolute;
+			z-index: 2;
+			top: 94px;
+			left: 79px;
+			width: 322px;
+			height: 20px;
+			visibility: hidden;
+		}
 	</style>
 	<script src="includes/encode_unicode.js" type="text/javascript" language="Javascript" charset="utf-8"></script>
 	<script src="includes/standardNav.js" type="text/javascript" language="javascript"></script>
@@ -78,6 +240,8 @@
 		var scrollBy = 1; // -1=scroll up, 1=scroll down
 		var scrollWhich = 0; // 0=library, 1=playlist contents
 		
+		var broadcastPasswordIsSet = <qtssobject name=plbroadcastpasswordisset/>;
+		
 		function DoScroll() {
 			if (dragStatus == 'timedscroll') {
 				if (scrollWhich == 0) {
@@ -113,6 +277,10 @@
 			for (var i=libScrollPos; i < Math.min((libScrollPos+gLibNumItems), directoryListing.length); i++) {
 				var itemText = directoryListing[i];
 				var itemName = playlists[i];
+				var isMP3 = (iconImages[i] == 'images/mp3_file.gif') ? 'true' : 'false';
+				if (itemText.length > gLibMaxChars) {
+					itemText = itemText.substr(0, gLibMaxChars) + "&#8230;";
+				}
 				itemText = itemText.replace('<', '&lt;');
 				itemText = itemText.replace('>', '&gt;');
 				filesLayerText = filesLayerText + '<img src="' + iconImages[i] + '" width=16 height=16 align=middle vspace=2>';
@@ -131,12 +299,12 @@
 				}
 				if ((startArray[i] == 0) || (startArray[i] == 2)) { // stopped
 					statusLayerText = statusLayerText + '<qtssstring name=PLStopped><br>';
-					controlsLayerText = controlsLayerText + '<a href="javascript:StartPlaylist(\'' + itemName + '\')">';
+					controlsLayerText = controlsLayerText + '<a href="javascript:StartPlaylist(\'' + itemName + '\', ' + isMP3 + ')">';
 					controlsLayerText = controlsLayerText + '<img src="images/icon_start_playlist.gif" width=16 height=16 hspace=1 vspace=2 border=0><' + '/a>';
 				}
 				else { // started
 					statusLayerText = statusLayerText + '<qtssstring name=PLStarted><br>';
-					controlsLayerText = controlsLayerText + '<a href="javascript:StopPlaylist(\'' + itemName + '\')">';
+					controlsLayerText = controlsLayerText + '<a href="javascript:StopPlaylist(\'' + itemName + '\', ' + isMP3 + ')">';
 					controlsLayerText = controlsLayerText + '<img src="images/icon_stop_playlist.gif" width=16 height=16 hspace=1 vspace=2 border=0><' + '/a>';
 				}
 				controlsLayerText = controlsLayerText + '<br>';
@@ -201,11 +369,20 @@
 			dblClickTimer = null;
 		}
 		
-		function StartPlaylist(plname) {
-			document.forms[0].elements['action'].value='StartPlaylist';
-			document.forms[0].elements['curplaylist'].value=plname;
-			document.forms[0].elements['filename'].value='playlists.html';
-			document.forms[0].submit();
+		function StartPlaylist(plname, isMP3) {
+			if ((!isMP3) || (broadcastPasswordIsSet == 1)) {
+				document.forms[0].elements['action'].value='StartPlaylist';
+				document.forms[0].elements['curplaylist'].value=plname;
+				document.forms[0].elements['filename'].value='playlists.html';
+				document.forms[0].submit();
+			}
+			else {
+				if (confirm('<qtssstring name=PLSetBroadcastPasswordConfirm>')) {
+					document.forms[0].elements['action'].value = '';
+					document.forms[0].elements['filename'].value = 'change_mp3_password.html';
+					document.forms[0].submit();
+				}
+			}
 		}
 
 		function StopPlaylist(plname) {

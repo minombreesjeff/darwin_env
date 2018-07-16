@@ -30,10 +30,22 @@
 			document.forms[0].submit();
 		}
 		
+		function validateFormData() {
+			for (var i = 0; i < document.forms[0].elements['relayDestCount'].value; i++) {
+				var fieldValue = document.forms[0].elements['relayDestTTL'+i].value;
+				if ((fieldValue != '') && ((fieldValue < 1) || (fieldValue > 255) || (fieldValue.match('[^0-9]') != null))) {
+					entityAlert("<qtssstring name=RelayErrMulticastTTLIncorrect/>");
+					document.forms[0].elements['relayDestTTL'+i].value = document.forms[0].elements['relayDestTTL'+i+'_shadow'].value
+					return false;
+				}
+			}
+			return true;
+		}
+		
 	</script>
 </head>
 <body bgcolor="#FFFFFF" background="images/stripes_gray.gif">
-<qtssobject type="form">
+<qtssobject type="validatedform">
 	<qtssobject type=hidden name="relayDestCount"/>
 	<qtssobject type=hidden name="qtssSvrDefaultDNSName"/>
 	<input type=hidden name=action value="">
@@ -204,7 +216,7 @@
 												<b><qtssstring name="RelayDetailsDestMulticastTTL"/></b>
 											</td>
 											<td align=left>
-												<qtssobject name="relayDestTTL" type=text param=" size=3"/>
+												<qtssobject name="relayDestTTL" type=text param=" size=4"/>
 											</td>
 										</tr>
 									</table>

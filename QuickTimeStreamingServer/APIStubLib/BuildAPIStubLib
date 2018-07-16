@@ -54,6 +54,16 @@ case $PLAT in
 		MACHDEFINES="-D__solaris__"
 		LIB="/usr/ccs/bin/ar -r "
 		;;
+		
+	IRIX*.*)
+#	IRIX and MipsPro compiler
+		echo "Configuring for IRIX platform"
+		CPLUS=CC
+		CCOMP=cc
+		LINKER="CC"
+		MACHDEFINES="-D__sgi__ -DirixMipsPro -D_SGI_REENTRANT_FUNCTIONS -DASSERT -D__PTHREADS__ -D__PTHREADS_MUTEXES__ -DBIGENDIAN -DUSE_THREAD -DEXPORT -D_REENTRANT"
+		LIB="ar -r "
+		;;
 
 	*)
 		echo "I don't know your platform. I'll assume this is a Linux x86 platform."

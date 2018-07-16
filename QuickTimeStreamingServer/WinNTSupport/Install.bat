@@ -49,7 +49,6 @@ mkdir  "c:\Program Files\Darwin Streaming Server\Logs\"
 rmdir /S /Q "c:\Program Files\Darwin Streaming Server\Documentation"
 mkdir "c:\Program Files\Darwin Streaming Server\Documentation\"
 copy readme.pdf "c:\Program Files\Darwin Streaming Server\Documentation"
-copy AboutDarwinStreamingSvr.pdf "c:\Program Files\Darwin Streaming Server\Documentation"
 
 rmdir /S /Q "c:\Program Files\Darwin Streaming Server\AdminHtml"
 mkdir "c:\Program Files\Darwin Streaming Server\AdminHtml\"

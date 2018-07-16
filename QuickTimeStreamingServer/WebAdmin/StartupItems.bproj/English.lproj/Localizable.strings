@@ -2,8 +2,8 @@
 <!DOCTYPE plist SYSTEM "file://localhost/System/Library/DTDs/PropertyList.dtd">
 <plist version="0.9">
 <dict>
-        <key>Starting QuickTime Streaming Server Admin</key>
-        <string>Starting QuickTime Streaming Server Admin</string>
+        <key>Starting QuickTime Streaming Services</key>
+        <string>Starting QuickTime Streaming Services</string>
 </dict>
 </plist>
 

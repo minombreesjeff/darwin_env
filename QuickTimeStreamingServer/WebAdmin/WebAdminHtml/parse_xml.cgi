@@ -2,23 +2,25 @@
 #
 # @APPLE_LICENSE_HEADER_START@
 #
-# Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
-# contents of this file constitute Original Code as defined in and are
-# subject to the Apple Public Source License Version 1.2 (the 'License').
-# You may not use this file except in compliance with the License.  Please
-# obtain a copy of the License at http://www.apple.com/publicsource and
-# read it before using this file.
+# Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
 #
-# This Original Code and all software distributed under the License are
+# This file contains Original Code and/or Modifications of Original Code
+# as defined in and that are subject to the Apple Public Source License
+# Version 2.0 (the 'License'). You may not use this file except in
+# compliance with the License. Please obtain a copy of the License at
+# http://www.opensource.apple.com/apsl/ and read it before using this
+# file.
+#
+# The Original Code and all software distributed under the License are
 # distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
 # EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
-# INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
-# FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
-# see the License for the specific language governing rights and
+# INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+# Please see the License for the specific language governing rights and
 # limitations under the License.
 #
-#
 # @APPLE_LICENSE_HEADER_END@
+#
 
 require('tag_vals.pl');
 require('tag_types.pl');
@@ -35,6 +37,8 @@ $qtssip = $ENV{"QTSSADMINSERVER_QTSSIP"};
 $qtssport = $ENV{"QTSSADMINSERVER_QTSSPORT"};
 $remoteip = $ENV{"REMOTE_HOST"};
 $accessdir = $ENV{"LANGDIR"};
+$nonAuthenticatedActions = ("|login|logout|AssistSetPassword|");
+$displayedLoginMessage = 0;
 
 $auth = '';
 $authheader = '';
@@ -42,8 +46,7 @@ $messageHash = &adminprotolib::GetMessageHash();
 $cookie = '';
 $password = '';
 $iteration = '';
-$nonAuthenticatedActions = ("|login|logout|StartStopServer|AssistSetPassword|");
-$displayedLoginMessage = 0;
+$cookieExpireSecs = $ENV{"COOKIE_EXPIRE_SECONDS"};
 
 # this array will get filled by the foundTag function
 my %endTags = ();
@@ -68,8 +71,7 @@ sub encodeBase64 {
 
 # b64decode(string)
 # Converts a string from base64 format to normal
-sub b64decode
-{
+sub b64decode {
     local($str) = $_[0];
     local($res);
     $str =~ tr|A-Za-z0-9+=/||cd;
@@ -216,7 +218,7 @@ sub foundTag {
 		if (($status == 500) and ($data =~ /Connection refused/) and ($displayedLoginMessage == 0)) {
 
 			$displayedLoginMessage = 1;
-			
+
 			$wasAuth = 0;
 
 			my $loginText = '';
@@ -241,12 +243,6 @@ sub foundTag {
 
 		}
 		if ($status == 401) {
-			if ($theAction eq 'StartStopServer') {
-				$startserver = 'yes';
-			}
-			else {
-				$startserver = 'no';
-			}
 			my $isAuthenticated = 0;
 			
 			if ($wasAuth == (-1)) {
@@ -255,7 +251,7 @@ sub foundTag {
 			}
 			
 			# only try default authentication if setup assistant on mac os x
-			if (($^O eq "darwin") and (-e "index.html") and (MacQTGroupsContainsAdminGroup() == 0)) {
+			if (($^O eq "darwin") and (-e "index.html") and ($ENV{"REMOTE_HOST"} eq '127.0.0.1') and (MacQTGroupsContainsAdminGroup() == 0)) {
 				if (wasAuth >= 0) { # first pass
 					open(LOGINFILE, "setup_assistant.html");
 					my $loginText = '';
@@ -347,30 +343,6 @@ sub parseTags {
 	return "$_[0]";
 }
 
-sub StartStopServer {
-	my $messageHash = &adminprotolib::GetMessageHash();
-	my $data = "";
-	my $status = &adminprotolib::EchoData($data, $messageHash, $authheader, $qtssip, $qtssport, "/modules/admin/server/qtssSvrState", "/server/qtssSvrState");
-	# if the server is not running, launch process
-	if($status == 500) {
-		&adminprotolib::StartServer($ENV{"QTSSADMINSERVER_QTSSNAME"});
-		sleep(4);
-		$status = &adminprotolib::SetAttribute($data, $messageHash, $authheader, $qtssip, $qtssport, "/admin/server/qtssSvrState", 1);	        
-		if (-e 'index.html') {
-			$filename = 'index.html';
-		}        
-	}
-	elsif($status == 200) {
-		# if server is running, then put it in idle mode or if server is idle/not running, then put it in running mode
-		if($data == 1) {
-			$status = &adminprotolib::SetAttribute($data, $messageHash, $authheader, $qtssip, $qtssport, "/admin/server/qtssSvrState", 5);
-		}
-		else {
-			$status = &adminprotolib::SetAttribute($data, $messageHash, $authheader, $qtssip, $qtssport, "/admin/server/qtssSvrState", 1);
-		}
-	}
-}
-
 sub SaveGeneralSettings {
 	my $messHash = adminprotolib::GetMessageHash();
 	my %messages = %$messHash;
@@ -409,73 +381,14 @@ sub SaveGeneralSettings {
 	if ($query->{'qtssAuthScheme'} ne $query->{'qtssAuthScheme_shadow'}) {
 		$status = &adminprotolib::SetAttribute($data, $messHash, $authheader, $qtssip, $qtssport, $settingsPath."authentication_scheme", $query->{'qtssAuthScheme'});
 	}
-	
-	
-	if (($^O eq "darwin") and ($autoStartValue ne parseForAutostart())) {
-		$configLine = qq(qtssAutoStart=$autoStartValue\n);
-		if(!(-e $configFilePath)) {
-			open(CONFIGFILE, ">$configFilePath");
-			print CONFIGFILE $configLine;
-			close(CONFIGFILE);
-			if($autoStartValue == 1)
-			{
-				$ENV{"HTTPS"} = "ON";
-			}
-			else
-			{
-				$ENV{"HTTPS"} = "OFF";
-			}
-		}
-		else {
-			if( -r $configFilePath && -w _) {
-				$tmpname = $configFilePath . ".tmp";
-				open(TEMPFILE, ">$tmpname");
-				open(CONFIGFILE, "<$configFilePath");
-				while($line = <CONFIGFILE>) {
-					$_ = $line;
-					chop;
-					if (/^#/ || !/\S/) {
-						print TEMPFILE $line;
-						next; 
-					}
-					/^([^=]+)=(.*)$/;
-					$name = $1; $val = $2;
-					$name =~ s/^\s+//g; $name =~ s/\s+$//g;
-					$val =~ s/^\s+//g; $val =~ s/\s+$//g;
-					if($name eq "qtssAutoStart") {
-						$val = $autoStartValue; 
-					}
-					$config{$name} = $val;
-					print TEMPFILE qq($name=$val\n);
-				}
-				if(!defined($config{'qtssAutoStart'})) {
-					print TEMPFILE $configLine;
-				}
-				close(CONFIGFILE);
-				close(TEMPFILE);
-				rename $tmpname, $configFilePath;
-				if($autoStartValue == 1)
-				{
-					$ENV{"HTTPS"} = "ON";
-				}
-				else
-				{
-					$ENV{"HTTPS"} = "OFF";
-				}
-			}
-			else {
-				print STDERR "couldn't open $configFilePath for writing\n";
-			}	
-		}
-	}
-	
-		
+
 	if ($sslValue ne parseForSSL()) {
 		$configLine = qq(ssl=$sslValue\n);
 		if(!(-e $configFilePath)) {
 			open(CONFIGFILE, ">$configFilePath");
 			print CONFIGFILE $configLine;
 			close(CONFIGFILE);
+			FixFileGroup($configFilePath);
 			if($sslValue == 1)
 			{
 				$ENV{"HTTPS"} = "ON";
@@ -556,14 +469,8 @@ sub RunAssistant {
 	
 	# set streaming on port 80
 	
-	if($query->{'qtssIsStreamingOn80'} eq 'true') {
-		if (isStreamingOnPort80() eq 'false') {
-			$status = &adminprotolib::AddValueToAttribute($data, $messHash, $authheader, $qtssip, $qtssport, $settingsPath."rtsp_port", 80);
-		}
-	}
-	else {
-		$status = &adminprotolib::DeleteValueFromAttribute($data, $messHash, $authheader, $qtssip, $qtssport, $settingsPath."rtsp_port", 80);
-	}
+	SavePortSettings();
+	$confirmMessage = ''; # reset the confirm message
 	
 	# set SSL on/off
 	
@@ -572,6 +479,7 @@ sub RunAssistant {
 		open(CONFIGFILE, ">$configFilePath");
 		print CONFIGFILE $configLine;
 		close(CONFIGFILE);
+		FixFileGroup($configFilePath);
 		if($sslValue == 1)
 		{
 			$ENV{"HTTPS"} = "ON";
@@ -632,7 +540,29 @@ sub SavePortSettings {
 
 	if ($query->{'qtssIsStreamingOn80'} ne $query->{'qtssIsStreamingOn80_shadow'}) {
 		if($query->{'qtssIsStreamingOn80'} eq "true") {
+			# set the pref
 			$status = &adminprotolib::AddValueToAttribute($data, $messHash, $authheader, $qtssip, $qtssport, $settingsPath."rtsp_port", 80);				
+			# find out where the pid file is
+			my $pidfileloc = '';
+			my $status = &adminprotolib::EchoData($pidfileloc, $messageHash, $authheader, $qtssip, $qtssport, "/modules/admin/server/qtssSvrPreferences/pid_file", "/server/qtssSvrPreferences/pid_file");
+			# if the pid file exists...
+			if (-e $pidfileloc) {
+				# read in the file into an array
+				my @splitPidFile = ();
+				my $line;
+				if (open(PIDFILE, $pidfileloc)) {
+					while ($line = <PIDFILE>) {
+						push(@splitPidFile, $line);
+					}
+					close(PIDFILE);
+				}				
+				if (scalar(@splitPidFile) > 0) {
+					if ($splitPidFile[1] ne '') {
+						kill 2, $splitPidFile[1];
+						sleep(2);
+					}
+				}
+			}
 		}
 		else {
 			$status = &adminprotolib::DeleteValueFromAttribute($data, $messHash, $authheader, $qtssip, $qtssport, $settingsPath."rtsp_port", 80);
@@ -776,7 +706,7 @@ sub ChangePassword {
 	close(FILEHDL);            
 	my $quotedOldUsername = quotemeta($oldUsername);
 	$groupsFileText =~ s/([ \t:]+)$quotedOldUsername([\r\n\s]+)/$1$newUsername$2/;
-
+	
 	$status = &adminprotolib::SetPassword($data, $messageHash, $authheader, $qtssip, $qtssport, $usersFileAttributePath, $query->{'new_password1'}, $qtssPasswdName, $newUsername);
 	sleep(2);
 
@@ -789,9 +719,10 @@ sub ChangePassword {
 	open(FILEHDL, ">$groupsFilePath") or die "Can't open groups file '$groupsFilePath'!";
 	print FILEHDL $groupsFileText;
 	close(FILEHDL);
+	FixFileGroup($groupsFilePath);
 	
 	$newcookieval = encodeBase64($newUsername.':'.$query->{'new_password1'});
-	$cookie = 'qtsspassword='.$newcookieval.'; path=/';
+	$cookie = 'qtsspassword='.$newcookieval.'; expires='.&cgilib::HttpDate(time+$cookieExpireSecs).';path=/';
 	$auth = $newcookieval;
 	$authheader = "Authorization: Basic $auth\r\n"; 
 	
@@ -875,7 +806,10 @@ sub ChangeMP3Password {
 	$status = &adminprotolib::SetAttribute($data, $messHash, $authheader, $qtssip, $qtssport, $MP3BroadcastPasswordPath, $query->{'new_password1'});
 	
 	$confirmMessage = $messages{'ChMP3PassSavedText'};
-	$filename = 'general_settings.html';
+	$filename = $query->{'replaceFilename'};
+	if ($filename eq '') {
+		$filename = 'general_settings.html';
+	}
 }
 
 # AssistSetPassword
@@ -951,7 +885,7 @@ sub AssistSetPassword {
 			}
 			close(GROUPSFILE);
 		}
-		$groupsFileText .= "admin: $newUsername\r";
+		$groupsFileText .= "admin: $newUsername\n";
 		$groupsFilePath = '/Library/QuickTimeStreaming/Config/qtgroups';
 		my $extraargs = '';
 		my $qtpasswdpath = $ENV{'QTSSADMINSERVER_QTSSQTPASSWD'};
@@ -999,7 +933,7 @@ sub AssistSetPassword {
 		
 		my $quotedOldUsername = quotemeta($oldUsername);
 		$groupsFileText =~ s/([ \t:]+)$quotedOldUsername([\r\n\s]+)/$1$newUsername$2/;
-
+		
 		$status = &adminprotolib::SetPassword($data, $messageHash, $authheader, $qtssip, $qtssport, $usersFileAttributePath, $query->{'new_password1'}, $qtssPasswdName, $newUsername);
 		
 		if ($status != 200) {
@@ -1012,6 +946,7 @@ sub AssistSetPassword {
 	open(FILEHDL, ">$groupsFilePath") or die "Can't open groups file '$groupsFilePath'!";
 	print FILEHDL $groupsFileText;
 	close(FILEHDL);
+	FixFileGroup($groupsFileText);
 	
 	# set the cookie and the auth header before calling DeleteUsername as the server expects the new username:password now
 	my $newcookieval = encodeBase64($newUsername.':'.$query->{'new_password1'});
@@ -1096,6 +1031,7 @@ sub StartPlaylist {
 			# which we shall delete when we stop the playlist later
 			open(STARTFILE, ">$startfile");
 			close(STARTFILE);
+			FixFileGroup($startfile);
 		}
 	}
 	# $confirmMessage = $messages{'PLChangedText'};
@@ -1176,7 +1112,7 @@ sub GetPlaylist {
 		$doctitle = $messages{'PLMoviePlaylistDetails'};
 		$extraFieldLabel = '';
 		$extraFieldHTML = '<input type=hidden name=PLGenre value="">';
-		$playlistUsernameHTML = '<tr><td>&nbsp;</td><td align=right>'.$messages{'Username'}.'</td><td><input type=text name=plbroadcastusername value="' . $plbroadcastusername . '"></td></tr>';
+		$playlistUsernameHTML = '<tr><td align=left>&nbsp;</td><td align=right>'.$messages{'Username'}.'</td><td align=left><input type=text name=plbroadcastusername value="' . $plbroadcastusername . '"></td></tr>';
 	}
 	else {
 		$isMP3 = 1;
@@ -1292,7 +1228,7 @@ sub NewPlaylist {
 		$doctitle = $messages{'PLMoviePlaylistDetails'};
 		$extraFieldLabel = '';
 		$extraFieldHTML = '';
-		$playlistUsernameHTML = '<tr><td>&nbsp;</td><td align=right>'.$messages{'Username'}.'</td><td><input type=text name=plbroadcastusername></td></tr>';
+		$playlistUsernameHTML = '<tr><td align=left>&nbsp;</td><td align=right>'.$messages{'Username'}.'</td><td align=left><input type=text name=plbroadcastusername></td></tr>';
 		$pltitle = $messages{'PLDefaultPlaylistName'};
 		$plfilename = $messages{'PLDefaultMoviePlaylistSDP'};
 	}
@@ -1444,6 +1380,10 @@ sub StartStopBroadcast {
 		$confirmMessage = $messages{'QTBErrBroadcastSettings'};
 	}
 	if ($messageName eq 'QTBConfStarted') {
+		my $value = '/modules/admin/server/qtssSvrDefaultDNSName';
+		my $data = '';
+		my $status = adminprotolib::EchoData($data, $messHash, $authheader, $qtssip, $qtssport, $value, $value);
+		&broadcasterlib::WriteRefMovie($data);
 		my $cycles = 0;
 		my $continue = 1;
 		my $state;
@@ -1478,18 +1418,12 @@ sub PerformAction {
 		&streamingadminserver::LoadMessageHashes();
 	}
 	elsif ($theAction eq 'login') {
-		$cookie = 'qtsspassword='.encodeBase64($query->{'qtssusername'}.':'.$query->{'qtsspassword'}).'; path=/';
-		if ($query->{'startserver'} eq 'yes') {
-			StartStopServer();
-		}
+		$cookie = 'qtsspassword='.encodeBase64($query->{'qtssusername'}.':'.$query->{'qtsspassword'}).'; expires='.&cgilib::HttpDate(time+$cookieExpireSecs).'; path=/';
 		return true;
 	}
 	elsif ($theAction eq 'logout') {
 		$cookie = 'qtsspassword=; path=/';
 		return true;
-	}
-	elsif ($theAction eq 'StartStopServer') {
-		StartStopServer();
 	}
 	elsif ($theAction eq 'restartadminserver') {
 		restart_streamingadminserver();
@@ -1630,15 +1564,6 @@ sub PerformAction {
 	}
 }
 
-sub makeSecureRoot {
-	if ($^O ne "MSWin32") {
-		chroot($ENV{"SERVER_ROOT"});
-	}
-	if (($^O eq "MSWin32") && &adminprotolib::CheckIfForbidden($ENV{"SERVER_ROOT"}, $filename)) {
-		die "Can't open HTML file '$filename'!";
-	}	
-}
-
 # post method environment variable
 $cl = $ENV{"CONTENT_LENGTH"};
 
@@ -1663,6 +1588,16 @@ $auth = $query->{'qtsspassword'};
 $username = $query->{'qtssusername'};
 $cookie = $query->{'cookie'};
 $confirmMessage = '';
+$chdelim = &playlistlib::GetFileDelimChar();
+$serverRoot = $ENV{"SERVER_ROOT"};
+
+# fix for 3064725
+# if the setup assistant is being called and the index file no longer exists,
+# clear $filename so we get the frameset instead
+if (($filename =~ m/setup_assistant/) && (!(-e "$serverRoot$chdelim" . "index.html")))
+{
+	$filename = '';
+}
 
 # hack for QT Broadcaster library on Mac OS X Only
 if ($filename eq 'broadcaster_settings.html') {
@@ -1739,21 +1674,14 @@ else {
 		$templatefile = "template.html";
 	}
 	
+	#prevent source code revelation
+	if (($filename =~ m/\.cgi$/) || ($filename =~ m/\.pl$/)) {
+		die "Can't access HTML file '$filename'!";
+	}
+	
 	$text = '';
 	$templatetext = '';
-	
-	if (!(-e "$templatefile")) {
-		die "Can't access template file '$templatefile'!";
-	}
-
-	if (open(TEMPLATEFILE, $templatefile)) {
-		while ($line = <TEMPLATEFILE>) {
-			$templatetext .= $line;
-		}
-	}
-	
-	close (TEMPLATEFILE);
-	
+		
 	if (!(-e "$filename")) {
 		die "Can't access HTML file '$filename'!";
 	}
@@ -1783,21 +1711,30 @@ else {
 		undef($qs);
 		return 0;
 	}
-	else {
-		makeSecureRoot();
-		
-		open(HTMLFILE, $filename) or die "Can't open HTML file '$filename'!";
-		close(HTMLFILE);
-		
-		open(TEMPLATEFILE, $templatefile) or die "Can't open HTML file '$templatefile'!";
-		close(TEMPLATEFILE);
 
-		# CGI programs must print their own HTTP response headers
-		&cgilib::PrintOKTextHeader($servername, $cookie);
-		
-		#print the replaced HTML
-		print $text;
+	# used to be makeSecureRoot()	
+	if ($^O ne "MSWin32") {
+		chroot($ENV{"SERVER_ROOT"});
+		die "Can't open HTML file '$filename!'" if (!(-e $ENV{"SERVER_ROOT"}.'/'.$filename));
 	}
+	if (($^O eq "MSWin32") && &adminprotolib::CheckIfForbidden($ENV{"SERVER_ROOT"}, $filename)) {
+		die "Can't open HTML file '$filename'!";
+	}	
+	
+	open(HTMLFILE, $filename) or die "Can't open HTML file '$filename'!";
+	close(HTMLFILE);
+	
+	# give them a new cookie unless we have a better plan for them
+	if ($cookie eq '') {
+		$cookie = 'qtsspassword='.getCookie('qtsspassword').'; expires='.&cgilib::HttpDate(time+$cookieExpireSecs).'; path=/';
+	}
+
+	# CGI programs must print their own HTTP response headers
+	&cgilib::PrintOKTextHeader($servername, $cookie);
+	
+	#print the replaced HTML
+	print $text;
+	
 }
 
 # done!

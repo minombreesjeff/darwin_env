@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -204,7 +205,10 @@ Bool16 RTPSessionOutput::IsUDP()
             fIsUDP = false;
         }
    }
-     
+   
+  //if (fIsUDP) printf("RTPSessionOutput::RTPSessionOutput Standard UDP client\n");
+   //else printf("RTPSessionOutput::RTPSessionOutput Buffered Client\n");
+   
    fTransportInitialized = true;
    return fIsUDP;
 }
@@ -257,7 +261,7 @@ Bool16  RTPSessionOutput::PacketReadyToSend(QTSS_RTPStreamObject *theStreamPtr,S
     {  
         UInt32 theLen = 0;
         UInt64 *lastPacketTransmitPtr = NULL; 
-
+        
         if ( (QTSS_NoErr == QTSS_GetValuePtr(*theStreamPtr, sLastRTCPTransmitAttr, 0, (void**)&lastPacketTransmitPtr, &theLen))       
              &&  (*currentTimePtr - *lastPacketTransmitPtr < sRTCPIntervalMSec) 
            )
@@ -649,13 +653,16 @@ Bool16 RTPSessionOutput::PacketShouldBeThinned(QTSS_RTPStreamObject inStream, St
     if (*curQualityLevel > 0 && ((*lastChangeTime + 30000) < timeNow) ) // 30 seconds between reductions
     {   *curQualityLevel -= 1; // reduce quality value.  If we quality doesn't change then we may have hit some steady state which we can't get out of without thinning or increasing the quality
         *lastChangeTime =timeNow; 
-        //printf("RTPSessionOutput set quality to %lu\n",*curQualityLevel);
+        //qtss_printf("RTPSessionOutput set quality to %lu\n",*curQualityLevel);
     }
 
     //Check to see if we need to drop to audio only
     if ((*curQualityLevel >= ReflectorSession::kAudioOnlyQuality) &&
         (*nextSeqNum == 0))
     {
+//#if REFLECTOR_THINNING_DEBUGGING || RTP_SESSION_DEBUGGING
+        qtss_printf(" *** Reflector Dropping to audio only *** \n");
+//#endif
         //All we need to do in this case is mark the sequence number of the first dropped packet
         (void)QTSS_SetValue(inStream, sNextSeqNumAttr, 0, &curSeqNum, sizeof(UInt16));  
          *lastChangeTime =timeNow;  

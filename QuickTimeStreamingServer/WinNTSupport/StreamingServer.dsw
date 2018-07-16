@@ -53,6 +53,9 @@ Package=<4>
     Begin Project Dependency
     Project_Dep_Name CommonUtilitiesLib
     End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeInternalStdLib
+    End Project Dependency
 }}}
 
 ###############################################################################
@@ -66,10 +69,28 @@ Package=<5>
 Package=<4>
 {{{
     Begin Project Dependency
-    Project_Dep_Name CommonUtilitiesLib
+    Project_Dep_Name QTFileExternalLib
     End Project Dependency
     Begin Project Dependency
-    Project_Dep_Name QTFileLib
+    Project_Dep_Name SafeInternalStdLib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name APICommonCode
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "QTFileExternalLib"="..\QTFileLib\QTFileExternalLib\QTFileExternalLib.dsp" - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name SafeInternalStdLib
     End Project Dependency
 }}}
 
@@ -83,6 +104,12 @@ Package=<5>
 
 Package=<4>
 {{{
+    Begin Project Dependency
+    Project_Dep_Name APIStubLib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeInternalStdLib
+    End Project Dependency
 }}}
 
 ###############################################################################
@@ -103,6 +130,9 @@ Package=<4>
     End Project Dependency
     Begin Project Dependency
     Project_Dep_Name CommonUtilitiesLib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeDynamicModuleStdLib
     End Project Dependency
 }}}
 
@@ -125,6 +155,9 @@ Package=<4>
     Begin Project Dependency
     Project_Dep_Name CommonUtilitiesLib
     End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeDynamicModuleStdLib
+    End Project Dependency
 }}}
 
 ###############################################################################
@@ -140,11 +173,44 @@ Package=<4>
     Begin Project Dependency
     Project_Dep_Name CommonUtilitiesLib
     End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeInternalStdLib
+    End Project Dependency
 }}}
 
 ###############################################################################
 
-Project: "SpamPro"="..\SpamPro.tproj\SpamPro.dsp" - Package Owner=<4>
+Project: "SafeDynamicModuleStdLib"="..\SafeStdLib\SafeDynamicModuleStdLib.dsp" - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name CommonUtilitiesLib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "SafeInternalStdLib"="..\SafeStdLib\SafeInternalStdLib.dsp" - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name CommonUtilitiesLib
+    End Project Dependency
+}}}
+
+###############################################################################
+
+Project: "StreamingLoadTool"="..\StreamingLoadTool\StreamingLoadTool.dsp" - Package Owner=<4>
 
 Package=<5>
 {{{
@@ -157,6 +223,9 @@ Package=<4>
     End Project Dependency
     Begin Project Dependency
     Project_Dep_Name CommonUtilitiesLib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeInternalStdLib
     End Project Dependency
 }}}
 
@@ -174,13 +243,16 @@ Package=<4>
     Project_Dep_Name CommonUtilitiesLib
     End Project Dependency
     Begin Project Dependency
-    Project_Dep_Name QTFileLib
-    End Project Dependency
-    Begin Project Dependency
     Project_Dep_Name APICommonCode
     End Project Dependency
     Begin Project Dependency
     Project_Dep_Name APIStubLib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeInternalStdLib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name QTFileLib
     End Project Dependency
 }}}
 
@@ -196,6 +268,9 @@ Package=<4>
 {{{
     Begin Project Dependency
     Project_Dep_Name CommonUtilitiesLib
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name SafeInternalStdLib
     End Project Dependency
 }}}
 

@@ -54,6 +54,7 @@ function IsNS6() {
 		(browserName.indexOf("Gecko") > 0));
 }
 
+
 function IsWin32() {
 	return browserName.indexOf("Win") > 0
 }

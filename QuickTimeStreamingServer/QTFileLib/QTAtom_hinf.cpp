@@ -1,27 +1,28 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_hinf.cpp,v 1.6 2001/11/28 01:48:03 sussery Exp $
+// $Id: QTAtom_hinf.cpp,v 1.10 2003/08/15 23:53:14 sbasu Exp $
 //
 // QTAtom_hinf:
 //   The 'hinf' QTAtom class.
@@ -43,29 +44,29 @@
 // -------------------------------------
 // Macros
 //
-#define DEBUG_PRINT(s) if(fDebug) printf s
-#define DEEP_DEBUG_PRINT(s) if(fDeepDebug) printf s
+#define DEBUG_PRINT(s) if(fDebug) qtss_printf s
+#define DEEP_DEBUG_PRINT(s) if(fDeepDebug) qtss_printf s
 
 
 
 // -------------------------------------
 // Constants
 //
-const char *	hinfAtom_TotalRTPBytes64		= ":trpy";
-const char *	hinfAtom_TotalRTPBytes32		= ":totl";
-const char *	hinfAtom_TotalRTPPackets64		= ":nump";
-const char *	hinfAtom_TotalRTPPackets32		= ":npck";
-const char *	hinfAtom_TotalPayloadBytes64	= ":tpyl";
-const char *	hinfAtom_TotalPayloadBytes32	= ":tpay";
-const char *	hinfAtom_MaxDataRate64			= ":maxr";
-const char *	hinfAtom_TotalMediaBytes64		= ":dmed";
-const char *	hinfAtom_TotalImmedBytes64		= ":dimm";
-const char *	hinfAtom_TotalRepeatBytes64		= ":drep";
-const char *	hinfAtom_MinTransTime32			= ":tmin";
-const char *	hinfAtom_MaxTransTime32			= ":tmax";
-const char *	hinfAtom_MaxPacketSize32		= ":pmax";
-const char *	hinfAtom_MaxPacketDuration32	= ":dmax";
-const char *	hinfAtom_PayloadType			= ":payt";
+const char *    hinfAtom_TotalRTPBytes64        = ":trpy";
+const char *    hinfAtom_TotalRTPBytes32        = ":totl";
+const char *    hinfAtom_TotalRTPPackets64      = ":nump";
+const char *    hinfAtom_TotalRTPPackets32      = ":npck";
+const char *    hinfAtom_TotalPayloadBytes64    = ":tpyl";
+const char *    hinfAtom_TotalPayloadBytes32    = ":tpay";
+const char *    hinfAtom_MaxDataRate64          = ":maxr";
+const char *    hinfAtom_TotalMediaBytes64      = ":dmed";
+const char *    hinfAtom_TotalImmedBytes64      = ":dimm";
+const char *    hinfAtom_TotalRepeatBytes64     = ":drep";
+const char *    hinfAtom_MinTransTime32         = ":tmin";
+const char *    hinfAtom_MaxTransTime32         = ":tmax";
+const char *    hinfAtom_MaxPacketSize32        = ":pmax";
+const char *    hinfAtom_MaxPacketDuration32    = ":dmax";
+const char *    hinfAtom_PayloadType            = ":payt";
 /*
 'trpy' 8 bytes The total number of bytes that will be sent,
 including 12-byte RTP headers, but not including
@@ -111,24 +112,24 @@ string (Pascal string).
 // Constructors and destructors
 //
 QTAtom_hinf::QTAtom_hinf(QTFile * File, QTFile::AtomTOCEntry * TOCEntry, Bool16 Debug, Bool16 DeepDebug)
-	: QTAtom(File, TOCEntry, Debug, DeepDebug),
-	fTotalRTPBytes32(0), //totl
-	fTotalRTPBytes64(0), //trpy
-	fTotalRTPPackets32(0), //nump
-	fTotalRTPPackets64(0), //npck
-	fTotalPayLoadBytes32(0), //tpay
-	fTotalPayLoadBytes64(0), //tpyl
-	fMaxDataRate64(0), //maxr
-	fTotalMediaBytes64(0), //dmed
-	fTotalImmediateBytes64(0), //dimm	
-	fTotalRepeatBytes64(0), //drep
-	fMinTransTime32(0), //tmin
-	fMaxTransTime32(0), //tmax
-	fMaxPacketSizeBytes32(0), //pmax
-	fMaxPacketDuration32(0), //dmax
-	fPayloadID(0)//payt
+    : QTAtom(File, TOCEntry, Debug, DeepDebug),
+    fTotalRTPBytes32(0), //totl
+    fTotalRTPBytes64(0), //trpy
+    fTotalRTPPackets32(0), //nump
+    fTotalRTPPackets64(0), //npck
+    fTotalPayLoadBytes32(0), //tpay
+    fTotalPayLoadBytes64(0), //tpyl
+    fMaxDataRate64(0), //maxr
+    fTotalMediaBytes64(0), //dmed
+    fTotalImmediateBytes64(0), //dimm   
+    fTotalRepeatBytes64(0), //drep
+    fMinTransTime32(0), //tmin
+    fMaxTransTime32(0), //tmax
+    fMaxPacketSizeBytes32(0), //pmax
+    fMaxPacketDuration32(0), //dmax
+    fPayloadID(0)//payt
 {
-	fPayloadStr[0] = 0;//payt
+    fPayloadStr[0] = 0;//payt
 }
 
 QTAtom_hinf::~QTAtom_hinf(void)
@@ -142,42 +143,42 @@ QTAtom_hinf::~QTAtom_hinf(void)
 //
 Bool16 QTAtom_hinf::Initialize(void)
 {
-	//
-	// Parse this atom's sub-atoms.
-	ReadSubAtomInt32(hinfAtom_TotalRTPBytes32, &fTotalRTPBytes32);
-	ReadSubAtomInt32(hinfAtom_TotalRTPPackets32, &fTotalRTPPackets32);
-	ReadSubAtomInt32(hinfAtom_TotalPayloadBytes32, &fTotalPayLoadBytes32);
+    //
+    // Parse this atom's sub-atoms.
+    ReadSubAtomInt32(hinfAtom_TotalRTPBytes32, &fTotalRTPBytes32);
+    ReadSubAtomInt32(hinfAtom_TotalRTPPackets32, &fTotalRTPPackets32);
+    ReadSubAtomInt32(hinfAtom_TotalPayloadBytes32, &fTotalPayLoadBytes32);
 
-	
-	ReadSubAtomInt64(hinfAtom_TotalRTPBytes64, &fTotalRTPBytes64);
-	ReadSubAtomInt64(hinfAtom_TotalRTPPackets64, &fTotalRTPPackets64);
-	ReadSubAtomInt64(hinfAtom_TotalPayloadBytes64, &fTotalPayLoadBytes64);
-	
-	ReadSubAtomInt64(hinfAtom_MaxDataRate64, &fMaxDataRate64);
-	ReadSubAtomInt64(hinfAtom_TotalMediaBytes64, &fTotalMediaBytes64);
-	ReadSubAtomInt64(hinfAtom_TotalImmedBytes64, &fTotalImmediateBytes64);
-	ReadSubAtomInt64(hinfAtom_TotalRepeatBytes64, &fTotalRepeatBytes64);
-	
-	
-	ReadSubAtomInt32(hinfAtom_MinTransTime32, &fMinTransTime32);
-	ReadSubAtomInt32(hinfAtom_MaxTransTime32, &fMaxTransTime32);
-	ReadSubAtomInt32(hinfAtom_MaxPacketSize32, &fMaxPacketSizeBytes32);
-	ReadSubAtomInt32(hinfAtom_MaxPacketDuration32, &fMaxPacketDuration32);
-	
-	ReadSubAtomInt32(hinfAtom_PayloadType, &fPayloadID);
-	if (fPayloadID != 0)
-	{	SInt8 len = 0;
-		ReadSubAtomBytes(hinfAtom_PayloadType, (char*)fPayloadStr, 5);
-		len = fPayloadStr[4];
-		if (len > 0)
-		{	ReadSubAtomBytes(hinfAtom_PayloadType, (char*)fPayloadStr, len+5);
-			::memmove(fPayloadStr,&fPayloadStr[5],len);
-			fPayloadStr[len] = 0;
-		}
-	}
-	//
-	// This atom has been successfully read in.
-	return true;
+    
+    ReadSubAtomInt64(hinfAtom_TotalRTPBytes64, &fTotalRTPBytes64);
+    ReadSubAtomInt64(hinfAtom_TotalRTPPackets64, &fTotalRTPPackets64);
+    ReadSubAtomInt64(hinfAtom_TotalPayloadBytes64, &fTotalPayLoadBytes64);
+    
+    ReadSubAtomInt64(hinfAtom_MaxDataRate64, &fMaxDataRate64);
+    ReadSubAtomInt64(hinfAtom_TotalMediaBytes64, &fTotalMediaBytes64);
+    ReadSubAtomInt64(hinfAtom_TotalImmedBytes64, &fTotalImmediateBytes64);
+    ReadSubAtomInt64(hinfAtom_TotalRepeatBytes64, &fTotalRepeatBytes64);
+    
+    
+    ReadSubAtomInt32(hinfAtom_MinTransTime32, &fMinTransTime32);
+    ReadSubAtomInt32(hinfAtom_MaxTransTime32, &fMaxTransTime32);
+    ReadSubAtomInt32(hinfAtom_MaxPacketSize32, &fMaxPacketSizeBytes32);
+    ReadSubAtomInt32(hinfAtom_MaxPacketDuration32, &fMaxPacketDuration32);
+    
+    ReadSubAtomInt32(hinfAtom_PayloadType, &fPayloadID);
+    if (fPayloadID != 0)
+    {   SInt8 len = 0;
+        ReadSubAtomBytes(hinfAtom_PayloadType, (char*)fPayloadStr, 5);
+        len = fPayloadStr[4];
+        if (len > 0)
+        {   ReadSubAtomBytes(hinfAtom_PayloadType, (char*)fPayloadStr, len+5);
+            ::memmove(fPayloadStr,&fPayloadStr[5],len);
+            fPayloadStr[len] = 0;
+        }
+    }
+    //
+    // This atom has been successfully read in.
+    return true;
 }
 
 
@@ -186,27 +187,27 @@ Bool16 QTAtom_hinf::Initialize(void)
 //
 void QTAtom_hinf::DumpAtom(void)
 {
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - Dumping atom.\n"));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total RTP bytes: %"_64BITARG_"u\n", this->GetTotalRTPBytes()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - Dumping atom.\n"));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total RTP bytes: %"_64BITARG_"u\n", this->GetTotalRTPBytes()));
 #ifndef __Win32__
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ....Average bitrate: %.2f Kbps\n", ((this->GetTotalRTPBytes() << 3) / fFile->GetDurationInSeconds()) / 1024));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ....Average bitrate: %.2f Kbps\n", ((this->GetTotalRTPBytes() << 3) / fFile->GetDurationInSeconds()) / 1024));
 #endif
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total RTP packets: %"_64BITARG_"u\n", this->GetTotalRTPPackets()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ....Average packet size: %"_64BITARG_"u\n", this->GetTotalRTPBytes() / this->GetTotalRTPPackets()));
-	
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Payload bytes: %lu\n", this->GetTotalPayLoadBytes()));
-	
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Data Rate: %"_64BITARG_"u\n", this->GetMaxDataRate()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Media Track bytes: %"_64BITARG_"u\n", this->GetTotalMediaBytes()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Repeat Packet bytes: %"_64BITARG_"u\n", this->GetRepeatBytes()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Immediate Bytes: %"_64BITARG_"u\n", this->GetTotalImmediateBytes()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total RTP packets: %"_64BITARG_"u\n", this->GetTotalRTPPackets()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ....Average packet size: %"_64BITARG_"u\n", this->GetTotalRTPBytes() / this->GetTotalRTPPackets()));
+    
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Payload bytes: %"_64BITARG_"u\n", this->GetTotalPayLoadBytes()));
+    
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Data Rate: %"_64BITARG_"u\n", this->GetMaxDataRate()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Media Track bytes: %"_64BITARG_"u\n", this->GetTotalMediaBytes()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Repeat Packet bytes: %"_64BITARG_"u\n", this->GetRepeatBytes()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Total Immediate Bytes: %"_64BITARG_"u\n", this->GetTotalImmediateBytes()));
 
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Minimum Transmission Time: %lu\n", this->GetMinTransTime()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Transmission Time: %lu\n", this->GetMaxTransTime()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Packet Size bytes: %lu\n", this->GetMaxPacketSizeBytes()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Maximum Packet Duration: %lu\n", this->GetMaxPacketDuration()));
-	
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Payload ID: %lu\n", this->GetPayLoadID()));
-	DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Payload string: %s\n", this->GetPayLoadStr()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Minimum Transmission Time: %lu\n", this->GetMinTransTime()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Transmission Time: %lu\n", this->GetMaxTransTime()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Packet Size bytes: %lu\n", this->GetMaxPacketSizeBytes()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Maximum Maximum Packet Duration: %lu\n", this->GetMaxPacketDuration()));
+    
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Payload ID: %lu\n", this->GetPayLoadID()));
+    DEBUG_PRINT(("QTAtom_hinf::DumpAtom - ..Payload string: %s\n", this->GetPayLoadStr()));
 
 }

@@ -16,7 +16,7 @@
 	"password" => "<input type=password name=\"<name/>\" value=\"<value/>\"<param/>><input type=hidden name=\"<name/>_shadow\" value=\"<value/>\">",
 	"hidden" => "<input type=hidden name=\"<name/>\" value=\"<value/>\">",
 	"form" => "<form method=post name=\"mainform\" action=\"/parse_xml.cgi\" target=\"<param/>\">",
-	"validatedform" => "<form method=post name=\"mainform\" action=\"/parse_xml.cgi\" onsubmit=\"return validateFormData()\">",
+	"validatedform" => "<form method=post name=\"mainform\" action=\"/parse_xml.cgi\" target=\"<param/>\" onsubmit=\"return validateFormData()\">",
 	"getform" => "<form method=get action=\"/parse_xml.cgi\" target=\"<param/>\">",
 	"textarea" => "<textarea name=\"<name/>\"<param/>><value/></textarea>",
 	"select" => "<input type=hidden name=\"<name/>_shadow\" value=\"<value/>\"><select name=\"<name/>\">",
@@ -36,3 +36,6 @@
 	"option" => "</option>",
 	"customtablecell" => "</td>",
 );
+
+# solaris expects a return value
+1;

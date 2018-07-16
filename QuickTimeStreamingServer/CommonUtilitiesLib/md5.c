@@ -1,3 +1,27 @@
+/*
+ * Copyright (c) 2003 Apple Computer, Inc. All rights reserved.
+ *
+ * @APPLE_LICENSE_HEADER_START@
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
+ * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+ * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
+ * limitations under the License.
+ * 
+ * @APPLE_LICENSE_HEADER_END@
+ */
 /* MD5.C - RSA Data Security, Inc., MD5 message-digest algorithm
  */
 
@@ -100,7 +124,7 @@ Rotation is separate from addition to prevent recomputation.
 
 /* MD5 initialization. Begins an MD5 operation, writing a new context.
  */
- 				/* context */
+                /* context */
 void MD5_Init (MD5_CTX *context)
 {
   context->count[0] = context->count[1] = 0;
@@ -116,7 +140,7 @@ void MD5_Init (MD5_CTX *context)
   operation, processing another message block, and updating the
   context.
  */
- 					/* context	 	input block 		length of input block*/
+                    /* context      input block         length of input block*/
 void MD5_Update (MD5_CTX *context, unsigned char *input, unsigned int inputLen)
 {
   unsigned int i, index, partLen;
@@ -156,7 +180,7 @@ void MD5_Update (MD5_CTX *context, unsigned char *input, unsigned int inputLen)
 /* MD5 finalization. Ends an MD5 message-digest operation, writing the
   the message digest and zeroizing the context.
  */
- 					/* message digest 			context	*/
+                    /* message digest           context */
 void MD5_Final (unsigned char digest[16], MD5_CTX *context)
 {
   unsigned char bits[8];
@@ -308,7 +332,7 @@ static void MD5_memcpy (UInt8 * output, UInt8 * input, unsigned int len)
   for (i = 0; i < len; i++)
  output[i] = input[i];
 */
-	memcpy(output, input, len);
+    memcpy(output, input, len);
 }
 
 /* Note: Replace "for loop" with standard memset if possible.
@@ -320,7 +344,7 @@ static void MD5_memset (UInt8 * output, int value, unsigned int len)
   for (i = 0; i < len; i++)
  ((char *)output)[i] = (char)value;
  */
- 	memset(output, value, len);
+    memset(output, value, len);
 }
 
 

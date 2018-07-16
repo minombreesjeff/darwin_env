@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -69,7 +70,7 @@ FileDeleter::FileDeleter(StrPtrLen* inSDPPath)
 
 FileDeleter::~FileDeleter()
 {
-    //printf("FileDeleter::~FileDeleter delete = %s \n",fFilePath.Ptr);
+    //qtss_printf("FileDeleter::~FileDeleter delete = %s \n",fFilePath.Ptr);
     ::unlink(fFilePath.Ptr);  
     delete fFilePath.Ptr;
     fFilePath.Ptr = NULL;
@@ -90,7 +91,7 @@ void ReflectorSession::Initialize()
 
 ReflectorSession::ReflectorSession(StrPtrLen* inSourceID, SourceInfo* inInfo)
 :   fIsSetup(false),
-    fQueueElem(this),
+    fQueueElem(),
     fNumOutputs(0),
     fStreamArray(NULL),
     fFormatter(fHTMLBuf, kMaxHTMLSize),
@@ -100,6 +101,7 @@ ReflectorSession::ReflectorSession(StrPtrLen* inSourceID, SourceInfo* inInfo)
     fInitTimeMS(OS::Milliseconds()),
     fHasBufferedStreams(false)
 {
+    fQueueElem.SetEnclosingObject(this);
     if (inSourceID != NULL)
     {
         fSourceID.Ptr = NEW char[inSourceID->Len + 1];
@@ -113,7 +115,7 @@ ReflectorSession::ReflectorSession(StrPtrLen* inSourceID, SourceInfo* inInfo)
 ReflectorSession::~ReflectorSession()
 {
 #if REFLECTOR_SESSION_DEBUGGING
-    printf("Removing ReflectorSession: %s\n", fSourceInfoHTML.Ptr);
+    qtss_printf("Removing ReflectorSession: %s\n", fSourceInfoHTML.Ptr);
 #endif
 
     // For each stream, check to see if the ReflectorStream should be deleted
@@ -126,7 +128,7 @@ ReflectorSession::~ReflectorSession()
         UInt32 refCount = fStreamArray[x]->GetRef()->GetRefCount();
         Bool16 unregisterNow = (refCount == 1) ? true : false;
         
-        //printf("ReflectorSession::~ReflectorSession stream index=%lu refcount=%lu\n",x,refCount);
+        //qtss_printf("ReflectorSession::~ReflectorSession stream index=%lu refcount=%lu\n",x,refCount);
         //decrement the ref count
         
         if (refCount > 0) // Refcount may be 0 if there was some error setting up the stream
@@ -137,7 +139,7 @@ ReflectorSession::~ReflectorSession()
         {   // Delete this stream if the refcount has dropped to 0
             if (unregisterNow)
                 sStreamMap->UnRegister(fStreamArray[x]->GetRef()); // Refcount may be 0 if there was some error setting up the stream
-            //printf("delete stream index=%lu refcount=%lu\n",x,refCount);
+            //qtss_printf("delete stream index=%lu refcount=%lu\n",x,refCount);
             delete fStreamArray[x];
             fStreamArray[x] = NULL;
         }   
@@ -198,7 +200,7 @@ QTSS_Error ReflectorSession::SetupReflectorSession(SourceInfo* inInfo, QTSS_Stan
             {
                 ReflectorStream* theRef = (ReflectorStream*)theStreamRef->GetObject();
                 UInt32 refCount = theRef->GetRef()->GetRefCount();
-                printf("stream has port stream index=%lu refcount=%lu\n",x,refCount);
+                qtss_printf("stream has port stream index=%lu refcount=%lu\n",x,refCount);
             }
             #endif
         }
@@ -218,9 +220,10 @@ QTSS_Error ReflectorSession::SetupReflectorSession(SourceInfo* inInfo, QTSS_Stan
                 return theError;
             }
             fStreamArray[x]->SetEnableBuffer(this->fHasBufferedStreams);// buffering is done by the stream's sender
+                
             // If the port was 0, update it to reflect what the actual RTP port is.
             fSourceInfo->GetStreamInfo(x)->fPort = fStreamArray[x]->GetStreamInfo()->fPort;
-            //printf("ReflectorSession::SetupReflectorSession fSourceInfo->GetStreamInfo(x)->fPort= %u\n",fSourceInfo->GetStreamInfo(x)->fPort);
+            //qtss_printf("ReflectorSession::SetupReflectorSession fSourceInfo->GetStreamInfo(x)->fPort= %u\n",fSourceInfo->GetStreamInfo(x)->fPort);
             
             ReflectorStream::GenerateSourceID(fSourceInfo->GetStreamInfo(x), &theStreamID[0]);
 
@@ -232,7 +235,7 @@ QTSS_Error ReflectorSession::SetupReflectorSession(SourceInfo* inInfo, QTSS_Stan
             Assert(debug == fStreamArray[x]->GetRef());
 
             //UInt32 refCount = fStreamArray[x]->GetRef()->GetRefCount();
-            //printf("stream index=%lu refcount=%lu\n",x,refCount);
+            //qtss_printf("stream index=%lu refcount=%lu\n",x,refCount);
         
         }
         else    
@@ -255,7 +258,7 @@ void ReflectorSession::AddBroadcasterClientSession(QTSS_StandardRTSP_Params* inP
     for (UInt32 x = 0; x < fSourceInfo->GetNumStreams(); x++)
     {
         if (fStreamArray[x] != NULL)
-        {   //printf("AddBroadcasterSession=%lu\n",inParams->inClientSession);
+        {   //qtss_printf("AddBroadcasterSession=%lu\n",inParams->inClientSession);
             ((ReflectorSocket*)fStreamArray[x]->GetSocketPair()->GetSocketA())->AddBroadcasterSession(inParams->inClientSession);
             ((ReflectorSocket*)fStreamArray[x]->GetSocketPair()->GetSocketB())->AddBroadcasterSession(inParams->inClientSession);
         }
@@ -323,7 +326,7 @@ void    ReflectorSession::AddOutput(ReflectorOutput* inOutput, Bool16 isClient)
             {
                 lastBucket = bucket; // Remember the last successful bucket placement.
                 if (isClient)
-                    fStreamArray[x]->IncEyeCount();     
+                    fStreamArray[x]->IncEyeCount();
             }
         }
         
@@ -332,12 +335,12 @@ void    ReflectorSession::AddOutput(ReflectorOutput* inOutput, Bool16 isClient)
             // If there was some kind of conflict adding this output to this bucket,
             // we need to remove it from the streams to which it was added.
             for (UInt32 y = 0; y < x; y++)
-            {    
+            {
                 fStreamArray[y]->RemoveOutput(inOutput);
                 if (isClient)
                     fStreamArray[y]->DecEyeCount();
             }
-                
+            
             // Because there was an error, we need to start the whole process over again,
             // this time starting from a higher bucket
             lastBucket = bucket = lastBucket + 1;
@@ -352,9 +355,10 @@ void    ReflectorSession::RemoveOutput(ReflectorOutput* inOutput, Bool16 isClien
 {
     (void)atomic_sub(&fNumOutputs, 1);
     for (UInt32 y = 0; y < fSourceInfo->GetNumStreams(); y++)
-    {    fStreamArray[y]->RemoveOutput(inOutput);
-         if (isClient)
-             fStreamArray[y]->DecEyeCount();  
+    {
+        fStreamArray[y]->RemoveOutput(inOutput);
+        if (isClient)
+            fStreamArray[y]->DecEyeCount();  
     }
 }
 

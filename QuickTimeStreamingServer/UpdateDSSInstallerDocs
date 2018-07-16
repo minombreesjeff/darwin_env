@@ -1,0 +1,7 @@
+echo "Updating dssPackageMetaData installer ReadMe.rtf from ./Documentation/ReadMe.rtf"
+cp ./Documentation/ReadMe.rtf ./dssPackageMetaData/dssPackageMetaData/DarwinStreamingServer.pkg/Contents/Resources/English.lproj/ReadMe.rtf
+cp ./Documentation/License.rtf ./dssPackageMetaData/dssPackageMetaData/DarwinStreamingServer.pkg/Contents/Resources/English.lproj/License.rtf
+
+echo "Updating pubPackageMetaData installer License.rtf from ./Documentation/License.rtf"
+cp ./Documentation/ReadMe.rtf ./pubPackageMetaData/pubPackageMetaData/DarwinStreamingServer.pkg/Contents/Resources/English.lproj/ReadMe.rtf
+cp ./Documentation/License.rtf ./pubPackageMetaData/pubPackageMetaData/DarwinStreamingServer.pkg/Contents/Resources/English.lproj/License.rtf

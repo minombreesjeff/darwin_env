@@ -24,7 +24,9 @@ all: libHTTPUtilitiesLib.a
 libHTTPUtilitiesLib.a: $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
 	ar -r libHTTPUtilitiesLib.a $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
 	ranlib libHTTPUtilitiesLib.a
-	
+
+install: libHTTPUtilitiesLib.a
+
 clean:
 	rm -f libHTTPUtilitiesLib.a $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
 

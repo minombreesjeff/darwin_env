@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -116,9 +117,8 @@ RelayOutput::RelayOutput(SourceInfo* inInfo, UInt32 inWhichOutput, RelaySession*
     fOutputSocket(NULL, Socket::kNonBlockingSocketType),
     fNumStreams(inRelaySession->GetSourceInfo()->GetNumStreams()),  // use the reflector session's source info
     fOutputInfo(*inInfo->GetOutputInfo(inWhichOutput)),
-    fQueueElem(this),
+    fQueueElem(),
     fFormatter(&fHTMLBuf[0], kMaxHTMLSize),
-
     fPacketsPerSecond(0),
     fBitsPerSecond(0),
     fLastUpdateTime(0),
@@ -135,6 +135,7 @@ RelayOutput::RelayOutput(SourceInfo* inInfo, UInt32 inWhichOutput, RelaySession*
     fRTSPOutputInfo(NULL)
 {
     Assert(fNumStreams > 0);
+    fQueueElem.SetEnclosingObject(this);
     fStreamCookieArray = NEW void*[fNumStreams];
     fTrackIDArray = NEW UInt32[fNumStreams];
     fOutputInfo.fPortArray = NEW UInt16[fNumStreams];//copy constructor doesn't do this
@@ -162,7 +163,7 @@ RelayOutput::RelayOutput(SourceInfo* inInfo, UInt32 inWhichOutput, RelaySession*
     else if (fOutputInfo.fBasePort != 0)
     {
         for (UInt32 y = 0; y < fNumStreams; y++)
-            fOutputInfo.fPortArray[y] = fOutputInfo.fBasePort + (y * 2);
+            fOutputInfo.fPortArray[y] = (UInt16) (fOutputInfo.fBasePort + (y * 2) );
     }
     
     OS_Error err = BindSocket();
@@ -354,7 +355,7 @@ Bool16  RelayOutput::Equal(SourceInfo* inInfo)
     return false;
 }
 
-QTSS_Error  RelayOutput::WritePacket(StrPtrLen* inPacket, void* inStreamCookie, UInt32 inFlags, SInt64 /*packetLatenessInMSec*/, SInt64* /*timeToSendThisPacketAgain*/, UInt64* /*packetID*/, SInt64* /*arrivalTimeMSec*/ )
+QTSS_Error  RelayOutput::WritePacket(StrPtrLen* inPacket, void* inStreamCookie, UInt32 inFlags, SInt64 /*packetLatenessInMSec*/, SInt64* /*timeToSendThisPacketAgain*/, UInt64* packetIDPtr, SInt64* /*arrivalTimeMSec*/ )
 {
 
     if (!fValid || fDoingAnnounce)
@@ -410,10 +411,9 @@ SInt64 RelayOutput::RelayAnnouncer::Run()
 { 
     OSMutexLocker locker(RelayOutput::GetQueueMutex());
     SInt64 result = -1;
-    
     if (fOutput != NULL)
         result = fOutput->RunAnnounce(); 
-    
+        
     return result;
 }
 
@@ -460,7 +460,7 @@ SInt64 RelayOutput::RunAnnounce()
     
     if (fAnnounceState == kSendingPlay)
     {
-        err = fClient->SendReceive(0);
+        err = fClient->SendPlay(0);
         if (err == OS_NoErr)
         {
             if (fClient->GetStatus() == 200)
@@ -492,7 +492,7 @@ SInt64 RelayOutput::RunAnnounce()
     }
     else if (err != OS_NoErr)
     {   
-        // We encountered some fatal error with the socket. Record this as a connection failure      
+        // We encountered some fatal error with the socket. Record this as a connection failure
         fValid = false;
         result = -1;    // let the task die
         fAnnounceTask = NULL;

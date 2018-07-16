@@ -69,6 +69,23 @@ case $PLAT in
 		MODULE_LIBS=
 		;;
 
+IRIX*.*)
+# IRIX with MipsPro compiler
+# Change all references of Makefile.POSIX below to Makefile.IRIX
+	echo "Configuring for the "$OSNAME" "$HARDWARENAME" SGI platform"
+		CPLUS=CC
+		CCOMP=cc
+		LINKER="CC"
+# GNU make is required. Obtain from freeware.sgi.com
+		MAKE=/usr/freeware/bin/gmake
+# defines from PlatformHeader.h defined here as MipsPro does not support -include pre-processor directive		
+		COMPILER_FLAGS="-D__sgi__ -DMipsPro -D_SGI_REENTRANT_FUNCTIONS -DASSERT -D__PTHREADS__ -D__PTHREADS_MUTEXES__ -DBIGENDIAN -DUSE_THREAD -DEXPORT -D_REENTRANT"
+		INCLUDE_FLAG=
+		CORE_LINK_LIBS="-ldl -lm -lcrypt"
+		SHARED=-shared
+		MODULE_LIBS=
+		;;
+
 	*)
 		echo "I don't know your platform. I'll assume this is a Linux x86 platform."
 		echo "Please edit the BuildServer script & PlatformHeader.h to add your platform."

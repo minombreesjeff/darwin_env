@@ -1,27 +1,28 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_mdhd.h,v 1.4.18.1 2002/11/27 10:14:02 murata Exp $
+// $Id: QTAtom_mdhd.h,v 1.9 2003/08/15 23:53:14 sbasu Exp $
 //
 // QTAtom_mdhd:
 //   The 'mdhd' QTAtom class.
@@ -43,40 +44,41 @@
 class QTAtom_mdhd : public QTAtom {
 
 public:
-	//
-	// Constructors and destructor.
-						QTAtom_mdhd(QTFile * File, QTFile::AtomTOCEntry * Atom,
-							   Bool16 Debug = false, Bool16 DeepDebug = false);
-	virtual				~QTAtom_mdhd(void);
+    //
+    // Constructors and destructor.
+                        QTAtom_mdhd(QTFile * File, QTFile::AtomTOCEntry * Atom,
+                               Bool16 Debug = false, Bool16 DeepDebug = false);
+    virtual             ~QTAtom_mdhd(void);
 
 
-	//
-	// Initialization functions.
-	virtual	Bool16		Initialize(void);
+    //
+    // Initialization functions.
+    virtual Bool16      Initialize(void);
 
-	//
-	// Accessors.
-	inline	Float64		GetTimeScale(void) { return (Float64)fTimeScale; }
-	inline	Float64		GetTimeScaleRecip(void) { return fTimeScaleRecip; }
+    //
+    // Accessors.
+    inline  Float64     GetTimeScale(void) { return (Float64)fTimeScale; }
+    inline  Float64     GetTimeScaleRecip(void) { return fTimeScaleRecip; }
 
+    inline  UInt64      GetDuration(void) { return fDuration; }
 
-	//
-	// Debugging functions.
-	virtual	void		DumpAtom(void);
+    //
+    // Debugging functions.
+    virtual void        DumpAtom(void);
 
 
 protected:
-	//
-	// Protected member variables.
-	UInt8		fVersion;
-	UInt32		fFlags; // 24 bits in the low 3 bytes
-	UInt64		fCreationTime, fModificationTime;
-	UInt32		fTimeScale;
+    //
+    // Protected member variables.
+    UInt8       fVersion;
+    UInt32      fFlags; // 24 bits in the low 3 bytes
+    UInt64      fCreationTime, fModificationTime;
+    UInt32      fTimeScale;
     UInt64      fDuration;
-	UInt16		fLanguage;
-	UInt16		fQuality;
-	
-	Float64		fTimeScaleRecip;
+    UInt16      fLanguage;
+    UInt16      fQuality;
+    
+    Float64     fTimeScaleRecip;
 };
 
 #endif // QTAtom_mdhd_H

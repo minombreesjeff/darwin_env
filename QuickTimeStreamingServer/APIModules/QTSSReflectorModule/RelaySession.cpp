@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -119,8 +120,8 @@ void RelaySession::Register()
     //strEnd = strchr(kVersionString, ' ');
     //Assert(strEnd != NULL);
 #ifndef __Win32__
-    //snprintf(sRelayUserAgent, ::strlen(relayStr) + (strEnd - kVersionString) + 1, "%s/%s", relayStr, kVersionString);
-    snprintf(sRelayUserAgent, ::strlen(relayStr) + ::strlen(kVersionString) + 1, "%s%s", relayStr, kVersionString);
+    //qtss_snprintf(sRelayUserAgent, ::strlen(relayStr) + (strEnd - kVersionString) + 1, "%s/%s", relayStr, kVersionString);
+    qtss_snprintf(sRelayUserAgent, ::strlen(relayStr) + ::strlen(kVersionString) + 1, "%s%s", relayStr, kVersionString);
 #else
     //_snprintf(sRelayUserAgent, ::strlen(relayStr) + (strEnd - kVersionString) + 1, "%s/%s", relayStr, kVersionString);
     _snprintf(sRelayUserAgent, ::strlen(relayStr) + ::strlen(kVersionString) + 1, "%s%s", relayStr, kVersionString);
@@ -214,7 +215,7 @@ QTSS_Error RelaySession::SetupRelaySession(SourceInfo* inInfo)
         RTSPSourceInfo* rtspInfo = (RTSPSourceInfo*)inInfo;
         if (!rtspInfo->IsAnnounce())
         {
-            UInt16 rtspPort = rtspInfo->GetHostPort();
+            UInt16 rtspPort = (UInt16) rtspInfo->GetHostPort();
             char* username = rtspInfo->GetUsername();
             char* password = rtspInfo->GetPassword();
             theErr = QTSS_SetValue (fRelaySessionObject, sSourceRTSPPort, 0, &rtspPort, sizeof(rtspPort));  // source rtsp port

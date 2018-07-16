@@ -1,23 +1,24 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
@@ -67,9 +68,8 @@ class RTPSessionOutput;
 class ReflectorPacket
 {
     public:
-
     
-        ReflectorPacket() : fQueueElem(this) { this->Reset();}
+        ReflectorPacket() : fQueueElem() { fQueueElem.SetEnclosingObject(this); this->Reset();}
         void Reset()    { // make packet ready to reuse fQueueElem is always in use
                             fBucketsSeenThisPacket = 0; 
                             fTimeArrived = 0; 
@@ -258,7 +258,7 @@ class ReflectorSender : public UDPDemuxerTask
     //This function gets data from the multicast source and reflects.
     //Returns the time at which it next needs to be invoked
     void        ReflectPackets(SInt64* ioWakeupTime, OSQueue* inFreeQueue);
-    
+
     //this is the old way of doing reflect packets. It is only here until the relay code can be cleaned up.
     void        ReflectRelayPackets(SInt64* ioWakeupTime, OSQueue* inFreeQueue);
     
@@ -275,8 +275,8 @@ class ReflectorSender : public UDPDemuxerTask
     
     OSQueue         fPacketQueue;
     OSQueueElem*    fFirstNewPacketInQueue;
-	OSQueueElem*	fFirstPacketInQueueForNewOutput;
-	
+    OSQueueElem*    fFirstPacketInQueueForNewOutput;
+    
     //these serve as an optimization, keeping track of when this
     //sender needs to run so it doesn't run unnecessarily
     Bool16      fHasNewPackets;
@@ -375,15 +375,16 @@ class ReflectorStream
         UInt32                  GetBufferDelay()                        { return ReflectorStream::sOverBufferInMsec; }
         UInt32                  GetTimeScale()                          { return fStreamInfo.fTimeScale; }
         UInt64                  fPacketCount;
-        
+
         void                    SetEnableBuffer(Bool16 enableBuffer)    { fEnableBuffer = enableBuffer; }
         Bool16                  BufferEnabled()                         { return fEnableBuffer; }
 inline  void                    UpdateBitRate(SInt64 currentTime);
         static UInt32           sOverBufferInMsec;
+        
         void                    IncEyeCount()                           { OSMutexLocker locker(&fBucketMutex); fEyeCount ++; }
         void                    DecEyeCount()                           { OSMutexLocker locker(&fBucketMutex); fEyeCount --; }
         UInt32                  GetEyeCount()                           { OSMutexLocker locker(&fBucketMutex); return fEyeCount; }
-       
+
     private:
     
         //Sends an RTCP receiver report to the broadcast source
@@ -449,7 +450,6 @@ inline  void                    UpdateBitRate(SInt64 currentTime);
         Bool16              fHasFirstRTPPacket;
         
         Bool16              fEnableBuffer;
-        
         UInt32              fEyeCount;
         
         static UInt32       sBucketSize;

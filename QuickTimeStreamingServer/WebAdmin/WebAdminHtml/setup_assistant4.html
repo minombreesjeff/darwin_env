@@ -10,9 +10,17 @@
 		.header { font-size: 18px; color:#666699 }
 		input { font-size: 12px }
 	</style> 
+	<script type="text/javascript" language=javascript>
+		
+		function onLoadScript() {
+			document.forms[0].elements['assistMovieFolder'].focus();
+			document.forms[0].elements['assistMovieFolder'].select();
+		}
+	
+	</script>
 	<title><qtssstring name="SetupAssistTitle"/></title>
 </head>
-<body bgcolor="#FFFFFF" background="images/stripes_gray.gif">
+<body bgcolor="#FFFFFF" background="images/stripes_gray.gif" onload="onLoadScript()">
 <qtssobject type=form param="_self">
 	<input type=hidden name=filename value="setup_assistant5.html">
 	<qtssobject type=hidden name="assistMP3Pass"/>
@@ -45,7 +53,7 @@
 										<table border=0 cellspacing=4 cellpadding=0>
 											<tr>
 												<td align=left><qtssstring name="SetupAssistMediaFolder"/>
-													<input type=text name="assistMovieFolder" size=36 value="<qtssobject name=qtssMovieFolder/>">
+													<input type=text name="assistMovieFolder" size=48 value="<qtssobject name=qtssMovieFolder/>">
 												</td>
 											</tr>
 										</table>

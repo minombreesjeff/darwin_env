@@ -38,6 +38,7 @@
 	"dialogText" => '=$dialogText',
 	"confirmMessage" => '=$confirmMessage',
 	"nextFilename" => '="<input type=hidden name=filename value=\"$nextFilename\">"',
+	"replaceFilename" => '=$query->{"replaceFilename"}',
 	"qtssErrorLogging" => '/modules/admin/server/qtssSvrPreferences/error_logging',
 	"qtssRequestLogging" => '/modules/admin/server/qtssSvrModuleObjects/QTSSAccessLogModule/qtssModPrefs/request_logging',
 	"qtssErrorLogInterval" => '/modules/admin/server/qtssSvrPreferences/error_logfile_interval',
@@ -47,6 +48,7 @@
 	"qtssMP3BroadcastPassword" => '/modules/admin/server/qtssSvrModuleObjects/QTSSMP3StreamingModule/qtssModPrefs/mp3_broadcast_password',
 	"qtssErrorLog" => '=parseErrorLog()',
 	"qtssIsStreamingOn80" => '=isStreamingOnPort80()',
+	"getNotBoundPort80Msg" => '=getNotBoundPort80Msg()',
 	"qtssLogDir" => '/modules/admin/server/qtssSvrModuleObjects/QTSSAccessLogModule/qtssModPrefs/request_logfile_dir',
 	"qtssLogFilename" => '/modules/admin/server/qtssSvrModuleObjects/QTSSAccessLogModule/qtssModPrefs/request_logfile_name',
 	"qtssCurPlaylistName" => '=$curplaylist',
@@ -59,6 +61,7 @@
 	"plbroadcastip" => '=if ($plexternal eq "1") {$plbroadcastip} else {""}',
 	"plbroadcastusername" => '=$plbroadcastusername',
 	"plbroadcastpassword" => '=$plbroadcastpassword',
+	"plbroadcastpasswordisset" => '=BroadcastPasswordIsSet()',
 	"playlistUsernameHTML" => '=$playlistUsernameHTML',
 	"currentRelay" => '=useDefaultIfBlank($query->{"currentRelay"}, $currentRelay)',
 	"defaultRelayStatus" => '=getDefaultRelayStatus()',
@@ -90,6 +93,7 @@
 	"extraFieldHTML" => '=$extraFieldHTML',
 	"iteration" => '=($iteration + 1)',
 	"currentdir" => '=fixPath($currentDir)',
+	"submitcurrentdir" => '=$query->{"submitcurrentdir"}',
 	"filename" => '=$filename',
 	"assistMP3Pass" => '=$query->{"assistMP3Pass"}',
 	"assistSSL" => '=$query->{"assistSSL"}',
@@ -105,6 +109,11 @@
 	"qtssAdminUsername", => '=GetCurrentAdminUsername()',
 	"qtssBroadcastUsername", => '=GetCurrentBroadcastUsername()',
 	"qtbStatus" => '=&broadcasterlib::CurrentState($broadcasterConn, $messageHash)',
+	"qtssCurMovieName" => '=$moviename',
+	"qtssCurMoviePath" => '=$curpath',
+	"qtssDefaultStreamingPort" => '=getDefaultStreamingPort()',
+	"qtssBroadcastRestrictionType" => '=$broadcastRestrictionType',
+	"qtssViewingRestrictionType" => '=$viewingRestrictionType',
 	"qtbRecording" => '=&broadcasterlib::IsRecording($broadcasterConn)',
 	"qtbRecordingPath" => '=&broadcasterlib::GetRecordingPath($broadcasterConn)',
 	"qtbStartStopButtonText" => '=&broadcasterlib::StartStopButtonText($broadcasterConn, $messageHash)',
@@ -445,6 +454,9 @@ sub getRepeaterArray {
 		if ($chdelim eq '\\') {
 			$chdelim = '\\\\';
 		}
+		# remove the trailing slash from the movies dir
+		$movieDir =~ s/$chdelim$//;
+		$currentDir =~ s/$chdelim$//;
 		my $currentdirfull = useDefaultIfBlank($currentDir, $movieDir);
 		while ($currentdirfull =~ m/(.*)$chdelim(.*)/s) {
 			push(@dirname, $2);
@@ -544,7 +556,8 @@ sub getRepeaterArray {
 		if (!(/request_logfile_name="([^"]+)"/)) {
 			die 'Error getting filename.';
 		}
-		$dirname .= '/' . $1 . '.log';
+    	my $filedelim = &playlistlib::GetFileDelimChar();
+		$dirname .= $filedelim . $1 . '.log';
 		open(LOGFILE, $dirname) or return "Can't open log file '$dirname'!";
 		while ($line = <LOGFILE>) {
             $line =~ s/</&lt;/g;
@@ -661,18 +674,6 @@ sub getRepeaterArray {
 		push(@returnedKeys, ('relayDestHostname','relayDestMountPoint','relayDestType','relayDestUsername','relayDestPassword','relayDestPort','relayDestTTL'));
 		return $relayDestCount;
 	}
-	elsif ($arrayName eq 'extragensettings') {
-		@qtssExtraGenSettings = ();
-		@qtssExtraGenLabels = ();
-		@qtssExtraGenDescs = ();
-		push(@returnedKeys, ('qtssExtraGenSettings','qtssExtraGenLabels','qtssExtraGenDescs'));
-		if($^O eq "darwin") {
-			push(@qtssExtraGenSettings, parseForAutostart());
-			push(@qtssExtraGenLabels, $messages{'GenSetOSXAutoStart'});
-			push(@qtssExtraGenDescs, $messages{'Enabled'});
-		}
-		return scalar(@qtssExtraGenSettings);
-	}
 	elsif ($arrayName eq 'queryparams') {
 		@passthrough = ();
 		my %queryHash = %$query;
@@ -684,6 +685,35 @@ sub getRepeaterArray {
 			}
 		}
 		return scalar(@passthrough);
+	}
+	elsif ($arrayName eq 'usergrouplist') {
+		push(@returnedKeys, 'qtssUsernames', 'qtssUserImages', 'qtssUserTypes');
+		@qtssUsernames = ();
+		@qtssUserImages = ();
+		@qtssUserTypes = ();
+		my $usersFilePath = '';
+		my $groupsFilePath = '';
+		my $adminGroup = '';
+		my $status = adminprotolib::EchoData($usersFilePath, $messHash, $authheader, $qtssip, $qtssport, '/modules/admin/server/qtssSvrModuleObjects/QTSSAccessModule/qtssModPrefs/modAccess_usersfilepath', 'modAccess_usersfilepath');
+		$status = adminprotolib::EchoData($groupsFilePath, $messHash, $authheader, $qtssip, $qtssport, '/modules/admin/server/qtssSvrModuleObjects/QTSSAccessModule/qtssModPrefs/modAccess_groupsfilepath', 'modAccess_groupsfilepath');
+		$status = adminprotolib::EchoData($adminGroup, $messHash, $authheader, $qtssip, $qtssport, '/modules/admin/server/qtssSvrModuleObjects/QTSSAdminModule/qtssModPrefs/AdministratorGroup', 'AdministratorGroup');
+		my $userArrayRef = &passwordutils::GetUserList($usersFilePath, $groupsFilePath);
+		my @userArray = @$userArrayRef;
+		my $key = '';
+		foreach $key (@userArray) {
+			my @splitKey = split(/:/, $key);
+			my $userType = $splitKey[0];
+			my $userName = $splitKey[1];
+			if (($userType eq 'group') && ($userName eq $adminGroup)) {
+				push(@qtssUsernames, $messages{'UsersAdministratorGroup'});
+			}
+			else {
+				push(@qtssUsernames, $userName);
+			}
+			push(@qtssUserImages, "icon_$userType.gif");
+			push(@qtssUserTypes, $messages{"UsersType$userType"});
+		}
+		return scalar(@qtssUsernames);
 	}
 	elsif ($arrayName eq 'audiopresets') {
 		push(@returnedKeys, 'qtbAudioPresetNames');
@@ -838,6 +868,32 @@ sub isStreamingOnPort80 {
 	}
 }
 
+sub getNotBoundPort80Msg {
+	my $messHash = adminprotolib::GetMessageHash();	
+	my %messages = %$messHash;
+	my $status = adminprotolib::GetData($responseText, $messHash, $authheader, $qtssip, $qtssport, '/modules/admin/server/qtssSvrRTSPPorts/*');
+	if ($responseText =~ /[0-9]="80"/) {
+		return "";
+	}
+	else {
+		if (isStreamingOnPort80() eq 'true') {
+			return $messages{'PortServerNotBound80Message'};
+		}
+		else {
+			return "";
+		}
+	}
+}
+
+sub getDefaultStreamingPort {
+	if (isStreamingOnPort80() eq 'true') {
+		return '80';
+	}
+	else {
+		return '554';
+	}
+}
+
 sub getDefaultRelayStatus {
 	my $messHash = adminprotolib::GetMessageHash();
 	my %messages = %$messHash;
@@ -909,6 +965,20 @@ sub GetHelpURL
 	else {
 		return 'http://helpqt.apple.com/dssWebAdminHelpR4/dssWebAdmin.help/DSSHelp.htm';
 	}
+}
+
+# BroadcastPasswordIsSet()
+# Returns 0 if the MP3 braodcast password is blank, or 1 if it isn't.
+sub BroadcastPasswordIsSet
+{
+	my $messHash = adminprotolib::GetMessageHash();
+	my %messages = %$messHash;
+	my $mp3BroadcastPassword = '';
+	$status = adminprotolib::EchoData($mp3BroadcastPassword, $messHash, $authheader, $qtssip, $qtssport, "/modules/admin/server/qtssSvrModuleObjects/QTSSMP3StreamingModule/qtssModPrefs/mp3_broadcast_password", "/modules/admin/server/qtssSvrModuleObjects/QTSSMP3StreamingModule/qtssModPrefs/mp3_broadcast_password");
+	if (($mp3BroadcastPassword eq '') or ($mp3BroadcastPassword eq ' ')) {
+		return 0;
+	}
+	return 1;
 }
 
 # MacQTGroupsContainsAdminGroup()
@@ -1021,6 +1091,21 @@ sub ConnectToBroadcaster {
 		}
 	}
 	return 1;
+}
+
+# FixFileGroup(theFile)
+# On Mac OS X, attempt to switch the group of the file to admin.
+sub FixFileGroup {
+	if ($^O eq 'darwin') {
+		my $filename = $_[0];
+		my $gid;
+		
+		if ((-e $filename) && ($gid = getgrnam('admin'))) {
+			my @fileStats = stat($filename);
+			my $uid = $fileStats[4];
+			chown $uid, $gid, $filename;
+		}
+	}
 }
 
 1; # return true

@@ -60,7 +60,7 @@ sub runFormatter {
 			my @tm = localtime($timeval/1000);
 			my $lang = $ENV{"LANGUAGE"};
 			if($lang eq "de") {
-				$_[0] .= sprintf "%s, %d %s %d %2.2d:%2.2d:%2.2d",
+				$_[0] .= sprintf "%s %d %s %d %2.2d:%2.2d:%2.2d",
 						$messages{$weekdayStr[$tm[6]]}, $tm[3], $messages{$monthStr[$tm[4]]}, $tm[5]+1900,
 						$tm[2], $tm[1], $tm[0];		
 			}
@@ -292,3 +292,5 @@ sub urlEncode {
   return $tmp2;
 }
 
+# solaris expects a return value
+1;

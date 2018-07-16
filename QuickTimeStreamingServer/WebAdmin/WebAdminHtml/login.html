@@ -13,7 +13,10 @@
 		//<script language=javascript>
 	
 		function onLoadScript() {
-			document.forms[0].elements['qtssusername'].focus();
+			if ((document.forms[0]) && (document.forms[0].elements) && (document.forms[0].elements['qtssusername'])) {
+				document.forms[0].elements['qtssusername'].focus();
+				document.forms[0].elements['filename'].value = document.forms[0].elements['treatedFilename'].value;
+			}
 		}
 		
 		if (parent.frames.length > 0) {
@@ -25,7 +28,7 @@
 <body bgcolor="#FFFFFF" background="images/stripes_gray.gif" onload="onLoadScript()"><qtssobject type=form param="_top">
 <input type="hidden" name="action" value="login">
 <qtssobject name=filename type=hidden/>
-<qtssobject name=startserver type=hidden/>
+<qtssobject name=treatedFilename type=hidden/>
 <table border="0" width="100%" height="90%" cellspacing="0" cellpadding="0">
 	<tr>
 		<td align="center" valign="middle"><table border=0 cellspacing=0 cellpadding=0>

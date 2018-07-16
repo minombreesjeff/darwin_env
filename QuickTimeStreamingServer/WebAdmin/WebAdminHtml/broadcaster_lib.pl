@@ -657,7 +657,23 @@ sub SetBroadcastNetworkType
 	SetNetworkSetting("overTCP", NSNumber->numberWithBool_($type));
 }
 
-# StartStopBroadcast(connection, messageHash)
+# WriteRefMovie(defaultDNSName)
+# Writes out the ref movie for the broadcast.
+sub WriteRefMovie
+{
+	my $defaultDNSName = $_[0];
+	my $serverRoot = NSString->stringWithUTF8String_($ENV{"SERVER_ROOT"});
+	my $refMovieFilename = NSString->stringWithUTF8String_("view_broadcast.mov");
+	
+	$refMovieFilename = $serverRoot->stringByAppendingPathComponent_($refMovieFilename);
+	
+	my $networkFilepath = GetNetworkFilepath();
+	my $refMovieText = NSString->stringWithUTF8String_("rtsptext\rrtsp://$defaultDNSName/$networkFilepath");
+	
+	$refMovieText->writeToFile_atomically_($refMovieFilename, 1);
+}
+
+# StartStopBroadcast(connection)
 # Toggles the broadcast state, and returns a message.
 sub StartStopBroadcast
 {

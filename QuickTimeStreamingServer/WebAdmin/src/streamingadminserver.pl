@@ -1,36 +1,30 @@
 #!/usr/bin/perl
+# 
+# @APPLE_LICENSE_HEADER_START@
+#
+# Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+#
+# This file contains Original Code and/or Modifications of Original Code
+# as defined in and that are subject to the Apple Public Source License
+# Version 2.0 (the 'License'). You may not use this file except in
+# compliance with the License. Please obtain a copy of the License at
+# http://www.opensource.apple.com/apsl/ and read it before using this
+# file.
+#
+# The Original Code and all software distributed under the License are
+# distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
+# EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
+# INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+# Please see the License for the specific language governing rights and
+# limitations under the License.
+#
+# @APPLE_LICENSE_HEADER_END@
+#
+# Require needed libraries
+#
 # A very simple perl web server used by Streaming Admin Server
-#----------------------------------------------------------
-# Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved.
-# ---------------------------------------------------------
-# Copyright (c) Jamie Cameron
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-# 1. Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-# 2. Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of the developer nor the names of contributors
-#    may be used to endorse or promote products derived from this software
-#    without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE DEVELOPER ``AS IS'' AND
-# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED.  IN NO EVENT SHALL THE DEVELOPER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
-# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
-# SUCH DAMAGE.
-# ---------------------------------------------------------
-
+ 
 # Require needed libraries
 package streamingadminserver;
 use Socket;
@@ -146,7 +140,7 @@ if($^O eq "darwin") {
 	  "sslport", 1240,
 	  "root", "/Library/QuickTimeStreaming/AdminHtml",
       "plroot", "/Library/QuickTimeStreaming/Playlists/",
-	  "server", "QTSS 3.0 Admin Server/1.0",
+	  "server", "QTSS 4.1 Admin Server/1.0",
 	  "index_docs", "index.html parse_xml.cgi index.htm index.cgi",
 	  "addtype_html", "text/html",
 	  "addtype_htm", "text/html",
@@ -155,11 +149,13 @@ if($^O eq "darwin") {
 	  "addtype_jpg", "image/jpeg",
 	  "addtype_jpeg", "image/jpeg",
 	  "addtype_cgi", "internal/cgi",
+	  "addtype_mov", "video/quicktime",
+	  "addtype_js", "application/x-javascript",
 	  "realm", "QTSS Admin Server",
 	  "qtssIPAddress", "localhost",
 	  "qtssPort", "554",
 	  "qtssName", "/usr/sbin/QuickTimeStreamingServer",
-	  "qtssAutoStart", "1",
+	  "qtssAutoStart", "0",
 	  "logfile", "/Library/QuickTimeStreaming/Logs/streamingadminserver.log",
 	  "log", "1",
 	  "logclear", "0",
@@ -173,10 +169,14 @@ if($^O eq "darwin") {
 	  "qtssQTPasswd", "/usr/bin/qtpasswd",
 	  "qtssPlaylistBroadcaster", "/usr/bin/PlaylistBroadcaster",
 	  "qtssMP3Broadcaster", "/usr/bin/MP3Broadcaster",
+	  "tempfileloc", "/tmp",
 	  "helpurl", "http://helpqt.apple.com/qtssWebAdminHelpR2/qtssWebAdmin.help/English.lproj/index.html",
 	  "qtssAdmin", "streamingadmin", 
 	  "cacheMessageFiles", "0",
-	  #"pidfile", "/Library/QuickTimeStreaming/Config/streamingadminserver.pid"
+	  "pidfile", "/var/run/streamingadminserver.pid",
+	  "runUser", "qtss",
+	  "runGroup", "qtss",
+	  "cookieExpireSeconds", "600"
 	  );
 }
 elsif($^O eq "MSWin32") {
@@ -184,7 +184,7 @@ elsif($^O eq "MSWin32") {
 	  "sslport", 1240,
 	  "root", "C:/Program Files/Darwin Streaming Server/AdminHtml",
 	  "plroot", "C:\\Program Files\\Darwin Streaming Server\\Playlists\\",
-	  "server", "QTSS 3.0 Admin Server/1.0",
+	  "server", "QTSS 4.1 Admin Server/1.0",
 	  "index_docs", "index.html parse_xml.cgi index.htm index.cgi",
 	  "addtype_html", "text/html",
       "addtype_htm", "text/html",
@@ -193,6 +193,8 @@ elsif($^O eq "MSWin32") {
 	  "addtype_jpg", "image/jpeg",
 	  "addtype_jpeg", "image/jpeg",
 	  "addtype_cgi", "internal/cgi",
+	  "addtype_mov", "video/quicktime",
+	  "addtype_js", "application/x-javascript",
 	  "realm", "QTSS Admin Server",
 	  "qtssIPAddress", "localhost",
 	  "qtssPort", "554",
@@ -222,7 +224,7 @@ else {
 	  "sslport", 1240,
 	  "root", "/var/streaming/AdminHtml",
       "plroot", "/var/streaming/playlists/",
-	  "server", "DSS 3.0 Admin Server/1.0",
+	  "server", "DSS 4.1 Admin Server/1.0",
 	  "index_docs", "index.html parse_xml.cgi index.htm index.cgi",
 	  "addtype_html", "text/html",
       "addtype_htm", "text/html",
@@ -231,6 +233,8 @@ else {
 	  "addtype_jpg", "image/jpeg",
 	  "addtype_jpeg", "image/jpeg",
 	  "addtype_cgi", "internal/cgi",
+	  "addtype_mov", "video/quicktime",
+	  "addtype_js", "application/x-javascript",
 	  "realm", "DSS Admin Server",
 	  "qtssIPAddress", "localhost",
 	  "qtssPort", "554",
@@ -250,9 +254,13 @@ else {
 	  "qtssPlaylistBroadcaster", "/usr/local/bin/PlaylistBroadcaster",
 	  "qtssMP3Broadcaster", "/usr/local/bin/MP3Broadcaster",
 	  "helpurl", "http://helpqt.apple.com/dssWebAdminHelpR3/dssWebAdmin.help/DSSHelp.htm",
+	  "tempfileloc", "/tmp",
 	  "qtssAdmin", "streamingadmin",
 	  "cacheMessageFiles", "0",
-	  #"pidfile", "/var/streaming/streamingadminserver.pid"
+	  "pidfile", "/var/run/streamingadminserver.pid",
+	  "runUser", "qtss",
+	  "runGroup", "qtss",
+	  "cookieExpireSeconds", "600"
 	  );
 }
 
@@ -373,6 +381,32 @@ if ($config{'log'}) {
 %messages = ();
 # load immediately
 &LoadMessageHashes();
+
+# find the user IDs and group IDs
+# if they aren't found, bail
+if ($^O ne "MSWin32")
+{
+    $runGroup = $config{"runGroup"};
+    
+    if (defined($runGroup) && ($runGroup ne ""))
+    {
+        if (!($gid = getgrnam($runGroup)))
+		{
+            print "Cannot switch to group $runGroup\n";
+            exit;
+		}
+    }    
+
+    $runUser = $config{"runUser"};
+    if (defined($runUser) && ($runUser ne ""))
+    {
+        if (!($uid = getpwnam($runUser)))
+		{
+            print "Cannot switch to user $runUser\n";
+            exit;
+		}
+    }  
+}
 
 if($config{'qtssAutoStart'} == 1) {
 # check if the streaming server is running by trying to connect
@@ -562,6 +596,15 @@ if ($ssl_available)
 									. "SSL Port $config{port} is in use by another process.\n"
 									. "The Streaming Admin Server may already be running.\n";  
 
+	# if sslport = 0, then get the port we actually bound to
+	# so that we can redirect to the right port later
+	if ($sslport == 0)
+	{
+		$sslsockaddr = getsockname(SSLMAIN);
+		($sslport, $ssladdr) = unpack_sockaddr_in($sslsockaddr);
+
+	}
+	
 	listen(SSLMAIN, SOMAXCONN) || die "Failed to listen on socket for Streaming Admin Server: $!\n";
 }
 
@@ -584,6 +627,22 @@ if (($^O ne "MSWin32") && ($write_pid == 1))  {
     open(PIDFILE, "> $config{'pidfile'}");
     printf PIDFILE "%d\n", getpid();
     close(PIDFILE);
+}
+
+# Switch to specfied user and/or group in the config
+if ($^O ne "MSWin32")
+{   
+    if (defined($runGroup) && ($runGroup ne ""))
+    {
+		$) = $gid;
+		$( = $gid;
+    }    
+
+    if (defined($runUser) && ($runUser ne ""))
+    {
+		$> = $uid;
+		$< = $uid;
+    }  
 }
 
 # Start the log-clearing process, if needed. This checks every minute
@@ -1041,6 +1100,26 @@ sub handle_request
     # replace %XX sequences in page
     $page =~ s/%(..)/pack("c",hex($1))/ge;
   
+	# delete multiple dots
+	while ($page =~ m/\.{2,}/) {
+		$page =~ s/\.{2,}/\./;
+	}
+	
+	# must have a MIME type
+	if ($page =~ /\.(.+)$/) {
+		if ($mime{$1} eq '') {
+			$page = '/';
+		}
+	}
+	else {
+		$page = '/';
+	}
+	
+	# prevent DOS device names
+	if (!($page =~ m/\./)) {
+		$page = '/';
+	}
+  
     # check address against access list
     if (@deny && &ip_match($acptip, @deny) ||
 		@allow && !&ip_match($acptip, @allow)) {
@@ -1310,12 +1389,14 @@ sub handle_request
 		$ENV{"QTSSADMINSERVER_QTSSMP3BROADCASTER"} = $config{"qtssMP3Broadcaster"};
 		$ENV{"QTSSADMINSERVER_QTSSADMIN"} = $config{"qtssAdmin"};
 		$ENV{"QTSSADMINSERVER_HELPURL"} = $config{"helpurl"};
+		$ENV{"QTSSADMINSERVER_TEMPFILELOC"} = $config{"tempfileloc"};
 		$ENV{"QTSSADMINSERVER_EN_MESSAGEHASH"} = $messages{"en"};
 		$ENV{"QTSSADMINSERVER_DE_MESSAGEHASH"} = $messages{"de"};
 		$ENV{"QTSSADMINSERVER_JA_MESSAGEHASH"} = $messages{"ja"};
 		$ENV{"QTSSADMINSERVER_FR_MESSAGEHASH"} = $messages{"fr"};
 		$ENV{"GENREFILE"} = 'genres';
 		$ENV{"COOKIES"} = $header{'cookie'};
+		$ENV{"COOKIE_EXPIRE_SECONDS"} = $config{"cookieExpireSeconds"};
 		$ENV{"LANGDIR"} = $langDir;
 		$ENV{"LANGUAGE"} = $language;
 		$ENV{"SSL_AVAIL"} = $ssl_available;
@@ -1325,6 +1406,9 @@ sub handle_request
 		}
 		if (defined($header{"content-type"})) {
 	    	$ENV{"CONTENT_TYPE"} = $header{"content-type"};
+		}
+		if (defined($header{"user-agent"})) {
+			$ENV{"USER_AGENT"} = $header{"user-agent"};
 		}
 		foreach $h (keys %header) {
 		    ($hname = $h) =~ tr/a-z/A-Z/;
@@ -1517,6 +1601,12 @@ sub handle_request
 		}
     }
     else {
+    	# if MIME type is text/plain, make sure the file ends in .txt
+    	# prevents source code revelation on Windows
+    	if ((&get_type($full) eq 'text/plain') && (!(full =~ m/\.txt$/))) {
+    		&http_error(404, 'Failed to open file');
+    	}
+    
 		# A file to output
 		local @st = stat($full);
 		open(FILE, $full) || &http_error(404, "Failed to open file");
@@ -2039,9 +2129,9 @@ sub LoadMessageHashes {
 	# moved so separate sub so that message file can be reloaded later
 	%messagesfile = ();
 	$messagesfile{"en"} = $config{'root'} . "/html_en/" . $config{'messagesfile'}; 
-	$messagesfile{"de"} = $config{'root'} . "/html_de/" . $config{'messagesfile'}; 
-	$messagesfile{"fr"} = $config{'root'} . "/html_fr/" . $config{'messagesfile'}; 
-	$messagesfile{"ja"} = $config{'root'} . "/html_ja/" . $config{'messagesfile'}; 
+	$messagesfile{"de"} = $config{'root'} . "/html_en/" . $config{'messagesfile'}; 
+	$messagesfile{"fr"} = $config{'root'} . "/html_en/" . $config{'messagesfile'}; 
+	$messagesfile{"jp"} = $config{'root'} . "/html_en/" . $config{'messagesfile'}; 
 	
 	%messages = ();
 	for $lang (keys %messagesfile) {

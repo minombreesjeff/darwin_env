@@ -9,7 +9,7 @@ LINK = $(LINKER)
 CCFLAGS += $(COMPILER_FLAGS) $(INCLUDE_FLAG) ../PlatformHeader.h -g -Wall
 
 # OPTIMIZATION
-CCFLAGS += -O3
+CCFLAGS += -O2
 
 # EACH DIRECTORY WITH HEADERS MUST BE APPENDED IN THIS MANNER TO THE CCFLAGS
 
@@ -54,14 +54,17 @@ CPPFILES =	atomic.cpp\
 			ev.cpp \
 			UserAgentParser.cpp \
 			QueryParamList.cpp \
-			md5digest.cpp 
+			md5digest.cpp \
+			SDPUtils.cpp
 
 all: libCommonUtilitiesLib.a
 
 libCommonUtilitiesLib.a: $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
 	ar -r libCommonUtilitiesLib.a $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
 	ranlib libCommonUtilitiesLib.a
-	
+
+install: libCommonUtilitiesLib.a
+
 clean:
 	rm -f libCommonUtilitiesLib.a $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)
 

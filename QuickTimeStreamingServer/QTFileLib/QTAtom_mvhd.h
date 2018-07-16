@@ -1,27 +1,28 @@
 /*
  *
  * @APPLE_LICENSE_HEADER_START@
- *
- * Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
- * contents of this file constitute Original Code as defined in and are
- * subject to the Apple Public Source License Version 1.2 (the 'License').
- * You may not use this file except in compliance with the License.  Please
- * obtain a copy of the License at http://www.apple.com/publicsource and
- * read it before using this file.
- *
- * This Original Code and all software distributed under the License are
+ * 
+ * Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
+ * 
+ * This file contains Original Code and/or Modifications of Original Code
+ * as defined in and that are subject to the Apple Public Source License
+ * Version 2.0 (the 'License'). You may not use this file except in
+ * compliance with the License. Please obtain a copy of the License at
+ * http://www.opensource.apple.com/apsl/ and read it before using this
+ * file.
+ * 
+ * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
- * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
- * FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
- * see the License for the specific language governing rights and
+ * INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+ * Please see the License for the specific language governing rights and
  * limitations under the License.
- *
- *
+ * 
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_mvhd.h,v 1.5.18.1.2.1 2003/01/16 08:17:45 murata Exp $
+// $Id: QTAtom_mvhd.h,v 1.9 2003/08/15 23:53:14 sbasu Exp $
 //
 // QTAtom_mvhd:
 //   The 'mvhd' QTAtom class.
@@ -41,51 +42,51 @@
 class QTAtom_mvhd : public QTAtom {
 
 public:
-	//
-	// Constructors and destructor.
-						QTAtom_mvhd(QTFile * File, QTFile::AtomTOCEntry * Atom,
-							   Bool16 Debug = false, Bool16 DeepDebug = false);
-	virtual				~QTAtom_mvhd(void);
+    //
+    // Constructors and destructor.
+                        QTAtom_mvhd(QTFile * File, QTFile::AtomTOCEntry * Atom,
+                               Bool16 Debug = false, Bool16 DeepDebug = false);
+    virtual             ~QTAtom_mvhd(void);
 
 
-	//
-	// Initialization functions.
-	virtual	Bool16		Initialize(void);
-	
-	//
-	// Accessors.
-	inline	Float64		GetTimeScale(void) { return (Float64)fTimeScale; }
+    //
+    // Initialization functions.
+    virtual Bool16      Initialize(void);
+    
+    //
+    // Accessors.
+    inline  Float64     GetTimeScale(void) { return (Float64)fTimeScale; }
 #if __Win32__
 
 	// Win compiler can't convert UInt64 to Float64. It does support SInt64 to Float64 though.
 
-	inline  Float64     GetDurationInSeconds(void) { if (fTimeScale != 0){return (Float64)((SInt64)fDuration) / (Float64) 						((SInt64)fTimeScale); } else {return (Float64) 0.0;} }
+	inline  Float64     GetDurationInSeconds(void) { if (fTimeScale != 0){return (Float64)((SInt64)fDuration) / (Float64) ((SInt64)fTimeScale); } else {return (Float64) 0.0;} }
 
 #else
 
-	inline  Float64     GetDurationInSeconds(void) { if (fTimeScale != 0){ return fDuration / (Float64)fTimeScale; } else {return 					(Float64) 0.0;} }
+	inline  Float64     GetDurationInSeconds(void) { if (fTimeScale != 0){ return fDuration / (Float64)fTimeScale; } else {return (Float64) 0.0;} }
 #endif
 
-	//
-	// Debugging functions.
-	virtual	void		DumpAtom(void);
+    //
+    // Debugging functions.
+    virtual void        DumpAtom(void);
 
 
 protected:
-	//
-	// Protected member variables.
-	UInt8		fVersion;
-	UInt32		fFlags; // 24 bits in the low 3 bytes
-	UInt64		fCreationTime, fModificationTime;
-	UInt32		fTimeScale;
+    //
+    // Protected member variables.
+    UInt8       fVersion;
+    UInt32      fFlags; // 24 bits in the low 3 bytes
+    UInt64      fCreationTime, fModificationTime;
+    UInt32      fTimeScale;
     UInt64      fDuration;
-	UInt32		fPreferredRate;
-	UInt16		fPreferredVolume;
-	UInt32		fa, fb, fu, fc, fd, fv, fx, fy, fw;
-	UInt32		fPreviewTime, fPreviewDuration, fPosterTime;
-	UInt32		fSelectionTime, fSelectionDuration;
-	UInt32		fCurrentTime;
-	UInt32		fNextTrackID;
+    UInt32      fPreferredRate;
+    UInt16      fPreferredVolume;
+    UInt32      fa, fb, fu, fc, fd, fv, fx, fy, fw;
+    UInt32      fPreviewTime, fPreviewDuration, fPosterTime;
+    UInt32      fSelectionTime, fSelectionDuration;
+    UInt32      fCurrentTime;
+    UInt32      fNextTrackID;
 };
 
 #endif // QTAtom_mvhd_H

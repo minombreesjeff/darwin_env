@@ -16,23 +16,23 @@ case $PLAT in
 	;;		
 esac
 
-echo removing DarwinStreamingSrvr4.1.3-$PLAT.tar.gz
-if rm -f DarwinStreamingSrvr4.1.3-$PLAT.tar.gz; 
+echo removing DarwinStreamingSrvr4.1.x-$PLAT.tar.gz
+if rm -f DarwinStreamingSrvr4.1.x-$PLAT.tar.gz; 
 then :
 fi
 
-echo removing DarwinStreamingSrvr4.1.3-$PLAT
-if rm -rf DarwinStreamingSrvr4.1.3-$PLAT; 
+echo removing DarwinStreamingSrvr4.1.x-$PLAT
+if rm -rf DarwinStreamingSrvr4.1.x-$PLAT; 
 then :
 fi
 
-echo removing StreamingProxy-4.1.3-$PLAT.tar.gz
-if rm -f StreamingProxy-4.1.3-$PLAT.tar.gz; 
+echo removing StreamingProxy-4.1.x-$PLAT.tar.gz
+if rm -f StreamingProxy-4.1.x-$PLAT.tar.gz; 
 then :
 fi
 
-echo removing StreamingProxy-4.1.3-$PLAT
-if rm -rf StreamingProxy-4.1.3-$PLAT 
+echo removing StreamingProxy-4.1.x-$PLAT
+if rm -rf StreamingProxy-4.1.x-$PLAT 
 then :
 fi
 
@@ -42,43 +42,52 @@ fi
 if [ ! -f DarwinStreamingServer ];
 then 
 	echo "DarwinStreamingServer failed to build!"
-	echo Done!
+	echo Buildit Failed. Exiting!
 	exit 1
 fi
 
 if [ ! -f PlaylistBroadcaster.tproj/PlaylistBroadcaster ];
 then 
 	echo "PlaylistBroadcaster failed to build!"
-	echo Done!
+	echo Buildit Failed. Exiting!
 	exit 1
 fi
 
 if [ ! -f MP3Broadcaster/MP3Broadcaster ];
 then 
 	echo "MP3Broadcaster failed to build!"
-	echo Done!
+	echo Buildit FAILED. Exiting!
 	exit 1
 fi
 
 if [ ! -f qtpasswd.tproj/qtpasswd ];
 then 
 	echo "qtpasswd failed to build!"
-	echo Done!
+	echo Buildit FAILED. Exiting!
 	exit 1
 fi
 
-./DSS_MakeRoot -f DarwinStreamingSrvr4.1.3-$PLAT
-tar cvf DarwinStreamingSrvr4.1.3-$PLAT.tar DarwinStreamingSrvr4.1.3-$PLAT
-gzip DarwinStreamingSrvr4.1.3-$PLAT.tar
-
-./DSS_MakeProxyRoot StreamingProxy-4.1.3-$PLAT
-tar cvf StreamingProxy-4.1.3-$PLAT.tar StreamingProxy-4.1.3-$PLAT
-gzip StreamingProxy-4.1.3-$PLAT.tar
-
-if [ ! -d SpamPro.tproj ];
+if [ ! -d StreamingLoadTool ];
 then 
-    echo "Warning: there is no SpamPro.tproj folder."
+	echo "Error: there is no StreamingLoadTool folder."
+	echo Cannot build StreamingLoadTool. Exiting!
+        exit 1
 fi
 
-echo Done!
+if [ ! -f StreamingLoadTool/StreamingLoadTool ];
+then
+        echo "StreamingLoadTool failed to build!"
+	echo Buildit FAILED. Exiting!
+	exit 1
+fi
+
+./DSS_MakeRoot -f DarwinStreamingSrvr4.1.x-$PLAT
+tar cvf DarwinStreamingSrvr4.1.x-$PLAT.tar DarwinStreamingSrvr4.1.x-$PLAT
+gzip DarwinStreamingSrvr4.1.x-$PLAT.tar
+
+./DSS_MakeProxyRoot StreamingProxy-4.1.x-$PLAT
+tar cvf StreamingProxy-4.1.x-$PLAT.tar StreamingProxy-4.1.x-$PLAT
+gzip StreamingProxy-4.1.x-$PLAT.tar
+
+echo Success!
 

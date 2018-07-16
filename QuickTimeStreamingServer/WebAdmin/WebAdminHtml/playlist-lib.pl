@@ -3,33 +3,46 @@
 #
 # @APPLE_LICENSE_HEADER_START@
 #
-# Copyright (c) 1999-2001 Apple Computer, Inc.  All Rights Reserved. The
-# contents of this file constitute Original Code as defined in and are
-# subject to the Apple Public Source License Version 1.2 (the 'License').
-# You may not use this file except in compliance with the License.  Please
-# obtain a copy of the License at http://www.apple.com/publicsource and
-# read it before using this file.
+# Copyright (c) 1999-2003 Apple Computer, Inc.  All Rights Reserved.
 #
-# This Original Code and all software distributed under the License are
+# This file contains Original Code and/or Modifications of Original Code
+# as defined in and that are subject to the Apple Public Source License
+# Version 2.0 (the 'License'). You may not use this file except in
+# compliance with the License. Please obtain a copy of the License at
+# http://www.opensource.apple.com/apsl/ and read it before using this
+# file.
+#
+# The Original Code and all software distributed under the License are
 # distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
 # EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
-# INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY, FITNESS
-# FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.  Please
-# see the License for the specific language governing rights and
+# INCLUDING WITHOUT LIMITATION, ANY WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
+# Please see the License for the specific language governing rights and
 # limitations under the License.
 #
-#
 # @APPLE_LICENSE_HEADER_END@
-#
 #
 #---------------------------------------------------------
 
 # playlist-lib.pl
 # Common functions for handling playlist broadcaster files
-#
-# ALL YOUR BASE ARE BELONG TO US
 
 package playlistlib;
+
+# FixFileGroup(theFile)
+# On Mac OS X, attempt to switch the group of the file to admin.
+sub FixFileGroup {
+	if ($^O eq 'darwin') {
+		my $filename = $_[0];
+		my $gid;
+		
+		if ((-e $filename) && ($gid = getgrnam('admin'))) {
+			my @fileStats = stat($filename);
+			my $uid = $fileStats[4];
+			chown $uid, $gid, $filename;
+		}
+	}
+}
 
 # -------------------------------------------------
 # GetGenreOptions($selectedItemName, $defaultItem, \@genreArrayRef)
@@ -155,6 +168,7 @@ sub PushCurrPlayList {
     }
     print NAMFILE "$name\n";
     close(NAMFILE);
+    FixFileGroup($targ);
     return 1;
 }
 
@@ -200,6 +214,7 @@ sub PushCurrPWDir {
     }
     print NAMFILE "$name\n";
     close(NAMFILE);
+    FixFileGroup($targ);
     return 1;
 }
 
@@ -371,15 +386,15 @@ sub CreatePlaylistFile {
     my $plarref = $_[1];
     my $movie;
     my $wt;
+    # support for dynamic playlists
+    my $replacelistName = $name;
+    my $playlistText = '';
+    $replacelistName =~ s/.playlist$/.replacelist/;
 
-    if (!open(PLFILE, "> $name")) {
-        # failed to create playlist file
-        return 0;
-    }
-    print PLFILE "*PLAY-LIST*\n";
-    print PLFILE "#\n";
-    print PLFILE "# Created by QTSS Admin CGI Server\n";
-    print PLFILE "#\n";
+    my $playlistText = "*PLAY-LIST*\n";
+    $playlistText .= "#\n";
+    $playlistText .= "# Created by QTSS Admin CGI Server\n";
+    $playlistText .= "#\n";
     foreach my $item (@$plarref) {
         $item =~ /(.+)[:]([0-9]+)$/;
         $movie = $1;
@@ -388,9 +403,22 @@ sub CreatePlaylistFile {
             $wt = 10;
         }
         $movie =~ s/\"/\"\"/g;
-        print PLFILE "\"$movie\" $wt\n";
+        $playlistText .= "\"$movie\" $wt\n";
     }
+    if (!open(PLFILE, "> $name")) {
+        # failed to create playlist file
+        return 0;
+    }
+    #if (!open (REPLACEFILE, "> $replacelistName")) {
+    #	close (PLFILE);
+    #	return 0;
+    #}
+    
+    print PLFILE $playlistText;
+    #print REPLACEFILE $playlistText;
+    
     close (PLFILE);
+    #close (REPLACEFILE);
     return 1;
 }
 
@@ -522,381 +550,6 @@ sub RemovePlaylistDir {
 	}
 	return $result;
 }
-
-# -------------------------------------------------
-# EmitMovieListHtml(dirname, \@labels)
-#
-# Generate the HTML for the movie list in dirname.
-#
-# returns HTML string for the movie list table.
-# -------------------------------------------------
-sub EmitMovieListHtml {
-	my $dir = "$_[0]";
-    my $lablref = $_[1];
-    my $filedelim = &playlistlib::GetFileDelimChar();
-    my $htmlstr = "";
-    my $fileloc = "";
-	
-	if (!(-e "$dir")) {
-		# directory doesn't exist; nothing to list.
-        $htmlstr = "\t<TR><TD>&nbsp;<br></TD><TD>$$lablref[2] \"$dir\"</TD></TR>\r\n";
-		return $htmlstr;
-	}
-    # make sure path is terminated with platform file delimeter
-    if (($dir !~ /\/$/) && ($dir !~ /\\$/)) {
-        $dir .= $filedelim;
-    }
-	if (opendir(DIR, $dir)) {
-	    while( defined ($file = readdir DIR) ) {
-	        #
-	    	# Look for subdirectories & files not ending with a ".sdp".
-	    	#
-	    	if ($file =~ /^[.]+/) {
-	    		#ignore any file or directory that starts with a dot
-	    	}
-	    	elsif (-d "$dir$file") {
-	    	
-	    	    # This is a subdirectory in the current movies directory
-	    	    
-                $htmlstr .= "\t<TR>\r\n";
-
-                $htmlstr .= "\t\t<TD ALIGN=center WIDTH=30 BGCOLOR=\"#EFEFF7\">";
-
-                $htmlstr .= "<IMG SRC=\"../images/icon_folder.gif\" ONCLICK=\"setdirectory(\'$file\')\" WIDTH=16 HEIGHT=16 ALIGN=bottom ALT=\"\"></TD>\n";
-
-                $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$file</TD>\n";
-
-                $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$$lablref[0]</TD>\n";
-
-                $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" ALIGN=CENTER>";
-
-                $htmlstr .= "&nbsp;<br></TD>\n";
-
-                $htmlstr .= "\t</TR>\n";
-
-	    	}
-	    	elsif ($file !~ /[.][Ss][Dd][Pp]$/) {
-	    	
-	    		my $tlabl;
-	    		
-	    		if (($file =~ /[.][Mm][Oo][Vv]$/) || 
-	    			($file =~ /[.][Mm][Pp]3$/) || 
-	    			($file =~ /[.][Mm][Ii][Dd]$/) || 
-	    			($file =~ /[.][Ww][Aa][Vv]$/) || 
-	    			($file =~ /[.][Aa][Vv][Ii]$/) ) {
-	    			# let's assume this is a valid media file and label it as such
-	    			$tlabl = $$lablref[1];
-	    		}
-	    		else {
-	    			# we don't know if this is a valid media file
-	    			$tlabl = "&nbsp;<br>";
-	    		}
-	    	
-	    	    # This is assumed to be a media file in the current movies directory
-	    	    
-	    	    $fileloc = "$dir$file";
-	    	    
-                $htmlstr .= "\t<TR>\r\n";
-
-                $htmlstr .= "\t\t<TD ALIGN=center WIDTH=30 BGCOLOR=\"#EFEFF7\">";
-
-                $htmlstr .= "<IMG SRC=\"../images/icon_movie.gif\" WIDTH=16 HEIGHT=16 ALIGN=bottom ALT=\"\"></TD>\n";
-
-                $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$file</TD>\n";
-
-                $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$tlabl</TD>\n";
-
-                $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" ALIGN=CENTER>";
-
-                $htmlstr .= "<INPUT TYPE=checkbox NAME=\"addmovie\" VALUE=\"$fileloc\">&nbsp;<br></TD>\n";
-
-                $htmlstr .= "\t</TR>\n";
-			}
-	    }
-		closedir(DIR);
-	}
-	return $htmlstr;
-}
-
-# -------------------------------------------------
-# EmitPLRemoveMovieTableRowHTML($name, $wt, $label)
-#
-# Emit one row of HTML for the remove movie playlist
-# table.
-# returns HTML string for the row.
-# -------------------------------------------------
-sub EmitPLRemoveMovieTableRowHTML {
-    my $name = $_[0];
-    my $wt = $_[1];
-    my $label = $_[2];
-    my $htmlstr = "";
-    my $i;
-
-    $htmlstr .= "\t<TR>\n";
-
-    $htmlstr .= "\t\t<TD ALIGN=center WIDTH=30 BGCOLOR=\"#EFEFF7\">";
-    $htmlstr .= "<IMG SRC=\"../images/icon_movie.gif\" WIDTH=16 HEIGHT=16 ALIGN=bottom ALT=\"\"></TD>\n";
-
-    $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$name</TD>\n";
-
-    $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$label</TD>\n";
-
-    $htmlstr .= "\t\t<TD ALIGN=center BGCOLOR=\"#EFEFF7\"><INPUT TYPE=checkbox NAME=\"remove\" VALUE=\"$name\"></TD>\n";
-
-    $htmlstr .= "\t</TR>\n"; 
-
-    return $htmlstr;    
-}
-
-# -------------------------------------------------
-# EmitPLRemoveMovieTableHtml(plarref, $label)
-#
-# Generate HTML for a remove movie movie table from 
-# playlist array  ref.
-# Each entry in the arary must be in the form:
-#       "moviename:10" where the number is the
-# play weight of the movie.
-# returns HTML string on success or "" on failure.
-# -------------------------------------------------
-sub EmitPLRemoveMovieTableHtml {
-    my $plarref = $_[0];
-    my $label = $_[1];
-    my $movie;
-    my $wt;
-    my $htmlstr = "";
-
-    foreach my $item (@$plarref) {
-        $item =~ /(.+)[:]([0-9]+)$/;
-        $movie = $1;
-        $wt = $2;
-        if ($wt == "") {
-            $wt = 10;
-        }
-        $htmlstr .= &playlistlib::EmitPLRemoveMovieTableRowHTML($movie, $wt, $label);
-    }
-    return $htmlstr;    
-}
-
-# -------------------------------------------------
-# GeneratePLRemoveMovieTable(dirname, label)
-#
-# Generate HTML for the remove movie playlist page 
-# using the directory name.
-# returns HTML string on success or "" on failure.
-# -------------------------------------------------
-sub GeneratePLRemoveMovieTable {
-	my $name = $_[0];
-	my $label = $_[1];
-	my $result = "";
-	my $plroot = &playlistlib::GetPLRootDir();
-    my $filedelim = &playlistlib::GetFileDelimChar();
-	
-	# parse the playlist directory and
-	# generate the HTML for the movie table.
-	if (-e "$plroot$name$filedelim$name.playlist") {
-	    my $temp;
-		$temp = &playlistlib::ParsePlaylistFile("$plroot$name$filedelim$name.playlist");
-		$result = &playlistlib::EmitPLRemoveMovieTableHtml(\@$temp, $label);
-	}
-	return $result;
-}
-
-# -------------------------------------------------
-# EmitPLDetailTableRowHTML($name, $wt, $order, $label)
-#
-# Emit one row of HTML movie playlist for a table.
-# returns HTML string for the row.
-# -------------------------------------------------
-sub EmitPLDetailTableRowHTML {
-    my $name = $_[0];
-    my $wt = $_[1];
-    my $order = $_[2];
-    my $label = $_[3];
-    my $htmlstr = "";
-    my $i;
-
-    if (($wt < 1) || ($wt > 10)) {
-        $wt = 10;
-    }
-
-    $htmlstr .= "\t\t<TR>\n";
-
-    $htmlstr .= "\t\t\t<TD BGCOLOR=\"#EFEFF7\" ALIGN=center>";
-    $htmlstr .= "<INPUT TYPE=text NAME=\"order\" VALUE=$order SIZE=4></TD>\n";
-
-    $htmlstr .= "\t\t\t<TD ALIGN=center BGCOLOR=\"#EFEFF7\">";
-    $htmlstr .= "<IMG SRC=\"../images/icon_movie.gif\" WIDTH=16 HEIGHT=16 ALT=\"\"></TD>\n";
-
-    $htmlstr .= "\t\t\t<TD WIDTH=\"60%\" BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$name</TD>\n";
-
-    $htmlstr .= "\t\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$label</TD>\r\n";
-
-    $htmlstr .= "\t\t\t<TD BGCOLOR=\"#EFEFF7\" ALIGN=center><SELECT NAME=\"weight\">\n"; 
-
-    for ($i=1; $i <= 10; $i++) {
-        if ($i == $wt) {
-            $htmlstr .= "\t\t\t\t<OPTION SELECTED VALUE=\"$name:$i\" CLASS=\"smallTD\">$i\n";
-        } else {
-            $htmlstr .= "\t\t\t\t<OPTION VALUE=\"$name:$i\" CLASS=\"smallTD\">$i\n";
-        }
-    }
-    $htmlstr .= "\t\t\t</SELECT></TD>\n"; 
-
-    $htmlstr .= "\t\t</TR>\n"; 
-
-    return $htmlstr;    
-}
-
-# -------------------------------------------------
-# EmitPLDetailTableHtml(plarref, $label)
-#
-# Generate HTML for a detail movie table from playlist 
-# array  ref.
-# Each entry in the arary must be in the form:
-#       "moviename:10" where the number is the
-# play weight of the movie.
-# returns HTML string on success or "" on failure.
-# -------------------------------------------------
-sub EmitPLDetailTableHtml {
-    my $plarref = $_[0];
-    my $label = $_[1];
-    my $movie;
-    my $wt;
-    my $htmlstr = "";
-    my $i = 1;
-
-    foreach my $item (@$plarref) {
-        $item =~ /(.+)[:]([0-9]+)$/;
-        $movie = $1;
-        $wt = $2;
-        if ($wt == "") {
-            $wt = 10;
-        }
-        $htmlstr .= &playlistlib::EmitPLDetailTableRowHTML($movie, $wt, $i, $label);
-        $i++;
-    }
-    return $htmlstr;    
-}
-
-# -------------------------------------------------
-# GeneratePLDetailTable(dirname, label)
-#
-# Generate HTML for the detail playlist page using 
-# the directory name.
-# returns HTML string on success or "" on failure.
-# -------------------------------------------------
-sub GeneratePLDetailTable {
-	my $name = $_[0];
-	my $label = $_[1];
-	my $result = "";
-	my $plroot = &playlistlib::GetPLRootDir();
-    my $filedelim = &playlistlib::GetFileDelimChar();
-	
-	# parse the playlist directory and
-	# generate the HTML for the movie table.
-	if (-e "$plroot$name$filedelim$name.playlist") {
-	    my $temp;
-		$temp = &playlistlib::ParsePlaylistFile("$plroot$name$filedelim$name.playlist");
-		$result = &playlistlib::EmitPLDetailTableHtml(\@$temp, $label);
-	}
-	return $result;
-}
-
-# -------------------------------------------------
-# EmitMainPlaylistRowHTML($file, $state, $labelsref)
-#
-# Emit one row of HTML playlist for a table.
-# returns HTML string on success or "" on failure.
-# -------------------------------------------------
-sub EmitMainPlaylistRowHTML {
-    my $name = $_[0];
-    my $dname = &playlistlib::DecodePLName($name);
-    my $state = $_[1];
-    my $lblsref = $_[2];
-    my $htmlstr = "";
-
-    $htmlstr .= "\t<TR>\n";
-
-    $htmlstr .= "\t\t<TD ALIGN=center BGCOLOR=\"#EFEFF7\">";        
-    $htmlstr .= "<IMG SRC=\"../images/icon_playlist.gif\" WIDTH=16 HEIGHT=16 ALT=\"\"></TD>\n";
-
-    $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">\n";
-    $htmlstr .= "\t\t\t<A HREF=\"setplsettings.cgi?cpl=$name&pg=detail\" TARGET=\"content\">";
-
-    # here's where we print the play list name...
-    $htmlstr .= "$dname</A>\n";
-
-    $htmlstr .= "\t\t</TD>\n";
-
-    if ($state == 0) {
-    	# playlist is stopped
-		$htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$$lblsref[0]</TD>\n";
-		
-        $htmlstr .= "\t\t<TD BGCOLOR=\"#CCCCCC\" ALIGN=CENTER><A HREF=\"startstopbcast.cgi?state=start&pl=$name\">\n";
-        $htmlstr .= "\t\t\t<IMG SRC=\"../images/icon_play.gif\" WIDTH=16 HEIGHT=16 BORDER=0 ALT=\"\"></A>\n";
-        $htmlstr .= "\t\t\t<IMG SRC=\"../images/icon_stop_off.gif\" WIDTH=16 HEIGHT=16 BORDER=0 ALT=\"\">\n";
-    }
-    elsif ($state == 1) {
-    	# playlist is running
-		$htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" CLASS=\"smallTD\">$$lblsref[1]</TD>\n";
-		
-        $htmlstr .= "\t\t<TD BGCOLOR=\"#CCCCCC\" ALIGN=CENTER>\n";
-        $htmlstr .= "\t\t\t<IMG SRC=\"../images/icon_play_off.gif\" WIDTH=16 HEIGHT=16 BORDER=0 ALT=\"\">";
-        $htmlstr .= "<A HREF=\"startstopbcast.cgi?state=stop&pl=$name\">\n";
-        $htmlstr .= "\t\t\t<IMG SRC=\"../images/icon_stop.gif\" WIDTH=16 HEIGHT=16 BORDER=0 ALT=\"\"></A>\n";
-    }
-    else {
-		# playlist is in error state		
-    	$htmlstr .= "\t\t\<TD ALIGN=center BGCOLOR=\"#EFEFF7\">\n";
-    	$htmlstr .= "\t\t\t<A HREF=\"setplsettings.cgi?cpl=$name&pg=errlog\" TARGET=\"content\">\n";
-    	$htmlstr .= "\t\t\t<IMG SRC=\"../images/icon_alert.gif\" WIDTH=16 HEIGHT=16 ALT=\"\"></TD>\n";
-
-        $htmlstr .= "\t\t<TD BGCOLOR=\"#CCCCCC\" ALIGN=CENTER><A HREF=\"startstopbcast.cgi?state=start&pl=$name\">\n";
-        $htmlstr .= "\t\t\t<IMG SRC=\"../images/icon_play.gif\" WIDTH=16 HEIGHT=16 BORDER=0 ALT=\"\"></A>\n";
-        $htmlstr .= "\t\t\t<IMG SRC=\"../images/icon_stop_off.gif\" WIDTH=16 HEIGHT=16 BORDER=0 ALT=\"\">\n";
-    }
-    $htmlstr .= "\t\t</TD>\n";
-
-    $htmlstr .= "\t\t<TD BGCOLOR=\"#EFEFF7\" ALIGN=center>";
-    $htmlstr .= "<INPUT TYPE=checkbox NAME=\"delete\" VALUE=\"$name\"></TD>\n";
-
-    $htmlstr .= "\t</TR>\n"; 
-
-    return $htmlstr;    
-}
-
-# -------------------------------------------------
-# EmitMainPlaylistHTML(\@labels)
-#
-# Emit the HTML for the play lists inside $dir.
-#
-# returns HTML string on success or "" on failure.
-# -------------------------------------------------
-sub EmitMainPlaylistHTML {
-    my $lblaref = $_[0];
-	my $dir = &playlistlib::GetPLRootDir();
-	my $state = 0;
-    my $htmlstr = "";
-    my $name = "";
-	
-	if (!(-e "$dir")) {
-		# directory doesn't exist; 
-		# this is probably an error.
-		mkdir "$dir", 0770;
-	}
-	if (opendir(DIR, $dir)) {
-	    while( defined ($name = readdir DIR) ) {
-	    	# print all the subdirectories in $plroot.
-	    	if (!(-f "$dir$name") && ($name !~ /^[.]+/)) { 
-	    	    $state = &playlistlib::GetPlayListState($name);
-                $htmlstr .= &playlistlib::EmitMainPlaylistRowHTML($name, $state, $lblaref);
-   		    }
-        }
-	    closedir(DIR);
-    }
-    return $htmlstr;
-}
-
 
 # -------------------------------------------------
 # SearchDirForRefMov(dirloc)
@@ -1099,6 +752,7 @@ sub CreatePlayListEntry {
    	}
     print PLDFILE "pid_file \"$fname.pid\"\n";
     close(PLDFILE);
+    FixFileGroup("$fname.config");
     chmod(0640, "$fname.config");
 
     return 1;

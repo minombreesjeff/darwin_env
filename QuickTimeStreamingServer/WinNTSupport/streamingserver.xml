@@ -27,9 +27,9 @@
 	<!-- able to connect to the streaming server -->
 	<LIST-PREF NAME="rtsp_port" TYPE="UInt16">
 		<VALUE>7070</VALUE>
-		<VALUE>554</VALUE>
-		<VALUE>8000</VALUE>
-		<VALUE>8001</VALUE>
+        <VALUE>554</VALUE>
+        <VALUE>8000</VALUE>
+        <VALUE>8001</VALUE>
 	</LIST-PREF>
 
 	<!-- The text to display as the login entity "realm" by the client is defined by default_authorization_realm -->
@@ -71,7 +71,7 @@
 	<PREF NAME="error_logfile_verbosity" TYPE="UInt32">3</PREF>
 
 	<!-- Maximum allowed size in bytes for the error log. A -->
-	<!-- value of 0 means unlimited -->
+	<!-- value of 0 means unlimited --> 
 	<PREF NAME="error_logfile_size" TYPE="UInt32">256000</PREF>
 
 	<!-- Amount of time in days between rolls of the -->
@@ -233,7 +233,7 @@
 
 	<!-- Turn on or off the SDP file deleter: files are deleted after the SDP t= endtime passes -->
     <PREF NAME="auto_delete_sdp_files" TYPE="Bool16">false</PREF>
-
+    
 	<!-- Set this to be the authentication scheme you want the server to use. -->
 	<!-- "basic", "digest", and "none" are the currently supported values. -->
     <PREF NAME="authentication_scheme">digest</PREF>
@@ -254,15 +254,17 @@
 
     <!-- Enable printfs of some interesting stats about each reliable UDP client -->
     <PREF NAME="reliable_udp_printfs" TYPE="Bool16">false</PREF>
-    
+       
     <!-- Enable debugging error messages in RTSP error response -->
     <PREF NAME="RTSP_error_message" TYPE="Bool16">false</PREF>
-	
+
+    <!-- If value is greater than zero, then the server creates run_num_threads threads -->
+    <!-- If value is zero, the server creates a thread for each processor -->
+    <!-- This setting is used to override the default behavior - one thread per process -->
+    <PREF NAME="run_num_threads" TYPE="UInt32">0</PREF>
+
 	<!-- Rate at which to overbuffer: number of times the data rate -->
 	<PREF NAME="overbuffer_rate" TYPE="Float32">2.0</PREF>
-    
-	<!-- Obsolete: (this is no longer used.) -->
-    <PREF NAME="auto_start" TYPE="Bool16">false</PREF>
     
 	<!-- Enables debugging of the RTSP protocol (used for developer debugging) -->
     <PREF NAME="RTSP_debug_printfs" TYPE="Bool16">false</PREF>
@@ -294,8 +296,8 @@
 	<PREF NAME="request_logfile_name">StreamingServer</PREF>
 
 	<!-- Either "true" or "false". Logs date time field -->
-    <!-- in GMT if true and in localtime if false-->
-    <PREF NAME="request_logtime_in_gmt" TYPE="Bool16">true</PREF>
+        <!-- in GMT if true and in localtime if false-->
+        <PREF NAME="request_logtime_in_gmt" TYPE="Bool16">true</PREF>
 
 	<!-- Either "true" or "false". This toggles access. -->
 	<!-- logging on and off. -->
@@ -389,29 +391,28 @@
 <MODULE NAME="QTSSHttpFileModule">
 	<!-- Module enabled or disabled -->
 	<PREF NAME="http_xfer_enabled" TYPE="Bool16" >false</PREF>
+	
 	<!-- Path to the http download folder. All files -->
 	<!-- that are requested from this folder are sent via HTTP -->
 	<PREF NAME="http_folder">c:\Program Files\Darwin Streaming Server\http</PREF>
+	
 	<!-- Either "true" or "false". This toggles http module -->
 	<!-- logging on and off. -->
 	<PREF NAME="http_logging" TYPE="Bool16">true</PREF>
+	
 	<!-- Name of the http module log file. -->
 	<PREF NAME="http_logfile_name">Http</PREF>
+	
 	<!-- Path to directory where http module logs are stored. -->
 	<PREF NAME="http_logfile_dir">c:\Program Files\Darwin Streaming Server\httpLogs</PREF>
+	
 	<!-- Maximum allowed size in bytes for the http module log. A -->
 	<!-- value of 0 means unlimited. -->
 	<PREF NAME="http_logfile_size" TYPE="UInt32">256000</PREF>
+	
 	<!-- Amount of time in days between rolls of the  -->
 	<!-- http module log. A value of 0 means unlimited. -->
-	<PREF NAME="http_logfile_interval" TYPE="UInt32">7</PREF>	
-</MODULE>
-
-<MODULE NAME="QTSSSpamDefenseModule">
-	<!-- Default value for number of connections per IP address. This is used by SpamDefenseModule. -->
-	<!-- Spam defense module will deny more than this number of clients from a single IP address -->
-	<!-- NOTE: This setting takes effect only when the QTSSSpamDefenseModule is installed. -->
-	<PREF NAME="num_conns_per_ip_addr" TYPE="UInt32">100</PREF>
+	<PREF NAME="http_logfile_interval" TYPE="UInt32">7</PREF>
 </MODULE>
 
 <MODULE NAME="QTSSReflectorModule">
@@ -432,7 +433,7 @@
 
  	<!-- Turn on or off a broadcaster Announce of an SDP file to the server -->
      <PREF NAME="enable_broadcast_announce" TYPE="Bool16">true</PREF>
-     
+
   	<!-- Force announced SDPs to this maximum duration in seconds. 0 = infinite duration. -->
      <PREF NAME="max_broadcast_announce_duration_secs" TYPE="UInt32">0</PREF>
      
@@ -440,8 +441,8 @@
      <PREF NAME="allow_duplicate_broadcasts" TYPE="Bool16">false</PREF>
 
    	<!-- Turns on or off checking static ports in sdp files against a valid range -->
-   	<!-- If an sdp file is played and the port is outside the min to max static sdp range then an invalid media error is returned to the client. -->
-   	<!-- Announced broadcasts will also receive the invalid media error from the server for setups on an invalid port. -->
+   	<!-- If an sdp file is played and it contains a port outside the min to max static sdp range then an invalid media error is returned to the client. -->
+    <!-- Announced broadcasts will also receive the invalid media error from the server for setups on an invalid static port. -->
 	<PREF NAME="enforce_static_sdp_port_range" TYPE="Bool16">false</PREF>
 	
   	<!-- The maximum value for a static port. See enforce_static_sdp_port_range -->
@@ -455,7 +456,7 @@
   	<!-- If enforce_static_sdp_port_range is true a warning will be logged  -->
   	<!-- when the minimum_static_sdp_port and maximum_static_sdp_port range crosses the server 6970 to 9999 range.  -->
 	<PREF NAME="minimum_static_sdp_port" TYPE="UInt16">20000</PREF>
-	
+
 	<!-- If no packets for the current SSRC are received in timeout seconds, use the next SSRC we see  -->
   	<!-- This timeout is only in use when use_one_SSRC_per_stream is true  -->
 	<PREF NAME="timeout_stream_SSRC_secs" TYPE="UInt32">30</PREF>
@@ -465,8 +466,8 @@
 	<PREF NAME="use_one_SSRC_per_stream" TYPE="Bool16">true</PREF>
 
   	<!-- When a broadcaster RTSP session goes down also teardown the clients watching the stream -->
-	<PREF NAME="kill_clients_when_broadcast_stops" TYPE="Bool16">false</PREF>
-    
+	<PREF NAME="kill_clients_when_broadcast_stops" TYPE="Bool16">false</PREF>	
+
   	<!-- These options allow you to configure buffering for the relector module. -->
     <PREF NAME="reflector_bucket_offset_delay_msec" TYPE="UInt32">73</PREF>
     <PREF NAME="reflector_buffer_size_sec" TYPE="UInt32">10</PREF>
@@ -476,6 +477,25 @@
     <PREF NAME="timeout_broadcaster_session_secs" TYPE="UInt32">20</PREF>
     <PREF NAME="authenticate_local_broadcast" TYPE="Bool16">false</PREF>
 	<PREF NAME="disable_overbuffering" TYPE="Bool16">false</PREF>
+
+	<!-- Maximum content length (in K bytes) of the SDP that is announced -->
+    <!-- A value of 0 indicates that no maximum is imposed -->
+    <PREF NAME="max_announced_sdp_length_kbytes" TYPE="UInt32">0</PREF>
+
+	<!-- allow broadcasts - broadcasts are reflected only if this is set to true -->
+	<PREF NAME="allow_broadcasts" TYPE="Bool16">true</PREF>
+	
+	<!-- Redirect broadcasts if URI begins with the keyword -->
+	<PREF NAME="redirect_broadcast_keyword"></PREF>
+	<!-- Redirect broadcasts to this directory if the the URI begins with the "redirect_broadcast_keyword" -->
+	<PREF NAME="redirect_broadcasts_dir"></PREF>
+
+	<!-- List of directories from which to allow broadcasts. -->
+	<!-- Can be relative to the "movie_folder" or to the "redirect_broadcasts_dir" -->
+	<!-- The latter directory will be used if the URI also has the "redirect_broadcast_keyword" prefix -->
+	<!-- Can also be an absolute file system path -->
+	<PREF NAME="broadcast_dir_list"></PREF>
+
 </MODULE>
 
 <MODULE NAME="QTSSFlowControlModule">
@@ -539,8 +559,8 @@
 	<PREF NAME="IPAccessList">127.0.0.*</PREF>
 	
 	<!-- The user has to belong to this group in order to be authorized -->
-	<!-- by the admin module for admin protocol requests -->	
-	<PREF NAME="AdministratorGroup">admin</PREF>
+	<!-- by the admin module for admin protocol requests -->
+	<PREF NAME="AdministratorGroup">admin</PREF>	 
 </MODULE>
 
 </CONFIGURATION>

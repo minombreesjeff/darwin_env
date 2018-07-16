@@ -10,10 +10,21 @@
 		.header { font-size: 18px; color:#666699 }
 		input { font-size: 12px }
 	</style> 
+	<script language="JavaScript">
+	
+		function validateFormData() {
+			if ((document.forms[0].elements['qtssIsStreamingOn80'].checked) && (document.forms[0].elements['qtssIsStreamingOn80_shadow'].value != 'true')) {
+				return confirm("<qtssstring name=PortChangeRestartServerConfirm>");
+			}
+			else
+				return true;
+		}
+	
+	</script>
 	<title><qtssstring name="SetupAssistTitle"/></title>
 </head>
 <body bgcolor="#FFFFFF" background="images/stripes_gray.gif">
-<qtssobject type=form param="_self">
+<qtssobject type=validatedform param="_self">
 	<input type=hidden name=filename value=""> <input type=hidden name=action value="RunAssistant"> 
 	<qtssobject type=hidden name="assistSSL"/>
 	<qtssobject type=hidden name="assistMovieFolder"/>

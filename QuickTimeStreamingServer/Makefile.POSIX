@@ -5,7 +5,7 @@ NAME = DarwinStreamingServer
 C++ = $(CPLUS)
 CC = $(CCOMP)
 LINK = $(LINKER)
-CCFLAGS += $(COMPILER_FLAGS)  -g -Wall $(INCLUDE_FLAG) PlatformHeader.h
+CCFLAGS += $(COMPILER_FLAGS)  -DDSS_USE_API_CALLBACKS -g -Wall -Wno-format-y2k $(INCLUDE_FLAG) PlatformHeader.h
 LIBS = $(CORE_LINK_LIBS) -lCommonUtilitiesLib -lQTFileLib
 
 # OPTIMIZATION
@@ -82,7 +82,6 @@ CPPFILES = 	Server.tproj/QTSSExpirationDate.cpp\
 			Server.tproj/main.cpp \
 			Server.tproj/RunServer.cpp \
 			Server.tproj/GenerateXMLPrefs.cpp \
-			Server.tproj/SDPTimeoutTask.cpp\
 			Server.tproj/QTSSUserProfile.cpp\
 			PrefsSourceLib/FilePrefsSource.cpp\
 			PrefsSourceLib/XMLPrefsParser.cpp \
@@ -103,6 +102,7 @@ CPPFILES = 	Server.tproj/QTSSExpirationDate.cpp\
 			APICommonCode/SDPSourceInfo.cpp \
 			APICommonCode/SourceInfo.cpp \
 			APICommonCode/QTAccessFile.cpp \
+			SafeStdLib/InternalStdLib.cpp \
 			APIModules/QTSSAccessLogModule/QTSSAccessLogModule.cpp \
 			APIModules/QTSSFileModule/QTSSFileModule.cpp \
 			APIModules/QTSSFlowControlModule/QTSSFlowControlModule.cpp \
@@ -139,6 +139,8 @@ all: DarwinStreamingServer
 
 DarwinStreamingServer: $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)  $(LIBFILES)
 	$(LINK) -o $@ $(CFILES:.c=.o) $(CPPFILES:.cpp=.o) $(COMPILER_FLAGS) $(LINKOPTS) $(LIBS) 
+
+install: DarwinStreamingServer
 
 clean:
 	rm -f $(CFILES:.c=.o) $(CPPFILES:.cpp=.o)

@@ -77,8 +77,8 @@ fi
 ##
 
 orig_dir=`pwd`  #remember our original working directory
-spam_repository=/Network/Servers/svrsol/Workgroup/CVS-Repository
-spam_parent_module=Servers/Mothra/
+slt_repository=/Network/Servers/svrsol/Workgroup/CVS-Repository
+slt_parent_module=Servers/Mothra/
 
 
 ## use /tmp if a destination directory is not specified
@@ -119,18 +119,11 @@ sudo -u ${cvs_user} cvs -d cvs.opensource.apple.com:/cvs/Darwin -s CVS_RSH=ssh -
 #
 cd ${project_path}
 
-##checkout SpamPro.tproj
+##checkout StreamingLoadTool
 #
-echo;echo Checking out SpamPro.tproj
-echo sudo -u ${cvs_user} cvs -d ${spam_repository} -z3 checkout -d SpamPro.tproj ${spam_parent_module}SpamPro.tproj
-sudo -u ${cvs_user} cvs -d ${spam_repository} -z3 checkout -d SpamPro.tproj ${spam_parent_module}SpamPro.tproj
-
-#checkout SpamProLib
-#
-echo;echo Checking out SpamProLib
-echo sudo -u ${cvs_user} cvs -d ${spam_repository} -z3 checkout -d SpamProLib ${spam_parent_module}SpamProLib
-sudo -u ${cvs_user} cvs -d ${spam_repository} -z3 checkout -d SpamProLib ${spam_parent_module}SpamProLib
-
+echo;echo Checking out StreamingLoadTool
+echo sudo -u ${cvs_user} cvs -d ${slt_repository} -z3 checkout -d StreamingLoadTool ${slt_parent_module}StreamingLoadTool
+sudo -u ${cvs_user} cvs -d ${slt_repository} -z3 checkout -d StreamingLoadTool ${slt_parent_module}StreamingLoadTool
 
 if ( ${do_tag} ) then
 	echo;echo "Tagging current files as qtssServer-${build_number}"
@@ -140,11 +133,7 @@ if ( ${do_tag} ) then
 	echo cvs ${cvs_options} -q tag ${force_tag} -R qtssServer-${build_number}
 	sudo -u ${cvs_user} cvs ${cvs_options} -q tag ${force_tag} -R qtssServer-${build_number}
 	
-	cd ${project_path}/SpamPro.tproj
-	echo cvs ${cvs_options} -q tag ${force_tag} -R qtssServer-${build_number}
-	sudo -u ${cvs_user} cvs ${cvs_options} -q tag ${force_tag} -R qtssServer-${build_number}
-	
-	cd ${project_path}/SpamProLib
+	cd ${project_path}/StreamingLoadTool
 	echo cvs ${cvs_options} -q tag ${force_tag} -R qtssServer-${build_number}
 	sudo -u ${cvs_user} cvs ${cvs_options} -q tag ${force_tag} -R qtssServer-${build_number}
 fi
