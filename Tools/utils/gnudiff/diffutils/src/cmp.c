@@ -41,8 +41,6 @@
 
 #ifdef __APPLE__
 #include "get_compat.h"
-#else
-#define COMPAT_MODE(func, mode) 1
 #endif
 
 static char const authorship_msgid[] =
@@ -303,7 +301,10 @@ main (int argc, char **argv)
   /* If the files are links to the same inode and have the same file position,
      they are identical.  */
 
-	if(!COMPAT_MODE("bin/cmp", "unix2003")) //conformance tests expect cmp to access the file
+#ifdef __APPLE__
+	// conformance tests expect cmp to access the file
+	if(!COMPAT_MODE("bin/cmp", "unix2003"))
+#endif
   if (0 < same_file (&stat_buf[0], &stat_buf[1])
       && same_file_attributes (&stat_buf[0], &stat_buf[1])
       && file_position (0) == file_position (1))
