@@ -328,10 +328,13 @@ OS_Error OS::RecursiveMakeDir(char *inPath)
 UInt32	OS::GetNumProcessors()
 {
 #ifdef __Win32__
+      return 1; // not yet thread safe for multiple threads per processor
+/*
 	SYSTEM_INFO theSystemInfo;
 	::GetSystemInfo(&theSystemInfo);
 	
 	return (UInt32)theSystemInfo.dwNumberOfProcessors;
+*/
 #else
 	return 1;
 #endif

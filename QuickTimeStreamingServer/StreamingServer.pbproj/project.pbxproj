@@ -1679,6 +1679,7 @@
 				00E5906900F4DD0500DD2B4C,
 				00E5906B00F4DD0500DD2B4C,
 				00E5907300F4DD0500DD2B4C,
+				F5F28E7E03688F8E01A80103,
 			);
 			buildSettings = {
 				INSTALL_PATH = /usr/bin;
@@ -2408,9 +2409,9 @@
 			productRefGroup = 68C3967800C567B77F000001;
 			projectDirPath = "";
 			targets = (
+				68C396B800C567B77F000001,
 				E959118F0355F56309DD2838,
 				E963C5BE031E9A1509DD2838,
-				68C396B800C567B77F000001,
 				68C3972C00C567B77F000001,
 				E923D3BA03537F5509DD2838,
 				F533DA97011744B701DD292F,
@@ -5980,6 +5981,7 @@
 				68C3972B00C567B77F000001,
 				F533DA96011744B701DD292F,
 				00A79FF90135B35C00DD2B4F,
+				F5EB17A6036F268601E210B6,
 				007870EC00F4E38300DD2B4C,
 			);
 			isa = PBXAggregateTarget;
@@ -15767,6 +15769,10 @@
 			settings = {
 			};
 		};
+		F5EB17A6036F268601E210B6 = {
+			isa = PBXTargetDependency;
+			target = E9A6B8FA031EC31A09DD2838;
+		};
 		F5EB63B1011F467801DD292F = {
 			fileRef = 68C3969C00C567B77F000001;
 			isa = PBXBuildFile;
@@ -15787,6 +15793,22 @@
 		};
 		F5EF9AF001235DC301DD292F = {
 			fileRef = F5EF9AEF01235DC301DD292F;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		F5F28E7E03688F8E01A80103 = {
+			buildActionMask = 8;
+			dstPath = /Library/QuickTimeStreaming/Config;
+			dstSubfolderSpec = 0;
+			files = (
+				F5F28E7F0368900301A80103,
+			);
+			isa = PBXCopyFilesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		F5F28E7F0368900301A80103 = {
+			fileRef = 00D2D75500F4E81E00DD2B4C;
 			isa = PBXBuildFile;
 			settings = {
 			};
