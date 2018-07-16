@@ -42,7 +42,7 @@
 
 #ifndef lint
 static const char rcsid[] _U_ =
-    "@(#) $Header: /cvs/root/tcpdump/tcpdump/parsenfsfh.c,v 1.1.1.4 2004/02/05 19:30:52 rbraun Exp $ (LBL)";
+    "@(#) $Header: /tcpdump/master/tcpdump/parsenfsfh.c,v 1.28 2004/03/25 03:30:55 mcr Exp $ (LBL)";
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -111,7 +111,7 @@ static int is_UCX(const unsigned char *);
 void
 Parse_fh(fh, len, fsidp, inop, osnamep, fsnamep, ourself)
 register const unsigned char *fh;
-int len;
+int len _U_;
 my_fsid *fsidp;
 ino_t *inop;
 const char **osnamep;		/* if non-NULL, return OS name here */

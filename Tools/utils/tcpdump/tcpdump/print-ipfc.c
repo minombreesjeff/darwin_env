@@ -21,7 +21,7 @@
 
 #ifndef lint
 static const char rcsid[] _U_ =
-    "@(#) $Header: /cvs/root/tcpdump/tcpdump/print-ipfc.c,v 1.1.1.2 2004/02/05 19:30:54 rbraun Exp $ (LBL)";
+    "@(#) $Header: /tcpdump/master/tcpdump/print-ipfc.c,v 1.7.2.1 2005/07/07 01:24:36 guy Exp $ (LBL)";
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -117,7 +117,7 @@ ipfc_print(const u_char *p, u_int length, u_int caplen)
 			printf("(LLC %s) ",
 		etherproto_string(htons(extracted_ethertype)));
 		}
-		if (!xflag && !qflag)
+		if (!suppress_default_print)
 			default_print(p, caplen);
 	}
 }
@@ -125,7 +125,7 @@ ipfc_print(const u_char *p, u_int length, u_int caplen)
 /*
  * This is the top level routine of the printer.  'p' points
  * to the Network_Header of the packet, 'h->ts' is the timestamp,
- * 'h->length' is the length of the packet off the wire, and 'h->caplen'
+ * 'h->len' is the length of the packet off the wire, and 'h->caplen'
  * is the number of bytes actually captured.
  */
 u_int

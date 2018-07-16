@@ -18,46 +18,16 @@
  * WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  *
- * @(#) $Header: /cvs/root/tcpdump/tcpdump/llc.h,v 1.1.1.3 2003/03/17 18:42:16 rbraun Exp $ (LBL)
+ * @(#) $Header: /tcpdump/master/tcpdump/llc.h,v 1.17.2.2 2005/09/29 07:40:12 hannes Exp $ (LBL)
  */
 
 /*
- * This stuff should come from a system header file, but there's no
- * obviously portable way to do that and it's not really going
- * to change from system to system.
+ * Definitions for information in the LLC header.
  */
-
-/*
- * A somewhat abstracted view of the LLC header
- */
-
-struct llc {
-	u_int8_t dsap;
-	u_int8_t ssap;
-	union {
-		u_int8_t u_ctl;
-		u_int16_t is_ctl;
-		struct {
-			u_int8_t snap_ui;
-			u_int8_t snap_pi[5];
-		} snap;
-		struct {
-			u_int8_t snap_ui;
-			u_int8_t snap_orgcode[3];
-			u_int8_t snap_ethertype[2];
-		} snap_ether;
-	} ctl;
-};
-
-#define	llcui		ctl.snap.snap_ui
-#define	llcpi		ctl.snap.snap_pi
-#define	llc_orgcode	ctl.snap_ether.snap_orgcode
-#define	llc_ethertype	ctl.snap_ether.snap_ethertype
-#define	llcis		ctl.is_ctl
-#define	llcu		ctl.u_ctl
 
 #define	LLC_U_FMT	3
 #define	LLC_GSAP	1
+#define	LLC_IG	        1 /* Individual / Group */
 #define LLC_S_FMT	1
 
 #define	LLC_U_POLL	0x10
@@ -94,6 +64,9 @@ struct llc {
 #ifndef LLCSAP_8021B_G
 #define	LLCSAP_8021B_G		0x03
 #endif
+#ifndef LLCSAP_SNA
+#define	LLCSAP_SNA		0x04
+#endif
 #ifndef LLCSAP_IP
 #define	LLCSAP_IP		0x06
 #endif
@@ -125,12 +98,6 @@ struct llc {
 #define	LLCSAP_ISONS		0xfe
 #endif
 
-#define	OUI_ENCAP_ETHER	0x000000	/* encapsulated Ethernet */
-#define	OUI_CISCO	0x00000c	/* Cisco protocols */
-#define	OUI_CISCO_90	0x0000f8	/* Cisco bridging */
-#define OUI_RFC2684	0x0080c2	/* RFC 2684 bridged Ethernet */
-#define	OUI_APPLETALK	0x080007	/* Appletalk */
-
 /*
  * PIDs for use with OUI_CISCO.
  */
@@ -150,4 +117,3 @@ struct llc {
 #define PID_RFC2684_802_6_FCS	0x0005	/* 802.6, with FCS */
 #define PID_RFC2684_802_6_NOFCS	0x000b	/* 802.6, without FCS */
 #define PID_RFC2684_BPDU	0x000e	/* BPDUs */
-
