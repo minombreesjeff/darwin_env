@@ -7,7 +7,7 @@ DEVELOPER_DIR = /Applications/Xcode.app/Contents/Developer
 endif
 
 Project               = subversion
-ProjectVersion        = 1.7.17
+ProjectVersion        = 1.7.19
 
 #-------------------------------------------------------------------------
 # build/get-py-info.py appends "-framework Python" to its --link and --libs
