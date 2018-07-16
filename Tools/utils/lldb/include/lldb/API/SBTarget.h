@@ -15,6 +15,7 @@
 #include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBFileSpec.h"
 #include "lldb/API/SBFileSpecList.h"
+#include "lldb/API/SBSymbolContextList.h"
 #include "lldb/API/SBType.h"
 #include "lldb/API/SBWatchpoint.h"
 
@@ -150,6 +151,12 @@ public:
     
     void
     SetWaitForLaunch (bool b);
+    
+    bool
+    GetIgnoreExisting ();
+    
+    void
+    SetIgnoreExisting (bool b);
     
     uint32_t
     GetResumeCount ();
@@ -741,6 +748,7 @@ protected:
     friend class SBInstruction;
     friend class SBModule;
     friend class SBProcess;
+    friend class SBSection;
     friend class SBSourceManager;
     friend class SBSymbol;
     friend class SBValue;

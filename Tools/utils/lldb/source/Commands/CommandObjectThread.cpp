@@ -42,7 +42,7 @@ using namespace lldb_private;
 // CommandObjectThreadBacktrace
 //-------------------------------------------------------------------------
 
-class CommandObjectThreadBacktrace : public CommandObject
+class CommandObjectThreadBacktrace : public CommandObjectParsed
 {
 public:
 
@@ -121,11 +121,11 @@ public:
     };
 
     CommandObjectThreadBacktrace (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "thread backtrace",
-                       "Show the stack for one or more threads.  If no threads are specified, show the currently selected thread.  Use the thread-index \"all\" to see all threads.",
-                       NULL,
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+        CommandObjectParsed (interpreter,
+                           "thread backtrace",
+                           "Show the stack for one or more threads.  If no threads are specified, show the currently selected thread.  Use the thread-index \"all\" to see all threads.",
+                           NULL,
+                           eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
         m_options(interpreter)
     {
         CommandArgumentEntry arg;
@@ -152,8 +152,9 @@ public:
         return &m_options;
     }
 
+protected:
     virtual bool
-    Execute (Args& command, CommandReturnObject &result)
+    DoExecute (Args& command, CommandReturnObject &result)
     {        
         result.SetStatus (eReturnStatusSuccessFinishResult);
         Stream &strm = result.GetOutputStream();
@@ -250,7 +251,7 @@ public:
         }
         return result.Succeeded();
     }
-protected:
+
     CommandOptions m_options;
 };
 
@@ -268,7 +269,7 @@ enum StepScope
     eStepScopeInstruction
 };
 
-class CommandObjectThreadStepWithTypeAndScope : public CommandObject
+class CommandObjectThreadStepWithTypeAndScope : public CommandObjectParsed
 {
 public:
 
@@ -358,7 +359,7 @@ public:
                                              uint32_t flags,
                                              StepType step_type,
                                              StepScope step_scope) :
-        CommandObject (interpreter, name, help, syntax, flags),
+        CommandObjectParsed (interpreter, name, help, syntax, flags),
         m_step_type (step_type),
         m_step_scope (step_scope),
         m_options (interpreter)
@@ -389,12 +390,9 @@ public:
         return &m_options;
     }
 
+protected:
     virtual bool
-    Execute 
-    (
-        Args& command,
-        CommandReturnObject &result
-    )
+    DoExecute (Args& command, CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         bool synchronous_execution = m_interpreter.GetSynchronous();
@@ -594,16 +592,16 @@ CommandObjectThreadStepWithTypeAndScope::CommandOptions::g_option_table[] =
 // CommandObjectThreadContinue
 //-------------------------------------------------------------------------
 
-class CommandObjectThreadContinue : public CommandObject
+class CommandObjectThreadContinue : public CommandObjectParsed
 {
 public:
 
     CommandObjectThreadContinue (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "thread continue",
-                       "Continue execution of one or more threads in an active process.",
-                       NULL,
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+        CommandObjectParsed (interpreter, 
+                             "thread continue",
+                             "Continue execution of one or more threads in an active process.",
+                             NULL,
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
     {
         CommandArgumentEntry arg;
         CommandArgumentData thread_idx_arg;
@@ -626,11 +624,7 @@ public:
     }
 
     virtual bool
-    Execute
-    (
-        Args& command,
-        CommandReturnObject &result
-    )
+    DoExecute (Args& command, CommandReturnObject &result)
     {
         bool synchronous_execution = m_interpreter.GetSynchronous ();
 
@@ -652,37 +646,41 @@ public:
         StateType state = process->GetState();
         if ((state == eStateCrashed) || (state == eStateStopped) || (state == eStateSuspended))
         {
+            Mutex::Locker locker (process->GetThreadList().GetMutex());
             const uint32_t num_threads = process->GetThreadList().GetSize();
-            uint32_t idx;
             const size_t argc = command.GetArgumentCount();
             if (argc > 0)
             {
-                std::vector<uint32_t> resume_thread_indexes;
+                std::vector<Thread *> resume_threads;
                 for (uint32_t i=0; i<argc; ++i)
                 {
                     bool success;
                     const int base = 0;
-                    idx = Args::StringToUInt32 (command.GetArgumentAtIndex(i), LLDB_INVALID_INDEX32, base, &success);
-                    if (!success)
+                    uint32_t thread_idx = Args::StringToUInt32 (command.GetArgumentAtIndex(i), LLDB_INVALID_INDEX32, base, &success);
+                    if (success)
                     {
-                        result.AppendErrorWithFormat ("invalid value for thread index: %s.", command.GetArgumentAtIndex(i));
-                        result.SetStatus (eReturnStatusFailed);
-                        return false;
-                    }
-                    else if (process->GetThreadList().FindThreadByIndexID(idx))
-                    {
-                        if (find(resume_thread_indexes.begin(), resume_thread_indexes.end(), idx) == resume_thread_indexes.end())
-                            resume_thread_indexes.push_back(idx);
+                        Thread *thread = process->GetThreadList().FindThreadByIndexID(thread_idx).get();
+                        
+                        if (thread)
+                        {
+                            resume_threads.push_back(thread);
+                        }
+                        else
+                        {
+                            result.AppendErrorWithFormat("invalid thread index %u.\n", thread_idx);
+                            result.SetStatus (eReturnStatusFailed);
+                            return false;
+                        }
                     }
                     else
                     {
-                        result.AppendErrorWithFormat("thread index %u out of range.\n", idx);
+                        result.AppendErrorWithFormat ("invalid thread index argument: \"%s\".\n", command.GetArgumentAtIndex(i));
                         result.SetStatus (eReturnStatusFailed);
                         return false;
                     }
                 }
-
-                if (resume_thread_indexes.empty())
+                
+                if (resume_threads.empty())
                 {
                     result.AppendError ("no valid thread indexes were specified");
                     result.SetStatus (eReturnStatusFailed);
@@ -690,20 +688,20 @@ public:
                 }
                 else
                 {
-                    if (resume_thread_indexes.size() == 1)
+                    if (resume_threads.size() == 1)
                         result.AppendMessageWithFormat ("Resuming thread: ");
                     else
                         result.AppendMessageWithFormat ("Resuming threads: ");
-
-                    for (idx=0; idx<num_threads; ++idx)
+                    
+                    for (uint32_t idx=0; idx<num_threads; ++idx)
                     {
-                        Thread *thread = process->GetThreadList().FindThreadByIndexID(idx).get();
-                        std::vector<uint32_t>::iterator this_thread_pos = find(resume_thread_indexes.begin(), resume_thread_indexes.end(), thread->GetIndexID());
+                        Thread *thread = process->GetThreadList().GetThreadAtIndex(idx).get();
+                        std::vector<Thread *>::iterator this_thread_pos = find(resume_threads.begin(), resume_threads.end(), thread);
                         
-                        if (this_thread_pos != resume_thread_indexes.end())
+                        if (this_thread_pos != resume_threads.end())
                         {
-                            resume_thread_indexes.erase(this_thread_pos);
-                            if (resume_thread_indexes.size() > 0)
+                            resume_threads.erase(this_thread_pos);
+                            if (resume_threads.size() > 0)
                                 result.AppendMessageWithFormat ("%u, ", thread->GetIndexID());
                             else
                                 result.AppendMessageWithFormat ("%u ", thread->GetIndexID());
@@ -728,9 +726,9 @@ public:
                     return false;
                 }
                 // Set the actions that the threads should each take when resuming
-                for (idx=0; idx<num_threads; ++idx)
+                for (uint32_t idx=0; idx<num_threads; ++idx)
                 {
-                    Thread *thread = process->GetThreadList().FindThreadByIndexID(idx).get();
+                    Thread *thread = process->GetThreadList().GetThreadAtIndex(idx).get();
                     if (thread == current_thread)
                     {
                         result.AppendMessageWithFormat ("Resuming thread 0x%4.4llx in process %llu\n", thread->GetID(), process->GetID());
@@ -742,7 +740,7 @@ public:
                     }
                 }
             }
-
+            
             Error error (process->Resume());
             if (error.Success())
             {
@@ -750,7 +748,7 @@ public:
                 if (synchronous_execution)
                 {
                     state = process->WaitForProcessToStop (NULL);
-
+                    
                     result.SetDidChangeProcessState (true);
                     result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
@@ -782,7 +780,7 @@ public:
 // CommandObjectThreadUntil
 //-------------------------------------------------------------------------
 
-class CommandObjectThreadUntil : public CommandObject
+class CommandObjectThreadUntil : public CommandObjectParsed
 {
 public:
 
@@ -879,11 +877,11 @@ public:
     };
 
     CommandObjectThreadUntil (CommandInterpreter &interpreter) :
-        CommandObject (interpreter, 
-                       "thread until",
-                       "Run the current or specified thread until it reaches a given line number or leaves the current function.",
-                       NULL,
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+        CommandObjectParsed (interpreter, 
+                             "thread until",
+                             "Run the current or specified thread until it reaches a given line number or leaves the current function.",
+                             NULL,
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -913,12 +911,9 @@ public:
         return &m_options;
     }
 
+protected:
     virtual bool
-    Execute 
-    (
-        Args& command,
-        CommandReturnObject &result
-    )
+    DoExecute (Args& command, CommandReturnObject &result)
     {
         bool synchronous_execution = m_interpreter.GetSynchronous ();
 
@@ -1100,7 +1095,7 @@ public:
         }
         return result.Succeeded();
     }
-protected:
+
     CommandOptions m_options;
 
 };
@@ -1119,16 +1114,16 @@ CommandObjectThreadUntil::CommandOptions::g_option_table[] =
 // CommandObjectThreadSelect
 //-------------------------------------------------------------------------
 
-class CommandObjectThreadSelect : public CommandObject
+class CommandObjectThreadSelect : public CommandObjectParsed
 {
 public:
 
     CommandObjectThreadSelect (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "thread select",
-                       "Select a thread as the currently active thread.",
-                       NULL,
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+        CommandObjectParsed (interpreter,
+                             "thread select",
+                             "Select a thread as the currently active thread.",
+                             NULL,
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
     {
         CommandArgumentEntry arg;
         CommandArgumentData thread_idx_arg;
@@ -1150,12 +1145,9 @@ public:
     {
     }
 
+protected:
     virtual bool
-    Execute 
-    (
-        Args& command,
-        CommandReturnObject &result
-    )
+    DoExecute (Args& command, CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
@@ -1202,17 +1194,17 @@ public:
 // CommandObjectThreadList
 //-------------------------------------------------------------------------
 
-class CommandObjectThreadList : public CommandObject
+class CommandObjectThreadList : public CommandObjectParsed
 {
 public:
 
 
     CommandObjectThreadList (CommandInterpreter &interpreter):
-        CommandObject (interpreter,
-                       "thread list",
-                       "Show a summary of all current threads in a process.",
-                       "thread list",
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+        CommandObjectParsed (interpreter,
+                             "thread list",
+                             "Show a summary of all current threads in a process.",
+                             "thread list",
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
     {
     }
 
@@ -1220,12 +1212,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute
-    (
-        Args& command,
-        CommandReturnObject &result
-    )
+    DoExecute (Args& command, CommandReturnObject &result)
     {
         Stream &strm = result.GetOutputStream();
         result.SetStatus (eReturnStatusSuccessFinishNoResult);

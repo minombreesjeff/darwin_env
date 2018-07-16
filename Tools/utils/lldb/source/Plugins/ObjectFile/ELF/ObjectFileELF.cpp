@@ -682,6 +682,8 @@ ObjectFileELF::GetSectionList()
                 section_sp->SetIsThreadSpecific (is_thread_specific);
             m_sections_ap->AddSection(section_sp);
         }
+        
+        m_sections_ap->Finalize(); // Now that we're done adding sections, finalize to build fast-lookup caches
     }
 
     return m_sections_ap.get();
@@ -875,14 +877,11 @@ ObjectFileELF::ParseDynamicSymbols()
     DataExtractor dynsym_data;
     if (ReadSectionData(dynsym, dynsym_data))
     {
-
         const unsigned section_size = dynsym_data.GetByteSize();
-        unsigned offset = 0;
         unsigned cursor = 0;
 
         while (cursor < section_size)
         {
-            offset = cursor;
             if (!symbol.Parse(dynsym_data, &cursor))
                 break;
 

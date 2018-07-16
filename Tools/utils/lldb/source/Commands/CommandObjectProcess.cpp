@@ -31,15 +31,15 @@ using namespace lldb_private;
 // CommandObjectProcessLaunch
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessLaunch
-class CommandObjectProcessLaunch : public CommandObject
+class CommandObjectProcessLaunch : public CommandObjectParsed
 {
 public:
 
     CommandObjectProcessLaunch (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process launch",
-                       "Launch the executable in the debugger.",
-                       NULL),
+        CommandObjectParsed (interpreter,
+                             "process launch",
+                             "Launch the executable in the debugger.",
+                             NULL),
         m_options (interpreter)
     {
         CommandArgumentEntry arg;
@@ -67,8 +67,15 @@ public:
         return &m_options;
     }
 
+    virtual const char *GetRepeatCommand (Args &current_command_args, uint32_t index)
+    {
+        // No repeat for "process launch"...
+        return "";
+    }
+
+protected:
     bool
-    Execute (Args& launch_args, CommandReturnObject &result)
+    DoExecute (Args& launch_args, CommandReturnObject &result)
     {
         Debugger &debugger = m_interpreter.GetDebugger();
         Target *target = debugger.GetSelectedTarget().get();
@@ -256,12 +263,6 @@ public:
         return result.Succeeded();
     }
 
-    virtual const char *GetRepeatCommand (Args &current_command_args, uint32_t index)
-    {
-        // No repeat for "process launch"...
-        return "";
-    }
-
 protected:
     ProcessLaunchCommandOptions m_options;
 };
@@ -293,7 +294,7 @@ protected:
 // CommandObjectProcessAttach
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessAttach
-class CommandObjectProcessAttach : public CommandObject
+class CommandObjectProcessAttach : public CommandObjectParsed
 {
 public:
 
@@ -348,6 +349,10 @@ public:
 
                 case 'w':   
                     attach_info.SetWaitForLaunch(true);
+                    break;
+                    
+                case 'i':
+                    attach_info.SetIgnoreExisting(false);
                     break;
 
                 default:
@@ -432,10 +437,10 @@ public:
     };
 
     CommandObjectProcessAttach (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process attach",
-                       "Attach to a process.",
-                       "process attach <cmd-options>"),
+        CommandObjectParsed (interpreter,
+                             "process attach",
+                             "Attach to a process.",
+                             "process attach <cmd-options>"),
         m_options (interpreter)
     {
     }
@@ -444,8 +449,15 @@ public:
     {
     }
 
+    Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
@@ -554,6 +566,7 @@ public:
                     else
                     {
                         result.AppendError ("attach failed: process did not stop (no such process or permission problem?)");
+                        process->Destroy();
                         result.SetStatus (eReturnStatusFailed);
                         return false;                
                     }
@@ -603,14 +616,6 @@ public:
         return result.Succeeded();
     }
     
-    Options *
-    GetOptions ()
-    {
-        return &m_options;
-    }
-
-protected:
-
     CommandOptions m_options;
 };
 
@@ -618,11 +623,12 @@ protected:
 OptionDefinition
 CommandObjectProcessAttach::CommandOptions::g_option_table[] =
 {
-{ LLDB_OPT_SET_ALL, false, "continue",'c', no_argument,       NULL, 0, eArgTypeNone,         "Immediately continue the process once attached."},
-{ LLDB_OPT_SET_ALL, false, "plugin",  'P', required_argument, NULL, 0, eArgTypePlugin,       "Name of the process plugin you want to use."},
-{ LLDB_OPT_SET_1,   false, "pid",     'p', required_argument, NULL, 0, eArgTypePid,          "The process ID of an existing process to attach to."},
-{ LLDB_OPT_SET_2,   false, "name",    'n', required_argument, NULL, 0, eArgTypeProcessName,  "The name of the process to attach to."},
-{ LLDB_OPT_SET_2,   false, "waitfor", 'w', no_argument,       NULL, 0, eArgTypeNone,         "Wait for the process with <process-name> to launch."},
+{ LLDB_OPT_SET_ALL, false, "continue",'c', no_argument,         NULL, 0, eArgTypeNone,         "Immediately continue the process once attached."},
+{ LLDB_OPT_SET_ALL, false, "plugin",  'P', required_argument,   NULL, 0, eArgTypePlugin,       "Name of the process plugin you want to use."},
+{ LLDB_OPT_SET_1,   false, "pid",     'p', required_argument,   NULL, 0, eArgTypePid,          "The process ID of an existing process to attach to."},
+{ LLDB_OPT_SET_2,   false, "name",    'n', required_argument,   NULL, 0, eArgTypeProcessName,  "The name of the process to attach to."},
+{ LLDB_OPT_SET_2,   false, "include-existing", 'i', no_argument, NULL, 0, eArgTypeNone,         "Include existing processes when doing attach -w."},
+{ LLDB_OPT_SET_2,   false, "waitfor", 'w', no_argument,         NULL, 0, eArgTypeNone,         "Wait for the process with <process-name> to launch."},
 { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -631,16 +637,16 @@ CommandObjectProcessAttach::CommandOptions::g_option_table[] =
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessContinue
 
-class CommandObjectProcessContinue : public CommandObject
+class CommandObjectProcessContinue : public CommandObjectParsed
 {
 public:
 
     CommandObjectProcessContinue (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process continue",
-                       "Continue execution of all threads in the current process.",
-                       "process continue",
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+        CommandObjectParsed (interpreter,
+                             "process continue",
+                             "Continue execution of all threads in the current process.",
+                             "process continue",
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
     {
     }
 
@@ -649,8 +655,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -719,16 +726,16 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessDetach
 
-class CommandObjectProcessDetach : public CommandObject
+class CommandObjectProcessDetach : public CommandObjectParsed
 {
 public:
 
     CommandObjectProcessDetach (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process detach",
-                       "Detach from the current process being debugged.",
-                       "process detach",
-                       eFlagProcessMustBeLaunched)
+        CommandObjectParsed (interpreter,
+                             "process detach",
+                             "Detach from the current process being debugged.",
+                             "process detach",
+                             eFlagProcessMustBeLaunched)
     {
     }
 
@@ -736,8 +743,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -769,7 +777,7 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessConnect
 
-class CommandObjectProcessConnect : public CommandObject
+class CommandObjectProcessConnect : public CommandObjectParsed
 {
 public:
     
@@ -829,11 +837,11 @@ public:
     };
 
     CommandObjectProcessConnect (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process connect",
-                       "Connect to a remote debug service.",
-                       "process connect <remote-url>",
-                       0),
+        CommandObjectParsed (interpreter,
+                             "process connect",
+                             "Connect to a remote debug service.",
+                             "process connect <remote-url>",
+                             0),
         m_options (interpreter)
     {
     }
@@ -843,8 +851,15 @@ public:
     }
 
     
+    Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+    
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         
@@ -919,14 +934,6 @@ public:
         }
         return result.Succeeded();
     }
-
-    Options *
-    GetOptions ()
-    {
-        return &m_options;
-    }
-    
-protected:
     
     CommandOptions m_options;
 };
@@ -944,16 +951,16 @@ CommandObjectProcessConnect::CommandOptions::g_option_table[] =
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessLoad
 
-class CommandObjectProcessLoad : public CommandObject
+class CommandObjectProcessLoad : public CommandObjectParsed
 {
 public:
 
     CommandObjectProcessLoad (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process load",
-                       "Load a shared library into the current process.",
-                       "process load <filename> [<filename> ...]",
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+        CommandObjectParsed (interpreter,
+                             "process load",
+                             "Load a shared library into the current process.",
+                             "process load <filename> [<filename> ...]",
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
     {
     }
 
@@ -961,8 +968,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -1003,16 +1011,16 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessUnload
 
-class CommandObjectProcessUnload : public CommandObject
+class CommandObjectProcessUnload : public CommandObjectParsed
 {
 public:
 
     CommandObjectProcessUnload (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process unload",
-                       "Unload a shared library from the current process using the index returned by a previous call to \"process load\".",
-                       "process unload <index>",
-                       eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+        CommandObjectParsed (interpreter,
+                             "process unload",
+                             "Unload a shared library from the current process using the index returned by a previous call to \"process load\".",
+                             "process unload <index>",
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
     {
     }
 
@@ -1020,8 +1028,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -1069,15 +1078,15 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessSignal
 
-class CommandObjectProcessSignal : public CommandObject
+class CommandObjectProcessSignal : public CommandObjectParsed
 {
 public:
 
     CommandObjectProcessSignal (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process signal",
-                       "Send a UNIX signal to the current process being debugged.",
-                       NULL)
+        CommandObjectParsed (interpreter,
+                             "process signal",
+                             "Send a UNIX signal to the current process being debugged.",
+                             NULL)
     {
         CommandArgumentEntry arg;
         CommandArgumentData signal_arg;
@@ -1097,8 +1106,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -1154,17 +1164,17 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessInterrupt
 
-class CommandObjectProcessInterrupt : public CommandObject
+class CommandObjectProcessInterrupt : public CommandObjectParsed
 {
 public:
 
 
     CommandObjectProcessInterrupt (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "process interrupt",
-                   "Interrupt the current process being debugged.",
-                   "process interrupt",
-                   eFlagProcessMustBeLaunched)
+        CommandObjectParsed (interpreter,
+                             "process interrupt",
+                             "Interrupt the current process being debugged.",
+                             "process interrupt",
+                             eFlagProcessMustBeLaunched)
     {
     }
 
@@ -1172,8 +1182,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -1217,16 +1228,16 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessKill
 
-class CommandObjectProcessKill : public CommandObject
+class CommandObjectProcessKill : public CommandObjectParsed
 {
 public:
 
     CommandObjectProcessKill (CommandInterpreter &interpreter) :
-    CommandObject (interpreter, 
-                   "process kill",
-                   "Terminate the current process being debugged.",
-                   "process kill",
-                   eFlagProcessMustBeLaunched)
+        CommandObjectParsed (interpreter, 
+                             "process kill",
+                             "Terminate the current process being debugged.",
+                             "process kill",
+                             eFlagProcessMustBeLaunched)
     {
     }
 
@@ -1234,8 +1245,9 @@ public:
     {
     }
 
+protected:
     bool
-    Execute (Args& command,
+    DoExecute (Args& command,
              CommandReturnObject &result)
     {
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
@@ -1275,15 +1287,15 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessStatus
 
-class CommandObjectProcessStatus : public CommandObject
+class CommandObjectProcessStatus : public CommandObjectParsed
 {
 public:
     CommandObjectProcessStatus (CommandInterpreter &interpreter) :
-    CommandObject (interpreter, 
-                   "process status",
-                   "Show the current status and location of executing process.",
-                   "process status",
-                   0)
+        CommandObjectParsed (interpreter, 
+                             "process status",
+                             "Show the current status and location of executing process.",
+                             "process status",
+                             0)
     {
     }
 
@@ -1293,11 +1305,7 @@ public:
 
 
     bool
-    Execute
-    (
-        Args& command,
-        CommandReturnObject &result
-    )
+    DoExecute (Args& command, CommandReturnObject &result)
     {
         Stream &strm = result.GetOutputStream();
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
@@ -1331,7 +1339,7 @@ public:
 //-------------------------------------------------------------------------
 #pragma mark CommandObjectProcessHandle
 
-class CommandObjectProcessHandle : public CommandObject
+class CommandObjectProcessHandle : public CommandObjectParsed
 {
 public:
 
@@ -1400,10 +1408,10 @@ public:
 
 
     CommandObjectProcessHandle (CommandInterpreter &interpreter) :
-        CommandObject (interpreter,
-                       "process handle",
-                       "Show or update what the process and debugger should do with various signals received from the OS.",
-                       NULL),
+        CommandObjectParsed (interpreter,
+                             "process handle",
+                             "Show or update what the process and debugger should do with various signals received from the OS.",
+                             NULL),
         m_options (interpreter)
     {
         SetHelpLong ("If no signals are specified, update them all.  If no update option is specified, list the current values.\n");
@@ -1503,8 +1511,9 @@ public:
         }
     }
 
+protected:
     bool
-    Execute (Args &signal_args, CommandReturnObject &result)
+    DoExecute (Args &signal_args, CommandReturnObject &result)
     {
         TargetSP target_sp = m_interpreter.GetDebugger().GetSelectedTarget();
         
@@ -1617,8 +1626,6 @@ public:
 
         return result.Succeeded();
     }
-
-protected:
 
     CommandOptions m_options;
 };

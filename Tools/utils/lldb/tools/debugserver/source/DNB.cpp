@@ -440,10 +440,11 @@ GetAllInfosMatchingName(const char *full_process_name, std::vector<struct kinfo_
         const char *process_name;
         process_name = strrchr (full_process_name, '/');
         if (process_name == NULL)
-          process_name = full_process_name;
+            process_name = full_process_name;
         else
-          process_name++;
+            process_name++;
 
+        const int process_name_len = strlen(process_name);
         std::vector<struct kinfo_proc> proc_infos;
         const size_t num_proc_infos = GetAllInfos(proc_infos);
         if (num_proc_infos > 0)
@@ -457,10 +458,49 @@ GetAllInfosMatchingName(const char *full_process_name, std::vector<struct kinfo_
 
                 // Check for process by name. We only check the first MAXCOMLEN
                 // chars as that is all that kp_proc.p_comm holds.
-                if (::strncasecmp(proc_infos[i].kp_proc.p_comm, process_name, MAXCOMLEN) == 0)
+                if (::strncasecmp(process_name, proc_infos[i].kp_proc.p_comm, MAXCOMLEN) == 0)
                 {
-                    // We found a matching process, add it to our list
-                    matching_proc_infos.push_back(proc_infos[i]);
+                    if (process_name_len > MAXCOMLEN)
+                    {
+                        // We found a matching process name whose first MAXCOMLEN
+                        // characters match, but there is more to the name than
+                        // this. We need to get the full process name. 
+
+                        int proc_args_mib[3] = { CTL_KERN, KERN_PROCARGS2, proc_infos[i].kp_proc.p_pid };
+                        
+                        // Get PATH_MAX for argv[0] plus 4 bytes for the argc
+                        char arg_data[PATH_MAX+4];
+                        size_t arg_data_size = sizeof(arg_data);
+                         // Skip the 4 byte argc integer value to get to argv[0]
+                        const char *argv0 = arg_data + 4;
+                        if (::sysctl (proc_args_mib, 3, arg_data, &arg_data_size , NULL, 0) == 0)
+                        {
+                            const char *argv_basename = strrchr(argv0, '/');
+                            if (argv_basename)
+                            {
+                                // Skip the '/'
+                                ++argv_basename;
+                            }
+                            else
+                            {
+                                // We didn't find a directory delimiter in the process argv[0], just use what was in there
+                                argv_basename = argv0;
+                            }
+
+                            if (argv_basename)
+                            {
+                                if (::strncasecmp(process_name, argv_basename, PATH_MAX) == 0)
+                                {
+                                    matching_proc_infos.push_back(proc_infos[i]);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // We found a matching process, add it to our list
+                        matching_proc_infos.push_back(proc_infos[i]);
+                    }
                 }
             }
         }
@@ -472,6 +512,7 @@ GetAllInfosMatchingName(const char *full_process_name, std::vector<struct kinfo_
 nub_process_t
 DNBProcessAttachWait (const char *waitfor_process_name, 
                       nub_launch_flavor_t launch_flavor,
+                      bool ignore_existing,
                       struct timespec *timeout_abstime, 
                       useconds_t waitfor_interval,
                       char *err_str, 
@@ -495,7 +536,12 @@ DNBProcessAttachWait (const char *waitfor_process_name,
     }
 
     if (attach_token == NULL)
-        num_exclude_proc_infos = GetAllInfosMatchingName (waitfor_process_name, exclude_proc_infos);
+    {
+        if (ignore_existing)
+            num_exclude_proc_infos = GetAllInfosMatchingName (waitfor_process_name, exclude_proc_infos);
+        else
+            num_exclude_proc_infos = 0;
+    }
 
     DNBLogThreadedIf (LOG_PROCESS, "Waiting for '%s' to appear...\n", waitfor_process_name);
 
@@ -1214,9 +1260,9 @@ DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t base_addr, FILE *file
         case '%':
             {
                 f++;    // Skip the '%' character
-                int min_field_width = 0;
-                int precision = 0;
-                uint32_t flags = 0;
+//                int min_field_width = 0;
+//                int precision = 0;
+                //uint32_t flags = 0;
                 uint32_t length_modifiers = 0;
                 uint32_t byte_size = 0;
                 uint32_t actual_byte_size = 0;
@@ -1233,12 +1279,12 @@ DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t base_addr, FILE *file
                 // Decode any flags
                 switch (*f)
                 {
-                case '#': fprintf_format += *f++; flags |= alternate_form;            break;
-                case '0': fprintf_format += *f++; flags |= zero_padding;            break;
-                case '-': fprintf_format += *f++; flags |= negative_field_width;    break;
-                case ' ': fprintf_format += *f++; flags |= blank_space;                break;
-                case '+': fprintf_format += *f++; flags |= show_sign;                break;
-                case ',': fprintf_format += *f++; flags |= show_thousands_separator;break;
+                case '#': fprintf_format += *f++; break; //flags |= alternate_form;          break;
+                case '0': fprintf_format += *f++; break; //flags |= zero_padding;            break;
+                case '-': fprintf_format += *f++; break; //flags |= negative_field_width;    break;
+                case ' ': fprintf_format += *f++; break; //flags |= blank_space;             break;
+                case '+': fprintf_format += *f++; break; //flags |= show_sign;               break;
+                case ',': fprintf_format += *f++; break; //flags |= show_thousands_separator;break;
                 case '{':
                 case '[':
                     {
@@ -1330,7 +1376,8 @@ DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t base_addr, FILE *file
                 // Check for a minimum field width
                 if (isdigit(*f))
                 {
-                    min_field_width = strtoul(f, &end, 10);
+                    //min_field_width = strtoul(f, &end, 10);
+                    strtoul(f, &end, 10);
                     if (end > f)
                     {
                         fprintf_format.append(f, end - f);
@@ -1346,7 +1393,8 @@ DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t base_addr, FILE *file
                     if (isdigit(*f))
                     {
                         fprintf_format += '.';
-                        precision = strtoul(f, &end, 10);
+                        //precision = strtoul(f, &end, 10);
+                        strtoul(f, &end, 10);
                         if (end > f)
                         {
                             fprintf_format.append(f, end - f);
@@ -1453,7 +1501,7 @@ DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t base_addr, FILE *file
                             byte_size = sizeof(char);
                         else if (length_modifiers & length_mod_h)
                             byte_size = sizeof(short);
-                        if (length_modifiers & length_mod_ll)
+                        else if (length_modifiers & length_mod_ll)
                             byte_size = sizeof(long long);
                         else if (length_modifiers & length_mod_l)
                             byte_size = sizeof(long);
@@ -1747,6 +1795,19 @@ DNBProcessGetThreadAtIndex (nub_process_t pid, size_t thread_idx)
     if (GetProcessSP (pid, procSP))
         return procSP->GetThreadAtIndex (thread_idx);
     return INVALID_NUB_THREAD;
+}
+
+//----------------------------------------------------------------------
+// Do whatever is needed to sync the thread's register state with it's kernel values.
+//----------------------------------------------------------------------
+nub_bool_t
+DNBProcessSyncThreadState (nub_process_t pid, nub_thread_t tid)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->SyncThreadState (tid);
+    return false;
+
 }
 
 nub_addr_t

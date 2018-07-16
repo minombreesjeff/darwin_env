@@ -110,18 +110,19 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx, Error &err)
     if (frame == NULL)
         return;
     
-    SymbolContext sym_ctx = frame->GetSymbolContext(lldb::eSymbolContextFunction);
+    SymbolContext sym_ctx = frame->GetSymbolContext(lldb::eSymbolContextFunction | lldb::eSymbolContextBlock);
     
     if (!sym_ctx.function)
         return;
     
-    clang::DeclContext *decl_context;
+    // Find the block that defines the function represented by "sym_ctx"
+    Block *function_block = sym_ctx.GetFunctionBlock();
     
-    if (sym_ctx.block && sym_ctx.block->GetInlinedFunctionInfo())
-        decl_context = sym_ctx.block->GetClangDeclContextForInlinedFunction();
-    else
-        decl_context = sym_ctx.function->GetClangDeclContext();
-        
+    if (!function_block)
+        return;
+
+    clang::DeclContext *decl_context = function_block->GetClangDeclContext();
+
     if (!decl_context)
         return;
             
@@ -131,24 +132,22 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx, Error &err)
         {
             if (m_enforce_valid_object)
             {
-                VariableList *vars = frame->GetVariableList(false);
+                lldb::VariableListSP variable_list_sp (function_block->GetBlockVariableList (true));
                 
                 const char *thisErrorString = "Stopped in a C++ method, but 'this' isn't available; pretending we are in a generic context";
                 
-                if (!vars)
+                if (!variable_list_sp)
                 {
-                    err.SetErrorToGenericError();
                     err.SetErrorString(thisErrorString);
                     return;
                 }
                 
-                lldb::VariableSP this_var = vars->FindVariable(ConstString("this"));
+                lldb::VariableSP this_var_sp (variable_list_sp->FindVariable(ConstString("this")));
                 
-                if (!this_var ||
-                    !this_var->IsInScope(frame) || 
-                    !this_var->LocationIsValidForFrame (frame))
+                if (!this_var_sp ||
+                    !this_var_sp->IsInScope(frame) || 
+                    !this_var_sp->LocationIsValidForFrame (frame))
                 {
-                    err.SetErrorToGenericError();
                     err.SetErrorString(thisErrorString);
                     return;
                 }
@@ -164,24 +163,22 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx, Error &err)
         {
             if (m_enforce_valid_object)
             {
-                VariableList *vars = frame->GetVariableList(false);
+                lldb::VariableListSP variable_list_sp (function_block->GetBlockVariableList (true));
                 
                 const char *selfErrorString = "Stopped in an Objective-C method, but 'self' isn't available; pretending we are in a generic context";
                 
-                if (!vars)
+                if (!variable_list_sp)
                 {
-                    err.SetErrorToGenericError();
                     err.SetErrorString(selfErrorString);
                     return;
                 }
                 
-                lldb::VariableSP self_var = vars->FindVariable(ConstString("self"));
+                lldb::VariableSP self_variable_sp = variable_list_sp->FindVariable(ConstString("self"));
                 
-                if (!self_var || 
-                    !self_var->IsInScope(frame) || 
-                    !self_var->LocationIsValidForFrame (frame))
+                if (!self_variable_sp || 
+                    !self_variable_sp->IsInScope(frame) || 
+                    !self_variable_sp->LocationIsValidForFrame (frame))
                 {
-                    err.SetErrorToGenericError();
                     err.SetErrorString(selfErrorString);
                     return;
                 }
@@ -545,7 +542,8 @@ ClangUserExpression::Execute (Stream &error_stream,
                               ExecutionContext &exe_ctx,
                               bool discard_on_error,
                               ClangUserExpression::ClangUserExpressionSP &shared_ptr_to_me,
-                              lldb::ClangExpressionVariableSP &result)
+                              lldb::ClangExpressionVariableSP &result,
+                              uint32_t single_thread_timeout_usec)
 {
     // The expression log is quite verbose, and if you're just tracking the execution of the
     // expression, it's quite convenient to have these logs come out with the STEP log as well.
@@ -581,8 +579,6 @@ ClangUserExpression::Execute (Stream &error_stream,
     
         call_plan_sp->SetPrivate(true);
     
-        uint32_t single_thread_timeout_usec = 500000;
-        
         if (log)
             log->Printf("-- [ClangUserExpression::Execute] Execution of expression begins --");
         
@@ -651,10 +647,11 @@ ClangUserExpression::Evaluate (ExecutionContext &exe_ctx,
                                bool discard_on_error,
                                const char *expr_cstr,
                                const char *expr_prefix,
-                               lldb::ValueObjectSP &result_valobj_sp)
+                               lldb::ValueObjectSP &result_valobj_sp,
+                               uint32_t single_thread_timeout_usec)
 {
     Error error;
-    return EvaluateWithError (exe_ctx, execution_policy, language, desired_type, discard_on_error, expr_cstr, expr_prefix, result_valobj_sp, error);
+    return EvaluateWithError (exe_ctx, execution_policy, language, desired_type, discard_on_error, expr_cstr, expr_prefix, result_valobj_sp, error, single_thread_timeout_usec);
 }
 
 ExecutionResults
@@ -666,7 +663,8 @@ ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx,
                                         const char *expr_cstr,
                                         const char *expr_prefix,
                                         lldb::ValueObjectSP &result_valobj_sp,
-                                        Error &error)
+                                        Error &error,
+                                        uint32_t single_thread_timeout_usec)
 {
     lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
 
@@ -741,7 +739,8 @@ ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx,
                                                              exe_ctx, 
                                                              discard_on_error,
                                                              user_expression_sp, 
-                                                             expr_result);
+                                                             expr_result,
+                                                             single_thread_timeout_usec);
             
             if (execution_results != eExecutionCompleted)
             {

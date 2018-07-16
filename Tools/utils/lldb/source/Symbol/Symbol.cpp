@@ -54,7 +54,7 @@ Symbol::Symbol
 ) :
     SymbolContextScope (),
     m_uid (symID),
-    m_mangled (name, name_is_mangled),
+    m_mangled (ConstString(name), name_is_mangled),
     m_type_data (0),
     m_type_data_resolved (false),
     m_is_synthetic (is_artificial),
@@ -84,7 +84,7 @@ Symbol::Symbol
 ) :
     SymbolContextScope (),
     m_uid (symID),
-    m_mangled (name, name_is_mangled),
+    m_mangled (ConstString(name), name_is_mangled),
     m_type_data (0),
     m_type_data_resolved (false),
     m_is_synthetic (is_artificial),
@@ -277,6 +277,12 @@ Symbol::GetPrologueByteSize ()
                                                                         sc))
             {
                 m_type_data = sc.line_entry.range.GetByteSize();
+                // Sanity check - this may be a function in the middle of code that has debug information, but
+                // not for this symbol.  So the line entries surrounding us won't lie inside our function.
+                // In that case, the line entry will be bigger than we are, so we do that quick check and
+                // if that is true, we just return 0.
+                if (m_type_data >= m_addr_range.GetByteSize())
+                    m_type_data = 0;
             }
             else
             {

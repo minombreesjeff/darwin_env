@@ -1652,7 +1652,8 @@ Target::EvaluateExpression
     bool unwind_on_error,
     bool keep_in_memory,
     lldb::DynamicValueType use_dynamic,
-    lldb::ValueObjectSP &result_valobj_sp
+    lldb::ValueObjectSP &result_valobj_sp,
+    uint32_t single_thread_timeout_usec
 )
 {
     ExecutionResults execution_results = eExecutionSetupError;
@@ -1781,7 +1782,8 @@ Target::EvaluateExpression
                                                                unwind_on_error,
                                                                expr_cstr, 
                                                                prefix, 
-                                                               result_valobj_sp);
+                                                               result_valobj_sp,
+                                                               single_thread_timeout_usec);
         }
     }
     
@@ -1933,7 +1935,12 @@ Target::RunStopHooks ()
         
     if (!m_process_sp)
         return;
-        
+    
+    // <rdar://problem/12027563> make sure we check that we are not stopped because of us running a user expression
+    // since in that case we do not want to run the stop-hooks
+    if (m_process_sp->GetModIDRef().IsLastResumeForUserExpression())
+        return;
+    
     if (m_stop_hooks.empty())
         return;
         
@@ -2913,7 +2920,11 @@ Target::SettingsController::instance_settings_table[] =
     { TSC_PREFER_DYNAMIC    , eSetVarTypeEnum   , NULL          , g_dynamic_value_types, false, false, "Should printed values be shown as their dynamic value." },
     { TSC_ENABLE_SYNTHETIC  , eSetVarTypeBoolean, "true"        , NULL,                  false, false, "Should synthetic values be used by default whenever available." },
     { TSC_SKIP_PROLOGUE     , eSetVarTypeBoolean, "true"        , NULL,                  false, false, "Skip function prologues when setting breakpoints by name." },
-    { TSC_SOURCE_MAP        , eSetVarTypeArray  , NULL          , NULL,                  false, false, "Source path remappings to use when locating source files from debug information." },
+    { TSC_SOURCE_MAP        , eSetVarTypeArray  , NULL          , NULL,                  false, false, "Source path remappings used to track the change of location between a source file when built, and "
+                                                                                                       "where it exists on the current system.  It consists of an array of duples, the first element of each duple is "
+                                                                                                       "some part (starting at the root) of the path to the file when it was built, "
+                                                                                                       "and the second is where the remainder of the original build hierarchy is rooted on the local system.  "
+                                                                                                       "Each element of the array is checked in order and the first one that results in a match wins." },
     { TSC_EXE_SEARCH_PATHS  , eSetVarTypeArray  , NULL          , NULL,                  false, false, "Executable search paths to use when locating executable files whose paths don't match the local file system." },
     { TSC_MAX_CHILDREN      , eSetVarTypeInt    , "256"         , NULL,                  true,  false, "Maximum number of children to expand in any level of depth." },
     { TSC_MAX_STRLENSUMMARY , eSetVarTypeInt    , "1024"        , NULL,                  true,  false, "Maximum number of characters to show when using %s in summary strings." },

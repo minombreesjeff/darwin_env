@@ -15,8 +15,8 @@ class CommandLineCompletionTestCase(TestBase):
     @classmethod
     def classCleanup(cls):
         """Cleanup the test byproducts."""
-        system(["/bin/sh", "-c", "rm -f child_send.txt"])
-        system(["/bin/sh", "-c", "rm -f child_read.txt"])
+        os.remove("child_send.txt")
+        os.remove("child_read.txt")
 
     def test_process_attach_dash_dash_con(self):
         """Test that 'process attach --con' completes to 'process attach --continue '."""
@@ -109,8 +109,8 @@ class CommandLineCompletionTestCase(TestBase):
         self.complete_from_to('settings set target.process', 'settings set target.process.')
 
     def test_settings_set_target_process_dot(self):
-        """Test that 'settings set target.process.' completes to 'settings set target.process.thread.'."""
-        self.complete_from_to('settings set target.process.', 'settings set target.process.thread.')
+        """Test that 'settings set target.process.t' completes to 'settings set target.process.thread.'."""
+        self.complete_from_to('settings set target.process.t', 'settings set target.process.thread.')
 
     def test_settings_set_target_process_thread_dot(self):
         """Test that 'settings set target.process.thread.' completes to ['Available completions:',

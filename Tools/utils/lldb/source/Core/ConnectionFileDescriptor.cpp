@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 // C++ Includes
 // Other libraries and framework includes
@@ -74,7 +75,10 @@ ConnectionFileDescriptor::ConnectionFileDescriptor () :
     m_udp_send_sockaddr (),
     m_should_close_fd (false), 
     m_socket_timeout_usec(0),
-    m_mutex (Mutex::eMutexTypeRecursive)
+    m_command_fd_send(-1),
+    m_command_fd_receive(-1),
+    m_mutex (Mutex::eMutexTypeRecursive),
+    m_shutting_down (false)
 {
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
     if (log)
@@ -90,7 +94,10 @@ ConnectionFileDescriptor::ConnectionFileDescriptor (int fd, bool owns_fd) :
     m_udp_send_sockaddr (),
     m_should_close_fd (owns_fd),
     m_socket_timeout_usec(0),
-    m_mutex (Mutex::eMutexTypeRecursive)
+    m_command_fd_send(-1),
+    m_command_fd_receive(-1),
+    m_mutex (Mutex::eMutexTypeRecursive),
+    m_shutting_down (false)
 {
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
     if (log)
@@ -104,6 +111,46 @@ ConnectionFileDescriptor::~ConnectionFileDescriptor ()
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::~ConnectionFileDescriptor ()", this);
     Disconnect (NULL);
+    CloseCommandFileDescriptor ();
+}
+
+void
+ConnectionFileDescriptor::InitializeCommandFileDescriptor ()
+{
+    CloseCommandFileDescriptor();
+    
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
+    // Make the command file descriptor here:
+    int filedes[2];
+    int result = pipe (filedes);
+    if (result != 0)
+    {
+        if (log)
+            log->Printf ("%p ConnectionFileDescriptor::ConnectionFileDescriptor () - could not make pipe: %s",
+                         this,
+                         strerror(errno));
+    }
+    else
+    {
+        m_command_fd_receive = filedes[0];
+        m_command_fd_send    = filedes[1];
+    }
+}
+
+void
+ConnectionFileDescriptor::CloseCommandFileDescriptor ()
+{
+    if (m_command_fd_receive != -1)
+    {
+        close (m_command_fd_receive);
+        m_command_fd_receive = -1;
+    }
+    
+    if (m_command_fd_send != -1)
+    {
+        close (m_command_fd_send);
+        m_command_fd_send = -1;
+    }
 }
 
 bool
@@ -120,6 +167,8 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Connect (url = '%s')", this, s);
 
+    InitializeCommandFileDescriptor();
+    
     if (s && s[0])
     {
         char *end = NULL;
@@ -157,7 +206,7 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
             if (success)
             {
                 // We have what looks to be a valid file descriptor, but we 
-                // should make it is. We currently are doing this by trying to
+                // should make sure it is. We currently are doing this by trying to
                 // get the flags from the file descriptor and making sure it 
                 // isn't a bad fd.
                 errno = 0;
@@ -235,22 +284,44 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
 ConnectionStatus
 ConnectionFileDescriptor::Disconnect (Error *error_ptr)
 {
-    Mutex::Locker locker (m_mutex);
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Disconnect ()", this);
-    if (m_should_close_fd == false)
+
+    ConnectionStatus status = eConnectionStatusSuccess;
+
+    if (m_fd_send < 0 && m_fd_recv < 0)
     {
-        m_fd_send = m_fd_recv = -1;
+        if (log)
+            log->Printf ("%p ConnectionFileDescriptor::Disconnect(): Nothing to disconnect", this);
         return eConnectionStatusSuccess;
     }
-    ConnectionStatus status = eConnectionStatusSuccess;
-    if (m_fd_send >= 0 || m_fd_recv >= 0)
+    
+    // Try to get the ConnectionFileDescriptor's mutex.  If we fail, that is quite likely
+    // because somebody is doing a blocking read on our file descriptor.  If that's the case,
+    // then send the "q" char to the command file channel so the read will wake up and the connection
+    // will then know to shut down.
+    
+    m_shutting_down = true;
+    
+    Mutex::Locker locker;
+    bool got_lock= locker.TryLock (m_mutex);
+    
+    if (!got_lock)
+    {
+        if (m_command_fd_send != -1 )
+        {
+            write (m_command_fd_send, "q", 1);
+            close (m_command_fd_send);
+            m_command_fd_send = -1;
+        }
+        locker.Lock (m_mutex);
+    }
+    
+    if (m_should_close_fd == true)
     {
         if (m_fd_send == m_fd_recv)
         {
-            // Both file descriptors are the same, only close one
-            m_fd_recv = -1;
             status = Close (m_fd_send, error_ptr);
         }
         else
@@ -266,7 +337,19 @@ ConnectionFileDescriptor::Disconnect (Error *error_ptr)
             }
         }
     }
-    return status;
+
+    // Now set all our descriptors to invalid values.
+    
+    m_fd_send = m_fd_recv = -1;
+
+    if (status != eConnectionStatusSuccess)
+    {
+        
+        return status;
+    }
+        
+    m_shutting_down = false;
+    return eConnectionStatusSuccess;
 }
 
 size_t
@@ -281,44 +364,31 @@ ConnectionFileDescriptor::Read (void *dst,
         log->Printf ("%p ConnectionFileDescriptor::Read () ::read (fd = %i, dst = %p, dst_len = %zu)...",
                      this, m_fd_recv, dst, dst_len);
 
+    Mutex::Locker locker;
+    bool got_lock = locker.TryLock (m_mutex);
+    if (!got_lock)
+    {
+        if (log)
+            log->Printf ("%p ConnectionFileDescriptor::Read () failed to get the connection lock.",
+                     this);
+        if (error_ptr)
+            error_ptr->SetErrorString ("failed to get the connection lock for read.");
+            
+        status = eConnectionStatusTimedOut;
+        return 0;
+    }
+    else if (m_shutting_down)
+        return eConnectionStatusError;
+    
     ssize_t bytes_read = 0;
 
-    switch (m_fd_recv_type)
+    status = BytesAvailable (timeout_usec, error_ptr);
+    if (status == eConnectionStatusSuccess)
     {
-    case eFDTypeFile:       // Other FD requireing read/write
-        status = BytesAvailable (timeout_usec, error_ptr);
-        if (status == eConnectionStatusSuccess)
+        do
         {
-            do
-            {
-                bytes_read = ::read (m_fd_recv, dst, dst_len);
-            } while (bytes_read < 0 && errno == EINTR);
-        }
-        break;
-
-    case eFDTypeSocket:     // Socket requiring send/recv
-        if (SetSocketReceiveTimeout (timeout_usec))
-        {
-            status = eConnectionStatusSuccess;
-            do
-            {
-                bytes_read = ::recv (m_fd_recv, dst, dst_len, 0);
-            } while (bytes_read < 0 && errno == EINTR);
-        }
-        break;
-
-    case eFDTypeSocketUDP:  // Unconnected UDP socket requiring sendto/recvfrom
-        if (SetSocketReceiveTimeout (timeout_usec))
-        {
-            status = eConnectionStatusSuccess;
-            SocketAddress from (m_udp_send_sockaddr);
-            socklen_t from_len = m_udp_send_sockaddr.GetLength();
-            do
-            {
-                bytes_read = ::recvfrom (m_fd_recv, dst, dst_len, 0, (struct sockaddr *)&from, &from_len);
-            } while (bytes_read < 0 && errno == EINTR);
-        }
-        break;
+            bytes_read = ::read (m_fd_recv, dst, dst_len);
+        } while (bytes_read < 0 && errno == EINTR);
     }
 
     if (status != eConnectionStatusSuccess)
@@ -512,7 +582,6 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
             break;  // Break to close....
         }
 
-        //Disconnect (NULL);
         return 0;
     }
 
@@ -523,6 +592,9 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
 ConnectionStatus
 ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_ptr)
 {
+    // Don't need to take the mutex here separately since we are only called from Read.  If we
+    // ever get used more generally we will need to lock here as well.
+    
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf("%p ConnectionFileDescriptor::BytesAvailable (timeout_usec = %u)", this, timeout_usec);
@@ -546,7 +618,9 @@ ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_pt
         fd_set read_fds;
         FD_ZERO (&read_fds);
         FD_SET (m_fd_recv, &read_fds);
-        int nfds = m_fd_recv + 1;
+        if (m_command_fd_receive != -1)
+            FD_SET (m_command_fd_receive, &read_fds);
+        int nfds = (m_fd_recv > m_command_fd_receive ? m_fd_recv : m_command_fd_receive) + 1;
         
         Error error;
 
@@ -594,7 +668,26 @@ ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_pt
         }
         else if (num_set_fds > 0)
         {
-            return eConnectionStatusSuccess;
+            if (m_command_fd_receive != -1 && FD_ISSET(m_command_fd_receive, &read_fds))
+            {
+                // We got a command to exit.  Read the data from that pipe:
+                char buffer[16];
+                ssize_t bytes_read;
+                
+                do
+                {
+                    bytes_read = ::read (m_command_fd_receive, buffer, sizeof(buffer));
+                } while (bytes_read < 0 && errno == EINTR);
+                assert (bytes_read == 1 && buffer[0] == 'q');
+                
+                if (log)
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable() got data: %*s from the command channel.",
+                                this, (int) bytes_read, buffer);
+
+                return eConnectionStatusEndOfFile;
+            }
+            else
+                return eConnectionStatusSuccess;
         }
     }
 

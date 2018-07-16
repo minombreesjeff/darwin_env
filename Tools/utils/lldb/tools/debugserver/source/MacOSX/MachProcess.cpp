@@ -49,28 +49,8 @@ static CFStringRef CopyBundleIDForPath (const char *app_buncle_path, DNBError &e
 static bool
 IsSBProcess (nub_process_t pid)
 {
-    bool opt_runningApps = true;
-    bool opt_debuggable = false;
-
-    CFReleaser<CFArrayRef> sbsAppIDs (::SBSCopyApplicationDisplayIdentifiers (opt_runningApps, opt_debuggable));
-    if (sbsAppIDs.get() != NULL)
-    {
-        CFIndex count = ::CFArrayGetCount (sbsAppIDs.get());
-        CFIndex i = 0;
-        for (i = 0; i < count; i++)
-        {
-            CFStringRef displayIdentifier = (CFStringRef)::CFArrayGetValueAtIndex (sbsAppIDs.get(), i);
-
-            // Get the process id for the app (if there is one)
-            pid_t sbs_pid = INVALID_NUB_PROCESS;
-            if (::SBSProcessIDForDisplayIdentifier ((CFStringRef)displayIdentifier, &sbs_pid) == TRUE)
-            {
-                if (sbs_pid == pid)
-                    return true;
-            }
-        }
-    }
-    return false;
+    CFReleaser<CFArrayRef> appIdsForPID (::SBSCopyDisplayIdentifiersForProcessID(pid));
+    return appIdsForPID.get() != NULL;
 }
 
 #endif
@@ -169,6 +149,22 @@ nub_thread_t
 MachProcess::GetThreadAtIndex (nub_size_t thread_idx) const
 {
     return m_thread_list.ThreadIDAtIndex(thread_idx);
+}
+
+nub_bool_t
+MachProcess::SyncThreadState (nub_thread_t tid)
+{
+    MachThreadSP thread_sp(m_thread_list.GetThreadByID(tid));
+    if (!thread_sp)
+        return false;
+    kern_return_t kret = ::thread_abort_safely(thread_sp->ThreadID());
+    DNBLogThreadedIf (LOG_THREAD, "thread = 0x%4.4x calling thread_abort_safely (tid) => %u (GetGPRState() for stop_count = %u)", thread_sp->ThreadID(), kret, thread_sp->Process()->StopCount());
+
+    if (kret == KERN_SUCCESS)
+        return true;
+    else
+        return false;
+    
 }
 
 nub_thread_t
@@ -421,8 +417,7 @@ MachProcess::DoSIGSTOP (bool clear_bps_and_wps, bool allow_running, uint32_t *th
     {
         DisableAllBreakpoints (true);
         DisableAllWatchpoints (true);
-        // The static analyzer complains about this, but just leave the following line in.
-         clear_bps_and_wps = false;
+        //clear_bps_and_wps = false;
     }
     uint32_t thread_idx = m_thread_list.GetThreadIndexForThreadStoppedWithSignal (SIGSTOP);
     if (thread_idx_ptr)
@@ -1533,6 +1528,24 @@ MachProcess::LaunchForDebug
         m_pid = MachProcess::ForkChildForPTraceDebugging (path, argv, envp, this, launch_err);
         break;
 
+#ifdef WITH_SPRINGBOARD
+
+    case eLaunchFlavorSpringBoard:
+        {
+            const char *app_ext = strstr(path, ".app");
+            if (app_ext != NULL)
+            {
+                std::string app_bundle_path(path, app_ext + strlen(".app"));
+                if (SBLaunchForDebug (app_bundle_path.c_str(), argv, envp, no_stdio, launch_err) != 0)
+                    return m_pid; // A successful SBLaunchForDebug() returns and assigns a non-zero m_pid.
+            }
+        }
+        // In case the executable name has a ".app" fragment which confuses our debugserver,
+        // let's do an intentional fallthrough here...
+        launch_flavor = eLaunchFlavorPosixSpawn;
+
+#endif
+
     case eLaunchFlavorPosixSpawn:
         m_pid = MachProcess::PosixSpawnChildForPTraceDebugging (path, 
                                                                 DNBArchProtocol::GetArchitecture (),
@@ -1547,21 +1560,6 @@ MachProcess::LaunchForDebug
                                                                 disable_aslr, 
                                                                 launch_err);
         break;
-
-#ifdef WITH_SPRINGBOARD
-
-    case eLaunchFlavorSpringBoard:
-        {
-            const char *app_ext = strstr(path, ".app");
-            if (app_ext != NULL)
-            {
-                std::string app_bundle_path(path, app_ext + strlen(".app"));
-                return SBLaunchForDebug (app_bundle_path.c_str(), argv, envp, no_stdio, launch_err);
-            }
-        }
-        break;
-
-#endif
 
     default:
         // Invalid  launch
@@ -1862,18 +1860,20 @@ MachProcess::ForkChildForPTraceDebugging
 
         // If our parent is setgid, lets make sure we don't inherit those
         // extra powers due to nepotism.
-        ::setgid (getgid ());
+        if (::setgid (getgid ()) == 0)
+        {
 
-        // Let the child have its own process group. We need to execute
-        // this call in both the child and parent to avoid a race condition
-        // between the two processes.
-        ::setpgid (0, 0);    // Set the child process group to match its pid
+            // Let the child have its own process group. We need to execute
+            // this call in both the child and parent to avoid a race condition
+            // between the two processes.
+            ::setpgid (0, 0);    // Set the child process group to match its pid
 
-        // Sleep a bit to before the exec call
-        ::sleep (1);
+            // Sleep a bit to before the exec call
+            ::sleep (1);
 
-        // Turn this process into
-        ::execv (path, (char * const *)argv);
+            // Turn this process into
+            ::execv (path, (char * const *)argv);
+        }
         // Exit with error code. Child process should have taken
         // over in above exec call and if the exec fails it will
         // exit the child process below.

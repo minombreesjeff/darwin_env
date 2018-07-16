@@ -832,6 +832,12 @@ cores_match (const ArchSpec::Core core1, const ArchSpec::Core core2, bool try_in
 }
 
 bool
+ArchSpec::operator ==(Core core) const
+{
+    return cores_match(core, GetCore(), true);
+}
+
+bool
 lldb_private::operator== (const ArchSpec& lhs, const ArchSpec& rhs)
 {
     if (lhs.GetByteOrder() != rhs.GetByteOrder())

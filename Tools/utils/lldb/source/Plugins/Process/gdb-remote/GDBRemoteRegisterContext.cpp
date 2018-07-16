@@ -183,7 +183,7 @@ GDBRemoteRegisterContext::ReadRegisterBytes (const RegisterInfo *reg_info, DataE
     if (!m_reg_valid[reg])
     {
         Mutex::Locker locker;
-        if (gdb_comm.GetSequenceMutex (locker))
+        if (gdb_comm.GetSequenceMutex (locker, "Didn't get sequence mutex for read register."))
         {
             const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
             ProcessSP process_sp (m_thread.GetProcess());
@@ -286,7 +286,6 @@ GDBRemoteRegisterContext::ReadRegisterBytes (const RegisterInfo *reg_info, DataE
     return true;
 }
 
-
 bool
 GDBRemoteRegisterContext::WriteRegister (const RegisterInfo *reg_info,
                                          const RegisterValue &value)
@@ -326,6 +325,29 @@ GDBRemoteRegisterContext::SetPrimordialRegister(const lldb_private::RegisterInfo
     }
     return false;
 }
+
+void
+GDBRemoteRegisterContext::SyncThreadState(Process *process)
+{
+    // NB.  We assume our caller has locked the sequence mutex.
+    
+    GDBRemoteCommunicationClient &gdb_comm (((ProcessGDBRemote *) process)->GetGDBRemote());
+    if (!gdb_comm.GetSyncThreadStateSupported())
+        return;
+
+    StreamString packet;
+    StringExtractorGDBRemote response;
+    packet.Printf ("QSyncThreadState:%4.4llx;", m_thread.GetID());
+    if (gdb_comm.SendPacketAndWaitForResponse(packet.GetString().c_str(),
+                                              packet.GetString().size(),
+                                              response,
+                                              false))
+    {
+        if (response.IsOKResponse())
+            InvalidateAllRegisters();
+    }
+}
+
 bool
 GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *reg_info, DataExtractor &data, uint32_t data_offset)
 {
@@ -357,7 +379,7 @@ GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *
                                   m_reg_data.GetByteOrder()))   // dst byte order
     {
         Mutex::Locker locker;
-        if (gdb_comm.GetSequenceMutex (locker))
+        if (gdb_comm.GetSequenceMutex (locker, "Didn't get sequence mutex for write register."))
         {
             const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
             ProcessSP process_sp (m_thread.GetProcess());
@@ -445,12 +467,6 @@ GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *
         else
         {
             LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_THREAD | GDBR_LOG_PACKETS));
-#if LLDB_CONFIGURATION_DEBUG
-            StreamString strm;
-            gdb_comm.DumpHistory(strm);
-            Host::SetCrashDescription (strm.GetData());
-            assert (!"Didn't get sequence mutex for write register.");
-#else
             if (log)
             {
                 if (log->GetVerbose())
@@ -462,7 +478,6 @@ GDBRemoteRegisterContext::WriteRegisterBytes (const lldb_private::RegisterInfo *
                 else
                     log->Printf("error: failed to get packet sequence mutex, not sending write register for \"%s\"", reg_info->name);
             }
-#endif
         }
     }
     return false;
@@ -484,8 +499,10 @@ GDBRemoteRegisterContext::ReadAllRegisterValues (lldb::DataBufferSP &data_sp)
     StringExtractorGDBRemote response;
 
     Mutex::Locker locker;
-    if (gdb_comm.GetSequenceMutex (locker))
+    if (gdb_comm.GetSequenceMutex (locker, "Didn't get sequence mutex for read all registers."))
     {
+        SyncThreadState(process);
+        
         char packet[32];
         const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
         ProcessSP process_sp (m_thread.GetProcess());
@@ -522,12 +539,6 @@ GDBRemoteRegisterContext::ReadAllRegisterValues (lldb::DataBufferSP &data_sp)
     else
     {
         LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_THREAD | GDBR_LOG_PACKETS));
-#if LLDB_CONFIGURATION_DEBUG
-        StreamString strm;
-        gdb_comm.DumpHistory(strm);
-        Host::SetCrashDescription (strm.GetData());
-        assert (!"Didn't get sequence mutex for read all registers.");
-#else
         if (log)
         {
             if (log->GetVerbose())
@@ -539,7 +550,6 @@ GDBRemoteRegisterContext::ReadAllRegisterValues (lldb::DataBufferSP &data_sp)
             else
                 log->Printf("error: failed to get packet sequence mutex, not sending read all registers");
         }
-#endif
     }
 
     data_sp.reset();
@@ -563,7 +573,7 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
 
     StringExtractorGDBRemote response;
     Mutex::Locker locker;
-    if (gdb_comm.GetSequenceMutex (locker))
+    if (gdb_comm.GetSequenceMutex (locker, "Didn't get sequence mutex for write all registers."))
     {
         const bool thread_suffix_supported = gdb_comm.GetThreadSuffixSupported();
         ProcessSP process_sp (m_thread.GetProcess());
@@ -662,12 +672,6 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
     else
     {
         LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_THREAD | GDBR_LOG_PACKETS));
-#if LLDB_CONFIGURATION_DEBUG
-        StreamString strm;
-        gdb_comm.DumpHistory(strm);
-        Host::SetCrashDescription (strm.GetData());
-        assert (!"Didn't get sequence mutex for write all registers.");
-#else
         if (log)
         {
             if (log->GetVerbose())
@@ -679,7 +683,6 @@ GDBRemoteRegisterContext::WriteAllRegisterValues (const lldb::DataBufferSP &data
             else
                 log->Printf("error: failed to get packet sequence mutex, not sending write all registers");
         }
-#endif
     }
     return false;
 }

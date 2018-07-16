@@ -835,7 +835,8 @@ Process::Process(Target &target, Listener &listener) :
                                       eBroadcastBitSTDERR);
 
     m_private_state_listener.StartListeningForEvents(&m_private_state_broadcaster,
-                                                     eBroadcastBitStateChanged);
+                                                     eBroadcastBitStateChanged |
+                                                     eBroadcastBitInterrupt);
 
     m_private_state_listener.StartListeningForEvents(&m_private_state_control_broadcaster,
                                                      eBroadcastInternalStateControlStop |
@@ -1027,7 +1028,7 @@ Process::HijackProcessEvents (Listener *listener)
 {
     if (listener != NULL)
     {
-        return HijackBroadcaster(listener, eBroadcastBitStateChanged);
+        return HijackBroadcaster(listener, eBroadcastBitStateChanged | eBroadcastBitInterrupt);
     }
     else
         return false;
@@ -1044,7 +1045,7 @@ Process::HijackPrivateProcessEvents (Listener *listener)
 {
     if (listener != NULL)
     {
-        return m_private_state_broadcaster.HijackBroadcaster(listener, eBroadcastBitStateChanged);
+        return m_private_state_broadcaster.HijackBroadcaster(listener, eBroadcastBitStateChanged | eBroadcastBitInterrupt);
     }
     else
         return false;
@@ -1067,9 +1068,14 @@ Process::WaitForStateChangedEvents (const TimeValue *timeout, EventSP &event_sp)
     StateType state = eStateInvalid;
     if (m_listener.WaitForEventForBroadcasterWithType (timeout,
                                                        this,
-                                                       eBroadcastBitStateChanged,
+                                                       eBroadcastBitStateChanged | eBroadcastBitInterrupt,
                                                        event_sp))
-        state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+    {
+        if (event_sp && event_sp->GetType() == eBroadcastBitStateChanged)
+            state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+        else if (log)
+            log->Printf ("Process::%s got no event or was interrupted.", __FUNCTION__);
+    }
 
     if (log)
         log->Printf ("Process::%s (timeout = %p, event_sp) => %s",
@@ -1118,9 +1124,10 @@ Process::WaitForStateChangedEventsPrivate (const TimeValue *timeout, EventSP &ev
     StateType state = eStateInvalid;
     if (m_private_state_listener.WaitForEventForBroadcasterWithType (timeout,
                                                                      &m_private_state_broadcaster,
-                                                                     eBroadcastBitStateChanged,
+                                                                     eBroadcastBitStateChanged | eBroadcastBitInterrupt,
                                                                      event_sp))
-        state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+        if (event_sp && event_sp->GetType() == eBroadcastBitStateChanged)
+            state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
 
     // This is a bit of a hack, but when we wait here we could very well return
     // to the command-line, and that could disable the log, which would render the
@@ -1938,64 +1945,55 @@ Process::DisableSoftwareBreakpoint (BreakpointSite *bp_site)
 
 }
 
-// Comment out line below to disable memory caching
+// Comment out line below to disable memory caching, overriding the process setting
+// target.process.disable-memory-cache
 #define ENABLE_MEMORY_CACHING
 // Uncomment to verify memory caching works after making changes to caching code
 //#define VERIFY_MEMORY_READS
 
-#if defined (ENABLE_MEMORY_CACHING)
-
+size_t
+Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
+{
+    if (!GetDisableMemoryCache())
+    {        
 #if defined (VERIFY_MEMORY_READS)
-
-size_t
-Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
-{
-    // Memory caching is enabled, with debug verification
-    if (buf && size)
-    {
-        // Uncomment the line below to make sure memory caching is working.
-        // I ran this through the test suite and got no assertions, so I am 
-        // pretty confident this is working well. If any changes are made to
-        // memory caching, uncomment the line below and test your changes!
-
-        // Verify all memory reads by using the cache first, then redundantly
-        // reading the same memory from the inferior and comparing to make sure
-        // everything is exactly the same.
-        std::string verify_buf (size, '\0');
-        assert (verify_buf.size() == size);
-        const size_t cache_bytes_read = m_memory_cache.Read (this, addr, buf, size, error);
-        Error verify_error;
-        const size_t verify_bytes_read = ReadMemoryFromInferior (addr, const_cast<char *>(verify_buf.data()), verify_buf.size(), verify_error);
-        assert (cache_bytes_read == verify_bytes_read);
-        assert (memcmp(buf, verify_buf.data(), verify_buf.size()) == 0);
-        assert (verify_error.Success() == error.Success());
-        return cache_bytes_read;
+        // Memory caching is enabled, with debug verification
+        
+        if (buf && size)
+        {
+            // Uncomment the line below to make sure memory caching is working.
+            // I ran this through the test suite and got no assertions, so I am 
+            // pretty confident this is working well. If any changes are made to
+            // memory caching, uncomment the line below and test your changes!
+            
+            // Verify all memory reads by using the cache first, then redundantly
+            // reading the same memory from the inferior and comparing to make sure
+            // everything is exactly the same.
+            std::string verify_buf (size, '\0');
+            assert (verify_buf.size() == size);
+            const size_t cache_bytes_read = m_memory_cache.Read (this, addr, buf, size, error);
+            Error verify_error;
+            const size_t verify_bytes_read = ReadMemoryFromInferior (addr, const_cast<char *>(verify_buf.data()), verify_buf.size(), verify_error);
+            assert (cache_bytes_read == verify_bytes_read);
+            assert (memcmp(buf, verify_buf.data(), verify_buf.size()) == 0);
+            assert (verify_error.Success() == error.Success());
+            return cache_bytes_read;
+        }
+        return 0;
+#else // !defined(VERIFY_MEMORY_READS)
+        // Memory caching is enabled, without debug verification
+        
+        return m_memory_cache.Read (addr, buf, size, error);
+#endif // defined (VERIFY_MEMORY_READS)
     }
-    return 0;
+    else
+    {
+        // Memory caching is disabled
+        
+        return ReadMemoryFromInferior (addr, buf, size, error);
+    }
 }
-
-#else   // #if defined (VERIFY_MEMORY_READS)
-
-size_t
-Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
-{
-    // Memory caching enabled, no verification
-    return m_memory_cache.Read (addr, buf, size, error);
-}
-
-#endif  // #else for #if defined (VERIFY_MEMORY_READS)
     
-#else   // #if defined (ENABLE_MEMORY_CACHING)
-
-size_t
-Process::ReadMemory (addr_t addr, void *buf, size_t size, Error &error)
-{
-    // Memory caching is disabled
-    return ReadMemoryFromInferior (addr, buf, size, error);
-}
-
-#endif  // #else for #if defined (ENABLE_MEMORY_CACHING)
-
 size_t
 Process::ReadCStringFromMemory (addr_t addr, std::string &out_str, Error &error)
 {
@@ -2718,75 +2716,6 @@ Process::Attach (ProcessAttachInfo &attach_info)
     return error;
 }
 
-//Error
-//Process::Attach (const char *process_name, bool wait_for_launch)
-//{
-//    m_abi_sp.reset();
-//    m_process_input_reader.reset();
-//    
-//    // Find the process and its architecture.  Make sure it matches the architecture
-//    // of the current Target, and if not adjust it.
-//    Error error;
-//    
-//    if (!wait_for_launch)
-//    {
-//        ProcessInstanceInfoList process_infos;
-//        PlatformSP platform_sp (m_target.GetPlatform ());
-//        assert (platform_sp.get());
-//        
-//        if (platform_sp)
-//        {
-//            ProcessInstanceInfoMatch match_info;
-//            match_info.GetProcessInfo().SetName(process_name);
-//            match_info.SetNameMatchType (eNameMatchEquals);
-//            platform_sp->FindProcesses (match_info, process_infos);
-//            if (process_infos.GetSize() > 1)
-//            {
-//                error.SetErrorStringWithFormat ("more than one process named %s", process_name);
-//            }
-//            else if (process_infos.GetSize() == 0)
-//            {
-//                error.SetErrorStringWithFormat ("could not find a process named %s", process_name);
-//            }
-//        }
-//        else
-//        {        
-//            error.SetErrorString ("invalid platform");
-//        }
-//    }
-//
-//    if (error.Success())
-//    {
-//        m_dyld_ap.reset();
-//        m_os_ap.reset();
-//        
-//        error = WillAttachToProcessWithName(process_name, wait_for_launch);
-//        if (error.Success())
-//        {
-//            SetPublicState (eStateAttaching);
-//            error = DoAttachToProcessWithName (process_name, wait_for_launch);
-//            if (error.Fail())
-//            {
-//                if (GetID() != LLDB_INVALID_PROCESS_ID)
-//                {
-//                    SetID (LLDB_INVALID_PROCESS_ID);
-//                    const char *error_string = error.AsCString();
-//                    if (error_string == NULL)
-//                        error_string = "attach failed";
-//
-//                    SetExitStatus(-1, error_string);
-//                }
-//            }
-//            else
-//            {
-//                SetNextEventAction(new Process::AttachCompletionHandler(this, 0));
-//                StartPrivateStateThread();
-//            }
-//        }
-//    }
-//    return error;
-//}
-
 void
 Process::CompleteAttach ()
 {
@@ -3188,11 +3117,11 @@ Process::ShouldBroadcastEvent (Event *event_ptr)
                     // break at main.cpp:58, run and hit the breakpoints on
                     // multiple threads, then somehow during the stepping over
                     // of all breakpoints no run gets reported.
-                    return_value = true;
 
                     // This is a transition from stop to run.
                     switch (m_thread_list.ShouldReportRun (event_ptr))
                     {
+                        default:
                         case eVoteYes:
                         case eVoteNoOpinion:
                             return_value = true;
@@ -3370,6 +3299,15 @@ Process::ControlPrivateStateThread (uint32_t signal)
 }
 
 void
+Process::SendAsyncInterrupt ()
+{
+    if (PrivateStateThreadIsValid())
+        m_private_state_broadcaster.BroadcastEvent (Process::eBroadcastBitInterrupt, NULL);
+    else
+        BroadcastEvent (Process::eBroadcastBitInterrupt, NULL);
+}
+
+void
 Process::HandlePrivateEvent (EventSP &event_sp)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
@@ -3488,7 +3426,22 @@ Process::RunPrivateStateThread ()
             m_private_state_control_wait.SetValue (true, eBroadcastAlways);
             continue;
         }
-
+        else if (event_sp->GetType() == eBroadcastBitInterrupt)
+        {
+            if (m_public_state.GetValue() == eStateAttaching)
+            {
+                if (log)
+                    log->Printf ("Process::%s (arg = %p, pid = %llu) woke up with an interrupt while attaching - forwarding interrupt.", __FUNCTION__, this, GetID());
+                BroadcastEvent (eBroadcastBitInterrupt, NULL);
+            }
+            else
+            {
+                if (log)
+                    log->Printf ("Process::%s (arg = %p, pid = %llu) woke up with an interrupt - Halting.", __FUNCTION__, this, GetID());
+                Halt();
+            }
+            continue;
+        }
 
         const StateType internal_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
 
@@ -3998,7 +3951,6 @@ Process::SettingsInitialize ()
         }
     }
     UserSettingsControllerSP &usc = GetSettingsController();
-    usc.reset (new SettingsController);
     UserSettingsController::InitializeSettingsController (usc,
                                                           SettingsController::global_settings_table,
                                                           SettingsController::instance_settings_table);
@@ -4153,471 +4105,519 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
     
     Listener listener("lldb.process.listener.run-thread-plan");
     
-    // This process event hijacker Hijacks the Public events and its destructor makes sure that the process events get 
-    // restored on exit to the function.
+    lldb::EventSP event_to_broadcast_sp;
     
-    ProcessEventHijacker run_thread_plan_hijacker (*this, &listener);
-        
-    if (log)
     {
-        StreamString s;
-        thread_plan_sp->GetDescription(&s, lldb::eDescriptionLevelVerbose);
-        log->Printf ("Process::RunThreadPlan(): Resuming thread %u - 0x%4.4llx to run thread plan \"%s\".",  
-                     thread->GetIndexID(), 
-                     thread->GetID(), 
-                     s.GetData());
-    }
-    
-    bool got_event;
-    lldb::EventSP event_sp;
-    lldb::StateType stop_state = lldb::eStateInvalid;
-    
-    TimeValue* timeout_ptr = NULL;
-    TimeValue real_timeout;
-    
-    bool first_timeout = true;
-    bool do_resume = true;
-    
-    while (1)
-    {
-        // We usually want to resume the process if we get to the top of the loop.
-        // The only exception is if we get two running events with no intervening
-        // stop, which can happen, we will just wait for then next stop event.
+        // This process event hijacker Hijacks the Public events and its destructor makes sure that the process events get
+        // restored on exit to the function.
+        //
+        // If the event needs to propagate beyond the hijacker (e.g., the process exits during execution), then the event
+        // is put into event_to_broadcast_sp for rebroadcasting.
         
-        if (do_resume)
-        {
-            // Do the initial resume and wait for the running event before going further.
-    
-            Error resume_error = PrivateResume ();
-            if (!resume_error.Success())
-            {
-                errors.Printf("Error resuming inferior: \"%s\".\n", resume_error.AsCString());
-                return_value = eExecutionSetupError;
-                break;
-            }
-    
-            real_timeout = TimeValue::Now();
-            real_timeout.OffsetWithMicroSeconds(500000);
-            timeout_ptr = &real_timeout;
+        ProcessEventHijacker run_thread_plan_hijacker (*this, &listener);
             
-            got_event = listener.WaitForEvent(timeout_ptr, event_sp);
-            if (!got_event)
-            {
-                if (log)
-                    log->PutCString("Process::RunThreadPlan(): didn't get any event after initial resume, exiting.");
-
-                errors.Printf("Didn't get any event after initial resume, exiting.");
-                return_value = eExecutionSetupError;
-                break;
-            }
-            
-            stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
-            if (stop_state != eStateRunning)
-            {
-                if (log)
-                    log->Printf("Process::RunThreadPlan(): didn't get running event after initial resume, got %s instead.", StateAsCString(stop_state));
-
-                errors.Printf("Didn't get running event after initial resume, got %s instead.", StateAsCString(stop_state));
-                return_value = eExecutionSetupError;
-                break;
-            }
-        
-            if (log)
-                log->PutCString ("Process::RunThreadPlan(): resuming succeeded.");
-            // We need to call the function synchronously, so spin waiting for it to return.
-            // If we get interrupted while executing, we're going to lose our context, and
-            // won't be able to gather the result at this point.
-            // We set the timeout AFTER the resume, since the resume takes some time and we
-            // don't want to charge that to the timeout.
-            
-            if (single_thread_timeout_usec != 0)
-            {
-                real_timeout = TimeValue::Now();
-                real_timeout.OffsetWithMicroSeconds(single_thread_timeout_usec);
-                    
-                timeout_ptr = &real_timeout;
-            }
-        }
-        else
-        {
-            if (log)
-                log->PutCString ("Process::RunThreadPlan(): handled an extra running event.");
-            do_resume = true;
-        }
-        
-        // Now wait for the process to stop again:
-        stop_state = lldb::eStateInvalid;
-        event_sp.reset();
-
-        if (log)
-        {
-            if (timeout_ptr)
-            {
-                StreamString s;
-                s.Printf ("about to wait - timeout is:\n   ");
-                timeout_ptr->Dump (&s, 120);
-                s.Printf ("\nNow is:\n    ");
-                TimeValue::Now().Dump (&s, 120);
-                log->Printf ("Process::RunThreadPlan(): %s", s.GetData());
-            }
-            else
-            {
-                log->Printf ("Process::RunThreadPlan(): about to wait forever.");
-            }
-        }
-        
-        got_event = listener.WaitForEvent (timeout_ptr, event_sp);
-        
-        if (got_event)
-        {
-            if (event_sp.get())
-            {
-                bool keep_going = false;
-                stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
-                if (log)
-                    log->Printf("Process::RunThreadPlan(): in while loop, got event: %s.", StateAsCString(stop_state));
-                    
-                switch (stop_state)
-                {
-                case lldb::eStateStopped:
-                    {
-                        // Yay, we're done.  Now make sure that our thread plan actually completed.
-                        ThreadSP thread_sp = GetThreadList().FindThreadByIndexID (thread_idx_id);
-                        if (!thread_sp)
-                        {
-                            // Ooh, our thread has vanished.  Unlikely that this was successful execution...
-                            if (log)
-                                log->Printf ("Process::RunThreadPlan(): execution completed but our thread (index-id=%u) has vanished.", thread_idx_id);
-                            return_value = eExecutionInterrupted;
-                        }
-                        else
-                        {
-                            StopInfoSP stop_info_sp (thread_sp->GetStopInfo ());
-                            StopReason stop_reason = eStopReasonInvalid;
-                            if (stop_info_sp)
-                                 stop_reason = stop_info_sp->GetStopReason();
-                            if (stop_reason == eStopReasonPlanComplete)
-                            {
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): execution completed successfully.");
-                                // Now mark this plan as private so it doesn't get reported as the stop reason
-                                // after this point.  
-                                if (thread_plan_sp)
-                                    thread_plan_sp->SetPrivate (orig_plan_private);
-                                return_value = eExecutionCompleted;
-                            }
-                            else
-                            {
-                                if (log)
-                                    log->PutCString ("Process::RunThreadPlan(): thread plan didn't successfully complete.");
-
-                                return_value = eExecutionInterrupted;
-                            }
-                        }
-                    }        
-                    break;
-
-                case lldb::eStateCrashed:
-                    if (log)
-                        log->PutCString ("Process::RunThreadPlan(): execution crashed.");
-                    return_value = eExecutionInterrupted;
-                    break;
-
-                case lldb::eStateRunning:
-                    do_resume = false;
-                    keep_going = true;
-                    break;
-
-                default:
-                    if (log)
-                        log->Printf("Process::RunThreadPlan(): execution stopped with unexpected state: %s.", StateAsCString(stop_state));
-                        
-                    errors.Printf ("Execution stopped with unexpected state.");
-                    return_value = eExecutionInterrupted;
-                    break;
-                }
-                if (keep_going)
-                    continue;
-                else
-                    break;
-            } 
-            else
-            {
-                if (log)
-                    log->PutCString ("Process::RunThreadPlan(): got_event was true, but the event pointer was null.  How odd...");
-                return_value = eExecutionInterrupted;
-                break;
-            }
-        }
-        else
-        {
-            // If we didn't get an event that means we've timed out...
-            // We will interrupt the process here.  Depending on what we were asked to do we will
-            // either exit, or try with all threads running for the same timeout.
-            // Not really sure what to do if Halt fails here...
-            
-            if (log) {
-                if (try_all_threads)
-                {
-                    if (first_timeout)
-                        log->Printf ("Process::RunThreadPlan(): Running function with timeout: %d timed out, "
-                                     "trying with all threads enabled.",
-                                     single_thread_timeout_usec);
-                    else
-                        log->Printf ("Process::RunThreadPlan(): Restarting function with all threads enabled "
-                                     "and timeout: %d timed out.",
-                                     single_thread_timeout_usec);
-                }
-                else
-                    log->Printf ("Process::RunThreadPlan(): Running function with timeout: %d timed out, "
-                                 "halt and abandoning execution.", 
-                                 single_thread_timeout_usec);
-            }
-            
-            Error halt_error = Halt();
-            if (halt_error.Success())
-            {
-                if (log)
-                    log->PutCString ("Process::RunThreadPlan(): Halt succeeded.");
-                    
-                // If halt succeeds, it always produces a stopped event.  Wait for that:
-                
-                real_timeout = TimeValue::Now();
-                real_timeout.OffsetWithMicroSeconds(500000);
-
-                got_event = listener.WaitForEvent(&real_timeout, event_sp);
-                
-                if (got_event)
-                {
-                    stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
-                    if (log)
-                    {
-                        log->Printf ("Process::RunThreadPlan(): Stopped with event: %s", StateAsCString(stop_state));
-                        if (stop_state == lldb::eStateStopped 
-                            && Process::ProcessEventData::GetInterruptedFromEvent(event_sp.get()))
-                            log->PutCString ("    Event was the Halt interruption event.");
-                    }
-                    
-                    if (stop_state == lldb::eStateStopped)
-                    {
-                        // Between the time we initiated the Halt and the time we delivered it, the process could have
-                        // already finished its job.  Check that here:
-                        
-                        if (thread->IsThreadPlanDone (thread_plan_sp.get()))
-                        {
-                            if (log)
-                                log->PutCString ("Process::RunThreadPlan(): Even though we timed out, the call plan was done.  "
-                                             "Exiting wait loop.");
-                            return_value = eExecutionCompleted;
-                            break;
-                        }
-
-                        if (!try_all_threads)
-                        {
-                            if (log)
-                                log->PutCString ("Process::RunThreadPlan(): try_all_threads was false, we stopped so now we're quitting.");
-                            return_value = eExecutionInterrupted;
-                            break;
-                        }
-                        
-                        if (first_timeout)
-                        {
-                            // Set all the other threads to run, and return to the top of the loop, which will continue;
-                            first_timeout = false;
-                            thread_plan_sp->SetStopOthers (false);
-                            if (log)
-                                log->PutCString ("Process::RunThreadPlan(): about to resume.");
-
-                            continue;
-                        }
-                        else
-                        {
-                            // Running all threads failed, so return Interrupted.
-                            if (log)
-                                log->PutCString("Process::RunThreadPlan(): running all threads timed out.");
-                            return_value = eExecutionInterrupted;
-                            break;
-                        }
-                    }
-                }
-                else
-                {   if (log)
-                        log->PutCString("Process::RunThreadPlan(): halt said it succeeded, but I got no event.  "
-                                "I'm getting out of here passing Interrupted.");
-                    return_value = eExecutionInterrupted;
-                    break;
-                }
-            }
-            else
-            {
-                // This branch is to work around some problems with gdb-remote's Halt.  It is a little racy, and can return 
-                // an error from halt, but if you wait a bit you'll get a stopped event anyway.
-                if (log)
-                    log->Printf ("Process::RunThreadPlan(): halt failed: error = \"%s\", I'm just going to wait a little longer and see if I get a stopped event.", 
-                                 halt_error.AsCString());                
-                real_timeout = TimeValue::Now();
-                real_timeout.OffsetWithMicroSeconds(500000);
-                timeout_ptr = &real_timeout;
-                got_event = listener.WaitForEvent(&real_timeout, event_sp);
-                if (!got_event || event_sp.get() == NULL)
-                {
-                    // This is not going anywhere, bag out.
-                    if (log)
-                        log->PutCString ("Process::RunThreadPlan(): halt failed: and waiting for the stopped event failed.");
-                    return_value = eExecutionInterrupted;
-                    break;                
-                }
-                else
-                {
-                    stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
-                    if (log)
-                        log->PutCString ("Process::RunThreadPlan(): halt failed: but then I got a stopped event.  Whatever...");
-                    if (stop_state == lldb::eStateStopped)
-                    {
-                        // Between the time we initiated the Halt and the time we delivered it, the process could have
-                        // already finished its job.  Check that here:
-                        
-                        if (thread->IsThreadPlanDone (thread_plan_sp.get()))
-                        {
-                            if (log)
-                                log->PutCString ("Process::RunThreadPlan(): Even though we timed out, the call plan was done.  "
-                                             "Exiting wait loop.");
-                            return_value = eExecutionCompleted;
-                            break;
-                        }
-
-                        if (first_timeout)
-                        {
-                            // Set all the other threads to run, and return to the top of the loop, which will continue;
-                            first_timeout = false;
-                            thread_plan_sp->SetStopOthers (false);
-                            if (log)
-                                log->PutCString ("Process::RunThreadPlan(): About to resume.");
-
-                            continue;
-                        }
-                        else
-                        {
-                            // Running all threads failed, so return Interrupted.
-                            if (log)
-                                log->PutCString ("Process::RunThreadPlan(): running all threads timed out.");
-                            return_value = eExecutionInterrupted;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        if (log)
-                            log->Printf ("Process::RunThreadPlan(): halt failed, I waited and didn't get"
-                                         " a stopped event, instead got %s.", StateAsCString(stop_state));
-                        return_value = eExecutionInterrupted;
-                        break;                
-                    }
-                }
-            }
-
-        }
-        
-    }  // END WAIT LOOP
-    
-    // If we had to start up a temporary private state thread to run this thread plan, shut it down now.
-    if (IS_VALID_LLDB_HOST_THREAD(backup_private_state_thread))
-    {
-        StopPrivateStateThread();
-        Error error;
-        m_private_state_thread = backup_private_state_thread;
-        if (stopper_base_plan_sp != NULL)
-        {
-            thread->DiscardThreadPlansUpToPlan(stopper_base_plan_sp);
-        }
-        m_public_state.SetValueNoLock(old_state);
-
-    }
-    
-    
-    // Now do some processing on the results of the run:
-    if (return_value == eExecutionInterrupted)
-    {
         if (log)
         {
             StreamString s;
-            if (event_sp)
-                event_sp->Dump (&s);
+            thread_plan_sp->GetDescription(&s, lldb::eDescriptionLevelVerbose);
+            log->Printf ("Process::RunThreadPlan(): Resuming thread %u - 0x%4.4llx to run thread plan \"%s\".",  
+                         thread->GetIndexID(), 
+                         thread->GetID(), 
+                         s.GetData());
+        }
+        
+        bool got_event;
+        lldb::EventSP event_sp;
+        lldb::StateType stop_state = lldb::eStateInvalid;
+        
+        TimeValue* timeout_ptr = NULL;
+        TimeValue real_timeout;
+        
+        bool first_timeout = true;
+        bool do_resume = true;
+        
+        while (1)
+        {
+            // We usually want to resume the process if we get to the top of the loop.
+            // The only exception is if we get two running events with no intervening
+            // stop, which can happen, we will just wait for then next stop event.
+            
+            if (do_resume)
+            {
+                // Do the initial resume and wait for the running event before going further.
+        
+                Error resume_error = PrivateResume ();
+                if (!resume_error.Success())
+                {
+                    errors.Printf("Error resuming inferior: \"%s\".\n", resume_error.AsCString());
+                    return_value = eExecutionSetupError;
+                    break;
+                }
+        
+                real_timeout = TimeValue::Now();
+                real_timeout.OffsetWithMicroSeconds(500000);
+                timeout_ptr = &real_timeout;
+                
+                got_event = listener.WaitForEvent(timeout_ptr, event_sp);
+                if (!got_event)
+                {
+                    if (log)
+                        log->PutCString("Process::RunThreadPlan(): didn't get any event after initial resume, exiting.");
+
+                    errors.Printf("Didn't get any event after initial resume, exiting.");
+                    return_value = eExecutionSetupError;
+                    break;
+                }
+                
+                stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+                if (stop_state != eStateRunning)
+                {
+                    if (log)
+                        log->Printf("Process::RunThreadPlan(): didn't get running event after initial resume, got %s instead.", StateAsCString(stop_state));
+
+                    errors.Printf("Didn't get running event after initial resume, got %s instead.", StateAsCString(stop_state));
+                    return_value = eExecutionSetupError;
+                    break;
+                }
+            
+                if (log)
+                    log->PutCString ("Process::RunThreadPlan(): resuming succeeded.");
+                // We need to call the function synchronously, so spin waiting for it to return.
+                // If we get interrupted while executing, we're going to lose our context, and
+                // won't be able to gather the result at this point.
+                // We set the timeout AFTER the resume, since the resume takes some time and we
+                // don't want to charge that to the timeout.
+                
+                if (single_thread_timeout_usec != 0)
+                {
+                    // we have a > 0 timeout, let us set it so that we stop after the deadline
+                    real_timeout = TimeValue::Now();
+                    real_timeout.OffsetWithMicroSeconds(single_thread_timeout_usec);
+                        
+                    timeout_ptr = &real_timeout;
+                }
+                else if (first_timeout)
+                {
+                    // if we are willing to wait "forever" we still need to have an initial timeout
+                    // this timeout is going to induce all threads to run when hit. we do this so that
+                    // we can avoid ending locked up because of multithreaded contention issues
+                    real_timeout = TimeValue::Now();
+                    real_timeout.OffsetWithNanoSeconds(500000000UL);
+                    timeout_ptr = &real_timeout;
+                }
+                else
+                {
+                    timeout_ptr = NULL; // if we are in a no-timeout scenario, then we only need a fake timeout the first time through
+                    // at this point in the code, all threads will be running so we are willing to wait forever, and do not
+                    // need a timeout
+                }
+            }
             else
             {
-                log->PutCString ("Process::RunThreadPlan(): Stop event that interrupted us is NULL.");
+                if (log)
+                    log->PutCString ("Process::RunThreadPlan(): handled an extra running event.");
+                do_resume = true;
             }
-
-            StreamString ts;
-
-            const char *event_explanation = NULL;                
             
-            do 
-            {
-                const Process::ProcessEventData *event_data = Process::ProcessEventData::GetEventDataFromEvent (event_sp.get());
+            // Now wait for the process to stop again:
+            event_sp.reset();
 
-                if (!event_data)
-                {
-                    event_explanation = "<no event data>";
-                    break;
-                }
-                
-                Process *process = event_data->GetProcessSP().get();
-
-                if (!process)
-                {
-                    event_explanation = "<no process>";
-                    break;
-                }
-                
-                ThreadList &thread_list = process->GetThreadList();
-                
-                uint32_t num_threads = thread_list.GetSize();
-                uint32_t thread_index;
-                
-                ts.Printf("<%u threads> ", num_threads);
-                
-                for (thread_index = 0;
-                     thread_index < num_threads;
-                     ++thread_index)
-                {
-                    Thread *thread = thread_list.GetThreadAtIndex(thread_index).get();
-                    
-                    if (!thread)
-                    {
-                        ts.Printf("<?> ");
-                        continue;
-                    }
-                    
-                    ts.Printf("<0x%4.4llx ", thread->GetID());
-                    RegisterContext *register_context = thread->GetRegisterContext().get();
-                    
-                    if (register_context)
-                        ts.Printf("[ip 0x%llx] ", register_context->GetPC());
-                    else
-                        ts.Printf("[ip unknown] ");
-                    
-                    lldb::StopInfoSP stop_info_sp = thread->GetStopInfo();
-                    if (stop_info_sp)
-                    {
-                        const char *stop_desc = stop_info_sp->GetDescription();
-                        if (stop_desc)
-                            ts.PutCString (stop_desc);
-                    }
-                    ts.Printf(">");
-                }
-                
-                event_explanation = ts.GetData();
-            } while (0);
-            
             if (log)
             {
+                if (timeout_ptr)
+                {
+                    StreamString s;
+                    s.Printf ("about to wait - timeout is:\n   ");
+                    timeout_ptr->Dump (&s, 120);
+                    s.Printf ("\nNow is:\n    ");
+                    TimeValue::Now().Dump (&s, 120);
+                    log->Printf ("Process::RunThreadPlan(): %s", s.GetData());
+                }
+                else
+                {
+                    log->Printf ("Process::RunThreadPlan(): about to wait forever.");
+                }
+            }
+            
+            got_event = listener.WaitForEvent (timeout_ptr, event_sp);
+            
+            if (got_event)
+            {
+                if (event_sp.get())
+                {
+                    bool keep_going = false;
+                    if (event_sp->GetType() == eBroadcastBitInterrupt)
+                    {
+                        Halt();
+                        keep_going = false;
+                        return_value = eExecutionInterrupted;
+                        errors.Printf ("Execution halted by user interrupt.");
+                        if (log)
+                            log->Printf ("Process::RunThreadPlan(): Got  interrupted by eBroadcastBitInterrupted, exiting.");
+                    }
+                    else
+                    {
+                        stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+                        if (log)
+                            log->Printf("Process::RunThreadPlan(): in while loop, got event: %s.", StateAsCString(stop_state));
+                            
+                        switch (stop_state)
+                        {
+                        case lldb::eStateStopped:
+                            {
+                                // Yay, we're done.  Now make sure that our thread plan actually completed.
+                                ThreadSP thread_sp = GetThreadList().FindThreadByIndexID (thread_idx_id);
+                                if (!thread_sp)
+                                {
+                                    // Ooh, our thread has vanished.  Unlikely that this was successful execution...
+                                    if (log)
+                                        log->Printf ("Process::RunThreadPlan(): execution completed but our thread (index-id=%u) has vanished.", thread_idx_id);
+                                    return_value = eExecutionInterrupted;
+                                }
+                                else
+                                {
+                                    StopInfoSP stop_info_sp (thread_sp->GetStopInfo ());
+                                    StopReason stop_reason = eStopReasonInvalid;
+                                    if (stop_info_sp)
+                                         stop_reason = stop_info_sp->GetStopReason();
+                                    if (stop_reason == eStopReasonPlanComplete)
+                                    {
+                                        if (log)
+                                            log->PutCString ("Process::RunThreadPlan(): execution completed successfully.");
+                                        // Now mark this plan as private so it doesn't get reported as the stop reason
+                                        // after this point.  
+                                        if (thread_plan_sp)
+                                            thread_plan_sp->SetPrivate (orig_plan_private);
+                                        return_value = eExecutionCompleted;
+                                    }
+                                    else
+                                    {
+                                        if (log)
+                                            log->PutCString ("Process::RunThreadPlan(): thread plan didn't successfully complete.");
+
+                                        return_value = eExecutionInterrupted;
+                                    }
+                                }
+                            }        
+                            break;
+
+                        case lldb::eStateCrashed:
+                            if (log)
+                                log->PutCString ("Process::RunThreadPlan(): execution crashed.");
+                            return_value = eExecutionInterrupted;
+                            break;
+
+                        case lldb::eStateRunning:
+                            do_resume = false;
+                            keep_going = true;
+                            break;
+
+                        default:
+                            if (log)
+                                log->Printf("Process::RunThreadPlan(): execution stopped with unexpected state: %s.", StateAsCString(stop_state));
+                                
+                            if (stop_state == eStateExited)
+                                event_to_broadcast_sp = event_sp;
+                                
+                            errors.Printf ("Execution stopped with unexpected state.");
+                            return_value = eExecutionInterrupted;
+                            break;
+                        }
+                    }
+                    
+                    if (keep_going)
+                        continue;
+                    else
+                        break;
+                } 
+                else
+                {
+                    if (log)
+                        log->PutCString ("Process::RunThreadPlan(): got_event was true, but the event pointer was null.  How odd...");
+                    return_value = eExecutionInterrupted;
+                    break;
+                }
+            }
+            else
+            {
+                // If we didn't get an event that means we've timed out...
+                // We will interrupt the process here.  Depending on what we were asked to do we will
+                // either exit, or try with all threads running for the same timeout.
+                // Not really sure what to do if Halt fails here...
+                
+                if (log) {
+                    if (try_all_threads)
+                    {
+                        if (first_timeout)
+                            log->Printf ("Process::RunThreadPlan(): Running function with timeout: %d timed out, "
+                                         "trying with all threads enabled.",
+                                         single_thread_timeout_usec);
+                        else
+                            log->Printf ("Process::RunThreadPlan(): Restarting function with all threads enabled "
+                                         "and timeout: %d timed out.",
+                                         single_thread_timeout_usec);
+                    }
+                    else
+                        log->Printf ("Process::RunThreadPlan(): Running function with timeout: %d timed out, "
+                                     "halt and abandoning execution.", 
+                                     single_thread_timeout_usec);
+                }
+                
+                Error halt_error = Halt();
+                if (halt_error.Success())
+                {
+                    if (log)
+                        log->PutCString ("Process::RunThreadPlan(): Halt succeeded.");
+                        
+                    // If halt succeeds, it always produces a stopped event.  Wait for that:
+                    
+                    real_timeout = TimeValue::Now();
+                    real_timeout.OffsetWithMicroSeconds(500000);
+
+                    got_event = listener.WaitForEvent(&real_timeout, event_sp);
+                    
+                    if (got_event)
+                    {
+                        stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+                        if (log)
+                        {
+                            log->Printf ("Process::RunThreadPlan(): Stopped with event: %s", StateAsCString(stop_state));
+                            if (stop_state == lldb::eStateStopped 
+                                && Process::ProcessEventData::GetInterruptedFromEvent(event_sp.get()))
+                                log->PutCString ("    Event was the Halt interruption event.");
+                        }
+                        
+                        if (stop_state == lldb::eStateStopped)
+                        {
+                            // Between the time we initiated the Halt and the time we delivered it, the process could have
+                            // already finished its job.  Check that here:
+                            
+                            if (thread->IsThreadPlanDone (thread_plan_sp.get()))
+                            {
+                                if (log)
+                                    log->PutCString ("Process::RunThreadPlan(): Even though we timed out, the call plan was done.  "
+                                                 "Exiting wait loop.");
+                                return_value = eExecutionCompleted;
+                                break;
+                            }
+
+                            if (!try_all_threads)
+                            {
+                                if (log)
+                                    log->PutCString ("Process::RunThreadPlan(): try_all_threads was false, we stopped so now we're quitting.");
+                                return_value = eExecutionInterrupted;
+                                break;
+                            }
+                            
+                            if (first_timeout)
+                            {
+                                // Set all the other threads to run, and return to the top of the loop, which will continue;
+                                first_timeout = false;
+                                thread_plan_sp->SetStopOthers (false);
+                                if (log)
+                                    log->PutCString ("Process::RunThreadPlan(): about to resume.");
+
+                                continue;
+                            }
+                            else
+                            {
+                                // Running all threads failed, so return Interrupted.
+                                if (log)
+                                    log->PutCString("Process::RunThreadPlan(): running all threads timed out.");
+                                return_value = eExecutionInterrupted;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {   if (log)
+                            log->PutCString("Process::RunThreadPlan(): halt said it succeeded, but I got no event.  "
+                                    "I'm getting out of here passing Interrupted.");
+                        return_value = eExecutionInterrupted;
+                        break;
+                    }
+                }
+                else
+                {
+                    // This branch is to work around some problems with gdb-remote's Halt.  It is a little racy, and can return 
+                    // an error from halt, but if you wait a bit you'll get a stopped event anyway.
+                    if (log)
+                        log->Printf ("Process::RunThreadPlan(): halt failed: error = \"%s\", I'm just going to wait a little longer and see if I get a stopped event.", 
+                                     halt_error.AsCString());                
+                    real_timeout = TimeValue::Now();
+                    real_timeout.OffsetWithMicroSeconds(500000);
+                    timeout_ptr = &real_timeout;
+                    got_event = listener.WaitForEvent(&real_timeout, event_sp);
+                    if (!got_event || event_sp.get() == NULL)
+                    {
+                        // This is not going anywhere, bag out.
+                        if (log)
+                            log->PutCString ("Process::RunThreadPlan(): halt failed: and waiting for the stopped event failed.");
+                        return_value = eExecutionInterrupted;
+                        break;                
+                    }
+                    else
+                    {
+                        stop_state = Process::ProcessEventData::GetStateFromEvent(event_sp.get());
+                        if (log)
+                            log->PutCString ("Process::RunThreadPlan(): halt failed: but then I got a stopped event.  Whatever...");
+                        if (stop_state == lldb::eStateStopped)
+                        {
+                            // Between the time we initiated the Halt and the time we delivered it, the process could have
+                            // already finished its job.  Check that here:
+                            
+                            if (thread->IsThreadPlanDone (thread_plan_sp.get()))
+                            {
+                                if (log)
+                                    log->PutCString ("Process::RunThreadPlan(): Even though we timed out, the call plan was done.  "
+                                                 "Exiting wait loop.");
+                                return_value = eExecutionCompleted;
+                                break;
+                            }
+
+                            if (first_timeout)
+                            {
+                                // Set all the other threads to run, and return to the top of the loop, which will continue;
+                                first_timeout = false;
+                                thread_plan_sp->SetStopOthers (false);
+                                if (log)
+                                    log->PutCString ("Process::RunThreadPlan(): About to resume.");
+
+                                continue;
+                            }
+                            else
+                            {
+                                // Running all threads failed, so return Interrupted.
+                                if (log)
+                                    log->PutCString ("Process::RunThreadPlan(): running all threads timed out.");
+                                return_value = eExecutionInterrupted;
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if (log)
+                                log->Printf ("Process::RunThreadPlan(): halt failed, I waited and didn't get"
+                                             " a stopped event, instead got %s.", StateAsCString(stop_state));
+                            return_value = eExecutionInterrupted;
+                            break;                
+                        }
+                    }
+                }
+
+            }
+            
+        }  // END WAIT LOOP
+        
+        // If we had to start up a temporary private state thread to run this thread plan, shut it down now.
+        if (IS_VALID_LLDB_HOST_THREAD(backup_private_state_thread))
+        {
+            StopPrivateStateThread();
+            Error error;
+            m_private_state_thread = backup_private_state_thread;
+            if (stopper_base_plan_sp != NULL)
+            {
+                thread->DiscardThreadPlansUpToPlan(stopper_base_plan_sp);
+            }
+            m_public_state.SetValueNoLock(old_state);
+
+        }
+        
+        
+        // Now do some processing on the results of the run:
+        if (return_value == eExecutionInterrupted)
+        {
+            if (log)
+            {
+                StreamString s;
+                if (event_sp)
+                    event_sp->Dump (&s);
+                else
+                {
+                    log->PutCString ("Process::RunThreadPlan(): Stop event that interrupted us is NULL.");
+                }
+
+                StreamString ts;
+
+                const char *event_explanation = NULL;                
+                
+                do 
+                {
+                    if (!event_sp)
+                    {
+                        event_explanation = "<no event>";
+                        break;
+                    }
+                    else if (event_sp->GetType() == eBroadcastBitInterrupt)
+                    {
+                        event_explanation = "<user interrupt>";
+                        break;
+                    }
+                    else
+                    {
+                        const Process::ProcessEventData *event_data = Process::ProcessEventData::GetEventDataFromEvent (event_sp.get());
+
+                        if (!event_data)
+                        {
+                            event_explanation = "<no event data>";
+                            break;
+                        }
+                        
+                        Process *process = event_data->GetProcessSP().get();
+
+                        if (!process)
+                        {
+                            event_explanation = "<no process>";
+                            break;
+                        }
+                        
+                        ThreadList &thread_list = process->GetThreadList();
+                        
+                        uint32_t num_threads = thread_list.GetSize();
+                        uint32_t thread_index;
+                        
+                        ts.Printf("<%u threads> ", num_threads);
+                        
+                        for (thread_index = 0;
+                             thread_index < num_threads;
+                             ++thread_index)
+                        {
+                            Thread *thread = thread_list.GetThreadAtIndex(thread_index).get();
+                            
+                            if (!thread)
+                            {
+                                ts.Printf("<?> ");
+                                continue;
+                            }
+                            
+                            ts.Printf("<0x%4.4llx ", thread->GetID());
+                            RegisterContext *register_context = thread->GetRegisterContext().get();
+                            
+                            if (register_context)
+                                ts.Printf("[ip 0x%llx] ", register_context->GetPC());
+                            else
+                                ts.Printf("[ip unknown] ");
+                            
+                            lldb::StopInfoSP stop_info_sp = thread->GetStopInfo();
+                            if (stop_info_sp)
+                            {
+                                const char *stop_desc = stop_info_sp->GetDescription();
+                                if (stop_desc)
+                                    ts.PutCString (stop_desc);
+                            }
+                            ts.Printf(">");
+                        }
+                        
+                        event_explanation = ts.GetData();
+                    }
+                } while (0);
+                
                 if (event_explanation)
                     log->Printf("Process::RunThreadPlan(): execution interrupted: %s %s", s.GetData(), event_explanation);
                 else
                     log->Printf("Process::RunThreadPlan(): execution interrupted: %s", s.GetData());
-            }                
-                
+            }
+            
             if (discard_on_error && thread_plan_sp)
             {
                 if (log)
@@ -4629,70 +4629,78 @@ Process::RunThreadPlan (ExecutionContext &exe_ctx,
             {
                 if (log)
                     log->Printf ("Process::RunThreadPlan: ExecutionInterrupted - for plan: %p not discarding.", thread_plan_sp.get());
-
             }
         }
-    }
-    else if (return_value == eExecutionSetupError)
-    {
-        if (log)
-            log->PutCString("Process::RunThreadPlan(): execution set up error.");
-            
-        if (discard_on_error && thread_plan_sp)
-        {
-            thread->DiscardThreadPlansUpToPlan (thread_plan_sp);
-            thread_plan_sp->SetPrivate (orig_plan_private);
-        }
-    }
-    else
-    {
-        if (thread->IsThreadPlanDone (thread_plan_sp.get()))
+        else if (return_value == eExecutionSetupError)
         {
             if (log)
-                log->PutCString("Process::RunThreadPlan(): thread plan is done");
-            return_value = eExecutionCompleted;
-        }
-        else if (thread->WasThreadPlanDiscarded (thread_plan_sp.get()))
-        {
-            if (log)
-                log->PutCString("Process::RunThreadPlan(): thread plan was discarded");
-            return_value = eExecutionDiscarded;
-        }
-        else
-        {
-            if (log)
-                log->PutCString("Process::RunThreadPlan(): thread plan stopped in mid course");
+                log->PutCString("Process::RunThreadPlan(): execution set up error.");
+                
             if (discard_on_error && thread_plan_sp)
             {
-                if (log)
-                    log->PutCString("Process::RunThreadPlan(): discarding thread plan 'cause discard_on_error is set.");
                 thread->DiscardThreadPlansUpToPlan (thread_plan_sp);
                 thread_plan_sp->SetPrivate (orig_plan_private);
             }
         }
-    }
-                
-    // Thread we ran the function in may have gone away because we ran the target
-    // Check that it's still there, and if it is put it back in the context.  Also restore the
-    // frame in the context if it is still present.
-    thread = GetThreadList().FindThreadByIndexID(thread_idx_id, true).get();
-    if (thread)
-    {
-        exe_ctx.SetFrameSP (thread->GetFrameWithStackID (ctx_frame_id));
-    }
-    
-    // Also restore the current process'es selected frame & thread, since this function calling may
-    // be done behind the user's back.
-    
-    if (selected_tid != LLDB_INVALID_THREAD_ID)
-    {
-        if (GetThreadList().SetSelectedThreadByIndexID (selected_tid) && selected_stack_id.IsValid())
+        else
         {
-            // We were able to restore the selected thread, now restore the frame:
-            StackFrameSP old_frame_sp = GetThreadList().GetSelectedThread()->GetFrameWithStackID(selected_stack_id);
-            if (old_frame_sp)
-                GetThreadList().GetSelectedThread()->SetSelectedFrame(old_frame_sp.get());
+            if (thread->IsThreadPlanDone (thread_plan_sp.get()))
+            {
+                if (log)
+                    log->PutCString("Process::RunThreadPlan(): thread plan is done");
+                return_value = eExecutionCompleted;
+            }
+            else if (thread->WasThreadPlanDiscarded (thread_plan_sp.get()))
+            {
+                if (log)
+                    log->PutCString("Process::RunThreadPlan(): thread plan was discarded");
+                return_value = eExecutionDiscarded;
+            }
+            else
+            {
+                if (log)
+                    log->PutCString("Process::RunThreadPlan(): thread plan stopped in mid course");
+                if (discard_on_error && thread_plan_sp)
+                {
+                    if (log)
+                        log->PutCString("Process::RunThreadPlan(): discarding thread plan 'cause discard_on_error is set.");
+                    thread->DiscardThreadPlansUpToPlan (thread_plan_sp);
+                    thread_plan_sp->SetPrivate (orig_plan_private);
+                }
+            }
         }
+                    
+        // Thread we ran the function in may have gone away because we ran the target
+        // Check that it's still there, and if it is put it back in the context.  Also restore the
+        // frame in the context if it is still present.
+        thread = GetThreadList().FindThreadByIndexID(thread_idx_id, true).get();
+        if (thread)
+        {
+            exe_ctx.SetFrameSP (thread->GetFrameWithStackID (ctx_frame_id));
+        }
+        
+        // Also restore the current process'es selected frame & thread, since this function calling may
+        // be done behind the user's back.
+        
+        if (selected_tid != LLDB_INVALID_THREAD_ID)
+        {
+            if (GetThreadList().SetSelectedThreadByIndexID (selected_tid) && selected_stack_id.IsValid())
+            {
+                // We were able to restore the selected thread, now restore the frame:
+                StackFrameSP old_frame_sp = GetThreadList().GetSelectedThread()->GetFrameWithStackID(selected_stack_id);
+                if (old_frame_sp)
+                    GetThreadList().GetSelectedThread()->SetSelectedFrame(old_frame_sp.get());
+            }
+        }
+    }
+    
+    // If the process exited during the run of the thread plan, notify everyone.
+    
+    if (event_to_broadcast_sp)
+    {
+        if (log)
+            log->PutCString("Process::RunThreadPlan(): rebroadcasting event.");
+        BroadcastEvent(event_to_broadcast_sp);
     }
     
     return return_value;
@@ -4881,7 +4889,9 @@ ProcessInstanceSettings::ProcessInstanceSettings
 }
 
 ProcessInstanceSettings::ProcessInstanceSettings (const ProcessInstanceSettings &rhs) :
-    InstanceSettings (Process::GetSettingsController(), CreateInstanceName().AsCString())
+    InstanceSettings (Process::GetSettingsController(), CreateInstanceName().AsCString()),
+    m_disable_memory_cache(rhs.m_disable_memory_cache),
+    m_extra_startup_commands (rhs.m_extra_startup_commands)
 {
     if (m_instance_name != InstanceSettings::GetDefaultName())
     {
@@ -4903,6 +4913,8 @@ ProcessInstanceSettings::operator= (const ProcessInstanceSettings &rhs)
 {
     if (this != &rhs)
     {
+        m_disable_memory_cache = rhs.m_disable_memory_cache;
+        m_extra_startup_commands = rhs.m_extra_startup_commands;
     }
 
     return *this;
@@ -4919,16 +4931,40 @@ ProcessInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_
                                                          Error &err,
                                                          bool pending)
 {
+    if (var_name == GetDisableMemoryCacheVarName())
+    {
+        bool success;
+        bool result = Args::StringToBoolean(value, false, &success);
+        
+        if (success)
+        {
+            m_disable_memory_cache = result;
+        }
+        else
+        {
+            err.SetErrorStringWithFormat ("Bad value \"%s\" for %s, should be Boolean.", value, GetDisableMemoryCacheVarName().AsCString());
+        }
+        
+    }
+    else if (var_name == GetExtraStartupCommandVarName())
+    {
+        UserSettingsController::UpdateStringArrayVariable (op, index_value, m_extra_startup_commands, value, err);
+    }
 }
 
 void
 ProcessInstanceSettings::CopyInstanceSettings (const lldb::InstanceSettingsSP &new_settings,
                                                bool pending)
 {
-//    if (new_settings.get() == NULL)
-//        return;
-//
-//    ProcessInstanceSettings *new_process_settings = (ProcessInstanceSettings *) new_settings.get();
+    if (new_settings.get() == NULL)
+        return;
+    
+    ProcessInstanceSettings *new_settings_ptr = static_cast <ProcessInstanceSettings *> (new_settings.get());
+    
+    if (!new_settings_ptr)
+        return;
+    
+    *this = *new_settings_ptr;
 }
 
 bool
@@ -4937,9 +4973,26 @@ ProcessInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
                                                    StringList &value,
                                                    Error *err)
 {
-    if (err)
-        err->SetErrorStringWithFormat ("unrecognized variable name '%s'", var_name.AsCString());
-    return false;
+    if (var_name == GetDisableMemoryCacheVarName())
+    {
+        value.AppendString(m_disable_memory_cache ? "true" : "false");
+        return true;
+    }
+    else if (var_name == GetExtraStartupCommandVarName())
+    {
+        if (m_extra_startup_commands.GetArgumentCount() > 0)
+        {
+            for (int i = 0; i < m_extra_startup_commands.GetArgumentCount(); ++i)
+                value.AppendString (m_extra_startup_commands.GetArgumentAtIndex (i));
+        }
+        return true;
+    }
+    else
+    {
+        if (err)
+            err->SetErrorStringWithFormat ("unrecognized variable name '%s'", var_name.AsCString());
+        return false;
+    }
 }
 
 const ConstString
@@ -4953,6 +5006,22 @@ ProcessInstanceSettings::CreateInstanceName ()
 
     const ConstString ret_val (sstr.GetData());
     return ret_val;
+}
+
+const ConstString &
+ProcessInstanceSettings::GetDisableMemoryCacheVarName () const
+{
+    static ConstString disable_memory_cache_var_name ("disable-memory-cache");
+    
+    return disable_memory_cache_var_name;
+}
+
+const ConstString &
+ProcessInstanceSettings::GetExtraStartupCommandVarName () const
+{
+    static ConstString extra_startup_command_var_name ("extra-startup-command");
+    
+    return extra_startup_command_var_name;
 }
 
 //--------------------------------------------------
@@ -4971,6 +5040,14 @@ SettingEntry
 Process::SettingsController::instance_settings_table[] =
 {
   //{ "var-name",       var-type,              "default",       enum-table, init'd, hidden, "help-text"},
+    {  "disable-memory-cache", eSetVarTypeBoolean,
+#ifdef ENABLE_MEMORY_CACHING
+        "false",
+#else
+        "true",
+#endif
+        NULL,       false,  false,  "Disable reading and caching of memory in fixed-size units." },
+    { "extra-startup-command", eSetVarTypeArray, NULL, NULL, false,  false,  "A list containing extra commands understood by the particular process plugin used." },
     {  NULL,            eSetVarTypeNone,        NULL,           NULL,       false,  false,  NULL }
 };
 

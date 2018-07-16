@@ -987,48 +987,6 @@ ScanBracketedRange (const char* var_name_begin,
     return true;
 }
 
-
-static ValueObjectSP
-ExpandExpressionPath (ValueObject* valobj,
-                      StackFrame* frame,
-                      bool* do_deref_pointer,
-                      const char* var_name_begin,
-                      const char* var_name_final,
-                      Error& error)
-{
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
-    StreamString sstring;
-    VariableSP var_sp;
-    
-    if (*do_deref_pointer)
-    {
-        if (log)
-            log->Printf("been told to deref_pointer by caller");
-        sstring.PutChar('*');
-    }
-    else if (valobj->IsDereferenceOfParent() && ClangASTContext::IsPointerType(valobj->GetParent()->GetClangType()) && !valobj->IsArrayItemForPointer())
-    {
-        if (log)
-            log->Printf("decided to deref_pointer myself");
-        sstring.PutChar('*');
-        *do_deref_pointer = true;
-    }
-
-    valobj->GetExpressionPath(sstring, true, ValueObject::eGetExpressionPathFormatHonorPointers);
-    if (log)
-        log->Printf("expression path to expand in phase 0: %s",sstring.GetData());
-    sstring.PutRawBytes(var_name_begin+3, var_name_final-var_name_begin-3);
-    if (log)
-        log->Printf("expression path to expand in phase 1: %s",sstring.GetData());
-    std::string name = std::string(sstring.GetData());
-    ValueObjectSP target = frame->GetValueForVariableExpressionPath (name.c_str(),
-                                                                     eNoDynamicValues, 
-                                                                     0,
-                                                                     var_sp,
-                                                                     error);
-    return target;
-}
-
 static ValueObjectSP
 ExpandIndexedExpression (ValueObject* valobj,
                          uint32_t index,
@@ -1378,10 +1336,10 @@ Debugger::FormatPrompt
                                         }
                                         else if (is_pointer) // if pointer, value is the address stored
                                         {
-                                            var_success = target->DumpPrintableRepresentation(s,
-                                                                                             val_obj_display,
-                                                                                             custom_format,
-                                                                                             ValueObject::ePrintableRepresentationSpecialCasesDisable);
+                                            target->DumpPrintableRepresentation (s,
+                                                                                 val_obj_display,
+                                                                                 custom_format,
+                                                                                 ValueObject::ePrintableRepresentationSpecialCasesDisable);
                                         }
                                         else
                                         {
@@ -2630,7 +2588,7 @@ DebuggerInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var
         if (new_value != UINT32_MAX)
             m_stop_source_before_count = new_value;
         else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextAfterName ().GetCString());
+            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextBeforeName ().GetCString());
     }
     else if (var_name == StopSourceContextAfterName ())
     {
@@ -2638,7 +2596,7 @@ DebuggerInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var
         if (new_value != UINT32_MAX)
             m_stop_source_after_count = new_value;
         else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextBeforeName ().GetCString());
+            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextAfterName ().GetCString());
     }
     else if (var_name == StopDisassemblyCountName ())
     {
@@ -2703,13 +2661,13 @@ DebuggerInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
     else if (var_name == StopSourceContextAfterName ())
     {
         StreamString strm;
-        strm.Printf ("%u", m_stop_source_before_count);
+        strm.Printf ("%u", m_stop_source_after_count);
         value.AppendString (strm.GetData());
     }
     else if (var_name == StopSourceContextBeforeName ())
     {
         StreamString strm;
-        strm.Printf ("%u", m_stop_source_after_count);
+        strm.Printf ("%u", m_stop_source_before_count);
         value.AppendString (strm.GetData());
     }
     else if (var_name == StopDisassemblyCountName ())

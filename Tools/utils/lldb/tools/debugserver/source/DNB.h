@@ -48,7 +48,7 @@ nub_process_t   DNBProcessLaunch        (const char *path,
 
 nub_process_t   DNBProcessAttach        (nub_process_t pid, struct timespec *timeout, char *err_str, size_t err_len) DNB_EXPORT;
 nub_process_t   DNBProcessAttachByName  (const char *name, struct timespec *timeout, char *err_str, size_t err_len) DNB_EXPORT;
-nub_process_t   DNBProcessAttachWait    (const char *wait_name, nub_launch_flavor_t launch_flavor, struct timespec *timeout, useconds_t interval, char *err_str, size_t err_len, DNBShouldCancelCallback should_cancel = NULL, void *callback_data = NULL) DNB_EXPORT;
+nub_process_t   DNBProcessAttachWait    (const char *wait_name, nub_launch_flavor_t launch_flavor, bool ignore_existing, struct timespec *timeout, useconds_t interval, char *err_str, size_t err_len, DNBShouldCancelCallback should_cancel = NULL, void *callback_data = NULL) DNB_EXPORT;
 // Resume a process with exact instructions on what to do with each thread:
 // - If no thread actions are supplied (actions is NULL or num_actions is zero),
 //   then all threads are continued.
@@ -79,6 +79,7 @@ nub_size_t      DNBProcessGetNumThreads                 (nub_process_t pid) DNB_
 nub_thread_t    DNBProcessGetCurrentThread              (nub_process_t pid) DNB_EXPORT;
 nub_thread_t    DNBProcessSetCurrentThread              (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
 nub_thread_t    DNBProcessGetThreadAtIndex              (nub_process_t pid, nub_size_t thread_idx) DNB_EXPORT;
+nub_bool_t      DNBProcessSyncThreadState               (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
 nub_addr_t      DNBProcessGetSharedLibraryInfoAddress   (nub_process_t pid) DNB_EXPORT;
 nub_bool_t      DNBProcessSharedLibrariesUpdated        (nub_process_t pid) DNB_EXPORT;
 nub_size_t      DNBProcessGetSharedLibraryInfo          (nub_process_t pid, nub_bool_t only_changed, DNBExecutableImageInfo **image_infos) DNB_EXPORT;

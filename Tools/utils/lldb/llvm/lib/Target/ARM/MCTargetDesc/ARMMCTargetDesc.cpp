@@ -62,7 +62,11 @@ std::string ARM_MC::ParseARMTriple(StringRef TT) {
         // v7em: FeatureNoARM, FeatureDB, FeatureHWDiv, FeatureDSPThumb2,
         //       FeatureT2XtPk, FeatureMClass
         ARMArchFeature = "+v7,+noarm,+db,+hwdiv,+t2dsp,t2xtpk,+mclass";
-      } else
+      } else if (Len >= Idx+2 && TT[Idx+1] == 's') {
+        // v7s: FeatureNEON, FeatureDB, FeatureDSPThumb2, FeatureT2XtPk
+        //      FeatureHWDiv, FeatureVFP4
+        ARMArchFeature = "+v7,+neon,+db,+t2dsp,+t2xtpk,+hwdiv,+vfp4";
+       } else
         // v7a: FeatureNEON, FeatureDB, FeatureDSPThumb2, FeatureT2XtPk
         ARMArchFeature = "+v7,+neon,+db,+t2dsp,+t2xtpk";
     } else if (SubVer == '6') {

@@ -42,6 +42,9 @@ public:
         eCore_arm_armv5t,
         eCore_arm_armv6,
         eCore_arm_armv7,
+        eCore_arm_armv7f,
+        eCore_arm_armv7k,
+        eCore_arm_armv7s,
         eCore_arm_xscale,  
         eCore_thumb,
         eCore_thumbv4t,
@@ -174,6 +177,9 @@ public:
     //------------------------------------------------------------------
     void
     Clear ();
+
+    bool
+    operator ==(Core core) const;
 
     //------------------------------------------------------------------
     /// Returns the size in bytes of an address of the current

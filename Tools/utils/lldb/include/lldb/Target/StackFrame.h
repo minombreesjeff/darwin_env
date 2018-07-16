@@ -36,7 +36,8 @@ public:
         eExpressionPathOptionCheckPtrVsMember       = (1u << 0),
         eExpressionPathOptionsNoFragileObjcIvar     = (1u << 1),
         eExpressionPathOptionsNoSyntheticChildren   = (1u << 2),
-        eExpressionPathOptionsNoSyntheticArrayRange = (1u << 3)
+        eExpressionPathOptionsNoSyntheticArrayRange = (1u << 3),
+        eExpressionPathOptionsAllowDirectIVarAccess = (1u << 4)
     };
     //------------------------------------------------------------------
     // Constructors and Destructors
@@ -167,9 +168,7 @@ public:
     bool
     GetStatus (Stream &strm,
                bool show_frame_info,
-               bool show_source,
-               uint32_t source_lines_before,
-               uint32_t source_lines_after);
+               bool show_source);
     
 protected:
     friend class StackFrameList;

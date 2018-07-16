@@ -128,8 +128,7 @@ public:
     {
         return m_breakpoints_use_platform_avoid;
     }
-    
-    
+        
     const Args &
     GetRunArguments () const
     {
@@ -899,7 +898,8 @@ public:
                         bool unwind_on_error,
                         bool keep_in_memory,
                         lldb::DynamicValueType use_dynamic,
-                        lldb::ValueObjectSP &result_valobj_sp);
+                        lldb::ValueObjectSP &result_valobj_sp,
+                        uint32_t single_thread_timeout_usec = 500000);
 
     ClangPersistentVariables &
     GetPersistentVariables()

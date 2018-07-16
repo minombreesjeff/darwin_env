@@ -49,6 +49,9 @@ GDBRemoteCommunicationClient::GDBRemoteCommunicationClient(bool is_platform) :
     m_supports_alloc_dealloc_memory (eLazyBoolCalculate),
     m_supports_memory_region_info  (eLazyBoolCalculate),
     m_supports_watchpoint_support_info  (eLazyBoolCalculate),
+    m_watchpoints_trigger_after_instruction(eLazyBoolCalculate),
+    m_attach_or_wait_reply(eLazyBoolCalculate),
+    m_prepare_for_reg_writing_reply (eLazyBoolCalculate),
     m_supports_qProcessInfoPID (true),
     m_supports_qfProcessInfo (true),
     m_supports_qUserName (true),
@@ -132,6 +135,46 @@ GDBRemoteCommunicationClient::GetListThreadsInStopReplySupported ()
     }
 }
 
+bool
+GDBRemoteCommunicationClient::GetVAttachOrWaitSupported ()
+{
+    if (m_attach_or_wait_reply == eLazyBoolCalculate)
+    {
+        m_attach_or_wait_reply = eLazyBoolNo;
+        
+        StringExtractorGDBRemote response;
+        if (SendPacketAndWaitForResponse("qVAttachOrWaitSupported", response, false))
+        {
+            if (response.IsOKResponse())
+                m_attach_or_wait_reply = eLazyBoolYes;
+        }
+    }
+    if (m_attach_or_wait_reply == eLazyBoolYes)
+        return true;
+    else
+        return false;
+}
+
+bool
+GDBRemoteCommunicationClient::GetSyncThreadStateSupported ()
+{
+    if (m_prepare_for_reg_writing_reply == eLazyBoolCalculate)
+    {
+        m_prepare_for_reg_writing_reply = eLazyBoolNo;
+        
+        StringExtractorGDBRemote response;
+        if (SendPacketAndWaitForResponse("qSyncThreadStateSupported", response, false))
+        {
+            if (response.IsOKResponse())
+                m_prepare_for_reg_writing_reply = eLazyBoolYes;
+        }
+    }
+    if (m_prepare_for_reg_writing_reply == eLazyBoolYes)
+        return true;
+    else
+        return false;
+}
+
 
 void
 GDBRemoteCommunicationClient::ResetDiscoverableSettings()
@@ -146,6 +189,8 @@ GDBRemoteCommunicationClient::ResetDiscoverableSettings()
     m_qHostInfo_is_valid = eLazyBoolCalculate;
     m_supports_alloc_dealloc_memory = eLazyBoolCalculate;
     m_supports_memory_region_info = eLazyBoolCalculate;
+    m_prepare_for_reg_writing_reply = eLazyBoolCalculate;
+    m_attach_or_wait_reply = eLazyBoolCalculate;
 
     m_supports_qProcessInfoPID = true;
     m_supports_qfProcessInfo = true;
@@ -381,7 +426,7 @@ GDBRemoteCommunicationClient::SendContinuePacketAndWaitForResponse
     StringExtractorGDBRemote &response
 )
 {
-    m_curr_tid = LLDB_INVALID_THREAD_ID;   
+    m_curr_tid = LLDB_INVALID_THREAD_ID;
     LogSP log (ProcessGDBRemoteLog::GetLogIfAllCategoriesSet (GDBR_LOG_PROCESS));
     if (log)
         log->Printf ("GDBRemoteCommunicationClient::%s ()", __FUNCTION__);
@@ -1019,6 +1064,17 @@ GDBRemoteCommunicationClient::GetHostInfo (bool force)
                         if (m_os_version_major != UINT32_MAX)
                             ++num_keys_decoded;
                     }
+                    else if (name.compare("watchpoint_exceptions_received") == 0)
+                    {
+                        ++num_keys_decoded;
+                        if (strcmp(value.c_str(),"before") == 0)
+                            m_watchpoints_trigger_after_instruction = eLazyBoolNo;
+                        else if (strcmp(value.c_str(),"after") == 0)
+                            m_watchpoints_trigger_after_instruction = eLazyBoolYes;
+                        else
+                            --num_keys_decoded;
+                    }
+
                 }
                 
                 if (num_keys_decoded > 0)
@@ -1350,6 +1406,30 @@ GDBRemoteCommunicationClient::GetWatchpointSupportInfo (uint32_t &num)
     }
     return error;
 
+}
+
+lldb_private::Error
+GDBRemoteCommunicationClient::GetWatchpointSupportInfo (uint32_t &num, bool& after)
+{
+    Error error(GetWatchpointSupportInfo(num));
+    if (error.Success())
+        error = GetWatchpointsTriggerAfterInstruction(after);
+    return error;
+}
+
+lldb_private::Error
+GDBRemoteCommunicationClient::GetWatchpointsTriggerAfterInstruction (bool &after)
+{
+    Error error;
+    
+    // we assume watchpoints will happen after running the relevant opcode
+    // and we only want to override this behavior if we have explicitly
+    // received a qHostInfo telling us otherwise
+    if (m_qHostInfo_is_valid != eLazyBoolYes)
+        after = true;
+    else
+        after = (m_watchpoints_trigger_after_instruction != eLazyBoolNo);
+    return error;
 }
 
 int
@@ -1788,13 +1868,13 @@ GDBRemoteCommunicationClient::LaunchGDBserverAndGetPort ()
         std::string name;
         std::string value;
         uint16_t port = 0;
-        lldb::pid_t pid = LLDB_INVALID_PROCESS_ID;
+        //lldb::pid_t pid = LLDB_INVALID_PROCESS_ID;
         while (response.GetNameColonValue(name, value))
         {
             if (name.size() == 4 && name.compare("port") == 0)
                 port = Args::StringToUInt32(value.c_str(), 0, 0);
-            if (name.size() == 3 && name.compare("pid") == 0)
-                pid = Args::StringToUInt32(value.c_str(), LLDB_INVALID_PROCESS_ID, 0);
+//            if (name.size() == 3 && name.compare("pid") == 0)
+//                pid = Args::StringToUInt32(value.c_str(), LLDB_INVALID_PROCESS_ID, 0);
         }
         return port;
     }
@@ -1940,7 +2020,7 @@ GDBRemoteCommunicationClient::GetCurrentThreadIDs (std::vector<lldb::tid_t> &thr
     Mutex::Locker locker;
     thread_ids.clear();
     
-    if (GetSequenceMutex (locker))
+    if (GetSequenceMutex (locker, "ProcessGDBRemote::UpdateThreadList() failed due to not getting the sequence mutex"))
     {
         sequence_mutex_unavailable = false;
         StringExtractorGDBRemote response;
@@ -1969,9 +2049,13 @@ GDBRemoteCommunicationClient::GetCurrentThreadIDs (std::vector<lldb::tid_t> &thr
     }
     else
     {
+#if defined (LLDB_CONFIGURATION_DEBUG)
+        // assert(!"ProcessGDBRemote::UpdateThreadList() failed due to not getting the sequence mutex");
+#else
         LogSP log (ProcessGDBRemoteLog::GetLogIfAnyCategoryIsSet (GDBR_LOG_PROCESS | GDBR_LOG_PACKETS));
         if (log)
             log->Printf("error: failed to get packet sequence mutex, not sending packet 'qfThreadInfo'");
+#endif
         sequence_mutex_unavailable = true;
     }
     return thread_ids.size();

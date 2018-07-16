@@ -3876,6 +3876,19 @@ defm SMUA : AI_sdml<0, "smua">;
 defm SMUS : AI_sdml<1, "smus">;
 
 //===----------------------------------------------------------------------===//
+//  Division Instructions (Optional in ARMv7-A and ARMv7-R)
+//
+def SDIV : ADivA1I<0b001, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), IIC_iALUi,
+                   "sdiv", "\t$Rd, $Rn, $Rm",
+                   [(set GPR:$Rd, (sdiv GPR:$Rn, GPR:$Rm))]>,
+           Requires<[IsARM, HasDivide]>;
+
+def UDIV : ADivA1I<0b011, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), IIC_iALUi,
+                   "udiv", "\t$Rd, $Rn, $Rm",
+                   [(set GPR:$Rd, (udiv GPR:$Rn, GPR:$Rm))]>,
+           Requires<[IsARM, HasDivide]>;
+
+//===----------------------------------------------------------------------===//
 //  Misc. Arithmetic Instructions.
 //
 

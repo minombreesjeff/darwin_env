@@ -834,6 +834,17 @@ FormatManager::LoadSystemFormatters()
     sys_category_sp->GetSummaryNavigator()->Add(ConstString("char *"), string_format);
     sys_category_sp->GetSummaryNavigator()->Add(ConstString("const char *"), string_format);
     sys_category_sp->GetRegexSummaryNavigator()->Add(any_size_char_arr, string_array_format);
+    
+    lldb::TypeSummaryImplSP ostype_summary(new StringSummaryFormat(TypeSummaryImpl::Flags().SetCascades(false)
+                                                                   .SetSkipPointers(true)
+                                                                   .SetSkipReferences(true)
+                                                                   .SetDontShowChildren(true)
+                                                                   .SetDontShowValue(false)
+                                                                   .SetShowMembersOneLiner(false)
+                                                                   .SetHideItemNames(false),
+                                                                   "${var%O}"));
+    
+    sys_category_sp->GetSummaryNavigator()->Add(ConstString("OSType"), ostype_summary);
 }
 
 static void
@@ -873,8 +884,8 @@ FormatManager::LoadObjCFormatters()
 {
     TypeSummaryImpl::Flags objc_flags;
     objc_flags.SetCascades(false)
-    .SetSkipPointers(false)
-    .SetSkipReferences(false)
+    .SetSkipPointers(true)
+    .SetSkipReferences(true)
     .SetDontShowChildren(true)
     .SetDontShowValue(true)
     .SetShowMembersOneLiner(false)
@@ -886,6 +897,18 @@ FormatManager::LoadObjCFormatters()
     TypeCategoryImpl::SharedPointer objc_category_sp = GetCategory(m_objc_category_name);
     objc_category_sp->GetSummaryNavigator()->Add(ConstString("BOOL"),
                                                  ObjC_BOOL_summary);
+
+    lldb::TypeSummaryImplSP ObjC_BOOLRef_summary(new ScriptSummaryFormat(objc_flags,
+                                                                      "lldb.formatters.objc.objc.BOOLRef_SummaryProvider",
+                                                                      ""));
+    objc_category_sp->GetSummaryNavigator()->Add(ConstString("BOOL &"),
+                                                 ObjC_BOOLRef_summary);
+    lldb::TypeSummaryImplSP ObjC_BOOLPtr_summary(new ScriptSummaryFormat(objc_flags,
+                                                                      "lldb.formatters.objc.objc.BOOLPtr_SummaryProvider",
+                                                                      ""));
+    objc_category_sp->GetSummaryNavigator()->Add(ConstString("BOOL *"),
+                                                 ObjC_BOOLPtr_summary);
+
     
     // we need to skip pointers here since we are special casing a SEL* when retrieving its value
     objc_flags.SetSkipPointers(true);

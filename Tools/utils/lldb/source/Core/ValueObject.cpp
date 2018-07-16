@@ -843,6 +843,7 @@ ValueObject::GetPointeeData (DataExtractor& data,
                     ModuleSP module_sp (GetModule());
                     if (module_sp)
                     {
+                        addr = addr + offset;
                         Address so_addr;
                         module_sp->ResolveFileAddress(addr, so_addr);
                         ExecutionContext exe_ctx (GetExecutionContextRef());
@@ -2020,7 +2021,9 @@ ValueObject::GetSyntheticExpressionPathChild(const char* expression, bool can_cr
     {
         // We haven't made a synthetic array member for expression yet, so
         // lets make one and cache it for any future reference.
-        synthetic_child_sp = GetValueForExpressionPath(expression);
+        synthetic_child_sp = GetValueForExpressionPath(expression,
+                                                       NULL, NULL, NULL,
+                                                       GetValueForExpressionPathOptions().DontAllowSyntheticChildren());
         
         // Cache the value if we got one back...
         if (synthetic_child_sp.get())
@@ -2344,8 +2347,10 @@ ValueObject::GetValuesForExpressionPath(const char* expression,
                 ValueObjectSP final_value = ret_val->Dereference(error);
                 if (error.Fail() || !final_value.get())
                 {
-                    *reason_to_stop = ValueObject::eExpressionPathScanEndReasonDereferencingFailed;
-                    *final_value_type = ValueObject::eExpressionPathEndResultTypeInvalid;
+                    if (reason_to_stop)
+                        *reason_to_stop = ValueObject::eExpressionPathScanEndReasonDereferencingFailed;
+                    if (final_value_type)
+                        *final_value_type = ValueObject::eExpressionPathEndResultTypeInvalid;
                     return 0;
                 }
                 else
@@ -2361,8 +2366,10 @@ ValueObject::GetValuesForExpressionPath(const char* expression,
                 ValueObjectSP final_value = ret_val->AddressOf(error);
                 if (error.Fail() || !final_value.get())
                 {
-                    *reason_to_stop = ValueObject::eExpressionPathScanEndReasonTakingAddressFailed;
-                    *final_value_type = ValueObject::eExpressionPathEndResultTypeInvalid;
+                    if (reason_to_stop)
+                        *reason_to_stop = ValueObject::eExpressionPathScanEndReasonTakingAddressFailed;
+                    if (final_value_type)
+                        *final_value_type = ValueObject::eExpressionPathEndResultTypeInvalid;
                     return 0;
                 }
                 else
@@ -2482,10 +2489,14 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
                     else if (options.m_no_synthetic_children == false) // let's try with synthetic children
                     {
                         if (root->IsSynthetic())
-                            child_valobj_sp = root;
-                        else
-                            child_valobj_sp = root->GetSyntheticValue();
-                        
+                        {
+                            *first_unparsed = expression_cstr;
+                            *reason_to_stop = ValueObject::eExpressionPathScanEndReasonNoSuchChild;
+                            *final_result = ValueObject::eExpressionPathEndResultTypeInvalid;
+                            return ValueObjectSP();
+                        }
+
+                        child_valobj_sp = root->GetSyntheticValue();
                         if (child_valobj_sp.get())
                             child_valobj_sp = child_valobj_sp->GetChildMemberWithName(child_name, true);
                     }
@@ -2520,6 +2531,14 @@ ValueObject::GetValueForExpressionPath_Impl(const char* expression_cstr,
                     }
                     else if (options.m_no_synthetic_children == false) // let's try with synthetic children
                     {
+                        if (root->IsSynthetic())
+                        {
+                            *first_unparsed = expression_cstr;
+                            *reason_to_stop = ValueObject::eExpressionPathScanEndReasonNoSuchChild;
+                            *final_result = ValueObject::eExpressionPathEndResultTypeInvalid;
+                            return ValueObjectSP();
+                        }
+                        
                         child_valobj_sp = root->GetSyntheticValue(true);
                         if (child_valobj_sp)
                             child_valobj_sp = child_valobj_sp->GetChildMemberWithName(child_name, true);
@@ -3770,9 +3789,9 @@ ValueObject::EvaluationPoint::SyncWithProcessState()
     if (current_mod_id.GetStopID() == 0)
         return false;
     
-    bool changed;
-    
-    if (m_mod_id.IsValid())
+    bool changed = false;
+    const bool was_valid = m_mod_id.IsValid();
+    if (was_valid)
     {
         if (m_mod_id == current_mod_id)
         {
@@ -3804,6 +3823,7 @@ ValueObject::EvaluationPoint::SyncWithProcessState()
                 {
                     // We used to have a frame, but now it is gone
                     SetInvalid();
+                    changed = was_valid;
                 }
             }
         }
@@ -3811,6 +3831,7 @@ ValueObject::EvaluationPoint::SyncWithProcessState()
         {
             // We used to have a thread, but now it is gone
             SetInvalid();
+            changed = was_valid;
         }
 
     }

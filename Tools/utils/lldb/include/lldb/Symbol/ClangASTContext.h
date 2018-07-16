@@ -237,6 +237,12 @@ public:
         return GetTranslationUnitDecl (getASTContext());
     }
     
+    static bool
+    GetClassMethodInfoForDeclContext (clang::DeclContext *decl_ctx,
+                                      lldb::LanguageType &language,
+                                      bool &is_instance_method,
+                                      ConstString &language_object_name);
+    
     static lldb::clang_type_t
     CopyType(clang::ASTContext *dest_context, 
              clang::ASTContext *source_context,
@@ -597,7 +603,9 @@ public:
                      lldb::clang_type_t clang_type,
                      uint32_t idx, 
                      std::string& name,
-                     uint32_t *bit_offset_ptr);
+                     uint64_t *bit_offset_ptr,
+                     uint32_t *bitfield_bit_size_ptr,
+                     bool *is_bitfield_ptr);
 
     static uint32_t
     GetNumPointeeChildren (lldb::clang_type_t clang_type);

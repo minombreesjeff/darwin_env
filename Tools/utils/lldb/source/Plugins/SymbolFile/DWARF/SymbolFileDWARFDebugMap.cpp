@@ -143,14 +143,20 @@ SymbolFileDWARFDebugMap::InitOSO ()
                     m_compile_unit_infos[i].so_symbol = symtab->SymbolAtIndex(oso_indexes[i] - 2);
                 m_compile_unit_infos[i].oso_symbol = symtab->SymbolAtIndex(oso_indexes[i]);
                 uint32_t sibling_idx = m_compile_unit_infos[i].so_symbol->GetSiblingIndex();
-                assert (sibling_idx != 0);
-                assert (sibling_idx > i + 1);
-                m_compile_unit_infos[i].last_symbol = symtab->SymbolAtIndex (sibling_idx - 1);
-                m_compile_unit_infos[i].first_symbol_index = symtab->GetIndexForSymbol(m_compile_unit_infos[i].so_symbol);
-                m_compile_unit_infos[i].last_symbol_index = symtab->GetIndexForSymbol(m_compile_unit_infos[i].last_symbol);
-                
-                if (log)
-                    log->Printf("Initialized OSO 0x%8.8x: file=%s", i, m_compile_unit_infos[i].oso_symbol->GetName().GetCString());
+                // The sibling index can't be less that or equal to the current index "i"
+                if (sibling_idx <= i)
+                {
+                    m_obj_file->GetModule()->ReportError ("N_SO in symbol with UID %u has invalid sibling in debug map, please file a bug and attach the binary listed in this error", m_compile_unit_infos[i].so_symbol->GetID());
+                }
+                else
+                {
+                    m_compile_unit_infos[i].last_symbol = symtab->SymbolAtIndex (sibling_idx - 1);
+                    m_compile_unit_infos[i].first_symbol_index = symtab->GetIndexForSymbol(m_compile_unit_infos[i].so_symbol);
+                    m_compile_unit_infos[i].last_symbol_index = symtab->GetIndexForSymbol(m_compile_unit_infos[i].last_symbol);
+                    
+                    if (log)
+                        log->Printf("Initialized OSO 0x%8.8x: file=%s", i, m_compile_unit_infos[i].oso_symbol->GetName().GetCString());
+                }
             }
         }
     }
@@ -429,6 +435,8 @@ SymbolFileDWARFDebugMap::GetSymbolFileByCompUnitInfo (CompileUnitInfo *comp_unit
                         }
                     }
                 }
+                oso_objfile->GetSectionList()->Finalize(); // Now that we're done adding sections, finalize to build fast-lookup caches
+                comp_unit_info->debug_map_sections_sp->Finalize();
 #if defined(DEBUG_OSO_DMAP)
                 s << "OSO sections after:\n";
                 oso_objfile->GetSectionList()->Dump(&s, NULL, true);

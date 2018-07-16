@@ -210,10 +210,10 @@ CommandObjectDisassemble::CommandOptions::g_option_table[] =
 //-------------------------------------------------------------------------
 
 CommandObjectDisassemble::CommandObjectDisassemble (CommandInterpreter &interpreter) :
-    CommandObject (interpreter,
-                   "disassemble",
-                   "Disassemble bytes in the current function, or elsewhere in the executable program as specified by the user.",
-                   "disassemble [<cmd-options>]"),
+    CommandObjectParsed (interpreter,
+                         "disassemble",
+                         "Disassemble bytes in the current function, or elsewhere in the executable program as specified by the user.",
+                         "disassemble [<cmd-options>]"),
     m_options (interpreter)
 {
 }
@@ -223,11 +223,7 @@ CommandObjectDisassemble::~CommandObjectDisassemble()
 }
 
 bool
-CommandObjectDisassemble::Execute
-(
-    Args& command,
-    CommandReturnObject &result
-)
+CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
 {
     Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
     if (target == NULL)
@@ -247,7 +243,7 @@ CommandObjectDisassemble::Execute
     }
 
     const char *plugin_name = m_options.GetPluginName ();
-    Disassembler *disassembler = Disassembler::FindPlugin(m_options.arch, plugin_name);
+    DisassemblerSP disassembler = Disassembler::FindPlugin(m_options.arch, plugin_name);
 
     if (disassembler == NULL)
     {

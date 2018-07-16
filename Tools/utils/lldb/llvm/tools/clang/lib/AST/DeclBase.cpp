@@ -1153,14 +1153,14 @@ void DeclContext::localUncachedLookup(DeclarationName Name,
   
   // If there's no external storage, just perform a normal lookup and copy
   // the results.
-  if (!hasExternalVisibleStorage() && !hasExternalLexicalStorage()) {
+  if (!hasExternalVisibleStorage() && !hasExternalLexicalStorage() && Name) {
     lookup_result LookupResults = lookup(Name);
     Results.insert(Results.end(), LookupResults.first, LookupResults.second);
     return;
   }
 
   // If we have a lookup table, check there first. Maybe we'll get lucky.
-  if (LookupPtr) {
+  if (LookupPtr && Name) {
     StoredDeclsMap::iterator Pos = LookupPtr->find(Name);
     if (Pos != LookupPtr->end()) {
       Results.insert(Results.end(), 

@@ -95,6 +95,10 @@ ThreadPlanStepOut::ThreadPlanStepOut
         // FIXME - can we do this more securely if we know first_insn?
 
         m_return_addr = return_frame_sp->GetFrameCodeAddress().GetLoadAddress(&m_thread.GetProcess()->GetTarget());
+        
+        if (m_return_addr == LLDB_INVALID_ADDRESS)
+            return;
+        
         Breakpoint *return_bp = m_thread.CalculateTarget()->CreateBreakpoint (m_return_addr, true).get();
         if (return_bp != NULL)
         {
@@ -157,7 +161,8 @@ ThreadPlanStepOut::ValidatePlan (Stream *error)
         return m_step_through_inline_plan_sp->ValidatePlan (error);
     else if (m_return_bp_id == LLDB_INVALID_BREAK_ID)
     {
-        error->PutCString("Could not create return address breakpoint.");
+        if (error)
+            error->PutCString("Could not create return address breakpoint.");
         return false;
     }
     else
@@ -415,6 +420,7 @@ ThreadPlanStepOut::QueueInlinedStepPlan (bool queue_now)
             {
                 SymbolContext inlined_sc;
                 inlined_block->CalculateSymbolContext(&inlined_sc);
+                inlined_sc.target_sp = GetTarget().shared_from_this();
                 RunMode run_mode = m_stop_others ? lldb::eOnlyThisThread : lldb::eAllThreads;
                 ThreadPlanStepOverRange *step_through_inline_plan_ptr = new ThreadPlanStepOverRange(m_thread, 
                                                                                                     inline_range, 

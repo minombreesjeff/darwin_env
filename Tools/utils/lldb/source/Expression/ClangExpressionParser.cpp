@@ -195,6 +195,8 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
             llvm::InitializeAllAsmPrinters();
             llvm::InitializeAllTargetMCs();
             llvm::InitializeAllDisassemblers();
+            
+            llvm::DisablePrettyStackTrace = true;
         }
     } InitializeLLVM;
         
@@ -754,7 +756,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     
     ArchSpec arch(target->GetArchitecture());
     
-    Disassembler *disassembler = Disassembler::FindPlugin(arch, NULL);
+    lldb::DisassemblerSP disassembler = Disassembler::FindPlugin(arch, NULL);
     
     if (disassembler == NULL)
     {

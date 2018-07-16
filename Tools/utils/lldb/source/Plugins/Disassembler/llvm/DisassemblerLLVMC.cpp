@@ -36,6 +36,7 @@ public:
         Instruction(address, addr_class),
         m_is_valid(false),
         m_disasm(disasm),
+        m_disasm_sp(disasm.shared_from_this()),
         m_does_branch(eLazyBoolCalculate)
     {
     }
@@ -133,18 +134,20 @@ public:
                     if ((thumb_opcode & 0xe000) != 0xe000 || ((thumb_opcode & 0x1800u) == 0))
                     {
                         m_opcode.SetOpcode16 (thumb_opcode);
+                        m_is_valid = true;
                     }
                     else
                     {
                         thumb_opcode <<= 16;
                         thumb_opcode |= data.GetU16(&data_offset);
-                        m_opcode.SetOpcode32 (thumb_opcode);
+                        m_opcode.SetOpcode16_2 (thumb_opcode);
                         m_is_valid = true;
                     }
                 }
                 else
                 {
                     m_opcode.SetOpcode32 (data.GetU32(&data_offset));
+                    m_is_valid = true;
                 }
             }
             else
@@ -195,7 +198,7 @@ public:
         DataExtractor data;
         const AddressClass address_class = GetAddressClass ();
 
-        if (m_opcode.GetData(data, address_class))
+        if (m_opcode.GetData(data))
         {
             char out_string[512];
             
@@ -415,6 +418,7 @@ protected:
     
     bool                    m_is_valid;
     DisassemblerLLVMC      &m_disasm;
+    DisassemblerSP          m_disasm_sp; // for ownership
     LazyBool                m_does_branch;
     
     static bool             s_regex_compiled;
@@ -442,7 +446,26 @@ DisassemblerLLVMC::DisassemblerLLVMC (const ArchSpec &arch) :
     m_disasm_context (NULL),
     m_alternate_disasm_context (NULL)
 {
-    m_disasm_context = ::LLVMCreateDisasm(arch.GetTriple().getTriple().c_str(), 
+    // See if this is an ARM core, and if yes, turn on armv7 to enable disassembly
+    // of new instructions.
+    
+    ArchSpec override_arch = arch;
+    
+    const char *triple_to_use = NULL;
+    
+    if (arch == ArchSpec::kCore_arm_any)
+    {
+        if (arch.GetMachine() == llvm::Triple::thumb)
+            triple_to_use = "thumbv7s-apple-ios";
+        else
+            triple_to_use = "armv7s-apple-ios";
+    }
+    else
+    {
+        triple_to_use = arch.GetTriple().getTriple().c_str();
+    }
+        
+    m_disasm_context = ::LLVMCreateDisasm(triple_to_use,
                                           (void*)this, 
                                           /*TagType=*/1,
                                           NULL,
@@ -451,7 +474,7 @@ DisassemblerLLVMC::DisassemblerLLVMC (const ArchSpec &arch) :
     if (arch.GetTriple().getArch() == llvm::Triple::arm)
     {
         ArchSpec thumb_arch(arch);
-        thumb_arch.GetTriple().setArchName(llvm::StringRef("thumbv7"));
+        thumb_arch.GetTriple().setArchName(llvm::StringRef("thumbv7s"));
         std::string thumb_triple(thumb_arch.GetTriple().getTriple());
 
         m_alternate_disasm_context = ::LLVMCreateDisasm(thumb_triple.c_str(),

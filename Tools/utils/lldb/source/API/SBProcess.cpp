@@ -39,7 +39,7 @@ using namespace lldb_private;
 
 
 SBProcess::SBProcess () :
-    m_opaque_sp()
+    m_opaque_wp()
 {
 }
 
@@ -49,13 +49,13 @@ SBProcess::SBProcess () :
 //----------------------------------------------------------------------
 
 SBProcess::SBProcess (const SBProcess& rhs) :
-    m_opaque_sp (rhs.m_opaque_sp)
+    m_opaque_wp (rhs.m_opaque_wp)
 {
 }
 
 
 SBProcess::SBProcess (const lldb::ProcessSP &process_sp) :
-    m_opaque_sp (process_sp)
+    m_opaque_wp (process_sp)
 {
 }
 
@@ -63,7 +63,7 @@ const SBProcess&
 SBProcess::operator = (const SBProcess& rhs)
 {
     if (this != &rhs)
-        m_opaque_sp = rhs.m_opaque_sp;
+        m_opaque_wp = rhs.m_opaque_wp;
     return *this;
 }
 
@@ -83,26 +83,26 @@ SBProcess::GetBroadcasterClassName ()
 lldb::ProcessSP
 SBProcess::GetSP() const
 {
-    return m_opaque_sp;
+    return m_opaque_wp.lock();
 }
 
 void
 SBProcess::SetSP (const ProcessSP &process_sp)
 {
-    m_opaque_sp = process_sp;
+    m_opaque_wp = process_sp;
 }
 
 void
 SBProcess::Clear ()
 {
-    m_opaque_sp.reset();
+    m_opaque_wp.reset();
 }
 
 
 bool
 SBProcess::IsValid() const
 {
-    return m_opaque_sp.get() != NULL;
+    return m_opaque_wp.lock().get() != NULL;
 }
 
 bool
@@ -119,7 +119,7 @@ SBProcess::RemoteLaunch (char const **argv,
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log) {
         log->Printf ("SBProcess(%p)::RemoteLaunch (argv=%p, envp=%p, stdin=%s, stdout=%s, stderr=%s, working-dir=%s, launch_flags=0x%x, stop_at_entry=%i, &error (%p))...",
-                     m_opaque_sp.get(), 
+                     m_opaque_wp.lock().get(),
                      argv, 
                      envp, 
                      stdin_path ? stdin_path : "NULL", 
@@ -401,6 +401,26 @@ SBProcess::SetSelectedThreadByID (uint32_t tid)
     if (log)
         log->Printf ("SBProcess(%p)::SetSelectedThreadByID (tid=0x%4.4x) => %s", 
                      process_sp.get(), tid, (ret_val ? "true" : "false"));
+
+    return ret_val;
+}
+
+bool
+SBProcess::SetSelectedThreadByIndexID (uint32_t index_id)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    bool ret_val = false;
+    ProcessSP process_sp(GetSP());
+    if (process_sp)
+    {
+        Mutex::Locker api_locker (process_sp->GetTarget().GetAPIMutex());
+        ret_val = process_sp->GetThreadList().SetSelectedThreadByIndexID (index_id);
+    }
+
+    if (log)
+        log->Printf ("SBProcess(%p)::SetSelectedThreadByID (tid=0x%x) => %s", 
+                     process_sp.get(), index_id, (ret_val ? "true" : "false"));
 
     return ret_val;
 }
@@ -698,6 +718,16 @@ SBProcess::Signal (int signo)
     return sb_error;
 }
 
+void
+SBProcess::SendAsyncInterrupt ()
+{
+    ProcessSP process_sp(GetSP());
+    if (process_sp)
+    {
+        process_sp->SendAsyncInterrupt ();
+    }
+}
+
 SBThread
 SBProcess::GetThreadByID (tid_t tid)
 {
@@ -719,6 +749,33 @@ SBProcess::GetThreadByID (tid_t tid)
         log->Printf ("SBProcess(%p)::GetThreadByID (tid=0x%4.4llx) => SBThread (%p)", 
                      process_sp.get(), 
                      tid,
+                     thread_sp.get());
+    }
+
+    return sb_thread;
+}
+
+SBThread
+SBProcess::GetThreadByIndexID (uint32_t index_id)
+{
+    SBThread sb_thread;
+    ThreadSP thread_sp;
+    ProcessSP process_sp(GetSP());
+    if (process_sp)
+    {
+        Mutex::Locker api_locker (process_sp->GetTarget().GetAPIMutex());
+        Process::StopLocker stop_locker;
+        const bool can_update = stop_locker.TryLock(&process_sp->GetRunLock());
+        thread_sp = process_sp->GetThreadList().FindThreadByIndexID (index_id, can_update);
+        sb_thread.SetThread (thread_sp);
+    }
+
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    if (log)
+    {
+        log->Printf ("SBProcess(%p)::GetThreadByID (tid=0x%x) => SBThread (%p)", 
+                     process_sp.get(), 
+                     index_id,
                      thread_sp.get());
     }
 

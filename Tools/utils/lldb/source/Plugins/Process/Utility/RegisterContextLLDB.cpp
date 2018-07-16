@@ -182,14 +182,14 @@ RegisterContextLLDB::InitializeZerothFrame()
     m_fast_unwind_plan_sp = GetFastUnwindPlanForFrame ();
     m_full_unwind_plan_sp = GetFullUnwindPlanForFrame (); 
     
-    const UnwindPlan::Row *active_row = NULL;
+    UnwindPlan::RowSP active_row;
     int cfa_offset = 0;
-    int row_register_kind;
+    int row_register_kind = -1;
     if (m_full_unwind_plan_sp && m_full_unwind_plan_sp->PlanValidAtAddress (m_current_pc))
     {
         active_row = m_full_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
         row_register_kind = m_full_unwind_plan_sp->GetRegisterKind ();
-        if (active_row && log)
+        if (active_row.get() && log)
         {
             StreamString active_row_strm;
             active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(exe_ctx.GetTargetPtr()));
@@ -198,7 +198,7 @@ RegisterContextLLDB::InitializeZerothFrame()
         }
     }
 
-    if (active_row == NULL)
+    if (!active_row.get())
     {
         m_frame_type = eNotAValidFrame;
         return;
@@ -356,8 +356,8 @@ RegisterContextLLDB::InitializeNonZerothFrame()
             m_current_offset_backed_up_one = -1;
             addr_t cfa_regval;
             int row_register_kind = m_full_unwind_plan_sp->GetRegisterKind ();
-            const UnwindPlan::Row *row = m_full_unwind_plan_sp->GetRowForFunctionOffset(0);
-            if (row)
+            UnwindPlan::RowSP row = m_full_unwind_plan_sp->GetRowForFunctionOffset(0);
+            if (row.get())
             {
                 uint32_t cfa_regnum = row->GetCFARegister();
                 int cfa_offset = row->GetCFAOffset();
@@ -505,9 +505,9 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     // We've set m_frame_type and m_sym_ctx before this call.
     m_fast_unwind_plan_sp = GetFastUnwindPlanForFrame ();
 
-    const UnwindPlan::Row *active_row = NULL;
+    UnwindPlan::RowSP active_row;
     int cfa_offset = 0;
-    int row_register_kind;
+    int row_register_kind = -1;
 
     // Try to get by with just the fast UnwindPlan if possible - the full UnwindPlan may be expensive to get
     // (e.g. if we have to parse the entire eh_frame section of an ObjectFile for the first time.)
@@ -516,7 +516,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     {
         active_row = m_fast_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
         row_register_kind = m_fast_unwind_plan_sp->GetRegisterKind ();
-        if (active_row && log)
+        if (active_row.get() && log)
         {
             StreamString active_row_strm;
             active_row->Dump(active_row_strm, m_fast_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(exe_ctx.GetTargetPtr()));
@@ -531,7 +531,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         {
             active_row = m_full_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
             row_register_kind = m_full_unwind_plan_sp->GetRegisterKind ();
-            if (active_row && log)
+            if (active_row.get() && log)
             {
                 StreamString active_row_strm;
                 active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(exe_ctx.GetTargetPtr()));
@@ -541,7 +541,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         }
     }
 
-    if (active_row == NULL)
+    if (!active_row.get())
     {
         m_frame_type = eNotAValidFrame;
         return;
@@ -670,8 +670,8 @@ RegisterContextLLDB::GetFastUnwindPlanForFrame ()
                 const char *has_fast = "";
                 if (m_fast_unwind_plan_sp)
                     has_fast = ", and has a fast UnwindPlan";
-                log->Printf("%*sFrame %u frame has a fast UnwindPlan",
-                            m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number);
+                log->Printf("%*sFrame %u frame%s",
+                            m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, has_fast);
             }
             m_frame_type = eNormalFrame;
             return unwind_plan_sp;
@@ -896,6 +896,10 @@ RegisterContextLLDB::ReadRegisterValueFromRegisterLocation (lldb_private::Unwind
     case UnwindLLDB::RegisterLocation::eRegisterInRegister:
         {
             const RegisterInfo *other_reg_info = GetRegisterInfoAtIndex(regloc.location.register_number);
+            
+            if (!other_reg_info)
+                return false;
+            
             if (IsFrameZero ()) 
             {
                 success = m_thread.GetRegisterContext()->ReadRegister (other_reg_info, value);
@@ -1038,7 +1042,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
 
     if (m_fast_unwind_plan_sp)
     {
-        const UnwindPlan::Row *active_row = m_fast_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
+        UnwindPlan::RowSP active_row = m_fast_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
         unwindplan_registerkind = m_fast_unwind_plan_sp->GetRegisterKind ();
         uint32_t row_regnum;
         if (!m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (eRegisterKindLLDB, lldb_regnum, unwindplan_registerkind, row_regnum))
@@ -1071,7 +1075,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
 
         if (m_full_unwind_plan_sp)
         {
-            const UnwindPlan::Row *active_row = m_full_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
+            UnwindPlan::RowSP active_row = m_full_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
             unwindplan_registerkind = m_full_unwind_plan_sp->GetRegisterKind ();
             uint32_t row_regnum;
             if (!m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (eRegisterKindLLDB, lldb_regnum, unwindplan_registerkind, row_regnum))

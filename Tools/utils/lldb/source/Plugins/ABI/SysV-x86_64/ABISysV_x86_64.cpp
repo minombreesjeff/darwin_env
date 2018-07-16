@@ -753,12 +753,12 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
             for (uint32_t idx = 0; idx < num_children; idx++)
             {
                 std::string name;
-                uint32_t field_bit_offset;
+                uint64_t field_bit_offset = 0;
                 bool is_signed;
                 bool is_complex;
                 uint32_t count;
                 
-                clang_type_t field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context, ret_value_type, idx, name, &field_bit_offset);
+                clang_type_t field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context, ret_value_type, idx, name, &field_bit_offset, NULL, NULL);
                 size_t field_bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, field_clang_type);
 
                 // If there are any unaligned fields, this is stored in memory.
@@ -840,12 +840,14 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
                                 in_gpr = false;
                             else
                             {
-                                uint32_t next_field_bit_offset;
-                                clang_type_t next_field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context, 
+                                uint64_t next_field_bit_offset = 0;
+                                clang_type_t next_field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context,
                                                                                                        ret_value_type, 
                                                                                                        idx + 1, 
                                                                                                        name, 
-                                                                                                       &next_field_bit_offset);
+                                                                                                       &next_field_bit_offset,
+                                                                                                       NULL,
+                                                                                                       NULL);
                                 if (ClangASTContext::IsIntegerType (next_field_clang_type, is_signed))
                                     in_gpr = true;
                                 else
@@ -864,12 +866,14 @@ ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread, ClangASTType &ast_type
                                 in_gpr = false;
                             else
                             {
-                                uint32_t prev_field_bit_offset;
+                                uint64_t prev_field_bit_offset = 0;
                                 clang_type_t prev_field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context, 
                                                                                                        ret_value_type, 
                                                                                                        idx - 1, 
                                                                                                        name, 
-                                                                                                       &prev_field_bit_offset);
+                                                                                                       &prev_field_bit_offset,
+                                                                                                       NULL,
+                                                                                                       NULL);
                                 if (ClangASTContext::IsIntegerType (prev_field_clang_type, is_signed))
                                     in_gpr = true;
                                 else
@@ -985,10 +989,10 @@ ABISysV_x86_64::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
         pc_reg_num == LLDB_INVALID_REGNUM)
         return false;
 
-    UnwindPlan::Row row;
-    row.SetCFARegister (sp_reg_num);
-    row.SetCFAOffset (8);
-    row.SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, -8, false);    
+    UnwindPlan::RowSP row(new UnwindPlan::Row);
+    row->SetCFARegister (sp_reg_num);
+    row->SetCFAOffset (8);
+    row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, -8, false);
     unwind_plan.AppendRow (row);
     unwind_plan.SetSourceName ("x86_64 at-func-entry default");
     return true;
@@ -1029,16 +1033,16 @@ ABISysV_x86_64::CreateDefaultUnwindPlan (UnwindPlan &unwind_plan)
         pc_reg_num == LLDB_INVALID_REGNUM)
         return false;
 
-    UnwindPlan::Row row;
+    UnwindPlan::RowSP row(new UnwindPlan::Row);
 
     const int32_t ptr_size = 8;
-    row.SetCFARegister (LLDB_REGNUM_GENERIC_FP);
-    row.SetCFAOffset (2 * ptr_size);
-    row.SetOffset (0);
+    row->SetCFARegister (LLDB_REGNUM_GENERIC_FP);
+    row->SetCFAOffset (2 * ptr_size);
+    row->SetOffset (0);
     
-    row.SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, ptr_size * -2, true);
-    row.SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, ptr_size * -1, true);
-    row.SetRegisterLocationToAtCFAPlusOffset(sp_reg_num, ptr_size *  0, true);
+    row->SetRegisterLocationToAtCFAPlusOffset(fp_reg_num, ptr_size * -2, true);
+    row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, ptr_size * -1, true);
+    row->SetRegisterLocationToAtCFAPlusOffset(sp_reg_num, ptr_size *  0, true);
 
     unwind_plan.AppendRow (row);
     unwind_plan.SetSourceName ("x86_64 default unwind plan");
