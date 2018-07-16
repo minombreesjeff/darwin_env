@@ -29,6 +29,7 @@ LDFLAGS =
 LIBS = -L ${PCAP_DIR}/WPCAP/LIB -lwpcap -lws2_32
 OBJS = \
 	../../addrtoname.o \
+	../../af.o \
 	../../gmpls.o \
 	../../gmt2local.o \
 	../../missing/inet_aton.o \
@@ -96,6 +97,7 @@ OBJS = \
 	../../print-nfs.o \
 	../../print-ntp.o \
 	../../print-null.o \
+	../../print-olsr.o \
 	../../print-ospf.o \
 	../../print-ospf6.o \
 	../../print-pflog.o \
@@ -146,7 +148,8 @@ OBJS = \
 	../../print-sip.o \
 	../../print-eap.o \
 	../../print-lmp.o \
-	../../print-syslog.o
+	../../print-syslog.o \
+	../../print-dccp.o
 
 main: ${OBJS}
 	${CC} ${CFLAGS} ${LDFLAGS} -o windump.exe ${OBJS} ${LIBS}

@@ -23,7 +23,7 @@
 
 #ifndef lint
 static const char rcsid[] _U_ =
-    "@(#) $Header: /tcpdump/master/tcpdump/print-tcp.c,v 1.120.2.2 2005/04/21 06:36:05 guy Exp $ (LBL)";
+    "@(#) $Header: /tcpdump/master/tcpdump/print-tcp.c,v 1.120.2.3 2005/10/16 06:05:46 guy Exp $ (LBL)";
 #endif
 
 #ifdef HAVE_CONFIG_H
@@ -420,7 +420,7 @@ tcp_print(register const u_char *bp, register u_int length,
 		return;
 	}
 
-	if (IP_V(ip) == 4 && vflag && !fragmented) {
+	if (IP_V(ip) == 4 && vflag && !Kflag && !fragmented) {
 		u_int16_t sum, tcp_sum;
 		if (TTEST2(tp->th_sport, length)) {
 			sum = tcp_cksum(ip, tp, length);
@@ -434,7 +434,7 @@ tcp_print(register const u_char *bp, register u_int length,
 		}
 	}
 #ifdef INET6
-	if (IP_V(ip) == 6 && ip6->ip6_plen && vflag && !fragmented) {
+	if (IP_V(ip) == 6 && ip6->ip6_plen && vflag && !Kflag && !fragmented) {
 		u_int16_t sum,tcp_sum;
 		if (TTEST2(tp->th_sport, length)) {
 			sum = tcp6_cksum(ip6, tp, length);
@@ -799,7 +799,7 @@ tcp_verify_signature(const struct ip *ip, const struct tcphdr *tp,
 	MD5_Update(&ctx, tcpmd5secret, strlen(tcpmd5secret));
 	MD5_Final(sig, &ctx);
 
-	if (memcmp(rcvsig, sig, 16))
+	if (memcmp(rcvsig, sig, TCP_SIGLEN) == 0)
 		return (SIGNATURE_VALID);
 	else
 		return (SIGNATURE_INVALID);

@@ -11,6 +11,8 @@ acconfig.h
 aclocal.m4
 addrtoname.c
 addrtoname.h
+af.c
+af.h
 ah.h
 aodv.h
 appletalk.h
@@ -171,6 +173,7 @@ print-netbios.c
 print-nfs.c
 print-ntp.c
 print-null.c
+print-olsr.c
 print-ospf.c
 print-ospf6.c
 print-pflog.c

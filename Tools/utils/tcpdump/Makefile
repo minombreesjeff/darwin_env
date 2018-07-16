@@ -21,11 +21,11 @@ Install_Target = install
 # Automatic Extract & Patch
 AEP            = YES
 AEP_Project    = $(Project)
-AEP_Version    = 3.9.4
+AEP_Version    = 3.9.7
 AEP_ProjVers   = $(AEP_Project)-$(AEP_Version)
 AEP_Filename   = $(AEP_ProjVers).tar.gz
 AEP_ExtractDir = $(AEP_ProjVers)
-AEP_Patches    = NLS_make_fix.patch
+AEP_Patches    = NLS_make_fix.patch BHB_tcp_checksum.patch
 
 ifeq ($(suffix $(AEP_Filename)),.bz2)
 AEP_ExtractOption = j

@@ -30,7 +30,7 @@ static const char copyright[] _U_ =
     "@(#) Copyright (c) 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 2000\n\
 The Regents of the University of California.  All rights reserved.\n";
 static const char rcsid[] _U_ =
-    "@(#) $Header: /tcpdump/master/tcpdump/tcpdump.c,v 1.253.2.11 2005/08/23 10:29:41 hannes Exp $ (LBL)";
+    "@(#) $Header: /tcpdump/master/tcpdump/tcpdump.c,v 1.253.2.12 2006/02/01 14:39:56 hannes Exp $ (LBL)";
 #endif
 
 /*
@@ -265,6 +265,9 @@ static struct printer printers[] = {
 #ifdef DLT_JUNIPER_CHDLC
 	{ juniper_chdlc_print, DLT_JUNIPER_CHDLC },
 #endif
+#ifdef DLT_MFR
+	{ mfr_if_print, DLT_MFR },
+#endif
 	{ NULL,			0 },
 };
 
@@ -496,7 +499,7 @@ main(int argc, char **argv)
 
 	opterr = 0;
 	while (
-	    (op = getopt(argc, argv, "aA" B_FLAG "c:C:d" D_FLAG "eE:fF:i:lLm:M:nNOpqr:Rs:StT:u" U_FLAG "vw:W:xXy:YZ:")) != -1)
+	    (op = getopt(argc, argv, "aA" B_FLAG "c:C:d" D_FLAG "eE:fF:i:KlLm:M:nNOpqr:Rs:StT:u" U_FLAG "vw:W:xXy:YZ:")) != -1)
 		switch (op) {
 
 		case 'a':
@@ -632,6 +635,10 @@ main(int argc, char **argv)
 
 		case 'N':
 			++Nflag;
+			break;
+
+		case 'K':
+			++Kflag;
 			break;
 
 		case 'm':
@@ -1406,7 +1413,7 @@ usage(void)
 #endif /* WIN32 */
 #endif /* HAVE_PCAP_LIB_VERSION */
 	(void)fprintf(stderr,
-"Usage: %s [-aAd" D_FLAG "eflLnNOpqRStu" U_FLAG "vxX]" B_FLAG_USAGE " [-c count] [ -C file_size ]\n", program_name);
+"Usage: %s [-aAd" D_FLAG "efKlLnNOpqRStu" U_FLAG "vxX]" B_FLAG_USAGE " [-c count] [ -C file_size ]\n", program_name);
 	(void)fprintf(stderr,
 "\t\t[ -E algo:secret ] [ -F file ] [ -i interface ] [ -M secret ]\n");
 	(void)fprintf(stderr,
