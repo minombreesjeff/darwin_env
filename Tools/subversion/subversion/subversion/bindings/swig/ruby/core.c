@@ -1979,7 +1979,7 @@ SWIG_ruby_failed(void)
 } 
 
 
-/*@SWIG:/home/hwright/dev/release/roll/prefix/share/swig/1.3.36/ruby/rubyprimtypes.swg,23,%ruby_aux_method@*/
+/*@SWIG:/tmp/1.6.18/prefix/share/swig/1.3.36/ruby/rubyprimtypes.swg,23,%ruby_aux_method@*/
 SWIGINTERN VALUE SWIG_AUX_NUM2LONG(VALUE *args)
 {
   VALUE obj = args[0];
@@ -2251,7 +2251,7 @@ typedef struct { int optch; const char *desc; } svn_opt_subcommand_desc2_t_desc_
 #include "svn_auth.h"
 
 
-/*@SWIG:/home/hwright/dev/release/roll/prefix/share/swig/1.3.36/ruby/rubyprimtypes.swg,23,%ruby_aux_method@*/
+/*@SWIG:/tmp/1.6.18/prefix/share/swig/1.3.36/ruby/rubyprimtypes.swg,23,%ruby_aux_method@*/
 SWIGINTERN VALUE SWIG_AUX_NUM2ULONG(VALUE *args)
 {
   VALUE obj = args[0];
@@ -29414,12 +29414,12 @@ SWIGEXPORT void Init_core(void) {
   rb_define_module_function(mCore, "svn_pool_create", _wrap_svn_pool_create, -1);
   rb_define_const(mCore, "SVN_VER_MAJOR", SWIG_From_int((int)(1)));
   rb_define_const(mCore, "SVN_VER_MINOR", SWIG_From_int((int)(6)));
-  rb_define_const(mCore, "SVN_VER_PATCH", SWIG_From_int((int)(17)));
-  rb_define_const(mCore, "SVN_VER_MICRO", SWIG_From_int((int)(17)));
+  rb_define_const(mCore, "SVN_VER_PATCH", SWIG_From_int((int)(18)));
+  rb_define_const(mCore, "SVN_VER_MICRO", SWIG_From_int((int)(18)));
   rb_define_const(mCore, "SVN_VER_LIBRARY", SWIG_From_int((int)(1)));
-  rb_define_const(mCore, "SVN_VER_TAG", SWIG_FromCharPtr(" (r1128011)"));
+  rb_define_const(mCore, "SVN_VER_TAG", SWIG_FromCharPtr(" (r1303927)"));
   rb_define_const(mCore, "SVN_VER_NUMTAG", SWIG_FromCharPtr(""));
-  rb_define_const(mCore, "SVN_VER_REVISION", SWIG_From_int((int)(1128011)));
+  rb_define_const(mCore, "SVN_VER_REVISION", SWIG_From_int((int)(1303927)));
   
   cSvn_version_t.klass = rb_define_class_under(mCore, "Svn_version_t", rb_cObject);
   SWIG_TypeClientData(SWIGTYPE_p_svn_version_t, (void *) &cSvn_version_t);

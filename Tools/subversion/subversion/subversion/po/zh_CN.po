@@ -37,9 +37,9 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: subversion 1.6\n"
-"Report-Msgid-Bugs-To: dev@subversion.apache.org\n"
-"POT-Creation-Date: 2010-12-26 12:00+0800\n"
-"PO-Revision-Date: 2010-12-26 12:00+0800\n"
+"Report-Msgid-Bugs-To: dev@subversion.tigris.org\n"
+"POT-Creation-Date: 2011-12-22 17:17+0800\n"
+"PO-Revision-Date: 2011-07-22 12:55+0800\n"
 "Last-Translator: Subversion Developers <dev@subversion.apache.org>\n"
 "Language-Team: Simplified Chinese <dev@subversion.apache.org>\n"
 "Language: \n"
@@ -1004,7 +1004,7 @@ msgid ""
 "'%s' is not under version control and is not part of the commit, yet its "
 "child '%s' is part of the commit"
 msgstr ""
-"“%s” 尚未纳入版本控制，也不是提交的一部份，但是它的子路径 “%s” 是提交的一部份"
+"“%s” 尚未纳入版本控制，也不是提交的一部分，但是它的子路径 “%s” 是提交的一部分"
 
 #, c-format
 msgid "Entry for '%s' has no URL"
@@ -1164,7 +1164,7 @@ msgid "Not all required revisions are specified"
 msgstr "没有全部提供需要的版本"
 
 msgid "At least one revision must be non-local for a pegged diff"
-msgstr "对于 peg 差异，必须至少有一个非本地版本"
+msgstr "对于铆钉差异，必须至少有一个非本地版本"
 
 #, c-format
 msgid "'%s' was not found in the repository at revision %ld"
@@ -2363,7 +2363,7 @@ msgid "Final line in revision file missing space"
 msgstr "版本文件的最后一行缺少空白字符"
 
 msgid "Malformed svndiff data in representation"
-msgstr "修订版的svndiff 数据非法"
+msgstr "修订版的 svndiff 数据非法"
 
 msgid "Reading one svndiff window read beyond the end of the representation"
 msgstr "读svndiff窗口时超出了结尾"
@@ -2423,6 +2423,9 @@ msgstr "无法设定目录的文本内容"
 
 msgid "Corrupt current file"
 msgstr "当前文件损坏"
+
+msgid "Truncated protorev file detected"
+msgstr "检测到文件 protorev 被截断"
 
 #, c-format
 msgid "Can't stat '%s'"
@@ -2485,6 +2488,10 @@ msgid "Only SHA1 checksums can be used as keys in the rep_cache table.\n"
 msgstr "在表 rep_cache 中，只有 SHA1 校验和才能用作键。\n"
 
 #, c-format
+msgid "Youngest revision is r%ld, but rep-cache contains r%ld"
+msgstr "最小的版本是 r%ld，但是缓存中包含的是 r%ld"
+
+#, c-format
 msgid ""
 "Representation key for checksum '%%s' exists in filesystem '%%s' with a "
 "different value (%%ld,%%%s,%%%s,%%%s) than what we were about to store (%%ld,"
@@ -2527,14 +2534,14 @@ msgstr "“%s” 于版本 %ld 是一个无关对象"
 
 #, c-format
 msgid "Invalid peg revision %ld"
-msgstr "无效 peg 版本 %ld"
+msgstr "无效的铆钉版本 %ld"
 
 #, c-format
 msgid "Invalid end revision %ld"
 msgstr "无效结束版本 %ld"
 
 msgid "Peg revision must precede end revision"
-msgstr "Peg 版本必须小于结束版本"
+msgstr "铆钉版本必须小于结束版本"
 
 #, c-format
 msgid "Mismatched RA version for '%s': found %d.%d.%d%s, expected %d.%d.%d%s"
@@ -2574,7 +2581,7 @@ msgid "Module for accessing a repository on local disk."
 msgstr "访问本地磁盘的版本库模块。"
 
 msgid "Unable to open an ra_local session to URL"
-msgstr "无法为URL打开ra_local会话"
+msgstr "无法为 URL 打开 ra_local 会话"
 
 #, c-format
 msgid "URL '%s' is not a child of the session's repository root URL '%s'"
@@ -2842,7 +2849,7 @@ msgid "Neon was unable to parse URL '%s'"
 msgstr "Neon 不能解析URL“%s”"
 
 msgid "The path was not part of a repository"
-msgstr "路径不是版本库的一部份"
+msgstr "路径不是版本库的一部分"
 
 #, c-format
 msgid "No part of path '%s' was found in repository HEAD"
@@ -2865,7 +2872,7 @@ msgid "At least one property change failed; repository is unchanged"
 msgstr "至少有一个属性变更失败；版本库未改变"
 
 msgid "Got apply-textdelta element without preceding add-file or open-file"
-msgstr "元素apply-textdelta之前没有add-file或者open-file元素"
+msgstr "元素 apply-textdelta 之前没有 add-file 或者 open-file 元素"
 
 msgid "Got close-file element without preceding add-file or open-file"
 msgstr "元素close-file之前没有add-file或者open-file元素"
@@ -3180,7 +3187,7 @@ msgid ""
 msgstr "在提交时，服务器不支持设置任意版本属性"
 
 msgid "Non-string as part of file contents"
-msgstr "部份文件内容不是字符串"
+msgstr "部分文件内容不是字符串"
 
 msgid "Dirlist element not a list"
 msgstr "目录列表元素不是列表"
@@ -3369,6 +3376,26 @@ msgstr ""
 "  期望校验和: %s\n"
 "  实际校验和: %s\n"
 
+msgid "(no error)"
+msgstr "(没有错误)"
+
+msgid "post-commit hook failed with no error message"
+msgstr "调用 post-commit 钩子失败 (没有错误信息)"
+
+msgid "post-commit hook failed with no error message."
+msgstr "调用 post-commit 钩子失败 (没有错误信息)。"
+
+#, c-format
+msgid "post commit FS processing had error '%s' and %s"
+msgstr "post-commit FS 处理的错误信息是 '%s' 和 '%s'"
+
+msgid "(no error message)"
+msgstr "(没有错误信息)"
+
+#, c-format
+msgid "post-commit FS processing had error '%s'."
+msgstr "post-commit FS 处理的错误信息是 '%s'。"
+
 msgid "Unable to open root of edit"
 msgstr "无法打开根来编辑"
 
@@ -3429,6 +3456,16 @@ msgstr "不能接受属性 “%s”，因为它的编码不是 UTF-8"
 #, c-format
 msgid "Cannot accept non-LF line endings in '%s' property"
 msgstr "不能接受属性 “%s” 的非 LF 行结束符"
+
+#, c-format
+msgid ""
+"Commit rejected because mergeinfo on '%s' contains unexpected string "
+"terminator"
+msgstr "由于 '%s' 上的合并信息包含意外的字符串终结符，提交被拒绝"
+
+#, c-format
+msgid "Commit rejected because mergeinfo on '%s' is syntactically invalid"
+msgstr "由于 '%s' 上的合并信息非法，提交被拒绝"
 
 #, c-format
 msgid "Write denied:  not authorized to read all of revision %ld"
@@ -3917,6 +3954,18 @@ msgid "Unable to make name for '%s'"
 msgstr "不能为 “%s” 产生名字"
 
 #, c-format
+msgid "Can't create temporary file from template '%s'"
+msgstr "无法从模版“%s”创建临时文件"
+
+#, c-format
+msgid "Can't set aside '%s'"
+msgstr "不能撤销“%s”"
+
+#, c-format
+msgid "Unable to make name in '%s'"
+msgstr "不能按照“%s”生成名字"
+
+#, c-format
 msgid "Can't create symbolic link '%s'"
 msgstr "无法创建符号连接 “%s”"
 
@@ -3934,6 +3983,10 @@ msgstr "无法找到临时目录"
 #, c-format
 msgid "Can't copy '%s' to '%s'"
 msgstr "不能复制 “%s” 到 “%s”"
+
+#, c-format
+msgid "Can't get file name"
+msgstr "无法获取文件名"
 
 #, c-format
 msgid "Can't set permissions on '%s'"
@@ -3970,18 +4023,6 @@ msgstr "无法创建目录 “%s”"
 #, c-format
 msgid "Can't set access time of '%s'"
 msgstr "不能设置 “%s” 的存取时间"
-
-#, c-format
-msgid "Can't get default file perms for file at '%s' (file stat error)"
-msgstr "不能获取 “%s” 文件的缺省权限(文件 stat 错误)"
-
-#, c-format
-msgid "Can't open file at '%s'"
-msgstr "不能打开文件 “%s”"
-
-#, c-format
-msgid "Can't get file perms for file at '%s' (file stat error)"
-msgstr "不能获取 “%s” 文件的权限(文件 stat 错误)"
 
 #, c-format
 msgid "Can't change perms of file '%s'"
@@ -4021,10 +4062,6 @@ msgstr "无法打开标准输入"
 
 msgid "Reading from stdin is disallowed"
 msgstr "不接受从标准输入设备读取"
-
-#, c-format
-msgid "Can't get file name"
-msgstr "无法获取文件名"
 
 #, c-format
 msgid "Can't remove file '%s'"
@@ -4301,7 +4338,7 @@ msgstr "“%s”不是有效的 Subversion 属性名称"
 
 #, c-format
 msgid "'%s' is just a peg revision. Maybe try '%s@' instead?"
-msgstr "“%s” 是 peg 版本。或许你应该使用 “%s@” ?"
+msgstr "“%s” 是铆钉版本。或许你应该使用 “%s@” ?"
 
 #, c-format
 msgid "URL '%s' contains a '..' element"
@@ -6412,11 +6449,11 @@ msgstr ""
 "\n"
 "  1、从 URL 指定的版本库，导出一个干净的目录树到 PATH。如果有指定\n"
 "     REV 的话，内容即为该版本的，否则就是 HEAD 版本。如果 PATH\n"
-"     被省略的话，URL的最后部份会被用来当成本地的目录名称。\n"
+"     被省略的话，URL的最后部分会被用来当成本地的目录名称。\n"
 "\n"
 "  2、在工作副本中，从指定的 PATH1 导出一个干净的目录树到 PATH2。如果\n"
 "     有指定 REV 的话，会从指定的版本导出，否则从工作副本导出。如果\n"
-"     PATH2 被省略的话，PATH1 的最后部份会被用来当成本地的目录名称。\n"
+"     PATH2 被省略的话，PATH1 的最后部分会被用来当成本地的目录名称。\n"
 "     如果没有指定 REV 的话，所有的本地修改都保留，但是未纳入版本控制\n"
 "     的文件不会被复制。\n"
 "\n"
@@ -7583,19 +7620,19 @@ msgstr "正在发送       %s\n"
 
 #, c-format
 msgid "Adding  (bin)  %s\n"
-msgstr "增加 (二进制)  %s\n"
+msgstr "正在增加 (二进制) %s\n"
 
 #, c-format
 msgid "Adding         %s\n"
-msgstr "增加           %s\n"
+msgstr "正在增加       %s\n"
 
 #, c-format
 msgid "Deleting       %s\n"
-msgstr "删除           %s\n"
+msgstr "正在删除       %s\n"
 
 #, c-format
 msgid "Replacing      %s\n"
-msgstr "替换           %s\n"
+msgstr "正在替换       %s\n"
 
 #, c-format
 msgid "Transmitting file data "

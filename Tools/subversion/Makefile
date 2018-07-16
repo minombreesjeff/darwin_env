@@ -3,7 +3,7 @@ RC_ProjectName = subversion
 endif
 
 Project               = subversion
-ProjectVersion        = 1.6.17
+ProjectVersion        = 1.6.18
 
 #-------------------------------------------------------------------------
 # build/get-py-info.py appends "-framework Python" to its --link and --libs
@@ -19,9 +19,11 @@ Patches        = build_get-py-info.py.diff \
                  spawn.diff \
                  xcode.diff \
                  swig.diff \
-                 configure.noperlppc.diff
+                 configure.noperlppc.diff \
+                 PR-11438447.diff \
+                 build-outputs.mk.perl.diff
 
-Extra_Make_Flags = -j$(shell sysctl -n hw.activecpu)
+Extra_Make_Flags = 
 
 include Makefile.$(RC_ProjectName)
 

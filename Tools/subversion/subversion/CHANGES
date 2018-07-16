@@ -1,10 +1,34 @@
+Version 1.6.18
+(29 Mar 2012, from /branches/1.6.x)
+http://svn.apache.org/repos/asf/subversion/tags/1.6.18
+
+  User-visible changes:
+    * reject invalid svn:mergeinfo at commit time over DAV (issue #3953) 
+    * fix reintegrate merge regression introduced in 1.6.13 (issue #3957)
+    * make the stderr output of the post-commit hook XML-safe (r893478)
+    * fix a rare source of FSFS corruption (r1240752)
+    * plug a memory leak in the bdb backend (r1205726)
+    * server-side performance fix for "log -g" (r1152282)
+    * fix description of svndumpfilter's --targets option (r1151911)
+    * fix datastream corruption during resumed transfer in ra_serf (r1154733)
+    * fix a crash in ra_svn SASL authentication (r1166555, -678)
+    * fix potential corruption on 32-bit FSFS with large files (r1230212)
+    * make website links point to subversion.apache.org (r896893, -901, r915036)
+    * fix non-fatal FSFS corruption bug with concurrent commits (issue #4129)
+
+  Developer-visible changes:
+    * fix sqlite distfile retrieval in get-deps.sh (r1134734)
+    * fix swig-py memory leak (r1235264, -296, -302, -736)
+    * allow passing --with-jdk to gen-make.py on Windows (r966167)
+
+
 Version 1.6.17
 (01 Jun 2011, from /branches/1.6.x)
 http://svn.apache.org/repos/asf/subversion/tags/1.6.17
 
   User-visible changes:
     * improve checkout speed on Windows (issue #3719)
-    * make 'blame -g' more efficient on with large mergeinfo (r1094692)
+    * make 'blame -g' more efficient with large mergeinfo (r1094692)
     * avoid some invalid handle exceptions on Windows (r1095654)
     * preserve log message with a non-zero editor exit (r1072084)
     * fix FSFS cache performance on 64-bit platforms (r1103665)
@@ -26,10 +50,10 @@ http://svn.apache.org/repos/asf/subversion/tags/1.6.17
     * fix 'log -g' excessive duplicate output (issue #3650)
     * fix svnsync copyfrom handling bug with BDB (r1036429)
     * server-side validation of svn:mergeinfo syntax during commit (issue #3895)
-    * fix remotely triggerable mod_dav_svn DoS
+    * fix remotely triggerable mod_dav_svn DoS (r1130303)
             See CVE-2011-1783, and descriptive advisory at
             http://subversion.apache.org/security/CVE-2011-1783-advisory.txt
-    * fix potential leak of authz-protected file contents
+    * fix potential leak of authz-protected file contents (r1130303)
             See CVE-2011-1921, and descriptive advisory at
             http://subversion.apache.org/security/CVE-2011-1921-advisory.txt
 
@@ -78,8 +102,10 @@ http://svn.apache.org/repos/asf/subversion/tags/1.6.15
    * fix 'svn export' regression from 1.6.13 (r1032970)
    * fix 'svn export' mistakenly uri-encodes paths (issue #3745)
    * fix server-side memory leaks triggered by 'blame -g' (r1032808)
+            This has been tracked as CVE-2010-4644
    * prevent crash in mod_dav_svn when using SVNParentPath (r1033166)
-   * allow 'log -g' to continue in the face of invalid mergeinfo (r1028108)
+            This has been tracked as CVE-2010-4539
+   * allow 'log -g' to continue in the face of invalid mergeinfo (issue #3270)
    * filter unreadable paths for 'svn ls' and 'svn co' (r997026, -070, -474)
    * fix abort in 'svn blame -g' (issue #3666)
    * fix file handle leak in ruby bindings (issue #3512)
@@ -512,9 +538,9 @@ http://svn.apache.org/repos/asf/subversion/tags/1.6.0
     * fix building Ruby bindings with Ruby 1.9 (r35852, r35883)
 
 
-Version 1.5.8
-(?? ??? 2010, from /branches/1.5.x)
-http://svn.apache.org/repos/asf/subversion/tags/1.5.8
+Version 1.5.9
+(06 Dec 2010, from /branches/1.5.x)
+http://svn.apache.org/repos/asf/subversion/tags/1.5.9
 
  User-visible changes:
   * fix proxying of LOCK and UNLOCK requests with WebDAV proxies (r36159)
@@ -524,18 +550,30 @@ http://svn.apache.org/repos/asf/subversion/tags/1.5.8
   * fixed: repeated mergeinfo of conflicting properties fails (issue #3250)
   * fix segfault in wc->URL copy (r37646, -56)
   * make 'svn up --set-depth infinity' expand shallow subtrees (r37169)
+  * resolve symlinks when checking for ~/.subversion (r36023)
   * make default depth of 'svn merge' infinity (r37156)
+  * don't allow foreign merges to add foreign mergeinfo (issue #3383)
   * error if attempting to reintegrate to/from the repo root (r37385)
+  * let 'svnadmin load' tolerate mergeinfo with "\r\n" (r37768)
   * improve memory performance in 'svn merge' (issue #3393)
   * fixed: 'SVNPathAuthz short_circuit' unsolicited read access (issue #3695)
            See CVE-2010-3315, and descriptive advisory at
            http://subversion.apache.org/security/CVE-2010-3315-advisory.txt
   * prevent crash in mod_dav_svn when using SVNParentPath (r1033166)
+  * limit memory fragmentation in svnserve (r1022675)
+  * fix server-side memory leaks triggered by 'blame -g' (r1032808)
+  * perform MIME type matching case-insensitively (issue #3479)
+  * respect Apache's ServerSignature directive (r880082)
+  * error early if attempting to use Serf >= 0.4.0 (r1041545)
 
  Developer-visible changes:
   * fix pointer dereference (r36783)
   * fix error leak (r36860)
   * make basic_tests 12 compatible with Windows and Python 2.5+ (r35930)
+
+
+Version 1.5.8
+(Not released, see changes for 1.5.9.)
 
 
 Version 1.5.7

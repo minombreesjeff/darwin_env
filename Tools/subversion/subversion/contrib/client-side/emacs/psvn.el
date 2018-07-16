@@ -2,7 +2,7 @@
 ;; Copyright (C) 2002-2009 by Stefan Reichoer
 
 ;; Author: Stefan Reichoer <stefan@xsteve.at>
-;; $Id: psvn.el 923804 2010-03-16 15:22:28Z cmpilato $
+;; $Id: psvn.el 1302891 2012-03-20 13:44:08Z stsp $
 
 ;; psvn.el is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@
 ;; if you upgrade to a higher version, you need to do a fresh checkout
 
 ;; psvn.el is an interface for the revision control tool subversion
-;; (see http://subversion.tigris.org)
+;; (see http://subversion.apache.org)
 ;; psvn.el provides a similar interface for subversion as pcl-cvs for cvs.
 ;; At the moment the following commands are implemented:
 ;;
@@ -253,7 +253,7 @@
       (require 'diff-mode))
   (error nil))
 
-(defconst svn-psvn-revision "$Id: psvn.el 923804 2010-03-16 15:22:28Z cmpilato $"
+(defconst svn-psvn-revision "$Id: psvn.el 1302891 2012-03-20 13:44:08Z stsp $"
   "The revision number of psvn.")
 
 ;;; user setable variables

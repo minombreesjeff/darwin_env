@@ -6,14 +6,15 @@ Install_Prefix = $(DEVELOPER_DIR)/usr
 Install_Man = $(DEVELOPER_DIR)/usr/share/man
 
 GnuAfterInstall       = post-install install-plist
-Extra_Configure_Flags = --disable-shared --enable-static \
+Extra_Configure_Flags = --enable-shared --disable-static \
                         --without-berkeley-db \
                         --without-apxs \
                         --with-apr=/usr --with-apr-util=/usr \
                         --with-neon=/usr/local \
                         --with-swig=$(shell test -e /usr/bin/swig && echo /usr || echo /usr/local) \
                         --with-ruby-sitedir=$(RBLIBDIR)/ruby \
-                        --without-sasl
+                        --without-sasl \
+                        --includedir=$(Install_Prefix)/local/include
 
 include $(MAKEFILEPATH)/CoreOS/ReleaseControl/GNUSource.make
 
@@ -23,8 +24,7 @@ Install_Flags   = DESTDIR=$(DSTROOT)
 # Post-install cleanup
 post-install:
 	[ -n "$(DSTROOT)" ] || exit 1
-	rm -rf $(DSTROOT)$(Install_Prefix)/lib
-	rm -rf $(DSTROOT)$(Install_Prefix)/include
+	/bin/sh $(SRCROOT)/rpath_subversion.sh
 	@for binary in svn svnadmin svndumpfilter svnlook svnserve svnsync svnversion; do \
 		file=$(DSTROOT)$(Install_Prefix)/bin/$${binary}; \
 		echo $(CP) $${file} $(SYMROOT); \
@@ -32,3 +32,9 @@ post-install:
 		echo $(STRIP) -x $${file}; \
 		$(STRIP) -x $${file}; \
 	done
+	@set -x && \
+	for library in `find $(DSTROOT) -type f -name \*.dylib`; do \
+		$(CP) $${library} $(SYMROOT) && \
+		$(STRIP) -x $${library} || exit 1; \
+	done
+	find $(DSTROOT) -name \*.la -delete

@@ -3515,7 +3515,7 @@ XS(_wrap_svn_txdelta_send_stream) {
       }
     }
     {
-      /*@SWIG:/home/hwright/dev/release/roll/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,58,%append_output@*/ if (argvi >= items) EXTEND(sp,1); /*@SWIG:/home/hwright/dev/release/roll/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,55,%set_output@*/ ST(argvi) = sv_2mortal(newSVpv(svn_md5_digest_to_cstring(arg4,
+      /*@SWIG:/tmp/1.6.18/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,58,%append_output@*/ if (argvi >= items) EXTEND(sp,1); /*@SWIG:/tmp/1.6.18/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,55,%set_output@*/ ST(argvi) = sv_2mortal(newSVpv(svn_md5_digest_to_cstring(arg4,
             _global_pool),
           0)); argvi++ /*@SWIG@*/ /*@SWIG@*/;
     }
@@ -8187,17 +8187,17 @@ XS(SWIG_init) {
     SvREADONLY_on(sv);
   }
   
-  /*@SWIG:/home/hwright/dev/release/roll/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,64,%set_constant@*/ do {
+  /*@SWIG:/tmp/1.6.18/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,64,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "svn_txdelta_source", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(svn_txdelta_source)));
     SvREADONLY_on(sv);
   } while(0) /*@SWIG@*/;
-  /*@SWIG:/home/hwright/dev/release/roll/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,64,%set_constant@*/ do {
+  /*@SWIG:/tmp/1.6.18/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,64,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "svn_txdelta_target", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(svn_txdelta_target)));
     SvREADONLY_on(sv);
   } while(0) /*@SWIG@*/;
-  /*@SWIG:/home/hwright/dev/release/roll/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,64,%set_constant@*/ do {
+  /*@SWIG:/tmp/1.6.18/prefix/share/swig/1.3.36/perl5/perltypemaps.swg,64,%set_constant@*/ do {
     SV *sv = get_sv((char*) SWIG_prefix "svn_txdelta_new", TRUE | 0x2 | GV_ADDMULTI);
     sv_setsv(sv, SWIG_From_int  SWIG_PERL_CALL_ARGS_1((int)(svn_txdelta_new)));
     SvREADONLY_on(sv);
