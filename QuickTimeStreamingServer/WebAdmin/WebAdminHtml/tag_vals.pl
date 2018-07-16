@@ -547,6 +547,8 @@ sub getRepeaterArray {
 		$dirname .= '/' . $1 . '.log';
 		open(LOGFILE, $dirname) or return "Can't open log file '$dirname'!";
 		while ($line = <LOGFILE>) {
+            $line =~ s/</&lt;/g;
+            $line =~ s/>/&gt;/g;
 			if (!($line =~ /^#/)) {
 				if ($line =~ /^[^\s]*\s*[^\s]*\s*[^\s]*\s*[^\s]*\s*([^\s]*)/) {
 					$foundIt = 'false';
@@ -770,6 +772,8 @@ sub parseErrorLog {
 	$dirname .= $chdelim . $1 . '.log';
 	open(LOGFILE, $dirname) or return "";
 	while ($line = <LOGFILE>) {
+              $line =~ s/</&lt;/g;
+              $line =~ s/>/&gt;/g;
 		$_ = $line;
 		if (/^\#/) { # comment or something
 			if (/^\#Log/) {  # top header

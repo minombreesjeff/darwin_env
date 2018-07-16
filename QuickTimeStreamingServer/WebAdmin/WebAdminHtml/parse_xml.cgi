@@ -1656,7 +1656,9 @@ elsif ($ENV{"REQUEST_METHOD"} eq "GET")
 
 # get the filename
 $filename = $query->{'filename'};
-$templatefile = $query->{'template'};
+if (($filename =~ /[^A-Za-z0-9_\-\.\/]/) or ($filename =~ /\.{2,}/) or ($filename =~ /\/{2,}/)) {
+	die "Can't access HTML file!";
+}
 $auth = $query->{'qtsspassword'};
 $username = $query->{'qtssusername'};
 $cookie = $query->{'cookie'};

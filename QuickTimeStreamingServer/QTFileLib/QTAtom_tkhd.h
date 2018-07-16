@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_tkhd.h,v 1.4 2001/03/13 22:24:30 murata Exp $
+// $Id: QTAtom_tkhd.h,v 1.4.18.1 2002/11/27 10:14:03 murata Exp $
 //
 // QTAtom_tkhd:
 //   The 'tkhd' QTAtom class.
@@ -67,9 +67,9 @@ public:
 	// Accessors.
 	inline	UInt32		GetTrackID(void) { return fTrackID; }
 	inline	UInt32		GetFlags(void) { return fFlags; }
-	inline	UInt32		GetCreationTime(void) { return fCreationTime; }
-	inline	UInt32		GetModificationTime(void) { return fModificationTime; }
-	inline	UInt32		GetDuration(void) { return fDuration; }
+	inline	UInt64		GetCreationTime(void) { return fCreationTime; }
+	inline	UInt64		GetModificationTime(void) { return fModificationTime; }
+	inline	UInt64		GetDuration(void) { return fDuration; }
 
 
 	//
@@ -82,10 +82,10 @@ protected:
 	// Protected member variables.
 	UInt8		fVersion;
 	UInt32		fFlags; // 24 bits in the low 3 bytes
-	UInt32		fCreationTime, fModificationTime;
+	UInt64		fCreationTime, fModificationTime;
 	UInt32		fTrackID;
 	UInt32		freserved1;
-	UInt32		fDuration;
+	UInt64		fDuration;
 	UInt32		freserved2, freserved3;
 	UInt16		fLayer, fAlternateGroup;
 	UInt16		fVolume;

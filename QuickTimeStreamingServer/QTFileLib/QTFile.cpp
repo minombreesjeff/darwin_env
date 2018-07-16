@@ -22,7 +22,7 @@
  *
  */
 
-// $Id: QTFile.cpp,v 1.17 2002/02/08 02:10:15 mythili Exp $
+// $Id: QTFile.cpp,v 1.17.12.1 2002/11/27 10:14:03 murata Exp $
 //
 // QTFile:
 //   The central point of control for a file in the QuickTime File Format.
@@ -571,7 +571,8 @@ Bool16 QTFile::GenerateAtomTOC(void)
 {
 	// General vars
 	OSType			AtomType;
-	unsigned long	AtomLength;
+    UInt32          atomLength;
+	UInt64          BigAtomLength;
 
 	UInt64			CurPos;
 	unsigned long	CurAtomHeaderSize;
@@ -579,24 +580,26 @@ Bool16 QTFile::GenerateAtomTOC(void)
 	AtomTOCEntry	*NewTOCEntry = NULL,
 					*CurParent = NULL, *LastTOCEntry = NULL;
 	Bool16 hasMoovAtom = false;
-
+    Bool16 hasBigAtom = false;
 
 	//
 	// Scan through all of the atoms in this movie, generating a TOC entry
 	// for each one.
 	CurPos = 0;
-	while( Read(CurPos, (char *)&AtomLength, 4) ) {
+	while( Read(CurPos, (char *)&atomLength, 4) ) {
 
 		//
 		// Swap the AtomLength for little-endian machines.
 		CurPos += 4;
-		AtomLength = ntohl(AtomLength);
+		atomLength = ntohl(atomLength);
+        BigAtomLength = (UInt64) atomLength;
+        hasBigAtom = false;
 
 		//
 		// Is AtomLength zero?  If so, and we're in a 'udta' atom, then all
 		// is well (this is the end of a 'udta' atom).  Leave this level of
 		// siblings as the 'udta' atom is obviously over.
-		if( (AtomLength == 0) && CurParent && (CurParent->AtomType == FOUR_CHARS_TO_INT('u', 'd', 't', 'a')) ) {
+		if( (BigAtomLength == 0) && CurParent && (CurParent->AtomType == FOUR_CHARS_TO_INT('u', 'd', 't', 'a')) ) {
 			//
 			// Do no harm..
 			DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Found End-of-udta marker.\n"));
@@ -610,7 +613,9 @@ Bool16 QTFile::GenerateAtomTOC(void)
 		//
 		// Is the AtomLength zero?  If so, this is a "QT atom" which needs
 		// some additional work before it can be processed.
-		} else if( AtomLength == 0 ) { //***
+		} 
+        else if( BigAtomLength == 0 ) 
+        {
 			//
 			// This is a QT atom; skip the (rest of the) reserved field and
 			// the lock count field.
@@ -618,10 +623,10 @@ Bool16 QTFile::GenerateAtomTOC(void)
 
 			//
 			// Read the size and the type of this atom.
-			if( !Read(CurPos, (char *)&AtomLength, 4) )
+			if( !Read(CurPos, (char *)&atomLength, 4) )
 				return false;
 			CurPos += 4;
-			AtomLength = ntohl(AtomLength);
+			BigAtomLength =  (UInt64) ntohl(atomLength);
 			
 			if( !Read(CurPos, (char *)&AtomType, 4) )
 				return false;
@@ -636,45 +641,87 @@ Bool16 QTFile::GenerateAtomTOC(void)
 			// Set the header size to that of a QT atom.
 			CurAtomHeaderSize = 10 + 16 + 4 + 4 + 4 + 2 + 2 + 4;
 
-		//
-		// This is a normal atom; get the atom type.
-		} else {
+		} 
+        else  // This is a normal atom; get the atom type.
+        {
 			if( !Read(CurPos, (char *)&AtomType, 4) )
 				break;
 
 			CurPos += 4;
 			CurAtomHeaderSize = 4 + 4; // AtomLength + AtomType
 			AtomType = ntohl(AtomType);
+
+            if ( atomLength == 1 ) //large size atom
+            {
+                if( !Read(CurPos, (char *)&BigAtomLength, 8) )  
+                    break;
+                BigAtomLength = QTAtom::NTOH64(BigAtomLength);
+                CurPos += 8;
+                CurAtomHeaderSize += 8; // AtomLength + AtomType + big atom length
+                hasBigAtom = true;
+            }
+             
+            if (AtomType == FOUR_CHARS_TO_INT('u', 'u', 'i', 'd'))
+            {
+                static const int sExtendedTypeSize = 16;
+                UInt8 usertype[sExtendedTypeSize + 1]; //sExtendedTypeSize for the type + 1 for 0 terminator.
+                usertype[sExtendedTypeSize] = 0;
+                if( !Read(CurPos, (char *)usertype, 16) ) // read and just throw it away we don't need to store
+                    return false;
+    
+                DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Found 'uuid' extended type name= %s.\n",usertype));
+	            CurPos += sExtendedTypeSize;
+                CurAtomHeaderSize += sExtendedTypeSize;
+            }
+
 		}
-		
-		if ( (0 == AtomLength) || (AtomLength < CurAtomHeaderSize) )
+
+
+		if (0 == BigAtomLength)
 		{
-			DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Bail atom is bad. type= '%c%c%c%c'; pos=%lu; length=%lu; header=%lu.\n",
+			DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Bail atom is bad. type= '%c%c%c%c'; pos=%"_64BITARG_"u; length=%"_64BITARG_"u; header=%lu.\n",
 			(char)((AtomType & 0xff000000) >> 24),
 			(char)((AtomType & 0x00ff0000) >> 16),
 			(char)((AtomType & 0x0000ff00) >> 8),
 			(char)((AtomType & 0x000000ff)),
-			(UInt32)CurPos - CurAtomHeaderSize, AtomLength, CurAtomHeaderSize));			
+			CurPos - CurAtomHeaderSize, BigAtomLength, CurAtomHeaderSize));			
 			
 			return false;
 		}
 
-		DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Found atom '%c%c%c%c'; pos=%"_64BITARG_"u; length=%lu; header=%lu.\n",
-		(char)((AtomType & 0xff000000) >> 24),
-		(char)((AtomType & 0x00ff0000) >> 16),
-		(char)((AtomType & 0x0000ff00) >> 8),
-		(char)((AtomType & 0x000000ff)),
-		CurPos - CurAtomHeaderSize, AtomLength, CurAtomHeaderSize));
+		if (hasBigAtom)
+        {    DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Found 64 bit atom '%c%c%c%c'; pos=%"_64BITARG_"u; length=%"_64BITARG_"u; header=%lu.\n",
+            (char)((AtomType & 0xff000000) >> 24),
+            (char)((AtomType & 0x00ff0000) >> 16),
+            (char)((AtomType & 0x0000ff00) >> 8),
+            (char)((AtomType & 0x000000ff)),
+            CurPos - CurAtomHeaderSize, BigAtomLength, CurAtomHeaderSize));
+        }
+        else
+        {    DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Found 32 bit atom '%c%c%c%c'; pos=%"_64BITARG_"u; length=%"_64BITARG_"u; header=%lu.\n",
+            (char)((AtomType & 0xff000000) >> 24),
+            (char)((AtomType & 0x00ff0000) >> 16),
+            (char)((AtomType & 0x0000ff00) >> 8),
+            (char)((AtomType & 0x000000ff)),
+            CurPos - CurAtomHeaderSize, BigAtomLength, CurAtomHeaderSize));
+        }
 
 		if ((AtomType == FOUR_CHARS_TO_INT('m', 'o', 'o', 'v')) && (hasMoovAtom))
 		{
 			//
 			// Skip over any additional 'moov' atoms once we find one.
-			CurPos += AtomLength - CurAtomHeaderSize;
+			CurPos += BigAtomLength - CurAtomHeaderSize;
 			continue;
 		}
 		else if (AtomType == FOUR_CHARS_TO_INT('m', 'o', 'o', 'v'))
-			hasMoovAtom = true;
+		{
+            hasMoovAtom = true;
+        }
+        else if (!hasMoovAtom)
+        {
+			CurPos += BigAtomLength - CurAtomHeaderSize;
+			continue;
+        }
 
 		//
 		// Create a TOC entry for this atom.
@@ -688,7 +735,7 @@ Bool16 QTFile::GenerateAtomTOC(void)
 		NewTOCEntry->beAtomType = htonl(AtomType);
 
 		NewTOCEntry->AtomDataPos = CurPos;
-		NewTOCEntry->AtomDataLength = AtomLength - CurAtomHeaderSize;
+		NewTOCEntry->AtomDataLength = BigAtomLength - CurAtomHeaderSize;
 		NewTOCEntry->AtomHeaderSize = CurAtomHeaderSize;
 
 		NewTOCEntry->NextOrdAtom = NULL;
@@ -725,35 +772,38 @@ Bool16 QTFile::GenerateAtomTOC(void)
 
 		//
 		// Figure out if we have to descend into this entry and do so.
-		switch( NewTOCEntry->AtomType ) {
-			case FOUR_CHARS_TO_INT('m', 'o', 'o', 'v'):		//moov
-				case FOUR_CHARS_TO_INT('c', 'l', 'i', 'p'):	//clip
-				case FOUR_CHARS_TO_INT('t', 'r', 'a', 'k'): //trak
-					/*case 'clip':*/ case FOUR_CHARS_TO_INT('m', 'a', 't', 't'): case FOUR_CHARS_TO_INT('e', 'd', 't', 's'): case FOUR_CHARS_TO_INT('t', 'r', 'e', 'f'):
-					case FOUR_CHARS_TO_INT('m', 'd', 'i', 'a'):			//mdia
-						case FOUR_CHARS_TO_INT('m', 'i', 'n', 'f'):		//minf
-							case FOUR_CHARS_TO_INT('d', 'i', 'n', 'f'): //dinf
-							case FOUR_CHARS_TO_INT('s', 't', 'b', 'l'): //stbl
-			case FOUR_CHARS_TO_INT('u', 'd', 't', 'a'): /* can appear anywhere */ //udta
-				case FOUR_CHARS_TO_INT('h', 'n', 't', 'i'): //hnti
-					case FOUR_CHARS_TO_INT('h', 'i', 'n', 'f'): //hinf
-			{
+        switch( NewTOCEntry->AtomType ) 
+        {
+            case FOUR_CHARS_TO_INT('m', 'o', 'o', 'v'): //moov
+            case FOUR_CHARS_TO_INT('c', 'l', 'i', 'p'): //clip
+            case FOUR_CHARS_TO_INT('t', 'r', 'a', 'k'): //trak
+            case FOUR_CHARS_TO_INT('m', 'a', 't', 't'): //matt
+            case FOUR_CHARS_TO_INT('e', 'd', 't', 's'): //edts 
+            case FOUR_CHARS_TO_INT('t', 'r', 'e', 'f'): //tref
+            case FOUR_CHARS_TO_INT('m', 'd', 'i', 'a'): //mdia
+            case FOUR_CHARS_TO_INT('m', 'i', 'n', 'f'): //minf
+            case FOUR_CHARS_TO_INT('d', 'i', 'n', 'f'): //dinf
+            case FOUR_CHARS_TO_INT('s', 't', 'b', 'l'): //stbl
+            case FOUR_CHARS_TO_INT('u', 'd', 't', 'a'): //udta - can appear anywhere
+            case FOUR_CHARS_TO_INT('h', 'n', 't', 'i'): //hnti
+            case FOUR_CHARS_TO_INT('h', 'i', 'n', 'f'): //hinf
+            {
 				//
 				// All of the above atoms need to be descended into.  Set up
 				// our variables to descend into this atom.
-				
-                                if (NewTOCEntry->AtomDataLength > 0) // maybe it should be greater than some number such as header size?
-                                {
-                                    DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - ..Creating a new parent.\n"));
-                                    CurParent = NewTOCEntry;
-                                    LastTOCEntry = NULL;
-                                    continue; // skip the level checks below
-                                }
-                                else
-                                {
-                                    DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Empty atom.\n"));
-                                }
-                                
+
+                if (NewTOCEntry->AtomDataLength > 0) // maybe it should be greater than some number such as header size?
+                {
+                    DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - ..Creating a new parent.\n"));
+                    CurParent = NewTOCEntry;
+                    LastTOCEntry = NULL;
+                    continue; // skip the level checks below
+                }
+                else
+                {
+                    DEEP_DEBUG_PRINT(("QTFile::GenerateAtomTOC - Empty atom.\n"));
+                }
+                
 			}
 			break;
 		}
@@ -801,7 +851,7 @@ void QTFile::DumpAtomTOC(void)
 	{
 	
 		// Print out this atom.		
-		DEBUG_PRINT(("%s[%03lu] AtomType=%c%c%c%c; AtomDataPos=%"_64BITARG_"u; AtomDataLength=%lu\n",
+		DEBUG_PRINT(("%s[%03lu] AtomType=%c%c%c%c; AtomDataPos=%"_64BITARG_"u; AtomDataLength=%"_64BITARG_"u\n",
 		Indent,
 		Atom->TOCID,
 		(char)((Atom->AtomType & 0xff000000) >> 24),

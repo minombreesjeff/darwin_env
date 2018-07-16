@@ -78,8 +78,10 @@ int MP3FileBroadcaster::PlaySong(char *fileName, char *currentFile, bool preflig
 		while ((temp > fileName) && (*(temp-1) != kPathDelimiterChar))
 			temp--;
 			
-		strcpy(mTitle, temp);
-	}
+	
+        ::strncpy(mTitle, temp,sizeof(mTitle) -1);
+        mTitle[sizeof(mTitle) -1] = 0;	
+    }
 	
 	if (strlen(mArtist) == 0) // no artist set -- mTitle is always set
 		::strcpy(mSong, mTitle); // mSong contains just the title

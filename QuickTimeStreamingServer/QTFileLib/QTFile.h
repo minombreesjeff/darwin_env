@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTFile.h,v 1.9 2001/08/14 14:28:43 murata Exp $
+// $Id: QTFile.h,v 1.9.16.1 2002/11/27 10:14:03 murata Exp $
 //
 // QTFile:
 //   The central point of control for a file in the QuickTime File Format.
@@ -74,7 +74,8 @@ public:
 		OSType			AtomType, beAtomType; // be = Big Endian
 
 		UInt64			AtomDataPos;
-		UInt32			AtomDataLength, AtomHeaderSize;
+		UInt64			AtomDataLength;
+        UInt32          AtomHeaderSize;
 
 		// TOC pointers
 		AtomTOCEntry	*NextOrdAtom;

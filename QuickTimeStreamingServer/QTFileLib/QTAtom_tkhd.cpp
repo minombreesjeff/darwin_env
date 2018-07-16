@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_tkhd.cpp,v 1.5 2001/03/13 22:24:30 murata Exp $
+// $Id: QTAtom_tkhd.cpp,v 1.5.18.1 2002/11/27 10:14:03 murata Exp $
 //
 // QTAtom_tkhd:
 //   The 'tkhd' QTAtom class.
@@ -64,12 +64,30 @@ const int		tkhdPos_TrackWidth			= 76;
 const int		tkhdPos_TrackHeight			= 80;
 
 
+const int		tkhdPosV1_CreationTime		=  4;
+const int		tkhdPosV1_ModificationTime	= 12;
+const int		tkhdPosV1_TrackID			= 20;
+const int		tkhdPosV1_Duration			= 28;
+const int		tkhdPosV1_Layer				= 44;
+const int		tkhdPosV1_AlternateGroup	= 34 + 12;
+const int		tkhdPosV1_Volume			= 36 + 12;
+const int		tkhdPosV1_a					= 40 + 12;
+const int		tkhdPosV1_b					= 44 + 12;
+const int		tkhdPosV1_u					= 48 + 12;
+const int		tkhdPosV1_c					= 52 + 12;
+const int		tkhdPosV1_d					= 56 + 12;
+const int		tkhdPosV1_v					= 60 + 12;
+const int		tkhdPosV1_x					= 64 + 12;
+const int		tkhdPosV1_y					= 68 + 12;
+const int		tkhdPosV1_w					= 72 + 12;
+const int		tkhdPosV1_TrackWidth		= 76 + 12;
+const int		tkhdPosV1_TrackHeight		= 80 + 12;
 
 // -------------------------------------
 // Macros
 //
 #define DEBUG_PRINT(s) if(fDebug) printf s
-#define DEEP_DEBUG_PRINT(s) if(f7DeepDebug) printf s
+#define DEEP_DEBUG_PRINT(s) if(fDeepDebug) printf s
 
 
 
@@ -95,37 +113,76 @@ Bool16 QTAtom_tkhd::Initialize(void)
 	// Temporary vars
 	UInt32		tempInt32;
 
-
-	//
-	// Verify that this atom is the correct length.
-	if( fTOCEntry.AtomDataLength != 84 )
-		return false;
-
 	//
 	// Parse this atom's fields.
 	ReadInt32(tkhdPos_VersionFlags, &tempInt32);
 	fVersion = (UInt8)((tempInt32 >> 24) & 0x000000ff);
 	fFlags = tempInt32 & 0x00ffffff;
 
-	ReadInt32(tkhdPos_CreationTime, &fCreationTime);
-	ReadInt32(tkhdPos_ModificationTime, &fModificationTime);
-	ReadInt32(tkhdPos_TrackID, &fTrackID);
-	ReadInt32(tkhdPos_Duration, &fDuration);
-	ReadInt16(tkhdPos_AlternateGroup, &fAlternateGroup);
-	ReadInt16(tkhdPos_Volume, &fVolume);
+    if (0 == fVersion)
+    {
+       // Verify that this atom is the correct length.
+        if( fTOCEntry.AtomDataLength != 84 )
+        {
+            DEEP_DEBUG_PRINT(("QTAtom_tkhd::Initialize failed. Expected AtomDataLength == 84 version: %d AtomDataLength: %"_64BITARG_"u\n",fVersion, fTOCEntry.AtomDataLength));
+            return false;
+        }
+        
+        ReadInt32To64(tkhdPos_CreationTime, &fCreationTime);
+        ReadInt32To64(tkhdPos_ModificationTime, &fModificationTime);
+        ReadInt32(tkhdPos_TrackID, &fTrackID);
+        ReadInt32To64(tkhdPos_Duration, &fDuration);
+        ReadInt16(tkhdPos_AlternateGroup, &fAlternateGroup);
+        ReadInt16(tkhdPos_Volume, &fVolume);
+        
+        ReadInt32(tkhdPos_a, &fa);
+        ReadInt32(tkhdPos_b, &fb);
+        ReadInt32(tkhdPos_u, &fu);
+        ReadInt32(tkhdPos_c, &fc);
+        ReadInt32(tkhdPos_d, &fd);
+        ReadInt32(tkhdPos_v, &fv);
+        ReadInt32(tkhdPos_x, &fx);
+        ReadInt32(tkhdPos_y, &fy);
+        ReadInt32(tkhdPos_w, &fw);
+        
+        ReadInt32(tkhdPos_TrackWidth, &fTrackWidth);
+        ReadInt32(tkhdPos_TrackHeight, &fTrackHeight);
+    }
+    else if (1 == fVersion)
+    {   
+       // Verify that this atom is the correct length.
+        if (fTOCEntry.AtomDataLength != 96)
+        {
+            DEEP_DEBUG_PRINT(("QTAtom_tkhd::Initialize failed. Expected AtomDataLength == 96 version: %d AtomDataLength: %"_64BITARG_"u\n",fVersion, fTOCEntry.AtomDataLength));
+            return false;
+        }
 
-	ReadInt32(tkhdPos_a, &fa);
-	ReadInt32(tkhdPos_b, &fb);
-	ReadInt32(tkhdPos_u, &fu);
-	ReadInt32(tkhdPos_c, &fc);
-	ReadInt32(tkhdPos_d, &fd);
-	ReadInt32(tkhdPos_v, &fv);
-	ReadInt32(tkhdPos_x, &fx);
-	ReadInt32(tkhdPos_y, &fy);
-	ReadInt32(tkhdPos_w, &fw);
+        ReadInt64(tkhdPosV1_CreationTime, &fCreationTime);
+        ReadInt64(tkhdPosV1_ModificationTime, &fModificationTime);
+        ReadInt32(tkhdPosV1_TrackID, &fTrackID);
+        ReadInt64(tkhdPosV1_Duration, &fDuration);
+        ReadInt16(tkhdPosV1_AlternateGroup, &fAlternateGroup);
+        ReadInt16(tkhdPosV1_Volume, &fVolume);
+    
+        ReadInt32(tkhdPosV1_a, &fa);
+        ReadInt32(tkhdPosV1_b, &fb);
+        ReadInt32(tkhdPosV1_u, &fu);
+        ReadInt32(tkhdPosV1_c, &fc);
+        ReadInt32(tkhdPosV1_d, &fd);
+        ReadInt32(tkhdPosV1_v, &fv);
+        ReadInt32(tkhdPosV1_x, &fx);
+        ReadInt32(tkhdPosV1_y, &fy);
+        ReadInt32(tkhdPosV1_w, &fw);
+    
+        ReadInt32(tkhdPosV1_TrackWidth, &fTrackWidth);
+        ReadInt32(tkhdPosV1_TrackHeight, &fTrackHeight);
+    }
+    else 
+    {
+        DEEP_DEBUG_PRINT(("QTAtom_tkhd::Initialize failed. Version unsupported: %d",fVersion));
+        return false;
+    }
 
-	ReadInt32(tkhdPos_TrackWidth, &fTrackWidth);
-	ReadInt32(tkhdPos_TrackHeight, &fTrackHeight);
 
 	//
 	// This atom has been successfully read in.
@@ -144,6 +201,7 @@ void QTAtom_tkhd::DumpAtom(void)
 
 
 	DEBUG_PRINT(("QTAtom_tkhd::DumpAtom - Dumping atom.\n"));
+	DEBUG_PRINT(("QTAtom_tkhd::DumpAtom - ..Version: %d.\n", (int) fVersion));
 	DEBUG_PRINT(("QTAtom_tkhd::DumpAtom - ..Track ID: %ld\n", fTrackID));
 	DEBUG_PRINT(("QTAtom_tkhd::DumpAtom - ..Flags:%s%s%s%s\n", (fFlags & flagEnabled) ? " Enabled" : "", (fFlags & flagInMovie) ? " InMovie" : "", (fFlags & flagInPreview) ? " InPreview" : "", (fFlags & flagInPoster) ? " InPoster" : ""));
 	DEBUG_PRINT(("QTAtom_tkhd::DumpAtom - ..Creation date: %s", asctime(gmtime(&unixCreationTime))));

@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_mdhd.cpp,v 1.5 2001/03/13 22:24:29 murata Exp $
+// $Id: QTAtom_mdhd.cpp,v 1.5.18.1 2002/11/27 10:14:02 murata Exp $
 //
 // QTAtom_mdhd:
 //   The 'mdhd' QTAtom class.
@@ -51,13 +51,20 @@ const int		mdhdPos_Duration			= 16;
 const int		mdhdPos_Language			= 20;
 const int		mdhdPos_Quality				= 22;
 
+const int		mdhdPosV1_CreationTime		=  4;
+const int		mdhdPosV1_ModificationTime	= 12;
+const int		mdhdPosV1_TimeScale			= 20;
+const int		mdhdPosV1_Duration			= 24;
+const int		mdhdPosV1_Language			= 20 + 12;
+const int		mdhdPosV1_Quality			= 22 + 12;
+
 
 
 // -------------------------------------
 // Macros
 //
 #define DEBUG_PRINT(s) if(fDebug) printf s
-#define DEEP_DEBUG_PRINT(s) if(f7DeepDebug) printf s
+#define DEEP_DEBUG_PRINT(s) if(fDeepDebug) printf s
 
 
 
@@ -83,24 +90,49 @@ Bool16 QTAtom_mdhd::Initialize(void)
 	// Temporary vars
 	UInt32		tempInt32;
 
-
-	//
-	// Verify that this atom is the correct length.
-	if( fTOCEntry.AtomDataLength != 24 )
-		return false;
-
 	//
 	// Parse this atom's fields.
 	ReadInt32(mdhdPos_VersionFlags, &tempInt32);
 	fVersion = (UInt8)((tempInt32 >> 24) & 0x000000ff);
 	fFlags = tempInt32 & 0x00ffffff;
 
-	ReadInt32(mdhdPos_CreationTime, &fCreationTime);
-	ReadInt32(mdhdPos_ModificationTime, &fModificationTime);
-	ReadInt32(mdhdPos_TimeScale, &fTimeScale);
-	ReadInt32(mdhdPos_Duration, &fDuration);
-	ReadInt16(mdhdPos_Language, &fLanguage);
-	ReadInt16(mdhdPos_Quality, &fQuality);
+    if (0 == fVersion)
+    {
+        // Verify that this atom is the correct length.
+        if( fTOCEntry.AtomDataLength != 24 )
+        {
+            DEEP_DEBUG_PRINT(("QTAtom_mdhd::Initialize failed. Expected AtomDataLength == 24 version: %d AtomDataLength: %"_64BITARG_"u\n",fVersion, fTOCEntry.AtomDataLength));
+            return false;
+        }
+
+        ReadInt32To64(mdhdPos_CreationTime, &fCreationTime);
+        ReadInt32To64(mdhdPos_ModificationTime, &fModificationTime);
+        ReadInt32(mdhdPos_TimeScale, &fTimeScale);
+        ReadInt32To64(mdhdPos_Duration, &fDuration);
+        ReadInt16(mdhdPos_Language, &fLanguage);
+        ReadInt16(mdhdPos_Quality, &fQuality);
+    }
+    else if (1 == fVersion)
+    {
+        // Verify that this atom is the correct length.
+        if( fTOCEntry.AtomDataLength != 36 )
+        {
+            DEEP_DEBUG_PRINT(("QTAtom_mdhd::Initialize failed. Expected AtomDataLength == 36 version: %d AtomDataLength: %"_64BITARG_"u\n",fVersion, fTOCEntry.AtomDataLength));
+            return false;
+        }
+
+        ReadInt64(mdhdPosV1_CreationTime, &fCreationTime);
+        ReadInt64(mdhdPosV1_ModificationTime, &fModificationTime);
+        ReadInt32(mdhdPosV1_TimeScale, &fTimeScale);
+        ReadInt64(mdhdPosV1_Duration, &fDuration);
+        ReadInt16(mdhdPosV1_Language, &fLanguage);
+        ReadInt16(mdhdPosV1_Quality, &fQuality);
+    }
+    else
+    {
+        DEEP_DEBUG_PRINT(("QTAtom_mdhd::Initialize  failed. Version unsupported: %d\n",fVersion));
+        return false;
+    }
 
 	//
 	// Compute the reciprocal of the timescale.
@@ -123,5 +155,6 @@ void QTAtom_mdhd::DumpAtom(void)
 
 
 	DEBUG_PRINT(("QTAtom_mdhd::DumpAtom - Dumping atom.\n"));
+	DEBUG_PRINT(("QTAtom_mdhd::DumpAtom - ..Version: %d.\n", (int) fVersion));
 	DEBUG_PRINT(("QTAtom_mdhd::DumpAtom - ..Creation date: %s", asctime(gmtime(&unixCreationTime))));
 }

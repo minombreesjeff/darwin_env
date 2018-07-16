@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_elst.cpp,v 1.5 2001/03/13 22:24:29 murata Exp $
+// $Id: QTAtom_elst.cpp,v 1.5.18.1 2002/11/27 10:14:02 murata Exp $
 //
 // QTAtom_elst:
 //   The 'elst' QTAtom class.
@@ -61,6 +61,10 @@ const int		elstEntryPos_Duration		=  0;
 const int		elstEntryPos_MediaTime		=  4;
 const int		elstEntryPos_MediaRate		=  8;
 
+const int		elstEntryPosV1_Duration		=  0;
+const int		elstEntryPosV1_MediaTime    =  8;
+const int		elstEntryPosV1_MediaRate	=  16;
+
 
 
 // -------------------------------------
@@ -92,20 +96,24 @@ Bool16 QTAtom_elst::Initialize(void)
 	UInt32		tempInt32;
 
 
-	DEEP_DEBUG_PRINT(("Processing 'elst' atom.\n"));
-
 	//
 	// Parse this atom's fields.
 	ReadInt32(elstPos_VersionFlags, &tempInt32);
 	fVersion = (UInt8)((tempInt32 >> 24) & 0x000000ff);
 	fFlags = tempInt32 & 0x00ffffff;
 
+    if (fVersion > 1)
+    {
+        DEEP_DEBUG_PRINT(("QTAtom_elst::Initialize failed. Version unsupported: %d\n",fVersion));
+        return false;
+    }
+
 	ReadInt32(elstPos_NumEdits, &fNumEdits);
 
 	//
 	// Read in all of the edits.
 	if( fNumEdits > 0 ) {
-		DEEP_DEBUG_PRINT(("..%lu edits found.\n", fNumEdits));
+		DEEP_DEBUG_PRINT(("QTAtom_elst::Initialize ..%lu edits found.\n", fNumEdits));
 
 		//
 		// Allocate our ref table.
@@ -115,20 +123,31 @@ Bool16 QTAtom_elst::Initialize(void)
 
 		//
 		// Read them all in..
-		for( UInt32 CurEdit = 0; CurEdit < fNumEdits; CurEdit++ ) {
-			//
-			// Get all of the data in this edit list entry.
-			ReadInt32(elstPos_EditList + (CurEdit * 12) + elstEntryPos_Duration, &tempInt32);
-			fEdits[CurEdit].EditDuration = tempInt32;
+		for( UInt32 CurEdit = 0; CurEdit < fNumEdits; CurEdit++ ) 
+        {
+            
+            if (0 == fVersion)
+            {
+                //
+                // Get all of the data in this edit list entry.
+                ReadInt32To64(elstPos_EditList + (CurEdit * 12) + elstEntryPos_Duration, &fEdits[CurEdit].EditDuration);
+                ReadInt32To64(elstPos_EditList + (CurEdit * 12) + elstEntryPos_MediaTime, (UInt64*) &fEdits[CurEdit].StartingMediaTime);
+    
+                ReadInt32(elstPos_EditList + (CurEdit * 12) + elstEntryPos_MediaRate, &fEdits[CurEdit].EditMediaRate);
+                
+            }
+            else if (1 == fVersion)
+            {
 
-			ReadInt32(elstPos_EditList + (CurEdit * 12) + elstEntryPos_MediaTime, &tempInt32);
-			fEdits[CurEdit].StartingMediaTime = (SInt32)tempInt32;
+                // Get all of the data in this edit list entry.
+                ReadInt64(elstPos_EditList + (CurEdit * 20) + elstEntryPosV1_Duration, &fEdits[CurEdit].EditDuration);    
+                ReadInt64(elstPos_EditList + (CurEdit * 20) + elstEntryPosV1_MediaTime, (UInt64*) &fEdits[CurEdit].StartingMediaTime );
+                
+                ReadInt32(elstPos_EditList + (CurEdit * 20) + elstEntryPosV1_MediaRate, &fEdits[CurEdit].EditMediaRate);
+                
+            }
 
-			ReadInt32(elstPos_EditList + (CurEdit * 12) + elstEntryPos_MediaRate, &tempInt32);
-			fEdits[CurEdit].EditMediaRate = tempInt32;
-			
-			DEEP_DEBUG_PRINT(("..Edit #%lu: Duration=%lu; MediaTime=%ld\n", CurEdit, fEdits[CurEdit].EditDuration, fEdits[CurEdit].StartingMediaTime));
-
+            DEEP_DEBUG_PRINT(("QTAtom_elst::Initialize ..Edit #%lu: Duration=%"_64BITARG_"u; MediaTime=%"_64BITARG_"d\n", CurEdit, fEdits[CurEdit].EditDuration, fEdits[CurEdit].StartingMediaTime));
 			//
 			// Adjust our starting media time.
 			if( fEdits[CurEdit].StartingMediaTime == -1 )
@@ -149,5 +168,6 @@ Bool16 QTAtom_elst::Initialize(void)
 void QTAtom_elst::DumpAtom(void)
 {
 	DEBUG_PRINT(("QTAtom_elst::DumpAtom - Dumping atom.\n"));
+	DEBUG_PRINT(("QTAtom_elst::DumpAtom - ..Version: %d.\n", (int) fVersion));
 	DEBUG_PRINT(("QTAtom_elst::DumpAtom - ..Number of edits: %ld\n", fNumEdits));
 }

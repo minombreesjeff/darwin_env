@@ -4,13 +4,13 @@
 
 PLAT=`uname`
 
-echo removing StreamingProxy-4.1.2-MacOSX.tar.gz
-if rm -f StreamingProxy-4.1.2-MacOSX.tar.gz; 
+echo removing StreamingProxy-4.1.3-MacOSX.tar.gz
+if rm -f StreamingProxy-4.1.3-MacOSX.tar.gz; 
 then :
 fi
 
-echo removing StreamingProxy-4.1.2-MacOSX
-if rm -rf StreamingProxy-4.1.2-MacOSX; 
+echo removing StreamingProxy-4.1.3-MacOSX
+if rm -rf StreamingProxy-4.1.3-MacOSX; 
 then :
 fi
 
@@ -18,8 +18,8 @@ fi
 ./Buildit
 cp build/StreamingProxy StreamingProxy.tproj/
 
-./DSS_MakeProxyRoot StreamingProxy-4.1.2-MacOSX
-tar cvf StreamingProxy-4.1.2-MacOSX.tar StreamingProxy-4.1.2-MacOSX
-gzip StreamingProxy-4.1.2-MacOSX.tar
+./DSS_MakeProxyRoot StreamingProxy-4.1.3-MacOSX
+tar cvf StreamingProxy-4.1.3-MacOSX.tar StreamingProxy-4.1.3-MacOSX
+gzip StreamingProxy-4.1.3-MacOSX.tar
 
 echo Done!

@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom.h,v 1.5 2001/11/20 01:08:47 murata Exp $
+// $Id: QTAtom.h,v 1.5.16.1 2002/11/27 10:14:02 murata Exp $
 //
 // QTAtom:
 //   The base-class for atoms in a QuickTime file.
@@ -72,6 +72,7 @@ public:
 			Bool16		ReadInt16(UInt64 Offset, UInt16 * Datum);
 			Bool16		ReadInt32(UInt64 Offset, UInt32 * Datum);
 			Bool16		ReadInt64(UInt64 Offset, UInt64 * Datum);
+			Bool16		ReadInt32To64(UInt64 Offset, UInt64 * Datum);
 			
 			Bool16		ReadSubAtomBytes(const char * AtomPath, char * Buffer, UInt32 Length);
 			Bool16		ReadSubAtomInt8(const char * AtomPath, UInt8 * Datum);

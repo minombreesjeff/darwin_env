@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_mdhd.h,v 1.4 2001/03/13 22:24:29 murata Exp $
+// $Id: QTAtom_mdhd.h,v 1.4.18.1 2002/11/27 10:14:02 murata Exp $
 //
 // QTAtom_mdhd:
 //   The 'mdhd' QTAtom class.
@@ -70,8 +70,9 @@ protected:
 	// Protected member variables.
 	UInt8		fVersion;
 	UInt32		fFlags; // 24 bits in the low 3 bytes
-	UInt32		fCreationTime, fModificationTime;
-	UInt32		fTimeScale, fDuration;
+	UInt64		fCreationTime, fModificationTime;
+	UInt32		fTimeScale;
+    UInt64      fDuration;
 	UInt16		fLanguage;
 	UInt16		fQuality;
 	

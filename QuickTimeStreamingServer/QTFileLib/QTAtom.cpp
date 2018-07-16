@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom.cpp,v 1.7 2001/11/20 01:08:47 murata Exp $
+// $Id: QTAtom.cpp,v 1.7.16.1 2002/11/27 10:14:01 murata Exp $
 //
 // QTAtom:
 //   The base-class for atoms in a QuickTime file.
@@ -122,6 +122,21 @@ Bool16 QTAtom::ReadInt32(UInt64 Offset, UInt32 * Datum)
 	return true;
 }
 
+Bool16 QTAtom::ReadInt32To64(UInt64 Offset, UInt64 * Datum)
+{
+	// General vars
+	UInt32		tempDatum;
+
+
+	//
+	// Read and flip.
+	if( !ReadBytes(Offset, (char *)&tempDatum, 4) )
+		return false;
+	
+    tempDatum =  ntohl(tempDatum);
+	*Datum = (UInt64) tempDatum;
+	return true;
+}
 Bool16 QTAtom::ReadInt64(UInt64 Offset, UInt64 * Datum)
 {
 	// General vars

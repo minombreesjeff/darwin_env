@@ -26,7 +26,7 @@
  
  */
 
-#define kVersionString "4.1.2"
-#define kBuildString "412.42"
+#define kVersionString "4.1.3"
+#define kBuildString "412.45"
 
 

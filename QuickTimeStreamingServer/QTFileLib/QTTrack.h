@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTTrack.h,v 1.12 2001/11/20 01:08:47 murata Exp $
+// $Id: QTTrack.h,v 1.12.16.1 2002/11/27 10:14:03 murata Exp $
 //
 // QTTrack:
 //   The central point of control for a track in a QTFile.
@@ -86,8 +86,8 @@ public:
 	
 	inline	const char *		GetTrackName(void) { return (fTrackName ? fTrackName : ""); }
 	inline	UInt32		GetTrackID(void) { return fTrackHeaderAtom->GetTrackID(); }
-	inline	UInt32		GetCreationTime(void) { return fTrackHeaderAtom->GetCreationTime(); }
-	inline	UInt32		GetModificationTime(void) { return fTrackHeaderAtom->GetModificationTime(); }
+	inline	UInt64		GetCreationTime(void) { return fTrackHeaderAtom->GetCreationTime(); }
+	inline	UInt64		GetModificationTime(void) { return fTrackHeaderAtom->GetModificationTime(); }
 	inline	UInt32		GetDuration(void) { return fTrackHeaderAtom->GetDuration(); }
 	inline	Float64		GetTimeScale(void) { return fMediaHeaderAtom->GetTimeScale(); }
 	inline	Float64		GetTimeScaleRecip(void) { return fMediaHeaderAtom->GetTimeScaleRecip(); }

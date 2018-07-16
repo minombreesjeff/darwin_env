@@ -1400,7 +1400,10 @@ sub handle_request
 	    	$doing_eval = 0;
 	    	if ($@) {
 				# Error in perl!
-				&http_error(500, "Perl execution failed", $@);
+				# Uncomment the first line (and comment the second) for debug
+				# Error message has security implications.
+				#&http_error(500, "Perl execution failed", $@);
+				&http_error(500, "Perl execution failed");
 	    	}
 	    	elsif (!$doneheaders) {
 				&http_error(500, "Missing Header");

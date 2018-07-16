@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_elst.h,v 1.4 2001/03/13 22:24:29 murata Exp $
+// $Id: QTAtom_elst.h,v 1.4.18.1 2002/11/27 10:14:02 murata Exp $
 //
 // QTAtom_elst:
 //   The 'elst' QTAtom class.
@@ -48,8 +48,8 @@ class QTAtom_elst : public QTAtom {
 	// Class typedefs.
 	struct EditListEntry {
 		// Edit information
-		UInt32			EditDuration;
-		SInt32			StartingMediaTime;
+		UInt64			EditDuration;
+		SInt64			StartingMediaTime;
 		UInt32			EditMediaRate;
 	};
 
@@ -68,7 +68,7 @@ public:
 
 	//
 	// Accessors.
-	inline	UInt32		FirstEditMovieTime(void) { return fFirstEditMovieTime; }
+	inline	UInt64		FirstEditMovieTime(void) { return fFirstEditMovieTime; }
 
 
 	//
