@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: dev@subversion.apache.org\n"
-"POT-Creation-Date: 2014-12-09 07:32+0000\n"
+"POT-Creation-Date: 2015-03-18 13:54+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1232,7 +1232,7 @@ msgstr ""
 #: ../libsvn_client/add.c:682 ../libsvn_client/changelist.c:65
 #: ../libsvn_client/changelist.c:104 ../libsvn_client/cleanup.c:56
 #: ../libsvn_client/cleanup.c:134 ../libsvn_client/commit.c:710
-#: ../libsvn_client/export.c:1050 ../libsvn_client/patch.c:2956
+#: ../libsvn_client/export.c:1050 ../libsvn_client/patch.c:3010
 #: ../libsvn_client/relocate.c:237 ../libsvn_client/resolved.c:54
 #: ../libsvn_client/revert.c:135 ../libsvn_client/status.c:269
 #: ../libsvn_client/switch.c:391 ../libsvn_client/update.c:590
@@ -1338,8 +1338,8 @@ msgstr ""
 msgid "New entry name required when importing a file"
 msgstr ""
 
-#: ../libsvn_client/commit.c:583 ../libsvn_client/patch.c:2963
-#: ../libsvn_client/patch.c:2975 ../libsvn_wc/adm_ops.c:583
+#: ../libsvn_client/commit.c:583 ../libsvn_client/patch.c:3017
+#: ../libsvn_client/patch.c:3029 ../libsvn_wc/adm_ops.c:583
 #: ../libsvn_wc/lock.c:120 ../libsvn_wc/wc_db_wcroot.c:74
 #, c-format
 msgid "'%s' does not exist"
@@ -1979,11 +1979,11 @@ msgstr ""
 msgid "Cannot strip %u components from '%s'"
 msgstr ""
 
-#: ../libsvn_client/patch.c:2952
+#: ../libsvn_client/patch.c:3006
 msgid "strip count must be positive"
 msgstr ""
 
-#: ../libsvn_client/patch.c:2968 ../libsvn_fs_base/tree.c:4003
+#: ../libsvn_client/patch.c:3022 ../libsvn_fs_base/tree.c:4003
 #: ../libsvn_fs_base/tree.c:4008 ../libsvn_fs_fs/tree.c:2731
 #: ../libsvn_fs_fs/tree.c:2736 ../libsvn_ra/compat.c:685
 #: ../libsvn_ra_local/ra_plugin.c:1077
@@ -1991,7 +1991,7 @@ msgstr ""
 msgid "'%s' is not a file"
 msgstr ""
 
-#: ../libsvn_client/patch.c:2980 ../libsvn_wc/util.c:59
+#: ../libsvn_client/patch.c:3034 ../libsvn_wc/util.c:59
 #, c-format
 msgid "'%s' is not a directory"
 msgstr ""
@@ -5325,17 +5325,17 @@ msgstr ""
 msgid "Unrecognized file in argument of %s"
 msgstr ""
 
-#: ../libsvn_subr/config.c:665
+#: ../libsvn_subr/config.c:666
 #, c-format
 msgid "Config error: invalid boolean value '%s' for '[%s] %s'"
 msgstr ""
 
-#: ../libsvn_subr/config.c:670
+#: ../libsvn_subr/config.c:671
 #, c-format
 msgid "Config error: invalid boolean value '%s' for '%s'"
 msgstr ""
 
-#: ../libsvn_subr/config.c:951
+#: ../libsvn_subr/config.c:952
 #, c-format
 msgid "Config error: invalid integer value '%s'"
 msgstr ""
@@ -5436,21 +5436,21 @@ msgstr ""
 msgid "Can't ungrab DSO mutex"
 msgstr ""
 
-#: ../libsvn_subr/error.c:472
+#: ../libsvn_subr/error.c:476
 msgid "Can't recode error string from APR"
 msgstr ""
 
-#: ../libsvn_subr/error.c:572
+#: ../libsvn_subr/error.c:576
 #, c-format
 msgid "%swarning: W%06d: %s\n"
 msgstr ""
 
-#: ../libsvn_subr/error.c:632
+#: ../libsvn_subr/error.c:636
 #, c-format
 msgid "In file '%s' line %d: assertion failed (%s)"
 msgstr ""
 
-#: ../libsvn_subr/error.c:636
+#: ../libsvn_subr/error.c:640
 #, c-format
 msgid "In file '%s' line %d: internal malfunction"
 msgstr ""
