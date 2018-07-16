@@ -22,16 +22,17 @@ ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ****************************************************************/
 
-char	*version = "version 981019";
+const char	*version = "version 20040207";
 
 #define DEBUG
 #include <stdio.h>
 #include <ctype.h>
+#include <locale.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include "awk.h"
-#include "awkgram.h"
+#include "ytab.h"
 
 extern	char	**environ;
 extern	int	nfields;
@@ -52,9 +53,10 @@ int	safe	= 0;	/* 1 => "safe" mode */
 
 int main(int argc, char *argv[])
 {
-	char *fs = NULL, *marg;
-	int temp;
+	const char *fs = NULL;
 
+	setlocale(LC_CTYPE, "");
+	setlocale(LC_NUMERIC, "C"); /* for parsing cmdline & prog */
 	cmdname = argv[0];
 	if (argc == 1) {
 		fprintf(stderr, "Usage: %s [-f programfile | 'program'] [-Ffieldsep] [-v var=value] [files]\n", cmdname);
@@ -78,7 +80,7 @@ int main(int argc, char *argv[])
 			argc--;
 			argv++;
 			if (argc <= 1)
-				ERROR "no program filename" FATAL;
+				FATAL("no program filename");
 			pfile[npfile++] = argv[1];
 			break;
 		case 'F':	/* set field separator */
@@ -95,26 +97,17 @@ int main(int argc, char *argv[])
 					fs = &argv[1][0];
 			}
 			if (fs == NULL || *fs == '\0')
-				ERROR "field separator FS is empty" WARNING;
+				WARNING("field separator FS is empty");
 			break;
 		case 'v':	/* -v a=1 to be done NOW.  one -v for each */
 			if (argv[1][2] == '\0' && --argc > 1 && isclvar((++argv)[1]))
 				setclvar(argv[1]);
+			else
+				FATAL("invalid -v option");
 			break;
 		case 'm':	/* more memory: -mr=record, -mf=fields */
-				/* no longer needed */
-			marg = argv[1];
-			if (argv[1][3])
-				temp = atoi(&argv[1][3]);
-			else {
-				argv++; argc--;
-				temp = atoi(&argv[1][0]);
-			}
-			switch (marg[2]) {
-			case 'r':	recsize = temp; break;
-			case 'f':	nfields = temp; break;
-			default: ERROR "unknown option %s\n", marg FATAL;
-			}
+				/* no longer supported */
+			WARNING("obsolete option %s ignored", argv[1]);
 			break;
 		case 'd':
 			dbg = atoi(&argv[1][2]);
@@ -127,7 +120,7 @@ int main(int argc, char *argv[])
 			exit(0);
 			break;
 		default:
-			ERROR "unknown option %s ignored", argv[1] WARNING;
+			WARNING("unknown option %s ignored", argv[1]);
 			break;
 		}
 		argc--;
@@ -138,7 +131,7 @@ int main(int argc, char *argv[])
 		if (argc <= 1) {
 			if (dbg)
 				exit(0);
-			ERROR "no program given" FATAL;
+			FATAL("no program given");
 		}
 		   dprintf( ("program = |%s|\n", argv[1]) );
 		lexprog = argv[1];
@@ -154,6 +147,7 @@ int main(int argc, char *argv[])
 	if (!safe)
 		envinit(environ);
 	yyparse();
+	setlocale(LC_NUMERIC, ""); /* back to whatever it is locally */
 	if (fs)
 		*FS = qstring(fs, '\0');
 	   dprintf( ("errorflag=%d\n", errorflag) );
@@ -176,7 +170,8 @@ int pgetc(void)		/* get 1 character from awk program */
 			if (strcmp(pfile[curpfile], "-") == 0)
 				yyin = stdin;
 			else if ((yyin = fopen(pfile[curpfile], "r")) == NULL)
-				ERROR "can't open file %s", pfile[curpfile] FATAL;
+				FATAL("can't open file %s", pfile[curpfile]);
+			lineno = 1;
 		}
 		if ((c = getc(yyin)) != EOF)
 			return c;
@@ -185,4 +180,12 @@ int pgetc(void)		/* get 1 character from awk program */
 		yyin = NULL;
 		curpfile++;
 	}
+}
+
+char *cursource(void)	/* current source file name */
+{
+	if (npfile > 0)
+		return pfile[curpfile];
+	else
+		return NULL;
 }

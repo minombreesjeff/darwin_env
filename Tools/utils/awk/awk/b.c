@@ -31,13 +31,14 @@ THIS SOFTWARE.
 #include <string.h>
 #include <stdlib.h>
 #include "awk.h"
-#include "awkgram.h"
+#include "ytab.h"
 
-#define	HAT	(NCHARS-1)	/* matches ^ in regular expr */
+#define	HAT	(NCHARS+2)	/* matches ^ in regular expr */
 				/* NCHARS is 2**n */
 #define MAXLIN 22
 
-#define type(v)		(v)->nobj
+#define type(v)		(v)->nobj	/* badly overloaded here */
+#define info(v)		(v)->ntype	/* badly overloaded here */
 #define left(v)		(v)->narg[0]
 #define right(v)	(v)->narg[1]
 #define parent(v)	(v)->nnext
@@ -60,9 +61,9 @@ int	maxsetvec = 0;
 
 int	rtok;		/* next token in current re */
 int	rlxval;
-char	*rlxstr;
-char	*prestr;	/* current position in current re */
-char	*lastre;	/* origin of last re */
+static uschar	*rlxstr;
+static uschar	*prestr;	/* current position in current re */
+static uschar	*lastre;	/* origin of last re */
 
 static	int setcnt;
 static	int poscnt;
@@ -74,7 +75,7 @@ int	patlen;
 fa	*fatab[NFA];
 int	nfatab	= 0;	/* entries in fatab */
 
-fa *makedfa(char *s, int anchor)	/* returns dfa for reg expr s */
+fa *makedfa(const char *s, int anchor)	/* returns dfa for reg expr s */
 {
 	int i, use, nuse;
 	fa *pfa;
@@ -92,10 +93,10 @@ fa *makedfa(char *s, int anchor)	/* returns dfa for reg expr s */
 		return mkdfa(s, anchor);
 	for (i = 0; i < nfatab; i++)	/* is it there already? */
 		if (fatab[i]->anchor == anchor
-		  && strcmp(fatab[i]->restr, s) == 0) {
+		  && strcmp((const char *) fatab[i]->restr, s) == 0) {
 			fatab[i]->use = now++;
 			return fatab[i];
-	}
+		}
 	pfa = mkdfa(s, anchor);
 	if (nfatab < NFA) {	/* room for another */
 		fatab[nfatab] = pfa;
@@ -116,7 +117,7 @@ fa *makedfa(char *s, int anchor)	/* returns dfa for reg expr s */
 	return pfa;
 }
 
-fa *mkdfa(char *s, int anchor)	/* does the real work of making a dfa */
+fa *mkdfa(const char *s, int anchor)	/* does the real work of making a dfa */
 				/* anchor = 1 for anchored matches, else 0 */
 {
 	Node *p, *p1;
@@ -142,7 +143,7 @@ fa *mkdfa(char *s, int anchor)	/* does the real work of making a dfa */
 	*f->posns[1] = 0;
 	f->initstat = makeinit(f, anchor);
 	f->anchor = anchor;
-	f->restr = tostring(s);
+	f->restr = (uschar *) tostring(s);
 	return f;
 }
 
@@ -182,7 +183,7 @@ void penter(Node *p)	/* set up parent pointers and leaf indices */
 {
 	switch (type(p)) {
 	LEAF
-		left(p) = (Node *) poscnt;
+		info(p) = poscnt;
 		poscnt++;
 		break;
 	UNARY
@@ -197,7 +198,7 @@ void penter(Node *p)	/* set up parent pointers and leaf indices */
 		parent(right(p)) = p;
 		break;
 	default:	/* can't happen */
-		ERROR "can't happen: unknown type %d in penter", type(p) FATAL;
+		FATAL("can't happen: unknown type %d in penter", type(p));
 		break;
 	}
 }
@@ -219,7 +220,7 @@ void freetr(Node *p)	/* free parse tree */
 		xfree(p);
 		break;
 	default:	/* can't happen */
-		ERROR "can't happen: unknown type %d in freetr", type(p) FATAL;
+		FATAL("can't happen: unknown type %d in freetr", type(p));
 		break;
 	}
 }
@@ -229,11 +230,11 @@ void freetr(Node *p)	/* free parse tree */
 
 int hexstr(char **pp)	/* find and eval hex string at pp, return new p */
 {			/* only pick up one 8-bit byte (2 chars) */
-	char *p;
+	uschar *p;
 	int n = 0;
 	int i;
 
-	for (i = 0, p = *pp; i < 2 && isxdigit(*p); i++, p++) {
+	for (i = 0, p = (uschar *) *pp; i < 2 && isxdigit(*p); i++, p++) {
 		if (isdigit(*p))
 			n = 16 * n + *p - '0';
 		else if (*p >= 'a' && *p <= 'f')
@@ -241,7 +242,7 @@ int hexstr(char **pp)	/* find and eval hex string at pp, return new p */
 		else if (*p >= 'A' && *p <= 'F')
 			n = 16 * n + *p - 'A' + 10;
 	}
-	*pp = p;
+	*pp = (char *) p;
 	return n;
 }
 
@@ -281,54 +282,55 @@ int quoted(char **pp)	/* pick up next thing after a \\ */
 	return c;
 }
 
-char *cclenter(char *p)	/* add a character class */
+char *cclenter(const char *argp)	/* add a character class */
 {
 	int i, c, c2;
-	char *op, *bp;
-	static char *buf = 0;
+	uschar *p = (uschar *) argp;
+	uschar *op, *bp;
+	static uschar *buf = 0;
 	static int bufsz = 100;
 
 	op = p;
-	if (buf == 0 && (buf = (char *) malloc(bufsz)) == NULL)
-		ERROR "out of space for character class [%.10s...] 1", p FATAL;
+	if (buf == 0 && (buf = (uschar *) malloc(bufsz)) == NULL)
+		FATAL("out of space for character class [%.10s...] 1", p);
 	bp = buf;
 	for (i = 0; (c = *p++) != 0; ) {
 		if (c == '\\') {
-			c = quoted(&p);
+			c = quoted((char **) &p);
 		} else if (c == '-' && i > 0 && bp[-1] != 0) {
 			if (*p != 0) {
 				c = bp[-1];
 				c2 = *p++;
 				if (c2 == '\\')
-					c2 = quoted(&p);
+					c2 = quoted((char **) &p);
 				if (c > c2) {	/* empty; ignore */
 					bp--;
 					i--;
 					continue;
 				}
 				while (c < c2) {
-					if (!adjbuf(&buf, &bufsz, bp-buf+2, 100, &bp, 0))
-						ERROR "out of space for character class [%.10s...] 2", p FATAL;
+					if (!adjbuf((char **) &buf, &bufsz, bp-buf+2, 100, (char **) &bp, 0))
+						FATAL("out of space for character class [%.10s...] 2", p);
 					*bp++ = ++c;
 					i++;
 				}
 				continue;
 			}
 		}
-		if (!adjbuf(&buf, &bufsz, bp-buf+2, 100, &bp, 0))
-			ERROR "out of space for character class [%.10s...] 3", p FATAL;
+		if (!adjbuf((char **) &buf, &bufsz, bp-buf+2, 100, (char **) &bp, 0))
+			FATAL("out of space for character class [%.10s...] 3", p);
 		*bp++ = c;
 		i++;
 	}
 	*bp = 0;
 	dprintf( ("cclenter: in = |%s|, out = |%s|\n", op, buf) );
 	xfree(op);
-	return(tostring(buf));
+	return (char *) tostring((char *) buf);
 }
 
-void overflo(char *s)
+void overflo(const char *s)
 {
-	ERROR "regular expression too big: %.30s...", s FATAL;
+	FATAL("regular expression too big: %.30s...", s);
 }
 
 void cfoll(fa *f, Node *v)	/* enter follow set of each leaf of vertex v into lfollow[leaf] */
@@ -338,8 +340,8 @@ void cfoll(fa *f, Node *v)	/* enter follow set of each leaf of vertex v into lfo
 
 	switch (type(v)) {
 	LEAF
-		f->re[(int) left(v)].ltype = type(v);
-		f->re[(int) left(v)].lval.np = right(v);
+		f->re[info(v)].ltype = type(v);
+		f->re[info(v)].lval.np = right(v);
 		while (f->accept >= maxsetvec) {	/* guessing here! */
 			maxsetvec *= 4;
 			setvec = (int *) realloc(setvec, maxsetvec * sizeof(int));
@@ -353,7 +355,7 @@ void cfoll(fa *f, Node *v)	/* enter follow set of each leaf of vertex v into lfo
 		follow(v);	/* computes setvec and setcnt */
 		if ((p = (int *) calloc(1, (setcnt+1)*sizeof(int))) == NULL)
 			overflo("out of space building follow set");
-		f->re[(int) left(v)].lfollow = p;
+		f->re[info(v)].lfollow = p;
 		*p = setcnt;
 		for (i = f->accept; i >= 0; i--)
 			if (setvec[i] == 1)
@@ -368,7 +370,7 @@ void cfoll(fa *f, Node *v)	/* enter follow set of each leaf of vertex v into lfo
 		cfoll(f,right(v));
 		break;
 	default:	/* can't happen */
-		ERROR "can't happen: unknown type %d in cfoll", type(v) FATAL;
+		FATAL("can't happen: unknown type %d in cfoll", type(v));
 	}
 }
 
@@ -379,14 +381,13 @@ int first(Node *p)	/* collects initially active leaves of p into setvec */
 
 	switch (type(p)) {
 	LEAF
-		lp = (int) left(p);	/* look for high-water mark of subscripts */
+		lp = info(p);	/* look for high-water mark of subscripts */
 		while (setcnt >= maxsetvec || lp >= maxsetvec) {	/* guessing here! */
 			maxsetvec *= 4;
 			setvec = (int *) realloc(setvec, maxsetvec * sizeof(int));
 			tmpset = (int *) realloc(tmpset, maxsetvec * sizeof(int));
-			if (setvec == 0 || tmpset == 0) { abort();
+			if (setvec == 0 || tmpset == 0)
 				overflo("out of space in first()");
-}
 		}
 		if (setvec[lp] != 1) {
 			setvec[lp] = 1;
@@ -410,7 +411,7 @@ int first(Node *p)	/* collects initially active leaves of p into setvec */
 		if (first(left(p)) == 0 || b == 0) return(0);
 		return(1);
 	}
-	ERROR "can't happen: unknown type %d in first", type(p) FATAL;	/* can't happen */
+	FATAL("can't happen: unknown type %d in first", type(p));	/* can't happen */
 	return(-1);
 }
 
@@ -445,15 +446,17 @@ void follow(Node *v)	/* collects leaves that can follow v into setvec */
 	}
 }
 
-int member(int c, char *s)	/* is c in s? */
+int member(int c, const char *sarg)	/* is c in s? */
 {
+	uschar *s = (uschar *) sarg;
+
 	while (*s)
 		if (c == *s++)
 			return(1);
 	return(0);
 }
 
-int match(fa *f, char *p0)	/* shortest match ? */
+int match(fa *f, const char *p0)	/* shortest match ? */
 {
 	int s, ns;
 	uschar *p = (uschar *) p0;
@@ -472,14 +475,19 @@ int match(fa *f, char *p0)	/* shortest match ? */
 	return(0);
 }
 
-int pmatch(fa *f, char *p0)	/* longest match, for sub */
+int pmatch(fa *f, const char *p0)	/* longest match, for sub */
 {
 	int s, ns;
 	uschar *p = (uschar *) p0;
 	uschar *q;
 	int i, k;
 
-	s = f->reset ? makeinit(f,1) : f->initstat;
+	/* s = f->reset ? makeinit(f,1) : f->initstat; */
+	if (f->reset) {
+		f->initstat = s = makeinit(f,1);
+	} else {
+		s = f->initstat;
+	}
 	patbeg = (char *) p;
 	patlen = -1;
 	do {
@@ -525,14 +533,19 @@ int pmatch(fa *f, char *p0)	/* longest match, for sub */
 	return (0);
 }
 
-int nematch(fa *f, char *p0)	/* non-empty match, for sub */
+int nematch(fa *f, const char *p0)	/* non-empty match, for sub */
 {
 	int s, ns;
 	uschar *p = (uschar *) p0;
 	uschar *q;
 	int i, k;
 
-	s = f->reset ? makeinit(f,1) : f->initstat;
+	/* s = f->reset ? makeinit(f,1) : f->initstat; */
+	if (f->reset) {
+		f->initstat = s = makeinit(f,1);
+	} else {
+		s = f->initstat;
+	}
 	patlen = -1;
 	while (*p) {
 		q = p;
@@ -577,18 +590,20 @@ int nematch(fa *f, char *p0)	/* non-empty match, for sub */
 	return (0);
 }
 
-Node *reparse(char *p)	/* parses regular expression pointed to by p */
+Node *reparse(const char *p)	/* parses regular expression pointed to by p */
 {			/* uses relex() to scan regular expression */
 	Node *np;
 
 	dprintf( ("reparse <%s>\n", p) );
-	lastre = prestr = p;	/* prestr points to string to be parsed */
+	lastre = prestr = (uschar *) p;	/* prestr points to string to be parsed */
 	rtok = relex();
+	/* GNU compatibility: an empty regexp matches anything */
 	if (rtok == '\0')
-		ERROR "empty regular expression" FATAL;
+		/* FATAL("empty regular expression"); previous */
+		return(op2(ALL, NIL, NIL));
 	np = regexp();
 	if (rtok != '\0')
-		ERROR "syntax error in regular expression %s at %s", lastre, prestr FATAL;
+		FATAL("syntax error in regular expression %s at %s", lastre, prestr);
 	return(np);
 }
 
@@ -603,7 +618,7 @@ Node *primary(void)
 
 	switch (rtok) {
 	case CHAR:
-		np = op2(CHAR, NIL, (Node *) rlxval);
+		np = op2(CHAR, NIL, itonp(rlxval));
 		rtok = relex();
 		return (unary(np));
 	case ALL:
@@ -613,16 +628,16 @@ Node *primary(void)
 		rtok = relex();
 		return (unary(op2(DOT, NIL, NIL)));
 	case CCL:
-		np = op2(CCL, NIL, (Node*) cclenter(rlxstr));
+		np = op2(CCL, NIL, (Node*) cclenter((char *) rlxstr));
 		rtok = relex();
 		return (unary(np));
 	case NCCL:
-		np = op2(NCCL, NIL, (Node *) cclenter(rlxstr));
+		np = op2(NCCL, NIL, (Node *) cclenter((char *) rlxstr));
 		rtok = relex();
 		return (unary(np));
 	case '^':
 		rtok = relex();
-		return (unary(op2(CHAR, NIL, (Node *) HAT)));
+		return (unary(op2(CHAR, NIL, itonp(HAT))));
 	case '$':
 		rtok = relex();
 		return (unary(op2(CHAR, NIL, NIL)));
@@ -638,9 +653,9 @@ Node *primary(void)
 			return (unary(np));
 		}
 		else
-			ERROR "syntax error in regular expression %s at %s", lastre, prestr FATAL;
+			FATAL("syntax error in regular expression %s at %s", lastre, prestr);
 	default:
-		ERROR "illegal primary in regular expression %s at %s", lastre, prestr FATAL;
+		FATAL("illegal primary in regular expression %s at %s", lastre, prestr);
 	}
 	return 0;	/*NOTREACHED*/
 }
@@ -680,13 +695,65 @@ Node *unary(Node *np)
 	}
 }
 
+/*
+ * Character class definitions conformant to the POSIX locale as
+ * defined in IEEE P1003.1 draft 7 of June 2001, assuming the source
+ * and operating character sets are both ASCII (ISO646) or supersets
+ * thereof.
+ *
+ * Note that to avoid overflowing the temporary buffer used in
+ * relex(), the expanded character class (prior to range expansion)
+ * must be less than twice the size of their full name.
+ */
+
+/* Because isblank doesn't show up in any of the header files on any
+ * system i use, it's defined here.  if some other locale has a richer
+ * definition of "blank", define HAS_ISBLANK and provide your own
+ * version.
+ * the parentheses here are an attempt to find a path through the maze
+ * of macro definition and/or function and/or version provided.  thanks
+ * to nelson beebe for the suggestion; let's see if it works everywhere.
+ */
+
+#ifndef HAS_ISBLANK
+
+int (isblank)(int c)
+{
+	return c==' ' || c=='\t';
+}
+
+#endif
+
+struct charclass {
+	const char *cc_name;
+	int cc_namelen;
+	int (*cc_func)(int);
+} charclasses[] = {
+	{ "alnum",	5,	isalnum },
+	{ "alpha",	5,	isalpha },
+	{ "blank",	5,	isblank },
+	{ "cntrl",	5,	iscntrl },
+	{ "digit",	5,	isdigit },
+	{ "graph",	5,	isgraph },
+	{ "lower",	5,	islower },
+	{ "print",	5,	isprint },
+	{ "punct",	5,	ispunct },
+	{ "space",	5,	isspace },
+	{ "upper",	5,	isupper },
+	{ "xdigit",	6,	isxdigit },
+	{ NULL,		0,	NULL },
+};
+
+
 int relex(void)		/* lexical analyzer for reparse */
 {
 	int c, n;
 	int cflag;
-	static char *buf = 0;
+	static uschar *buf = 0;
 	static int bufsz = 100;
-	char *bp;
+	uschar *bp;
+	struct charclass *cc;
+	int i;
 
 	switch (c = *prestr++) {
 	case '|': return OR;
@@ -701,14 +768,14 @@ int relex(void)		/* lexical analyzer for reparse */
 	case ')':
 		return c;
 	case '\\':
-		rlxval = quoted(&prestr);
+		rlxval = quoted((char **) &prestr);
 		return CHAR;
 	default:
 		rlxval = c;
 		return CHAR;
 	case '[': 
-		if (buf == 0 && (buf = (char *) malloc(bufsz)) == NULL)
-			ERROR "out of space in reg expr %.10s..", lastre FATAL;
+		if (buf == 0 && (buf = (uschar *) malloc(bufsz)) == NULL)
+			FATAL("out of space in reg expr %.10s..", lastre);
 		bp = buf;
 		if (*prestr == '^') {
 			cflag = 1;
@@ -716,24 +783,42 @@ int relex(void)		/* lexical analyzer for reparse */
 		}
 		else
 			cflag = 0;
-		n = 2 * strlen(prestr)+1;
-		if (!adjbuf(&buf, &bufsz, n, n, &bp, 0))
-			ERROR "out of space for reg expr %.10s...", lastre FATAL;
+		n = 2 * strlen((const char *) prestr)+1;
+		if (!adjbuf((char **) &buf, &bufsz, n, n, (char **) &bp, 0))
+			FATAL("out of space for reg expr %.10s...", lastre);
 		for (; ; ) {
 			if ((c = *prestr++) == '\\') {
 				*bp++ = '\\';
 				if ((c = *prestr++) == '\0')
-					ERROR "nonterminated character class %.20s...", lastre FATAL;
+					FATAL("nonterminated character class %.20s...", lastre);
 				*bp++ = c;
-			} else if (c == '\n') {
-				ERROR "newline in character class %.20s...", lastre FATAL;
+			/* } else if (c == '\n') { */
+			/* 	FATAL("newline in character class %.20s...", lastre); */
+			} else if (c == '[' && *prestr == ':') {
+				/* POSIX char class names, Dag-Erling Smorgrav, des@ofug.org */
+				for (cc = charclasses; cc->cc_name; cc++)
+					if (strncmp((const char *) prestr + 1, (const char *) cc->cc_name, cc->cc_namelen) == 0)
+						break;
+				if (cc->cc_name != NULL && prestr[1 + cc->cc_namelen] == ':' &&
+				    prestr[2 + cc->cc_namelen] == ']') {
+					prestr += cc->cc_namelen + 3;
+					for (i = 0; i < NCHARS; i++) {
+						if (!adjbuf((char **) &buf, &bufsz, bp-buf+1, 100, (char **) &bp, 0))
+						    FATAL("out of space for reg expr %.10s...", lastre);
+						if (cc->cc_func(i)) {
+							*bp++ = i;
+							n++;
+						}
+					}
+				} else
+					*bp++ = c;
 			} else if (c == '\0') {
-				ERROR "nonterminated character class %.20s", lastre FATAL;
+				FATAL("nonterminated character class %.20s", lastre);
 			} else if (bp == buf) {	/* 1st char is special */
 				*bp++ = c;
 			} else if (c == ']') {
 				*bp++ = 0;
-				rlxstr = tostring(buf);
+				rlxstr = (uschar *) tostring((char *) buf);
 				if (cflag == 0)
 					return CCL;
 				else
@@ -749,15 +834,12 @@ int cgoto(fa *f, int s, int c)
 	int i, j, k;
 	int *p, *q;
 
-	if (c < 0)
-		ERROR "can't happen: neg char %d in cgoto", c FATAL;
 	while (f->accept >= maxsetvec) {	/* guessing here! */
 		maxsetvec *= 4;
 		setvec = (int *) realloc(setvec, maxsetvec * sizeof(int));
 		tmpset = (int *) realloc(tmpset, maxsetvec * sizeof(int));
-		if (setvec == 0 || tmpset == 0) { abort();
+		if (setvec == 0 || tmpset == 0)
 			overflo("out of space in cgoto()");
-}
 	}
 	for (i = 0; i <= f->accept; i++)
 		setvec[i] = 0;
@@ -766,11 +848,11 @@ int cgoto(fa *f, int s, int c)
 	p = f->posns[s];
 	for (i = 1; i <= *p; i++) {
 		if ((k = f->re[p[i]].ltype) != FINAL) {
-			if ((k == CHAR && c == f->re[p[i]].lval.i)
+			if ((k == CHAR && c == ptoi(f->re[p[i]].lval.np))
 			 || (k == DOT && c != 0 && c != HAT)
 			 || (k == ALL && c != 0)
-			 || (k == CCL && member(c, f->re[p[i]].lval.up))
-			 || (k == NCCL && !member(c, f->re[p[i]].lval.up) && c != 0 && c != HAT)) {
+			 || (k == CCL && member(c, (char *) f->re[p[i]].lval.up))
+			 || (k == NCCL && !member(c, (char *) f->re[p[i]].lval.up) && c != 0 && c != HAT)) {
 				q = f->re[p[i]].lfollow;
 				for (j = 1; j <= *q; j++) {
 					if (q[j] >= maxsetvec) {

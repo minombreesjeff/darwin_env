@@ -25,19 +25,19 @@ THIS SOFTWARE.
 /*
  * this program makes the table to link function names
  * and type indices that is used by execute() in run.c.
- * it finds the indices in awkgram.h, produced by yacc.
+ * it finds the indices in ytab.h, produced by yacc.
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "awk.h"
-#include "awkgram.h"
+#include "ytab.h"
 
 struct xx
 {	int token;
-	char *name;
-	char *pname;
+	const char *name;
+	const char *pname;
 } proc[] = {
 	{ PROGRAM, "program", NULL },
 	{ BOR, "boolop", " || " },
@@ -107,12 +107,12 @@ struct xx
 };
 
 #define SIZE	(LASTTOKEN - FIRSTTOKEN + 1)
-char *table[SIZE];
+const char *table[SIZE];
 char *names[SIZE];
 
 int main(int argc, char *argv[])
 {
-	struct xx *p;
+	const struct xx *p;
 	int i, n, tok;
 	char c;
 	FILE *fp;
@@ -120,12 +120,12 @@ int main(int argc, char *argv[])
 
 	printf("#include <stdio.h>\n");
 	printf("#include \"awk.h\"\n");
-	printf("#include \"awkgram.h\"\n\n");
+	printf("#include \"ytab.h\"\n\n");
 	for (i = SIZE; --i >= 0; )
 		names[i] = "";
 
-	if ((fp = fopen("awkgram.h", "r")) == NULL) {
-		fprintf(stderr, "maketab can't open awkgram.h!\n");
+	if ((fp = fopen("ytab.h", "r")) == NULL) {
+		fprintf(stderr, "maketab can't open ytab.h!\n");
 		exit(1);
 	}
 	printf("static char *printname[%d] = {\n", SIZE);
@@ -135,8 +135,8 @@ int main(int argc, char *argv[])
 		if (c != '#' || (n != 4 && strcmp(def,"define") != 0))	/* not a valid #define */
 			continue;
 		if (tok < FIRSTTOKEN || tok > LASTTOKEN) {
-			fprintf(stderr, "maketab funny token %d %s\n", tok, buf);
-			exit(1);
+			fprintf(stderr, "maketab funny token %d %s ignored\n", tok, buf);
+			continue;
 		}
 		names[tok-FIRSTTOKEN] = (char *) malloc(strlen(name)+1);
 		strcpy(names[tok-FIRSTTOKEN], name);
