@@ -96,7 +96,9 @@ public:
 
     SBModule ();
 
-    SBModule (const SBModule &rhs);
+    SBModule (const lldb::SBModule &rhs);
+     
+    SBModule (const lldb::SBModuleSpec &module_spec);
     
     SBModule (lldb::SBProcess &process, 
               lldb::addr_t header_addr);
@@ -227,6 +229,25 @@ public:
 
     %feature("docstring", "
     //------------------------------------------------------------------
+    /// Get all types matching \a type_mask from debug info in this
+    /// module.
+    ///
+    /// @param[in] type_mask
+    ///     A bitfield that consists of one or more bits logically OR'ed
+    ///     together from the lldb::TypeClass enumeration. This allows
+    ///     you to request only structure types, or only class, struct
+    ///     and union types. Passing in lldb::eTypeClassAny will return
+    ///     all types found in the debug information for this module.
+    ///
+    /// @return
+    ///     A list of types in this module that match \a type_mask
+    //------------------------------------------------------------------
+    ") GetTypes;
+    lldb::SBTypeList
+    GetTypes (uint32_t type_mask = lldb::eTypeClassAny);
+
+    %feature("docstring", "
+    //------------------------------------------------------------------
     /// Find global and static variables by name.
     ///
     /// @param[in] target
@@ -248,6 +269,24 @@ public:
                          const char *name, 
                          uint32_t max_matches);
     
+    %feature("docstring", "
+    //------------------------------------------------------------------
+    /// Find the first global (or static) variable by name.
+    ///
+    /// @param[in] target
+    ///     A valid SBTarget instance representing the debuggee.
+    ///
+    /// @param[in] name
+    ///     The name of the global or static variable we are looking
+    ///     for.
+    ///
+    /// @return
+    ///     An SBValue that gets filled in with the found variable (if any).
+    //------------------------------------------------------------------
+    ") FindFirstGlobalVariable;
+    lldb::SBValue
+    FindFirstGlobalVariable (lldb::SBTarget &target, const char *name);
+             
     lldb::ByteOrder
     GetByteOrder ();
     
@@ -261,10 +300,16 @@ public:
     GetVersion (uint32_t *versions, 
                 uint32_t num_versions);
 
+    bool
+    operator == (const lldb::SBModule &rhs) const;
+             
+    bool
+    operator != (const lldb::SBModule &rhs) const;
+             
     %pythoncode %{
         class symbols_access(object):
             re_compile_type = type(re.compile('.'))
-            '''A helper object that will lazily hand out lldb.SBModule objects for a target when supplied an index, or by full or partial path.'''
+            '''A helper object that will lazily hand out lldb.SBSymbol objects for a module when supplied an index, name, or regular expression.'''
             def __init__(self, sbmodule):
                 self.sbmodule = sbmodule
         
@@ -312,6 +357,10 @@ public:
             '''An accessor function that returns a symbols_access() object which allows lazy symbol access from a lldb.SBModule object.'''
             return self.symbols_access (self)
         
+        def get_compile_units_access_object (self):
+            '''An accessor function that returns a compile_units_access() object which allows lazy compile unit access from a lldb.SBModule object.'''
+            return self.compile_units_access (self)
+        
         def get_symbols_array(self):
             '''An accessor function that returns a list() that contains all symbols in a lldb.SBModule object.'''
             symbols = []
@@ -321,7 +370,7 @@ public:
 
         class sections_access(object):
             re_compile_type = type(re.compile('.'))
-            '''A helper object that will lazily hand out lldb.SBModule objects for a target when supplied an index, or by full or partial path.'''
+            '''A helper object that will lazily hand out lldb.SBSection objects for a module when supplied an index, name, or regular expression.'''
             def __init__(self, sbmodule):
                 self.sbmodule = sbmodule
         
@@ -353,18 +402,66 @@ public:
                 else:
                     print "error: unsupported item type: %s" % type(key)
                 return None
+
+        class compile_units_access(object):
+            re_compile_type = type(re.compile('.'))
+            '''A helper object that will lazily hand out lldb.SBCompileUnit objects for a module when supplied an index, full or partial path, or regular expression.'''
+            def __init__(self, sbmodule):
+                self.sbmodule = sbmodule
         
+            def __len__(self):
+                if self.sbmodule:
+                    return int(self.sbmodule.GetNumCompileUnits())
+                return 0
+        
+            def __getitem__(self, key):
+                count = len(self)
+                if type(key) is int:
+                    if key < count:
+                        return self.sbmodule.GetCompileUnitAtIndex(key)
+                elif type(key) is str:
+                    is_full_path = key[0] == '/'
+                    for idx in range(count):
+                        comp_unit = self.sbmodule.GetCompileUnitAtIndex(idx)
+                        if is_full_path:
+                            if comp_unit.file.fullpath == key:
+                                return comp_unit
+                        else:
+                            if comp_unit.file.basename == key:
+                                return comp_unit
+                elif isinstance(key, self.re_compile_type):
+                    matches = []
+                    for idx in range(count):
+                        comp_unit = self.sbmodule.GetCompileUnitAtIndex(idx)
+                        fullpath = comp_unit.file.fullpath
+                        if fullpath:
+                            re_match = key.search(fullpath)
+                            if re_match:
+                                matches.append(comp_unit)
+                    return matches
+                else:
+                    print "error: unsupported item type: %s" % type(key)
+                return None
+
         def get_sections_access_object(self):
             '''An accessor function that returns a sections_access() object which allows lazy section array access.'''
             return self.sections_access (self)
         
         def get_sections_array(self):
             '''An accessor function that returns an array object that contains all sections in this module object.'''
-            if not hasattr(self, 'sections'):
-                self.sections = []
+            if not hasattr(self, 'sections_array'):
+                self.sections_array = []
                 for idx in range(self.num_sections):
-                    self.sections.append(self.GetSectionAtIndex(idx))
-            return self.sections
+                    self.sections_array.append(self.GetSectionAtIndex(idx))
+            return self.sections_array
+
+        def get_compile_units_array(self):
+            '''An accessor function that returns an array object that contains all compile_units in this module object.'''
+            if not hasattr(self, 'compile_units_array'):
+                self.compile_units_array = []
+                for idx in range(self.GetNumCompileUnits()):
+                    self.compile_units_array.append(self.GetCompileUnitAtIndex(idx))
+            return self.compile_units_array
 
         __swig_getmethods__["symbols"] = get_symbols_array
         if _newclass: symbols = property(get_symbols_array, None, doc='''A read only property that returns a list() of lldb.SBSymbol objects contained in this module.''')
@@ -374,9 +471,15 @@ public:
 
         __swig_getmethods__["sections"] = get_sections_array
         if _newclass: sections = property(get_sections_array, None, doc='''A read only property that returns a list() of lldb.SBSection objects contained in this module.''')
-        
+
+        __swig_getmethods__["compile_units"] = get_compile_units_array
+        if _newclass: compile_units = property(get_compile_units_array, None, doc='''A read only property that returns a list() of lldb.SBCompileUnit objects contained in this module.''')
+
         __swig_getmethods__["section"] = get_sections_access_object
         if _newclass: section = property(get_sections_access_object, None, doc='''A read only property that can be used to access symbols by index ("section = module.section[0]"), name ("sections = module.section[\'main\']"), or using a regular expression ("sections = module.section[re.compile(...)]"). The return value is a single lldb.SBSection object for array access, and a list() of lldb.SBSection objects for name and regular expression access''')
+
+        __swig_getmethods__["compile_unit"] = get_compile_units_access_object
+        if _newclass: section = property(get_sections_access_object, None, doc='''A read only property that can be used to access compile units by index ("compile_unit = module.compile_unit[0]"), name ("compile_unit = module.compile_unit[\'main.cpp\']"), or using a regular expression ("compile_unit = module.compile_unit[re.compile(...)]"). The return value is a single lldb.SBCompileUnit object for array access or by full or partial path, and a list() of lldb.SBCompileUnit objects regular expressions.''')
 
         def get_uuid(self):
             return uuid.UUID (self.GetUUIDString())

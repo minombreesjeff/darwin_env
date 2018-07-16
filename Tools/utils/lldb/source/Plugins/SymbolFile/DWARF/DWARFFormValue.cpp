@@ -38,7 +38,7 @@ static uint8_t g_form_sizes_addr4[] =
     0, // 0x0d DW_FORM_sdata
     4, // 0x0e DW_FORM_strp
     0, // 0x0f DW_FORM_udata
-    4, // 0x10 DW_FORM_ref_addr
+    0, // 0x10 DW_FORM_ref_addr (addr size for DWARF2 and earlier, 4 bytes for DWARF32, 8 bytes for DWARF32 in DWARF 3 and later
     1, // 0x11 DW_FORM_ref1
     2, // 0x12 DW_FORM_ref2
     4, // 0x13 DW_FORM_ref4
@@ -77,7 +77,7 @@ g_form_sizes_addr8[] =
     0, // 0x0d DW_FORM_sdata
     4, // 0x0e DW_FORM_strp
     0, // 0x0f DW_FORM_udata
-    8, // 0x10 DW_FORM_ref_addr
+    0, // 0x10 DW_FORM_ref_addr (addr size for DWARF2 and earlier, 4 bytes for DWARF32, 8 bytes for DWARF32 in DWARF 3 and later
     1, // 0x11 DW_FORM_ref1
     2, // 0x12 DW_FORM_ref2
     4, // 0x13 DW_FORM_ref4
@@ -114,7 +114,7 @@ DWARFFormValue::DWARFFormValue(dw_form_t form) :
 }
 
 bool
-DWARFFormValue::ExtractValue(const DataExtractor& data, uint32_t* offset_ptr, const DWARFCompileUnit* cu)
+DWARFFormValue::ExtractValue(const DataExtractor& data, lldb::offset_t* offset_ptr, const DWARFCompileUnit* cu)
 {
     bool indirect = false;
     bool is_block = false;
@@ -145,7 +145,12 @@ DWARFFormValue::ExtractValue(const DataExtractor& data, uint32_t* offset_ptr, co
         case DW_FORM_strp:      m_value.value.uval = data.GetU32(offset_ptr);                           break;
     //  case DW_FORM_APPLE_db_str:
         case DW_FORM_udata:     m_value.value.uval = data.GetULEB128(offset_ptr);                       break;
-        case DW_FORM_ref_addr:  m_value.value.uval = data.GetMaxU64(offset_ptr, DWARFCompileUnit::GetAddressByteSize(cu));  break;
+        case DW_FORM_ref_addr:
+            if (cu->GetVersion() <= 2)
+                m_value.value.uval = data.GetMaxU64(offset_ptr, DWARFCompileUnit::GetAddressByteSize(cu));
+            else
+                m_value.value.uval = data.GetU32(offset_ptr); // 4 for DWARF32, 8 for DWARF64, but we don't support DWARF64 yet
+            break;
         case DW_FORM_ref1:      m_value.value.uval = data.GetU8(offset_ptr);                            break;
         case DW_FORM_ref2:      m_value.value.uval = data.GetU16(offset_ptr);                           break;
         case DW_FORM_ref4:      m_value.value.uval = data.GetU32(offset_ptr);                           break;
@@ -178,13 +183,13 @@ DWARFFormValue::ExtractValue(const DataExtractor& data, uint32_t* offset_ptr, co
 }
 
 bool
-DWARFFormValue::SkipValue(const DataExtractor& debug_info_data, uint32_t* offset_ptr, const DWARFCompileUnit* cu) const
+DWARFFormValue::SkipValue(const DataExtractor& debug_info_data, lldb::offset_t *offset_ptr, const DWARFCompileUnit* cu) const
 {
     return DWARFFormValue::SkipValue(m_form, debug_info_data, offset_ptr, cu);
 }
 
 bool
-DWARFFormValue::SkipValue(dw_form_t form, const DataExtractor& debug_info_data, uint32_t* offset_ptr, const DWARFCompileUnit* cu)
+DWARFFormValue::SkipValue(dw_form_t form, const DataExtractor& debug_info_data, lldb::offset_t *offset_ptr, const DWARFCompileUnit* cu)
 {
     switch (form)
     {
@@ -203,8 +208,14 @@ DWARFFormValue::SkipValue(dw_form_t form, const DataExtractor& debug_info_data, 
 
     // Compile unit address sized values
     case DW_FORM_addr:
-    case DW_FORM_ref_addr:
         *offset_ptr += DWARFCompileUnit::GetAddressByteSize(cu);
+        return true;
+
+    case DW_FORM_ref_addr:
+        if (cu->GetVersion() <= 2)
+            *offset_ptr += DWARFCompileUnit::GetAddressByteSize(cu);
+        else
+            *offset_ptr += 4;// 4 for DWARF32, 8 for DWARF64, but we don't support DWARF64 yet
         return true;
 
     // 0 bytes values (implied from DW_FORM)
@@ -337,7 +348,10 @@ DWARFFormValue::Dump(Stream &s, const DataExtractor* debug_str_data, const DWARF
 
     case DW_FORM_ref_addr:
     {
-        s.Address(uvalue, sizeof (uint64_t) * 2);
+        if (cu->GetVersion() <= 2)
+            s.Address(uvalue, sizeof (uint64_t) * 2);
+        else
+            s.Address(uvalue, 4 * 2);// 4 for DWARF32, 8 for DWARF64, but we don't support DWARF64 yet
         break;
     }
     case DW_FORM_ref1:      cu_relative_offset = true;  if (verbose) s.Printf("cu + 0x%2.2x", (uint8_t)uvalue); break;

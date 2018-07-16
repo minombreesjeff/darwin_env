@@ -108,7 +108,7 @@ Breakpoint::FindLocationByID (break_id_t bp_loc_id)
 }
 
 BreakpointLocationSP
-Breakpoint::GetLocationAtIndex (uint32_t index)
+Breakpoint::GetLocationAtIndex (size_t index)
 {
     return m_locations.GetByIndex(index);
 }
@@ -242,7 +242,8 @@ Breakpoint::GetThreadIndex() const
 void
 Breakpoint::SetThreadName (const char *thread_name)
 {
-    if (::strcmp (m_options.GetThreadSpec()->GetName(), thread_name) == 0)
+    if (m_options.GetThreadSpec()->GetName() != NULL
+        && ::strcmp (m_options.GetThreadSpec()->GetName(), thread_name) == 0)
         return;
         
     m_options.GetThreadSpec()->SetName (thread_name);
@@ -261,7 +262,8 @@ Breakpoint::GetThreadName () const
 void 
 Breakpoint::SetQueueName (const char *queue_name)
 {
-    if (::strcmp (m_options.GetThreadSpec()->GetQueueName(), queue_name) == 0)
+    if (m_options.GetThreadSpec()->GetQueueName() != NULL
+        && ::strcmp (m_options.GetThreadSpec()->GetQueueName(), queue_name) == 0)
         return;
         
     m_options.GetThreadSpec()->SetQueueName (queue_name);
@@ -391,7 +393,7 @@ Breakpoint::ModulesChanged (ModuleList &module_list, bool load, bool delete_loca
 
                     if (!break_loc->ResolveBreakpointSite())
                     {
-                        LogSP log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+                        Log *log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
                         if (log)
                             log->Printf ("Warning: could not set breakpoint site for breakpoint location %d of breakpoint %d.\n",
                                          break_loc->GetID(), GetID());
@@ -523,12 +525,21 @@ Breakpoint::GetNumLocations() const
 void
 Breakpoint::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_locations)
 {
-    const size_t num_locations = GetNumLocations ();
-    const size_t num_resolved_locations = GetNumResolvedLocations ();
-
     assert (s != NULL);
     
-
+    if (!m_kind_description.empty())
+    {
+        if (eDescriptionLevelBrief)
+        {
+            s->PutCString (GetBreakpointKind());
+            return;
+        }
+        else
+            s->Printf("Kind: %s\n", GetBreakpointKind ());
+    }
+    
+    const size_t num_locations = GetNumLocations ();
+    const size_t num_resolved_locations = GetNumResolvedLocations ();
     
     // They just made the breakpoint, they don't need to be told HOW they made it...
     // Also, we'll print the breakpoint number differently depending on whether there is 1 or more locations.
@@ -758,7 +769,7 @@ Breakpoint::BreakpointEventData::GetBreakpointFromEvent (const EventSP &event_sp
     return bp_sp;
 }
 
-uint32_t
+size_t
 Breakpoint::BreakpointEventData::GetNumBreakpointLocationsFromEvent (const EventSP &event_sp)
 {
     const BreakpointEventData *data = GetEventDataFromEvent (event_sp.get());

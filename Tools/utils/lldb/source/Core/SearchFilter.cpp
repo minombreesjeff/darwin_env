@@ -85,16 +85,6 @@ SearchFilter::ModulePasses (const ModuleSP &module_sp)
 }
 
 bool
-SearchFilter::SymbolContextPasses
-(
-    const SymbolContext &context,
-    lldb::SymbolContextItem scope
-)
-{
-    return true;
-}
-
-bool
 SearchFilter::AddressPasses (Address &address)
 {
     return true;
@@ -245,8 +235,8 @@ SearchFilter::DoCUIteration (const ModuleSP &module_sp, const SymbolContext &con
     Searcher::CallbackReturn shouldContinue;
     if (context.comp_unit == NULL)
     {
-        uint32_t num_comp_units = module_sp->GetNumCompileUnits();
-        for (uint32_t i = 0; i < num_comp_units; i++)
+        const size_t num_comp_units = module_sp->GetNumCompileUnits();
+        for (size_t i = 0; i < num_comp_units; i++)
         {
             CompUnitSP cu_sp (module_sp->GetCompileUnitAtIndex (i));
             if (cu_sp)
@@ -373,22 +363,6 @@ SearchFilterByModule::ModulePasses (const FileSpec &spec)
     // Do a full match only if "spec" has a directory
     const bool full_match = spec.GetDirectory();
     return FileSpec::Equal(spec, m_module_spec, full_match);
-}
-
-bool
-SearchFilterByModule::SymbolContextPasses (const SymbolContext &sc,
-                                           lldb::SymbolContextItem scope)
-{
-    if (scope & eSymbolContextModule)
-    {
-        if (sc.module_sp)
-        {
-            // Match the full path only if "m_module_spec" has a directory
-            const bool full_match = m_module_spec.GetDirectory();
-            return FileSpec::Equal (sc.module_sp->GetFileSpec(), m_module_spec, full_match);
-        }
-    }
-    return false;
 }
 
 bool
@@ -543,22 +517,6 @@ SearchFilterByModuleList::ModulePasses (const FileSpec &spec)
 }
 
 bool
-SearchFilterByModuleList::SymbolContextPasses
-(
- const SymbolContext &context,
- lldb::SymbolContextItem scope
- )
-{
-    if (!(scope & eSymbolContextModule))
-        return false;
-
-    if (context.module_sp && m_module_spec_list.FindFileIndex(0, context.module_sp->GetFileSpec(), true) != UINT32_MAX)
-        return true;
-    else
-        return false;
-}
-
-bool
 SearchFilterByModuleList::AddressPasses (Address &address)
 {
     // FIXME: Not yet implemented
@@ -617,7 +575,7 @@ SearchFilterByModuleList::Search (Searcher &searcher)
 void
 SearchFilterByModuleList::GetDescription (Stream *s)
 {
-    uint32_t num_modules = m_module_spec_list.GetSize();
+    size_t num_modules = m_module_spec_list.GetSize();
     if (num_modules == 1)
     {
         s->Printf (", module = ");
@@ -634,8 +592,8 @@ SearchFilterByModuleList::GetDescription (Stream *s)
     }
     else
     {
-        s->Printf (", modules(%u) = ", num_modules);
-        for (uint32_t i = 0; i < num_modules; i++)
+        s->Printf (", modules(%zu) = ", num_modules);
+        for (size_t i = 0; i < num_modules; i++)
         {
             if (s->GetVerbose())
             {
@@ -715,25 +673,8 @@ SearchFilterByModuleListAndCU::~SearchFilterByModuleListAndCU()
 }
 
 bool
-SearchFilterByModuleListAndCU::SymbolContextPasses
-(
- const SymbolContext &context,
- lldb::SymbolContextItem scope
- )
-{
-    if (!SearchFilterByModuleList::SymbolContextPasses(context, scope))
-        return false;
-    if (!(scope & eSymbolContextCompUnit))
-        return false;
-    if (context.comp_unit && m_cu_spec_list.FindFileIndex(0, context.comp_unit, false) == UINT32_MAX)
-        return false;
-    return true;
-}
-
-bool
 SearchFilterByModuleListAndCU::AddressPasses (Address &address)
 {
-    // FIXME: Not yet implemented
     return true;
 }
 
@@ -747,7 +688,20 @@ SearchFilterByModuleListAndCU::CompUnitPasses (FileSpec &fileSpec)
 bool
 SearchFilterByModuleListAndCU::CompUnitPasses (CompileUnit &compUnit)
 {
-    return m_cu_spec_list.FindFileIndex(0, compUnit, false) != UINT32_MAX;
+    bool in_cu_list = m_cu_spec_list.FindFileIndex(0, compUnit, false) != UINT32_MAX;
+    if (in_cu_list)
+    {
+        ModuleSP module_sp(compUnit.GetModule());
+        if (module_sp)
+        {
+            bool module_passes = SearchFilterByModuleList::ModulePasses(module_sp);
+            return module_passes;
+        }
+        else
+            return true;
+    }
+    else
+        return false;
 }
 
 void
@@ -812,7 +766,7 @@ SearchFilterByModuleListAndCU::Search (Searcher &searcher)
 void
 SearchFilterByModuleListAndCU::GetDescription (Stream *s)
 {
-    uint32_t num_modules = m_module_spec_list.GetSize();
+    size_t num_modules = m_module_spec_list.GetSize();
     if (num_modules == 1)
     {
         s->Printf (", module = ");
@@ -829,8 +783,8 @@ SearchFilterByModuleListAndCU::GetDescription (Stream *s)
     }
     else if (num_modules > 0)
     {
-        s->Printf (", modules(%d) = ", num_modules);
-        for (uint32_t i = 0; i < num_modules; i++)
+        s->Printf (", modules(%zd) = ", num_modules);
+        for (size_t i = 0; i < num_modules; i++)
         {
             if (s->GetVerbose())
             {

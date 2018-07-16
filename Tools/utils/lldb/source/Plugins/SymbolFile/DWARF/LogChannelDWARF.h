@@ -43,7 +43,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -52,11 +52,8 @@ public:
     static lldb_private::LogChannel *
     CreateInstance ();
 
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -76,13 +73,13 @@ public:
     virtual void
     ListCategories (lldb_private::Stream *strm);
 
-    static lldb::LogSP
+    static lldb_private::Log *
     GetLog ();
 
-    static lldb::LogSP
+    static lldb_private::Log *
     GetLogIfAll (uint32_t mask);
     
-    static lldb::LogSP
+    static lldb_private::Log *
     GetLogIfAny (uint32_t mask);
     
     static void

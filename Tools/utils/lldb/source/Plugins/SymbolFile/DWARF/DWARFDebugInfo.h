@@ -21,7 +21,7 @@ typedef std::multimap<const char*, dw_offset_t, CStringCompareFunctionObject> CS
 typedef CStringToDIEMap::iterator CStringToDIEMapIter;
 typedef CStringToDIEMap::const_iterator CStringToDIEMapConstIter;
 
-typedef STD_SHARED_PTR(DWARFCompileUnit) DWARFCompileUnitSP;
+typedef std::shared_ptr<DWARFCompileUnit> DWARFCompileUnitSP;
 
 class DWARFDebugInfo
 {
@@ -45,7 +45,7 @@ public:
             DWARFDebugInfoEntry** block_die);
 
     void AddCompileUnit(DWARFCompileUnitSP& cu);
-    uint32_t GetNumCompileUnits();
+    size_t GetNumCompileUnits();
     bool ContainsCompileUnit (const DWARFCompileUnit *cu) const;
     DWARFCompileUnit* GetCompileUnitAtIndex(uint32_t idx);
     DWARFCompileUnitSP GetCompileUnit(dw_offset_t cu_offset, uint32_t* idx_ptr = NULL);
@@ -77,7 +77,7 @@ protected:
     SymbolFileDWARF* m_dwarf2Data;
     typedef std::vector<DWARFCompileUnitSP>     CompileUnitColl;
     CompileUnitColl m_compile_units;
-    std::auto_ptr<DWARFDebugAranges> m_cu_aranges_ap; // A quick address to compile unit table
+    std::unique_ptr<DWARFDebugAranges> m_cu_aranges_ap; // A quick address to compile unit table
 
 private:
     // All parsing needs to be done partially any managed by this class as accessors are called.

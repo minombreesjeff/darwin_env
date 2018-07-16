@@ -96,7 +96,7 @@ class AliasTestCase(TestBase):
                      startstr = "Current breakpoints:",
                      substrs = [ "1: name = 'foo', locations = 1",
                                  "2: name = 'sum', locations = 1",
-                                 "3: file ='main.cpp', line = 32, locations = 1" ])
+                                 "3: file = 'main.cpp', line = 32, locations = 1" ])
 
         self.runCmd ("bpa -s python 1 -o 'print frame; print bp_loc'")
         self.runCmd ("bpa -s command 2 -o 'frame variable b'")
@@ -136,22 +136,22 @@ class AliasTestCase(TestBase):
                                  "= 0x00000044" ])
 
         self.runCmd ("alias exprf expr -f %1")
-        self.runCmd ("alias exprf2 expr -f %1 --")
+        self.runCmd ("alias exprf2 expr --raw -f %1 --")
         self.expect ("exprf x -- 1234",
                      substrs = [ "(int) $",
                                  "= 0x000004d2" ])
 
         self.expect ('exprf2 c "Hi there!"',
-                     substrs = [ "(const char) [0] = 'H'",
-                                 "(const char) [1] = 'i'",
-                                 "(const char) [2] = ' '",
-                                 "(const char) [3] = 't'",
-                                 "(const char) [4] = 'h'",
-                                 "(const char) [5] = 'e'",
-                                 "(const char) [6] = 'r'",
-                                 "(const char) [7] = 'e'",
-                                 "(const char) [8] = '!'",
-                                 "(const char) [9] = '\\0'" ])
+                     substrs = [ "[0] = 'H'",
+                                 "[1] = 'i'",
+                                 "[2] = ' '",
+                                 "[3] = 't'",
+                                 "[4] = 'h'",
+                                 "[5] = 'e'",
+                                 "[6] = 'r'",
+                                 "[7] = 'e'",
+                                 "[8] = '!'",
+                                 "[9] = '\\0'" ])
         
 
         self.expect ("exprf x 1234",

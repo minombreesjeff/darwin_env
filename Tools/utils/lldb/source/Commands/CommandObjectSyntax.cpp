@@ -59,13 +59,13 @@ CommandObjectSyntax::DoExecute (Args& command, CommandReturnObject &result)
 {
     CommandObject::CommandMap::iterator pos;
     CommandObject *cmd_obj;
-    const int argc = command.GetArgumentCount();
+    const size_t argc = command.GetArgumentCount();
 
     if (argc > 0)
     {
         cmd_obj = m_interpreter.GetCommandObject (command.GetArgumentAtIndex(0));
         bool all_okay = true;
-        for (int i = 1; i < argc; ++i)
+        for (size_t i = 1; i < argc; ++i)
         {
             std::string sub_command = command.GetArgumentAtIndex (i);
             if (!cmd_obj->IsMultiwordObject())

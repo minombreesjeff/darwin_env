@@ -30,10 +30,6 @@
 using namespace lldb;
 using namespace lldb_private;
 
-static const char *pluginName = "ABIMacOSX_i386";
-static const char *pluginDesc = "Mac OS X ABI for i386 targets";
-static const char *pluginShort = "abi.macosx-i386";
-
 enum
 {
     gcc_eax = 0,
@@ -453,7 +449,6 @@ ABIMacOSX_i386::PrepareNormalCall (Thread &thread,
                 switch (scalar.GetType())
                 {
                 case Scalar::e_void:
-                default:
                     return false;
                 case Scalar::e_sint: 
                 case Scalar::e_uint:
@@ -723,7 +718,7 @@ ABIMacOSX_i386::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueOb
     {
         DataExtractor data;
         size_t num_bytes = new_value_sp->GetData(data);
-        uint32_t offset = 0;
+        lldb::offset_t offset = 0;
         if (num_bytes <= 8)
         {
             const RegisterInfo *eax_info = reg_ctx->GetRegisterInfoByName("eax", 0);
@@ -975,8 +970,8 @@ ABIMacOSX_i386::RegisterIsCalleeSaved (const RegisterInfo *reg_info)
 void
 ABIMacOSX_i386::Initialize()
 {
-    PluginManager::RegisterPlugin (pluginName,
-                                   pluginDesc,
+    PluginManager::RegisterPlugin (GetPluginNameStatic(),
+                                   "Mac OS X ABI for i386 targets",
                                    CreateInstance);    
 }
 
@@ -986,19 +981,21 @@ ABIMacOSX_i386::Terminate()
     PluginManager::UnregisterPlugin (CreateInstance);
 }
 
+lldb_private::ConstString
+ABIMacOSX_i386::GetPluginNameStatic ()
+{
+    static ConstString g_short_name("abi.macosx-i386");
+    return g_short_name;
+    
+}
+
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 ABIMacOSX_i386::GetPluginName()
 {
-    return pluginName;
-}
-
-const char *
-ABIMacOSX_i386::GetShortPluginName()
-{
-    return pluginShort;
+    return GetPluginNameStatic();
 }
 
 uint32_t

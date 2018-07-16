@@ -14,6 +14,7 @@
 
 // C++ Includes
 #include <queue>
+#include <set>
 
 // Other libraries and framework includes
 #include "lldb/Target/Process.h"
@@ -39,6 +40,9 @@ public:
     //------------------------------------------------------------------
     // Process protocol.
     //------------------------------------------------------------------
+    virtual void
+    Finalize();
+
     virtual bool
     CanDebug(lldb_private::Target &target, bool plugin_specified_by_name);
 
@@ -65,7 +69,7 @@ public:
     DoHalt(bool &caused_stop);
 
     virtual lldb_private::Error
-    DoDetach();
+    DoDetach(bool keep_stopped);
 
     virtual lldb_private::Error
     DoSignal(int signal);
@@ -96,14 +100,29 @@ public:
     virtual lldb_private::Error
     DoDeallocateMemory(lldb::addr_t ptr);
 
+    virtual lldb::addr_t
+    ResolveIndirectFunction(const lldb_private::Address *address, lldb_private::Error &error);
+
     virtual size_t
     GetSoftwareBreakpointTrapOpcode(lldb_private::BreakpointSite* bp_site);
 
     virtual lldb_private::Error
-    EnableBreakpoint(lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite(lldb_private::BreakpointSite *bp_site);
 
     virtual lldb_private::Error
-    DisableBreakpoint(lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite(lldb_private::BreakpointSite *bp_site);
+
+    virtual lldb_private::Error
+    EnableWatchpoint(lldb_private::Watchpoint *wp, bool notify = true);
+
+    virtual lldb_private::Error
+    DisableWatchpoint(lldb_private::Watchpoint *wp, bool notify = true);
+
+    virtual lldb_private::Error
+    GetWatchpointSupportInfo(uint32_t &num);
+
+    virtual lldb_private::Error
+    GetWatchpointSupportInfo(uint32_t &num, bool &after);
 
     virtual uint32_t
     UpdateThreadListIfNeeded();
@@ -121,12 +140,6 @@ public:
     virtual size_t
     PutSTDIN(const char *buf, size_t len, lldb_private::Error &error);
 
-    virtual size_t
-    GetSTDOUT(char *buf, size_t len, lldb_private::Error &error);
-
-    virtual size_t
-    GetSTDERR(char *buf, size_t len, lldb_private::Error &error);
-
     //--------------------------------------------------------------------------
     // ProcessPOSIX internal API.
 
@@ -143,6 +156,16 @@ public:
     GetFilePath(const lldb_private::ProcessLaunchInfo::FileAction *file_action,
                 const char *default_path);
 
+    /// Stops all threads in the process.
+    /// The \p stop_tid parameter indicates the thread which initiated the stop.
+    virtual void
+    StopAllThreads(lldb::tid_t stop_tid);
+
+    /// Adds the thread to the list of threads for which we have received the initial stopping signal.
+    /// The \p stop_tid paramter indicates the thread which the stop happened for.
+    bool
+    AddThreadForInitialStopIfNeeded(lldb::tid_t stop_tid);
+
 protected:
     /// Target byte order.
     lldb::ByteOrder m_byte_order;
@@ -157,13 +180,6 @@ protected:
     lldb_private::Mutex m_message_mutex;
     std::queue<ProcessMessage> m_message_queue;
 
-    /// True when the process has entered a state of "limbo".
-    ///
-    /// This flag qualifies eStateStopped.  It lets us know that when we
-    /// continue from this state the process will exit.  Also, when true,
-    /// Process::m_exit_status is set.
-    bool m_in_limbo;
-
     /// Drive any exit events to completion.
     bool m_exit_now;
 
@@ -176,8 +192,16 @@ protected:
     /// Returns true if the process is stopped.
     bool IsStopped();
 
+    /// Returns true if at least one running is currently running
+    bool IsAThreadRunning();
+
     typedef std::map<lldb::addr_t, lldb::addr_t> MMapMap;
     MMapMap m_addr_to_mmap_size;
+
+    typedef std::set<lldb::tid_t> ThreadStopSet;
+    /// Every thread begins with a stop signal. This keeps track
+    /// of the threads for which we have received the stop signal.
+    ThreadStopSet m_seen_initial_stop;
 };
 
 #endif  // liblldb_MacOSXProcess_H_

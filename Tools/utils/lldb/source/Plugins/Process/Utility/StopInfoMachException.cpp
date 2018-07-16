@@ -34,7 +34,7 @@ StopInfoMachException::GetDescription ()
 {
     if (m_description.empty() && m_value != 0)
     {
-        ExecutionContext exe_ctx (m_thread.shared_from_this());
+        ExecutionContext exe_ctx (m_thread_wp.lock());
         Target *target = exe_ctx.GetTargetPtr();
         const llvm::Triple::ArchType cpu = target ? target->GetArchitecture().GetMachine() : llvm::Triple::UnknownArch;
 
@@ -49,7 +49,14 @@ StopInfoMachException::GetDescription ()
             exc_desc = "EXC_BAD_ACCESS";
             subcode_label = "address";
             switch (cpu)
-            {                        
+            {
+            case llvm::Triple::x86:
+            case llvm::Triple::x86_64:
+                switch (m_exc_code)
+                {
+                case 0xd: code_desc = "EXC_I386_GPFLT"; m_exc_data_count = 1; break;
+                }
+                break;
             case llvm::Triple::arm:
                 switch (m_exc_code)
                 {
@@ -186,6 +193,8 @@ StopInfoMachException::GetDescription ()
                     case 0x101: code_desc = "EXC_ARM_DA_ALIGN"; break;
                     case 0x102: code_desc = "EXC_ARM_DA_DEBUG"; break;
                     case 1: code_desc = "EXC_ARM_BREAKPOINT"; break;
+                    // FIXME temporary workaround, exc_code 0 does not really mean EXC_ARM_BREAKPOINT
+                    case 0: code_desc = "EXC_ARM_BREAKPOINT"; break;
                     }
                     break;
 
@@ -209,6 +218,12 @@ StopInfoMachException::GetDescription ()
 
         case 10:
             exc_desc = "EXC_CRASH";
+            break;
+        case 11:
+            exc_desc = "EXC_RESOURCE";
+            break;
+        case 12:
+            exc_desc = "EXC_GUARD";
             break;
         }
         
@@ -339,8 +354,8 @@ StopInfoMachException::CreateStopReasonWithMachException
         
         case 6: // EXC_BREAKPOINT
             {
-                bool is_software_breakpoint = false;
-                bool is_trace_if_software_breakpoint_missing = false;
+                bool is_actual_breakpoint = false;
+                bool is_trace_if_actual_breakpoint_missing = false;
                 switch (cpu)
                 {
                 case llvm::Triple::x86:
@@ -369,9 +384,9 @@ StopInfoMachException::CreateStopReasonWithMachException
                     {
                         // KDP returns EXC_I386_BPTFLT for trace breakpoints
                         if (exc_code == 3)
-                            is_trace_if_software_breakpoint_missing = true;
+                            is_trace_if_actual_breakpoint_missing = true;
 
-                        is_software_breakpoint = true;
+                        is_actual_breakpoint = true;
                         if (!pc_already_adjusted)
                             pc_decrement = 1;
                     }
@@ -379,11 +394,11 @@ StopInfoMachException::CreateStopReasonWithMachException
 
                 case llvm::Triple::ppc:
                 case llvm::Triple::ppc64:
-                    is_software_breakpoint = exc_code == 1; // EXC_PPC_BREAKPOINT
+                    is_actual_breakpoint = exc_code == 1; // EXC_PPC_BREAKPOINT
                     break;
                 
                 case llvm::Triple::arm:
-                    if (exc_code == 0x102)
+                    if (exc_code == 0x102) // EXC_ARM_DA_DEBUG
                     {
                         // It's a watchpoint, then, if the exc_sub_code indicates a known/enabled
                         // data break address from our watchpoint list.
@@ -402,18 +417,54 @@ StopInfoMachException::CreateStopReasonWithMachException
                         if (thread.GetTemporaryResumeState() == eStateStepping)
                             return StopInfo::CreateStopReasonToTrace(thread);
                     }
-                    else if (exc_code == 1)
+                    else if (exc_code == 1) // EXC_ARM_BREAKPOINT
                     {
-                        is_software_breakpoint = true;
-                        is_trace_if_software_breakpoint_missing = true;
+                        is_actual_breakpoint = true;
+                        is_trace_if_actual_breakpoint_missing = true;
+                    }
+                    else if (exc_code == 0) // FIXME not EXC_ARM_BREAKPOINT but a kernel is currently returning this so accept it as indicating a breakpoint until the kernel is fixed
+                    {
+                        is_actual_breakpoint = true;
+                        is_trace_if_actual_breakpoint_missing = true;
                     }
                     break;
+
+                case llvm::Triple::arm64:
+                {
+                    if (exc_code == 1 && exc_sub_code == 0) // EXC_ARM_BREAKPOINT
+                    {
+                        // This is hit when we single instruction step aka MDSCR_EL1 SS bit 0 is set
+                        return StopInfo::CreateStopReasonToTrace(thread);
+                    }
+                    if (exc_code == 0x102) // EXC_ARM_DA_DEBUG
+                    {
+                        // It's a watchpoint, then, if the exc_sub_code indicates a known/enabled
+                        // data break address from our watchpoint list.
+                        lldb::WatchpointSP wp_sp;
+                        if (target)
+                            wp_sp = target->GetWatchpointList().FindByAddress((lldb::addr_t)exc_sub_code);
+                        if (wp_sp && wp_sp->IsEnabled())
+                        {
+                            // Debugserver may piggyback the hardware index of the fired watchpoint in the exception data.
+                            // Set the hardware index if that's the case.
+                            if (exc_data_count >= 3)
+                                wp_sp->SetHardwareIndex((uint32_t)exc_sub_sub_code);
+                            return StopInfo::CreateStopReasonWithWatchpointID(thread, wp_sp->GetID());
+                        }
+                        // EXC_ARM_DA_DEBUG seems to be reused for EXC_BREAKPOINT as well as EXC_BAD_ACCESS
+                        if (thread.GetTemporaryResumeState() == eStateStepping)
+                            return StopInfo::CreateStopReasonToTrace(thread);
+                    }
+                    // It looks like exc_sub_code has the 4 bytes of the instruction that triggered the 
+                    // exception, i.e. our breakpoint opcode
+                    is_actual_breakpoint = exc_code == 1;
+                }
 
                 default:
                     break;
                 }
 
-                if (is_software_breakpoint)
+                if (is_actual_breakpoint)
                 {
                     RegisterContextSP reg_ctx_sp (thread.GetRegisterContext());
                     addr_t pc = reg_ctx_sp->GetPC() - pc_decrement;
@@ -441,7 +492,7 @@ StopInfoMachException::CreateStopReasonWithMachException
                     }
                     
                     // Don't call this a trace if we weren't single stepping this thread.
-                    if (is_trace_if_software_breakpoint_missing && thread.GetTemporaryResumeState() == eStateStepping)
+                    if (is_trace_if_actual_breakpoint_missing && thread.GetTemporaryResumeState() == eStateStepping)
                     {
                         return StopInfo::CreateStopReasonToTrace (thread);
                     }

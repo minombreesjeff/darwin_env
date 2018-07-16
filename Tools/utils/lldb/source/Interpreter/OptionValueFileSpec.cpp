@@ -15,8 +15,8 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Core/FormatManager.h"
 #include "lldb/Core/State.h"
+#include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandCompletions.h"
 
@@ -64,17 +64,7 @@ OptionValueFileSpec::DumpValue (const ExecutionContext *exe_ctx, Stream &strm, u
 
         if (m_current_value)
         {
-            if (m_current_value.GetDirectory())
-            {
-                strm << '"' << m_current_value.GetDirectory();
-                if (m_current_value.GetFilename())
-                    strm << '/' << m_current_value.GetFilename();
-                strm << '"';
-            }
-            else
-            {
-                strm << '"' << m_current_value.GetFilename() << '"';
-            }
+            strm << '"' << m_current_value.GetPath().c_str() << '"';
         }
     }
 }
@@ -94,8 +84,17 @@ OptionValueFileSpec::SetValueFromCString (const char *value_cstr,
     case eVarSetOperationAssign:
         if (value_cstr && value_cstr[0])
         {
-            m_value_was_set = true;
-            m_current_value.SetFile(value_cstr, value_cstr[0] == '~');
+            Args args(value_cstr);
+            if (args.GetArgumentCount() == 1)
+            {
+                const char *path = args.GetArgumentAtIndex(0);
+                m_value_was_set = true;
+                m_current_value.SetFile(path, true);
+            }
+            else
+            {
+                error.SetErrorString("please supply a single path argument for this file or quote the path if it contains spaces");
+            }
         }
         else
         {

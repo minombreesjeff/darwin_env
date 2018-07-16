@@ -11,11 +11,11 @@
 #define liblldb_ClangASTContext_h_
 
 // C Includes
+#include <stdint.h>
+
 // C++ Includes
 #include <string>
 #include <vector>
-#include <memory>
-#include <stdint.h>
 
 // Other libraries and framework includes
 #include "llvm/ADT/OwningPtr.h"
@@ -53,7 +53,11 @@ public:
         eTypeIsTemplate         = (1u << 14),
         eTypeIsTypedef          = (1u << 15),
         eTypeIsVector           = (1u << 16),
-        eTypeIsScalar           = (1u << 17)
+        eTypeIsScalar           = (1u << 17),
+        eTypeIsInteger          = (1u << 18),
+        eTypeIsFloat            = (1u << 19),
+        eTypeIsComplex          = (1u << 20),
+        eTypeIsSigned           = (1u << 21)
     };
 
     typedef void (*CompleteTagDeclCallback)(void *baton, clang::TagDecl *);
@@ -144,10 +148,10 @@ public:
     GetCompleteDecl (clang::ASTContext *ast,
                      clang::Decl *decl);
 
-    void SetMetadataAsUserID (uintptr_t object,
+    void SetMetadataAsUserID (const void *object,
                               lldb::user_id_t user_id);
 
-    void SetMetadata (uintptr_t object,
+    void SetMetadata (const void *object,
                       ClangASTMetadata &meta_data)
     {
         SetMetadata(getASTContext(), object, meta_data);
@@ -155,18 +159,18 @@ public:
     
     static void
     SetMetadata (clang::ASTContext *ast,
-                 uintptr_t object,
+                 const void *object,
                  ClangASTMetadata &meta_data);
     
     ClangASTMetadata *
-    GetMetadata (uintptr_t object)
+    GetMetadata (const void *object)
     {
         return GetMetadata(getASTContext(), object);
     }
     
     static ClangASTMetadata *
     GetMetadata (clang::ASTContext *ast,
-                 uintptr_t object);
+                 const void *object);
     
     //------------------------------------------------------------------
     // Basic Types
@@ -201,6 +205,9 @@ public:
 
     lldb::clang_type_t
     GetBuiltInType_objc_id();
+    
+    static lldb::clang_type_t
+    GetBuiltInType_objc_id(clang::ASTContext *ast);
 
     lldb::clang_type_t
     GetBuiltInType_objc_Class();
@@ -329,6 +336,26 @@ public:
                                                       bitfield_bit_size);
     }
     
+    clang::VarDecl *
+    AddVariableToRecordType (lldb::clang_type_t record_opaque_type,
+                             const char *name,
+                             lldb::clang_type_t var_opaque_type,
+                             lldb::AccessType access)
+    {
+        return ClangASTContext::AddVariableToRecordType (getASTContext(),
+                                                         record_opaque_type,
+                                                         name,
+                                                         var_opaque_type,
+                                                         access);
+    }
+
+    static clang::VarDecl *
+    AddVariableToRecordType (clang::ASTContext *ast,
+                             lldb::clang_type_t record_opaque_type,
+                             const char *name,
+                             lldb::clang_type_t var_opaque_type,
+                             lldb::AccessType access);
+
     static void
     BuildIndirectFields (clang::ASTContext *ast,
                          lldb::clang_type_t record_qual_type);
@@ -546,19 +573,21 @@ public:
                                lldb::clang_type_t class_opaque_type, 
                                const char *name,  // the full symbol name as seen in the symbol table ("-[NString stringWithCString:]")
                                lldb::clang_type_t method_opaque_type,
-                               lldb::AccessType access);
+                               lldb::AccessType access,
+                               bool is_artificial);
 
     clang::ObjCMethodDecl *
     AddMethodToObjCObjectType (lldb::clang_type_t class_opaque_type, 
                                const char *name,  // the full symbol name as seen in the symbol table ("-[NString stringWithCString:]")
                                lldb::clang_type_t method_opaque_type,
-                               lldb::AccessType access)
+                               lldb::AccessType access,
+                               bool is_artificial)
     {
         return AddMethodToObjCObjectType (getASTContext(),
                                           class_opaque_type,
                                           name,
                                           method_opaque_type,
-                                          access);
+                                          access, is_artificial);
     }
 
     static bool
@@ -573,8 +602,8 @@ public:
     // Returns a mask containing bits from the ClangASTContext::eTypeXXX enumerations
     static uint32_t
     GetTypeInfo (lldb::clang_type_t clang_type, 
-                     clang::ASTContext *ast,                // The AST for clang_type (can be NULL)
-                     lldb::clang_type_t *pointee_or_element_type);  // (can be NULL)
+                 clang::ASTContext *ast,                // The AST for clang_type (can be NULL)
+                 lldb::clang_type_t *pointee_or_element_type);  // (can be NULL)
 
     static uint32_t
     GetNumChildren (clang::ASTContext *ast,
@@ -596,23 +625,37 @@ public:
     static lldb::clang_type_t
     GetDirectBaseClassAtIndex (clang::ASTContext *ast, 
                                lldb::clang_type_t clang_type,
-                               uint32_t idx, 
+                               size_t idx, 
                                uint32_t *bit_offset_ptr);
 
     static lldb::clang_type_t
     GetVirtualBaseClassAtIndex (clang::ASTContext *ast, 
                                 lldb::clang_type_t clang_type,
-                                uint32_t idx, 
+                                size_t idx, 
                                 uint32_t *bit_offset_ptr);
 
     static lldb::clang_type_t
     GetFieldAtIndex (clang::ASTContext *ast, 
                      lldb::clang_type_t clang_type,
-                     uint32_t idx, 
+                     size_t idx, 
                      std::string& name,
                      uint64_t *bit_offset_ptr,
                      uint32_t *bitfield_bit_size_ptr,
                      bool *is_bitfield_ptr);
+    
+    static uint32_t
+    IsHomogeneousAggregate (clang::ASTContext *ast,
+                            lldb::clang_type_t clang_type,
+                            lldb::clang_type_t* base_type_ptr);
+
+    static size_t
+    GetIndexOfFieldWithName (clang::ASTContext *ast,
+                             lldb::clang_type_t clang_type,
+                             const char* name,
+                             lldb::clang_type_t* field_clang_type = NULL,
+                             uint64_t *bit_offset_ptr = NULL,
+                             uint32_t *bitfield_bit_size_ptr = NULL,
+                             bool *is_bitfield_ptr = NULL);
 
     static uint32_t
     GetNumPointeeChildren (lldb::clang_type_t clang_type);
@@ -621,7 +664,7 @@ public:
     GetChildClangTypeAtIndex (ExecutionContext *exe_ctx,
                               const char *parent_name,
                               lldb::clang_type_t  parent_clang_type,
-                              uint32_t idx,
+                              size_t idx,
                               bool transparent_pointers,
                               bool omit_empty_base_classes,
                               bool ignore_array_bounds,
@@ -638,7 +681,7 @@ public:
                               clang::ASTContext *ast,
                               const char *parent_name,
                               lldb::clang_type_t  parent_clang_type,
-                              uint32_t idx,
+                              size_t idx,
                               bool transparent_pointers,
                               bool omit_empty_base_classes,
                               bool ignore_array_bounds,
@@ -786,7 +829,8 @@ public:
 
     lldb::clang_type_t
     CreateArrayType (lldb::clang_type_t element_type,
-                     size_t element_count);
+                     size_t element_count,
+                     bool is_vector);
 
     //------------------------------------------------------------------
     // Tag Declarations
@@ -851,7 +895,7 @@ public:
     CreateMemberPointerType (lldb::clang_type_t  clang_pointee_type,
                              lldb::clang_type_t  clang_class_type);
 
-    uint32_t
+    uint64_t
     GetPointerBitSize ();
 
     static bool
@@ -964,7 +1008,16 @@ public:
                                const char *s, 
                                uint8_t *dst, 
                                size_t dst_size);
-    
+
+    lldb::clang_type_t
+    GetFloatTypeFromBitSize (size_t bit_size)
+    {
+        return GetFloatTypeFromBitSize (getASTContext(), bit_size);
+    }
+
+    static lldb::clang_type_t
+    GetFloatTypeFromBitSize (clang::ASTContext *ast,
+                             size_t bit_size);
     //------------------------------------------------------------------
     // Qualifiers
     //------------------------------------------------------------------
@@ -974,22 +1027,22 @@ protected:
     //------------------------------------------------------------------
     // Classes that inherit from ClangASTContext can see and modify these
     //------------------------------------------------------------------
-    std::string                             m_target_triple;
-    std::auto_ptr<clang::ASTContext>        m_ast_ap;
-    std::auto_ptr<clang::LangOptions>       m_language_options_ap;
-    std::auto_ptr<clang::FileManager>       m_file_manager_ap;
-    std::auto_ptr<clang::FileSystemOptions> m_file_system_options_ap;
-    std::auto_ptr<clang::SourceManager>     m_source_manager_ap;
-    std::auto_ptr<clang::DiagnosticsEngine>  m_diagnostics_engine_ap;
-    std::auto_ptr<clang::DiagnosticConsumer> m_diagnostic_consumer_ap;
-    std::auto_ptr<clang::TargetOptions>     m_target_options_ap;
-    std::auto_ptr<clang::TargetInfo>        m_target_info_ap;
-    std::auto_ptr<clang::IdentifierTable>   m_identifier_table_ap;
-    std::auto_ptr<clang::SelectorTable>     m_selector_table_ap;
-    std::auto_ptr<clang::Builtin::Context>  m_builtins_ap;
-    CompleteTagDeclCallback                 m_callback_tag_decl;
-    CompleteObjCInterfaceDeclCallback       m_callback_objc_decl;
-    void *                                  m_callback_baton;
+    std::string                                     m_target_triple;
+    std::unique_ptr<clang::ASTContext>               m_ast_ap;
+    std::unique_ptr<clang::LangOptions>              m_language_options_ap;
+    std::unique_ptr<clang::FileManager>              m_file_manager_ap;
+    std::unique_ptr<clang::FileSystemOptions>        m_file_system_options_ap;
+    std::unique_ptr<clang::SourceManager>            m_source_manager_ap;
+    std::unique_ptr<clang::DiagnosticsEngine>        m_diagnostics_engine_ap;
+    std::unique_ptr<clang::DiagnosticConsumer>       m_diagnostic_consumer_ap;
+    llvm::IntrusiveRefCntPtr<clang::TargetOptions>  m_target_options_rp;
+    std::unique_ptr<clang::TargetInfo>               m_target_info_ap;
+    std::unique_ptr<clang::IdentifierTable>          m_identifier_table_ap;
+    std::unique_ptr<clang::SelectorTable>            m_selector_table_ap;
+    std::unique_ptr<clang::Builtin::Context>         m_builtins_ap;
+    CompleteTagDeclCallback                         m_callback_tag_decl;
+    CompleteObjCInterfaceDeclCallback               m_callback_objc_decl;
+    void *                                          m_callback_baton;
 private:
     //------------------------------------------------------------------
     // For ClangASTContext only

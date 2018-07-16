@@ -31,7 +31,7 @@ public:
     virtual
     ~ValueObjectRegisterContext();
 
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
 
     virtual lldb::ValueType
@@ -46,11 +46,11 @@ public:
     virtual ConstString
     GetQualifiedTypeName();
 
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren();
 
     virtual ValueObject *
-    CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int32_t synthetic_index);
+    CreateChildAtIndex (size_t idx, bool synthetic_array_member, int32_t synthetic_index);
 
 protected:
     virtual bool
@@ -81,7 +81,7 @@ public:
     virtual
     ~ValueObjectRegisterSet();
 
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
 
     virtual lldb::ValueType
@@ -96,16 +96,16 @@ public:
     virtual ConstString
     GetQualifiedTypeName();
 
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren();
 
     virtual ValueObject *
-    CreateChildAtIndex (uint32_t idx, bool synthetic_array_member, int32_t synthetic_index);
+    CreateChildAtIndex (size_t idx, bool synthetic_array_member, int32_t synthetic_index);
     
     virtual lldb::ValueObjectSP
     GetChildMemberWithName (const ConstString &name, bool can_create);
 
-    virtual uint32_t
+    virtual size_t
     GetIndexOfChildWithName (const ConstString &name);
 
 
@@ -142,7 +142,7 @@ public:
     virtual
     ~ValueObjectRegister();
 
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
 
     virtual lldb::ValueType
@@ -154,11 +154,14 @@ public:
     virtual ConstString
     GetTypeName();
 
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren();
     
     virtual bool
     SetValueFromCString (const char *value_str, Error& error);
+    
+    virtual bool
+    SetData (DataExtractor &data, Error &error);
 
     virtual bool
     ResolveValue (Scalar &scalar);

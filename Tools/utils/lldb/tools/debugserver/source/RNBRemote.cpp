@@ -30,7 +30,6 @@
 
 #include <iomanip>
 #include <sstream>
-
 #include <TargetConditionals.h> // for endianness predefines
 
 //----------------------------------------------------------------------
@@ -72,7 +71,6 @@ RNBRemote::RNBRemote () :
     m_rx_packets(),
     m_rx_partial_data(),
     m_rx_pthread(0),
-    m_breakpoints(),
     m_max_payload_size(DEFAULT_GDB_REMOTE_PROTOCOL_BUFSIZE - 4),
     m_extended_mode(false),
     m_noack_mode(false),
@@ -155,9 +153,9 @@ RNBRemote::CreatePacketTable  ()
     t.push_back (Packet (remove_read_watch_bp,          &RNBRemote::HandlePacket_z,             NULL, "z3", "Remove read watchpoint"));
     t.push_back (Packet (insert_access_watch_bp,        &RNBRemote::HandlePacket_z,             NULL, "Z4", "Insert access watchpoint"));
     t.push_back (Packet (remove_access_watch_bp,        &RNBRemote::HandlePacket_z,             NULL, "z4", "Remove access watchpoint"));
+    t.push_back (Packet (query_monitor,                 &RNBRemote::HandlePacket_qRcmd,          NULL, "qRcmd", "Monitor command"));
     t.push_back (Packet (query_current_thread_id,       &RNBRemote::HandlePacket_qC,            NULL, "qC", "Query current thread ID"));
     t.push_back (Packet (query_get_pid,                 &RNBRemote::HandlePacket_qGetPid,       NULL, "qGetPid", "Query process id"));
-//  t.push_back (Packet (query_memory_crc,              &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "qCRC:", "Compute CRC of memory region"));
     t.push_back (Packet (query_thread_ids_first,        &RNBRemote::HandlePacket_qThreadInfo,   NULL, "qfThreadInfo", "Get list of active threads (first req)"));
     t.push_back (Packet (query_thread_ids_subsequent,   &RNBRemote::HandlePacket_qThreadInfo,   NULL, "qsThreadInfo", "Get list of active threads (subsequent req)"));
     // APPLE LOCAL: qThreadStopInfo
@@ -173,6 +171,7 @@ RNBRemote::CreatePacketTable  ()
     t.push_back (Packet (query_vattachorwait_supported, &RNBRemote::HandlePacket_qVAttachOrWaitSupported,NULL, "qVAttachOrWaitSupported", "Replys with OK if the 'vAttachOrWait' packet is supported."));
     t.push_back (Packet (query_sync_thread_state_supported, &RNBRemote::HandlePacket_qSyncThreadStateSupported,NULL, "qSyncThreadStateSupported", "Replys with OK if the 'QSyncThreadState:' packet is supported."));
     t.push_back (Packet (query_host_info,               &RNBRemote::HandlePacket_qHostInfo,     NULL, "qHostInfo", "Replies with multiple 'key:value;' tuples appended to each other."));
+    t.push_back (Packet (query_process_info,            &RNBRemote::HandlePacket_qProcessInfo,     NULL, "qProcessInfo", "Replies with multiple 'key:value;' tuples appended to each other."));
 //  t.push_back (Packet (query_symbol_lookup,           &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "qSymbol", "Notify that host debugger is ready to do symbol lookups"));
     t.push_back (Packet (start_noack_mode,              &RNBRemote::HandlePacket_QStartNoAckMode        , NULL, "QStartNoAckMode", "Request that " DEBUGSERVER_PROGRAM_NAME " stop acking remote protocol packets"));
     t.push_back (Packet (prefix_reg_packets_with_tid,   &RNBRemote::HandlePacket_QThreadSuffixSupported , NULL, "QThreadSuffixSupported", "Check if thread specifc packets (register packets 'g', 'G', 'p', and 'P') support having the thread ID appended to the end of the command"));
@@ -194,8 +193,9 @@ RNBRemote::CreatePacketTable  ()
     t.push_back (Packet (deallocate_memory,             &RNBRemote::HandlePacket_DeallocateMemory, NULL, "_m", "Deallocate memory in the inferior process."));
     t.push_back (Packet (memory_region_info,            &RNBRemote::HandlePacket_MemoryRegionInfo, NULL, "qMemoryRegionInfo", "Return size and attributes of a memory region that contains the given address"));
     t.push_back (Packet (get_profile_data,              &RNBRemote::HandlePacket_GetProfileData, NULL, "qGetProfileData", "Return profiling data of the current target."));
-    t.push_back (Packet (set_enable_profiling,          &RNBRemote::HandlePacket_SetAsyncEnableProfiling, NULL, "QSetAsyncEnableProfiling", "Enable or disable the profiling of current target."));
+    t.push_back (Packet (set_enable_profiling,          &RNBRemote::HandlePacket_SetEnableAsyncProfiling, NULL, "QSetEnableAsyncProfiling", "Enable or disable the profiling of current target."));
     t.push_back (Packet (watchpoint_support_info,       &RNBRemote::HandlePacket_WatchpointSupportInfo, NULL, "qWatchpointSupportInfo", "Return the number of supported hardware watchpoints"));
+    t.push_back (Packet (set_process_event,             &RNBRemote::HandlePacket_QSetProcessEvent, NULL, "QSetProcessEvent:", "Set a process event, to be passed to the process, can be set before the process is started, or after."));
 
 }
 
@@ -782,6 +782,36 @@ RNBRemote::ThreadFunctionReadRemoteData(void *arg)
 }
 
 
+// If we fail to get back a valid CPU type for the remote process,
+// make a best guess for the CPU type based on the currently running
+// debugserver binary -- the debugger may not handle the case of an
+// un-specified process CPU type correctly.
+
+static cpu_type_t
+best_guess_cpu_type ()
+{
+#if defined (__arm__) || defined (__arm64__)
+    if (sizeof (char *) == 8)
+    {
+        return CPU_TYPE_ARM64;
+    }   
+    else
+    {
+        return CPU_TYPE_ARM;
+    }   
+#elif defined (__i386__) || defined (__x86_64__)
+    if (sizeof (char*) == 8)
+    {
+        return CPU_TYPE_X86_64;
+    }
+    else
+    {
+        return CPU_TYPE_I386;
+    }
+#endif
+    return 0;
+}
+
 
 /* Read the bytes in STR which are GDB Remote Protocol binary encoded bytes
  (8-bit bytes).
@@ -878,65 +908,267 @@ g_gdb_register_map_arm[] =
     { 13,  4,  "sp",    {0}, NULL, 1},
     { 14,  4,  "lr",    {0}, NULL, 1},
     { 15,  4,  "pc",    {0}, NULL, 1},
-    { 16, 12,  "f0",    {0}, k_zero_bytes, 0},
-    { 17, 12,  "f1",    {0}, k_zero_bytes, 0},
-    { 18, 12,  "f2",    {0}, k_zero_bytes, 0},
-    { 19, 12,  "f3",    {0}, k_zero_bytes, 0},
-    { 20, 12,  "f4",    {0}, k_zero_bytes, 0},
-    { 21, 12,  "f5",    {0}, k_zero_bytes, 0},
-    { 22, 12,  "f6",    {0}, k_zero_bytes, 0},
-    { 23, 12,  "f7",    {0}, k_zero_bytes, 0},
-    { 24,  4, "fps",    {0}, k_zero_bytes, 0},
-    { 25,  4,"cpsr",    {0}, NULL, 1},
-    { 26,  4,  "s0",    {0}, NULL, 0},
-    { 27,  4,  "s1",    {0}, NULL, 0},
-    { 28,  4,  "s2",    {0}, NULL, 0},
-    { 29,  4,  "s3",    {0}, NULL, 0},
-    { 30,  4,  "s4",    {0}, NULL, 0},
-    { 31,  4,  "s5",    {0}, NULL, 0},
-    { 32,  4,  "s6",    {0}, NULL, 0},
-    { 33,  4,  "s7",    {0}, NULL, 0},
-    { 34,  4,  "s8",    {0}, NULL, 0},
-    { 35,  4,  "s9",    {0}, NULL, 0},
-    { 36,  4, "s10",    {0}, NULL, 0},
-    { 37,  4, "s11",    {0}, NULL, 0},
-    { 38,  4, "s12",    {0}, NULL, 0},
-    { 39,  4, "s13",    {0}, NULL, 0},
-    { 40,  4, "s14",    {0}, NULL, 0},
-    { 41,  4, "s15",    {0}, NULL, 0},
-    { 42,  4, "s16",    {0}, NULL, 0},
-    { 43,  4, "s17",    {0}, NULL, 0},
-    { 44,  4, "s18",    {0}, NULL, 0},
-    { 45,  4, "s19",    {0}, NULL, 0},
-    { 46,  4, "s20",    {0}, NULL, 0},
-    { 47,  4, "s21",    {0}, NULL, 0},
-    { 48,  4, "s22",    {0}, NULL, 0},
-    { 49,  4, "s23",    {0}, NULL, 0},
-    { 50,  4, "s24",    {0}, NULL, 0},
-    { 51,  4, "s25",    {0}, NULL, 0},
-    { 52,  4, "s26",    {0}, NULL, 0},
-    { 53,  4, "s27",    {0}, NULL, 0},
-    { 54,  4, "s28",    {0}, NULL, 0},
-    { 55,  4, "s29",    {0}, NULL, 0},
-    { 56,  4, "s30",    {0}, NULL, 0},
-    { 57,  4, "s31",    {0}, NULL, 0},
-    { 58,  4, "fpscr",  {0}, NULL, 0},
-    { 59,  8, "d16",    {0}, NULL, 0},
-    { 60,  8, "d17",    {0}, NULL, 0},
-    { 61,  8, "d18",    {0}, NULL, 0},
-    { 62,  8, "d19",    {0}, NULL, 0},
-    { 63,  8, "d20",    {0}, NULL, 0},
-    { 64,  8, "d21",    {0}, NULL, 0},
-    { 65,  8, "d22",    {0}, NULL, 0},
-    { 66,  8, "d23",    {0}, NULL, 0},
-    { 67,  8, "d24",    {0}, NULL, 0},
-    { 68,  8, "d25",    {0}, NULL, 0},
-    { 69,  8, "d26",    {0}, NULL, 0},
-    { 70,  8, "d27",    {0}, NULL, 0},
-    { 71,  8, "d28",    {0}, NULL, 0},
-    { 72,  8, "d29",    {0}, NULL, 0},
-    { 73,  8, "d30",    {0}, NULL, 0},
-    { 74,  8, "d31",    {0}, NULL, 0}
+    { 16,  4,"cpsr",    {0}, NULL, 1},               // current program status register
+    { 17,  4,  "s0",    {0}, NULL, 0},
+    { 18,  4,  "s1",    {0}, NULL, 0},
+    { 19,  4,  "s2",    {0}, NULL, 0},
+    { 20,  4,  "s3",    {0}, NULL, 0},
+    { 21,  4,  "s4",    {0}, NULL, 0},
+    { 22,  4,  "s5",    {0}, NULL, 0},
+    { 23,  4,  "s6",    {0}, NULL, 0},
+    { 24,  4,  "s7",    {0}, NULL, 0},
+    { 25,  4,  "s8",    {0}, NULL, 0},
+    { 26,  4,  "s9",    {0}, NULL, 0},
+    { 27,  4, "s10",    {0}, NULL, 0},
+    { 28,  4, "s11",    {0}, NULL, 0},
+    { 29,  4, "s12",    {0}, NULL, 0},
+    { 30,  4, "s13",    {0}, NULL, 0},
+    { 31,  4, "s14",    {0}, NULL, 0},
+    { 32,  4, "s15",    {0}, NULL, 0},
+    { 33,  4, "s16",    {0}, NULL, 0},
+    { 34,  4, "s17",    {0}, NULL, 0},
+    { 35,  4, "s18",    {0}, NULL, 0},
+    { 36,  4, "s19",    {0}, NULL, 0},
+    { 37,  4, "s20",    {0}, NULL, 0},
+    { 38,  4, "s21",    {0}, NULL, 0},
+    { 39,  4, "s22",    {0}, NULL, 0},
+    { 40,  4, "s23",    {0}, NULL, 0},
+    { 41,  4, "s24",    {0}, NULL, 0},
+    { 42,  4, "s25",    {0}, NULL, 0},
+    { 43,  4, "s26",    {0}, NULL, 0},
+    { 44,  4, "s27",    {0}, NULL, 0},
+    { 45,  4, "s28",    {0}, NULL, 0},
+    { 46,  4, "s29",    {0}, NULL, 0},
+    { 47,  4, "s30",    {0}, NULL, 0},
+    { 48,  4, "s31",    {0}, NULL, 0},
+    { 49,  8, "d0",     {0}, NULL, 0},
+    { 50,  8, "d1",     {0}, NULL, 0},
+    { 51,  8, "d2",     {0}, NULL, 0},
+    { 52,  8, "d3",     {0}, NULL, 0},
+    { 53,  8, "d4",     {0}, NULL, 0},
+    { 54,  8, "d5",     {0}, NULL, 0},
+    { 55,  8, "d6",     {0}, NULL, 0},
+    { 56,  8, "d7",     {0}, NULL, 0},
+    { 57,  8, "d8",     {0}, NULL, 0},
+    { 58,  8, "d9",     {0}, NULL, 0},
+    { 59,  8, "d10",    {0}, NULL, 0},
+    { 60,  8, "d11",    {0}, NULL, 0},
+    { 61,  8, "d12",    {0}, NULL, 0},
+    { 62,  8, "d13",    {0}, NULL, 0},
+    { 63,  8, "d14",    {0}, NULL, 0},
+    { 64,  8, "d15",    {0}, NULL, 0},
+    { 65,  8, "d16",    {0}, NULL, 0},
+    { 66,  8, "d17",    {0}, NULL, 0},
+    { 67,  8, "d18",    {0}, NULL, 0},
+    { 68,  8, "d19",    {0}, NULL, 0},
+    { 69,  8, "d20",    {0}, NULL, 0},
+    { 70,  8, "d21",    {0}, NULL, 0},
+    { 71,  8, "d22",    {0}, NULL, 0},
+    { 72,  8, "d23",    {0}, NULL, 0},
+    { 73,  8, "d24",    {0}, NULL, 0},
+    { 74,  8, "d25",    {0}, NULL, 0},
+    { 75,  8, "d26",    {0}, NULL, 0},
+    { 76,  8, "d27",    {0}, NULL, 0},
+    { 77,  8, "d28",    {0}, NULL, 0},
+    { 78,  8, "d29",    {0}, NULL, 0},
+    { 79,  8, "d30",    {0}, NULL, 0},
+    { 80,  8, "d31",    {0}, NULL, 0},
+    { 81, 16, "q0",     {0}, NULL, 0},
+    { 82, 16, "q1",     {0}, NULL, 0},
+    { 83, 16, "q2",     {0}, NULL, 0},
+    { 84, 16, "q3",     {0}, NULL, 0},
+    { 85, 16, "q4",     {0}, NULL, 0},
+    { 86, 16, "q5",     {0}, NULL, 0},
+    { 87, 16, "q6",     {0}, NULL, 0},
+    { 88, 16, "q7",     {0}, NULL, 0},
+    { 89, 16, "q8",     {0}, NULL, 0},
+    { 90, 16, "q9",     {0}, NULL, 0},
+    { 91, 16, "q10",    {0}, NULL, 0},
+    { 92, 16, "q11",    {0}, NULL, 0},
+    { 93, 16, "q12",    {0}, NULL, 0},
+    { 94, 16, "q13",    {0}, NULL, 0},
+    { 95, 16, "q14",    {0}, NULL, 0},
+    { 96, 16, "q15",    {0}, NULL, 0},
+    { 97,  4, "fpscr",  {0}, NULL, 0}
+};
+
+//----------------------------------------------------------------------
+// ARM64 register sets as gdb knows them
+//----------------------------------------------------------------------
+register_map_entry_t
+g_gdb_register_map_arm64[] =
+{
+// Using the "gdb" numbers from fastsim here
+    { 0,  8,  "x0",    {0}, NULL, 1},
+    { 1,  8,  "x1",    {0}, NULL, 1},
+    { 2,  8,  "x2",    {0}, NULL, 1},
+    { 3,  8,  "x3",    {0}, NULL, 1},
+    { 4,  8,  "x4",    {0}, NULL, 0},
+    { 5,  8,  "x5",    {0}, NULL, 0},
+    { 6,  8,  "x6",    {0}, NULL, 0},
+    { 7,  8,  "x7",    {0}, NULL, 0},
+    { 8,  8,  "x8",    {0}, NULL, 0},
+    { 9,  8,  "x9",    {0}, NULL, 0},
+    { 10, 8, "x10",    {0}, NULL, 0},
+    { 11, 8, "x11",    {0}, NULL, 0},
+    { 12, 8, "x12",    {0}, NULL, 0},
+    { 13, 8, "x13",    {0}, NULL, 0},
+    { 14, 8, "x14",    {0}, NULL, 0},
+    { 15, 8, "x15",    {0}, NULL, 0},
+    { 16, 8, "x16",    {0}, NULL, 0},
+    { 17, 8, "x17",    {0}, NULL, 0},
+    { 18, 8, "x18",    {0}, NULL, 0},
+    { 19, 8, "x19",    {0}, NULL, 0},
+    { 20, 8, "x20",    {0}, NULL, 0},
+    { 21, 8, "x21",    {0}, NULL, 0},
+    { 22, 8, "x22",    {0}, NULL, 0},
+    { 23, 8, "x23",    {0}, NULL, 0},
+    { 24, 8, "x24",    {0}, NULL, 0},
+    { 25, 8, "x25",    {0}, NULL, 0},
+    { 26, 8, "x26",    {0}, NULL, 0},
+    { 27, 8, "x27",    {0}, NULL, 0},
+    { 28, 8, "x28",    {0}, NULL, 0},
+    { 29, 8, "x29",    {0}, NULL, 1}, // fp aka x29
+    { 30, 8, "x30",    {0}, NULL, 1}, // ra aka x30 aka lr
+    { 31, 8, "sp",     {0}, NULL, 1}, // sp aka xsp
+    { 32, 8, "pc",     {0}, NULL, 1},
+
+// These seem possible/likely numberings?  I'm making up the rest of them here.
+
+    { 33, 4, "cpsr",    {0}, NULL, 1}, // cpsr aka psr
+
+    { 34, 16,  "v0",    {0}, NULL, 0},
+    { 35, 16,  "v1",    {0}, NULL, 0},
+    { 36, 16,  "v2",    {0}, NULL, 0},
+    { 37, 16,  "v3",    {0}, NULL, 0},
+    { 38, 16,  "v4",    {0}, NULL, 0},
+    { 39, 16,  "v5",    {0}, NULL, 0},
+    { 40, 16,  "v6",    {0}, NULL, 0},
+    { 41, 16,  "v7",    {0}, NULL, 0},
+    { 42, 16,  "v8",    {0}, NULL, 0},
+    { 43, 16,  "v9",    {0}, NULL, 0},
+    { 44, 16, "v10",    {0}, NULL, 0},
+    { 45, 16, "v11",    {0}, NULL, 0},
+    { 46, 16, "v12",    {0}, NULL, 0},
+    { 47, 16, "v13",    {0}, NULL, 0},
+    { 48, 16, "v14",    {0}, NULL, 0},
+    { 49, 16, "v15",    {0}, NULL, 0},
+    { 50, 16, "v16",    {0}, NULL, 0},
+    { 51, 16, "v17",    {0}, NULL, 0},
+    { 52, 16, "v18",    {0}, NULL, 0},
+    { 53, 16, "v19",    {0}, NULL, 0},
+    { 54, 16, "v20",    {0}, NULL, 0},
+    { 55, 16, "v21",    {0}, NULL, 0},
+    { 56, 16, "v22",    {0}, NULL, 0},
+    { 57, 16, "v23",    {0}, NULL, 0},
+    { 58, 16, "v24",    {0}, NULL, 0},
+    { 59, 16, "v25",    {0}, NULL, 0},
+    { 60, 16, "v26",    {0}, NULL, 0},
+    { 61, 16, "v27",    {0}, NULL, 0},
+    { 62, 16, "v28",    {0}, NULL, 0},
+    { 63, 16, "v29",    {0}, NULL, 0},
+    { 64, 16, "v30",    {0}, NULL, 0},
+    { 65, 16, "v31",    {0}, NULL, 0},
+
+    { 66, 4, "fpsr",    {0}, NULL, 0},
+    { 67, 4, "fpcr",    {0}, NULL, 0},
+
+    { 68, 4,  "s0",    {0}, NULL, 0},
+    { 69, 4,  "s1",    {0}, NULL, 0},
+    { 70, 4,  "s2",    {0}, NULL, 0},
+    { 71, 4,  "s3",    {0}, NULL, 0},
+    { 72, 4,  "s4",    {0}, NULL, 0},
+    { 73, 4,  "s5",    {0}, NULL, 0},
+    { 74, 4,  "s6",    {0}, NULL, 0},
+    { 75, 4,  "s7",    {0}, NULL, 0},
+    { 76, 4,  "s8",    {0}, NULL, 0},
+    { 77, 4,  "s9",    {0}, NULL, 0},
+    { 78, 4, "s10",    {0}, NULL, 0},
+    { 79, 4, "s11",    {0}, NULL, 0},
+    { 80, 4, "s12",    {0}, NULL, 0},
+    { 81, 4, "s13",    {0}, NULL, 0},
+    { 82, 4, "s14",    {0}, NULL, 0},
+    { 83, 4, "s15",    {0}, NULL, 0},
+    { 84, 4, "s16",    {0}, NULL, 0},
+    { 85, 4, "s17",    {0}, NULL, 0},
+    { 86, 4, "s18",    {0}, NULL, 0},
+    { 87, 4, "s19",    {0}, NULL, 0},
+    { 88, 4, "s20",    {0}, NULL, 0},
+    { 89, 4, "s21",    {0}, NULL, 0},
+    { 90, 4, "s22",    {0}, NULL, 0},
+    { 91, 4, "s23",    {0}, NULL, 0},
+    { 92, 4, "s24",    {0}, NULL, 0},
+    { 93, 4, "s25",    {0}, NULL, 0},
+    { 94, 4, "s26",    {0}, NULL, 0},
+    { 95, 4, "s27",    {0}, NULL, 0},
+    { 96, 4, "s28",    {0}, NULL, 0},
+    { 97, 4, "s29",    {0}, NULL, 0},
+    { 98, 4, "s30",    {0}, NULL, 0},
+    { 99, 4, "s31",    {0}, NULL, 0},
+
+    { 100, 8,  "d0",    {0}, NULL, 0},
+    { 101, 8,  "d1",    {0}, NULL, 0},
+    { 102, 8,  "d2",    {0}, NULL, 0},
+    { 103, 8,  "d3",    {0}, NULL, 0},
+    { 104, 8,  "d4",    {0}, NULL, 0},
+    { 105, 8,  "d5",    {0}, NULL, 0},
+    { 106, 8,  "d6",    {0}, NULL, 0},
+    { 107, 8,  "d7",    {0}, NULL, 0},
+    { 108, 8,  "d8",    {0}, NULL, 0},
+    { 109, 8,  "d9",    {0}, NULL, 0},
+    { 110, 8, "d10",    {0}, NULL, 0},
+    { 111, 8, "d11",    {0}, NULL, 0},
+    { 112, 8, "d12",    {0}, NULL, 0},
+    { 113, 8, "d13",    {0}, NULL, 0},
+    { 114, 8, "d14",    {0}, NULL, 0},
+    { 115, 8, "d15",    {0}, NULL, 0},
+    { 116, 8, "d16",    {0}, NULL, 0},
+    { 117, 8, "d17",    {0}, NULL, 0},
+    { 118, 8, "d18",    {0}, NULL, 0},
+    { 119, 8, "d19",    {0}, NULL, 0},
+    { 120, 8, "d20",    {0}, NULL, 0},
+    { 121, 8, "d21",    {0}, NULL, 0},
+    { 122, 8, "d22",    {0}, NULL, 0},
+    { 123, 8, "d23",    {0}, NULL, 0},
+    { 124, 8, "d24",    {0}, NULL, 0},
+    { 125, 8, "d25",    {0}, NULL, 0},
+    { 126, 8, "d26",    {0}, NULL, 0},
+    { 127, 8, "d27",    {0}, NULL, 0},
+    { 128, 8, "d28",    {0}, NULL, 0},
+    { 129, 8, "d29",    {0}, NULL, 0},
+    { 130, 8, "d30",    {0}, NULL, 0},
+    { 131, 8, "d31",    {0}, NULL, 0},
+
+    { 132, 4,  "w0",    {0}, NULL, 0},
+    { 133, 4,  "w1",    {0}, NULL, 0},
+    { 134, 4,  "w2",    {0}, NULL, 0},
+    { 135, 4,  "w3",    {0}, NULL, 0},
+    { 136, 4,  "w4",    {0}, NULL, 0},
+    { 137, 4,  "w5",    {0}, NULL, 0},
+    { 138, 4,  "w6",    {0}, NULL, 0},
+    { 139, 4,  "w7",    {0}, NULL, 0},
+    { 140, 4,  "w8",    {0}, NULL, 0},
+    { 141, 4,  "w9",    {0}, NULL, 0},
+    { 142, 4,  "w10",   {0}, NULL, 0},
+    { 143, 4,  "w11",   {0}, NULL, 0},
+    { 144, 4,  "w12",   {0}, NULL, 0},
+    { 145, 4,  "w13",   {0}, NULL, 0},
+    { 146, 4,  "w14",   {0}, NULL, 0},
+    { 147, 4,  "w15",   {0}, NULL, 0},
+    { 148, 4,  "w16",   {0}, NULL, 0},
+    { 149, 4,  "w17",   {0}, NULL, 0},
+    { 150, 4,  "w18",   {0}, NULL, 0},
+    { 151, 4,  "w19",   {0}, NULL, 0},
+    { 152, 4,  "w20",   {0}, NULL, 0},
+    { 153, 4,  "w21",   {0}, NULL, 0},
+    { 154, 4,  "w22",   {0}, NULL, 0},
+    { 155, 4,  "w23",   {0}, NULL, 0},
+    { 156, 4,  "w24",   {0}, NULL, 0},
+    { 157, 4,  "w25",   {0}, NULL, 0},
+    { 158, 4,  "w26",   {0}, NULL, 0},
+    { 159, 4,  "w27",   {0}, NULL, 0},
+    { 160, 4,  "w28",   {0}, NULL, 0}
+
 };
 
 register_map_entry_t
@@ -1056,7 +1288,7 @@ RNBRemote::Initialize()
 
 
 bool
-RNBRemote::InitializeRegisters ()
+RNBRemote::InitializeRegisters (bool force)
 {
     pid_t pid = m_ctx.ProcessID();
     if (pid == INVALID_NUB_PROCESS)
@@ -1070,6 +1302,13 @@ RNBRemote::InitializeRegisters ()
         // registers to be discovered using multiple qRegisterInfo calls to get
         // all register information after the architecture for the process is
         // determined.
+        if (force)
+        {
+            g_dynamic_register_map.clear();
+            g_reg_entries = NULL;
+            g_num_reg_entries = 0;
+        }
+
         if (g_dynamic_register_map.empty())
         {
             nub_size_t num_reg_sets = 0;
@@ -1104,6 +1343,12 @@ RNBRemote::InitializeRegisters ()
     else
     {
         uint32_t cpu_type = DNBProcessGetCPUType (pid);
+        if (cpu_type == 0)
+        {
+            DNBLog ("Unable to get the process cpu_type, making a best guess.");
+            cpu_type = best_guess_cpu_type ();
+        }
+
         DNBLogThreadedIf (LOG_RNB_PROC, "RNBRemote::%s() getting gdb registers(%s)", __FUNCTION__, m_arch.c_str());
 #if defined (__i386__) || defined (__x86_64__)
         if (cpu_type == CPU_TYPE_X86_64)
@@ -1136,7 +1381,7 @@ RNBRemote::InitializeRegisters ()
             g_num_reg_entries = sizeof (g_gdb_register_map_i386) / sizeof (register_map_entry_t);
             return true;
         }
-#elif defined (__arm__)
+#elif defined (__arm__) || defined (__arm64__)
         if (cpu_type == CPU_TYPE_ARM)
         {
             const size_t num_regs = sizeof (g_gdb_register_map_arm) / sizeof (register_map_entry_t);
@@ -1152,7 +1397,23 @@ RNBRemote::InitializeRegisters ()
             g_num_reg_entries = sizeof (g_gdb_register_map_arm) / sizeof (register_map_entry_t);
             return true;
         }
+        if (cpu_type == CPU_TYPE_ARM64)
+        {
+            const size_t num_regs = sizeof (g_gdb_register_map_arm64) / sizeof (register_map_entry_t);
+            for (uint32_t i=0; i<num_regs; ++i)
+            {
+                if (!DNBGetRegisterInfoByName (g_gdb_register_map_arm64[i].gdb_name, &g_gdb_register_map_arm64[i].nub_info))
+                {
+                    RegisterEntryNotAvailable (&g_gdb_register_map_arm64[i]);
+                    assert (g_gdb_register_map_arm64[i].gdb_size <= MAX_REGISTER_BYTE_SIZE);
+                }
+            }
+            g_reg_entries = g_gdb_register_map_arm64;
+            g_num_reg_entries = sizeof (g_gdb_register_map_arm64) / sizeof (register_map_entry_t);
+            return true;
+        }
 #endif
+
     }
     return false;
 }
@@ -1434,6 +1695,134 @@ RNBRemote::HandlePacket_qThreadExtraInfo (const char *p)
     return SendPacket ("");
 }
 
+
+const char *k_space_delimiters = " \t";
+static void
+skip_spaces (std::string &line)
+{
+    if (!line.empty())
+    {
+        size_t space_pos = line.find_first_not_of (k_space_delimiters);
+        if (space_pos > 0)
+            line.erase(0, space_pos);
+    }
+}
+
+static std::string
+get_identifier (std::string &line)
+{
+    std::string word;
+    skip_spaces (line);
+    const size_t line_size = line.size();
+    size_t end_pos;
+    for (end_pos = 0; end_pos < line_size; ++end_pos)
+    {
+        if (end_pos == 0)
+        {
+            if (isalpha(line[end_pos]) || line[end_pos] == '_')
+                continue;
+        }
+        else if (isalnum(line[end_pos]) || line[end_pos] == '_')
+            continue;
+        break;
+    }
+    word.assign (line, 0, end_pos);
+    line.erase(0, end_pos);
+    return word;
+}
+
+static std::string
+get_operator (std::string &line)
+{
+    std::string op;
+    skip_spaces (line);
+    if (!line.empty())
+    {
+        if (line[0] == '=')
+        {
+            op = '=';
+            line.erase(0,1);
+        }
+    }
+    return op;
+}
+
+static std::string
+get_value (std::string &line)
+{
+    std::string value;
+    skip_spaces (line);
+    if (!line.empty())
+    {
+        value.swap(line);
+    }
+    return value;
+}
+
+extern void FileLogCallback(void *baton, uint32_t flags, const char *format, va_list args);
+extern void ASLLogCallback(void *baton, uint32_t flags, const char *format, va_list args);
+
+rnb_err_t
+RNBRemote::HandlePacket_qRcmd (const char *p)
+{
+    const char *c = p + strlen("qRcmd,");
+    std::string line;
+    while (c[0] && c[1])
+    {
+        char smallbuf[3] = { c[0], c[1], '\0' };
+        errno = 0;
+        int ch = strtoul (smallbuf, NULL, 16);
+        if (errno != 0 && ch == 0)
+            return HandlePacket_ILLFORMED (__FILE__, __LINE__, p, "non-hex char in payload of qRcmd packet");
+        line.push_back(ch);
+        c += 2;
+    }
+    if (*c == '\0')
+    {
+        std::string command = get_identifier(line);
+        if (command.compare("set") == 0)
+        {
+            std::string variable = get_identifier (line);
+            std::string op = get_operator (line);
+            std::string value = get_value (line);
+            if (variable.compare("logfile") == 0)
+            {
+                FILE *log_file = fopen(value.c_str(), "w");
+                if (log_file)
+                {
+                    DNBLogSetLogCallback(FileLogCallback, log_file);
+                    return SendPacket ("OK");
+                }
+                return SendPacket ("E71");
+            }
+            else if (variable.compare("logmask") == 0)
+            {
+                char *end;
+                errno = 0;
+                uint32_t logmask = strtoul (value.c_str(), &end, 0);
+                if (errno == 0 && end && *end == '\0')
+                {
+                    DNBLogSetLogMask (logmask);
+                    if (!DNBLogGetLogCallback())
+                        DNBLogSetLogCallback(ASLLogCallback, NULL);
+                    return SendPacket ("OK");
+                }
+                errno = 0;
+                logmask = strtoul (value.c_str(), &end, 16);
+                if (errno == 0 && end && *end == '\0')
+                {
+                    DNBLogSetLogMask (logmask);
+                    return SendPacket ("OK");
+                }
+                return SendPacket ("E72");
+            }
+            return SendPacket ("E70");
+        }
+        return SendPacket ("E69");
+    }
+    return SendPacket ("E73");
+}
+
 rnb_err_t
 RNBRemote::HandlePacket_qC (const char *p)
 {
@@ -1551,6 +1940,30 @@ RNBRemote::HandlePacket_qRegisterInfo (const char *p)
             case GENERIC_REGNUM_ARG8:   ostrm << "generic:arg8;"; break;
             default: break;
         }
+        
+        if (reg_entry->nub_info.pseudo_regs && reg_entry->nub_info.pseudo_regs[0] != INVALID_NUB_REGNUM)
+        {
+            ostrm << "container-regs:";
+            for (unsigned i=0; reg_entry->nub_info.pseudo_regs[i] != INVALID_NUB_REGNUM; ++i)
+            {
+                if (i > 0)
+                    ostrm << ',';
+                ostrm << RAW_HEXBASE << reg_entry->nub_info.pseudo_regs[i];
+            }
+            ostrm << ';';
+        }
+
+        if (reg_entry->nub_info.update_regs && reg_entry->nub_info.update_regs[0] != INVALID_NUB_REGNUM)
+        {
+            ostrm << "invalidate-regs:";
+            for (unsigned i=0; reg_entry->nub_info.update_regs[i] != INVALID_NUB_REGNUM; ++i)
+            {
+                if (i > 0)
+                    ostrm << ',';
+                ostrm << RAW_HEXBASE << reg_entry->nub_info.update_regs[i];
+            }
+            ostrm << ';';
+        }
 
         return SendPacket (ostrm.str ());
     }
@@ -1581,6 +1994,16 @@ set_logging (const char *p)
             {
                 if (*p == '|')
                     p++;
+
+// to regenerate the LOG_ entries (not including the LOG_RNB entries)
+// $ for logname in `grep '^#define LOG_' DNBDefs.h | egrep -v 'LOG_HI|LOG_LO' | awk '{print $2}'` 
+// do 
+//   echo "                else if (strncmp (p, \"$logname\", sizeof (\"$logname\") - 1) == 0)"
+//   echo "                {" 
+//   echo "                    p += sizeof (\"$logname\") - 1;"
+//   echo "                    bitmask |= $logname;"
+//   echo "                }"
+// done
                 if (strncmp (p, "LOG_VERBOSE", sizeof ("LOG_VERBOSE") - 1) == 0)
                 {
                     p += sizeof ("LOG_VERBOSE") - 1;
@@ -1621,26 +2044,48 @@ set_logging (const char *p)
                     p += sizeof ("LOG_MEMORY_DATA_LONG") - 1;
                     bitmask |= LOG_MEMORY_DATA_LONG;
                 }
+                else if (strncmp (p, "LOG_MEMORY_PROTECTIONS", sizeof ("LOG_MEMORY_PROTECTIONS") - 1) == 0)
+                {
+                    p += sizeof ("LOG_MEMORY_PROTECTIONS") - 1;
+                    bitmask |= LOG_MEMORY_PROTECTIONS;
+                }
                 else if (strncmp (p, "LOG_BREAKPOINTS", sizeof ("LOG_BREAKPOINTS") - 1) == 0)
                 {
                     p += sizeof ("LOG_BREAKPOINTS") - 1;
                     bitmask |= LOG_BREAKPOINTS;
-                }
-                else if (strncmp (p, "LOG_ALL", sizeof ("LOG_ALL") - 1) == 0)
-                {
-                    p += sizeof ("LOG_ALL") - 1;
-                    bitmask |= LOG_ALL;
                 }
                 else if (strncmp (p, "LOG_EVENTS", sizeof ("LOG_EVENTS") - 1) == 0)
                 {
                     p += sizeof ("LOG_EVENTS") - 1;
                     bitmask |= LOG_EVENTS;
                 }
+                else if (strncmp (p, "LOG_WATCHPOINTS", sizeof ("LOG_WATCHPOINTS") - 1) == 0)
+                {
+                    p += sizeof ("LOG_WATCHPOINTS") - 1;
+                    bitmask |= LOG_WATCHPOINTS;
+                }
+                else if (strncmp (p, "LOG_STEP", sizeof ("LOG_STEP") - 1) == 0)
+                {
+                    p += sizeof ("LOG_STEP") - 1;
+                    bitmask |= LOG_STEP;
+                }
+                else if (strncmp (p, "LOG_TASK", sizeof ("LOG_TASK") - 1) == 0)
+                {
+                    p += sizeof ("LOG_TASK") - 1;
+                    bitmask |= LOG_TASK;
+                }
+                else if (strncmp (p, "LOG_ALL", sizeof ("LOG_ALL") - 1) == 0)
+                {
+                    p += sizeof ("LOG_ALL") - 1;
+                    bitmask |= LOG_ALL;
+                }
                 else if (strncmp (p, "LOG_DEFAULT", sizeof ("LOG_DEFAULT") - 1) == 0)
                 {
                     p += sizeof ("LOG_DEFAULT") - 1;
                     bitmask |= LOG_DEFAULT;
                 }
+// end of auto-generated entries
+
                 else if (strncmp (p, "LOG_NONE", sizeof ("LOG_NONE") - 1) == 0)
                 {
                     p += sizeof ("LOG_NONE") - 1;
@@ -2082,6 +2527,26 @@ RNBRemote::HandlePacket_QLaunchArch (const char *p)
     return SendPacket ("E63");
 }
 
+rnb_err_t
+RNBRemote::HandlePacket_QSetProcessEvent (const char *p)
+{
+    p += sizeof ("QSetProcessEvent:") - 1;
+    // If the process is running, then send the event to the process, otherwise
+    // store it in the context.
+    if (Context().HasValidProcessID())
+    {
+        if (DNBProcessSendEvent (Context().ProcessID(), p))
+            return SendPacket("OK");
+        else
+            return SendPacket ("E80");
+    }
+    else
+    {
+        Context().PushProcessEvent(p);
+    }
+    return SendPacket ("OK");
+}
+
 void
 append_hex_value (std::ostream& ostrm, const uint8_t* buf, size_t buf_size, bool swap)
 {
@@ -2173,6 +2638,10 @@ RNBRemote::SendStopReplyPacketForThread (nub_thread_t tid)
 
     if (DNBThreadGetStopReason (pid, tid, &tid_stop_info))
     {
+        const bool did_exec = tid_stop_info.reason == eStopTypeExec;
+        if (did_exec)
+            RNBRemote::InitializeRegisters(true);
+
         std::ostringstream ostrm;
         // Output the T packet with the thread
         ostrm << 'T';
@@ -2270,8 +2739,12 @@ RNBRemote::SendStopReplyPacketForThread (nub_thread_t tid)
                 }
             }
         }
-
-        if (tid_stop_info.details.exception.type)
+        
+        if (did_exec)
+        {
+            ostrm << "reason:exec;";
+        }
+        else if (tid_stop_info.details.exception.type)
         {
             ostrm << "metype:" << std::hex << tid_stop_info.details.exception.type << ";";
             ostrm << "mecount:" << std::hex << tid_stop_info.details.exception.data_count << ";";
@@ -2347,8 +2820,22 @@ RNBRemote::HandlePacket_last_signal (const char *unused)
                     strncpy (pid_exited_packet, "W00", sizeof(pid_exited_packet)-1);
                     pid_exited_packet[sizeof(pid_exited_packet)-1] = '\0';
                 }
-
-                return SendPacket (pid_exited_packet);
+                
+                const char *exit_info = DNBProcessGetExitInfo (pid);
+                if (exit_info != NULL && *exit_info != '\0')
+                {
+                    std::ostringstream exit_packet;
+                    exit_packet << pid_exited_packet;
+                    exit_packet << ';';
+                    exit_packet << RAW_HEXBASE << "description";
+                    exit_packet << ':';
+                    for (size_t i = 0; exit_info[i] != '\0'; i++)
+                        exit_packet << RAWHEX8(exit_info[i]);
+                    exit_packet << ';';
+                    return SendPacket (exit_packet.str());
+                }
+                else
+                    return SendPacket (pid_exited_packet);
             }
             break;
     }
@@ -3029,32 +3516,16 @@ RNBRemote::HandlePacket_z (const char *p)
         {
             case '0':   // set software breakpoint
             case '1':   // set hardware breakpoint
-            {
-                // gdb can send multiple Z packets for the same address and
-                // these calls must be ref counted.
-                bool hardware = (break_type == '1');
+                {
+                    // gdb can send multiple Z packets for the same address and
+                    // these calls must be ref counted.
+                    bool hardware = (break_type == '1');
 
-                // Check if we currently have a breakpoint already set at this address
-                BreakpointMapIter pos = m_breakpoints.find(addr);
-                if (pos != m_breakpoints.end())
-                {
-                    // We do already have a breakpoint at this address, increment
-                    // its reference count and return OK
-                    pos->second.Retain();
-                    return SendPacket ("OK");
-                }
-                else
-                {
-                    // We do NOT already have a breakpoint at this address, So lets
-                    // create one.
-                    nub_break_t break_id = DNBBreakpointSet (pid, addr, byte_size, hardware);
-                    if (NUB_BREAK_ID_IS_VALID(break_id))
+                    if (DNBBreakpointSet (pid, addr, byte_size, hardware))
                     {
                         // We successfully created a breakpoint, now lets full out
                         // a ref count structure with the breakID and add it to our
                         // map.
-                        Breakpoint rnbBreakpoint(break_id);
-                        m_breakpoints[addr] = rnbBreakpoint;
                         return SendPacket ("OK");
                     }
                     else
@@ -3063,43 +3534,23 @@ RNBRemote::HandlePacket_z (const char *p)
                         return SendPacket ("E09");
                     }
                 }
-            }
                 break;
 
             case '2':   // set write watchpoint
             case '3':   // set read watchpoint
             case '4':   // set access watchpoint
-            {
-                bool hardware = true;
-                uint32_t watch_flags = 0;
-                if (break_type == '2')
-                    watch_flags = WATCH_TYPE_WRITE;
-                else if (break_type == '3')
-                    watch_flags = WATCH_TYPE_READ;
-                else
-                    watch_flags = WATCH_TYPE_READ | WATCH_TYPE_WRITE;
+                {
+                    bool hardware = true;
+                    uint32_t watch_flags = 0;
+                    if (break_type == '2')
+                        watch_flags = WATCH_TYPE_WRITE;
+                    else if (break_type == '3')
+                        watch_flags = WATCH_TYPE_READ;
+                    else
+                        watch_flags = WATCH_TYPE_READ | WATCH_TYPE_WRITE;
 
-                // Check if we currently have a watchpoint already set at this address
-                BreakpointMapIter pos = m_watchpoints.find(addr);
-                if (pos != m_watchpoints.end())
-                {
-                    // We do already have a watchpoint at this address, increment
-                    // its reference count and return OK
-                    pos->second.Retain();
-                    return SendPacket ("OK");
-                }
-                else
-                {
-                    // We do NOT already have a watchpoint at this address, So lets
-                    // create one.
-                    nub_watch_t watch_id = DNBWatchpointSet (pid, addr, byte_size, watch_flags, hardware);
-                    if (NUB_WATCH_ID_IS_VALID(watch_id))
+                    if (DNBWatchpointSet (pid, addr, byte_size, watch_flags, hardware))
                     {
-                        // We successfully created a watchpoint, now lets full out
-                        // a ref count structure with the watch_id and add it to our
-                        // map.
-                        Breakpoint rnbWatchpoint(watch_id);
-                        m_watchpoints[addr] = rnbWatchpoint;
                         return SendPacket ("OK");
                     }
                     else
@@ -3108,7 +3559,6 @@ RNBRemote::HandlePacket_z (const char *p)
                         return SendPacket ("E09");
                     }
                 }
-            }
                 break;
 
             default:
@@ -3122,83 +3572,27 @@ RNBRemote::HandlePacket_z (const char *p)
         {
             case '0':   // remove software breakpoint
             case '1':   // remove hardware breakpoint
-            {
-                // gdb can send multiple z packets for the same address and
-                // these calls must be ref counted.
-                BreakpointMapIter pos = m_breakpoints.find(addr);
-                if (pos != m_breakpoints.end())
+                if (DNBBreakpointClear (pid, addr))
                 {
-                    // We currently have a breakpoint at address ADDR. Decrement
-                    // its reference count, and it that count is now zero we
-                    // can clear the breakpoint.
-                    pos->second.Release();
-                    if (pos->second.RefCount() == 0)
-                    {
-                        if (DNBBreakpointClear (pid, pos->second.BreakID()))
-                        {
-                            m_breakpoints.erase(pos);
-                            return SendPacket ("OK");
-                        }
-                        else
-                        {
-                            return SendPacket ("E08");
-                        }
-                    }
-                    else
-                    {
-                        // We still have references to this breakpoint don't
-                        // delete it, just decrementing the reference count
-                        // is enough.
-                        return SendPacket ("OK");
-                    }
+                    return SendPacket ("OK");
                 }
                 else
                 {
-                    // We don't know about any breakpoints at this address
                     return SendPacket ("E08");
                 }
-            }
                 break;
 
             case '2':   // remove write watchpoint
             case '3':   // remove read watchpoint
             case '4':   // remove access watchpoint
-            {
-                // gdb can send multiple z packets for the same address and
-                // these calls must be ref counted.
-                BreakpointMapIter pos = m_watchpoints.find(addr);
-                if (pos != m_watchpoints.end())
+                if (DNBWatchpointClear (pid, addr))
                 {
-                    // We currently have a watchpoint at address ADDR. Decrement
-                    // its reference count, and it that count is now zero we
-                    // can clear the watchpoint.
-                    pos->second.Release();
-                    if (pos->second.RefCount() == 0)
-                    {
-                        if (DNBWatchpointClear (pid, pos->second.BreakID()))
-                        {
-                            m_watchpoints.erase(pos);
-                            return SendPacket ("OK");
-                        }
-                        else
-                        {
-                            return SendPacket ("E08");
-                        }
-                    }
-                    else
-                    {
-                        // We still have references to this watchpoint don't
-                        // delete it, just decrementing the reference count
-                        // is enough.
-                        return SendPacket ("OK");
-                    }
+                    return SendPacket ("OK");
                 }
                 else
                 {
-                    // We don't know about any watchpoints at this address
                     return SendPacket ("E08");
                 }
-            }
                 break;
 
             default:
@@ -3460,14 +3854,32 @@ RNBRemote::HandlePacket_MemoryRegionInfo (const char *p)
     return SendPacket (ostrm.str());
 }
 
+// qGetProfileData;scan_type:0xYYYYYYY
 rnb_err_t
 RNBRemote::HandlePacket_GetProfileData (const char *p)
 {
     nub_process_t pid = m_ctx.ProcessID();
     if (pid == INVALID_NUB_PROCESS)
         return SendPacket ("OK");
-
-    std::string data = DNBProcessGetProfileData(pid);
+    
+    StringExtractor packet(p += sizeof ("qGetProfileData"));
+    DNBProfileDataScanType scan_type = eProfileAll;
+    std::string name;
+    std::string value;
+    while (packet.GetNameColonValue(name, value))
+    {
+        if (name.compare ("scan_type") == 0)
+        {
+            std::istringstream iss(value);
+            uint32_t int_value = 0;
+            if (iss >> std::hex >> int_value)
+            {
+                scan_type = (DNBProfileDataScanType)int_value;
+            }
+        }
+    }
+    
+    std::string data = DNBProcessGetProfileData(pid, scan_type);
     if (!data.empty())
     {
         return SendPacket (data.c_str());
@@ -3478,18 +3890,18 @@ RNBRemote::HandlePacket_GetProfileData (const char *p)
     }
 }
 
-
-// QSetAsyncEnableProfiling;enable:[0|1]:interval_usec:XXXXXX;
+// QSetEnableAsyncProfiling;enable:[0|1]:interval_usec:XXXXXX;scan_type:0xYYYYYYY
 rnb_err_t
-RNBRemote::HandlePacket_SetAsyncEnableProfiling (const char *p)
+RNBRemote::HandlePacket_SetEnableAsyncProfiling (const char *p)
 {
     nub_process_t pid = m_ctx.ProcessID();
     if (pid == INVALID_NUB_PROCESS)
-        return SendPacket ("");
+        return SendPacket ("OK");
 
-    StringExtractor packet(p += sizeof ("QSetAsyncEnableProfiling:") - 1);
+    StringExtractor packet(p += sizeof ("QSetEnableAsyncProfiling"));
     bool enable = false;
     uint64_t interval_usec = 0;
+    DNBProfileDataScanType scan_type = eProfileAll;
     std::string name;
     std::string value;
     while (packet.GetNameColonValue(name, value))
@@ -3502,13 +3914,23 @@ RNBRemote::HandlePacket_SetAsyncEnableProfiling (const char *p)
         {
             interval_usec  = strtoul(value.c_str(), NULL, 10);
         }
+        else if (name.compare ("scan_type") == 0)
+        {
+            std::istringstream iss(value);
+            uint32_t int_value = 0;
+            if (iss >> std::hex >> int_value)
+            {
+                scan_type = (DNBProfileDataScanType)int_value;
+            }
+        }
     }
     
     if (interval_usec == 0)
     {
         enable = 0;
     }
-    DNBProcessSetAsyncEnableProfiling(pid, enable, interval_usec);
+    
+    DNBProcessSetEnableAsyncProfiling(pid, enable, interval_usec, scan_type);
     return SendPacket ("OK");
 }
 
@@ -3600,6 +4022,7 @@ RNBRemote::HandlePacket_D (const char *p)
 rnb_err_t
 RNBRemote::HandlePacket_k (const char *p)
 {
+    DNBLog ("Got a 'k' packet, killing the inferior process.");
     // No response to should be sent to the kill packet
     if (m_ctx.HasValidProcessID())
         DNBProcessKill (m_ctx.ProcessID());
@@ -3741,7 +4164,7 @@ RNBRemote::HandlePacket_qHostInfo (const char *p)
     // The OS in the triple should be "ios" or "macosx" which doesn't match our
     // "Darwin" which gets returned from "kern.ostype", so we need to hardcode
     // this for now.
-    if (cputype == CPU_TYPE_ARM)
+    if (cputype == CPU_TYPE_ARM || cputype == CPU_TYPE_ARM64)
     {
         strm << "ostype:ios;";
         // On armv7 we use "synchronous" watchpoints which means the exception is delivered before the instruction executes.
@@ -3777,3 +4200,138 @@ RNBRemote::HandlePacket_qHostInfo (const char *p)
         strm << "ptrsize:" << std::dec << sizeof(void *) << ';';
     return SendPacket (strm.str());
 }
+
+
+// Note that all numeric values returned by qProcessInfo are hex encoded,
+// including the pid and the cpu type.
+
+rnb_err_t
+RNBRemote::HandlePacket_qProcessInfo (const char *p)
+{
+    nub_process_t pid;
+    std::ostringstream rep;
+
+    // If we haven't run the process yet, return an error.
+    if (!m_ctx.HasValidProcessID())
+        return SendPacket ("E68");
+
+    pid = m_ctx.ProcessID();
+
+    rep << "pid:" << std::hex << pid << ";";
+
+    int procpid_mib[4];
+    procpid_mib[0] = CTL_KERN;
+    procpid_mib[1] = KERN_PROC;
+    procpid_mib[2] = KERN_PROC_PID;
+    procpid_mib[3] = pid;
+    struct kinfo_proc proc_kinfo;
+    size_t proc_kinfo_size = sizeof(struct kinfo_proc);
+
+    if (::sysctl (procpid_mib, 4, &proc_kinfo, &proc_kinfo_size, NULL, 0) == 0)
+    {
+        if (proc_kinfo_size > 0)
+        {
+            rep << "parent-pid:" << std::hex << proc_kinfo.kp_eproc.e_ppid << ";";
+            rep << "real-uid:" << std::hex << proc_kinfo.kp_eproc.e_pcred.p_ruid << ";";
+            rep << "real-gid:" << std::hex << proc_kinfo.kp_eproc.e_pcred.p_rgid << ";";
+            rep << "effective-uid:" << std::hex << proc_kinfo.kp_eproc.e_ucred.cr_uid << ";";
+            if (proc_kinfo.kp_eproc.e_ucred.cr_ngroups > 0)
+                rep << "effective-gid:" << std::hex << proc_kinfo.kp_eproc.e_ucred.cr_groups[0] << ";";
+        }
+    }
+    
+    cpu_type_t cputype = DNBProcessGetCPUType (pid);
+    if (cputype == 0)
+    {
+        DNBLog ("Unable to get the process cpu_type, making a best guess.");
+        cputype = best_guess_cpu_type();
+    }
+
+    if (cputype != 0)
+    {
+        rep << "cputype:" << std::hex << cputype << ";";
+    }
+
+    bool host_cpu_is_64bit;
+    uint32_t is64bit_capable;
+    size_t is64bit_capable_len = sizeof (is64bit_capable);
+    if (sysctlbyname("hw.cpu64bit_capable", &is64bit_capable, &is64bit_capable_len, NULL, 0) == 0)
+        host_cpu_is_64bit = true;
+    else
+        host_cpu_is_64bit = false;
+
+    uint32_t cpusubtype;
+    size_t cpusubtype_len = sizeof(cpusubtype);
+    if (::sysctlbyname("hw.cpusubtype", &cpusubtype, &cpusubtype_len, NULL, 0) == 0)
+    {
+        if (cputype == CPU_TYPE_X86_64 && cpusubtype == CPU_SUBTYPE_486)
+        {
+            cpusubtype = CPU_SUBTYPE_X86_64_ALL;
+        }
+
+        // We can query a process' cputype but we cannot query a process' cpusubtype.
+        // If the process has cputype CPU_TYPE_ARM, then it is an armv7 (32-bit process) and we 
+        // need to override the host cpusubtype (which is in the CPU_SUBTYPE_ARM64 subtype namespace)
+        // with a reasonable CPU_SUBTYPE_ARMV7 subtype.
+        if (host_cpu_is_64bit && cputype == CPU_TYPE_ARM)
+        {
+            cpusubtype = 11; //CPU_SUBTYPE_ARM_V7S;
+        }
+
+        rep << "cpusubtype:" << std::hex << cpusubtype << ';';
+    }
+
+    // The OS in the triple should be "ios" or "macosx" which doesn't match our
+    // "Darwin" which gets returned from "kern.ostype", so we need to hardcode
+    // this for now.
+    if (cputype == CPU_TYPE_ARM || cputype == CPU_TYPE_ARM64)
+        rep << "ostype:ios;";
+    else
+        rep << "ostype:macosx;";
+
+    rep << "vendor:apple;";
+
+#if defined (__LITTLE_ENDIAN__)
+    rep << "endian:little;";
+#elif defined (__BIG_ENDIAN__)
+    rep << "endian:big;";
+#elif defined (__PDP_ENDIAN__)
+    rep << "endian:pdp;";
+#endif
+
+
+#if (defined (__x86_64__) || defined (__i386__)) && defined (x86_THREAD_STATE)
+    nub_thread_t thread = DNBProcessGetCurrentThreadMachPort (pid);
+    kern_return_t kr;
+    x86_thread_state_t gp_regs;
+    mach_msg_type_number_t gp_count = x86_THREAD_STATE_COUNT;
+    kr = thread_get_state (thread, x86_THREAD_STATE,
+                           (thread_state_t) &gp_regs, &gp_count);
+    if (kr == KERN_SUCCESS)
+    {
+        if (gp_regs.tsh.flavor == x86_THREAD_STATE64)
+            rep << "ptrsize:8;";
+        else
+            rep << "ptrsize:4;";
+    }
+#elif defined (__arm__)
+    rep << "ptrsize:4;";
+#elif defined (__arm64__) && defined (ARM_UNIFIED_THREAD_STATE)
+    nub_thread_t thread = DNBProcessGetCurrentThreadMachPort (pid);
+    kern_return_t kr;
+    arm_unified_thread_state_t gp_regs;
+    mach_msg_type_number_t gp_count = ARM_UNIFIED_THREAD_STATE_COUNT;
+    kr = thread_get_state (thread, ARM_UNIFIED_THREAD_STATE,
+                           (thread_state_t) &gp_regs, &gp_count);
+    if (kr == KERN_SUCCESS)
+    {
+        if (gp_regs.ash.flavor == ARM_THREAD_STATE64)
+            rep << "ptrsize:8;";
+        else
+            rep << "ptrsize:4;";
+    }
+#endif
+
+    return SendPacket (rep.str());
+}
+

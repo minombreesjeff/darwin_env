@@ -36,7 +36,7 @@ class MachThread
 {
 public:
 
-                    MachThread (MachProcess *process, thread_t thread = 0);
+                    MachThread (MachProcess *process, uint64_t unique_thread_id = 0, thread_t mach_port_number = 0);
                     ~MachThread ();
 
     MachProcess *   Process() { return m_process; }
@@ -44,11 +44,13 @@ public:
                     Process() const { return m_process; }
     nub_process_t   ProcessID() const;
     void            Dump(uint32_t index);
-    thread_t        ThreadID() const { return m_tid; }
+    uint64_t        ThreadID() const { return m_unique_id; }
+    thread_t        MachPortNumber() const { return m_mach_port_number; }
     thread_t        InferiorThreadID() const;
 
     uint32_t        SequenceID() const { return m_seq_id; }
-    static bool     ThreadIDIsValid(thread_t thread);
+    static bool     ThreadIDIsValid(uint64_t thread);       // The 64-bit system-wide unique thread identifier
+    static bool     MachPortNumberIsValid(thread_t thread); // The mach port # for this thread in debugserver namespace
     void            Resume(bool others_stopped);
     void            Suspend();
     bool            SetSuspendCountBeforeResume(bool others_stopped);
@@ -60,11 +62,11 @@ public:
     bool            SetPC(uint64_t value);                              // Set program counter
     uint64_t        GetSP(uint64_t failValue = INVALID_NUB_ADDRESS);    // Get stack pointer
 
-    nub_break_t     CurrentBreakpoint();
+    DNBBreakpoint * CurrentBreakpoint();
     uint32_t        EnableHardwareBreakpoint (const DNBBreakpoint *breakpoint);
-    uint32_t        EnableHardwareWatchpoint (const DNBBreakpoint *watchpoint);
+    uint32_t        EnableHardwareWatchpoint (const DNBBreakpoint *watchpoint, bool also_set_on_task);
     bool            DisableHardwareBreakpoint (const DNBBreakpoint *breakpoint);
-    bool            DisableHardwareWatchpoint (const DNBBreakpoint *watchpoint);
+    bool            DisableHardwareWatchpoint (const DNBBreakpoint *watchpoint, bool also_set_on_task);
     uint32_t        NumSupportedHardwareWatchpoints () const;
     bool            RollbackTransForHWP();
     bool            FinishTransForHWP();
@@ -106,6 +108,8 @@ public:
         return m_arch_ap.get();
     }
 
+    static uint64_t GetGloballyUniqueThreadIDForMachPortID (thread_t mach_port_id);
+
 protected:
     static bool     GetBasicInfo(thread_t threadID, struct thread_basic_info *basic_info);
 
@@ -116,29 +120,26 @@ protected:
 //    GetDispatchQueueName();
 //
     MachProcess *                   m_process;      // The process that owns this thread
-    thread_t                        m_tid;          // The thread port for this thread
+    uint64_t                        m_unique_id;    // The globally unique ID for this thread (nub_thread_t)
+    thread_t                        m_mach_port_number;  // The mach port # for this thread in debugserver namesp.
     uint32_t                        m_seq_id;       // A Sequential ID that increments with each new thread
     nub_state_t                     m_state;        // The state of our process
     PThreadMutex                    m_state_mutex;  // Multithreaded protection for m_state
-    nub_break_t                     m_break_id;     // Breakpoint that this thread is (stopped)/was(running) at (NULL for none)
     struct thread_basic_info        m_basic_info;   // Basic information for a thread used to see if a thread is valid
     int32_t                         m_suspend_count; // The current suspend count > 0 means we have suspended m_suspendCount times,
                                                     //                           < 0 means we have resumed it m_suspendCount times.
     MachException::Data             m_stop_exception; // The best exception that describes why this thread is stopped
-    std::auto_ptr<DNBArchProtocol>  m_arch_ap;      // Arch specific information for register state and more
+    std::unique_ptr<DNBArchProtocol> m_arch_ap;      // Arch specific information for register state and more
     const DNBRegisterSetInfo *      m_reg_sets;      // Register set information for this thread
     nub_size_t                      m_num_reg_sets;
-#ifdef THREAD_IDENTIFIER_INFO_COUNT
     thread_identifier_info_data_t   m_ident_info;
     struct proc_threadinfo          m_proc_threadinfo;
     std::string                     m_dispatch_queue_name;
-#endif
 
 private:
     friend class MachThreadList;
-    void HardwareWatchpointStateChanged(); // Provide a chance to update the global view of the hardware watchpoint state
 };
 
-typedef STD_SHARED_PTR(MachThread) MachThreadSP;
+typedef std::shared_ptr<MachThread> MachThreadSP;
 
 #endif

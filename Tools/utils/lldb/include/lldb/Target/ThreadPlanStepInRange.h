@@ -32,6 +32,12 @@ public:
                            const SymbolContext &addr_context,
                            lldb::RunMode stop_others);
 
+    ThreadPlanStepInRange (Thread &thread,
+                           const AddressRange &range,
+                           const SymbolContext &addr_context,
+                           const char *step_into_function_name,
+                           lldb::RunMode stop_others);
+
     virtual
     ~ThreadPlanStepInRange ();
 
@@ -43,18 +49,25 @@ public:
 
     void SetAvoidRegexp(const char *name);
     
-    static ThreadPlan *
+    void SetStepInTarget (const char *target)
+    {
+        m_step_into_target.SetCString(target);
+    }
+    
+    static lldb::ThreadPlanSP
     DefaultShouldStopHereCallback (ThreadPlan *current_plan, Flags &flags, void *baton);
 
     static void
     SetDefaultFlagValue (uint32_t new_value);
+    
+    bool
+    IsVirtualStep();
+
+protected:
+    virtual bool DoWillResume (lldb::StateType resume_state, bool current_plan);
 
     virtual bool
-    PlanExplainsStop ();
-
-    virtual bool WillResume (lldb::StateType resume_state, bool current_plan);
-    
-protected:
+    DoPlanExplainsStop (Event *event_ptr);
 
     virtual void
     SetFlagsToDefault ();
@@ -64,11 +77,16 @@ protected:
 
 private:
 
-    friend ThreadPlan *
-    Thread::QueueThreadPlanForStepRange (bool abort_other_plans,
-                                         StepType type,
+    friend lldb::ThreadPlanSP
+    Thread::QueueThreadPlanForStepOverRange (bool abort_other_plans,
                                          const AddressRange &range,
                                          const SymbolContext &addr_context,
+                                         lldb::RunMode stop_others);
+    friend lldb::ThreadPlanSP
+    Thread::QueueThreadPlanForStepInRange (bool abort_other_plans,
+                                         const AddressRange &range,
+                                         const SymbolContext &addr_context,
+                                         const char *step_in_target,
                                          lldb::RunMode stop_others,
                                          bool avoid_code_without_debug_info);
 
@@ -77,11 +95,12 @@ private:
     // from step in.
 
     static uint32_t s_default_flag_values;
-    std::auto_ptr<RegularExpression> m_avoid_regexp_ap;
+    lldb::ThreadPlanSP m_sub_plan_sp;  // Keep track of the last plan we were running.  If it fails, we should stop.
+    std::unique_ptr<RegularExpression> m_avoid_regexp_ap;
     bool m_step_past_prologue;  // FIXME: For now hard-coded to true, we could put a switch in for this if there's
                                 // demand for that.
     bool m_virtual_step;        // true if we've just done a "virtual step", i.e. just moved the inline stack depth.
-
+    ConstString m_step_into_target;
     DISALLOW_COPY_AND_ASSIGN (ThreadPlanStepInRange);
 
 };

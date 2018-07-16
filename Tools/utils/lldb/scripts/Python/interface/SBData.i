@@ -42,50 +42,50 @@ public:
     SetByteOrder (lldb::ByteOrder endian);
 
     float
-    GetFloat (lldb::SBError& error, uint32_t offset);
+    GetFloat (lldb::SBError& error, lldb::offset_t offset);
 
     double
-    GetDouble (lldb::SBError& error, uint32_t offset);
+    GetDouble (lldb::SBError& error, lldb::offset_t offset);
 
     long double
-    GetLongDouble (lldb::SBError& error, uint32_t offset);
+    GetLongDouble (lldb::SBError& error, lldb::offset_t offset);
 
     lldb::addr_t
-    GetAddress (lldb::SBError& error, uint32_t offset);
+    GetAddress (lldb::SBError& error, lldb::offset_t offset);
 
     uint8_t
-    GetUnsignedInt8 (lldb::SBError& error, uint32_t offset);
+    GetUnsignedInt8 (lldb::SBError& error, lldb::offset_t offset);
 
     uint16_t
-    GetUnsignedInt16 (lldb::SBError& error, uint32_t offset);
+    GetUnsignedInt16 (lldb::SBError& error, lldb::offset_t offset);
 
     uint32_t
-    GetUnsignedInt32 (lldb::SBError& error, uint32_t offset);
+    GetUnsignedInt32 (lldb::SBError& error, lldb::offset_t offset);
 
     uint64_t
-    GetUnsignedInt64 (lldb::SBError& error, uint32_t offset);
+    GetUnsignedInt64 (lldb::SBError& error, lldb::offset_t offset);
 
     int8_t
-    GetSignedInt8 (lldb::SBError& error, uint32_t offset);
+    GetSignedInt8 (lldb::SBError& error, lldb::offset_t offset);
 
     int16_t
-    GetSignedInt16 (lldb::SBError& error, uint32_t offset);
+    GetSignedInt16 (lldb::SBError& error, lldb::offset_t offset);
 
     int32_t
-    GetSignedInt32 (lldb::SBError& error, uint32_t offset);
+    GetSignedInt32 (lldb::SBError& error, lldb::offset_t offset);
 
     int64_t
-    GetSignedInt64 (lldb::SBError& error, uint32_t offset);
+    GetSignedInt64 (lldb::SBError& error, lldb::offset_t offset);
 
     const char*
-    GetString (lldb::SBError& error, uint32_t offset);
+    GetString (lldb::SBError& error, lldb::offset_t offset);
 
     bool
     GetDescription (lldb::SBStream &description, lldb::addr_t base_addr);
 
     size_t
     ReadRawData (lldb::SBError& error,
-                 uint32_t offset,
+                 lldb::offset_t offset,
                  void *buf,
                  size_t size);
 
@@ -160,6 +160,46 @@ public:
             def all(self):
                 return self[0:len(self)]
         
+        @classmethod
+        def CreateDataFromInt (cls, value, size = None, target = None, ptr_size = None, endian = None):
+            import sys
+            lldbmodule = sys.modules[cls.__module__]
+            lldbdict = lldbmodule.__dict__
+            if 'target' in lldbdict:
+                lldbtarget = lldbdict['target']
+            else:
+                lldbtarget = None
+            if target == None and lldbtarget != None and lldbtarget.IsValid():
+                target = lldbtarget
+            if ptr_size == None:
+                if target and target.IsValid():
+                    ptr_size = target.addr_size
+                else:
+                    ptr_size = 8
+            if endian == None:
+                if target and target.IsValid():
+                    endian = target.byte_order
+                else:
+                    endian = lldbdict['eByteOrderLittle']
+            if size == None:
+                if value > 2147483647:
+                    size = 8
+                elif value < -2147483648:
+                    size = 8
+                elif value > 4294967295:
+                    size = 8
+                else:
+                    size = 4
+            if size == 4:
+                if value < 0:
+                    return SBData().CreateDataFromSInt32Array(endian, ptr_size, [value])
+                return SBData().CreateDataFromUInt32Array(endian, ptr_size, [value])
+            if size == 8:
+                if value < 0:
+                    return SBData().CreateDataFromSInt64Array(endian, ptr_size, [value])
+                return SBData().CreateDataFromUInt64Array(endian, ptr_size, [value])
+            return None
+
         def _make_helper(self, sbdata, getfunc, itemsize):
             return self.read_data_helper(sbdata, getfunc, itemsize)
             

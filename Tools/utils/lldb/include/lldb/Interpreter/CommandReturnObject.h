@@ -118,32 +118,35 @@ public:
     Clear();
 
     void
-    AppendMessage (const char *in_string, int len = -1);
+    AppendMessage (const char *in_string);
 
     void
     AppendMessageWithFormat (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
 
     void
-    AppendRawWarning (const char *in_string, int len = -1);
+    AppendRawWarning (const char *in_string);
 
     void
-    AppendWarning (const char *in_string, int len = -1);
+    AppendWarning (const char *in_string);
 
     void
     AppendWarningWithFormat (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
 
     void
-    AppendError (const char *in_string, int len = -1);
+    AppendError (const char *in_string);
 
     void
-    AppendRawError (const char *in_string, int len = -1);
+    AppendRawError (const char *in_string);
 
     void
     AppendErrorWithFormat (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
 
     void
-    SetError (const Error &error, 
-              const char *fallback_error_cstr);
+    SetError (const Error &error,
+              const char *fallback_error_cstr = NULL);
+    
+    void
+    SetError (const char *error_cstr);
 
     lldb::ReturnStatus
     GetStatus();

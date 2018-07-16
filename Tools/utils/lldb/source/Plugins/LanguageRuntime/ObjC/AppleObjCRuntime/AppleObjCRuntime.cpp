@@ -38,6 +38,8 @@
 using namespace lldb;
 using namespace lldb_private;
 
+#define PO_FUNCTION_TIMEOUT_USEC 15*1000*1000
+
 bool
 AppleObjCRuntime::GetObjectDescription (Stream &str, ValueObject &valobj)
 {
@@ -134,17 +136,19 @@ AppleObjCRuntime::GetObjectDescription (Stream &strm, Value &value, ExecutionCon
     lldb::addr_t wrapper_struct_addr = LLDB_INVALID_ADDRESS;
     func.InsertFunction(exe_ctx, wrapper_struct_addr, error_stream);
 
-    bool unwind_on_error = true;
-    bool try_all_threads = true;
-    bool stop_others = true;
+    const bool unwind_on_error = true;
+    const bool try_all_threads = true;
+    const bool stop_others = true;
+    const bool ignore_breakpoints = true;
     
     ExecutionResults results = func.ExecuteFunction (exe_ctx, 
                                                      &wrapper_struct_addr, 
                                                      error_stream, 
                                                      stop_others, 
-                                                     0 /* no timeout */,
+                                                     PO_FUNCTION_TIMEOUT_USEC /* 15 secs timeout */,
                                                      try_all_threads, 
-                                                     unwind_on_error, 
+                                                     unwind_on_error,
+                                                     ignore_breakpoints,
                                                      ret);
     if (results != eExecutionCompleted)
     {
@@ -308,7 +312,7 @@ AppleObjCRuntime::GetObjCVersion (Process *process, ModuleSP &objc_module_sp)
             if (!ofile)
                 return eObjC_VersionUnknown;
             
-            SectionList *sections = ofile->GetSectionList();
+            SectionList *sections = module_sp->GetSectionList();
             if (!sections)
                 return eObjC_VersionUnknown;    
             SectionSP v1_telltale_section_sp = sections->FindSectionByName(ConstString ("__OBJC"));
@@ -331,11 +335,15 @@ AppleObjCRuntime::SetExceptionBreakpoints ()
     const bool is_internal = true;
     
     if (!m_objc_exception_bp_sp)
+    {
         m_objc_exception_bp_sp = LanguageRuntime::CreateExceptionBreakpoint (m_process->GetTarget(),
                                                                             GetLanguageType(),
                                                                             catch_bp, 
                                                                             throw_bp, 
                                                                             is_internal);
+        if (m_objc_exception_bp_sp)
+            m_objc_exception_bp_sp->SetBreakpointKind("ObjC exception");
+    }
     else
         m_objc_exception_bp_sp->SetEnabled(true);
 }
@@ -387,3 +395,21 @@ AppleObjCRuntime::CalculateHasNewLiteralsAndIndexing()
     else
         return false;
 }
+
+lldb::SearchFilterSP
+AppleObjCRuntime::CreateExceptionSearchFilter ()
+{
+    Target &target = m_process->GetTarget();
+    
+    if (target.GetArchitecture().GetTriple().getVendor() == llvm::Triple::Apple)
+    {
+        FileSpecList filter_modules;
+        filter_modules.Append(FileSpec("libobjc.A.dylib", false));
+        return target.GetSearchFilterForModuleList(&filter_modules);
+    }
+    else
+    {
+        return LanguageRuntime::CreateExceptionSearchFilter();
+    }
+}
+

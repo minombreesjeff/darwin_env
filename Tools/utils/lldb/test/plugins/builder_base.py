@@ -13,6 +13,7 @@ variable.
 """
 
 import os
+import platform
 import lldbtest
 
 def getArchitecture():
@@ -22,6 +23,27 @@ def getArchitecture():
 def getCompiler():
     """Returns the compiler in effect the test suite is running with."""
     return os.environ["CC"] if "CC" in os.environ else "clang"
+
+def getArchFlag():
+    """Returns the flag required to specify the arch"""
+    compiler = getCompiler()
+    if compiler is None:
+      return ""
+    elif "gcc" in compiler:
+      archflag = "-m"
+    elif "clang" in compiler:
+      archflag = "-arch "
+    else:
+      archflag = None
+
+    return (" ARCHFLAG=" + archflag) if archflag else ""
+
+def getMake():
+    """Returns the name for GNU make"""
+    if platform.system() == "FreeBSD":
+      return "gmake "
+    else:
+      return "make "
 
 def getArchSpec(architecture):
     """
@@ -67,13 +89,14 @@ def buildDefault(sender=None, architecture=None, compiler=None, dictionary=None,
     """Build the binaries the default way."""
     if clean:
         lldbtest.system(["/bin/sh", "-c",
-                         "make clean" + getCmdLine(dictionary) + "; make"
+                         getMake() + "clean" + getCmdLine(dictionary) + ";"
+                         + getMake()
                          + getArchSpec(architecture) + getCCSpec(compiler)
                          + getCmdLine(dictionary)],
                         sender=sender)
     else:
         lldbtest.system(["/bin/sh", "-c",
-                         "make" + getArchSpec(architecture) + getCCSpec(compiler)
+                         getMake() + getArchSpec(architecture) + getCCSpec(compiler)
                          + getCmdLine(dictionary)],
                         sender=sender)
 
@@ -84,14 +107,14 @@ def buildDwarf(sender=None, architecture=None, compiler=None, dictionary=None, c
     """Build the binaries with dwarf debug info."""
     if clean:
         lldbtest.system(["/bin/sh", "-c",
-                         "make clean" + getCmdLine(dictionary)
-                         + "; make MAKE_DSYM=NO"
+                         getMake() + "clean" + getCmdLine(dictionary)
+                         + ";" + getMake() + "MAKE_DSYM=NO"
                          + getArchSpec(architecture) + getCCSpec(compiler)
                          + getCmdLine(dictionary)],
                         sender=sender)
     else:
         lldbtest.system(["/bin/sh", "-c",
-                         "make MAKE_DSYM=NO"
+                         getMake() + "MAKE_DSYM=NO"
                          + getArchSpec(architecture) + getCCSpec(compiler)
                          + getCmdLine(dictionary)],
                         sender=sender)
@@ -104,7 +127,8 @@ def cleanup(sender=None, dictionary=None):
     #import traceback
     #traceback.print_stack()
     if os.path.isfile("Makefile"):
-        lldbtest.system(["/bin/sh", "-c", "make clean"+getCmdLine(dictionary)],
+        lldbtest.system(["/bin/sh", "-c",
+                         getMake() + "clean" + getCmdLine(dictionary)],
                         sender=sender)
 
     # True signifies that we can handle cleanup.

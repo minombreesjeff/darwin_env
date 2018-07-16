@@ -24,12 +24,10 @@ namespace lldb_private
 class Error;
 class Module;
 class Scalar;
-
 } // End lldb_private namespace.
 
 class ProcessLinux;
 class Operation;
-class ProcessPOSIX;
 
 /// @class ProcessMonitor
 /// @brief Manages communication with the inferior (debugee) process.
@@ -56,6 +54,7 @@ public:
                    const char *stdin_path,
                    const char *stdout_path,
                    const char *stderr_path,
+                   const char *working_dir,
                    lldb_private::Error &error);
 
     ProcessMonitor(ProcessPOSIX *process,
@@ -63,6 +62,11 @@ public:
                    lldb_private::Error &error);
 
     ~ProcessMonitor();
+
+    enum ResumeSignals 
+    {
+        eResumeSignalNone = 0
+    };
 
     /// Provides the process number of debugee.
     lldb::pid_t
@@ -106,30 +110,42 @@ public:
     ///
     /// This method is provided for use by RegisterContextLinux derivatives.
     bool
-    ReadRegisterValue(unsigned offset, unsigned size, lldb_private::RegisterValue &value);
+    ReadRegisterValue(lldb::tid_t tid, unsigned offset, const char *reg_name,
+                      unsigned size, lldb_private::RegisterValue &value);
 
     /// Writes the given value to the register identified by the given
     /// (architecture dependent) offset.
     ///
     /// This method is provided for use by RegisterContextLinux derivatives.
     bool
-    WriteRegisterValue(unsigned offset, const lldb_private::RegisterValue &value);
+    WriteRegisterValue(lldb::tid_t tid, unsigned offset, const char *reg_name,
+                       const lldb_private::RegisterValue &value);
 
     /// Reads all general purpose registers into the specified buffer.
     bool
-    ReadGPR(void *buf);
+    ReadGPR(lldb::tid_t tid, void *buf, size_t buf_size);
 
-    /// Reads all floating point registers into the specified buffer.
+    /// Reads generic floating point registers into the specified buffer.
     bool
-    ReadFPR(void *buf);
+    ReadFPR(lldb::tid_t tid, void *buf, size_t buf_size);
+
+    /// Reads the specified register set into the specified buffer.
+    /// For instance, the extended floating-point register set.
+    bool
+    ReadRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset);
 
     /// Writes all general purpose registers into the specified buffer.
     bool
-    WriteGPR(void *buf);
+    WriteGPR(lldb::tid_t tid, void *buf, size_t buf_size);
 
-    /// Writes all floating point registers into the specified buffer.
+    /// Writes generic floating point registers into the specified buffer.
     bool
-    WriteFPR(void *buf);
+    WriteFPR(lldb::tid_t tid, void *buf, size_t buf_size);
+
+    /// Writes the specified register set into the specified buffer.
+    /// For instance, the extended floating-point register set.
+    bool
+    WriteRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset);
 
     /// Writes a siginfo_t structure corresponding to the given thread ID to the
     /// memory region pointed to by @p siginfo.
@@ -159,17 +175,24 @@ public:
     BringProcessIntoLimbo();
 
     lldb_private::Error
-    Detach();
+    Detach(lldb::tid_t tid);
 
+    /// Stops the monitoring the child process thread.
+    void
+    StopMonitor();
+
+    /// Stops the requested thread and waits for the stop signal.
+    bool
+    StopThread(lldb::tid_t tid);
 
 private:
     ProcessLinux *m_process;
 
     lldb::thread_t m_operation_thread;
+    lldb::thread_t m_monitor_thread;
     lldb::pid_t m_pid;
     int m_terminal_fd;
 
-    lldb::thread_t m_monitor_thread;
 
     lldb_private::Mutex m_server_mutex;
     int m_client_fd;
@@ -198,7 +221,8 @@ private:
                    char const **envp,
                    const char *stdin_path,
                    const char *stdout_path,
-                   const char *stderr_path);
+                   const char *stderr_path,
+                   const char *working_dir);
 
         ~LaunchArgs();
 
@@ -208,6 +232,7 @@ private:
         const char *m_stdin_path;       // Redirect stdin or NULL.
         const char *m_stdout_path;      // Redirect stdout or NULL.
         const char *m_stderr_path;      // Redirect stderr or NULL.
+        const char *m_working_dir;      // Working directory or NULL.
     };
 
     void
@@ -240,6 +265,9 @@ private:
 
     static bool
     Attach(AttachArgs *args);
+
+    static bool
+    SetDefaultPtraceOpts(const lldb::pid_t);
 
     static void
     ServeOperation(OperationArgs *args);
@@ -277,9 +305,6 @@ private:
     /// Stops the child monitor thread.
     void
     StopMonitoringChildProcess();
-
-    void 
-    StopMonitor();
 
     /// Stops the operation thread used to attach/launch a process.
     void

@@ -17,6 +17,7 @@
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Symbol/DWARFCallFrameInfo.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -47,54 +48,79 @@ DWARFCallFrameInfo::~DWARFCallFrameInfo()
 
 
 bool
+DWARFCallFrameInfo::GetUnwindPlan (Address addr, UnwindPlan& unwind_plan)
+{
+    FDEEntryMap::Entry fde_entry;
+
+    // Make sure that the Address we're searching for is the same object file
+    // as this DWARFCallFrameInfo, we only store File offsets in m_fde_index.
+    ModuleSP module_sp = addr.GetModule();
+    if (module_sp.get() == NULL || module_sp->GetObjectFile() == NULL || module_sp->GetObjectFile() != &m_objfile)
+        return false;
+
+    if (GetFDEEntryByFileAddress (addr.GetFileAddress(), fde_entry) == false)
+        return false;
+    return FDEToUnwindPlan (fde_entry.data, addr, unwind_plan);
+}
+
+bool
 DWARFCallFrameInfo::GetAddressRange (Address addr, AddressRange &range)
 {
-    FDEEntry fde_entry;
-    if (GetFDEEntryByAddress (addr, fde_entry) == false)
+
+    // Make sure that the Address we're searching for is the same object file
+    // as this DWARFCallFrameInfo, we only store File offsets in m_fde_index.
+    ModuleSP module_sp = addr.GetModule();
+    if (module_sp.get() == NULL || module_sp->GetObjectFile() == NULL || module_sp->GetObjectFile() != &m_objfile)
         return false;
-    range = fde_entry.bounds;
+
+    if (m_section_sp.get() == NULL || m_section_sp->IsEncrypted())
+        return false;
+    GetFDEIndex();
+    FDEEntryMap::Entry *fde_entry = m_fde_index.FindEntryThatContains (addr.GetFileAddress());
+    if (!fde_entry)
+        return false;
+
+    range = AddressRange(fde_entry->base, fde_entry->size, m_objfile.GetSectionList());
     return true;
 }
 
 bool
-DWARFCallFrameInfo::GetUnwindPlan (Address addr, UnwindPlan& unwind_plan)
-{
-    FDEEntry fde_entry;
-    if (GetFDEEntryByAddress (addr, fde_entry) == false)
-        return false;
-    return FDEToUnwindPlan (fde_entry.offset, addr, unwind_plan);
-}
-
-bool
-DWARFCallFrameInfo::GetFDEEntryByAddress (Address addr, FDEEntry& fde_entry)
+DWARFCallFrameInfo::GetFDEEntryByFileAddress (addr_t file_addr, FDEEntryMap::Entry &fde_entry)
 {
     if (m_section_sp.get() == NULL || m_section_sp->IsEncrypted())
         return false;
+
     GetFDEIndex();
 
-    struct FDEEntry searchfde;
-    searchfde.bounds = AddressRange (addr, 1);
-
-    std::vector<FDEEntry>::const_iterator idx;
-    if (m_fde_index.size() == 0)
+    if (m_fde_index.IsEmpty())
         return false;
 
-    idx = std::lower_bound (m_fde_index.begin(), m_fde_index.end(), searchfde);
-    if (idx == m_fde_index.end())
-    {
-        --idx;
-    }
-    if (idx != m_fde_index.begin() && idx->bounds.GetBaseAddress().GetOffset() != addr.GetOffset())
-    {
-       --idx;
-    }
-    if (idx->bounds.ContainsFileAddress (addr))
-    {
-        fde_entry = *idx;
-        return true;
-    }
+    FDEEntryMap::Entry *fde = m_fde_index.FindEntryThatContains (file_addr);
 
-    return false;
+    if (fde == NULL)
+        return false;
+
+    fde_entry = *fde;
+    return true;
+}
+
+void
+DWARFCallFrameInfo::GetFunctionAddressAndSizeVector (FunctionAddressAndSizeVector &function_info)
+{
+    GetFDEIndex();
+    const size_t count = m_fde_index.GetSize();
+    function_info.Clear();
+    if (count > 0)
+        function_info.Reserve(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const FDEEntryMap::Entry *func_offset_data_entry = m_fde_index.GetEntryAtIndex (i);
+        if (func_offset_data_entry)
+        {
+            FunctionAddressAndSizeVector::Entry function_offset_entry (func_offset_data_entry->base, func_offset_data_entry->size);
+            function_info.Append (function_offset_entry);
+        }
+    }
 }
 
 const DWARFCallFrameInfo::CIE*
@@ -117,13 +143,13 @@ DWARFCallFrameInfo::CIESP
 DWARFCallFrameInfo::ParseCIE (const dw_offset_t cie_offset)
 {
     CIESP cie_sp(new CIE(cie_offset));
-    dw_offset_t offset = cie_offset;
+    lldb::offset_t offset = cie_offset;
     if (m_cfi_data_initialized == false)
         GetCFIData();
     const uint32_t length = m_cfi_data.GetU32(&offset);
     const dw_offset_t cie_id = m_cfi_data.GetU32(&offset);
     const dw_offset_t end_offset = cie_offset + length + 4;
-    if (length > 0 && ((!m_is_eh_frame && cie_id == 0xfffffffful) || (m_is_eh_frame && cie_id == 0ul)))
+    if (length > 0 && ((!m_is_eh_frame && cie_id == UINT32_MAX) || (m_is_eh_frame && cie_id == 0ul)))
     {
         size_t i;
         //    cie.offset = cie_offset;
@@ -277,9 +303,9 @@ DWARFCallFrameInfo::GetCFIData()
 {
     if (m_cfi_data_initialized == false)
     {
-        LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+        Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
         if (log)
-            m_objfile.GetModule()->LogMessage(log.get(), "Reading EH frame info");
+            m_objfile.GetModule()->LogMessage(log, "Reading EH frame info");
         m_objfile.ReadSectionData (m_section_sp.get(), m_cfi_data);
         m_cfi_data_initialized = true;
     }
@@ -302,7 +328,9 @@ DWARFCallFrameInfo::GetFDEIndex ()
     if (m_fde_index_initialized) // if two threads hit the locker
         return;
 
-    dw_offset_t offset = 0;
+    Timer scoped_timer (__PRETTY_FUNCTION__, "%s - %s", __PRETTY_FUNCTION__, m_objfile.GetFileSpec().GetFilename().AsCString(""));
+
+    lldb::offset_t offset = 0;
     if (m_cfi_data_initialized == false)
         GetCFIData();
     while (m_cfi_data.ValidOffsetForDataOfSize (offset, 8))
@@ -329,10 +357,8 @@ DWARFCallFrameInfo::GetFDEIndex ()
 
             lldb::addr_t addr = m_cfi_data.GetGNUEHPointer(&offset, cie->ptr_encoding, pc_rel_addr, text_addr, data_addr);
             lldb::addr_t length = m_cfi_data.GetGNUEHPointer(&offset, cie->ptr_encoding & DW_EH_PE_MASK_ENCODING, pc_rel_addr, text_addr, data_addr);
-            FDEEntry fde;
-            fde.bounds = AddressRange (addr, length, m_objfile.GetSectionList());
-            fde.offset = current_entry;
-            m_fde_index.push_back(fde);
+            FDEEntryMap::Entry fde (addr, length, current_entry);
+            m_fde_index.Append(fde);
         }
         else
         {
@@ -344,14 +370,15 @@ DWARFCallFrameInfo::GetFDEIndex ()
         }
         offset = next_entry;
     }
-    std::sort (m_fde_index.begin(), m_fde_index.end());
+    m_fde_index.Sort();
     m_fde_index_initialized = true;
 }
 
 bool
-DWARFCallFrameInfo::FDEToUnwindPlan (dw_offset_t offset, Address startaddr, UnwindPlan& unwind_plan)
+DWARFCallFrameInfo::FDEToUnwindPlan (dw_offset_t dwarf_offset, Address startaddr, UnwindPlan& unwind_plan)
 {
-    dw_offset_t current_entry = offset;
+    lldb::offset_t offset = dwarf_offset;
+    lldb::offset_t current_entry = offset;
 
     if (m_section_sp.get() == NULL || m_section_sp->IsEncrypted())
         return false;

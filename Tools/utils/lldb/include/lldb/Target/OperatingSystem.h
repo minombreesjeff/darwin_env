@@ -65,7 +65,9 @@ public:
     // Plug-in Methods
     //------------------------------------------------------------------
     virtual bool
-    UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list) = 0;
+    UpdateThreadList (ThreadList &old_thread_list,
+                      ThreadList &real_thread_list,
+                      ThreadList &new_thread_list) = 0;
     
     virtual void
     ThreadWasSelected (Thread *thread) = 0;
@@ -75,6 +77,15 @@ public:
 
     virtual lldb::StopInfoSP
     CreateThreadStopReason (Thread *thread) = 0;
+
+    virtual lldb::ThreadSP
+    CreateThread (lldb::tid_t tid, lldb::addr_t context)
+    {
+        return lldb::ThreadSP();
+    }
+    
+    virtual bool
+    IsOperatingSystemPluginThread (const lldb::ThreadSP &thread_sp);
 
 protected:
     //------------------------------------------------------------------

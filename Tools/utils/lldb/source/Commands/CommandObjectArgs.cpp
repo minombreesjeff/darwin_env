@@ -104,7 +104,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
     ConstString target_triple;
     
     
-    Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+    Process *process = m_exe_ctx.GetProcessPtr();
     if (!process)
     {
         result.AppendError ("Args found no process.");
@@ -120,8 +120,8 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
         return false;
     }
     
-    int num_args = args.GetArgumentCount ();
-    int arg_index;
+    const size_t num_args = args.GetArgumentCount ();
+    size_t arg_index;
     
     if (!num_args)
     {
@@ -130,7 +130,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
         return false;
     }
     
-    Thread *thread = m_interpreter.GetExecutionContext ().GetThreadPtr();
+    Thread *thread = m_exe_ctx.GetThreadPtr();
     
     if (!thread)
     {
@@ -256,7 +256,7 @@ CommandObjectArgs::DoExecute (Args& args, CommandReturnObject &result)
 
     for (arg_index = 0; arg_index < num_args; ++arg_index)
     {
-        result.GetOutputStream ().Printf ("%d (%s): ", arg_index, args.GetArgumentAtIndex (arg_index));
+        result.GetOutputStream ().Printf ("%zu (%s): ", arg_index, args.GetArgumentAtIndex (arg_index));
         value_list.GetValueAtIndex (arg_index)->Dump (&result.GetOutputStream ());
         result.GetOutputStream ().Printf("\n");
     }

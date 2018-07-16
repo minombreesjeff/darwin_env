@@ -52,10 +52,7 @@ public:
         eContextTypeVariable            // lldb_private::Variable *
     };
 
-    enum
-    {
-        kMaxByteSize = 32u
-    };
+    const static size_t kMaxByteSize = 32u;
 
     struct Vector
     {
@@ -76,12 +73,12 @@ public:
         const Vector& 
 		operator=(const Vector& vector) 
 		{
-            SetBytes((uint8_t *)vector.bytes, vector.length, vector.byte_order);
+            SetBytes(vector.bytes, vector.length, vector.byte_order);
             return *this;
         }
 
         bool 
-		SetBytes(uint8_t *bytes, size_t length, lldb::ByteOrder byte_order)
+		SetBytes(const void *bytes, size_t length, lldb::ByteOrder byte_order)
 		{
             this->length = length;
             this->byte_order = byte_order;
@@ -103,15 +100,17 @@ public:
 		{
             Scalar scalar;
             if (IsValid())
-                if (length == 1) scalar = *(uint8_t *)bytes;
-                if (length == 2) scalar = *(uint16_t *)bytes;
-                if (length == 4) scalar = *(uint32_t *)bytes;
-                if (length == 8) scalar = *(uint64_t *)bytes;
+            {
+                if (length == 1) scalar = *(const uint8_t *)bytes;
+                else if (length == 2) scalar = *(const uint16_t *)bytes;
+                else if (length == 4) scalar = *(const uint32_t *)bytes;
+                else if (length == 8) scalar = *(const uint64_t *)bytes;
 #if defined (ENABLE_128_BIT_SUPPORT)
-                if (length >= 16) scalar = *(__uint128_t *)bytes;
+                else if (length >= 16) scalar = *(const __uint128_t *)bytes;
 #else
-                if (length >= 16) scalar = *(__uint64_t *)bytes;
+                else if (length >= 16) scalar = *(const __uint64_t *)bytes;
 #endif
+            }
             return scalar;
         }
     };
@@ -168,7 +167,7 @@ public:
     }
 
     RegisterInfo *
-    GetRegisterInfo();
+    GetRegisterInfo() const;
 
     Type *
     GetType();
@@ -176,6 +175,18 @@ public:
     Scalar &
     ResolveValue (ExecutionContext *exe_ctx, clang::ASTContext *ast_context);
 
+    const Scalar &
+    GetScalar() const
+    {
+        return m_value;
+    }
+    
+    const Vector &
+    GetVector() const
+    {
+        return m_vector;
+    }
+    
     Scalar &
     GetScalar()
     {
@@ -213,7 +224,7 @@ public:
     }
 
     void
-    ResizeData(int len);
+    ResizeData(size_t len);
 
     bool
     ValueOf(ExecutionContext *exe_ctx, clang::ASTContext *ast_context);
@@ -227,7 +238,7 @@ public:
     lldb::Format
     GetValueDefaultFormat ();
 
-    size_t
+    uint64_t
     GetValueByteSize (clang::ASTContext *ast_context, Error *error_ptr);
 
     Error

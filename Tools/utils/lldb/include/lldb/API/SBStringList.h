@@ -62,7 +62,7 @@ protected:
 
 private:
 
-    std::auto_ptr<lldb_private::StringList> m_opaque_ap;
+    std::unique_ptr<lldb_private::StringList> m_opaque_ap;
 
 };
 

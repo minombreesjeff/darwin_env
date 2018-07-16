@@ -32,7 +32,8 @@ EmulateInstruction::FindPlugin (const ArchSpec &arch, InstructionType supported_
     EmulateInstructionCreateInstance create_callback = NULL;
     if (plugin_name)
     {
-        create_callback  = PluginManager::GetEmulateInstructionCreateCallbackForPluginName (plugin_name);
+        ConstString const_plugin_name (plugin_name);
+        create_callback  = PluginManager::GetEmulateInstructionCreateCallbackForPluginName (const_plugin_name);
         if (create_callback)
         {
            	EmulateInstruction *emulate_insn_ptr = create_callback(arch, supported_inst_type);
@@ -186,7 +187,7 @@ EmulateInstruction::ReadMemoryUnsigned (const Context &context, lldb::addr_t add
         size_t bytes_read = m_read_mem_callback (this, m_baton, context, addr, buf, byte_size);
         if (bytes_read == byte_size)
         {
-            uint32_t offset = 0;
+            lldb::offset_t offset = 0;
             DataExtractor data (buf, byte_size, GetByteOrder(), GetAddressByteSize());
             uval64 = data.GetMaxU64 (&offset, byte_size);
             success = true;
@@ -586,10 +587,6 @@ EmulateInstruction::Context::Dump (Stream &strm,
         break;
         
     case eInfoTypeNoArgs:
-        break;
-
-    default:
-        strm.Printf (" (unknown <info_type>)");
         break;
     }
 }

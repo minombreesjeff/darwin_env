@@ -26,6 +26,8 @@
 // A build script phase can modify this version number if needed.
 //----------------------------------------------------------------------
 //#define LLDB_VERSION
+//#define LLDB_REVISION
+//#define LLDB_VERSION_STRING
 
 //----------------------------------------------------------------------
 // LLDB defines
@@ -47,6 +49,7 @@
 #define LLDB_WATCH_ID_IS_VALID(uid)     ((uid) != (LLDB_INVALID_WATCH_ID))
 #define LLDB_WATCH_TYPE_READ            (1u << 0)
 #define LLDB_WATCH_TYPE_WRITE           (1u << 1)
+#define LLDB_WATCH_TYPE_IS_VALID(type)  ((type | LLDB_WATCH_TYPE_READ) || (type | LLDB_WATCH_TYPE_WRITE))
 
 //----------------------------------------------------------------------
 // Generic Register Numbers
@@ -77,6 +80,7 @@
 #define LLDB_INVALID_THREAD_ID          0
 #define LLDB_INVALID_FRAME_ID           UINT32_MAX
 #define LLDB_INVALID_SIGNAL_NUMBER      INT32_MAX
+#define LLDB_INVALID_OFFSET             UINT64_MAX // Must match max of lldb::offset_t
 
 //----------------------------------------------------------------------
 /// CPU Type defintions

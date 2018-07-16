@@ -12,6 +12,7 @@
 
 // C Includes
 // C++ Includes
+#include <list>
 
 // Other libraries and framework includes
 // Project includes
@@ -24,7 +25,6 @@
 #include "lldb/Core/Event.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/UserSettingsController.h"
-#include "lldb/Core/SourceManager.h"
 #include "lldb/Expression/ClangPersistentVariables.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/OptionValueBoolean.h"
@@ -46,7 +46,14 @@ typedef enum InlineStrategy
     eInlineBreakpointsHeaders,
     eInlineBreakpointsAlways
 } InlineStrategy;
-
+    
+typedef enum LoadScriptFromSymFile
+{
+    eLoadScriptFromSymFileTrue,
+    eLoadScriptFromSymFileFalse,
+    eLoadScriptFromSymFileWarn
+} LoadScriptFromSymFile;
+    
 //----------------------------------------------------------------------
 // TargetProperties
 //----------------------------------------------------------------------
@@ -79,6 +86,12 @@ public:
     void
     SetDisableSTDIO (bool b);
     
+    const char *
+    GetDisassemblyFlavor() const;
+
+//    void
+//    SetDisassemblyFlavor(const char *flavor);
+    
     InlineStrategy
     GetInlineStrategy () const;
 
@@ -105,6 +118,9 @@ public:
     
     FileSpecList &
     GetExecutableSearchPaths ();
+
+    FileSpecList &
+    GetDebugFileSearchPaths ();
     
     bool
     GetEnableSyntheticValue () const;
@@ -114,6 +130,9 @@ public:
     
     uint32_t
     GetMaximumSizeOfStringSummary() const;
+
+    uint32_t
+    GetMaximumMemReadSize () const;
     
     FileSpec
     GetStandardInputPath () const;
@@ -138,10 +157,18 @@ public:
     
     const char *
     GetExpressionPrefixContentsAsCString ();
-
+    
+    bool
+    GetUseFastStepping() const;
+    
+    LoadScriptFromSymFile
+    GetLoadScriptFromSymbolFile() const;
+    
+    MemoryModuleLoadLevel
+    GetMemoryModuleLoadLevel() const;
 };
 
-typedef STD_SHARED_PTR(TargetProperties) TargetPropertiesSP;
+typedef std::shared_ptr<TargetProperties> TargetPropertiesSP;
 
 class EvaluateExpressionOptions
 {
@@ -151,6 +178,7 @@ public:
         m_execution_policy(eExecutionPolicyOnlyWhenNeeded),
         m_coerce_to_id(false),
         m_unwind_on_error(true),
+        m_ignore_breakpoints (false),
         m_keep_in_memory(false),
         m_run_others(true),
         m_use_dynamic(lldb::eNoDynamicValues),
@@ -193,6 +221,19 @@ public:
     SetUnwindOnError (bool unwind = false)
     {
         m_unwind_on_error = unwind;
+        return *this;
+    }
+    
+    bool
+    DoesIgnoreBreakpoints () const
+    {
+        return m_ignore_breakpoints;
+    }
+    
+    EvaluateExpressionOptions&
+    SetIgnoreBreakpoints (bool ignore = false)
+    {
+        m_ignore_breakpoints = ignore;
         return *this;
     }
     
@@ -252,6 +293,7 @@ private:
     ExecutionPolicy m_execution_policy;
     bool m_coerce_to_id;
     bool m_unwind_on_error;
+    bool m_ignore_breakpoints;
     bool m_keep_in_memory;
     bool m_run_others;
     lldb::DynamicValueType m_use_dynamic;
@@ -262,7 +304,7 @@ private:
 // Target
 //----------------------------------------------------------------------
 class Target :
-    public STD_ENABLE_SHARED_FROM_THIS(Target),
+    public std::enable_shared_from_this<Target>,
     public TargetProperties,
     public Broadcaster,
     public ExecutionContextScope,
@@ -278,7 +320,9 @@ public:
     {
         eBroadcastBitBreakpointChanged  = (1 << 0),
         eBroadcastBitModulesLoaded      = (1 << 1),
-        eBroadcastBitModulesUnloaded    = (1 << 2)
+        eBroadcastBitModulesUnloaded    = (1 << 2),
+        eBroadcastBitWatchpointChanged  = (1 << 3),
+        eBroadcastBitSymbolsLoaded      = (1 << 4)
     };
     
     // These two functions fill out the Broadcaster interface:
@@ -338,6 +382,9 @@ public:
 
     static FileSpecList
     GetDefaultExecutableSearchPaths ();
+
+    static FileSpecList
+    GetDefaultDebugFileSearchPaths ();
 
     static ArchSpec
     GetDefaultArchitecture ();
@@ -643,6 +690,9 @@ public:
     void
     ModulesDidUnload (ModuleList &module_list);
     
+    void
+    SymbolsDidLoad (ModuleList &module_list);
+    
     //------------------------------------------------------------------
     /// Gets the module for the main executable.
     ///
@@ -696,6 +746,14 @@ public:
     void
     SetExecutableModule (lldb::ModuleSP& module_sp, bool get_dependent_files);
 
+    bool
+    LoadScriptingResources (std::list<Error>& errors,
+                            Stream* feedback_stream = NULL,
+                            bool continue_on_error = true)
+    {
+        return m_images.LoadScriptingResourcesInTarget(this,errors,feedback_stream,continue_on_error);
+    }
+    
     //------------------------------------------------------------------
     /// Get accessor for the images for this process.
     ///
@@ -830,7 +888,13 @@ public:
                 size_t dst_len,
                 Error &error,
                 lldb::addr_t *load_addr_ptr = NULL);
-
+    
+    size_t
+    ReadCStringFromMemory (const Address& addr, std::string &out_str, Error &error);
+    
+    size_t
+    ReadCStringFromMemory (const Address& addr, char *dst, size_t dst_max_len, Error &result_error);
+    
     size_t
     ReadScalarIntegerFromMemory (const Address& addr, 
                                  bool prefer_file_cache,
@@ -989,7 +1053,7 @@ public:
         lldb::TargetSP m_target_sp;
         StringList   m_commands;
         lldb::SymbolContextSpecifierSP m_specifier_sp;
-        std::auto_ptr<ThreadSpec> m_thread_spec_ap;
+        std::unique_ptr<ThreadSpec> m_thread_spec_ap;
         bool m_active;
         
         // Use AddStopHook to make a new empty stop hook.  The GetCommandPointer and fill it with commands,
@@ -997,7 +1061,7 @@ public:
         StopHook (lldb::TargetSP target_sp, lldb::user_id_t uid);
         friend class Target;
     };
-    typedef STD_SHARED_PTR(StopHook) StopHookSP;
+    typedef std::shared_ptr<StopHook> StopHookSP;
     
     // Add an empty stop hook to the Target's stop hook list, and returns a shared pointer to it in new_hook.  
     // Returns the id of the new hook.        
@@ -1089,10 +1153,7 @@ public:
     }
 
     SourceManager &
-    GetSourceManager ()
-    {
-        return m_source_manager;
-    }
+    GetSourceManager ();
 
     //------------------------------------------------------------------
     // Methods.
@@ -1128,12 +1189,12 @@ protected:
     bool m_valid;
     lldb::SearchFilterSP  m_search_filter_sp;
     PathMappingList m_image_search_paths;
-    std::auto_ptr<ClangASTContext> m_scratch_ast_context_ap;
-    std::auto_ptr<ClangASTSource> m_scratch_ast_source_ap;
-    std::auto_ptr<ClangASTImporter> m_ast_importer_ap;
+    std::unique_ptr<ClangASTContext> m_scratch_ast_context_ap;
+    std::unique_ptr<ClangASTSource> m_scratch_ast_source_ap;
+    std::unique_ptr<ClangASTImporter> m_ast_importer_ap;
     ClangPersistentVariables m_persistent_variables;      ///< These are the persistent variables associated with this process for the expression parser.
 
-    SourceManager m_source_manager;
+    std::unique_ptr<SourceManager> m_source_manager_ap;
 
     typedef std::map<lldb::user_id_t, StopHookSP> StopHookCollection;
     StopHookCollection      m_stop_hooks;

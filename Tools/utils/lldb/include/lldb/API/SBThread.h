@@ -26,7 +26,8 @@ public:
         eBroadcastBitStackChanged           = (1 << 0),
         eBroadcastBitThreadSuspended        = (1 << 1),
         eBroadcastBitThreadResumed          = (1 << 2),
-        eBroadcastBitSelectedFrameChanged  = (1 << 3)
+        eBroadcastBitSelectedFrameChanged   = (1 << 3),
+        eBroadcastBitThreadSelected         = (1 << 4)
     };
 
     static const char *
@@ -35,6 +36,8 @@ public:
     SBThread ();
 
     SBThread (const lldb::SBThread &thread);
+    
+    SBThread (const lldb::ThreadSP& lldb_object_sp);
 
    ~SBThread();
 
@@ -98,6 +101,9 @@ public:
     StepInto (lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
 
     void
+    StepInto (const char *target_name, lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
+    
+    void
     StepOut ();
 
     void
@@ -125,7 +131,7 @@ public:
     /// SBProcess::Continue() is called, any threads that aren't suspended will
     /// be allowed to run. If any of the SBThread functions for stepping are 
     /// called (StepOver, StepInto, StepOut, StepInstruction, RunToAddres), the
-    /// thread will now be allowed to run and these funtions will simply return.
+    /// thread will not be allowed to run and these funtions will simply return.
     ///
     /// Eventually we plan to add support for thread centric debugging where
     /// each thread is controlled individually and each thread would broadcast
@@ -146,6 +152,9 @@ public:
     
     bool
     IsSuspended();
+
+    bool
+    IsStopped();
 
     uint32_t
     GetNumFrames ();
@@ -193,8 +202,6 @@ protected:
     friend class SBProcess;
     friend class SBDebugger;
     friend class SBValue;
-
-    SBThread (const lldb::ThreadSP& lldb_object_sp);
 
     void
     SetThread (const lldb::ThreadSP& lldb_object_sp);

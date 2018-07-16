@@ -43,18 +43,24 @@ public:
         eCore_arm_armv6,
         eCore_arm_armv7,
         eCore_arm_armv7f,
-        eCore_arm_armv7k,
         eCore_arm_armv7s,
+        eCore_arm_armv7k,
+        eCore_arm_armv7m,
+        eCore_arm_armv7em,
         eCore_arm_xscale,  
+
         eCore_thumb,
         eCore_thumbv4t,
         eCore_thumbv5,
         eCore_thumbv5e,
         eCore_thumbv6,
         eCore_thumbv7,
-        eCore_thumbv7f,
-        eCore_thumbv7k,
         eCore_thumbv7s,
+        eCore_thumbv7k,
+        eCore_thumbv7f,
+        eCore_thumbv7m,
+        eCore_thumbv7em,
+        eCore_arm_arm64,
         
         eCore_ppc_generic,
         eCore_ppc_ppc601,
@@ -98,7 +104,7 @@ public:
         kCore_arm_last      = eCore_arm_xscale,
 
         kCore_thumb_first   = eCore_thumb,
-        kCore_thumb_last    = eCore_thumbv7s,
+        kCore_thumb_last    = eCore_thumbv7em,
 
         kCore_ppc_first     = eCore_ppc_generic,
         kCore_ppc_last      = eCore_ppc_ppc970,
@@ -143,10 +149,7 @@ public:
 
     //------------------------------------------------------------------
     /// Destructor.
-    ///
-    /// The destructor is virtual in case this class is subclassed.
     //------------------------------------------------------------------
-    virtual
     ~ArchSpec ();
 
     //------------------------------------------------------------------
@@ -159,7 +162,7 @@ public:
     const ArchSpec&
     operator= (const ArchSpec& rhs);
 
-    static uint32_t
+    static size_t
     AutoComplete (const char *name, 
                   StringList &matches);
 
@@ -389,7 +392,7 @@ public:
 
 protected:
     bool
-    Compare (const ArchSpec& rhs, bool exact_match) const;
+    IsEqualTo (const ArchSpec& rhs, bool exact_match) const;
 
     llvm::Triple m_triple;
     Core m_core;
@@ -400,35 +403,6 @@ protected:
     void
     CoreUpdated (bool update_triple);
 };
-
-
-//------------------------------------------------------------------
-/// @fn bool operator== (const ArchSpec& lhs, const ArchSpec& rhs)
-/// @brief Equal to operator.
-///
-/// Tests two ArchSpec objects to see if they are equal.
-///
-/// @param[in] lhs The Left Hand Side ArchSpec object to compare.
-/// @param[in] rhs The Left Hand Side ArchSpec object to compare.
-///
-/// Uses the IsExactMatch() method for comparing the cpu types.
-///
-/// @return true if \a lhs is equal to \a rhs
-//------------------------------------------------------------------
-bool operator==(const ArchSpec& lhs, const ArchSpec& rhs);
-
-//------------------------------------------------------------------
-/// @fn bool operator!= (const ArchSpec& lhs, const ArchSpec& rhs)
-/// @brief Not equal to operator.
-///
-/// Tests two ArchSpec objects to see if they are not equal.
-///
-/// @param[in] lhs The Left Hand Side ArchSpec object to compare.
-/// @param[in] rhs The Left Hand Side ArchSpec object to compare.
-///
-/// @return true if \a lhs is not equal to \a rhs
-//------------------------------------------------------------------
-bool operator!=(const ArchSpec& lhs, const ArchSpec& rhs);
 
 //------------------------------------------------------------------
 /// @fn bool operator< (const ArchSpec& lhs, const ArchSpec& rhs)

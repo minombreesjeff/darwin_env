@@ -35,7 +35,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -43,10 +43,11 @@ public:
 
     static lldb_private::ObjectFile *
     CreateInstance (const lldb::ModuleSP &module_sp,
-                    lldb::DataBufferSP& dataSP,
+                    lldb::DataBufferSP& data_sp,
+                    lldb::offset_t data_offset,
                     const lldb_private::FileSpec* file,
-                    lldb::addr_t offset,
-                    lldb::addr_t length);
+                    lldb::offset_t file_offset,
+                    lldb::offset_t length);
 
     static lldb_private::ObjectFile *
     CreateMemoryInstance (const lldb::ModuleSP &module_sp, 
@@ -54,8 +55,16 @@ public:
                           const lldb::ProcessSP &process_sp, 
                           lldb::addr_t header_addr);
 
+    static size_t
+    GetModuleSpecifications (const lldb_private::FileSpec& file,
+                             lldb::DataBufferSP& data_sp,
+                             lldb::offset_t data_offset,
+                             lldb::offset_t file_offset,
+                             lldb::offset_t length,
+                             lldb_private::ModuleSpecList &specs);
+
     static bool
-    MagicBytesMatch (lldb::DataBufferSP& dataSP, 
+    MagicBytesMatch (lldb::DataBufferSP& data_sp,
                      lldb::addr_t offset, 
                      lldb::addr_t length);
 
@@ -63,13 +72,14 @@ public:
     // Member Functions
     //------------------------------------------------------------------
     ObjectFileMachO (const lldb::ModuleSP &module_sp,
-                     lldb::DataBufferSP& dataSP,
+                     lldb::DataBufferSP& data_sp,
+                     lldb::offset_t data_offset,
                      const lldb_private::FileSpec* file,
-                     lldb::addr_t offset,
-                     lldb::addr_t length);
+                     lldb::offset_t offset,
+                     lldb::offset_t length);
 
     ObjectFileMachO (const lldb::ModuleSP &module_sp,
-                     lldb::DataBufferSP& dataSP,
+                     lldb::DataBufferSP& data_sp,
                      const lldb::ProcessSP &process_sp,
                      lldb::addr_t header_addr);
 
@@ -85,7 +95,7 @@ public:
     virtual bool
     IsExecutable () const;
 
-    virtual size_t
+    virtual uint32_t
     GetAddressByteSize ()  const;
 
     virtual lldb::AddressClass
@@ -94,8 +104,11 @@ public:
     virtual lldb_private::Symtab *
     GetSymtab();
 
-    virtual lldb_private::SectionList *
-    GetSectionList();
+    virtual bool
+    IsStripped ();
+    
+    virtual void
+    CreateSections (lldb_private::SectionList &unified_section_list);
 
     virtual void
     Dump (lldb_private::Stream *s);
@@ -112,11 +125,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -143,9 +153,36 @@ public:
     GetVersion (uint32_t *versions, uint32_t num_versions);
 
 protected:
+
+    static bool
+    ParseHeader (lldb_private::DataExtractor &data,
+                 lldb::offset_t *data_offset_ptr,
+                 llvm::MachO::mach_header &header);
+    
+    
+    static bool
+    GetUUID (const llvm::MachO::mach_header &header,
+             const lldb_private::DataExtractor &data,
+             lldb::offset_t lc_offset, // Offset to the first load command
+             lldb_private::UUID& uuid);
+    
+    // Intended for same-host arm device debugging where lldb needs to
+    // detect libraries in the shared cache and augment the nlist entries
+    // with an on-disk dyld_shared_cache file.  The process will record
+    // the shared cache UUID so the on-disk cache can be matched or rejected
+    // correctly.
+    lldb_private::UUID
+    GetProcessSharedCacheUUID (lldb_private::Process *);
+
+    // Intended for same-host arm device debugging where lldb will read
+    // shared cache libraries out of its own memory instead of the remote
+    // process' memory as an optimization.  If lldb's shared cache UUID 
+    // does not match the process' shared cache UUID, this optimization
+    // should not be used.
+    lldb_private::UUID
+    GetLLDBSharedCacheUUID ();
+
     llvm::MachO::mach_header m_header;
-    mutable std::auto_ptr<lldb_private::SectionList> m_sections_ap;
-    mutable std::auto_ptr<lldb_private::Symtab> m_symtab_ap;
     static const lldb_private::ConstString &GetSegmentNameTEXT();
     static const lldb_private::ConstString &GetSegmentNameDATA();
     static const lldb_private::ConstString &GetSegmentNameOBJC();
@@ -155,16 +192,13 @@ protected:
     llvm::MachO::dysymtab_command m_dysymtab;
     std::vector<llvm::MachO::segment_command_64> m_mach_segments;
     std::vector<llvm::MachO::section_64> m_mach_sections;
-    typedef lldb_private::RangeArray<uint32_t, uint32_t, 1> FileRangeArray;
+    typedef lldb_private::RangeVector<uint32_t, uint32_t> FileRangeArray;
     lldb_private::Address  m_entry_point_address;
     FileRangeArray m_thread_context_offsets;
     bool m_thread_context_offsets_valid;
 
     size_t
-    ParseSections ();
-
-    size_t
-    ParseSymtab (bool minimize);
+    ParseSymtab ();
 
 };
 

@@ -15,6 +15,7 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/ValueObject.h"
+#include "lldb/Symbol/Type.h"
 
 namespace lldb_private {
 
@@ -28,13 +29,16 @@ public:
     virtual
     ~ValueObjectDynamicValue();
 
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
 
     virtual ConstString
     GetTypeName();
 
-    virtual uint32_t
+    virtual ConstString
+    GetQualifiedTypeName();
+    
+    virtual size_t
     CalculateNumChildren();
 
     virtual lldb::ValueType
@@ -86,9 +90,24 @@ public:
     virtual bool
     SetValueFromCString (const char *value_str, Error& error);
     
+    virtual bool
+    SetData (DataExtractor &data, Error &error);
+    
 protected:
     virtual bool
     UpdateValue ();
+    
+    virtual lldb::DynamicValueType
+    GetDynamicValueTypeImpl ()
+    {
+        return m_use_dynamic;
+    }
+    
+    virtual bool
+    HasDynamicValueTypeInfo ()
+    {
+        return true;
+    }
     
     virtual clang::ASTContext *
     GetClangASTImpl ();
@@ -97,7 +116,7 @@ protected:
     GetClangTypeImpl ();
 
     Address  m_address;  ///< The variable that this value object is based upon
-    lldb::TypeSP m_type_sp;
+    TypeAndOrName m_dynamic_type_info; // We can have a type_sp or just a name
     lldb::ValueObjectSP m_owning_valobj_sp;
     lldb::DynamicValueType m_use_dynamic;
 

@@ -13,6 +13,7 @@
 #include "lldb/lldb-private.h"
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Host/FileSpec.h"
+#include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/ModuleChild.h"
 #include "lldb/Core/PluginInterface.h"
 #include "lldb/Host/Endian.h"
@@ -50,7 +51,7 @@ namespace lldb_private {
 /// this abstract class.
 //----------------------------------------------------------------------
 class ObjectFile:
-    public STD_ENABLE_SHARED_FROM_THIS(ObjectFile),
+    public std::enable_shared_from_this<ObjectFile>,
     public PluginInterface,
     public ModuleChild
 {
@@ -78,7 +79,7 @@ public:
         eStrataKernel,
         eStrataRawImage
     } Strata;
-        
+
     //------------------------------------------------------------------
     /// Construct with a parent module, offset, and header data.
     ///
@@ -88,14 +89,15 @@ public:
     //------------------------------------------------------------------
     ObjectFile (const lldb::ModuleSP &module_sp, 
                 const FileSpec *file_spec_ptr, 
-                lldb::addr_t offset, 
-                lldb::addr_t length, 
-                lldb::DataBufferSP& headerDataSP);
+                lldb::offset_t file_offset,
+                lldb::offset_t length,
+                lldb::DataBufferSP& data_sp,
+                lldb::offset_t data_offset);
 
     ObjectFile (const lldb::ModuleSP &module_sp, 
                 const lldb::ProcessSP &process_sp,
                 lldb::addr_t header_addr, 
-                lldb::DataBufferSP& headerDataSP);
+                lldb::DataBufferSP& data_sp);
 
     //------------------------------------------------------------------
     /// Destructor.
@@ -148,9 +150,10 @@ public:
     static lldb::ObjectFileSP
     FindPlugin (const lldb::ModuleSP &module_sp,
                 const FileSpec* file_spec,
-                lldb::addr_t file_offset,
-                lldb::addr_t file_size,
-                lldb::DataBufferSP &data_sp);
+                lldb::offset_t file_offset,
+                lldb::offset_t file_size,
+                lldb::DataBufferSP &data_sp,
+                lldb::offset_t &data_offset);
 
     //------------------------------------------------------------------
     /// Find a ObjectFile plug-in that can parse a file in memory.
@@ -176,6 +179,18 @@ public:
                 lldb::DataBufferSP &file_data_sp);
 
     
+    static size_t
+    GetModuleSpecifications (const FileSpec &file,
+                             lldb::offset_t file_offset,
+                             ModuleSpecList &specs);
+    
+    static size_t
+    GetModuleSpecifications (const lldb_private::FileSpec& file,
+                             lldb::DataBufferSP& data_sp,
+                             lldb::offset_t data_offset,
+                             lldb::offset_t file_offset,
+                             lldb::offset_t length,
+                             lldb_private::ModuleSpecList &specs);
     //------------------------------------------------------------------
     /// Split a path into a file path with object name.
     ///
@@ -204,7 +219,8 @@ public:
     static bool
     SplitArchivePathWithObject (const char *path_with_object,
                                 lldb_private::FileSpec &archive_file,
-                                lldb_private::ConstString &archive_object);
+                                lldb_private::ConstString &archive_object,
+                                bool must_exist);
 
     //------------------------------------------------------------------
     /// Gets the address size in bytes for the current object file.
@@ -214,7 +230,7 @@ public:
     ///     architecture (and object for archives). Returns zero if no
     ///     architecture or object has been selected.
     //------------------------------------------------------------------
-    virtual size_t
+    virtual uint32_t
     GetAddressByteSize ()  const = 0;
 
     //------------------------------------------------------------------
@@ -278,8 +294,8 @@ public:
     ///     simple object files that a represented by an entire file.
     //------------------------------------------------------------------
     virtual lldb::addr_t
-    GetOffset () const
-    { return m_offset; }
+    GetFileOffset () const
+    { return m_file_offset; }
 
     virtual lldb::addr_t
     GetByteSize () const
@@ -332,7 +348,10 @@ public:
     ///     The list of sections contained in this object file.
     //------------------------------------------------------------------
     virtual SectionList *
-    GetSectionList () = 0;
+    GetSectionList ();
+
+    virtual void
+    CreateSections (SectionList &unified_section_list) = 0;
 
     //------------------------------------------------------------------
     /// Gets the symbol table for the currently selected architecture
@@ -348,6 +367,31 @@ public:
     GetSymtab () = 0;
 
     //------------------------------------------------------------------
+    /// Detect if this object file has been stripped of local symbols.
+    ///
+    /// @return
+    ///     Return \b true if the object file has been stripped of local
+    ///     symbols.
+    //------------------------------------------------------------------
+    virtual bool
+    IsStripped () = 0;
+
+    //------------------------------------------------------------------
+    /// Frees the symbol table.
+    ///
+    /// This function should only be used when an object file is
+    ///
+    /// @param[in] flags
+    ///     eSymtabFromUnifiedSectionList: Whether to clear symbol table
+    ///     for unified module section list, or object file.
+    ///
+    /// @return
+    ///     The symbol table for this object file.
+    //------------------------------------------------------------------
+    virtual void
+    ClearSymtab ();
+    
+    //------------------------------------------------------------------
     /// Gets the UUID for this object file.
     ///
     /// If the object file format contains a UUID, the value should be
@@ -361,6 +405,21 @@ public:
     //------------------------------------------------------------------
     virtual bool
     GetUUID (lldb_private::UUID* uuid) = 0;
+
+    //------------------------------------------------------------------
+    /// Gets the symbol file spec list for this object file.
+    ///
+    /// If the object file format contains a debug symbol file link,
+    /// the values will be return in the FileSpecList.
+    ///
+    /// @return
+    ///     Returns filespeclist.
+    //------------------------------------------------------------------
+    virtual lldb_private::FileSpecList
+    GetDebugSymbolFilePaths()
+    {
+        return FileSpecList();
+    }
 
     //------------------------------------------------------------------
     /// Gets whether endian swapping should occur when extracting data
@@ -439,13 +498,13 @@ public:
     /// file is that describes the content of the file. If the header
     /// doesn't appear in a section that is defined in the object file,
     /// an address with no section is returned that has the file offset
-    /// set in the m_offset member of the lldb_private::Address object.
+    /// set in the m_file_offset member of the lldb_private::Address object.
     ///
     /// @return
     ///     Returns the entry address for this module.
     //------------------------------------------------------------------
     virtual lldb_private::Address
-    GetHeaderAddress () { return Address();}
+    GetHeaderAddress () { return Address(m_memory_addr);}
 
     
     virtual uint32_t
@@ -459,6 +518,7 @@ public:
     {
         return lldb::RegisterContextSP();
     }
+
     //------------------------------------------------------------------
     /// The object file should be able to calculate its type by looking
     /// at its file header and possibly the sections or other data in
@@ -473,6 +533,17 @@ public:
     //------------------------------------------------------------------
     virtual Type
     CalculateType() = 0;
+
+    //------------------------------------------------------------------
+    /// In cases where the type can't be calculated (elf files), this
+    /// routine allows someone to explicitly set it. As an example,
+    /// SymbolVendorELF uses this routine to set eTypeDebugInfo when
+    /// loading debug link files.
+    virtual void
+    SetType (Type type)
+    {
+        m_type = type;
+    }
 
     //------------------------------------------------------------------
     /// The object file should be able to calculate the strata of the
@@ -601,12 +672,14 @@ protected:
     FileSpec m_file;
     Type m_type;
     Strata m_strata;
-    lldb::addr_t m_offset; ///< The offset in bytes into the file, or the address in memory
+    lldb::addr_t m_file_offset; ///< The offset in bytes into the file, or the address in memory
     lldb::addr_t m_length; ///< The length of this object file if it is known (can be zero if length is unknown or can't be determined).
     DataExtractor m_data; ///< The data for this object file so things can be parsed lazily.
     lldb_private::UnwindTable m_unwind_table; /// < Table of FuncUnwinders objects created for this ObjectFile's functions
     lldb::ProcessWP m_process_wp;
     const lldb::addr_t m_memory_addr;
+    std::unique_ptr<lldb_private::SectionList> m_sections_ap;
+    std::unique_ptr<lldb_private::Symtab> m_symtab_ap;
     
     //------------------------------------------------------------------
     /// Sets the architecture for a module.  At present the architecture

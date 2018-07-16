@@ -18,6 +18,7 @@ class CmdPythonTestCase(TestBase):
         self.pycmd_tests ()
 
     @dwarf_test
+    @skipIfLinux # causes buildbot failures, skip until we can investigate it
     def test_with_dwarf (self):
         self.buildDwarf ()
         self.pycmd_tests ()
@@ -43,6 +44,9 @@ class CmdPythonTestCase(TestBase):
 
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
+
+        # Interact with debugger in synchronous mode
+        self.setAsync(False)
 
         # We don't want to display the stdout if not in TraceOn() mode.
         if not self.TraceOn():
@@ -106,11 +110,22 @@ class CmdPythonTestCase(TestBase):
         self.expect("tell_async",
                     substrs = ['running async'])
         self.expect("tell_curr",
-                    substrs = ['I am running','sync'])
+                    substrs = ['I am running sync'])
 
+        # Test that a python command can redefine itself
+        self.expect('command script add -f foobar welcome')
 
         self.runCmd("command script clear")
 
+        # Test that re-defining an existing command works
+        self.runCmd('command script add my_command --function welcome.welcome_impl')
+        self.expect('my_command Blah', substrs = ['Hello Blah, welcome to LLDB'])
+
+        self.runCmd('command script add my_command --function welcome.target_name_impl')
+        self.expect('my_command', substrs = ['a.out'])
+
+        self.runCmd("command script clear")
+                
         self.expect('command script list', matching=False,
                     substrs = ['targetname',
                                'longwait'])

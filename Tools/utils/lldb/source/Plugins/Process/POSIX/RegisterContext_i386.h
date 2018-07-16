@@ -35,18 +35,18 @@ public:
     GetRegisterCount();
 
     const lldb_private::RegisterInfo *
-    GetRegisterInfoAtIndex(uint32_t reg);
+    GetRegisterInfoAtIndex(size_t reg);
 
     size_t
     GetRegisterSetCount();
 
     const lldb_private::RegisterSet *
-    GetRegisterSet(uint32_t set);
+    GetRegisterSet(size_t set);
 
-    static unsigned
+    unsigned
     GetRegisterIndexFromOffset(unsigned offset);
 
-    static const char *
+    const char *
     GetRegisterName(unsigned reg);
 
     bool

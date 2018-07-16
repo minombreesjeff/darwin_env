@@ -20,7 +20,6 @@ Type:
 for available options.
 """
 
-import argparse
 import os
 import platform
 import signal
@@ -29,6 +28,28 @@ import sys
 import textwrap
 import time
 import unittest2
+import progress
+
+if sys.version_info >= (2, 7):
+    argparse = __import__('argparse')
+else:
+    argparse = __import__('argparse_compat')
+
+def parse_args(parser):
+    """ Returns an argument object. LLDB_TEST_ARGUMENTS environment variable can
+        be used to pass additional arguments if a compatible (>=2.7) argparse
+        library is available.
+    """
+    if sys.version_info >= (2, 7):
+        args = ArgParseNamespace()
+
+        if ('LLDB_TEST_ARGUMENTS' in os.environ):
+            print "Arguments passed through environment: '%s'" % os.environ['LLDB_TEST_ARGUMENTS']
+            args = parser.parse_args([sys.argv[0]].__add__(os.environ['LLDB_TEST_ARGUMENTS'].split()),namespace=args)
+
+        return parser.parse_args(namespace=args)
+    else:
+        return parser.parse_args()
 
 def is_exe(fpath):
     """Returns true if fpath is an executable."""
@@ -74,7 +95,9 @@ validCategories = {
 'dataformatters':'Tests related to the type command and the data formatters subsystem',
 'expression':'Tests related to the expression parser',
 'objc':'Tests related to the Objective-C programming language support',
-'pyapi':'Tests related to the Python API'
+'pyapi':'Tests related to the Python API',
+'basic_process': 'Basic process execution sniff tests.',
+'cmdline' : 'Tests related to the LLDB command-line interface'
 }
 
 # The test suite.
@@ -95,7 +118,7 @@ just_do_benchmarks_test = False
 # Use @dsym_test or @dwarf_test decorators, defined in lldbtest.py, to mark a test
 # as a dsym or dwarf test.  Use '-N dsym' or '-N dwarf' to exclude dsym or dwarf
 # tests from running.
-dont_do_dsym_test = "linux" in sys.platform
+dont_do_dsym_test = "linux" in sys.platform or "freebsd" in sys.platform
 dont_do_dwarf_test = False
 
 # The blacklist is optional (-b blacklistFile) and allows a central place to skip
@@ -132,7 +155,7 @@ post_flight = None
 
 # The 'archs' and 'compilers' can be specified via either command line or configFile,
 # with the command line overriding the configFile.  The corresponding options can be
-# specified more than once. For example, "-A x86_64 -A i386" => archs=['x86_64', 'i386'] 
+# specified more than once. For example, "-A x86_64 -A i386" => archs=['x86_64', 'i386']
 # and "-C gcc -C clang" => compilers=['gcc', 'clang'].
 archs = None        # Must be initialized after option parsing
 compilers = None    # Must be initialized after option parsing
@@ -186,6 +209,10 @@ skip_long_running_test = True
 # turn it off.
 noHeaders = False
 
+# Parsable mode silences headers, and any other output this script might generate, and instead
+# prints machine-readable output similar to what clang tests produce.
+parsable = False
+
 # The regular expression pattern to match against eligible filenames as our test cases.
 regexp = None
 
@@ -206,11 +233,11 @@ sdir_has_content = False
 # svn_info stores the output from 'svn info lldb.base.dir'.
 svn_info = ''
 
-# The environment variables to unset before running the test cases.
-unsets = []
+# svn_silent means do not try to obtain svn status
+svn_silent = True
 
 # Default verbosity is 0.
-verbose = 0
+verbose = 1
 
 # Set to True only if verbose is 0 and LLDB trace mode is off.
 progress_bar = False
@@ -221,6 +248,7 @@ testdirs = [ sys.path[0] ]
 # Separator string.
 separator = '-' * 70
 
+failed = False
 
 def usage(parser):
     parser.print_help()
@@ -307,6 +335,18 @@ o GDB_REMOTE_LOG: if defined, specifies the log file pathname for the
     sys.exit(0)
 
 
+def unique_string_match(yourentry,list):
+	candidate = None
+	for item in list:
+		if item.startswith(yourentry):
+			if candidate:
+				return None
+			candidate = item
+	return candidate
+
+class ArgParseNamespace(object):
+    pass
+
 def parseOptionsAndInitTestdirs():
     """Initialize the list of directories containing our unittest scripts.
 
@@ -343,10 +383,11 @@ def parseOptionsAndInitTestdirs():
     global skip_build_and_cleanup
     global skip_long_running_test
     global noHeaders
+    global parsable
     global regexp
     global rdir
     global sdir_name
-    global unsets
+    global svn_silent
     global verbose
     global testdirs
 
@@ -377,7 +418,7 @@ def parseOptionsAndInitTestdirs():
     X('+a', "Just do lldb Python API tests. Do not specify along with '+a'", dest='plus_a')
     X('+b', 'Just do benchmark tests', dest='plus_b')
     group.add_argument('-b', metavar='blacklist', help='Read a blacklist file specified after this option')
-    group.add_argument('-f', metavar='filterspec', help='Specify a filter, which consists of the test class name, a dot, followed by the test method, to only admit such test into the test suite')  # FIXME: Example?
+    group.add_argument('-f', metavar='filterspec', action='append', help='Specify a filter, which consists of the test class name, a dot, followed by the test method, to only admit such test into the test suite')  # FIXME: Example?
     X('-g', 'If specified, the filterspec by -f is not exclusive, i.e., if a test module does not match the filterspec (testclass.testmethod), the whole module is still admitted to the test suite')
     X('-l', "Don't skip long running tests")
     group.add_argument('-p', metavar='pattern', help='Specify a regexp filename pattern for inclusion in the test suite')
@@ -404,25 +445,36 @@ def parseOptionsAndInitTestdirs():
     X('-F', 'Fail fast. Stop the test suite on the first error/failure')
     X('-i', "Ignore (don't bailout) if 'lldb.py' module cannot be located in the build tree relative to this script; use PYTHONPATH to locate the module")
     X('-n', "Don't print the headers like build dir, lldb version, and svn info at all")
+    X('-P', "Use the graphic progress bar.")
+    X('-q', "Don't print extra output from this script.")
     X('-S', "Skip the build and cleanup while running the test. Use this option with care as you would need to build the inferior(s) by hand and build the executable(s) with the correct name(s). This can be used with '-# n' to stress test certain test cases for n number of times")
     X('-t', 'Turn on tracing of lldb command and other detailed test executions')
-    group.add_argument('-u', metavar='variable', action='append', help='Specify an environment variable to unset before running the test cases. e.g., -u DYLD_INSERT_LIBRARIES -u MallocScribble')
+    group.add_argument('-u', dest='unset_env_varnames', metavar='variable', action='append', help='Specify an environment variable to unset before running the test cases. e.g., -u DYLD_INSERT_LIBRARIES -u MallocScribble')
     X('-v', 'Do verbose mode of unittest framework (print out each test case invocation)')
     X('-w', 'Insert some wait time (currently 0.5 sec) between consecutive test cases')
+    X('-T', 'Obtain and dump svn information for this checkout of LLDB (off by default)')
 
     # Remove the reference to our helper function
     del X
 
     group = parser.add_argument_group('Test directories')
     group.add_argument('args', metavar='test-dir', nargs='*', help='Specify a list of directory names to search for test modules named after Test*.py (test discovery). If empty, search from the current working directory instead.')
-    args = parser.parse_args()
 
+    args = parse_args(parser)
     platform_system = platform.system()
     platform_machine = platform.machine()
     
-    # only print the args if being verbose
-    if args.v:
-        print args
+    if args.unset_env_varnames:
+        for env_var in args.unset_env_varnames:
+            if env_var in os.environ:
+                # From Python Doc: When unsetenv() is supported, deletion of items in os.environ
+                # is automatically translated into a corresponding call to unsetenv().
+                del os.environ[env_var]
+                #os.unsetenv(env_var)
+    
+    # only print the args if being verbose (and parsable is off)
+    if args.v and not args.q:
+        print sys.argv
 
     if args.h:
         do_help = True
@@ -436,13 +488,18 @@ def parseOptionsAndInitTestdirs():
             archs = [platform_machine]
 
     if args.categoriesList:
+        finalCategoriesList = []
         for category in args.categoriesList:
+            origCategory = category
             if not(category in validCategories):
-                print "fatal error: category '" + category + "' is not a valid category"
+                category = unique_string_match(category,validCategories)
+            if not(category in validCategories) or category == None:
+                print "fatal error: category '" + origCategory + "' is not a valid category"
                 print "if you have added a new category, please edit dotest.py, adding your new category to validCategories"
                 print "else, please specify one or more of the following: " + str(validCategories.keys())
                 sys.exit(1)
-        categoriesList = set(args.categoriesList)
+            finalCategoriesList.append(category)
+        categoriesList = set(finalCategoriesList)
         useCategories = True
     else:
         categoriesList = []
@@ -510,9 +567,9 @@ def parseOptionsAndInitTestdirs():
         failfast = True
 
     if args.f:
-        if args.f.startswith('-'):
+        if any([x.startswith('-') for x in args.f]):
             usage(parser)
-        filters.append(args.f)
+        filters.extend(args.f)
 
     if args.g:
         fs4all = False
@@ -539,6 +596,14 @@ def parseOptionsAndInitTestdirs():
         if args.p.startswith('-'):
             usage(parser)
         regexp = args.p
+
+    if args.q:
+        noHeaders = True
+        parsable = True
+
+    if args.P:
+        progress_bar = True
+        verbose = 0
 
     if args.R:
         if args.R.startswith('-'):
@@ -568,8 +633,8 @@ def parseOptionsAndInitTestdirs():
     if args.t:
         os.environ['LLDB_COMMAND_TRACE'] = 'YES'
 
-    if args.u:
-        unsets.extend(args.u)
+    if args.T:
+        svn_silent = False
 
     if args.v:
         verbose = 2
@@ -601,10 +666,6 @@ def parseOptionsAndInitTestdirs():
     # Do not specify both '-a' and '+a' at the same time.
     if dont_do_python_api_test and just_do_python_api_test:
         usage(parser)
-
-    # The simple progress bar is turned on only if verbose == 0 and LLDB_COMMAND_TRACE is not 'YES'
-    if ("LLDB_COMMAND_TRACE" not in os.environ or os.environ["LLDB_COMMAND_TRACE"] != "YES") and verbose == 0:
-        progress_bar = True
 
     # Gather all the dirs passed on the command line.
     if len(args.args) > 0:
@@ -694,6 +755,7 @@ def setupSysPath():
     global dumpSysPath
     global noHeaders
     global svn_info
+    global svn_silent
     global lldbFrameworkPath
     global lldbExecutablePath
 
@@ -797,12 +859,14 @@ def setupSysPath():
             lldbExec = which('lldb')
             if lldbHere and not lldbExec:
                 lldbExec = lldbHere
+            if lldbExec and not lldbHere:
+                lldbHere = lldbExec
     
     if lldbHere:
         os.environ["LLDB_HERE"] = lldbHere
-        os.environ["LLDB_BUILD_DIR"] = os.path.split(lldbHere)[0]
+        os.environ["LLDB_LIB_DIR"] = os.path.split(lldbHere)[0]
         if not noHeaders:
-            print "LLDB build dir:", os.environ["LLDB_BUILD_DIR"]
+            print "LLDB library dir:", os.environ["LLDB_LIB_DIR"]
             os.system('%s -v' % lldbHere)
 
     if not lldbExec:
@@ -811,14 +875,16 @@ def setupSysPath():
         os.environ["LLDB_EXEC"] = lldbExec
         #print "The 'lldb' from PATH env variable", lldbExec
 
-    if os.path.isdir(os.path.join(base, '.svn')):
-        pipe = subprocess.Popen(["svn", "info", base], stdout = subprocess.PIPE)
-        svn_info = pipe.stdout.read()
-    elif os.path.isdir(os.path.join(base, '.git')):
-        pipe = subprocess.Popen(["git", "svn", "info", base], stdout = subprocess.PIPE)
-        svn_info = pipe.stdout.read()
-    if not noHeaders:
-        print svn_info
+    # Skip printing svn/git information when running in parsable (lit-test compatibility) mode
+    if not svn_silent and not parsable:
+        if os.path.isdir(os.path.join(base, '.svn')) and which("svn") is not None:
+            pipe = subprocess.Popen([which("svn"), "info", base], stdout = subprocess.PIPE)
+            svn_info = pipe.stdout.read()
+        elif os.path.isdir(os.path.join(base, '.git')) and which("git") is not None:
+            pipe = subprocess.Popen([which("git"), "svn", "info", base], stdout = subprocess.PIPE)
+            svn_info = pipe.stdout.read()
+        if not noHeaders:
+            print svn_info
 
     global ignore
 
@@ -834,37 +900,63 @@ def setupSysPath():
         # The '-i' option is used to skip looking for lldb.py in the build tree.
         if ignore:
             return
+        
+        # If our lldb supports the -P option, use it to find the python path:
+        init_in_python_dir = 'lldb/__init__.py'
+        import pexpect
+        lldb_dash_p_result = None
+
+        if lldbHere:
+            lldb_dash_p_result = pexpect.run("%s -P"%(lldbHere))
+        elif lldbExec:
+            lldb_dash_p_result = pexpect.run("%s -P"%(lldbExec))
+
+        if lldb_dash_p_result and not lldb_dash_p_result.startswith(("<", "lldb: invalid option:")):
+            lines = lldb_dash_p_result.splitlines()
+            if len(lines) == 1 and os.path.isfile(os.path.join(lines[0], init_in_python_dir)):
+                lldbPath = lines[0]
+                if "linux" in sys.platform:
+                    os.environ['LLDB_LIB_DIR'] = os.path.join(lldbPath, '..', '..')
+        
+        if not lldbPath: 
+            dbgPath  = os.path.join(base, *(xcode3_build_dir + dbg + python_resource_dir))
+            dbgPath2 = os.path.join(base, *(xcode4_build_dir + dbg + python_resource_dir))
+            dbcPath  = os.path.join(base, *(xcode3_build_dir + dbc + python_resource_dir))
+            dbcPath2 = os.path.join(base, *(xcode4_build_dir + dbc + python_resource_dir))
+            relPath  = os.path.join(base, *(xcode3_build_dir + rel + python_resource_dir))
+            relPath2 = os.path.join(base, *(xcode4_build_dir + rel + python_resource_dir))
+            baiPath  = os.path.join(base, *(xcode3_build_dir + bai + python_resource_dir))
+            baiPath2 = os.path.join(base, *(xcode4_build_dir + bai + python_resource_dir))
     
-        dbgPath  = os.path.join(base, *(xcode3_build_dir + dbg + python_resource_dir))
-        dbgPath2 = os.path.join(base, *(xcode4_build_dir + dbg + python_resource_dir))
-        dbcPath  = os.path.join(base, *(xcode3_build_dir + dbc + python_resource_dir))
-        dbcPath2 = os.path.join(base, *(xcode4_build_dir + dbc + python_resource_dir))
-        relPath  = os.path.join(base, *(xcode3_build_dir + rel + python_resource_dir))
-        relPath2 = os.path.join(base, *(xcode4_build_dir + rel + python_resource_dir))
-        baiPath  = os.path.join(base, *(xcode3_build_dir + bai + python_resource_dir))
-        baiPath2 = os.path.join(base, *(xcode4_build_dir + bai + python_resource_dir))
-    
-        if os.path.isfile(os.path.join(dbgPath, 'lldb/__init__.py')):
-            lldbPath = dbgPath
-        elif os.path.isfile(os.path.join(dbgPath2, 'lldb/__init__.py')):
-            lldbPath = dbgPath2
-        elif os.path.isfile(os.path.join(dbcPath, 'lldb/__init__.py')):
-            lldbPath = dbcPath
-        elif os.path.isfile(os.path.join(dbcPath2, 'lldb/__init__.py')):
-            lldbPath = dbcPath2
-        elif os.path.isfile(os.path.join(relPath, 'lldb/__init__.py')):
-            lldbPath = relPath
-        elif os.path.isfile(os.path.join(relPath2, 'lldb/__init__.py')):
-            lldbPath = relPath2
-        elif os.path.isfile(os.path.join(baiPath, 'lldb/__init__.py')):
-            lldbPath = baiPath
-        elif os.path.isfile(os.path.join(baiPath2, 'lldb/__init__.py')):
-            lldbPath = baiPath2
-    
+            if os.path.isfile(os.path.join(dbgPath, init_in_python_dir)):
+                lldbPath = dbgPath
+            elif os.path.isfile(os.path.join(dbgPath2, init_in_python_dir)):
+                lldbPath = dbgPath2
+            elif os.path.isfile(os.path.join(dbcPath, init_in_python_dir)):
+                lldbPath = dbcPath
+            elif os.path.isfile(os.path.join(dbcPath2, init_in_python_dir)):
+                lldbPath = dbcPath2
+            elif os.path.isfile(os.path.join(relPath, init_in_python_dir)):
+                lldbPath = relPath
+            elif os.path.isfile(os.path.join(relPath2, init_in_python_dir)):
+                lldbPath = relPath2
+            elif os.path.isfile(os.path.join(baiPath, init_in_python_dir)):
+                lldbPath = baiPath
+            elif os.path.isfile(os.path.join(baiPath2, init_in_python_dir)):
+                lldbPath = baiPath2
+
         if not lldbPath:
             print 'This script requires lldb.py to be in either ' + dbgPath + ',',
             print relPath + ', or ' + baiPath
             sys.exit(-1)
+
+    # Some of the code that uses this path assumes it hasn't resolved the Versions... link.  
+    # If the path we've constructed looks like that, then we'll strip out the Versions/A part.
+    (before, frameWithVersion, after) = lldbPath.rpartition("LLDB.framework/Versions/A")
+    if frameWithVersion != "" :
+        lldbPath = before + "LLDB.framework" + after
+
+    lldbPath = os.path.abspath(lldbPath)
 
     # If tests need to find LLDB_FRAMEWORK, now they can do it
     os.environ["LLDB_FRAMEWORK"] = os.path.dirname(os.path.dirname(lldbPath))
@@ -999,7 +1091,7 @@ def lldbLoggings():
             raise Exception('log enable failed (check GDB_REMOTE_LOG env variable.')
 
 def getMyCommandLine():
-    ps = subprocess.Popen(['ps', '-o', "command=CMD", str(os.getpid())], stdout=subprocess.PIPE).communicate()[0]
+    ps = subprocess.Popen([which('ps'), '-o', "command=CMD", str(os.getpid())], stdout=subprocess.PIPE).communicate()[0]
     lines = ps.split('\n')
     cmd_line = lines[1]
     return cmd_line
@@ -1083,8 +1175,9 @@ def getsource_if_available(obj):
     except:
         return repr(obj)
 
-print "lldb.pre_flight:", getsource_if_available(lldb.pre_flight)
-print "lldb.post_flight:", getsource_if_available(lldb.post_flight)
+if not noHeaders:
+    print "lldb.pre_flight:", getsource_if_available(lldb.pre_flight)
+    print "lldb.post_flight:", getsource_if_available(lldb.post_flight)
 
 # Put all these test decorators in the lldb namespace.
 lldb.dont_do_python_api_test = dont_do_python_api_test
@@ -1130,21 +1223,12 @@ if not noHeaders:
 
 if not os.path.isdir(sdir_name):
     os.mkdir(sdir_name)
+where_to_save_session = os.getcwd()
 fname = os.path.join(sdir_name, "TestStarted")
 with open(fname, "w") as f:
     print >> f, "Test started at: %s\n" % timestamp_started
     print >> f, svn_info
     print >> f, "Command invoked: %s\n" % getMyCommandLine()
-
-#
-# If we have environment variables to unset, do it here before we invoke the test runner.
-#
-for env_var in unsets :
-    if env_var in os.environ:
-        # From Python Doc: When unsetenv() is supported, deletion of items in os.environ
-        # is automatically translated into a corresponding call to unsetenv().
-        del os.environ[env_var]
-        #os.unsetenv(env_var)
 
 #
 # Invoke the default TextTestRunner to run the test suite, possibly iterating
@@ -1182,7 +1266,8 @@ for i in range(len(compilers)):
                     compilers[i] = cmd_output.split('\n')[0]
                     print "'xcrun -find %s' returning %s" % (c, compilers[i])
 
-print "compilers=%s" % str(compilers)
+if not parsable:
+    print "compilers=%s" % str(compilers)
 
 if not compilers or len(compilers) == 0:
     print "No eligible compiler found, exiting."
@@ -1262,16 +1347,18 @@ for ia in range(len(archs) if iterArchs else 1):
                 sys.path = [x.replace(rdir, newrdir, 1) for x in old_sys_path]
 
             # Output the configuration.
-            sys.stderr.write("\nConfiguration: " + configString + "\n")
+            if not parsable:
+                sys.stderr.write("\nConfiguration: " + configString + "\n")
 
         #print "sys.stderr name is", sys.stderr.name
         #print "sys.stdout name is", sys.stdout.name
 
         # First, write out the number of collected test cases.
-        sys.stderr.write(separator + "\n")
-        sys.stderr.write("Collected %d test%s\n\n"
-                         % (suite.countTestCases(),
-                            suite.countTestCases() != 1 and "s" or ""))
+        if not parsable:
+            sys.stderr.write(separator + "\n")
+            sys.stderr.write("Collected %d test%s\n\n"
+                             % (suite.countTestCases(),
+                                suite.countTestCases() != 1 and "s" or ""))
 
         class LLDBTestResult(unittest2.TextTestResult):
             """
@@ -1284,6 +1371,30 @@ for ia in range(len(archs) if iterArchs else 1):
             """
             __singleton__ = None
             __ignore_singleton__ = False
+
+            @staticmethod
+            def getTerminalSize():
+                import os
+                env = os.environ
+                def ioctl_GWINSZ(fd):
+                    try:
+                        import fcntl, termios, struct, os
+                        cr = struct.unpack('hh', fcntl.ioctl(fd, termios.TIOCGWINSZ,
+                    '1234'))
+                    except:
+                        return
+                    return cr
+                cr = ioctl_GWINSZ(0) or ioctl_GWINSZ(1) or ioctl_GWINSZ(2)
+                if not cr:
+                    try:
+                        fd = os.open(os.ctermid(), os.O_RDONLY)
+                        cr = ioctl_GWINSZ(fd)
+                        os.close(fd)
+                    except:
+                        pass
+                if not cr:
+                    cr = (env.get('LINES', 25), env.get('COLUMNS', 80))
+                return int(cr[1]), int(cr[0])
 
             def __init__(self, *args):
                 if not LLDBTestResult.__ignore_singleton__ and LLDBTestResult.__singleton__:
@@ -1299,6 +1410,19 @@ for ia in range(len(archs) if iterArchs else 1):
                 self.indentation = ' ' * (counterWidth + 2)
                 # This counts from 1 .. suite.countTestCases().
                 self.counter = 0
+                (width, height) = LLDBTestResult.getTerminalSize()
+                self.progressbar = None
+                global progress_bar
+                if width > 10 and not parsable and progress_bar:
+                    try:
+                        self.progressbar = progress.ProgressWithEvents(stdout=self.stream,start=0,end=suite.countTestCases(),width=width-10)
+                    except:
+                        self.progressbar = None
+
+            def _config_string(self, test):
+              compiler = getattr(test, "getCompiler", None)
+              arch = getattr(test, "getArchitecture", None)
+              return "%s-%s" % (compiler() if compiler else "", arch() if arch else "")
 
             def _exc_info_to_string(self, err, test):
                 """Overrides superclass TestResult's method in order to append
@@ -1316,7 +1440,14 @@ for ia in range(len(archs) if iterArchs else 1):
                     return str(test)
 
             def getCategoriesForTest(self,test):
-                if hasattr(test,"getCategories"):
+                if hasattr(test,"_testMethodName"):
+                    test_method = getattr(test,"_testMethodName")
+                    test_method = getattr(test,test_method)
+                else:
+                    test_method = None
+                if test_method != None and hasattr(test_method,"getCategories"):
+                    test_categories = test_method.getCategories(test)
+                elif hasattr(test,"getCategories"):
                     test_categories = test.getCategories()
                 elif inspect.ismethod(test) and test.__self__ != None and hasattr(test.__self__,"getCategories"):
                     test_categories = test.__self__.getCategories()
@@ -1339,6 +1470,8 @@ for ia in range(len(archs) if iterArchs else 1):
             def hardMarkAsSkipped(self,test):
                 getattr(test, test._testMethodName).__func__.__unittest_skip__ = True
                 getattr(test, test._testMethodName).__func__.__unittest_skip_why__ = "test case does not fall in any category of interest for this run"
+                test.__class__.__unittest_skip__ = True
+                test.__class__.__unittest_skip_why__ = "test case does not fall in any category of interest for this run"
 
             def startTest(self, test):
                 if self.shouldSkipBecauseOfCategories(test):
@@ -1348,22 +1481,34 @@ for ia in range(len(archs) if iterArchs else 1):
                     self.stream.write(self.fmt % self.counter)
                 super(LLDBTestResult, self).startTest(test)
 
+            def addSuccess(self, test):
+                global parsable
+                super(LLDBTestResult, self).addSuccess(test)
+                if parsable:
+                    self.stream.write("PASS: LLDB (%s) :: %s\n" % (self._config_string(test), str(test)))
+
             def addError(self, test, err):
                 global sdir_has_content
+                global parsable
                 sdir_has_content = True
                 super(LLDBTestResult, self).addError(test, err)
                 method = getattr(test, "markError", None)
                 if method:
                     method()
+                if parsable:
+                    self.stream.write("FAIL: LLDB (%s) :: %s\n" % (self._config_string(test), str(test)))
 
             def addFailure(self, test, err):
                 global sdir_has_content
                 global failuresPerCategory
+                global parsable
                 sdir_has_content = True
                 super(LLDBTestResult, self).addFailure(test, err)
                 method = getattr(test, "markFailure", None)
                 if method:
                     method()
+                if parsable:
+                    self.stream.write("FAIL: LLDB (%s) :: %s\n" % (self._config_string(test), str(test)))
                 if useCategories:
                     test_categories = self.getCategoriesForTest(test)
                     for category in test_categories:
@@ -1372,34 +1517,50 @@ for ia in range(len(archs) if iterArchs else 1):
                         else:
                             failuresPerCategory[category] = 1
 
-            def addExpectedFailure(self, test, err):
+            def addExpectedFailure(self, test, err, bugnumber):
                 global sdir_has_content
+                global parsable
                 sdir_has_content = True
-                super(LLDBTestResult, self).addExpectedFailure(test, err)
+                super(LLDBTestResult, self).addExpectedFailure(test, err, bugnumber)
                 method = getattr(test, "markExpectedFailure", None)
                 if method:
-                    method()
+                    method(err, bugnumber)
+                if parsable:
+                    self.stream.write("XFAIL: LLDB (%s) :: %s\n" % (self._config_string(test), str(test)))
 
             def addSkip(self, test, reason):
                 global sdir_has_content
+                global parsable
                 sdir_has_content = True
                 super(LLDBTestResult, self).addSkip(test, reason)
                 method = getattr(test, "markSkippedTest", None)
                 if method:
                     method()
+                if parsable:
+                    self.stream.write("UNSUPPORTED: LLDB (%s) :: %s (%s) \n" % (self._config_string(test), str(test), reason))
 
-            def addUnexpectedSuccess(self, test):
+            def addUnexpectedSuccess(self, test, bugnumber):
                 global sdir_has_content
+                global parsable
                 sdir_has_content = True
-                super(LLDBTestResult, self).addUnexpectedSuccess(test)
+                super(LLDBTestResult, self).addUnexpectedSuccess(test, bugnumber)
                 method = getattr(test, "markUnexpectedSuccess", None)
                 if method:
-                    method()
+                    method(bugnumber)
+                if parsable:
+                    self.stream.write("XPASS: LLDB (%s) :: %s\n" % (self._config_string(test), str(test)))
+
+        if parsable:
+            v = 0
+        elif progress_bar:
+            v = 1
+        else:
+            v = verbose
 
         # Invoke the test runner.
         if count == 1:
             result = unittest2.TextTestRunner(stream=sys.stderr,
-                                              verbosity=(1 if progress_bar else verbose),
+                                              verbosity=v,
                                               failfast=failfast,
                                               resultclass=LLDBTestResult).run(suite)
         else:
@@ -1408,13 +1569,15 @@ for ia in range(len(archs) if iterArchs else 1):
             # not enforced.
             LLDBTestResult.__ignore_singleton__ = True
             for i in range(count):
+               
                 result = unittest2.TextTestRunner(stream=sys.stderr,
-                                                  verbosity=(1 if progress_bar else verbose),
+                                                  verbosity=v,
                                                   failfast=failfast,
                                                   resultclass=LLDBTestResult).run(suite)
 
+        failed = failed or not result.wasSuccessful()
 
-if sdir_has_content:
+if sdir_has_content and not parsable:
     sys.stderr.write("Session logs for test failures/errors/unexpected successes"
                      " can be found in directory '%s'\n" % sdir_name)
 
@@ -1423,6 +1586,7 @@ if useCategories and len(failuresPerCategory) > 0:
     for category in failuresPerCategory:
         sys.stderr.write("%s - %d\n" % (category,failuresPerCategory[category]))
 
+os.chdir(where_to_save_session)
 fname = os.path.join(sdir_name, "TestFinished")
 with open(fname, "w") as f:
     print >> f, "Test finished at: %s\n" % datetime.datetime.now().strftime("%Y-%m-%d-%H_%M_%S")
@@ -1434,4 +1598,4 @@ if ("LLDB_TESTSUITE_FORCE_FINISH" in os.environ):
     subprocess.Popen(["/bin/sh", "-c", "kill %s; exit 0" % (os.getpid())])
 
 # Exiting.
-sys.exit(not result.wasSuccessful)
+sys.exit(failed)

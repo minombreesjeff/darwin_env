@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <libgen.h>
 #include <sys/stat.h>
+#include <set>
 #include <string.h>
 #include <fstream>
 
@@ -35,7 +36,6 @@
 
 using namespace lldb;
 using namespace lldb_private;
-using namespace std;
 
 static bool
 GetFileStats (const FileSpec *file_spec, struct stat *stats_ptr)
@@ -110,7 +110,7 @@ FileSpec::ResolveUsername (const char *src_path, char *dst_path, size_t dst_len)
     }
     else
     {
-        int user_name_len = first_slash - src_path - 1;
+        size_t user_name_len = first_slash - src_path - 1;
         ::memcpy (user_home, src_path + 1, user_name_len);
         user_home[user_name_len] = '\0';
         user_name = user_home;
@@ -524,10 +524,11 @@ FileSpec::Equal (const FileSpec& a, const FileSpec& b, bool full)
 void
 FileSpec::Dump(Stream *s) const
 {
+    static ConstString g_slash_only ("/");
     if (s)
     {
         m_directory.Dump(s);
-        if (m_directory)
+        if (m_directory && m_directory != g_slash_only)
             s->PutChar('/');
         m_filename.Dump(s);
     }
@@ -703,6 +704,24 @@ FileSpec::GetPath(char *path, size_t path_max_len) const
     return 0;
 }
 
+std::string
+FileSpec::GetPath (void) const
+{
+    static ConstString g_slash_only ("/");
+    std::string path;
+    const char *dirname = m_directory.GetCString();
+    const char *filename = m_filename.GetCString();
+    if (dirname)
+    {
+        path.append (dirname);
+        if (filename && m_directory != g_slash_only)
+            path.append ("/");
+    }
+    if (filename)
+        path.append (filename);
+    return path;
+}
+
 ConstString
 FileSpec::GetFileNameExtension () const
 {
@@ -745,10 +764,11 @@ DataBufferSP
 FileSpec::MemoryMapFileContents(off_t file_offset, size_t file_size) const
 {
     DataBufferSP data_sp;
-    auto_ptr<DataBufferMemoryMap> mmap_data(new DataBufferMemoryMap());
+    std::unique_ptr<DataBufferMemoryMap> mmap_data(new DataBufferMemoryMap());
     if (mmap_data.get())
     {
-        if (mmap_data->MemoryMapFromFileSpec (this, file_offset, file_size) >= file_size)
+        const size_t mapped_length = mmap_data->MemoryMapFromFileSpec (this, file_offset, file_size);
+        if (((file_size == SIZE_MAX) && (mapped_length > 0)) || (mapped_length >= file_size))
             data_sp.reset(mmap_data.release());
     }
     return data_sp;
@@ -863,7 +883,7 @@ FileSpec::ReadFileLines (STLStringArray &lines)
     char path[PATH_MAX];
     if (GetPath(path, sizeof(path)))
     {
-        ifstream file_stream (path);
+        std::ifstream file_stream (path);
 
         if (file_stream)
         {
@@ -891,8 +911,15 @@ FileSpec::EnumerateDirectory
         lldb_utility::CleanUp <DIR *, int> dir_path_dir (opendir(dir_path), NULL, closedir);
         if (dir_path_dir.is_valid())
         {
-            struct dirent* dp;
-            while ((dp = readdir(dir_path_dir.get())) != NULL)
+            long path_max = fpathconf (dirfd (dir_path_dir.get()), _PC_NAME_MAX);
+#if defined (__APPLE_) && defined (__DARWIN_MAXPATHLEN)
+            if (path_max < __DARWIN_MAXPATHLEN)
+                path_max = __DARWIN_MAXPATHLEN;
+#endif
+            struct dirent *buf, *dp;
+            buf = (struct dirent *) malloc (offsetof (struct dirent, d_name) + path_max + 1);
+
+            while (buf && readdir_r(dir_path_dir.get(), buf, &dp) == 0 && dp)
             {
                 // Only search directories
                 if (dp->d_type == DT_DIR || dp->d_type == DT_UNKNOWN)
@@ -938,7 +965,6 @@ FileSpec::EnumerateDirectory
                         
                         switch (result)
                         {
-                        default:
                         case eEnumerateDirectoryResultNext:  
                             // Enumerate next entry in the current directory. We just
                             // exit this switch and will continue enumerating the
@@ -955,6 +981,8 @@ FileSpec::EnumerateDirectory
                             {
                                 // The subdirectory returned Quit, which means to 
                                 // stop all directory enumerations at all levels.
+                                if (buf)
+                                    free (buf);
                                 return eEnumerateDirectoryResultQuit;
                             }
                             break;
@@ -962,13 +990,21 @@ FileSpec::EnumerateDirectory
                         case eEnumerateDirectoryResultExit:  // Exit from the current directory at the current level.
                             // Exit from this directory level and tell parent to 
                             // keep enumerating.
+                            if (buf)
+                                free (buf);
                             return eEnumerateDirectoryResultNext;
 
                         case eEnumerateDirectoryResultQuit:  // Stop directory enumerations at any level
+                            if (buf)
+                                free (buf);
                             return eEnumerateDirectoryResultQuit;
                         }
                     }
                 }
+            }
+            if (buf)
+            {
+                free (buf);
             }
         }
     }
@@ -1022,5 +1058,3 @@ FileSpec::IsRelativeToCurrentWorkingDirectory () const
     }
     return false;
 }
-
-

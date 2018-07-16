@@ -116,10 +116,10 @@ class ObjCDynamicValueTestCase(TestBase):
         # check that our ObjC GetISA() does a good job at hiding KVO swizzled classes
         
         self.expect('frame var -d run-target myObserver->_source -T', 'the KVO-ed class is hidden',
-                    substrs = ['dynamic type: SourceDerived'])
+                    substrs = ['SourceDerived'])
 
         self.expect('frame var -d run-target myObserver->_source -T', 'the KVO-ed class is hidden', matching = False,
-                    substrs = ['dynamic type: NSKVONotify'])
+                    substrs = ['NSKVONotify'])
 
         # This test is not entirely related to the main thrust of this test case, but since we're here,
         # try stepping into setProperty, and make sure we get into the version in Source:
@@ -129,6 +129,7 @@ class ObjCDynamicValueTestCase(TestBase):
         threads = lldbutil.get_stopped_threads (process, lldb.eStopReasonPlanComplete)
         self.assertTrue (len(threads) == 1)
         line_entry = threads[0].GetFrameAtIndex(0).GetLineEntry()
+
         self.assertTrue (line_entry.GetLine() == self.set_property_line)
         self.assertTrue (line_entry.GetFileSpec().GetFilename() == self.source_name) 
 

@@ -22,6 +22,8 @@
 #include "lldb/Expression/ClangExpressionDeclMap.h"
 #include "lldb/Expression/ClangExpressionParser.h"
 #include "lldb/Expression/ClangUtilityFunction.h"
+#include "lldb/Expression/ExpressionSourceCode.h"
+#include "lldb/Expression/IRExecutionUnit.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Target.h"
@@ -40,9 +42,11 @@ using namespace lldb_private;
 ClangUtilityFunction::ClangUtilityFunction (const char *text, 
                                             const char *name) :
     ClangExpression (),
-    m_function_text (text),
+    m_function_text (ExpressionSourceCode::g_expression_prefix),
     m_function_name (name)
 {
+    if (text && text[0])
+        m_function_text.append (text);
 }
 
 ClangUtilityFunction::~ClangUtilityFunction ()
@@ -65,8 +69,6 @@ bool
 ClangUtilityFunction::Install (Stream &error_stream,
                                ExecutionContext &exe_ctx)
 {
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-    
     if (m_jit_start_addr != LLDB_INVALID_ADDRESS)
     {
         error_stream.PutCString("error: already installed\n");
@@ -101,9 +103,7 @@ ClangUtilityFunction::Install (Stream &error_stream,
     
     m_expr_decl_map.reset(new ClangExpressionDeclMap(keep_result_in_memory, exe_ctx));
     
-    m_data_allocator.reset(new ProcessDataAllocator(*process));
-    
-    if (!m_expr_decl_map->WillParse(exe_ctx))
+    if (!m_expr_decl_map->WillParse(exe_ctx, NULL))
     {
         error_stream.PutCString ("error: current process state is unsuitable for expression parsing\n");
         return false;
@@ -125,27 +125,15 @@ ClangUtilityFunction::Install (Stream &error_stream,
     //////////////////////////////////
     // JIT the output of the parser
     //
-    
-    lldb::ClangExpressionVariableSP const_result;
-    
-    bool evaluated_statically = false; // should stay that way
-    
-    Error jit_error = parser.PrepareForExecution (m_jit_alloc, 
-                                                  m_jit_start_addr, 
-                                                  m_jit_end_addr, 
-                                                  exe_ctx,
-                                                  m_data_allocator.get(),
-                                                  evaluated_statically,
-                                                  const_result,
-                                                  eExecutionPolicyAlways);
-    
-    if (log)
-    {
-        StreamString dump_string;
-        m_data_allocator->Dump(dump_string);
         
-        log->Printf("Data buffer contents:\n%s", dump_string.GetString().c_str());
-    }
+    bool can_interpret = false; // should stay that way
+    
+    Error jit_error = parser.PrepareForExecution (m_jit_start_addr, 
+                                                  m_jit_end_addr,
+                                                  m_execution_unit_ap,
+                                                  exe_ctx,
+                                                  can_interpret,
+                                                  eExecutionPolicyAlways);
     
     if (m_jit_start_addr != LLDB_INVALID_ADDRESS)
         m_jit_process_wp = lldb::ProcessWP(process->shared_from_this());

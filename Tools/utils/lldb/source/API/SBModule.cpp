@@ -10,6 +10,7 @@
 #include "lldb/API/SBModule.h"
 #include "lldb/API/SBAddress.h"
 #include "lldb/API/SBFileSpec.h"
+#include "lldb/API/SBModuleSpec.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBStream.h"
 #include "lldb/API/SBSymbolContextList.h"
@@ -39,6 +40,19 @@ SBModule::SBModule (const lldb::ModuleSP& module_sp) :
 {
 }
 
+SBModule::SBModule(const SBModuleSpec &module_spec) :
+    m_opaque_sp ()
+{
+    ModuleSP module_sp;
+    Error error = ModuleList::GetSharedModule (*module_spec.m_opaque_ap,
+                                               module_sp,
+                                               NULL,
+                                               NULL,
+                                               NULL);
+    if (module_sp)
+        SetSP(module_sp);
+}
+
 SBModule::SBModule(const SBModule &rhs) :
     m_opaque_sp (rhs.m_opaque_sp)
 {
@@ -50,12 +64,14 @@ SBModule::SBModule (lldb::SBProcess &process, lldb::addr_t header_addr) :
     ProcessSP process_sp (process.GetSP());
     if (process_sp)
     {
-        const bool add_image_to_target = true;
-        const bool load_image_sections_in_target = true;
-        m_opaque_sp = process_sp->ReadModuleFromMemory (FileSpec(), 
-                                                        header_addr, 
-                                                        add_image_to_target,
-                                                        load_image_sections_in_target);
+        m_opaque_sp = process_sp->ReadModuleFromMemory (FileSpec(), header_addr);
+        if (m_opaque_sp)
+        {
+            Target &target = process_sp->GetTarget();
+            bool changed = false;
+            m_opaque_sp->SetLoadAddress(target, 0, changed);
+            target.GetImages().Append(m_opaque_sp);
+        }
     }
 }
 
@@ -86,7 +102,7 @@ SBModule::Clear()
 SBFileSpec
 SBModule::GetFileSpec () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBFileSpec file_spec;
     ModuleSP module_sp (GetSP ());
@@ -105,7 +121,7 @@ SBModule::GetFileSpec () const
 lldb::SBFileSpec
 SBModule::GetPlatformFileSpec () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     SBFileSpec file_spec;
     ModuleSP module_sp (GetSP ());
@@ -126,7 +142,7 @@ bool
 SBModule::SetPlatformFileSpec (const lldb::SBFileSpec &platform_file)
 {
     bool result = false;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     ModuleSP module_sp (GetSP ());
     if (module_sp)
@@ -137,12 +153,10 @@ SBModule::SetPlatformFileSpec (const lldb::SBFileSpec &platform_file)
     
     if (log)
     {
-        log->Printf ("SBModule(%p)::SetPlatformFileSpec (SBFileSpec(%p (%s%s%s)) => %i", 
+        log->Printf ("SBModule(%p)::SetPlatformFileSpec (SBFileSpec(%p (%s)) => %i", 
                      module_sp.get(), 
                      platform_file.get(),
-                     platform_file->GetDirectory().GetCString(),
-                     platform_file->GetDirectory() ? "/" : "",
-                     platform_file->GetFilename().GetCString(),
+                     platform_file->GetPath().c_str(),
                      result);
     }
     return result;
@@ -153,7 +167,7 @@ SBModule::SetPlatformFileSpec (const lldb::SBFileSpec &platform_file)
 const uint8_t *
 SBModule::GetUUIDBytes () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     const uint8_t *uuid_bytes = NULL;
     ModuleSP module_sp (GetSP ());
@@ -178,17 +192,24 @@ SBModule::GetUUIDBytes () const
 const char *
 SBModule::GetUUIDString () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
-    static char uuid_string[80];
-    const char * uuid_c_string = NULL;
+    static char uuid_string_buffer[80];
+    const char *uuid_c_string = NULL;
+    std::string uuid_string;
     ModuleSP module_sp (GetSP ());
     if (module_sp)
-        uuid_c_string = (const char *)module_sp->GetUUID().GetAsCString(uuid_string, sizeof(uuid_string));
+        uuid_string = module_sp->GetUUID().GetAsString();
+
+    if (!uuid_string.empty())
+    {
+        strncpy (uuid_string_buffer, uuid_string.c_str(), sizeof (uuid_string_buffer));
+        uuid_c_string = uuid_string_buffer;
+    }
 
     if (log)
     {
-        if (uuid_c_string)
+        if (!uuid_string.empty())
         {
             StreamString s;
             module_sp->GetUUID().Dump (&s);
@@ -293,19 +314,27 @@ SBModule::GetCompileUnitAtIndex (uint32_t index)
     return sb_cu;
 }
 
+static Symtab *
+GetUnifiedSymbolTable (const lldb::ModuleSP& module_sp)
+{
+    if (module_sp)
+    {
+        SymbolVendor *symbols = module_sp->GetSymbolVendor();
+        if (symbols)
+            return symbols->GetSymtab();
+    }
+    return NULL;
+}
+
 size_t
 SBModule::GetNumSymbols ()
 {
     ModuleSP module_sp (GetSP ());
     if (module_sp)
     {
-        ObjectFile *obj_file = module_sp->GetObjectFile();
-        if (obj_file)
-        {
-            Symtab *symtab = obj_file->GetSymtab();
-            if (symtab)
-                return symtab->GetNumSymbols();
-        }
+        Symtab *symtab = GetUnifiedSymbolTable (module_sp);
+        if (symtab)
+            return symtab->GetNumSymbols();
     }
     return 0;
 }
@@ -315,16 +344,9 @@ SBModule::GetSymbolAtIndex (size_t idx)
 {
     SBSymbol sb_symbol;
     ModuleSP module_sp (GetSP ());
-    if (module_sp)
-    {
-        ObjectFile *obj_file = module_sp->GetObjectFile();
-        if (obj_file)
-        {
-            Symtab *symtab = obj_file->GetSymtab();
-            if (symtab)
-                sb_symbol.SetSymbol(symtab->SymbolAtIndex (idx));
-        }
-    }
+    Symtab *symtab = GetUnifiedSymbolTable (module_sp);
+    if (symtab)
+        sb_symbol.SetSymbol(symtab->SymbolAtIndex (idx));
     return sb_symbol;
 }
 
@@ -336,16 +358,9 @@ SBModule::FindSymbol (const char *name,
     if (name && name[0])
     {
         ModuleSP module_sp (GetSP ());
-        if (module_sp)
-        {
-            ObjectFile *obj_file = module_sp->GetObjectFile();
-            if (obj_file)
-            {
-                Symtab *symtab = obj_file->GetSymtab();
-                if (symtab)
-                    sb_symbol.SetSymbol(symtab->FindFirstSymbolWithNameAndType(ConstString(name), symbol_type, Symtab::eDebugAny, Symtab::eVisibilityAny));
-            }
-        }
+        Symtab *symtab = GetUnifiedSymbolTable (module_sp);
+        if (symtab)
+            sb_symbol.SetSymbol(symtab->FindFirstSymbolWithNameAndType(ConstString(name), symbol_type, Symtab::eDebugAny, Symtab::eVisibilityAny));
     }
     return sb_symbol;
 }
@@ -358,28 +373,21 @@ SBModule::FindSymbols (const char *name, lldb::SymbolType symbol_type)
     if (name && name[0])
     {
         ModuleSP module_sp (GetSP ());
-        if (module_sp)
+        Symtab *symtab = GetUnifiedSymbolTable (module_sp);
+        if (symtab)
         {
-            ObjectFile *obj_file = module_sp->GetObjectFile();
-            if (obj_file)
+            std::vector<uint32_t> matching_symbol_indexes;
+            const size_t num_matches = symtab->FindAllSymbolsWithNameAndType(ConstString(name), symbol_type, matching_symbol_indexes);
+            if (num_matches)
             {
-                Symtab *symtab = obj_file->GetSymtab();
-                if (symtab)
+                SymbolContext sc;
+                sc.module_sp = module_sp;
+                SymbolContextList &sc_list = *sb_sc_list;
+                for (size_t i=0; i<num_matches; ++i)
                 {
-                    std::vector<uint32_t> matching_symbol_indexes;
-                    const size_t num_matches = symtab->FindAllSymbolsWithNameAndType(ConstString(name), symbol_type, matching_symbol_indexes);
-                    if (num_matches)
-                    {
-                        SymbolContext sc;
-                        sc.module_sp = module_sp;
-                        SymbolContextList &sc_list = *sb_sc_list;
-                        for (size_t i=0; i<num_matches; ++i)
-                        {
-                            sc.symbol = symtab->SymbolAtIndex (matching_symbol_indexes[i]);
-                            if (sc.symbol)
-                                sc_list.Append(sc);
-                        }
-                    }
+                    sc.symbol = symtab->SymbolAtIndex (matching_symbol_indexes[i]);
+                    if (sc.symbol)
+                        sc_list.Append(sc);
                 }
             }
         }
@@ -396,13 +404,11 @@ SBModule::GetNumSections ()
     ModuleSP module_sp (GetSP ());
     if (module_sp)
     {
-        ObjectFile *obj_file = module_sp->GetObjectFile();
-        if (obj_file)
-        {
-            SectionList *section_list = obj_file->GetSectionList ();
-            if (section_list)
-                return section_list->GetSize();
-        }
+        // Give the symbol vendor a chance to add to the unified section list.
+        module_sp->GetSymbolVendor();
+        SectionList *section_list = module_sp->GetSectionList();
+        if (section_list)
+            return section_list->GetSize();
     }
     return 0;
 }
@@ -414,14 +420,12 @@ SBModule::GetSectionAtIndex (size_t idx)
     ModuleSP module_sp (GetSP ());
     if (module_sp)
     {
-        ObjectFile *obj_file = module_sp->GetObjectFile();
-        if (obj_file)
-        {
-            SectionList *section_list = obj_file->GetSectionList ();
+        // Give the symbol vendor a chance to add to the unified section list.
+        module_sp->GetSymbolVendor();
+        SectionList *section_list = module_sp->GetSectionList ();
 
-            if (section_list)
-                sb_section.SetSP(section_list->GetSectionAtIndex (idx));
-        }
+        if (section_list)
+            sb_section.SetSP(section_list->GetSectionAtIndex (idx));
     }
     return sb_section;
 }
@@ -465,19 +469,27 @@ SBModule::FindGlobalVariables (SBTarget &target, const char *name, uint32_t max_
 
         if (match_count > 0)
         {
-            ValueObjectList &value_object_list = sb_value_list.ref();
             for (uint32_t i=0; i<match_count; ++i)
             {
                 lldb::ValueObjectSP valobj_sp;
                 TargetSP target_sp (target.GetSP());
                 valobj_sp = ValueObjectVariable::Create (target_sp.get(), variable_list.GetVariableAtIndex(i));
                 if (valobj_sp)
-                    value_object_list.Append(valobj_sp);
+                    sb_value_list.Append(SBValue(valobj_sp));
             }
         }
     }
     
     return sb_value_list;
+}
+
+lldb::SBValue
+SBModule::FindFirstGlobalVariable (lldb::SBTarget &target, const char *name)
+{
+    SBValueList sb_value_list(FindGlobalVariables(target, name, 1));
+    if (sb_value_list.IsValid() && sb_value_list.GetSize() > 0)
+        return sb_value_list.GetValueAtIndex(0);
+    return SBValue();
 }
 
 lldb::SBType
@@ -546,6 +558,24 @@ SBModule::FindTypes (const char *type)
     return retval;
 }
 
+lldb::SBTypeList
+SBModule::GetTypes (uint32_t type_mask)
+{
+    SBTypeList sb_type_list;
+    
+    ModuleSP module_sp (GetSP ());
+    if (module_sp)
+    {
+        SymbolVendor* vendor = module_sp->GetSymbolVendor();
+        if (vendor)
+        {
+            TypeList type_list;
+            vendor->GetTypes (NULL, type_mask, type_list);
+            sb_type_list.m_opaque_ap->Append(type_list);
+        }
+    }
+    return sb_type_list;
+}
 
 SBSection
 SBModule::FindSection (const char *sect_name)
@@ -555,18 +585,16 @@ SBModule::FindSection (const char *sect_name)
     ModuleSP module_sp (GetSP ());
     if (sect_name && module_sp)
     {
-        ObjectFile *objfile = module_sp->GetObjectFile();
-        if (objfile)
+        // Give the symbol vendor a chance to add to the unified section list.
+        module_sp->GetSymbolVendor();
+        SectionList *section_list = module_sp->GetSectionList();
+        if (section_list)
         {
-            SectionList *section_list = objfile->GetSectionList();
-            if (section_list)
+            ConstString const_sect_name(sect_name);
+            SectionSP section_sp (section_list->FindSectionByName(const_sect_name));
+            if (section_sp)
             {
-                ConstString const_sect_name(sect_name);
-                SectionSP section_sp (section_list->FindSectionByName(const_sect_name));
-                if (section_sp)
-                {
-                    sb_section.SetSP (section_sp);
-                }
+                sb_section.SetSP (section_sp);
             }
         }
     }

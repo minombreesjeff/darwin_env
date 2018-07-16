@@ -57,8 +57,10 @@ static const CoreDefinition g_core_definitions[ArchSpec::kNumCores] =
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv6       , "armv6"     },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv7       , "armv7"     },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv7f      , "armv7f"    },
-    { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv7k      , "armv7k"    },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv7s      , "armv7s"    },
+    { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv7k      , "armv7k"    },
+    { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv7m      , "armv7m"    },
+    { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_armv7em     , "armv7em"   },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::arm    , ArchSpec::eCore_arm_xscale      , "xscale"    },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumb           , "thumb"     },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv4t        , "thumbv4t"  },
@@ -67,10 +69,12 @@ static const CoreDefinition g_core_definitions[ArchSpec::kNumCores] =
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv6         , "thumbv6"   },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv7         , "thumbv7"   },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv7f        , "thumbv7f"  },
-    { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv7k        , "thumbv7k"  },
     { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv7s        , "thumbv7s"  },
-    
-    
+    { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv7k        , "thumbv7k"  },
+    { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv7m        , "thumbv7m"  },
+    { eByteOrderLittle, 4, 2, 4, llvm::Triple::thumb  , ArchSpec::eCore_thumbv7em       , "thumbv7em" },
+    { eByteOrderLittle, 8, 4, 4, llvm::Triple::arm64  , ArchSpec::eCore_arm_arm64       , "arm64"     },
+
     { eByteOrderLittle, 4, 4, 4, llvm::Triple::ppc    , ArchSpec::eCore_ppc_generic     , "ppc"       },
     { eByteOrderLittle, 4, 4, 4, llvm::Triple::ppc    , ArchSpec::eCore_ppc_ppc601      , "ppc601"    },
     { eByteOrderLittle, 4, 4, 4, llvm::Triple::ppc    , ArchSpec::eCore_ppc_ppc602      , "ppc602"    },
@@ -118,12 +122,17 @@ struct ArchDefinition
 };
 
 
-uint32_t
+size_t
 ArchSpec::AutoComplete (const char *name, StringList &matches)
 {
     uint32_t i;
     if (name && name[0])
     {
+        // FIXME: Temporarily recognize arch "armv8" for <rdar://problem/12091365>
+        if (NameMatches("armv8", eNameMatchStartsWith, name))
+        {
+            name = "arm64";
+        }
         for (i = 0; i < ArchSpec::kNumCores; ++i)
         {
             if (NameMatches(g_core_definitions[i].name, eNameMatchStartsWith, name))
@@ -161,8 +170,10 @@ static const ArchDefinitionEntry g_macho_arch_entries[] =
     { ArchSpec::eCore_arm_xscale      , llvm::MachO::CPUTypeARM       , 8      , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_arm_armv7       , llvm::MachO::CPUTypeARM       , 9      , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_arm_armv7f      , llvm::MachO::CPUTypeARM       , 10     , UINT32_MAX , SUBTYPE_MASK },
-    { ArchSpec::eCore_arm_armv7k      , llvm::MachO::CPUTypeARM       , 12     , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_arm_armv7s      , llvm::MachO::CPUTypeARM       , 11     , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_arm_armv7k      , llvm::MachO::CPUTypeARM       , 12     , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_arm_armv7m      , llvm::MachO::CPUTypeARM       , 15     , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_arm_armv7em     , llvm::MachO::CPUTypeARM       , 16     , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_thumb           , llvm::MachO::CPUTypeARM       , 0      , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_thumbv4t        , llvm::MachO::CPUTypeARM       , 5      , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_thumbv5         , llvm::MachO::CPUTypeARM       , 7      , UINT32_MAX , SUBTYPE_MASK },
@@ -170,8 +181,18 @@ static const ArchDefinitionEntry g_macho_arch_entries[] =
     { ArchSpec::eCore_thumbv6         , llvm::MachO::CPUTypeARM       , 6      , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_thumbv7         , llvm::MachO::CPUTypeARM       , 9      , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_thumbv7f        , llvm::MachO::CPUTypeARM       , 10     , UINT32_MAX , SUBTYPE_MASK },
-    { ArchSpec::eCore_thumbv7k        , llvm::MachO::CPUTypeARM       , 12     , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_thumbv7s        , llvm::MachO::CPUTypeARM       , 11     , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_thumbv7k        , llvm::MachO::CPUTypeARM       , 12     , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_thumbv7m        , llvm::MachO::CPUTypeARM       , 15     , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_thumbv7em       , llvm::MachO::CPUTypeARM       , 16     , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_arm_arm64       , llvm::MachO::CPUTypeARM | 
+                                        llvm::MachO::CPUArchABI64     , CPU_ANY, UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_arm_arm64       , llvm::MachO::CPUTypeARM | 
+                                        llvm::MachO::CPUArchABI64     , 0      , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_arm_arm64       , llvm::MachO::CPUTypeARM | 
+                                        llvm::MachO::CPUArchABI64     , 1      , UINT32_MAX , SUBTYPE_MASK },
+    { ArchSpec::eCore_arm_arm64       , llvm::MachO::CPUTypeARM | 
+                                        llvm::MachO::CPUArchABI64     , 13     , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_ppc_generic     , llvm::MachO::CPUTypePowerPC   , CPU_ANY, UINT32_MAX , UINT32_MAX  },
     { ArchSpec::eCore_ppc_generic     , llvm::MachO::CPUTypePowerPC   , 0      , UINT32_MAX , SUBTYPE_MASK },
     { ArchSpec::eCore_ppc_ppc601      , llvm::MachO::CPUTypePowerPC   , 1      , UINT32_MAX , SUBTYPE_MASK },
@@ -261,6 +282,12 @@ FindArchDefinition (ArchitectureType arch_type)
 static const CoreDefinition *
 FindCoreDefinition (llvm::StringRef name)
 {
+    // FIXME: Temporarily recognize arch "armv8" for <rdar://problem/12091365>
+    if (name.equals_lower("armv8"))
+    {
+        llvm::StringRef newname("arm64");
+        name = newname;
+    }
     for (unsigned int i = 0; i < ArchSpec::kNumCores; ++i)
     {
         if (name.equals_lower(g_core_definitions[i].name))
@@ -495,11 +522,11 @@ ParseMachCPUDashSubtypeTriple (const char *triple_cstr, ArchSpec &arch)
     {
         char *end = NULL;
         errno = 0;
-        uint32_t cpu = ::strtoul (triple_cstr, &end, 0);
+        uint32_t cpu = (uint32_t)::strtoul (triple_cstr, &end, 0);
         if (errno == 0 && cpu != 0 && end && ((*end == '-') || (*end == '.')))
         {
             errno = 0;
-            uint32_t sub = ::strtoul (end + 1, &end, 0);
+            uint32_t sub = (uint32_t)::strtoul (end + 1, &end, 0);
             if (errno == 0 && end && ((*end == '-') || (*end == '.') || (*end == '\0')))
             {
                 if (arch.SetArchitecture (eArchTypeMachO, cpu, sub))
@@ -513,7 +540,7 @@ ParseMachCPUDashSubtypeTriple (const char *triple_cstr, ArchSpec &arch)
                             llvm::StringRef vendor_str(vendor_os.substr(0, dash_pos));
                             arch.GetTriple().setVendorName(vendor_str);
                             const size_t vendor_start_pos = dash_pos+1;
-                            dash_pos = vendor_os.find(vendor_start_pos, '-');
+                            dash_pos = vendor_os.find('-', vendor_start_pos);
                             if (dash_pos == llvm::StringRef::npos)
                             {
                                 if (vendor_start_pos < vendor_os.size())
@@ -604,7 +631,7 @@ ArchSpec::SetTriple (const char *triple_cstr, Platform *platform)
                     // architecture. If this is not available (might not be
                     // connected) use the first supported architecture.
                     ArchSpec compatible_arch;
-                    if (platform->IsCompatibleArchitecture (raw_arch, &compatible_arch))
+                    if (platform->IsCompatibleArchitecture (raw_arch, false, &compatible_arch))
                     {
                         if (compatible_arch.IsValid())
                         {
@@ -669,6 +696,7 @@ ArchSpec::SetArchitecture (ArchitectureType arch_type, uint32_t cpu, uint32_t su
 
                     switch (core_def->machine)
                     {
+                        case llvm::Triple::arm64:
                         case llvm::Triple::arm:
                         case llvm::Triple::thumb:
                             m_triple.setOS (llvm::Triple::IOS);
@@ -717,17 +745,17 @@ ArchSpec::GetMaximumOpcodeByteSize() const
 bool
 ArchSpec::IsExactMatch (const ArchSpec& rhs) const
 {
-    return Compare (rhs, true);
+    return IsEqualTo (rhs, true);
 }
 
 bool
 ArchSpec::IsCompatibleMatch (const ArchSpec& rhs) const
 {
-    return Compare (rhs, false);
+    return IsEqualTo (rhs, false);
 }
 
 bool
-ArchSpec::Compare (const ArchSpec& rhs, bool exact_match) const
+ArchSpec::IsEqualTo (const ArchSpec& rhs, bool exact_match) const
 {
     if (GetByteOrder() != rhs.GetByteOrder())
         return false;
@@ -746,12 +774,15 @@ ArchSpec::Compare (const ArchSpec& rhs, bool exact_match) const
         const llvm::Triple::VendorType rhs_triple_vendor = rhs_triple.getVendor();
         if (lhs_triple_vendor != rhs_triple_vendor)
         {
-            const bool rhs_vendor_specified = rhs.TripleVendorWasSpecified();
-            const bool lhs_vendor_specified = TripleVendorWasSpecified();
-            // Both architectures had the vendor specified, so if they aren't
-            // equal then we return false
-            if (rhs_vendor_specified && lhs_vendor_specified)
-                return false;
+            if (exact_match)
+            {
+                const bool rhs_vendor_specified = rhs.TripleVendorWasSpecified();
+                const bool lhs_vendor_specified = TripleVendorWasSpecified();
+                // Both architectures had the vendor specified, so if they aren't
+                // equal then we return false
+                if (rhs_vendor_specified && lhs_vendor_specified)
+                    return false;
+            }
             
             // Only fail if both vendor types are not unknown
             if (lhs_triple_vendor != llvm::Triple::UnknownVendor &&
@@ -763,12 +794,15 @@ ArchSpec::Compare (const ArchSpec& rhs, bool exact_match) const
         const llvm::Triple::OSType rhs_triple_os = rhs_triple.getOS();
         if (lhs_triple_os != rhs_triple_os)
         {
-            const bool rhs_os_specified = rhs.TripleOSWasSpecified();
-            const bool lhs_os_specified = TripleOSWasSpecified();
-            // Both architectures had the OS specified, so if they aren't
-            // equal then we return false
-            if (rhs_os_specified && lhs_os_specified)
-                return false;
+            if (exact_match)
+            {
+                const bool rhs_os_specified = rhs.TripleOSWasSpecified();
+                const bool lhs_os_specified = TripleOSWasSpecified();
+                // Both architectures had the OS specified, so if they aren't
+                // equal then we return false
+                if (rhs_os_specified && lhs_os_specified)
+                    return false;
+            }
             // Only fail if both os types are not unknown
             if (lhs_triple_os != llvm::Triple::UnknownOS &&
                 rhs_triple_os != llvm::Triple::UnknownOS)
@@ -849,6 +883,8 @@ cores_match (const ArchSpec::Core core1, const ArchSpec::Core core2, bool try_in
             return true;
         break;
 
+    case ArchSpec::eCore_arm_armv7m:
+    case ArchSpec::eCore_arm_armv7em:
     case ArchSpec::eCore_arm_armv7f:
     case ArchSpec::eCore_arm_armv7k:
     case ArchSpec::eCore_arm_armv7s:
@@ -866,18 +902,6 @@ cores_match (const ArchSpec::Core core1, const ArchSpec::Core core2, bool try_in
     if (try_inverse)
         return cores_match (core2, core1, false, enforce_exact_match);
     return false;
-}
-
-bool
-lldb_private::operator== (const ArchSpec& lhs, const ArchSpec& rhs)
-{
-    return lhs.IsExactMatch (rhs);
-}
-
-bool
-lldb_private::operator!= (const ArchSpec& lhs, const ArchSpec& rhs)
-{
-    return !(lhs == rhs);
 }
 
 bool

@@ -26,7 +26,9 @@ class CPPBoolTestCase(TestBase):
         TestBase.setUp(self)
     
     def set_breakpoint(self, line):
-        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", line, num_expected_locations=1, loc_exact=False)
+        # Some compilers (for example GCC 4.4.7 and 4.6.1) emit multiple locations for the statement with the ternary
+        # operator in the test program, while others emit only 1.
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", line, num_expected_locations=-1, loc_exact=False)
 
     def static_method_commands(self):
         """Test that bool types work in the expression parser"""

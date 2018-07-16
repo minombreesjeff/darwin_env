@@ -11,6 +11,7 @@
 #define liblldb_ClangASTImporter_h_
 
 #include <map>
+#include <set>
 
 #include "lldb/lldb-types.h"
 
@@ -20,6 +21,68 @@
 #include "lldb/Symbol/ClangNamespaceDecl.h"
 
 namespace lldb_private {
+    
+class ClangASTMetrics
+{
+public:
+    static void DumpCounters (Log *log);
+    static void ClearLocalCounters ()
+    {
+        local_counters = { 0, 0, 0, 0, 0, 0 };
+    }
+    
+    static void RegisterVisibleQuery ()
+    {
+        ++global_counters.m_visible_query_count;
+        ++local_counters.m_visible_query_count;
+    }
+    
+    static void RegisterLexicalQuery ()
+    {
+        ++global_counters.m_lexical_query_count;
+        ++local_counters.m_lexical_query_count;
+    }
+    
+    static void RegisterLLDBImport ()
+    {
+        ++global_counters.m_lldb_import_count;
+        ++local_counters.m_lldb_import_count;
+    }
+    
+    static void RegisterClangImport ()
+    {
+        ++global_counters.m_clang_import_count;
+        ++local_counters.m_clang_import_count;
+    }
+    
+    static void RegisterDeclCompletion ()
+    {
+        ++global_counters.m_decls_completed_count;
+        ++local_counters.m_decls_completed_count;
+    }
+    
+    static void RegisterRecordLayout ()
+    {
+        ++global_counters.m_record_layout_count;
+        ++local_counters.m_record_layout_count;
+    }
+    
+private:
+    struct Counters
+    {
+        uint64_t    m_visible_query_count;
+        uint64_t    m_lexical_query_count;
+        uint64_t    m_lldb_import_count;
+        uint64_t    m_clang_import_count;
+        uint64_t    m_decls_completed_count;
+        uint64_t    m_record_layout_count;
+    };
+    
+    static Counters global_counters;
+    static Counters local_counters;
+    
+    static void DumpCounters (Log *log, Counters &counters);
+};
 
 class ClangASTImporter 
 {
@@ -67,6 +130,9 @@ public:
     CompleteObjCInterfaceDecl (clang::ObjCInterfaceDecl *interface_decl);
     
     bool
+    RequireCompleteType (clang::QualType type);
+    
+    bool
     ResolveDeclOrigin (const clang::Decl *decl, clang::Decl **original_decl, clang::ASTContext **original_ctx)
     {
         DeclOrigin origin = GetDeclOrigin(decl);
@@ -91,7 +157,7 @@ public:
     //
     
     typedef std::vector < std::pair<lldb::ModuleSP, ClangNamespaceDecl> > NamespaceMap;
-    typedef STD_SHARED_PTR(NamespaceMap) NamespaceMapSP;
+    typedef std::shared_ptr<NamespaceMap> NamespaceMapSP;
     
     void RegisterNamespaceMap (const clang::NamespaceDecl *decl, 
                                NamespaceMapSP &namespace_map);
@@ -185,20 +251,41 @@ private:
                                *source_ctx,
                                master.m_file_manager,
                                true /*minimal*/),
+            m_decls_to_deport(NULL),
+            m_decls_already_deported(NULL),
             m_master(master),
             m_source_ctx(source_ctx)
         {
         }
         
+        // A call to "InitDeportWorkQueues" puts the minion into deport mode.
+        // In deport mode, every copied Decl that could require completion is
+        // recorded and placed into the decls_to_deport set.
+        //
+        // A call to "ExecuteDeportWorkQueues" completes all the Decls that
+        // are in decls_to_deport, adding any Decls it sees along the way that
+        // it hasn't already deported.  It proceeds until decls_to_deport is
+        // empty.
+        //
+        // These calls must be paired.  Leaving a minion in deport mode or
+        // trying to start deport minion with a new pair of queues will result
+        // in an assertion failure.
+        
+        void InitDeportWorkQueues (std::set<clang::NamedDecl *> *decls_to_deport,
+                                   std::set<clang::NamedDecl *> *decls_already_deported);
+        void ExecuteDeportWorkQueues ();
+        
         void ImportDefinitionTo (clang::Decl *to, clang::Decl *from);
         
         clang::Decl *Imported (clang::Decl *from, clang::Decl *to);
         
-        ClangASTImporter   &m_master;
-        clang::ASTContext  *m_source_ctx;
+        std::set<clang::NamedDecl *>   *m_decls_to_deport;
+        std::set<clang::NamedDecl *>   *m_decls_already_deported;
+        ClangASTImporter               &m_master;
+        clang::ASTContext              *m_source_ctx;
     };
     
-    typedef STD_SHARED_PTR(Minion) MinionSP;
+    typedef std::shared_ptr<Minion> MinionSP;
     typedef std::map<clang::ASTContext *, MinionSP> MinionMap;
     typedef std::map<const clang::NamespaceDecl *, NamespaceMapSP> NamespaceMetaMap;
     
@@ -221,7 +308,7 @@ private:
         MapCompleter           *m_map_completer;
     };
     
-    typedef STD_SHARED_PTR(ASTContextMetadata) ASTContextMetadataSP;    
+    typedef std::shared_ptr<ASTContextMetadata> ASTContextMetadataSP;    
     typedef std::map<const clang::ASTContext *, ASTContextMetadataSP> ContextMetadataMap;
     
     ContextMetadataMap m_metadata_map;

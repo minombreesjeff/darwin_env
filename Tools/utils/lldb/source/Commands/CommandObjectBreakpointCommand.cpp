@@ -167,6 +167,12 @@ initialized:\n\
 (lldb)\n\
 \n\
 \n\
+Your Python code, however organized, can optionally return a value.\n\
+If the returned value is False, that tells LLDB not to stop at the breakpoint\n\
+to which the code is associated. Returning anything other than False, or even\n\
+returning None, or even omitting a return statement entirely, will cause\n\
+LLDB to stop.\n\
+\n\
 Final Note:  If you get a warning that no breakpoint command was generated, but\n\
 you did not get any syntax errors, you probably forgot to add a call to your\n\
 functions.\n\
@@ -206,7 +212,7 @@ one command per line.\n" );
                                              CommandReturnObject &result)
     {
         InputReaderSP reader_sp (new InputReader(m_interpreter.GetDebugger()));
-        std::auto_ptr<BreakpointOptions::CommandData> data_ap(new BreakpointOptions::CommandData());
+        std::unique_ptr<BreakpointOptions::CommandData> data_ap(new BreakpointOptions::CommandData());
         if (reader_sp && data_ap.get())
         {
             BatonSP baton_sp (new BreakpointOptions::CommandBaton (data_ap.release()));
@@ -242,7 +248,7 @@ one command per line.\n" );
     SetBreakpointCommandCallback (BreakpointOptions *bp_options,
                                   const char *oneliner)
     {
-        std::auto_ptr<BreakpointOptions::CommandData> data_ap(new BreakpointOptions::CommandData());
+        std::unique_ptr<BreakpointOptions::CommandData> data_ap(new BreakpointOptions::CommandData());
 
         // It's necessary to set both user_source and script_source to the oneliner.
         // The former is used to generate callback description (as in breakpoint command list)
@@ -534,6 +540,13 @@ protected:
         if (result.Succeeded())
         {
             const size_t count = valid_bp_ids.GetSize();
+            if (count > 1)
+            {
+                result.AppendError ("can only add commands to one breakpoint at a time.");
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
+            
             for (size_t i = 0; i < count; ++i)
             {
                 BreakpointID cur_bp_id = valid_bp_ids.GetBreakpointIDAtIndex (i);
@@ -574,7 +587,8 @@ protected:
                         // what the user would do manually: make their breakpoint command be a function call
                         else if (m_options.m_function_name.size())
                         {
-                            std::string oneliner(m_options.m_function_name);
+                            std::string oneliner("return ");
+                            oneliner += m_options.m_function_name;
                             oneliner += "(frame, bp_loc, internal_dict)";
                             m_interpreter.GetScriptInterpreter()->SetBreakpointCommandCallback (bp_options,
                                                                                                 oneliner.c_str());

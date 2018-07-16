@@ -190,7 +190,7 @@ but do NOT enter more than one command per line. \n" );
                                              CommandReturnObject &result)
     {
         InputReaderSP reader_sp (new InputReader(m_interpreter.GetDebugger()));
-        std::auto_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
+        std::unique_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
         if (reader_sp && data_ap.get())
         {
             BatonSP baton_sp (new WatchpointOptions::CommandBaton (data_ap.release()));
@@ -226,7 +226,7 @@ but do NOT enter more than one command per line. \n" );
     SetWatchpointCommandCallback (WatchpointOptions *wp_options,
                                   const char *oneliner)
     {
-        std::auto_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
+        std::unique_ptr<WatchpointOptions::CommandData> data_ap(new WatchpointOptions::CommandData());
 
         // It's necessary to set both user_source and script_source to the oneliner.
         // The former is used to generate callback description (as in watchpoint command list)
@@ -512,7 +512,7 @@ protected:
         }
         
         std::vector<uint32_t> valid_wp_ids;
-        if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, valid_wp_ids))
+        if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, valid_wp_ids))
         {
             result.AppendError("Invalid watchpoints specification.");
             result.SetStatus(eReturnStatusFailed);
@@ -678,7 +678,7 @@ protected:
         }
 
         std::vector<uint32_t> valid_wp_ids;
-        if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, valid_wp_ids))
+        if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, valid_wp_ids))
         {
             result.AppendError("Invalid watchpoints specification.");
             result.SetStatus(eReturnStatusFailed);
@@ -770,7 +770,7 @@ protected:
         }
 
         std::vector<uint32_t> valid_wp_ids;
-        if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, valid_wp_ids))
+        if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, valid_wp_ids))
         {
             result.AppendError("Invalid watchpoints specification.");
             result.SetStatus(eReturnStatusFailed);
@@ -830,7 +830,6 @@ CommandObjectWatchpointCommand::CommandObjectWatchpointCommand (CommandInterpret
                             "A set of commands for adding, removing and examining bits of code to be executed when the watchpoint is hit (watchpoint 'commmands').",
                             "command <sub-command> [<sub-command-options>] <watchpoint-id>")
 {
-    bool status;
     CommandObjectSP add_command_object (new CommandObjectWatchpointCommandAdd (interpreter));
     CommandObjectSP delete_command_object (new CommandObjectWatchpointCommandDelete (interpreter));
     CommandObjectSP list_command_object (new CommandObjectWatchpointCommandList (interpreter));
@@ -839,9 +838,9 @@ CommandObjectWatchpointCommand::CommandObjectWatchpointCommand (CommandInterpret
     delete_command_object->SetCommandName ("watchpoint command delete");
     list_command_object->SetCommandName ("watchpoint command list");
 
-    status = LoadSubCommand ("add",    add_command_object);
-    status = LoadSubCommand ("delete", delete_command_object);
-    status = LoadSubCommand ("list",   list_command_object);
+    LoadSubCommand ("add",    add_command_object);
+    LoadSubCommand ("delete", delete_command_object);
+    LoadSubCommand ("list",   list_command_object);
 }
 
 CommandObjectWatchpointCommand::~CommandObjectWatchpointCommand ()

@@ -28,7 +28,7 @@ public:
     static void
     Terminate();
     
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
     
     static const char *
@@ -36,25 +36,36 @@ public:
     
     static ObjectFile *
     CreateInstance (const lldb::ModuleSP &module_sp,
-                    lldb::DataBufferSP& dataSP,
+                    lldb::DataBufferSP& data_sp,
+                    lldb::offset_t data_offset,
                     const lldb_private::FileSpec* file,
-                    lldb::addr_t offset,
-                    lldb::addr_t length);
+                    lldb::offset_t offset,
+                    lldb::offset_t length);
     
     static lldb_private::ObjectFile *
     CreateMemoryInstance (const lldb::ModuleSP &module_sp, 
                           lldb::DataBufferSP& data_sp, 
                           const lldb::ProcessSP &process_sp, 
                           lldb::addr_t header_addr);
+    
+    static size_t
+    GetModuleSpecifications (const lldb_private::FileSpec& file,
+                             lldb::DataBufferSP& data_sp,
+                             lldb::offset_t data_offset,
+                             lldb::offset_t file_offset,
+                             lldb::offset_t length,
+                             lldb_private::ModuleSpecList &specs);
+
     static bool
-    MagicBytesMatch (lldb::DataBufferSP& dataSP);
+    MagicBytesMatch (lldb::DataBufferSP& data_sp);
     
     
     ObjectFilePECOFF (const lldb::ModuleSP &module_sp,
-                      lldb::DataBufferSP& dataSP,
+                      lldb::DataBufferSP& data_sp,
+                      lldb::offset_t data_offset,
                       const lldb_private::FileSpec* file,
-                      lldb::addr_t offset,
-                      lldb::addr_t length);
+                      lldb::offset_t file_offset,
+                      lldb::offset_t length);
     
 	virtual 
     ~ObjectFilePECOFF();
@@ -68,17 +79,20 @@ public:
     virtual bool
     IsExecutable () const;
     
-    virtual size_t
+    virtual uint32_t
     GetAddressByteSize ()  const;
     
 //    virtual lldb_private::AddressClass
 //    GetAddressClass (lldb::addr_t file_addr);
 //    
     virtual lldb_private::Symtab *
-    GetSymtab();
+    GetSymtab ();
     
-    virtual lldb_private::SectionList *
-    GetSectionList();
+    virtual bool
+    IsStripped ();
+
+    virtual void
+    CreateSections (lldb_private::SectionList &unified_section_list);
     
     virtual void
     Dump (lldb_private::Stream *s);
@@ -95,11 +109,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();
@@ -212,8 +223,8 @@ protected:
 	} coff_symbol_t;
     
 	bool ParseDOSHeader ();
-	bool ParseCOFFHeader (uint32_t* offset_ptr);
-	bool ParseCOFFOptionalHeader (uint32_t* offset_ptr);
+	bool ParseCOFFHeader (lldb::offset_t *offset_ptr);
+	bool ParseCOFFOptionalHeader (lldb::offset_t *offset_ptr);
 	bool ParseSectionHeaders (uint32_t offset);
 	
 	static	void DumpDOSHeader(lldb_private::Stream *s, const dos_header_t& header);
@@ -227,8 +238,6 @@ protected:
 	typedef SectionHeaderColl::iterator			SectionHeaderCollIter;
 	typedef SectionHeaderColl::const_iterator	SectionHeaderCollConstIter;
 private:
-    mutable std::auto_ptr<lldb_private::SectionList> m_sections_ap;
-    mutable std::auto_ptr<lldb_private::Symtab> m_symtab_ap;
 	dos_header_t		m_dos_header;
 	coff_header_t		m_coff_header;
 	coff_opt_header_t	m_coff_header_opt;

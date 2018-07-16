@@ -46,10 +46,13 @@ public:
             return m_valid;
         }
         
+        // v1 does not support tagged pointers
         virtual bool
-        IsTagged ()
+        GetTaggedPointerInfo (uint64_t* info_bits = NULL,
+                              uint64_t* value_bits = NULL,
+                              uint64_t* payload = NULL)
         {
-            return false;   // v1 runtime does not support tagged pointers
+            return false;
         }
         
         virtual uint64_t
@@ -63,6 +66,12 @@ public:
         {
             return m_isa;
         }
+        
+        virtual bool
+        Describe (std::function <void (ObjCLanguageRuntime::ObjCISA)> const &superclass_func,
+                  std::function <bool (const char *, const char *)> const &instance_method_func,
+                  std::function <bool (const char *, const char *)> const &class_method_func,
+                  std::function <bool (const char *, const char *, lldb::addr_t, uint64_t)> const &ivar_func);
         
         virtual
         ~ClassDescriptorV1 ()
@@ -105,14 +114,14 @@ public:
     static lldb_private::LanguageRuntime *
     CreateInstance (Process *process, lldb::LanguageType language);
     
+    static lldb_private::ConstString
+    GetPluginNameStatic();
+    
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();
@@ -125,6 +134,9 @@ public:
     
     virtual void
     UpdateISAToDescriptorMapIfNeeded();
+    
+    virtual TypeVendor *
+    GetTypeVendor();
 
 protected:
     virtual lldb::BreakpointResolverSP
@@ -173,6 +185,7 @@ protected:
     
     HashTableSignature m_hash_signature;
     lldb::addr_t m_isa_hash_table_ptr;
+    std::unique_ptr<TypeVendor> m_type_vendor_ap;
 private:
     AppleObjCRuntimeV1(Process *process);
 };

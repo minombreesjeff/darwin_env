@@ -6,6 +6,9 @@ import lldb.formatters.Logger
 # ships with current releases of OS X - They will not work for other implementations
 # of the standard C++ library - and they are bound to use the libc++-specific namespace
 
+# the std::string summary is just an example for your convenience
+# the actual summary that LLDB uses is C++ code inside the debugger's own core
+
 # this could probably be made more efficient but since it only reads a handful of bytes at a time
 # we probably don't need to worry too much about this for the time being
 def make_string(F,L):
@@ -125,8 +128,7 @@ class stdvector_SynthProvider:
 			pass
 
 	def has_children(self):
-		# retrieving the count is quick enough on a std::vector
-		return self.num_children() > 0
+		return True
 
 # Just an example: the actual summary is produced by a summary string: size=${svar%#}
 def stdvector_SummaryProvider(valobj,dict):
@@ -322,24 +324,6 @@ class stdlist_SynthProvider:
 			pass
 
 	def has_children(self):
-		logger = lldb.formatters.Logger.Logger()
-		if self.count == None:
-			self.update()
-			try:
-				next_val = self.head.GetValueAsUnsigned(0)
-				prev_val = self.tail.GetValueAsUnsigned(0)
-				if next_val == 0 or prev_val == 0:
-					return False
-				if next_val == self.node_address:
-					return False
-				# skip all the advanced logic to detect the exact count of children
-				# in the interest of speed from this point on, we MIGHT have children
-				# our loop detection logic will still make nothing show up :)
-				return True
-			except:
-				return 0;
-		if self.count == 0:
-			return False
 		return True
 
 
@@ -504,7 +488,7 @@ class stdmap_SynthProvider:
 			return 0;
 
 	def has_children(self):
-		return self.num_children_impl() > 0
+		return True
 
 	def get_data_type(self):
 		logger = lldb.formatters.Logger.Logger()
@@ -577,8 +561,12 @@ class stdmap_SynthProvider:
 				else:
 					# FIXME we need to have accessed item 0 before accessing any other item!
 					if self.skip_size == None:
-						logger >> "You asked for item > 0 before asking for item == 0, too bad - I have no clue"
-						return None
+						logger >> "You asked for item > 0 before asking for item == 0, I will fetch 0 now then retry"
+						if self.get_child_at_index(0):
+							return self.get_child_at_index(index)
+						else:
+							logger >> "item == 0 could not be found. sorry, nothing can be done here."
+							return None
 					return current.CreateChildAtOffset('[' + str(index) + ']',self.skip_size,self.data_type)
 			else:
 				logger >> "Unable to infer data-type - returning None (should mark tree as garbage here?)"
@@ -629,9 +617,7 @@ class stddeque_SynthProvider:
         return min(self.count, _deque_capping_size)
 
     def has_children(self):
-        if self.cont is None:
-            self.update()
-        return self.count > 0
+        return True
 
     def get_child_index(self,name):
         logger = lldb.formatters.Logger.Logger()

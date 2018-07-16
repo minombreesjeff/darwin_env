@@ -105,6 +105,10 @@ static OptionDefinition g_options[] =
         "Tells the debugger to open source files using the host's \"external editor\" mechanism." },
     { LLDB_3_TO_5,       false, "no-lldbinit"    , 'x', no_argument      , 0,  eArgTypeNone,
         "Do not automatically parse any '.lldbinit' files." },
+    { LLDB_3_TO_5,       false, "no-use-colors"  , 'o', no_argument      , 0,  eArgTypeNone,
+        "Do not use colors." },
+    { LLDB_OPT_SET_6,    true , "python-path"    , 'P', no_argument      , 0,  eArgTypeNone,
+        "Prints out the path to the lldb.py file for this version of lldb." },
     { 0,                 false, NULL             , 0  , 0                , 0,  eArgTypeNone,         NULL }
 };
 
@@ -118,7 +122,9 @@ Driver::Driver () :
     m_editline_reader (),
     m_io_channel_ap (),
     m_option_data (),
-    m_waiting_for_command (false)
+    m_executing_user_command (false),
+    m_waiting_for_command (false),
+    m_done(false)
 {
     // We want to be able to handle CTRL+D in the terminal to have it terminate
     // certain input
@@ -387,6 +393,7 @@ Driver::OptionData::OptionData () :
     m_source_command_files (),
     m_debug_mode (false),
     m_print_version (false),
+    m_print_python_path (false),
     m_print_help (false),
     m_wait_for(false),
     m_process_name(),
@@ -409,6 +416,7 @@ Driver::OptionData::Clear ()
     m_debug_mode = false;
     m_print_help = false;
     m_print_version = false;
+    m_print_python_path = false;
     m_use_external_editor = false;
     m_wait_for = false;
     m_process_name.erase();
@@ -505,7 +513,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         return error;
     }
 
-    // Build the option_string argument for call to getopt_long.
+    // Build the option_string argument for call to getopt_long_only.
 
     for (int i = 0; long_options[i].name != NULL; ++i)
     {
@@ -536,7 +544,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
     m_debugger.SkipLLDBInitFiles (false);
     m_debugger.SkipAppInitFiles (false);
 
-    // Prepare for & make calls to getopt_long.
+    // Prepare for & make calls to getopt_long_only.
 #if __GLIBC__
     optind = 0;
 #else
@@ -547,7 +555,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
     while (1)
     {
         int long_options_index = -1;
-        val = ::getopt_long (argc, const_cast<char **>(argv), option_string.c_str(), long_options, &long_options_index);
+        val = ::getopt_long_only (argc, const_cast<char **>(argv), option_string.c_str(), long_options, &long_options_index);
 
         if (val == -1)
             break;
@@ -590,6 +598,10 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
                         m_option_data.m_print_version = true;
                         break;
 
+                    case 'P':
+                        m_option_data.m_print_python_path = true;
+                        break;
+
                     case 'c':
                         {
                             SBFileSpec file(optarg);
@@ -609,6 +621,10 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
                     case 'x':
                         m_debugger.SkipLLDBInitFiles (true);
                         m_debugger.SkipAppInitFiles (true);
+                        break;
+
+                    case 'o':
+                        m_debugger.SetUseColor (false);
                         break;
 
                     case 'f':
@@ -703,6 +719,24 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         ::fprintf (out_fh, "%s\n", m_debugger.GetVersionString());
         exit = true;
     }
+    else if (m_option_data.m_print_python_path)
+    {
+        SBFileSpec python_file_spec = SBHostOS::GetLLDBPythonPath();
+        if (python_file_spec.IsValid())
+        {
+            char python_path[PATH_MAX];
+            size_t num_chars = python_file_spec.GetPath(python_path, PATH_MAX);
+            if (num_chars < PATH_MAX)
+            {
+                ::fprintf (out_fh, "%s\n", python_path);
+            }
+            else
+                ::fprintf (out_fh, "<PATH TOO LONG>\n");
+        }
+        else
+            ::fprintf (out_fh, "<COULD NOT FIND PATH>\n");
+        exit = true;
+    }
     else if (m_option_data.m_process_name.empty() && m_option_data.m_process_pid == LLDB_INVALID_PROCESS_ID)
     {
         // Any arguments that are left over after option parsing are for
@@ -711,7 +745,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
         // are arguments for the inferior program. If no file was specified with
         // -f, then what is left is the program name followed by any arguments.
 
-        // Skip any options we consumed with getopt_long
+        // Skip any options we consumed with getopt_long_only
         argc -= optind;
         argv += optind;
 
@@ -728,7 +762,7 @@ Driver::ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &exit)
     }
     else
     {
-        // Skip any options we consumed with getopt_long
+        // Skip any options we consumed with getopt_long_only
         argc -= optind;
         //argv += optind; // Commented out to keep static analyzer happy
 
@@ -748,7 +782,7 @@ Driver::GetProcessSTDOUT ()
     size_t total_bytes = 0;
     while ((len = m_debugger.GetSelectedTarget().GetProcess().GetSTDOUT (stdio_buffer, sizeof (stdio_buffer))) > 0)
     {
-        m_io_channel_ap->OutWrite (stdio_buffer, len, ASYNC);
+        m_io_channel_ap->OutWrite (stdio_buffer, len, NO_ASYNC);
         total_bytes += len;
     }
     return total_bytes;
@@ -763,7 +797,7 @@ Driver::GetProcessSTDERR ()
     size_t total_bytes = 0;
     while ((len = m_debugger.GetSelectedTarget().GetProcess().GetSTDERR (stdio_buffer, sizeof (stdio_buffer))) > 0)
     {
-        m_io_channel_ap->ErrWrite (stdio_buffer, len, ASYNC);
+        m_io_channel_ap->ErrWrite (stdio_buffer, len, NO_ASYNC);
         total_bytes += len;
     }
     return total_bytes;
@@ -796,7 +830,6 @@ Driver::UpdateSelectedThread ()
                 StopReason thread_stop_reason = thread.GetStopReason();
                 switch (thread_stop_reason)
                 {
-                default:
                 case eStopReasonInvalid:
                 case eStopReasonNone:
                     break;
@@ -807,6 +840,7 @@ Driver::UpdateSelectedThread ()
                 case eStopReasonSignal:
                 case eStopReasonException:
                 case eStopReasonExec:
+                case eStopReasonThreadExiting:
                     if (!other_thread.IsValid())
                         other_thread = thread;
                     break;
@@ -946,11 +980,32 @@ Driver::HandleProcessEvent (const SBEvent &event)
             // Make sure the program hasn't been auto-restarted:
             if (SBProcess::GetRestartedFromEvent (event))
             {
+                size_t num_reasons = SBProcess::GetNumRestartedReasonsFromEvent(event);
+                if (num_reasons > 0)
+                {
                 // FIXME: Do we want to report this, or would that just be annoyingly chatty?
-                char message[1024];
-                int message_len = ::snprintf (message, sizeof(message), "Process %" PRIu64 " stopped and was programmatically restarted.\n",
+                    if (num_reasons == 1)
+                    {
+                        char message[1024];
+                        const char *reason = SBProcess::GetRestartedReasonAtIndexFromEvent (event, 0);
+                        int message_len = ::snprintf (message, sizeof(message), "Process %" PRIu64 " stopped and restarted: %s\n",
+                                              process.GetProcessID(), reason ? reason : "<UNKNOWN REASON>");
+                        m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                    }
+                    else
+                    {
+                        char message[1024];
+                        int message_len = ::snprintf (message, sizeof(message), "Process %" PRIu64 " stopped and restarted, reasons:\n",
                                               process.GetProcessID());
-                m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                        m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                        for (size_t i = 0; i < num_reasons; i++)
+                        {
+                            const char *reason = SBProcess::GetRestartedReasonAtIndexFromEvent (event, i);
+                            int message_len = ::snprintf(message, sizeof(message), "\t%s\n", reason ? reason : "<UNKNOWN REASON>");
+                            m_io_channel_ap->OutWrite(message, message_len, ASYNC);
+                        }
+                    }
+                }
             }
             else
             {
@@ -987,7 +1042,8 @@ Driver::HandleThreadEvent (const SBEvent &event)
     // reprint the thread status for that thread.
     using namespace lldb;
     const uint32_t event_type = event.GetType();
-    if (event_type == SBThread::eBroadcastBitStackChanged)
+    if (event_type == SBThread::eBroadcastBitStackChanged
+        || event_type == SBThread::eBroadcastBitThreadSelected)
     {
         SBThread thread = SBThread::GetThreadFromEvent (event);
         if (thread.IsValid())
@@ -1020,17 +1076,28 @@ Driver::HandleIOEvent (const SBEvent &event)
         
         // We don't want the result to bypass the OutWrite function in IOChannel, as this can result in odd
         // output orderings and problems with the prompt.
+        
+        // Note that we are in the process of executing a command
+        m_executing_user_command = true;
+
         m_debugger.GetCommandInterpreter().HandleCommand (command_string, result, true);
+
+        // Note that we are back from executing a user command
+        m_executing_user_command = false;
+
+        // Display any STDOUT/STDERR _prior_ to emitting the command result text
+        GetProcessSTDOUT ();
+        GetProcessSTDERR ();
 
         const bool only_if_no_immediate = true;
 
+        // Now emit the command output text from the command we just executed
         const size_t output_size = result.GetOutputSize();
-        
         if (output_size > 0)
             m_io_channel_ap->OutWrite (result.GetOutput(only_if_no_immediate), output_size, NO_ASYNC);
 
+        // Now emit the command error text from the command we just executed
         const size_t error_size = result.GetErrorSize();
-
         if (error_size > 0)
             m_io_channel_ap->OutWrite (result.GetError(only_if_no_immediate), error_size, NO_ASYNC);
 
@@ -1100,7 +1167,8 @@ Driver::EditLineInputReaderCallback
         break;
 
     case eInputReaderReactivate:
-        driver->ReadyForCommand();
+        if (driver->m_executing_user_command == false)
+            driver->ReadyForCommand();
         break;
 
     case eInputReaderDeactivate:
@@ -1303,7 +1371,8 @@ Driver::MainLoop ()
                                          SBTarget::eBroadcastBitBreakpointChanged);
         listener.StartListeningForEventClass(m_debugger, 
                                          SBThread::GetBroadcasterClassName(),
-                                         SBThread::eBroadcastBitStackChanged);
+                                         SBThread::eBroadcastBitStackChanged |
+                                         SBThread::eBroadcastBitThreadSelected);
         listener.StartListeningForEvents (*m_io_channel_ap,
                                           IOChannel::eBroadcastBitHasUserInput |
                                           IOChannel::eBroadcastBitUserInterrupt |
@@ -1333,6 +1402,7 @@ Driver::MainLoop ()
             // Now we handle options we got from the command line
             char command_string[PATH_MAX * 2];
             const size_t num_source_command_files = GetNumSourceCommandFiles();
+            const bool dump_stream_only_if_no_immediate = true;
             if (num_source_command_files > 0)
             {
                 for (size_t i=0; i < num_source_command_files; ++i)
@@ -1345,6 +1415,19 @@ Driver::MainLoop ()
                         result.PutError (m_debugger.GetErrorFileHandle());
                         result.PutOutput (m_debugger.GetOutputFileHandle());
                     }
+                    
+                    // if the command sourcing generated an error - dump the result object
+                    if (result.Succeeded() == false)
+                    {
+                        const size_t output_size = result.GetOutputSize();
+                        if (output_size > 0)
+                            m_io_channel_ap->OutWrite (result.GetOutput(dump_stream_only_if_no_immediate), output_size, NO_ASYNC);
+                        const size_t error_size = result.GetErrorSize();
+                        if (error_size > 0)
+                            m_io_channel_ap->OutWrite (result.GetError(dump_stream_only_if_no_immediate), error_size, NO_ASYNC);
+                    }
+                    
+                    result.Clear();
                 }
             }
 
@@ -1510,9 +1593,15 @@ Driver::MainLoop ()
                 }
             }
 
-            editline_output_pty.CloseMasterFileDescriptor();
+            master_out_comm.SetReadThreadBytesReceivedCallback(NULL, NULL);
             master_out_comm.Disconnect();
+            master_out_comm.ReadThreadStop();
+
+            out_comm_2.SetReadThreadBytesReceivedCallback(NULL, NULL);
             out_comm_2.Disconnect();
+            out_comm_2.ReadThreadStop();
+
+            editline_output_pty.CloseMasterFileDescriptor();
             reset_stdin_termios();
             fclose (stdin);
 
@@ -1547,6 +1636,15 @@ Driver::ReadyForCommand ()
     }
 }
 
+void
+Driver::ResizeWindow (unsigned short col)
+{
+    GetDebugger().SetTerminalWidth (col);
+    if (m_io_channel_ap.get() != NULL)
+    {
+        m_io_channel_ap->ElResize();
+    }
+}
 
 void
 sigwinch_handler (int signo)
@@ -1557,7 +1655,7 @@ sigwinch_handler (int signo)
     {
         if ((window_size.ws_col > 0) && g_driver != NULL)
         {
-            g_driver->GetDebugger().SetTerminalWidth (window_size.ws_col);
+            g_driver->ResizeWindow (window_size.ws_col);
         }
     }
 }

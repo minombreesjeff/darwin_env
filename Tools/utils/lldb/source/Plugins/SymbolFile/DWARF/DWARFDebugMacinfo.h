@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SymbolFileDWARF_DWARFDebugLine_h_
-#define SymbolFileDWARF_DWARFDebugLine_h_
+#ifndef SymbolFileDWARF_DWARFDebugMacinfo_h_
+#define SymbolFileDWARF_DWARFDebugMacinfo_h_
 
 #include "SymbolFileDWARF.h"
 
@@ -22,8 +22,8 @@ public:
     static void
     Dump (lldb_private::Stream *s,
           const lldb_private::DataExtractor& macinfo_data,
-          dw_offset_t offset = DW_INVALID_OFFSET);
+          lldb::offset_t offset = LLDB_INVALID_OFFSET);
 };
 
 
-#endif  // SymbolFileDWARF_DWARFDebugLine_h_
+#endif  // SymbolFileDWARF_DWARFDebugMacinfo_h_

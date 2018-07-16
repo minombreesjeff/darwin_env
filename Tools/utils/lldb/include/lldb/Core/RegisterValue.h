@@ -345,7 +345,7 @@ namespace lldb_private {
         Error
         SetValueFromData (const RegisterInfo *reg_info, 
                           DataExtractor &data, 
-                          uint32_t offset,
+                          lldb::offset_t offset,
                           bool partial_data_ok);
 
         // The default value of 0 for reg_name_right_align_at means no alignment at all.
@@ -374,6 +374,12 @@ namespace lldb_private {
         uint32_t
         GetByteSize () const;
 
+        static uint32_t
+        GetMaxByteSize ()
+        {
+            return kMaxRegisterByteSize;
+        }
+
         void
         Clear();
 
@@ -382,7 +388,7 @@ namespace lldb_private {
         RegisterValue::Type m_type;
         union
         {
-             uint8_t uint8;
+            uint8_t  uint8;
             uint16_t uint16;
             uint32_t uint32;
             uint64_t uint64;

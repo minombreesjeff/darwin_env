@@ -384,7 +384,7 @@ MachException::Message::Reply(MachProcess *process, int signal)
         if (state_pid != -1)
         {
             errno = 0;
-            if (::ptrace (PT_THUPDATE, state_pid, (caddr_t)state.thread_port, soft_signal) != 0)
+            if (::ptrace (PT_THUPDATE, state_pid, (caddr_t)((uintptr_t)state.thread_port), soft_signal) != 0)
                 err.SetError(errno, DNBError::POSIX);
             else
                 err.Clear();
@@ -480,6 +480,17 @@ MachException::Data::Dump() const
                            EXC_MASK_RPC_ALERT       | \
                            EXC_MASK_MACHINE)
 
+// Don't listen for EXC_RESOURCE, it should really get handled by the system handler.
+
+#ifndef EXC_RESOURCE
+#define EXC_RESOURCE 11
+#endif
+
+#ifndef EXC_MASK_RESOURCE
+#define EXC_MASK_RESOURCE (1 << EXC_RESOURCE)
+#endif
+
+#define LLDB_EXC_MASK (EXC_MASK_ALL & ~EXC_MASK_RESOURCE)
 
 kern_return_t
 MachException::PortInfo::Save (task_t task)
@@ -490,7 +501,7 @@ MachException::PortInfo::Save (task_t task)
     // and back off to just what is supported on the current system
     DNBError err;
 
-    mask = EXC_MASK_ALL;
+    mask = LLDB_EXC_MASK;
 
     count = (sizeof (ports) / sizeof (ports[0]));
     err = ::task_get_exception_ports (task, mask, masks, &count, ports, behaviors, flavors);

@@ -20,6 +20,7 @@ class StdListDataFormatterTestCase(TestBase):
         self.data_formatter_commands()
 
     @dwarf_test
+    @expectedFailureLinux('llvm.org/pr15301', ['gcc', 'icc']) # LLDB prints incorrect sizes of STL containers
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()
@@ -28,8 +29,10 @@ class StdListDataFormatterTestCase(TestBase):
     def setUp(self):
         # Call super's setUp().
         TestBase.setUp(self)
-        # Find the line number to break at.
+        # Find the line numbers to break at for the different tests.
         self.line = line_number('main.cpp', '// Set break point at this line.')
+        self.optional_line = line_number('main.cpp', '// Optional break point at this line.')
+        self.final_line = line_number('main.cpp', '// Set final break point at this line.')
 
     def data_formatter_commands(self):
         """Test that that file and class static variables display correctly."""
@@ -57,36 +60,35 @@ class StdListDataFormatterTestCase(TestBase):
         self.addTearDownHook(cleanup)
 
         self.runCmd("frame variable numbers_list --show-types")
-        #self.runCmd("type synth add std::int_list std::string_list int_list string_list -l StdListSynthProvider")
-        self.runCmd("type summary add std::int_list std::string_list int_list string_list --summary-string \"list has ${svar%#} items\" -e")
+
         self.runCmd("type format add -f hex int")
 
         self.expect("frame variable numbers_list --raw", matching=False,
-                    substrs = ['list has 0 items',
+                    substrs = ['size=0',
                                '{}'])
         self.expect("frame variable &numbers_list._M_impl._M_node --raw", matching=False,
-                    substrs = ['list has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
         self.expect("frame variable numbers_list",
-                    substrs = ['list has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
         self.expect("p numbers_list",
-                    substrs = ['list has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
         self.runCmd("n")
 
         self.expect("frame variable numbers_list",
-                    substrs = ['list has 1 items',
+                    substrs = ['size=1',
                                '[0] = ',
                                '0x12345678'])
 
         self.runCmd("n");self.runCmd("n");self.runCmd("n");
 
         self.expect("frame variable numbers_list",
-                    substrs = ['list has 4 items',
+                    substrs = ['size=4',
                                '[0] = ',
                                '0x12345678',
                                '[1] =',
@@ -99,7 +101,7 @@ class StdListDataFormatterTestCase(TestBase):
         self.runCmd("n");self.runCmd("n");
 
         self.expect("frame variable numbers_list",
-                    substrs = ['list has 6 items',
+                    substrs = ['size=6',
                                '[0] = ',
                                '0x12345678',
                                '0x11223344',
@@ -111,7 +113,7 @@ class StdListDataFormatterTestCase(TestBase):
                                '0x0cab0cab'])
 
         self.expect("p numbers_list",
-                    substrs = ['list has 6 items',
+                    substrs = ['size=6',
                                '[0] = ',
                                '0x12345678',
                                '0x11223344',
@@ -138,13 +140,13 @@ class StdListDataFormatterTestCase(TestBase):
         self.runCmd("n")
             
         self.expect("frame variable numbers_list",
-                    substrs = ['list has 0 items',
+                    substrs = ['size=0',
                                '{}'])
 
         self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
             
         self.expect("frame variable numbers_list",
-                    substrs = ['list has 4 items',
+                    substrs = ['size=4',
                                '[0] = ', '1',
                                '[1] = ', '2',
                                '[2] = ', '3',
@@ -155,20 +157,27 @@ class StdListDataFormatterTestCase(TestBase):
         self.runCmd("n")
             
         self.expect("frame variable text_list",
-            substrs = ['list has 0 items',
+            substrs = ['size=0',
                        '{}'])
         
-        self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.final_line, num_expected_locations=-1)
+
+        self.runCmd("c", RUN_SUCCEEDED)
+
+        # The stop reason of the thread should be breakpoint.
+        self.expect("thread list", STOPPED_DUE_TO_BREAKPOINT,
+            substrs = ['stopped',
+                       'stop reason = breakpoint'])
 
         self.expect("frame variable text_list",
-                    substrs = ['list has 4 items',
+                    substrs = ['size=4',
                                '[0]', 'goofy',
                                '[1]', 'is',
                                '[2]', 'smart',
                                '[3]', '!!!'])
 
         self.expect("p text_list",
-                    substrs = ['list has 4 items',
+                    substrs = ['size=4',
                                '\"goofy\"',
                                '\"is\"',
                                '\"smart\"',

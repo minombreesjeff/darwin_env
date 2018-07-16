@@ -27,6 +27,7 @@
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/ClangASTSource.h"
 #include "lldb/Expression/ClangExpressionVariable.h"
+#include "lldb/Expression/Materializer.h"
 #include "lldb/Symbol/TaggedASTType.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -69,6 +70,9 @@ public:
     ///     If true, inhibits the normal deallocation of the memory for
     ///     the result persistent variable, and instead marks the variable
     ///     as persisting.
+    ///
+    /// @param[in] exe_ctx
+    ///     The execution context to use when parsing.
     //------------------------------------------------------------------
     ClangExpressionDeclMap (bool keep_result_in_memory,
                             ExecutionContext &exe_ctx);
@@ -85,11 +89,16 @@ public:
     ///     The execution context to use when finding types for variables.
     ///     Also used to find a "scratch" AST context to store result types.
     ///
+    /// @param[in] materializer
+    ///     If non-NULL, the materializer to populate with information about
+    ///     the variables to use
+    ///
     /// @return
     ///     True if parsing is possible; false if it is unsafe to continue.
     //------------------------------------------------------------------
     bool
-    WillParse (ExecutionContext &exe_ctx);
+    WillParse (ExecutionContext &exe_ctx,
+               Materializer *materializer);
     
     //------------------------------------------------------------------
     /// [Used by ClangExpressionParser] For each variable that had an unknown
@@ -106,60 +115,6 @@ public:
     //------------------------------------------------------------------
     void 
     DidParse ();
-    
-    //------------------------------------------------------------------
-    /// [Used by IRForTarget] Get a new result variable name of the form
-    ///     $n, where n is a natural number starting with 0.
-    ///
-    /// @param[in] name
-    ///     The std::string to place the name into.
-    //------------------------------------------------------------------
-    const ConstString &
-    GetPersistentResultName ();
-
-    //------------------------------------------------------------------
-    /// [Used by IRForTarget] Get a constant variable given a name,
-    ///     a type, and an llvm::APInt.
-    ///
-    /// @param[in] name
-    ///     The name of the variable
-    ///
-    /// @param[in] type
-    ///     The type of the variable, which will be imported into the
-    ///     target's AST context
-    ///
-    /// @param[in] value
-    ///     The value of the variable
-    ///
-    /// @return
-    ///     The created variable
-    //------------------------------------------------------------------
-    lldb::ClangExpressionVariableSP
-    BuildIntegerVariable (const ConstString &name,
-                          lldb_private::TypeFromParser type,
-                          const llvm::APInt& value);
-    
-    //------------------------------------------------------------------
-    /// [Used by IRForTarget] Cast an existing variable given a Decl and
-    ///     a type.
-    ///
-    /// @param[in] name
-    ///     The name of the new variable
-    ///
-    /// @param[in] decl
-    ///     The Clang variable declaration for the original variable,
-    ///     which must be looked up in the map
-    ///
-    /// @param[in] type
-    ///     The desired type of the variable after casting
-    ///
-    /// @return
-    ///     The created variable
-    //------------------------------------------------------------------
-    lldb::ClangExpressionVariableSP
-    BuildCastVariable (const ConstString &name,
-                       clang::VarDecl *decl,
-                       lldb_private::TypeFromParser type);
     
     //------------------------------------------------------------------
     /// [Used by IRForTarget] Add a variable to the list of persistent
@@ -382,239 +337,6 @@ public:
     TargetInfo GetTargetInfo();
     
     //------------------------------------------------------------------
-    /// [Used by IRInterpreter] Promote an unknown address to a
-    ///     LoadAddress or FileAddress depending on the presence of a
-    ///     process.
-    ///
-    /// @param[in] addr
-    ///     The address to promote.
-    ///
-    /// @return
-    ///     The wrapped entity.
-    //------------------------------------------------------------------
-    lldb_private::Value WrapBareAddress (lldb::addr_t addr);
-    
-    //------------------------------------------------------------------
-    /// [Used by IRInterpreter] Write to the target.
-    ///
-    /// @param[in] value
-    ///     The address to write to.
-    ///
-    /// @param[in] addr
-    ///     The address of the data buffer to read from.
-    ///
-    /// @param[in] length
-    ///     The amount of data to write, in bytes.
-    ///
-    /// @return
-    ///     True if the write could be performed; false otherwise.
-    //------------------------------------------------------------------
-    bool
-    WriteTarget (lldb_private::Value &value,
-                 const uint8_t *data,
-                 size_t length);
-    
-    //------------------------------------------------------------------
-    /// [Used by IRInterpreter] Read from the target.
-    ///
-    /// @param[in] data
-    ///     The address of the data buffer to write to.
-    ///
-    /// @param[in] value
-    ///     The address to read from.
-    ///
-    /// @param[in] length
-    ///     The amount of data to read, in bytes.
-    ///
-    /// @return
-    ///     True if the read could be performed; false otherwise.
-    //------------------------------------------------------------------
-    bool
-    ReadTarget (uint8_t *data,
-                lldb_private::Value &value,
-                size_t length);
-
-    //------------------------------------------------------------------
-    /// [Used by IRInterpreter] Get the Value for a NamedDecl.
-    ///
-    /// @param[in] decl
-    ///     The Decl whose value is to be found.
-    ///
-    /// @param[out] flags
-    ///     The flags for the found variable.
-    ///
-    /// @return
-    ///     The value, or NULL.
-    //------------------------------------------------------------------
-    lldb_private::Value
-    LookupDecl (clang::NamedDecl *decl,
-                ClangExpressionVariable::FlagType &flags);
-    
-    //------------------------------------------------------------------
-    /// [Used by IRInterpreter] Get the Value for "this", "self", or
-    ///   "_cmd".
-    ///
-    /// @param[in] name
-    ///     The name of the entity to be found.
-    ///
-    /// @return
-    ///     The value, or NULL.
-    //------------------------------------------------------------------
-    lldb_private::Value
-    GetSpecialValue (const ConstString &name);
-    
-    //------------------------------------------------------------------
-    /// [Used by IRInterpreter] Returns true if the result is a
-    ///   reference to data in the target, meaning it must be
-    ///   dereferenced once more to get its data.
-    ///
-    /// @param[in] name
-    ///     The name of the result.
-    ///
-    /// @return
-    ///     True if the result is a reference; false otherwise (or on
-    ///     error).
-    //------------------------------------------------------------------
-    bool
-    ResultIsReference (const ConstString &name);
-    
-    //------------------------------------------------------------------
-    /// [Used by IRInterpreter] Find the result persistent variable,
-    ///   propagate the given value to it, and return it.
-    ///
-    /// @param[out] valobj
-    ///     Set to the complete object.
-    ///
-    /// @param[in] value
-    ///     A value indicating the location of the value's contents.
-    ///
-    /// @param[in] name
-    ///     The name of the result.
-    ///
-    /// @param[in] type
-    ///     The type of the data.
-    ///
-    /// @param[in] transient
-    ///     True if the data should be treated as disappearing after the
-    ///     expression completes.  In that case, it gets no live data.
-    ///
-    /// @param[in] maybe_make_load
-    ///     True if the value is a file address but should be potentially
-    ///     upgraded to a load address if a target is presence.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool
-    CompleteResultVariable (lldb::ClangExpressionVariableSP &valobj, 
-                            lldb_private::Value &value,
-                            const ConstString &name,
-                            lldb_private::TypeFromParser type,
-                            bool transient,
-                            bool maybe_make_load);
-    
-    
-    void
-    RemoveResultVariable (const ConstString &name);
-    
-    //------------------------------------------------------------------
-    /// [Used by CommandObjectExpression] Materialize the entire struct
-    /// at a given address, which should be aligned as specified by 
-    /// GetStructInfo().
-    ///
-    /// @param[in] struct_address
-    ///     The address at which the struct should be written.
-    ///
-    /// @param[in] error
-    ///     An Error to populate with any messages related to
-    ///     materializing the struct.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool 
-    Materialize (lldb::addr_t &struct_address,
-                 Error &error);
-    
-    //------------------------------------------------------------------
-    /// [Used by CommandObjectExpression] Get the "this" pointer
-    /// from a given execution context.
-    ///
-    /// @param[out] object_ptr
-    ///     The this pointer.
-    ///
-    /// @param[in] object_name
-    ///     The name of the object pointer -- "this," "self," or similar
-    ///     depending on language
-    ///
-    /// @param[in] error
-    ///     An Error to populate with any messages related to
-    ///     finding the "this" pointer.
-    ///
-    /// @param[in] suppress_type_check
-    ///     True if the type is not needed.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool
-    GetObjectPointer (lldb::addr_t &object_ptr,
-                      ConstString &object_name,
-                      Error &error,
-                      bool suppress_type_check = false);
-    
-    //------------------------------------------------------------------
-    /// [Used by CommandObjectExpression] Pretty-print a materialized
-    /// struct, which must have been materialized by Materialize(),
-    /// byte for byte on a given stream.
-    ///
-    /// @param[in] exe_ctx
-    ///     The execution context from which to read the struct.
-    ///
-    /// @param[in] s
-    ///     The stream on which to write the pretty-printed output.
-    ///
-    /// @param[in] error
-    ///     An Error to populate with any messages related to
-    ///     pretty-printing the struct.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool 
-    DumpMaterializedStruct (Stream &s,
-                            Error &error);
-    
-    //------------------------------------------------------------------
-    /// [Used by CommandObjectExpression] Deaterialize the entire struct.
-    ///
-    /// @param[in] exe_ctx
-    ///     The execution context from which to read the struct.
-    ///
-    /// @param[out] result
-    ///     A ClangExpressionVariable containing the result of the
-    ///     expression, for potential re-use.
-    ///
-    /// @param[in] stack_frame_top, stack_frame_bottom
-    ///     If not LLDB_INVALID_ADDRESS, the bounds for the stack frame
-    ///     in which the expression ran.  A result whose address falls
-    ///     inside this stack frame is dematerialized as a value
-    ///     requiring rematerialization.
-    ///
-    /// @param[in] error
-    ///     An Error to populate with any messages related to
-    ///     dematerializing the struct.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool 
-    Dematerialize (lldb::ClangExpressionVariableSP &result_sp,
-                   lldb::addr_t stack_frame_top,
-                   lldb::addr_t stack_frame_bottom,
-                   Error &error);
-    
-    //------------------------------------------------------------------
     /// [Used by ClangASTSource] Find all entities matching a given name,
     /// using a NameSearchContext to make Decls for them.
     ///
@@ -674,6 +396,7 @@ private:
             m_sym_ctx(),
             m_persistent_vars(NULL),
             m_enable_lookups(false),
+            m_materializer(NULL),
             m_decl_map(decl_map)
         {
         }
@@ -693,12 +416,13 @@ private:
         ClangPersistentVariables   *m_persistent_vars;  ///< The persistent variables for the process.
         bool                        m_enable_lookups;   ///< Set to true during parsing if we have found the first "$__lldb" name.
         TargetInfo                  m_target_info;      ///< Basic information about the target.
+        Materializer               *m_materializer;     ///< If non-NULL, the materializer to use when reporting used variables.
     private:
         ClangExpressionDeclMap     &m_decl_map;
         DISALLOW_COPY_AND_ASSIGN (ParserVars);
     };
     
-    std::auto_ptr<ParserVars> m_parser_vars;
+    std::unique_ptr<ParserVars> m_parser_vars;
     
     //----------------------------------------------------------------------
     /// Activate parser-specific variables
@@ -740,7 +464,7 @@ private:
         TypeFromUser                m_object_pointer_type;      ///< The type of the "this" variable, if one exists
     };
     
-    std::auto_ptr<StructVars> m_struct_vars;
+    std::unique_ptr<StructVars> m_struct_vars;
     
     //----------------------------------------------------------------------
     /// Activate struct variables
@@ -762,71 +486,14 @@ private:
     }
     
     //----------------------------------------------------------------------
-    /// The following values refer to a specific materialization of the
-    /// structure in a process
+    /// Get this parser's ID for use in extracting parser- and JIT-specific
+    /// data from persistent variables.
     //----------------------------------------------------------------------
-    struct MaterialVars {
-        MaterialVars() :
-            m_allocated_area(0),
-            m_materialized_location(0)
-        {
-        }
-        
-        Process                    *m_process;                  ///< The process that the struct is materialized into.
-        lldb::addr_t                m_allocated_area;           ///< The base of the memory allocated for the struct.  Starts on a potentially unaligned address and may therefore be larger than the struct.
-        lldb::addr_t                m_materialized_location;    ///< The address at which the struct is placed.  Falls inside the allocated area.
-    };
-    
-    std::auto_ptr<MaterialVars> m_material_vars;
-    
-    //----------------------------------------------------------------------
-    /// Activate materialization-specific variables
-    //----------------------------------------------------------------------
-    void 
-    EnableMaterialVars()
+    uint64_t
+    GetParserID()
     {
-        if (!m_material_vars.get())
-            m_material_vars.reset(new struct MaterialVars);
+        return (uint64_t)this;
     }
-    
-    //----------------------------------------------------------------------
-    /// Deallocate materialization-specific variables
-    //----------------------------------------------------------------------
-    void 
-    DisableMaterialVars()
-    {
-        m_material_vars.reset();
-    }
-    
-    //------------------------------------------------------------------
-    /// Given a stack frame, find a variable that matches the given name and 
-    /// type.  We need this for expression re-use; we may not always get the
-    /// same lldb::Variable back, and we want the expression to work wherever 
-    /// it can.  Returns the variable defined in the tightest scope.
-    ///
-    /// @param[in] frame
-    ///     The stack frame to use as a basis for finding the variable.
-    ///
-    /// @param[in] name
-    ///     The name as a plain C string.
-    ///
-    /// @param[in] type
-    ///     The required type for the variable.  This function may be called
-    ///     during parsing, in which case we don't know its type; hence the
-    ///     default.
-    ///
-    /// @param[in] object_pointer
-    ///     The type expected is an object type.  This means we will ignore
-    ///     constness of the pointer target.
-    ///
-    /// @return
-    ///     The LLDB Variable found, or NULL if none was found.
-    //------------------------------------------------------------------
-    lldb::VariableSP
-    FindVariableInScope (StackFrame &frame,
-                         const ConstString &name,
-                         TypeFromUser *type = NULL,
-                         bool object_pointer = false);
     
     //------------------------------------------------------------------
     /// Given a target, find a data symbol that has the given name.
@@ -1007,156 +674,23 @@ private:
     ///
     /// @param[in] type
     ///     The type that needs to be created.
-    ///
-    /// @param[in] add_method
-    ///     True if a method with signature void $__lldb_expr(void*)
-    ///     should be added to the C++ class type passed in
     //------------------------------------------------------------------
     void 
     AddOneType (NameSearchContext &context, 
                 TypeFromUser &type,
-                unsigned int current_id,
-                bool add_method);
+                unsigned int current_id);
     
     //------------------------------------------------------------------
-    /// Actually do the task of materializing or dematerializing the struct.
-    /// Since both tasks are very similar, although ClangExpressionDeclMap
-    /// exposes two functions to the outside, both call DoMaterialize.
+    /// Copy a C++ class type into the parser's AST context and add a
+    /// member function declaration to it for the expression.
     ///
-    /// @param[in] dematerialize
-    ///     True if the struct is to be dematerialized; false if it is to
-    ///     be materialized.
-    ///
-    /// @param[in] stack_frame_top, stack_frame_bottom
-    ///     If not LLDB_INVALID_ADDRESS, the bounds for the stack frame
-    ///     in which the expression ran.  A result whose address falls
-    ///     inside this stack frame is dematerialized as a value
-    ///     requiring rematerialization.
-    ///
-    /// @param[out] result
-    ///     If the struct is being dematerialized, a pointer into which the
-    ///     location of the result persistent variable is placed.  If not,
-    ///     NULL.
-    ///
-    /// @param[in] err
-    ///     An Error to populate with any messages related to
-    ///     (de)materializing the struct.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
+    /// @param[in] type
+    ///     The type that needs to be created.
     //------------------------------------------------------------------
-    bool 
-    DoMaterialize (bool dematerialize,
-                   lldb::addr_t stack_frame_top,
-                   lldb::addr_t stack_frame_bottom,
-                   lldb::ClangExpressionVariableSP *result_sp_ptr,
-                   Error &err);
-    
-    //------------------------------------------------------------------
-    /// Clean up the state required to dematerialize the variable.
-    //------------------------------------------------------------------
-    void 
-    DidDematerialize ();
 
-    //------------------------------------------------------------------
-    /// Actually do the task of materializing or dematerializing a persistent
-    /// variable.
-    ///
-    /// @param[in] dematerialize
-    ///     True if the variable is to be dematerialized; false if it is to
-    ///     be materialized.
-    ///
-    /// @param[in] var_sp
-    ///     The persistent variable to materialize
-    ///
-    /// @param[in] addr
-    ///     The address at which to materialize the variable.
-    ///
-    /// @param[in] stack_frame_top, stack_frame_bottom
-    ///     If not LLDB_INVALID_ADDRESS, the bounds for the stack frame
-    ///     in which the expression ran.  A result whose address falls
-    ///     inside this stack frame is dematerialized as a value
-    ///     requiring rematerialization.
-    ///
-    /// @param[in] err
-    ///     An Error to populate with any messages related to
-    ///     (de)materializing the persistent variable.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool 
-    DoMaterializeOnePersistentVariable (bool dematerialize,
-                                        lldb::ClangExpressionVariableSP &var_sp,
-                                        lldb::addr_t addr,
-                                        lldb::addr_t stack_frame_top,
-                                        lldb::addr_t stack_frame_bottom,
-                                        Error &err);
-    
-    //------------------------------------------------------------------
-    /// Actually do the task of materializing or dematerializing a 
-    /// variable.
-    ///
-    /// @param[in] dematerialize
-    ///     True if the variable is to be dematerialized; false if it is to
-    ///     be materialized.
-    ///
-    /// @param[in] sym_ctx
-    ///     The symbol context to use (for looking the variable up).
-    ///
-    /// @param[in] expr_var
-    ///     The entity that the expression parser uses for the variable.
-    ///     In case the variable needs to be copied into the target's
-    ///     memory, this location is stored in the variable during
-    ///     materialization and cleared when it is demateralized.
-    ///
-    /// @param[in] addr
-    ///     The address at which to materialize the variable.
-    ///
-    /// @param[in] err
-    ///     An Error to populate with any messages related to
-    ///     (de)materializing the persistent variable.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool 
-    DoMaterializeOneVariable (bool dematerialize,
-                              const SymbolContext &sym_ctx,
-                              lldb::ClangExpressionVariableSP &expr_var,
-                              lldb::addr_t addr, 
-                              Error &err);
-    
-    //------------------------------------------------------------------
-    /// Actually do the task of materializing or dematerializing a 
-    /// register variable.
-    ///
-    /// @param[in] dematerialize
-    ///     True if the variable is to be dematerialized; false if it is to
-    ///     be materialized.
-    ///
-    /// @param[in] reg_ctx
-    ///     The register context to use.
-    ///
-    /// @param[in] reg_info
-    ///     The information for the register to read/write.
-    ///
-    /// @param[in] addr
-    ///     The address at which to materialize the variable.
-    ///
-    /// @param[in] err
-    ///     An Error to populate with any messages related to
-    ///     (de)materializing the persistent variable.
-    ///
-    /// @return
-    ///     True on success; false otherwise.
-    //------------------------------------------------------------------
-    bool 
-    DoMaterializeOneRegister (bool dematerialize,
-                              RegisterContext &reg_ctx,
-                              const RegisterInfo &reg_info,
-                              lldb::addr_t addr, 
-                              Error &err);
+    TypeFromParser
+    CopyClassType(TypeFromUser &type,
+                  unsigned int current_id);
 };
     
 } // namespace lldb_private

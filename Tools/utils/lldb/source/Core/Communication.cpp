@@ -108,7 +108,7 @@ Communication::Disconnect (Error *error_ptr)
         // don't want to pay for the overhead it might cause if every time we
         // access the connection we have to take a lock.
         //
-        // This auto_ptr will cleanup after itself when this object goes away,
+        // This unique pointer will cleanup after itself when this object goes away,
         // so there is no need to currently have it destroy itself immediately
         // upon disconnnect.
         //connection_sp.reset();
@@ -338,7 +338,7 @@ Communication::ReadThread (void *p)
 {
     Communication *comm = (Communication *)p;
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_COMMUNICATION));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_COMMUNICATION));
 
     if (log)
         log->Printf ("%p Communication::ReadThread () thread starting...", p);
@@ -374,14 +374,13 @@ Communication::ReadThread (void *p)
         case eConnectionStatusLostConnection:   // Lost connection while connected to a valid connection
             done = true;
             // Fall through...
-        default:
         case eConnectionStatusError:            // Check GetError() for details
         case eConnectionStatusTimedOut:         // Request timed out
             if (log)
-                error.LogIfError(log.get(), 
-                                 "%p Communication::ReadFromConnection () => status = %s", 
-                                 p, 
-                                 Communication::ConnectionStatusAsCString (status));
+                error.LogIfError (log,
+                                  "%p Communication::ReadFromConnection () => status = %s",
+                                  p,
+                                  Communication::ConnectionStatusAsCString (status));
             break;
         }
     }
@@ -391,8 +390,6 @@ Communication::ReadThread (void *p)
 
     // Let clients know that this thread is exiting
     comm->BroadcastEvent (eBroadcastBitReadThreadDidExit);
-    comm->m_read_thread_enabled = false;
-    comm->m_read_thread = LLDB_INVALID_HOST_THREAD;
     return NULL;
 }
 

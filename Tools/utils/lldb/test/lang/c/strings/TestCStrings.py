@@ -16,7 +16,6 @@ class CStringsTestCase(TestBase):
         self.buildDsym()
         self.static_method_commands()
 
-    @expectedFailureLinux # bugzilla 14437
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Tests that C strings work as expected in expressions"""
@@ -43,6 +42,7 @@ class CStringsTestCase(TestBase):
         self.expect("expression -- z[2]",
                     startstr = "(const char) $1 = 'x'")
 
+        # On Linux, the expression below will test GNU indirect function calls.
         self.expect("expression -- (int)strlen(\"hello\")",
                     startstr = "(int) $2 = 5")
 
@@ -52,14 +52,22 @@ class CStringsTestCase(TestBase):
         self.expect("expression -- \"\"[0]",
                     startstr = "(const char) $4 = '\\0'")
 
+        self.expect("expr --raw -- \"hello\"",
+            substrs = ['[0] = \'h\'',
+                       '[5] = \'\\0\''])
+
         self.expect("p \"hello\"",
-            substrs = ['(const char [6]) $', 'hello',
-                       '(const char) [0] = \'h\'',
-                       '(const char) [5] = \'\\0\''])
+            substrs = ['[6]) $', 'hello'])
 
         self.expect("p (char*)\"hello\"",
                     substrs = ['(char *) $', ' = 0x',
                                'hello'])
+
+        self.expect("p (int)strlen(\"\")",
+                    substrs = ['(int) $', ' = 0'])
+
+        self.expect("expression !z",
+                    substrs = ['false'])
 
 if __name__ == '__main__':
     import atexit

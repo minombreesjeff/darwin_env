@@ -34,6 +34,7 @@ $
 import os, sys, traceback
 import os.path
 import re
+import signal
 from subprocess import *
 import StringIO
 import time
@@ -100,6 +101,8 @@ SOURCE_DISPLAYED_CORRECTLY = "Source code displayed correctly"
 STEP_OUT_SUCCEEDED = "Thread step-out succeeded"
 
 STOPPED_DUE_TO_EXC_BAD_ACCESS = "Process should be stopped due to bad access exception"
+
+STOPPED_DUE_TO_ASSERT = "Process should be stopped due to an assertion"
 
 STOPPED_DUE_TO_BREAKPOINT = "Process should be stopped due to breakpoint"
 
@@ -368,73 +371,242 @@ def dwarf_test(func):
     wrapper.__dwarf_test__ = True
     return wrapper
 
-def expectedFailureClang(func):
-    """Decorate the item as a Clang only expectedFailure."""
-    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
-        raise Exception("@expectedFailureClang can only be used to decorate a test method")
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        from unittest2 import case
-        self = args[0]
-        compiler = self.getCompiler()
-        try:
-            func(*args, **kwargs)
-        except Exception:
-            if "clang" in compiler:
-                raise case._ExpectedFailure(sys.exc_info())
-            else:
-                raise
+def expectedFailureGcc(bugnumber=None, compiler_version=["=", None]):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailureGcc_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            test_compiler = self.getCompiler()
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "gcc" in test_compiler and self.expectedCompilerVersion(compiler_version):
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
+            if "gcc" in test_compiler:
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailureGcc_easy_wrapper
+     else:
+        def expectedFailureGcc_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                test_compiler = self.getCompiler()
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "gcc" in test_compiler and self.expectedCompilerVersion(compiler_version):
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "gcc" in test_compiler:
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailureGcc_impl
 
-        if "clang" in compiler:
-            raise case._UnexpectedSuccess
-    return wrapper
+def expectedFailureClang(bugnumber=None):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailureClang_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            test_compiler = self.getCompiler()
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "clang" in test_compiler:
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
+            if "clang" in test_compiler:
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailureClang_easy_wrapper
+     else:
+        def expectedFailureClang_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                test_compiler = self.getCompiler()
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "clang" in test_compiler:
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "clang" in test_compiler:
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailureClang_impl
 
-def expectedFailurei386(func):
-    """Decorate the item as an i386 only expectedFailure."""
-    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
-        raise Exception("@expectedFailurei386 can only be used to decorate a test method")
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        from unittest2 import case
-        self = args[0]
-        arch = self.getArchitecture()
-        try:
-            func(*args, **kwargs)
-        except Exception:
+def expectedFailureIcc(bugnumber=None):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailureIcc_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            test_compiler = self.getCompiler()
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "icc" in test_compiler:
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
+            if "icc" in test_compiler:
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailureIcc_easy_wrapper
+     else:
+        def expectedFailureIcc_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                test_compiler = self.getCompiler()
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "icc" in test_compiler:
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "icc" in test_compiler:
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailureIcc_impl
+
+
+def expectedFailurei386(bugnumber=None):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailurei386_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            arch = self.getArchitecture()
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "i386" in arch:
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
             if "i386" in arch:
-                raise case._ExpectedFailure(sys.exc_info())
-            else:
-                raise
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailurei386_easy_wrapper
+     else:
+        def expectedFailurei386_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                arch = self.getArchitecture()
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "i386" in arch:
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "i386" in arch:
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailurei386_impl
 
-        if "i386" in arch:
-            raise case._UnexpectedSuccess
-    return wrapper
+def expectedFailureLinux(bugnumber=None, compilers=None):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailureLinux_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            platform = sys.platform
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "linux" in platform and self.expectedCompiler(compilers):
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
+            if "linux" in platform and self.expectedCompiler(compilers):
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailureLinux_easy_wrapper
+     else:
+        def expectedFailureLinux_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                platform = sys.platform
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "linux" in platform and self.expectedCompiler(compilers):
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "linux" in platform and self.expectedCompiler(compilers):
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailureLinux_impl
 
-def expectedFailureLinux(func):
-    """Decorate the item as a Linux only expectedFailure."""
+def expectedFailureDarwin(bugnumber=None):
+     if callable(bugnumber):
+        @wraps(bugnumber)
+        def expectedFailureDarwin_easy_wrapper(*args, **kwargs):
+            from unittest2 import case
+            self = args[0]
+            platform = sys.platform
+            try:
+                bugnumber(*args, **kwargs)
+            except Exception:
+                if "darwin" in platform:
+                    raise case._ExpectedFailure(sys.exc_info(),None)
+                else:
+                    raise
+            if "darwin" in platform:
+                raise case._UnexpectedSuccess(sys.exc_info(),None)
+        return expectedFailureDarwin_easy_wrapper
+     else:
+        def expectedFailureDarwin_impl(func):
+              @wraps(func)
+              def wrapper(*args, **kwargs):
+                from unittest2 import case
+                self = args[0]
+                platform = sys.platform
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    if "darwin" in platform:
+                        raise case._ExpectedFailure(sys.exc_info(),bugnumber)
+                    else:
+                        raise
+                if "darwin" in platform:
+                    raise case._UnexpectedSuccess(sys.exc_info(),bugnumber)
+              return wrapper
+        return expectedFailureDarwin_impl
+
+def skipIfFreeBSD(func):
+    """Decorate the item to skip tests that should be skipped on FreeBSD."""
     if isinstance(func, type) and issubclass(func, unittest2.TestCase):
-        raise Exception("@expectedFailureLinux can only be used to decorate a test method")
+        raise Exception("@skipIfFreeBSD can only be used to decorate a test method")
     @wraps(func)
     def wrapper(*args, **kwargs):
         from unittest2 import case
         self = args[0]
         platform = sys.platform
-        try:
+        if "freebsd" in platform:
+            self.skipTest("skip on FreeBSD")
+        else:
             func(*args, **kwargs)
-        except Exception:
-            if "linux" in platform:
-                raise case._ExpectedFailure(sys.exc_info())
-            else:
-                raise
-
-        if "linux" in platform:
-            raise case._UnexpectedSuccess
     return wrapper
 
-def skipOnLinux(func):
+def skipIfLinux(func):
     """Decorate the item to skip tests that should be skipped on Linux."""
     if isinstance(func, type) and issubclass(func, unittest2.TestCase):
-        raise Exception("@skipOnLinux can only be used to decorate a test method")
+        raise Exception("@skipIfLinux can only be used to decorate a test method")
     @wraps(func)
     def wrapper(*args, **kwargs):
         from unittest2 import case
@@ -445,6 +617,85 @@ def skipOnLinux(func):
         else:
             func(*args, **kwargs)
     return wrapper
+
+def skipIfDarwin(func):
+    """Decorate the item to skip tests that should be skipped on Darwin."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfDarwin can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        platform = sys.platform
+        if "darwin" in platform:
+            self.skipTest("skip on darwin")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
+
+def skipIfLinuxClang(func):
+    """Decorate the item to skip tests that should be skipped if building on 
+       Linux with clang.
+    """
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfLinuxClang can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        compiler = self.getCompiler()
+        platform = sys.platform
+        if "clang" in compiler and "linux" in platform:
+            self.skipTest("skipping because Clang is used on Linux")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
+def skipIfGcc(func):
+    """Decorate the item to skip tests that should be skipped if building with gcc ."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfGcc can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        compiler = self.getCompiler()
+        if "gcc" in compiler:
+            self.skipTest("skipping because gcc is the test compiler")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
+def skipIfIcc(func):
+    """Decorate the item to skip tests that should be skipped if building with icc ."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfIcc can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        compiler = self.getCompiler()
+        if "icc" in compiler:
+            self.skipTest("skipping because icc is the test compiler")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
+def skipIfi386(func):
+    """Decorate the item to skip tests that should be skipped if building 32-bit."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipIfi386 can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        if "i386" == self.getArchitecture():
+            self.skipTest("skipping because i386 is not a supported architecture")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
 
 class Base(unittest2.TestCase):
     """
@@ -598,6 +849,12 @@ class Base(unittest2.TestCase):
         self.dicts = []
         self.doTearDownCleanups = False
 
+        # List of spawned subproces.Popen objects
+        self.subprocesses = []
+
+        # List of forked process PIDs
+        self.forkedProcessPids = []
+
         # Create a string buffer to record the session info, to be dumped into a
         # test case specific file if test failure is encountered.
         self.session = StringIO.StringIO()
@@ -650,6 +907,63 @@ class Base(unittest2.TestCase):
             for hook in lldb.runHooks:
                 child.sendline(hook)
                 child.expect_exact(child_prompt)
+
+    def setAsync(self, value):
+        """ Sets async mode to True/False and ensures it is reset after the testcase completes."""
+        old_async = self.dbg.GetAsync()
+        self.dbg.SetAsync(value)
+        self.addTearDownHook(lambda: self.dbg.SetAsync(old_async))
+
+    def cleanupSubprocesses(self):
+        # Ensure any subprocesses are cleaned up
+        for p in self.subprocesses:
+            if p.poll() == None:
+                p.terminate()
+            del p
+        del self.subprocesses[:]
+        # Ensure any forked processes are cleaned up
+        for pid in self.forkedProcessPids:
+            if os.path.exists("/proc/" + str(pid)):
+                os.kill(pid, signal.SIGTERM)
+
+    def spawnSubprocess(self, executable, args=[]):
+        """ Creates a subprocess.Popen object with the specified executable and arguments,
+            saves it in self.subprocesses, and returns the object.
+            NOTE: if using this function, ensure you also call:
+
+              self.addTearDownHook(self.cleanupSubprocesses)
+
+            otherwise the test suite will leak processes.
+        """
+
+        # Don't display the stdout if not in TraceOn() mode.
+        proc = Popen([executable] + args,
+                     stdout = open(os.devnull) if not self.TraceOn() else None,
+                     stdin = PIPE)
+        self.subprocesses.append(proc)
+        return proc
+
+    def forkSubprocess(self, executable, args=[]):
+        """ Fork a subprocess with its own group ID.
+            NOTE: if using this function, ensure you also call:
+
+              self.addTearDownHook(self.cleanupSubprocesses)
+
+            otherwise the test suite will leak processes.
+        """
+        child_pid = os.fork()
+        if child_pid == 0:
+            # If more I/O support is required, this can be beefed up.
+            fd = os.open(os.devnull, os.O_RDWR)
+            os.dup2(fd, 1)
+            os.dup2(fd, 2)
+            # This call causes the child to have its of group ID
+            os.setpgid(0,0)
+            os.execvp(executable, [executable] + args)
+        # Give the child time to get through the execvp() call
+        time.sleep(0.1)
+        self.forkedProcessPids.append(child_pid)
+        return child_pid
 
     def HideStdout(self):
         """Hide output to stdout from the user.
@@ -714,14 +1028,17 @@ class Base(unittest2.TestCase):
         if self.child and self.child.isalive():
             with recording(self, traceAlways) as sbuf:
                 print >> sbuf, "tearing down the child process...."
-            if self.child_in_script_interpreter:
-                self.child.sendline('quit()')
-                self.child.expect_exact(self.child_prompt)
-            self.child.sendline('quit')
             try:
+                if self.child_in_script_interpreter:
+                    self.child.sendline('quit()')
+                    self.child.expect_exact(self.child_prompt)
+                self.child.sendline('settings set interpreter.prompt-on-quit false')
+                self.child.sendline('quit')
                 self.child.expect(pexpect.EOF)
-            except:
+            except ValueError, ExceptionPexpect:
+                # child is already terminated
                 pass
+
             # Give it one final blow to make sure the child is terminated.
             self.child.close()
 
@@ -766,14 +1083,17 @@ class Base(unittest2.TestCase):
             # Once by the Python unittest framework, and a second time by us.
             print >> sbuf, "FAIL"
 
-    def markExpectedFailure(self):
+    def markExpectedFailure(self,err,bugnumber):
         """Callback invoked when an expected failure/error occurred."""
         self.__expected__ = True
         with recording(self, False) as sbuf:
             # False because there's no need to write "expected failure" to the
             # stderr twice.
             # Once by the Python unittest framework, and a second time by us.
-            print >> sbuf, "expected failure"
+            if bugnumber == None:
+                print >> sbuf, "expected failure"
+            else:
+                print >> sbuf, "expected failure (problem id:" + str(bugnumber) + ")"	
 
     def markSkippedTest(self):
         """Callback invoked when a test is skipped."""
@@ -784,14 +1104,17 @@ class Base(unittest2.TestCase):
             # Once by the Python unittest framework, and a second time by us.
             print >> sbuf, "skipped test"
 
-    def markUnexpectedSuccess(self):
+    def markUnexpectedSuccess(self, bugnumber):
         """Callback invoked when an unexpected success occurred."""
         self.__unexpected__ = True
         with recording(self, False) as sbuf:
             # False because there's no need to write "unexpected success" to the
             # stderr twice.
             # Once by the Python unittest framework, and a second time by us.
-            print >> sbuf, "unexpected success"
+            if bugnumber == None:
+                print >> sbuf, "unexpected success"
+            else:
+                print >> sbuf, "unexpected success (problem id:" + str(bugnumber) + ")"	
 
     def dumpSessionInfo(self):
         """
@@ -874,6 +1197,57 @@ class Base(unittest2.TestCase):
         module = builder_module()
         return module.getCompiler()
 
+    def getCompilerVersion(self):
+        """ Returns a string that represents the compiler version.
+            Supports: llvm, clang.
+        """
+        from lldbutil import which
+        version = 'unknown'
+
+        compiler = self.getCompiler()
+        version_output = system([which(compiler), "-v"])[1]
+        for line in version_output.split(os.linesep):
+            m = re.search('version ([0-9\.]+)', line)
+            if m:
+                version = m.group(1)
+        return version
+
+    def expectedCompilerVersion(self, compiler_version):
+        """Returns True iff compiler_version[1] matches the current compiler version.
+           Use compiler_version[0] to specify the operator used to determine if a match has occurred.
+           Any operator other than the following defaults to an equality test:
+             '>', '>=', "=>", '<', '<=', '=<', '!=', "!" or 'not'
+        """
+        if (compiler_version == None):
+            return True
+        operator = str(compiler_version[0])
+        version = compiler_version[1]
+
+        if (version == None):
+            return True
+        if (operator == '>'):
+            return self.getCompilerVersion() > version
+        if (operator == '>=' or operator == '=>'): 
+            return self.getCompilerVersion() >= version
+        if (operator == '<'):
+            return self.getCompilerVersion() < version
+        if (operator == '<=' or operator == '=<'):
+            return self.getCompilerVersion() <= version
+        if (operator == '!=' or operator == '!' or operator == 'not'):
+            return str(version) not in str(self.getCompilerVersion())
+        return str(version) in str(self.getCompilerVersion())
+
+    def expectedCompiler(self, compilers):
+        """Returns True iff any element of compilers is a sub-string of the current compiler."""
+        if (compilers == None):
+            return True
+
+        for compiler in compilers:
+            if compiler in self.getCompiler():
+                return True
+
+        return False
+
     def getRunOptions(self):
         """Command line option for -A and -C to run this test again, called from
         self.dumpSessionInfo()."""
@@ -890,6 +1264,39 @@ class Base(unittest2.TestCase):
     # ==================================================
     # Build methods supported through a plugin interface
     # ==================================================
+
+    def buildDriver(self, sources, exe_name):
+        """ Platform-specific way to build a program that links with LLDB (via the liblldb.so
+            or LLDB.framework).
+        """
+        if "gcc" in self.getCompiler() and "4.6" in self.getCompilerVersion():
+          stdflag = "-std=c++0x"
+        else:
+          stdflag = "-std=c++11"
+
+        if sys.platform.startswith("darwin"):
+            dsym = os.path.join(self.lib_dir, 'LLDB.framework', 'LLDB')
+            d = {'CXX_SOURCES' : sources,
+                 'EXE' : exe_name,
+                 'CFLAGS_EXTRAS' : "%s -stdlib=libc++" % stdflag,
+                 'FRAMEWORK_INCLUDES' : "-F%s" % self.lib_dir,
+                 'LD_EXTRAS' : "%s -rpath %s" % (dsym, self.lib_dir),
+                }
+        elif sys.platform.startswith("linux") or os.environ.get('LLDB_BUILD_TYPE') == 'Makefile':
+            d = {'CXX_SOURCES' : sources, 
+                 'EXE' : exe_name,
+                 'CFLAGS_EXTRAS' : "%s -I%s" % (stdflag, os.path.join(os.environ["LLDB_SRC"], "include")),
+                 'LD_EXTRAS' : "-L%s -llldb" % self.lib_dir}
+        if self.TraceOn():
+            print "Building LLDB Driver (%s) from sources %s" % (exe_name, sources)
+
+        self.buildDefault(dictionary=d)
+
+    def buildProgram(self, sources, exe_name):
+        """ Platform specific way to build an executable from C/C++ sources. """
+        d = {'CXX_SOURCES' : sources,
+             'EXE' : exe_name}
+        self.buildDefault(dictionary=d)
 
     def buildDefault(self, architecture=None, compiler=None, dictionary=None, clean=True):
         """Platform specific way to build the default binaries."""
@@ -915,6 +1322,29 @@ class Base(unittest2.TestCase):
         if not module.buildDwarf(self, architecture, compiler, dictionary, clean):
             raise Exception("Don't know how to build binary with dwarf")
 
+    def getBuildFlags(self, use_cpp11=True, use_pthreads=True):
+        """ Returns a dictionary (which can be provided to build* functions above) which
+            contains OS-specific build flags.
+        """
+        cflags = ""
+        if use_cpp11:
+            cflags += "-std="
+            if "gcc" in self.getCompiler() and "4.6" in self.getCompilerVersion():
+                cflags += "c++0x"
+            else:
+                cflags += "c++11"
+        if sys.platform.startswith("darwin"):
+            cflags += " -stdlib=libc++"
+        elif "clang" in self.getCompiler():
+            cflags += " -stdlib=libstdc++"
+
+        if use_pthreads:
+            ldflags = "-lpthread"
+
+        return {'CFLAGS_EXTRAS' : cflags,
+                'LD_EXTRAS' : ldflags,
+               }
+
     def cleanup(self, dictionary=None):
         """Platform specific way to do cleanup after build."""
         if lldb.skip_build_and_cleanup:
@@ -923,6 +1353,19 @@ class Base(unittest2.TestCase):
         if not module.cleanup(self, dictionary):
             raise Exception("Don't know how to do cleanup with dictionary: "+dictionary)
 
+    def getLLDBLibraryEnvVal(self):
+        """ Returns the path that the OS-specific library search environment variable
+            (self.dylibPath) should be set to in order for a program to find the LLDB
+            library. If an environment variable named self.dylibPath is already set,
+            the new path is appended to it and returned.
+        """
+        existing_library_path = os.environ[self.dylibPath] if self.dylibPath in os.environ else None
+        if existing_library_path:
+            return "%s:%s" % (existing_library_path, self.lib_dir)
+        elif sys.platform.startswith("darwin"):
+            return os.path.join(self.lib_dir, 'LLDB.framework')
+        else:
+            return self.lib_dir
 
 class TestBase(Base):
     """
@@ -1131,7 +1574,7 @@ class TestBase(Base):
             if matched:
                 self.runCmd('thread select %s' % matched.group(1))
 
-    def runCmd(self, cmd, msg=None, check=True, trace=False):
+    def runCmd(self, cmd, msg=None, check=True, trace=False, inHistory=False):
         """
         Ask the command interpreter to handle the command and then check its
         return status.
@@ -1145,7 +1588,7 @@ class TestBase(Base):
         running = (cmd.startswith("run") or cmd.startswith("process launch"))
 
         for i in range(self.maxLaunchCount if running else 1):
-            self.ci.HandleCommand(cmd, self.res)
+            self.ci.HandleCommand(cmd, self.res, inHistory)
 
             with recording(self, trace) as sbuf:
                 print >> sbuf, "runCmd:", cmd
@@ -1212,7 +1655,7 @@ class TestBase(Base):
 
         return match_object        
 
-    def expect(self, str, msg=None, patterns=None, startstr=None, endstr=None, substrs=None, trace=False, error=False, matching=True, exe=True):
+    def expect(self, str, msg=None, patterns=None, startstr=None, endstr=None, substrs=None, trace=False, error=False, matching=True, exe=True, inHistory=False):
         """
         Similar to runCmd; with additional expect style output matching ability.
 
@@ -1241,7 +1684,7 @@ class TestBase(Base):
         if exe:
             # First run the command.  If we are expecting error, set check=False.
             # Pass the assert message along since it provides more semantic info.
-            self.runCmd(str, msg=msg, trace = (True if trace else False), check = not error)
+            self.runCmd(str, msg=msg, trace = (True if trace else False), check = not error, inHistory=inHistory)
 
             # Then compare the output against expected strings.
             output = self.res.GetError() if error else self.res.GetOutput()

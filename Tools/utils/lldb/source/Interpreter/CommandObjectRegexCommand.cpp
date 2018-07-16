@@ -30,10 +30,12 @@ CommandObjectRegexCommand::CommandObjectRegexCommand
     const char *name,
     const char *help,
     const char *syntax,
-    uint32_t max_matches
+    uint32_t max_matches,
+    uint32_t completion_type_mask
 ) :
     CommandObjectRaw (interpreter, name, help, syntax),
     m_max_matches (max_matches),
+    m_completion_type_mask (completion_type_mask),
     m_entries ()
 {
 }
@@ -58,7 +60,9 @@ CommandObjectRegexCommand::DoExecute
         EntryCollection::const_iterator pos, end = m_entries.end();
         for (pos = m_entries.begin(); pos != end; ++pos)
         {
-            if (pos->regex.Execute (command, m_max_matches))
+            RegularExpression::Match regex_match(m_max_matches);
+
+            if (pos->regex.Execute (command, &regex_match))
             {
                 std::string new_command(pos->command);
                 std::string match_str;
@@ -66,7 +70,7 @@ CommandObjectRegexCommand::DoExecute
                 size_t idx, percent_var_idx;
                 for (uint32_t match_idx=1; match_idx <= m_max_matches; ++match_idx)
                 {
-                    if (pos->regex.GetMatchAtIndex (command, match_idx, match_str))
+                    if (regex_match.GetMatchAtIndex (command, match_idx, match_str))
                     {
                         const int percent_var_len = ::snprintf (percent_var, sizeof(percent_var), "%%%u", match_idx);
                         for (idx = 0; (percent_var_idx = new_command.find(percent_var, idx)) != std::string::npos; )
@@ -80,7 +84,9 @@ CommandObjectRegexCommand::DoExecute
                 // Interpret the new command and return this as the result!
                 if (m_interpreter.GetExpandRegexAliases())
                     result.GetOutputStream().Printf("%s\n", new_command.c_str());
-                return m_interpreter.HandleCommand(new_command.c_str(), eLazyBoolCalculate, result);
+                // Pass in true for "no context switching".  The command that called us should have set up the context
+                // appropriately, we shouldn't have to redo that.
+                return m_interpreter.HandleCommand(new_command.c_str(), eLazyBoolCalculate, result, NULL, true, true);
             }
         }
         result.SetStatus(eReturnStatusFailed);
@@ -111,4 +117,34 @@ CommandObjectRegexCommand::AddRegexCommand (const char *re_cstr, const char *com
     // The regex didn't compile...
     m_entries.pop_back();
     return false;
+}
+
+int
+CommandObjectRegexCommand::HandleCompletion (Args &input,
+                                             int &cursor_index,
+                                             int &cursor_char_position,
+                                             int match_start_point,
+                                             int max_return_elements,
+                                             bool &word_complete,
+                                             StringList &matches)
+{
+    if (m_completion_type_mask)
+    {
+        std::string completion_str (input.GetArgumentAtIndex (cursor_index), cursor_char_position);
+        CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
+                                                             m_completion_type_mask,
+                                                             completion_str.c_str(),
+                                                             match_start_point,
+                                                             max_return_elements,
+                                                             NULL,
+                                                             word_complete,
+                                                             matches);
+        return matches.GetSize();
+    }
+    else
+    {
+        matches.Clear();
+        word_complete = false;
+    }
+    return 0;
 }

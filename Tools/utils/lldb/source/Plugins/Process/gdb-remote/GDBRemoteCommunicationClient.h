@@ -130,6 +130,10 @@ public:
 
     int
     SendLaunchArchPacket (const char *arch);
+    
+    int
+    SendLaunchEventDataPacket (const char *data, bool *was_supported = NULL);
+    
     //------------------------------------------------------------------
     /// Sends a "vAttach:PID" where PID is in hex. 
     ///
@@ -199,8 +203,8 @@ public:
     bool
     DeallocateMemory (lldb::addr_t addr);
 
-    bool
-    Detach ();
+    lldb_private::Error
+    Detach (bool keep_stopped);
 
     lldb_private::Error
     GetMemoryRegionInfo (lldb::addr_t addr, 
@@ -217,7 +221,10 @@ public:
 
     const lldb_private::ArchSpec &
     GetHostArchitecture ();
-    
+
+    const lldb_private::ArchSpec &
+    GetProcessArchitecture ();
+
     bool
     GetVContSupported (char flavor);
 
@@ -282,14 +289,6 @@ public:
         return GetVContSupported ('a');
     }
     
-    uint32_t 
-    SetPacketTimeout (uint32_t packet_timeout)
-    {
-        const uint32_t old_packet_timeout = m_packet_timeout;
-        m_packet_timeout = packet_timeout;
-        return old_packet_timeout;
-    }
-
     bool
     GetStopReply (StringExtractorGDBRemote &response);
 
@@ -307,7 +306,6 @@ public:
         case eWatchpointWrite:      return m_supports_z2;
         case eWatchpointRead:       return m_supports_z3;
         case eWatchpointReadWrite:  return m_supports_z4;
-        default:                    break;
         }
         return false;
     }
@@ -330,10 +328,10 @@ public:
                          uint32_t recv_size);
     
     bool
-    SetCurrentThread (int tid);
+    SetCurrentThread (uint64_t tid);
     
     bool
-    SetCurrentThreadForRun (int tid);
+    SetCurrentThreadForRun (uint64_t tid);
 
     lldb_private::LazyBool
     SupportsAllocDeallocMemory () // const
@@ -352,7 +350,15 @@ public:
     {
         return m_interrupt_sent;
     }
+    
+    std::string
+    HarmonizeThreadIdsForProfileData (ProcessGDBRemote *process,
+                                      StringExtractorGDBRemote &inputStringExtractor);
+    
 protected:
+
+    bool
+    GetCurrentProcessInfo ();
 
     //------------------------------------------------------------------
     // Classes that inherit from GDBRemoteCommunicationClient can see and modify these
@@ -367,9 +373,11 @@ protected:
     lldb_private::LazyBool m_supports_vCont_s;
     lldb_private::LazyBool m_supports_vCont_S;
     lldb_private::LazyBool m_qHostInfo_is_valid;
+    lldb_private::LazyBool m_qProcessInfo_is_valid;
     lldb_private::LazyBool m_supports_alloc_dealloc_memory;
     lldb_private::LazyBool m_supports_memory_region_info;
     lldb_private::LazyBool m_supports_watchpoint_support_info;
+    lldb_private::LazyBool m_supports_detach_stay_stopped;
     lldb_private::LazyBool m_watchpoints_trigger_after_instruction;
     lldb_private::LazyBool m_attach_or_wait_reply;
     lldb_private::LazyBool m_prepare_for_reg_writing_reply;
@@ -401,8 +409,11 @@ protected:
     StringExtractorGDBRemote m_async_response;
     int m_async_signal; // We were asked to deliver a signal to the inferior process.
     bool m_interrupt_sent;
+    std::string m_partial_profile_data;
+    std::map<uint64_t, uint32_t> m_thread_id_to_used_usec_map;
     
     lldb_private::ArchSpec m_host_arch;
+    lldb_private::ArchSpec m_process_arch;
     uint32_t m_os_version_major;
     uint32_t m_os_version_minor;
     uint32_t m_os_version_update;

@@ -51,7 +51,7 @@ public:
 protected:
     lldb::ValueObjectSP
     GetReturnValueObjectSimple (lldb_private::Thread &thread,
-                    lldb_private::ClangASTType &ast_type) const;
+                                lldb_private::ClangASTType &ast_type) const;
     
 public:    
     virtual lldb::ValueObjectSP
@@ -112,14 +112,14 @@ public:
     static lldb::ABISP
     CreateInstance (const lldb_private::ArchSpec &arch);
 
+    static lldb_private::ConstString
+    GetPluginNameStatic();
+    
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();

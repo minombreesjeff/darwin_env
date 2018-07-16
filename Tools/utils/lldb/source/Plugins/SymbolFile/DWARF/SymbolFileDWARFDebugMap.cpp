@@ -9,11 +9,16 @@
 
 #include "SymbolFileDWARFDebugMap.h"
 
+#include "DWARFDebugAranges.h"
+
+#include "lldb/Core/RangeMap.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/Section.h"
+
+//#define DEBUG_OSO_DMAP // DO NOT CHECKIN WITH THIS NOT COMMENTED OUT
 #if defined(DEBUG_OSO_DMAP)
 #include "lldb/Core/StreamFile.h"
 #endif
@@ -21,6 +26,7 @@
 
 #include "lldb/Symbol/ClangExternalASTSourceCallbacks.h"
 #include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/LineTable.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Symbol/VariableList.h"
@@ -35,6 +41,141 @@ using namespace lldb_private;
 // (so we can fixup the object file sections) and also for "Module::GetSymbolVendor()"
 // (so we can fixup the symbol file id.
 
+
+
+
+const SymbolFileDWARFDebugMap::FileRangeMap &
+SymbolFileDWARFDebugMap::CompileUnitInfo::GetFileRangeMap(SymbolFileDWARFDebugMap *exe_symfile)
+{
+    if (file_range_map_valid)
+        return file_range_map;
+
+    file_range_map_valid = true;
+
+    Module *oso_module = exe_symfile->GetModuleByCompUnitInfo (this);
+    if (!oso_module)
+        return file_range_map;
+    
+    ObjectFile *oso_objfile = oso_module->GetObjectFile();
+    if (!oso_objfile)
+        return file_range_map;
+    
+    Log *log (LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
+    if (log)
+    {
+        ConstString object_name (oso_module->GetObjectName());
+        log->Printf("%p: SymbolFileDWARFDebugMap::CompileUnitInfo::GetFileRangeMap ('%s')",
+                    this,
+                    oso_module->GetSpecificationDescription().c_str());
+    }
+    
+
+    std::vector<SymbolFileDWARFDebugMap::CompileUnitInfo *> cu_infos;
+    if (exe_symfile->GetCompUnitInfosForModule(oso_module, cu_infos))
+    {
+        for (auto comp_unit_info : cu_infos)
+        {
+            Symtab *exe_symtab = exe_symfile->GetObjectFile()->GetSymtab();
+            ModuleSP oso_module_sp (oso_objfile->GetModule());
+            Symtab *oso_symtab = oso_objfile->GetSymtab();
+            
+            ///const uint32_t fun_resolve_flags = SymbolContext::Module | eSymbolContextCompUnit | eSymbolContextFunction;
+            //SectionList *oso_sections = oso_objfile->Sections();
+            // Now we need to make sections that map from zero based object
+            // file addresses to where things eneded up in the main executable.
+            
+            assert (comp_unit_info->first_symbol_index != UINT32_MAX);
+            // End index is one past the last valid symbol index
+            const uint32_t oso_end_idx = comp_unit_info->last_symbol_index + 1;
+            for (uint32_t idx = comp_unit_info->first_symbol_index + 2; // Skip the N_SO and N_OSO
+                 idx < oso_end_idx;
+                 ++idx)
+            {
+                Symbol *exe_symbol = exe_symtab->SymbolAtIndex(idx);
+                if (exe_symbol)
+                {
+                    if (exe_symbol->IsDebug() == false)
+                        continue;
+                    
+                    switch (exe_symbol->GetType())
+                    {
+                    default:
+                        break;
+                        
+                    case eSymbolTypeCode:
+                        {
+                            // For each N_FUN, or function that we run into in the debug map
+                            // we make a new section that we add to the sections found in the
+                            // .o file. This new section has the file address set to what the
+                            // addresses are in the .o file, and the load address is adjusted
+                            // to match where it ended up in the final executable! We do this
+                            // before we parse any dwarf info so that when it goes get parsed
+                            // all section/offset addresses that get registered will resolve
+                            // correctly to the new addresses in the main executable.
+                            
+                            // First we find the original symbol in the .o file's symbol table
+                            Symbol *oso_fun_symbol = oso_symtab->FindFirstSymbolWithNameAndType (exe_symbol->GetMangled().GetName(Mangled::ePreferMangled),
+                                                                                                 eSymbolTypeCode,
+                                                                                                 Symtab::eDebugNo,
+                                                                                                 Symtab::eVisibilityAny);
+                            if (oso_fun_symbol)
+                            {
+                                // Add the inverse OSO file address to debug map entry mapping
+                                exe_symfile->AddOSOFileRange (this,
+                                                              exe_symbol->GetAddress().GetFileAddress(),
+                                                              oso_fun_symbol->GetAddress().GetFileAddress(),
+                                                              std::min<addr_t>(exe_symbol->GetByteSize(), oso_fun_symbol->GetByteSize()));
+                                
+                            }
+                        }
+                        break;
+                        
+                    case eSymbolTypeData:
+                        {
+                            // For each N_GSYM we remap the address for the global by making
+                            // a new section that we add to the sections found in the .o file.
+                            // This new section has the file address set to what the
+                            // addresses are in the .o file, and the load address is adjusted
+                            // to match where it ended up in the final executable! We do this
+                            // before we parse any dwarf info so that when it goes get parsed
+                            // all section/offset addresses that get registered will resolve
+                            // correctly to the new addresses in the main executable. We
+                            // initially set the section size to be 1 byte, but will need to
+                            // fix up these addresses further after all globals have been
+                            // parsed to span the gaps, or we can find the global variable
+                            // sizes from the DWARF info as we are parsing.
+                            
+                            // Next we find the non-stab entry that corresponds to the N_GSYM in the .o file
+                            Symbol *oso_gsym_symbol = oso_symtab->FindFirstSymbolWithNameAndType (exe_symbol->GetMangled().GetName(Mangled::ePreferMangled),
+                                                                                                  eSymbolTypeData,
+                                                                                                  Symtab::eDebugNo,
+                                                                                                  Symtab::eVisibilityAny);
+                            
+                            if (exe_symbol && oso_gsym_symbol &&
+                                exe_symbol->ValueIsAddress() &&
+                                oso_gsym_symbol->ValueIsAddress())
+                            {
+                                // Add the inverse OSO file address to debug map entry mapping
+                                exe_symfile->AddOSOFileRange (this,
+                                                              exe_symbol->GetAddress().GetFileAddress(),
+                                                              oso_gsym_symbol->GetAddress().GetFileAddress(),
+                                                              std::min<addr_t>(exe_symbol->GetByteSize(), oso_gsym_symbol->GetByteSize()));
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            exe_symfile->FinalizeOSOFileRanges (this);
+            // We don't need the symbols anymore for the .o files
+            oso_objfile->ClearSymtab();
+        }
+    }
+    return file_range_map;
+}
+
+
 class DebugMapModule : public Module
 {
 public:
@@ -43,8 +184,9 @@ public:
                     const FileSpec& file_spec,
                     const ArchSpec& arch,
                     const ConstString *object_name,
-                    off_t object_offset) :
-        Module (file_spec, arch, object_name, object_offset),
+                    off_t object_offset,
+                    const TimeValue *object_mod_time_ptr) :
+        Module (file_spec, arch, object_name, object_offset, object_mod_time_ptr),
         m_exe_module_wp (exe_module_sp),
         m_cu_idx (cu_idx)
     {
@@ -55,175 +197,9 @@ public:
     {
     }
 
-    virtual ObjectFile *
-    GetObjectFile ()
-    {
-        Mutex::Locker locker (m_mutex);
-        if (m_did_load_objfile == false)
-        {
-            ModuleSP exe_module_sp (m_exe_module_wp.lock());
-            if (exe_module_sp)
-            {
-                ObjectFile *exe_objfile = exe_module_sp->GetObjectFile();
-                ObjectFile *oso_objfile = Module::GetObjectFile();
-                SymbolVendor *exe_sym_vendor = exe_module_sp->GetSymbolVendor();
-
-                if (exe_objfile && oso_objfile && exe_sym_vendor)
-                {
-                    SymbolFileDWARFDebugMap *exe_symfile = (SymbolFileDWARFDebugMap *)exe_sym_vendor->GetSymbolFile();
-                    if (exe_symfile)
-                    {
-                        SymbolFileDWARFDebugMap::CompileUnitInfo *comp_unit_info = exe_symfile->GetCompUnitInfo (this);
-                        if (comp_unit_info)
-                        {
-                            // Set the ID of the symbol file DWARF to the index of the OSO
-                            // shifted left by 32 bits to provide a unique prefix for any
-                            // UserID's that get created in the symbol file.
-                            //comp_unit_info->exe_sections_sp.reset(new SectionList);
-                            
-                            Symtab *exe_symtab = exe_objfile->GetSymtab();
-                            ModuleSP oso_module_sp (oso_objfile->GetModule());
-                            Symtab *oso_symtab = oso_objfile->GetSymtab();
-                            //#define DEBUG_OSO_DMAP    // Do not check in with this defined...
-#if defined(DEBUG_OSO_DMAP)
-                            StreamFile s(stdout);
-                            s << "OSO symtab:\n";
-                            oso_symtab->Dump(&s, NULL);
-                            s << "OSO sections before:\n";
-                            oso_objfile->GetSectionList()->Dump(&s, NULL, true);
-#endif
-                    
-                            ///const uint32_t fun_resolve_flags = SymbolContext::Module | eSymbolContextCompUnit | eSymbolContextFunction;
-                            //SectionList *oso_sections = oso_objfile->Sections();
-                            // Now we need to make sections that map from zero based object
-                            // file addresses to where things eneded up in the main executable.
-
-                            assert (comp_unit_info->first_symbol_index != UINT32_MAX);
-                            // End index is one past the last valid symbol index
-                            const uint32_t oso_end_idx = comp_unit_info->last_symbol_index + 1;
-                            uint32_t sect_id = 0x10000;
-                            for (uint32_t idx = comp_unit_info->first_symbol_index + 2; // Skip the N_SO and N_OSO
-                                 idx < oso_end_idx;
-                                 ++idx)
-                            {
-                                Symbol *exe_symbol = exe_symtab->SymbolAtIndex(idx);
-                                if (exe_symbol)
-                                {
-                                    if (exe_symbol->IsDebug() == false)
-                                        continue;
-                                    
-                                    switch (exe_symbol->GetType())
-                                    {
-                                        default:
-                                            break;
-                                            
-                                        case eSymbolTypeCode:
-                                        {
-                                            // For each N_FUN, or function that we run into in the debug map
-                                            // we make a new section that we add to the sections found in the
-                                            // .o file. This new section has the file address set to what the
-                                            // addresses are in the .o file, and the load address is adjusted
-                                            // to match where it ended up in the final executable! We do this
-                                            // before we parse any dwarf info so that when it goes get parsed
-                                            // all section/offset addresses that get registered will resolve
-                                            // correctly to the new addresses in the main executable.
-                                            
-                                            // First we find the original symbol in the .o file's symbol table
-                                            Symbol *oso_fun_symbol = oso_symtab->FindFirstSymbolWithNameAndType(exe_symbol->GetMangled().GetName(Mangled::ePreferMangled), eSymbolTypeCode, Symtab::eDebugNo, Symtab::eVisibilityAny);
-                                            if (oso_fun_symbol)
-                                            {
-                                                // If we found the symbol, then we
-                                                SectionSP exe_fun_section (exe_symbol->GetAddress().GetSection());
-                                                SectionSP oso_fun_section (oso_fun_symbol->GetAddress().GetSection());
-                                                if (oso_fun_section)
-                                                {
-                                                    // Now we create a section that we will add as a child of the
-                                                    // section in which the .o symbol (the N_FUN) exists.
-                                                    
-                                                    // We use the exe_symbol size because the one in the .o file
-                                                    // will just be a symbol with no size, and the exe_symbol
-                                                    // size will reflect any size changes (ppc has been known to
-                                                    // shrink function sizes when it gets rid of jump islands that
-                                                    // aren't needed anymore).
-                                                    SectionSP oso_fun_section_sp (new Section (oso_fun_symbol->GetAddress().GetSection(),
-                                                                                               oso_module_sp,                         // Module (the .o file)
-                                                                                               sect_id++,                          // Section ID starts at 0x10000 and increments so the section IDs don't overlap with the standard mach IDs
-                                                                                               exe_symbol->GetMangled().GetName(Mangled::ePreferMangled), // Name the section the same as the symbol for which is was generated!
-                                                                                               eSectionTypeDebug,
-                                                                                               oso_fun_symbol->GetAddress().GetOffset(),  // File VM address offset in the current section
-                                                                                               exe_symbol->GetByteSize(),          // File size (we need the size from the executable)
-                                                                                               0, 0, 0));
-                                                    
-                                                    oso_fun_section_sp->SetLinkedLocation (exe_fun_section,
-                                                                                           exe_symbol->GetAddress().GetFileAddress() - exe_fun_section->GetFileAddress());
-                                                    oso_fun_section->GetChildren().AddSection(oso_fun_section_sp);
-                                                }
-                                            }
-                                        }
-                                            break;
-                                            
-                                        case eSymbolTypeData:
-                                        {
-                                            // For each N_GSYM we remap the address for the global by making
-                                            // a new section that we add to the sections found in the .o file.
-                                            // This new section has the file address set to what the
-                                            // addresses are in the .o file, and the load address is adjusted
-                                            // to match where it ended up in the final executable! We do this
-                                            // before we parse any dwarf info so that when it goes get parsed
-                                            // all section/offset addresses that get registered will resolve
-                                            // correctly to the new addresses in the main executable. We
-                                            // initially set the section size to be 1 byte, but will need to
-                                            // fix up these addresses further after all globals have been
-                                            // parsed to span the gaps, or we can find the global variable
-                                            // sizes from the DWARF info as we are parsing.
-                                            
-                                            // Next we find the non-stab entry that corresponds to the N_GSYM in the .o file
-                                            Symbol *oso_gsym_symbol = oso_symtab->FindFirstSymbolWithNameAndType (exe_symbol->GetMangled().GetName(),
-                                                                                                                  eSymbolTypeData,
-                                                                                                                  Symtab::eDebugNo,
-                                                                                                                  Symtab::eVisibilityAny);
-                                            
-                                            if (exe_symbol && oso_gsym_symbol && exe_symbol->ValueIsAddress() && oso_gsym_symbol->ValueIsAddress())
-                                            {
-                                                // If we found the symbol, then we
-                                                SectionSP exe_gsym_section (exe_symbol->GetAddress().GetSection());
-                                                SectionSP oso_gsym_section (oso_gsym_symbol->GetAddress().GetSection());
-                                                if (oso_gsym_section)
-                                                {
-                                                    SectionSP oso_gsym_section_sp (new Section (oso_gsym_symbol->GetAddress().GetSection(),
-                                                                                                oso_module_sp,                         // Module (the .o file)
-                                                                                                sect_id++,                          // Section ID starts at 0x10000 and increments so the section IDs don't overlap with the standard mach IDs
-                                                                                                exe_symbol->GetMangled().GetName(Mangled::ePreferMangled), // Name the section the same as the symbol for which is was generated!
-                                                                                                eSectionTypeDebug,
-                                                                                                oso_gsym_symbol->GetAddress().GetOffset(),  // File VM address offset in the current section
-                                                                                                1,                                   // We don't know the size of the global, just do the main address for now.
-                                                                                                0, 0, 0));
-                                                    
-                                                    oso_gsym_section_sp->SetLinkedLocation (exe_gsym_section,
-                                                                                            exe_symbol->GetAddress().GetFileAddress() - exe_gsym_section->GetFileAddress());
-                                                    oso_gsym_section->GetChildren().AddSection(oso_gsym_section_sp);
-                                                }
-                                            }
-                                        }
-                                            break;
-                                    }
-                                }
-                            }
-                            oso_objfile->GetSectionList()->Finalize(); // Now that we're done adding sections, finalize to build fast-lookup caches
-#if defined(DEBUG_OSO_DMAP)
-                            s << "OSO sections after:\n";
-                            oso_objfile->GetSectionList()->Dump(&s, NULL, true);
-#endif
-                        }
-                    }
-                }
-            }
-        }
-        return m_objfile_sp.get();
-    }
     
     virtual SymbolVendor*
-    GetSymbolVendor(bool can_create = true)
+    GetSymbolVendor(bool can_create = true, lldb_private::Stream *feedback_strm = NULL)
     {
         // Scope for locker
         if (m_symfile_ap.get() || can_create == false)
@@ -237,13 +213,13 @@ public:
             if (oso_objfile)
             {
                 Mutex::Locker locker (m_mutex);
-                SymbolVendor* symbol_vendor = Module::GetSymbolVendor(can_create);
+                SymbolVendor* symbol_vendor = Module::GetSymbolVendor(can_create, feedback_strm);
                 if (symbol_vendor)
                 {
                     // Set a a pointer to this class to set our OSO DWARF file know
                     // that the DWARF is being used along with a debug map and that
                     // it will have the remapped sections that we do below.
-                    SymbolFileDWARF *oso_symfile = (SymbolFileDWARF *)symbol_vendor->GetSymbolFile();
+                    SymbolFileDWARF *oso_symfile = SymbolFileDWARFDebugMap::GetSymbolFileAsSymbolFileDWARF(symbol_vendor->GetSymbolFile());
                     
                     if (!oso_symfile)
                         return NULL;
@@ -293,10 +269,11 @@ SymbolFileDWARFDebugMap::Terminate()
 }
 
 
-const char *
+lldb_private::ConstString
 SymbolFileDWARFDebugMap::GetPluginNameStatic()
 {
-    return "dwarf-debugmap";
+    static ConstString g_name("dwarf-debugmap");
+    return g_name;
 }
 
 const char *
@@ -341,15 +318,37 @@ SymbolFileDWARFDebugMap::InitializeObject()
     GetClangASTContext().SetExternalSource (ast_source_ap);
 }
 
-
-
 void
 SymbolFileDWARFDebugMap::InitOSO()
 {
     if (m_flags.test(kHaveInitializedOSOs))
         return;
-
+    
     m_flags.set(kHaveInitializedOSOs);
+    
+    // If the object file has been stripped, there is no sense in looking further
+    // as all of the debug symbols for the debug map will not be available
+    if (m_obj_file->IsStripped())
+        return;
+    
+    // Also make sure the file type is some sort of executable. Core files, debug
+    // info files (dSYM), object files (.o files), and stub libraries all can
+    switch (m_obj_file->GetType())
+    {
+        case ObjectFile::eTypeInvalid:
+        case ObjectFile::eTypeCoreFile:
+        case ObjectFile::eTypeDebugInfo:
+        case ObjectFile::eTypeObjectFile:
+        case ObjectFile::eTypeStubLibrary:
+        case ObjectFile::eTypeUnknown:
+            return;
+            
+        case ObjectFile::eTypeExecutable:
+        case ObjectFile::eTypeDynamicLinker:
+        case ObjectFile::eTypeSharedLibrary:
+            break;
+    }
+
     // In order to get the abilities of this plug-in, we look at the list of
     // N_OSO entries (object files) from the symbol table and make sure that
     // these files exist and also contain valid DWARF. If we get any of that
@@ -358,13 +357,9 @@ SymbolFileDWARFDebugMap::InitOSO()
     Symtab* symtab = m_obj_file->GetSymtab();
     if (symtab)
     {
-        LogSP log (LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
+        Log *log (LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_MAP));
 
         std::vector<uint32_t> oso_indexes;
-#if defined(DEBUG_OSO_DMAP)
-//      StreamFile s(stdout);
-//      symtab->Dump(&s, NULL, eSortOrderNone);
-#endif
         // When a mach-o symbol is encoded, the n_type field is encoded in bits
         // 23:16, and the n_desc field is encoded in bits 15:0.
         // 
@@ -384,36 +379,70 @@ SymbolFileDWARFDebugMap::InitOSO()
             symtab->SortSymbolIndexesByValue(m_func_indexes, true);
             symtab->SortSymbolIndexesByValue(m_glob_indexes, true);
 
+            for (uint32_t sym_idx : m_func_indexes)
+            {
+                const Symbol *symbol = symtab->SymbolAtIndex(sym_idx);
+                lldb::addr_t file_addr = symbol->GetAddress().GetFileAddress();
+                lldb::addr_t byte_size = symbol->GetByteSize();
+                DebugMap::Entry debug_map_entry(file_addr, byte_size, OSOEntry(sym_idx, LLDB_INVALID_ADDRESS));
+                m_debug_map.Append(debug_map_entry);
+            }
+            for (uint32_t sym_idx : m_glob_indexes)
+            {
+                const Symbol *symbol = symtab->SymbolAtIndex(sym_idx);
+                lldb::addr_t file_addr = symbol->GetAddress().GetFileAddress();
+                lldb::addr_t byte_size = symbol->GetByteSize();
+                DebugMap::Entry debug_map_entry(file_addr, byte_size, OSOEntry(sym_idx, LLDB_INVALID_ADDRESS));
+                m_debug_map.Append(debug_map_entry);
+            }
+            m_debug_map.Sort();
+
             m_compile_unit_infos.resize(oso_index_count);
-//          s.Printf("%s N_OSO symbols:\n", __PRETTY_FUNCTION__);
-//          symtab->Dump(&s, oso_indexes);
 
             for (uint32_t i=0; i<oso_index_count; ++i)
             {
-                const Symbol *so_symbol = symtab->SymbolAtIndex(oso_indexes[i] - 1);
-                const Symbol *oso_symbol = symtab->SymbolAtIndex(oso_indexes[i]);
-                assert (so_symbol);
-                assert (oso_symbol);
-                assert (so_symbol->GetType() == eSymbolTypeSourceFile);
-                assert (oso_symbol->GetType() == eSymbolTypeObjectFile);
-                m_compile_unit_infos[i].so_file.SetFile(so_symbol->GetName().AsCString(), true);
-                m_compile_unit_infos[i].oso_file.SetFile(oso_symbol->GetName().AsCString(), true);
-                uint32_t sibling_idx = so_symbol->GetSiblingIndex();
-                // The sibling index can't be less that or equal to the current index "i"
-                if (sibling_idx <= i)
+                const uint32_t so_idx = oso_indexes[i] - 1;
+                const uint32_t oso_idx = oso_indexes[i];
+                const Symbol *so_symbol = symtab->SymbolAtIndex(so_idx);
+                const Symbol *oso_symbol = symtab->SymbolAtIndex(oso_idx);
+                if (so_symbol &&
+                    oso_symbol &&
+                    so_symbol->GetType() == eSymbolTypeSourceFile &&
+                    oso_symbol->GetType() == eSymbolTypeObjectFile)
                 {
-                    m_obj_file->GetModule()->ReportError ("N_SO in symbol with UID %u has invalid sibling in debug map, please file a bug and attach the binary listed in this error", so_symbol->GetID());
+                    m_compile_unit_infos[i].so_file.SetFile(so_symbol->GetName().AsCString(), false);
+                    m_compile_unit_infos[i].oso_path = oso_symbol->GetName();
+                    TimeValue oso_mod_time;
+                    oso_mod_time.OffsetWithSeconds(oso_symbol->GetAddress().GetOffset());
+                    m_compile_unit_infos[i].oso_mod_time = oso_mod_time;
+                    uint32_t sibling_idx = so_symbol->GetSiblingIndex();
+                    // The sibling index can't be less that or equal to the current index "i"
+                    if (sibling_idx <= i)
+                    {
+                        m_obj_file->GetModule()->ReportError ("N_SO in symbol with UID %u has invalid sibling in debug map, please file a bug and attach the binary listed in this error", so_symbol->GetID());
+                    }
+                    else
+                    {
+                        const Symbol* last_symbol = symtab->SymbolAtIndex (sibling_idx - 1);
+                        m_compile_unit_infos[i].first_symbol_index = so_idx;
+                        m_compile_unit_infos[i].last_symbol_index = sibling_idx - 1;
+                        m_compile_unit_infos[i].first_symbol_id = so_symbol->GetID();
+                        m_compile_unit_infos[i].last_symbol_id = last_symbol->GetID();
+                        
+                        if (log)
+                            log->Printf("Initialized OSO 0x%8.8x: file=%s", i, oso_symbol->GetName().GetCString());
+                    }
                 }
                 else
                 {
-                    const Symbol* last_symbol = symtab->SymbolAtIndex (sibling_idx - 1);
-                    m_compile_unit_infos[i].first_symbol_index = symtab->GetIndexForSymbol(so_symbol);
-                    m_compile_unit_infos[i].last_symbol_index = symtab->GetIndexForSymbol(last_symbol);
-                    m_compile_unit_infos[i].first_symbol_id = so_symbol->GetID();
-                    m_compile_unit_infos[i].last_symbol_id = last_symbol->GetID();
-                    
-                    if (log)
-                        log->Printf("Initialized OSO 0x%8.8x: file=%s", i, oso_symbol->GetName().GetCString());
+                    if (oso_symbol == NULL)
+                        m_obj_file->GetModule()->ReportError ("N_OSO symbol[%u] can't be found, please file a bug and attach the binary listed in this error", oso_idx);
+                    else if (so_symbol == NULL)
+                        m_obj_file->GetModule()->ReportError ("N_SO not found for N_OSO symbol[%u], please file a bug and attach the binary listed in this error", oso_idx);
+                    else if (so_symbol->GetType() != eSymbolTypeSourceFile)
+                        m_obj_file->GetModule()->ReportError ("N_SO has incorrect symbol type (%u) for N_OSO symbol[%u], please file a bug and attach the binary listed in this error", so_symbol->GetType(), oso_idx);
+                    else if (oso_symbol->GetType() != eSymbolTypeSourceFile)
+                        m_obj_file->GetModule()->ReportError ("N_OSO has incorrect symbol type (%u) for N_OSO symbol[%u], please file a bug and attach the binary listed in this error", oso_symbol->GetType(), oso_idx);
                 }
             }
         }
@@ -432,37 +461,62 @@ SymbolFileDWARFDebugMap::GetModuleByOSOIndex (uint32_t oso_idx)
 Module *
 SymbolFileDWARFDebugMap::GetModuleByCompUnitInfo (CompileUnitInfo *comp_unit_info)
 {
-    if (comp_unit_info->oso_module_sp.get() == NULL && comp_unit_info->symbol_file_supported)
+    if (!comp_unit_info->oso_sp)
     {
-        if (!comp_unit_info->oso_file.Exists())
+        auto pos = m_oso_map.find (comp_unit_info->oso_path);
+        if (pos != m_oso_map.end())
         {
-            char path[PATH_MAX*2];
-            comp_unit_info->oso_file.GetPath(path, sizeof(path));
-            if (ObjectFile::SplitArchivePathWithObject (path,
-                                                        comp_unit_info->oso_file,
-                                                        comp_unit_info->oso_object))
+            comp_unit_info->oso_sp = pos->second;
+        }
+        else
+        {
+            ObjectFile *obj_file = GetObjectFile();
+            comp_unit_info->oso_sp.reset (new OSOInfo());
+            m_oso_map[comp_unit_info->oso_path] = comp_unit_info->oso_sp;
+            const char *oso_path = comp_unit_info->oso_path.GetCString();
+            FileSpec oso_file (oso_path, false);
+            ConstString oso_object;
+            if (oso_file.Exists())
             {
-                comp_unit_info->oso_file.GetPath(path, sizeof(path));
-                //printf ("resolved archive '%s' and object '%s'\n", path, comp_unit_info->oso_object.GetCString());
+                TimeValue oso_mod_time (oso_file.GetModificationTime());
+                if (oso_mod_time != comp_unit_info->oso_mod_time)
+                {
+                    obj_file->GetModule()->ReportError ("debug map object file '%s' has changed (actual time is 0x%" PRIx64 ", debug map time is 0x%" PRIx64 ") since this executable was linked, file will be ignored",
+                                                        oso_file.GetPath().c_str(),
+                                                        oso_mod_time.GetAsSecondsSinceJan1_1970(),
+                                                        comp_unit_info->oso_mod_time.GetAsSecondsSinceJan1_1970());
+                    return NULL;
+                }
+
             }
             else
             {
-                comp_unit_info->symbol_file_supported = false;
-                return false;
+                const bool must_exist = true;
+
+                if (!ObjectFile::SplitArchivePathWithObject (oso_path,
+                                                             oso_file,
+                                                             oso_object,
+                                                             must_exist))
+                {
+                    return NULL;
+                }
             }
+            // Always create a new module for .o files. Why? Because we
+            // use the debug map, to add new sections to each .o file and
+            // even though a .o file might not have changed, the sections
+            // that get added to the .o file can change.
+            comp_unit_info->oso_sp->module_sp.reset (new DebugMapModule (obj_file->GetModule(),
+                                                                         GetCompUnitInfoIndex(comp_unit_info),
+                                                                         oso_file,
+                                                                         m_obj_file->GetModule()->GetArchitecture(),
+                                                                         oso_object ? &oso_object : NULL,
+                                                                         0,
+                                                                         oso_object ? &comp_unit_info->oso_mod_time : NULL));
         }
-        // Always create a new module for .o files. Why? Because we
-        // use the debug map, to add new sections to each .o file and
-        // even though a .o file might not have changed, the sections
-        // that get added to the .o file can change.
-        comp_unit_info->oso_module_sp.reset (new DebugMapModule (GetObjectFile()->GetModule(),
-                                                                 GetCompUnitInfoIndex(comp_unit_info),
-                                                                 comp_unit_info->oso_file,
-                                                                 m_obj_file->GetModule()->GetArchitecture(),
-                                                                 comp_unit_info->oso_object ? &comp_unit_info->oso_object : NULL,
-                                                                 0));
     }
-    return comp_unit_info->oso_module_sp.get();
+    if (comp_unit_info->oso_sp)
+        return comp_unit_info->oso_sp->module_sp.get();
+    return NULL;
 }
 
 
@@ -532,6 +586,14 @@ SymbolFileDWARFDebugMap::GetSymbolFileByOSOIndex (uint32_t oso_idx)
 }
 
 SymbolFileDWARF *
+SymbolFileDWARFDebugMap::GetSymbolFileAsSymbolFileDWARF (SymbolFile *sym_file)
+{
+    if (sym_file && sym_file->GetPluginName() == SymbolFileDWARF::GetPluginNameStatic())
+        return (SymbolFileDWARF *)sym_file;
+    return NULL;
+}
+
+SymbolFileDWARF *
 SymbolFileDWARFDebugMap::GetSymbolFileByCompUnitInfo (CompileUnitInfo *comp_unit_info)
 {
     Module *oso_module = GetModuleByCompUnitInfo (comp_unit_info);
@@ -539,7 +601,7 @@ SymbolFileDWARFDebugMap::GetSymbolFileByCompUnitInfo (CompileUnitInfo *comp_unit
     {
         SymbolVendor *sym_vendor = oso_module->GetSymbolVendor();
         if (sym_vendor)
-            return (SymbolFileDWARF *)sym_vendor->GetSymbolFile();
+            return GetSymbolFileAsSymbolFileDWARF (sym_vendor->GetSymbolFile());
     }
     return NULL;
 }
@@ -555,27 +617,17 @@ SymbolFileDWARFDebugMap::CalculateAbilities ()
     const uint32_t oso_index_count = GetNumCompileUnits();
     if (oso_index_count > 0)
     {
-        const uint32_t dwarf_abilities = SymbolFile::CompileUnits |
-                                         SymbolFile::Functions |
-                                         SymbolFile::Blocks |
-                                         SymbolFile::GlobalVariables |
-                                         SymbolFile::LocalVariables |
-                                         SymbolFile::VariableTypes |
-                                         SymbolFile::LineTables;
-
         InitOSO();
         if (!m_compile_unit_infos.empty())
-            return dwarf_abilities;
-//        for (uint32_t oso_idx=0; oso_idx<oso_index_count; ++oso_idx)
-//        {
-//            SymbolFileDWARF *oso_dwarf = GetSymbolFileByOSOIndex (oso_idx);
-//            if (oso_dwarf)
-//            {
-//                uint32_t oso_abilities = oso_dwarf->GetAbilities();
-//                if ((oso_abilities & dwarf_abilities) == dwarf_abilities)
-//                    return oso_abilities;
-//            }
-//        }
+        {
+            return SymbolFile::CompileUnits    |
+                   SymbolFile::Functions       |
+                   SymbolFile::Blocks          |
+                   SymbolFile::GlobalVariables |
+                   SymbolFile::LocalVariables  |
+                   SymbolFile::VariableTypes   |
+                   SymbolFile::LineTables      ;
+        }
     }
     return 0;
 }
@@ -596,44 +648,30 @@ SymbolFileDWARFDebugMap::ParseCompileUnitAtIndex(uint32_t cu_idx)
 
     if (cu_idx < cu_count)
     {
-        if (m_compile_unit_infos[cu_idx].oso_compile_unit_sp.get() == NULL &&
-            m_compile_unit_infos[cu_idx].symbol_file_supported)
+        Module *oso_module = GetModuleByCompUnitInfo (&m_compile_unit_infos[cu_idx]);
+        if (oso_module)
         {
             FileSpec so_file_spec;
             if (GetFileSpecForSO (cu_idx, so_file_spec))
             {
-                Module *oso_module = GetModuleByOSOIndex (cu_idx);
-                if (oso_module)
-                {
-                     // User zero as the ID to match the compile unit at offset
-                     // zero in each .o file since each .o file can only have
-                     // one compile unit for now.
-                    lldb::user_id_t cu_id = 0;
-                    m_compile_unit_infos[cu_idx].oso_compile_unit_sp.reset (new CompileUnit (oso_module->shared_from_this(),
-                                                                                             NULL,
-                                                                                             so_file_spec,
-                                                                                             cu_id,
-                                                                                             eLanguageTypeUnknown));
-                }
-
-                if (!m_compile_unit_infos[cu_idx].oso_compile_unit_sp)
-                {
-                    m_compile_unit_infos[cu_idx].oso_compile_unit_sp.reset(new CompileUnit (m_obj_file->GetModule(),
-                                                                                            NULL,
-                                                                                            so_file_spec,
-                                                                                            cu_idx,
-                                                                                            eLanguageTypeUnknown));
-                }
+                // User zero as the ID to match the compile unit at offset
+                // zero in each .o file since each .o file can only have
+                // one compile unit for now.
+                lldb::user_id_t cu_id = 0;
+                m_compile_unit_infos[cu_idx].compile_unit_sp.reset(new CompileUnit (m_obj_file->GetModule(),
+                                                                                    NULL,
+                                                                                    so_file_spec,
+                                                                                    cu_id,
+                                                                                    eLanguageTypeUnknown));
             
-                if (m_compile_unit_infos[cu_idx].oso_compile_unit_sp)
+                if (m_compile_unit_infos[cu_idx].compile_unit_sp)
                 {
                     // Let our symbol vendor know about this compile unit
-                    m_obj_file->GetModule()->GetSymbolVendor()->SetCompileUnitAtIndex (cu_idx,
-                                                                                       m_compile_unit_infos[cu_idx].oso_compile_unit_sp);
+                    m_obj_file->GetModule()->GetSymbolVendor()->SetCompileUnitAtIndex (cu_idx, m_compile_unit_infos[cu_idx].compile_unit_sp);
                 }
             }
         }
-        comp_unit_sp = m_compile_unit_infos[cu_idx].oso_compile_unit_sp;
+        comp_unit_sp = m_compile_unit_infos[cu_idx].compile_unit_sp;
     }
 
     return comp_unit_sp;
@@ -645,23 +683,23 @@ SymbolFileDWARFDebugMap::GetCompUnitInfo (const SymbolContext& sc)
     const uint32_t cu_count = GetNumCompileUnits();
     for (uint32_t i=0; i<cu_count; ++i)
     {
-        if (sc.comp_unit == m_compile_unit_infos[i].oso_compile_unit_sp.get())
+        if (sc.comp_unit == m_compile_unit_infos[i].compile_unit_sp.get())
             return &m_compile_unit_infos[i];
     }
     return NULL;
 }
 
 
-SymbolFileDWARFDebugMap::CompileUnitInfo *
-SymbolFileDWARFDebugMap::GetCompUnitInfo (const lldb_private::Module *module)
+size_t
+SymbolFileDWARFDebugMap::GetCompUnitInfosForModule (const lldb_private::Module *module, std::vector<CompileUnitInfo *>& cu_infos)
 {
     const uint32_t cu_count = GetNumCompileUnits();
     for (uint32_t i=0; i<cu_count; ++i)
     {
-        if (module == m_compile_unit_infos[i].oso_module_sp.get())
-            return &m_compile_unit_infos[i];
+        if (module == GetModuleByCompUnitInfo (&m_compile_unit_infos[i]))
+            cu_infos.push_back (&m_compile_unit_infos[i]);
     }
-    return NULL;
+    return cu_infos.size();
 }
 
 lldb::LanguageType
@@ -738,7 +776,7 @@ SymbolFileDWARFDebugMap::ResolveTypeUID(lldb::user_id_t type_uid)
     const uint64_t oso_idx = GetOSOIndexFromUserID (type_uid);
     SymbolFileDWARF *oso_dwarf = GetSymbolFileByOSOIndex (oso_idx);
     if (oso_dwarf)
-        oso_dwarf->ResolveTypeUID (type_uid);
+        return oso_dwarf->ResolveTypeUID (type_uid);
     return NULL;
 }
 
@@ -757,30 +795,31 @@ SymbolFileDWARFDebugMap::ResolveSymbolContext (const Address& exe_so_addr, uint3
     if (symtab)
     {
         const addr_t exe_file_addr = exe_so_addr.GetFileAddress();
-        sc.symbol = symtab->FindSymbolContainingFileAddress (exe_file_addr, &m_func_indexes[0], m_func_indexes.size());
 
-        if (sc.symbol != NULL)
+        const DebugMap::Entry *debug_map_entry = m_debug_map.FindEntryThatContains (exe_file_addr);
+        if (debug_map_entry)
         {
-            resolved_flags |= eSymbolContextSymbol;
 
-            uint32_t oso_idx = 0;
-            CompileUnitInfo* comp_unit_info = GetCompileUnitInfoForSymbolWithID (sc.symbol->GetID(), &oso_idx);
-            if (comp_unit_info)
+            sc.symbol = symtab->SymbolAtIndex(debug_map_entry->data.GetExeSymbolIndex());
+
+            if (sc.symbol != NULL)
             {
-                SymbolFileDWARF *oso_dwarf = GetSymbolFileByOSOIndex (oso_idx);
-                ObjectFile *oso_objfile = GetObjectFileByOSOIndex (oso_idx);
-                if (oso_dwarf && oso_objfile)
+                resolved_flags |= eSymbolContextSymbol;
+
+                uint32_t oso_idx = 0;
+                CompileUnitInfo* comp_unit_info = GetCompileUnitInfoForSymbolWithID (sc.symbol->GetID(), &oso_idx);
+                if (comp_unit_info)
                 {
-                    SectionList *oso_section_list = oso_objfile->GetSectionList();
-
-                    SectionSP oso_symbol_section_sp (oso_section_list->FindSectionContainingLinkedFileAddress (exe_file_addr, UINT32_MAX));
-
-                    if (oso_symbol_section_sp)
+                    comp_unit_info->GetFileRangeMap(this);
+                    Module *oso_module = GetModuleByCompUnitInfo (comp_unit_info);
+                    if (oso_module)
                     {
-                        const addr_t linked_file_addr = oso_symbol_section_sp->GetLinkedFileAddress();
-                        Address oso_so_addr (oso_symbol_section_sp, exe_file_addr - linked_file_addr);
-                        if (oso_so_addr.IsSectionOffset())
-                            resolved_flags |= oso_dwarf->ResolveSymbolContext (oso_so_addr, resolve_scope, sc);
+                        lldb::addr_t oso_file_addr = exe_file_addr - debug_map_entry->GetRangeBase() + debug_map_entry->data.GetOSOFileAddress();
+                        Address oso_so_addr;
+                        if (oso_module->ResolveFileAddress(oso_file_addr, oso_so_addr))
+                        {
+                            resolved_flags |= oso_module->GetSymbolVendor()->ResolveSymbolContext (oso_so_addr, resolve_scope, sc);
+                        }
                     }
                 }
             }
@@ -1098,6 +1137,43 @@ SymbolFileDWARFDebugMap::FindFunctions (const RegularExpression& regex, bool inc
     return sc_list.GetSize() - initial_size;
 }
 
+size_t
+SymbolFileDWARFDebugMap::GetTypes (SymbolContextScope *sc_scope,
+                                   uint32_t type_mask,
+                                   TypeList &type_list)
+{
+    Timer scoped_timer (__PRETTY_FUNCTION__,
+                        "SymbolFileDWARFDebugMap::GetTypes (type_mask = 0x%8.8x)",
+                        type_mask);
+    
+    
+    uint32_t initial_size = type_list.GetSize();
+    SymbolFileDWARF *oso_dwarf = NULL;
+    if (sc_scope)
+    {
+        SymbolContext sc;
+        sc_scope->CalculateSymbolContext(&sc);
+        
+        CompileUnitInfo *cu_info = GetCompUnitInfo (sc);
+        if (cu_info)
+        {
+            oso_dwarf = GetSymbolFileByCompUnitInfo (cu_info);
+            if (oso_dwarf)
+                oso_dwarf->GetTypes (sc_scope, type_mask, type_list);
+        }
+    }
+    else
+    {
+        uint32_t oso_idx = 0;
+        while ((oso_dwarf = GetSymbolFileByOSOIndex (oso_idx++)) != NULL)
+        {
+            oso_dwarf->GetTypes (sc_scope, type_mask, type_list);
+        }
+    }
+    return type_list.GetSize() - initial_size;
+}
+
+
 TypeSP
 SymbolFileDWARFDebugMap::FindDefinitionTypeForDWARFDeclContext (const DWARFDeclContext &die_decl_ctx)
 {
@@ -1226,14 +1302,8 @@ SymbolFileDWARFDebugMap::FindNamespace (const lldb_private::SymbolContext& sc,
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 SymbolFileDWARFDebugMap::GetPluginName()
-{
-    return "SymbolFileDWARFDebugMap";
-}
-
-const char *
-SymbolFileDWARFDebugMap::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }
@@ -1255,15 +1325,33 @@ SymbolFileDWARFDebugMap::GetCompileUnit (SymbolFileDWARF *oso_dwarf)
             SymbolFileDWARF *oso_symfile = GetSymbolFileByCompUnitInfo (&m_compile_unit_infos[cu_idx]);
             if (oso_symfile == oso_dwarf)
             {
-                if (!m_compile_unit_infos[cu_idx].oso_compile_unit_sp)
-                    m_compile_unit_infos[cu_idx].oso_compile_unit_sp = ParseCompileUnitAtIndex (cu_idx);
+                if (!m_compile_unit_infos[cu_idx].compile_unit_sp)
+                    m_compile_unit_infos[cu_idx].compile_unit_sp = ParseCompileUnitAtIndex (cu_idx);
 
-                return m_compile_unit_infos[cu_idx].oso_compile_unit_sp;
+                return m_compile_unit_infos[cu_idx].compile_unit_sp;
             }
         }
     }
     assert(!"this shouldn't happen");
     return lldb::CompUnitSP();
+}
+
+SymbolFileDWARFDebugMap::CompileUnitInfo *
+SymbolFileDWARFDebugMap::GetCompileUnitInfo (SymbolFileDWARF *oso_dwarf)
+{
+    if (oso_dwarf)
+    {
+        const uint32_t cu_count = GetNumCompileUnits();
+        for (uint32_t cu_idx=0; cu_idx<cu_count; ++cu_idx)
+        {
+            SymbolFileDWARF *oso_symfile = GetSymbolFileByCompUnitInfo (&m_compile_unit_infos[cu_idx]);
+            if (oso_symfile == oso_dwarf)
+            {
+                return &m_compile_unit_infos[cu_idx];
+            }
+        }
+    }
+    return NULL;
 }
 
 
@@ -1278,13 +1366,13 @@ SymbolFileDWARFDebugMap::SetCompileUnit (SymbolFileDWARF *oso_dwarf, const CompU
             SymbolFileDWARF *oso_symfile = GetSymbolFileByCompUnitInfo (&m_compile_unit_infos[cu_idx]);
             if (oso_symfile == oso_dwarf)
             {
-                if (m_compile_unit_infos[cu_idx].oso_compile_unit_sp)
+                if (m_compile_unit_infos[cu_idx].compile_unit_sp)
                 {
-                    assert (m_compile_unit_infos[cu_idx].oso_compile_unit_sp.get() == cu_sp.get());
+                    assert (m_compile_unit_infos[cu_idx].compile_unit_sp.get() == cu_sp.get());
                 }
                 else
                 {
-                    m_compile_unit_infos[cu_idx].oso_compile_unit_sp = cu_sp;
+                    m_compile_unit_infos[cu_idx].compile_unit_sp = cu_sp;
                     m_obj_file->GetModule()->GetSymbolVendor()->SetCompileUnitAtIndex(cu_idx, cu_sp);
                 }
             }
@@ -1374,4 +1462,125 @@ SymbolFileDWARFDebugMap::GetClangDeclContextForTypeUID (const lldb_private::Symb
     return NULL;
 }
 
+bool
+SymbolFileDWARFDebugMap::AddOSOFileRange (CompileUnitInfo *cu_info,
+                                          lldb::addr_t exe_file_addr,
+                                          lldb::addr_t oso_file_addr,
+                                          lldb::addr_t oso_byte_size)
+{
+    const uint32_t debug_map_idx = m_debug_map.FindEntryIndexThatContains(exe_file_addr);
+    if (debug_map_idx != UINT32_MAX)
+    {
+        DebugMap::Entry *debug_map_entry = m_debug_map.FindEntryThatContains(exe_file_addr);
+        debug_map_entry->data.SetOSOFileAddress(oso_file_addr);
+        cu_info->file_range_map.Append(FileRangeMap::Entry(oso_file_addr, oso_byte_size, exe_file_addr));
+        return true;
+    }
+    return false;
+}
+
+void
+SymbolFileDWARFDebugMap::FinalizeOSOFileRanges (CompileUnitInfo *cu_info)
+{
+    cu_info->file_range_map.Sort();
+#if defined(DEBUG_OSO_DMAP)
+    const FileRangeMap &oso_file_range_map = cu_info->GetFileRangeMap(this);
+    const size_t n = oso_file_range_map.GetSize();
+    printf ("SymbolFileDWARFDebugMap::FinalizeOSOFileRanges (cu_info = %p) %s\n",
+            cu_info,
+            cu_info->oso_sp->module_sp->GetFileSpec().GetPath().c_str());
+    for (size_t i=0; i<n; ++i)
+    {
+        const FileRangeMap::Entry &entry = oso_file_range_map.GetEntryRef(i);
+        printf ("oso [0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ") ==> exe [0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ")\n",
+                entry.GetRangeBase(), entry.GetRangeEnd(),
+                entry.data, entry.data + entry.GetByteSize());
+    }
+#endif
+}
+
+lldb::addr_t
+SymbolFileDWARFDebugMap::LinkOSOFileAddress (SymbolFileDWARF *oso_symfile, lldb::addr_t oso_file_addr)
+{
+    CompileUnitInfo *cu_info = GetCompileUnitInfo (oso_symfile);
+    if (cu_info)
+    {
+        const FileRangeMap::Entry *oso_range_entry = cu_info->GetFileRangeMap(this).FindEntryThatContains(oso_file_addr);
+        if (oso_range_entry)
+        {
+            const DebugMap::Entry *debug_map_entry = m_debug_map.FindEntryThatContains(oso_range_entry->data);
+            if (debug_map_entry)
+            {
+                const lldb::addr_t offset = oso_file_addr - oso_range_entry->GetRangeBase();
+                const lldb::addr_t exe_file_addr = debug_map_entry->GetRangeBase() + offset;
+                return exe_file_addr;
+            }
+        }
+    }
+    return LLDB_INVALID_ADDRESS;
+}
+
+bool
+SymbolFileDWARFDebugMap::LinkOSOAddress (Address &addr)
+{
+    // Make sure this address hasn't been fixed already
+    Module *exe_module = GetObjectFile()->GetModule().get();
+    Module *addr_module = addr.GetModule().get();
+    if (addr_module == exe_module)
+        return true; // Address is already in terms of the main executable module
+
+    CompileUnitInfo *cu_info = GetCompileUnitInfo (GetSymbolFileAsSymbolFileDWARF(addr_module->GetSymbolVendor()->GetSymbolFile()));
+    if (cu_info)
+    {
+        const lldb::addr_t oso_file_addr = addr.GetFileAddress();
+        const FileRangeMap::Entry *oso_range_entry = cu_info->GetFileRangeMap(this).FindEntryThatContains(oso_file_addr);
+        if (oso_range_entry)
+        {
+            const DebugMap::Entry *debug_map_entry = m_debug_map.FindEntryThatContains(oso_range_entry->data);
+            if (debug_map_entry)
+            {
+                const lldb::addr_t offset = oso_file_addr - oso_range_entry->GetRangeBase();
+                const lldb::addr_t exe_file_addr = debug_map_entry->GetRangeBase() + offset;
+                return exe_module->ResolveFileAddress(exe_file_addr, addr);
+            }
+        }
+    }
+    return true;
+}
+
+LineTable *
+SymbolFileDWARFDebugMap::LinkOSOLineTable (SymbolFileDWARF *oso_dwarf, LineTable *line_table)
+{
+    CompileUnitInfo *cu_info = GetCompileUnitInfo (oso_dwarf);
+    if (cu_info)
+        return line_table->LinkLineTable(cu_info->GetFileRangeMap(this));
+    return NULL;
+}
+
+size_t
+SymbolFileDWARFDebugMap::AddOSOARanges (SymbolFileDWARF* dwarf2Data, DWARFDebugAranges* debug_aranges)
+{
+    size_t num_line_entries_added = 0;
+    if (debug_aranges && dwarf2Data)
+    {
+        CompileUnitInfo *compile_unit_info = GetCompileUnitInfo(dwarf2Data);
+        if (compile_unit_info)
+        {
+            const FileRangeMap &file_range_map = compile_unit_info->GetFileRangeMap(this);
+            for (size_t idx = 0;
+                 idx < file_range_map.GetSize();
+                 idx++)
+            {
+                const FileRangeMap::Entry* entry = file_range_map.GetEntryAtIndex(idx);
+                if (entry)
+                {
+                    printf ("[0x%16.16" PRIx64 " - 0x%16.16" PRIx64 ")\n", entry->GetRangeBase(), entry->GetRangeEnd());
+                    debug_aranges->AppendRange(dwarf2Data->GetID(), entry->GetRangeBase(), entry->GetRangeEnd());
+                    num_line_entries_added++;
+                }
+            }
+        }
+    }
+    return num_line_entries_added;
+}
 

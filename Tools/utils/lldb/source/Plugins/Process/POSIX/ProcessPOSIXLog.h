@@ -1,4 +1,4 @@
-//===-- ProcessLinuxLog.h -----------------------------------------*- C++ -*-===//
+//===-- ProcessPOSIXLog.h -----------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ProcessLinuxLog_h_
-#define liblldb_ProcessLinuxLog_h_
+#ifndef liblldb_ProcessPOSIXLog_h_
+#define liblldb_ProcessPOSIXLog_h_
 
 // C Includes
 // C++ Includes
@@ -49,14 +49,19 @@ public:
         m_pluginname = pluginName;
     }
 
+    static void
+    RegisterPluginName(lldb_private::ConstString pluginName)
+        {
+            m_pluginname = pluginName.GetCString();
+        }
 
-    static lldb::LogSP
+    static lldb_private::Log *
     GetLogIfAllCategoriesSet(uint32_t mask = 0);
 
     static void
     DisableLog (const char **args, lldb_private::Stream *feedback_strm);
 
-    static lldb::LogSP
+    static lldb_private::Log *
     EnableLog (lldb::StreamSP &log_stream_sp, uint32_t log_options,
                const char **args, lldb_private::Stream *feedback_strm);
 
@@ -71,16 +76,16 @@ public:
     // recursive functions.  FIXME: not thread safe!
     //     Example:
     //     void NestingFunc() {
-    //         LogSP log (ProcessLinuxLog::GetLogIfAllCategoriesSet(POSIX_LOG_ALL));
+    //         LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_ALL));
     //         if (log)
     //         {
-    //             ProcessLinuxLog::IncNestLevel();
-    //             if (ProcessLinuxLog::AtTopNestLevel())
+    //             ProcessPOSIXLog::IncNestLevel();
+    //             if (ProcessPOSIXLog::AtTopNestLevel())
     //                 log->Print(msg);
     //         }
     //         NestingFunc();
     //         if (log)
-    //             ProcessLinuxLog::DecNestLevel();
+    //             ProcessPOSIXLog::DecNestLevel();
     //     }
 
     static bool
@@ -103,4 +108,4 @@ public:
     }
 };
 
-#endif  // liblldb_ProcessLinuxLog_h_
+#endif  // liblldb_ProcessPOSIXLog_h_

@@ -99,6 +99,9 @@ DynamicLoaderStatic::LoadAllImagesAtFileAddresses ()
     
     ModuleList loaded_module_list;
 
+    // Disable JIT for static dynamic loader targets
+    m_process->SetCanJIT(false);
+
     Mutex::Locker mutex_locker(module_list.GetMutex());
     
     const size_t num_modules = module_list.GetSize();
@@ -175,10 +178,11 @@ DynamicLoaderStatic::Terminate()
 }
 
 
-const char *
+lldb_private::ConstString
 DynamicLoaderStatic::GetPluginNameStatic()
 {
-    return "dynamic-loader.static";
+    static ConstString g_name("static");
+    return g_name;
 }
 
 const char *
@@ -191,14 +195,8 @@ DynamicLoaderStatic::GetPluginDescriptionStatic()
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 DynamicLoaderStatic::GetPluginName()
-{
-    return "DynamicLoaderStatic";
-}
-
-const char *
-DynamicLoaderStatic::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }

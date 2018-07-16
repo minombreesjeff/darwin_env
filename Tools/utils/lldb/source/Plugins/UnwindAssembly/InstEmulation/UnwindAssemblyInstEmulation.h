@@ -53,17 +53,14 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
     GetPluginDescriptionStatic();
 
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();
@@ -160,7 +157,7 @@ private:
     GetRegisterValue (const lldb_private::RegisterInfo &reg_info, 
                       lldb_private::RegisterValue &reg_value);
 
-    std::auto_ptr<lldb_private::EmulateInstruction> m_inst_emulator_ap;    
+    std::unique_ptr<lldb_private::EmulateInstruction> m_inst_emulator_ap;    
     lldb_private::AddressRange* m_range_ptr; 
     lldb_private::Thread* m_thread_ptr;
     lldb_private::UnwindPlan* m_unwind_plan_ptr;

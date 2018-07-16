@@ -41,11 +41,11 @@ namespace lldb_private {
 /// made.
 //----------------------------------------------------------------------
 class Module :
-    public STD_ENABLE_SHARED_FROM_THIS(Module),
+    public std::enable_shared_from_this<Module>,
     public SymbolContextScope
 {
 public:
-	// Static functions that can track the lifetime of moodule objects.
+	// Static functions that can track the lifetime of module objects.
 	// This is handy because we might have Module objects that are in
 	// shared pointers that aren't in the global module list (from 
 	// ModuleList). If this is the case we need to know about it.
@@ -88,7 +88,8 @@ public:
     Module (const FileSpec& file_spec,
             const ArchSpec& arch,
             const ConstString *object_name = NULL,
-            off_t object_offset = 0);
+            off_t object_offset = 0,
+            const TimeValue *object_mod_time_ptr = NULL);
 
     Module (const ModuleSpec &module_spec);
     //------------------------------------------------------------------
@@ -151,6 +152,29 @@ public:
                     lldb::DescriptionLevel level = lldb::eDescriptionLevelFull);
 
     //------------------------------------------------------------------
+    /// Get the module path and object name.
+    ///
+    /// Modules can refer to object files. In this case the specification
+    /// is simple and would return the path to the file:
+    ///
+    ///     "/usr/lib/foo.dylib"
+    ///
+    /// Modules can be .o files inside of a BSD archive (.a file). In
+    /// this case, the object specification will look like:
+    ///
+    ///     "/usr/lib/foo.a(bar.o)"
+    ///
+    /// There are many places where logging wants to log this fully
+    /// qualified specification, so we centralize this functionality
+    /// here.
+    ///
+    /// @return
+    ///     The object path + object name if there is one.
+    //------------------------------------------------------------------
+    std::string
+    GetSpecificationDescription () const;
+
+    //------------------------------------------------------------------
     /// Dump a description of this object to a Stream.
     ///
     /// Dump a description of the contents of this object to the
@@ -173,8 +197,9 @@ public:
     virtual void
     DumpSymbolContext (Stream *s);
 
+    
     //------------------------------------------------------------------
-    /// Find a symbol in the object files symbol table.
+    /// Find a symbol in the object file's symbol table.
     ///
     /// @param[in] name
     ///     The name of the symbol that we are looking for.
@@ -204,6 +229,28 @@ public:
                                      SymbolContextList &sc_list);
 
     //------------------------------------------------------------------
+    /// Find a funciton symbols in the object file's symbol table.
+    ///
+    /// @param[in] name
+    ///     The name of the symbol that we are looking for.
+    ///
+    /// @param[in] name_type_mask
+    ///     A mask that has one or more bitwise OR'ed values from the
+    ///     lldb::FunctionNameType enumeration type that indicate what
+    ///     kind of names we are looking for.
+    ///
+    /// @param[out] sc_list
+    ///     A list to append any matching symbol contexts to.
+    ///
+    /// @return
+    ///     The number of symbol contexts that were added to \a sc_list
+    //------------------------------------------------------------------
+    size_t
+    FindFunctionSymbols (const ConstString &name,
+                         uint32_t name_type_mask,
+                         SymbolContextList& sc_list);
+
+    //------------------------------------------------------------------
     /// Find compile units by partial or full path.
     ///
     /// Finds all compile units that match \a path in all of the modules
@@ -224,7 +271,7 @@ public:
     /// @return
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindCompileUnits (const FileSpec &path,
                       bool append,
                       SymbolContextList &sc_list);
@@ -261,7 +308,7 @@ public:
     /// @return
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindFunctions (const ConstString &name,
                    const ClangNamespaceDecl *namespace_decl,
                    uint32_t name_type_mask, 
@@ -292,7 +339,7 @@ public:
     /// @return
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindFunctions (const RegularExpression& regex, 
                    bool symbols_ok, 
                    bool inlines_ok,
@@ -325,11 +372,11 @@ public:
     /// @return
     ///     The number of matches added to \a variable_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindGlobalVariables (const ConstString &name,
                          const ClangNamespaceDecl *namespace_decl,
                          bool append, 
-                         uint32_t max_matches, 
+                         size_t max_matches,
                          VariableList& variable_list);
 
     //------------------------------------------------------------------
@@ -354,10 +401,10 @@ public:
     /// @return
     ///     The number of matches added to \a variable_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindGlobalVariables (const RegularExpression& regex, 
                          bool append, 
-                         uint32_t max_matches, 
+                         size_t max_matches,
                          VariableList& variable_list);
 
     //------------------------------------------------------------------
@@ -401,11 +448,11 @@ public:
     /// @return
     ///     The number of matches added to \a type_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindTypes (const SymbolContext& sc,
                const ConstString &type_name,
                bool exact_match,
-               uint32_t max_matches,
+               size_t max_matches,
                TypeList& types);
 
     lldb::TypeSP
@@ -435,11 +482,11 @@ public:
     /// @return
     ///     The number of matches added to \a type_list.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     FindTypesInNamespace (const SymbolContext& sc,
                           const ConstString &type_name,
                           const ClangNamespaceDecl *namespace_decl,
-                          uint32_t max_matches,
+                          size_t max_matches,
                           TypeList& type_list);
 
     //------------------------------------------------------------------
@@ -503,16 +550,26 @@ public:
     }
     
     void
-    SetSymbolFileFileSpec (const FileSpec &file)
+    SetSymbolFileFileSpec (const FileSpec &file);
+
+    const TimeValue &
+    GetModificationTime () const
     {
-        m_symfile_spec = file;
-        m_symfile_ap.reset();
-        m_did_load_symbol_vendor = false;
+        return m_mod_time;
     }
 
     const TimeValue &
-    GetModificationTime () const;
-   
+    GetObjectModificationTime () const
+    {
+        return m_object_mod_time;
+    }
+
+    void
+    SetObjectModificationTime (const TimeValue &mod_time)
+    {
+        m_mod_time = mod_time;
+    }
+
     //------------------------------------------------------------------
     /// Tells whether this module is capable of being the main executable
     /// for a process.
@@ -538,7 +595,9 @@ public:
     IsLoadedInTarget (Target *target);
 
     bool
-    LoadScriptingResourceInTarget (Target *target, Error& error);
+    LoadScriptingResourceInTarget (Target *target,
+                                   Error& error,
+                                   Stream* feedback_stream = NULL);
     
     //------------------------------------------------------------------
     /// Get the number of compile units for this module.
@@ -547,11 +606,11 @@ public:
     ///     The number of compile units that the symbol vendor plug-in
     ///     finds.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     GetNumCompileUnits();
 
     lldb::CompUnitSP
-    GetCompileUnitAtIndex (uint32_t);
+    GetCompileUnitAtIndex (size_t idx);
 
     const ConstString &
     GetObjectName() const;
@@ -579,7 +638,21 @@ public:
     //------------------------------------------------------------------
     virtual ObjectFile *
     GetObjectFile ();
-    
+
+    //------------------------------------------------------------------
+    /// Get the unified section list for the module. This is the section
+    /// list created by the module's object file and any debug info and
+    /// symbol files created by the symbol vendor.
+    ///
+    /// If the symbol vendor has not been loaded yet, this function
+    /// will return the section list for the object file.
+    ///
+    /// @return
+    ///     Unified module section list.
+    //------------------------------------------------------------------
+    virtual SectionList *
+    GetSectionList ();
+
     uint32_t
     GetVersion (uint32_t *versions, uint32_t num_versions);
 
@@ -603,7 +676,8 @@ public:
     ///     object and remains valid as long as the object is around.
     //------------------------------------------------------------------
     virtual SymbolVendor*
-    GetSymbolVendor(bool can_create = true);
+    GetSymbolVendor(bool can_create = true,
+                    lldb_private::Stream *feedback_strm = NULL);
 
     //------------------------------------------------------------------
     /// Get accessor the type list for this module.
@@ -858,6 +932,56 @@ public:
     bool
     RemapSourceFile (const char *path, std::string &new_path) const;
     
+    
+    //------------------------------------------------------------------
+    /// Prepare to do a function name lookup.
+    ///
+    /// Looking up functions by name can be a tricky thing. LLDB requires
+    /// that accelerator tables contain full names for functions as well
+    /// as function basenames which include functions, class methods and
+    /// class functions. When the user requests that an action use a
+    /// function by name, we are sometimes asked to automatically figure
+    /// out what a name could possibly map to. A user might request a
+    /// breakpoint be set on "count". If no options are supplied to limit
+    /// the scope of where to search for count, we will by default match
+    /// any function names named "count", all class and instance methods
+    /// named "count" (no matter what the namespace or contained context)
+    /// and any selectors named "count". If a user specifies "a::b" we
+    /// will search for the basename "b", and then prune the results that
+    /// don't match "a::b" (note that "c::a::b" and "d::e::a::b" will
+    /// match a query of "a::b".
+    ///
+    /// @param[in] name
+    ///     The user supplied name to use in the lookup
+    ///
+    /// @param[in] name_type_mask
+    ///     The mask of bits from lldb::FunctionNameType enumerations
+    ///     that tell us what kind of name we are looking for.
+    ///
+    /// @param[out] lookup_name
+    ///     The actual name that will be used when calling
+    ///     SymbolVendor::FindFunctions() or Symtab::FindFunctionSymbols()
+    ///
+    /// @param[out] lookup_name_type_mask
+    ///     The actual name mask that should be used in the calls to
+    ///     SymbolVendor::FindFunctions() or Symtab::FindFunctionSymbols()
+    ///
+    /// @param[out] match_name_after_lookup
+    ///     A boolean that indicates if we need to iterate through any
+    ///     match results obtained from SymbolVendor::FindFunctions() or
+    ///     Symtab::FindFunctionSymbols() to see if the name contains
+    ///     \a name. For example if \a name is "a::b", this function will
+    ///     return a \a lookup_name of "b", with \a match_name_after_lookup
+    ///     set to true to indicate any matches will need to be checked
+    ///     to make sure they contain \a name.
+    //------------------------------------------------------------------
+    static void
+    PrepareForFunctionNameLookup (const ConstString &name,
+                                  uint32_t name_type_mask,
+                                  ConstString &lookup_name,
+                                  uint32_t &lookup_name_type_mask,
+                                  bool &match_name_after_lookup);
+
 protected:
     //------------------------------------------------------------------
     // Member Variables
@@ -871,10 +995,12 @@ protected:
     FileSpec                    m_symfile_spec; ///< If this path is valid, then this is the file that _will_ be used as the symbol file for this module
     ConstString                 m_object_name;  ///< The name an object within this module that is selected, or empty of the module is represented by \a m_file.
     uint64_t                    m_object_offset;
+    TimeValue                   m_object_mod_time;
     lldb::ObjectFileSP          m_objfile_sp;   ///< A shared pointer to the object file parser for this module as it may or may not be shared with the SymbolFile
-    std::auto_ptr<SymbolVendor> m_symfile_ap;   ///< A pointer to the symbol vendor for this module.
+    std::unique_ptr<SymbolVendor> m_symfile_ap;   ///< A pointer to the symbol vendor for this module.
     ClangASTContext             m_ast;          ///< The AST context for this module.
     PathMappingList             m_source_mappings; ///< Module specific source remappings for when you have debug info for a module that doesn't match where the sources currently are
+    std::unique_ptr<lldb_private::SectionList> m_sections_ap; ///< Unified section list for module that is used by the ObjectFile and and ObjectFile instances for the debug info
 
     bool                        m_did_load_objfile:1,
                                 m_did_load_symbol_vendor:1,
@@ -933,18 +1059,21 @@ protected:
     bool
     SetArchitecture (const ArchSpec &new_arch);
     
-    
+    SectionList *
+    GetUnifiedSectionList();
+
     friend class ModuleList;
     friend class ObjectFile;
+    friend class SymbolFile;
 
 private:
 
-    uint32_t
+    size_t
     FindTypes_Impl (const SymbolContext& sc, 
                     const ConstString &name,
                     const ClangNamespaceDecl *namespace_decl,
                     bool append, 
-                    uint32_t max_matches, 
+                    size_t max_matches,
                     TypeList& types);
 
     

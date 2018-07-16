@@ -69,23 +69,6 @@ static inline void StripLeadingSpaces(llvm::StringRef &Str)
     while (!Str.empty() && isspace(Str[0]))
         Str = Str.substr(1);
 }
-static inline llvm::StringRef StripOptionTerminator(llvm::StringRef &Str, bool with_dash_w, bool with_dash_x)
-{
-    llvm::StringRef ExprStr = Str;
-
-    // Get rid of the leading spaces first.
-    StripLeadingSpaces(ExprStr);
-
-    // If there's no '-w' and no '-x', we can just return.
-    if (!with_dash_w && !with_dash_x)
-        return ExprStr;
-
-    // Otherwise, split on the "--" option terminator string, and return the rest of the string.
-    ExprStr = ExprStr.split("--").second;
-    StripLeadingSpaces(ExprStr);
-    return ExprStr;
-}
-
 
 // Equivalent class: {"-", "to", "To", "TO"} of range specifier array.
 static const char* RSA[4] = { "-", "to", "To", "TO" };
@@ -105,10 +88,22 @@ WithRSAIndex(llvm::StringRef &Arg)
 // Return true if wp_ids is successfully populated with the watch ids.
 // False otherwise.
 bool
-CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(Args &args, std::vector<uint32_t> &wp_ids)
+CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(Target *target, Args &args, std::vector<uint32_t> &wp_ids)
 {
     // Pre-condition: args.GetArgumentCount() > 0.
-    assert(args.GetArgumentCount() > 0);
+    if (args.GetArgumentCount() == 0)
+    {
+        if (target == NULL)
+            return false;
+        WatchpointSP watch_sp = target->GetLastCreatedWatchpoint();
+        if (watch_sp)
+        {
+            wp_ids.push_back(watch_sp->GetID());
+            return true;
+        }
+        else
+            return false;
+    }
 
     llvm::StringRef Minus("-");
     std::vector<llvm::StringRef> StrRefArgs;
@@ -309,7 +304,7 @@ protected:
         {
             // Particular watchpoints selected; enable them.
             std::vector<uint32_t> wp_ids;
-            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, wp_ids))
+            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, wp_ids))
             {
                 result.AppendError("Invalid watchpoints specification.");
                 result.SetStatus(eReturnStatusFailed);
@@ -409,7 +404,7 @@ protected:
         {
             // Particular watchpoints selected; enable them.
             std::vector<uint32_t> wp_ids;
-            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, wp_ids))
+            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, wp_ids))
             {
                 result.AppendError("Invalid watchpoints specification.");
                 result.SetStatus(eReturnStatusFailed);
@@ -494,7 +489,7 @@ protected:
         {
             // Particular watchpoints selected; disable them.
             std::vector<uint32_t> wp_ids;
-            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, wp_ids))
+            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, wp_ids))
             {
                 result.AppendError("Invalid watchpoints specification.");
                 result.SetStatus(eReturnStatusFailed);
@@ -577,7 +572,7 @@ protected:
         {
             // Particular watchpoints selected; delete them.
             std::vector<uint32_t> wp_ids;
-            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, wp_ids))
+            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, wp_ids))
             {
                 result.AppendError("Invalid watchpoints specification.");
                 result.SetStatus(eReturnStatusFailed);
@@ -718,7 +713,7 @@ protected:
         {
             // Particular watchpoints selected; ignore them.
             std::vector<uint32_t> wp_ids;
-            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, wp_ids))
+            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, wp_ids))
             {
                 result.AppendError("Invalid watchpoints specification.");
                 result.SetStatus(eReturnStatusFailed);
@@ -875,7 +870,7 @@ protected:
         {
             // Particular watchpoints selected; set condition on them.
             std::vector<uint32_t> wp_ids;
-            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(command, wp_ids))
+            if (!CommandObjectMultiwordWatchpoint::VerifyWatchpointIDs(target, command, wp_ids))
             {
                 result.AppendError("Invalid watchpoints specification.");
                 result.SetStatus(eReturnStatusFailed);
@@ -934,7 +929,10 @@ public:
                              "If watchpoint setting fails, consider disable/delete existing ones "
                              "to free up resources.",
                              NULL,
-                            eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+                             eFlagRequiresFrame         |
+                             eFlagTryTargetAPILock      |
+                             eFlagProcessMustBeLaunched |
+                             eFlagProcessMustBePaused   ),
         m_option_group (interpreter),
         m_option_watchpoint ()
     {
@@ -972,9 +970,9 @@ public:
     }
 
 protected:
-    static uint32_t GetVariableCallback (void *baton,
-                                         const char *name,
-                                         VariableList &variable_list)
+    static size_t GetVariableCallback (void *baton,
+                                       const char *name,
+                                       VariableList &variable_list)
     {
         Target *target = static_cast<Target *>(baton);
         if (target)
@@ -988,18 +986,10 @@ protected:
     }
     
     virtual bool
-    DoExecute (Args& command,
-             CommandReturnObject &result)
+    DoExecute (Args& command, CommandReturnObject &result)
     {
         Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        StackFrame *frame = exe_ctx.GetFramePtr();
-        if (frame == NULL)
-        {
-            result.AppendError ("you must be stopped in a valid stack frame to set a watchpoint.");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
+        StackFrame *frame = m_exe_ctx.GetFramePtr();
 
         // If no argument is present, issue an error message.  There's no way to set a watchpoint.
         if (command.GetArgumentCount() <= 0)
@@ -1025,7 +1015,8 @@ protected:
         Stream &output_stream = result.GetOutputStream();
 
         // A simple watch variable gesture allows only one argument.
-        if (command.GetArgumentCount() != 1) {
+        if (command.GetArgumentCount() != 1)
+        {
             result.GetErrorStream().Printf("error: specify exactly one variable to watch for\n");
             result.SetStatus(eReturnStatusFailed);
             return false;
@@ -1041,14 +1032,15 @@ protected:
                                                               var_sp,
                                                               error);
         
-        if (!valobj_sp) {
+        if (!valobj_sp)
+        {
             // Not in the frame; let's check the globals.
             
             VariableList variable_list;
             ValueObjectList valobj_list;
             
             Error error (Variable::GetValuesForVariableExpressionPath (command.GetArgumentAtIndex(0),
-                                                                       exe_ctx.GetBestExecutionContextScope(),
+                                                                       m_exe_ctx.GetBestExecutionContextScope(),
                                                                        GetVariableCallback,
                                                                        target,
                                                                        variable_list,
@@ -1060,17 +1052,21 @@ protected:
         
         ClangASTType type;
         
-        if (valobj_sp) {
+        if (valobj_sp)
+        {
             AddressType addr_type;
             addr = valobj_sp->GetAddressOf(false, &addr_type);
-            if (addr_type == eAddressTypeLoad) {
+            if (addr_type == eAddressTypeLoad)
+            {
                 // We're in business.
                 // Find out the size of this variable.
                 size = m_option_watchpoint.watch_size == 0 ? valobj_sp->GetByteSize()
                                                            : m_option_watchpoint.watch_size;
             }
             type.SetClangType(valobj_sp->GetClangAST(), valobj_sp->GetClangType());
-        } else {
+        }
+        else
+        {
             const char *error_cstr = error.AsCString(NULL);
             if (error_cstr)
                 result.GetErrorStream().Printf("error: %s\n", error_cstr);
@@ -1082,12 +1078,15 @@ protected:
 
         // Now it's time to create the watchpoint.
         uint32_t watch_type = m_option_watchpoint.watch_type;
+        
         error.Clear();
         Watchpoint *wp = target->CreateWatchpoint(addr, size, &type, watch_type, error).get();
-        if (wp) {
+        if (wp)
+        {
             wp->SetWatchSpec(command.GetArgumentAtIndex(0));
             wp->SetWatchVariable(true);
-            if (var_sp && var_sp->GetDeclaration().GetFile()) {
+            if (var_sp && var_sp->GetDeclaration().GetFile())
+            {
                 StreamString ss;
                 // True to show fullpath for declaration file.
                 var_sp->GetDeclaration().DumpStopContext(&ss, true);
@@ -1097,7 +1096,9 @@ protected:
             wp->GetDescription(&output_stream, lldb::eDescriptionLevelFull);
             output_stream.EOL();
             result.SetStatus(eReturnStatusSuccessFinishResult);
-        } else {
+        }
+        else
+        {
             result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%" PRIx64 ", size=%lu, variable expression='%s').\n",
                                          addr, size, command.GetArgumentAtIndex(0));
             if (error.AsCString(NULL))
@@ -1135,7 +1136,10 @@ public:
                           "If watchpoint setting fails, consider disable/delete existing ones "
                           "to free up resources.",
                           NULL,
-                          eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+                          eFlagRequiresFrame         |
+                          eFlagTryTargetAPILock      |
+                          eFlagProcessMustBeLaunched |
+                          eFlagProcessMustBePaused   ),
         m_option_group (interpreter),
         m_option_watchpoint ()
     {
@@ -1181,35 +1185,64 @@ protected:
     virtual bool
     DoExecute (const char *raw_command, CommandReturnObject &result)
     {
+        m_option_group.NotifyOptionParsingStarting(); // This is a raw command, so notify the option group
+        
         Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
-        ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        StackFrame *frame = exe_ctx.GetFramePtr();
-        if (frame == NULL)
-        {
-            result.AppendError ("you must be stopped in a valid stack frame to set a watchpoint.");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
+        StackFrame *frame = m_exe_ctx.GetFramePtr();
 
         Args command(raw_command);
+        const char *expr = NULL;
+        if (raw_command[0] == '-')
+        {
+            // We have some options and these options MUST end with --.
+            const char *end_options = NULL;
+            const char *s = raw_command;
+            while (s && s[0])
+            {
+                end_options = ::strstr (s, "--");
+                if (end_options)
+                {
+                    end_options += 2; // Get past the "--"
+                    if (::isspace (end_options[0]))
+                    {
+                        expr = end_options;
+                        while (::isspace (*expr))
+                            ++expr;
+                        break;
+                    }
+                }
+                s = end_options;
+            }
+            
+            if (end_options)
+            {
+                Args args (raw_command, end_options - raw_command);
+                if (!ParseOptions (args, result))
+                    return false;
+                
+                Error error (m_option_group.NotifyOptionParsingFinished());
+                if (error.Fail())
+                {
+                    result.AppendError (error.AsCString());
+                    result.SetStatus (eReturnStatusFailed);
+                    return false;
+                }
+            }
+        }
 
-        // Process possible options.
-        if (!ParseOptions (command, result))
-            return false;
+        if (expr == NULL)
+            expr = raw_command;
 
         // If no argument is present, issue an error message.  There's no way to set a watchpoint.
-        if (command.GetArgumentCount() <= 0)
+        if (command.GetArgumentCount() == 0)
         {
-            result.GetErrorStream().Printf("error: required argument missing; specify an expression to evaulate into the addres to watch for\n");
+            result.GetErrorStream().Printf("error: required argument missing; specify an expression to evaulate into the address to watch for\n");
             result.SetStatus(eReturnStatusFailed);
             return false;
         }
 
-        bool with_dash_w = m_option_watchpoint.watch_type_specified;
-        bool with_dash_x = (m_option_watchpoint.watch_size != 0);
-
         // If no '-w' is specified, default to '-w write'.
-        if (!with_dash_w)
+        if (!m_option_watchpoint.watch_type_specified)
         {
             m_option_watchpoint.watch_type = OptionGroupWatchpoint::eWatchWrite;
         }
@@ -1219,21 +1252,7 @@ protected:
         lldb::addr_t addr = 0;
         size_t size = 0;
 
-        VariableSP var_sp;
         ValueObjectSP valobj_sp;
-        Stream &output_stream = result.GetOutputStream();
-
-        // We will process the raw command string to rid of the '-w', '-x', or '--'
-        llvm::StringRef raw_expr_str(raw_command);
-        std::string expr_str = StripOptionTerminator(raw_expr_str, with_dash_w, with_dash_x).str();
-
-        // Sanity check for when the user forgets to terminate the option strings with a '--'.
-        if ((with_dash_w || with_dash_w) && expr_str.empty())
-        {
-            result.GetErrorStream().Printf("error: did you forget to enter the option terminator string \"--\"?\n");
-            result.SetStatus(eReturnStatusFailed);
-            return false;
-        }
 
         // Use expression evaluation to arrive at the address to watch.
         EvaluateExpressionOptions options;
@@ -1243,13 +1262,14 @@ protected:
         .SetRunOthers(true)
         .SetTimeoutUsec(0);
         
-        ExecutionResults expr_result = target->EvaluateExpression (expr_str.c_str(), 
+        ExecutionResults expr_result = target->EvaluateExpression (expr, 
                                                                    frame, 
                                                                    valobj_sp,
                                                                    options);
-        if (expr_result != eExecutionCompleted) {
+        if (expr_result != eExecutionCompleted)
+        {
             result.GetErrorStream().Printf("error: expression evaluation of address to watch failed\n");
-            result.GetErrorStream().Printf("expression evaluated: %s\n", expr_str.c_str());
+            result.GetErrorStream().Printf("expression evaluated: %s\n", expr);
             result.SetStatus(eReturnStatusFailed);
             return false;
         }
@@ -1257,13 +1277,17 @@ protected:
         // Get the address to watch.
         bool success = false;
         addr = valobj_sp->GetValueAsUnsigned(0, &success);
-        if (!success) {
+        if (!success)
+        {
             result.GetErrorStream().Printf("error: expression did not evaluate to an address\n");
             result.SetStatus(eReturnStatusFailed);
             return false;
         }
-        size = with_dash_x ? m_option_watchpoint.watch_size
-                           : target->GetArchitecture().GetAddressByteSize();
+        
+        if (m_option_watchpoint.watch_size != 0)
+            size = m_option_watchpoint.watch_size;
+        else
+            size = target->GetArchitecture().GetAddressByteSize();
 
         // Now it's time to create the watchpoint.
         uint32_t watch_type = m_option_watchpoint.watch_type;
@@ -1276,18 +1300,16 @@ protected:
         
         Error error;
         Watchpoint *wp = target->CreateWatchpoint(addr, size, &type, watch_type, error).get();
-        if (wp) {
-            if (var_sp && var_sp->GetDeclaration().GetFile()) {
-                StreamString ss;
-                // True to show fullpath for declaration file.
-                var_sp->GetDeclaration().DumpStopContext(&ss, true);
-                wp->SetDeclInfo(ss.GetString());
-            }
+        if (wp)
+        {
+            Stream &output_stream = result.GetOutputStream();
             output_stream.Printf("Watchpoint created: ");
             wp->GetDescription(&output_stream, lldb::eDescriptionLevelFull);
             output_stream.EOL();
             result.SetStatus(eReturnStatusSuccessFinishResult);
-        } else {
+        }
+        else
+        {
             result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%" PRIx64 ", size=%lu).\n",
                                          addr, size);
             if (error.AsCString(NULL))

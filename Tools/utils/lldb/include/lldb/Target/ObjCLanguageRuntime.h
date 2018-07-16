@@ -14,6 +14,7 @@
 // C++ Includes
 #include <functional>
 #include <map>
+#include <unordered_set>
 
 // Other libraries and framework includes
 // Project includes
@@ -31,11 +32,113 @@ class ObjCLanguageRuntime :
     public LanguageRuntime
 {
 public:
-    
+    class MethodName
+    {
+    public:
+        enum Type
+        {
+            eTypeUnspecified,
+            eTypeClassMethod,
+            eTypeInstanceMethod
+        };
+        
+        MethodName () :
+            m_full(),
+            m_class(),
+            m_category(),
+            m_selector(),
+            m_type (eTypeUnspecified),
+            m_category_is_valid (false)
+        {
+        }
+
+        MethodName (const char *name, bool strict) :
+            m_full(),
+            m_class(),
+            m_category(),
+            m_selector(),
+            m_type (eTypeUnspecified),
+            m_category_is_valid (false)
+        {
+            SetName (name, strict);
+        }
+
+        void
+        Clear();
+
+        bool
+        IsValid (bool strict) const
+        {
+            // If "strict" is true, the name must have everything specified including
+            // the leading "+" or "-" on the method name
+            if (strict && m_type == eTypeUnspecified)
+                return false;
+            // Other than that, m_full will only be filled in if the objective C
+            // name is valid.
+            return (bool)m_full;
+        }
+        
+        bool
+        HasCategory()
+        {
+            return (bool)GetCategory();
+        }
+
+        Type
+        GetType () const
+        {
+            return m_type;
+        }
+        
+        const ConstString &
+        GetFullName () const
+        {
+            return m_full;
+        }
+        
+        ConstString
+        GetFullNameWithoutCategory (bool empty_if_no_category);
+
+        bool
+        SetName (const char *name, bool strict);
+
+        const ConstString &
+        GetClassName ();
+
+        const ConstString &
+        GetClassNameWithCategory ();
+
+        const ConstString &
+        GetCategory ();
+        
+        const ConstString &
+        GetSelector ();
+
+        // Get all possible names for a method. Examples:
+        // If name is "+[NSString(my_additions) myStringWithCString:]"
+        //  names[0] => "+[NSString(my_additions) myStringWithCString:]"
+        //  names[1] => "+[NSString myStringWithCString:]"
+        // If name is specified without the leading '+' or '-' like "[NSString(my_additions) myStringWithCString:]"
+        //  names[0] => "+[NSString(my_additions) myStringWithCString:]"
+        //  names[1] => "-[NSString(my_additions) myStringWithCString:]"
+        //  names[2] => "+[NSString myStringWithCString:]"
+        //  names[3] => "-[NSString myStringWithCString:]"
+        size_t
+        GetFullNames (std::vector<ConstString> &names, bool append);
+    protected:
+        ConstString m_full;     // Full name:   "+[NSString(my_additions) myStringWithCString:]"
+        ConstString m_class;    // Class name:  "NSString"
+        ConstString m_class_category; // Class with category: "NSString(my_additions)"
+        ConstString m_category; // Category:    "my_additions"
+        ConstString m_selector; // Selector:    "myStringWithCString:"
+        Type m_type;
+        bool m_category_is_valid;
+
+    };
     typedef lldb::addr_t ObjCISA;
     
     class ClassDescriptor;
-    typedef STD_SHARED_PTR(ClassDescriptor) ClassDescriptorSP;
+    typedef std::shared_ptr<ClassDescriptor> ClassDescriptorSP;
     
     // the information that we want to support retrieving from an ObjC class
     // this needs to be pure virtual since there are at least 2 different implementations
@@ -95,7 +198,9 @@ public:
         IsValid () = 0;
         
         virtual bool
-        IsTagged () = 0;
+        GetTaggedPointerInfo (uint64_t* info_bits = NULL,
+                              uint64_t* value_bits = NULL,
+                              uint64_t* payload = NULL) = 0;
         
         virtual uint64_t
         GetInstanceSize () = 0;
@@ -147,41 +252,6 @@ public:
         lldb::TypeWP m_type_wp;
     };
     
-    // a convenience subclass of ClassDescriptor meant to represent invalid objects
-    class ClassDescriptor_Invalid : public ClassDescriptor
-    {
-    public:
-        ClassDescriptor_Invalid() {}
-        
-        virtual
-        ~ClassDescriptor_Invalid ()
-        {}
-        
-        virtual ConstString
-        GetClassName () { return ConstString(""); }
-        
-        virtual ClassDescriptorSP
-        GetSuperclass () { return ClassDescriptorSP(new ClassDescriptor_Invalid()); }
-        
-        virtual bool
-        IsValid () { return false; }
-        
-        virtual bool
-        IsTagged () { return false; }
-        
-        virtual uint64_t
-        GetInstanceSize () { return 0; }
-        
-        virtual ObjCISA
-        GetISA () { return 0; }
-        
-        virtual bool
-        CheckPointer (lldb::addr_t value, uint32_t ptr_size) const
-        {
-            return false;
-        }
-    };
-    
     virtual ClassDescriptorSP
     GetClassDescriptor (ValueObject& in_value);
     
@@ -189,10 +259,10 @@ public:
     GetNonKVOClassDescriptor (ValueObject& in_value);
 
     virtual ClassDescriptorSP
-    GetClassDescriptor (const ConstString &class_name);
+    GetClassDescriptorFromClassName (const ConstString &class_name);
 
     virtual ClassDescriptorSP
-    GetClassDescriptor (ObjCISA isa);
+    GetClassDescriptorFromISA (ObjCISA isa);
 
     ClassDescriptorSP
     GetNonKVOClassDescriptor (ObjCISA isa);
@@ -249,7 +319,7 @@ public:
     IsValidISA(ObjCISA isa)
     {
         UpdateISAToDescriptorMap();
-        return m_isa_to_descriptor_cache.count(isa) > 0;
+        return m_isa_to_descriptor.count(isa) > 0;
     }
 
     virtual void
@@ -258,7 +328,7 @@ public:
     void
     UpdateISAToDescriptorMap()
     {
-        if (m_process && m_process->GetStopID() != m_isa_to_descriptor_cache_stop_id)
+        if (m_process && m_process->GetStopID() != m_isa_to_descriptor_stop_id)
         {
             UpdateISAToDescriptorMapIfNeeded ();
         }
@@ -351,12 +421,12 @@ public:
     ///     Returns the number of strings that were successfully filled
     ///     in.
     //------------------------------------------------------------------
-    static uint32_t
-    ParseMethodName (const char *name, 
-                     ConstString *class_name,               // Class name (with category if there is one)
-                     ConstString *selector_name,            // selector only
-                     ConstString *name_sans_category,       // full function name with no category (empty if no category)
-                     ConstString *class_name_sans_category);// Class name without category (empty if no category)
+//    static uint32_t
+//    ParseMethodName (const char *name, 
+//                     ConstString *class_name,               // Class name (with category if there is one)
+//                     ConstString *selector_name,            // selector only
+//                     ConstString *name_sans_category,       // full function name with no category (empty if no category)
+//                     ConstString *class_name_sans_category);// Class name without category (empty if no category)
     
     static bool
     IsPossibleObjCMethodName (const char *name)
@@ -396,6 +466,12 @@ public:
         return (m_has_new_literals_and_indexing == eLazyBoolYes);
     }
     
+    virtual void
+    SymbolsDidLoad (const ModuleList& module_list)
+    {
+        m_negative_complete_class_cache.clear();
+    }
+    
 protected:
     //------------------------------------------------------------------
     // Classes that inherit from ObjCLanguageRuntime can see and modify these
@@ -406,6 +482,40 @@ protected:
     {
         return false;
     }
+    
+    
+    bool
+    ISAIsCached (ObjCISA isa) const
+    {
+        return m_isa_to_descriptor.find(isa) != m_isa_to_descriptor.end();
+    }
+
+    bool
+    AddClass (ObjCISA isa, const ClassDescriptorSP &descriptor_sp)
+    {
+        if (isa != 0)
+        {
+            m_isa_to_descriptor[isa] = descriptor_sp;
+            return true;
+        }
+        return false;
+    }
+
+    bool
+    AddClass (ObjCISA isa, const ClassDescriptorSP &descriptor_sp, const char *class_name);
+
+    bool
+    AddClass (ObjCISA isa, const ClassDescriptorSP &descriptor_sp, uint32_t class_name_hash)
+    {
+        if (isa != 0)
+        {
+            m_isa_to_descriptor[isa] = descriptor_sp;
+            m_hash_to_isa_map.insert(std::make_pair(class_name_hash, isa));
+            return true;
+        }
+        return false;
+    }
+
 private:
     // We keep a map of <Class,Selector>->Implementation so we don't have to call the resolver
     // function over and over.
@@ -454,16 +564,37 @@ private:
     };
 
     typedef std::map<ClassAndSel,lldb::addr_t> MsgImplMap;
-    MsgImplMap m_impl_cache;
-    
-    LazyBool m_has_new_literals_and_indexing;
-protected:
     typedef std::map<ObjCISA, ClassDescriptorSP> ISAToDescriptorMap;
+    typedef std::multimap<uint32_t, ObjCISA> HashToISAMap;
     typedef ISAToDescriptorMap::iterator ISAToDescriptorIterator;
-    ISAToDescriptorMap m_isa_to_descriptor_cache;
-    uint32_t m_isa_to_descriptor_cache_stop_id;
+    typedef HashToISAMap::iterator HashToISAIterator;
+
+    MsgImplMap m_impl_cache;
+    LazyBool m_has_new_literals_and_indexing;
+    ISAToDescriptorMap m_isa_to_descriptor;
+    HashToISAMap m_hash_to_isa_map;
+
+protected:
+    uint32_t m_isa_to_descriptor_stop_id;
+
     typedef std::map<ConstString, lldb::TypeWP> CompleteClassMap;
     CompleteClassMap m_complete_class_cache;
+    
+    struct ConstStringSetHelpers {
+        size_t operator () (const ConstString& arg) const // for hashing
+        {
+            return (size_t)arg.GetCString();
+        }
+        bool operator () (const ConstString& arg1, const ConstString& arg2) const // for equality
+        {
+            return arg1.operator==(arg2);
+        }
+    };
+    typedef std::unordered_set<ConstString, ConstStringSetHelpers, ConstStringSetHelpers> CompleteClassSet;
+    CompleteClassSet m_negative_complete_class_cache;
+
+    ISAToDescriptorIterator
+    GetDescriptorIterator (const ConstString &name);
 
     DISALLOW_COPY_AND_ASSIGN (ObjCLanguageRuntime);
 };

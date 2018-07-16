@@ -18,7 +18,6 @@
 #include "DNBBreakpoint.h"
 #include "DNBError.h"
 #include "DNBThreadResumeActions.h"
-//#include "MachDYLD.h"
 #include "MachException.h"
 #include "MachVMMemory.h"
 #include "MachTask.h"
@@ -56,7 +55,8 @@ public:
                                             const char *stderr_path,
                                             bool no_stdio, 
                                             nub_launch_flavor_t launch_flavor, 
-                                            int disable_aslr, 
+                                            int disable_aslr,
+                                            const char *event_data,
                                             DNBError &err);
 
     static uint32_t         GetCPUTypeForLocalProcess (pid_t pid);
@@ -77,8 +77,14 @@ public:
     static const void *     PrepareForAttach (const char *path, nub_launch_flavor_t launch_flavor, bool waitfor, DNBError &err_str);
     static void             CleanupAfterAttach (const void *attach_token, bool success, DNBError &err_str);
     static nub_process_t    CheckForProcess (const void *attach_token);
+#ifdef WITH_BKS
+    pid_t                   BKSLaunchForDebug (const char *app_bundle_path, char const *argv[], char const *envp[], bool no_stdio, bool disable_aslr, const char *event_data, DNBError &launch_err);
+    pid_t                   BKSForkChildForPTraceDebugging (const char *path, char const *argv[], char const *envp[], bool no_stdio, bool disable_aslr, const char *event_data, DNBError &launch_err);
+    bool                    BKSSendEvent (const char *event, DNBError &error);
+    static void             BKSCleanupAfterAttach (const void *attach_token, DNBError &err_str);
+#endif
 #ifdef WITH_SPRINGBOARD
-    pid_t                   SBLaunchForDebug (const char *app_bundle_path, char const *argv[], char const *envp[], bool no_stdio, DNBError &launch_err);
+    pid_t                   SBLaunchForDebug (const char *app_bundle_path, char const *argv[], char const *envp[], bool no_stdio, bool disable_aslr, DNBError &launch_err);
     static pid_t            SBForkChildForPTraceDebugging (const char *path, char const *argv[], char const *envp[], bool no_stdio, MachProcess* process, DNBError &launch_err);
 #endif
     nub_addr_t              LookupSymbol (const char *name, const char *shlib);
@@ -95,6 +101,7 @@ public:
 
     bool                    Resume (const DNBThreadResumeActions& thread_actions);
     bool                    Signal  (int signal, const struct timespec *timeout_abstime = NULL);
+    bool                    SendEvent (const char *event, DNBError &send_err);
     bool                    Kill (const struct timespec *timeout_abstime = NULL);
     bool                    Detach ();
     nub_size_t              ReadMemory (nub_addr_t addr, nub_size_t size, void *buf);
@@ -115,22 +122,20 @@ public:
     //----------------------------------------------------------------------
     // Breakpoint functions
     //----------------------------------------------------------------------
-    nub_break_t             CreateBreakpoint (nub_addr_t addr, nub_size_t length, bool hardware, thread_t thread);
-    bool                    DisableBreakpoint (nub_break_t breakID, bool remove);
-    nub_size_t              DisableAllBreakpoints (bool remove);
-    bool                    EnableBreakpoint (nub_break_t breakID);
-    void                    DumpBreakpoint(nub_break_t breakID) const;
+    DNBBreakpoint *         CreateBreakpoint (nub_addr_t addr, nub_size_t length, bool hardware);
+    bool                    DisableBreakpoint (nub_addr_t addr, bool remove);
+    void                    DisableAllBreakpoints (bool remove);
+    bool                    EnableBreakpoint (nub_addr_t addr);
     DNBBreakpointList&      Breakpoints() { return m_breakpoints; }
     const DNBBreakpointList& Breakpoints() const { return m_breakpoints; }
 
     //----------------------------------------------------------------------
     // Watchpoint functions
     //----------------------------------------------------------------------
-    nub_watch_t             CreateWatchpoint (nub_addr_t addr, nub_size_t length, uint32_t watch_type, bool hardware, thread_t thread);
-    bool                    DisableWatchpoint (nub_watch_t watchID, bool remove);
-    nub_size_t              DisableAllWatchpoints (bool remove);
-    bool                    EnableWatchpoint (nub_watch_t watchID);
-    void                    DumpWatchpoint(nub_watch_t watchID) const;
+    DNBBreakpoint *         CreateWatchpoint (nub_addr_t addr, nub_size_t length, uint32_t watch_type, bool hardware);
+    bool                    DisableWatchpoint (nub_addr_t addr, bool remove);
+    void                    DisableAllWatchpoints (bool remove);
+    bool                    EnableWatchpoint (nub_addr_t addr);
     uint32_t                GetNumSupportedHardwareWatchpoints () const;
     DNBBreakpointList&      Watchpoints() { return m_watchpoints; }
     const DNBBreakpointList& Watchpoints() const { return m_watchpoints; }
@@ -148,7 +153,7 @@ public:
     //----------------------------------------------------------------------
     // Profile functions
     //----------------------------------------------------------------------
-    void                    SetAsyncEnableProfiling (bool enable, uint64_t internal_usec);
+    void                    SetEnableAsyncProfiling (bool enable, uint64_t internal_usec, DNBProfileDataScanType scan_type);
     bool                    IsProfilingEnabled () { return m_profile_enabled; }
     uint64_t                ProfileInterval () { return m_profile_interval_usec; }
     bool                    StartProfileThread ();
@@ -176,11 +181,14 @@ public:
     nub_size_t              GetNumThreads () const;
     nub_thread_t            GetThreadAtIndex (nub_size_t thread_idx) const;
     nub_thread_t            GetCurrentThread ();
+    nub_thread_t            GetCurrentThreadMachPort ();
     nub_thread_t            SetCurrentThread (nub_thread_t tid);
     MachThreadList &        GetThreadList() { return m_thread_list; }
-    bool                    GetThreadStoppedReason(nub_thread_t tid, struct DNBThreadStopInfo *stop_info) const;
+    bool                    GetThreadStoppedReason(nub_thread_t tid, struct DNBThreadStopInfo *stop_info);
     void                    DumpThreadStoppedReason(nub_thread_t tid) const;
     const char *            GetThreadInfo (nub_thread_t tid) const;
+
+    nub_thread_t            GetThreadIDForMachPortNumber (thread_t mach_port_number) const;
 
     uint32_t                GetCPUType ();
     nub_state_t             GetState ();
@@ -212,6 +220,15 @@ public:
                             {
                                 m_exit_status = status;
                                 SetState(eStateExited);
+                            }
+    const char *            GetExitInfo ()
+                            {
+                                return m_exit_info.c_str();
+                            }
+    
+    void                    SetExitInfo (const char *info)
+                            {
+                                m_exit_info.assign(info);
                             }
 
     uint32_t                StopCount() const { return m_stop_count; }
@@ -248,17 +265,21 @@ public:
                             }
 
     bool                    ProcessUsingSpringBoard() const { return (m_flags & eMachProcessFlagsUsingSBS) != 0; }
+    bool                    ProcessUsingBackBoard() const { return (m_flags & eMachProcessFlagsUsingBKS) != 0; }
+    
+    DNBProfileDataScanType  GetProfileScanType () { return m_profile_scan_type; }
+    
 private:
     enum
     {
         eMachProcessFlagsNone = 0,
         eMachProcessFlagsAttached = (1 << 0),
-        eMachProcessFlagsUsingSBS = (1 << 1)
+        eMachProcessFlagsUsingSBS = (1 << 1),
+        eMachProcessFlagsUsingBKS = (1 << 2)
     };
     void                    Clear ();
     void                    ReplyToAllExceptions ();
     void                    PrivateResume ();
-    nub_size_t              RemoveTrapsFromBuffer (nub_addr_t addr, nub_size_t size, uint8_t *buf) const;
 
     uint32_t                Flags () const { return m_flags; }
     nub_state_t             DoSIGSTOP (bool clear_bps_and_wps, bool allow_running, uint32_t *thread_idx_ptr);
@@ -271,6 +292,7 @@ private:
     std::string                 m_path;                     // A path to the executable if we have one
     std::vector<std::string>    m_args;                     // The arguments with which the process was lauched
     int                         m_exit_status;              // The exit status for the process
+    std::string                 m_exit_info;                // Any extra info that we may have about the exit
     MachTask                    m_task;                     // The mach task for this process
     uint32_t                    m_flags;                    // Process specific flags (see eMachProcessFlags enums)
     uint32_t                    m_stop_count;               // A count of many times have we stopped
@@ -280,6 +302,7 @@ private:
     
     bool                        m_profile_enabled;          // A flag to indicate if profiling is enabled
     uint64_t                    m_profile_interval_usec;    // If enable, the profiling interval in microseconds
+    DNBProfileDataScanType      m_profile_scan_type;        // Indicates what needs to be profiled
     pthread_t                   m_profile_thread;           // Thread ID for the thread that profiles the inferior
     PThreadMutex                m_profile_data_mutex;       // Multithreaded protection for profile info data
     std::vector<std::string>    m_profile_data;             // Profile data, must be protected by m_profile_data_mutex
@@ -293,6 +316,7 @@ private:
     nub_state_t                 m_state;                    // The state of our process
     PThreadMutex                m_state_mutex;              // Multithreaded protection for m_state
     PThreadEvent                m_events;                   // Process related events in the child processes lifetime can be waited upon
+    PThreadEvent                m_private_events;           // Used to coordinate running and stopping the process without affecting m_events
     DNBBreakpointList           m_breakpoints;              // Breakpoint list for this process
     DNBBreakpointList           m_watchpoints;              // Watchpoint list for this process
     DNBCallbackNameToAddress    m_name_to_addr_callback;
@@ -300,6 +324,8 @@ private:
     DNBCallbackCopyExecutableImageInfos
                                 m_image_infos_callback;
     void *                      m_image_infos_baton;
+    std::string                 m_bundle_id;                 // If we are a SB or BKS process, this will be our bundle ID.
+    bool                        m_did_exec;
 };
 
 

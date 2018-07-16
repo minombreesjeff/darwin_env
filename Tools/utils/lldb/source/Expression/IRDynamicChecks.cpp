@@ -18,11 +18,11 @@
 #include "lldb/Target/StackFrame.h"
 
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Constants.h"
-#include "llvm/Function.h"
-#include "llvm/Instructions.h"
-#include "llvm/Module.h"
-#include "llvm/Value.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Value.h"
 
 using namespace llvm;
 using namespace lldb_private;
@@ -356,7 +356,7 @@ public:
 private:
     bool InstrumentInstruction(llvm::Instruction *inst)
     {
-        lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
         if (log)
             log->Printf("Instrumenting load/store instruction: %s\n", 
@@ -497,7 +497,7 @@ private:
     
     bool InspectInstruction(llvm::Instruction &i)
     {
-        lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
         CallInst *call_inst = dyn_cast<CallInst>(&i);
         
@@ -517,23 +517,16 @@ private:
                 return false;
             }
             
-            ConstantDataArray *real_name = dyn_cast<ConstantDataArray>(metadata->getOperand(0));
+            MDString *real_name = dyn_cast<MDString>(metadata->getOperand(0));
             
             if (!real_name)
             {
                 if (log)
-                    log->Printf("Function call metadata is not a ConstantArray for [%p] %s", call_inst, PrintValue(call_inst).c_str());
+                    log->Printf("Function call metadata is not an MDString for [%p] %s", call_inst, PrintValue(call_inst).c_str());
                 return false;
             }
-            
-            if (!real_name->isString())
-            {
-                if (log)
-                    log->Printf("Function call metadata is not a string for [%p] %s", call_inst, PrintValue(call_inst).c_str());
-                return false;
-            }
-            
-            std::string name_str = real_name->getAsString();
+
+            std::string name_str = real_name->getString();
             const char* name_cstr = name_str.c_str();
             
             if (log)
@@ -604,7 +597,7 @@ IRDynamicChecks::~IRDynamicChecks()
 bool
 IRDynamicChecks::runOnModule(llvm::Module &M)
 {
-    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
     llvm::Function* function = M.getFunction(StringRef(m_func_name.c_str()));
     

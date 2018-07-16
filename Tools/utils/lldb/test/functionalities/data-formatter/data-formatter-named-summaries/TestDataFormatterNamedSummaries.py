@@ -81,7 +81,7 @@ class NamedSummariesDataFormatterTestCase(TestBase):
 
         self.expect("frame variable second --summary AllUseIt",
             substrs = ['AllUseIt: x=65',
-                       'y=43.21'])
+                       'y=43.25'])
 
         self.expect("frame variable third --summary AllUseIt",
             substrs = ['AllUseIt: x=96',
@@ -94,9 +94,10 @@ class NamedSummariesDataFormatterTestCase(TestBase):
             substrs = ['Second: x=65',
                         'y=0x'])
                     
-        self.expect("frame variable second --summary NoSuchSummary",
-            substrs = ['Second: x=65',
-                        'y=0x'])
+        # <rdar://problem/11576143> decided that invalid summaries will raise an error
+        # instead of just defaulting to the base summary
+        self.expect("frame variable second --summary NoSuchSummary",error=True,
+            substrs = ['must specify a valid named summary'])
                     
         self.runCmd("thread step-over")
                     

@@ -61,6 +61,22 @@ public:
 protected:
     void* m_object;
 };
+    
+class ScriptInterpreterLocker
+{
+public:
+    
+    ScriptInterpreterLocker ()
+    {
+    }
+    
+    virtual ~ScriptInterpreterLocker ()
+    {
+    }
+private:
+    DISALLOW_COPY_AND_ASSIGN (ScriptInterpreterLocker);
+};
+
 
 class ScriptInterpreter
 {
@@ -84,11 +100,11 @@ public:
                                                           void** pyfunct_wrapper,
                                                           std::string& retval);
     
-    typedef void* (*SWIGPythonCreateSyntheticProvider) (const std::string python_class_name,
+    typedef void* (*SWIGPythonCreateSyntheticProvider) (const char *python_class_name,
                                                         const char *session_dictionary_name,
                                                         const lldb::ValueObjectSP& valobj_sp);
 
-    typedef void* (*SWIGPythonCreateOSPlugin) (const std::string python_class_name,
+    typedef void* (*SWIGPythonCreateOSPlugin) (const char *python_class_name,
                                                const char *session_dictionary_name,
                                                const lldb::ProcessSP& process_sp);
     
@@ -104,12 +120,32 @@ public:
                                                                      const char *session_dictionary_name,
                                                                      lldb::DebuggerSP& debugger,
                                                                      const char* args,
-                                                                     std::string& err_msg,
                                                                      lldb_private::CommandReturnObject& cmd_retobj);
     
-    typedef bool           (*SWIGPythonCallModuleInit)              (const std::string python_module_name,
+    typedef bool           (*SWIGPythonCallModuleInit)              (const char *python_module_name,
                                                                      const char *session_dictionary_name,
                                                                      lldb::DebuggerSP& debugger);
+    
+    typedef bool            (*SWIGPythonScriptKeyword_Process)      (const char* python_function_name,
+                                                                     const char* session_dictionary_name,
+                                                                     lldb::ProcessSP& process,
+                                                                     std::string& output);
+    typedef bool            (*SWIGPythonScriptKeyword_Thread)      (const char* python_function_name,
+                                                                    const char* session_dictionary_name,
+                                                                    lldb::ThreadSP& thread,
+                                                                    std::string& output);
+    
+    typedef bool            (*SWIGPythonScriptKeyword_Target)      (const char* python_function_name,
+                                                                    const char* session_dictionary_name,
+                                                                    lldb::TargetSP& target,
+                                                                    std::string& output);
+
+    typedef bool            (*SWIGPythonScriptKeyword_Frame)      (const char* python_function_name,
+                                                                    const char* session_dictionary_name,
+                                                                    lldb::StackFrameSP& frame,
+                                                                    std::string& output);
+
+    
 
     typedef enum
     {
@@ -261,38 +297,46 @@ public:
     }
     
     virtual lldb::ScriptInterpreterObjectSP
-    CreateSyntheticScriptedProvider (std::string class_name,
+    CreateSyntheticScriptedProvider (const char *class_name,
                                      lldb::ValueObjectSP valobj)
     {
         return lldb::ScriptInterpreterObjectSP();
     }
     
     virtual lldb::ScriptInterpreterObjectSP
-    CreateOSPlugin (std::string class_name,
-                    lldb::ProcessSP process_sp)
+    OSPlugin_CreatePluginObject (const char *class_name,
+                                 lldb::ProcessSP process_sp)
     {
         return lldb::ScriptInterpreterObjectSP();
     }
     
     virtual lldb::ScriptInterpreterObjectSP
-    OSPlugin_QueryForRegisterInfo (lldb::ScriptInterpreterObjectSP object)
+    OSPlugin_RegisterInfo (lldb::ScriptInterpreterObjectSP os_plugin_object_sp)
     {
         return lldb::ScriptInterpreterObjectSP();
     }
     
     virtual lldb::ScriptInterpreterObjectSP
-    OSPlugin_QueryForThreadsInfo (lldb::ScriptInterpreterObjectSP object)
+    OSPlugin_ThreadsInfo (lldb::ScriptInterpreterObjectSP os_plugin_object_sp)
     {
         return lldb::ScriptInterpreterObjectSP();
     }
     
     virtual lldb::ScriptInterpreterObjectSP
-    OSPlugin_QueryForRegisterContextData (lldb::ScriptInterpreterObjectSP object,
-                                          lldb::tid_t thread_id)
+    OSPlugin_RegisterContextData (lldb::ScriptInterpreterObjectSP os_plugin_object_sp,
+                                  lldb::tid_t thread_id)
     {
         return lldb::ScriptInterpreterObjectSP();
     }
-    
+
+    virtual lldb::ScriptInterpreterObjectSP
+    OSPlugin_CreateThread (lldb::ScriptInterpreterObjectSP os_plugin_object_sp,
+                           lldb::tid_t tid,
+                           lldb::addr_t context)
+    {
+        return lldb::ScriptInterpreterObjectSP();
+    }
+
     virtual bool
     GenerateFunction(const char *signature, const StringList &input)
     {
@@ -332,7 +376,7 @@ public:
         return false;
     }
     
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren (const lldb::ScriptInterpreterObjectSP& implementor)
     {
         return 0;
@@ -373,9 +417,55 @@ public:
     }
     
     virtual bool
+    RunScriptFormatKeyword (const char* impl_function,
+                            Process* process,
+                            std::string& output,
+                            Error& error)
+    {
+        error.SetErrorString("unimplemented");
+        return false;
+    }
+
+    virtual bool
+    RunScriptFormatKeyword (const char* impl_function,
+                            Thread* thread,
+                            std::string& output,
+                            Error& error)
+    {
+        error.SetErrorString("unimplemented");
+        return false;
+    }
+    
+    virtual bool
+    RunScriptFormatKeyword (const char* impl_function,
+                            Target* target,
+                            std::string& output,
+                            Error& error)
+    {
+        error.SetErrorString("unimplemented");
+        return false;
+    }
+    
+    virtual bool
+    RunScriptFormatKeyword (const char* impl_function,
+                            StackFrame* frame,
+                            std::string& output,
+                            Error& error)
+    {
+        error.SetErrorString("unimplemented");
+        return false;
+    }
+    
+    virtual bool
     GetDocumentationForItem (const char* item, std::string& dest)
     {
 		dest.clear();
+        return false;
+    }
+    
+    virtual bool
+    CheckObjectExists (const char* name)
+    {
         return false;
     }
 
@@ -394,6 +484,9 @@ public:
     {
         return lldb::ScriptInterpreterObjectSP(new ScriptInterpreterObject(object));
     }
+    
+    virtual std::unique_ptr<ScriptInterpreterLocker>
+    AcquireInterpreterLock ();
     
     const char *
     GetScriptInterpreterPtyName ();

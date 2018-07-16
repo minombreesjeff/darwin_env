@@ -11,6 +11,7 @@
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBAddress.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBEvent.h"
 #include "lldb/API/SBStream.h"
 
 #include "lldb/lldb-types.h"
@@ -34,7 +35,7 @@ SBWatchpoint::SBWatchpoint () :
 SBWatchpoint::SBWatchpoint (const lldb::WatchpointSP &wp_sp) :
     m_opaque_sp (wp_sp)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (log)
     {
@@ -66,7 +67,7 @@ SBWatchpoint::~SBWatchpoint ()
 watch_id_t
 SBWatchpoint::GetID ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     watch_id_t watch_id = LLDB_INVALID_WATCH_ID;
     lldb::WatchpointSP watchpoint_sp(GetSP());
@@ -182,7 +183,7 @@ SBWatchpoint::GetHitCount ()
         count = watchpoint_sp->GetHitCount();
     }
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
         log->Printf ("SBWatchpoint(%p)::GetHitCount () => %u", watchpoint_sp.get(), count);
 
@@ -270,4 +271,28 @@ void
 SBWatchpoint::SetSP (const lldb::WatchpointSP &sp)
 {
     m_opaque_sp = sp;
+}
+
+bool
+SBWatchpoint::EventIsWatchpointEvent (const lldb::SBEvent &event)
+{
+    return Watchpoint::WatchpointEventData::GetEventDataFromEvent(event.get()) != NULL;
+
+}
+
+WatchpointEventType
+SBWatchpoint::GetWatchpointEventTypeFromEvent (const SBEvent& event)
+{
+    if (event.IsValid())
+        return Watchpoint::WatchpointEventData::GetWatchpointEventTypeFromEvent (event.GetSP());
+    return eWatchpointEventTypeInvalidType;
+}
+
+SBWatchpoint
+SBWatchpoint::GetWatchpointFromEvent (const lldb::SBEvent& event)
+{
+    SBWatchpoint sb_watchpoint;
+    if (event.IsValid())
+        sb_watchpoint.m_opaque_sp = Watchpoint::WatchpointEventData::GetWatchpointFromEvent (event.GetSP());
+    return sb_watchpoint;
 }

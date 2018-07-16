@@ -17,6 +17,8 @@
 #include "lldb/Symbol/ClangASTImporter.h"
 #include "lldb/Target/Target.h"
 
+#include "llvm/ADT/SmallSet.h"
+
 namespace lldb_private {
     
 //----------------------------------------------------------------------
@@ -98,7 +100,7 @@ public:
     /// @return
     ///     Whatever SetExternalVisibleDeclsForName returns.
     //------------------------------------------------------------------
-    clang::DeclContextLookupResult 
+    bool
     FindExternalVisibleDeclsByName (const clang::DeclContext *DC,
                                     clang::DeclarationName Name);
     
@@ -248,7 +250,7 @@ public:
         {
         }
         
-        clang::DeclContextLookupResult 
+        bool
         FindExternalVisibleDeclsByName (const clang::DeclContext *DC,
                                         clang::DeclarationName Name)
         {
@@ -297,17 +299,19 @@ public:
         }
         
         ClangASTMetadata *
-        GetMetadata(uintptr_t object)
+        GetMetadata(const void * object)
         {
             return m_original.GetMetadata(object);
         }
         
-        void SetMetadata(uintptr_t object, ClangASTMetadata &metadata)
+        void
+        SetMetadata(const void * object, ClangASTMetadata &metadata)
         {
             return m_original.SetMetadata(object, metadata);
         }
         
-        bool HasMetadata(uintptr_t object)
+        bool
+        HasMetadata(const void * object)
         {
             return m_original.HasMetadata(object);
         }
@@ -425,11 +429,12 @@ protected:
 /// Decls given appropriate type information.
 //----------------------------------------------------------------------
 struct NameSearchContext {
-    ClangASTSource &m_ast_source;                       ///< The AST source making the request
-    llvm::SmallVectorImpl<clang::NamedDecl*> &m_decls;  ///< The list of declarations already constructed
-    ClangASTImporter::NamespaceMapSP m_namespace_map;   ///< The mapping of all namespaces found for this request back to their modules
-    const clang::DeclarationName &m_decl_name;          ///< The name being looked for
-    const clang::DeclContext *m_decl_context;           ///< The DeclContext to put declarations into
+    ClangASTSource &m_ast_source;                               ///< The AST source making the request
+    llvm::SmallVectorImpl<clang::NamedDecl*> &m_decls;          ///< The list of declarations already constructed
+    ClangASTImporter::NamespaceMapSP m_namespace_map;           ///< The mapping of all namespaces found for this request back to their modules
+    const clang::DeclarationName &m_decl_name;                  ///< The name being looked for
+    const clang::DeclContext *m_decl_context;                   ///< The DeclContext to put declarations into
+    llvm::SmallSet <lldb::clang_type_t, 5> m_function_types;    ///< All the types of functions that have been reported, so we don't report conflicts
     
     struct {
         bool variable                   : 1;

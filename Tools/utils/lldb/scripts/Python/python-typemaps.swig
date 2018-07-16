@@ -333,7 +333,7 @@
     if (count >= $2)
         count = $2;
     PyObject* list = PyList_New(count);
-    for (int j = 0; j < count; j++)
+    for (uint32_t j = 0; j < count; j++)
     {
         if ($1[j] < UINT32_MAX)
         {
@@ -441,4 +441,27 @@
       mode[i++] = 'a';
 #endif
    $result = PyFile_FromFile($1, const_cast<char*>(""), mode, fclose);
+}
+
+%typemap(in) (const char* string, int len) {
+    if ($input == Py_None)
+    {
+        $1 = NULL;
+        $2 = 0;
+    }
+    else if (PyUnicode_Check($input))
+    {
+        $1 = PyString_AsString(PyUnicode_AsUTF8String($input));
+        $2 = strlen($1);
+    }
+    else if (PyString_Check($input))
+    {
+        $1 = PyString_AsString($input);
+        $2 = PyString_Size($input);
+    }
+    else
+    {
+        PyErr_SetString(PyExc_TypeError,"not a string-like object");
+        return NULL;
+    }
 }

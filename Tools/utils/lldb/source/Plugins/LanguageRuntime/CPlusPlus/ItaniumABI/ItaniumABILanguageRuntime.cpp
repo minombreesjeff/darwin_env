@@ -32,9 +32,6 @@
 using namespace lldb;
 using namespace lldb_private;
 
-static const char *pluginName = "ItaniumABILanguageRuntime";
-static const char *pluginDesc = "Itanium ABI for the C++ language";
-static const char *pluginShort = "language.itanium";
 static const char *vtable_demangled_prefix = "vtable for ";
 
 bool
@@ -58,6 +55,8 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
     // The second pointer above the "address point" is the "offset_to_top".  We'll use that to get the
     // start of the value object which holds the dynamic type.
     //
+    
+    class_type_or_name.Clear();
     
     // Only a pointer or reference type can have a different dynamic and static type:
     if (CouldHaveDynamicValue (in_value))
@@ -88,10 +87,10 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
             return false;
         }
         
-        uint32_t offset_ptr = 0;
-        lldb::addr_t vtable_address_point = data.GetAddress (&offset_ptr);
+        lldb::offset_t offset = 0;
+        lldb::addr_t vtable_address_point = data.GetAddress (&offset);
             
-        if (offset_ptr == 0)
+        if (offset == 0)
             return false;
         
         // Now find the symbol that contains this address:
@@ -109,7 +108,7 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                     const char *name = symbol->GetMangled().GetDemangledName().AsCString();
                     if (strstr(name, vtable_demangled_prefix) == name)
                     {
-                        LogSP log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+                        Log *log (lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
                         if (log)
                             log->Printf ("0x%16.16" PRIx64 ": static-type = '%s' has vtable symbol '%s'\n",
                                          original_ptr,
@@ -253,8 +252,8 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
                                 return false;
                             }
                             
-                            offset_ptr = 0;
-                            int64_t offset_to_top = data.GetMaxS64(&offset_ptr, process->GetAddressByteSize());
+                            offset = 0;
+                            int64_t offset_to_top = data.GetMaxS64(&offset, process->GetAddressByteSize());
                             
                             // So the dynamic type is a value that starts at offset_to_top
                             // above the original address.
@@ -271,7 +270,7 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
         }
     }
     
-    return false;
+    return class_type_or_name.IsEmpty() == false;
 }
 
 bool
@@ -304,8 +303,8 @@ ItaniumABILanguageRuntime::CreateInstance (Process *process, lldb::LanguageType 
 void
 ItaniumABILanguageRuntime::Initialize()
 {
-    PluginManager::RegisterPlugin (pluginName,
-                                   pluginDesc,
+    PluginManager::RegisterPlugin (GetPluginNameStatic(),
+                                   "Itanium ABI for the C++ language",
                                    CreateInstance);    
 }
 
@@ -315,19 +314,20 @@ ItaniumABILanguageRuntime::Terminate()
     PluginManager::UnregisterPlugin (CreateInstance);
 }
 
+lldb_private::ConstString
+ItaniumABILanguageRuntime::GetPluginNameStatic()
+{
+    static ConstString g_name("itanium");
+    return g_name;
+}
+
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 ItaniumABILanguageRuntime::GetPluginName()
 {
-    return pluginName;
-}
-
-const char *
-ItaniumABILanguageRuntime::GetShortPluginName()
-{
-    return pluginShort;
+    return GetPluginNameStatic();
 }
 
 uint32_t
@@ -335,10 +335,6 @@ ItaniumABILanguageRuntime::GetPluginVersion()
 {
     return 1;
 }
-
-static const char *exception_names[] = { "__cxa_begin_catch", "__cxa_throw", "__cxa_rethrow", "__cxa_allocate_exception"};
-static const int num_throw_names = 3;
-static const int num_expression_throw_names = 1;
 
 BreakpointResolverSP
 ItaniumABILanguageRuntime::CreateExceptionResolver (Breakpoint *bkpt, bool catch_bp, bool throw_bp)
@@ -349,49 +345,70 @@ ItaniumABILanguageRuntime::CreateExceptionResolver (Breakpoint *bkpt, bool catch
 BreakpointResolverSP
 ItaniumABILanguageRuntime::CreateExceptionResolver (Breakpoint *bkpt, bool catch_bp, bool throw_bp, bool for_expressions)
 {
-    BreakpointResolverSP resolver_sp;
-    static const int total_expressions = sizeof (exception_names)/sizeof (char *);
-    
     // One complication here is that most users DON'T want to stop at __cxa_allocate_expression, but until we can do
     // anything better with predicting unwinding the expression parser does.  So we have two forms of the exception
     // breakpoints, one for expressions that leaves out __cxa_allocate_exception, and one that includes it.
     // The SetExceptionBreakpoints does the latter, the CreateExceptionBreakpoint in the runtime the former.
+    static const char *g_catch_name = "__cxa_begin_catch";
+    static const char *g_throw_name1 = "__cxa_throw";
+    static const char *g_throw_name2 = "__cxa_rethrow";
+    static const char *g_exception_throw_name = "__cxa_allocate_exception";
+    std::vector<const char *> exception_names;
+    exception_names.reserve(4);
+    if (catch_bp)
+        exception_names.push_back(g_catch_name);
+
+    if (throw_bp)
+    {
+        exception_names.push_back(g_throw_name1);
+        exception_names.push_back(g_throw_name2);
+    }
+
+    if (for_expressions)
+        exception_names.push_back(g_exception_throw_name);
     
-    uint32_t num_expressions;
-    if (catch_bp && throw_bp)
-    {
-        if (for_expressions)
-            num_expressions = total_expressions;
-        else
-            num_expressions = total_expressions - num_expression_throw_names;
-            
-        resolver_sp.reset (new BreakpointResolverName (bkpt,
-                                                       exception_names,
-                                                       num_expressions,
-                                                       eFunctionNameTypeBase,
-                                                       eLazyBoolNo));
-    }
-    else if (throw_bp)
-    {
-        if (for_expressions)
-            num_expressions = num_throw_names - num_expression_throw_names;
-        else
-            num_expressions = num_throw_names;
-            
-        resolver_sp.reset (new BreakpointResolverName (bkpt,
-                                                       exception_names + 1,
-                                                       num_expressions,
-                                                       eFunctionNameTypeBase,
-                                                       eLazyBoolNo));
-    }
-    else if (catch_bp)
-        resolver_sp.reset (new BreakpointResolverName (bkpt,
-                                                       exception_names,
-                                                       total_expressions - num_throw_names,
-                                                       eFunctionNameTypeBase,
-                                                       eLazyBoolNo));
+    BreakpointResolverSP resolver_sp (new BreakpointResolverName (bkpt,
+                                                                  exception_names.data(),
+                                                                  exception_names.size(),
+                                                                  eFunctionNameTypeBase,
+                                                                  eLazyBoolNo));
 
     return resolver_sp;
+}
+
+
+
+lldb::SearchFilterSP
+ItaniumABILanguageRuntime::CreateExceptionSearchFilter ()
+{
+    Target &target = m_process->GetTarget();
+
+    if (target.GetArchitecture().GetTriple().getVendor() == llvm::Triple::Apple)
+    {
+        // Limit the number of modules that are searched for these breakpoints for
+        // Apple binaries.
+        FileSpecList filter_modules;
+        filter_modules.Append(FileSpec("libc++abi.dylib", false));
+        filter_modules.Append(FileSpec("libSystem.B.dylib", false));
+        return target.GetSearchFilterForModuleList(&filter_modules);
+    }
+    else
+    {
+        return LanguageRuntime::CreateExceptionSearchFilter();
+    }
+}
+
+lldb::BreakpointSP
+ItaniumABILanguageRuntime::CreateExceptionBreakpoint (bool catch_bp,
+                                                      bool throw_bp,
+                                                      bool for_expressions,
+                                                      bool is_internal)
+{
+    Target &target = m_process->GetTarget();
+    FileSpecList filter_modules;
+    BreakpointResolverSP exception_resolver_sp = CreateExceptionResolver (NULL, catch_bp, throw_bp, for_expressions);
+    SearchFilterSP filter_sp (CreateExceptionSearchFilter ());
+    return target.CreateBreakpoint (filter_sp, exception_resolver_sp, is_internal);
 }
 
 void
@@ -408,17 +425,16 @@ ItaniumABILanguageRuntime::SetExceptionBreakpoints ()
     // For the exception breakpoints set by the Expression parser, we'll be a little more aggressive and
     // stop at exception allocation as well.
     
-    if (!m_cxx_exception_bp_sp)
+    if (m_cxx_exception_bp_sp)
     {
-        Target &target = m_process->GetTarget();
-        
-        BreakpointResolverSP exception_resolver_sp = CreateExceptionResolver (NULL, catch_bp, throw_bp, for_expressions);
-        SearchFilterSP filter_sp = target.GetSearchFilterForModule(NULL);
-        
-        m_cxx_exception_bp_sp = target.CreateBreakpoint (filter_sp, exception_resolver_sp, is_internal);
+        m_cxx_exception_bp_sp->SetEnabled (true);
     }
     else
-        m_cxx_exception_bp_sp->SetEnabled (true);
+    {
+        m_cxx_exception_bp_sp = CreateExceptionBreakpoint (catch_bp, throw_bp, for_expressions, is_internal);
+        if (m_cxx_exception_bp_sp)
+            m_cxx_exception_bp_sp->SetBreakpointKind("c++ exception");
+    }
     
 }
 
@@ -428,7 +444,7 @@ ItaniumABILanguageRuntime::ClearExceptionBreakpoints ()
     if (!m_process)
         return;
     
-    if (m_cxx_exception_bp_sp.get())
+    if (m_cxx_exception_bp_sp)
     {
         m_cxx_exception_bp_sp->SetEnabled (false);
     }    

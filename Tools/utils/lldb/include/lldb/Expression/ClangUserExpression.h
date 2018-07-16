@@ -14,7 +14,6 @@
 // C++ Includes
 #include <string>
 #include <map>
-#include <memory>
 #include <vector>
 
 // Other libraries and framework includes
@@ -22,11 +21,12 @@
 
 #include "lldb/lldb-forward.h"
 #include "lldb/lldb-private.h"
+#include "lldb/Core/Address.h"
 #include "lldb/Core/ClangForward.h"
 #include "lldb/Expression/ClangExpression.h"
 #include "lldb/Expression/ClangExpressionVariable.h"
 #include "lldb/Expression/IRForTarget.h"
-#include "lldb/Expression/ProcessDataAllocator.h"
+#include "lldb/Expression/Materializer.h"
 #include "lldb/Symbol/TaggedASTType.h"
 #include "lldb/Target/ExecutionContext.h"
 
@@ -47,7 +47,7 @@ namespace lldb_private
 class ClangUserExpression : public ClangExpression
 {
 public:
-    typedef STD_SHARED_PTR(ClangUserExpression) ClangUserExpressionSP;
+    typedef std::shared_ptr<ClangUserExpression> ClangUserExpressionSP;
     
     enum { kDefaultTimeout = 500000u };
     //------------------------------------------------------------------
@@ -107,6 +107,15 @@ public:
            lldb_private::ExecutionPolicy execution_policy,
            bool keep_result_in_memory);
     
+    bool
+    CanInterpret ()
+    {
+        return m_can_interpret;
+    }
+    
+    bool
+    MatchesContext (ExecutionContext &exe_ctx);
+    
     //------------------------------------------------------------------
     /// Execute the parsed expression
     ///
@@ -117,10 +126,13 @@ public:
     ///     The execution context to use when looking up entities that
     ///     are needed for parsing (locations of variables, etc.)
     ///
-    /// @param[in] discard_on_error
+    /// @param[in] unwind_on_error
     ///     If true, and the execution stops before completion, we unwind the
     ///     function call, and return the program state to what it was before the
     ///     execution.  If false, we leave the program in the stopped state.
+    ///
+    /// @param[in] ignore_breakpoints
+    ///     If true, ignore breakpoints while executing the expression.
     ///
     /// @param[in] shared_ptr_to_me
     ///     This is a shared pointer to this ClangUserExpression.  This is
@@ -150,7 +162,8 @@ public:
     ExecutionResults
     Execute (Stream &error_stream,
              ExecutionContext &exe_ctx,
-             bool discard_on_error,
+             bool unwind_on_error,
+             bool ignore_breakpoints,
              ClangUserExpressionSP &shared_ptr_to_me,
              lldb::ClangExpressionVariableSP &result,
              bool try_all_threads,
@@ -187,7 +200,8 @@ public:
     FinalizeJITExecution (Stream &error_stream,
                           ExecutionContext &exe_ctx,
                           lldb::ClangExpressionVariableSP &result,
-                          lldb::addr_t function_stack_pointer = LLDB_INVALID_ADDRESS);
+                          lldb::addr_t function_stack_bottom = LLDB_INVALID_ADDRESS,
+                          lldb::addr_t function_stack_top = LLDB_INVALID_ADDRESS);
     
     //------------------------------------------------------------------
     /// Return the string that the parser should parse.  Must be a full
@@ -237,16 +251,6 @@ public:
     DeclMap ()
     {
         return m_expr_decl_map.get();
-    }
-    
-    //------------------------------------------------------------------
-    /// Return the object that the parser should use when registering
-    /// local variables.  May be NULL if the Expression doesn't care.
-    //------------------------------------------------------------------
-    ClangExpressionVariableList *
-    LocalVariables ()
-    {
-        return m_local_variables.get();
     }
     
     //------------------------------------------------------------------
@@ -305,9 +309,12 @@ public:
     ///     the expression.  Currently restricted to those languages 
     ///     supported by Clang.
     ///
-    /// @param[in] discard_on_error
+    /// @param[in] unwind_on_error
     ///     True if the thread's state should be restored in the case 
     ///     of an error.
+    ///
+    /// @param[in] ignore_breakpoints
+    ///     If true, ignore breakpoints while executing the expression.
     ///
     /// @param[in] result_type
     ///     If not eResultTypeAny, the type of the desired result.  Will
@@ -341,7 +348,8 @@ public:
               lldb_private::ExecutionPolicy execution_policy,
               lldb::LanguageType language,
               ResultType desired_type,
-              bool discard_on_error,
+              bool unwind_on_error,
+              bool ignore_breakpoints,
               const char *expr_cstr,
               const char *expr_prefix,
               lldb::ValueObjectSP &result_valobj_sp,
@@ -353,7 +361,8 @@ public:
                        lldb_private::ExecutionPolicy execution_policy,
                        lldb::LanguageType language,
                        ResultType desired_type,
-                       bool discard_on_error,
+                       bool unwind_on_error,
+                       bool ignore_breakpoints,
                        const char *expr_cstr,
                        const char *expr_prefix,
                        lldb::ValueObjectSP &result_valobj_sp,
@@ -378,41 +387,19 @@ private:
                                    lldb::addr_t &object_ptr,
                                    lldb::addr_t &cmd_ptr);
     
-    bool
-    EvaluatedStatically ()
-    {
-        return m_evaluated_statically;
-    }
-    
     void
-    InstallContext (ExecutionContext &exe_ctx)
-    {
-        m_process_wp = exe_ctx.GetProcessSP();
-        m_target_wp = exe_ctx.GetTargetSP();
-        m_frame_wp = exe_ctx.GetFrameSP();
-    }
+    InstallContext (ExecutionContext &exe_ctx);
     
     bool
     LockAndCheckContext (ExecutionContext &exe_ctx,
                          lldb::TargetSP &target_sp,
                          lldb::ProcessSP &process_sp,
-                         lldb::StackFrameSP &frame_sp)
-    {
-        target_sp = m_target_wp.lock();
-        process_sp = m_process_wp.lock();
-        frame_sp = m_frame_wp.lock();
-        
-        if ((target_sp && target_sp.get() != exe_ctx.GetTargetPtr()) || 
-            (process_sp && process_sp.get() != exe_ctx.GetProcessPtr()) ||
-            (frame_sp && frame_sp.get() != exe_ctx.GetFramePtr()))
-            return false;
-        
-        return true;
-    }
+                         lldb::StackFrameSP &frame_sp);
     
-    lldb::TargetWP                              m_target_wp;            ///< The target used as the context for the expression.
     lldb::ProcessWP                             m_process_wp;           ///< The process used as the context for the expression.
-    lldb::StackFrameWP                          m_frame_wp;             ///< The stack frame used as context for the expression.
+    Address                                     m_address;              ///< The address the process is stopped in.
+    lldb::addr_t                                m_stack_frame_bottom;   ///< The bottom of the allocated stack frame.
+    lldb::addr_t                                m_stack_frame_top;      ///< The top of the allocated stack frame.
     
     std::string                                 m_expr_text;            ///< The text of the expression, as typed by the user
     std::string                                 m_expr_prefix;          ///< The text of the translation-level definitions, as provided by the user
@@ -422,11 +409,10 @@ private:
     std::string                                 m_transformed_text;     ///< The text of the expression, as send to the parser
     ResultType                                  m_desired_type;         ///< The type to coerce the expression's result to.  If eResultTypeAny, inferred from the expression.
     
-    std::auto_ptr<ClangExpressionDeclMap>       m_expr_decl_map;        ///< The map to use when parsing and materializing the expression.
-    std::auto_ptr<ClangExpressionVariableList>  m_local_variables;      ///< The local expression variables, if the expression is DWARF.
-    std::auto_ptr<ProcessDataAllocator>         m_data_allocator;       ///< The allocator that the parser uses to place strings for use by JIT-compiled code.
-    
-    std::auto_ptr<ASTResultSynthesizer>         m_result_synthesizer;   ///< The result synthesizer, if one is needed.
+    std::unique_ptr<ClangExpressionDeclMap>      m_expr_decl_map;        ///< The map to use when parsing the expression.
+    std::unique_ptr<IRExecutionUnit>             m_execution_unit_ap;    ///< The execution unit the expression is stored in.
+    std::unique_ptr<Materializer>                m_materializer_ap;      ///< The materializer to use when running the expression.
+    std::unique_ptr<ASTResultSynthesizer>        m_result_synthesizer;   ///< The result synthesizer, if one is needed.
     
     bool                                        m_enforce_valid_object; ///< True if the expression parser should enforce the presence of a valid class pointer in order to generate the expression as a method.
     bool                                        m_cplusplus;            ///< True if the expression is compiled as a C++ member function (true if it was parsed when exe_ctx was in a C++ method).
@@ -436,8 +422,9 @@ private:
     bool                                        m_const_object;         ///< True if "this" is const.
     Target                                     *m_target;               ///< The target for storing persistent data like types and variables.
     
-    bool                                        m_evaluated_statically; ///< True if the expression could be evaluated statically; false otherwise.
-    lldb::ClangExpressionVariableSP             m_const_result;         ///< The statically-computed result of the expression.  NULL if it could not be computed statically or the expression has side effects.
+    bool                                        m_can_interpret;        ///< True if the expression could be evaluated statically; false otherwise.
+    lldb::addr_t                                m_materialized_address; ///< The address at which the arguments to the expression have been materialized.
+    Materializer::DematerializerSP              m_dematerializer_sp;    ///< The dematerializer.
 };
     
 } // namespace lldb_private

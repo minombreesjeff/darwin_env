@@ -318,58 +318,109 @@ File::GetFileSpec (FileSpec &file_spec) const
     return error;
 }
 
-Error
-File::SeekFromStart (off_t& offset)
+off_t
+File::SeekFromStart (off_t offset, Error *error_ptr)
 {
-    Error error;
+    off_t result = 0;
     if (DescriptorIsValid())
     {
-        offset = ::lseek (m_descriptor, offset, SEEK_SET);
+        result = ::lseek (m_descriptor, offset, SEEK_SET);
 
-        if (offset == -1)
-            error.SetErrorToErrno();
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    else 
+    else if (StreamIsValid ())
     {
-        error.SetErrorString("invalid file handle");
+        result = ::fseek(m_stream, offset, SEEK_SET);
+        
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    return error;
+    else if (error_ptr)
+    {
+        error_ptr->SetErrorString("invalid file handle");
+    }
+    return result;
 }
 
-Error
-File::SeekFromCurrent (off_t& offset)
+off_t
+File::SeekFromCurrent (off_t offset,  Error *error_ptr)
 {
-    Error error;
+    off_t result = -1;
     if (DescriptorIsValid())
     {
-        offset = ::lseek (m_descriptor, offset, SEEK_CUR);
+        result = ::lseek (m_descriptor, offset, SEEK_CUR);
         
-        if (offset == -1)
-            error.SetErrorToErrno();
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    else 
+    else if (StreamIsValid ())
     {
-        error.SetErrorString("invalid file handle");
+        result = ::fseek(m_stream, offset, SEEK_CUR);
+        
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    return error;
+    else if (error_ptr)
+    {
+        error_ptr->SetErrorString("invalid file handle");
+    }
+    return result;
 }
 
-Error
-File::SeekFromEnd (off_t& offset)
+off_t
+File::SeekFromEnd (off_t offset, Error *error_ptr)
 {
-    Error error;
+    off_t result = -1;
     if (DescriptorIsValid())
     {
-        offset = ::lseek (m_descriptor, offset, SEEK_END);
+        result = ::lseek (m_descriptor, offset, SEEK_END);
         
-        if (offset == -1)
-            error.SetErrorToErrno();
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    else 
+    else if (StreamIsValid ())
     {
-        error.SetErrorString("invalid file handle");
+        result = ::fseek(m_stream, offset, SEEK_END);
+        
+        if (error_ptr)
+        {
+            if (result == -1)
+                error_ptr->SetErrorToErrno();
+            else
+                error_ptr->Clear();
+        }
     }
-    return error;
+    else if (error_ptr)
+    {
+        error_ptr->SetErrorString("invalid file handle");
+    }
+    return result;
 }
 
 Error
@@ -556,7 +607,7 @@ File::Read (size_t &num_bytes, off_t &offset, bool null_terminate, DataBufferSP 
                     if (num_bytes > bytes_left)
                         num_bytes = bytes_left;
                         
-                    std::auto_ptr<DataBufferHeap> data_heap_ap;
+                    std::unique_ptr<DataBufferHeap> data_heap_ap;
                     data_heap_ap.reset(new DataBufferHeap(num_bytes + (null_terminate ? 1 : 0), '\0'));
                         
                     if (data_heap_ap.get())
@@ -625,12 +676,12 @@ File::Write (const void *buf, size_t &num_bytes, off_t &offset)
 //------------------------------------------------------------------
 // Print some formatted output to the stream.
 //------------------------------------------------------------------
-int
+size_t
 File::Printf (const char *format, ...)
 {
     va_list args;
     va_start (args, format);
-    int result = PrintfVarArg (format, args);
+    size_t result = PrintfVarArg (format, args);
     va_end (args);
     return result;
 }
@@ -638,10 +689,10 @@ File::Printf (const char *format, ...)
 //------------------------------------------------------------------
 // Print some formatted output to the stream.
 //------------------------------------------------------------------
-int
+size_t
 File::PrintfVarArg (const char *format, va_list args)
 {
-    int result = 0;
+    size_t result = 0;
     if (DescriptorIsValid())
     {
         char *s = NULL;

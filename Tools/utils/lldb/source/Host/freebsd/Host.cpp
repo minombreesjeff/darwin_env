@@ -77,6 +77,13 @@ Host::ThreadCreated (const char *thread_name)
     }
 }
 
+std::string
+Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
+{
+    std::string thread_name;
+    return thread_name;
+}
+
 void
 Host::Backtrace (Stream &strm, uint32_t max_frames)
 {
@@ -121,8 +128,8 @@ Host::GetEnvironment (StringList &env)
 }
 
 bool
-Host::GetOSVersion(uint32_t &major, 
-                   uint32_t &minor, 
+Host::GetOSVersion(uint32_t &major,
+                   uint32_t &minor,
                    uint32_t &update)
 {
     struct utsname un;
@@ -131,8 +138,8 @@ Host::GetOSVersion(uint32_t &major,
     if (uname(&un) < 0)
         return false;
 
-    status = sscanf(un.release, "%u.%u-%u", &major, &minor, &update);
-    return status == 3;
+    status = sscanf(un.release, "%u.%u", &major, &minor);
+    return status == 2;
 }
 
 Error
@@ -185,7 +192,7 @@ GetFreeBSDProcessArgs (const ProcessInstanceInfoMatch *match_info_ptr,
         if (::sysctl (mib, 4, arg_data, &arg_data_size , NULL, 0) == 0)
         {
             DataExtractor data (arg_data, arg_data_size, lldb::endian::InlHostByteOrder(), sizeof(void *));
-            uint32_t offset = 0;
+            lldb::offset_t offset = 0;
             const char *cstr;
 
             cstr = data.GetCStr (&offset);
@@ -193,7 +200,7 @@ GetFreeBSDProcessArgs (const ProcessInstanceInfoMatch *match_info_ptr,
             {
                 process_info.GetExecutableFile().SetFile(cstr, false);
 
-                if (!(match_info_ptr == NULL || 
+                if (!(match_info_ptr == NULL ||
                     NameMatches (process_info.GetExecutableFile().GetFilename().GetCString(),
                                  match_info_ptr->GetNameMatchType(),
                                  match_info_ptr->GetProcessInfo().GetName())))
@@ -218,7 +225,7 @@ GetFreeBSDProcessArgs (const ProcessInstanceInfoMatch *match_info_ptr,
                         return true;
                 }
             }
-        } 
+        }
     }
     return false;
 }
@@ -240,7 +247,7 @@ GetFreeBSDProcessUserAndGroup(ProcessInstanceInfo &process_info)
     struct kinfo_proc proc_kinfo;
     size_t proc_kinfo_size;
 
-    if (process_info.ProcessIDIsValid()) 
+    if (process_info.ProcessIDIsValid())
     {
         int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID,
             (int)process_info.GetProcessID() };
@@ -294,7 +301,7 @@ Host::GetAuxvData(lldb_private::Process *process)
    struct ps_strings ps_strings;
    struct ptrace_io_desc pid;
    DataBufferSP buf_sp;
-   std::auto_ptr<DataBufferHeap> buf_ap(new DataBufferHeap(1024, 0));
+   std::unique_ptr<DataBufferHeap> buf_ap(new DataBufferHeap(1024, 0));
 
    if (::sysctl(mib, 2, &ps_strings_addr, &ps_strings_size, NULL, 0) == 0) {
            pid.piod_op = PIOD_READ_D;

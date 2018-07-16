@@ -34,7 +34,7 @@ public:
     static void
     Terminate();
     
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
     
     static const char *
@@ -52,11 +52,8 @@ public:
     //------------------------------------------------------------------
     // lldb_private::PluginInterface Methods
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();
@@ -65,7 +62,8 @@ public:
     // lldb_private::OperatingSystem Methods
     //------------------------------------------------------------------
     virtual bool
-    UpdateThreadList (lldb_private::ThreadList &old_thread_list, 
+    UpdateThreadList (lldb_private::ThreadList &old_thread_list,
+                      lldb_private::ThreadList &real_thread_list,
                       lldb_private::ThreadList &new_thread_list);
     
     virtual void
@@ -78,19 +76,32 @@ public:
     virtual lldb::StopInfoSP
     CreateThreadStopReason (lldb_private::Thread *thread);
 
+    //------------------------------------------------------------------
+    // Method for lazy creation of threads on demand
+    //------------------------------------------------------------------
+    virtual lldb::ThreadSP
+    CreateThread (lldb::tid_t tid, lldb::addr_t context);
+
 protected:
     
     bool IsValid() const
     {
-        return m_python_object != NULL;
+        return m_python_object_sp && m_python_object_sp->GetObject() != NULL;
     }
+    
+    lldb::ThreadSP
+    CreateThreadFromThreadInfo (lldb_private::PythonDictionary &thread_dict,
+                                lldb_private::ThreadList &core_thread_list,
+                                lldb_private::ThreadList &old_thread_list,
+                                bool *did_create_ptr);
+
     DynamicRegisterInfo *
     GetDynamicRegisterInfo ();
 
     lldb::ValueObjectSP m_thread_list_valobj_sp;
-    std::auto_ptr<DynamicRegisterInfo> m_register_info_ap;
+    std::unique_ptr<DynamicRegisterInfo> m_register_info_ap;
     lldb_private::ScriptInterpreter *m_interpreter;
-    void* m_python_object;
+    lldb::ScriptInterpreterObjectSP m_python_object_sp;
     
 };
 

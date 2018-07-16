@@ -13,6 +13,9 @@
 
 #include <stdarg.h>
 
+#include <map>
+#include <string>
+
 #include "lldb/lldb-private.h"
 #include "lldb/Core/StringList.h"
 
@@ -97,6 +100,16 @@ public:
     //------------------------------------------------------------------
     static lldb::ByteOrder
     GetByteOrder ();
+
+    //------------------------------------------------------------------
+    /// Returns the number of CPUs on this current host.
+    ///
+    /// @return
+    ///     Number of CPUs on this current host, or zero if the number
+    ///     of CPUs can't be determined on this host.
+    //------------------------------------------------------------------
+    static uint32_t
+    GetNumberCPUS ();
 
     static bool
     GetOSVersion (uint32_t &major, 
@@ -266,11 +279,9 @@ public:
     ///     The thread ID for which we are trying retrieve the name of.
     ///
     /// @return
-    ///     A NULL terminate C string name that is owned by a static
-    ///     global string pool, or NULL if there is no matching thread
-    ///     name. This string does not need to be freed.
+    ///     A std::string containing the thread name.
     //------------------------------------------------------------------
-    static const char *
+    static std::string
     GetThreadName (lldb::pid_t pid, lldb::tid_t tid);
 
     //------------------------------------------------------------------
@@ -289,7 +300,7 @@ public:
     ///     \b true if the thread name was able to be set, \b false
     ///     otherwise.
     //------------------------------------------------------------------
-    static void
+    static bool
     SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name);
 
     //------------------------------------------------------------------
@@ -404,7 +415,12 @@ public:
     static uint32_t
     FindProcesses (const ProcessInstanceInfoMatch &match_info,
                    ProcessInstanceInfoList &proc_infos);
-    
+
+    typedef std::map<lldb::pid_t, bool> TidMap;
+    typedef std::pair<lldb::pid_t, bool> TidPair;
+    static bool
+    FindProcessThreads (const lldb::pid_t pid, TidMap &tids_to_attach);
+
     static bool
     GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &proc_info);
     

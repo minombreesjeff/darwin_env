@@ -30,14 +30,14 @@ public:
     {
     }
     
-    clang::DeclContextLookupResult
+    bool
     FindExternalVisibleDeclsByName (const clang::DeclContext *decl_ctx,
                                     clang::DeclarationName name)
     {
         static unsigned int invocation_id = 0;
         unsigned int current_id = invocation_id++;
 
-        lldb::LogSP log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
+        Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
 
         if (log)
         {
@@ -61,11 +61,14 @@ public:
             if (!m_type_vendor.FinishDecl(non_const_interface_decl))
                 break;
                         
-            return non_const_interface_decl->lookup(name);
+            clang::DeclContext::lookup_const_result result = non_const_interface_decl->lookup(name);
+            
+            return (result.size() != 0);
         }
         while(0);
         
-        return clang::DeclContextLookupResult();
+        SetNoExternalVisibleDeclsForName(decl_ctx, name);
+        return false;
     }
     
     clang::ExternalLoadResult
@@ -82,7 +85,7 @@ public:
         static unsigned int invocation_id = 0;
         unsigned int current_id = invocation_id++;
 
-        lldb::LogSP log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
+        Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
         
         if (log)
         {
@@ -112,7 +115,7 @@ public:
         static unsigned int invocation_id = 0;
         unsigned int current_id = invocation_id++;
         
-        lldb::LogSP log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
+        Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
         
         if (log)
         {
@@ -126,6 +129,8 @@ public:
             ASTDumper dumper((clang::Decl*)interface_decl);
             dumper.ToLog(log, "    [CT] ");
         }
+        
+        m_type_vendor.FinishDecl(interface_decl);
                 
         if (log)
         {
@@ -177,7 +182,7 @@ AppleObjCTypeVendor::GetDeclForISA(ObjCLanguageRuntime::ObjCISA isa)
     
     clang::ASTContext *ast_ctx = m_ast_ctx.getASTContext();
     
-    ObjCLanguageRuntime::ClassDescriptorSP descriptor = m_runtime.GetClassDescriptor(isa);
+    ObjCLanguageRuntime::ClassDescriptorSP descriptor = m_runtime.GetClassDescriptorFromISA(isa);
     
     if (!descriptor)
         return NULL;
@@ -193,10 +198,11 @@ AppleObjCTypeVendor::GetDeclForISA(ObjCLanguageRuntime::ObjCISA isa)
                                                                                 NULL);
     
     ClangASTMetadata meta_data;
-    meta_data.SetISAPtr((uint64_t) isa);
-    m_external_source->SetMetadata((uintptr_t)new_iface_decl, meta_data);
+    meta_data.SetISAPtr(isa);
+    m_external_source->SetMetadata(new_iface_decl, meta_data);
     
     new_iface_decl->setHasExternalVisibleStorage();
+    new_iface_decl->setHasExternalLexicalStorage();
     
     ast_ctx->getTranslationUnitDecl()->addDecl(new_iface_decl);
     
@@ -320,8 +326,6 @@ public:
     
     clang::ObjCMethodDecl *BuildMethod (clang::ObjCInterfaceDecl *interface_decl, const char *name, bool instance)
     {
-        lldb::LogSP log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
-        
         if (!m_is_valid || m_type_vector.size() < 3)
             return NULL;
         
@@ -492,9 +496,9 @@ private:
 bool
 AppleObjCTypeVendor::FinishDecl(clang::ObjCInterfaceDecl *interface_decl)
 {
-    lldb::LogSP log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
+    Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
     
-    ClangASTMetadata *metadata = m_external_source->GetMetadata((uintptr_t)interface_decl);
+    ClangASTMetadata *metadata = m_external_source->GetMetadata(interface_decl);
     ObjCLanguageRuntime::ObjCISA objc_isa = 0;
     if (metadata)
      objc_isa = metadata->GetISAPtr();
@@ -508,8 +512,9 @@ AppleObjCTypeVendor::FinishDecl(clang::ObjCInterfaceDecl *interface_decl)
     interface_decl->startDefinition();
     
     interface_decl->setHasExternalVisibleStorage(false);
+    interface_decl->setHasExternalLexicalStorage(false);
     
-    ObjCLanguageRuntime::ClassDescriptorSP descriptor = m_runtime.GetClassDescriptor(objc_isa);
+    ObjCLanguageRuntime::ClassDescriptorSP descriptor = m_runtime.GetClassDescriptorFromISA(objc_isa);
     
     if (!descriptor)
         return false;
@@ -522,7 +527,7 @@ AppleObjCTypeVendor::FinishDecl(clang::ObjCInterfaceDecl *interface_decl)
         interface_decl->setSuperClass(superclass_decl);
     };
     
-    auto instance_method_func = [log, interface_decl, this](const char *name, const char *types)
+    auto instance_method_func = [log, interface_decl, this](const char *name, const char *types) -> bool
     {        
         ObjCRuntimeMethodType method_type(types);
         
@@ -537,7 +542,7 @@ AppleObjCTypeVendor::FinishDecl(clang::ObjCInterfaceDecl *interface_decl)
         return false;
     };
     
-    auto class_method_func = [log, interface_decl, this](const char *name, const char *types)
+    auto class_method_func = [log, interface_decl, this](const char *name, const char *types) -> bool
     {
         ObjCRuntimeMethodType method_type(types);
         
@@ -587,7 +592,7 @@ AppleObjCTypeVendor::FindTypes (const ConstString &name,
     static unsigned int invocation_id = 0;
     unsigned int current_id = invocation_id++;
     
-    lldb::LogSP log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
+    Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));  // FIXME - a more appropriate log channel?
     
     if (log)
         log->Printf("AppleObjCTypeVendor::FindTypes [%u] ('%s', %s, %u, )",
@@ -612,9 +617,9 @@ AppleObjCTypeVendor::FindTypes (const ConstString &name,
         
         clang::DeclContext::lookup_const_result lookup_result = ast_ctx->getTranslationUnitDecl()->lookup(decl_name);
         
-        if (lookup_result.first != lookup_result.second)
+        if (!lookup_result.empty())
         {
-            if (const clang::ObjCInterfaceDecl *result_iface_decl = llvm::dyn_cast<clang::ObjCInterfaceDecl>(*lookup_result.first))
+            if (const clang::ObjCInterfaceDecl *result_iface_decl = llvm::dyn_cast<clang::ObjCInterfaceDecl>(lookup_result[0]))
             {
                 clang::QualType result_iface_type = ast_ctx->getObjCInterfaceType(result_iface_decl);
                 
@@ -623,7 +628,7 @@ AppleObjCTypeVendor::FindTypes (const ConstString &name,
                     ASTDumper dumper(result_iface_type);
                     
                     uint64_t isa_value = LLDB_INVALID_ADDRESS;
-                    ClangASTMetadata *metadata = m_external_source->GetMetadata((uintptr_t)result_iface_decl);
+                    ClangASTMetadata *metadata = m_external_source->GetMetadata(result_iface_decl);
                     if (metadata)
                         isa_value = metadata->GetISAPtr();
                     

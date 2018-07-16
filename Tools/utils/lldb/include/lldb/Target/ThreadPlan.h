@@ -92,7 +92,8 @@ namespace lldb_private {
 //  When the target process is about to be restarted, the plan's WillResume method is called,
 //  giving the plan a chance to prepare for the run.  If WillResume returns false, then the
 //  process is not restarted.  Be sure to set an appropriate error value in the Process if
-//  you have to do this.
+//  you have to do this.  Note, ThreadPlans actually implement DoWillResume, WillResume wraps that call.
+//
 //  Next the "StopOthers" method of all the threads are polled, and if one thread's Current plan
 //  returns "true" then only that thread gets to run.  If more than one returns "true" the threads that want to run solo
 //  get run one by one round robin fashion.  Otherwise all are let to run.
@@ -115,6 +116,8 @@ namespace lldb_private {
 //  figure out what to do about the plans below it in the stack.  If the stop is recoverable, then the plan that
 //  understands it can just do what it needs to set up to restart, and then continue.
 //  Otherwise, the plan that understood the stop should call DiscardPlanStack to clean up the stack below it.
+//  Note, plans actually implement DoPlanExplainsStop, the result is cached in PlanExplainsStop so the DoPlanExplainsStop
+//  itself will only get called once per stop.
 //
 //  Master plans:
 //
@@ -235,6 +238,7 @@ public:
     typedef enum
     {
         eKindGeneric,
+        eKindNull,
         eKindBase,
         eKindCallFunction,
         eKindStepInstruction,
@@ -331,9 +335,6 @@ public:
     virtual bool
     ValidatePlan (Stream *error) = 0;
 
-    virtual bool
-    PlanExplainsStop () = 0;
-    
     bool
     TracerExplainsStop ()
     {
@@ -347,6 +348,9 @@ public:
     lldb::StateType
     RunState ();
 
+    bool
+    PlanExplainsStop (Event *event_ptr);
+    
     virtual bool
     ShouldStop (Event *event_ptr) = 0;
     
@@ -371,9 +375,11 @@ public:
     virtual bool
     StopOthers ();
 
-    virtual bool
+    // This is the wrapper for DoWillResume that does generic ThreadPlan logic, then
+    // calls DoWillResume.
+    bool
     WillResume (lldb::StateType resume_state, bool current_plan);
-
+    
     virtual bool
     WillStop () = 0;
 
@@ -405,6 +411,13 @@ public:
     virtual bool
     MischiefManaged ();
 
+    virtual void
+    ThreadDestroyed ()
+    {
+        // Any cleanup that a plan might want to do in case the thread goes away
+        // in the middle of the plan being queued on a thread can be done here.
+    }
+
     bool
     GetPrivate ()
     {
@@ -423,7 +436,7 @@ public:
     virtual void
     WillPop();
 
-    // This pushes \a plan onto the plan stack of the current plan's thread.
+    // This pushes a plan onto the plan stack of the current plan's thread.
     void
     PushPlan (lldb::ThreadPlanSP &thread_plan_sp)
     {
@@ -504,12 +517,24 @@ public:
         // Nothing to do in general.
         return true;
     }
+
+    virtual bool
+    IsVirtualStep()
+    {
+        return false;
+    }
     
 protected:
     //------------------------------------------------------------------
     // Classes that inherit from ThreadPlan can see and modify these
     //------------------------------------------------------------------
 
+    virtual bool
+    DoWillResume (lldb::StateType resume_state, bool current_plan) { return true; };
+
+    virtual bool
+    DoPlanExplainsStop (Event *event_ptr) = 0;
+    
     // This gets the previous plan to the current plan (for forwarding requests).
     // This is mostly a formal requirement, it allows us to make the Thread's
     // GetPreviousPlan protected, but only friend ThreadPlan to thread.
@@ -520,19 +545,31 @@ protected:
         return m_thread.GetPreviousPlan (this);
     }
     
-    // This forwards the private Thread::GetPrivateStopReason which is generally what
+    // This forwards the private Thread::GetPrivateStopInfo which is generally what
     // ThreadPlan's need to know.
     
     lldb::StopInfoSP 
-    GetPrivateStopReason()
+    GetPrivateStopInfo()
     {
-        return m_thread.GetPrivateStopReason ();
+        return m_thread.GetPrivateStopInfo ();
     }
     
     void
     SetStopInfo (lldb::StopInfoSP stop_reason_sp)
     {
         m_thread.SetStopInfo (stop_reason_sp);
+    }
+    
+    void
+    CachePlanExplainsStop (bool does_explain)
+    {
+        m_cached_plan_explains_stop = does_explain ? eLazyBoolYes : eLazyBoolNo;
+    }
+    
+    LazyBool
+    GetCachedPlanExplainsStop () const
+    {
+        return m_cached_plan_explains_stop;
     }
     
     virtual lldb::StateType
@@ -551,6 +588,7 @@ private:
     ThreadPlanKind m_kind;
     std::string m_name;
     Mutex m_plan_complete_mutex;
+    LazyBool m_cached_plan_explains_stop;
     bool m_plan_complete;
     bool m_plan_private;
     bool m_okay_to_discard;
@@ -561,6 +599,57 @@ private:
 
 private:
     DISALLOW_COPY_AND_ASSIGN(ThreadPlan);
+};
+
+//----------------------------------------------------------------------
+// ThreadPlanNull:
+// Threads are assumed to always have at least one plan on the plan stack.
+// This is put on the plan stack when a thread is destroyed so that if you
+// accidentally access a thread after it is destroyed you won't crash.
+// But asking questions of the ThreadPlanNull is definitely an error.
+//----------------------------------------------------------------------
+
+class ThreadPlanNull : public ThreadPlan
+{
+public:
+    ThreadPlanNull (Thread &thread);
+    virtual ~ThreadPlanNull ();
+    
+    virtual void
+    GetDescription (Stream *s,
+                    lldb::DescriptionLevel level);
+
+    virtual bool
+    ValidatePlan (Stream *error);
+
+    virtual bool
+    ShouldStop (Event *event_ptr);
+
+    virtual bool
+    MischiefManaged ();
+
+    virtual bool
+    WillStop ();
+
+    virtual bool
+    IsBasePlan()
+    {
+        return true;
+    }
+    
+    virtual bool
+    OkayToDiscard ()
+    {
+        return false;
+    }
+
+protected:
+    virtual bool
+    DoPlanExplainsStop (Event *event_ptr);
+    
+    virtual lldb::StateType
+    GetPlanRunState ();
+    
 };
 
 

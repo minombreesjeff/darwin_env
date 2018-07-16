@@ -19,6 +19,7 @@ class DeadStripTestCase(TestBase):
         self.buildDsym()
         self.dead_strip()
 
+    @skipIfLinux # The -dead_strip linker option isn't supported on Linux versions of ld.
     @dwarf_test
     def test_with_dwarf(self):
         """Test breakpoint works correctly with dead-code stripping."""
@@ -31,13 +32,13 @@ class DeadStripTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break by function name f1 (live code).
-        lldbutil.run_break_set_by_symbol (self, "f1", extra_options="-s a.out", num_expected_locations=1, module_name="a.out")
+        lldbutil.run_break_set_by_symbol (self, "f1", num_expected_locations=1, module_name="a.out")
 
         # Break by function name f2 (dead code).
-        lldbutil.run_break_set_by_symbol (self, "f2", extra_options="-s a.out", num_expected_locations=0)
+        lldbutil.run_break_set_by_symbol (self, "f2", num_expected_locations=0, module_name="a.out")
 
         # Break by function name f3 (live code).
-        lldbutil.run_break_set_by_symbol (self, "f3", extra_options="-s a.out", num_expected_locations=1, module_name="a.out")
+        lldbutil.run_break_set_by_symbol (self, "f3", num_expected_locations=1, module_name="a.out")
 
         self.runCmd("run", RUN_SUCCEEDED)
 

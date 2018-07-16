@@ -16,12 +16,17 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Interpreter/Args.h"
-#include "lldb/Core/FormatManager.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
+#include "lldb/Target/Process.h"
+//#include "lldb/Target/RegisterContext.h"
+#include "lldb/Target/StackFrame.h"
+#include "lldb/Target/Target.h"
+//#include "lldb/Target/Thread.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -93,15 +98,15 @@ Args::~Args ()
 void
 Args::Dump (Stream *s)
 {
-    const int argc = m_argv.size();
-    for (int i=0; i<argc; ++i)
+    const size_t argc = m_argv.size();
+    for (size_t i=0; i<argc; ++i)
     {
         s->Indent();
         const char *arg_cstr = m_argv[i];
         if (arg_cstr)
-            s->Printf("argv[%i]=\"%s\"\n", i, arg_cstr);
+            s->Printf("argv[%zi]=\"%s\"\n", i, arg_cstr);
         else
-            s->Printf("argv[%i]=NULL\n", i);
+            s->Printf("argv[%zi]=NULL\n", i);
     }
     s->EOL();
 }
@@ -110,8 +115,8 @@ bool
 Args::GetCommandString (std::string &command) const
 {
     command.clear();
-    int argc = GetArgumentCount();
-    for (int i=0; i<argc; ++i)
+    const size_t argc = GetArgumentCount();
+    for (size_t i=0; i<argc; ++i)
     {
         if (i > 0)
             command += ' ';
@@ -124,7 +129,7 @@ bool
 Args::GetQuotedCommandString (std::string &command) const
 {
     command.clear ();
-    size_t argc = GetArgumentCount ();
+    const size_t argc = GetArgumentCount();
     for (size_t i = 0; i < argc; ++i)
     {
         if (i > 0)
@@ -226,7 +231,7 @@ Args::SetCommandString (const char *command)
                             if (quote_char == '\0')
                             {
                                 arg.append (arg_piece_start, arg_end - arg_piece_start);
-                                if (arg_end + 1 != '\0')
+                                if (arg_end[1] != '\0')
                                 {
                                     arg.append (arg_end + 1, 1);
                                     arg_pos = arg_end + 2;
@@ -566,7 +571,7 @@ Args::DeleteArgumentAtIndex (size_t idx)
 }
 
 void
-Args::SetArguments (int argc, const char **argv)
+Args::SetArguments (size_t argc, const char **argv)
 {
     // m_argv will be rebuilt in UpdateArgvFromArgs() below, so there is
     // no need to clear it here.
@@ -650,11 +655,11 @@ Args::ParseOptions (Options &options)
     while (1)
     {
         int long_options_index = -1;
-        val = ::getopt_long(GetArgumentCount(),
-                            GetArgumentVector(),
-                            sstr.GetData(),
-                            long_options,
-                            &long_options_index);
+        val = ::getopt_long_only(GetArgumentCount(),
+                                 GetArgumentVector(),
+                                 sstr.GetData(),
+                                 long_options,
+                                 &long_options_index);
         if (val == -1)
             break;
 
@@ -718,11 +723,12 @@ Args::StringToSInt32 (const char *s, int32_t fail_value, int base, bool *success
     if (s && s[0])
     {
         char *end = NULL;
-        int32_t uval = ::strtol (s, &end, base);
+        const long sval = ::strtol (s, &end, base);
         if (*end == '\0')
         {
-            if (success_ptr) *success_ptr = true;
-            return uval; // All characters were used, return the result
+            if (success_ptr)
+                *success_ptr = ((sval <= INT32_MAX) && (sval >= INT32_MIN));
+            return (int32_t)sval; // All characters were used, return the result
         }
     }
     if (success_ptr) *success_ptr = false;
@@ -735,11 +741,12 @@ Args::StringToUInt32 (const char *s, uint32_t fail_value, int base, bool *succes
     if (s && s[0])
     {
         char *end = NULL;
-        uint32_t uval = ::strtoul (s, &end, base);
+        const unsigned long uval = ::strtoul (s, &end, base);
         if (*end == '\0')
         {
-            if (success_ptr) *success_ptr = true;
-            return uval; // All characters were used, return the result
+            if (success_ptr)
+                *success_ptr = (uval <= UINT32_MAX);
+            return (uint32_t)uval; // All characters were used, return the result
         }
     }
     if (success_ptr) *success_ptr = false;
@@ -782,27 +789,148 @@ Args::StringToUInt64 (const char *s, uint64_t fail_value, int base, bool *succes
 }
 
 lldb::addr_t
-Args::StringToAddress (const char *s, lldb::addr_t fail_value, bool *success_ptr)
+Args::StringToAddress (const ExecutionContext *exe_ctx, const char *s, lldb::addr_t fail_value, Error *error_ptr)
 {
+    bool error_set = false;
     if (s && s[0])
     {
         char *end = NULL;
         lldb::addr_t addr = ::strtoull (s, &end, 0);
         if (*end == '\0')
         {
-            if (success_ptr) *success_ptr = true;
+            if (error_ptr)
+                error_ptr->Clear();
             return addr; // All characters were used, return the result
         }
         // Try base 16 with no prefix...
         addr = ::strtoull (s, &end, 16);
         if (*end == '\0')
         {
-            if (success_ptr) *success_ptr = true;
+            if (error_ptr)
+                error_ptr->Clear();
             return addr; // All characters were used, return the result
         }
+        
+        if (exe_ctx)
+        {
+            Target *target = exe_ctx->GetTargetPtr();
+            if (target)
+            {
+                lldb::ValueObjectSP valobj_sp;
+                EvaluateExpressionOptions options;
+                options.SetCoerceToId(false);
+                options.SetUnwindOnError(true);
+                options.SetKeepInMemory(false);
+                options.SetRunOthers(true);
+                
+                ExecutionResults expr_result = target->EvaluateExpression(s,
+                                                                          exe_ctx->GetFramePtr(),
+                                                                          valobj_sp,
+                                                                          options);
+
+                bool success = false;
+                if (expr_result == eExecutionCompleted)
+                {
+                    // Get the address to watch.
+                    addr = valobj_sp->GetValueAsUnsigned(fail_value, &success);
+                    if (success)
+                    {
+                        if (error_ptr)
+                            error_ptr->Clear();
+                        return addr;
+                    }
+                    else
+                    {
+                        if (error_ptr)
+                        {
+                            error_set = true;
+                            error_ptr->SetErrorStringWithFormat("address expression \"%s\" resulted in a value whose type can't be converted to an address: %s", s, valobj_sp->GetTypeName().GetCString());
+                        }
+                    }
+                    
+                }
+                else
+                {
+                    // Since the compiler can't handle things like "main + 12" we should
+                    // try to do this for now. The compliler doesn't like adding offsets
+                    // to function pointer types.
+                    static RegularExpression g_symbol_plus_offset_regex("^(.*)([-\\+])[[:space:]]*(0x[0-9A-Fa-f]+|[0-9]+)[[:space:]]*$");
+                    RegularExpression::Match regex_match(3);
+                    if (g_symbol_plus_offset_regex.Execute(s, &regex_match))
+                    {
+                        uint64_t offset = 0;
+                        bool add = true;
+                        std::string name;
+                        std::string str;
+                        if (regex_match.GetMatchAtIndex(s, 1, name))
+                        {
+                            if (regex_match.GetMatchAtIndex(s, 2, str))
+                            {
+                                add = str[0] == '+';
+                                
+                                if (regex_match.GetMatchAtIndex(s, 3, str))
+                                {
+                                    offset = Args::StringToUInt64(str.c_str(), 0, 0, &success);
+                                    
+                                    if (success)
+                                    {
+                                        Error error;
+                                        addr = StringToAddress (exe_ctx, name.c_str(), LLDB_INVALID_ADDRESS, &error);
+                                        if (addr != LLDB_INVALID_ADDRESS)
+                                        {
+                                            if (add)
+                                                return addr + offset;
+                                            else
+                                                return addr - offset;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (error_ptr)
+                    {
+                        error_set = true;
+                        error_ptr->SetErrorStringWithFormat("address expression \"%s\" evaluation failed", s);
+                    }
+                }
+            }
+        }
     }
-    if (success_ptr) *success_ptr = false;
+    if (error_ptr)
+    {
+        if (!error_set)
+            error_ptr->SetErrorStringWithFormat("invalid address expression \"%s\"", s);
+    }
     return fail_value;
+}
+
+const char *
+Args::StripSpaces (std::string &s, bool leading, bool trailing, bool return_null_if_empty)
+{
+    static const char *k_white_space = " \t\v";
+    if (!s.empty())
+    {
+        if (leading)
+        {
+            size_t pos = s.find_first_not_of (k_white_space);
+            if (pos == std::string::npos)
+                s.clear();
+            else if (pos > 0)
+                s.erase(0, pos);
+        }
+        
+        if (trailing)
+        {
+            size_t rpos = s.find_last_not_of(k_white_space);
+            if (rpos != std::string::npos && rpos + 1 < s.size())
+                s.erase(rpos + 1);
+        }
+    }
+    if (return_null_if_empty && s.empty())
+        return NULL;
+    return s.c_str();
 }
 
 bool
@@ -843,8 +971,7 @@ Args::StringToVersion (const char *s, uint32_t &major, uint32_t &minor, uint32_t
     if (s && s[0])
     {
         char *pos = NULL;
-        uint32_t uval32;
-        uval32 = ::strtoul (s, &pos, 0);
+        unsigned long uval32 = ::strtoul (s, &pos, 0);
         if (pos == s)
             return s;
         major = uval32;
@@ -894,7 +1021,7 @@ Args::GetShellSafeArgument (const char *unsafe_arg, std::string &safe_arg)
 }
 
 
-int32_t
+int64_t
 Args::StringToOptionEnum (const char *s, OptionEnumValueElement *enum_values, int32_t fail_value, Error &error)
 {    
     if (enum_values)
@@ -954,7 +1081,7 @@ Args::StringToFormat
 (
     const char *s,
     lldb::Format &format,
-    uint32_t *byte_size_ptr
+    size_t *byte_size_ptr
 )
 {
     format = eFormatInvalid;
@@ -1187,8 +1314,11 @@ Args::ParseAliasOptions (Options &options,
     while (1)
     {
         int long_options_index = -1;
-        val = ::getopt_long (GetArgumentCount(), GetArgumentVector(), sstr.GetData(), long_options,
-                             &long_options_index);
+        val = ::getopt_long_only (GetArgumentCount(),
+                                  GetArgumentVector(),
+                                  sstr.GetData(),
+                                  long_options,
+                                  &long_options_index);
 
         if (val == -1)
             break;
@@ -1365,8 +1495,8 @@ Args::ParseArgsForCompletion
     int val;
     const OptionDefinition *opt_defs = options.GetDefinitions();
 
-    // Fooey... getopt_long permutes the GetArgumentVector to move the options to the front.
-    // So we have to build another Arg and pass that to getopt_long so it doesn't
+    // Fooey... getopt_long_only permutes the GetArgumentVector to move the options to the front.
+    // So we have to build another Arg and pass that to getopt_long_only so it doesn't
     // change the one we have.
 
     std::vector<const char *> dummy_vec (GetArgumentVector(), GetArgumentVector() + GetArgumentCount() + 1);
@@ -1377,14 +1507,13 @@ Args::ParseArgsForCompletion
     while (1)
     {
         bool missing_argument = false;
-        int parse_start = optind;
         int long_options_index = -1;
         
-        val = ::getopt_long (dummy_vec.size() - 1,
-                             (char *const *) &dummy_vec.front(), 
-                             sstr.GetData(), 
-                             long_options,
-                             &long_options_index);
+        val = ::getopt_long_only (dummy_vec.size() - 1,
+                                  (char *const *) &dummy_vec.front(),
+                                  sstr.GetData(),
+                                  long_options,
+                                  &long_options_index);
 
         if (val == -1)
         {
@@ -1398,7 +1527,7 @@ Args::ParseArgsForCompletion
             // Handling the "--" is a little tricky, since that may mean end of options or arguments, or the
             // user might want to complete options by long name.  I make this work by checking whether the
             // cursor is in the "--" argument, and if so I assume we're completing the long option, otherwise
-            // I let it pass to getopt_long which will terminate the option parsing.
+            // I let it pass to getopt_long_only which will terminate the option parsing.
             // Note, in either case we continue parsing the line so we can figure out what other options
             // were passed.  This will be useful when we come to restricting completions based on what other
             // options we've seen on the line.
@@ -1471,7 +1600,7 @@ Args::ParseArgsForCompletion
             switch (long_options[long_options_index].has_arg)
             {
             case no_argument:
-                option_element_vector.push_back (OptionArgElement (opt_defs_index, parse_start, 0));
+                option_element_vector.push_back (OptionArgElement (opt_defs_index, optind - 1, 0));
                 break;
             case required_argument:
                 if (optarg != NULL)
@@ -1514,7 +1643,7 @@ Args::ParseArgsForCompletion
     }
     
     // Finally we have to handle the case where the cursor index points at a single "-".  We want to mark that in
-    // the option_element_vector, but only if it is not after the "--".  But it turns out that getopt_long just ignores
+    // the option_element_vector, but only if it is not after the "--".  But it turns out that getopt_long_only just ignores
     // an isolated "-".  So we have to look it up by hand here.  We only care if it is AT the cursor position.
     
     if ((dash_dash_pos == -1 || cursor_index < dash_dash_pos)
@@ -1576,8 +1705,7 @@ Args::EncodeEscapeSequences (const char *src, std::string &dst)
                         unsigned long octal_value = ::strtoul (oct_str, NULL, 8);
                         if (octal_value <= UINT8_MAX)
                         {
-                            const char octal_char = octal_value;
-                            dst.append(1, octal_char);
+                            dst.append(1, (char)octal_value);
                         }
                     }
                         break;

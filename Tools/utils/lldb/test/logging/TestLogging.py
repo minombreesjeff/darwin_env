@@ -28,13 +28,13 @@ class LogTestCase(TestBase):
                     patterns = [ "Current executable set to .*a.out" ])
 
         log_file = os.path.join (os.getcwd(), "lldb-commands-log-%s-%s-%s.txt" % (type,
-                                                                                  self.getCompiler(),
+                                                                                  os.path.basename(self.getCompiler()),
                                                                                   self.getArchitecture()))
 
         if (os.path.exists (log_file)):
             os.remove (log_file)
 
-        self.runCmd ("log enable lldb commands -f " + log_file)
+        self.runCmd ("log enable -f '%s' lldb commands" % (log_file))
         
         self.runCmd ("command alias bp breakpoint")
                      
@@ -62,10 +62,6 @@ class LogTestCase(TestBase):
             "HandleCommand, command line after removing command name(s): ''\n",
             "HandleCommand, command succeeded\n",
             ]
-
-        # com.apple.main-thread identifier appears on darwin only
-        if sys.platform.startswith("darwin"):
-            expected_log_lines = ['com.apple.main-thread ' + x for x in expected_log_lines]
 
         self.assertTrue (os.path.isfile (log_file))
 

@@ -21,7 +21,7 @@
 namespace lldb_private {
 
 class SymbolFileType :
-    public STD_ENABLE_SHARED_FROM_THIS(SymbolFileType),
+    public std::enable_shared_from_this<SymbolFileType>,
     public UserID
     {
     public:
@@ -50,7 +50,7 @@ class SymbolFileType :
     };
     
 class Type :
-    public STD_ENABLE_SHARED_FROM_THIS(Type),
+    public std::enable_shared_from_this<Type>,
     public UserID
 {
 public:
@@ -79,7 +79,7 @@ public:
     Type (lldb::user_id_t uid,
           SymbolFile* symbol_file,
           const ConstString &name,
-          uint32_t byte_size,
+          uint64_t byte_size,
           SymbolContextScope *context,
           lldb::user_id_t encoding_uid,
           EncodingDataType encoding_uid_type,
@@ -123,7 +123,7 @@ public:
     const ConstString&
     GetName();
 
-    uint32_t
+    uint64_t
     GetByteSize();
 
     uint32_t
@@ -146,9 +146,6 @@ public:
     
     lldb::TypeSP
     GetTypedefType();
-
-    void
-    SetByteSize(uint32_t byte_size);
 
     const ConstString &
     GetName () const
@@ -206,7 +203,7 @@ public:
     GetFormat ();
 
     lldb::Encoding
-    GetEncoding (uint32_t &count);
+    GetEncoding (uint64_t &count);
 
     SymbolContextScope *
     GetSymbolContextScope()
@@ -304,7 +301,7 @@ protected:
     Type *m_encoding_type;
     lldb::user_id_t m_encoding_uid;
     EncodingDataType m_encoding_uid_type;
-    uint32_t m_byte_size;
+    uint64_t m_byte_size;
     Declaration m_decl;
     lldb::clang_type_t m_clang_type;
     
@@ -340,6 +337,12 @@ public:
     TypeAndOrName &
     operator= (const TypeAndOrName &rhs);
     
+    bool
+    operator==(const TypeAndOrName &other) const;
+    
+    bool
+    operator!=(const TypeAndOrName &other) const;
+    
     ConstString GetName () const;
 
     lldb::TypeSP
@@ -359,6 +362,21 @@ public:
     
     bool
     IsEmpty ();
+    
+    bool
+    HasName ();
+    
+    bool
+    HasTypeSP ();
+    
+    void
+    Clear ();
+    
+    operator
+    bool ()
+    {
+        return !IsEmpty();
+    }
     
 private:
     lldb::TypeSP m_type_sp;
@@ -426,6 +444,9 @@ public:
     {
         return m_type_sp;
     }
+    
+    ConstString
+    GetName ();
 
     bool
     GetDescription (lldb_private::Stream &strm, 
@@ -453,6 +474,27 @@ public:
         m_content.push_back(type);
     }
     
+    class AppendVisitor
+    {
+    public:
+        AppendVisitor(TypeListImpl &type_list) :
+            m_type_list(type_list)
+        {
+        }
+        
+        void
+        operator() (const lldb::TypeImplSP& type)
+        {
+            m_type_list.Append(type);
+        }
+        
+    private:
+        TypeListImpl &m_type_list;
+    };
+    
+    void
+    Append (const lldb_private::TypeList &type_list);
+
     lldb::TypeImplSP
     GetTypeAtIndex(size_t idx)
     {
@@ -506,6 +548,8 @@ public:
         m_bitfield_bit_size (0),
         m_is_bitfield (false)
     {
+        if (m_type_impl_sp)
+            m_name = m_type_impl_sp->GetName();
     }
 
     const lldb::TypeImplSP &

@@ -86,19 +86,20 @@ PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
     return NULL;
 }
 
-const char *
-PlatformLinux::GetPluginNameStatic()
-{
-    return "plugin.platform.linux";
-}
 
-const char *
-PlatformLinux::GetShortPluginNameStatic (bool is_host)
+lldb_private::ConstString
+PlatformLinux::GetPluginNameStatic (bool is_host)
 {
     if (is_host)
-        return Platform::GetHostPlatformName ();
+    {
+        static ConstString g_host_name(Platform::GetHostPlatformName ());
+        return g_host_name;
+    }
     else
-        return "remote-linux";
+    {
+        static ConstString g_remote_name("remote-linux");
+        return g_remote_name;
+    }
 }
 
 const char *
@@ -108,6 +109,12 @@ PlatformLinux::GetPluginDescriptionStatic (bool is_host)
         return "Local Linux user platform plug-in.";
     else
         return "Remote Linux user platform plug-in.";
+}
+
+lldb_private::ConstString
+PlatformLinux::GetPluginName()
+{
+    return GetPluginNameStatic(IsHost());
 }
 
 void
@@ -120,7 +127,7 @@ PlatformLinux::Initialize ()
         default_platform_sp->SetSystemArchitecture (Host::GetArchitecture());
         Platform::SetDefaultPlatform (default_platform_sp);
 #endif
-        PluginManager::RegisterPlugin(PlatformLinux::GetShortPluginNameStatic(false),
+        PluginManager::RegisterPlugin(PlatformLinux::GetPluginNameStatic(false),
                                       PlatformLinux::GetPluginDescriptionStatic(false),
                                       PlatformLinux::CreateInstance);
     }
@@ -201,15 +208,36 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
                                                  NULL, 
                                                  NULL,
                                                  NULL);
+            if (error.Fail())
+            {
+                // If we failed, it may be because the vendor and os aren't known. If that is the
+                // case, try setting them to the host architecture and give it another try.
+                llvm::Triple &module_triple = module_spec.GetArchitecture().GetTriple(); 
+                bool is_vendor_specified = (module_triple.getVendor() != llvm::Triple::UnknownVendor);
+                bool is_os_specified = (module_triple.getOS() != llvm::Triple::UnknownOS);
+                if (!is_vendor_specified || !is_os_specified)
+                {
+                    const llvm::Triple &host_triple = Host::GetArchitecture (Host::eSystemDefaultArchitecture).GetTriple();
+
+                    if (!is_vendor_specified)
+                        module_triple.setVendorName (host_triple.getVendorName());
+                    if (!is_os_specified)
+                        module_triple.setOSName (host_triple.getOSName());
+
+                    error = ModuleList::GetSharedModule (module_spec, 
+                                                         exe_module_sp, 
+                                                         NULL, 
+                                                         NULL,
+                                                         NULL);
+                }
+            }
         
             // TODO find out why exe_module_sp might be NULL            
             if (!exe_module_sp || exe_module_sp->GetObjectFile() == NULL)
             {
                 exe_module_sp.reset();
-                error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain the architecture %s",
-                                                exe_file.GetDirectory().AsCString(""),
-                                                exe_file.GetDirectory() ? "/" : "",
-                                                exe_file.GetFilename().AsCString(""),
+                error.SetErrorStringWithFormat ("'%s' doesn't contain the architecture %s",
+                                                exe_file.GetPath().c_str(),
                                                 exe_arch.GetArchitectureName());
             }
         }
@@ -242,11 +270,9 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
             
             if (error.Fail() || !exe_module_sp)
             {
-                error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain any '%s' platform architectures: %s",
-                                                exe_file.GetDirectory().AsCString(""),
-                                                exe_file.GetDirectory() ? "/" : "",
-                                                exe_file.GetFilename().AsCString(""),
-                                                GetShortPluginName(),
+                error.SetErrorStringWithFormat ("'%s' doesn't contain any '%s' platform architectures: %s",
+                                                exe_file.GetPath().c_str(),
+                                                GetPluginName().GetCString(),
                                                 arch_names.GetString().c_str());
             }
         }
@@ -333,12 +359,14 @@ PlatformLinux::GetStatus (Stream &strm)
 {
     struct utsname un;
 
-    if (uname(&un)) {
-        strm << "Linux";
-        return;
-    }
+    Platform::GetStatus(strm);
 
-    strm << un.sysname << ' ' << un.release << ' ' << un.version << '\n';
+    if (uname(&un))
+        return;
+
+    strm.Printf ("    Kernel: %s\n", un.sysname);
+    strm.Printf ("   Release: %s\n", un.release);
+    strm.Printf ("   Version: %s\n", un.version);
 }
 
 size_t

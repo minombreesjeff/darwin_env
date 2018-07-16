@@ -93,7 +93,7 @@ RNBRunLoopGetStartModeFromRemote (RNBRemote* remote)
 
             if (set_events & RNBContext::event_read_thread_exiting)
             {
-                RNBLogSTDERR ("error: packet read thread exited.");
+                RNBLogSTDERR ("error: packet read thread exited.\n");
                 return eRNBRunLoopModeExit;
             }
 
@@ -108,10 +108,13 @@ RNBRunLoopGetStartModeFromRemote (RNBRemote* remote)
                 if (type == RNBRemote::vattach || type == RNBRemote::vattachwait || type == RNBRemote::vattachorwait)
                 {
                     if (err == rnb_success)
+                    {
+                        RNBLogSTDOUT ("Attach succeeded, ready to debug.\n");
                         return eRNBRunLoopModeInferiorExecuting;
+                    }
                     else
                     {
-                        RNBLogSTDERR ("error: attach failed.");
+                        RNBLogSTDERR ("error: attach failed.\n");
                         return eRNBRunLoopModeExit;
                     }
                 }
@@ -127,7 +130,7 @@ RNBRunLoopGetStartModeFromRemote (RNBRemote* remote)
                 }
                 else if (err == rnb_not_connected)
                 {
-                    RNBLogSTDERR ("error: connection lost.");
+                    RNBLogSTDERR ("error: connection lost.\n");
                     return eRNBRunLoopModeExit;
                 }
                 else
@@ -192,7 +195,13 @@ RNBRunLoopLaunchInferior (RNBRemote *remote, const char *stdin_path, const char 
         // Our default launch method is posix spawn
         launch_flavor = eLaunchFlavorPosixSpawn;
 
-#ifdef WITH_SPRINGBOARD
+#if defined WITH_BKS
+        // Check if we have an app bundle, if so launch using BackBoard Services.
+        if (strstr(inferior_argv[0], ".app"))
+        {
+            launch_flavor = eLaunchFlavorBKS;
+        }
+#elif defined WITH_SPRINGBOARD
         // Check if we have an app bundle, if so launch using SpringBoard.
         if (strstr(inferior_argv[0], ".app"))
         {
@@ -213,6 +222,7 @@ RNBRunLoopLaunchInferior (RNBRemote *remote, const char *stdin_path, const char 
     launch_err_str[0] = '\0';
     const char * cwd = (ctx.GetWorkingDirPath() != NULL ? ctx.GetWorkingDirPath()
                                                         : ctx.GetWorkingDirectory());
+    const char *process_event = ctx.GetProcessEvent();
     nub_process_t pid = DNBProcessLaunch (resolved_path,
                                           &inferior_argv[0],
                                           &inferior_envp[0],
@@ -223,6 +233,7 @@ RNBRunLoopLaunchInferior (RNBRemote *remote, const char *stdin_path, const char 
                                           no_stdio,
                                           launch_flavor,
                                           g_disable_aslr,
+                                          process_event,
                                           launch_err_str,
                                           sizeof(launch_err_str));
 
@@ -568,6 +579,7 @@ RNBRunLoopInferiorExecuting (RNBRemote *remote)
                     // in its current state and listen for another connection...
                     if (ctx.ProcessStateRunning())
                     {
+                        DNBLog ("debugserver's event read thread is exiting, killing the inferior process.");
                         DNBProcessKill (ctx.ProcessID());
                     }
                 }
@@ -681,13 +693,13 @@ PortWasBoundCallback (const void *baton, in_port_t port)
 }
 
 static int
-StartListening (RNBRemote *remote, int listen_port, const char *unix_socket_name)
+StartListening (RNBRemote *remote, const char *listen_host, int listen_port, const char *unix_socket_name)
 {
     if (!remote->Comm().IsConnected())
     {
         if (listen_port != 0)
-            RNBLogSTDOUT ("Listening to port %i...\n", listen_port);
-        if (remote->Comm().Listen(listen_port, PortWasBoundCallback, unix_socket_name) != rnb_success)
+            RNBLogSTDOUT ("Listening to port %i for a connection from %s...\n", listen_port, listen_host ? listen_host : "localhost");
+        if (remote->Comm().Listen(listen_host, listen_port, PortWasBoundCallback, unix_socket_name) != rnb_success)
         {
             RNBLogSTDERR ("Failed to get connection from a remote gdb process.\n");
             return 0;
@@ -756,7 +768,7 @@ show_usage_and_exit (int exit_code)
 
 
 //----------------------------------------------------------------------
-// option descriptors for getopt_long()
+// option descriptors for getopt_long_only()
 //----------------------------------------------------------------------
 static struct option g_long_options[] =
 {
@@ -807,6 +819,14 @@ main (int argc, char *argv[])
     //    signal (SIGINT, signal_handler);
     signal (SIGPIPE, signal_handler);
     signal (SIGHUP, signal_handler);
+    
+    // We're always sitting in waitpid or kevent waiting on our target process' death,
+    // we don't need no stinking SIGCHLD's...
+    
+    sigset_t sigset;
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &sigset, NULL);
 
     g_remoteSP.reset (new RNBRemote ());
     
@@ -874,7 +894,7 @@ main (int argc, char *argv[])
     }
     // NULL terminate the short option string.
     short_options[short_options_idx++] = '\0';
-    while ((ch = getopt_long(argc, argv, short_options, g_long_options, &long_option_index)) != -1)
+    while ((ch = getopt_long_only(argc, argv, short_options, g_long_options, &long_option_index)) != -1)
     {
         DNBLogDebug("option: ch == %c (0x%2.2x) --%s%c%s\n",
                     ch, (uint8_t)ch,
@@ -967,15 +987,23 @@ main (int argc, char *argv[])
                     else if (strcasestr(optarg, "spring") == optarg)
                         g_launch_flavor = eLaunchFlavorSpringBoard;
 #endif
+#ifdef WITH_BKS
+                    else if (strcasestr(optarg, "backboard") == optarg)
+                        g_launch_flavor = eLaunchFlavorBKS;
+#endif
+
                     else
                     {
                         RNBLogSTDERR ("error: invalid TYPE for the --launch=TYPE (-x TYPE) option: '%s'\n", optarg);
                         RNBLogSTDERR ("Valid values TYPE are:\n");
-                        RNBLogSTDERR ("  auto    Auto-detect the best launch method to use.\n");
-                        RNBLogSTDERR ("  posix   Launch the executable using posix_spawn.\n");
-                        RNBLogSTDERR ("  fork    Launch the executable using fork and exec.\n");
+                        RNBLogSTDERR ("  auto       Auto-detect the best launch method to use.\n");
+                        RNBLogSTDERR ("  posix      Launch the executable using posix_spawn.\n");
+                        RNBLogSTDERR ("  fork       Launch the executable using fork and exec.\n");
 #ifdef WITH_SPRINGBOARD
-                        RNBLogSTDERR ("  spring  Launch the executable through Springboard.\n");
+                        RNBLogSTDERR ("  spring     Launch the executable through Springboard.\n");
+#endif
+#ifdef WITH_BKS
+                        RNBLogSTDERR ("  backboard  Launch the executable through BackBoard Services.\n");
 #endif
                         exit (5);
                     }
@@ -1077,7 +1105,6 @@ main (int argc, char *argv[])
             case 'u':
                 unix_socket_name.assign (optarg);
                 break;
-                
         }
     }
     
@@ -1097,7 +1124,7 @@ main (int argc, char *argv[])
 //        fprintf(stderr, "error: no architecture was specified\n");
 //        exit (8);
 //    }
-    // Skip any options we consumed with getopt_long
+    // Skip any options we consumed with getopt_long_only
     argc -= optind;
     argv += optind;
 
@@ -1147,6 +1174,7 @@ main (int argc, char *argv[])
                   compile_options.c_str(),
                   RNB_ARCH);
 
+    std::string listen_host;
     int listen_port = INT32_MAX;
     char str[PATH_MAX];
     str[0] = '\0';
@@ -1163,16 +1191,27 @@ main (int argc, char *argv[])
         int items_scanned = ::sscanf (argv[0], "%[^:]:%i", str, &listen_port);
         if (items_scanned == 2)
         {
-            DNBLogDebug("host = '%s'  port = %i", str, listen_port);
-        }
-        else if (argv[0][0] == '/')
-        {
-            listen_port = INT32_MAX;
-            strncpy(str, argv[0], sizeof(str));
+            listen_host = str;
+            DNBLogDebug("host = '%s'  port = %i", listen_host.c_str(), listen_port);
         }
         else
         {
-            show_usage_and_exit (2);
+            // No hostname means "localhost"
+            int items_scanned = ::sscanf (argv[0], "%i", &listen_port);
+            if (items_scanned == 1)
+            {
+                listen_host = "localhost";
+                DNBLogDebug("host = '%s'  port = %i", listen_host.c_str(), listen_port);
+            }
+            else if (argv[0][0] == '/')
+            {
+                listen_port = INT32_MAX;
+                strncpy(str, argv[0], sizeof(str));
+            }
+            else
+            {
+                show_usage_and_exit (2);
+            }
         }
 
         // We just used the 'host:port' or the '/path/file' arg...
@@ -1283,7 +1322,7 @@ main (int argc, char *argv[])
 #endif
                 if (listen_port != INT32_MAX)
                 {
-                    if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                    if (!StartListening (remote, listen_host.c_str(), listen_port, unix_socket_name.c_str()))
                         mode = eRNBRunLoopModeExit;
                 }
                 else if (str[0] == '/')
@@ -1317,7 +1356,13 @@ main (int argc, char *argv[])
                         // Our default launch method is posix spawn
                         launch_flavor = eLaunchFlavorPosixSpawn;
 
-#ifdef WITH_SPRINGBOARD
+#if defined WITH_BKS
+                        // Check if we have an app bundle, if so launch using SpringBoard.
+                        if (waitfor_pid_name.find (".app") != std::string::npos)
+                        {
+                            launch_flavor = eLaunchFlavorBKS;
+                        }
+#elif defined WITH_SPRINGBOARD
                         // Check if we have an app bundle, if so launch using SpringBoard.
                         if (waitfor_pid_name.find (".app") != std::string::npos)
                         {
@@ -1328,6 +1373,7 @@ main (int argc, char *argv[])
 
                     ctx.SetLaunchFlavor(launch_flavor);
                     bool ignore_existing = false;
+                    RNBLogSTDOUT ("Waiting to attach to process %s...\n", waitfor_pid_name.c_str());
                     nub_process_t pid = DNBProcessAttachWait (waitfor_pid_name.c_str(), launch_flavor, ignore_existing, timeout_ptr, waitfor_interval, err_str, sizeof(err_str));
                     g_pid = pid;
 
@@ -1336,7 +1382,7 @@ main (int argc, char *argv[])
                         ctx.LaunchStatus().SetError(-1, DNBError::Generic);
                         if (err_str[0])
                             ctx.LaunchStatus().SetErrorString(err_str);
-                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s", waitfor_pid_name.c_str(), err_str);
+                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s\n", waitfor_pid_name.c_str(), err_str);
                         mode = eRNBRunLoopModeExit;
                     }
                     else
@@ -1367,6 +1413,7 @@ main (int argc, char *argv[])
                         timeout_ptr = &attach_timeout_abstime;
                     }
 
+                    RNBLogSTDOUT ("Attaching to process %s...\n", attach_pid_name.c_str());
                     nub_process_t pid = DNBProcessAttachByName (attach_pid_name.c_str(), timeout_ptr, err_str, sizeof(err_str));
                     g_pid = pid;
                     if (pid == INVALID_NUB_PROCESS)
@@ -1374,7 +1421,7 @@ main (int argc, char *argv[])
                         ctx.LaunchStatus().SetError(-1, DNBError::Generic);
                         if (err_str[0])
                             ctx.LaunchStatus().SetErrorString(err_str);
-                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s", waitfor_pid_name.c_str(), err_str);
+                        RNBLogSTDERR ("error: failed to attach to process named: \"%s\" %s\n", waitfor_pid_name.c_str(), err_str);
                         mode = eRNBRunLoopModeExit;
                     }
                     else
@@ -1386,7 +1433,7 @@ main (int argc, char *argv[])
                 }
                 else
                 {
-                    RNBLogSTDERR ("error: asked to attach with empty name and invalid PID.");
+                    RNBLogSTDERR ("error: asked to attach with empty name and invalid PID.\n");
                     mode = eRNBRunLoopModeExit;
                 }
 
@@ -1394,7 +1441,7 @@ main (int argc, char *argv[])
                 {
                     if (listen_port != INT32_MAX)
                     {
-                        if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                        if (!StartListening (remote, listen_host.c_str(), listen_port, unix_socket_name.c_str()))
                             mode = eRNBRunLoopModeExit;
                     }
                     else if (str[0] == '/')
@@ -1403,7 +1450,7 @@ main (int argc, char *argv[])
                             mode = eRNBRunLoopModeExit;
                     }
                     if (mode != eRNBRunLoopModeExit)
-                        RNBLogSTDOUT ("Got a connection, waiting for debugger instructions for process %d.\n", attach_pid);
+                        RNBLogSTDOUT ("Waiting for debugger instructions for process %d.\n", attach_pid);
                 }
                 break;
 
@@ -1419,7 +1466,7 @@ main (int argc, char *argv[])
                     {
                         if (listen_port != INT32_MAX)
                         {
-                            if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                            if (!StartListening (remote, listen_host.c_str(), listen_port, unix_socket_name.c_str()))
                                 mode = eRNBRunLoopModeExit;
                         }
                         else if (str[0] == '/')
@@ -1429,7 +1476,7 @@ main (int argc, char *argv[])
                         }
 
                         if (mode != eRNBRunLoopModeExit)
-                            RNBLogSTDOUT ("Got a connection, waiting for debugger instructions.\n");
+                            RNBLogSTDOUT ("Got a connection, launched process %s.\n", argv_sub_zero);
                     }
                     else
                     {
@@ -1446,7 +1493,7 @@ main (int argc, char *argv[])
             case eRNBRunLoopModePlatformMode:
                 if (listen_port != INT32_MAX)
                 {
-                    if (!StartListening (remote, listen_port, unix_socket_name.c_str()))
+                    if (!StartListening (remote, listen_host.c_str(), listen_port, unix_socket_name.c_str()))
                         mode = eRNBRunLoopModeExit;
                 }
                 else if (str[0] == '/')
@@ -1468,6 +1515,7 @@ main (int argc, char *argv[])
 
     remote->StopReadRemoteDataThread ();
     remote->Context().SetProcessID(INVALID_NUB_PROCESS);
+    RNBLogSTDOUT ("Exiting.\n");
 
     return 0;
 }

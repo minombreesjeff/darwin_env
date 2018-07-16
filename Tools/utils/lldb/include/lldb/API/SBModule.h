@@ -26,6 +26,8 @@ public:
 
     SBModule (const SBModule &rhs);
 
+    SBModule (const SBModuleSpec &module_spec);
+
     const SBModule &
     operator = (const SBModule &rhs);
 
@@ -175,6 +177,22 @@ public:
                          const char *name, 
                          uint32_t max_matches);
     
+    //------------------------------------------------------------------
+    /// Find the first global (or static) variable by name.
+    ///
+    /// @param[in] target
+    ///     A valid SBTarget instance representing the debuggee.
+    ///
+    /// @param[in] name
+    ///     The name of the global or static variable we are looking
+    ///     for.
+    ///
+    /// @return
+    ///     An SBValue that gets filled in with the found variable (if any).
+    //------------------------------------------------------------------
+    lldb::SBValue
+    FindFirstGlobalVariable (lldb::SBTarget &target, const char *name);
+    
     lldb::SBType
     FindFirstType (const char* name);
     
@@ -183,7 +201,24 @@ public:
     
     lldb::SBType
     GetBasicType(lldb::BasicType type);
-    
+
+    //------------------------------------------------------------------
+    /// Get all types matching \a type_mask from debug info in this
+    /// module.
+    ///
+    /// @param[in] type_mask
+    ///     A bitfield that consists of one or more bits logically OR'ed
+    ///     together from the lldb::TypeClass enumeration. This allows
+    ///     you to request only structure types, or only class, struct
+    ///     and union types. Passing in lldb::eTypeClassAny will return
+    ///     all types found in the debug information for this module.
+    ///
+    /// @return
+    ///     A list of types in this module that match \a type_mask
+    //------------------------------------------------------------------
+    lldb::SBTypeList
+    GetTypes (uint32_t type_mask = lldb::eTypeClassAny);
+
     //------------------------------------------------------------------
     /// Get the module version numbers.
     ///

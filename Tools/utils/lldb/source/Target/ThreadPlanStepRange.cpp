@@ -15,6 +15,8 @@
 // Project includes
 
 #include "lldb/lldb-private-log.h"
+#include "lldb/Breakpoint/BreakpointLocation.h"
+#include "lldb/Breakpoint/BreakpointSite.h"
 #include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Stream.h"
@@ -49,8 +51,10 @@ ThreadPlanStepRange::ThreadPlanStepRange (ThreadPlanKind kind,
     m_stop_others (stop_others),
     m_stack_id (),
     m_no_more_plans (false),
-    m_first_run_event (true)
+    m_first_run_event (true),
+    m_use_fast_step(false)
 {
+    m_use_fast_step = GetTarget().GetUseFastStepping();
     AddRange(range);
     m_stack_id = m_thread.GetStackFrameAtIndex(0)->GetStackID();
 }
@@ -58,6 +62,16 @@ ThreadPlanStepRange::ThreadPlanStepRange (ThreadPlanKind kind,
 ThreadPlanStepRange::~ThreadPlanStepRange ()
 {
     ClearNextBranchBreakpoint();
+    
+    size_t num_instruction_ranges = m_instruction_ranges.size();
+    
+    // FIXME: The DisassemblerLLVMC has a reference cycle and won't go away if it has any active instructions.
+    // I'll fix that but for now, just clear the list and it will go away nicely.
+    for (size_t i = 0; i < num_instruction_ranges; i++)
+    {
+        if (m_instruction_ranges[i])
+            m_instruction_ranges[i]->GetInstructionList().Clear();
+    }
 }
 
 void
@@ -76,7 +90,7 @@ ThreadPlanStepRange::ValidatePlan (Stream *error)
 Vote
 ThreadPlanStepRange::ShouldReportStop (Event *event_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     const Vote vote = IsPlanComplete() ? eVoteYes : eVoteNo;
     if (log)
@@ -91,6 +105,9 @@ ThreadPlanStepRange::AddRange(const AddressRange &new_range)
     // condense the ranges if they overlap, though I don't think it is likely
     // to be very important.
     m_address_ranges.push_back (new_range);
+    
+    // Fill the slot for this address range with an empty DisassemblerSP in the instruction ranges. I want the
+    // indices to match, but I don't want to do the work to disassemble this range if I don't step into it.
     m_instruction_ranges.push_back (DisassemblerSP());
 }
 
@@ -115,7 +132,7 @@ ThreadPlanStepRange::DumpRanges(Stream *s)
 bool
 ThreadPlanStepRange::InRange ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     bool ret_value = false;
 
     lldb::addr_t pc_load_addr = m_thread.GetRegisterContext()->GetPC();
@@ -265,8 +282,11 @@ ThreadPlanStepRange::GetInstructionsForAddress(lldb::addr_t addr, size_t &range_
             {
                 //Disassemble the address range given:
                 ExecutionContext exe_ctx (m_thread.GetProcess());
+                const char *plugin_name = NULL;
+                const char *flavor = NULL;
                 m_instruction_ranges[i] = Disassembler::DisassembleRange(GetTarget().GetArchitecture(),
-                                                                         NULL,
+                                                                         plugin_name,
+                                                                         flavor,
                                                                          exe_ctx,
                                                                          m_address_ranges[i]);
                 
@@ -297,6 +317,9 @@ ThreadPlanStepRange::ClearNextBranchBreakpoint()
 {
     if (m_next_branch_bp_sp)
     {
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        if (log)
+            log->Printf ("Removing next branch breakpoint: %d.", m_next_branch_bp_sp->GetID());
         GetTarget().RemoveBreakpointByID (m_next_branch_bp_sp->GetID());
         m_next_branch_bp_sp.reset();
     }
@@ -305,11 +328,15 @@ ThreadPlanStepRange::ClearNextBranchBreakpoint()
 bool
 ThreadPlanStepRange::SetNextBranchBreakpoint ()
 {
+    if (m_next_branch_bp_sp)
+        return true;
+
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     // Stepping through ranges using breakpoints doesn't work yet, but with this off we fall back to instruction
     // single stepping.
-    return false;
-    // Always clear the next branch breakpoint, we don't want to leave one of these stranded.
-    ClearNextBranchBreakpoint();
+    if (!m_use_fast_step)
+         return false;
+
     lldb::addr_t cur_addr = GetThread().GetRegisterContext()->GetPC();
     // Find the current address in our address ranges, and fetch the disassembly if we haven't already:
     size_t pc_index;
@@ -327,15 +354,39 @@ ThreadPlanStepRange::SetNextBranchBreakpoint ()
         // If we didn't find a branch, run to the end of the range.
         if (branch_index == UINT32_MAX)
         {
-            branch_index = instructions->GetSize() - 2;
+            branch_index = instructions->GetSize() - 1;
         }
+        
         if (branch_index - pc_index > 1)
         {
             const bool is_internal = true;
             run_to_address = instructions->GetInstructionAtIndex(branch_index)->GetAddress();
             m_next_branch_bp_sp = GetTarget().CreateBreakpoint(run_to_address, is_internal);
-            m_next_branch_bp_sp->SetThreadID(m_thread.GetID());
-            return true;
+            if (m_next_branch_bp_sp)
+            {
+                if (log)
+                {
+                    lldb::break_id_t bp_site_id = LLDB_INVALID_BREAK_ID;
+                    BreakpointLocationSP bp_loc = m_next_branch_bp_sp->GetLocationAtIndex(0);
+                    if (bp_loc)
+                    {
+                        BreakpointSiteSP bp_site = bp_loc->GetBreakpointSite();
+                        if (bp_site)
+                        {
+                            bp_site_id = bp_site->GetID();
+                        }
+                    }
+                    log->Printf ("ThreadPlanStepRange::SetNextBranchBreakpoint - Setting breakpoint %d (site %d) to run to address 0x%" PRIx64,
+                                 m_next_branch_bp_sp->GetID(),
+                                 bp_site_id,
+                                 run_to_address.GetLoadAddress(&m_thread.GetProcess()->GetTarget()));
+                }
+                m_next_branch_bp_sp->SetThreadID(m_thread.GetID());
+                m_next_branch_bp_sp->SetBreakpointKind ("next-branch-location");
+                return true;
+            }
+            else
+                return false;
         }
     }
     return false;
@@ -344,15 +395,39 @@ ThreadPlanStepRange::SetNextBranchBreakpoint ()
 bool
 ThreadPlanStepRange::NextRangeBreakpointExplainsStop (lldb::StopInfoSP stop_info_sp)
 {
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (!m_next_branch_bp_sp)
         return false;
     
     break_id_t bp_site_id = stop_info_sp->GetValue();
     BreakpointSiteSP bp_site_sp = m_thread.GetProcess()->GetBreakpointSiteList().FindByID(bp_site_id);
-    if (!bp_site_sp->IsBreakpointAtThisSite (m_next_branch_bp_sp->GetID()))
+    if (!bp_site_sp)
+        return false;
+    else if (!bp_site_sp->IsBreakpointAtThisSite (m_next_branch_bp_sp->GetID()))
         return false;
     else
-        return bp_site_sp->GetNumberOfOwners() == 1;
+    {
+        // If we've hit the next branch breakpoint, then clear it.
+        size_t num_owners = bp_site_sp->GetNumberOfOwners();
+        bool explains_stop = true;
+        // If all the owners are internal, then we are probably just stepping over this range from multiple threads,
+        // or multiple frames, so we want to continue.  If one is not internal, then we should not explain the stop,
+        // and let the user breakpoint handle the stop.
+        for (size_t i = 0; i < num_owners; i++)
+        {
+            if (!bp_site_sp->GetOwnerAtIndex(i)->GetBreakpoint().IsInternal())
+            {
+                explains_stop = false;
+                break;
+            }
+        }
+        if (log)
+            log->Printf ("ThreadPlanStepRange::NextRangeBreakpointExplainsStop - Hit next range breakpoint which has %zu owners - explains stop: %u.",
+                        num_owners,
+                        explains_stop);
+        ClearNextBranchBreakpoint();
+        return  explains_stop;
+    }
 }
 
 bool
@@ -405,9 +480,10 @@ ThreadPlanStepRange::MischiefManaged ()
 
     if (done)
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
             log->Printf("Completed step through range plan.");
+        ClearNextBranchBreakpoint();
         ThreadPlan::MischiefManaged ();
         return true;
     }
@@ -421,7 +497,7 @@ ThreadPlanStepRange::MischiefManaged ()
 bool
 ThreadPlanStepRange::IsPlanStale ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     FrameComparison frame_order = CompareCurrentFrameToStartFrame();
     
     if (frame_order == eFrameCompareOlder)

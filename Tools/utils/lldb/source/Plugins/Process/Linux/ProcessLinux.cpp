@@ -64,7 +64,7 @@ ProcessLinux::Initialize()
 // Constructors and destructors.
 
 ProcessLinux::ProcessLinux(Target& target, Listener &listener)
-    : ProcessPOSIX(target, listener)
+    : ProcessPOSIX(target, listener), m_stopping_threads(false)
 {
 #if 0
     // FIXME: Putting this code in the ctor and saving the byte order in a
@@ -81,10 +81,11 @@ void
 ProcessLinux::Terminate()
 {
 }
-const char *
+lldb_private::ConstString
 ProcessLinux::GetPluginNameStatic()
 {
-    return "linux";
+    static ConstString g_name("linux");
+    return g_name;
 }
 
 const char *
@@ -97,22 +98,7 @@ ProcessLinux::GetPluginDescriptionStatic()
 bool
 ProcessLinux::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
-    LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
-    if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("ProcessLinux::%s() (pid = %" PRIu64 ")", __FUNCTION__, GetID());
-
-    // Update the process thread list with this new thread.
-    // FIXME: We should be using tid, not pid.
-    assert(m_monitor);
-    ThreadSP thread_sp (old_thread_list.FindThreadByID (GetID(), false));
-    if (!thread_sp) {
-        thread_sp.reset(new POSIXThread(*this, GetID()));
-    }
-
-    if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("ProcessLinux::%s() updated pid = %" PRIu64, __FUNCTION__, GetID());
-    new_thread_list.AddThread(thread_sp);
-
+    new_thread_list = old_thread_list;
     return new_thread_list.GetSize(false) > 0;
 }
 
@@ -120,16 +106,10 @@ ProcessLinux::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
 //------------------------------------------------------------------------------
 // ProcessInterface protocol.
 
-const char *
+lldb_private::ConstString
 ProcessLinux::GetPluginName()
 {
-    return "process.linux";
-}
-
-const char *
-ProcessLinux::GetShortPluginName()
-{
-    return "process.linux";
+    return GetPluginNameStatic();
 }
 
 uint32_t
@@ -153,4 +133,40 @@ Log *
 ProcessLinux::EnablePluginLogging(Stream *strm, Args &command)
 {
     return NULL;
+}
+
+// ProcessPOSIX override
+void
+ProcessLinux::StopAllThreads(lldb::tid_t stop_tid)
+{
+    // If a breakpoint occurs while we're stopping threads, we'll get back
+    // here, but we don't want to do it again.  Only the MonitorChildProcess
+    // thread calls this function, so we don't need to protect this flag.
+    if (m_stopping_threads)
+      return;
+    m_stopping_threads = true;
+
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
+    if (log)
+        log->Printf ("ProcessLinux::%s() stopping all threads", __FUNCTION__);
+
+    // Walk the thread list and stop the other threads.  The thread that caused
+    // the stop should already be marked as stopped before we get here.
+    Mutex::Locker thread_list_lock(m_thread_list.GetMutex());
+
+    uint32_t thread_count = m_thread_list.GetSize(false);
+    for (uint32_t i = 0; i < thread_count; ++i)
+    {
+        POSIXThread *thread = static_cast<POSIXThread*>(
+            m_thread_list.GetThreadAtIndex(i, false).get());
+        assert(thread);
+        lldb::tid_t tid = thread->GetID();
+        if (!StateIsStoppedState(thread->GetState(), false))
+            m_monitor->StopThread(tid);
+    }
+
+    m_stopping_threads = false;
+
+    if (log)
+        log->Printf ("ProcessLinux::%s() finished", __FUNCTION__);
 }

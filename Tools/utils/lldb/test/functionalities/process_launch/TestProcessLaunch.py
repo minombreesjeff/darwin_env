@@ -11,6 +11,13 @@ class ProcessLaunchTestCase(TestBase):
 
     mydir = os.path.join("functionalities", "process_launch")
 
+    def setUp(self):
+        # Call super's setUp().
+        TestBase.setUp(self)
+        # disable "There is a running process, kill it and restart?" prompt
+        self.runCmd("settings set auto-confirm true")
+        self.addTearDownHook(lambda: self.runCmd("settings clear auto-confirm"))
+
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_io_with_dsym (self):
@@ -145,7 +152,7 @@ class ProcessLaunchTestCase(TestBase):
                                                                err_file_path)
 
         self.expect(launch_command, error=True,
-                startstr = "error: No such file or directory: %sz" % my_working_dir_path)
+                patterns = ["error:.* No such file or directory: %sz" % my_working_dir_path])
 
         # Really launch the process
         launch_command = "process launch -w %s -o %s -e %s" % (my_working_dir_path,

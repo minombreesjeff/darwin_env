@@ -42,10 +42,10 @@ public:
     Dump(Stream *s, bool show_context) const;
 
     lldb::VariableSP
-    GetVariableAtIndex(uint32_t idx) const;
+    GetVariableAtIndex(size_t idx) const;
 
     lldb::VariableSP
-    RemoveVariableAtIndex (uint32_t idx);
+    RemoveVariableAtIndex (size_t idx);
     
     lldb::VariableSP
     FindVariable (const ConstString& name);
@@ -62,6 +62,11 @@ public:
     AppendVariablesIfUnique (const RegularExpression& regex, 
                              VariableList &var_list, 
                              size_t& total_matches);
+    
+    size_t
+    AppendVariablesWithScope (lldb::ValueType type,
+                              VariableList &var_list,
+                              bool if_unique = true);
 
     uint32_t
     FindIndexForVariable (Variable* variable);

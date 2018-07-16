@@ -11,6 +11,7 @@
 #define liblldb_ModuleSpec_h_
 
 #include "lldb/Core/ArchSpec.h"
+#include "lldb/Core/Stream.h"
 #include "lldb/Core/UUID.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Target/PathMappingList.h"
@@ -28,6 +29,7 @@ public:
         m_uuid (),
         m_object_name (),
         m_object_offset (0),
+        m_object_mod_time (),
         m_source_mappings ()
     {
     }
@@ -40,6 +42,7 @@ public:
         m_uuid (),
         m_object_name (),
         m_object_offset (0),
+        m_object_mod_time (),
         m_source_mappings ()
     {
     }
@@ -52,6 +55,7 @@ public:
         m_uuid (),
         m_object_name (),
         m_object_offset (0),
+        m_object_mod_time (),
         m_source_mappings ()
     {
     }
@@ -64,6 +68,7 @@ public:
         m_uuid (rhs.m_uuid),
         m_object_name (rhs.m_object_name),
         m_object_offset (rhs.m_object_offset),
+        m_object_mod_time (rhs.m_object_mod_time),
         m_source_mappings (rhs.m_source_mappings)
     {
     }
@@ -80,6 +85,7 @@ public:
             m_uuid = rhs.m_uuid;
             m_object_name = rhs.m_object_name;
             m_object_offset = rhs.m_object_offset;
+            m_object_mod_time = rhs.m_object_mod_time;
             m_source_mappings = rhs.m_source_mappings;
         }
         return *this;
@@ -248,11 +254,154 @@ public:
     {
         m_object_offset = object_offset;
     }
+    
+    TimeValue &
+    GetObjectModificationTime ()
+    {
+        return m_object_mod_time;
+    }
+    
+    const TimeValue &
+    GetObjectModificationTime () const
+    {
+        return m_object_mod_time;
+    }
 
     PathMappingList &
     GetSourceMappingList () const
     {
         return m_source_mappings;
+    }
+
+    void
+    Clear ()
+    {
+        m_file.Clear();
+        m_platform_file.Clear();
+        m_symbol_file.Clear();
+        m_arch.Clear();
+        m_uuid.Clear();
+        m_object_name.Clear();
+        m_object_offset = 0;
+        m_source_mappings.Clear(false);
+        m_object_mod_time.Clear();
+    }
+
+    
+    operator bool () const
+    {
+        if (m_file)
+            return true;
+        if (m_platform_file)
+            return true;
+        if (m_symbol_file)
+            return true;
+        if (m_arch.IsValid())
+            return true;
+        if (m_uuid.IsValid())
+            return true;
+        if (m_object_name)
+            return true;
+        if (m_object_mod_time.IsValid())
+            return true;
+        return false;
+    }
+
+    void
+    Dump (Stream &strm)
+    {
+        bool dumped_something = false;
+        if (m_file)
+        {
+            strm.PutCString("file = '");
+            strm << m_file;
+            strm.PutCString("'");
+            dumped_something = true;
+        }
+        if (m_platform_file)
+        {
+            if (dumped_something)
+                strm.PutCString(", ");
+            strm.PutCString("platform_file = '");
+            strm << m_platform_file;
+            strm.PutCString("'");
+            dumped_something = true;
+        }
+        if (m_symbol_file)
+        {
+            if (dumped_something)
+                strm.PutCString(", ");
+            strm.PutCString("symbol_file = '");
+            strm << m_symbol_file;
+            strm.PutCString("'");
+            dumped_something = true;
+        }
+        if (m_arch.IsValid())
+        {
+            if (dumped_something)
+                strm.PutCString(", ");
+            strm.Printf("arch = %s", m_arch.GetTriple().str().c_str());
+            dumped_something = true;
+        }
+        if (m_uuid.IsValid())
+        {
+            if (dumped_something)
+                strm.PutCString(", ");
+            strm.PutCString("uuid = ");
+            m_uuid.Dump(&strm);
+            dumped_something = true;
+            
+        }
+        if (m_object_name)
+        {
+            if (dumped_something)
+                strm.PutCString(", ");
+            strm.Printf("object_name = %s", m_object_name.GetCString());
+            dumped_something = true;
+        }
+    }
+
+    bool
+    Matches (const ModuleSpec &match_module_spec, bool exact_arch_match) const
+    {
+        if (match_module_spec.GetUUIDPtr() && match_module_spec.GetUUID() != GetUUID())
+            return false;
+        if (match_module_spec.GetObjectName() && match_module_spec.GetObjectName() != GetObjectName())
+            return false;
+        if (match_module_spec.GetFileSpecPtr())
+        {
+            const FileSpec &fspec = match_module_spec.GetFileSpec();
+            if (!FileSpec::Equal(fspec, GetFileSpec(), fspec.GetDirectory().IsEmpty() == false))
+                return false;
+        }
+        if (match_module_spec.GetPlatformFileSpecPtr())
+        {
+            const FileSpec &fspec = match_module_spec.GetPlatformFileSpec();
+            if (!FileSpec::Equal(fspec, GetPlatformFileSpec(), fspec.GetDirectory().IsEmpty() == false))
+                return false;
+            
+        }
+        if (match_module_spec.GetSymbolFileSpecPtr())
+        {
+            const FileSpec &fspec = match_module_spec.GetSymbolFileSpec();
+            if (!FileSpec::Equal(fspec, GetSymbolFileSpec(), fspec.GetDirectory().IsEmpty() == false))
+                return false;
+            
+        }
+        if (match_module_spec.GetArchitecturePtr())
+        {
+            if (exact_arch_match)
+            {
+                if (!GetArchitecture().IsExactMatch(match_module_spec.GetArchitecture()))
+                    return false;
+            }
+            else
+            {
+                if (!GetArchitecture().IsCompatibleMatch(match_module_spec.GetArchitecture()))
+                    return false;
+            }
+        }
+        return true;
     }
 
 protected:
@@ -263,7 +412,161 @@ protected:
     UUID m_uuid;
     ConstString m_object_name;
     uint64_t m_object_offset;
+    TimeValue m_object_mod_time;
     mutable PathMappingList m_source_mappings;
+};
+
+class ModuleSpecList
+{
+public:
+    ModuleSpecList () :
+        m_specs(),
+        m_mutex(Mutex::eMutexTypeRecursive) 
+    {
+    }
+
+    ModuleSpecList (const ModuleSpecList &rhs) :
+        m_specs(),
+        m_mutex(Mutex::eMutexTypeRecursive)
+    {
+        Mutex::Locker lhs_locker(m_mutex);
+        Mutex::Locker rhs_locker(rhs.m_mutex);
+        m_specs = rhs.m_specs;
+    }
+
+    ~ModuleSpecList ()
+    {
+    }
+
+    ModuleSpecList &
+    operator = (const ModuleSpecList &rhs)
+    {
+        if (this != &rhs)
+        {
+            Mutex::Locker lhs_locker(m_mutex);
+            Mutex::Locker rhs_locker(rhs.m_mutex);
+            m_specs = rhs.m_specs;
+        }
+        return *this;
+    }
+
+    size_t
+    GetSize() const
+    {
+        Mutex::Locker locker(m_mutex);
+        return m_specs.size();
+    }
+
+    void
+    Clear ()
+    {
+        Mutex::Locker locker(m_mutex);
+        m_specs.clear();
+    }
+
+    void
+    Append (const ModuleSpec &spec)
+    {
+        Mutex::Locker locker(m_mutex);
+        m_specs.push_back (spec);
+    }
+
+    void
+    Append (const ModuleSpecList &rhs)
+    {
+        Mutex::Locker lhs_locker(m_mutex);
+        Mutex::Locker rhs_locker(rhs.m_mutex);
+        m_specs.insert(m_specs.end(), rhs.m_specs.begin(), rhs.m_specs.end());
+    }
+
+    bool
+    GetModuleSpecAtIndex (size_t i, ModuleSpec &module_spec) const
+    {
+        Mutex::Locker locker(m_mutex);
+        if (i < m_specs.size())
+        {
+            module_spec = m_specs[i];
+            return true;
+        }
+        module_spec.Clear();
+        return false;
+    }
+    
+    
+    bool
+    FindMatchingModuleSpec (const ModuleSpec &module_spec, ModuleSpec &match_module_spec) const
+    {
+        Mutex::Locker locker(m_mutex);
+        bool exact_arch_match = true;
+        for (auto spec: m_specs)
+        {
+            if (spec.Matches(module_spec, exact_arch_match))
+            {
+                match_module_spec = spec;
+                return true;
+            }
+        }
+        
+        // If there was an architecture, retry with a compatible arch
+        if (module_spec.GetArchitecturePtr())
+        {
+            exact_arch_match = false;
+            for (auto spec: m_specs)
+            {
+                if (spec.Matches(module_spec, exact_arch_match))
+                {
+                    match_module_spec = spec;
+                    return true;
+                }
+            }
+        }
+        match_module_spec.Clear();
+        return false;
+    }
+    
+    size_t
+    FindMatchingModuleSpecs (const ModuleSpec &module_spec, ModuleSpecList &matching_list) const
+    {
+        Mutex::Locker locker(m_mutex);
+        bool exact_arch_match = true;
+        const size_t initial_match_count = matching_list.GetSize();
+        for (auto spec: m_specs)
+        {
+            if (spec.Matches(module_spec, exact_arch_match))
+                matching_list.Append (spec);
+        }
+        
+        // If there was an architecture, retry with a compatible arch if no matches were found
+        if (module_spec.GetArchitecturePtr() && (initial_match_count == matching_list.GetSize()))
+        {
+            exact_arch_match = false;
+            for (auto spec: m_specs)
+            {
+                if (spec.Matches(module_spec, exact_arch_match))
+                    matching_list.Append (spec);
+            }
+        }
+        return matching_list.GetSize() - initial_match_count;
+    }
+
+    void
+    Dump (Stream &strm)
+    {
+        Mutex::Locker locker(m_mutex);
+        uint32_t idx = 0;
+        for (auto spec: m_specs)
+        {
+            strm.Printf("[%u] ", idx);
+            spec.Dump (strm);
+            strm.EOL();
+            ++idx;
+        }
+    }
+
+protected:
+    typedef std::vector<ModuleSpec> collection; ///< The module collection type.
+    collection m_specs; ///< The collection of modules.
+    mutable Mutex m_mutex;
 };
 
 } // namespace lldb_private

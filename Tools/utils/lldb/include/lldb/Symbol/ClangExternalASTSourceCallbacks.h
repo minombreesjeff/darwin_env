@@ -14,7 +14,6 @@
 // C++ Includes
 #include <string>
 #include <vector>
-#include <memory>
 #include <stdint.h>
 
 // Other libraries and framework includes
@@ -113,7 +112,7 @@ public:
         return clang::ELR_Failure;
     }
     
-    virtual clang::DeclContextLookupResult 
+    virtual bool
     FindExternalVisibleDeclsByName (const clang::DeclContext *decl_ctx,
                                     clang::DeclarationName decl_name);
     

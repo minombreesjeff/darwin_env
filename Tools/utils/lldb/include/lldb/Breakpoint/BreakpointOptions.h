@@ -12,7 +12,6 @@
 
 // C Includes
 // C++ Includes
-#include <memory>
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-private.h"
@@ -184,7 +183,7 @@ public:
     ///    A pointer to the condition expression text, or NULL if no
     //     condition has been set.
     //------------------------------------------------------------------
-    const char *GetConditionText () const;
+    const char *GetConditionText (size_t *hash = NULL) const;
     
     //------------------------------------------------------------------
     // Enabled/Ignore Count
@@ -349,9 +348,9 @@ private:
     bool m_enabled;
     bool m_one_shot;
     uint32_t m_ignore_count; // Number of times to ignore this breakpoint
-    std::auto_ptr<ThreadSpec> m_thread_spec_ap; // Thread for which this breakpoint will take
-    std::auto_ptr<ClangUserExpression> m_condition_ap;  // The condition to test.
-
+    std::unique_ptr<ThreadSpec> m_thread_spec_ap; // Thread for which this breakpoint will take
+    std::string m_condition_text;  // The condition to test.
+    size_t m_condition_text_hash; // Its hash, so that locations know when the condition is updated.
 };
 
 } // namespace lldb_private

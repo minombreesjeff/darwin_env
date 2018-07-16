@@ -67,7 +67,7 @@ VariableList::Clear()
 }
 
 VariableSP
-VariableList::GetVariableAtIndex(uint32_t idx) const
+VariableList::GetVariableAtIndex(size_t idx) const
 {
     VariableSP var_sp;
     if (idx < m_variables.size())
@@ -76,7 +76,7 @@ VariableList::GetVariableAtIndex(uint32_t idx) const
 }
 
 VariableSP
-VariableList::RemoveVariableAtIndex(uint32_t idx)
+VariableList::RemoveVariableAtIndex(size_t idx)
 {
     VariableSP var_sp;
     if (idx < m_variables.size())
@@ -128,6 +128,27 @@ VariableList::AppendVariablesIfUnique (const RegularExpression& regex, VariableL
             total_matches++;
             // Only add this variable if it isn't already in the "var_list"
             var_list.AddVariableIfUnique (*pos);
+        }
+    }
+    // Return the number of new unique variables added to "var_list"
+    return var_list.GetSize() - initial_size;
+}
+
+size_t
+VariableList::AppendVariablesWithScope (lldb::ValueType type,
+                                        VariableList &var_list,
+                                        bool if_unique)
+{
+    const size_t initial_size = var_list.GetSize();
+    iterator pos, end = m_variables.end();
+    for (pos = m_variables.begin(); pos != end; ++pos)
+    {
+        if ((*pos)->GetScope() == type)
+        {
+            if (if_unique)
+                var_list.AddVariableIfUnique (*pos);
+            else
+                var_list.AddVariable(*pos);
         }
     }
     // Return the number of new unique variables added to "var_list"

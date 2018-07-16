@@ -37,7 +37,8 @@ public:
             bool is_artificial,
             const lldb::SectionSP &section_sp,
             lldb::addr_t value,
-            uint32_t size,
+            lldb::addr_t size,
+            bool size_is_valid,
             uint32_t flags);
 
     Symbol (uint32_t symID,
@@ -49,6 +50,7 @@ public:
             bool is_trampoline,
             bool is_artificial,
             const AddressRange &range,
+            bool size_is_valid,
             uint32_t flags);
 
     Symbol (const Symbol& rhs);
@@ -205,13 +207,22 @@ public:
     bool
     IsTrampoline () const;
 
+    bool
+    IsIndirect () const;
+
+    bool
+    GetByteSizeIsValid () const
+    {
+        return m_size_is_valid;
+    }
+
     lldb::addr_t
     GetByteSize () const;
     
     void
-    SetByteSize (uint32_t size)
+    SetByteSize (lldb::addr_t size)
     {
-        m_calculated_size = size > 0;
+        m_size_is_valid = size > 0;
         m_addr_range.SetByteSize(size);
     }
 
@@ -286,7 +297,6 @@ public:
 protected:
 
     uint32_t        m_uid;                  // User ID (usually the original symbol table index)
-    Mangled         m_mangled;              // uniqued symbol name/mangled name pair
     uint16_t        m_type_data;            // data specific to m_type
     uint16_t        m_type_data_resolved:1, // True if the data in m_type_data has already been calculated
                     m_is_synthetic:1,       // non-zero if this symbol is not actually in the symbol table, but synthesized from other info in the object file.
@@ -294,11 +304,12 @@ protected:
                     m_is_external:1,        // non-zero if this symbol is globally visible
                     m_size_is_sibling:1,    // m_size contains the index of this symbol's sibling
                     m_size_is_synthesized:1,// non-zero if this symbol's size was calculated using a delta between this symbol and the next
-                    m_calculated_size:1,
+                    m_size_is_valid:1,
                     m_demangled_is_synthesized:1, // The demangled name was created should not be used for expressions or other lookups
                     m_type:8;
-    uint32_t        m_flags;                // A copy of the flags from the original symbol table, the ObjectFile plug-in can interpret these
+    Mangled         m_mangled;              // uniqued symbol name/mangled name pair
     AddressRange    m_addr_range;           // Contains the value, or the section offset address when the value is an address in a section, and the size (if any)
+    uint32_t        m_flags;                // A copy of the flags from the original symbol table, the ObjectFile plug-in can interpret these
 };
 
 } // namespace lldb_private

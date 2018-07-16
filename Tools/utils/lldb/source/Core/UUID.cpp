@@ -14,35 +14,38 @@
 #include <ctype.h>
 
 // C++ Includes
+#include <string>
+
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/Stream.h"
 
 namespace lldb_private {
 
-UUID::UUID()
+UUID::UUID() : m_num_uuid_bytes(16)
 {
     ::memset (m_uuid, 0, sizeof(m_uuid));
 }
 
 UUID::UUID(const UUID& rhs)
 {
+    m_num_uuid_bytes = rhs.m_num_uuid_bytes;
     ::memcpy (m_uuid, rhs.m_uuid, sizeof (m_uuid));
 }
 
 UUID::UUID (const void *uuid_bytes, uint32_t num_uuid_bytes)
 {
-    if (uuid_bytes && num_uuid_bytes >= 16)
-        ::memcpy (m_uuid, uuid_bytes, sizeof (m_uuid));
-    else
-        ::memset (m_uuid, 0, sizeof(m_uuid));
+    SetBytes (uuid_bytes, num_uuid_bytes);
 }
 
 const UUID&
 UUID::operator=(const UUID& rhs)
 {
     if (this != &rhs)
+    {
+        m_num_uuid_bytes = rhs.m_num_uuid_bytes;
         ::memcpy (m_uuid, rhs.m_uuid, sizeof (m_uuid));
+    }
     return *this;
 }
 
@@ -53,6 +56,7 @@ UUID::~UUID()
 void
 UUID::Clear()
 {
+    m_num_uuid_bytes = 16;
     ::memset (m_uuid, 0, sizeof(m_uuid));
 }
 
@@ -62,16 +66,31 @@ UUID::GetBytes() const
     return m_uuid;
 }
 
-char *
-UUID::GetAsCString (char *dst, size_t dst_len) const
+std::string
+UUID::GetAsString (const char *separator) const
 {
+    std::string result;
+    char buf[256];
+    if (!separator)
+        separator = "-";
     const uint8_t *u = (const uint8_t *)GetBytes();
-    if (dst_len > snprintf (dst,
-                            dst_len,
-                            "%2.2X%2.2X%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X%2.2X%2.2X%2.2X%2.2X",
-                            u[0],u[1],u[2],u[3],u[4],u[5],u[6],u[7],u[8],u[9],u[10],u[11],u[12],u[13],u[14],u[15]))
-        return dst;
-    return NULL;
+    if (sizeof (buf) > (size_t)snprintf (buf,
+                            sizeof (buf),
+                            "%2.2X%2.2X%2.2X%2.2X%s%2.2X%2.2X%s%2.2X%2.2X%s%2.2X%2.2X%s%2.2X%2.2X%2.2X%2.2X%2.2X%2.2X",
+                            u[0],u[1],u[2],u[3],separator,
+                            u[4],u[5],separator,
+                            u[6],u[7],separator,
+                            u[8],u[9],separator,
+                            u[10],u[11],u[12],u[13],u[14],u[15]))
+    {
+        result.append (buf);
+        if (m_num_uuid_bytes == 20)
+        {
+            if (sizeof (buf) > (size_t)snprintf (buf, sizeof (buf), "%s%2.2X%2.2X%2.2X%2.2X", separator,u[16],u[17],u[18],u[19]))
+                result.append (buf);
+        }
+    }
+    return result;
 }
 
 void
@@ -80,21 +99,46 @@ UUID::Dump (Stream *s) const
     const uint8_t *u = (const uint8_t *)GetBytes();
     s->Printf ("%2.2X%2.2X%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X%2.2X%2.2X%2.2X%2.2X",
               u[0],u[1],u[2],u[3],u[4],u[5],u[6],u[7],u[8],u[9],u[10],u[11],u[12],u[13],u[14],u[15]);
+    if (m_num_uuid_bytes == 20)
+    {
+        s->Printf ("-%2.2X%2.2X%2.2X%2.2X", u[16],u[17],u[18],u[19]);
+    }
 }
 
-void
-UUID::SetBytes (const void *uuid_bytes)
+bool
+UUID::SetBytes (const void *uuid_bytes, uint32_t num_uuid_bytes)
 {
     if (uuid_bytes)
-        ::memcpy (m_uuid, uuid_bytes, sizeof (m_uuid));
-    else
-        ::memset (m_uuid, 0, sizeof(m_uuid));
+    {
+        switch (num_uuid_bytes)
+        {
+            case 20:
+                m_num_uuid_bytes = 20;
+                break;
+            case 16:
+                m_num_uuid_bytes = 16;
+                m_uuid[16] = m_uuid[17] = m_uuid[18] = m_uuid[19] = 0;
+                break;
+            default:
+                // Unsupported UUID byte size
+                m_num_uuid_bytes = 0;
+                break;
+        }
+
+        if (m_num_uuid_bytes > 0)
+        {
+            ::memcpy (m_uuid, uuid_bytes, m_num_uuid_bytes);
+            return true;
+        }
+    }
+    ::memset (m_uuid, 0, sizeof(m_uuid));
+    return false;
 }
 
 size_t
 UUID::GetByteSize()
 {
-    return sizeof(UUID::ValueType);
+    return m_num_uuid_bytes;
 }
 
 bool
@@ -115,7 +159,11 @@ UUID::IsValid () const
             m_uuid[12] ||
             m_uuid[13] ||
             m_uuid[14] ||
-            m_uuid[15];
+            m_uuid[15] ||
+            m_uuid[16] ||
+            m_uuid[17] ||
+            m_uuid[18] ||
+            m_uuid[19];
 }
 
 static inline int
@@ -128,7 +176,7 @@ xdigit_to_int (char ch)
 }
 
 size_t
-UUID::DecodeUUIDBytesFromCString (const char *p, ValueType &uuid_bytes, const char **end)
+UUID::DecodeUUIDBytesFromCString (const char *p, ValueType &uuid_bytes, const char **end, uint32_t num_uuid_bytes)
 {
     size_t uuid_byte_idx = 0;
     if (p)
@@ -147,7 +195,7 @@ UUID::DecodeUUIDBytesFromCString (const char *p, ValueType &uuid_bytes, const ch
                 
                 // Increment the byte that we are decoding within the UUID value
                 // and break out if we are done
-                if (++uuid_byte_idx == 16)
+                if (++uuid_byte_idx == num_uuid_bytes)
                     break;
             }
             else if (*p == '-')
@@ -164,10 +212,13 @@ UUID::DecodeUUIDBytesFromCString (const char *p, ValueType &uuid_bytes, const ch
     }
     if (end)
         *end = p;
+    // Clear trailing bytes to 0.
+    for (uint32_t i = uuid_byte_idx; i < sizeof(ValueType); i++)
+        uuid_bytes[i] = 0;
     return uuid_byte_idx;
 }
 size_t
-UUID::SetFromCString (const char *cstr)
+UUID::SetFromCString (const char *cstr, uint32_t num_uuid_bytes)
 {
     if (cstr == NULL)
         return 0;
@@ -178,11 +229,11 @@ UUID::SetFromCString (const char *cstr)
     while (isspace(*p))
         ++p;
     
-    const uint32_t uuid_byte_idx = UUID::DecodeUUIDBytesFromCString (p, m_uuid, &p);
+    const size_t uuid_byte_idx = UUID::DecodeUUIDBytesFromCString (p, m_uuid, &p, num_uuid_bytes);
 
     // If we successfully decoded a UUID, return the amount of characters that
     // were consumed
-    if (uuid_byte_idx == 16)
+    if (uuid_byte_idx == num_uuid_bytes)
         return p - cstr;
 
     // Else return zero to indicate we were not able to parse a UUID value
@@ -194,35 +245,35 @@ UUID::SetFromCString (const char *cstr)
 bool
 lldb_private::operator == (const lldb_private::UUID &lhs, const lldb_private::UUID &rhs)
 {
-    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), lldb_private::UUID::GetByteSize()) == 0;
+    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), sizeof (lldb_private::UUID::ValueType)) == 0;
 }
 
 bool
 lldb_private::operator != (const lldb_private::UUID &lhs, const lldb_private::UUID &rhs)
 {
-    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), lldb_private::UUID::GetByteSize()) != 0;
+    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), sizeof (lldb_private::UUID::ValueType)) != 0;
 }
 
 bool
 lldb_private::operator <  (const lldb_private::UUID &lhs, const lldb_private::UUID &rhs)
 {
-    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), lldb_private::UUID::GetByteSize()) <  0;
+    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), sizeof (lldb_private::UUID::ValueType)) <  0;
 }
 
 bool
 lldb_private::operator <= (const lldb_private::UUID &lhs, const lldb_private::UUID &rhs)
 {
-    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), lldb_private::UUID::GetByteSize()) <= 0;
+    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), sizeof (lldb_private::UUID::ValueType)) <= 0;
 }
 
 bool
 lldb_private::operator >  (const lldb_private::UUID &lhs, const lldb_private::UUID &rhs)
 {
-    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), lldb_private::UUID::GetByteSize()) >  0;
+    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), sizeof (lldb_private::UUID::ValueType)) >  0;
 }
 
 bool
 lldb_private::operator >= (const lldb_private::UUID &lhs, const lldb_private::UUID &rhs)
 {
-    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), lldb_private::UUID::GetByteSize()) >= 0;
+    return ::memcmp (lhs.GetBytes(), rhs.GetBytes(), sizeof (lldb_private::UUID::ValueType)) >= 0;
 }

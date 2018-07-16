@@ -59,14 +59,14 @@ class TypeAndTypeListTestCase(TestBase):
         # Get Frame #0.
         self.assertTrue(process.GetState() == lldb.eStateStopped)
         thread = lldbutil.get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-        self.assertTrue(thread != None, "There should be a thread stopped due to breakpoint condition")
+        self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint condition")
         frame0 = thread.GetFrameAtIndex(0)
 
         # Get the type 'Task'.
         type_list = target.FindTypes('Task')
         if self.TraceOn():
             print "Size of type_list from target.FindTypes('Task') query: %d" % type_list.GetSize()
-        self.assertTrue(len(type_list) == 1)
+        self.assertTrue(len(type_list) >= 1) # a second Task make be scared up by the Objective-C runtime
         for type in type_list:
             self.assertTrue(type)
             self.DebugSBType(type)

@@ -30,7 +30,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -64,11 +64,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -93,7 +90,7 @@ protected:
     lldb::addr_t m_entry_point;
 
     /// Auxiliary vector of the inferior process.
-    std::auto_ptr<AuxVector> m_auxv;
+    std::unique_ptr<AuxVector> m_auxv;
 
     /// Enables a breakpoint on a function called by the runtime
     /// linker each time a module is loaded or unloaded.
@@ -157,6 +154,11 @@ protected:
     /// success and LLDB_INVALID_ADDRESS on failure.
     lldb::addr_t
     GetEntryPoint();
+
+    /// Checks to see if the target module has changed, updates the target
+    /// accordingly and returns the target executable module.
+    lldb::ModuleSP
+    GetTargetExecutable();
 
 private:
     DISALLOW_COPY_AND_ASSIGN(DynamicLoaderPOSIXDYLD);

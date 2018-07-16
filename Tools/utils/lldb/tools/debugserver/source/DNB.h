@@ -16,8 +16,13 @@
 
 #include "DNBDefs.h"
 #include <mach/thread_info.h>
+#include <string>
 
 #define DNB_EXPORT __attribute__((visibility("default")))
+
+#ifndef CPU_TYPE_ARM64
+#define CPU_TYPE_ARM64 ((cpu_type_t) 12 | 0x01000000)
+#endif
 
 typedef bool (*DNBShouldCancelCallback) (void *);
 
@@ -38,7 +43,8 @@ nub_process_t   DNBProcessLaunch        (const char *path,
                                          const char *stderr_path,
                                          bool no_stdio, 
                                          nub_launch_flavor_t launch_flavor, 
-                                         int disable_aslr, 
+                                         int disable_aslr,
+                                         const char *event_data,
                                          char *err_str, 
                                          size_t err_len) DNB_EXPORT;
 
@@ -58,13 +64,14 @@ nub_bool_t      DNBProcessHalt          (nub_process_t pid) DNB_EXPORT;
 nub_bool_t      DNBProcessDetach        (nub_process_t pid) DNB_EXPORT;
 nub_bool_t      DNBProcessSignal        (nub_process_t pid, int signal) DNB_EXPORT;
 nub_bool_t      DNBProcessKill          (nub_process_t pid) DNB_EXPORT;
+nub_bool_t      DNBProcessSendEvent     (nub_process_t pid, const char *event) DNB_EXPORT;
 nub_size_t      DNBProcessMemoryRead    (nub_process_t pid, nub_addr_t addr, nub_size_t size, void *buf) DNB_EXPORT;
 nub_size_t      DNBProcessMemoryWrite   (nub_process_t pid, nub_addr_t addr, nub_size_t size, const void *buf) DNB_EXPORT;
 nub_addr_t      DNBProcessMemoryAllocate    (nub_process_t pid, nub_size_t size, uint32_t permissions) DNB_EXPORT;
 nub_bool_t      DNBProcessMemoryDeallocate  (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
 int             DNBProcessMemoryRegionInfo  (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *region_info) DNB_EXPORT;
-std::string     DNBProcessGetProfileData (nub_process_t pid) DNB_EXPORT;
-nub_bool_t      DNBProcessSetAsyncEnableProfiling   (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec) DNB_EXPORT;
+std::string     DNBProcessGetProfileData (nub_process_t pid, DNBProfileDataScanType scanType) DNB_EXPORT;
+nub_bool_t      DNBProcessSetEnableAsyncProfiling   (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec, DNBProfileDataScanType scan_type) DNB_EXPORT;
 
 //----------------------------------------------------------------------
 // Process status
@@ -73,8 +80,11 @@ nub_bool_t      DNBProcessIsAlive                       (nub_process_t pid) DNB_
 nub_state_t     DNBProcessGetState                      (nub_process_t pid) DNB_EXPORT;
 nub_bool_t      DNBProcessGetExitStatus                 (nub_process_t pid, int *status) DNB_EXPORT;
 nub_bool_t      DNBProcessSetExitStatus                 (nub_process_t pid, int status) DNB_EXPORT;
+const char *    DNBProcessGetExitInfo                   (nub_process_t pid) DNB_EXPORT;
+nub_bool_t      DNBProcessSetExitInfo                   (nub_process_t pid, const char *info) DNB_EXPORT;
 nub_size_t      DNBProcessGetNumThreads                 (nub_process_t pid) DNB_EXPORT;
 nub_thread_t    DNBProcessGetCurrentThread              (nub_process_t pid) DNB_EXPORT;
+nub_thread_t    DNBProcessGetCurrentThreadMachPort      (nub_process_t pid) DNB_EXPORT;
 nub_thread_t    DNBProcessSetCurrentThread              (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
 nub_thread_t    DNBProcessGetThreadAtIndex              (nub_process_t pid, nub_size_t thread_idx) DNB_EXPORT;
 nub_bool_t      DNBProcessSyncThreadState               (nub_process_t pid, nub_thread_t tid) DNB_EXPORT;
@@ -102,7 +112,6 @@ nub_size_t      DNBProcessGetArgumentCount      (nub_process_t pid) DNB_EXPORT;
 //----------------------------------------------------------------------
 nub_event_t     DNBProcessWaitForEvents         (nub_process_t pid, nub_event_t event_mask, bool wait_for_set, struct timespec* timeout) DNB_EXPORT;
 void            DNBProcessResetEvents           (nub_process_t pid, nub_event_t event_mask) DNB_EXPORT;
-void            DNBProcessInterruptEvents       (nub_process_t pid) DNB_EXPORT;
 
 //----------------------------------------------------------------------
 // Thread functions
@@ -120,24 +129,14 @@ const char *    DNBThreadGetInfo                (nub_process_t pid, nub_thread_t
 //----------------------------------------------------------------------
 // Breakpoint functions
 //----------------------------------------------------------------------
-nub_break_t     DNBBreakpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, nub_bool_t hardware) DNB_EXPORT;
-nub_bool_t      DNBBreakpointClear              (nub_process_t pid, nub_break_t breakID) DNB_EXPORT;
-nub_ssize_t     DNBBreakpointGetHitCount        (nub_process_t pid, nub_break_t breakID) DNB_EXPORT;
-nub_ssize_t     DNBBreakpointGetIgnoreCount     (nub_process_t pid, nub_break_t breakID) DNB_EXPORT;
-nub_bool_t      DNBBreakpointSetIgnoreCount     (nub_process_t pid, nub_break_t breakID, nub_size_t ignore_count) DNB_EXPORT;
-nub_bool_t      DNBBreakpointSetCallback        (nub_process_t pid, nub_break_t breakID, DNBCallbackBreakpointHit callback, void *baton) DNB_EXPORT;
-void            DNBBreakpointPrint              (nub_process_t pid, nub_break_t breakID) DNB_EXPORT;
+nub_bool_t      DNBBreakpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, nub_bool_t hardware) DNB_EXPORT;
+nub_bool_t      DNBBreakpointClear              (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
 
 //----------------------------------------------------------------------
 // Watchpoint functions
 //----------------------------------------------------------------------
-nub_watch_t     DNBWatchpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, uint32_t watch_flags, nub_bool_t hardware) DNB_EXPORT;
-nub_bool_t      DNBWatchpointClear              (nub_process_t pid, nub_watch_t watchID) DNB_EXPORT;
-nub_ssize_t     DNBWatchpointGetHitCount        (nub_process_t pid, nub_watch_t watchID) DNB_EXPORT;
-nub_ssize_t     DNBWatchpointGetIgnoreCount     (nub_process_t pid, nub_watch_t watchID) DNB_EXPORT;
-nub_bool_t      DNBWatchpointSetIgnoreCount     (nub_process_t pid, nub_watch_t watchID, nub_size_t ignore_count) DNB_EXPORT;
-nub_bool_t      DNBWatchpointSetCallback        (nub_process_t pid, nub_watch_t watchID, DNBCallbackBreakpointHit callback, void *baton) DNB_EXPORT;
-void            DNBWatchpointPrint              (nub_process_t pid, nub_watch_t watchID) DNB_EXPORT;
+nub_bool_t      DNBWatchpointSet                (nub_process_t pid, nub_addr_t addr, nub_size_t size, uint32_t watch_flags, nub_bool_t hardware) DNB_EXPORT;
+nub_bool_t      DNBWatchpointClear              (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
 uint32_t        DNBWatchpointGetNumSupportedHWP (nub_process_t pid) DNB_EXPORT; 
 
 const DNBRegisterSetInfo *

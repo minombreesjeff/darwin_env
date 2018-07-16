@@ -89,10 +89,41 @@ Platform::GetFile (const FileSpec &platform_file,
     return Error();
 }
 
-FileSpec
-Platform::LocateExecutableScriptingResource (const ModuleSpec &module_spec)
+FileSpecList
+Platform::LocateExecutableScriptingResources (Target *target, Module &module)
 {
-    return FileSpec();
+    return FileSpecList();
+}
+
+Platform*
+Platform::FindPlugin (Process *process, const ConstString &plugin_name)
+{
+    PlatformCreateInstance create_callback = NULL;
+    if (plugin_name)
+    {
+        create_callback  = PluginManager::GetPlatformCreateCallbackForPluginName (plugin_name);
+        if (create_callback)
+        {
+            ArchSpec arch;
+            if (process)
+            {
+                arch = process->GetTarget().GetArchitecture();
+            }
+            std::unique_ptr<Platform> instance_ap(create_callback(process, &arch));
+            if (instance_ap.get())
+                return instance_ap.release();
+        }
+    }
+    else
+    {
+        for (uint32_t idx = 0; (create_callback = PluginManager::GetPlatformCreateCallbackAtIndex(idx)) != NULL; ++idx)
+        {
+            std::unique_ptr<Platform> instance_ap(create_callback(process, nullptr));
+            if (instance_ap.get())
+                return instance_ap.release();
+        }
+    }
+    return NULL;
 }
 
 Error
@@ -125,7 +156,8 @@ Platform::Create (const char *platform_name, Error &error)
     lldb::PlatformSP platform_sp;
     if (platform_name && platform_name[0])
     {
-        create_callback = PluginManager::GetPlatformCreateCallbackForPluginName (platform_name);
+        ConstString const_platform_name (platform_name);
+        create_callback = PluginManager::GetPlatformCreateCallbackForPluginName (const_platform_name);
         if (create_callback)
             platform_sp.reset(create_callback(true, NULL));
         else
@@ -145,12 +177,27 @@ Platform::Create (const ArchSpec &arch, ArchSpec *platform_arch_ptr, Error &erro
     {
         uint32_t idx;
         PlatformCreateInstance create_callback;
+        // First try exact arch matches across all platform plug-ins
+        bool exact = true;
         for (idx = 0; (create_callback = PluginManager::GetPlatformCreateCallbackAtIndex (idx)); ++idx)
         {
             if (create_callback)
+            {
                 platform_sp.reset(create_callback(false, &arch));
-            if (platform_sp && platform_sp->IsCompatibleArchitecture(arch, platform_arch_ptr))
-                return platform_sp;
+                if (platform_sp && platform_sp->IsCompatibleArchitecture(arch, exact, platform_arch_ptr))
+                    return platform_sp;
+            }
+        }
+        // Next try compatible arch matches across all platform plug-ins
+        exact = false;
+        for (idx = 0; (create_callback = PluginManager::GetPlatformCreateCallbackAtIndex (idx)); ++idx)
+        {
+            if (create_callback)
+            {
+                platform_sp.reset(create_callback(false, &arch));
+                if (platform_sp && platform_sp->IsCompatibleArchitecture(arch, exact, platform_arch_ptr))
+                    return platform_sp;
+            }
         }
     }
     else
@@ -202,7 +249,7 @@ Platform::Platform (bool is_host) :
     m_max_uid_name_len (0),
     m_max_gid_name_len (0)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p Platform::Platform()", this);
 }
@@ -215,7 +262,7 @@ Platform::Platform (bool is_host) :
 //------------------------------------------------------------------
 Platform::~Platform()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p Platform::~Platform()", this);
 }
@@ -227,7 +274,7 @@ Platform::GetStatus (Stream &strm)
     uint32_t minor = UINT32_MAX;
     uint32_t update = UINT32_MAX;
     std::string s;
-    strm.Printf ("  Platform: %s\n", GetShortPluginName());
+    strm.Printf ("  Platform: %s\n", GetPluginName().GetCString());
 
     ArchSpec arch (GetSystemArchitecture());
     if (arch.IsValid())
@@ -342,13 +389,13 @@ Platform::GetOSKernelDescription (std::string &s)
         return GetRemoteOSKernelDescription (s);
 }
 
-const char *
+ConstString
 Platform::GetName ()
 {
     const char *name = GetHostname();
     if (name == NULL || name[0] == '\0')
-        name = GetShortPluginName();
-    return name;
+        return GetPluginName();
+    return ConstString (name);
 }
 
 const char *
@@ -464,10 +511,8 @@ Platform::ResolveExecutable (const FileSpec &exe_file,
     }
     else
     {
-        error.SetErrorStringWithFormat ("'%s%s%s' does not exist",
-                                        exe_file.GetDirectory().AsCString(""),
-                                        exe_file.GetDirectory() ? "/" : "",
-                                        exe_file.GetFilename().AsCString(""));
+        error.SetErrorStringWithFormat ("'%s' does not exist",
+                                        exe_file.GetPath().c_str());
     }
     return error;
 }
@@ -548,9 +593,9 @@ Platform::ConnectRemote (Args& args)
 {
     Error error;
     if (IsHost())
-        error.SetErrorStringWithFormat ("The currently selected platform (%s) is the host platform and is always connected.", GetShortPluginName());
+        error.SetErrorStringWithFormat ("The currently selected platform (%s) is the host platform and is always connected.", GetPluginName().GetCString());
     else
-        error.SetErrorStringWithFormat ("Platform::ConnectRemote() is not supported by %s", GetShortPluginName());
+        error.SetErrorStringWithFormat ("Platform::ConnectRemote() is not supported by %s", GetPluginName().GetCString());
     return error;
 }
 
@@ -559,9 +604,9 @@ Platform::DisconnectRemote ()
 {
     Error error;
     if (IsHost())
-        error.SetErrorStringWithFormat ("The currently selected platform (%s) is the host platform and is always connected.", GetShortPluginName());
+        error.SetErrorStringWithFormat ("The currently selected platform (%s) is the host platform and is always connected.", GetPluginName().GetCString());
     else
-        error.SetErrorStringWithFormat ("Platform::DisconnectRemote() is not supported by %s", GetShortPluginName());
+        error.SetErrorStringWithFormat ("Platform::DisconnectRemote() is not supported by %s", GetPluginName().GetCString());
     return error;
 }
 
@@ -680,19 +725,35 @@ Platform::GetPlatformForArchitecture (const ArchSpec &arch, ArchSpec *platform_a
 /// architecture and the target triple contained within.
 //------------------------------------------------------------------
 bool
-Platform::IsCompatibleArchitecture (const ArchSpec &arch, ArchSpec *compatible_arch_ptr)
+Platform::IsCompatibleArchitecture (const ArchSpec &arch, bool exact_arch_match, ArchSpec *compatible_arch_ptr)
 {
     // If the architecture is invalid, we must answer true...
     if (arch.IsValid())
     {
         ArchSpec platform_arch;
-        for (uint32_t arch_idx=0; GetSupportedArchitectureAtIndex (arch_idx, platform_arch); ++arch_idx)
+        // Try for an exact architecture match first.
+        if (exact_arch_match)
         {
-            if (arch == platform_arch)
+            for (uint32_t arch_idx=0; GetSupportedArchitectureAtIndex (arch_idx, platform_arch); ++arch_idx)
             {
-                if (compatible_arch_ptr)
-                    *compatible_arch_ptr = platform_arch;
-                return true;
+                if (arch.IsExactMatch(platform_arch))
+                {
+                    if (compatible_arch_ptr)
+                        *compatible_arch_ptr = platform_arch;
+                    return true;
+                }
+            }
+        }
+        else
+        {
+            for (uint32_t arch_idx=0; GetSupportedArchitectureAtIndex (arch_idx, platform_arch); ++arch_idx)
+            {
+                if (arch.IsCompatibleMatch(platform_arch))
+                {
+                    if (compatible_arch_ptr)
+                        *compatible_arch_ptr = platform_arch;
+                    return true;
+                }
             }
         }
     }
@@ -701,6 +762,7 @@ Platform::IsCompatibleArchitecture (const ArchSpec &arch, ArchSpec *compatible_a
     return false;
     
 }
+
 
 lldb::BreakpointSP
 Platform::SetThreadCreationBreakpoint (lldb_private::Target &target)

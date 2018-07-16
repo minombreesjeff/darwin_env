@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Core/RegularExpression.h"
+#include "llvm/ADT/StringRef.h"
 #include <string.h>
 
 using namespace lldb_private;
@@ -19,8 +20,7 @@ RegularExpression::RegularExpression() :
     m_re(),
     m_comp_err (1),
     m_preg(),
-    m_compile_flags(REG_EXTENDED),
-    m_matches()
+    m_compile_flags(REG_EXTENDED)
 {
     memset(&m_preg,0,sizeof(m_preg));
 }
@@ -124,31 +124,45 @@ RegularExpression::Compile(const char* re, int flags)
 // matches "match_count" should indicate the number of regmatch_t
 // values that are present in "match_ptr". The regular expression
 // will be executed using the "execute_flags".
-//----------------------------------------------------------------------
+//---------------------------------------------------------------------
 bool
-RegularExpression::Execute(const char* s, size_t num_matches, int execute_flags) const
+RegularExpression::Execute(const char* s, Match *match, int execute_flags) const
 {
-    int match_result = 1;
-    if (m_comp_err == 0)
+    int err = 1;
+    if (s != NULL && m_comp_err == 0)
     {
-        if (num_matches > 0)
-            m_matches.resize(num_matches + 1);
+        if (match)
+        {
+            err = ::regexec (&m_preg,
+                             s,
+                             match->GetSize(),
+                             match->GetData(),
+                             execute_flags);
+        }
         else
-            m_matches.clear();
-
-        match_result = ::regexec (&m_preg,
-                                  s,
-                                  m_matches.size(),
-                                  &m_matches[0],
-                                  execute_flags);
+        {
+            err = ::regexec (&m_preg,
+                             s,
+                             0,
+                             NULL,
+                             execute_flags);
+        }
     }
-    return match_result == 0;
+    
+    if (err != 0)
+    {
+        // The regular expression didn't compile, so clear the matches
+        if (match)
+            match->Clear();
+        return false;
+    }
+    return true;
 }
 
 bool
-RegularExpression::GetMatchAtIndex (const char* s, uint32_t idx, std::string& match_str) const
+RegularExpression::Match::GetMatchAtIndex (const char* s, uint32_t idx, std::string& match_str) const
 {
-    if (idx <= m_preg.re_nsub && idx < m_matches.size())
+    if (idx < m_matches.size())
     {
         if (m_matches[idx].rm_eo == m_matches[idx].rm_so)
         {
@@ -160,6 +174,46 @@ RegularExpression::GetMatchAtIndex (const char* s, uint32_t idx, std::string& ma
         {
             match_str.assign (s + m_matches[idx].rm_so,
                               m_matches[idx].rm_eo - m_matches[idx].rm_so);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+RegularExpression::Match::GetMatchAtIndex (const char* s, uint32_t idx, llvm::StringRef& match_str) const
+{
+    if (idx < m_matches.size())
+    {
+        if (m_matches[idx].rm_eo == m_matches[idx].rm_so)
+        {
+            // Matched the empty string...
+            match_str = llvm::StringRef();
+            return true;
+        }
+        else if (m_matches[idx].rm_eo > m_matches[idx].rm_so)
+        {
+            match_str = llvm::StringRef (s + m_matches[idx].rm_so, m_matches[idx].rm_eo - m_matches[idx].rm_so);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+RegularExpression::Match::GetMatchSpanningIndices (const char* s, uint32_t idx1, uint32_t idx2, llvm::StringRef& match_str) const
+{
+    if (idx1 < m_matches.size() && idx2 < m_matches.size())
+    {
+        if (m_matches[idx1].rm_so == m_matches[idx2].rm_eo)
+        {
+            // Matched the empty string...
+            match_str = llvm::StringRef();
+            return true;
+        }
+        else if (m_matches[idx1].rm_so < m_matches[idx2].rm_eo)
+        {
+            match_str = llvm::StringRef (s + m_matches[idx1].rm_so, m_matches[idx2].rm_eo - m_matches[idx1].rm_so);
             return true;
         }
     }

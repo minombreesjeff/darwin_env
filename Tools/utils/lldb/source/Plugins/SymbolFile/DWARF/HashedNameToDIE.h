@@ -32,18 +32,21 @@ struct DWARFMappedHash
         dw_offset_t offset;  // The DIE offset
         dw_tag_t tag;
         uint32_t type_flags; // Any flags for this DIEInfo
+        uint32_t qualified_name_hash; // A 32 bit hash of the fully qualified name
 
         DIEInfo () :
             offset (DW_INVALID_OFFSET),
             tag (0),
-            type_flags (0)
+            type_flags (0),
+            qualified_name_hash (0)
         {
         }
 
-        DIEInfo (dw_offset_t o, dw_tag_t t, uint32_t f) :
+        DIEInfo (dw_offset_t o, dw_tag_t t, uint32_t f, uint32_t h) :
             offset(o),
             tag (t),
-            type_flags (f)
+            type_flags (f),
+            qualified_name_hash (h)
         {
         }
         
@@ -53,6 +56,7 @@ struct DWARFMappedHash
             offset = DW_INVALID_OFFSET;
             tag = 0;
             type_flags = 0;
+            qualified_name_hash = 0;
         }            
     };
     
@@ -96,6 +100,37 @@ struct DWARFMappedHash
             }
         }
     }
+
+    static void
+    ExtractDIEArray (const DIEInfoArray &die_info_array,
+                     const dw_tag_t tag,
+                     const uint32_t qualified_name_hash,
+                     DIEArray &die_offsets)
+    {
+        if (tag == 0)
+        {
+            ExtractDIEArray (die_info_array, die_offsets);
+        }
+        else
+        {
+            const size_t count = die_info_array.size();
+            for (size_t i=0; i<count; ++i)
+            {
+                if (qualified_name_hash != die_info_array[i].qualified_name_hash)
+                    continue;
+                const dw_tag_t die_tag = die_info_array[i].tag;
+                bool tag_matches = die_tag == 0 || tag == die_tag;
+                if (!tag_matches)
+                {
+                    if (die_tag == DW_TAG_class_type || die_tag == DW_TAG_structure_type)
+                        tag_matches = tag == DW_TAG_structure_type || tag == DW_TAG_class_type;
+                }
+                if (tag_matches)
+                    die_offsets.push_back (die_info_array[i].offset);
+            }
+        }
+    }
+
     enum AtomType
     {
         eAtomTypeNULL       = 0u,
@@ -103,7 +138,11 @@ struct DWARFMappedHash
         eAtomTypeCUOffset   = 2u,   // DIE offset of the compiler unit header that contains the item in question
         eAtomTypeTag        = 3u,   // DW_TAG_xxx value, should be encoded as DW_FORM_data1 (if no tags exceed 255) or DW_FORM_data2
         eAtomTypeNameFlags  = 4u,   // Flags from enum NameFlags
-        eAtomTypeTypeFlags  = 5u    // Flags from enum TypeFlags
+        eAtomTypeTypeFlags  = 5u,   // Flags from enum TypeFlags,
+        eAtomTypeQualNameHash = 6u  // A 32 bit hash of the full qualified name (since all hash entries are basename only)
+                                    // For example a type like "std::vector<int>::iterator" would have a name of "iterator"
+                                    // and a 32 bit hash for "std::vector<int>::iterator" to allow us to not have to pull
+                                    // in debug info for a type when we know the fully qualified name.
     };
     
     // Bit definitions for the eAtomTypeTypeFlags flags
@@ -196,6 +235,7 @@ struct DWARFMappedHash
             case eAtomTypeTag:          return "die-tag";
             case eAtomTypeNameFlags:    return "name-flags";
             case eAtomTypeTypeFlags:    return "type-flags";
+            case eAtomTypeQualNameHash: return "qualified-name-hash";
         }
         return "<invalid>";
     }
@@ -306,8 +346,9 @@ struct DWARFMappedHash
 //        void
 //        Dump (std::ostream* ostrm_ptr);        
         
-        uint32_t
-        Read (const lldb_private::DataExtractor &data, uint32_t offset)
+        lldb::offset_t
+        Read (const lldb_private::DataExtractor &data,
+              lldb::offset_t offset)
         {
             ClearAtoms ();
             
@@ -379,8 +420,8 @@ struct DWARFMappedHash
         //        virtual void
         //        Dump (std::ostream* ostrm_ptr);        
         //        
-        virtual uint32_t
-        Read (lldb_private::DataExtractor &data, uint32_t offset)
+        virtual lldb::offset_t
+        Read (lldb_private::DataExtractor &data, lldb::offset_t offset)
         {
             offset = MappedHash::Header<Prologue>::Read (data, offset);
             if (offset != UINT32_MAX)
@@ -392,7 +433,7 @@ struct DWARFMappedHash
         
         bool
         Read (const lldb_private::DataExtractor &data, 
-              uint32_t *offset_ptr, 
+              lldb::offset_t *offset_ptr, 
               DIEInfo &hash_data) const
         {
             const size_t num_atoms = header_data.atoms.size();
@@ -409,17 +450,22 @@ struct DWARFMappedHash
                 switch (header_data.atoms[i].type)
                 {
                     case eAtomTypeDIEOffset:    // DIE offset, check form for encoding
-                        hash_data.offset = form_value.Reference (header_data.die_base_offset);
+                        hash_data.offset = (dw_offset_t)form_value.Reference (header_data.die_base_offset);
                         break;
 
                     case eAtomTypeTag:          // DW_TAG value for the DIE
-                        hash_data.tag = form_value.Unsigned ();
+                        hash_data.tag = (dw_tag_t)form_value.Unsigned ();
                         
                     case eAtomTypeTypeFlags:    // Flags from enum TypeFlags
-                        hash_data.type_flags = form_value.Unsigned ();
+                        hash_data.type_flags = (uint32_t)form_value.Unsigned ();
                         break;
+
+                    case eAtomTypeQualNameHash:    // Flags from enum TypeFlags
+                        hash_data.qualified_name_hash = form_value.Unsigned ();
+                        break;
+
                     default:
-                        return false;
+                        // We can always skip atomes we don't know about
                         break;
                 }
             }
@@ -462,7 +508,11 @@ struct DWARFMappedHash
                             strm.PutCString (" )");
                         }
                         break;
-                        
+
+                    case eAtomTypeQualNameHash:    // Flags from enum TypeFlags
+                        strm.Printf ("0x%8.8x", hash_data.qualified_name_hash);
+                        break;
+
                     default:
                         strm.Printf ("AtomType(0x%x)", header_data.atoms[i].type);
                         break;
@@ -557,9 +607,30 @@ struct DWARFMappedHash
             return m_string_table.PeekCStr (key);
         }
         
+        virtual bool
+        ReadHashData (uint32_t hash_data_offset,
+                      HashData &hash_data) const
+        {
+            lldb::offset_t offset = hash_data_offset;
+            offset += 4; // Skip string table offset that contains offset of hash name in .debug_str
+            const uint32_t count = m_data.GetU32 (&offset);
+            if (count > 0)
+            {
+                hash_data.resize(count);
+                for (uint32_t i=0; i<count; ++i)
+                {
+                    if (!m_header.Read(m_data, &offset, hash_data[i]))
+                        return false;
+                }
+            }
+            else
+                hash_data.clear();
+            return true;
+        }
+
         virtual Result
         GetHashDataForName (const char *name,
-                            uint32_t* hash_data_offset_ptr, 
+                            lldb::offset_t* hash_data_offset_ptr,
                             Pair &pair) const
         {
             pair.key = m_data.GetU32 (hash_data_offset_ptr);
@@ -580,7 +651,7 @@ struct DWARFMappedHash
             }
 
             const uint32_t count = m_data.GetU32 (hash_data_offset_ptr);
-            const uint32_t min_total_hash_data_size = count * m_header.header_data.GetMinumumHashDataByteSize();
+            const size_t min_total_hash_data_size = count * m_header.header_data.GetMinumumHashDataByteSize();
             if (count > 0 && m_data.ValidOffsetForDataOfSize (*hash_data_offset_ptr, min_total_hash_data_size))
             {
                 // We have at least one HashData entry, and we have enough
@@ -637,7 +708,7 @@ struct DWARFMappedHash
 
         virtual Result
         AppendHashDataForRegularExpression (const lldb_private::RegularExpression& regex,
-                                            uint32_t* hash_data_offset_ptr, 
+                                            lldb::offset_t* hash_data_offset_ptr, 
                                             Pair &pair) const
         {
             pair.key = m_data.GetU32 (hash_data_offset_ptr);
@@ -653,7 +724,7 @@ struct DWARFMappedHash
                 return eResultError;
             
             const uint32_t count = m_data.GetU32 (hash_data_offset_ptr);
-            const uint32_t min_total_hash_data_size = count * m_header.header_data.GetMinumumHashDataByteSize();
+            const size_t min_total_hash_data_size = count * m_header.header_data.GetMinumumHashDataByteSize();
             if (count > 0 && m_data.ValidOffsetForDataOfSize (*hash_data_offset_ptr, min_total_hash_data_size))
             {
                 const bool match = regex.Execute(strp_cstr);
@@ -712,10 +783,10 @@ struct DWARFMappedHash
             Pair pair;
             for (uint32_t offset_idx=0; offset_idx<hash_count; ++offset_idx)
             {
-                uint32_t hash_data_offset = GetHashDataOffset (offset_idx);
+                lldb::offset_t hash_data_offset = GetHashDataOffset (offset_idx);
                 while (hash_data_offset != UINT32_MAX)
                 {
-                    const uint32_t prev_hash_data_offset = hash_data_offset;
+                    const lldb::offset_t prev_hash_data_offset = hash_data_offset;
                     Result hash_result = AppendHashDataForRegularExpression (regex, &hash_data_offset, pair);
                     if (prev_hash_data_offset == hash_data_offset)
                         break;
@@ -749,7 +820,7 @@ struct DWARFMappedHash
             for (uint32_t offset_idx=0; offset_idx<hash_count; ++offset_idx)
             {
                 bool done = false;
-                uint32_t hash_data_offset = GetHashDataOffset (offset_idx);
+                lldb::offset_t hash_data_offset = GetHashDataOffset (offset_idx);
                 while (!done && hash_data_offset != UINT32_MAX)
                 {
                     KeyType key = m_data.GetU32 (&hash_data_offset);
@@ -792,6 +863,18 @@ struct DWARFMappedHash
             DIEInfoArray die_info_array;
             if (FindByName(name, die_info_array))
                 DWARFMappedHash::ExtractDIEArray (die_info_array, tag, die_offsets);
+            return die_info_array.size();
+        }
+
+        size_t
+        FindByNameAndTagAndQualifiedNameHash (const char *name,
+                                              const dw_tag_t tag,
+                                              const uint32_t qualified_name_hash,
+                                              DIEArray &die_offsets)
+        {
+            DIEInfoArray die_info_array;
+            if (FindByName(name, die_info_array))
+                DWARFMappedHash::ExtractDIEArray (die_info_array, tag, qualified_name_hash, die_offsets);
             return die_info_array.size();
         }
 

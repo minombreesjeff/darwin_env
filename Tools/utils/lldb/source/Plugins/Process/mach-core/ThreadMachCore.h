@@ -37,9 +37,6 @@ public:
     virtual lldb::RegisterContextSP
     CreateRegisterContextForFrame (lldb_private::StackFrame *frame);
 
-    virtual void
-    ClearStackFrames ();
-
     static bool
     ThreadIDIsValid (lldb::tid_t thread);
 
@@ -82,11 +79,10 @@ protected:
     lldb::addr_t m_thread_dispatch_qaddr;
     lldb::RegisterContextSP m_thread_reg_ctx_sp;
     //------------------------------------------------------------------
-    // Member variables.
+    // Protected member functions.
     //------------------------------------------------------------------
-
-    virtual lldb::StopInfoSP
-    GetPrivateStopReason ();
+    virtual bool
+    CalculateStopInfo ();
 };
 
 #endif  // liblldb_ThreadMachCore_h_

@@ -28,7 +28,6 @@
 //  lldb::thread_arg_t      The type of the one any only thread creation argument for the host system
 //  lldb::thread_result_t   The return type that gets returned when a thread finishes.
 //  lldb::thread_func_t     The function prototype used to spawn a thread on the host system.
-//  lldb::SharedPtr         The template that wraps up the host version of a reference counted pointer (like boost::shared_ptr)
 //  #define LLDB_INVALID_PROCESS_ID ...
 //  #define LLDB_INVALID_THREAD_ID ...
 //  #define LLDB_INVALID_HOST_THREAD ...
@@ -74,6 +73,7 @@ namespace lldb
     typedef uint64_t    user_id_t;
     typedef uint64_t    pid_t;
     typedef uint64_t    tid_t;
+    typedef uint64_t    offset_t;
     typedef int32_t     break_id_t;
     typedef int32_t     watch_id_t;
     typedef void *      clang_type_t;

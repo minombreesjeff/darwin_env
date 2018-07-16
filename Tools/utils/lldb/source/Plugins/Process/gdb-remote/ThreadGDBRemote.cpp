@@ -80,24 +80,14 @@ ThreadGDBRemote::GetQueueName ()
     return NULL;
 }
 
-bool
+void
 ThreadGDBRemote::WillResume (StateType resume_state)
 {
-    // Call the Thread::WillResume first. If we stop at a signal, the stop info
-    // class for signal will set the resume signal that we need below. The signal
-    // stuff obeys the Process::UnixSignal defaults. 
-    // If the thread's WillResume returns false, that means that we aren't going to actually resume,
-    // in which case we should not do the rest of our "resume" work.
-    
-    if (!Thread::WillResume(resume_state))
-        return false;
-    
-    ClearStackFrames();
-
     int signo = GetResumeSignal();
-    lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (GDBR_LOG_THREAD));
+    const lldb::user_id_t tid = GetProtocolID();
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (GDBR_LOG_THREAD));
     if (log)
-        log->Printf ("Resuming thread: %4.4" PRIx64 " with state: %s.", GetID(), StateAsCString(resume_state));
+        log->Printf ("Resuming thread: %4.4" PRIx64 " with state: %s.", tid, StateAsCString(resume_state));
 
     ProcessSP process_sp (GetProcess());
     if (process_sp)
@@ -112,24 +102,22 @@ ThreadGDBRemote::WillResume (StateType resume_state)
 
         case eStateRunning:
             if (gdb_process->GetUnixSignals().SignalIsValid (signo))
-                gdb_process->m_continue_C_tids.push_back(std::make_pair(GetID(), signo));
+                gdb_process->m_continue_C_tids.push_back(std::make_pair(tid, signo));
             else
-                gdb_process->m_continue_c_tids.push_back(GetID());
+                gdb_process->m_continue_c_tids.push_back(tid);
             break;
 
         case eStateStepping:
             if (gdb_process->GetUnixSignals().SignalIsValid (signo))
-                gdb_process->m_continue_S_tids.push_back(std::make_pair(GetID(), signo));
+                gdb_process->m_continue_S_tids.push_back(std::make_pair(tid, signo));
             else
-                gdb_process->m_continue_s_tids.push_back(GetID());
+                gdb_process->m_continue_s_tids.push_back(tid);
             break;
 
         default:
             break;
         }
-        return true;
     }
-    return false;
 }
 
 void
@@ -146,16 +134,6 @@ ThreadGDBRemote::RefreshStateAfterStop()
     const bool force = false;
     GetRegisterContext()->InvalidateIfNeeded (force);
 }
-
-void
-ThreadGDBRemote::ClearStackFrames ()
-{
-    Unwind *unwinder = GetUnwinder ();
-    if (unwinder)
-        unwinder->Clear();
-    Thread::ClearStackFrames();
-}
-
 
 bool
 ThreadGDBRemote::ThreadIDIsValid (lldb::tid_t thread)
@@ -202,8 +180,12 @@ ThreadGDBRemote::CreateRegisterContextForFrame (StackFrame *frame)
             reg_ctx_sp.reset (new GDBRemoteRegisterContext (*this, concrete_frame_idx, gdb_process->m_register_info, read_all_registers_at_once));
         }
     }
-    else if (m_unwinder_ap.get())
-        reg_ctx_sp = m_unwinder_ap->CreateRegisterContextForFrame (frame);
+    else
+    {
+        Unwind *unwinder = GetUnwinder ();
+        if (unwinder)
+            reg_ctx_sp = unwinder->CreateRegisterContextForFrame (frame);
+    }
     return reg_ctx_sp;
 }
 
@@ -215,37 +197,18 @@ ThreadGDBRemote::PrivateSetRegisterValue (uint32_t reg, StringExtractor &respons
     return gdb_reg_ctx->PrivateSetRegisterValue (reg, response);
 }
 
-lldb::StopInfoSP
-ThreadGDBRemote::GetPrivateStopReason ()
+bool
+ThreadGDBRemote::CalculateStopInfo ()
 {
     ProcessSP process_sp (GetProcess());
     if (process_sp)
     {
-        const uint32_t process_stop_id = process_sp->GetStopID();
-        if (m_thread_stop_reason_stop_id != process_stop_id ||
-            (m_actual_stop_info_sp && !m_actual_stop_info_sp->IsValid()))
-        {
-            if (IsStillAtLastBreakpointHit())
-                return m_actual_stop_info_sp;
-
-            // If GetGDBProcess().SetThreadStopInfo() doesn't find a stop reason
-            // for this thread, then m_actual_stop_info_sp will not ever contain
-            // a valid stop reason and the "m_actual_stop_info_sp->IsValid() == false"
-            // check will never be able to tell us if we have the correct stop info
-            // for this thread and we will continually send qThreadStopInfo packets
-            // down to the remote GDB server, so we need to keep our own notion
-            // of the stop ID that m_actual_stop_info_sp is valid for (even if it
-            // contains nothing). We use m_thread_stop_reason_stop_id for this below.
-            m_thread_stop_reason_stop_id = process_stop_id;
-            m_actual_stop_info_sp.reset();
-
-            StringExtractorGDBRemote stop_packet;
-            ProcessGDBRemote *gdb_process = static_cast<ProcessGDBRemote *>(process_sp.get());
-            if (gdb_process->GetGDBRemote().GetThreadStopInfo(GetID(), stop_packet))
-                gdb_process->SetThreadStopInfo (stop_packet);
-        }
+        StringExtractorGDBRemote stop_packet;
+        ProcessGDBRemote *gdb_process = static_cast<ProcessGDBRemote *>(process_sp.get());
+        if (gdb_process->GetGDBRemote().GetThreadStopInfo(GetProtocolID(), stop_packet))
+            return gdb_process->SetThreadStopInfo (stop_packet) == eStateStopped;
     }
-    return m_actual_stop_info_sp;
+    return false;
 }
 
 

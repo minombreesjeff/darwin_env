@@ -32,10 +32,10 @@ public:
     virtual
     ~ValueObjectCast();
     
-    virtual size_t
+    virtual uint64_t
     GetByteSize();
     
-    virtual uint32_t
+    virtual size_t
     CalculateNumChildren();
     
     virtual lldb::ValueType

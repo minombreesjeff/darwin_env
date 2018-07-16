@@ -19,6 +19,7 @@
 // Other libraries and framework includes
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Broadcaster.h"
+#include "lldb/Core/ConstString.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/InputReader.h"
 #include "lldb/Core/StreamString.h"
@@ -48,9 +49,12 @@ public:
     Initialize();
 
     static void
+    DebuggerInitialize (lldb_private::Debugger &debugger);
+
+    static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -113,17 +117,11 @@ public:
     virtual void
     DidAttach ();
 
-    virtual void
-    DoDidExec ();
-
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -141,10 +139,10 @@ public:
     DoHalt (bool &caused_stop);
 
     virtual lldb_private::Error
-    WillDetach ();
-
-    virtual lldb_private::Error
-    DoDetach ();
+    DoDetach (bool keep_stopped);
+    
+    virtual bool
+    DetachRequiresHalt() { return true; }
 
     virtual lldb_private::Error
     DoSignal (int signal);
@@ -193,19 +191,19 @@ public:
     // Process Breakpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite (lldb_private::BreakpointSite *bp_site);
 
     virtual lldb_private::Error
-    DisableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite (lldb_private::BreakpointSite *bp_site);
 
     //----------------------------------------------------------------------
     // Process Watchpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableWatchpoint (lldb_private::Watchpoint *wp);
+    EnableWatchpoint (lldb_private::Watchpoint *wp, bool notify = true);
 
     virtual lldb_private::Error
-    DisableWatchpoint (lldb_private::Watchpoint *wp);
+    DisableWatchpoint (lldb_private::Watchpoint *wp, bool notify = true);
 
     virtual lldb_private::Error
     GetWatchpointSupportInfo (uint32_t &num);
@@ -224,6 +222,10 @@ public:
     {
         return m_gdb_comm;
     }
+    
+    virtual lldb_private::Error
+    SendEventData(const char *data);
+
 
 protected:
     friend class ThreadGDBRemote;
@@ -291,14 +293,7 @@ protected:
     BuildDynamicRegisterInfo (bool force);
 
     void
-    SetLastStopPacket (const StringExtractorGDBRemote &response)
-    {
-        lldb_private::Mutex::Locker locker (m_last_stop_packet_mutex);
-        m_last_stop_packet = response;
-    }
-
-    void
-    CheckForKernel (lldb_private::Stream *strm);
+    SetLastStopPacket (const StringExtractorGDBRemote &response);
 
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
@@ -341,8 +336,6 @@ protected:
     lldb::BreakpointSP m_thread_create_bp_sp;
     bool m_waiting_for_attach;
     bool m_destroy_tried_resuming;
-    std::string m_dyld_plugin_name;
-    lldb::addr_t m_kernel_load_addr;
     lldb::CommandObjectSP m_command_sp;
     
     bool
@@ -386,11 +379,6 @@ protected:
                                lldb::InputReaderAction notification,
                                const char *bytes, 
                                size_t bytes_len);
-
-    lldb_private::Error
-    InterruptIfRunning (bool discard_thread_plans, 
-                        bool catch_stop_event, 
-                        lldb::EventSP &stop_event_sp);
 
     lldb_private::DynamicLoader *
     GetDynamicLoader ();

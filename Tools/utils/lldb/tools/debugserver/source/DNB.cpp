@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "DNB.h"
+#include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +26,16 @@
 #include <vector>
 #include <libproc.h>
 
+#define TRY_KQUEUE 1
+
+#ifdef TRY_KQUEUE
+    #include <sys/event.h>
+    #include <sys/time.h>
+    #ifdef NOTE_EXIT_DETAIL
+        #define USE_KQUEUE
+    #endif
+#endif
+
 #include "MacOSX/MachProcess.h"
 #include "MacOSX/MachTask.h"
 #include "CFString.h"
@@ -35,7 +46,7 @@
 #include "CFBundle.h"
 
 
-typedef STD_SHARED_PTR(MachProcess) MachProcessSP;
+typedef std::shared_ptr<MachProcess> MachProcessSP;
 typedef std::map<nub_process_t, MachProcessSP> ProcessMap;
 typedef ProcessMap::iterator ProcessMapIter;
 typedef ProcessMap::const_iterator ProcessMapConstIter;
@@ -122,6 +133,95 @@ GetProcessSP (nub_process_t pid, MachProcessSP& procSP)
     return false;
 }
 
+#ifdef USE_KQUEUE
+void *
+kqueue_thread (void *arg)
+{
+    int kq_id = (int) (intptr_t) arg;
+    
+    struct kevent death_event;
+    while (1)
+    {        
+        int n_events = kevent (kq_id, NULL, 0, &death_event, 1, NULL);
+        if (n_events == -1)
+        {
+            if (errno == EINTR)
+                continue;
+            else
+            {
+                DNBLogError ("kqueue failed with error: (%d): %s", errno, strerror(errno));
+                return NULL;
+            }
+        }
+        else if (death_event.flags & EV_ERROR)
+        {
+            int error_no = death_event.data;
+            const char *error_str = strerror(death_event.data);
+            if (error_str == NULL)
+                error_str = "Unknown error";
+            DNBLogError ("Failed to initialize kqueue event: (%d): %s", error_no, error_str );
+            return NULL;
+        }
+        else
+        {
+            int status;
+            pid_t child_pid = waitpid ((pid_t) death_event.ident, &status, 0);
+            if (death_event.data & NOTE_EXIT_MEMORY)
+            {
+                if (death_event.data & NOTE_VM_PRESSURE)
+                    DNBProcessSetExitInfo (child_pid, "Terminated due to Memory Pressure");
+                else if (death_event.data & NOTE_VM_ERROR)
+                    DNBProcessSetExitInfo (child_pid, "Terminated due to Memory Error");
+                else
+                    DNBProcessSetExitInfo (child_pid, "Terminated due to unknown Memory condition");
+            }
+            else if (death_event.data & NOTE_EXIT_DECRYPTFAIL)
+                    DNBProcessSetExitInfo (child_pid, "Terminated due to decrypt failure");
+            else if (death_event.data & NOTE_EXIT_CSERROR)
+                    DNBProcessSetExitInfo (child_pid, "Terminated due to code signing error");
+            
+            DNBLogThreadedIf(LOG_PROCESS, "waitpid_process_thread (): setting exit status for pid = %i to %i", child_pid, status);
+            DNBProcessSetExitStatus (child_pid, status);
+            return NULL;
+        }
+    }
+}
+
+static bool
+spawn_kqueue_thread (pid_t pid)
+{
+    pthread_t thread = THREAD_NULL;
+    int kq_id;
+    
+    printf ("Spawning kqueue listening thread.\n");
+    kq_id = kqueue();
+    if (kq_id == -1)
+    {
+        DNBLogError ("Could not get kqueue for pid = %i.", pid);
+        return false;
+    }
+
+    struct kevent reg_event;
+    
+    EV_SET(&reg_event, pid, EVFILT_PROC, EV_ADD, NOTE_EXIT|NOTE_EXIT_DETAIL, 0, NULL);
+    // Register the event:
+    int result = kevent (kq_id, &reg_event, 1, NULL, 0, NULL);
+    if (result != 0)
+    {
+        DNBLogError ("Failed to register kqueue NOTE_EXIT event for pid %i, error: %d.", pid, result);
+        return false;
+    }
+    
+    ::pthread_create (&thread, NULL, kqueue_thread, (void *)(intptr_t)kq_id);
+    
+    if (thread != THREAD_NULL)
+    {
+        ::pthread_detach (thread);
+        return true;
+    }
+    return false;
+}
+#endif // #if USE_KQUEUE
 
 static void *
 waitpid_thread (void *arg)
@@ -131,7 +231,7 @@ waitpid_thread (void *arg)
     while (1)
     {
         pid_t child_pid = waitpid(pid, &status, 0);
-        DNBLogThreadedIf(LOG_PROCESS, "waitpid_process_thread (): waitpid (pid = %i, &status, 0) => %i, status = %i, errno = %i", pid, child_pid, status, errno);
+        DNBLogThreadedIf(LOG_PROCESS, "waitpid_thread (): waitpid (pid = %i, &status, 0) => %i, status = %i, errno = %i", pid, child_pid, status, errno);
 
         if (child_pid < 0)
         {
@@ -147,7 +247,7 @@ waitpid_thread (void *arg)
             }
             else// if (WIFEXITED(status) || WIFSIGNALED(status))
             {
-                DNBLogThreadedIf(LOG_PROCESS, "waitpid_process_thread (): setting exit status for pid = %i to %i", child_pid, status);
+                DNBLogThreadedIf(LOG_PROCESS, "waitpid_thread (): setting exit status for pid = %i to %i", child_pid, status);
                 DNBProcessSetExitStatus (child_pid, status);
                 return NULL;
             }
@@ -156,15 +256,21 @@ waitpid_thread (void *arg)
 
     // We should never exit as long as our child process is alive, so if we
     // do something else went wrong and we should exit...
-    DNBLogThreadedIf(LOG_PROCESS, "waitpid_process_thread (): main loop exited, setting exit status to an invalid value (-1) for pid %i", pid);
+    DNBLogThreadedIf(LOG_PROCESS, "waitpid_thread (): main loop exited, setting exit status to an invalid value (-1) for pid %i", pid);
     DNBProcessSetExitStatus (pid, -1);
     return NULL;
 }
-
 static bool
 spawn_waitpid_thread (pid_t pid)
 {
     pthread_t thread = THREAD_NULL;
+    printf ("Spawning general listening thread.\n");
+#ifdef USE_KQUEUE
+    bool success = spawn_kqueue_thread (pid);
+    if (success)
+        return true;
+#endif
+
     ::pthread_create (&thread, NULL, waitpid_thread, (void *)(intptr_t)pid);
     if (thread != THREAD_NULL)
     {
@@ -185,6 +291,7 @@ DNBProcessLaunch (const char *path,
                   bool no_stdio,
                   nub_launch_flavor_t launch_flavor,
                   int disable_aslr,
+                  const char *event_data,
                   char *err_str,
                   size_t err_len)
 {
@@ -227,7 +334,8 @@ DNBProcessLaunch (const char *path,
                                                stderr_path, 
                                                no_stdio, 
                                                launch_flavor, 
-                                               disable_aslr, 
+                                               disable_aslr,
+                                               event_data,
                                                launch_err);
         if (err_str)
         {
@@ -255,6 +363,7 @@ DNBProcessLaunch (const char *path,
                 // We failed to get the task for our process ID which is bad.
                 // Kill our process otherwise it will be stopped at the entry
                 // point and get reparented to someone else and never go away.
+                DNBLog ("Could not get task port for process, sending SIGKILL and exiting.");
                 kill (SIGKILL, pid);
 
                 if (err_str && err_len > 0)
@@ -674,6 +783,19 @@ DNBProcessSignal (nub_process_t pid, int signal)
     return false;
 }
 
+nub_bool_t
+DNBProcessSendEvent (nub_process_t pid, const char *event)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+    {
+        // FIXME: Do something with the error...
+        DNBError send_error;
+        return procSP->SendEvent (event, send_error);
+    }
+    return false;
+}
+
 
 nub_bool_t
 DNBProcessIsAlive (nub_process_t pid)
@@ -726,6 +848,28 @@ DNBProcessSetExitStatus (nub_process_t pid, int status)
     return false;
 }
 
+const char *
+DNBProcessGetExitInfo (nub_process_t pid)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+    {
+        return procSP->GetExitInfo();
+    }
+    return NULL;
+}
+
+nub_bool_t
+DNBProcessSetExitInfo (nub_process_t pid, const char *info)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+    {
+        procSP->SetExitInfo(info);
+        return true;
+    }
+    return false;
+}
 
 const char *
 DNBThreadGetName (nub_process_t pid, nub_thread_t tid)
@@ -898,237 +1042,45 @@ DNBProcessResetEvents (nub_process_t pid, nub_event_t event_mask)
         procSP->Events().ResetEvents(event_mask);
 }
 
-void
-DNBProcessInterruptEvents (nub_process_t pid)
-{
-    MachProcessSP procSP;
-    if (GetProcessSP (pid, procSP))
-        procSP->Events().SetEvents(eEventProcessAsyncInterrupt);
-}
-
-
 // Breakpoints
-nub_break_t
+nub_bool_t
 DNBBreakpointSet (nub_process_t pid, nub_addr_t addr, nub_size_t size, nub_bool_t hardware)
 {
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
-    {
-        return procSP->CreateBreakpoint(addr, size, hardware, THREAD_NULL);
-    }
-    return INVALID_NUB_BREAK_ID;
-}
-
-nub_bool_t
-DNBBreakpointClear (nub_process_t pid, nub_break_t breakID)
-{
-    if (NUB_BREAK_ID_IS_VALID(breakID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            return procSP->DisableBreakpoint(breakID, true);
-        }
-    }
-    return false; // Failed
-}
-
-nub_ssize_t
-DNBBreakpointGetHitCount (nub_process_t pid, nub_break_t breakID)
-{
-    if (NUB_BREAK_ID_IS_VALID(breakID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Breakpoints().FindByID(breakID);
-            if (bp)
-                return bp->GetHitCount();
-        }
-    }
-    return 0;
-}
-
-nub_ssize_t
-DNBBreakpointGetIgnoreCount (nub_process_t pid, nub_break_t breakID)
-{
-    if (NUB_BREAK_ID_IS_VALID(breakID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Breakpoints().FindByID(breakID);
-            if (bp)
-                return bp->GetIgnoreCount();
-        }
-    }
-    return 0;
-}
-
-nub_bool_t
-DNBBreakpointSetIgnoreCount (nub_process_t pid, nub_break_t breakID, nub_size_t ignore_count)
-{
-    if (NUB_BREAK_ID_IS_VALID(breakID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Breakpoints().FindByID(breakID);
-            if (bp)
-            {
-                bp->SetIgnoreCount(ignore_count);
-                return true;
-            }
-        }
-    }
+        return procSP->CreateBreakpoint(addr, size, hardware) != NULL;
     return false;
 }
 
-// Set the callback function for a given breakpoint. The callback function will
-// get called as soon as the breakpoint is hit. The function will be called
-// with the process ID, thread ID, breakpoint ID and the baton, and can return
-//
 nub_bool_t
-DNBBreakpointSetCallback (nub_process_t pid, nub_break_t breakID, DNBCallbackBreakpointHit callback, void *baton)
-{
-    if (NUB_BREAK_ID_IS_VALID(breakID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Breakpoints().FindByID(breakID);
-            if (bp)
-            {
-                bp->SetCallback(callback, baton);
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-//----------------------------------------------------------------------
-// Dump the breakpoints stats for process PID for a breakpoint by ID.
-//----------------------------------------------------------------------
-void
-DNBBreakpointPrint (nub_process_t pid, nub_break_t breakID)
+DNBBreakpointClear (nub_process_t pid, nub_addr_t addr)
 {
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
-        procSP->DumpBreakpoint(breakID);
+        return procSP->DisableBreakpoint(addr, true);
+    return false; // Failed
 }
+
 
 //----------------------------------------------------------------------
 // Watchpoints
 //----------------------------------------------------------------------
-nub_watch_t
+nub_bool_t
 DNBWatchpointSet (nub_process_t pid, nub_addr_t addr, nub_size_t size, uint32_t watch_flags, nub_bool_t hardware)
 {
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
-    {
-        return procSP->CreateWatchpoint(addr, size, watch_flags, hardware, THREAD_NULL);
-    }
-    return INVALID_NUB_WATCH_ID;
-}
-
-nub_bool_t
-DNBWatchpointClear (nub_process_t pid, nub_watch_t watchID)
-{
-    if (NUB_WATCH_ID_IS_VALID(watchID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            return procSP->DisableWatchpoint(watchID, true);
-        }
-    }
-    return false; // Failed
-}
-
-nub_ssize_t
-DNBWatchpointGetHitCount (nub_process_t pid, nub_watch_t watchID)
-{
-    if (NUB_WATCH_ID_IS_VALID(watchID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Watchpoints().FindByID(watchID);
-            if (bp)
-                return bp->GetHitCount();
-        }
-    }
-    return 0;
-}
-
-nub_ssize_t
-DNBWatchpointGetIgnoreCount (nub_process_t pid, nub_watch_t watchID)
-{
-    if (NUB_WATCH_ID_IS_VALID(watchID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Watchpoints().FindByID(watchID);
-            if (bp)
-                return bp->GetIgnoreCount();
-        }
-    }
-    return 0;
-}
-
-nub_bool_t
-DNBWatchpointSetIgnoreCount (nub_process_t pid, nub_watch_t watchID, nub_size_t ignore_count)
-{
-    if (NUB_WATCH_ID_IS_VALID(watchID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Watchpoints().FindByID(watchID);
-            if (bp)
-            {
-                bp->SetIgnoreCount(ignore_count);
-                return true;
-            }
-        }
-    }
+        return procSP->CreateWatchpoint(addr, size, watch_flags, hardware) != NULL;
     return false;
 }
 
-// Set the callback function for a given watchpoint. The callback function will
-// get called as soon as the watchpoint is hit. The function will be called
-// with the process ID, thread ID, watchpoint ID and the baton, and can return
-//
 nub_bool_t
-DNBWatchpointSetCallback (nub_process_t pid, nub_watch_t watchID, DNBCallbackBreakpointHit callback, void *baton)
-{
-    if (NUB_WATCH_ID_IS_VALID(watchID))
-    {
-        MachProcessSP procSP;
-        if (GetProcessSP (pid, procSP))
-        {
-            DNBBreakpoint *bp = procSP->Watchpoints().FindByID(watchID);
-            if (bp)
-            {
-                bp->SetCallback(callback, baton);
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-//----------------------------------------------------------------------
-// Dump the watchpoints stats for process PID for a watchpoint by ID.
-//----------------------------------------------------------------------
-void
-DNBWatchpointPrint (nub_process_t pid, nub_watch_t watchID)
+DNBWatchpointClear (nub_process_t pid, nub_addr_t addr)
 {
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
-        procSP->DumpWatchpoint(watchID);
+        return procSP->DisableWatchpoint(addr, true);
+    return false; // Failed
 }
 
 //----------------------------------------------------------------------
@@ -1218,22 +1170,22 @@ DNBProcessMemoryRegionInfo (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *r
 }
 
 std::string
-DNBProcessGetProfileData (nub_process_t pid)
+DNBProcessGetProfileData (nub_process_t pid, DNBProfileDataScanType scanType)
 {
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
-        return procSP->Task().GetProfileData();
+        return procSP->Task().GetProfileData(scanType);
     
     return std::string("");
 }
 
 nub_bool_t
-DNBProcessSetAsyncEnableProfiling (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec)
+DNBProcessSetEnableAsyncProfiling (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec, DNBProfileDataScanType scan_type)
 {
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
     {
-        procSP->SetAsyncEnableProfiling(enable, interval_usec);
+        procSP->SetEnableAsyncProfiling(enable, interval_usec, scan_type);
         return true;
     }
     
@@ -1384,7 +1336,7 @@ DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t base_addr, FILE *file
                                         }
                                         else
                                         {
-                                            fprintf(file, "error: unable to read register '%s' for process %#.4x and thread %#.4x\n", register_name.c_str(), pid, tid);
+                                            fprintf(file, "error: unable to read register '%s' for process %#.4x and thread %#.8" PRIx64 "\n", register_name.c_str(), pid, tid);
                                             return total_bytes_read;
                                         }
                                     }
@@ -1767,6 +1719,18 @@ DNBProcessGetCurrentThread (nub_process_t pid)
     MachProcessSP procSP;
     if (GetProcessSP (pid, procSP))
         return procSP->GetCurrentThread();
+    return 0;
+}
+
+//----------------------------------------------------------------------
+// Get the mach port number of the current thread.
+//----------------------------------------------------------------------
+nub_thread_t
+DNBProcessGetCurrentThreadMachPort (nub_process_t pid)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->GetCurrentThreadMachPort();
     return 0;
 }
 
@@ -2202,8 +2166,9 @@ DNBInitialize()
 #if defined (__i386__) || defined (__x86_64__)
     DNBArchImplI386::Initialize();
     DNBArchImplX86_64::Initialize();
-#elif defined (__arm__)
+#elif defined (__arm__) || defined (__arm64__)
     DNBArchMachARM::Initialize();
+    DNBArchMachARM64::Initialize();
 #endif
 }
 
@@ -2221,6 +2186,8 @@ DNBSetArchitecture (const char *arch)
             return DNBArchProtocol::SetArchitecture (CPU_TYPE_I386);
         else if (strcasecmp (arch, "x86_64") == 0)
             return DNBArchProtocol::SetArchitecture (CPU_TYPE_X86_64);
+        else if (strstr (arch, "arm64") == arch || strstr (arch, "armv8") == arch)
+            return DNBArchProtocol::SetArchitecture (CPU_TYPE_ARM64);
         else if (strstr (arch, "arm") == arch)
             return DNBArchProtocol::SetArchitecture (CPU_TYPE_ARM);
     }

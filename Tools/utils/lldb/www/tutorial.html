@@ -93,6 +93,13 @@
                         <br>(lldb) breakpoint set -n foo
                     </code>
 
+                   <p>You can use the --name option multiple times to make a breakpoint on a set of functions as well.  This is convenient
+                      since it allows you to set commmon conditions or commands without having to specify them multiple times:</p>
+
+                    <code>
+                        (lldb) breakpoint set --name foo --name bar
+                    </code>
+
                    <p>Setting breakpoints by name is even more specialized in LLDB as you can specify
                        that you want to set a breakpoint at a function by method name. To set a breakpoint
                        on all C++ methods named <code>foo</code> you can enter either of:</p>
@@ -117,6 +124,8 @@
                       <br>(lldb) breakpoint set -s foo.dylib -n foo
                   </code>
 
+                   <p>The <code>--shlib</code> option can also be repeated to specify several shared libraries.</p>
+
                    <p>Suggestions on more interesting primitives of this sort are also very welcome.</p>
 
                    <p>Just like gdb, the lldb command interpreter does a shortest unique
@@ -136,10 +145,12 @@
                    things like if you specify "<code>--shlib &lt;path&gt;</code>", and are completing on "<code>--file &lt;path&gt;</code>", we will only
                    list source files in the shared library specified by "<code>--shlib &lt;path&gt;</code>".</p>
 
-                   <p>The individual commands are pretty extensively documented, using
-                   the <code>help</code> command.  And there is an <code>apropos</code> command that will
-                   search the help for a particular word and dump a summary help string
-                   for each matching command.</p>
+                   <p>The individual commands are pretty extensively documented.  You can
+                   use the <code>help</code> command to get an overview of which commands are
+                   available or to obtain details about specific commands.  There is also an
+                   <code>apropos</code> command that will search the help text for all commands
+                   for a particular word and dump a summary help string for each matching
+                   command.</p>
 
                    <p>Finally, there is a mechanism to construct aliases for commonly used
                    commands.  So for instance if you get annoyed typing:</p>

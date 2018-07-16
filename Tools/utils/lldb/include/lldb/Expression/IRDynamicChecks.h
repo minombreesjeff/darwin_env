@@ -20,7 +20,7 @@ namespace llvm {
     class Function;
     class Instruction;
     class Module;
-    class TargetData;
+    class DataLayout;
     class Value;
 }
 
@@ -77,8 +77,8 @@ public:
     
     bool DoCheckersExplainStop (lldb::addr_t addr, Stream &message);
     
-    std::auto_ptr<ClangUtilityFunction> m_valid_pointer_check;
-    std::auto_ptr<ClangUtilityFunction> m_objc_object_check;
+    std::unique_ptr<ClangUtilityFunction> m_valid_pointer_check;
+    std::unique_ptr<ClangUtilityFunction> m_objc_object_check;
 };
 
 //----------------------------------------------------------------------

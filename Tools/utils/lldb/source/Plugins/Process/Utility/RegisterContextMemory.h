@@ -46,13 +46,13 @@ public:
     GetRegisterCount ();
 
     virtual const lldb_private::RegisterInfo *
-    GetRegisterInfoAtIndex (uint32_t reg);
+    GetRegisterInfoAtIndex (size_t reg);
 
     virtual size_t
     GetRegisterSetCount ();
 
     virtual const lldb_private::RegisterSet *
-    GetRegisterSet (uint32_t reg_set);
+    GetRegisterSet (size_t reg_set);
 
     virtual uint32_t
     ConvertRegisterKindToRegisterNumber (uint32_t kind, uint32_t num);
@@ -60,7 +60,7 @@ public:
     
     //------------------------------------------------------------------
     // If all of the thread register are in a contiguous buffer in 
-    // memory, then the default ReadRegister/WriteRegiter and
+    // memory, then the default ReadRegister/WriteRegister and
     // ReadAllRegisterValues/WriteAllRegisterValues will work. If thread
     // registers are not contiguous, clients will want to subclass this
     // class and modify the read/write functions as needed.

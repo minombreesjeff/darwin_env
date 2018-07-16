@@ -21,9 +21,25 @@ using namespace lldb_private;
 SymbolFile*
 SymbolFile::FindPlugin (ObjectFile* obj_file)
 {
-    std::auto_ptr<SymbolFile> best_symfile_ap;
+    std::unique_ptr<SymbolFile> best_symfile_ap;
     if (obj_file != NULL)
     {
+        
+        // We need to test the abilities of this section list. So create what it would
+        // be with this new obj_file.
+        lldb::ModuleSP module_sp(obj_file->GetModule());
+        if (module_sp)
+        {
+            // Default to the main module section list.
+            ObjectFile *module_obj_file = module_sp->GetObjectFile();
+            if (module_obj_file != obj_file)
+            {
+                // Make sure the main object file's sections are created
+                module_obj_file->GetSectionList();
+                obj_file->CreateSections (*module_sp->GetUnifiedSectionList());
+            }
+        }
+
         // TODO: Load any plug-ins in the appropriate plug-in search paths and
         // iterate over all of them to find the best one for the job.
 
@@ -32,7 +48,7 @@ SymbolFile::FindPlugin (ObjectFile* obj_file)
         SymbolFileCreateInstance create_callback;
         for (uint32_t idx = 0; (create_callback = PluginManager::GetSymbolFileCreateCallbackAtIndex(idx)) != NULL; ++idx)
         {
-            std::auto_ptr<SymbolFile> curr_symfile_ap(create_callback(obj_file));
+            std::unique_ptr<SymbolFile> curr_symfile_ap(create_callback(obj_file));
 
             if (curr_symfile_ap.get())
             {
@@ -40,7 +56,7 @@ SymbolFile::FindPlugin (ObjectFile* obj_file)
                 if (sym_file_abilities > best_symfile_abilities)
                 {
                     best_symfile_abilities = sym_file_abilities;
-                    best_symfile_ap = curr_symfile_ap;
+                    best_symfile_ap.reset (curr_symfile_ap.release());
                     // If any symbol file parser has all of the abilities, then
                     // we should just stop looking.
                     if ((kAllAbilities & sym_file_abilities) == kAllAbilities)

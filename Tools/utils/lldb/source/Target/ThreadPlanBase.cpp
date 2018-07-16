@@ -68,7 +68,7 @@ ThreadPlanBase::ValidatePlan (Stream *error)
 }
 
 bool
-ThreadPlanBase::PlanExplainsStop ()
+ThreadPlanBase::DoPlanExplainsStop (Event *event_ptr)
 {
     // The base plan should defer to its tracer, since by default it
     // always handles the stop.
@@ -78,18 +78,34 @@ ThreadPlanBase::PlanExplainsStop ()
         return true;
 }
 
+Vote
+ThreadPlanBase::ShouldReportStop(Event *event_ptr)
+{
+    StopInfoSP stop_info_sp = m_thread.GetStopInfo ();
+    if (stop_info_sp)
+    {
+        bool should_notify = stop_info_sp->ShouldNotify(event_ptr);
+        if (should_notify)
+            return eVoteYes;
+        else
+            return eVoteNoOpinion;
+    }
+    else
+        return eVoteNoOpinion;
+}
+
 bool
 ThreadPlanBase::ShouldStop (Event *event_ptr)
 {
     m_stop_vote = eVoteYes;
     m_run_vote = eVoteYes;
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    StopInfoSP stop_info_sp = GetPrivateStopInfo ();
     if (stop_info_sp)
     {
-        StopReason reason = stop_info_sp->GetStopReason();
+        StopReason reason = stop_info_sp->GetStopReason ();
         switch (reason)
         {
         case eStopReasonInvalid:
@@ -101,7 +117,7 @@ ThreadPlanBase::ShouldStop (Event *event_ptr)
 
         case eStopReasonBreakpoint:
         case eStopReasonWatchpoint:
-            if (stop_info_sp->ShouldStop(event_ptr))
+            if (stop_info_sp->ShouldStopSynchronous(event_ptr))
             {
                 // If we are going to stop for a breakpoint, then unship the other plans
                 // at this point.  Don't force the discard, however, so Master plans can stay
@@ -146,7 +162,8 @@ ThreadPlanBase::ShouldStop (Event *event_ptr)
                 log->Printf("Base plan discarding thread plans for thread tid = 0x%4.4" PRIx64 " (exec.)", m_thread.GetID());
             m_thread.DiscardThreadPlans(false);
             return true;
-            
+
+        case eStopReasonThreadExiting:
         case eStopReasonSignal:
             if (stop_info_sp->ShouldStop(event_ptr))
             {
@@ -200,7 +217,7 @@ ThreadPlanBase::WillStop ()
 }
 
 bool 
-ThreadPlanBase::WillResume (lldb::StateType resume_state, bool current_plan)
+ThreadPlanBase::DoWillResume (lldb::StateType resume_state, bool current_plan)
 {
     // Reset these to the default values so we don't set them wrong, then not get asked
     // for a while, then return the wrong answer.

@@ -111,6 +111,7 @@ public:
         std::vector<std::string> m_source_command_files;
         bool m_debug_mode;
         bool m_print_version;
+        bool m_print_python_path;
         bool m_print_help;
         bool m_wait_for;
         std::string m_process_name;
@@ -150,14 +151,18 @@ public:
     {
         m_done = true;
     }
+    
+    void
+    ResizeWindow (unsigned short col);
 
 private:
     lldb::SBDebugger m_debugger;
     lldb_utility::PseudoTerminal m_editline_pty;
     FILE *m_editline_slave_fh;
     lldb::SBInputReader m_editline_reader;
-    std::auto_ptr<IOChannel> m_io_channel_ap;
+    std::unique_ptr<IOChannel> m_io_channel_ap;
     OptionData m_option_data;
+    bool m_executing_user_command;
     bool m_waiting_for_command;
     bool m_done;
 

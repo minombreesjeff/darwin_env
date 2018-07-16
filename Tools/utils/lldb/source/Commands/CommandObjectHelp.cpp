@@ -64,7 +64,7 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
 {
     CommandObject::CommandMap::iterator pos;
     CommandObject *cmd_obj;
-    const int argc = command.GetArgumentCount ();
+    const size_t argc = command.GetArgumentCount ();
     
     // 'help' doesn't take any arguments, other than command names.  If argc is 0, we show the user
     // all commands (aliases and user commands if asked for).  Otherwise every argument must be the name of a command or a sub-command.
@@ -94,7 +94,7 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
             CommandObject *sub_cmd_obj = cmd_obj;
             // Loop down through sub_command dictionaries until we find the command object that corresponds
             // to the help command entered.
-            for (int i = 1; i < argc && all_okay; ++i)
+            for (size_t i = 1; i < argc && all_okay; ++i)
             {
                 std::string sub_command = command.GetArgumentAtIndex(i);
                 matches.Clear();
@@ -119,13 +119,7 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
             {
                 std::string cmd_string;
                 command.GetCommandString (cmd_string);
-                if (matches.GetSize() < 2)
-                {
-                    result.AppendErrorWithFormat("'%s' is not a known command.\n"
-                                                 "Try 'help' to see a current list of commands.\n",
-                                                 cmd_string.c_str());
-                }
-                else 
+                if (matches.GetSize() >= 2)
                 {
                     StreamString s;
                     s.Printf ("ambiguous command %s", cmd_string.c_str());
@@ -136,81 +130,28 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
                     }
                     s.Printf ("\n");
                     result.AppendError(s.GetData());
+                    result.SetStatus (eReturnStatusFailed);
+                    return false;
                 }
-
-                result.SetStatus (eReturnStatusFailed);
-            }
-            else
-            {
-                Stream &output_strm = result.GetOutputStream();
-                if (sub_cmd_obj->GetOptions() != NULL)
+                else if (!sub_cmd_obj)
                 {
-                    if (sub_cmd_obj->WantsRawCommandString())
-                    {
-                        std::string help_text (sub_cmd_obj->GetHelp());
-                        help_text.append ("  This command takes 'raw' input (no need to quote stuff).");
-                        m_interpreter.OutputFormattedHelpText (output_strm, "", "", help_text.c_str(), 1);
-                    }
-                    else
-                        m_interpreter.OutputFormattedHelpText (output_strm, "", "", sub_cmd_obj->GetHelp(), 1);
-                    output_strm.Printf ("\nSyntax: %s\n", sub_cmd_obj->GetSyntax());
-                    sub_cmd_obj->GetOptions()->GenerateOptionUsage (output_strm, sub_cmd_obj);
-                    const char *long_help = sub_cmd_obj->GetHelpLong();
-                    if ((long_help != NULL)
-                        && (strlen (long_help) > 0))
-                        output_strm.Printf ("\n%s", long_help);
-                    if (sub_cmd_obj->WantsRawCommandString() && !sub_cmd_obj->WantsCompletion())
-                    {
-                        // Emit the message about using ' -- ' between the end of the command options and the raw input
-                        // conditionally, i.e., only if the command object does not want completion.
-                        m_interpreter.OutputFormattedHelpText (output_strm, "", "",
-                                                               "\nIMPORTANT NOTE:  Because this command takes 'raw' input, if you use any command options"
-                                                               " you must use ' -- ' between the end of the command options and the beginning of the raw input.", 1);
-                    }
-                    else if (sub_cmd_obj->GetNumArgumentEntries() > 0
-                             && sub_cmd_obj->GetOptions()
-                             && sub_cmd_obj->GetOptions()->NumCommandOptions() > 0)
-                    {
-                            // Also emit a warning about using "--" in case you are using a command that takes options and arguments.
-                            m_interpreter.OutputFormattedHelpText (output_strm, "", "",
-                                                                   "\nThis command takes options and arguments, if your arguments look like option specifiers"
-                                                                   " you must use '--' to terminate the options before starting to give the arguments.", 1);
-                    }
-
-                    // Mark this help command with a success status.
-                    result.SetStatus (eReturnStatusSuccessFinishNoResult);
-                }
-                else if (sub_cmd_obj->IsMultiwordObject())
-                {
-                    if (sub_cmd_obj->WantsRawCommandString())
-                    {
-                        std::string help_text (sub_cmd_obj->GetHelp());
-                        help_text.append ("  This command takes 'raw' input (no need to quote stuff).");
-                        m_interpreter.OutputFormattedHelpText (output_strm, "", "", help_text.c_str(), 1);
-                    }
-                    else
-                        m_interpreter.OutputFormattedHelpText (output_strm, "", "", sub_cmd_obj->GetHelp(), 1);
-                    sub_cmd_obj->GenerateHelpText (result);
+                    result.AppendErrorWithFormat("'%s' is not a known command.\n"
+                                                 "Try 'help' to see a current list of commands.\n",
+                                                 cmd_string.c_str());
+                    result.SetStatus (eReturnStatusFailed);
+                    return false;
                 }
                 else
                 {
-                    const char *long_help = sub_cmd_obj->GetHelpLong();
-                    if ((long_help != NULL)
-                        && (strlen (long_help) > 0))
-                        output_strm.Printf ("%s", long_help);
-                    else if (sub_cmd_obj->WantsRawCommandString())
-                    {
-                        std::string help_text (sub_cmd_obj->GetHelp());
-                        help_text.append ("  This command takes 'raw' input (no need to quote stuff).");
-                        m_interpreter.OutputFormattedHelpText (output_strm, "", "", help_text.c_str(), 1);
-                    }
-                    else
-                        m_interpreter.OutputFormattedHelpText (output_strm, "", "", sub_cmd_obj->GetHelp(), 1);
-                    output_strm.Printf ("\nSyntax: %s\n", sub_cmd_obj->GetSyntax());
-                    // Mark this help command with a success status.
-                    result.SetStatus (eReturnStatusSuccessFinishNoResult);
+                    result.GetOutputStream().Printf("'%s' is not a known command.\n"
+                                                   "Try 'help' to see a current list of commands.\n"
+                                                    "The closest match is '%s'. Help on it follows.\n\n",
+                                                   cmd_string.c_str(),
+                                                   sub_cmd_obj->GetCommandName());
                 }
             }
+            
+            sub_cmd_obj->GenerateHelpText(result);
             
             if (is_alias_command)
             {
@@ -223,8 +164,8 @@ CommandObjectHelp::DoExecute (Args& command, CommandReturnObject &result)
         {
             Stream &output_strm = result.GetOutputStream();
             output_strm.Printf("Help requested with ambiguous command name, possible completions:\n");
-            const uint32_t match_count = matches.GetSize();
-            for (uint32_t i = 0; i < match_count; i++)
+            const size_t match_count = matches.GetSize();
+            for (size_t i = 0; i < match_count; i++)
             {
                 output_strm.Printf("\t%s\n", matches.GetStringAtIndex(i));
             }

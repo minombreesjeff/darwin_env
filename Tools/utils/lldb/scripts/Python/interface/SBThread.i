@@ -124,6 +124,9 @@ public:
     StepInto (lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
 
     void
+    StepInto (const char *target_name, lldb::RunMode stop_other_threads = lldb::eOnlyDuringStepping);
+
+    void
     StepOut ();
 
     void
@@ -175,6 +178,9 @@ public:
     bool
     IsSuspended();
 
+    bool
+    IsStopped();
+
     uint32_t
     GetNumFrames ();
 
@@ -196,6 +202,12 @@ public:
     bool
     GetStatus (lldb::SBStream &status) const;
     
+    bool
+    operator == (const lldb::SBThread &rhs) const;
+
+    bool
+    operator != (const lldb::SBThread &rhs) const;
+             
     %pythoncode %{
         class frames_access(object):
             '''A helper object that will lazily hand out frames for a thread when supplied an index.'''
@@ -255,6 +267,9 @@ public:
 
         __swig_getmethods__["is_suspended"] = IsSuspended
         if _newclass: is_suspended = property(IsSuspended, None, doc='''A read only property that returns a boolean value that indicates if this thread is suspended.''')
+
+        __swig_getmethods__["is_stopped"] = IsStopped
+        if _newclass: is_stopped = property(IsStopped, None, doc='''A read only property that returns a boolean value that indicates if this thread is stopped but not exited.''')
     %}
 
 };

@@ -9,6 +9,34 @@
 
 #include "lldb/lldb-python.h"
 
+// C includes
+#include <dlfcn.h>
+#include <errno.h>
+#include <grp.h>
+#include <limits.h>
+#include <netdb.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
+
+#if defined (__APPLE__)
+
+#include <dispatch/dispatch.h>
+#include <libproc.h>
+#include <mach-o/dyld.h>
+#include <mach/mach_port.h>
+
+#endif
+
+#if defined (__linux__) || defined (__FreeBSD__) || defined (__FreeBSD_kernel__)
+#include <sys/wait.h>
+#endif
+
+#if defined (__FreeBSD__)
+#include <pthread_np.h>
+#endif
+
 #include "lldb/Host/Host.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/ConstString.h"
@@ -26,36 +54,11 @@
 
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MachO.h"
-
-#include <dlfcn.h>
-#include <errno.h>
-#include <grp.h>
-#include <limits.h>
-#include <netdb.h>
-#include <pwd.h>
-#include <sys/types.h>
+#include "llvm/ADT/Twine.h"
 
 
-#if defined (__APPLE__)
-
-#include <dispatch/dispatch.h>
-#include <libproc.h>
-#include <mach-o/dyld.h>
-#include <mach/mach_port.h>
-#include <sys/sysctl.h>
 
 
-#elif defined (__linux__)
-
-#include <sys/wait.h>
-
-#elif defined (__FreeBSD__)
-
-#include <sys/wait.h>
-#include <sys/sysctl.h>
-#include <pthread_np.h>
-
-#endif
 
 using namespace lldb;
 using namespace lldb_private;
@@ -131,7 +134,7 @@ private:
 static void *
 MonitorChildProcessThreadFunction (void *arg)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     const char *function = __FUNCTION__;
     if (log)
         log->Printf ("%s (arg = %p) thread starting...", function, arg);
@@ -146,7 +149,11 @@ MonitorChildProcessThreadFunction (void *arg)
     delete info;
 
     int status = -1;
-    const int options = 0;
+#if defined (__FreeBSD__) || defined (__FreeBSD_kernel__)
+    #define __WALL 0
+#endif
+    const int options = __WALL;
+
     while (1)
     {
         log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
@@ -155,7 +162,8 @@ MonitorChildProcessThreadFunction (void *arg)
 
         // Wait for all child processes
         ::pthread_testcancel ();
-        const lldb::pid_t wait_pid = ::waitpid (pid, &status, options);
+        // Get signals from all children with same process group of pid
+        const lldb::pid_t wait_pid = ::waitpid (-1*pid, &status, options);
         ::pthread_testcancel ();
 
         if (wait_pid == -1)
@@ -163,9 +171,13 @@ MonitorChildProcessThreadFunction (void *arg)
             if (errno == EINTR)
                 continue;
             else
+            {
+                if (log)
+                    log->Printf ("%s (arg = %p) thread exiting because waitpid failed (%s)...", __FUNCTION__, arg, strerror(errno));
                 break;
+            }
         }
-        else if (wait_pid == pid)
+        else if (wait_pid > 0)
         {
             bool exited = false;
             int signal = 0;
@@ -186,8 +198,10 @@ MonitorChildProcessThreadFunction (void *arg)
             {
                 signal = WTERMSIG(status);
                 status_cstr = "SIGNALED";
-                exited = true;
-                exit_status = -1;
+                if (wait_pid == pid) {
+                    exited = true;
+                    exit_status = -1;
+                }
             }
             else
             {
@@ -214,15 +228,23 @@ MonitorChildProcessThreadFunction (void *arg)
                 {
                     bool callback_return = false;
                     if (callback)
-                        callback_return = callback (callback_baton, pid, exited, signal, exit_status);
+                        callback_return = callback (callback_baton, wait_pid, exited, signal, exit_status);
                     
                     // If our process exited, then this thread should exit
-                    if (exited)
+                    if (exited && wait_pid == pid)
+                    {
+                        if (log)
+                            log->Printf ("%s (arg = %p) thread exiting because pid received exit signal...", __FUNCTION__, arg);
                         break;
+                    }
                     // If the callback returns true, it means this process should
                     // exit
                     if (callback_return)
+                    {
+                        if (log)
+                            log->Printf ("%s (arg = %p) thread exiting because callback returned true...", __FUNCTION__, arg);
                         break;
+                    }
                 }
             }
         }
@@ -500,7 +522,8 @@ Host::WillTerminate ()
 {
 }
 
-#if !defined (__APPLE__) && !defined (__FreeBSD__) // see macosx/Host.mm
+#if !defined (__APPLE__) && !defined (__FreeBSD__) && !defined (__FreeBSD_kernel__) && !defined (__linux__) // see macosx/Host.mm
+
 void
 Host::ThreadCreated (const char *thread_name)
 {
@@ -519,7 +542,7 @@ Host::GetEnvironment (StringList &env)
     return 0;
 }
 
-#endif
+#endif // #if !defined (__APPLE__) && !defined (__FreeBSD__) && !defined (__FreeBSD_kernel__) && !defined (__linux__)
 
 struct HostThreadCreateInfo
 {
@@ -543,7 +566,7 @@ ThreadCreateTrampoline (thread_arg_t arg)
     thread_func_t thread_fptr = info->thread_fptr;
     thread_arg_t thread_arg = info->thread_arg;
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_THREAD));
     if (log)
         log->Printf("thread created");
     
@@ -606,92 +629,10 @@ Host::ThreadJoin (lldb::thread_t thread, thread_result_t *thread_result_ptr, Err
     return err == 0;
 }
 
-// rdar://problem/8153284
-// Fixed a crasher where during shutdown, loggings attempted to access the
-// thread name but the static map instance had already been destructed.
-// So we are using a ThreadSafeSTLMap POINTER, initializing it with a
-// pthread_once action.  That map will get leaked.
-//
-// Another approach is to introduce a static guard object which monitors its
-// own destruction and raises a flag, but this incurs more overhead.
-
-static pthread_once_t g_thread_map_once = PTHREAD_ONCE_INIT;
-static ThreadSafeSTLMap<uint64_t, std::string> *g_thread_names_map_ptr;
-
-static void
-InitThreadNamesMap()
-{
-    g_thread_names_map_ptr = new ThreadSafeSTLMap<uint64_t, std::string>();
-}
-
-//------------------------------------------------------------------
-// Control access to a static file thread name map using a single
-// static function to avoid a static constructor.
-//------------------------------------------------------------------
-static const char *
-ThreadNameAccessor (bool get, lldb::pid_t pid, lldb::tid_t tid, const char *name)
-{
-    int success = ::pthread_once (&g_thread_map_once, InitThreadNamesMap);
-    if (success != 0)
-        return NULL;
-    
-    uint64_t pid_tid = ((uint64_t)pid << 32) | (uint64_t)tid;
-
-    if (get)
-    {
-        // See if the thread name exists in our thread name pool
-        std::string value;
-        bool found_it = g_thread_names_map_ptr->GetValueForKey (pid_tid, value);
-        if (found_it)
-            return value.c_str();
-        else
-            return NULL;
-    }
-    else if (name)
-    {
-        // Set the thread name
-        g_thread_names_map_ptr->SetValueForKey (pid_tid, std::string(name));
-    }
-    return NULL;
-}
-
-const char *
-Host::GetThreadName (lldb::pid_t pid, lldb::tid_t tid)
-{
-    const char *name = ThreadNameAccessor (true, pid, tid, NULL);
-    if (name == NULL)
-    {
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
-        // We currently can only get the name of a thread in the current process.
-        if (pid == Host::GetCurrentProcessID())
-        {
-            char pthread_name[1024];
-            if (::pthread_getname_np (::pthread_from_mach_thread_np (tid), pthread_name, sizeof(pthread_name)) == 0)
-            {
-                if (pthread_name[0])
-                {
-                    // Set the thread in our string pool
-                    ThreadNameAccessor (false, pid, tid, pthread_name);
-                    // Get our copy of the thread name string
-                    name = ThreadNameAccessor (true, pid, tid, NULL);
-                }
-            }
-            
-            if (name == NULL)
-            {
-                dispatch_queue_t current_queue = ::dispatch_get_current_queue ();
-                if (current_queue != NULL)
-                    name = dispatch_queue_get_label (current_queue);
-            }
-        }
-#endif
-    }
-    return name;
-}
-
-void
+bool
 Host::SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name)
 {
+#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
     lldb::pid_t curr_pid = Host::GetCurrentProcessID();
     lldb::tid_t curr_tid = Host::GetCurrentThreadID();
     if (pid == LLDB_INVALID_PROCESS_ID)
@@ -700,14 +641,39 @@ Host::SetThreadName (lldb::pid_t pid, lldb::tid_t tid, const char *name)
     if (tid == LLDB_INVALID_THREAD_ID)
         tid = curr_tid;
 
-#if defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
     // Set the pthread name if possible
     if (pid == curr_pid && tid == curr_tid)
     {
-        ::pthread_setname_np (name);
+        if (::pthread_setname_np (name) == 0)
+            return true;
     }
+    return false;
+#elif defined (__linux__) || defined (__GLIBC__)
+    void *fn = dlsym (RTLD_DEFAULT, "pthread_setname_np");
+    if (fn)
+    {
+        int (*pthread_setname_np_func)(pthread_t thread, const char *name);
+        *reinterpret_cast<void **> (&pthread_setname_np_func) = fn;
+
+        lldb::pid_t curr_pid = Host::GetCurrentProcessID();
+        lldb::tid_t curr_tid = Host::GetCurrentThreadID();
+
+        if (pid == LLDB_INVALID_PROCESS_ID)
+            pid = curr_pid;
+
+        if (tid == LLDB_INVALID_THREAD_ID)
+            tid = curr_tid;
+
+        if (pid == curr_pid)
+        {
+            if (pthread_setname_np_func (tid, name) == 0)
+                return true;
+        }
+    }
+    return false;
+#else
+    return false;
 #endif
-    ThreadNameAccessor (false, pid, tid, name);
 }
 
 FileSpec
@@ -740,7 +706,7 @@ Host::GetProgramFileSpec ()
             exe_path[len] = 0;
             g_program_filespec.SetFile(exe_path, false);
         }
-#elif defined (__FreeBSD__)
+#elif defined (__FreeBSD__) || defined (__FreeBSD_kernel__)
         int exe_path_mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, getpid() };
         size_t exe_path_size;
         if (sysctl(exe_path_mib, 4, NULL, &exe_path_size, NULL, 0) == 0)
@@ -949,7 +915,7 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                     if (framework_pos)
                     {
                         framework_pos += strlen("LLDB.framework");
-#if !defined (__arm__)
+#if !defined (__arm__) && !defined (__arm64__)
                         ::strncpy (framework_pos, "/Resources", PATH_MAX - (framework_pos - raw_path));
 #endif
                     }
@@ -995,15 +961,9 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
         }
         break;
 
+#ifndef LLDB_DISABLE_PYTHON
     case ePathTypePythonDir:                
         {
-            // TODO: Anyone know how we can determine this for linux? Other systems?
-            // For linux and FreeBSD we are currently assuming the
-            // location of the lldb binary that contains this function is
-            // the directory that will contain a python directory which
-            // has our lldb module. This is how files get placed when
-            // compiling with Makefiles.
-
             static ConstString g_lldb_python_dir;
             if (!g_lldb_python_dir)
             {
@@ -1022,9 +982,19 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                         ::strncpy (framework_pos, "/Resources/Python", PATH_MAX - (framework_pos - raw_path));
                     }
 #else
+                    llvm::Twine python_version_dir;
+                    python_version_dir = "/python"
+                                       + llvm::Twine(PY_MAJOR_VERSION)
+                                       + "."
+                                       + llvm::Twine(PY_MINOR_VERSION)
+                                       + "/site-packages";
+
                     // We may get our string truncated. Should we protect
                     // this with an assert?
-                    ::strncat(raw_path, "/python", sizeof(raw_path) - strlen(raw_path) - 1);
+
+                    ::strncat(raw_path, python_version_dir.str().c_str(),
+                              sizeof(raw_path) - strlen(raw_path) - 1);
+
 #endif
                     FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
                     g_lldb_python_dir.SetCString(resolved_path);
@@ -1034,7 +1004,8 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             return file_spec.GetDirectory();
         }
         break;
-    
+#endif
+
     case ePathTypeLLDBSystemPlugins:    // System plug-ins directory
         {
 #if defined (__APPLE__)
@@ -1093,9 +1064,6 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
             // TODO: where would user LLDB plug-ins be located on linux? Other systems?
             return false;
         }
-    default:
-        assert (!"Unhandled PathType");
-        break;
     }
 
     return false;
@@ -1178,7 +1146,7 @@ Host::GetGroupName (uint32_t gid, std::string &group_name)
     return NULL;
 }
 
-#if !defined (__APPLE__) && !defined (__FreeBSD__) // see macosx/Host.mm
+#if !defined (__APPLE__) && !defined (__FreeBSD__) && !defined (__FreeBSD_kernel__) // see macosx/Host.mm
 bool
 Host::GetOSBuildString (std::string &s)
 {
@@ -1218,20 +1186,28 @@ Host::GetEffectiveGroupID ()
     return getegid();
 }
 
-#if !defined (__APPLE__)
+#if !defined (__APPLE__) && !defined(__linux__)
 uint32_t
 Host::FindProcesses (const ProcessInstanceInfoMatch &match_info, ProcessInstanceInfoList &process_infos)
 {
     process_infos.Clear();
     return process_infos.GetSize();
 }
-#endif
+#endif // #if !defined (__APPLE__) && !defined(__linux__)
 
-#if !defined (__APPLE__) && !defined (__FreeBSD__)
+#if !defined (__APPLE__) && !defined (__FreeBSD__) && !defined (__FreeBSD_kernel__) && !defined(__linux__)
 bool
 Host::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
 {
     process_info.Clear();
+    return false;
+}
+#endif
+
+#if !defined(__linux__)
+bool
+Host::FindProcessThreads (const lldb::pid_t pid, TidMap &tids_to_attach)
+{
     return false;
 }
 #endif
@@ -1354,7 +1330,7 @@ Host::RunShellCommand (const char *command,
     }
     
     // The process monitor callback will delete the 'shell_info_ptr' below...
-    std::auto_ptr<ShellInfo> shell_info_ap (new ShellInfo());
+    std::unique_ptr<ShellInfo> shell_info_ap (new ShellInfo());
     
     const bool monitor_signals = false;
     launch_info.SetMonitorProcessCallback(MonitorShellCommand, shell_info_ap.get(), monitor_signals);
@@ -1365,7 +1341,7 @@ Host::RunShellCommand (const char *command,
     {
         // The process successfully launched, so we can defer ownership of
         // "shell_info" to the MonitorShellCommand callback function that will
-        // get called when the process dies. We release the std::auto_ptr as it
+        // get called when the process dies. We release the unique pointer as it
         // doesn't need to delete the ShellInfo anymore.
         ShellInfo *shell_info = shell_info_ap.release();
         TimeValue timeout_time(TimeValue::Now());
@@ -1424,6 +1400,56 @@ Host::RunShellCommand (const char *command,
     // it can delete "shell_info" in case we timed out and were not able to kill
     // the process...
     return error;
+}
+
+
+uint32_t
+Host::GetNumberCPUS ()
+{
+    static uint32_t g_num_cores = UINT32_MAX;
+    if (g_num_cores == UINT32_MAX)
+    {
+#if defined(__APPLE__) or defined (__linux__) or defined (__FreeBSD__) or defined (__FreeBSD_kernel__)
+
+        g_num_cores = ::sysconf(_SC_NPROCESSORS_ONLN);
+        
+#elif defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
+        
+        // Header file for this might need to be included at the top of this file
+        SYSTEM_INFO system_info;
+        ::GetSystemInfo (&system_info);
+        g_num_cores = system_info.dwNumberOfProcessors;
+        
+#else
+        
+        // Assume POSIX support if a host specific case has not been supplied above
+        g_num_cores = 0;
+        int num_cores = 0;
+        size_t num_cores_len = sizeof(num_cores);
+#ifdef HW_AVAILCPU
+        int mib[] = { CTL_HW, HW_AVAILCPU };
+#else
+        int mib[] = { CTL_HW, HW_NCPU };
+#endif
+        
+        /* get the number of CPUs from the system */
+        if (sysctl(mib, sizeof(mib)/sizeof(int), &num_cores, &num_cores_len, NULL, 0) == 0 && (num_cores > 0))
+        {
+            g_num_cores = num_cores;
+        }
+        else
+        {
+            mib[1] = HW_NCPU;
+            num_cores_len = sizeof(num_cores);
+            if (sysctl(mib, sizeof(mib)/sizeof(int), &num_cores, &num_cores_len, NULL, 0) == 0 && (num_cores > 0))
+            {
+                if (num_cores > 0)
+                    g_num_cores = num_cores;
+            }
+        }
+#endif
+    }
+    return g_num_cores;
 }
 
 

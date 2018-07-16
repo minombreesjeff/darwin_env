@@ -59,7 +59,12 @@ DYLDRendezvous::DYLDRendezvous(Process *process)
       m_removed_soentries()
 {
     // Cache a copy of the executable path
-    m_process->GetTarget().GetExecutableModule().get()->GetFileSpec().GetPath(m_exe_path, PATH_MAX);
+    if (m_process)
+    {
+        Module *exe_mod = m_process->GetTarget().GetExecutableModulePointer();
+        if (exe_mod)
+            exe_mod->GetFileSpec().GetPath(m_exe_path, PATH_MAX);
+    }
 }
 
 bool
@@ -295,7 +300,7 @@ DYLDRendezvous::ReadSOEntryFromMemory(lldb::addr_t addr, SOEntry &entry)
 }
 
 void
-DYLDRendezvous::DumpToLog(LogSP log) const
+DYLDRendezvous::DumpToLog(Log *log) const
 {
     int state = GetState();
 
@@ -304,7 +309,7 @@ DYLDRendezvous::DumpToLog(LogSP log) const
 
     log->PutCString("DYLDRendezvous:");
     log->Printf("   Address: %" PRIx64, GetRendezvousAddress());
-    log->Printf("   Version: %d",  GetVersion());
+    log->Printf("   Version: %" PRIu64, GetVersion());
     log->Printf("   Link   : %" PRIx64, GetLinkMapAddress());
     log->Printf("   Break  : %" PRIx64, GetBreakAddress());
     log->Printf("   LDBase : %" PRIx64, GetLDBase());

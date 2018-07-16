@@ -14,7 +14,7 @@ class AbbreviationsTestCase(TestBase):
 
     def test_nonrunning_command_abbreviations (self):
         self.expect("ap script",
-                    startstr = "The following commands may relate to 'script':",
+                    startstr = "The following built-in commands may relate to 'script':",
                     substrs = ['breakpoint command add',
                                'breakpoint command list',
                                'breakpoint list',
@@ -62,7 +62,7 @@ class AbbreviationsTestCase(TestBase):
         self.expect("lo li",
                     startstr = "Logging categories for ")
 
-        self.runCmd("se se prompt Sycamore> ")
+        self.runCmd("se se prompt 'Sycamore> '")
         self.expect("se sh prompt",
                     startstr = 'prompt (string) = "Sycamore> "')
 
@@ -122,10 +122,10 @@ class AbbreviationsTestCase(TestBase):
         self.expect("break list",
                     substrs = ["1: name = 'product', locations = 1",
                                "2: name = 'sum', locations = 1",
-                               "3: file ='main.cpp', line = 32, locations = 1"])
+                               "3: file = 'main.cpp', line = 32, locations = 1"])
         self.expect("br cl -l 32 -f main.cpp",
                     startstr = "1 breakpoints cleared:",
-                    substrs = ["3: file ='main.cpp', line = 32, locations = 1"])
+                    substrs = ["3: file = 'main.cpp', line = 32, locations = 1"])
 
         # Add a future to terminate the current process being debugged.
         #
@@ -148,11 +148,9 @@ class AbbreviationsTestCase(TestBase):
         if self.getArchitecture() in ["", 'x86_64', 'i386']:
             self.expect("dis -f",
                         startstr = "a.out`sum(int, int)",
-                        substrs = [' push',
-                                   ' mov',
+                        substrs = [' mov',
                                    ' addl ',
-                                   'ret'],
-                        patterns = ['(leave|popq|popl)'])
+                                   'ret'])
 
         self.expect("i d l main.cpp",
                     patterns = ["Line table for .*main.cpp in `a.out"])
@@ -170,7 +168,6 @@ class AbbreviationsTestCase(TestBase):
             self.expect("i li",
                         substrs = [ 'a.out',
                                     '/usr/lib/dyld',
-                                    '/usr/lib/libstdc++',
                                     '/usr/lib/libSystem.B.dylib'])
 
 

@@ -40,16 +40,16 @@ public:
     bool
     IsValid () const;
 
-    Thread &
-    GetThread()
+    void
+    SetThread (const lldb::ThreadSP &thread_sp)
     {
-        return m_thread;
+        m_thread_wp = thread_sp;
     }
 
-    const Thread &
+    lldb::ThreadSP
     GetThread() const
     {
-        return m_thread;
+        return m_thread_wp.lock();
     }
 
     // The value of the StopInfo depends on the StopReason.
@@ -79,11 +79,20 @@ public:
         return true;
     }
 
+    void
+    OverrideShouldNotify (bool override_value)
+    {
+        m_override_should_notify = override_value ? eLazyBoolYes : eLazyBoolNo;
+    }
+    
     // If should stop returns false, check if we should notify of this event
     virtual bool
     ShouldNotify (Event *event_ptr)
     {
-        return false;
+        if (m_override_should_notify == eLazyBoolCalculate)
+            return DoShouldNotify (event_ptr);
+        else
+            return m_override_should_notify == eLazyBoolYes;
     }
 
     virtual void
@@ -106,7 +115,31 @@ public:
         else
             m_description.clear();
     }
-
+    
+    // Sometimes the thread plan logic will know that it wants a given stop to stop or not,
+    // regardless of what the ordinary logic for that StopInfo would dictate.  The main example
+    // of this is the ThreadPlanCallFunction, which for instance knows - based on how that particular
+    // expression was executed - whether it wants all breakpoints to auto-continue or not.
+    // Use OverrideShouldStop on the StopInfo to implement this.
+    
+    void
+    OverrideShouldStop (bool override_value)
+    {
+        m_override_should_stop = override_value ? eLazyBoolYes : eLazyBoolNo;
+    }
+    
+    bool
+    GetOverrideShouldStop()
+    {
+        return m_override_should_stop != eLazyBoolCalculate;
+    }
+    
+    bool
+    GetOverriddenShouldStopValue ()
+    {
+        return m_override_should_stop == eLazyBoolYes;
+    }
+    
     static lldb::StopInfoSP
     CreateStopReasonWithBreakpointSiteID (Thread &thread, lldb::break_id_t break_id);
 
@@ -138,11 +171,18 @@ public:
 protected:
     // Perform any action that is associated with this stop.  This is done as the
     // Event is removed from the event queue.  ProcessEventData::DoOnRemoval does the job.
+ 
     virtual void
     PerformAction (Event *event_ptr)
     {
     }
 
+    virtual bool
+    DoShouldNotify (Event *event_ptr)
+    {
+        return false;
+    }
+    
     // Stop the thread by default. Subclasses can override this to allow
     // the thread to continue if desired.  The ShouldStop method should not do anything
     // that might run code.  If you need to run code when deciding whether to stop
@@ -158,11 +198,13 @@ protected:
     //------------------------------------------------------------------
     // Classes that inherit from StackID can see and modify these
     //------------------------------------------------------------------
-    Thread &        m_thread;   // The thread corresponding to the stop reason.
+    lldb::ThreadWP  m_thread_wp;   // The thread corresponding to the stop reason.
     uint32_t        m_stop_id;  // The process stop ID for which this stop info is valid
     uint32_t        m_resume_id; // This is the resume ID when we made this stop ID.
     uint64_t        m_value;    // A generic value that can be used for things pertaining to this stop info
     std::string     m_description; // A textual description describing this stop.
+    LazyBool        m_override_should_notify;
+    LazyBool        m_override_should_stop;
     
     // This determines whether the target has run since this stop info.
     // N.B. running to evaluate a user expression does not count. 

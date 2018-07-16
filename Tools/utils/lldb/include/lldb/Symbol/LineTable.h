@@ -16,8 +16,28 @@
 #include "lldb/Symbol/LineEntry.h"
 #include "lldb/Core/ModuleChild.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Core/RangeMap.h"
 
 namespace lldb_private {
+
+//----------------------------------------------------------------------
+/// @class LineSequence LineTable.h "lldb/Symbol/LineTable.h"
+/// @brief An abstract base class used during symbol table creation.
+//----------------------------------------------------------------------
+class LineSequence
+{
+public:
+    LineSequence ();
+
+    virtual
+    ~LineSequence() {}
+
+    virtual void
+    Clear() = 0;
+
+private:
+    DISALLOW_COPY_AND_ASSIGN (LineSequence);
+};
 
 //----------------------------------------------------------------------
 /// @class LineTable LineTable.h "lldb/Symbol/LineTable.h"
@@ -53,10 +73,9 @@ public:
 //  void
 //  AddLineEntry (const LineEntry& line_entry);
 
-    // Called when you can guarantee the addresses are in increasing order
+    // Called when you can't guarantee the addresses are in increasing order
     void
-    AppendLineEntry (const lldb::SectionSP& section_sp,
-                     lldb::addr_t section_offset,
+    InsertLineEntry (lldb::addr_t file_addr,
                      uint32_t line,
                      uint16_t column,
                      uint16_t file_idx,
@@ -66,18 +85,27 @@ public:
                      bool is_epilogue_begin,
                      bool is_terminal_entry);
 
-    // Called when you can't guarantee the addresses are in increasing order
+    // Used to instantiate the LineSequence helper classw
+    LineSequence*
+    CreateLineSequenceContainer ();
+
+    // Append an entry to a caller-provided collection that will later be
+    // inserted in this line table.
     void
-    InsertLineEntry (const lldb::SectionSP& section_sp,
-                     lldb::addr_t section_offset,
-                     uint32_t line,
-                     uint16_t column,
-                     uint16_t file_idx,
-                     bool is_start_of_statement,
-                     bool is_start_of_basic_block,
-                     bool is_prologue_end,
-                     bool is_epilogue_begin,
-                     bool is_terminal_entry);
+    AppendLineEntryToSequence (LineSequence* sequence,
+                               lldb::addr_t file_addr,
+                               uint32_t line,
+                               uint16_t column,
+                               uint16_t file_idx,
+                               bool is_start_of_statement,
+                               bool is_start_of_basic_block,
+                               bool is_prologue_end,
+                               bool is_epilogue_begin,
+                               bool is_terminal_entry);
+
+    // Insert a sequence of entries into this line table.
+    void
+    InsertSequence (LineSequence* sequence);
 
     //------------------------------------------------------------------
     /// Dump all line entries in this line table to the stream \a s.
@@ -204,15 +232,48 @@ public:
     uint32_t
     GetSize () const;
 
+    typedef lldb_private::RangeArray<lldb::addr_t, lldb::addr_t, 32> FileAddressRanges;
+    
+    //------------------------------------------------------------------
+    /// Gets all contiguous file address ranges for the entire line table.
+    ///
+    /// @param[out] file_ranges
+    ///     A collection of file address ranges that will be filled in
+    ///     by this function.
+    ///
+    /// @param[out] append
+    ///     If \b true, then append to \a file_ranges, otherwise clear
+    ///     \a file_ranges prior to adding any ranges. 
+    ///
+    /// @return
+    ///     The number of address ranges added to \a file_ranges
+    //------------------------------------------------------------------
+    size_t
+    GetContiguousFileAddressRanges (FileAddressRanges &file_ranges, bool append);
+
+    //------------------------------------------------------------------
+    /// Given a file range link map, relink the current line table
+    /// and return a fixed up line table.
+    ///
+    /// @param[out] file_range_map
+    ///     A collection of file ranges that maps to new file ranges
+    ///     that will be used when linking the line table.
+    ///
+    /// @return
+    ///     A new line table if at least one line table entry was able
+    ///     to be mapped.
+    //------------------------------------------------------------------
+    typedef RangeDataVector<lldb::addr_t, lldb::addr_t, lldb::addr_t> FileRangeMap;
+
+    LineTable *
+    LinkLineTable (const FileRangeMap &file_range_map);
+
 protected:
 
     struct Entry
     {
-        enum { kInvalidSectIdx = UINT32_MAX };
-
         Entry () :
-            sect_idx (kInvalidSectIdx),
-            sect_offset (0),
+            file_addr (LLDB_INVALID_ADDRESS),
             line (0),
             column (0),
             file_idx (0),
@@ -224,8 +285,7 @@ protected:
         {
         }
 
-        Entry ( uint32_t _sect_idx,
-                lldb::addr_t _sect_offset,
+        Entry ( lldb::addr_t _file_addr,
                 uint32_t _line,
                 uint16_t _column,
                 uint16_t _file_idx,
@@ -234,8 +294,7 @@ protected:
                 bool _is_prologue_end,
                 bool _is_epilogue_begin,
                 bool _is_terminal_entry) :
-            sect_idx (_sect_idx),
-            sect_offset (_sect_offset),
+            file_addr (_file_addr),
             line (_line),
             column (_column),
             file_idx (_file_idx),
@@ -245,10 +304,6 @@ protected:
             is_epilogue_begin (_is_epilogue_begin),
             is_terminal_entry (_is_terminal_entry)
         {
-            // We have reserved 32 bits for the section offset which should
-            // be enough, but if it isn't then we need to make m_section_offset
-            // bigger
-            assert(_sect_offset <= UINT32_MAX);
         }
 
         int
@@ -257,8 +312,7 @@ protected:
         void
         Clear ()
         {
-            sect_idx = kInvalidSectIdx;
-            sect_offset = 0;
+            file_addr = LLDB_INVALID_ADDRESS;
             line = 0;
             column = 0;
             file_idx = 0;
@@ -274,7 +328,7 @@ protected:
         {
             // Compare the sections before calling
             #define SCALAR_COMPARE(a,b) if (a < b) return -1; if (a > b) return +1
-            SCALAR_COMPARE (lhs.sect_offset, rhs.sect_offset);
+            SCALAR_COMPARE (lhs.file_addr, rhs.file_addr);
             SCALAR_COMPARE (lhs.line, rhs.line);
             SCALAR_COMPARE (lhs.column, rhs.column);
             SCALAR_COMPARE (lhs.is_start_of_statement, rhs.is_start_of_statement);
@@ -301,16 +355,13 @@ protected:
 
         static bool EntryAddressLessThan (const Entry& lhs, const Entry& rhs)
         {
-            if (lhs.sect_idx == rhs.sect_idx)
-                return lhs.sect_offset < rhs.sect_offset;
-            return lhs.sect_idx < rhs.sect_idx;
+            return lhs.file_addr < rhs.file_addr;
         }
 
         //------------------------------------------------------------------
         // Member variables.
         //------------------------------------------------------------------
-        uint32_t    sect_idx;                   ///< The section index for this line entry.
-        uint32_t    sect_offset;                ///< The offset into the section for this line entry.
+        lldb::addr_t file_addr;                 ///< The file address for this line entry
         uint32_t    line;                       ///< The source line number, or zero if there is no line number information.
         uint16_t    column;                     ///< The column number of the source line, or zero if there is no column information.
         uint16_t    file_idx:11,                ///< The file index into CompileUnit's file table, or zero if there is no file information.
@@ -331,20 +382,37 @@ protected:
     //------------------------------------------------------------------
     // Types
     //------------------------------------------------------------------
-    typedef std::vector<lldb_private::Section*> section_collection; ///< The collection type for the line entries.
-    typedef std::vector<Entry> entry_collection;    ///< The collection type for the line entries.
+    typedef std::vector<lldb_private::Section*> section_collection; ///< The collection type for the sections.
+    typedef std::vector<Entry>                  entry_collection;   ///< The collection type for the line entries.
     //------------------------------------------------------------------
     // Member variables.
     //------------------------------------------------------------------
-    CompileUnit* m_comp_unit;       ///< The compile unit that this line table belongs to.
-    SectionList m_section_list; ///< The list of sections that at least one of the line entries exists in.
+    CompileUnit* m_comp_unit;   ///< The compile unit that this line table belongs to.
     entry_collection m_entries; ///< The collection of line entries in this line table.
+
+    //------------------------------------------------------------------
+    // Helper class
+    //------------------------------------------------------------------
+    class LineSequenceImpl : public LineSequence
+    {
+    public:
+        LineSequenceImpl() :
+            LineSequence()
+        {}
+
+        virtual
+        ~LineSequenceImpl()
+        {}
+
+        virtual void
+        Clear();
+
+        entry_collection m_entries; ///< The collection of line entries in this sequence.
+    };
 
     bool
     ConvertEntryAtIndexToLineEntry (uint32_t idx, LineEntry &line_entry);
 
-    lldb_private::Section *
-    GetSectionForEntryIndex (uint32_t idx);
 private:
     DISALLOW_COPY_AND_ASSIGN (LineTable);
 };

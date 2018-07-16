@@ -11,7 +11,7 @@
 int main (int argc, char const *argv[])
 {
     enum days {
-        Monday = 10,
+        Monday = -3,
         Tuesday,
         Wednesday,
         Thursday,

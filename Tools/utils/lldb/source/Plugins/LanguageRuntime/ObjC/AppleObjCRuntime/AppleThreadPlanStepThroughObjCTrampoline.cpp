@@ -84,9 +84,15 @@ AppleThreadPlanStepThroughObjCTrampoline::InitializeClangFunction ()
         }
         m_impl_function = m_trampoline_handler->GetLookupImplementationWrapperFunction();
         ExecutionContext exc_ctx;
+        const bool unwind_on_error = true;
+        const bool ignore_breakpoints = true;
         m_thread.CalculateExecutionContext(exc_ctx);
-        m_func_sp.reset(m_impl_function->GetThreadPlanToCallFunction (exc_ctx, m_args_addr, errors, m_stop_others));
-        m_func_sp->SetPrivate(true);
+        m_func_sp.reset(m_impl_function->GetThreadPlanToCallFunction (exc_ctx,
+                                                                      m_args_addr,
+                                                                      errors,
+                                                                      m_stop_others,
+                                                                      unwind_on_error,
+                                                                      ignore_breakpoints));
         m_func_sp->SetOkayToDiscard(true);
         m_thread.QueueThreadPlan (m_func_sp, false);
     }
@@ -120,7 +126,7 @@ AppleThreadPlanStepThroughObjCTrampoline::ValidatePlan (Stream *error)
 }
 
 bool
-AppleThreadPlanStepThroughObjCTrampoline::PlanExplainsStop ()
+AppleThreadPlanStepThroughObjCTrampoline::DoPlanExplainsStop (Event *event_ptr)
 {
     // If we get asked to explain the stop it will be because something went
     // wrong (like the implementation for selector function crashed...  We're going
@@ -167,7 +173,7 @@ AppleThreadPlanStepThroughObjCTrampoline::ShouldStop (Event *event_ptr)
         lldb::addr_t target_addr = target_addr_value.GetScalar().ULongLong();
         Address target_so_addr;
         target_so_addr.SetOpcodeLoadAddress(target_addr, exc_ctx.GetTargetPtr());
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (target_addr == 0)
         {
             if (log)

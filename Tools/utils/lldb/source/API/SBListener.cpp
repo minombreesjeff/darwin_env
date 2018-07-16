@@ -38,7 +38,7 @@ SBListener::SBListener (const char *name) :
 {
     m_opaque_ptr = m_opaque_sp.get();
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (log)
         log->Printf ("SBListener::SBListener (name=\"%s\") => SBListener(%p)",
@@ -131,15 +131,13 @@ SBListener::StopListeningForEventClass (SBDebugger &debugger,
 uint32_t
 SBListener::StartListeningForEvents (const SBBroadcaster& broadcaster, uint32_t event_mask)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
-
     uint32_t acquired_event_mask = 0;
     if (m_opaque_ptr && broadcaster.IsValid())
     {
         acquired_event_mask = m_opaque_ptr->StartListeningForEvents (broadcaster.get(), event_mask);
     }
     
-    log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API);
+    Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API);
     if (log)
     {
         StreamString sstr_requested;
@@ -190,7 +188,7 @@ SBListener::StopListeningForEvents (const SBBroadcaster& broadcaster, uint32_t e
 bool
 SBListener::WaitForEvent (uint32_t timeout_secs, SBEvent &event)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         if (timeout_secs == UINT32_MAX)

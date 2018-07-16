@@ -79,9 +79,9 @@ public:
         insert_access_watch_bp,         // 'Z4'
         remove_access_watch_bp,         // 'z4'
 
+        query_monitor,                  // 'qRcmd'
         query_current_thread_id,        // 'qC'
         query_get_pid,                  // 'qGetPid'
-        query_memory_crc,               // 'qCRC:'
         query_thread_ids_first,         // 'qfThreadInfo'
         query_thread_ids_subsequent,    // 'qsThreadInfo'
         query_thread_extra_info,        // 'qThreadExtraInfo'
@@ -95,6 +95,7 @@ public:
         query_vattachorwait_supported,  // 'qVAttachOrWaitSupported'
         query_sync_thread_state_supported,// 'QSyncThreadState'
         query_host_info,                // 'qHostInfo'
+        query_process_info,             // 'qProcessInfo'
         pass_signals_to_inferior,       // 'QPassSignals'
         start_noack_mode,               // 'QStartNoAckMode'
         prefix_reg_packets_with_tid,    // 'QPrefixRegisterPacketsWithThreadID
@@ -113,11 +114,11 @@ public:
         sync_thread_state,              // 'QSyncThreadState:'
         memory_region_info,             // 'qMemoryRegionInfo:'
         get_profile_data,               // 'qGetProfileData'
-        set_enable_profiling,           // 'QSetAsyncEnableProfiling'
+        set_enable_profiling,           // 'QSetEnableAsyncProfiling'
         watchpoint_support_info,        // 'qWatchpointSupportInfo:'
         allocate_memory,                // '_M'
         deallocate_memory,              // '_m'
-
+        set_process_event,               // 'QSetProcessEvent:'
         unknown_type
     } PacketEnum;
 
@@ -128,7 +129,7 @@ public:
 
     void            Initialize();
 
-    bool            InitializeRegisters ();
+    bool            InitializeRegisters (bool force = false);
 
     rnb_err_t       HandleAsyncPacket(PacketEnum *type = NULL);
     rnb_err_t       HandleReceivedPacket(PacketEnum *type = NULL);
@@ -165,6 +166,7 @@ public:
     rnb_err_t HandlePacket_A (const char *p);
     rnb_err_t HandlePacket_H (const char *p);
     rnb_err_t HandlePacket_qC (const char *p);
+    rnb_err_t HandlePacket_qRcmd (const char *p);
     rnb_err_t HandlePacket_qGetPid (const char *p);
     rnb_err_t HandlePacket_qLaunchSuccess (const char *p);
     rnb_err_t HandlePacket_qRegisterInfo (const char *p);
@@ -176,6 +178,7 @@ public:
     rnb_err_t HandlePacket_qThreadExtraInfo (const char *p);
     rnb_err_t HandlePacket_qThreadStopInfo (const char *p);
     rnb_err_t HandlePacket_qHostInfo (const char *p);
+    rnb_err_t HandlePacket_qProcessInfo (const char *p);
     rnb_err_t HandlePacket_QStartNoAckMode (const char *p);
     rnb_err_t HandlePacket_QThreadSuffixSupported (const char *p);
     rnb_err_t HandlePacket_QSetLogging (const char *p);
@@ -190,6 +193,7 @@ public:
     rnb_err_t HandlePacket_QListThreadsInStopReply (const char *p);
     rnb_err_t HandlePacket_QSyncThreadState (const char *p);
     rnb_err_t HandlePacket_QPrefixRegisterPacketsWithThreadID (const char *p);
+    rnb_err_t HandlePacket_QSetProcessEvent (const char *p);
     rnb_err_t HandlePacket_last_signal (const char *p);
     rnb_err_t HandlePacket_m (const char *p);
     rnb_err_t HandlePacket_M (const char *p);
@@ -213,7 +217,7 @@ public:
     rnb_err_t HandlePacket_DeallocateMemory (const char *p);
     rnb_err_t HandlePacket_MemoryRegionInfo (const char *p);
     rnb_err_t HandlePacket_GetProfileData(const char *p);
-    rnb_err_t HandlePacket_SetAsyncEnableProfiling(const char *p);
+    rnb_err_t HandlePacket_SetEnableAsyncProfiling(const char *p);
     rnb_err_t HandlePacket_WatchpointSupportInfo (const char *p);
 
     rnb_err_t HandlePacket_stop_process (const char *p);
@@ -298,39 +302,6 @@ protected:
     nub_thread_t
     ExtractThreadIDFromThreadSuffix (const char *p);
 
-    // gdb can send multiple Z/z packets for the same address and
-    // these calls must be ref counted.
-    struct Breakpoint
-    {
-        Breakpoint(nub_break_t breakID) :
-            m_breakID(breakID),
-            m_refCount(1)
-        {
-        }
-
-        Breakpoint() :
-            m_breakID(INVALID_NUB_BREAK_ID),
-            m_refCount(0)
-        {
-        }
-
-        Breakpoint(const Breakpoint& rhs) :
-            m_breakID(rhs.m_breakID),
-            m_refCount(rhs.m_refCount)
-        {
-        }
-
-        nub_break_t BreakID() const { return m_breakID; }
-        uint32_t RefCount() const { return m_refCount; }
-        void Release() { if (m_refCount > 0) --m_refCount; }
-        void Retain() { ++m_refCount; }
-
-        nub_break_t m_breakID;
-        uint32_t m_refCount;
-    };
-    typedef std::map<nub_addr_t, Breakpoint> BreakpointMap;
-    typedef BreakpointMap::iterator          BreakpointMapIter;
-    typedef BreakpointMap::const_iterator    BreakpointMapConstIter;
     RNBContext      m_ctx;              // process context
     RNBSocket       m_comm;             // communication port
     std::string     m_arch;
@@ -342,8 +313,6 @@ protected:
     std::deque<std::string> m_rx_packets;
     std::string     m_rx_partial_data;  // For packets that may come in more than one batch, anything left over can be left here
     pthread_t       m_rx_pthread;
-    BreakpointMap   m_breakpoints;
-    BreakpointMap   m_watchpoints;
     uint32_t        m_max_payload_size;  // the maximum sized payload we should send to gdb
     bool            m_extended_mode;   // are we in extended mode?
     bool            m_noack_mode;      // are we in no-ack mode?

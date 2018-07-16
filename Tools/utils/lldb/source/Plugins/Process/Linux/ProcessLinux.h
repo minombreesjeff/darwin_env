@@ -41,7 +41,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -58,11 +58,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -78,11 +75,28 @@ public:
     EnablePluginLogging(lldb_private::Stream *strm,
                         lldb_private::Args &command);
 
+    //------------------------------------------------------------------
+    // Plug-in process overrides
+    //------------------------------------------------------------------
+    virtual lldb_private::UnixSignals &
+    GetUnixSignals ()
+    {
+        return m_linux_signals;
+    }
+
+    //------------------------------------------------------------------
+    // ProcessPOSIX overrides
+    //------------------------------------------------------------------
+    virtual void
+    StopAllThreads(lldb::tid_t stop_tid);
+
 private:
 
     /// Linux-specific signal set.
     LinuxSignals m_linux_signals;
 
+    // Flag to avoid recursion when stopping all threads.
+    bool m_stopping_threads;
 };
 
 #endif  // liblldb_MacOSXProcess_H_

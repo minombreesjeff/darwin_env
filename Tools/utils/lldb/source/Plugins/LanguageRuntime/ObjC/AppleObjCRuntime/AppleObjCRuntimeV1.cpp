@@ -9,6 +9,7 @@
 
 #include "AppleObjCRuntimeV1.h"
 #include "AppleObjCTrampolineHandler.h"
+#include "AppleObjCTypeVendor.h"
 
 #include "llvm/Support/MachO.h"
 #include "clang/AST/Type.h"
@@ -36,11 +37,6 @@
 using namespace lldb;
 using namespace lldb_private;
 
-static const char *pluginName = "AppleObjCRuntimeV1";
-static const char *pluginDesc = "Apple Objective C Language Runtime - Version 1";
-static const char *pluginShort = "language.apple.objc.v1";
-
-
 AppleObjCRuntimeV1::AppleObjCRuntimeV1(Process *process) :
     AppleObjCRuntime (process),
     m_hash_signature (),
@@ -48,13 +44,26 @@ AppleObjCRuntimeV1::AppleObjCRuntimeV1(Process *process) :
 {
 }
 
+// for V1 runtime we just try to return a class name as that is the minimum level of support
+// required for the data formatters to work
 bool
 AppleObjCRuntimeV1::GetDynamicTypeAndAddress (ValueObject &in_value,
                                              lldb::DynamicValueType use_dynamic, 
                                              TypeAndOrName &class_type_or_name, 
                                              Address &address)
 {
-    return false;
+    class_type_or_name.Clear();
+    if (CouldHaveDynamicValue(in_value))
+    {
+        auto class_descriptor(GetClassDescriptor(in_value));
+        if (class_descriptor && class_descriptor->IsValid() && class_descriptor->GetClassName())
+        {
+            const addr_t object_ptr = in_value.GetPointerValue();
+            address.SetRawAddress(object_ptr);
+            class_type_or_name.SetName(class_descriptor->GetClassName());
+        }
+    }
+    return class_type_or_name.IsEmpty() == false;
 }
 
 //------------------------------------------------------------------
@@ -82,8 +91,8 @@ AppleObjCRuntimeV1::CreateInstance (Process *process, lldb::LanguageType languag
 void
 AppleObjCRuntimeV1::Initialize()
 {
-    PluginManager::RegisterPlugin (pluginName,
-                                   pluginDesc,
+    PluginManager::RegisterPlugin (GetPluginNameStatic(),
+                                   "Apple Objective C Language Runtime - Version 1",
                                    CreateInstance);    
 }
 
@@ -93,19 +102,20 @@ AppleObjCRuntimeV1::Terminate()
     PluginManager::UnregisterPlugin (CreateInstance);
 }
 
+lldb_private::ConstString
+AppleObjCRuntimeV1::GetPluginNameStatic()
+{
+    static ConstString g_name("apple-objc-v1");
+    return g_name;
+}
+
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+ConstString
 AppleObjCRuntimeV1::GetPluginName()
 {
-    return pluginName;
-}
-
-const char *
-AppleObjCRuntimeV1::GetShortPluginName()
-{
-    return pluginShort;
+    return GetPluginNameStatic();
 }
 
 uint32_t
@@ -136,7 +146,7 @@ struct BufStruct {
 ClangUtilityFunction *
 AppleObjCRuntimeV1::CreateObjectChecker(const char *name)
 {
-    std::auto_ptr<BufStruct> buf(new BufStruct);
+    std::unique_ptr<BufStruct> buf(new BufStruct);
     
     assert(snprintf(&buf->contents[0], sizeof(buf->contents),
                     "struct __objc_class                                                    \n"
@@ -158,7 +168,7 @@ AppleObjCRuntimeV1::CreateObjectChecker(const char *name)
                     "   struct __objc_object *obj = (struct __objc_object*)$__lldb_arg_obj; \n"
                     "   (int)strlen(obj->isa->name);                                        \n"
                     "}                                                                      \n",
-                    name) < sizeof(buf->contents));
+                    name) < (int)sizeof(buf->contents));
 
     return new ClangUtilityFunction(buf->contents, name);
 }
@@ -294,6 +304,15 @@ AppleObjCRuntimeV1::ClassDescriptorV1::GetSuperclass ()
     return ObjCLanguageRuntime::ClassDescriptorSP(new AppleObjCRuntimeV1::ClassDescriptorV1(m_parent_isa,process_sp));
 }
 
+bool
+AppleObjCRuntimeV1::ClassDescriptorV1::Describe (std::function <void (ObjCLanguageRuntime::ObjCISA)> const &superclass_func,
+                                                 std::function <bool (const char *, const char *)> const &instance_method_func,
+                                                 std::function <bool (const char *, const char *)> const &class_method_func,
+                                                 std::function <bool (const char *, const char *, lldb::addr_t, uint64_t)> const &ivar_func)
+{
+    return false;
+}
+
 lldb::addr_t
 AppleObjCRuntimeV1::GetISAHashTablePointer ()
 {
@@ -341,10 +360,9 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
     {
         // Update the process stop ID that indicates the last time we updated the
         // map, wether it was successful or not.
-        m_isa_to_descriptor_cache_stop_id = process->GetStopID();
+        m_isa_to_descriptor_stop_id = process->GetStopID();
         
-
-        lldb::LogSP log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
+        Log *log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_PROCESS));
         
         ProcessSP process_sp = process->shared_from_this();
         
@@ -375,7 +393,7 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
                 const uint32_t addr_size = m_process->GetAddressByteSize();
                 const ByteOrder byte_order = m_process->GetByteOrder();
                 DataExtractor data (buffer.GetBytes(), buffer.GetByteSize(), byte_order, addr_size);
-                uint32_t offset = addr_size; // Skip prototype
+                lldb::offset_t offset = addr_size; // Skip prototype
                 const uint32_t count = data.GetU32(&offset);
                 const uint32_t num_buckets = data.GetU32(&offset);
                 const addr_t buckets_ptr = data.GetPointer(&offset);
@@ -408,14 +426,14 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
                                 isa = bucket_data;
                                 if (isa)
                                 {
-                                    if (m_isa_to_descriptor_cache.count(isa) == 0)
+                                    if (!ISAIsCached(isa))
                                     {
                                         ClassDescriptorSP descriptor_sp (new ClassDescriptorV1(isa, process_sp));
                                         
                                         if (log && log->GetVerbose())
                                             log->Printf("AppleObjCRuntimeV1 added (ObjCISA)0x%" PRIx64 " from _objc_debug_class_hash to isa->descriptor cache", isa);
                                         
-                                        m_isa_to_descriptor_cache[isa] = descriptor_sp;
+                                        AddClass (isa, descriptor_sp);
                                     }
                                 }
                             }
@@ -430,14 +448,14 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
 
                                     if (isa && isa != LLDB_INVALID_ADDRESS)
                                     {
-                                        if (m_isa_to_descriptor_cache.count(isa) == 0)
+                                        if (!ISAIsCached(isa))
                                         {
                                             ClassDescriptorSP descriptor_sp (new ClassDescriptorV1(isa, process_sp));
                                             
                                             if (log && log->GetVerbose())
                                                 log->Printf("AppleObjCRuntimeV1 added (ObjCISA)0x%" PRIx64 " from _objc_debug_class_hash to isa->descriptor cache", isa);
                                             
-                                            m_isa_to_descriptor_cache[isa] = descriptor_sp;
+                                            AddClass (isa, descriptor_sp);
                                         }
                                     }
                                 }
@@ -450,7 +468,15 @@ AppleObjCRuntimeV1::UpdateISAToDescriptorMapIfNeeded()
     }
     else
     {
-        m_isa_to_descriptor_cache_stop_id = UINT32_MAX;
+        m_isa_to_descriptor_stop_id = UINT32_MAX;
     }
 }
 
+TypeVendor *
+AppleObjCRuntimeV1::GetTypeVendor()
+{
+    if (!m_type_vendor_ap.get())
+        m_type_vendor_ap.reset(new AppleObjCTypeVendor(*this));
+    
+    return m_type_vendor_ap.get();
+}

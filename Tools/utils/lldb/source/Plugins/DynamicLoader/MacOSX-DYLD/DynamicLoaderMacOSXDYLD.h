@@ -37,7 +37,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -80,11 +80,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -178,6 +175,7 @@ protected:
         lldb_private::UUID uuid;            // UUID for this dylib if it has one, else all zeros
         llvm::MachO::mach_header header;    // The mach header for this image
         std::vector<Segment> segments;      // All segment vmaddr and vmsize pairs for this executable (from memory of inferior)
+        uint32_t load_stop_id;              // The process stop ID that the sections for this image were loadeded
 
         DYLDImageInfo() :
             address(LLDB_INVALID_ADDRESS),
@@ -186,7 +184,8 @@ protected:
             file_spec(),
             uuid(),
             header(),
-            segments()
+            segments(),
+            load_stop_id(0)
         {
         }
 
@@ -203,6 +202,7 @@ protected:
             }
             uuid.Clear();
             segments.clear();
+            load_stop_id = 0;
         }
 
         bool
@@ -316,7 +316,7 @@ protected:
                             DYLDImageInfo& info);
 
     lldb::ModuleSP
-    FindTargetModuleForDYLDImageInfo (const DYLDImageInfo &image_info,
+    FindTargetModuleForDYLDImageInfo (DYLDImageInfo &image_info,
                                       bool can_create,
                                       bool *did_create_ptr);
 
@@ -358,15 +358,13 @@ protected:
                                           bool update_executable);
 
     bool
-    UpdateCommPageLoadAddress (lldb_private::Module *module);
-
-    bool
     ReadImageInfos (lldb::addr_t image_infos_addr, 
                     uint32_t image_infos_count, 
                     DYLDImageInfo::collection &image_infos);
 
 
     DYLDImageInfo m_dyld;               // Info about the current dyld being used
+    lldb::ModuleWP m_dyld_module_wp;
     lldb::addr_t m_dyld_all_image_infos_addr;
     DYLDAllImageInfos m_dyld_all_image_infos;
     uint32_t m_dyld_all_image_infos_stop_id;

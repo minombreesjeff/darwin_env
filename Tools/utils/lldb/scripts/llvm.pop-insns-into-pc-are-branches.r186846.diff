@@ -1,0 +1,42 @@
+commit 741e37ed0de4a65eab69e0967a5da3eb1adc01ef
+Author: Jim Grosbach <grosbach@apple.com>
+Date:   Mon Jul 22 17:45:55 2013 +0000
+
+    MC: mayAffectControlFlow() handling for variadic instructions.
+    
+    Variadic MC instructions don't note whether the variable operands
+    are uses or defs, so mayAffectControlFlow() must conservatively
+    assume they are defs and return true if the PC is in the operand
+    list.
+    
+    rdar://14488628
+    
+    git-svn-id: https://llvm.org/svn/llvm-project/llvm/trunk@186846 91177308-0d34-0410-b5e6-96231b3b80d8
+
+diff --git a/include/llvm/MC/MCInstrDesc.h b/include/llvm/MC/MCInstrDesc.h
+index 9b5415add24..310f7068771 100644
+--- include/llvm/MC/MCInstrDesc.h
++++ include/llvm/MC/MCInstrDesc.h
+@@ -268,8 +268,20 @@ public:
+     if (isBranch() || isCall() || isReturn() || isIndirectBranch())
+       return true;
+     unsigned PC = RI.getProgramCounter();
+-    if (PC == 0) return false;
+-    return hasDefOfPhysReg(MI, PC, RI);
++    if (PC == 0)
++      return false;
++    if (hasDefOfPhysReg(MI, PC, RI))
++      return true;
++    // A variadic instruction may define PC in the variable operand list.
++    // There's currently no indication of which entries in a variable
++    // list are defs and which are uses. While that's the case, this function
++    // needs to assume they're defs in order to be conservatively correct.
++    for (int i = NumOperands, e = MI.getNumOperands(); i != e; ++i) {
++      if (MI.getOperand(i).isReg() &&
++          RI.isSubRegisterEq(PC, MI.getOperand(i).getReg()))
++        return true;
++    }
++    return false;
+   }
+ 
+   /// \brief Return true if this instruction has a predicate operand

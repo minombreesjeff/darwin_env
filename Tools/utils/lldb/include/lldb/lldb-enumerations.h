@@ -177,7 +177,8 @@ namespace lldb {
         eStopReasonSignal,
         eStopReasonException,
         eStopReasonExec,        // Program was re-exec'ed
-        eStopReasonPlanComplete
+        eStopReasonPlanComplete,
+        eStopReasonThreadExiting
     } StopReason;
 
     //----------------------------------------------------------------------
@@ -300,6 +301,20 @@ namespace lldb {
         eBreakpointEventTypeThreadChanged       = (1u << 11)
     } BreakpointEventType;
 
+    typedef enum WatchpointEventType
+    {
+        eWatchpointEventTypeInvalidType         = (1u << 0),
+        eWatchpointEventTypeAdded               = (1u << 1),
+        eWatchpointEventTypeRemoved             = (1u << 2),
+        eWatchpointEventTypeEnabled             = (1u << 6),
+        eWatchpointEventTypeDisabled            = (1u << 7),
+        eWatchpointEventTypeCommandChanged      = (1u << 8),
+        eWatchpointEventTypeConditionChanged    = (1u << 9),
+        eWatchpointEventTypeIgnoreChanged       = (1u << 10),
+        eWatchpointEventTypeThreadChanged       = (1u << 11),
+        eWatchpointEventTypeTypeChanged         = (1u << 12)
+    } WatchpointEventType;
+
 
     //----------------------------------------------------------------------
     /// Programming language type.
@@ -354,6 +369,7 @@ namespace lldb {
     typedef enum CommandArgumentType
     {
         eArgTypeAddress = 0,
+        eArgTypeAddressOrExpression,
         eArgTypeAliasName,
         eArgTypeAliasOptions,
         eArgTypeArchitecture,
@@ -365,6 +381,7 @@ namespace lldb {
         eArgTypeCommandName,
         eArgTypeCount,
         eArgTypeDirectoryName,
+        eArgTypeDisassemblyFlavor,
         eArgTypeEndAddress,
         eArgTypeExpression,
         eArgTypeExpressionPath,
@@ -439,6 +456,7 @@ namespace lldb {
         eSymbolTypeInvalid = 0,
         eSymbolTypeAbsolute,
         eSymbolTypeCode,
+        eSymbolTypeResolver,
         eSymbolTypeData,
         eSymbolTypeTrampoline,
         eSymbolTypeRuntime,
@@ -497,6 +515,10 @@ namespace lldb {
         eSectionTypeDWARFAppleTypes,
         eSectionTypeDWARFAppleNamespaces,
         eSectionTypeDWARFAppleObjC,
+        eSectionTypeELFSymbolTable,       // Elf SHT_SYMTAB section
+        eSectionTypeELFDynamicSymbols,    // Elf SHT_DYNSYM section
+        eSectionTypeELFRelocationEntries, // Elf SHT_REL or SHT_REL section
+        eSectionTypeELFDynamicLinkInfo,   // Elf SHT_DYNAMIC section
         eSectionTypeEHFrame,
         eSectionTypeOther
         
@@ -523,10 +545,7 @@ namespace lldb {
                                                     // methods or selectors will be searched.
         eFunctionNameTypeMethod     = (1u << 4),    // Find function by method name (C++) with no namespace or arguments
         eFunctionNameTypeSelector   = (1u << 5),    // Find function by selector name (ObjC) names
-        eFunctionNameTypeAny        = (eFunctionNameTypeFull     |
-                                       eFunctionNameTypeBase     |
-                                       eFunctionNameTypeMethod   |
-                                       eFunctionNameTypeSelector )
+        eFunctionNameTypeAny        = eFunctionNameTypeAuto // DEPRECATED: use eFunctionNameTypeAuto
     } FunctionNameType;
     
     
@@ -595,7 +614,7 @@ namespace lldb {
         eTypeClassOther             = (1u << 31),
         // Define a mask that can be used for any type when finding types
         eTypeClassAny               = (0xffffffffu)
-    }TypeClass;
+    } TypeClass;
 
     typedef enum TemplateArgumentKind
     {

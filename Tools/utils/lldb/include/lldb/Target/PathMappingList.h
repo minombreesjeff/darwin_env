@@ -38,7 +38,6 @@ public:
 
     PathMappingList (const PathMappingList &rhs);
 
-    virtual
     ~PathMappingList ();
 
     const PathMappingList &
@@ -144,6 +143,11 @@ public:
     uint32_t
     FindIndexForPath (const ConstString &path) const;
 
+    uint32_t
+    GetModificationID() const
+    {
+        return m_mod_id;
+    }
 protected:
     typedef std::pair <ConstString, ConstString> pair;
     typedef std::vector <pair> collection;
@@ -159,6 +163,7 @@ protected:
     collection m_pairs;
     ChangedCallback m_callback;
     void * m_callback_baton;
+    uint32_t m_mod_id; // Incremented anytime anything is added or removed.
 };
 
 } // namespace lldb_private

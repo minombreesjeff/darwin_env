@@ -53,6 +53,14 @@ public:
             return plugin_name.c_str();
         }
         
+        const char *
+        GetFlavorString ()
+        {
+            if (flavor_string.empty() || flavor_string == "default")
+                return NULL;
+            return flavor_string.c_str();
+        }
+        
         virtual Error
         OptionParsingFinished ();
 
@@ -62,15 +70,17 @@ public:
         uint32_t num_instructions;
         bool raw;
         std::string func_name;
-        bool cur_function;
+        bool current_function;
         lldb::addr_t start_addr;
         lldb::addr_t end_addr;
         bool at_pc;
         bool frame_line;
         std::string plugin_name;
+        std::string flavor_string;
         ArchSpec arch;
         bool some_location_specified; // If no location was specified, we'll select "at_pc".  This should be set
                                       // in SetOptionValue if anything the selects a location is set.
+        lldb::addr_t symbol_containing_addr;
         static OptionDefinition g_option_table[];
     };
 

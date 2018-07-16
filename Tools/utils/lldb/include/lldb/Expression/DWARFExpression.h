@@ -17,10 +17,10 @@
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Scalar.h"
 
+namespace lldb_private {
+    
 class ClangExpressionVariable;
 class ClangExpressionVariableList;
-
-namespace lldb_private {
 
 class ClangExpressionDeclMap;
 
@@ -59,8 +59,8 @@ public:
     ///     The byte length of the location expression.
     //------------------------------------------------------------------
     DWARFExpression(const DataExtractor& data,
-                    uint32_t data_offset,
-                    uint32_t data_length);
+                    lldb::offset_t data_offset,
+                    lldb::offset_t data_length);
 
     //------------------------------------------------------------------
     /// Copy constructor
@@ -139,21 +139,20 @@ public:
     /// us detect if a variable is a global or static variable since
     /// there is no other indication from DWARF debug info.
     ///
-    /// @param[in] file_addr
-    ///     The file address to search for in the location. 
+    /// @param[in] op_addr_idx
+    ///     The DW_OP_addr index to retrieve in case there is more than
+    ///     one DW_OP_addr opcode in the location byte stream.
     ///
     /// @param[out] error
     ///     If the location stream contains unknown DW_OP opcodes or the
     ///     data is missing, \a error will be set to \b true.
     ///
     /// @return
-    ///     True if IsLocationList() is false and the \a file_addr was
-    ///     is contained in a DW_OP_addr location opcode or if \a file_addr
-    ///     was invalid and there are any DW_OP_addr opcodes, false 
-    ///     otherwise.
+    ///     LLDB_INVALID_ADDRESS if the location doesn't contain a
+    ///     DW_OP_addr for \a op_addr_idx, otherwise a valid file address
     //------------------------------------------------------------------
-    bool
-    LocationContains_DW_OP_addr (lldb::addr_t file_addr, bool &error) const;
+    lldb::addr_t
+    GetLocation_DW_OP_addr (uint32_t op_addr_idx, bool &error) const;
 
     bool
     Update_DW_OP_addr (lldb::addr_t file_addr);
@@ -184,7 +183,7 @@ public:
     ///     The byte length of the location expression.
     //------------------------------------------------------------------
     void
-    SetOpcodeData(const DataExtractor& data, uint32_t data_offset, uint32_t data_length);
+    SetOpcodeData(const DataExtractor& data, lldb::offset_t data_offset, lldb::offset_t data_length);
 
     //------------------------------------------------------------------
     /// Copy the DWARF location expression into a local buffer.
@@ -212,8 +211,8 @@ public:
     //------------------------------------------------------------------
     void
     CopyOpcodeData (const DataExtractor& data,
-                    uint32_t data_offset,
-                    uint32_t data_length);
+                    lldb::offset_t data_offset,
+                    lldb::offset_t data_length);
     
 
     //------------------------------------------------------------------
@@ -340,8 +339,8 @@ public:
               ClangExpressionDeclMap *decl_map,
               RegisterContext *reg_ctx,
               const DataExtractor& opcodes,
-              const uint32_t offset,
-              const uint32_t length,
+              const lldb::offset_t offset,
+              const lldb::offset_t length,
               const uint32_t reg_set,
               const Value* initial_value_ptr,
               Value& result,
@@ -403,16 +402,16 @@ protected:
     //------------------------------------------------------------------
     void
     DumpLocation(Stream *s, 
-                 uint32_t offset, 
-                 uint32_t length, 
+                 lldb::offset_t offset,
+                 lldb::offset_t length,
                  lldb::DescriptionLevel level,
                  ABI *abi) const;
     
     bool
     GetLocation (lldb::addr_t base_addr, 
                  lldb::addr_t pc, 
-                 uint32_t &offset, 
-                 uint32_t &len);
+                 lldb::offset_t &offset, 
+                 lldb::offset_t &len);
 
     //------------------------------------------------------------------
     /// Classes that inherit from DWARFExpression can see and modify these

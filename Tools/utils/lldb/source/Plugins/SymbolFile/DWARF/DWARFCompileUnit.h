@@ -29,8 +29,8 @@ public:
 
     DWARFCompileUnit(SymbolFileDWARF* dwarf2Data);
 
-    bool        Extract(const lldb_private::DataExtractor &debug_info, uint32_t* offset_ptr);
-    dw_offset_t Extract(dw_offset_t offset, const lldb_private::DataExtractor& debug_info_data, const DWARFAbbreviationDeclarationSet* abbrevs);
+    bool        Extract(const lldb_private::DataExtractor &debug_info, lldb::offset_t *offset_ptr);
+    dw_offset_t Extract(lldb::offset_t offset, const lldb_private::DataExtractor& debug_info_data, const DWARFAbbreviationDeclarationSet* abbrevs);
     size_t      ExtractDIEsIfNeeded (bool cu_die_only);
     bool        LookupAddress(
                     const dw_addr_t address,
@@ -190,7 +190,7 @@ protected:
     const DWARFAbbreviationDeclarationSet *m_abbrevs;
     void *              m_user_data;
     DWARFDebugInfoEntry::collection m_die_array;    // The compile unit debug information entry item
-    std::auto_ptr<DWARFDebugAranges> m_func_aranges_ap;   // A table similar to the .debug_aranges table, but this one points to the exact DW_TAG_subprogram DIEs
+    std::unique_ptr<DWARFDebugAranges> m_func_aranges_ap;   // A table similar to the .debug_aranges table, but this one points to the exact DW_TAG_subprogram DIEs
     dw_addr_t           m_base_addr;
     dw_offset_t         m_offset;
     uint32_t            m_length;

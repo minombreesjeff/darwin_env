@@ -26,21 +26,25 @@ using namespace lldb_private;
 
 static bool
 GetMaxU64(DataExtractor &data,
-          uint32_t *offset, uint64_t *value, unsigned int byte_size)
+          lldb::offset_t *offset_ptr,
+          uint64_t *value,
+          unsigned int byte_size)
 {
-    uint32_t saved_offset = *offset;
-    *value = data.GetMaxU64(offset, byte_size);
-    return *offset != saved_offset;
+    lldb::offset_t saved_offset = *offset_ptr;
+    *value = data.GetMaxU64(offset_ptr, byte_size);
+    return *offset_ptr != saved_offset;
 }
 
 static bool
-ParseAuxvEntry(DataExtractor &data, AuxVector::Entry &entry, 
-               uint32_t *offset, unsigned int byte_size)
+ParseAuxvEntry(DataExtractor &data,
+               AuxVector::Entry &entry,
+               lldb::offset_t *offset_ptr,
+               unsigned int byte_size)
 {
-    if (!GetMaxU64(data, offset, &entry.type, byte_size))
+    if (!GetMaxU64(data, offset_ptr, &entry.type, byte_size))
         return false;
 
-    if (!GetMaxU64(data, offset, &entry.value, byte_size))
+    if (!GetMaxU64(data, offset_ptr, &entry.value, byte_size))
         return false;
 
     return true;
@@ -57,7 +61,7 @@ void
 AuxVector::ParseAuxv(DataExtractor &data)
 {
     const unsigned int byte_size  = m_process->GetAddressByteSize();
-    uint32_t offset = 0;
+    lldb::offset_t offset = 0;
 
     for (;;) 
     {
@@ -80,7 +84,7 @@ AuxVector::AuxVector(Process *process)
     : m_process(process)
 {
     DataExtractor data;
-    LogSP log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_DYNAMIC_LOADER));
+    Log *log(GetLogIfAnyCategoriesSet(LIBLLDB_LOG_DYNAMIC_LOADER));
 
     data.SetData(GetAuxvData());
     data.SetByteOrder(m_process->GetByteOrder());
@@ -105,7 +109,7 @@ AuxVector::FindEntry(EntryType type) const
 }
 
 void
-AuxVector::DumpToLog(LogSP log) const
+AuxVector::DumpToLog(Log *log) const
 {
     if (!log)
         return;
@@ -120,31 +124,44 @@ AuxVector::DumpToLog(LogSP log) const
 const char *
 AuxVector::GetEntryName(EntryType type)
 {
-    const char *name;
+    const char *name = "AT_???";
 
 #define ENTRY_NAME(_type) _type: name = #_type
     switch (type) 
     {
-    default:
-        name = "unkown";
-        break;
-
-    case ENTRY_NAME(AT_NULL);   break;
-    case ENTRY_NAME(AT_IGNORE); break;
-    case ENTRY_NAME(AT_EXECFD); break;
-    case ENTRY_NAME(AT_PHDR);   break;
-    case ENTRY_NAME(AT_PHENT);  break;
-    case ENTRY_NAME(AT_PHNUM);  break;
-    case ENTRY_NAME(AT_PAGESZ); break;
-    case ENTRY_NAME(AT_BASE);   break;
-    case ENTRY_NAME(AT_FLAGS);  break;
-    case ENTRY_NAME(AT_ENTRY);  break;
-    case ENTRY_NAME(AT_NOTELF); break;
-    case ENTRY_NAME(AT_UID);    break;
-    case ENTRY_NAME(AT_EUID);   break;
-    case ENTRY_NAME(AT_GID);    break;
-    case ENTRY_NAME(AT_EGID);   break;
-    case ENTRY_NAME(AT_CLKTCK); break;
+    case ENTRY_NAME(AT_NULL);           break;
+    case ENTRY_NAME(AT_IGNORE);         break;
+    case ENTRY_NAME(AT_EXECFD);         break;
+    case ENTRY_NAME(AT_PHDR);           break;
+    case ENTRY_NAME(AT_PHENT);          break;
+    case ENTRY_NAME(AT_PHNUM);          break;
+    case ENTRY_NAME(AT_PAGESZ);         break;
+    case ENTRY_NAME(AT_BASE);           break;
+    case ENTRY_NAME(AT_FLAGS);          break;
+    case ENTRY_NAME(AT_ENTRY);          break;
+    case ENTRY_NAME(AT_NOTELF);         break;
+    case ENTRY_NAME(AT_UID);            break;
+    case ENTRY_NAME(AT_EUID);           break;
+    case ENTRY_NAME(AT_GID);            break;
+    case ENTRY_NAME(AT_EGID);           break;
+    case ENTRY_NAME(AT_CLKTCK);         break;
+    case ENTRY_NAME(AT_PLATFORM);       break;
+    case ENTRY_NAME(AT_HWCAP);          break;
+    case ENTRY_NAME(AT_FPUCW);          break;
+    case ENTRY_NAME(AT_DCACHEBSIZE);    break;
+    case ENTRY_NAME(AT_ICACHEBSIZE);    break;
+    case ENTRY_NAME(AT_UCACHEBSIZE);    break;
+    case ENTRY_NAME(AT_IGNOREPPC);      break;
+    case ENTRY_NAME(AT_SECURE);         break;
+    case ENTRY_NAME(AT_BASE_PLATFORM);  break;
+    case ENTRY_NAME(AT_RANDOM);         break;
+    case ENTRY_NAME(AT_EXECFN);         break;
+    case ENTRY_NAME(AT_SYSINFO);        break;
+    case ENTRY_NAME(AT_SYSINFO_EHDR);   break;
+    case ENTRY_NAME(AT_L1I_CACHESHAPE); break;
+    case ENTRY_NAME(AT_L1D_CACHESHAPE); break;
+    case ENTRY_NAME(AT_L2_CACHESHAPE);  break;
+    case ENTRY_NAME(AT_L3_CACHESHAPE);  break;
     }
 #undef ENTRY_NAME
 

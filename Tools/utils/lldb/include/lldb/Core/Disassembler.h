@@ -13,6 +13,7 @@
 // C Includes
 // C++ Includes
 #include <vector>
+#include <string>
 
 // Other libraries and framework includes
 // Project includes
@@ -51,7 +52,7 @@ public:
     GetOperands (const ExecutionContext* exe_ctx)
     {
         CalculateMnemonicOperandsAndCommentIfNeeded (exe_ctx);
-        return m_mnemocics.c_str();
+        return m_mnemonics.c_str();
     }
     
     const char *
@@ -84,12 +85,12 @@ public:
           const ExecutionContext* exe_ctx);
     
     virtual bool
-    DoesBranch () const = 0;
+    DoesBranch () = 0;
 
     virtual size_t
     Decode (const Disassembler &disassembler, 
-            const DataExtractor& data, 
-            uint32_t data_offset) = 0;
+            const DataExtractor& data,
+            lldb::offset_t data_offset) = 0;
             
     virtual void
     SetDescription (const char *) {}  // May be overridden in sub-classes that have descriptions.
@@ -137,7 +138,7 @@ private:
 protected:
     Opcode m_opcode; // The opcode for this instruction
     std::string m_opcode_name;
-    std::string m_mnemocics;
+    std::string m_mnemonics;
     std::string m_comment;
     bool m_calculated_strings;
 
@@ -166,7 +167,7 @@ public:
     GetMaxOpcocdeByteSize () const;
 
     lldb::InstructionSP
-    GetInstructionAtIndex (uint32_t idx) const;
+    GetInstructionAtIndex (size_t idx) const;
     
     uint32_t
     GetIndexOfNextBranchInstruction(uint32_t start) const;
@@ -205,7 +206,7 @@ public:
      ~PseudoInstruction ();
      
     virtual bool
-    DoesBranch () const;
+    DoesBranch ();
 
     virtual void
     CalculateMnemonicOperandsAndComment (const ExecutionContext* exe_ctx)
@@ -218,7 +219,7 @@ public:
     virtual size_t
     Decode (const Disassembler &disassembler,
             const DataExtractor &data,
-            uint32_t data_offset);
+            lldb::offset_t data_offset);
             
     void
     SetOpcode (size_t opcode_size, void *opcode_data);
@@ -233,7 +234,7 @@ protected:
 };
 
 class Disassembler :
-    public STD_ENABLE_SHARED_FROM_THIS(Disassembler),
+    public std::enable_shared_from_this<Disassembler>,
     public PluginInterface
 {
 public:
@@ -247,27 +248,39 @@ public:
         eOptionMarkPCAddress    = (1u << 3)  // Mark the disassembly line the contains the PC
     };
 
+    // FindPlugin should be lax about the flavor string (it is too annoying to have various internal uses of the
+    // disassembler fail because the global flavor string gets set wrong.  Instead, if you get a flavor string you
+    // don't understand, use the default.  Folks who care to check can use the FlavorValidForArchSpec method on the
+    // disassembler they got back.
     static lldb::DisassemblerSP
-    FindPlugin (const ArchSpec &arch, const char *plugin_name);
+    FindPlugin (const ArchSpec &arch, const char *flavor, const char *plugin_name);
+    
+    // This version will use the value in the Target settings if flavor is NULL;
+    static lldb::DisassemblerSP
+    FindPluginForTarget(const lldb::TargetSP target_sp, const ArchSpec &arch, const char *flavor, const char *plugin_name);
 
     static lldb::DisassemblerSP
     DisassembleRange (const ArchSpec &arch,
                       const char *plugin_name,
+                      const char *flavor,
                       const ExecutionContext &exe_ctx,
                       const AddressRange &disasm_range);
     
     static lldb::DisassemblerSP 
     DisassembleBytes (const ArchSpec &arch,
                       const char *plugin_name,
+                      const char *flavor,
                       const Address &start,
                       const void *bytes,
                       size_t length,
-                      uint32_t num_instructions = UINT32_MAX);
+                      uint32_t max_num_instructions,
+                      bool data_from_file);
 
     static bool
     Disassemble (Debugger &debugger,
                  const ArchSpec &arch,
                  const char *plugin_name,
+                 const char *flavor,
                  const ExecutionContext &exe_ctx,
                  const AddressRange &range,
                  uint32_t num_instructions,
@@ -279,6 +292,7 @@ public:
     Disassemble (Debugger &debugger,
                  const ArchSpec &arch,
                  const char *plugin_name,
+                 const char *flavor,
                  const ExecutionContext &exe_ctx,
                  const Address &start,
                  uint32_t num_instructions,
@@ -290,6 +304,7 @@ public:
     Disassemble (Debugger &debugger,
                  const ArchSpec &arch,
                  const char *plugin_name,
+                 const char *flavor,
                  const ExecutionContext &exe_ctx,
                  SymbolContextList &sc_list,
                  uint32_t num_instructions,
@@ -301,6 +316,7 @@ public:
     Disassemble (Debugger &debugger,
                  const ArchSpec &arch,
                  const char *plugin_name,
+                 const char *flavor,
                  const ExecutionContext &exe_ctx,
                  const ConstString &name,
                  Module *module,
@@ -313,16 +329,17 @@ public:
     Disassemble (Debugger &debugger,
                  const ArchSpec &arch,
                  const char *plugin_name,
+                 const char *flavor,
                  const ExecutionContext &exe_ctx,
                  uint32_t num_instructions,
                  uint32_t num_mixed_context_lines,
                  uint32_t options,
                  Stream &strm);
-
+    
     //------------------------------------------------------------------
     // Constructors and Destructors
     //------------------------------------------------------------------
-    Disassembler(const ArchSpec &arch);
+    Disassembler(const ArchSpec &arch, const char *flavor);
     virtual ~Disassembler();
 
     typedef const char * (*SummaryCallback)(const Instruction& inst, ExecutionContext *exe_context, void *user_data);
@@ -340,19 +357,22 @@ public:
     size_t
     ParseInstructions (const ExecutionContext *exe_ctx,
                        const AddressRange &range,
-                       Stream *error_strm_ptr);
+                       Stream *error_strm_ptr,
+                       bool prefer_file_cache);
 
     size_t
     ParseInstructions (const ExecutionContext *exe_ctx,
                        const Address &range,
-                       uint32_t num_instructions);
+                       uint32_t num_instructions,
+                       bool prefer_file_cache);
 
     virtual size_t
     DecodeInstructions (const Address &base_addr,
                         const DataExtractor& data,
-                        uint32_t data_offset,
-                        uint32_t num_instructions,
-                        bool append) = 0;
+                        lldb::offset_t data_offset,
+                        size_t num_instructions,
+                        bool append,
+                        bool data_from_file) = 0;
     
     InstructionList &
     GetInstructionList ();
@@ -365,6 +385,15 @@ public:
     {
         return m_arch;
     }
+    
+    const char *
+    GetFlavor () const
+    {
+        return m_flavor.c_str();
+    }
+    
+    virtual bool
+    FlavorValidForArchSpec (const lldb_private::ArchSpec &arch, const char *flavor) = 0;    
 
 protected:
     //------------------------------------------------------------------
@@ -373,6 +402,7 @@ protected:
     const ArchSpec m_arch;
     InstructionList m_instruction_list;
     lldb::addr_t m_base_addr;
+    std::string m_flavor;
 
 private:
     //------------------------------------------------------------------

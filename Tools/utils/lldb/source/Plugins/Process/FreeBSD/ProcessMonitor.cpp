@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <string.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <signal.h>
 #include <sys/ptrace.h>
@@ -58,22 +59,24 @@ Get_PT_IO_OP(int op)
     }
 }
 
+// Wrapper for ptrace to catch errors and log calls.
+// Note that ptrace sets errno on error because -1 is reserved as a valid result.
 extern long
-PtraceWrapper(int req, ::pid_t pid, void *addr, int data,
+PtraceWrapper(int req, lldb::pid_t pid, void *addr, int data,
               const char* reqName, const char* file, int line)
 {
     long int result;
 
-    LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PTRACE));
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet(POSIX_LOG_PTRACE));
 
     if (log) {
-        log->Printf("ptrace(%s, %u, %p, %x) called from file %s line %d",
+        log->Printf("ptrace(%s, %lu, %p, %x) called from file %s line %d",
                     reqName, pid, addr, data, file, line);
         if (req == PT_IO) {
             struct ptrace_io_desc *pi = (struct ptrace_io_desc *) addr;
             
             log->Printf("PT_IO: op=%s offs=%zx size=%ld",
-                     Get_PT_IO_OP(pi->piod_op),  pi->piod_offs, pi->piod_len);
+                     Get_PT_IO_OP(pi->piod_op), (size_t)pi->piod_offs, pi->piod_len);
         }
     }
 
@@ -84,7 +87,7 @@ PtraceWrapper(int req, ::pid_t pid, void *addr, int data,
 
     //PtraceDisplayBytes(req, data);
 
-    if (log && (result == -1 || errno != 0))
+    if (log && errno != 0)
     {
         const char* str;
         switch (errno)
@@ -112,10 +115,21 @@ PtraceWrapper(int req, ::pid_t pid, void *addr, int data,
     return result;
 }
 
+// Wrapper for ptrace when logging is not required.
+// Sets errno to 0 prior to calling ptrace.
+extern long
+PtraceWrapper(int req, lldb::pid_t pid, void *addr, int data)
+{
+    long result = 0;
+    errno = 0;
+    result = ptrace(req, pid, (caddr_t)addr, data);
+    return result;
+}
+
 #define PTRACE(req, pid, addr, data) \
     PtraceWrapper((req), (pid), (addr), (data), #req, __FILE__, __LINE__)
 #else
-#define PTRACE ptrace
+    PtraceWrapper((req), (pid), (addr), (data))
 #endif
 
 //------------------------------------------------------------------------------
@@ -191,6 +205,7 @@ EnsureFDFlags(int fd, int flags, Error &error)
 class Operation
 {
 public:
+    virtual ~Operation() {}
     virtual void Execute(ProcessMonitor *monitor) = 0;
 };
 
@@ -260,13 +275,16 @@ WriteOperation::Execute(ProcessMonitor *monitor)
 class ReadRegOperation : public Operation
 {
 public:
-    ReadRegOperation(unsigned offset, unsigned size, RegisterValue &value, bool &result)
-      : m_offset(offset), m_size(size), m_value(value), m_result(result)
+    ReadRegOperation(lldb::tid_t tid, unsigned offset, unsigned size,
+                     RegisterValue &value, bool &result)
+        : m_tid(tid), m_offset(offset), m_size(size),
+          m_value(value), m_result(result)
         { }
 
     void Execute(ProcessMonitor *monitor);
 
 private:
+    lldb::tid_t m_tid;
     unsigned m_offset;
     unsigned m_size;
     RegisterValue &m_value;
@@ -276,11 +294,10 @@ private:
 void
 ReadRegOperation::Execute(ProcessMonitor *monitor)
 {
-    lldb::pid_t pid = monitor->GetPID();
     struct reg regs;
     int rc;
 
-    if ((rc = PTRACE(PT_GETREGS, pid, (caddr_t)&regs, 0)) < 0) {
+    if ((rc = PTRACE(PT_GETREGS, m_tid, (caddr_t)&regs, 0)) < 0) {
         m_result = false;
     } else {
         if (m_size == sizeof(uintptr_t))
@@ -297,13 +314,16 @@ ReadRegOperation::Execute(ProcessMonitor *monitor)
 class WriteRegOperation : public Operation
 {
 public:
-    WriteRegOperation(unsigned offset, const RegisterValue &value, bool &result)
-        : m_offset(offset), m_value(value), m_result(result)
+    WriteRegOperation(lldb::tid_t tid, unsigned offset,
+                      const RegisterValue &value, bool &result)
+        : m_tid(tid), m_offset(offset),
+          m_value(value), m_result(result)
         { }
 
     void Execute(ProcessMonitor *monitor);
 
 private:
+    lldb::tid_t m_tid;
     unsigned m_offset;
     const RegisterValue &m_value;
     bool &m_result;
@@ -312,15 +332,14 @@ private:
 void
 WriteRegOperation::Execute(ProcessMonitor *monitor)
 {
-    lldb::pid_t pid = monitor->GetPID();
     struct reg regs;
 
-    if (PTRACE(PT_GETREGS, pid, (caddr_t)&regs, 0) < 0) {
+    if (PTRACE(PT_GETREGS, m_tid, (caddr_t)&regs, 0) < 0) {
         m_result = false;
         return;
     }
     *(uintptr_t *)(((caddr_t)&regs) + m_offset) = (uintptr_t)m_value.GetAsUInt64();
-    if (PTRACE(PT_SETREGS, pid, (caddr_t)&regs, 0) < 0)
+    if (PTRACE(PT_SETREGS, m_tid, (caddr_t)&regs, 0) < 0)
         m_result = false;
     else
         m_result = true;
@@ -332,13 +351,14 @@ WriteRegOperation::Execute(ProcessMonitor *monitor)
 class ReadGPROperation : public Operation
 {
 public:
-    ReadGPROperation(void *buf, bool &result)
-        : m_buf(buf), m_result(result)
+    ReadGPROperation(lldb::tid_t tid, void *buf, bool &result)
+        : m_tid(tid), m_buf(buf), m_result(result)
         { }
 
     void Execute(ProcessMonitor *monitor);
 
 private:
+    lldb::tid_t m_tid;
     void *m_buf;
     bool &m_result;
 };
@@ -349,7 +369,7 @@ ReadGPROperation::Execute(ProcessMonitor *monitor)
     int rc;
 
     errno = 0;
-    rc = PTRACE(PT_GETREGS, monitor->GetPID(), (caddr_t)m_buf, 0);
+    rc = PTRACE(PT_GETREGS, m_tid, (caddr_t)m_buf, 0);
     if (errno != 0)
         m_result = false;
     else
@@ -362,13 +382,14 @@ ReadGPROperation::Execute(ProcessMonitor *monitor)
 class ReadFPROperation : public Operation
 {
 public:
-    ReadFPROperation(void *buf, bool &result)
-        : m_buf(buf), m_result(result)
+    ReadFPROperation(lldb::tid_t tid, void *buf, bool &result)
+        : m_tid(tid), m_buf(buf), m_result(result)
         { }
 
     void Execute(ProcessMonitor *monitor);
 
 private:
+    lldb::tid_t m_tid;
     void *m_buf;
     bool &m_result;
 };
@@ -376,7 +397,7 @@ private:
 void
 ReadFPROperation::Execute(ProcessMonitor *monitor)
 {
-    if (PTRACE(PT_GETFPREGS, monitor->GetPID(), (caddr_t)m_buf, 0) < 0)
+    if (PTRACE(PT_GETFPREGS, m_tid, (caddr_t)m_buf, 0) < 0)
         m_result = false;
     else
         m_result = true;
@@ -388,13 +409,14 @@ ReadFPROperation::Execute(ProcessMonitor *monitor)
 class WriteGPROperation : public Operation
 {
 public:
-    WriteGPROperation(void *buf, bool &result)
-        : m_buf(buf), m_result(result)
+    WriteGPROperation(lldb::tid_t tid, void *buf, bool &result)
+        : m_tid(tid), m_buf(buf), m_result(result)
         { }
 
     void Execute(ProcessMonitor *monitor);
 
 private:
+    lldb::tid_t m_tid;
     void *m_buf;
     bool &m_result;
 };
@@ -402,7 +424,7 @@ private:
 void
 WriteGPROperation::Execute(ProcessMonitor *monitor)
 {
-    if (PTRACE(PT_SETREGS, monitor->GetPID(), (caddr_t)m_buf, 0) < 0)
+    if (PTRACE(PT_SETREGS, m_tid, (caddr_t)m_buf, 0) < 0)
         m_result = false;
     else
         m_result = true;
@@ -414,13 +436,14 @@ WriteGPROperation::Execute(ProcessMonitor *monitor)
 class WriteFPROperation : public Operation
 {
 public:
-    WriteFPROperation(void *buf, bool &result)
-        : m_buf(buf), m_result(result)
+    WriteFPROperation(lldb::tid_t tid, void *buf, bool &result)
+        : m_tid(tid), m_buf(buf), m_result(result)
         { }
 
     void Execute(ProcessMonitor *monitor);
 
 private:
+    lldb::tid_t m_tid;
     void *m_buf;
     bool &m_result;
 };
@@ -428,7 +451,7 @@ private:
 void
 WriteFPROperation::Execute(ProcessMonitor *monitor)
 {
-    if (PTRACE(PT_SETFPREGS, monitor->GetPID(), (caddr_t)m_buf, 0) < 0)
+    if (PTRACE(PT_SETFPREGS, m_tid, (caddr_t)m_buf, 0) < 0)
         m_result = false;
     else
         m_result = true;
@@ -460,13 +483,19 @@ ResumeOperation::Execute(ProcessMonitor *monitor)
         data = m_signo;
 
     if (PTRACE(PT_CONTINUE, m_tid, (caddr_t)1, data))
+    {
+        Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
+
+        if (log)
+            log->Printf ("ResumeOperation (%"  PRIu64 ") failed: %s", m_tid, strerror(errno));
         m_result = false;
+    }
     else
         m_result = true;
 }
 
 //------------------------------------------------------------------------------
-/// @class ResumeOperation
+/// @class SingleStepOperation
 /// @brief Implements ProcessMonitor::SingleStep.
 class SingleStepOperation : public Operation
 {
@@ -587,7 +616,7 @@ KillOperation::Execute(ProcessMonitor *monitor)
 }
 
 //------------------------------------------------------------------------------
-/// @class KillOperation
+/// @class DetachOperation
 /// @brief Implements ProcessMonitor::BringProcessIntoLimbo.
 class DetachOperation : public Operation
 {
@@ -627,14 +656,16 @@ ProcessMonitor::LaunchArgs::LaunchArgs(ProcessMonitor *monitor,
                                        char const **envp,
                                        const char *stdin_path,
                                        const char *stdout_path,
-                                       const char *stderr_path)
+                                       const char *stderr_path,
+                                       const char *working_dir)
     : OperationArgs(monitor),
       m_module(module),
       m_argv(argv),
       m_envp(envp),
       m_stdin_path(stdin_path),
       m_stdout_path(stdout_path),
-      m_stderr_path(stderr_path) { }
+      m_stderr_path(stderr_path),
+      m_working_dir(working_dir) { }
 
 ProcessMonitor::LaunchArgs::~LaunchArgs()
 { }
@@ -665,6 +696,7 @@ ProcessMonitor::ProcessMonitor(ProcessPOSIX *process,
                                const char *stdin_path,
                                const char *stdout_path,
                                const char *stderr_path,
+                               const char *working_dir,
                                lldb_private::Error &error)
     : m_process(static_cast<ProcessFreeBSD *>(process)),
       m_operation_thread(LLDB_INVALID_HOST_THREAD),
@@ -675,10 +707,10 @@ ProcessMonitor::ProcessMonitor(ProcessPOSIX *process,
       m_client_fd(-1),
       m_server_fd(-1)
 {
-    std::auto_ptr<LaunchArgs> args;
+    std::unique_ptr<LaunchArgs> args;
 
     args.reset(new LaunchArgs(this, module, argv, envp,
-                              stdin_path, stdout_path, stderr_path));
+                              stdin_path, stdout_path, stderr_path, working_dir));
     
 
     // Server/client descriptors.
@@ -708,7 +740,7 @@ WAIT_AGAIN:
     // Check that the launch was a success.
     if (!args->m_error.Success())
     {
-        StopLaunchOpThread();
+        StopOpThread();
         error = args->m_error;
         return;
     }
@@ -736,7 +768,7 @@ ProcessMonitor::ProcessMonitor(ProcessPOSIX *process,
       m_client_fd(-1),
       m_server_fd(-1)
 {
-    std::auto_ptr<AttachArgs> args;
+    std::unique_ptr<AttachArgs> args;
 
     args.reset(new AttachArgs(this, pid));
 
@@ -764,10 +796,10 @@ WAIT_AGAIN:
         }
     }
 
-    // Check that the launch was a success.
+    // Check that the attach was a success.
     if (!args->m_error.Success())
     {
-        StopAttachOpThread();
+        StopOpThread();
         error = args->m_error;
         return;
     }
@@ -802,18 +834,6 @@ ProcessMonitor::StartLaunchOpThread(LaunchArgs *args, Error &error)
         Host::ThreadCreate(g_thread_name, LaunchOpThread, args, &error);
 }
 
-void
-ProcessMonitor::StopLaunchOpThread()
-{
-    lldb::thread_result_t result;
-
-    if (!IS_VALID_LLDB_HOST_THREAD(m_operation_thread))
-        return;
-
-    Host::ThreadCancel(m_operation_thread, NULL);
-    Host::ThreadJoin(m_operation_thread, &result, NULL);
-}
-
 void *
 ProcessMonitor::LaunchOpThread(void *arg)
 {
@@ -839,13 +859,34 @@ ProcessMonitor::Launch(LaunchArgs *args)
     const char *stdin_path = args->m_stdin_path;
     const char *stdout_path = args->m_stdout_path;
     const char *stderr_path = args->m_stderr_path;
+    const char *working_dir = args->m_working_dir;
+
+    lldb_utility::PseudoTerminal terminal;
+    const size_t err_len = 1024;
+    char err_str[err_len];
     lldb::pid_t pid;
 
     lldb::ThreadSP inferior;
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
 
     // Propagate the environment if one is not supplied.
     if (envp == NULL || envp[0] == NULL)
         envp = const_cast<const char **>(environ);
+
+    // Pseudo terminal setup.
+    if (!terminal.OpenFirstAvailableMaster(O_RDWR | O_NOCTTY, err_str, err_len))
+    {
+        args->m_error.SetErrorToGenericError();
+        args->m_error.SetErrorString("Could not open controlling TTY.");
+        goto FINISH;
+    }
+
+    if ((pid = terminal.Fork(err_str, err_len)) == -1)
+    {
+        args->m_error.SetErrorToGenericError();
+        args->m_error.SetErrorString("Process fork failed.");
+        goto FINISH;
+    }
 
     // Recognized child exit status codes.
     enum {
@@ -853,10 +894,9 @@ ProcessMonitor::Launch(LaunchArgs *args)
         eDupStdinFailed,
         eDupStdoutFailed,
         eDupStderrFailed,
+        eChdirFailed,
         eExecFailed
     };
-
-    pid = fork();
 
     // Child process.
     if (pid == 0)
@@ -887,6 +927,11 @@ ProcessMonitor::Launch(LaunchArgs *args)
             if (!DupDescriptor(stderr_path, STDERR_FILENO, O_WRONLY | O_CREAT))
                 exit(eDupStderrFailed);
 
+        // Change working directory
+        if (working_dir != NULL && working_dir[0])
+          if (0 != ::chdir(working_dir))
+              exit(eChdirFailed);
+
         // Execute.  We should never return.
         execve(argv[0],
                const_cast<char *const *>(argv),
@@ -908,22 +953,25 @@ ProcessMonitor::Launch(LaunchArgs *args)
         args->m_error.SetErrorToGenericError();
         switch (WEXITSTATUS(status))
         {
-            case ePtraceFailed: 
+            case ePtraceFailed:
                 args->m_error.SetErrorString("Child ptrace failed.");
                 break;
-            case eDupStdinFailed: 
+            case eDupStdinFailed:
                 args->m_error.SetErrorString("Child open stdin failed.");
                 break;
-            case eDupStdoutFailed: 
+            case eDupStdoutFailed:
                 args->m_error.SetErrorString("Child open stdout failed.");
                 break;
-            case eDupStderrFailed: 
+            case eDupStderrFailed:
                 args->m_error.SetErrorString("Child open stderr failed.");
                 break;
-            case eExecFailed: 
+            case eChdirFailed:
+                args->m_error.SetErrorString("Child failed to set working directory.");
+                break;
+            case eExecFailed:
                 args->m_error.SetErrorString("Child exec failed.");
                 break;
-            default: 
+            default:
                 args->m_error.SetErrorString("Child returned unknown exit status.");
                 break;
         }
@@ -941,10 +989,9 @@ ProcessMonitor::Launch(LaunchArgs *args)
         goto FINISH;
     }
 #endif
-    // XXX - Release the master terminal descriptor and pass it off to the
-    // XXX - ProcessMonitor instance.  Similarly stash the inferior pid.
-    // For now just use stdin fd
-    monitor->m_terminal_fd = ::dup(STDIN_FILENO);
+    // Release the master terminal descriptor and pass it off to the
+    // ProcessMonitor instance.  Similarly stash the inferior pid.
+    monitor->m_terminal_fd = terminal.ReleaseMasterFileDescriptor();
     monitor->m_pid = pid;
 
     // Set the terminal fd to be in non blocking mode (it simplifies the
@@ -954,7 +1001,9 @@ ProcessMonitor::Launch(LaunchArgs *args)
         goto FINISH;
 
     // Update the process thread list with this new thread.
-    inferior.reset(new POSIXThread(processSP, pid));
+    inferior.reset(new POSIXThread(*processSP, pid));
+    if (log)
+        log->Printf ("ProcessMonitor::%s() adding pid = %" PRIu64, __FUNCTION__, pid);
     process.GetThreadList().AddThread(inferior);
 
     // Let our process instance know the thread has stopped.
@@ -987,12 +1036,6 @@ ProcessMonitor::StartAttachOpThread(AttachArgs *args, lldb_private::Error &error
 
     m_operation_thread =
         Host::ThreadCreate(g_thread_name, AttachOpThread, args, &error);
-}
-
-void
-ProcessMonitor::StopAttachOpThread()
-{
-    assert(!"Not implemented yet!!!");
 }
 
 void *
@@ -1040,7 +1083,7 @@ ProcessMonitor::Attach(AttachArgs *args)
     }
 
     // Update the process thread list with the attached thread.
-    inferior.reset(new POSIXThread(processSP, pid));
+    inferior.reset(new POSIXThread(*processSP, pid));
     tl.AddThread(inferior);
 
     // Let our process instance know the thread has stopped.
@@ -1060,9 +1103,21 @@ ProcessMonitor::MonitorCallback(void *callback_baton,
     ProcessMessage message;
     ProcessMonitor *monitor = static_cast<ProcessMonitor*>(callback_baton);
     ProcessFreeBSD *process = monitor->m_process;
+    assert(process);
     bool stop_monitoring;
     siginfo_t info;
     int ptrace_err;
+
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
+
+    if (exited)
+    {
+        if (log)
+            log->Printf ("ProcessMonitor::%s() got exit signal, tid = %"  PRIu64, __FUNCTION__, pid);
+        message = ProcessMessage::Exit(pid, status);
+        process->SendMessage(message);
+        return pid == process->GetID();
+    }
 
     if (!monitor->GetSignalInfo(pid, &info, ptrace_err))
         stop_monitoring = true; // pid is gone.  Bail.
@@ -1091,7 +1146,10 @@ ProcessMonitor::MonitorSIGTRAP(ProcessMonitor *monitor,
 {
     ProcessMessage message;
 
-    assert(info->si_signo == SIGTRAP && "Unexpected child signal!");
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
+
+    assert(monitor);
+    assert(info && info->si_signo == SIGTRAP && "Unexpected child signal!");
 
     switch (info->si_code)
     {
@@ -1107,17 +1165,23 @@ ProcessMonitor::MonitorSIGTRAP(ProcessMonitor *monitor,
         unsigned long data = 0;
         if (!monitor->GetEventMessage(pid, &data))
             data = -1;
+        if (log)
+            log->Printf ("ProcessMonitor::%s() received exit? event, data = %lx, pid = %" PRIu64, __FUNCTION__, data, pid);
         message = ProcessMessage::Limbo(pid, (data >> 8));
         break;
     }
 
     case 0:
     case TRAP_TRACE:
+        if (log)
+            log->Printf ("ProcessMonitor::%s() received trace event, pid = %" PRIu64, __FUNCTION__, pid);
         message = ProcessMessage::Trace(pid);
         break;
 
     case SI_KERNEL:
     case TRAP_BRKPT:
+        if (log)
+            log->Printf ("ProcessMonitor::%s() received breakpoint event, pid = %" PRIu64, __FUNCTION__, pid);
         message = ProcessMessage::Break(pid);
         break;
     }
@@ -1132,6 +1196,8 @@ ProcessMonitor::MonitorSignal(ProcessMonitor *monitor,
     ProcessMessage message;
     int signo = info->si_signo;
 
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
+
     // POSIX says that process behaviour is undefined after it ignores a SIGFPE,
     // SIGILL, SIGSEGV, or SIGBUS *unless* that signal was generated by a
     // kill(2) or raise(3).  Similarly for tgkill(2) on FreeBSD.
@@ -1142,11 +1208,20 @@ ProcessMonitor::MonitorSignal(ProcessMonitor *monitor,
     // Similarly, ACK signals generated by this monitor.
     if (info->si_code == SI_USER)
     {
+        if (log)
+            log->Printf ("ProcessMonitor::%s() received signal %s with code %s, pid = %d",
+                            __FUNCTION__,
+                            monitor->m_process->GetUnixSignals().GetSignalAsCString (signo),
+                            "SI_USER",
+                            info->si_pid);
         if (info->si_pid == getpid())
             return ProcessMessage::SignalDelivered(pid, signo);
         else
             return ProcessMessage::Signal(pid, signo);
     }
+
+    if (log)
+        log->Printf ("ProcessMonitor::%s() received signal %s", __FUNCTION__, monitor->m_process->GetUnixSignals().GetSignalAsCString (signo));
 
     if (signo == SIGSEGV) {
         lldb::addr_t fault_addr = reinterpret_cast<lldb::addr_t>(info->si_addr);
@@ -1356,7 +1431,8 @@ ProcessMonitor::ServeOperation(OperationArgs *args)
                 assert(errno == EINTR);
                 goto READ_AGAIN;
             }
-
+            if (status == 0)
+                continue; // Poll again. The connection probably terminated.
             assert(status == sizeof(op));
             op->Execute(monitor);
             write(fdset.fd, &op, sizeof(op));
@@ -1410,65 +1486,86 @@ ProcessMonitor::WriteMemory(lldb::addr_t vm_addr, const void *buf, size_t size,
 }
 
 bool
-ProcessMonitor::ReadRegisterValue(unsigned offset, unsigned size, RegisterValue &value)
+ProcessMonitor::ReadRegisterValue(lldb::tid_t tid, unsigned offset, const char* reg_name,
+                                  unsigned size, RegisterValue &value)
 {
     bool result;
-    ReadRegOperation op(offset, size, value, result);
+    ReadRegOperation op(tid, offset, size, value, result);
     DoOperation(&op);
     return result;
 }
 
 bool
-ProcessMonitor::WriteRegisterValue(unsigned offset, const RegisterValue &value)
+ProcessMonitor::WriteRegisterValue(lldb::tid_t tid, unsigned offset,
+                                   const char* reg_name, const RegisterValue &value)
 {
     bool result;
-    WriteRegOperation op(offset, value, result);
+    WriteRegOperation op(tid, offset, value, result);
     DoOperation(&op);
     return result;
 }
 
 bool
-ProcessMonitor::ReadGPR(void *buf)
+ProcessMonitor::ReadGPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
-    ReadGPROperation op(buf, result);
+    ReadGPROperation op(tid, buf, result);
     DoOperation(&op);
     return result;
 }
 
 bool
-ProcessMonitor::ReadFPR(void *buf)
+ProcessMonitor::ReadFPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
-    ReadFPROperation op(buf, result);
+    ReadFPROperation op(tid, buf, result);
     DoOperation(&op);
     return result;
 }
 
 bool
-ProcessMonitor::WriteGPR(void *buf)
+ProcessMonitor::ReadRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset)
+{
+    return false;
+}
+
+bool
+ProcessMonitor::WriteGPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
-    WriteGPROperation op(buf, result);
+    WriteGPROperation op(tid, buf, result);
     DoOperation(&op);
     return result;
 }
 
 bool
-ProcessMonitor::WriteFPR(void *buf)
+ProcessMonitor::WriteFPR(lldb::tid_t tid, void *buf, size_t buf_size)
 {
     bool result;
-    WriteFPROperation op(buf, result);
+    WriteFPROperation op(tid, buf, result);
     DoOperation(&op);
     return result;
+}
+
+bool
+ProcessMonitor::WriteRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset)
+{
+    return false;
 }
 
 bool
 ProcessMonitor::Resume(lldb::tid_t tid, uint32_t signo)
 {
     bool result;
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_PROCESS));
+
+    if (log)
+        log->Printf ("ProcessMonitor::%s() resuming thread = %"  PRIu64 " with signal %s", __FUNCTION__, tid,
+                                 m_process->GetUnixSignals().GetSignalAsCString (signo));
     ResumeOperation op(tid, signo, result);
     DoOperation(&op);
+    if (log)
+        log->Printf ("ProcessMonitor::%s() resuming result = %s", __FUNCTION__, result ? "true" : "false");
     return result;
 }
 
@@ -1508,14 +1605,16 @@ ProcessMonitor::GetEventMessage(lldb::tid_t tid, unsigned long *message)
     return result;
 }
 
-Error
-ProcessMonitor::Detach()
+lldb_private::Error
+ProcessMonitor::Detach(lldb::tid_t tid)
 {
-    Error result;
-    DetachOperation op(result);
-    DoOperation(&op);
-    StopMonitor();
-    return result;
+    lldb_private::Error error;
+    if (tid != LLDB_INVALID_THREAD_ID)
+    {
+        DetachOperation op(error);
+        DoOperation(&op);
+    }
+    return error;
 }    
 
 bool
@@ -1546,10 +1645,23 @@ void
 ProcessMonitor::StopMonitor()
 {
     StopMonitoringChildProcess();
-    StopLaunchOpThread();
+    StopOpThread();
     CloseFD(m_terminal_fd);
     CloseFD(m_client_fd);
     CloseFD(m_server_fd);
+}
+
+void
+ProcessMonitor::StopOpThread()
+{
+    lldb::thread_result_t result;
+
+    if (!IS_VALID_LLDB_HOST_THREAD(m_operation_thread))
+        return;
+
+    Host::ThreadCancel(m_operation_thread, NULL);
+    Host::ThreadJoin(m_operation_thread, &result, NULL);
+    m_operation_thread = LLDB_INVALID_HOST_THREAD;
 }
 
 void

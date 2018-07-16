@@ -19,6 +19,7 @@
 // Other libraries and framework includes
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Broadcaster.h"
+#include "lldb/Core/ConstString.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/InputReader.h"
 #include "lldb/Core/StreamString.h"
@@ -47,9 +48,12 @@ public:
     Initialize();
     
     static void
+    DebuggerInitialize (lldb_private::Debugger &debugger);
+
+    static void
     Terminate();
     
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
     
     static const char *
@@ -113,11 +117,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-    
-    virtual const char *
-    GetShortPluginName();
     
     virtual uint32_t
     GetPluginVersion();
@@ -135,13 +136,10 @@ public:
     DoHalt (bool &caused_stop);
     
     virtual lldb_private::Error
-    DoDetach ();
+    DoDetach (bool keep_stopped);
     
     virtual lldb_private::Error
     DoSignal (int signal);
-    
-    virtual lldb_private::Error
-    WillDestroy ();
     
     virtual lldb_private::Error
     DoDestroy ();
@@ -174,19 +172,19 @@ public:
     // Process Breakpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    EnableBreakpointSite (lldb_private::BreakpointSite *bp_site);
     
     virtual lldb_private::Error
-    DisableBreakpoint (lldb_private::BreakpointSite *bp_site);
+    DisableBreakpointSite (lldb_private::BreakpointSite *bp_site);
     
     //----------------------------------------------------------------------
     // Process Watchpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableWatchpoint (lldb_private::Watchpoint *wp);
+    EnableWatchpoint (lldb_private::Watchpoint *wp, bool notify = true);
     
     virtual lldb_private::Error
-    DisableWatchpoint (lldb_private::Watchpoint *wp);
+    DisableWatchpoint (lldb_private::Watchpoint *wp, bool notify = true);
     
     CommunicationKDP &
     GetCommunication()
@@ -228,12 +226,6 @@ protected:
     bool
     ProcessIDIsValid ( ) const;
     
-    //    static void
-    //    STDIOReadThreadBytesReceived (void *baton, const void *src, size_t src_len);
-    
-    //    void
-    //    AppendSTDOUT (const char* s, size_t len);
-    
     void
     Clear ( );
     
@@ -248,8 +240,7 @@ protected:
     };
     
     lldb::ThreadSP
-    GetKernelThread (lldb_private::ThreadList &old_thread_list,
-                     lldb_private::ThreadList &new_thread_list);
+    GetKernelThread ();
 
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
@@ -257,10 +248,10 @@ protected:
     CommunicationKDP m_comm;
     lldb_private::Broadcaster m_async_broadcaster;
     lldb::thread_t m_async_thread;
-    bool m_destroy_in_process;
-    std::string m_dyld_plugin_name;
+    lldb_private::ConstString m_dyld_plugin_name;
     lldb::addr_t m_kernel_load_addr;
     lldb::CommandObjectSP m_command_sp;
+    lldb::ThreadWP m_kernel_thread_wp;
 
 
     bool

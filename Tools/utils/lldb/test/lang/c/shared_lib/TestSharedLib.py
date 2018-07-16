@@ -63,10 +63,14 @@ class SharedLibTestCase(TestBase):
 
     def expr(self):
         """Test that types work when defined in a shared library and forward-declared in the main executable"""
+
+        if "clang" in self.getCompiler() and "3.4" in self.getCompilerVersion():
+            self.skipTest("llvm.org/pr16214 -- clang emits partial DWARF for structures referenced via typedef")
+
 	self.common_setup()
 
         # This should display correctly.
-        self.expect("expression *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("expression --show-types -- *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["(foo)", "(sub_foo)", "other_element = 3"])
 
     @unittest2.expectedFailure
@@ -76,7 +80,7 @@ class SharedLibTestCase(TestBase):
 	self.common_setup()
 
         # This should display correctly.
-        self.expect("frame variable *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types -- *my_foo_ptr", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["(foo)", "(sub_foo)", "other_element = 3"])
                        
 if __name__ == '__main__':

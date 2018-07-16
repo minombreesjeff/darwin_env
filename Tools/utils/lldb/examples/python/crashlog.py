@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-#----------------------------------------------------------------------
+#---------------------------------------------------------------------
 # Be sure to add the python path that points to the LLDB shared library.
 #
 # To use this in the embedded python interpreter using "lldb":
@@ -83,6 +83,7 @@ PARSE_MODE_SYSTEM = 4
 
 class CrashLog(symbolication.Symbolicator):
     """Class that does parses darwin crash logs"""
+    parent_process_regex = re.compile('^Parent Process:\s*(.*)\[(\d+)\]');
     thread_state_regex = re.compile('^Thread ([0-9]+) crashed with')
     thread_regex = re.compile('^Thread ([0-9]+)([^:]*):(.*)')
     frame_regex = re.compile('^([0-9]+) +([^ ]+) *\t?(0x[0-9a-fA-F]+) +(.*)')
@@ -173,6 +174,10 @@ class CrashLog(symbolication.Symbolicator):
                         if plist:
                             if 'DBGArchitecture' in plist:
                                 self.arch = plist['DBGArchitecture']
+                                # FIXME TOT svn supports ArchSpecs in numeric form but we haven't
+                                # merged that in yet; this should be removed once that's in.
+                                if self.arch == '16777228-0':
+                                    self.arch = 'arm64'
                             if 'DBGDSYMPath' in plist:
                                 self.symfile = os.path.realpath(plist['DBGDSYMPath'])
                             if 'DBGSymbolRichExecutable' in plist:
@@ -265,9 +270,10 @@ class CrashLog(symbolication.Symbolicator):
                     else:
                         self.process = version_string
                         self.process_compatability_version = version_string
-                elif line.startswith ('Parent Process:'):
-                    (self.parent_process_name, pid_with_brackets) = line[15:].strip().split()
-                    self.parent_process_id = pid_with_brackets.strip('[]') 
+                elif self.parent_process_regex.search(line):
+                    parent_process_match = self.parent_process_regex.search(line)
+                    self.parent_process_name = parent_process_match.group(1)
+                    self.parent_process_id = parent_process_match.group(2)
                 elif line.startswith ('Exception Type:'):
                     self.thread_exception = line[15:].strip()
                     continue
@@ -678,10 +684,10 @@ def SymbolicateCrashLog(crash_log, options):
         for frame_idx, frame in enumerate(thread.frames):
             disassemble = (this_thread_crashed or options.disassemble_all_threads) and frame_idx < options.disassemble_depth;
             if frame_idx == 0:
-                symbolicated_frame_addresses = crash_log.symbolicate (frame.pc, options.verbose)
+                symbolicated_frame_addresses = crash_log.symbolicate (frame.pc & crash_log.addr_mask, options.verbose)
             else:
                 # Any frame above frame zero and we have to subtract one to get the previous line entry
-                symbolicated_frame_addresses = crash_log.symbolicate (frame.pc - 1, options.verbose)
+                symbolicated_frame_addresses = crash_log.symbolicate ((frame.pc & crash_log.addr_mask) - 1, options.verbose)
             
             if symbolicated_frame_addresses:
                 symbolicated_frame_address_idx = 0

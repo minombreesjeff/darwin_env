@@ -15,8 +15,10 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
-#include "lldb/Target/Target.h"
+#include "lldb/Core/Error.h"
+#include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Target/Target.h"
 #include "lldb/Utility/Utils.h"
 
 using namespace lldb;
@@ -36,10 +38,30 @@ g_option_table[] =
     { LLDB_OPT_SET_2,                  false, "summary-string",  'z', required_argument, NULL, 0, eArgTypeName, "Specify a summary string to use to format the variable output."},
 };
 
+static Error
+ValidateNamedSummary (const char* str, void*)
+{
+    if (!str || !str[0])
+        return Error("must specify a valid named summary");
+    TypeSummaryImplSP summary_sp;
+    if (DataVisualization::NamedSummaryFormats::GetSummaryFormat(ConstString(str), summary_sp) == false)
+        return Error("must specify a valid named summary");
+    return Error();
+}
+
+static Error
+ValidateSummaryString (const char* str, void*)
+{
+    if (!str || !str[0])
+        return Error("must specify a non-empty summary string");
+    return Error();
+}
 
 OptionGroupVariable::OptionGroupVariable (bool show_frame_options) :
     OptionGroup(),
-    include_frame_options (show_frame_options)
+    include_frame_options (show_frame_options),
+    summary(ValidateNamedSummary),
+    summary_string(ValidateSummaryString)
 {
 }
 
@@ -67,10 +89,10 @@ OptionGroupVariable::SetOptionValue (CommandInterpreter &interpreter,
             show_scope = true;
             break;
         case 'y':
-            summary.SetCurrentValue(option_arg);
+            error = summary.SetCurrentValue(option_arg);
             break;
         case 'z':
-            summary_string.SetCurrentValue(option_arg);
+            error = summary_string.SetCurrentValue(option_arg);
             break;
         default:
             error.SetErrorStringWithFormat("unrecognized short option '%c'", short_option);

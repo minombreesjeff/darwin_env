@@ -15,7 +15,6 @@ class StructTypesTestCase(TestBase):
     mydir = os.path.join("lang", "c", "struct_types")
 
     # rdar://problem/12566646
-    @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_with_dsym(self):
@@ -23,6 +22,7 @@ class StructTypesTestCase(TestBase):
         self.buildDsym()
         self.struct_types()
 
+    # rdar://problem/12566646
     @dwarf_test
     def test_with_dwarf(self):
         """Test that break on a struct declaration has no effect."""
@@ -80,7 +80,7 @@ class StructTypesTestCase(TestBase):
             DATA_TYPES_DISPLAYED_CORRECTLY,
             substrs = ["pt.padding[1] = '"])
         # Test zero length array access and make sure it succeeds with "expression"
-        self.expect("expression -- pt.padding[0]",
+        self.expect("expression -- (pt.padding[0])",
             DATA_TYPES_DISPLAYED_CORRECTLY,
             substrs = ["(char)", " = '"])
 
@@ -89,7 +89,8 @@ class StructTypesTestCase(TestBase):
             DATA_TYPES_DISPLAYED_CORRECTLY,
             substrs = ['padding[]']) # Once rdar://problem/12566646 is fixed, this should display correctly
 
-
+        self.expect("expression -- &pt == (struct point_tag*)0",
+                    substrs = ['false'])
 
 if __name__ == '__main__':
     import atexit

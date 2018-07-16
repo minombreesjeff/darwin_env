@@ -96,11 +96,8 @@ Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.
                     <p>This drops you into the embedded python interpreter. When running under the <b>script</b> command, 
                        lldb sets some convenience variables that give you quick access to the currently selected entities that characterize
                        the program and debugger state.  In each case, if there is no currently selected entity of the appropriate
-                       type, the variable's <b>IsValid</b> method will return false.  
-                    <p>Note also, these variables hold the values
-                       of the selected objects on entry to the embedded interpreter.  They do not update as you use the LLDB
-                       API's to change, for example, the currently selected stack frame or thread.</p>
-                       These are all global variables contained in the <b>lldb</b> python namespace :</p>
+                       type, the variable's <b>IsValid</b> method will return false. These variables are:</p>
+
                     <table class="stats" width="620" cellspacing="0">
                     <tr>
                         <td class="hed" width="20%">Variable</td>
@@ -160,7 +157,7 @@ Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.
                             Contains the currently selected thread.
                             The <b>lldb.SBThread</b> object manages the stack frames in that thread.
                             A thread is always selected in the command interpreter when a target stops.
-                            The <b>thread select &lt;thread-index&gt;</b> commmand can be used to change the 
+                            The <b>thread select &lt;thread-index&gt;</b> command can be used to change the 
                             currently selected thread.  So as long as you have a stopped process, there will be
                             some selected thread.
                         </td>
@@ -177,14 +174,25 @@ Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.
                             The <b>lldb.SBFrame</b> object manage the stack locals and the register set for
                             that stack.
                             A stack frame is always selected in the command interpreter when a target stops.
-                            The <b>frame select &lt;frame-index&gt;</b> commmand can be used to change the 
+                            The <b>frame select &lt;frame-index&gt;</b> command can be used to change the 
                             currently selected frame.  So as long as you have a stopped process, there will
                             be some selected frame.
                         </td>
                     </tr>
                     </table>
 
-                    <p>Once in the embedded interpreter, these objects can be used. To get started, note that almost 
+                    <p>While extremely convenient, these variables have a couple caveats that you should be aware of.
+                       First of all, they hold the values
+                       of the selected objects on entry to the embedded interpreter.  They do not update as you use the LLDB
+                       API's to change, for example, the currently selected stack frame or thread.  
+                     <p>Moreover, they are only defined and meaningful while in the interactive Python interpreter.
+                       There is no guarantee on their value in any other situation, hence you should not use them when defining
+                       Python formatters, breakpoint scripts and commands (or any other Python extension point that LLDB provides).
+                       As a rationale for such behavior, consider that lldb can
+                       run in a multithreaded environment, and another thread might call the "script" command, changing the value out
+                       from under you.</p>
+
+                    <p>To get started with these objects and LLDB scripting, please note that almost 
                        all of the <b>lldb</b> Python objects are able to briefly describe themselves when you pass them 
                        to the Python <b>print</b> function:
 <code><pre><tt>(lldb) <b>script</b>
@@ -263,6 +271,10 @@ frame #0: 0x0000000100000bb6 a.out main + 54 at main.c:16
                         </td>
                     </tr>
                     </table>
+             <p>Optionally, a Python breakpoint command can return a value. Returning False tells LLDB that you do not want to stop at the breakpoint.
+                Any other return value (including None or leaving out the return statement altogether) is akin to telling LLDB to actually stop at the breakpoint.
+                This can be useful in situations where a breakpoint only needs to stop the process when certain conditions are met, and you do not want to inspect the
+                program state manually at every stop and then continue.
              <p>An example will show how simple it is to write some python code and attach it to a breakpoint. 
                 The following example will allow you to track the order in which the functions in a given shared library 
                 are first executed during one run of your program.  This is a simple method to gather an order file which
@@ -293,8 +305,8 @@ Enter your Python command(s). Type 'DONE' to end.
 > <strong>print '[%i] %s' % (counter, name)</strong>
 > <font color=green># Disable the current breakpoint location so it doesn't get hit again</font>
 > <strong>bp_loc.SetEnabled(False)</strong>
-> <font color=green># How continue the process</font>
-> <strong>frame.GetThread().GetProcess().Continue()</strong>
+> <font color=green># No need to stop here</font>
+> <strong>return False</strong>
 > <strong>DONE</strong>
 </tt></pre></code>
             <p>The <b>breakpoint command add</b> command above attaches a python script to breakpoint 1.
@@ -360,10 +372,9 @@ Enter your Python command(s). Type 'DONE' to end.
                 <b>lldb.SBCommandReturnObject</b>
             </td>
             <td class="content">
-                A return object where you can indicate the success or failure of your command. You can also
-                provide information for the command result by printing data into it. You can also just print
-                data as you normally would in a python script and the output will show up; this is useful for
-                logging, but the real output for your command should go in the result object.
+                A return object which encapsulates success/failure information for the command and output text
+                that needs to be printed as a result of the command. The plain Python "print" command also works but
+                text won't go in the result by default (it is useful as a temporary logging facility).
             </td>
         </tr>
         <tr>
@@ -379,6 +390,10 @@ Enter your Python command(s). Type 'DONE' to end.
             </td>
         </tr>
         </table>
+        <p>As a convenience, you can treat the result object as a Python file object, and say
+        <code><pre><tt>print >>result, "my command does lots of cool stuff"</tt></pre></code>
+        SBCommandReturnObject and SBStream
+        both support this file-like behavior by providing write() and flush() calls at the Python layer.</p>
         <p>One other handy convenience when defining lldb command-line commands is the command
           <b>command script import</b> which will import a module specified by file path - so you
           don't have to change your PYTHONPATH for temporary scripts.  It also has another convenience
@@ -438,7 +453,7 @@ total 365848
 -rw-r--r--@  1 someuser  wheel         6148 Jan 19 17:27 .DS_Store
 -rw-------   1 someuser  wheel         7331 Jan 19 15:37 crash.log
 </tt></pre></code>
-        <p>A template has been created in the source repository that can help you to create
+        <p>A more interesting template has been created in the source repository that can help you to create
             lldb command quickly:</p>
         <a href="http://llvm.org/svn/llvm-project/lldb/trunk/examples/python/cmdtemplate.py">cmdtemplate.py</a>
 		<p>
@@ -509,6 +524,11 @@ $2 = 0x000000010010aba0 Let's Be Friendsfoobar</tt></pre></code>
 <code><pre><tt><font color=green>#!/usr/bin/python</font>
 
 import lldb
+import os
+
+def disassemble_instructions(insts):
+    for i in insts:
+        print i
 
 <font color=green># Set the path to the executable to debug</font>
 exe = "./a.out"
@@ -542,30 +562,30 @@ if target:
         state = process.GetState ()
         print process
         if state == lldb.eStateStopped:
-        <font color=green># Get the first thread</font>
-        thread = process.GetThreadAtIndex (0)
-        if thread:
-            <font color=green># Print some simple thread info</font>
-            print thread
-            <font color=green># Get the first frame</font>
-            frame = thread.GetFrameAtIndex (0)
-            if frame:
-                <font color=green># Print some simple frame info</font>
-                print frame
-                function = frame.GetFunction()
-                <font color=green># See if we have debug info (a function)</font>
-                if function:
-                    <font color=green># We do have a function, print some info for the function</font>
-                    print function
-                    <font color=green># Now get all instructions for this function and print them</font>
-                    insts = function.GetInstructions(target)
-                    disassemble_instructions (insts)
-                else:
-                    <font color=green># See if we have a symbol in the symbol table for where we stopped</font>
-                    symbol = frame.GetSymbol();
-                    if symbol:
-                        <font color=green># We do have a symbol, print some info for the symbol</font>
-                        print symbol
+            <font color=green># Get the first thread</font>
+            thread = process.GetThreadAtIndex (0)
+            if thread:
+                <font color=green># Print some simple thread info</font>
+                print thread
+                <font color=green># Get the first frame</font>
+                frame = thread.GetFrameAtIndex (0)
+                if frame:
+                    <font color=green># Print some simple frame info</font>
+                    print frame
+                    function = frame.GetFunction()
+                    <font color=green># See if we have debug info (a function)</font>
+                    if function:
+                        <font color=green># We do have a function, print some info for the function</font>
+                        print function
+                        <font color=green># Now get all instructions for this function and print them</font>
+                        insts = function.GetInstructions(target)
+                        disassemble_instructions (insts)
+                    else:
+                        <font color=green># See if we have a symbol in the symbol table for where we stopped</font>
+                        symbol = frame.GetSymbol();
+                        if symbol:
+                            <font color=green># We do have a symbol, print some info for the symbol</font>
+                            print symbol
 </tt></pre></code>
         				</div>
         				<div class="postfooter"></div>

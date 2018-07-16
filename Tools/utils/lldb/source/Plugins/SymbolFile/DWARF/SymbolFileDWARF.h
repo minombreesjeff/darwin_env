@@ -13,8 +13,8 @@
 // C Includes
 // C++ Includes
 #include <list>
-#include <memory>
 #include <map>
+#include <set>
 #include <vector>
 
 // Other libraries and framework includes
@@ -22,6 +22,7 @@
 #include "clang/AST/ExternalASTSource.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/ClangForward.h"
@@ -64,6 +65,7 @@ class SymbolFileDWARF : public lldb_private::SymbolFile, public lldb_private::Us
 public:
     friend class SymbolFileDWARFDebugMap;
     friend class DebugMapModule;
+    friend class DWARFCompileUnit;
     //------------------------------------------------------------------
     // Static Functions
     //------------------------------------------------------------------
@@ -73,7 +75,7 @@ public:
     static void
     Terminate();
 
-    static const char *
+    static lldb_private::ConstString
     GetPluginNameStatic();
 
     static const char *
@@ -120,6 +122,10 @@ public:
     virtual uint32_t        FindTypes (const lldb_private::SymbolContext& sc, const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::TypeList& types);
     virtual lldb_private::TypeList *
                             GetTypeList ();
+    virtual size_t          GetTypes (lldb_private::SymbolContextScope *sc_scope,
+                                      uint32_t type_mask,
+                                      lldb_private::TypeList &type_list);
+
     virtual lldb_private::ClangASTContext &
                             GetClangASTContext ();
 
@@ -180,11 +186,8 @@ public:
     //------------------------------------------------------------------
     // PluginInterface protocol
     //------------------------------------------------------------------
-    virtual const char *
+    virtual lldb_private::ConstString
     GetPluginName();
-
-    virtual const char *
-    GetShortPluginName();
 
     virtual uint32_t
     GetPluginVersion();
@@ -336,6 +339,10 @@ protected:
     class DelayedAddObjCClassProperty;
     typedef std::vector <DelayedAddObjCClassProperty> DelayedPropertyList;
     
+    bool                    ClassOrStructIsVirtual (
+                                DWARFCompileUnit* dwarf_cu,
+                                const DWARFDebugInfoEntry *parent_die);
+
     size_t                  ParseChildMembers(
                                 const lldb_private::SymbolContext& sc,
                                 DWARFCompileUnit* dwarf_cu,
@@ -366,6 +373,7 @@ protected:
     size_t                  ParseChildEnumerators(
                                 const lldb_private::SymbolContext& sc,
                                 lldb::clang_type_t enumerator_qual_type,
+                                bool is_signed,
                                 uint32_t enumerator_byte_size,
                                 DWARFCompileUnit* dwarf_cu,
                                 const DWARFDebugInfoEntry *enum_die);
@@ -531,11 +539,26 @@ protected:
                            const lldb_private::ConstString &selector);
 
     bool
-    CopyUniqueClassMethodTypes (lldb_private::Type *class_type,
+    CopyUniqueClassMethodTypes (SymbolFileDWARF *class_symfile,
+                                lldb_private::Type *class_type,
                                 DWARFCompileUnit* src_cu,
                                 const DWARFDebugInfoEntry *src_class_die,
                                 DWARFCompileUnit* dst_cu,
-                                const DWARFDebugInfoEntry *dst_class_die);
+                                const DWARFDebugInfoEntry *dst_class_die,
+                                llvm::SmallVectorImpl <const DWARFDebugInfoEntry *> &failures);
+
+    bool
+    FixupAddress (lldb_private::Address &addr);
+
+    typedef std::set<lldb_private::Type *> TypeSet;
+
+    void
+    GetTypes (DWARFCompileUnit* dwarf_cu,
+              const DWARFDebugInfoEntry *die,
+              dw_offset_t min_die_offset,
+              dw_offset_t max_die_offset,
+              uint32_t type_mask,
+              TypeSet &type_set);
 
     lldb::ModuleWP                  m_debug_map_module_wp;
     SymbolFileDWARFDebugMap *       m_debug_map_symfile;
@@ -555,15 +578,15 @@ protected:
     lldb_private::DataExtractor     m_data_apple_namespaces;
     lldb_private::DataExtractor     m_data_apple_objc;
 
-    // The auto_ptr items below are generated on demand if and when someone accesses
+    // The unique pointer items below are generated on demand if and when someone accesses
     // them through a non const version of this class.
-    std::auto_ptr<DWARFDebugAbbrev>     m_abbr;
-    std::auto_ptr<DWARFDebugInfo>       m_info;
-    std::auto_ptr<DWARFDebugLine>       m_line;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_names_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_types_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_namespaces_ap;
-    std::auto_ptr<DWARFMappedHash::MemoryTable> m_apple_objc_ap;
+    std::unique_ptr<DWARFDebugAbbrev>     m_abbr;
+    std::unique_ptr<DWARFDebugInfo>       m_info;
+    std::unique_ptr<DWARFDebugLine>       m_line;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_names_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_types_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_namespaces_ap;
+    std::unique_ptr<DWARFMappedHash::MemoryTable> m_apple_objc_ap;
     NameToDIE                           m_function_basename_index;  // All concrete functions
     NameToDIE                           m_function_fullname_index;  // All concrete functions
     NameToDIE                           m_function_method_index;    // All inlined functions
@@ -577,7 +600,7 @@ protected:
                                         m_using_apple_tables:1;
     lldb_private::LazyBool              m_supports_DW_AT_APPLE_objc_complete_type;
 
-    std::auto_ptr<DWARFDebugRanges>     m_ranges;
+    std::unique_ptr<DWARFDebugRanges>     m_ranges;
     UniqueDWARFASTTypeMap m_unique_ast_type_map;
     typedef llvm::SmallPtrSet<const DWARFDebugInfoEntry *, 4> DIEPointerSet;
     typedef llvm::DenseMap<const DWARFDebugInfoEntry *, clang::DeclContext *> DIEToDeclContextMap;

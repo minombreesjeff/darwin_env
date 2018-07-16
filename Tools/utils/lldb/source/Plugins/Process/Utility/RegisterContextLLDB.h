@@ -25,7 +25,7 @@ class UnwindLLDB;
 class RegisterContextLLDB : public lldb_private::RegisterContext
 {
 public:
-    typedef STD_SHARED_PTR(RegisterContextLLDB) SharedPtr;
+    typedef std::shared_ptr<RegisterContextLLDB> SharedPtr;
 
     RegisterContextLLDB (lldb_private::Thread &thread,
                          const SharedPtr& next_frame,
@@ -46,13 +46,13 @@ public:
     GetRegisterCount ();
 
     virtual const lldb_private::RegisterInfo *
-    GetRegisterInfoAtIndex (uint32_t reg);
+    GetRegisterInfoAtIndex (size_t reg);
 
     virtual size_t
     GetRegisterSetCount ();
 
     virtual const lldb_private::RegisterSet *
-    GetRegisterSet (uint32_t reg_set);
+    GetRegisterSet (size_t reg_set);
 
     virtual bool
     ReadRegister (const lldb_private::RegisterInfo *reg_info, lldb_private::RegisterValue &value);

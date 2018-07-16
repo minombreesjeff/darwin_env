@@ -98,6 +98,25 @@
                         </td>
                     </tr>
 
+                    <tr><td class="header" colspan="2">Set environment variables for process before launching.</td></tr>
+                        <td class="content">
+                            <b>(gdb)</b> set env DEBUG 1<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> settings set target.env-vars DEBUG=1<br>
+                            <b>(lldb)</b> set se target.env-vars DEBUG=1<br>
+                            <b>(lldb)</b> env DEBUG=1<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Set environment variables for process and launch process in one command.</td></tr>
+                        <td class="content">
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> process launch -v DEBUG=1<br>
+                        </td>
+                    </tr>
+
                     <tr><td class="header" colspan="2">Attach to a process with process ID 123.</td></tr>
                     <tr>
                         <td class="content">
@@ -223,6 +242,16 @@
                         </td>
                     </tr>
 
+                    <tr><td class="header" colspan="2">Return immediately from the currently selected frame, with an optional return value.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> return &lt;RETURN EXPRESSION&gt;<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> thread return &lt;RETURN EXPRESSION&gt;<br>
+                        </td>
+                    </tr>
+
                     <tr><td class="header" colspan="2">Backtrace and disassemble every time you stop.</td></tr>
                     <tr>
                         <td class="content">
@@ -318,8 +347,20 @@
                             <b>(gdb)</b> rbreak regular-expression<br>
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> breakpoint set --regex regular-expression<br>
+                            <b>(lldb)</b> breakpoint set --func-regex regular-expression<br>
                             <b>(lldb)</b> br s -r regular-expression<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Ensure that breakpoints by file and line work for #included .c/.cpp/.m files.</td></tr>
+
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> b foo.c:12<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> settings set target.inline-breakpoint-strategy always<br>
+                            <b>(lldb)</b> br s -f foo.c -l 12<br>
                         </td>
                     </tr>
 
@@ -638,7 +679,18 @@
                             <b>(gdb)</b> p function_with_a_breakpoint()<br>
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> expr -u 0 -- function_with_a_breakpoint()<br>
+                            <b>(lldb)</b> expr -i 0 -- function_with_a_breakpoint()<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Calling a function that crashes, and stopping when the function crashes.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> set unwindonsignal 0<br>
+                            <b>(gdb)</b> p function_which_crashes()<br>
+                        </td>
+                        <td class="content">
+                            <b>(lldb)</b> expr -u 0 -- function_which_crashes()<br>
                         </td>
                     </tr>
 
@@ -890,7 +942,7 @@
                             <b>(gdb)</b> info malloc 0x10010d680
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> script import lldb.macosx.heap<br>
+                            <b>(lldb)</b> command script import lldb.macosx.heap<br>
                             <b>(lldb)</b> process launch --environment MallocStackLogging=1 -- [ARGS]<br>	
                             <b>(lldb)</b> malloc_info --stack-history 0x10010d680<br>
                         </td>
@@ -900,7 +952,7 @@
                         <td class="content">
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> script import lldb.macosx.heap<br>
+                            <b>(lldb)</b> command script import lldb.macosx.heap<br>
                             <b>(lldb)</b> malloc_info --type 0x10010d680<br>
                         </td>
                     </tr>
@@ -909,7 +961,7 @@
                         <td class="content">
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> script import lldb.macosx.heap<br>
+                            <b>(lldb)</b> command script import lldb.macosx.heap<br>
                             <b>(lldb)</b> ptr_refs EXPR <br>
                         </td>
                     </tr>
@@ -918,7 +970,7 @@
                         <td class="content">
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> script import lldb.macosx.heap<br>
+                            <b>(lldb)</b> command script import lldb.macosx.heap<br>
                             <b>(lldb)</b> cstr_refs CSTRING<br>
                         </td>
                     </tr>
@@ -1051,7 +1103,20 @@
                         </td>
                     </tr>
 
-                    <tr><td class="header" colspan="2">Look up information for an address in <b>a.out</a> only.</td></tr>
+                    <tr><td class="header" colspan="2">Find full souce line information.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(gdb)</b> info line 0x1ec4<br>
+                        </td>
+                        <td class="content">
+                          This one is a bit messy at present.  Do:<br><br>
+                            <b>(lldb)</b> image lookup -v --address 0x1ec4<br><br>
+                          and look for the LineEntry line, which will have the full source path and
+                          line range information.<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Look up information for an address in <b>a.out</b> only.</td></tr>
                     <tr>
                         <td class="content">
                         </td>
@@ -1148,7 +1213,7 @@
                             <b>(gdb)</b> directory /my/path<br>
                         </td>
                         <td class="content">
-                            (<i>No equivalent command yet.)<br>
+                            (<i>No equivalent command - use the source-map instead.)<br>
                         </td>
                     </tr>
 

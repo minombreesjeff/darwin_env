@@ -29,7 +29,9 @@ public:
         eSignalDeliveredMessage,
         eTraceMessage,
         eBreakpointMessage,
-        eCrashMessage
+        eWatchpointMessage,
+        eCrashMessage,
+        eNewThreadMessage
     };
 
     enum CrashReason
@@ -103,12 +105,26 @@ public:
         return ProcessMessage(tid, eBreakpointMessage);
     }
 
+    static ProcessMessage Watch(lldb::tid_t tid, lldb::addr_t wp_addr) {
+        return ProcessMessage(tid, eWatchpointMessage, 0, wp_addr);
+    }
+
     /// Indicates that the thread @p tid crashed.
     static ProcessMessage Crash(lldb::pid_t pid, CrashReason reason,
                                 int signo, lldb::addr_t fault_addr) {
         ProcessMessage message(pid, eCrashMessage, signo, fault_addr);
         message.m_crash_reason = reason;
         return message;
+    }
+
+    /// Indicates that the thread @p child_tid was spawned.
+    static ProcessMessage NewThread(lldb::tid_t parent_tid, lldb::tid_t child_tid) {
+        return ProcessMessage(parent_tid, eNewThreadMessage, child_tid);
+    }
+
+    /// Indicates that the thread @p tid is about to exit with status @p status.
+    static ProcessMessage Exit(lldb::tid_t tid, int status) {
+        return ProcessMessage(tid, eExitMessage, status);
     }
 
     int GetExitStatus() const {
@@ -137,8 +153,18 @@ public:
         return m_addr;
     }
 
+    lldb::addr_t GetHWAddress() const {
+        assert(GetKind() == eWatchpointMessage || GetKind() == eTraceMessage);
+        return m_addr;
+    }
+
+    lldb::tid_t GetChildTID() const {
+        assert(GetKind() == eNewThreadMessage);
+        return m_child_tid;
+    }
+
     static const char *
-    GetCrashReasonString(CrashReason reason);
+    GetCrashReasonString(CrashReason reason, lldb::addr_t fault_addr);
 
     const char *
     PrintCrashReason() const;
@@ -159,13 +185,23 @@ private:
           m_kind(kind),
           m_crash_reason(eInvalidCrashReason),
           m_status(status),
-          m_addr(addr) { }
+          m_addr(addr),
+          m_child_tid(0) { }
+
+    ProcessMessage(lldb::tid_t tid, Kind kind, lldb::tid_t child_tid)
+        : m_tid(tid),
+          m_kind(kind),
+          m_crash_reason(eInvalidCrashReason),
+          m_status(0),
+          m_addr(0),
+          m_child_tid(child_tid) { }
 
     lldb::tid_t m_tid;
     Kind        m_kind         : 8;
     CrashReason m_crash_reason : 8;
     int m_status;
     lldb::addr_t m_addr;
+    lldb::tid_t m_child_tid;
 };
 
 #endif // #ifndef liblldb_ProcessMessage_H_

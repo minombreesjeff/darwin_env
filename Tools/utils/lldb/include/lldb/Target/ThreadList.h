@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "lldb/lldb-private.h"
-#include "lldb/Host/Mutex.h"
 #include "lldb/Core/UserID.h"
 
 
@@ -51,10 +50,10 @@ public:
     GetSelectedThread ();
 
     bool
-    SetSelectedThreadByID (lldb::tid_t tid);
+    SetSelectedThreadByID (lldb::tid_t tid, bool notify = false);
 
     bool
-    SetSelectedThreadByIndexID (uint32_t index_id);
+    SetSelectedThreadByIndexID (uint32_t index_id, bool notify = false);
 
     void
     Clear();
@@ -73,6 +72,15 @@ public:
 
     lldb::ThreadSP
     FindThreadByID (lldb::tid_t tid, bool can_update = true);
+    
+    lldb::ThreadSP
+    FindThreadByProtocolID (lldb::tid_t tid, bool can_update = true);
+
+    lldb::ThreadSP
+    RemoveThreadByID (lldb::tid_t tid, bool can_update = true);
+    
+    lldb::ThreadSP
+    RemoveThreadByProtocolID (lldb::tid_t tid, bool can_update = true);
 
     lldb::ThreadSP
     FindThreadByIndexID (uint32_t index_id, bool can_update = true);
@@ -112,6 +120,9 @@ public:
     DidResume ();
 
     void
+    DidStop ();
+
+    void
     DiscardThreadPlans();
 
     uint32_t
@@ -121,15 +132,18 @@ public:
     SetStopID (uint32_t stop_id);
 
     Mutex &
-    GetMutex ()
-    {
-        return m_threads_mutex;
-    }
+    GetMutex ();
     
     void
     Update (ThreadList &rhs);
     
 protected:
+
+    void
+    SetShouldReportStop (Vote vote);
+
+    void
+    NotifySelectedThreadChanged (lldb::tid_t tid);
 
     typedef std::vector<lldb::ThreadSP> collection;
     //------------------------------------------------------------------
@@ -138,7 +152,6 @@ protected:
     Process *m_process; ///< The process that manages this thread list.
     uint32_t m_stop_id; ///< The process stop ID that this thread list is valid for.
     collection m_threads; ///< The threads for this process.
-    mutable Mutex m_threads_mutex;
     lldb::tid_t m_selected_tid;  ///< For targets that need the notion of a current thread.
 
 private:

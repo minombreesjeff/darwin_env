@@ -64,6 +64,12 @@ public:
             return m_file_spec;
         }
         
+        uint32_t
+        GetSourceMapModificationID() const
+        {
+            return m_source_map_mod_id;
+        }
+        
     protected:
 
         bool
@@ -72,6 +78,7 @@ public:
         FileSpec m_file_spec_orig;  // The original file spec that was used (can be different from m_file_spec)
         FileSpec m_file_spec;       // The actualy file spec being used (if the target has source mappings, this might be different from m_file_spec_orig)
         TimeValue m_mod_time;       // Keep the modification time that this file data is valid for
+        uint32_t m_source_map_mod_id; // If the target uses path remappings, be sure to clear our notion of a source file if the path modification ID changes
         lldb::DataBufferSP m_data_sp;
         typedef std::vector<uint32_t> LineOffsets;
         LineOffsets m_offsets;
@@ -79,7 +86,7 @@ public:
 
 #endif // SWIG
 
-    typedef STD_SHARED_PTR(File) FileSP;
+    typedef std::shared_ptr<File> FileSP;
 
 #ifndef SWIG
 
@@ -106,8 +113,8 @@ public:
     //------------------------------------------------------------------
     // A source manager can be made with a non-null target, in which case it can use the path remappings to find 
     // source files that are not in their build locations.  With no target it won't be able to do this.
-    SourceManager (Debugger &debugger);
-    SourceManager (Target &target);
+    SourceManager (const lldb::DebuggerSP &debugger_sp);
+    SourceManager (const lldb::TargetSP &target_sp);
 
     ~SourceManager();
 
@@ -117,13 +124,6 @@ public:
     {
         return m_last_file_sp;
     }
-
-    size_t
-    DisplaySourceLines (const FileSpec &file,
-                        uint32_t line,
-                        uint32_t context_before,
-                        uint32_t context_after,
-                        Stream *s);
 
     size_t
     DisplaySourceLinesWithLineNumbers (const FileSpec &file,
@@ -136,15 +136,17 @@ public:
 
     // This variant uses the last file we visited.
     size_t
-    DisplaySourceLinesWithLineNumbersUsingLastFile (uint32_t line,
-                                                    uint32_t context_before,
-                                                    uint32_t context_after,
+    DisplaySourceLinesWithLineNumbersUsingLastFile (uint32_t start_line,
+                                                    uint32_t count,
+                                                    uint32_t curr_line,
                                                     const char* current_line_cstr,
                                                     Stream *s,
                                                     const SymbolContextList *bp_locs = NULL);
 
     size_t
     DisplayMoreWithLineNumbers (Stream *s,
+                                uint32_t count,
+                                bool reverse,
                                 const SymbolContextList *bp_locs = NULL);
 
     bool
@@ -175,12 +177,11 @@ protected:
     // Classes that inherit from SourceManager can see and modify these
     //------------------------------------------------------------------
     FileSP m_last_file_sp;
-    uint32_t m_last_file_line;
-    uint32_t m_last_file_context_before;
-    uint32_t m_last_file_context_after;
+    uint32_t m_last_line;
+    uint32_t m_last_count;
     bool     m_default_set;
-    Target *m_target;
-    Debugger *m_debugger;
+    lldb::TargetWP m_target_wp;
+    lldb::DebuggerWP m_debugger_wp;
     
 private:
     //------------------------------------------------------------------

@@ -17,6 +17,7 @@
 // Project includes
 #include "lldb/Core/AddressRange.h"
 #include "lldb/Core/Disassembler.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandCompletions.h"
@@ -40,14 +41,16 @@ CommandObjectDisassemble::CommandOptions::CommandOptions (CommandInterpreter &in
     num_lines_context(0),
     num_instructions (0),
     func_name(),
-    cur_function (false),
+    current_function (false),
     start_addr(),
     end_addr (),
     at_pc (false),
     frame_line (false),
     plugin_name (),
+    flavor_string(),
     arch(),
-    some_location_specified (false) 
+    some_location_specified (false),
+    symbol_containing_addr () 
 {
     OptionParsingStarting();
 }
@@ -88,23 +91,21 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
         break;
 
     case 's':
-        start_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 0);
-        if (start_addr == LLDB_INVALID_ADDRESS)
-            start_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 16);
-
-        if (start_addr == LLDB_INVALID_ADDRESS)
-            error.SetErrorStringWithFormat ("invalid start address string '%s'", option_arg);
-        some_location_specified = true;
+        {
+            ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
+            start_addr = Args::StringToAddress(&exe_ctx, option_arg, LLDB_INVALID_ADDRESS, &error);
+            if (start_addr != LLDB_INVALID_ADDRESS)
+                some_location_specified = true;
+        }
         break;
     case 'e':
-        end_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 0);
-        if (end_addr == LLDB_INVALID_ADDRESS)
-            end_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 16);
-
-        if (end_addr == LLDB_INVALID_ADDRESS)
-            error.SetErrorStringWithFormat ("invalid end address string '%s'", option_arg);
+        {
+            ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
+            end_addr = Args::StringToAddress(&exe_ctx, option_arg, LLDB_INVALID_ADDRESS, &error);
+            if (end_addr != LLDB_INVALID_ADDRESS)
+                some_location_specified = true;
+        }
         break;
-        some_location_specified = true;
     case 'n':
         func_name.assign (option_arg);
         some_location_specified = true;
@@ -127,18 +128,41 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
         plugin_name.assign (option_arg);
         break;
 
+    case 'F':
+        {
+            Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
+            if (target->GetArchitecture().GetTriple().getArch() == llvm::Triple::x86
+                || target->GetArchitecture().GetTriple().getArch() == llvm::Triple::x86_64)
+            {
+                flavor_string.assign (option_arg);
+            }
+            else
+                error.SetErrorStringWithFormat("Disassembler flavors are currently only supported for x86 and x86_64 targets.");
+            break;
+        }
     case 'r':
         raw = true;
         break;
 
     case 'f':
-        cur_function = true;
+        current_function = true;
         some_location_specified = true;
         break;
 
-    case 'a':
+    case 'A':
         if (!arch.SetTriple (option_arg, m_interpreter.GetPlatform (true).get()))
             arch.SetTriple (option_arg);
+        break;
+
+    case 'a':
+        {
+            ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
+            symbol_containing_addr = Args::StringToAddress(&exe_ctx, option_arg, LLDB_INVALID_ADDRESS, &error);
+            if (symbol_containing_addr != LLDB_INVALID_ADDRESS)
+            {
+                some_location_specified = true;
+            }
+        }
         break;
 
     default:
@@ -157,13 +181,34 @@ CommandObjectDisassemble::CommandOptions::OptionParsingStarting ()
     num_lines_context = 0;
     num_instructions = 0;
     func_name.clear();
-    cur_function = false;
+    current_function = false;
     at_pc = false;
     frame_line = false;
     start_addr = LLDB_INVALID_ADDRESS;
     end_addr = LLDB_INVALID_ADDRESS;
+    symbol_containing_addr = LLDB_INVALID_ADDRESS;
     raw = false;
     plugin_name.clear();
+    
+    Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
+    
+    // This is a hack till we get the ability to specify features based on architecture.  For now GetDisassemblyFlavor
+    // is really only valid for x86 (and for the llvm assembler plugin, but I'm papering over that since that is the
+    // only disassembler plugin we have...
+    if (target)
+    {
+        if (target->GetArchitecture().GetTriple().getArch() == llvm::Triple::x86
+            || target->GetArchitecture().GetTriple().getArch() == llvm::Triple::x86_64)
+        {
+            flavor_string.assign(target->GetDisassemblyFlavor());
+        }
+        else
+            flavor_string.assign ("default");
+        
+    }
+    else
+        flavor_string.assign("default");
+    
     arch.Clear();
     some_location_specified = false;
 }
@@ -172,7 +217,7 @@ Error
 CommandObjectDisassemble::CommandOptions::OptionParsingFinished ()
 {
     if (!some_location_specified)
-        at_pc = true;
+        current_function = true;
     return Error();
     
 }
@@ -186,24 +231,29 @@ CommandObjectDisassemble::CommandOptions::GetDefinitions ()
 OptionDefinition
 CommandObjectDisassemble::CommandOptions::g_option_table[] =
 {
-{ LLDB_OPT_SET_ALL  , false , "bytes",          'b', no_argument        , NULL, 0, eArgTypeNone,        "Show opcode bytes when disassembling."},
-{ LLDB_OPT_SET_ALL  , false , "context",        'C', required_argument  , NULL, 0, eArgTypeNumLines,    "Number of context lines of source to show."},
-{ LLDB_OPT_SET_ALL  , false , "mixed",          'm', no_argument        , NULL, 0, eArgTypeNone,        "Enable mixed source and assembly display."},
-{ LLDB_OPT_SET_ALL  , false , "raw",            'r', no_argument        , NULL, 0, eArgTypeNone,        "Print raw disassembly with no symbol information."},
-{ LLDB_OPT_SET_ALL  , false , "plugin",         'P', required_argument  , NULL, 0, eArgTypePlugin,      "Name of the disassembler plugin you want to use."},
-{ LLDB_OPT_SET_ALL  , false , "arch",           'a', required_argument  , NULL, 0, eArgTypeArchitecture,"Specify the architecture to use from cross disassembly."},
-{ LLDB_OPT_SET_1 |
-  LLDB_OPT_SET_2    , true  , "start-address" , 's', required_argument  , NULL, 0, eArgTypeStartAddress,"Address at which to start disassembling."},
-{ LLDB_OPT_SET_1    , false , "end-address"  ,  'e', required_argument  , NULL, 0, eArgTypeEndAddress,  "Address at which to end disassembling."},
-{ LLDB_OPT_SET_2 |
-  LLDB_OPT_SET_3 |
-  LLDB_OPT_SET_4 |
-  LLDB_OPT_SET_5    , false , "count",          'c', required_argument  , NULL, 0, eArgTypeNumLines,    "Number of instructions to display."},
-{ LLDB_OPT_SET_3    , false  , "name",           'n', required_argument  , NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,             "Disassemble entire contents of the given function name."},
-{ LLDB_OPT_SET_4    , false  , "frame",          'f', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble from the start of the current frame's function."},
-{ LLDB_OPT_SET_5    , false  , "pc",             'p', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble around the current pc."},
-{ LLDB_OPT_SET_6    , false  , "line",           'l', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble the current frame's current source line instructions if there debug line table information, else disasemble around the pc."},
-{ 0                 , false , NULL,             0,   0                  , NULL, 0, eArgTypeNone,        NULL }
+{ LLDB_OPT_SET_ALL, false, "bytes"        , 'b', no_argument        , NULL, 0, eArgTypeNone,        "Show opcode bytes when disassembling."},
+{ LLDB_OPT_SET_ALL, false, "context"      , 'C', required_argument  , NULL, 0, eArgTypeNumLines,    "Number of context lines of source to show."},
+{ LLDB_OPT_SET_ALL, false, "mixed"        , 'm', no_argument        , NULL, 0, eArgTypeNone,        "Enable mixed source and assembly display."},
+{ LLDB_OPT_SET_ALL, false, "raw"          , 'r', no_argument        , NULL, 0, eArgTypeNone,        "Print raw disassembly with no symbol information."},
+{ LLDB_OPT_SET_ALL, false, "plugin"       , 'P', required_argument  , NULL, 0, eArgTypePlugin,      "Name of the disassembler plugin you want to use."},
+{ LLDB_OPT_SET_ALL, false, "flavor"       , 'F', required_argument  , NULL, 0, eArgTypeDisassemblyFlavor,        "Name of the disassembly flavor you want to use.  "
+                                                                                                    "Currently the only valid options are default, and for Intel"
+                                                                                                    " architectures, att and intel."},
+{ LLDB_OPT_SET_ALL, false, "arch"         , 'A', required_argument  , NULL, 0, eArgTypeArchitecture,"Specify the architecture to use from cross disassembly."},
+{ LLDB_OPT_SET_1  |
+  LLDB_OPT_SET_2  , true , "start-address", 's', required_argument  , NULL, 0, eArgTypeAddressOrExpression,"Address at which to start disassembling."},
+{ LLDB_OPT_SET_1  , false, "end-address"  , 'e', required_argument  , NULL, 0, eArgTypeAddressOrExpression,  "Address at which to end disassembling."},
+{ LLDB_OPT_SET_2  |
+  LLDB_OPT_SET_3  |
+  LLDB_OPT_SET_4  |
+  LLDB_OPT_SET_5  , false, "count"        , 'c', required_argument  , NULL, 0, eArgTypeNumLines,    "Number of instructions to display."},
+{ LLDB_OPT_SET_3  , false, "name"         , 'n', required_argument  , NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
+                                                                                                    "Disassemble entire contents of the given function name."},
+{ LLDB_OPT_SET_4  , false, "frame"        , 'f', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble from the start of the current frame's function."},
+{ LLDB_OPT_SET_5  , false, "pc"           , 'p', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble around the current pc."},
+{ LLDB_OPT_SET_6  , false, "line"         , 'l', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble the current frame's current source line instructions if there debug line table information, else disasemble around the pc."},
+{ LLDB_OPT_SET_7  , false, "address"      , 'a', required_argument  , NULL, 0, eArgTypeAddressOrExpression, "Disassemble function containing this address."},
+{ 0               , false, NULL           ,   0, 0                  , NULL, 0, eArgTypeNone,        NULL }
 };
 
 
@@ -246,20 +296,26 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
     }
 
     const char *plugin_name = m_options.GetPluginName ();
-    DisassemblerSP disassembler = Disassembler::FindPlugin(m_options.arch, plugin_name);
+    const char *flavor_string = m_options.GetFlavorString();
+
+    DisassemblerSP disassembler = Disassembler::FindPlugin(m_options.arch, flavor_string, plugin_name);
 
     if (!disassembler)
     {
         if (plugin_name)
-            result.AppendErrorWithFormat ("Unable to find Disassembler plug-in named '%s' that supports the '%s' architecture.\n", 
+        {
+            result.AppendErrorWithFormat ("Unable to find Disassembler plug-in named '%s' that supports the '%s' architecture.\n",
                                           plugin_name,
                                           m_options.arch.GetArchitectureName());
+        }
         else
             result.AppendErrorWithFormat ("Unable to find Disassembler plug-in for the '%s' architecture.\n", 
                                           m_options.arch.GetArchitectureName());
         result.SetStatus (eReturnStatusFailed);
         return false;
     }
+    else if (flavor_string != NULL && !disassembler->FlavorValidForArchSpec(m_options.arch, flavor_string))
+        result.AppendWarningWithFormat("invalid disassembler flavor \"%s\", using default.\n", flavor_string);
 
     result.SetStatus (eReturnStatusSuccessFinishResult);
 
@@ -274,7 +330,6 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
     if (m_options.show_mixed && m_options.num_lines_context == 0)
         m_options.num_lines_context = 1;
 
-    ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
     // Always show the PC in the disassembly
     uint32_t options = Disassembler::eOptionMarkPCAddress;
 
@@ -295,7 +350,8 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
         if (Disassembler::Disassemble (m_interpreter.GetDebugger(), 
                                        m_options.arch,
                                        plugin_name,
-                                       exe_ctx,
+                                       flavor_string,
+                                       m_exe_ctx,
                                        name,
                                        NULL,    // Module *
                                        m_options.num_instructions,
@@ -314,7 +370,7 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
     else
     {
         AddressRange range;
-        StackFrame *frame = exe_ctx.GetFramePtr();
+        StackFrame *frame = m_exe_ctx.GetFramePtr();
         if (m_options.frame_line)
         {
             if (frame == NULL)
@@ -334,7 +390,7 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
                 m_options.show_mixed = false;
             }
         }
-        else if (m_options.cur_function)
+        else if (m_options.current_function)
         {
             if (frame == NULL)
             {
@@ -385,9 +441,43 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
                         range.SetByteSize (m_options.end_addr - m_options.start_addr);
                     }
                 }
+                else
+                {
+                    if (m_options.symbol_containing_addr != LLDB_INVALID_ADDRESS 
+                        && target 
+                        && !target->GetSectionLoadList().IsEmpty())
+                    {
+                        bool failed = false;
+                        Address symbol_containing_address;
+                        if (target->GetSectionLoadList().ResolveLoadAddress (m_options.symbol_containing_addr, symbol_containing_address))
+                        {
+                            ModuleSP module_sp (symbol_containing_address.GetModule());
+                            SymbolContext sc;
+                            module_sp->ResolveSymbolContextForAddress (symbol_containing_address, eSymbolContextEverything, sc);
+                            if (sc.function || sc.symbol)
+                            {
+                                sc.GetAddressRange (eSymbolContextFunction | eSymbolContextSymbol, 0, false, range);
+                            }
+                            else
+                            {
+                                failed = true;
+                            }
+                        }
+                        else
+                        {
+                            failed = true;
+                        }
+                        if (failed)
+                        {
+                            result.AppendErrorWithFormat ("Could not find function bounds for address 0x%" PRIx64 "\n", m_options.symbol_containing_addr);
+                            result.SetStatus (eReturnStatusFailed);
+                            return false;
+                        }
+                    }
+                }
             }
         }
-        
+
         if (m_options.num_instructions != 0)
         {
             if (!range.GetBaseAddress().IsValid())
@@ -415,7 +505,8 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
             if (Disassembler::Disassemble (m_interpreter.GetDebugger(), 
                                            m_options.arch,
                                            plugin_name,
-                                           exe_ctx,
+                                           flavor_string,
+                                           m_exe_ctx,
                                            range.GetBaseAddress(),
                                            m_options.num_instructions,
                                            m_options.show_mixed ? m_options.num_lines_context : 0,
@@ -461,7 +552,8 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
             if (Disassembler::Disassemble (m_interpreter.GetDebugger(), 
                                            m_options.arch,
                                            plugin_name,
-                                           exe_ctx,
+                                           flavor_string,
+                                           m_exe_ctx,
                                            range,
                                            m_options.num_instructions,
                                            m_options.show_mixed ? m_options.num_lines_context : 0,

@@ -77,8 +77,13 @@ class HelpCommandTestCase(TestBase):
         version_str = self.version_number_string()
         import re
         match = re.match('[0-9]+', version_str)
+        if sys.platform.startswith("darwin"):
+            search_regexp = ['lldb-' + (version_str if match else '[0-9]+')]
+        else:
+            search_regexp = ['lldb version (\d|\.)+.*$']
+
         self.expect("version",
-            patterns = ['LLDB-' + (version_str if match else '[0-9]+')])
+            patterns = search_regexp)
 
     def test_help_should_not_crash_lldb(self):
         """Command 'help disasm' should not crash lldb."""
@@ -119,7 +124,7 @@ class HelpCommandTestCase(TestBase):
         """Command 'help image du line' is not ambiguous and should work."""
         # 'image' is an alias for 'target modules'.
         self.expect("help image du line",
-            substrs = ['Dump the debug symbol file for one or more target modules'])
+            substrs = ['Dump the line table for one or more compilation units'])
 
     def test_help_target_variable_syntax(self):
         """Command 'help target variable' should display <variable-name> ..."""

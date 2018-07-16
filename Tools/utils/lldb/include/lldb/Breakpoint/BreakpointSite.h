@@ -39,7 +39,7 @@ namespace lldb_private {
 //----------------------------------------------------------------------
 
 class BreakpointSite : 
-    public STD_ENABLE_SHARED_FROM_THIS(BreakpointSite),
+    public std::enable_shared_from_this<BreakpointSite>,
     public StoppointLocation
 {
 public:
@@ -83,7 +83,7 @@ public:
     //------------------------------------------------------------------
     bool
     SetTrapOpcode (const uint8_t *trap_opcode,
-                   size_t trap_opcode_size);
+                   uint32_t trap_opcode_size);
 
     //------------------------------------------------------------------
     /// Gets the original instruction bytes that were overwritten by the trap
@@ -168,7 +168,7 @@ public:
     /// @return
     ///    The number of owners.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     GetNumberOfOwners ();
 
     //------------------------------------------------------------------
@@ -183,7 +183,7 @@ public:
     ///    A shared pointer to the breakpoint location at that index.
     //------------------------------------------------------------------
     lldb::BreakpointLocationSP
-    GetOwnerAtIndex (uint32_t index);
+    GetOwnerAtIndex (size_t idx);
     
     //------------------------------------------------------------------
     /// Check whether the owners of this breakpoint site have any
@@ -220,9 +220,29 @@ public:
     GetDescription (Stream *s,
                     lldb::DescriptionLevel level);
 
+    //------------------------------------------------------------------
+    /// Tell whether a breakpoint has a location at this site.
+    ///
+    /// @param[in] bp_id
+    ///     The breakpoint id to query.
+    ///
+    /// @result
+    ///     \b true if bp_id has a location that is at this site,
+    ///     \b false otherwise.
+    //------------------------------------------------------------------
     bool
     IsBreakpointAtThisSite (lldb::break_id_t bp_id);
 
+    //------------------------------------------------------------------
+    /// Tell whether ALL the breakpoints in the location collection are internal.
+    ///
+    /// @result
+    ///     \b true if all breakpoint locations are owned by internal breakpoints,
+    ///     \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    IsInternal () const;
+    
     BreakpointSite::Type
     GetType () const
     {
@@ -244,7 +264,7 @@ private:
     /// @param[in] context
     ///    \a break_loc_id is the Breakpoint Location to remove.
     //------------------------------------------------------------------
-    uint32_t
+    size_t
     RemoveOwner (lldb::break_id_t break_id,
                  lldb::break_id_t break_loc_id);
 
@@ -265,7 +285,6 @@ private:
     BreakpointSite (BreakpointSiteList *list,
                     const lldb::BreakpointLocationSP& owner,
                     lldb::addr_t m_addr,
-                    lldb::tid_t tid,
                     bool use_hardware);
 
     DISALLOW_COPY_AND_ASSIGN(BreakpointSite);

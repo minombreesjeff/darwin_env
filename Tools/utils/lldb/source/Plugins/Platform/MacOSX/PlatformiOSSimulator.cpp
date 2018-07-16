@@ -42,7 +42,7 @@ PlatformiOSSimulator::Initialize ()
 {
     if (g_initialize_count++ == 0)
     {
-        PluginManager::RegisterPlugin (PlatformiOSSimulator::GetShortPluginNameStatic(),
+        PluginManager::RegisterPlugin (PlatformiOSSimulator::GetPluginNameStatic(),
                                        PlatformiOSSimulator::GetDescriptionStatic(),
                                        PlatformiOSSimulator::CreateInstance);
     }
@@ -68,7 +68,7 @@ PlatformiOSSimulator::CreateInstance (bool force, const ArchSpec *arch)
     {
         switch (arch->GetMachine())
         {
-        // Currently simulator is i386 only...
+        case llvm::Triple::x86_64:
         case llvm::Triple::x86:
             {
                 const llvm::Triple &triple = arch->GetTriple();
@@ -124,16 +124,11 @@ PlatformiOSSimulator::CreateInstance (bool force, const ArchSpec *arch)
 }
 
 
-const char *
+lldb_private::ConstString
 PlatformiOSSimulator::GetPluginNameStatic ()
 {
-    return "PlatformiOSSimulator";
-}
-
-const char *
-PlatformiOSSimulator::GetShortPluginNameStatic()
-{
-    return "ios-simulator";
+    static ConstString g_name("ios-simulator");
+    return g_name;
 }
 
 const char *
@@ -240,20 +235,16 @@ PlatformiOSSimulator::ResolveExecutable (const FileSpec &exe_file,
         
         if (error.Fail() || !exe_module_sp)
         {
-            error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain any '%s' platform architectures: %s",
-                                            exe_file.GetDirectory().AsCString(""),
-                                            exe_file.GetDirectory() ? "/" : "",
-                                            exe_file.GetFilename().AsCString(""),
-                                            GetShortPluginName(),
+            error.SetErrorStringWithFormat ("'%s' doesn't contain any '%s' platform architectures: %s",
+                                            exe_file.GetPath().c_str(),
+                                            GetPluginName().GetCString(),
                                             arch_names.GetString().c_str());
         }
     }
     else
     {
-        error.SetErrorStringWithFormat ("'%s%s%s' does not exist",
-                                        exe_file.GetDirectory().AsCString(""),
-                                        exe_file.GetDirectory() ? "/" : "",
-                                        exe_file.GetFilename().AsCString(""));
+        error.SetErrorStringWithFormat ("'%s' does not exist",
+                                        exe_file.GetPath().c_str());
     }
 
     return error;
@@ -356,7 +347,7 @@ PlatformiOSSimulator::GetFile (const FileSpec &platform_file,
         }
         error.SetErrorStringWithFormat ("unable to locate a platform file for '%s' in platform '%s'", 
                                         platform_file_path,
-                                        GetPluginName());
+                                        GetPluginName().GetCString());
     }
     else
     {
@@ -416,9 +407,21 @@ PlatformiOSSimulator::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &a
 {
     if (idx == 0)
     {
-        // All iOS simulator binaries are currently i386
-        arch = Host::GetArchitecture (Host::eSystemDefaultArchitecture32);
+        arch = Host::GetArchitecture (Host::eSystemDefaultArchitecture);
         return arch.IsValid();
+    }
+    else if (idx == 1)
+    {
+        ArchSpec platform_arch (Host::GetArchitecture (Host::eSystemDefaultArchitecture));
+        ArchSpec platform_arch64 (Host::GetArchitecture (Host::eSystemDefaultArchitecture64));
+        if (platform_arch.IsExactMatch(platform_arch64))
+        {
+            // This macosx platform supports both 32 and 64 bit. Since we already
+            // returned the 64 bit arch for idx == 0, return the 32 bit arch 
+            // for idx == 1
+            arch = Host::GetArchitecture (Host::eSystemDefaultArchitecture32);
+            return arch.IsValid();
+        }
     }
     return false;
 }

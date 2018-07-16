@@ -9,8 +9,6 @@
 
 #include "UnwindAssemblyInstEmulation.h"
 
-#include "llvm-c/EnhancedDisassembly.h"
-
 #include "lldb/Core/Address.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/DataBufferHeap.h"
@@ -57,10 +55,11 @@ UnwindAssemblyInstEmulation::GetNonCallSiteUnwindPlanFromAssembly (AddressRange&
         thread.CalculateExecutionContext(exe_ctx);
         DisassemblerSP disasm_sp (Disassembler::DisassembleRange (m_arch,
                                                                   NULL,
+                                                                  NULL,
                                                                   exe_ctx,
                                                                   range));
         
-        LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+        Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
         if (disasm_sp)
         {
@@ -265,6 +264,9 @@ UnwindAssemblyInstEmulation::GetNonCallSiteUnwindPlanFromAssembly (AddressRange&
                     }
                 }
             }
+            // FIXME: The DisassemblerLLVMC has a reference cycle and won't go away if it has any active instructions.
+            // I'll fix that but for now, just clear the list and it will go away nicely.
+            disasm_sp->GetInstructionList().Clear();
         }
         
         if (log && log->GetVerbose ())
@@ -299,7 +301,7 @@ UnwindAssemblyInstEmulation::FirstNonPrologueInsn (AddressRange& func,
 UnwindAssembly *
 UnwindAssemblyInstEmulation::CreateInstance (const ArchSpec &arch)
 {
-    std::auto_ptr<EmulateInstruction> inst_emulator_ap (EmulateInstruction::FindPlugin (arch, eInstructionTypePrologueEpilogue, NULL));
+    std::unique_ptr<EmulateInstruction> inst_emulator_ap (EmulateInstruction::FindPlugin (arch, eInstructionTypePrologueEpilogue, NULL));
     // Make sure that all prologue instructions are handled
     if (inst_emulator_ap.get())
         return new UnwindAssemblyInstEmulation (arch, inst_emulator_ap.release());
@@ -310,19 +312,11 @@ UnwindAssemblyInstEmulation::CreateInstance (const ArchSpec &arch)
 //------------------------------------------------------------------
 // PluginInterface protocol in UnwindAssemblyParser_x86
 //------------------------------------------------------------------
-
-const char *
+ConstString
 UnwindAssemblyInstEmulation::GetPluginName()
 {
-    return "UnwindAssemblyInstEmulation";
+    return GetPluginNameStatic();
 }
-
-const char *
-UnwindAssemblyInstEmulation::GetShortPluginName()
-{
-    return "unwindassembly.inst-emulation";
-}
-
 
 uint32_t
 UnwindAssemblyInstEmulation::GetPluginVersion()
@@ -345,10 +339,11 @@ UnwindAssemblyInstEmulation::Terminate()
 }
 
 
-const char *
+ConstString
 UnwindAssemblyInstEmulation::GetPluginNameStatic()
 {
-    return "UnwindAssemblyInstEmulation";
+    static ConstString g_name("inst-emulation");
+    return g_name;
 }
 
 const char *
@@ -398,7 +393,7 @@ UnwindAssemblyInstEmulation::ReadMemory (EmulateInstruction *instruction,
                                          void *dst,
                                          size_t dst_len)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
     if (log && log->GetVerbose ())
     {
@@ -439,7 +434,7 @@ UnwindAssemblyInstEmulation::WriteMemory (EmulateInstruction *instruction,
                         instruction->GetArchitecture ().GetByteOrder(), 
                         instruction->GetArchitecture ().GetAddressByteSize());
 
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
     if (log && log->GetVerbose ())
     {
@@ -546,7 +541,7 @@ UnwindAssemblyInstEmulation::ReadRegister (EmulateInstruction *instruction,
 {
     bool synthetic = GetRegisterValue (*reg_info, reg_value);
 
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     
     if (log && log->GetVerbose ())
     {
@@ -576,7 +571,7 @@ UnwindAssemblyInstEmulation::WriteRegister (EmulateInstruction *instruction,
                                             const RegisterInfo *reg_info,
                                             const RegisterValue &reg_value)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
     if (log && log->GetVerbose ())
     {
@@ -594,7 +589,6 @@ UnwindAssemblyInstEmulation::WriteRegister (EmulateInstruction *instruction,
 
     switch (context.type)
     {
-        default:
         case EmulateInstruction::eContextInvalid:
         case EmulateInstruction::eContextReadOpcode:
         case EmulateInstruction::eContextImmediate:

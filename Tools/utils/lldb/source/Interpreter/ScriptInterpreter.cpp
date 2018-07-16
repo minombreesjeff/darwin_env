@@ -81,6 +81,12 @@ ScriptInterpreter::LanguageToString (lldb::ScriptLanguage language)
     return return_value;
 }
 
+std::unique_ptr<ScriptInterpreterLocker>
+ScriptInterpreter::AcquireInterpreterLock ()
+{
+    return std::unique_ptr<ScriptInterpreterLocker>(new ScriptInterpreterLocker());
+}
+
 void
 ScriptInterpreter::InitializeInterpreter (SWIGInitCallback python_swig_init_callback)
 {

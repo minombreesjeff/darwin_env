@@ -211,6 +211,7 @@ class Image:
         self.module = None
         self.symfile = None
         self.slide = None
+        
     
     def dump(self, prefix):
         print "%s%s" % (prefix, self)
@@ -377,7 +378,7 @@ class Symbolicator:
         """A class the represents the information needed to symbolicate addresses in a program"""
         self.target = None
         self.images = list() # a list of images to be used when symbolicating
-
+        self.addr_mask = 0xffffffffffffffff
     
     def __str__(self):
         s = "Symbolicator:\n"
@@ -412,6 +413,12 @@ class Symbolicator:
             for image in self.images:
                 self.target = image.create_target ()
                 if self.target:
+                    if self.target.GetAddressByteSize() == 4:
+                        triple = self.target.triple
+                        if triple:
+                            arch = triple.split('-')[0]
+                            if "arm" in arch:
+                                self.addr_mask = 0xfffffffffffffffe
                     return self.target
         return None
     
@@ -419,9 +426,19 @@ class Symbolicator:
         if not self.target:
             self.create_target()
         if self.target:
-            image = self.find_image_containing_load_addr (load_addr)
-            if image:
-                image.add_module (self.target)
+            live_process = False
+            process = self.target.process
+            if process:
+                state = process.state
+                if state > lldb.eStateUnloaded and state < lldb.eStateDetached:
+                    live_process = True
+            # If we don't have a live process, we can attempt to find the image
+            # that a load address belongs to and lazily load its module in the
+            # target, but we shouldn't do any of this if we have a live process
+            if not live_process:
+                image = self.find_image_containing_load_addr (load_addr)
+                if image:
+                    image.add_module (self.target)
             symbolicated_address = Address(self.target, load_addr)
             if symbolicated_address.symbolicate (verbose):
                 if symbolicated_address.so_addr:
@@ -521,7 +538,7 @@ def Symbolicate(command_args):
     description='''Symbolicate one or more addresses using LLDB's python scripting API..'''
     parser = optparse.OptionParser(description=description, prog='crashlog.py',usage=usage)
     parser.add_option('-v', '--verbose', action='store_true', dest='verbose', help='display verbose debug info', default=False)
-    parser.add_option('-p', '--platform', type='string', metavar='platform', dest='platform', help='specify one platform by name')
+    parser.add_option('-p', '--platform', type='string', metavar='platform', dest='platform', help='Specify the platform to use when creating the debug target. Valid values include "localhost", "darwin-kernel", "ios-simulator", "remote-freebsd", "remote-macosx", "remote-ios", "remote-linux".')
     parser.add_option('-f', '--file', type='string', metavar='file', dest='file', help='Specify a file to use when symbolicating')
     parser.add_option('-a', '--arch', type='string', metavar='arch', dest='arch', help='Specify a architecture to use when symbolicating')
     parser.add_option('-s', '--slide', type='int', metavar='slide', dest='slide', help='Specify the slide to use on the file specified with the --file option', default=None)

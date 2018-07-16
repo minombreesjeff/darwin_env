@@ -155,7 +155,7 @@ protected:
         
         PlatformSP host_platform_sp (Platform::GetDefaultPlatform());
         ostrm.Printf ("%s: %s\n", 
-                      host_platform_sp->GetShortPluginName(), 
+                      host_platform_sp->GetPluginName().GetCString(),
                       host_platform_sp->GetDescription());
 
         uint32_t idx;
@@ -207,7 +207,16 @@ protected:
     {
         Stream &ostrm = result.GetOutputStream();      
         
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {
+            platform_sp = target->GetPlatform();
+        }
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }
         if (platform_sp)
         {
             platform_sp->GetStatus (ostrm);
@@ -317,7 +326,7 @@ protected:
                     {
                         Stream &ostrm = result.GetOutputStream();      
                         if (hostname.empty())
-                            ostrm.Printf ("Disconnected from \"%s\"\n", platform_sp->GetShortPluginName());
+                            ostrm.Printf ("Disconnected from \"%s\"\n", platform_sp->GetPluginName().GetCString());
                         else
                             ostrm.Printf ("Disconnected from \"%s\"\n", hostname.c_str());
                         result.SetStatus (eReturnStatusSuccessFinishResult);            
@@ -331,7 +340,7 @@ protected:
                 else
                 {
                     // Not connected...
-                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetShortPluginName());
+                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetPluginName().GetCString());
                     result.SetStatus (eReturnStatusFailed);            
                 }
             }
@@ -357,11 +366,11 @@ class CommandObjectPlatformProcessLaunch : public CommandObjectParsed
 {
 public:
     CommandObjectPlatformProcessLaunch (CommandInterpreter &interpreter) :
-        CommandObjectParsed (interpreter, 
+        CommandObjectParsed (interpreter,
                              "platform process launch",
                              "Launch a new process on a remote platform.",
                              "platform process launch program",
-                             0),
+                             eFlagRequiresTarget | eFlagTryTargetAPILock),
         m_options (interpreter)
     {
     }
@@ -381,20 +390,22 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
-        
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
+
         if (platform_sp)
         {
             Error error;
-            const uint32_t argc = args.GetArgumentCount();
-            Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
-            if (target == NULL)
-            {
-                result.AppendError ("invalid target, create a debug target using the 'target create' command");
-                result.SetStatus (eReturnStatusFailed);
-                return false;
-            }
-
+            const size_t argc = args.GetArgumentCount();
+            Target *target = m_exe_ctx.GetTargetPtr();
             Module *exe_module = target->GetExecutableModulePointer();
             if (exe_module)
             {
@@ -497,7 +508,16 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
         
         if (platform_sp)
         {
@@ -550,9 +570,9 @@ protected:
                                 result.AppendErrorWithFormat ("no processes were found that %s \"%s\" on the \"%s\" platform\n", 
                                                               match_desc,
                                                               match_name,
-                                                              platform_sp->GetShortPluginName());
+                                                              platform_sp->GetPluginName().GetCString());
                             else
-                                result.AppendErrorWithFormat ("no processes were found on the \"%s\" platform\n", platform_sp->GetShortPluginName());
+                                result.AppendErrorWithFormat ("no processes were found on the \"%s\" platform\n", platform_sp->GetPluginName().GetCString());
                             result.SetStatus (eReturnStatusFailed);
                         }
                         else
@@ -560,7 +580,7 @@ protected:
                             result.AppendMessageWithFormat ("%u matching process%s found on \"%s\"", 
                                                             matches,
                                                             matches > 1 ? "es were" : " was",
-                                                            platform_sp->GetName());
+                                                            platform_sp->GetName().GetCString());
                             if (match_desc)
                                 result.AppendMessageWithFormat (" whose name %s \"%s\"", 
                                                                 match_desc,
@@ -724,21 +744,21 @@ protected:
 OptionDefinition
 CommandObjectPlatformProcessList::CommandOptions::g_option_table[] =
 {
-{   LLDB_OPT_SET_1, false, "pid"              , 'p', required_argument, NULL, 0, eArgTypePid          , "List the process info for a specific process ID." },
-{   LLDB_OPT_SET_2, true , "name"             , 'n', required_argument, NULL, 0, eArgTypeProcessName  , "Find processes with executable basenames that match a string." },
-{   LLDB_OPT_SET_3, true , "ends-with"        , 'e', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that end with a string." },
-{   LLDB_OPT_SET_4, true , "starts-with"      , 's', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that start with a string." },
-{   LLDB_OPT_SET_5, true , "contains"         , 'c', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that contain a string." },
-{   LLDB_OPT_SET_6, true , "regex"            , 'r', required_argument, NULL, 0, eArgTypeNone         , "Find processes with executable basenames that match a regular expression." },
-{  ~LLDB_OPT_SET_1, false, "parent"           , 'P', required_argument, NULL, 0, eArgTypePid          , "Find processes that have a matching parent process ID." },
-{  ~LLDB_OPT_SET_1, false, "uid"              , 'u', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching user ID." },
-{  ~LLDB_OPT_SET_1, false, "euid"             , 'U', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching effective user ID." },
-{  ~LLDB_OPT_SET_1, false, "gid"              , 'g', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching group ID." },
-{  ~LLDB_OPT_SET_1, false, "egid"             , 'G', required_argument, NULL, 0, eArgTypeNone         , "Find processes that have a matching effective group ID." },
-{  ~LLDB_OPT_SET_1, false, "arch"             , 'a', required_argument, NULL, 0, eArgTypeArchitecture , "Find processes that have a matching architecture." },
-{ LLDB_OPT_SET_ALL, false, "show-args"        , 'A', no_argument      , NULL, 0, eArgTypeNone         , "Show process arguments instead of the process executable basename." },
-{ LLDB_OPT_SET_ALL, false, "verbose"          , 'v', no_argument      , NULL, 0, eArgTypeNone         , "Enable verbose output." },
-{  0              , false, NULL               ,  0 , 0                , NULL, 0, eArgTypeNone         , NULL }
+{ LLDB_OPT_SET_1            , false, "pid"        , 'p', required_argument, NULL, 0, eArgTypePid              , "List the process info for a specific process ID." },
+{ LLDB_OPT_SET_2            , true , "name"       , 'n', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that match a string." },
+{ LLDB_OPT_SET_3            , true , "ends-with"  , 'e', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that end with a string." },
+{ LLDB_OPT_SET_4            , true , "starts-with", 's', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that start with a string." },
+{ LLDB_OPT_SET_5            , true , "contains"   , 'c', required_argument, NULL, 0, eArgTypeProcessName      , "Find processes with executable basenames that contain a string." },
+{ LLDB_OPT_SET_6            , true , "regex"      , 'r', required_argument, NULL, 0, eArgTypeRegularExpression, "Find processes with executable basenames that match a regular expression." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "parent"     , 'P', required_argument, NULL, 0, eArgTypePid              , "Find processes that have a matching parent process ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "uid"        , 'u', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching user ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "euid"       , 'U', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching effective user ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "gid"        , 'g', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching group ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "egid"       , 'G', required_argument, NULL, 0, eArgTypeUnsignedInteger  , "Find processes that have a matching effective group ID." },
+{ LLDB_OPT_SET_FROM_TO(2, 6), false, "arch"       , 'a', required_argument, NULL, 0, eArgTypeArchitecture     , "Find processes that have a matching architecture." },
+{ LLDB_OPT_SET_FROM_TO(1, 6), false, "show-args"  , 'A', no_argument      , NULL, 0, eArgTypeNone             , "Show process arguments instead of the process executable basename." },
+{ LLDB_OPT_SET_FROM_TO(1, 6), false, "verbose"    , 'v', no_argument      , NULL, 0, eArgTypeNone             , "Enable verbose output." },
+{ 0                         , false, NULL         ,  0 , 0                , NULL, 0, eArgTypeNone             , NULL }
 };
 
 //----------------------------------------------------------------------
@@ -777,7 +797,17 @@ protected:
     virtual bool
     DoExecute (Args& args, CommandReturnObject &result)
     {
-        PlatformSP platform_sp (m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform());
+        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        PlatformSP platform_sp;
+        if (target)
+        {   
+            platform_sp = target->GetPlatform();
+        }   
+        if (!platform_sp)
+        {
+            platform_sp = m_interpreter.GetDebugger().GetPlatformList().GetSelectedPlatform();
+        }   
+
         if (platform_sp)
         {
             const size_t argc = args.GetArgumentCount();
@@ -818,7 +848,7 @@ protected:
                 else
                 {
                     // Not connected...
-                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetShortPluginName());
+                    result.AppendErrorWithFormat ("not connected to '%s'", platform_sp->GetPluginName().GetCString());
                     result.SetStatus (eReturnStatusFailed);            
                 }
             }

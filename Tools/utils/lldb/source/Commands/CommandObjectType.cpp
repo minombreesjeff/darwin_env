@@ -17,13 +17,13 @@
 
 // C++ Includes
 
-#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/InputReaderEZ.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/StringList.h"
+#include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandObject.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
@@ -61,7 +61,7 @@ public:
     {
     }
     
-    typedef STD_SHARED_PTR(ScriptAddOptions) SharedPointer;
+    typedef std::shared_ptr<ScriptAddOptions> SharedPointer;
     
 };
 
@@ -94,7 +94,7 @@ public:
     {
     }
     
-    typedef STD_SHARED_PTR(SynthAddOptions) SharedPointer;
+    typedef std::shared_ptr<SynthAddOptions> SharedPointer;
     
 };
 
@@ -179,7 +179,7 @@ public:
     }
     
     static bool
-    AddSummary(const ConstString& type_name,
+    AddSummary(ConstString type_name,
                lldb::TypeSummaryImplSP entry,
                SummaryFormatType type,
                std::string category,
@@ -324,7 +324,7 @@ public:
     }
     
     static bool
-    AddSynth(const ConstString& type_name,
+    AddSynth(ConstString type_name,
              lldb::SyntheticChildrenSP entry,
              SynthFormatType type,
              std::string category_name,
@@ -744,7 +744,9 @@ CommandObjectTypeFormatList_LoopCallback (
 //-------------------------------------------------------------------------
 
 static const char *g_summary_addreader_instructions = "Enter your Python command(s). Type 'DONE' to end.\n"
-                                                       "def function (valobj,internal_dict):";
+                                                       "def function (valobj,internal_dict):\n"
+                                                       "     \"\"\"valobj: an SBValue which you want to provide a summary for\n"
+                                                       "        internal_dict: an LLDB support object not to be used\"\"\"";
 
 class TypeScriptAddInputReader : public InputReaderEZ
 {
@@ -818,7 +820,7 @@ public:
         ScriptAddOptions *options_ptr = ((ScriptAddOptions*)data.baton);
         if (!options_ptr)
         {
-            out_stream->Printf ("Internal error #1: no script attached.\n");
+            out_stream->Printf ("internal synchronization information missing or invalid.\n");
             out_stream->Flush();
             return;
         }
@@ -828,7 +830,7 @@ public:
         ScriptInterpreter *interpreter = data.reader.GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
         if (!interpreter)
         {
-            out_stream->Printf ("Internal error #2: no script attached.\n");
+            out_stream->Printf ("no script interpreter.\n");
             out_stream->Flush();
             return;
         }
@@ -836,13 +838,13 @@ public:
         if (!interpreter->GenerateTypeScriptFunction (options->m_user_source, 
                                                       funct_name_str))
         {
-            out_stream->Printf ("Internal error #3: no script attached.\n");
+            out_stream->Printf ("unable to generate a function.\n");
             out_stream->Flush();
             return;
         }
         if (funct_name_str.empty())
         {
-            out_stream->Printf ("Internal error #4: no script attached.\n");
+            out_stream->Printf ("unable to obtain a valid function name from the script interpreter.\n");
             out_stream->Flush();
             return;
         }
@@ -1037,17 +1039,10 @@ CommandObjectTypeSummaryAdd::Execute_ScriptSummary (Args& command, CommandReturn
     
     if (!m_options.m_python_function.empty()) // we have a Python function ready to use
     {
-        ScriptInterpreter *interpreter = m_interpreter.GetScriptInterpreter();
-        if (!interpreter)
-        {
-            result.AppendError ("Internal error #1N: no script attached.\n");
-            result.SetStatus (eReturnStatusFailed);
-            return false;
-        }
         const char *funct_name = m_options.m_python_function.c_str();
         if (!funct_name || !funct_name[0])
         {
-            result.AppendError ("Internal error #2N: no script attached.\n");
+            result.AppendError ("function name empty.\n");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
@@ -1057,13 +1052,20 @@ CommandObjectTypeSummaryAdd::Execute_ScriptSummary (Args& command, CommandReturn
         script_format.reset(new ScriptSummaryFormat(m_options.m_flags,
                                                     funct_name,
                                                     code.c_str()));
+        
+        ScriptInterpreter *interpreter = m_interpreter.GetScriptInterpreter();
+        
+        if (interpreter && interpreter->CheckObjectExists(funct_name) == false)
+            result.AppendWarningWithFormat("The provided function \"%s\" does not exist - "
+                                           "please define it before attempting to use this summary.\n",
+                                           funct_name);
     }
     else if (!m_options.m_python_script.empty()) // we have a quick 1-line script, just use it
     {
         ScriptInterpreter *interpreter = m_interpreter.GetScriptInterpreter();
         if (!interpreter)
         {
-            result.AppendError ("Internal error #1Q: no script attached.\n");
+            result.AppendError ("script interpreter missing - unable to generate function wrapper.\n");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
@@ -1073,13 +1075,13 @@ CommandObjectTypeSummaryAdd::Execute_ScriptSummary (Args& command, CommandReturn
         if (!interpreter->GenerateTypeScriptFunction (funct_sl, 
                                                       funct_name_str))
         {
-            result.AppendError ("Internal error #2Q: no script attached.\n");
+            result.AppendError ("unable to generate function wrapper.\n");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
         if (funct_name_str.empty())
         {
-            result.AppendError ("Internal error #3Q: no script attached.\n");
+            result.AppendError ("script interpreter failed to generate a valid function name.\n");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
@@ -1338,7 +1340,7 @@ CommandObjectTypeSummaryAdd::DoExecute (Args& command, CommandReturnObject &resu
 }
 
 bool
-CommandObjectTypeSummaryAdd::AddSummary(const ConstString& type_name,
+CommandObjectTypeSummaryAdd::AddSummary(ConstString type_name,
                                         TypeSummaryImplSP entry,
                                         SummaryFormatType type,
                                         std::string category_name,
@@ -1346,6 +1348,21 @@ CommandObjectTypeSummaryAdd::AddSummary(const ConstString& type_name,
 {
     lldb::TypeCategoryImplSP category;
     DataVisualization::Categories::GetCategory(ConstString(category_name.c_str()), category);
+    
+    if (type == eRegularSummary)
+    {
+        std::string type_name_str(type_name.GetCString());
+        if (type_name_str.compare(type_name_str.length() - 2, 2, "[]") == 0)
+        {
+            type_name_str.resize(type_name_str.length()-2);
+            if (type_name_str.back() != ' ')
+                type_name_str.append(" \\[[0-9]+\\]");
+            else
+                type_name_str.append("\\[[0-9]+\\]");
+            type_name.SetCString(type_name_str.c_str());
+            type = eRegexSummary;
+        }
+    }
     
     if (type == eRegexSummary)
     {
@@ -1856,7 +1873,7 @@ private:
             return true;
         
         // if we have a regex and this category does not match it, just skip it
-        if(param->cate_regex != NULL && param->cate_regex->Execute(cate_name) == false)
+        if(param->cate_regex != NULL && strcmp(cate_name,param->cate_regex->GetText()) != 0 && param->cate_regex->Execute(cate_name) == false)
             return true;
         
         result->GetOutputStream().Printf("-----------------------\nCategory: %s (%s)\n-----------------------\n",
@@ -1880,7 +1897,7 @@ private:
                   RegularExpression* regex,
                   CommandReturnObject *result)
     {
-        if (regex == NULL || regex->Execute(type)) 
+        if (regex == NULL || strcmp(type,regex->GetText()) == 0 || regex->Execute(type))
                 result->GetOutputStream().Printf ("%s: %s\n", type, entry->GetDescription().c_str());
         return true;
     }
@@ -1961,7 +1978,7 @@ protected:
         if (argc == 1 && strcmp(command.GetArgumentAtIndex(0),"*") == 0)
         {
             // we want to make sure to enable "system" last and "default" first
-            DataVisualization::Categories::Enable(ConstString("default"), CategoryMap::First);
+            DataVisualization::Categories::Enable(ConstString("default"), TypeCategoryMap::First);
             uint32_t num_categories = DataVisualization::Categories::GetCount();
             for (uint32_t i = 0; i < num_categories; i++)
             {
@@ -1972,10 +1989,10 @@ protected:
                          ::strcmp(category_sp->GetName(), "default") == 0 )
                         continue;
                     else
-                        DataVisualization::Categories::Enable(category_sp, CategoryMap::Default);
+                        DataVisualization::Categories::Enable(category_sp, TypeCategoryMap::Default);
                 }
             }
-            DataVisualization::Categories::Enable(ConstString("system"), CategoryMap::Last);
+            DataVisualization::Categories::Enable(ConstString("system"), TypeCategoryMap::Last);
         }
         else
         {
@@ -2191,7 +2208,7 @@ private:
         
         const char* cate_name = cate->GetName();
         
-        if (regex == NULL || regex->Execute(cate_name))
+        if (regex == NULL || strcmp(cate_name, regex->GetText()) == 0 || regex->Execute(cate_name))
             result->GetOutputStream().Printf("Category %s is%s enabled\n",
                                        cate_name,
                                        (cate->IsEnabled() ? "" : " not"));
@@ -2404,7 +2421,7 @@ private:
             return true;
         
         // if we have a regex and this category does not match it, just skip it
-        if(param->cate_regex != NULL && param->cate_regex->Execute(cate_name) == false)
+        if(param->cate_regex != NULL && strcmp(cate_name,param->cate_regex->GetText()) != 0 && param->cate_regex->Execute(cate_name) == false)
             return true;
         
         result->GetOutputStream().Printf("-----------------------\nCategory: %s (%s)\n-----------------------\n",
@@ -2618,7 +2635,7 @@ private:
             return true;
         
         // if we have a regex and this category does not match it, just skip it
-        if(param->cate_regex != NULL && param->cate_regex->Execute(cate_name) == false)
+        if(param->cate_regex != NULL && strcmp(cate_name,param->cate_regex->GetText()) != 0 && param->cate_regex->Execute(cate_name) == false)
             return true;
         
         result->GetOutputStream().Printf("-----------------------\nCategory: %s (%s)\n-----------------------\n",
@@ -3353,7 +3370,7 @@ public:
         SynthAddOptions *options_ptr = ((SynthAddOptions*)data.baton);
         if (!options_ptr)
         {
-            out_stream->Printf ("Internal error #1: no script attached.\n");
+            out_stream->Printf ("internal synchronization data missing.\n");
             out_stream->Flush();
             return;
         }
@@ -3363,7 +3380,7 @@ public:
         ScriptInterpreter *interpreter = data.reader.GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
         if (!interpreter)
         {
-            out_stream->Printf ("Internal error #2: no script attached.\n");
+            out_stream->Printf ("no script interpreter.\n");
             out_stream->Flush();
             return;
         }
@@ -3371,13 +3388,13 @@ public:
         if (!interpreter->GenerateTypeSynthClass (options->m_user_source, 
                                                   class_name_str))
         {
-            out_stream->Printf ("Internal error #3: no script attached.\n");
+            out_stream->Printf ("unable to generate a class.\n");
             out_stream->Flush();
             return;
         }
         if (class_name_str.empty())
         {
-            out_stream->Printf ("Internal error #4: no script attached.\n");
+            out_stream->Printf ("unable to obtain a proper name for the class.\n");
             out_stream->Flush();
             return;
         }
@@ -3385,10 +3402,10 @@ public:
         // everything should be fine now, let's add the synth provider class
         
         SyntheticChildrenSP synth_provider;
-        synth_provider.reset(new TypeSyntheticImpl(SyntheticChildren::Flags().SetCascades(options->m_cascade).
-                                                         SetSkipPointers(options->m_skip_pointers).
-                                                         SetSkipReferences(options->m_skip_references),
-                                                         class_name_str.c_str()));
+        synth_provider.reset(new ScriptedSyntheticChildren(SyntheticChildren::Flags().SetCascades(options->m_cascade).
+                                                           SetSkipPointers(options->m_skip_pointers).
+                                                           SetSkipReferences(options->m_skip_references),
+                                                           class_name_str.c_str()));
         
         
         lldb::TypeCategoryImplSP category;
@@ -3415,7 +3432,7 @@ public:
             }
             else
             {
-                out_stream->Printf ("Internal error #6: no script attached.\n");
+                out_stream->Printf ("invalid type name.\n");
                 out_stream->Flush();
                 return;
             }
@@ -3504,13 +3521,18 @@ CommandObjectTypeSynthAdd::Execute_PythonClass (Args& command, CommandReturnObje
     
     SyntheticChildrenSP entry;
     
-    TypeSyntheticImpl* impl = new TypeSyntheticImpl(SyntheticChildren::Flags().
-                                                    SetCascades(m_options.m_cascade).
-                                                    SetSkipPointers(m_options.m_skip_pointers).
-                                                    SetSkipReferences(m_options.m_skip_references),
-                                                    m_options.m_class_name.c_str());
+    ScriptedSyntheticChildren* impl = new ScriptedSyntheticChildren(SyntheticChildren::Flags().
+                                                                    SetCascades(m_options.m_cascade).
+                                                                    SetSkipPointers(m_options.m_skip_pointers).
+                                                                    SetSkipReferences(m_options.m_skip_references),
+                                                                    m_options.m_class_name.c_str());
     
     entry.reset(impl);
+    
+    ScriptInterpreter *interpreter = m_interpreter.GetScriptInterpreter();
+    
+    if (interpreter && interpreter->CheckObjectExists(impl->GetPythonClassName()) == false)
+        result.AppendWarning("The provided class does not exist - please define it before attempting to use this synthetic provider");
     
     // now I have a valid provider, let's add it to every type
     
@@ -3568,14 +3590,29 @@ CommandObjectTypeSynthAdd::CommandObjectTypeSynthAdd (CommandInterpreter &interp
 }
 
 bool
-CommandObjectTypeSynthAdd::AddSynth(const ConstString& type_name,
-         SyntheticChildrenSP entry,
-         SynthFormatType type,
-         std::string category_name,
-         Error* error)
+CommandObjectTypeSynthAdd::AddSynth(ConstString type_name,
+                                    SyntheticChildrenSP entry,
+                                    SynthFormatType type,
+                                    std::string category_name,
+                                    Error* error)
 {
     lldb::TypeCategoryImplSP category;
     DataVisualization::Categories::GetCategory(ConstString(category_name.c_str()), category);
+    
+    if (type == eRegularSynth)
+    {
+        std::string type_name_str(type_name.GetCString());
+        if (type_name_str.compare(type_name_str.length() - 2, 2, "[]") == 0)
+        {
+            type_name_str.resize(type_name_str.length()-2);
+            if (type_name_str.back() != ' ')
+                type_name_str.append(" \\[[0-9]+\\]");
+            else
+                type_name_str.append("\\[[0-9]+\\]");
+            type_name.SetCString(type_name_str.c_str());
+            type = eRegularSynth;
+        }
+    }
     
     if (category->AnyMatches(type_name,
                              eFormatCategoryItemFilter | eFormatCategoryItemRegexFilter,
@@ -3747,7 +3784,7 @@ private:
     };
     
     bool
-    AddFilter(const ConstString& type_name,
+    AddFilter(ConstString type_name,
               SyntheticChildrenSP entry,
               FilterFormatType type,
               std::string category_name,
@@ -3755,6 +3792,21 @@ private:
     {
         lldb::TypeCategoryImplSP category;
         DataVisualization::Categories::GetCategory(ConstString(category_name.c_str()), category);
+        
+        if (type == eRegularFilter)
+        {
+            std::string type_name_str(type_name.GetCString());
+            if (type_name_str.compare(type_name_str.length() - 2, 2, "[]") == 0)
+            {
+                type_name_str.resize(type_name_str.length()-2);
+                if (type_name_str.back() != ' ')
+                    type_name_str.append(" \\[[0-9]+\\]");
+                else
+                    type_name_str.append("\\[[0-9]+\\]");
+                type_name.SetCString(type_name_str.c_str());
+                type = eRegexFilter;
+            }
+        }
         
         if (category->AnyMatches(type_name,
                                  eFormatCategoryItemSynth | eFormatCategoryItemRegexSynth,

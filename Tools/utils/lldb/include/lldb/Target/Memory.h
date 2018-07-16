@@ -38,7 +38,7 @@ namespace lldb_private {
         ~MemoryCache ();
         
         void
-        Clear();
+        Clear(bool clear_invalid_ranges = false);
         
         void
         Flush (lldb::addr_t addr, size_t size);
@@ -170,7 +170,7 @@ namespace lldb_private {
         DeallocateMemory (lldb::addr_t ptr);
         
     protected:
-        typedef STD_SHARED_PTR(AllocatedBlock) AllocatedBlockSP;
+        typedef std::shared_ptr<AllocatedBlock> AllocatedBlockSP;
 
         AllocatedBlockSP
         AllocatePage (uint32_t byte_size, 

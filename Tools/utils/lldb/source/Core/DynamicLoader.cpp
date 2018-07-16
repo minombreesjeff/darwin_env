@@ -9,6 +9,7 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Target/DynamicLoader.h"
+#include "lldb/Target/Process.h"
 #include "lldb/Core/PluginManager.h"
 
 using namespace lldb;
@@ -20,10 +21,11 @@ DynamicLoader::FindPlugin (Process *process, const char *plugin_name)
     DynamicLoaderCreateInstance create_callback = NULL;
     if (plugin_name)
     {
-        create_callback  = PluginManager::GetDynamicLoaderCreateCallbackForPluginName (plugin_name);
+        ConstString const_plugin_name(plugin_name);
+        create_callback  = PluginManager::GetDynamicLoaderCreateCallbackForPluginName (const_plugin_name);
         if (create_callback)
         {
-            std::auto_ptr<DynamicLoader> instance_ap(create_callback(process, true));
+            std::unique_ptr<DynamicLoader> instance_ap(create_callback(process, true));
             if (instance_ap.get())
                 return instance_ap.release();
         }
@@ -32,7 +34,7 @@ DynamicLoader::FindPlugin (Process *process, const char *plugin_name)
     {
         for (uint32_t idx = 0; (create_callback = PluginManager::GetDynamicLoaderCreateCallbackAtIndex(idx)) != NULL; ++idx)
         {
-            std::auto_ptr<DynamicLoader> instance_ap(create_callback(process, false));
+            std::unique_ptr<DynamicLoader> instance_ap(create_callback(process, false));
             if (instance_ap.get())
                 return instance_ap.release();
         }
@@ -45,8 +47,7 @@ DynamicLoader::FindPlugin (Process *process, const char *plugin_name)
 // DynamicLoader constructor
 //----------------------------------------------------------------------
 DynamicLoader::DynamicLoader(Process *process) :
-    m_process (process),
-    m_stop_when_images_change(false)    // Stop the process by default when a process' images change
+    m_process (process)
 {
 }
 
@@ -64,12 +65,12 @@ DynamicLoader::~DynamicLoader()
 bool
 DynamicLoader::GetStopWhenImagesChange () const
 {
-    return m_stop_when_images_change;
+    return m_process->GetStopOnSharedLibraryEvents();
 }
 
 void
 DynamicLoader::SetStopWhenImagesChange (bool stop)
 {
-    m_stop_when_images_change = stop;
+    m_process->SetStopOnSharedLibraryEvents (stop);
 }
 

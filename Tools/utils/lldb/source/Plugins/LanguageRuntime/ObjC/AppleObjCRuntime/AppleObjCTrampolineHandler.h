@@ -67,6 +67,8 @@ public:
 private:
     static const char *g_lookup_implementation_function_name;
     static const char *g_lookup_implementation_function_code;
+    static const char *g_lookup_implementation_with_stret_function_code;
+    static const char *g_lookup_implementation_no_stret_function_code;
 
     class AppleObjCVTables
     {
@@ -195,14 +197,14 @@ private:
     MsgsendMap m_msgSend_map;
     lldb::ProcessSP m_process_sp;
     lldb::ModuleSP m_objc_module_sp;
-    std::auto_ptr<ClangFunction> m_impl_function;
-    std::auto_ptr<ClangUtilityFunction> m_impl_code;
+    std::unique_ptr<ClangFunction> m_impl_function;
+    std::unique_ptr<ClangUtilityFunction> m_impl_code;
     Mutex m_impl_function_mutex;
     lldb::addr_t m_impl_fn_addr;
     lldb::addr_t m_impl_stret_fn_addr;
     lldb::addr_t m_msg_forward_addr;
     lldb::addr_t m_msg_forward_stret_addr;
-    std::auto_ptr<AppleObjCVTables> m_vtables_ap;
+    std::unique_ptr<AppleObjCVTables> m_vtables_ap;
     
      
 };

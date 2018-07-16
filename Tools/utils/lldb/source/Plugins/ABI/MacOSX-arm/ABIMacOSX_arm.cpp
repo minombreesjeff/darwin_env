@@ -35,12 +35,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-static const char *pluginName = "ABIMacOSX_arm";
-static const char *pluginDesc = "Mac OS X ABI for arm targets";
-static const char *pluginShort = "abi.macosx-arm";
-
-
-static RegisterInfo g_register_infos[] = 
+static RegisterInfo g_register_infos[] =
 {
     //  NAME       ALT       SZ OFF ENCODING         FORMAT          COMPILER                DWARF               GENERIC                     GDB                     LLDB NATIVE            VALUE REGS    INVALIDATE REGS
     //  ========== =======   == === =============    ============    ======================= =================== =========================== ======================= ====================== ==========    ===============
@@ -332,10 +327,7 @@ ABIMacOSX_arm::GetArgumentValues (Thread &thread,
     if (!reg_ctx)
         return false;
         
-    addr_t sp = reg_ctx->GetSP(0);
-    
-    if (!sp)
-        return false;
+    addr_t sp = 0;
 
     for (uint32_t value_idx = 0; value_idx < num_values; ++value_idx)
     {
@@ -405,6 +397,14 @@ ABIMacOSX_arm::GetArgumentValues (Thread &thread,
                 }
                 else
                 {
+                    if (sp == 0)
+                    {
+                        // Read the stack pointer if it already hasn't been read
+                        sp = reg_ctx->GetSP(0);
+                        if (sp == 0)
+                            return false;
+                    }
+
                     // Arguments 5 on up are on the stack
                     const uint32_t arg_byte_size = (bit_width + (8-1)) / 8;
                     Error error;
@@ -421,7 +421,7 @@ ABIMacOSX_arm::GetArgumentValues (Thread &thread,
 
 ValueObjectSP
 ABIMacOSX_arm::GetReturnValueObjectImpl (Thread &thread,
-                               lldb_private::ClangASTType &ast_type) const
+                                         lldb_private::ClangASTType &ast_type) const
 {
     Value value;
     ValueObjectSP return_valobj_sp;
@@ -543,7 +543,7 @@ ABIMacOSX_arm::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueObj
     {
         DataExtractor data;
         size_t num_bytes = new_value_sp->GetData(data);
-        uint32_t offset = 0;
+        lldb::offset_t offset = 0;
         if (num_bytes <= 8)
         {
             const RegisterInfo *r0_info = reg_ctx->GetRegisterInfoByName("r0", 0);
@@ -836,8 +836,8 @@ ABIMacOSX_arm::RegisterIsVolatile (const RegisterInfo *reg_info)
 void
 ABIMacOSX_arm::Initialize()
 {
-    PluginManager::RegisterPlugin (pluginName,
-                                   pluginDesc,
+    PluginManager::RegisterPlugin (GetPluginNameStatic(),
+                                   "Mac OS X ABI for arm targets",
                                    CreateInstance);    
 }
 
@@ -847,19 +847,20 @@ ABIMacOSX_arm::Terminate()
     PluginManager::UnregisterPlugin (CreateInstance);
 }
 
+lldb_private::ConstString
+ABIMacOSX_arm::GetPluginNameStatic()
+{
+    static ConstString g_name("macosx-arm");
+    return g_name;
+}
+
 //------------------------------------------------------------------
 // PluginInterface protocol
 //------------------------------------------------------------------
-const char *
+lldb_private::ConstString
 ABIMacOSX_arm::GetPluginName()
 {
-    return pluginName;
-}
-
-const char *
-ABIMacOSX_arm::GetShortPluginName()
-{
-    return pluginShort;
+    return GetPluginNameStatic();
 }
 
 uint32_t

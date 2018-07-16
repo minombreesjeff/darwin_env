@@ -41,7 +41,7 @@ PlatformRemoteGDBServer::Initialize ()
     if (g_initialized == false)
     {
         g_initialized = true;
-        PluginManager::RegisterPlugin (PlatformRemoteGDBServer::GetShortPluginNameStatic(),
+        PluginManager::RegisterPlugin (PlatformRemoteGDBServer::GetPluginNameStatic(),
                                        PlatformRemoteGDBServer::GetDescriptionStatic(),
                                        PlatformRemoteGDBServer::CreateInstance);
     }
@@ -71,10 +71,11 @@ PlatformRemoteGDBServer::CreateInstance (bool force, const lldb_private::ArchSpe
 }
 
 
-const char *
-PlatformRemoteGDBServer::GetShortPluginNameStatic()
+lldb_private::ConstString
+PlatformRemoteGDBServer::GetPluginNameStatic()
 {
-    return "remote-gdb-server";
+    static ConstString g_name("remote-gdb-server");
+    return g_name;
 }
 
 const char *
@@ -398,7 +399,7 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
                                                                 "connect://%s:%u", 
                                                                 GetHostname (), 
                                                                 port);
-                        assert (connect_url_len < sizeof(connect_url));
+                        assert (connect_url_len < (int)sizeof(connect_url));
                         error = process_sp->ConnectRemote (NULL, connect_url);
                         if (error.Success())
                             error = process_sp->Attach(attach_info);

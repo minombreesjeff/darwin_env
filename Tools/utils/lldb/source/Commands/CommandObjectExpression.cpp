@@ -53,10 +53,9 @@ OptionDefinition
 CommandObjectExpression::CommandOptions::g_option_table[] =
 {
     { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "all-threads",        'a', required_argument, NULL, 0, eArgTypeBoolean,    "Should we run all threads if the execution doesn't complete on one thread."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "dynamic-value",      'd', required_argument, NULL, 0, eArgTypeBoolean,    "Upcast the value resulting from the expression to its dynamic type if available."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "timeout",            't', required_argument, NULL, 0, eArgTypeUnsignedInteger,  "Timeout value for running the expression."},
-    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "unwind-on-error",    'u', required_argument, NULL, 0, eArgTypeBoolean,    "Clean up program state if the expression causes a crash, breakpoint hit or signal."},
-    { LLDB_OPT_SET_2                 , false, "object-description", 'o', no_argument,       NULL, 0, eArgTypeNone,       "Print the object description of the value resulting from the expression."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "ignore-breakpoints", 'i', required_argument, NULL, 0, eArgTypeBoolean,    "Ignore breakpoint hits while running expressions"},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "timeout",            't', required_argument, NULL, 0, eArgTypeUnsignedInteger,  "Timeout value (in microseconds) for running the expression."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "unwind-on-error",    'u', required_argument, NULL, 0, eArgTypeBoolean,    "Clean up program state if the expression causes a crash, or raises a signal.  Note, unlike gdb hitting a breakpoint is controlled by another option (-i)."},
 };
 
 
@@ -96,27 +95,16 @@ CommandObjectExpression::CommandOptions::SetOptionValue (CommandInterpreter &int
         }
         break;
         
-    case 'd':
+    case 'i':
         {
             bool success;
-            bool result;
-            result = Args::StringToBoolean(option_arg, true, &success);
-            if (!success)
-                error.SetErrorStringWithFormat("invalid dynamic value setting: \"%s\"", option_arg);
+            bool tmp_value = Args::StringToBoolean(option_arg, true, &success);
+            if (success)
+                ignore_breakpoints = tmp_value;
             else
-            {
-                if (result)
-                    use_dynamic = eLazyBoolYes;  
-                else
-                    use_dynamic = eLazyBoolNo;
-            }
+                error.SetErrorStringWithFormat("could not convert \"%s\" to a boolean value.", option_arg);
+            break;
         }
-        break;
-        
-    case 'o':
-        print_object = true;
-        break;
-        
     case 't':
         {
             bool success;
@@ -132,8 +120,10 @@ CommandObjectExpression::CommandOptions::SetOptionValue (CommandInterpreter &int
     case 'u':
         {
             bool success;
-            unwind_on_error = Args::StringToBoolean(option_arg, true, &success);
-            if (!success)
+            bool tmp_value = Args::StringToBoolean(option_arg, true, &success);
+            if (success)
+                unwind_on_error = tmp_value;
+            else
                 error.SetErrorStringWithFormat("could not convert \"%s\" to a boolean value.", option_arg);
             break;
         }
@@ -148,10 +138,18 @@ CommandObjectExpression::CommandOptions::SetOptionValue (CommandInterpreter &int
 void
 CommandObjectExpression::CommandOptions::OptionParsingStarting (CommandInterpreter &interpreter)
 {
-    use_dynamic = eLazyBoolCalculate;
-    print_object = false;
-    unwind_on_error = true;
-    show_types = true;
+    Process *process = interpreter.GetExecutionContext().GetProcessPtr();
+    if (process != NULL)
+    {
+        ignore_breakpoints = process->GetIgnoreBreakpointsInExpressions();
+        unwind_on_error    = process->GetUnwindOnErrorInExpressions();
+    }
+    else
+    {
+        ignore_breakpoints = false;
+        unwind_on_error = true;
+    }
+    
     show_summary = true;
     try_all_threads = true;
     timeout = 0;
@@ -168,7 +166,7 @@ CommandObjectExpression::CommandObjectExpression (CommandInterpreter &interprete
                       "expression",
                       "Evaluate a C/ObjC/C++ expression in the current program context, using user defined variables and variables currently in scope.",
                       NULL,
-                      eFlagProcessMustBePaused),
+                      eFlagProcessMustBePaused | eFlagTryTargetAPILock),
     m_option_group (interpreter),
     m_format_options (eFormatDefault),
     m_command_options (),
@@ -212,6 +210,7 @@ Examples: \n\
     // Add the "--format" and "--gdb-format"
     m_option_group.Append (&m_format_options, OptionGroupFormat::OPTION_GROUP_FORMAT | OptionGroupFormat::OPTION_GROUP_GDB_FMT, LLDB_OPT_SET_1);
     m_option_group.Append (&m_command_options);
+    m_option_group.Append (&m_varobj_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1 | LLDB_OPT_SET_2);
     m_option_group.Finalize();
 }
 
@@ -315,7 +314,12 @@ CommandObjectExpression::EvaluateExpression
     CommandReturnObject *result
 )
 {
-    Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
+    // Don't use m_exe_ctx as this might be called asynchronously
+    // after the command object DoExecute has finished when doing
+    // multi-line expression that use an input reader...
+    ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
+
+    Target *target = exe_ctx.GetTargetPtr();
     
     if (!target)
         target = Host::GetDummyTarget(m_interpreter.GetDebugger()).get();
@@ -327,40 +331,28 @@ CommandObjectExpression::EvaluateExpression
         ExecutionResults exe_results;
         
         bool keep_in_memory = true;
-        lldb::DynamicValueType use_dynamic;
-        // If use dynamic is not set, get it from the target:
-        switch (m_command_options.use_dynamic)
-        {
-        case eLazyBoolCalculate:
-            use_dynamic = target->GetPreferDynamicValue();
-            break;
-        case eLazyBoolYes:
-            use_dynamic = lldb::eDynamicCanRunTarget;
-            break;
-        case eLazyBoolNo:
-            use_dynamic = lldb::eNoDynamicValues;
-            break;
-        }
-        
+
         EvaluateExpressionOptions options;
-        options.SetCoerceToId(m_command_options.print_object)
+        options.SetCoerceToId(m_varobj_options.use_objc)
         .SetUnwindOnError(m_command_options.unwind_on_error)
+        .SetIgnoreBreakpoints (m_command_options.ignore_breakpoints)
         .SetKeepInMemory(keep_in_memory)
-        .SetUseDynamic(use_dynamic)
+        .SetUseDynamic(m_varobj_options.use_dynamic)
         .SetRunOthers(m_command_options.try_all_threads)
         .SetTimeoutUsec(m_command_options.timeout);
         
         exe_results = target->EvaluateExpression (expr, 
-                                                  m_interpreter.GetExecutionContext().GetFramePtr(),
+                                                  exe_ctx.GetFramePtr(),
                                                   result_valobj_sp,
                                                   options);
         
-        if (exe_results == eExecutionInterrupted && !m_command_options.unwind_on_error)
+        if ((exe_results == eExecutionInterrupted && !m_command_options.unwind_on_error)
+            ||(exe_results == eExecutionHitBreakpoint && !m_command_options.ignore_breakpoints))
         {
             uint32_t start_frame = 0;
             uint32_t num_frames = 1;
             uint32_t num_frames_with_source = 0;
-            Thread *thread = m_interpreter.GetExecutionContext().GetThreadPtr();
+            Thread *thread = exe_ctx.GetThreadPtr();
             if (thread)
             {
                 thread->GetStatus (result->GetOutputStream(), 
@@ -370,7 +362,7 @@ CommandObjectExpression::EvaluateExpression
             }
             else 
             {
-                Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+                Process *process = exe_ctx.GetProcessPtr();
                 if (process)
                 {
                     bool only_threads_with_stop_reason = true;
@@ -394,22 +386,8 @@ CommandObjectExpression::EvaluateExpression
                     if (format != eFormatDefault)
                         result_valobj_sp->SetFormat (format);
 
-                    ValueObject::DumpValueObjectOptions options;
-                    options.SetMaximumPointerDepth(0)
-                    .SetMaximumDepth(UINT32_MAX)
-                    .SetShowLocation(false)
-                    .SetShowTypes(m_command_options.show_types)
-                    .SetUseObjectiveC(m_command_options.print_object)
-                    .SetUseDynamicType(use_dynamic)
-                    .SetScopeChecked(true)
-                    .SetFlatOutput(false)
-                    .SetUseSyntheticValue(true)
-                    .SetIgnoreCap(false)
-                    .SetFormat(format)
-                    .SetSummary()
-                    .SetShowSummary(!m_command_options.print_object)
-                    .SetHideRootType(m_command_options.print_object);
-                    
+                    ValueObject::DumpValueObjectOptions options(m_varobj_options.GetAsDumpOptions(true,format));
+
                     ValueObject::DumpValueObject (*(output_stream),
                                                   result_valobj_sp.get(),   // Variable object to dump
                                                   options);
@@ -434,7 +412,7 @@ CommandObjectExpression::EvaluateExpression
                     const char *error_cstr = result_valobj_sp->GetError().AsCString();
                     if (error_cstr && error_cstr[0])
                     {
-                        int error_cstr_len = strlen (error_cstr);
+                        const size_t error_cstr_len = strlen (error_cstr);
                         const bool ends_with_newline = error_cstr[error_cstr_len - 1] == '\n';
                         if (strstr(error_cstr, "error:") != error_cstr)
                             error_stream->PutCString ("error: ");

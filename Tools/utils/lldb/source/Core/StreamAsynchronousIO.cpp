@@ -35,7 +35,7 @@ StreamAsynchronousIO::Flush ()
 {
     if (m_accumulated_data.GetSize() > 0)
     {
-        std::auto_ptr<EventDataBytes> data_bytes_ap (new EventDataBytes);
+        std::unique_ptr<EventDataBytes> data_bytes_ap (new EventDataBytes);
         // Let's swap the bytes to avoid LARGE string copies.
         data_bytes_ap->SwapBytes (m_accumulated_data.GetString());
         EventSP new_event_sp (new Event (m_broadcast_event_type, data_bytes_ap.release()));
@@ -44,7 +44,7 @@ StreamAsynchronousIO::Flush ()
     }
 }
 
-int
+size_t
 StreamAsynchronousIO::Write (const void *s, size_t length)
 {
     m_accumulated_data.Write (s, length);

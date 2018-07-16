@@ -17,6 +17,7 @@
 #include "lldb/API/SBFileSpecList.h"
 #include "lldb/API/SBSymbolContextList.h"
 #include "lldb/API/SBType.h"
+#include "lldb/API/SBValue.h"
 #include "lldb/API/SBWatchpoint.h"
 
 namespace lldb {
@@ -108,6 +109,12 @@ public:
     
     bool
     AddSuppressFileAction (int fd, bool read, bool write);
+    
+    void
+    SetLaunchEventData (const char *data);
+    
+    const char *
+    GetLaunchEventData () const;
     
 protected:
     friend class SBTarget;
@@ -235,7 +242,9 @@ public:
     {
         eBroadcastBitBreakpointChanged  = (1 << 0),
         eBroadcastBitModulesLoaded      = (1 << 1),
-        eBroadcastBitModulesUnloaded    = (1 << 2)
+        eBroadcastBitModulesUnloaded    = (1 << 2),
+        eBroadcastBitWatchpointChanged  = (1 << 3),
+        eBroadcastBitSymbolsLoaded      = (1 << 4)
     };
 
     //------------------------------------------------------------------
@@ -245,6 +254,8 @@ public:
 
     SBTarget (const lldb::SBTarget& rhs);
 
+    SBTarget (const lldb::TargetSP& target_sp);
+    
     const lldb::SBTarget&
     operator = (const lldb::SBTarget& rhs);
 
@@ -364,6 +375,9 @@ public:
     
     SBProcess
     Launch (SBLaunchInfo &launch_info, SBError& error);
+    
+    SBProcess
+    LoadCore (const char *core_file);
 
     SBProcess
     Attach (SBAttachInfo &attach_info, SBError& error);
@@ -469,6 +483,10 @@ public:
                const char *triple,
                const char *uuid_cstr,
                const char *symfile);
+    
+    lldb::SBModule
+    AddModule (const SBModuleSpec &module_spec);
+
     uint32_t
     GetNumModules () const;
 
@@ -601,6 +619,19 @@ public:
     FindGlobalVariables (const char *name, 
                          uint32_t max_matches);
 
+    //------------------------------------------------------------------
+    /// Find the first global (or static) variable by name.
+    ///
+    /// @param[in] name
+    ///     The name of the global or static variable we are looking
+    ///     for.
+    ///
+    /// @return
+    ///     An SBValue that gets filled in with the found variable (if any).
+    //------------------------------------------------------------------
+    lldb::SBValue
+    FindFirstGlobalVariable (const char* name);
+    
     void
     Clear ();
 
@@ -729,10 +760,22 @@ public:
     ReadInstructions (lldb::SBAddress base_addr, uint32_t count);
 
     lldb::SBInstructionList
+    ReadInstructions (lldb::SBAddress base_addr, uint32_t count, const char *flavor_string);
+
+    lldb::SBInstructionList
     GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
+    
+    // The "WithFlavor" is necessary to keep SWIG from getting confused about overloaded arguments when
+    // using the buf + size -> Python Object magic.
+    
+    lldb::SBInstructionList
+    GetInstructionsWithFlavor (lldb::SBAddress base_addr,  const char *flavor_string, const void *buf, size_t size);
     
     lldb::SBInstructionList
     GetInstructions (lldb::addr_t base_addr, const void *buf, size_t size);
+
+    lldb::SBInstructionList
+    GetInstructionsWithFlavor (lldb::addr_t base_addr, const char *flavor_string, const void *buf, size_t size);
 
     lldb::SBSymbolContextList
     FindSymbols (const char *name,
@@ -747,6 +790,12 @@ public:
     bool
     GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
 
+    lldb::SBValue
+    EvaluateExpression (const char *expr, const SBExpressionOptions &options);
+
+    lldb::addr_t
+    GetStackRedZoneSize();
+    
 protected:
     friend class SBAddress;
     friend class SBBlock;
@@ -764,8 +813,6 @@ protected:
     // Constructors are private, use static Target::Create function to
     // create an instance of this class.
     //------------------------------------------------------------------
-
-    SBTarget (const lldb::TargetSP& target_sp);
 
     lldb::TargetSP
     GetSP () const;

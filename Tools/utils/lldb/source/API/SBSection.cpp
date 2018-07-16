@@ -69,6 +69,20 @@ SBSection::GetName ()
     return NULL;
 }
 
+lldb::SBSection
+SBSection::GetParent()
+{
+    lldb::SBSection sb_section;
+    SectionSP section_sp (GetSP());
+    if (section_sp)
+    {
+        SectionSP parent_section_sp (section_sp->GetParent());
+        if (parent_section_sp)
+            sb_section.SetSP(parent_section_sp);
+    }
+    return sb_section;    
+}
+
 
 lldb::SBSection
 SBSection::FindSubSection (const char *sect_name)
@@ -163,7 +177,7 @@ SBSection::GetFileOffset ()
         {
             ObjectFile *objfile = module_sp->GetObjectFile();
             if (objfile)
-                return objfile->GetOffset() + section_sp->GetFileOffset();
+                return objfile->GetFileOffset() + section_sp->GetFileOffset();
         }
     }
     return UINT64_MAX;
@@ -200,7 +214,7 @@ SBSection::GetSectionData (uint64_t offset, uint64_t size)
                 ObjectFile *objfile = module_sp->GetObjectFile();
                 if (objfile)
                 {
-                    const uint64_t sect_file_offset = objfile->GetOffset() + section_sp->GetFileOffset();
+                    const uint64_t sect_file_offset = objfile->GetFileOffset() + section_sp->GetFileOffset();
                     const uint64_t file_offset = sect_file_offset + offset;
                     uint64_t file_size = size;
                     if (file_size == UINT64_MAX)

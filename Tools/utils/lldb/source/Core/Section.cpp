@@ -16,20 +16,22 @@ using namespace lldb;
 using namespace lldb_private;
 
 Section::Section (const ModuleSP &module_sp,
+                  ObjectFile *obj_file,
                   user_id_t sect_id,
                   const ConstString &name,
                   SectionType sect_type,
                   addr_t file_addr,
                   addr_t byte_size,
-                  uint64_t file_offset,
-                  uint64_t file_size,
+                  lldb::offset_t file_offset,
+                  lldb::offset_t file_size,
                   uint32_t flags) :
     ModuleChild     (module_sp),
     UserID          (sect_id),
     Flags           (flags),
+    m_obj_file      (obj_file),
+    m_type          (sect_type),
     m_parent_wp     (),
     m_name          (name),
-    m_type          (sect_type),
     m_file_addr     (file_addr),
     m_byte_size     (byte_size),
     m_file_offset   (file_offset),
@@ -37,9 +39,7 @@ Section::Section (const ModuleSP &module_sp,
     m_children      (),
     m_fake          (false),
     m_encrypted     (false),
-    m_thread_specific (false),
-    m_linked_section_wp(),
-    m_linked_offset (0)
+    m_thread_specific (false)
 {
 //    printf ("Section::Section(%p): module=%p, sect_id = 0x%16.16" PRIx64 ", addr=[0x%16.16" PRIx64 " - 0x%16.16" PRIx64 "), file [0x%16.16" PRIx64 " - 0x%16.16" PRIx64 "), flags = 0x%8.8x, name = %s\n",
 //            this, module_sp.get(), sect_id, file_addr, file_addr + byte_size, file_offset, file_offset + file_size, flags, name.GetCString());
@@ -47,20 +47,22 @@ Section::Section (const ModuleSP &module_sp,
 
 Section::Section (const lldb::SectionSP &parent_section_sp,
                   const ModuleSP &module_sp,
+                  ObjectFile *obj_file,
                   user_id_t sect_id,
                   const ConstString &name,
                   SectionType sect_type,
                   addr_t file_addr,
                   addr_t byte_size,
-                  uint64_t file_offset,
-                  uint64_t file_size,
+                  lldb::offset_t file_offset,
+                  lldb::offset_t file_size,
                   uint32_t flags) :
     ModuleChild     (module_sp),
     UserID          (sect_id),
     Flags           (flags),
+    m_obj_file      (obj_file),
+    m_type          (sect_type),
     m_parent_wp     (),
     m_name          (name),
-    m_type          (sect_type),
     m_file_addr     (file_addr),
     m_byte_size     (byte_size),
     m_file_offset   (file_offset),
@@ -68,9 +70,7 @@ Section::Section (const lldb::SectionSP &parent_section_sp,
     m_children      (),
     m_fake          (false),
     m_encrypted     (false),
-    m_thread_specific (false),
-    m_linked_section_wp(),
-    m_linked_offset (0)
+    m_thread_specific (false)
 {
 //    printf ("Section::Section(%p): module=%p, sect_id = 0x%16.16" PRIx64 ", addr=[0x%16.16" PRIx64 " - 0x%16.16" PRIx64 "), file [0x%16.16" PRIx64 " - 0x%16.16" PRIx64 "), flags = 0x%8.8x, name = %s.%s\n",
 //            this, module_sp.get(), sect_id, file_addr, file_addr + byte_size, file_offset, file_offset + file_size, flags, parent_section_sp->GetName().GetCString(), name.GetCString());
@@ -81,15 +81,6 @@ Section::Section (const lldb::SectionSP &parent_section_sp,
 Section::~Section()
 {
 //    printf ("Section::~Section(%p)\n", this);
-}
-
-const ConstString&
-Section::GetName() const
-{
-    SectionSP linked_section_sp (m_linked_section_wp.lock());
-    if (linked_section_sp)
-        return linked_section_sp->GetName();
-    return m_name;
 }
 
 addr_t
@@ -119,53 +110,31 @@ Section::GetOffset () const
     return 0;
 }
 
-
-addr_t
-Section::GetLinkedFileAddress () const
-{
-    SectionSP linked_section_sp (m_linked_section_wp.lock());
-    if (linked_section_sp)
-        return linked_section_sp->GetFileAddress() + m_linked_offset;
-    return LLDB_INVALID_ADDRESS;
-}
-
-
 addr_t
 Section::GetLoadBaseAddress (Target *target) const
 {
     addr_t load_base_addr = LLDB_INVALID_ADDRESS;
-    SectionSP linked_section_sp (m_linked_section_wp.lock());
-    if (linked_section_sp)
+    SectionSP parent_sp (GetParent ());
+    if (parent_sp)
     {
-        load_base_addr = linked_section_sp->GetLoadBaseAddress(target);
+        load_base_addr = parent_sp->GetLoadBaseAddress (target);
         if (load_base_addr != LLDB_INVALID_ADDRESS)
-            load_base_addr += m_linked_offset;
+            load_base_addr += GetOffset();
     }
     else
     {
-        SectionSP parent_sp (GetParent ());
-        if (parent_sp)
-        {
-            load_base_addr = parent_sp->GetLoadBaseAddress (target);
-            if (load_base_addr != LLDB_INVALID_ADDRESS)
-                load_base_addr += GetOffset();
-        }
-        else
-        {
-            load_base_addr = target->GetSectionLoadList().GetSectionLoadAddress (const_cast<Section *>(this)->shared_from_this());
-        }
+        load_base_addr = target->GetSectionLoadList().GetSectionLoadAddress (const_cast<Section *>(this)->shared_from_this());
     }
-
     return load_base_addr;
 }
 
 bool
 Section::ResolveContainedAddress (addr_t offset, Address &so_addr) const
 {
-    const uint32_t num_children = m_children.GetSize();
+    const size_t num_children = m_children.GetSize();
     if (num_children > 0)
     {
-        for (uint32_t i=0; i<num_children; i++)
+        for (size_t i=0; i<num_children; i++)
         {
             Section* child_section = m_children.GetSectionAtIndex (i).get();
 
@@ -174,22 +143,13 @@ Section::ResolveContainedAddress (addr_t offset, Address &so_addr) const
                 return child_section->ResolveContainedAddress (offset - child_offset, so_addr);
         }
     }
-    SectionSP linked_section_sp (m_linked_section_wp.lock());
-    if (linked_section_sp)
-    {
-        so_addr.SetOffset(m_linked_offset + offset);
-        so_addr.SetSection(linked_section_sp);
-    }
-    else
-    {
-        so_addr.SetOffset(offset);
-        so_addr.SetSection(const_cast<Section *>(this)->shared_from_this());
-        
+    so_addr.SetOffset(offset);
+    so_addr.SetSection(const_cast<Section *>(this)->shared_from_this());
+    
 #ifdef LLDB_CONFIGURATION_DEBUG
-        // For debug builds, ensure that there are no orphaned (i.e., moduleless) sections.
-        assert(GetModule().get());
+    // For debug builds, ensure that there are no orphaned (i.e., moduleless) sections.
+    assert(GetModule().get());
 #endif
-    }
     return true;
 }
 
@@ -202,21 +162,6 @@ Section::ContainsFileAddress (addr_t vm_addr) const
         if (file_addr <= vm_addr)
         {
             const addr_t offset = vm_addr - file_addr;
-            return offset < GetByteSize();
-        }
-    }
-    return false;
-}
-
-bool
-Section::ContainsLinkedFileAddress (addr_t vm_addr) const
-{
-    const addr_t linked_file_addr = GetLinkedFileAddress();
-    if (linked_file_addr != LLDB_INVALID_ADDRESS)
-    {
-        if (linked_file_addr <= vm_addr)
-        {
-            const addr_t offset = vm_addr - linked_file_addr;
             return offset < GetByteSize();
         }
     }
@@ -261,12 +206,11 @@ Section::Dump (Stream *s, Target *target, uint32_t depth) const
     bool resolved = true;
     addr_t addr = LLDB_INVALID_ADDRESS;
 
-    SectionSP linked_section_sp (m_linked_section_wp.lock());
     if (GetByteSize() == 0)
         s->Printf("%39s", "");
     else
     {
-        if (target && linked_section_sp.get() == NULL)
+        if (target)
             addr = GetLoadBaseAddress (target);
 
         if (addr == LLDB_INVALID_ADDRESS)
@@ -286,35 +230,6 @@ Section::Dump (Stream *s, Target *target, uint32_t depth) const
 
     s->EOL();
 
-    if (linked_section_sp)
-    {
-        addr = LLDB_INVALID_ADDRESS;
-        resolved = true;
-        if (target)
-        {
-            addr = linked_section_sp->GetLoadBaseAddress(target);
-            if (addr != LLDB_INVALID_ADDRESS)
-                addr += m_linked_offset;
-        }
-
-        if (addr == LLDB_INVALID_ADDRESS)
-        {
-            if (target)
-                resolved = false;
-            addr = linked_section_sp->GetFileAddress() + m_linked_offset;
-        }
-
-        int indent = 28 + s->GetIndentLevel();
-        s->Printf("%*.*s", indent, indent, "");
-        VMRange linked_range(addr, addr + m_byte_size);
-        linked_range.Dump (s, 0);
-        indent = 3 * (sizeof(uint32_t) * 2 + 2 + 1) + 1;
-        s->Printf("%c%*.*s", resolved ? ' ' : '*', indent, indent, "");
-
-        linked_section_sp->DumpName(s);
-        s->Printf(" + 0x%" PRIx64 "\n", m_linked_offset);
-    }
-
     if (depth > 0)
         m_children.Dump(s, target, false, depth - 1);
 }
@@ -331,13 +246,16 @@ Section::DumpName (Stream *s) const
     else
     {
         // The top most section prints the module basename
+        const char * name = NULL;
         ModuleSP module_sp (GetModule());
-        if (module_sp)
-        {
-            const char *module_basename = module_sp->GetFileSpec().GetFilename().AsCString();
-            if (module_basename && module_basename[0])
-                s->Printf("%s.", module_basename);
-        }
+        const FileSpec &file_spec = m_obj_file->GetFileSpec();
+
+        if (m_obj_file)
+            name = file_spec.GetFilename().AsCString();
+        if ((!name || !name[0]) && module_sp)
+            name = module_sp->GetFileSpec().GetFilename().AsCString();
+        if (name && name[0])
+            s->Printf("%s.", name);
     }
     m_name.Dump(s);
 }
@@ -371,22 +289,10 @@ Section::Slide (addr_t slide_amount, bool slide_children)
     return false;
 }
 
-void
-Section::SetLinkedLocation (const lldb::SectionSP &linked_section_sp, uint64_t linked_offset)
-{
-    if (linked_section_sp)
-        m_module_wp = linked_section_sp->GetModule();
-    m_linked_section_wp = linked_section_sp;
-    m_linked_offset  = linked_offset;
-}
-
 #pragma mark SectionList
 
 SectionList::SectionList () :
     m_sections()
-#ifdef LLDB_CONFIGURATION_DEBUG
-    , m_finalized(false)
-#endif
 {
 }
 
@@ -395,17 +301,36 @@ SectionList::~SectionList ()
 {
 }
 
-uint32_t
+SectionList &
+SectionList::operator = (const SectionList& rhs)
+{
+    if (this != &rhs)
+        m_sections = rhs.m_sections;
+    return *this;
+}
+
+size_t
 SectionList::AddSection (const lldb::SectionSP& section_sp)
 {
     assert (section_sp.get());
-    uint32_t section_index = m_sections.size();
+    size_t section_index = m_sections.size();
     m_sections.push_back(section_sp);
-    InvalidateRangeCache();
     return section_index;
 }
 
-uint32_t
+// Warning, this can be slow as it's removing items from a std::vector.
+bool
+SectionList::DeleteSection (size_t idx)
+{
+    if (idx < m_sections.size())
+    {
+        m_sections.erase (m_sections.begin() + idx);
+        return true; 
+    }
+    return false;
+}
+
+size_t
 SectionList::FindSectionIndex (const Section* sect)
 {
     iterator sect_iter;
@@ -422,15 +347,16 @@ SectionList::FindSectionIndex (const Section* sect)
     return UINT32_MAX;
 }
 
-uint32_t
+size_t
 SectionList::AddUniqueSection (const lldb::SectionSP& sect_sp)
 {
-    uint32_t sect_idx = FindSectionIndex (sect_sp.get());
+    size_t sect_idx = FindSectionIndex (sect_sp.get());
     if (sect_idx == UINT32_MAX)
+    {
         sect_idx = AddSection (sect_sp);
+    }
     return sect_idx;
 }
-
 
 bool
 SectionList::ReplaceSection (user_id_t sect_id, const lldb::SectionSP& sect_sp, uint32_t depth)
@@ -441,7 +367,6 @@ SectionList::ReplaceSection (user_id_t sect_id, const lldb::SectionSP& sect_sp, 
         if ((*sect_iter)->GetID() == sect_id)
         {
             *sect_iter = sect_sp;
-            InvalidateRangeCache();
             return true;
         }
         else if (depth > 0)
@@ -452,7 +377,6 @@ SectionList::ReplaceSection (user_id_t sect_id, const lldb::SectionSP& sect_sp, 
     }
     return false;
 }
-
 
 size_t
 SectionList::GetNumSections (uint32_t depth) const
@@ -470,7 +394,7 @@ SectionList::GetNumSections (uint32_t depth) const
 }
 
 SectionSP
-SectionList::GetSectionAtIndex (uint32_t idx) const
+SectionList::GetSectionAtIndex (size_t idx) const
 {
     SectionSP sect_sp;
     if (idx < m_sections.size())
@@ -530,11 +454,11 @@ SectionList::FindSectionByID (user_id_t sect_id) const
 
 
 SectionSP
-SectionList::FindSectionByType (SectionType sect_type, bool check_children, uint32_t start_idx) const
+SectionList::FindSectionByType (SectionType sect_type, bool check_children, size_t start_idx) const
 {
     SectionSP sect_sp;
-    uint32_t num_sections = m_sections.size();
-    for (uint32_t idx = start_idx; idx < num_sections; ++idx)
+    size_t num_sections = m_sections.size();
+    for (size_t idx = start_idx; idx < num_sections; ++idx)
     {
         if (m_sections[idx]->GetType() == sect_type)
         {
@@ -573,71 +497,6 @@ SectionList::FindSectionContainingFileAddress (addr_t vm_addr, uint32_t depth) c
         }
     }
     return sect_sp;
-}
-
-void
-SectionList::BuildRangeCache() const
-{
-    m_range_cache.Clear();
-    
-    for (collection::size_type idx = 0, last_idx = m_sections.size();
-         idx < last_idx;
-         ++idx)
-    {
-        Section *sect = m_sections[idx].get();
-        
-        addr_t linked_file_address = sect->GetLinkedFileAddress();
-        
-        if (linked_file_address != LLDB_INVALID_ADDRESS)
-            m_range_cache.Append(SectionRangeCache::Entry(linked_file_address, sect->GetByteSize(), idx));
-    }
-    
-    m_range_cache.Sort();
-    
-#ifdef LLDB_CONFIGURATION_DEBUG
-    m_finalized = true;
-#endif
-}
-
-void
-SectionList::InvalidateRangeCache() const
-{
-#ifdef LLDB_CONFIGURATION_DEBUG
-    assert(!m_finalized);
-#endif
-    m_range_cache.Clear();
-}
-
-SectionSP
-SectionList::FindSectionContainingLinkedFileAddress (addr_t vm_addr, uint32_t depth) const
-{
-    //if (m_range_cache.IsEmpty())
-    //    BuildRangeCache();
-#ifdef LLDB_CONFIGURATION_DEBUG
-    assert(m_finalized);
-#endif
-    
-    SectionRangeCache::Entry *entry = m_range_cache.FindEntryThatContains(vm_addr);
-    
-    if (entry)
-        return m_sections[entry->data];
-        
-    if (depth == 0)
-        return SectionSP();
-    
-    for (const_iterator si = m_sections.begin(), se = m_sections.end();
-         si != se;
-         ++si)
-    {
-        Section *sect = si->get();
-        
-        SectionSP sect_sp = sect->GetChildren().FindSectionContainingLinkedFileAddress(vm_addr, depth - 1);
-            
-        if (sect_sp)
-            return sect_sp;
-    }
-    
-    return SectionSP();
 }
 
 bool
@@ -681,22 +540,5 @@ SectionList::Slide (addr_t slide_amount, bool slide_children)
         if ((*pos)->Slide(slide_amount, slide_children))
             ++count;
     }
-    InvalidateRangeCache();
     return count;
 }
-
-void
-SectionList::Finalize ()
-{
-    BuildRangeCache();
-    
-    for (const_iterator si = m_sections.begin(), se = m_sections.end();
-         si != se;
-         ++si)
-    {
-        Section *sect = si->get();
-        
-        sect->GetChildren().Finalize();
-    }
-}
-

@@ -27,7 +27,7 @@ added above and beyond the standard GDB remote protocol packets.
 //  the performance of the connection.
 //----------------------------------------------------------------------
 Having to send an ACK/NACK after every packet slows things down a bit, so we
-have a way to disable ACK packets to mimize the traffic for reliable
+have a way to disable ACK packets to minimize the traffic for reliable
 communication interfaces (like sockets). Below GDB or LLDB will send this
 packet to try and disable ACKs. All lines that start with "send packet: " are
 from GDB/LLDB, and all lines that start with "read packet: " are from the GDB
@@ -336,17 +336,21 @@ format      The preferred format for display of this register. The value must
                 vector-float32
                 vector-uint128
 
-set         The regiter set name as a string that this register belongs to.
+set         The register set name as a string that this register belongs to.
 
 gcc         The GCC compiler registers number for this register (used for
             EH frame and other compiler information that is encoded in the
-            executable files). 
+            executable files). The supplied number will be decoded like a
+            string passed to strtoul() with a base of zero, so the number
+            can be decimal, or hex if it is prefixed with "0x".
 
             NOTE: If the compiler doesn't have a register number for this 
             register, this key/value pair should be omitted.
 
 dwarf       The DWARF register number for this register that is used for this
-            register in the debug information. 
+            register in the debug information. The supplied number will be decoded
+            like a string passed to strtoul() with a base of zero, so the number
+            can be decimal, or hex if it is prefixed with "0x".
 
             NOTE: If the compiler doesn't have a register number for this 
             register, this key/value pair should be omitted.
@@ -370,6 +374,52 @@ generic     If the register is a generic register that most CPUs have, classify
              arg1 - arg8 (specified for registers that contain function 
                       arguments when the argument fits into a register)
 
+container-regs
+            The value for this key is a comma separated list of raw hex (optional 
+            leading "0x") register numbers.
+
+            This specifies that this register is contained in other concrete
+            register values. For example "eax" is in the lower 32 bits of the
+            "rax" register value for x86_64, so "eax" could specify that it is
+            contained in "rax" by specifying the register number for "rax" (whose
+            register number is 0x00)
+            
+            "container-regs:00;"
+            
+            If a register is comprised of one or more registers, like "d0" is ARM
+            which is a 64 bit register, it might be made up of "s0" and "s1". If
+            the register number for "s0" is 0x20, and the register number of "s1"
+            is "0x21", the "container-regs" key/value pair would be:
+            
+            "container-regs:20,21;"
+            
+            This is handy for defining what GDB used to call "pseudo" registers.
+            These registers are never requested by LLDB via the register read
+            or write packets, the container registers will be requested on behalf
+            of this register.
+            
+invalidate-regs
+            The value for this key is a comma separated list of raw hex (optional 
+            leading "0x") register numbers.
+            
+            This specifies which register values should be invalidated when this
+            register is modified. For example if modifying "eax" would cause "rax",
+            "eax", "ax", "ah", and "al" to be modified where rax is 0x0, eax is 0x15,
+            ax is 0x25, ah is 0x35, and al is 0x39, the "invalidate-regs" key/value
+            pair would be:
+
+            "invalidate-regs:0,15,25,35,39;"
+            
+            If there is a single register that gets invalidated, then omit the comma
+            and just list a single register:
+            
+            "invalidate-regs:0;"
+            
+            This is handy when modifying a specific register can cause other
+            register values to change. For example, when debugging an ARM target,
+            modifying the CPSR register can cause the r8 - r14 and cpsr value to
+            change depending on if the mode has changed. 
+
 //----------------------------------------------------------------------
 // "qHostInfo"
 //
@@ -392,10 +442,54 @@ Key value pairs are one of:
 
 cputype: is a number that is the mach-o CPU type that is being debugged
 cpusubtype: is a number that is the mach-o CPU subtype type that is being debugged
-ostype: is a string the represents the OS being debugged (darwin, lunix, freebsd)
+ostype: is a string the represents the OS being debugged (darwin, linux, freebsd)
 vendor: is a string that represents the vendor (apple)
 endian: is one of "little", "big", or "pdp"
 ptrsize: is a number that represents how big pointers are in bytes on the debug target
+
+//----------------------------------------------------------------------
+// "qProcessInfo"
+//
+// BRIEF
+//  Get information about the process we are currently debugging.
+//
+// PRIORITY TO IMPLEMENT
+//  Medium.  On systems which can launch multiple different architecture processes,
+//  the qHostInfo may not disambiguate sufficiently to know what kind of 
+//  process is being debugged.
+//  e.g. on a 64-bit x86 Mac system both 32-bit and 64-bit user processes are possible,
+//  and with Mach-O universal files, the executable file may contain both 32- and 
+//  64-bit slices so it may be impossible to know until you're attached to a real
+//  process to know what you're working with.
+//
+//  All numeric fields return base-16 numbers without any "0x" prefix.
+//----------------------------------------------------------------------
+
+An i386 process:
+
+send packet: $qProcessInfo#00
+read packet: $pid:42a8;parent-pid:42bf;real-uid:ecf;real-gid:b;effective-uid:ecf;effective-gid:b;cputype:7;cpusubtype:3;ostype:macosx;vendor:apple;endian:little;ptrsize:4;#00
+
+An x86_64 process:
+
+send packet: $qProcessInfo#00
+read packet: $pid:d22c;parent-pid:d34d;real-uid:ecf;real-gid:b;effective-uid:ecf;effective-gid:b;cputype:1000007;cpusubtype:3;ostype:macosx;vendor:apple;endian:little;ptrsize:8;#00
+
+Key value pairs include:
+
+pid: the process id
+parent-pid: the process of the parent process (often debugserver will become the parent when attaching)
+real-uid: the real user id of the process
+real-gid: the real group id of the process
+effective-uid: the effective user id of the process
+effective-gid: the effective group id of the process
+cputype: the Mach-O CPU type of the process
+cpusubtype: the Mach-O CPU subtype of the process
+ostype: is a string the represents the OS being debugged (darwin, linux, freebsd)
+vendor: is a string that represents the vendor (apple)
+endian: is one of "little", "big", or "pdp"
+ptrsize: is a number that represents how big pointers are in bytes
+
 
 //----------------------------------------------------------------------
 // "qShlibInfoAddr"
@@ -417,8 +511,8 @@ ptrsize: is a number that represents how big pointers are in bytes on the debug 
 
 LLDB and GDB both support the "qShlibInfoAddr" packet which is a hint to each
 debugger as to where to find the dynamic loader information. For darwin
-binaires that run in user land this is the address of the "all_image_infos"
-stucture in the "/usr/lib/dyld" executable, or the result of a TASK_DYLD_INFO
+binaries that run in user land this is the address of the "all_image_infos"
+structure in the "/usr/lib/dyld" executable, or the result of a TASK_DYLD_INFO
 call. The result is returned as big endian hex bytes that are the address
 value:
 
@@ -469,7 +563,7 @@ to implement better multi-threaded debugging support.
 //----------------------------------------------------------------------
 
 When reading thread registers, you currently need to set the current
-thread,then read the registers. This is kind of cumbersome, so we added the
+thread, then read the registers. This is kind of cumbersome, so we added the
 ability to query if the remote GDB server supports adding a "thread:<tid>;"
 suffix to all packets that request information for a thread. To test if the
 remote GDB server supports this feature:
@@ -605,6 +699,26 @@ The lack of 'permissions:' indicates that none of read/write/execute are valid
 for this region.
 
 //----------------------------------------------------------------------
+// Detach and stay stopped:
+//
+// We extended the "D" packet to specify that the monitor should keep the
+// target suspended on detach.  The normal behavior is to resume execution
+// on detach.  We will send:
+//
+//  qSupportsDetachAndStayStopped:
+//
+// to query whether the monitor supports the extended detach, and if it does,
+// when we want the monitor to detach but not resume the target, we will
+// send:
+// 
+//   D1
+//
+// In any case, if we want the normal detach behavior we will just send:
+//
+//   D
+//----------------------------------------------------------------------
+
+//----------------------------------------------------------------------
 // Stop reply packet extensions
 //
 // BRIEF
@@ -630,7 +744,7 @@ for this region.
 //        the hex value of the register in debuggee endian byte order.
 //      - If key == "thread", then the value is the big endian hex
 //        thread-id of the stopped thread.
-//      - If key == "core", then value is a hex nujber of the core on
+//      - If key == "core", then value is a hex number of the core on
 //        which the stop was detected.
 //      - If key == "watch" or key == "rwatch" or key == "awatch", then
 //        value is the data address in big endian hex
@@ -700,7 +814,7 @@ for this region.
 //
 // BEST PRACTICES:
 //  Since register values can be supplied with this packet, it is often useful
-//  to return the PC, SP, FP, LR (if any), and FLAGS regsiters so that separate
+//  to return the PC, SP, FP, LR (if any), and FLAGS registers so that separate
 //  packets don't need to be sent to read each of these registers from each
 //  thread.
 //
@@ -709,7 +823,7 @@ for this region.
 //  "T" packet with "00" as the signal number and fill in as many key values 
 //  and registers as possible.
 //
-//  LLDB likes to know why a thread stopped since many thread contol 
+//  LLDB likes to know why a thread stopped since many thread control 
 //  operations like stepping over a source line, actually are implemented
 //  by running the process multiple times. If a breakpoint is hit while
 //  trying to step over a source line and LLDB finds out that a breakpoint
@@ -719,14 +833,14 @@ for this region.
 //  at the current PC and do an instruction single step, knowing that
 //  we stopped due to a "trace" helps us know that we can continue
 //  running versus stopping due to a "breakpoint" (if we have two 
-//  breakpoint instruction on consucutive instructions). So the more info
+//  breakpoint instruction on consecutive instructions). So the more info
 //  we can get about the reason a thread stops, the better job LLDB can
 //  do when controlling your process. A typical GDB server behavior is 
 //  to send a SIGTRAP for breakpoints _and_ also when instruction single
 //  stepping, in this case the debugger doesn't really know why we 
 //  stopped and it can make it hard for the debugger to control your
 //  program correctly. What if a real SIGTRAP was delivered to a thread
-//  while we were trying to single step? We woudn't know the difference
+//  while we were trying to single step? We wouldn't know the difference
 //  with a standard GDB remote server and we could do the wrong thing.
 //
 // PRIORITY TO IMPLEMENT

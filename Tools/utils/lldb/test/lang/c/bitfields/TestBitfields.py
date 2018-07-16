@@ -33,6 +33,7 @@ class BitfieldsTestCase(TestBase):
 
     @python_api_test
     @dwarf_test
+    @expectedFailureGcc # GCC (4.6/4.7) generates incorrect code with unnamed bitfields.
     def test_with_dwarf_and_python_api(self):
         """Use Python APIs to inspect a bitfields variable."""
         self.buildDwarf()
@@ -105,7 +106,6 @@ class BitfieldsTestCase(TestBase):
 
         self.expect("frame variable --show-types more_bits", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['(uint32_t:3) a = 3',
-                       '(int:1)  = 0',
                        '(uint8_t:1) b = \'\\0\'',
                        '(uint8_t:1) c = \'\\x01\'',
                        '(uint8_t:1) d = \'\\0\''])

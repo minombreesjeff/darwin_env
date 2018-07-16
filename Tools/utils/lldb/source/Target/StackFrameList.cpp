@@ -65,6 +65,9 @@ StackFrameList::StackFrameList
 //----------------------------------------------------------------------
 StackFrameList::~StackFrameList()
 {
+    // Call clear since this takes a lock and clears the stack frame list
+    // in case another thread is currently using this stack frame list
+    Clear();
 }
 
 void
@@ -87,7 +90,7 @@ StackFrameList::GetCurrentInlinedDepth ()
         {
             m_current_inlined_pc = LLDB_INVALID_ADDRESS;
             m_current_inlined_depth = UINT32_MAX;
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
             if (log && log->GetVerbose())
                 log->Printf ("GetCurrentInlinedDepth: invalidating current inlined depth.\n");
         }
@@ -109,7 +112,7 @@ StackFrameList::ResetCurrentInlinedDepth ()
         {
             m_current_inlined_depth = UINT32_MAX;
             m_current_inlined_pc = LLDB_INVALID_ADDRESS;
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
             if (log && log->GetVerbose())
                 log->Printf ("ResetCurrentInlinedDepth: Invalidating current inlined depth.\n");
         }
@@ -204,7 +207,7 @@ StackFrameList::ResetCurrentInlinedDepth ()
                                     }
                                     m_current_inlined_pc = curr_pc;
                                     m_current_inlined_depth = num_inlined_functions + 1;
-                                    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+                                    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
                                     if (log && log->GetVerbose())
                                         log->Printf ("ResetCurrentInlinedDepth: setting inlined depth: %d 0x%" PRIx64 ".\n", m_current_inlined_depth, curr_pc);
                                     
@@ -250,6 +253,10 @@ StackFrameList::SetCurrentInlinedDepth (uint32_t new_depth)
 void
 StackFrameList::GetFramesUpTo(uint32_t end_idx)
 {
+    // this makes sure we do not fetch frames for an invalid thread
+    if (m_thread.IsValid() == false)
+        return;
+
     // We've already gotten more frames than asked for, or we've already finished unwinding, return.
     if (m_frames.size() > end_idx || GetAllFramesFetched())
         return;
@@ -289,27 +296,30 @@ StackFrameList::GetFramesUpTo(uint32_t end_idx)
                 // if we need to
                 if (m_frames.empty())
                 {
-                    m_thread.GetRegisterContext();
-                    assert (m_thread.m_reg_context_sp.get());
-
-                    const bool success = unwinder->GetFrameInfoAtIndex(idx, cfa, pc);
-                    // There shouldn't be any way not to get the frame info for frame 0.
-                    // But if the unwinder can't make one, lets make one by hand with the
-                    // SP as the CFA and see if that gets any further.
-                    if (!success)
-                    {
-                        cfa = m_thread.GetRegisterContext()->GetSP();
-                        pc = m_thread.GetRegisterContext()->GetPC();
-                    }
+                    RegisterContextSP reg_ctx_sp (m_thread.GetRegisterContext());
                     
-                    unwind_frame_sp.reset (new StackFrame (m_thread.shared_from_this(),
-                                                           m_frames.size(), 
-                                                           idx,
-                                                           m_thread.m_reg_context_sp,
-                                                           cfa,
-                                                           pc,
-                                                           NULL));
-                    m_frames.push_back (unwind_frame_sp);
+                    if (reg_ctx_sp)
+                    {
+
+                        const bool success = unwinder->GetFrameInfoAtIndex(idx, cfa, pc);
+                        // There shouldn't be any way not to get the frame info for frame 0.
+                        // But if the unwinder can't make one, lets make one by hand with the
+                        // SP as the CFA and see if that gets any further.
+                        if (!success)
+                        {
+                            cfa = reg_ctx_sp->GetSP();
+                            pc = reg_ctx_sp->GetPC();
+                        }
+                        
+                        unwind_frame_sp.reset (new StackFrame (m_thread.shared_from_this(),
+                                                               m_frames.size(), 
+                                                               idx,
+                                                               reg_ctx_sp,
+                                                               cfa,
+                                                               pc,
+                                                               NULL));
+                        m_frames.push_back (unwind_frame_sp);
+                    }
                 }
                 else
                 {
@@ -493,6 +503,8 @@ StackFrameList::GetFrameAtIndex (uint32_t idx)
 {
     StackFrameSP frame_sp;
     Mutex::Locker locker (m_mutex);
+    uint32_t original_idx = idx;
+    
     uint32_t inlined_depth = GetCurrentInlinedDepth();
     if (inlined_depth != UINT32_MAX)
         idx += inlined_depth;
@@ -503,44 +515,63 @@ StackFrameList::GetFrameAtIndex (uint32_t idx)
     if (frame_sp)
         return frame_sp;
         
-        // GetFramesUpTo will fill m_frames with as many frames as you asked for,
-        // if there are that many.  If there weren't then you asked for too many
-        // frames.
-        GetFramesUpTo (idx);
-        if (idx < m_frames.size())
+    // GetFramesUpTo will fill m_frames with as many frames as you asked for,
+    // if there are that many.  If there weren't then you asked for too many
+    // frames.
+    GetFramesUpTo (idx);
+    if (idx < m_frames.size())
+    {
+        if (m_show_inlined_frames)
         {
-            if (m_show_inlined_frames)
+            // When inline frames are enabled we actually create all the frames in GetFramesUpTo.
+            frame_sp = m_frames[idx];
+        }
+        else
+        {
+            Unwind *unwinder = m_thread.GetUnwinder ();
+            if (unwinder)
             {
-                // When inline frames are enabled we actually create all the frames in GetFramesUpTo.
-                frame_sp = m_frames[idx];
-            }
-            else
-            {
-                Unwind *unwinder = m_thread.GetUnwinder ();
-                if (unwinder)
+                addr_t pc, cfa;
+                if (unwinder->GetFrameInfoAtIndex(idx, cfa, pc))
                 {
-                    addr_t pc, cfa;
-                    if (unwinder->GetFrameInfoAtIndex(idx, cfa, pc))
+                    frame_sp.reset (new StackFrame (m_thread.shared_from_this(), idx, idx, cfa, pc, NULL));
+                    
+                    Function *function = frame_sp->GetSymbolContext (eSymbolContextFunction).function;
+                    if (function)
                     {
-                        frame_sp.reset (new StackFrame (m_thread.shared_from_this(), idx, idx, cfa, pc, NULL));
-                        
-                        Function *function = frame_sp->GetSymbolContext (eSymbolContextFunction).function;
-                        if (function)
-                        {
-                            // When we aren't showing inline functions we always use
-                            // the top most function block as the scope.
-                            frame_sp->SetSymbolContextScope (&function->GetBlock(false));
-                        }
-                        else 
-                        {
-                            // Set the symbol scope from the symbol regardless if it is NULL or valid.
-                            frame_sp->SetSymbolContextScope (frame_sp->GetSymbolContext (eSymbolContextSymbol).symbol);
-                        }
-                        SetFrameAtIndex(idx, frame_sp);
+                        // When we aren't showing inline functions we always use
+                        // the top most function block as the scope.
+                        frame_sp->SetSymbolContextScope (&function->GetBlock(false));
                     }
+                    else 
+                    {
+                        // Set the symbol scope from the symbol regardless if it is NULL or valid.
+                        frame_sp->SetSymbolContextScope (frame_sp->GetSymbolContext (eSymbolContextSymbol).symbol);
+                    }
+                    SetFrameAtIndex(idx, frame_sp);
                 }
             }
         }
+    }
+    else if (original_idx == 0)
+    {
+        // There should ALWAYS be a frame at index 0.  If something went wrong with the CurrentInlinedDepth such that
+        // there weren't as many frames as we thought taking that into account, then reset the current inlined depth
+        // and return the real zeroth frame.
+        if (m_frames.size() > 0)
+        {
+            ResetCurrentInlinedDepth();
+            frame_sp = m_frames[original_idx];
+        }
+        else
+        {
+            // Why do we have a thread with zero frames, that should not ever happen...
+            if (m_thread.IsValid())
+                assert ("A valid thread has no frames.");
+            
+        }
+    }
+    
     return frame_sp;
 }
 
@@ -564,19 +595,42 @@ StackFrameList::GetFrameWithConcreteFrameIndex (uint32_t unwind_idx)
     return frame_sp;
 }
 
+static bool
+CompareStackID (const StackFrameSP &stack_sp, const StackID &stack_id)
+{
+    return stack_sp->GetStackID() < stack_id;
+}
+
 StackFrameSP
 StackFrameList::GetFrameWithStackID (const StackID &stack_id)
 {
-    uint32_t frame_idx = 0;
     StackFrameSP frame_sp;
-    do
+    
+    if (stack_id.IsValid())
     {
-        frame_sp = GetFrameAtIndex (frame_idx);
-        if (frame_sp && frame_sp->GetStackID() == stack_id)
-            break;
-        frame_idx++;
+        Mutex::Locker locker (m_mutex);
+        uint32_t frame_idx = 0;
+        // Do a binary search in case the stack frame is already in our cache
+        collection::const_iterator begin = m_frames.begin();
+        collection::const_iterator end = m_frames.end();
+        if (begin != end)
+        {
+            collection::const_iterator pos = std::lower_bound (begin, end, stack_id, CompareStackID);
+            if (pos != end && (*pos)->GetStackID() == stack_id)
+                return *pos;
+            
+            if (m_frames.back()->GetStackID() < stack_id)
+                frame_idx = m_frames.size();
+        }
+        do
+        {
+            frame_sp = GetFrameAtIndex (frame_idx);
+            if (frame_sp && frame_sp->GetStackID() == stack_id)
+                break;
+            frame_idx++;
+        }
+        while (frame_sp);
     }
-    while (frame_sp);
     return frame_sp;
 }
 
@@ -686,7 +740,7 @@ StackFrameList::InvalidateFrames (uint32_t start_idx)
 }
 
 void
-StackFrameList::Merge (std::auto_ptr<StackFrameList>& curr_ap, lldb::StackFrameListSP& prev_sp)
+StackFrameList::Merge (std::unique_ptr<StackFrameList>& curr_ap, lldb::StackFrameListSP& prev_sp)
 {
     Mutex::Locker curr_locker (curr_ap.get() ? &curr_ap->m_mutex : NULL);
     Mutex::Locker prev_locker (prev_sp.get() ? &prev_sp->m_mutex : NULL);

@@ -3,44 +3,48 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
 <link href="style.css" rel="stylesheet" type="text/css" />
-<title>Downloading LLDB Sources</title>
+<title>Downloading LLDB</title>
 </head>
 
 <body>
-    <div class="www_title">
-      The <strong>LLDB</strong> Debugger
-    </div>
-    
+	<div class="www_title">
+		The <strong>LLDB</strong> Debugger
+	</div>
+	
 <div id="container">
 	<div id="content">
-        
-  <!--#include virtual="sidebar.incl"-->
-  
+		
+	<!--#include virtual="sidebar.incl"-->
+
 		<div id="middle">
-    		<div class="post">
-    			<h1 class ="postheader">Downloading LLDB sources</h1>
-    			<div class="postcontent">
-    			    <p>Obtaining read only access to the LLDB sources is easy:</p>
-    			    <ul>
-    			        <li>svn co http://llvm.org/svn/llvm-project/lldb/trunk lldb</li>
-    			    </ul>
-    			</div>
-              	<div class="postfooter"></div>
-          	</div>
-    		<div class="post">
-    			<h1 class ="postheader">Committing LLDB sources</h1>
-    			<div class="postcontent">
-    			    <p>If you wish to contribute to LLDB, you must first get commit access by
-    			        <a href="http://llvm.org/docs/DeveloperPolicy.html#commitaccess">requesting commit access</a></p>
-                    <p>Once you have commit access, you will have a <b>USERNAME</b> and you can checkout the sources:
-        			        <a href="http://llvm.org/docs/DeveloperPolicy.html#commitaccess">requesting commit access</a></p>
-    			    <ul>
-    			        <li>svn co https://USERNAME@llvm.org/svn/llvm-project/lldb/trunk lldb</li>
-    			    </ul>
-    			</div>
-              	<div class="postfooter"></div>
-          	</div>
-      	</div>
+			<div class="post">
+				<h1 class ="postheader">Latest LLDB</h1>
+				<div class="postcontent">
+					<p>Nightly builds of LLDB are <a href="http://blog.llvm.org/2013/04/llvm-debianubuntu-nightly-packages.html">packaged and tested</a> from trunk:</p>
+					<ul>
+						<li>Debian and Ubuntu:
+						<a href="http://llvm.org/apt/">llvm.org/apt</a></li>
+					</ul>
+				</div>
+				<div class="postfooter"></div>
+			</div>
+			<div class="post">
+				<h1 class ="postheader">LLDB releases</h1>
+				<div class="postcontent">
+					<p>Debian packages are available for LLDB 3.2 and later.</p>
+					<ul>
+						<li><a href="http://packages.debian.org/experimental/lldb-3.4">LLDB 3.4 - incremental release</a> (experimental)</li>
+							<ul>
+								<li><a href="http://packages.debian.org/experimental/amd64/lldb-3.4/download">amd64</a> (x86-64)</li>
+								<li><a href="http://packages.debian.org/experimental/s390/lldb-3.4/download">System/390</a> (i386)</li>
+							</ul>
+						<li><a href="http://packages.debian.org/unstable/lldb-3.3">LLDB 3.3</a> (unstable)</li>
+						<li><a href="http://packages.debian.org/unstable/lldb-3.2">LLDB 3.2</a> (unstable)</li>
+					</ul>
+				</div>
+				<div class="postfooter"></div>
+			</div>
+		</div>
 	</div>
 </div>
 </body>

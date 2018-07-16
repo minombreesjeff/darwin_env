@@ -46,7 +46,8 @@ BreakpointLocation::BreakpointLocation
     m_address (addr),
     m_owner (owner),
     m_options_ap (),
-    m_bp_site_sp ()
+    m_bp_site_sp (),
+    m_condition_mutex ()
 {
     SetThreadID (tid);
     m_being_created = false;
@@ -240,9 +241,121 @@ BreakpointLocation::SetCondition (const char *condition)
 }
 
 const char *
-BreakpointLocation::GetConditionText () const
+BreakpointLocation::GetConditionText (size_t *hash) const
 {
-    return GetOptionsNoCreate()->GetConditionText();
+    return GetOptionsNoCreate()->GetConditionText(hash);
+}
+
+bool
+BreakpointLocation::ConditionSaysStop (ExecutionContext &exe_ctx, Error &error)
+{
+    Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
+ 
+    Mutex::Locker evaluation_locker(m_condition_mutex);
+    
+    size_t condition_hash;
+    const char *condition_text = GetConditionText(&condition_hash);
+    
+    if (!condition_text)
+    {
+        m_user_expression_sp.reset();
+        return false;
+    }
+    
+    if (condition_hash != m_condition_hash ||
+        !m_user_expression_sp ||
+        !m_user_expression_sp->MatchesContext(exe_ctx))
+    {
+        m_user_expression_sp.reset(new ClangUserExpression(condition_text,
+                                                           NULL,
+                                                           lldb::eLanguageTypeUnknown,
+                                                           ClangUserExpression::eResultTypeAny));
+        
+        StreamString errors;
+        
+        if (!m_user_expression_sp->Parse(errors,
+                                         exe_ctx,
+                                         eExecutionPolicyOnlyWhenNeeded,
+                                         true))
+        {
+            error.SetErrorStringWithFormat("Couldn't parse conditional expression:\n%s",
+                                           errors.GetData());
+            m_user_expression_sp.reset();
+            return false;
+        }
+        
+        m_condition_hash = condition_hash;
+    }
+
+    // We need to make sure the user sees any parse errors in their condition, so we'll hook the
+    // constructor errors up to the debugger's Async I/O.
+        
+    ValueObjectSP result_value_sp;
+    const bool unwind_on_error = true;
+    const bool ignore_breakpoints = true;
+    const bool try_all_threads = true;
+    
+    Error expr_error;
+    
+    StreamString execution_errors;
+    
+    ClangExpressionVariableSP result_variable_sp;
+    
+    ExecutionResults result_code =
+    m_user_expression_sp->Execute(execution_errors,
+                                  exe_ctx,
+                                  unwind_on_error,
+                                  ignore_breakpoints,
+                                  m_user_expression_sp,
+                                  result_variable_sp,
+                                  try_all_threads,
+                                  ClangUserExpression::kDefaultTimeout);
+    
+    bool ret;
+    
+    if (result_code == eExecutionCompleted)
+    {
+        if (!result_variable_sp)
+        {
+            ret = false;
+            error.SetErrorString("Expression did not return a result");
+            return false;
+        }
+        
+        result_value_sp = result_variable_sp->GetValueObject();
+
+        if (result_value_sp)
+        {
+            Scalar scalar_value;
+            if (result_value_sp->ResolveValue (scalar_value))
+            {
+                if (scalar_value.ULongLong(1) == 0)
+                    ret = false;
+                else
+                    ret = true;
+                if (log)
+                    log->Printf("Condition successfully evaluated, result is %s.\n",
+                                ret ? "true" : "false");
+            }
+            else
+            {
+                ret = false;
+                error.SetErrorString("Failed to get an integer result from the expression");
+            }
+        }
+        else
+        {
+            ret = false;
+            error.SetErrorString("Failed to get any result from the expression");
+        }
+    }
+    else
+    {
+        ret = false;
+        error.SetErrorStringWithFormat("Couldn't execute expression:\n%s", execution_errors.GetData());
+    }
+    
+    return ret;
 }
 
 uint32_t
@@ -322,7 +435,7 @@ bool
 BreakpointLocation::ShouldStop (StoppointCallbackContext *context)
 {
     bool should_stop = true;
-    LogSP log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
+    Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
 
     IncrementHitCount();
 
@@ -371,14 +484,11 @@ BreakpointLocation::ResolveBreakpointSite ()
     if (process == NULL)
         return false;
 
-    if (m_owner.GetTarget().GetSectionLoadList().IsEmpty())
-        return false;
-
     lldb::break_id_t new_id = process->CreateBreakpointSite (shared_from_this(), false);
 
     if (new_id == LLDB_INVALID_BREAK_ID)
     {
-        LogSP log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
+        Log *log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
         if (log)
             log->Warning ("Tried to add breakpoint site at 0x%" PRIx64 " but it was already present.\n",
                           m_address.GetOpcodeLoadAddress (&m_owner.GetTarget()));

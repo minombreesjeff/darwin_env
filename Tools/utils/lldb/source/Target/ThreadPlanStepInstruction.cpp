@@ -44,7 +44,14 @@ ThreadPlanStepInstruction::ThreadPlanStepInstruction
     m_step_over (step_over)
 {
     m_instruction_addr = m_thread.GetRegisterContext()->GetPC(0);
-    m_stack_id = m_thread.GetStackFrameAtIndex(0)->GetStackID();
+    StackFrameSP m_start_frame_sp(m_thread.GetStackFrameAtIndex(0));
+    m_stack_id = m_start_frame_sp->GetStackID();
+    
+    m_start_has_symbol = m_start_frame_sp->GetSymbolContext(eSymbolContextSymbol).symbol != NULL;
+    
+    StackFrameSP parent_frame_sp = m_thread.GetStackFrameAtIndex(1);
+    if (parent_frame_sp)
+        m_parent_frame_id = parent_frame_sp->GetStackID();
 }
 
 ThreadPlanStepInstruction::~ThreadPlanStepInstruction ()
@@ -65,6 +72,9 @@ ThreadPlanStepInstruction::GetDescription (Stream *s, lldb::DescriptionLevel lev
     {
         s->Printf ("Stepping one instruction past ");
         s->Address(m_instruction_addr, sizeof (addr_t));
+        if (!m_start_has_symbol)
+            s->Printf(" which has no symbol");
+        
         if (m_step_over)
             s->Printf(" stepping over calls");
         else
@@ -81,9 +91,9 @@ ThreadPlanStepInstruction::ValidatePlan (Stream *error)
 }
 
 bool
-ThreadPlanStepInstruction::PlanExplainsStop ()
+ThreadPlanStepInstruction::DoPlanExplainsStop (Event *event_ptr)
 {
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    StopInfoSP stop_info_sp = GetPrivateStopInfo ();
     if (stop_info_sp)
     {
         StopReason reason = stop_info_sp->GetStopReason();
@@ -100,7 +110,7 @@ ThreadPlanStepInstruction::ShouldStop (Event *event_ptr)
 {
     if (m_step_over)
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         
         StackID cur_frame_zero_id = m_thread.GetStackFrameAtIndex(0)->GetStackID();
         
@@ -120,29 +130,42 @@ ThreadPlanStepInstruction::ShouldStop (Event *event_ptr)
             StackFrame *return_frame = m_thread.GetStackFrameAtIndex(1).get();
             if (return_frame)
             {
-                if (log)
+                if (return_frame->GetStackID() != m_parent_frame_id || m_start_has_symbol)
                 {
-                    StreamString s;
-                    s.PutCString ("Stepped in to: ");
-                    addr_t stop_addr = m_thread.GetStackFrameAtIndex(0)->GetRegisterContext()->GetPC();
-                    s.Address (stop_addr, m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
-                    s.PutCString (" stepping out to: ");
-                    addr_t return_addr = return_frame->GetRegisterContext()->GetPC();
-                    s.Address (return_addr, m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
-                    log->Printf("%s.", s.GetData());
+                    if (log)
+                    {
+                        StreamString s;
+                        s.PutCString ("Stepped in to: ");
+                        addr_t stop_addr = m_thread.GetStackFrameAtIndex(0)->GetRegisterContext()->GetPC();
+                        s.Address (stop_addr, m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
+                        s.PutCString (" stepping out to: ");
+                        addr_t return_addr = return_frame->GetRegisterContext()->GetPC();
+                        s.Address (return_addr, m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
+                        log->Printf("%s.", s.GetData());
+                    }
+                    
+                    // StepInstruction should probably have the tri-state RunMode, but for now it is safer to
+                    // run others.
+                    const bool stop_others = false;
+                    m_thread.QueueThreadPlanForStepOut(false,
+                                                       NULL,
+                                                       true,
+                                                       stop_others,
+                                                       eVoteNo,
+                                                       eVoteNoOpinion,
+                                                       0);
+                    return false;
                 }
-                
-                // StepInstruction should probably have the tri-state RunMode, but for now it is safer to
-                // run others.
-                const bool stop_others = false;
-                m_thread.QueueThreadPlanForStepOut(false,
-                                                   NULL,
-                                                   true,
-                                                   stop_others,
-                                                   eVoteNo,
-                                                   eVoteNoOpinion,
-                                                   0);
-                return false;
+                else
+                {
+                    if (log)
+                    {
+                        log->PutCString("The stack id we are stepping in changed, but our parent frame did not when stepping from code with no symbols.  "
+                        "We are probably just confused about where we are, stopping.");
+                    }
+                    SetPlanComplete();
+                    return true;
+                }
             }
             else
             {
@@ -190,7 +213,7 @@ ThreadPlanStepInstruction::MischiefManaged ()
 {
     if (IsPlanComplete())
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
             log->Printf("Completed single instruction step plan.");
         ThreadPlan::MischiefManaged ();

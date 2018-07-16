@@ -34,7 +34,8 @@ CommandObjectMultiword::CommandObjectMultiword
     const char *syntax,
     uint32_t flags
 ) :
-    CommandObject (interpreter, name, help, syntax, flags)
+    CommandObject (interpreter, name, help, syntax, flags),
+    m_can_be_removed(false)
 {
 }
 
@@ -100,7 +101,6 @@ CommandObjectMultiword::LoadSubCommand
     if (pos == m_subcommand_dict.end())
     {
         m_subcommand_dict[name] = cmd_obj;
-        m_interpreter.CrossRegisterCommand (name, GetCommandName());
     }
     else
         success = false;
@@ -115,7 +115,7 @@ CommandObjectMultiword::Execute(const char *args_string, CommandReturnObject &re
     const size_t argc = args.GetArgumentCount();
     if (argc == 0)
     {
-        GenerateHelpText (result);
+        this->CommandObject::GenerateHelpText (result);
     }
     else
     {
@@ -125,7 +125,7 @@ CommandObjectMultiword::Execute(const char *args_string, CommandReturnObject &re
         {
             if (::strcasecmp (sub_command, "help") == 0)
             {
-                GenerateHelpText (result);
+                this->CommandObject::GenerateHelpText (result);
             }
             else if (!m_subcommand_dict.empty())
             {
@@ -143,7 +143,7 @@ CommandObjectMultiword::Execute(const char *args_string, CommandReturnObject &re
                 else
                 {
                     std::string error_msg;
-                    int num_subcmd_matches = matches.GetSize();
+                    const size_t num_subcmd_matches = matches.GetSize();
                     if (num_subcmd_matches > 0)
                         error_msg.assign ("ambiguous command ");
                     else
@@ -158,14 +158,14 @@ CommandObjectMultiword::Execute(const char *args_string, CommandReturnObject &re
                     if (num_subcmd_matches > 0)
                     {
                         error_msg.append (" Possible completions:");
-                        for (int i = 0; i < num_subcmd_matches; i++)
+                        for (size_t i = 0; i < num_subcmd_matches; i++)
                         {
                             error_msg.append ("\n\t");
                             error_msg.append (matches.GetStringAtIndex (i));
                         }
                     }
                     error_msg.append ("\n");
-                    result.AppendRawError (error_msg.c_str(), error_msg.size());
+                    result.AppendRawError (error_msg.c_str());
                     result.SetStatus (eReturnStatusFailed);
                 }
             }
@@ -181,12 +181,11 @@ CommandObjectMultiword::Execute(const char *args_string, CommandReturnObject &re
 }
 
 void
-CommandObjectMultiword::GenerateHelpText (CommandReturnObject &result)
+CommandObjectMultiword::GenerateHelpText (Stream &output_stream)
 {
     // First time through here, generate the help text for the object and
     // push it to the return result object as well
 
-    Stream &output_stream = result.GetOutputStream();
     output_stream.PutCString ("The following subcommands are supported:\n\n");
 
     CommandMap::iterator pos;
@@ -203,14 +202,14 @@ CommandObjectMultiword::GenerateHelpText (CommandReturnObject &result)
         {
             std::string help_text (pos->second->GetHelp());
             help_text.append ("  This command takes 'raw' input (no need to quote stuff).");
-            m_interpreter.OutputFormattedHelpText (result.GetOutputStream(),
+            m_interpreter.OutputFormattedHelpText (output_stream,
                                                    indented_command.c_str(),
                                                    "--",
                                                    help_text.c_str(),
                                                    max_len);
         }
         else
-            m_interpreter.OutputFormattedHelpText (result.GetOutputStream(), 
+            m_interpreter.OutputFormattedHelpText (output_stream, 
                                                    indented_command.c_str(),
                                                    "--", 
                                                    pos->second->GetHelp(), 
@@ -218,8 +217,6 @@ CommandObjectMultiword::GenerateHelpText (CommandReturnObject &result)
     }
 
     output_stream.PutCString ("\nFor more help on any particular subcommand, type 'help <command> <subcommand>'.\n");
-
-    result.SetStatus (eReturnStatusSuccessFinishNoResult);
 }
 
 int
@@ -362,23 +359,6 @@ CommandObjectProxy::GetHelpLong ()
     if (proxy_command)
         return proxy_command->GetHelpLong();
     return NULL;
-}
-
-void
-CommandObjectProxy::AddObject (const char *obj_name)
-{
-    CommandObject *proxy_command = GetProxyCommandObject();
-    if (proxy_command)
-        return proxy_command->AddObject (obj_name);
-}
-
-bool
-CommandObjectProxy::IsCrossRefObject ()
-{
-    CommandObject *proxy_command = GetProxyCommandObject();
-    if (proxy_command)
-        return proxy_command->IsCrossRefObject();
-    return false;
 }
 
 bool

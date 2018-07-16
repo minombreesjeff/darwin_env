@@ -26,6 +26,7 @@
 #include "ProcessKDP.h"
 #include "ProcessKDPLog.h"
 #include "RegisterContextKDP_arm.h"
+#include "RegisterContextKDP_arm64.h"
 #include "RegisterContextKDP_i386.h"
 #include "RegisterContextKDP_x86_64.h"
 #include "Plugins/Process/Utility/StopInfoMachException.h"
@@ -66,23 +67,6 @@ ThreadKDP::GetQueueName ()
     return NULL;
 }
 
-bool
-ThreadKDP::WillResume (StateType resume_state)
-{
-    // Call the Thread::WillResume first. If we stop at a signal, the stop info
-    // class for signal will set the resume signal that we need below. The signal
-    // stuff obeys the Process::UnixSignal defaults. 
-    Thread::WillResume(resume_state);
-
-    ClearStackFrames();
-
-    lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP));
-    if (log)
-        log->Printf ("Resuming thread: %4.4" PRIx64 " with state: %s.", GetID(), StateAsCString(resume_state));
-
-    return true;
-}
-
 void
 ThreadKDP::RefreshStateAfterStop()
 {
@@ -95,18 +79,10 @@ ThreadKDP::RefreshStateAfterStop()
     // register supply functions where they check the process stop ID and do
     // the right thing.
     const bool force = false;
-    GetRegisterContext()->InvalidateIfNeeded (force);
+    lldb::RegisterContextSP reg_ctx_sp (GetRegisterContext());
+    if (reg_ctx_sp)
+        reg_ctx_sp->InvalidateIfNeeded (force);
 }
-
-void
-ThreadKDP::ClearStackFrames ()
-{
-    Unwind *unwinder = GetUnwinder ();
-    if (unwinder)
-        unwinder->Clear();
-    Thread::ClearStackFrames();
-}
-
 
 bool
 ThreadKDP::ThreadIDIsValid (lldb::tid_t thread)
@@ -152,6 +128,9 @@ ThreadKDP::CreateRegisterContextForFrame (StackFrame *frame)
                 case llvm::MachO::CPUTypeARM:
                     reg_ctx_sp.reset (new RegisterContextKDP_arm (*this, concrete_frame_idx));
                     break;
+                case llvm::MachO::CPUTypeARM64:
+                    reg_ctx_sp.reset (new RegisterContextKDP_arm64 (*this, concrete_frame_idx));
+                    break;
                 case llvm::MachO::CPUTypeI386:
                     reg_ctx_sp.reset (new RegisterContextKDP_i386 (*this, concrete_frame_idx));
                     break;
@@ -164,37 +143,38 @@ ThreadKDP::CreateRegisterContextForFrame (StackFrame *frame)
             }
         }
     }
-    else if (m_unwinder_ap.get())
-        reg_ctx_sp = m_unwinder_ap->CreateRegisterContextForFrame (frame);
+    else
+    {
+        Unwind *unwinder = GetUnwinder ();
+        if (unwinder)
+            reg_ctx_sp = unwinder->CreateRegisterContextForFrame (frame);
+    }
     return reg_ctx_sp;
 }
 
-lldb::StopInfoSP
-ThreadKDP::GetPrivateStopReason ()
+bool
+ThreadKDP::CalculateStopInfo ()
 {
     ProcessSP process_sp (GetProcess());
     if (process_sp)
     {
-        const uint32_t process_stop_id = process_sp->GetStopID();
-        if (m_thread_stop_reason_stop_id != process_stop_id ||
-            (m_actual_stop_info_sp && !m_actual_stop_info_sp->IsValid()))
+        if (m_cached_stop_info_sp)
         {
-            if (IsStillAtLastBreakpointHit())
-                return m_actual_stop_info_sp;
-
-            if (m_cached_stop_info_sp)
-                SetStopInfo (m_cached_stop_info_sp);
-            else
-                SetStopInfo(StopInfo::CreateStopReasonWithSignal (*this, SIGSTOP));
+            SetStopInfo (m_cached_stop_info_sp);
         }
+        else
+        {
+            SetStopInfo(StopInfo::CreateStopReasonWithSignal (*this, SIGSTOP));
+        }
+        return true;
     }
-    return m_actual_stop_info_sp;
+    return false;
 }
 
 void
 ThreadKDP::SetStopInfoFrom_KDP_EXCEPTION (const DataExtractor &exc_reply_packet)
 {
-    uint32_t offset = 0;
+    lldb::offset_t offset = 0;
     uint8_t reply_command = exc_reply_packet.GetU8(&offset);
     if (reply_command == CommunicationKDP::KDP_EXCEPTION)
     {

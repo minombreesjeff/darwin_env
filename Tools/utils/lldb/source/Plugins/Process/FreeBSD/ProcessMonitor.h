@@ -54,6 +54,7 @@ public:
                    const char *stdin_path,
                    const char *stdout_path,
                    const char *stderr_path,
+                   const char *working_dir,
                    lldb_private::Error &error);
 
     ProcessMonitor(ProcessPOSIX *process,
@@ -103,36 +104,66 @@ public:
     /// dependent) offset.
     ///
     /// This method is provided for use by RegisterContextFreeBSD derivatives.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    ReadRegisterValue(unsigned offset, unsigned size, lldb_private::RegisterValue &value);
+    ReadRegisterValue(lldb::tid_t tid, unsigned offset, const char *reg_name,
+                      unsigned size, lldb_private::RegisterValue &value);
 
     /// Writes the given value to the register identified by the given
     /// (architecture dependent) offset.
     ///
     /// This method is provided for use by RegisterContextFreeBSD derivatives.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    WriteRegisterValue(unsigned offset, const lldb_private::RegisterValue &value);
+    WriteRegisterValue(lldb::tid_t tid, unsigned offset, const char *reg_name,
+                       const lldb_private::RegisterValue &value);
 
     /// Reads all general purpose registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    ReadGPR(void *buf);
+    ReadGPR(lldb::tid_t tid, void *buf, size_t buf_size);
 
     /// Reads all floating point registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    ReadFPR(void *buf);
+    ReadFPR(lldb::tid_t tid, void *buf, size_t buf_size);
+
+    /// Reads the specified register set into the specified buffer.
+    ///
+    /// This method is provided for use by RegisterContextFreeBSD derivatives.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
+    bool
+    ReadRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset);
 
     /// Writes all general purpose registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    WriteGPR(void *buf);
+    WriteGPR(lldb::tid_t tid, void *buf, size_t buf_size);
 
     /// Writes all floating point registers into the specified buffer.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
     bool
-    WriteFPR(void *buf);
+    WriteFPR(lldb::tid_t tid, void *buf, size_t buf_size);
+
+    /// Writes the specified register set into the specified buffer.
+    ///
+    /// This method is provided for use by RegisterContextFreeBSD derivatives.
+    /// FIXME: The FreeBSD implementation of this function should use tid in order
+    ///        to enable support for debugging threaded programs.
+    bool
+    WriteRegisterSet(lldb::tid_t tid, void *buf, size_t buf_size, unsigned int regset);
 
     /// Writes a siginfo_t structure corresponding to the given thread ID to the
     /// memory region pointed to by @p siginfo.
     bool
-    GetSignalInfo(lldb::tid_t tid, void *siginfo, int &errno);
+    GetSignalInfo(lldb::tid_t tid, void *siginfo, int &error_no);
 
     /// Writes the raw event message code (vis-a-vis PTRACE_GETEVENTMSG)
     /// corresponding to the given thread IDto the memory pointed to by @p
@@ -157,8 +188,10 @@ public:
     BringProcessIntoLimbo();
 
     lldb_private::Error
-    Detach();
+    Detach(lldb::tid_t tid);
 
+    void
+    StopMonitor();
 
 private:
     ProcessFreeBSD *m_process;
@@ -196,7 +229,8 @@ private:
                    char const **envp,
                    const char *stdin_path,
                    const char *stdout_path,
-                   const char *stderr_path);
+                   const char *stderr_path,
+                   const char *working_dir);
 
         ~LaunchArgs();
 
@@ -206,13 +240,11 @@ private:
         const char *m_stdin_path;       // Redirect stdin or NULL.
         const char *m_stdout_path;      // Redirect stdout or NULL.
         const char *m_stderr_path;      // Redirect stderr or NULL.
+        const char *m_working_dir;      // Working directory or NULL.
     };
 
     void
     StartLaunchOpThread(LaunchArgs *args, lldb_private::Error &error);
-
-    void
-    StopLaunchOpThread();
 
     static void *
     LaunchOpThread(void *arg);
@@ -235,9 +267,6 @@ private:
 
     void
     StartAttachOpThread(AttachArgs *args, lldb_private::Error &error);
-
-    void
-    StopAttachOpThread();
 
     static void *
     AttachOpThread(void *args);
@@ -282,8 +311,9 @@ private:
     void
     StopMonitoringChildProcess();
 
-    void 
-    StopMonitor();
+    /// Stops the operation thread used to attach/launch a process.
+    void
+    StopOpThread();
 
     void
     CloseFD(int &fd);

@@ -17,11 +17,13 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Event.h"
 #include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/OptionGroupPlatform.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/TargetList.h"
@@ -80,8 +82,67 @@ TargetList::CreateTarget (Debugger &debugger,
             return error;
         }
     }
-
+    
     ArchSpec platform_arch(arch);
+
+    
+    if (user_exe_path && user_exe_path[0])
+    {
+        ModuleSpecList module_specs;
+        ModuleSpec module_spec;
+        module_spec.GetFileSpec().SetFile(user_exe_path, true);
+        lldb::offset_t file_offset = 0;
+        const size_t num_specs = ObjectFile::GetModuleSpecifications (module_spec.GetFileSpec(), file_offset, module_specs);
+        if (num_specs > 0)
+        {
+            ModuleSpec matching_module_spec;
+
+            if (num_specs == 1)
+            {
+                if (module_specs.GetModuleSpecAtIndex(0, matching_module_spec))
+                {
+                    if (platform_arch.IsValid())
+                    {
+                        if (!platform_arch.IsCompatibleMatch(matching_module_spec.GetArchitecture()))
+                        {
+                            error.SetErrorStringWithFormat("the specified architecture '%s' is not compatible with '%s' in '%s'",
+                                                           platform_arch.GetTriple().str().c_str(),
+                                                           matching_module_spec.GetArchitecture().GetTriple().str().c_str(),
+                                                           module_spec.GetFileSpec().GetPath().c_str());
+                            return error;
+                        }
+                    }
+                    else
+                    {
+                        // Only one arch and none was specified
+                        platform_arch = matching_module_spec.GetArchitecture();
+                    }
+                }
+            }
+            else
+            {
+                if (arch.IsValid())
+                {
+                    module_spec.GetArchitecture() = arch;
+                    if (module_specs.FindMatchingModuleSpec(module_spec, matching_module_spec))
+                    {
+                        platform_arch = matching_module_spec.GetArchitecture();
+                    }
+                }
+                // Don't just select the first architecture, we want to let the platform select
+                // the best architecture first when there are multiple archs.
+//                else
+//                {
+//                    // No arch specified, select the first arch
+//                    if (module_specs.GetModuleSpecAtIndex(0, matching_module_spec))
+//                    {
+//                        platform_arch = matching_module_spec.GetArchitecture();
+//                    }
+//                }
+            }
+        }
+    }
+
     CommandInterpreter &interpreter = debugger.GetCommandInterpreter();
     if (platform_options)
     {
@@ -104,7 +165,7 @@ TargetList::CreateTarget (Debugger &debugger,
         // current architecture if we have a valid architecture.
         platform_sp = debugger.GetPlatformList().GetSelectedPlatform ();
         
-        if (arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, &platform_arch))
+        if (arch.IsValid() && !platform_sp->IsCompatibleArchitecture(arch, false, &platform_arch))
         {
             platform_sp = Platform::GetPlatformForArchitecture(arch, &platform_arch);
         }
@@ -142,7 +203,7 @@ TargetList::CreateTarget (Debugger &debugger,
     {
         if (arch.IsValid())
         {
-            if (!platform_sp->IsCompatibleArchitecture(arch))
+            if (!platform_sp->IsCompatibleArchitecture(arch, false, NULL))
                 platform_sp = Platform::GetPlatformForArchitecture(specified_arch, &arch);
         }
     }
@@ -158,6 +219,10 @@ TargetList::CreateTarget (Debugger &debugger,
         arch = specified_arch;
 
     FileSpec file (user_exe_path, false);
+    if (!file.Exists() && user_exe_path && user_exe_path[0] == '~')
+    {
+        file = FileSpec(user_exe_path, true);
+    }
     bool user_exe_path_is_bundle = false;
     char resolved_bundle_exe_path[PATH_MAX];
     resolved_bundle_exe_path[0] = '\0';
@@ -178,7 +243,9 @@ TargetList::CreateTarget (Debugger &debugger,
                     std::string cwd_user_exe_path (cwd);
                     cwd_user_exe_path += '/';
                     cwd_user_exe_path += user_exe_path;
-                    file.SetFile(cwd_user_exe_path.c_str(), false);
+                    FileSpec cwd_file (cwd_user_exe_path.c_str(), false);
+                    if (cwd_file.Exists())
+                        file = cwd_file;
                 }
             }
         }
@@ -199,18 +266,14 @@ TargetList::CreateTarget (Debugger &debugger,
             {
                 if (arch.IsValid())
                 {
-                    error.SetErrorStringWithFormat("\"%s%s%s\" doesn't contain architecture %s",
-                                                   file.GetDirectory().AsCString(),
-                                                   file.GetDirectory() ? "/" : "",
-                                                   file.GetFilename().AsCString(),
+                    error.SetErrorStringWithFormat("\"%s\" doesn't contain architecture %s",
+                                                   file.GetPath().c_str(),
                                                    arch.GetArchitectureName());
                 }
                 else
                 {
-                    error.SetErrorStringWithFormat("unsupported file type \"%s%s%s\"",
-                                                   file.GetDirectory().AsCString(),
-                                                   file.GetDirectory() ? "/" : "",
-                                                   file.GetFilename().AsCString());
+                    error.SetErrorStringWithFormat("unsupported file type \"%s\"",
+                                                   file.GetPath().c_str());
                 }
                 return error;
             }
@@ -301,7 +364,7 @@ TargetList::FindTargetWithExecutableAndArchitecture
             {
                 if (exe_arch_ptr)
                 {
-                    if (*exe_arch_ptr != exe_module->GetArchitecture())
+                    if (!exe_arch_ptr->IsCompatibleMatch(exe_module->GetArchitecture()))
                         continue;
                 }
                 target_sp = *pos;

@@ -26,16 +26,17 @@ public:
 
     virtual void GetDescription (Stream *s, lldb::DescriptionLevel level);
     virtual bool ValidatePlan (Stream *error);
-    virtual bool PlanExplainsStop ();
     virtual bool ShouldStop (Event *event_ptr);
     virtual bool StopOthers ();
     virtual lldb::StateType GetPlanRunState ();
-    virtual bool WillResume (lldb::StateType resume_state, bool current_plan);
     virtual bool WillStop ();
     virtual bool MischiefManaged ();
     virtual void DidPush();
 
 protected:
+    virtual bool DoPlanExplainsStop (Event *event_ptr);
+    virtual bool DoWillResume (lldb::StateType resume_state, bool current_plan);
+
     ThreadPlanStepThrough (Thread &thread,
                            StackID &return_stack_id,
                            bool stop_others);
@@ -47,7 +48,7 @@ protected:
     HitOurBackstopBreakpoint();
 
 private:
-    friend ThreadPlan *
+    friend lldb::ThreadPlanSP
     Thread::QueueThreadPlanForStepThrough (StackID &return_stack_id,
                                            bool abort_other_plans,
                                            bool stop_others);

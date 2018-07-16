@@ -10,6 +10,9 @@ class TestObjCStepping(TestBase):
 
     mydir = os.path.join("lang", "c", "stepping")
 
+    def getCategories(self):
+        return ['basic_process']
+
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @python_api_test
     @dsym_test
@@ -18,7 +21,7 @@ class TestObjCStepping(TestBase):
         self.buildDsym()
         self.step_over_stepping()
 
-    @expectedFailureLinux # bugzilla 14437
+    @expectedFailureLinux # llvm.org/pr14437
     @python_api_test
     @dwarf_test
     def test_with_dwarf_and_python_api(self):
@@ -72,6 +75,9 @@ class TestObjCStepping(TestBase):
 
         thread = threads[0]
 
+        # Get the stop id and for fun make sure it increases:
+        old_stop_id = process.GetStopID()
+
         # Now step over, which should cause us to hit the breakpoint in "a"
         thread.StepOver()
 
@@ -79,6 +85,10 @@ class TestObjCStepping(TestBase):
         threads = lldbutil.get_threads_stopped_at_breakpoint (process, break_in_a)
         if len(threads) != 1:
             self.fail ("Failed to stop at breakpoint in a.")
+
+        # Check that the stop ID increases:
+        new_stop_id = process.GetStopID()
+        self.assertTrue(new_stop_id > old_stop_id, "Stop ID increases monotonically.")
 
         thread = threads[0]
 
@@ -99,13 +109,25 @@ class TestObjCStepping(TestBase):
         current_bp.append(thread.GetStopReasonDataAtIndex(0))
         current_bp.append(thread.GetStopReasonDataAtIndex(1))
 
-        frame.EvaluateExpression ('(int) printf ("aaaaaaaaaa\n")')
+        stop_id_before_expression = process.GetStopID()
+        stop_id_before_including_expressions = process.GetStopID(True)
+
+        frame.EvaluateExpression ("(int) printf (print_string)")
 
         frame = thread.GetFrameAtIndex(0)
         self.assertTrue (current_line == frame.GetLineEntry().GetLine(), "The line stayed the same after expression.")
         self.assertTrue (current_file == frame.GetLineEntry().GetFileSpec(), "The file stayed the same after expression.")
         self.assertTrue (thread.GetStopReason() == lldb.eStopReasonBreakpoint, "We still say we stopped for a breakpoint.")
         self.assertTrue (thread.GetStopReasonDataAtIndex(0) == current_bp[0] and thread.GetStopReasonDataAtIndex(1) == current_bp[1], "And it is the same breakpoint.")
+        
+        # Also make sure running the expression didn't change the public stop id
+        # but did change if we are asking for expression stops as well.
+        stop_id_after_expression = process.GetStopID()
+        stop_id_after_including_expressions = process.GetStopID(True)
+
+        self.assertTrue (stop_id_before_expression == stop_id_after_expression, "Expression calling doesn't change stop ID")
+
+        self.assertTrue (stop_id_after_including_expressions > stop_id_before_including_expressions, "Stop ID including expressions increments over expression call.")
 
         # Do the same thing with an expression that's going to crash, and make sure we are still unchanged.
 
@@ -161,6 +183,71 @@ class TestObjCStepping(TestBase):
         self.assertTrue (thread.GetFrameAtIndex(0).GetLineEntry().GetLine() == current_line)
         self.assertTrue (thread.GetFrameAtIndex(0).GetLineEntry().GetFileSpec() == current_file)
 
+        # Now we are going to test step in targetting a function:
+
+        break_in_b.SetEnabled (False)
+
+        break_before_complex_1 = target.BreakpointCreateBySourceRegex ('// Stop here to try step in targetting b.', self.main_source_spec)
+        self.assertTrue(break_before_complex_1, VALID_BREAKPOINT)
+
+        break_before_complex_2 = target.BreakpointCreateBySourceRegex ('// Stop here to try step in targetting complex.', self.main_source_spec)
+        self.assertTrue(break_before_complex_2, VALID_BREAKPOINT)
+
+        break_before_complex_3 = target.BreakpointCreateBySourceRegex ('// Stop here to step targetting b and hitting breakpoint.', self.main_source_spec)
+        self.assertTrue(break_before_complex_3, VALID_BREAKPOINT)
+
+        break_before_complex_4 = target.BreakpointCreateBySourceRegex ('// Stop here to make sure bogus target steps over.', self.main_source_spec)
+        self.assertTrue(break_before_complex_4, VALID_BREAKPOINT)
+
+        threads = lldbutil.continue_to_breakpoint(process, break_before_complex_1)
+        self.assertTrue (len(threads) == 1)
+        thread = threads[0]
+        break_before_complex_1.SetEnabled(False)
+
+        thread.StepInto ("b")
+        self.assertTrue (thread.GetFrameAtIndex(0).GetFunctionName() == "b")
+
+        # Now continue out and stop at the next call to complex.  This time step all the way into complex:
+        threads = lldbutil.continue_to_breakpoint (process, break_before_complex_2)
+        self.assertTrue (len(threads) == 1)
+        thread = threads[0]
+        break_before_complex_2.SetEnabled(False)
+
+        thread.StepInto ("complex")
+        self.assertTrue (thread.GetFrameAtIndex(0).GetFunctionName() == "complex")
+        
+        # Now continue out and stop at the next call to complex.  This time enable breakpoints in a and c and then step targetting b:
+        threads = lldbutil.continue_to_breakpoint (process, break_before_complex_3)
+        self.assertTrue (len(threads) == 1)
+        thread = threads[0]
+        break_before_complex_3.SetEnabled(False)
+
+        break_at_start_of_a = target.BreakpointCreateByName ('a')
+        break_at_start_of_c = target.BreakpointCreateByName ('c')
+
+        thread.StepInto ("b")
+        threads = lldbutil.get_stopped_threads(process, lldb.eStopReasonBreakpoint);
+
+        self.assertTrue (len(threads) == 1)
+        thread = threads[0]
+        stop_break_id = thread.GetStopReasonDataAtIndex(0)
+        self.assertTrue(stop_break_id == break_at_start_of_a.GetID() or stop_break_id == break_at_start_of_c.GetID())
+
+        break_at_start_of_a.SetEnabled(False)
+        break_at_start_of_c.SetEnabled(False)
+
+        process.Continue()
+        self.assertTrue (thread.GetFrameAtIndex(0).GetFunctionName() == "b")
+        
+        # Now continue out and stop at the next call to complex.  This time enable breakpoints in a and c and then step targetting b:
+        threads = lldbutil.continue_to_breakpoint (process, break_before_complex_4)
+        self.assertTrue (len(threads) == 1)
+        thread = threads[0]
+        break_before_complex_4.SetEnabled(False)
+
+        thread.StepInto("NoSuchFunction")
+        self.assertTrue (thread.GetFrameAtIndex(0).GetFunctionName() == "main")
+        
 if __name__ == '__main__':
     import atexit
     lldb.SBDebugger.Initialize()

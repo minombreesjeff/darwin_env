@@ -14,17 +14,18 @@
 
 // C++ Includes
 #include <list>
-#include <memory>
 
 // Other libraries and framework includes
 
 // Project includes
 #include "lldb/lldb-private.h"
 #include "lldb/Breakpoint/StoppointLocation.h"
-#include "lldb/Core/UserID.h"
 #include "lldb/Core/Address.h"
-#include "lldb/Target/Process.h"
 #include "lldb/Core/StringList.h"
+#include "lldb/Core/UserID.h"
+#include "lldb/Host/Mutex.h"
+#include "lldb/Target/Process.h"
+#include "lldb/Expression/ClangUserExpression.h"
 
 namespace lldb_private {
 
@@ -47,7 +48,7 @@ namespace lldb_private {
 //----------------------------------------------------------------------
 
 class BreakpointLocation : 
-    public STD_ENABLE_SHARED_FROM_THIS(BreakpointLocation),
+    public std::enable_shared_from_this<BreakpointLocation>,
     public StoppointLocation
 {
 public:
@@ -176,7 +177,10 @@ public:
     //     condition has been set.
     //------------------------------------------------------------------
     const char *
-    GetConditionText () const;
+    GetConditionText (size_t *hash = NULL) const;
+    
+    bool
+    ConditionSaysStop (ExecutionContext &exe_ctx, Error &error);
 
 
     //------------------------------------------------------------------
@@ -380,8 +384,11 @@ private:
     bool m_being_created;
     Address m_address; ///< The address defining this location.
     Breakpoint &m_owner; ///< The breakpoint that produced this object.
-    std::auto_ptr<BreakpointOptions> m_options_ap; ///< Breakpoint options pointer, NULL if we're using our breakpoint's options.
+    std::unique_ptr<BreakpointOptions> m_options_ap; ///< Breakpoint options pointer, NULL if we're using our breakpoint's options.
     lldb::BreakpointSiteSP m_bp_site_sp; ///< Our breakpoint site (it may be shared by more than one location.)
+    ClangUserExpression::ClangUserExpressionSP m_user_expression_sp; ///< The compiled expression to use in testing our condition.
+    Mutex m_condition_mutex; ///< Guards parsing and evaluation of the condition, which could be evaluated by multiple processes.
+    size_t m_condition_hash; ///< For testing whether the condition source code changed.
 
     void
     SendBreakpointLocationChangedEvent (lldb::BreakpointEventType eventKind);

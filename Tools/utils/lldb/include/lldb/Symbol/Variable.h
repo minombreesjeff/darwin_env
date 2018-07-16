@@ -144,9 +144,9 @@ public:
         m_loc_is_const_data = b;
     }
     
-    typedef uint32_t (*GetVariableCallback) (void *baton, 
-                                             const char *name,
-                                             VariableList &var_list);
+    typedef size_t (*GetVariableCallback) (void *baton,
+                                           const char *name,
+                                           VariableList &var_list);
 
 
     static Error
@@ -156,6 +156,12 @@ public:
                                         void *baton,
                                         VariableList &variable_list,
                                         ValueObjectList &valobj_list);
+
+    static size_t
+    AutoComplete (const ExecutionContext &exe_ctx,
+                  const char *name,
+                  StringList &matches,
+                  bool &word_complete);
 
 protected:
     ConstString m_name;                 // The basename of the variable (no namespaces)

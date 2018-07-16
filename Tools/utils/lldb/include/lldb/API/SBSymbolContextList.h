@@ -60,7 +60,7 @@ protected:
     operator*() const;
 
 private:
-    std::auto_ptr<lldb_private::SymbolContextList> m_opaque_ap;
+    std::unique_ptr<lldb_private::SymbolContextList> m_opaque_ap;
 };
 
 

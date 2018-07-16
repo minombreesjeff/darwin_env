@@ -108,9 +108,10 @@ SymbolContext::operator= (const SymbolContext& rhs)
 }
 
 void
-SymbolContext::Clear()
+SymbolContext::Clear(bool clear_target)
 {
-    target_sp.reset();
+    if (clear_target)
+        target_sp.reset();
     module_sp.reset();
     comp_unit   = NULL;
     function    = NULL;
@@ -318,7 +319,6 @@ SymbolContext::GetResolvedMask () const
     return resolved_mask;
 }
 
-
 void
 SymbolContext::Dump(Stream *s, Target *target) const
 {
@@ -453,7 +453,7 @@ SymbolContext::GetParentOfInlinedScope (const Address &curr_frame_pc,
                                         SymbolContext &next_frame_sc, 
                                         Address &next_frame_pc) const
 {
-    next_frame_sc.Clear();
+    next_frame_sc.Clear(false);
     next_frame_pc.Clear();
 
     if (block)
@@ -492,7 +492,7 @@ SymbolContext::GetParentOfInlinedScope (const Address &curr_frame_pc,
             }
             else
             {
-                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_SYMBOLS));
+                Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_SYMBOLS));
 
                 if (log)
                 {
@@ -516,11 +516,10 @@ SymbolContext::GetParentOfInlinedScope (const Address &curr_frame_pc,
                     if (objfile)
                     {
                         Host::SystemLog (Host::eSystemLogWarning, 
-                                         "warning: inlined block 0x%8.8" PRIx64 " doesn't have a range that contains file address 0x%" PRIx64 " in %s/%s\n",
+                                         "warning: inlined block 0x%8.8" PRIx64 " doesn't have a range that contains file address 0x%" PRIx64 " in %s\n",
                                          curr_inlined_block->GetID(), 
                                          curr_frame_pc.GetFileAddress(),
-                                         objfile->GetFileSpec().GetDirectory().GetCString(),
-                                         objfile->GetFileSpec().GetFilename().GetCString());
+                                         objfile->GetFileSpec().GetPath().c_str());
                     }
                     else
                     {
@@ -593,7 +592,7 @@ SymbolContext::GetFunctionMethodInfo (lldb::LanguageType &language,
 }
 
 ConstString
-SymbolContext::GetFunctionName (Mangled::NamePreference preference)
+SymbolContext::GetFunctionName (Mangled::NamePreference preference) const
 {
     if (function)
     {
@@ -619,6 +618,33 @@ SymbolContext::GetFunctionName (Mangled::NamePreference preference)
         // No function, return an empty string.
         return ConstString();
     }
+}
+
+LineEntry
+SymbolContext::GetFunctionStartLineEntry () const
+{
+    LineEntry line_entry;
+    Address start_addr;
+    if (block)
+    {
+        Block *inlined_block = block->GetContainingInlinedBlock();
+        if (inlined_block)
+        {
+            if (inlined_block->GetStartAddress (start_addr))
+            {
+                if (start_addr.CalculateSymbolContextLineEntry (line_entry))
+                    return line_entry;
+            }
+            return LineEntry();
+        }
+    }
+    
+    if (function)
+    {
+        if (function->GetAddressRange().GetBaseAddress().CalculateSymbolContextLineEntry(line_entry))
+            return line_entry;
+    }
+    return LineEntry();
 }
 
 //----------------------------------------------------------------------
@@ -997,6 +1023,10 @@ SymbolContextList::AppendIfUnique (const SymbolContext& sc, bool merge_symbol_in
         {
             for (pos = m_symbol_contexts.begin(); pos != end; ++pos)
             {
+                // Don't merge symbols into inlined function symbol contexts
+                if (pos->block && pos->block->GetContainingInlinedBlock())
+                    continue;
+
                 if (pos->function)
                 {
                     if (pos->function->GetAddressRange().GetBaseAddress() == sc.symbol->GetAddress())
@@ -1016,6 +1046,49 @@ SymbolContextList::AppendIfUnique (const SymbolContext& sc, bool merge_symbol_in
     }
     m_symbol_contexts.push_back(sc);
     return true;
+}
+
+bool
+SymbolContextList::MergeSymbolContextIntoFunctionContext (const SymbolContext& symbol_sc,
+                                                          uint32_t start_idx,
+                                                          uint32_t stop_idx)
+{
+    if (symbol_sc.symbol    != NULL
+        && symbol_sc.comp_unit == NULL
+        && symbol_sc.function  == NULL
+        && symbol_sc.block     == NULL
+        && symbol_sc.line_entry.IsValid() == false)
+    {
+        if (symbol_sc.symbol->ValueIsAddress())
+        {
+            const size_t end = std::min<size_t>(m_symbol_contexts.size(), stop_idx);
+            for (size_t i=start_idx; i<end; ++i)
+            {
+                const SymbolContext &function_sc = m_symbol_contexts[i];
+                // Don't merge symbols into inlined function symbol contexts
+                if (function_sc.block && function_sc.block->GetContainingInlinedBlock())
+                    continue;
+                
+                if (function_sc.function)
+                {
+                    if (function_sc.function->GetAddressRange().GetBaseAddress() == symbol_sc.symbol->GetAddress())
+                    {
+                        // Do we already have a function with this symbol?
+                        if (function_sc.symbol == symbol_sc.symbol)
+                            return true; // Already have a symbol context with this symbol, return true
+
+                        if (function_sc.symbol == NULL)
+                        {
+                            // We successfully merged this symbol into an existing symbol context
+                            m_symbol_contexts[i].symbol = symbol_sc.symbol;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return false;
 }
 
 void
@@ -1044,7 +1117,7 @@ SymbolContextList::Dump(Stream *s, Target *target) const
 }
 
 bool
-SymbolContextList::GetContextAtIndex(uint32_t idx, SymbolContext& sc) const
+SymbolContextList::GetContextAtIndex(size_t idx, SymbolContext& sc) const
 {
     if (idx < m_symbol_contexts.size())
     {
@@ -1055,7 +1128,18 @@ SymbolContextList::GetContextAtIndex(uint32_t idx, SymbolContext& sc) const
 }
 
 bool
-SymbolContextList::RemoveContextAtIndex (uint32_t idx)
+SymbolContextList::GetLastContext(SymbolContext& sc) const
+{
+    if (!m_symbol_contexts.empty())
+    {
+        sc = m_symbol_contexts.back();
+        return true;
+    }
+    return false;
+}
+
+bool
+SymbolContextList::RemoveContextAtIndex (size_t idx)
 {
     if (idx < m_symbol_contexts.size())
     {
@@ -1075,8 +1159,8 @@ uint32_t
 SymbolContextList::NumLineEntriesWithLine (uint32_t line) const
 {
     uint32_t match_count = 0;
-    const uint32_t size = m_symbol_contexts.size();
-    for (uint32_t idx = 0; idx<size; ++idx)
+    const size_t size = m_symbol_contexts.size();
+    for (size_t idx = 0; idx<size; ++idx)
     {
         if (m_symbol_contexts[idx].line_entry.line == line)
             ++match_count;
@@ -1089,8 +1173,8 @@ SymbolContextList::GetDescription(Stream *s,
                                   lldb::DescriptionLevel level, 
                                   Target *target) const
 {
-    const uint32_t size = m_symbol_contexts.size();
-    for (uint32_t idx = 0; idx<size; ++idx)
+    const size_t size = m_symbol_contexts.size();
+    for (size_t idx = 0; idx<size; ++idx)
         m_symbol_contexts[idx].GetDescription (s, level, target);
 }
 

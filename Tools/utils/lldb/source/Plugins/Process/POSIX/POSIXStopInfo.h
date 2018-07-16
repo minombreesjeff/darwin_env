@@ -68,10 +68,12 @@ class POSIXCrashStopInfo
     : public POSIXStopInfo
 {
 public:
-    POSIXCrashStopInfo(POSIXThread &thread, uint32_t status, 
-                  ProcessMessage::CrashReason reason)
+    POSIXCrashStopInfo(POSIXThread &thread, uint32_t status,
+                       ProcessMessage::CrashReason reason,
+                       lldb::addr_t fault_addr)
         : POSIXStopInfo(thread, status),
-          m_crash_reason(reason)
+          m_crash_reason(reason),
+          m_fault_addr(fault_addr)
         { }
 
     ~POSIXCrashStopInfo();
@@ -82,11 +84,37 @@ public:
     const char *
     GetDescription();
 
-    ProcessMessage::CrashReason
-    GetCrashReason() const;
-
 private:
     ProcessMessage::CrashReason m_crash_reason;
+    lldb::addr_t m_fault_addr;
 };    
+
+//===----------------------------------------------------------------------===//
+/// @class POSIXNewThreadStopInfo
+/// @brief Represents the stop state of process when a new thread is spawned.
+///
+
+class POSIXNewThreadStopInfo
+    : public POSIXStopInfo
+{
+public:
+    POSIXNewThreadStopInfo (POSIXThread &thread)
+        : POSIXStopInfo (thread, 0)
+        { }
+
+    ~POSIXNewThreadStopInfo();
+
+    lldb::StopReason
+    GetStopReason() const;
+
+    const char *
+    GetDescription();
+
+    bool
+    ShouldStop(lldb_private::Event *event_ptr);
+
+    bool
+    ShouldNotify(lldb_private::Event *event_ptr);
+};
 
 #endif

@@ -10,10 +10,13 @@
 #include "lldb/API/SBCompileUnit.h"
 #include "lldb/API/SBLineEntry.h"
 #include "lldb/API/SBStream.h"
+#include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/LineEntry.h"
 #include "lldb/Symbol/LineTable.h"
-#include "lldb/Core/Log.h"
+#include "lldb/Symbol/SymbolVendor.h"
+#include "lldb/Symbol/Type.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -71,7 +74,7 @@ SBCompileUnit::GetNumLineEntries () const
 SBLineEntry
 SBCompileUnit::GetLineEntryAtIndex (uint32_t idx) const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBLineEntry sb_line_entry;
     if (m_opaque_ptr)
@@ -106,7 +109,7 @@ SBCompileUnit::FindLineEntryIndex (uint32_t start_idx, uint32_t line, SBFileSpec
 uint32_t
 SBCompileUnit::FindLineEntryIndex (uint32_t start_idx, uint32_t line, SBFileSpec *inline_file_spec, bool exact) const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     uint32_t index = UINT32_MAX;
     if (m_opaque_ptr)
@@ -148,23 +151,50 @@ SBCompileUnit::GetNumSupportFiles () const
 {
     if (m_opaque_ptr)
     {
-	FileSpecList& support_files = m_opaque_ptr->GetSupportFiles ();
-	return support_files.GetSize();
+        FileSpecList& support_files = m_opaque_ptr->GetSupportFiles ();
+        return support_files.GetSize();
     }
     return 0;
 }
 
+
+
+lldb::SBTypeList
+SBCompileUnit::GetTypes (uint32_t type_mask)
+{
+    SBTypeList sb_type_list;
+    
+    if (m_opaque_ptr)
+    {
+        ModuleSP module_sp (m_opaque_ptr->GetModule());
+        if (module_sp)
+        {
+            SymbolVendor* vendor = module_sp->GetSymbolVendor();
+            if (vendor)
+            {
+                TypeList type_list;
+                vendor->GetTypes (m_opaque_ptr, type_mask, type_list);
+                sb_type_list.m_opaque_ap->Append(type_list);
+            }
+        }
+    }
+    return sb_type_list;
+}
+
+
+
+
 SBFileSpec
 SBCompileUnit::GetSupportFileAtIndex (uint32_t idx) const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBFileSpec sb_file_spec;
     if (m_opaque_ptr)
     {
-	FileSpecList &support_files = m_opaque_ptr->GetSupportFiles ();
-	FileSpec file_spec = support_files.GetFileSpecAtIndex(idx);
-	sb_file_spec.SetFileSpec(file_spec);
+        FileSpecList &support_files = m_opaque_ptr->GetSupportFiles ();
+        FileSpec file_spec = support_files.GetFileSpecAtIndex(idx);
+        sb_file_spec.SetFileSpec(file_spec);
     }
     
     if (log)

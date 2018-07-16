@@ -34,21 +34,18 @@ class BreakpointConditionsTestCase(TestBase):
         self.buildDsym()
         self.breakpoint_conditions_python()
 
-    @expectedFailureLinux # bugzilla 14426
     @dwarf_test
     def test_breakpoint_condition_with_dwarf_and_run_command(self):
         """Exercise breakpoint condition with 'breakpoint modify -c <expr> id'."""
         self.buildDwarf()
         self.breakpoint_conditions()
 
-    @expectedFailureLinux # bugzilla 14426
     @dwarf_test
     def test_breakpoint_condition_inline_with_dwarf_and_run_command(self):
         """Exercise breakpoint condition inline with 'breakpoint set'."""
         self.buildDwarf()
         self.breakpoint_conditions(inline=True)
 
-    @expectedFailureLinux # bugzilla 14426
     @python_api_test
     @dwarf_test
     def test_breakpoint_condition_with_dwarf_and_python_api(self):
@@ -120,6 +117,20 @@ class BreakpointConditionsTestCase(TestBase):
         self.expect("frame variable --show-types val", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) val = 1')
 
+        self.runCmd("process kill")
+        self.runCmd("breakpoint disable")
+
+        self.runCmd("breakpoint set -p Loop")
+        self.runCmd("breakpoint modify -c ($eax&&!i)")
+        self.runCmd("run")
+        
+        self.expect("process status", PROCESS_STOPPED,
+            patterns = ['Process .* stopped'])
+
+        self.runCmd("continue")
+
+        self.expect("process status", PROCESS_EXITED,
+            patterns = ['Process .* exited'])
 
     def breakpoint_conditions_python(self):
         """Use Python APIs to set breakpoint conditions."""
@@ -168,7 +179,7 @@ class BreakpointConditionsTestCase(TestBase):
         # Frame #0 should be on self.line1 and the break condition should hold.
         from lldbutil import get_stopped_thread
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-        self.assertTrue(thread != None, "There should be a thread stopped due to breakpoint condition")
+        self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint condition")
         frame0 = thread.GetFrameAtIndex(0)
         var = frame0.FindValue('val', lldb.eValueTypeVariableArgument)
         self.assertTrue(frame0.GetLineEntry().GetLine() == self.line1 and

@@ -21,7 +21,9 @@
 
 namespace lldb_private {
 
-class OptionValueProperties : public OptionValue, public STD_ENABLE_SHARED_FROM_THIS(OptionValueProperties)
+class OptionValueProperties :
+    public OptionValue,
+    public std::enable_shared_from_this<OptionValueProperties>
 {
 public:
 
@@ -30,7 +32,9 @@ public:
     //---------------------------------------------------------------------
     OptionValueProperties () :
         OptionValue(),
-        m_name ()
+        m_name (),
+        m_properties (),
+        m_name_to_index ()
     {
     }
 

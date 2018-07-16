@@ -16,6 +16,7 @@
 #include "lldb/API/SBStream.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
+#include "lldb/Core/State.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -102,7 +103,7 @@ SBThread::Clear ()
 StopReason
 SBThread::GetStopReason()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     StopReason reason = eStopReasonInvalid;
     Mutex::Locker api_locker;
@@ -151,6 +152,7 @@ SBThread::GetStopReasonDataCount ()
                 case eStopReasonTrace:
                 case eStopReasonExec:
                 case eStopReasonPlanComplete:
+                case eStopReasonThreadExiting:
                     // There is no data for these stop reasons.
                     return 0;
 
@@ -178,7 +180,7 @@ SBThread::GetStopReasonDataCount ()
         }
         else
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
             if (log)
                 log->Printf ("SBThread(%p)::GetStopReasonDataCount() => error: process is running", exe_ctx.GetThreadPtr());
         }
@@ -209,6 +211,7 @@ SBThread::GetStopReasonDataAtIndex (uint32_t idx)
                 case eStopReasonTrace:
                 case eStopReasonExec:
                 case eStopReasonPlanComplete:
+                case eStopReasonThreadExiting:
                     // There is no data for these stop reasons.
                     return 0;
 
@@ -251,7 +254,7 @@ SBThread::GetStopReasonDataAtIndex (uint32_t idx)
         }
         else
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
             if (log)
                 log->Printf ("SBThread(%p)::GetStopReasonDataAtIndex() => error: process is running", exe_ctx.GetThreadPtr());
         }
@@ -262,7 +265,7 @@ SBThread::GetStopReasonDataAtIndex (uint32_t idx)
 size_t
 SBThread::GetStopDescription (char *dst, size_t dst_len)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -348,6 +351,13 @@ SBThread::GetStopDescription (char *dst, size_t dst_len)
                         }
                         break;
 
+                    case eStopReasonThreadExiting:
+                        {
+                            char limbo_desc[] = "thread exiting";
+                            stop_desc = limbo_desc;
+                            stop_desc_len = sizeof(limbo_desc);
+                        }
+                        break;
                     default:
                         break;
                     }
@@ -371,7 +381,7 @@ SBThread::GetStopDescription (char *dst, size_t dst_len)
         }
         else
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
             if (log)
                 log->Printf ("SBThread(%p)::GetStopDescription() => error: process is running", exe_ctx.GetThreadPtr());
         }
@@ -384,7 +394,7 @@ SBThread::GetStopDescription (char *dst, size_t dst_len)
 SBValue
 SBThread::GetStopReturnValue ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     ValueObjectSP return_valobj_sp;
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -444,7 +454,7 @@ SBThread::GetIndexID () const
 const char *
 SBThread::GetName () const
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     const char *name = NULL;
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -476,7 +486,7 @@ SBThread::GetQueueName () const
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (exe_ctx.HasThreadScope())
     {
         Process::StopLocker stop_locker;
@@ -542,7 +552,7 @@ SBThread::ResumeNewPlan (ExecutionContext &exe_ctx, ThreadPlan *new_plan)
 void
 SBThread::StepOver (lldb::RunMode stop_other_threads)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -557,80 +567,86 @@ SBThread::StepOver (lldb::RunMode stop_other_threads)
         Thread *thread = exe_ctx.GetThreadPtr();
         bool abort_other_plans = false;
         StackFrameSP frame_sp(thread->GetStackFrameAtIndex (0));
-        ThreadPlan *new_plan = NULL;
 
+        ThreadPlanSP new_plan_sp;
         if (frame_sp)
         {
             if (frame_sp->HasDebugInformation ())
             {
                 SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
-                new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans,
-                                                                eStepTypeOver,
-                                                                sc.line_entry.range,
-                                                                sc,
-                                                                stop_other_threads,
-                                                                false);
-                
+                new_plan_sp = thread->QueueThreadPlanForStepOverRange (abort_other_plans,
+                                                                    sc.line_entry.range,
+                                                                    sc,
+                                                                    stop_other_threads);
             }
             else
             {
-                new_plan = thread->QueueThreadPlanForStepSingleInstruction (true,
+                new_plan_sp = thread->QueueThreadPlanForStepSingleInstruction (true,
                                                                             abort_other_plans, 
                                                                             stop_other_threads);
             }
         }
 
         // This returns an error, we should use it!
-        ResumeNewPlan (exe_ctx, new_plan);
+        ResumeNewPlan (exe_ctx, new_plan_sp.get());
     }
 }
 
 void
 SBThread::StepInto (lldb::RunMode stop_other_threads)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    StepInto (NULL, stop_other_threads);
+}
+
+void
+SBThread::StepInto (const char *target_name, lldb::RunMode stop_other_threads)
+{
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
 
     if (log)
-        log->Printf ("SBThread(%p)::StepInto (stop_other_threads='%s')", exe_ctx.GetThreadPtr(),
+        log->Printf ("SBThread(%p)::StepInto (target_name='%s', stop_other_threads='%s')",
+                     exe_ctx.GetThreadPtr(),
+                     target_name? target_name: "<NULL>",
                      Thread::RunModeAsCString (stop_other_threads));
+    
     if (exe_ctx.HasThreadScope())
     {
         bool abort_other_plans = false;
 
         Thread *thread = exe_ctx.GetThreadPtr();
         StackFrameSP frame_sp(thread->GetStackFrameAtIndex (0));
-        ThreadPlan *new_plan = NULL;
+        ThreadPlanSP new_plan_sp;
 
         if (frame_sp && frame_sp->HasDebugInformation ())
         {
             bool avoid_code_without_debug_info = true;
             SymbolContext sc(frame_sp->GetSymbolContext(eSymbolContextEverything));
-            new_plan = thread->QueueThreadPlanForStepRange (abort_other_plans,
-                                                            eStepTypeInto,
-                                                            sc.line_entry.range,
-                                                            sc,
-                                                            stop_other_threads,
-                                                            avoid_code_without_debug_info);
+            new_plan_sp = thread->QueueThreadPlanForStepInRange (abort_other_plans,
+                                                              sc.line_entry.range,
+                                                              sc,
+                                                              target_name,
+                                                              stop_other_threads,
+                                                              avoid_code_without_debug_info);
         }
         else
         {
-            new_plan = thread->QueueThreadPlanForStepSingleInstruction (false,
+            new_plan_sp = thread->QueueThreadPlanForStepSingleInstruction (false,
                                                                         abort_other_plans, 
                                                                         stop_other_threads);
         }
         
         // This returns an error, we should use it!
-        ResumeNewPlan (exe_ctx, new_plan);
+        ResumeNewPlan (exe_ctx, new_plan_sp.get());
     }
 }
 
 void
 SBThread::StepOut ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -646,23 +662,23 @@ SBThread::StepOut ()
 
         Thread *thread = exe_ctx.GetThreadPtr();
 
-        ThreadPlan *new_plan = thread->QueueThreadPlanForStepOut (abort_other_plans,
+        ThreadPlanSP new_plan_sp(thread->QueueThreadPlanForStepOut (abort_other_plans,
                                                                   NULL, 
                                                                   false, 
                                                                   stop_other_threads, 
                                                                   eVoteYes, 
                                                                   eVoteNoOpinion,
-                                                                  0);
+                                                                  0));
                                                                   
         // This returns an error, we should use it!
-        ResumeNewPlan (exe_ctx, new_plan);
+        ResumeNewPlan (exe_ctx, new_plan_sp.get());
     }
 }
 
 void
 SBThread::StepOutOfFrame (lldb::SBFrame &sb_frame)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -681,23 +697,23 @@ SBThread::StepOutOfFrame (lldb::SBFrame &sb_frame)
         bool stop_other_threads = false;
         Thread *thread = exe_ctx.GetThreadPtr();
 
-        ThreadPlan *new_plan = thread->QueueThreadPlanForStepOut (abort_other_plans,
+        ThreadPlanSP new_plan_sp(thread->QueueThreadPlanForStepOut (abort_other_plans,
                                                                     NULL, 
                                                                     false, 
                                                                     stop_other_threads, 
                                                                     eVoteYes, 
                                                                     eVoteNoOpinion,
-                                                                    frame_sp->GetFrameIndex());
+                                                                    frame_sp->GetFrameIndex()));
                                                                     
         // This returns an error, we should use it!
-        ResumeNewPlan (exe_ctx, new_plan);
+        ResumeNewPlan (exe_ctx, new_plan_sp.get());
     }
 }
 
 void
 SBThread::StepInstruction (bool step_over)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -710,17 +726,17 @@ SBThread::StepInstruction (bool step_over)
     if (exe_ctx.HasThreadScope())
     {
         Thread *thread = exe_ctx.GetThreadPtr();
-        ThreadPlan *new_plan = thread->QueueThreadPlanForStepSingleInstruction (step_over, true, true);
+        ThreadPlanSP new_plan_sp(thread->QueueThreadPlanForStepSingleInstruction (step_over, true, true));
         
         // This returns an error, we should use it!
-        ResumeNewPlan (exe_ctx, new_plan);
+        ResumeNewPlan (exe_ctx, new_plan_sp.get());
     }
 }
 
 void
 SBThread::RunToAddress (lldb::addr_t addr)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -738,10 +754,10 @@ SBThread::RunToAddress (lldb::addr_t addr)
 
         Thread *thread = exe_ctx.GetThreadPtr();
 
-        ThreadPlan *new_plan = thread->QueueThreadPlanForRunToAddress (abort_other_plans, target_addr, stop_other_threads);
+        ThreadPlanSP new_plan_sp(thread->QueueThreadPlanForRunToAddress (abort_other_plans, target_addr, stop_other_threads));
         
         // This returns an error, we should use it!
-        ResumeNewPlan (exe_ctx, new_plan);
+        ResumeNewPlan (exe_ctx, new_plan_sp.get());
     }
 }
 
@@ -751,7 +767,7 @@ SBThread::StepOverUntil (lldb::SBFrame &sb_frame,
                          uint32_t line)
 {
     SBError sb_error;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     char path[PATH_MAX];
     
     Mutex::Locker api_locker;
@@ -877,13 +893,13 @@ SBThread::StepOverUntil (lldb::SBFrame &sb_frame,
         }
         else
         {
-            ThreadPlan *new_plan = thread->QueueThreadPlanForStepUntil (abort_other_plans,
+            ThreadPlanSP new_plan_sp(thread->QueueThreadPlanForStepUntil (abort_other_plans,
                                                                         &step_over_until_addrs[0],
                                                                         step_over_until_addrs.size(),
                                                                         stop_other_threads,
-                                                                        frame_sp->GetFrameIndex());      
+                                                                        frame_sp->GetFrameIndex()));
 
-            sb_error = ResumeNewPlan (exe_ctx, new_plan);
+            sb_error = ResumeNewPlan (exe_ctx, new_plan_sp.get());
         }
     }
     else
@@ -898,7 +914,7 @@ SBThread::ReturnFromFrame (SBFrame &frame, SBValue &return_value)
 {
     SBError sb_error;
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     Mutex::Locker api_locker;
     ExecutionContext exe_ctx (m_opaque_sp.get(), api_locker);
@@ -920,7 +936,7 @@ SBThread::ReturnFromFrame (SBFrame &frame, SBValue &return_value)
 bool
 SBThread::Suspend()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     ExecutionContext exe_ctx (m_opaque_sp.get());
     bool result = false;
     if (exe_ctx.HasThreadScope())
@@ -945,7 +961,7 @@ SBThread::Suspend()
 bool
 SBThread::Resume ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     ExecutionContext exe_ctx (m_opaque_sp.get());
     bool result = false;
     if (exe_ctx.HasThreadScope())
@@ -976,12 +992,19 @@ SBThread::IsSuspended()
     return false;
 }
 
+bool
+SBThread::IsStopped()
+{
+    ExecutionContext exe_ctx (m_opaque_sp.get());
+    if (exe_ctx.HasThreadScope())
+        return StateIsStoppedState(exe_ctx.GetThreadPtr()->GetState(), true);
+    return false;
+}
+
 SBProcess
 SBThread::GetProcess ()
 {
-
     SBProcess sb_process;
-    ProcessSP process_sp;
     ExecutionContext exe_ctx (m_opaque_sp.get());
     if (exe_ctx.HasThreadScope())
     {
@@ -989,13 +1012,13 @@ SBThread::GetProcess ()
         sb_process.SetSP (exe_ctx.GetProcessSP());
     }
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
         SBStream frame_desc_strm;
         sb_process.GetDescription (frame_desc_strm);
         log->Printf ("SBThread(%p)::GetProcess () => SBProcess(%p): %s", exe_ctx.GetThreadPtr(),
-                     process_sp.get(), frame_desc_strm.GetData());
+                     sb_process.GetSP().get(), frame_desc_strm.GetData());
     }
 
     return sb_process;
@@ -1004,7 +1027,7 @@ SBThread::GetProcess ()
 uint32_t
 SBThread::GetNumFrames ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     uint32_t num_frames = 0;
     Mutex::Locker api_locker;
@@ -1033,7 +1056,7 @@ SBThread::GetNumFrames ()
 SBFrame
 SBThread::GetFrameAtIndex (uint32_t idx)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBFrame sb_frame;
     StackFrameSP frame_sp;
@@ -1069,7 +1092,7 @@ SBThread::GetFrameAtIndex (uint32_t idx)
 lldb::SBFrame
 SBThread::GetSelectedFrame ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBFrame sb_frame;
     StackFrameSP frame_sp;
@@ -1105,7 +1128,7 @@ SBThread::GetSelectedFrame ()
 lldb::SBFrame
 SBThread::SetSelectedFrame (uint32_t idx)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBFrame sb_frame;
     StackFrameSP frame_sp;

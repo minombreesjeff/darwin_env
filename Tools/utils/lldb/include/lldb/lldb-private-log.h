@@ -42,6 +42,8 @@
 #define LIBLLDB_LOG_SYMBOLS             (1u << 20)
 #define LIBLLDB_LOG_MODULES             (1u << 21)
 #define LIBLLDB_LOG_TARGET              (1u << 22)
+#define LIBLLDB_LOG_MMAP                (1u << 23)
+#define LIBLLDB_LOG_OS                  (1u << 24)
 #define LIBLLDB_LOG_ALL                 (UINT32_MAX)
 #define LIBLLDB_LOG_DEFAULT             (LIBLLDB_LOG_PROCESS              |\
                                          LIBLLDB_LOG_THREAD               |\
@@ -62,10 +64,10 @@ LogIfAllCategoriesSet (uint32_t mask, const char *format, ...);
 void
 LogIfAnyCategoriesSet (uint32_t mask, const char *format, ...);
 
-lldb::LogSP
+Log *
 GetLogIfAllCategoriesSet (uint32_t mask);
 
-lldb::LogSP
+Log *
 GetLogIfAnyCategoriesSet (uint32_t mask);
 
 uint32_t
@@ -77,7 +79,7 @@ IsLogVerbose ();
 void
 DisableLog (const char **categories, Stream *feedback_strm);
 
-lldb::LogSP
+Log *
 EnableLog (lldb::StreamSP &log_stream_sp, uint32_t log_options, const char **categories, Stream *feedback_strm);
 
 void

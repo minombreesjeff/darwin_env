@@ -12,6 +12,7 @@
 
 // C Includes
 // C++ Includes
+#include <atomic>
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-private.h"
@@ -115,7 +116,7 @@ public:
     //------------------------------------------------------------------
     Address (const Address& rhs) :
         m_section_wp (rhs.m_section_wp),
-        m_offset (rhs.m_offset)
+        m_offset(rhs.m_offset.load())
     {
     }
 
@@ -302,7 +303,7 @@ public:
     ///     the address is currently not loaded.
     //------------------------------------------------------------------
     lldb::addr_t
-    GetCallableLoadAddress (Target *target) const;
+    GetCallableLoadAddress (Target *target, bool is_indirect = false) const;
 
     //------------------------------------------------------------------
     /// Get the load address as an opcode load address.
@@ -392,12 +393,6 @@ public:
     //------------------------------------------------------------------
     bool
     ResolveAddressUsingFileSections (lldb::addr_t addr, const SectionList *sections);
-
-    bool
-    IsLinkedAddress () const;
-
-    void
-    ResolveLinkedAddress ();
 
     //------------------------------------------------------------------
     /// Set the address to represent \a load_addr.
@@ -544,7 +539,7 @@ protected:
     // Member variables.
     //------------------------------------------------------------------
     lldb::SectionWP m_section_wp;   ///< The section for the address, can be NULL.
-    lldb::addr_t m_offset;      ///< Offset into section if \a m_section_wp is valid...
+    std::atomic<lldb::addr_t> m_offset;      ///< Offset into section if \a m_section_wp is valid...
 };
 
 

@@ -28,6 +28,11 @@ class BasicExprCommandsTestCase(TestBase):
         self.line = line_number('main.cpp',
                                 '// Please test many expressions while stopped at this line:')
 
+        # Disable confirmation prompt to avoid infinite wait
+        self.runCmd("settings set auto-confirm true")
+        self.addTearDownHook(lambda: self.runCmd("settings clear auto-confirm"))
+
+
     def test_many_expr_commands(self):
         """These basic expression commands should work as expected."""
         self.buildDefault()
@@ -157,6 +162,22 @@ class BasicExprCommandsTestCase(TestBase):
             startstr = "'Z'")
         self.DebugSBValue(val)
 
+        callee_break = target.BreakpointCreateByName ("a_function_to_call", None)
+        self.assertTrue(callee_break.GetNumLocations() > 0)
+
+        # Make sure ignoring breakpoints works from the command line:
+        self.expect("expression -i true -- a_function_to_call()",
+                    substrs = ['(int) $', ' 1'])
+        self.assertTrue (callee_break.GetHitCount() == 1)
+
+        # Now try ignoring breakpoints using the SB API's:
+        options = lldb.SBExpressionOptions()
+        options.SetIgnoreBreakpoints(True)
+        value = frame.EvaluateExpression('a_function_to_call()', options)
+        self.assertTrue (value.IsValid())
+        self.assertTrue (value.GetValueAsSigned(0) == 2)
+        self.assertTrue (callee_break.GetHitCount() == 2)
+
     # rdar://problem/8686536
     # CommandInterpreter::HandleCommand is stripping \'s from input for WantsRawCommand commands
     def test_expr_commands_can_handle_quotes(self):
@@ -206,7 +227,6 @@ class BasicExprCommandsTestCase(TestBase):
         self.expect('print_hi',
             substrs = ['(int) $',
                        '6'])
-
 
 if __name__ == '__main__':
     import atexit

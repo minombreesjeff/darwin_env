@@ -181,6 +181,8 @@ def stop_reason_to_str(enum):
         return "exception"
     elif enum == lldb.eStopReasonPlanComplete:
         return "plancomplete"
+    elif enum == lldb.eStopReasonThreadExiting:
+        return "threadexiting"
     else:
         raise Exception("Unknown StopReason enum")
 
@@ -258,6 +260,41 @@ def value_type_to_str(enum):
 
 
 # ==================================================
+# Get stopped threads due to each stop reason.
+# ==================================================
+
+def sort_stopped_threads(process,
+                         breakpoint_threads = None,
+                         crashed_threads = None,
+                         watchpoint_threads = None,
+                         signal_threads = None,
+                         exiting_threads = None,
+                         other_threads = None):
+    """ Fills array *_threads with threads stopped for the corresponding stop
+        reason.
+    """
+    for lst in [breakpoint_threads,
+                watchpoint_threads,
+                signal_threads,
+                exiting_threads,
+                other_threads]:
+        if lst is not None:
+            lst[:] = []
+
+    for thread in process:
+        dispatched = False
+        for (reason, list) in [(lldb.eStopReasonBreakpoint, breakpoint_threads),
+                               (lldb.eStopReasonException, crashed_threads),
+                               (lldb.eStopReasonWatchpoint, watchpoint_threads),
+                               (lldb.eStopReasonSignal, signal_threads),
+                               (lldb.eStopReasonThreadExiting, exiting_threads),
+                               (None, other_threads)]:
+            if not dispatched and list is not None:
+                if thread.GetStopReason() == reason or reason is None:
+                    list.append(thread)
+                    dispatched = True
+
+# ==================================================
 # Utility functions for setting breakpoints
 # ==================================================
 
@@ -274,6 +311,9 @@ def run_break_set_by_file_and_line (test, file_name, line_number, extra_options 
         command = 'breakpoint set -l %d'%(line_number)
     else:
         command = 'breakpoint set -f "%s" -l %d'%(file_name, line_number)
+
+    if module_name:
+        command += " --shlib '%s'" % (module_name)
 
     if extra_options:
         command += " " + extra_options
@@ -292,6 +332,10 @@ def run_break_set_by_symbol (test, symbol, extra_options = None, num_expected_lo
 
     If sym_exact is true, then the output symbol must match the input exactly, otherwise we do a substring match."""
     command = 'breakpoint set -n "%s"'%(symbol)
+
+    if module_name:
+        command += " --shlib '%s'" % (module_name)
+
     if extra_options:
         command += " " + extra_options
 
@@ -307,7 +351,11 @@ def run_break_set_by_symbol (test, symbol, extra_options = None, num_expected_lo
 def run_break_set_by_selector (test, selector, extra_options = None, num_expected_locations = -1, module_name=None):
     """Set a breakpoint by selector.  Common options are the same as run_break_set_by_file_and_line."""
 
-    command = 'breakpoint set -S "%s"'%(selector)
+    command = 'breakpoint set -S "%s"' % (selector)
+
+    if module_name:
+        command += ' --shlib "%s"' % (module_name)
+
     if extra_options:
         command += " " + extra_options
 
@@ -468,7 +516,7 @@ def get_stopped_thread(process, reason):
     ...
         from lldbutil import get_stopped_thread
         thread = get_stopped_thread(process, lldb.eStopReasonPlanComplete)
-        self.assertTrue(thread != None, "There should be a thread stopped due to breakpoint condition")
+        self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint condition")
     ...
 
     2. Get the thread stopped due to a breakpoint
@@ -476,7 +524,7 @@ def get_stopped_thread(process, reason):
     ...
         from lldbutil import get_stopped_thread
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-        self.assertTrue(thread != None, "There should be a thread stopped due to breakpoint")
+        self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint")
     ...
 
     """

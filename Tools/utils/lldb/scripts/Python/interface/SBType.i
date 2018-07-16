@@ -65,7 +65,7 @@ public:
     %}
 
 protected:
-    std::auto_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
+    std::unique_ptr<lldb_private::TypeMemberImpl> m_opaque_ap;
 };
 
 %feature("docstring",
@@ -153,7 +153,7 @@ public:
     bool
     IsValid();
 
-    size_t
+    uint64_t
     GetByteSize();
 
     bool
@@ -165,6 +165,9 @@ public:
     bool
     IsFunctionType ();
 
+    bool
+    IsPolymorphicClass ();
+    
     lldb::SBType
     GetPointerType();
 
@@ -180,6 +183,9 @@ public:
     lldb::SBType
     GetUnqualifiedType();
     
+    lldb::SBType
+    GetCanonicalType();
+
     lldb::BasicType
     GetBasicType();
 

@@ -22,20 +22,17 @@
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolContext.h"
+#include "lldb/Target/ObjCLanguageRuntime.h"
 
 using namespace lldb;
 using namespace lldb_private;
 
-BreakpointResolverName::BreakpointResolverName
-(
-    Breakpoint *bkpt,
-    const char *func_name,
-    uint32_t func_name_type_mask,
-    Breakpoint::MatchType type,
-    bool skip_prologue
-) :
+BreakpointResolverName::BreakpointResolverName (Breakpoint *bkpt,
+                                                const char *name_cstr,
+                                                uint32_t name_type_mask,
+                                                Breakpoint::MatchType type,
+                                                bool skip_prologue) :
     BreakpointResolver (bkpt, BreakpointResolver::NameResolver),
-    m_func_name_type_mask (func_name_type_mask),
     m_class_name (),
     m_regex (),
     m_match_type (type),
@@ -44,17 +41,17 @@ BreakpointResolverName::BreakpointResolverName
     
     if (m_match_type == Breakpoint::Regexp)
     {
-        if (!m_regex.Compile (func_name))
+        if (!m_regex.Compile (name_cstr))
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
 
             if (log)
-                log->Warning ("function name regexp: \"%s\" did not compile.", func_name);
+                log->Warning ("function name regexp: \"%s\" did not compile.", name_cstr);
         }
     }
     else
     {
-        m_func_names.push_back(ConstString(func_name));
+        AddNameLookup (ConstString(name_cstr), name_type_mask);
     }
 }
 
@@ -64,13 +61,12 @@ BreakpointResolverName::BreakpointResolverName (Breakpoint *bkpt,
                                                 uint32_t name_type_mask,
                                                 bool skip_prologue) :
     BreakpointResolver (bkpt, BreakpointResolver::NameResolver),
-    m_func_name_type_mask (name_type_mask),
     m_match_type (Breakpoint::Exact),
     m_skip_prologue (skip_prologue)
 {
     for (size_t i = 0; i < num_names; i++)
     {
-        m_func_names.push_back (ConstString (names[i]));
+        AddNameLookup (ConstString (names[i]), name_type_mask);
     }
 }
 
@@ -79,24 +75,18 @@ BreakpointResolverName::BreakpointResolverName (Breakpoint *bkpt,
                                                 uint32_t name_type_mask,
                                                 bool skip_prologue) :
     BreakpointResolver (bkpt, BreakpointResolver::NameResolver),
-    m_func_name_type_mask (name_type_mask),
     m_match_type (Breakpoint::Exact),
     m_skip_prologue (skip_prologue)
 {
-    size_t num_names = names.size();
-    
-    for (size_t i = 0; i < num_names; i++)
+    for (const std::string& name : names)
     {
-        m_func_names.push_back (ConstString (names[i].c_str()));
+        AddNameLookup (ConstString (name.c_str(), name.size()), name_type_mask);
     }
 }
 
-BreakpointResolverName::BreakpointResolverName
-(
-    Breakpoint *bkpt,
-    RegularExpression &func_regex,
-    bool skip_prologue
-) :
+BreakpointResolverName::BreakpointResolverName (Breakpoint *bkpt,
+                                                RegularExpression &func_regex,
+                                                bool skip_prologue) :
     BreakpointResolver (bkpt, BreakpointResolver::NameResolver),
     m_class_name (NULL),
     m_regex (func_regex),
@@ -119,12 +109,70 @@ BreakpointResolverName::BreakpointResolverName
     m_match_type (type),
     m_skip_prologue (skip_prologue)
 {
-    m_func_names.push_back(ConstString(method));
+    LookupInfo lookup;
+    lookup.name.SetCString(method);
+    lookup.lookup_name = lookup.name;
+    lookup.name_type_mask = eFunctionNameTypeMethod;
+    lookup.match_name_after_lookup = false;
+    m_lookups.push_back (lookup);
 }
 
 BreakpointResolverName::~BreakpointResolverName ()
 {
 }
+
+void
+BreakpointResolverName::AddNameLookup (const ConstString &name, uint32_t name_type_mask)
+{
+    ObjCLanguageRuntime::MethodName objc_method(name.GetCString(), false);
+    if (objc_method.IsValid(false))
+    {
+        std::vector<ConstString> objc_names;
+        objc_method.GetFullNames(objc_names, true);
+        for (ConstString objc_name : objc_names)
+        {
+            LookupInfo lookup;
+            lookup.name = name;
+            lookup.lookup_name = objc_name;
+            lookup.name_type_mask = eFunctionNameTypeFull;
+            lookup.match_name_after_lookup = false;
+            m_lookups.push_back (lookup);
+        }
+    }
+    else
+    {
+        LookupInfo lookup;
+        lookup.name = name;
+        Module::PrepareForFunctionNameLookup(lookup.name, name_type_mask, lookup.lookup_name, lookup.name_type_mask, lookup.match_name_after_lookup);
+        m_lookups.push_back (lookup);
+    }
+}
+
+
+void
+BreakpointResolverName::LookupInfo::Prune (SymbolContextList &sc_list, size_t start_idx) const
+{
+    if (match_name_after_lookup && name)
+    {
+        SymbolContext sc;
+        size_t i = start_idx;
+        while (i < sc_list.GetSize())
+        {
+            if (!sc_list.GetContextAtIndex(i, sc))
+                break;
+            ConstString full_name (sc.GetFunctionName());
+            if (full_name && ::strstr(full_name.GetCString(), name.GetCString()) == NULL)
+            {
+                sc_list.RemoveContextAtIndex(i);
+            }
+            else
+            {
+                ++i;
+            }
+        }
+    }
+}
+
 
 // FIXME: Right now we look at the module level, and call the module's "FindFunctions".
 // Greg says he will add function tables, maybe at the CompileUnit level to accelerate function
@@ -140,15 +188,14 @@ BreakpointResolverName::SearchCallback
 )
 {
     SymbolContextList func_list;
-    SymbolContextList sym_list;
+    //SymbolContextList sym_list;
     
     uint32_t i;
     bool new_location;
-    SymbolContext sc;
     Address break_addr;
     assert (m_breakpoint != NULL);
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
     
     if (m_class_name)
     {
@@ -156,45 +203,38 @@ BreakpointResolverName::SearchCallback
             log->Warning ("Class/method function specification not supported yet.\n");
         return Searcher::eCallbackReturnStop;
     }
-    
-    const bool include_symbols = false;
+    bool filter_by_cu = (filter.GetFilterRequiredItems() & eSymbolContextCompUnit) != 0;
+    const bool include_symbols = filter_by_cu == false;
     const bool include_inlines = true;
     const bool append = true;
-    bool filter_by_cu = (filter.GetFilterRequiredItems() & eSymbolContextCompUnit) != 0;
 
     switch (m_match_type)
     {
         case Breakpoint::Exact:
             if (context.module_sp)
             {
-                size_t num_names = m_func_names.size();
-                for (int j = 0; j < num_names; j++)
+                for (const LookupInfo &lookup : m_lookups)
                 {
-                    uint32_t num_functions = context.module_sp->FindFunctions (m_func_names[j], 
-                                                                               NULL,
-                                                                               m_func_name_type_mask, 
-                                                                               include_symbols,
-                                                                               include_inlines, 
-                                                                               append, 
-                                                                               func_list);
-                    // If the search filter specifies a Compilation Unit, then we don't need to bother to look in plain
-                    // symbols, since all the ones from a set compilation unit will have been found above already.
-                    
-                    if (num_functions == 0 && !filter_by_cu)
-                    {
-                        if (m_func_name_type_mask & (eFunctionNameTypeBase | eFunctionNameTypeFull | eFunctionNameTypeAuto))
-                            context.module_sp->FindSymbolsWithNameAndType (m_func_names[j], eSymbolTypeCode, sym_list);
-                    }
+                    const size_t start_func_idx = func_list.GetSize();
+                    context.module_sp->FindFunctions (lookup.lookup_name,
+                                                      NULL,
+                                                      lookup.name_type_mask,
+                                                      include_symbols,
+                                                      include_inlines,
+                                                      append,
+                                                      func_list);
+                    const size_t end_func_idx = func_list.GetSize();
+
+                    if (start_func_idx < end_func_idx)
+                        lookup.Prune (func_list, start_func_idx);
                 }
             }
             break;
         case Breakpoint::Regexp:
             if (context.module_sp)
             {
-                if (!filter_by_cu)
-                    context.module_sp->FindSymbolsMatchingRegExAndType (m_regex, eSymbolTypeCode, sym_list);
-                context.module_sp->FindFunctions (m_regex, 
-                                                  include_symbols,
+                context.module_sp->FindFunctions (m_regex,
+                                                  !filter_by_cu, // include symbols only if we aren't filterning by CU
                                                   include_inlines, 
                                                   append, 
                                                   func_list);
@@ -225,35 +265,9 @@ BreakpointResolverName::SearchCallback
     }
 
     // Remove any duplicates between the funcion list and the symbol list
+    SymbolContext sc;
     if (func_list.GetSize())
     {
-        for (i = 0; i < func_list.GetSize(); i++)
-        {
-            if (func_list.GetContextAtIndex(i, sc) == false)
-                continue;
-            
-            if (sc.function == NULL)
-                continue;
-            uint32_t j = 0;
-            while (j < sym_list.GetSize())
-            {
-                SymbolContext symbol_sc;
-                if (sym_list.GetContextAtIndex(j, symbol_sc))
-                {
-                    if (symbol_sc.symbol && symbol_sc.symbol->ValueIsAddress())
-                    {
-                        if (sc.function->GetAddressRange().GetBaseAddress() == symbol_sc.symbol->GetAddress())
-                        {
-                            sym_list.RemoveContextAtIndex(j);
-                            continue;   // Don't increment j
-                        }
-                    }
-                }
-                
-                j++;
-            }
-        }
-        
         for (i = 0; i < func_list.GetSize(); i++)
         {
             if (func_list.GetContextAtIndex(i, sc))
@@ -266,14 +280,21 @@ BreakpointResolverName::SearchCallback
                 else if (sc.function)
                 {
                     break_addr = sc.function->GetAddressRange().GetBaseAddress();
-                    if (m_skip_prologue)
+                    if (m_skip_prologue && break_addr.IsValid())
                     {
-                        if (break_addr.IsValid())
-                        {
-                            const uint32_t prologue_byte_size = sc.function->GetPrologueByteSize();
-                            if (prologue_byte_size)
-                                break_addr.SetOffset(break_addr.GetOffset() + prologue_byte_size);
-                        }
+                        const uint32_t prologue_byte_size = sc.function->GetPrologueByteSize();
+                        if (prologue_byte_size)
+                            break_addr.SetOffset(break_addr.GetOffset() + prologue_byte_size);
+                    }
+                }
+                else if (sc.symbol)
+                {
+                    break_addr = sc.symbol->GetAddress();
+                    if (m_skip_prologue && break_addr.IsValid())
+                    {
+                        const uint32_t prologue_byte_size = sc.symbol->GetPrologueByteSize();
+                        if (prologue_byte_size)
+                            break_addr.SetOffset(break_addr.GetOffset() + prologue_byte_size);
                     }
                 }
                 
@@ -297,35 +318,6 @@ BreakpointResolverName::SearchCallback
         }
     }
     
-    for (i = 0; i < sym_list.GetSize(); i++)
-    {
-        if (sym_list.GetContextAtIndex(i, sc))
-        {
-            if (sc.symbol && sc.symbol->ValueIsAddress())
-            {
-                break_addr = sc.symbol->GetAddress();
-                
-                if (m_skip_prologue)
-                {
-                    const uint32_t prologue_byte_size = sc.symbol->GetPrologueByteSize();
-                    if (prologue_byte_size)
-                        break_addr.SetOffset(break_addr.GetOffset() + prologue_byte_size);
-                }
-                
-                if (filter.AddressPasses(break_addr))
-                {
-                    BreakpointLocationSP bp_loc_sp (m_breakpoint->AddLocation(break_addr, &new_location));
-                    if (bp_loc_sp && new_location && !m_breakpoint->IsInternal())
-                    {
-                        StreamString s;
-                        bp_loc_sp->GetDescription(&s, lldb::eDescriptionLevelVerbose);
-                        if (log) 
-                            log->Printf ("Added location: %s\n", s.GetData());
-                    }
-                }
-            }
-        }
-    }
     return Searcher::eCallbackReturnContinue;
 }
 
@@ -342,17 +334,17 @@ BreakpointResolverName::GetDescription (Stream *s)
         s->Printf("regex = '%s'", m_regex.GetText());
     else
     {
-        size_t num_names = m_func_names.size();
+        size_t num_names = m_lookups.size();
         if (num_names == 1)
-            s->Printf("name = '%s'", m_func_names[0].AsCString());
+            s->Printf("name = '%s'", m_lookups[0].name.GetCString());
         else
         {
             s->Printf("names = {");
             for (size_t i = 0; i < num_names - 1; i++)
             {
-                s->Printf ("'%s', ", m_func_names[i].AsCString());
+                s->Printf ("'%s', ", m_lookups[i].name.GetCString());
             }
-            s->Printf ("'%s'}", m_func_names[num_names - 1].AsCString());
+            s->Printf ("'%s'}", m_lookups[num_names - 1].name.GetCString());
         }
     }
 }

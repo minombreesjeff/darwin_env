@@ -10,6 +10,9 @@ from lldbtest import *
 
 class ExprDoesntDeadlockTestCase(TestBase):
 
+    def getCategories(self):
+        return ['basic_process']
+
     mydir = os.path.join("functionalities", "expr-doesnt-deadlock")
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
@@ -20,6 +23,7 @@ class ExprDoesntDeadlockTestCase(TestBase):
         self.expr_doesnt_deadlock()
 
     @dwarf_test
+    @skipIfLinux # llvm.org/pr15258: disabled due to assertion failure in ProcessMonitor::GetCrashReasonForSIGSEGV:
     def test_with_dwarf_and_run_command(self):
         """Test that expr will time out and allow other threads to run if it blocks."""
         self.buildDwarf()
@@ -54,14 +58,14 @@ class ExprDoesntDeadlockTestCase(TestBase):
         # Frame #0 should be on self.line1 and the break condition should hold.
         from lldbutil import get_stopped_thread
         thread = get_stopped_thread(process, lldb.eStopReasonBreakpoint)
-        self.assertTrue(thread != None, "There should be a thread stopped due to breakpoint condition")
+        self.assertTrue(thread.IsValid(), "There should be a thread stopped due to breakpoint condition")
 
         frame0 = thread.GetFrameAtIndex(0)
 
         var = frame0.EvaluateExpression ("call_me_to_get_lock()")
         self.assertTrue (var.IsValid())
         self.assertTrue (var.GetValueAsSigned (0) == 567)
-        
+
 if __name__ == '__main__':
     import atexit
     lldb.SBDebugger.Initialize()

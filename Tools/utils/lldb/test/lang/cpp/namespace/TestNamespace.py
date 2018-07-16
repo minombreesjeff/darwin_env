@@ -21,6 +21,7 @@ class NamespaceTestCase(TestBase):
         self.namespace_variable_commands()
 
     # rdar://problem/8668674
+    @expectedFailureGcc # llvm.org/pr15302: lldb does not print 'anonymous namespace' when the inferior is built with GCC (4.7)
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test that anonymous and named namespace variables display correctly."""
@@ -105,6 +106,16 @@ class NamespaceTestCase(TestBase):
         self.expect("expression -- A::B::j", VARIABLES_DISPLAYED_CORRECTLY,
             patterns = [' = 4$'])
 
+        # expression command with function in anonymous namespace
+        self.expect("expression -- myanonfunc(3)",
+            patterns = [' = 6'])
+
+        # global namespace qualification with function in anonymous namespace
+        self.expect("expression -- ::myanonfunc(4)",
+            patterns = [' = 8'])
+
+        self.expect("p myanonfunc",
+            patterns = ['\(anonymous namespace\)::myanonfunc\(int\)'])
 
 if __name__ == '__main__':
     import atexit

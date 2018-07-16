@@ -40,22 +40,17 @@ DynamicLoaderPOSIXDYLD::Terminate()
 {
 }
 
-const char *
+lldb_private::ConstString
 DynamicLoaderPOSIXDYLD::GetPluginName()
 {
-    return "DynamicLoaderPOSIXDYLD";
+    return GetPluginNameStatic();
 }
 
-const char *
-DynamicLoaderPOSIXDYLD::GetShortPluginName()
-{
-    return "linux-dyld";
-}
-
-const char *
+lldb_private::ConstString
 DynamicLoaderPOSIXDYLD::GetPluginNameStatic()
 {
-    return "dynamic-loader.linux-dyld";
+    static ConstString g_name("linux-dyld");
+    return g_name;
 }
 
 const char *
@@ -98,7 +93,7 @@ DynamicLoaderPOSIXDYLD::DynamicLoaderPOSIXDYLD(Process *process)
       m_rendezvous(process),
       m_load_offset(LLDB_INVALID_ADDRESS),
       m_entry_point(LLDB_INVALID_ADDRESS),
-      m_auxv(NULL)
+      m_auxv()
 {
 }
 
@@ -114,7 +109,7 @@ DynamicLoaderPOSIXDYLD::DidAttach()
 
     m_auxv.reset(new AuxVector(m_process));
 
-    executable = m_process->GetTarget().GetExecutableModule();
+    executable = GetTargetExecutable();
     load_offset = ComputeLoadOffset();
 
     if (executable.get() && load_offset != LLDB_INVALID_ADDRESS)
@@ -135,7 +130,7 @@ DynamicLoaderPOSIXDYLD::DidLaunch()
 
     m_auxv.reset(new AuxVector(m_process));
 
-    executable = m_process->GetTarget().GetExecutableModule();
+    executable = GetTargetExecutable();
     load_offset = ComputeLoadOffset();
 
     if (executable.get() && load_offset != LLDB_INVALID_ADDRESS)
@@ -146,6 +141,46 @@ DynamicLoaderPOSIXDYLD::DidLaunch()
         ProbeEntry();
         m_process->GetTarget().ModulesDidLoad(module_list);
     }
+}
+
+ModuleSP
+DynamicLoaderPOSIXDYLD::GetTargetExecutable()
+{
+    Target &target = m_process->GetTarget();
+    ModuleSP executable = target.GetExecutableModule();
+
+    if (executable.get())
+    {
+        if (executable->GetFileSpec().Exists())
+        {
+            ModuleSpec module_spec (executable->GetFileSpec(), executable->GetArchitecture());
+            ModuleSP module_sp (new Module (module_spec));
+
+            // Check if the executable has changed and set it to the target executable if they differ.
+            if (module_sp.get() && module_sp->GetUUID().IsValid() && executable->GetUUID().IsValid())
+            {
+                if (module_sp->GetUUID() != executable->GetUUID())
+                    executable.reset();
+            }
+            else if (executable->FileHasChanged())
+            {
+                executable.reset();
+            }
+
+            if (!executable.get())
+            {
+                executable = target.GetSharedModule(module_spec);
+                if (executable.get() != target.GetExecutableModulePointer())
+                {
+                    // Don't load dependent images since we are in dyld where we will know
+                    // and find out about all images that are loaded
+                    const bool get_dependent_images = false;
+                    target.SetExecutableModule(executable, get_dependent_images);
+                }
+            }
+        }
+    }
+    return executable;
 }
 
 Error
@@ -202,6 +237,7 @@ DynamicLoaderPOSIXDYLD::ProbeEntry()
     
     entry_break = m_process->GetTarget().CreateBreakpoint(entry, true).get();
     entry_break->SetCallback(EntryBreakpointHit, this, true);
+    entry_break->SetBreakpointKind("shared-library-event");
 }
 
 // The runtime linker has run and initialized the rendezvous structure once the
@@ -233,6 +269,7 @@ DynamicLoaderPOSIXDYLD::SetRendezvousBreakpoint()
     break_addr = m_rendezvous.GetBreakAddress();
     dyld_break = m_process->GetTarget().CreateBreakpoint(break_addr, true).get();
     dyld_break->SetCallback(RendezvousBreakpointHit, this, true);
+    dyld_break->SetBreakpointKind ("shared-library-event");
 }
 
 bool
@@ -382,7 +419,6 @@ DynamicLoaderPOSIXDYLD::LoadModuleAtAddress(const FileSpec &file, addr_t base_ad
     else if ((module_sp = target.GetSharedModule(module_spec))) 
     {
         UpdateLoadedSections(module_sp, base_addr);
-        modules.Append(module_sp);
     }
 
     return module_sp;

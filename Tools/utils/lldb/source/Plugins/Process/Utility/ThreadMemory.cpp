@@ -13,6 +13,7 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Unwind.h"
+#include "Plugins/Process/Utility/RegisterContextThreadMemory.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -21,6 +22,7 @@ ThreadMemory::ThreadMemory (Process &process,
                             tid_t tid,
                             const ValueObjectSP &thread_info_valobj_sp) :
     Thread (process, tid),
+    m_backing_thread_sp (),
     m_thread_info_valobj_sp (thread_info_valobj_sp),
     m_name(),
     m_queue()
@@ -34,6 +36,7 @@ ThreadMemory::ThreadMemory (Process &process,
                             const char *queue,
                             lldb::addr_t register_data_addr) :
     Thread (process, tid),
+    m_backing_thread_sp (),
     m_thread_info_valobj_sp (),
     m_name(),
     m_queue(),
@@ -51,30 +54,26 @@ ThreadMemory::~ThreadMemory()
     DestroyThread();
 }
 
-bool
+void
 ThreadMemory::WillResume (StateType resume_state)
 {
-    ClearStackFrames();
-    // Call the Thread::WillResume first. If we stop at a signal, the stop info
-    // class for signal will set the resume signal that we need below. The signal
-    // stuff obeys the Process::UnixSignal defaults. 
-    Thread::WillResume(resume_state);
-    return true;
+    if (m_backing_thread_sp)
+        m_backing_thread_sp->WillResume(resume_state);
+}
+
+void
+ThreadMemory::ClearStackFrames ()
+{
+    if (m_backing_thread_sp)
+        m_backing_thread_sp->ClearStackFrames();
+    Thread::ClearStackFrames();
 }
 
 RegisterContextSP
 ThreadMemory::GetRegisterContext ()
 {
     if (!m_reg_context_sp)
-    {
-        ProcessSP process_sp (GetProcess());
-        if (process_sp)
-        {
-            OperatingSystem *os = process_sp->GetOperatingSystem ();
-            if (os)
-                m_reg_context_sp = os->CreateRegisterContextForThread (this, m_register_data_addr);
-        }
-    }
+        m_reg_context_sp.reset (new RegisterContextThreadMemory (*this, m_register_data_addr));
     return m_reg_context_sp;
 }
 
@@ -91,54 +90,51 @@ ThreadMemory::CreateRegisterContextForFrame (StackFrame *frame)
     {
         reg_ctx_sp = GetRegisterContext ();
     }
-    else if (m_unwinder_ap.get())
+    else
     {
-        reg_ctx_sp = m_unwinder_ap->CreateRegisterContextForFrame (frame);
+        Unwind *unwinder = GetUnwinder ();
+        if (unwinder)
+            reg_ctx_sp = unwinder->CreateRegisterContextForFrame (frame);
     }
     return reg_ctx_sp;
 }
 
-lldb::StopInfoSP
-ThreadMemory::GetPrivateStopReason ()
+bool
+ThreadMemory::CalculateStopInfo ()
 {
-    ProcessSP process_sp (GetProcess());
-
-    if (process_sp)
+    if (m_backing_thread_sp)
     {
-        const uint32_t process_stop_id = process_sp->GetStopID();
-        if (m_thread_stop_reason_stop_id != process_stop_id ||
-            (m_actual_stop_info_sp && !m_actual_stop_info_sp->IsValid()))
+        lldb::StopInfoSP backing_stop_info_sp (m_backing_thread_sp->GetPrivateStopInfo());
+        if (backing_stop_info_sp)
         {
-            if (IsStillAtLastBreakpointHit())
-                return m_actual_stop_info_sp;
-
-            // If GetGDBProcess().SetThreadStopInfo() doesn't find a stop reason
-            // for this thread, then m_actual_stop_info_sp will not ever contain
-            // a valid stop reason and the "m_actual_stop_info_sp->IsValid() == false"
-            // check will never be able to tell us if we have the correct stop info
-            // for this thread and we will continually send qThreadStopInfo packets
-            // down to the remote GDB server, so we need to keep our own notion
-            // of the stop ID that m_actual_stop_info_sp is valid for (even if it
-            // contains nothing). We use m_thread_stop_reason_stop_id for this below.
-            m_thread_stop_reason_stop_id = process_stop_id;
-            m_actual_stop_info_sp.reset();
-            
-            OperatingSystem *os = process_sp->GetOperatingSystem ();
-            if (os)
-                m_actual_stop_info_sp = os->CreateThreadStopReason (this);
+            backing_stop_info_sp->SetThread (shared_from_this());
+            SetStopInfo (backing_stop_info_sp);
+            return true;
         }
     }
-    return m_actual_stop_info_sp;
-    
+    else
+    {
+        ProcessSP process_sp (GetProcess());
+
+        if (process_sp)
+        {
+            OperatingSystem *os = process_sp->GetOperatingSystem ();
+            if (os)
+            {
+                SetStopInfo (os->CreateThreadStopReason (this));
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void
 ThreadMemory::RefreshStateAfterStop()
 {
-    RegisterContextSP reg_ctx_sp(GetRegisterContext());
-    if (reg_ctx_sp)
-    {
-        const bool force = true;
-        reg_ctx_sp->InvalidateIfNeeded (force);
-    }
+    if (m_backing_thread_sp)
+        return m_backing_thread_sp->RefreshStateAfterStop();
+    
+    if (m_reg_context_sp)
+        m_reg_context_sp->InvalidateAllRegisters();
 }

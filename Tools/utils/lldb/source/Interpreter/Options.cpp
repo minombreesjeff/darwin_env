@@ -206,7 +206,7 @@ Options::BuildValidOptionSets ()
         }
         else
         {
-            for (int j = 0; j < LLDB_MAX_NUM_OPTION_SETS; j++)
+            for (uint32_t j = 0; j < LLDB_MAX_NUM_OPTION_SETS; j++)
             {
                 if (this_usage_mask & (1 << j))
                 {
@@ -224,7 +224,7 @@ Options::BuildValidOptionSets ()
         
         for (int i = 0; i < num_options; ++i)
         {
-            for (int j = 0; j < num_option_sets; j++)
+            for (uint32_t j = 0; j < num_option_sets; j++)
             {
                 if (opt_defs[i].usage_mask & 1 << j)
                 {
@@ -310,7 +310,7 @@ Options::GetLongOptions ()
             }
         }
 
-        //getopt_long requires a NULL final entry in the table:
+        //getopt_long_only requires a NULL final entry in the table:
 
         m_getopt_table[i].name    = NULL;
         m_getopt_table[i].has_arg = 0;
@@ -498,7 +498,7 @@ Options::GenerateOptionUsage
     if (num_options == 0)
         return;
         
-    int num_option_sets = GetRequiredOptions().size();
+    uint32_t num_option_sets = GetRequiredOptions().size();
     
     uint32_t i;
     
@@ -522,8 +522,7 @@ Options::GenerateOptionUsage
 
         std::set<int> options;
         std::set<int>::const_iterator options_pos, options_end;
-        bool first;
-        for (i = 0, first = true; i < num_options; ++i)
+        for (i = 0; i < num_options; ++i)
         {
             if (opt_defs[i].usage_mask & opt_set_mask && isprint8(opt_defs[i].short_option))
             {
@@ -760,7 +759,7 @@ Options::HandleOptionCompletion
     cur_opt_std_str.erase(char_pos);
     const char *cur_opt_str = cur_opt_std_str.c_str();
 
-    for (int i = 0; i < opt_element_vector.size(); i++)
+    for (size_t i = 0; i < opt_element_vector.size(); i++)
     {
         int opt_pos = opt_element_vector[i].opt_pos;
         int opt_arg_pos = opt_element_vector[i].opt_arg_pos;
@@ -796,7 +795,7 @@ Options::HandleOptionCompletion
             }
             else if (opt_defs_index != OptionArgElement::eUnrecognizedArg)
             {
-                // We recognized it, if it an incomplete long option, complete it anyway (getopt_long is
+                // We recognized it, if it an incomplete long option, complete it anyway (getopt_long_only is
                 // happy with shortest unique string, but it's still a nice thing to do.)  Otherwise return
                 // The string so the upper level code will know this is a full match and add the " ".
                 if (cur_opt_str && strlen (cur_opt_str) > 2
@@ -819,7 +818,7 @@ Options::HandleOptionCompletion
                 // FIXME - not handling wrong options yet:
                 // Check to see if they are writing a long option & complete it.
                 // I think we will only get in here if the long option table has two elements
-                // that are not unique up to this point.  getopt_long does shortest unique match
+                // that are not unique up to this point.  getopt_long_only does shortest unique match
                 // for long options already.
 
                 if (cur_opt_str && strlen (cur_opt_str) > 2
@@ -834,7 +833,7 @@ Options::HandleOptionCompletion
                             // The options definitions table has duplicates because of the
                             // way the grouping information is stored, so only add once.
                             bool duplicate = false;
-                            for (int k = 0; k < matches.GetSize(); k++)
+                            for (size_t k = 0; k < matches.GetSize(); k++)
                             {
                                 if (matches.GetStringAtIndex(k) == full_name)
                                 {
@@ -901,7 +900,7 @@ Options::HandleOptionArgumentCompletion
 )
 {
     const OptionDefinition *opt_defs = GetDefinitions();
-    std::auto_ptr<SearchFilter> filter_ap;
+    std::unique_ptr<SearchFilter> filter_ap;
 
     int opt_arg_pos = opt_element_vector[opt_element_index].opt_arg_pos;
     int opt_defs_index = opt_element_vector[opt_element_index].opt_defs_index;
@@ -945,7 +944,7 @@ Options::HandleOptionArgumentCompletion
     if (completion_mask & CommandCompletions::eSourceFileCompletion
         || completion_mask & CommandCompletions::eSymbolCompletion)
     {
-        for (int i = 0; i < opt_element_vector.size(); i++)
+        for (size_t i = 0; i < opt_element_vector.size(); i++)
         {
             int cur_defs_index = opt_element_vector[i].opt_defs_index;
             int cur_arg_pos    = opt_element_vector[i].opt_arg_pos;

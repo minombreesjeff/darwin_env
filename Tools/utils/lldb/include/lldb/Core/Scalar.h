@@ -73,9 +73,9 @@ public:
     bool
     GetData (DataExtractor &data, size_t limit_byte_size = UINT32_MAX) const;
 
-    uint32_t 
+    size_t
     GetAsMemoryData (void *dst,
-                     uint32_t dst_len, 
+                     size_t dst_len, 
                      lldb::ByteOrder dst_byte_order,
                      Error &error) const;
 
@@ -102,6 +102,9 @@ public:
 
     bool
     Cast (Scalar::Type type);
+    
+    bool
+    MakeSigned ();
 
     static const char *
     GetValueTypeAsCString (Scalar::Type value_type);
@@ -219,7 +222,10 @@ public:
     GetRawBits64 (uint64_t fail_value) const;
 
     Error
-    SetValueFromCString (const char *s, lldb::Encoding encoding, uint32_t byte_size);
+    SetValueFromCString (const char *s, lldb::Encoding encoding, size_t byte_size);
+    
+    Error
+    SetValueFromData (DataExtractor &data, lldb::Encoding encoding, size_t byte_size);
 
     static bool
     UIntValueIsValidForSize (uint64_t uval64, size_t total_byte_size)
@@ -249,6 +255,16 @@ public:
     }
 
 protected:
+    typedef int                 sint_t;
+    typedef unsigned int        uint_t;
+    typedef long                slong_t;
+    typedef unsigned long       ulong_t;
+    typedef long long           slonglong_t;
+    typedef unsigned long long  ulonglong_t;
+    typedef float               float_t;
+    typedef double              double_t;
+    typedef long double         long_double_t;
+    
     union ValueData
     {
         int                 sint;
@@ -277,6 +293,8 @@ private:
     friend const Scalar operator|   (const Scalar& lhs, const Scalar& rhs);
     friend const Scalar operator%   (const Scalar& lhs, const Scalar& rhs);
     friend const Scalar operator^   (const Scalar& lhs, const Scalar& rhs);
+    friend const Scalar operator<<  (const Scalar& lhs, const Scalar& rhs);
+    friend const Scalar operator>>  (const Scalar& lhs, const Scalar& rhs);
     friend          bool operator== (const Scalar& lhs, const Scalar& rhs);
     friend          bool operator!= (const Scalar& lhs, const Scalar& rhs);
     friend          bool operator<  (const Scalar& lhs, const Scalar& rhs);
@@ -309,6 +327,8 @@ const Scalar operator& (const Scalar& lhs, const Scalar& rhs);
 const Scalar operator| (const Scalar& lhs, const Scalar& rhs);
 const Scalar operator% (const Scalar& lhs, const Scalar& rhs);
 const Scalar operator^ (const Scalar& lhs, const Scalar& rhs);
+const Scalar operator<< (const Scalar& lhs, const Scalar& rhs);
+const Scalar operator>> (const Scalar& lhs, const Scalar& rhs);
 bool operator== (const Scalar& lhs, const Scalar& rhs);
 bool operator!= (const Scalar& lhs, const Scalar& rhs);
 bool operator<  (const Scalar& lhs, const Scalar& rhs);

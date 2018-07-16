@@ -1,0 +1,9 @@
+#!/bin/sh -x
+
+mkdir llvm
+cd llvm
+
+( git clone git:/git/puzzlebox/llvm.git/ source && cd source && git checkout -b lldb-build 10dc83ea8d4dc33241a39085e63b95cf437b0434 )
+( cd source/tools && git clone git:/git/puzzlebox/clang.git/ clang && cd clang && git checkout 3d118c7324b81ea2d43ff71f9343033ae57cbfcc )
+rm -rf build
+( mkdir build && cd build && ../source/configure --enable-optimized --disable-assertions --enable-targets=x86_64,arm,arm64 --build=x86_64-apple-darwin10 ; make -j8 )

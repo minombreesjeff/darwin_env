@@ -55,14 +55,14 @@ BreakpointResolverFileRegex::SearchCallback
     if (!context.target_sp)
         return eCallbackReturnContinue;
         
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS));
 
     CompileUnit *cu = context.comp_unit;
     FileSpec cu_file_spec = *(static_cast<FileSpec *>(cu));
     std::vector<uint32_t> line_matches;
     context.target_sp->GetSourceManager().FindLinesMatchingRegex(cu_file_spec, m_regex, 1, UINT32_MAX, line_matches); 
     uint32_t num_matches = line_matches.size();
-    for (int i = 0; i < num_matches; i++)
+    for (uint32_t i = 0; i < num_matches; i++)
     {
         uint32_t start_idx = 0;
         bool exact = false;

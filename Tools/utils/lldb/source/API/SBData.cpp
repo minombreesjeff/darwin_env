@@ -86,7 +86,7 @@ SBData::IsValid()
 uint8_t
 SBData::GetAddressByteSize ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     uint8_t value = 0;
     if (m_opaque_sp.get())
         value = m_opaque_sp->GetAddressByteSize();
@@ -99,7 +99,7 @@ SBData::GetAddressByteSize ()
 void
 SBData::SetAddressByteSize (uint8_t addr_byte_size)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (m_opaque_sp.get())
         m_opaque_sp->SetAddressByteSize(addr_byte_size);
     if (log)
@@ -116,7 +116,7 @@ SBData::Clear ()
 size_t
 SBData::GetByteSize ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     size_t value = 0;
     if (m_opaque_sp.get())
         value = m_opaque_sp->GetByteSize();
@@ -129,7 +129,7 @@ SBData::GetByteSize ()
 lldb::ByteOrder
 SBData::GetByteOrder ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     lldb::ByteOrder value = eByteOrderInvalid;
     if (m_opaque_sp.get())
         value = m_opaque_sp->GetByteOrder();
@@ -142,7 +142,7 @@ SBData::GetByteOrder ()
 void
 SBData::SetByteOrder (lldb::ByteOrder endian)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (m_opaque_sp.get())
         m_opaque_sp->SetByteOrder(endian);
     if (log)
@@ -151,9 +151,9 @@ SBData::SetByteOrder (lldb::ByteOrder endian)
 
 
 float
-SBData::GetFloat (lldb::SBError& error, uint32_t offset)
+SBData::GetFloat (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     float value = 0;
     if (!m_opaque_sp.get())
     {
@@ -167,15 +167,15 @@ SBData::GetFloat (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetFloat (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetFloat (error=%p,offset=%" PRIu64 ") => "
                      "(%f)", error.get(), offset, value);
     return value;
 }
 
 double
-SBData::GetDouble (lldb::SBError& error, uint32_t offset)
+SBData::GetDouble (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     double value = 0;
     if (!m_opaque_sp.get())
     {
@@ -189,15 +189,15 @@ SBData::GetDouble (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetDouble (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetDouble (error=%p,offset=%" PRIu64 ") => "
                      "(%f)", error.get(), offset, value);
     return value;
 }
 
 long double
-SBData::GetLongDouble (lldb::SBError& error, uint32_t offset)
+SBData::GetLongDouble (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     long double value = 0;
     if (!m_opaque_sp.get())
     {
@@ -211,15 +211,15 @@ SBData::GetLongDouble (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetLongDouble (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetLongDouble (error=%p,offset=%" PRIu64 ") => "
                      "(%Lf)", error.get(), offset, value);
     return value;
 }
 
 lldb::addr_t
-SBData::GetAddress (lldb::SBError& error, uint32_t offset)
+SBData::GetAddress (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     lldb::addr_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -233,15 +233,15 @@ SBData::GetAddress (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetAddress (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetAddress (error=%p,offset=%" PRIu64 ") => "
                      "(%p)", error.get(), offset, (void*)value);
     return value;
 }
 
 uint8_t
-SBData::GetUnsignedInt8 (lldb::SBError& error, uint32_t offset)
+SBData::GetUnsignedInt8 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     uint8_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -255,15 +255,15 @@ SBData::GetUnsignedInt8 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetUnsignedInt8 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetUnsignedInt8 (error=%p,offset=%" PRIu64 ") => "
                      "(%c)", error.get(), offset, value);
     return value;
 }
 
 uint16_t
-SBData::GetUnsignedInt16 (lldb::SBError& error, uint32_t offset)
+SBData::GetUnsignedInt16 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     uint16_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -277,15 +277,15 @@ SBData::GetUnsignedInt16 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetUnsignedInt16 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetUnsignedInt16 (error=%p,offset=%" PRIu64 ") => "
                      "(%hd)", error.get(), offset, value);
     return value;
 }
 
 uint32_t
-SBData::GetUnsignedInt32 (lldb::SBError& error, uint32_t offset)
+SBData::GetUnsignedInt32 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     uint32_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -299,15 +299,15 @@ SBData::GetUnsignedInt32 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetUnsignedInt32 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetUnsignedInt32 (error=%p,offset=%" PRIu64 ") => "
                      "(%d)", error.get(), offset, value);
     return value;
 }
 
 uint64_t
-SBData::GetUnsignedInt64 (lldb::SBError& error, uint32_t offset)
+SBData::GetUnsignedInt64 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     uint64_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -321,15 +321,15 @@ SBData::GetUnsignedInt64 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetUnsignedInt64 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetUnsignedInt64 (error=%p,offset=%" PRIu64 ") => "
                      "(%" PRId64 ")", error.get(), offset, value);
     return value;
 }
 
 int8_t
-SBData::GetSignedInt8 (lldb::SBError& error, uint32_t offset)
+SBData::GetSignedInt8 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     int8_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -343,15 +343,15 @@ SBData::GetSignedInt8 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetSignedInt8 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetSignedInt8 (error=%p,offset=%" PRIu64 ") => "
                      "(%c)", error.get(), offset, value);
     return value;
 }
 
 int16_t
-SBData::GetSignedInt16 (lldb::SBError& error, uint32_t offset)
+SBData::GetSignedInt16 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     int16_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -365,15 +365,15 @@ SBData::GetSignedInt16 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetSignedInt16 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetSignedInt16 (error=%p,offset=%" PRIu64 ") => "
                      "(%hd)", error.get(), offset, value);
     return value;
 }
 
 int32_t
-SBData::GetSignedInt32 (lldb::SBError& error, uint32_t offset)
+SBData::GetSignedInt32 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     int32_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -387,15 +387,15 @@ SBData::GetSignedInt32 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetSignedInt32 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetSignedInt32 (error=%p,offset=%" PRIu64 ") => "
                      "(%d)", error.get(), offset, value);
     return value;
 }
 
 int64_t
-SBData::GetSignedInt64 (lldb::SBError& error, uint32_t offset)
+SBData::GetSignedInt64 (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     int64_t value = 0;
     if (!m_opaque_sp.get())
     {
@@ -409,15 +409,15 @@ SBData::GetSignedInt64 (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetSignedInt64 (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetSignedInt64 (error=%p,offset=%" PRIu64 ") => "
                      "(%" PRId64 ")", error.get(), offset, value);
     return value;
 }
 
 const char*
-SBData::GetString (lldb::SBError& error, uint32_t offset)
+SBData::GetString (lldb::SBError& error, lldb::offset_t offset)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     const char* value = 0;
     if (!m_opaque_sp.get())
     {
@@ -431,7 +431,7 @@ SBData::GetString (lldb::SBError& error, uint32_t offset)
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::GetString (error=%p,offset=%d) => "
+        log->Printf ("SBData::GetString (error=%p,offset=%" PRIu64 ") => "
                      "(%p)", error.get(), offset, value);
     return value;
 }
@@ -461,11 +461,11 @@ SBData::GetDescription (lldb::SBStream &description, lldb::addr_t base_addr)
 
 size_t
 SBData::ReadRawData (lldb::SBError& error,
-                     uint32_t offset,
+                     lldb::offset_t offset,
                      void *buf,
                      size_t size)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     void* ok = NULL;
     if (!m_opaque_sp.get())
     {
@@ -479,7 +479,7 @@ SBData::ReadRawData (lldb::SBError& error,
             error.SetErrorString("unable to read data");
     }
     if (log)
-        log->Printf ("SBData::ReadRawData (error=%p,offset=%d,buf=%p,size=%lu) => "
+        log->Printf ("SBData::ReadRawData (error=%p,offset=%" PRIu64 ",buf=%p,size=%lu) => "
                      "(%p)", error.get(), offset, buf, size, ok);
     return ok ? size : 0;
 }
@@ -491,7 +491,7 @@ SBData::SetData (lldb::SBError& error,
                  lldb::ByteOrder endian,
                  uint8_t addr_size)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (!m_opaque_sp.get())
         m_opaque_sp.reset(new DataExtractor(buf, size, endian, addr_size));
     else
@@ -504,7 +504,7 @@ SBData::SetData (lldb::SBError& error,
 bool
 SBData::Append (const SBData& rhs)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     bool value = false;
     if (m_opaque_sp.get() && rhs.m_opaque_sp.get())
         value = m_opaque_sp.get()->Append(*rhs.m_opaque_sp);
@@ -613,7 +613,7 @@ SBData::CreateDataFromDoubleArray (lldb::ByteOrder endian, uint32_t addr_byte_si
 bool
 SBData::SetDataFromCString (const char* data)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     if (!data)
     {
@@ -642,7 +642,7 @@ SBData::SetDataFromCString (const char* data)
 bool
 SBData::SetDataFromUInt64Array (uint64_t* array, size_t array_len)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     if (!array || array_len == 0)
     {
@@ -671,7 +671,7 @@ SBData::SetDataFromUInt64Array (uint64_t* array, size_t array_len)
 bool
 SBData::SetDataFromUInt32Array (uint32_t* array, size_t array_len)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     if (!array || array_len == 0)
     {
@@ -700,7 +700,7 @@ SBData::SetDataFromUInt32Array (uint32_t* array, size_t array_len)
 bool
 SBData::SetDataFromSInt64Array (int64_t* array, size_t array_len)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     if (!array || array_len == 0)
     {
@@ -729,7 +729,7 @@ SBData::SetDataFromSInt64Array (int64_t* array, size_t array_len)
 bool
 SBData::SetDataFromSInt32Array (int32_t* array, size_t array_len)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     if (!array || array_len == 0)
     {
@@ -758,7 +758,7 @@ SBData::SetDataFromSInt32Array (int32_t* array, size_t array_len)
 bool
 SBData::SetDataFromDoubleArray (double* array, size_t array_len)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     if (!array || array_len == 0)
     {

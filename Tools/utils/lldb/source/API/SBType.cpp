@@ -136,7 +136,7 @@ SBType::IsValid() const
     return m_opaque_sp->IsValid();
 }
 
-size_t
+uint64_t
 SBType::GetByteSize()
 {
     if (!IsValid())
@@ -231,6 +231,18 @@ SBType::IsFunctionType ()
     return false;
 }
 
+bool
+SBType::IsPolymorphicClass ()
+{
+    if (IsValid())
+    {
+        return ClangASTType::IsPolymorphicClass (m_opaque_sp->GetASTContext(), m_opaque_sp->GetOpaqueQualType());
+    }
+    return false;
+}
+
+
+
 lldb::SBType
 SBType::GetFunctionReturnType ()
 {
@@ -273,6 +285,18 @@ SBType::GetUnqualifiedType()
     QualType qt (QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType()));
     return SBType(ClangASTType(m_opaque_sp->GetASTContext(),qt.getUnqualifiedType().getAsOpaquePtr()));
 }
+
+lldb::SBType
+SBType::GetCanonicalType()
+{
+    if (IsValid())
+    {
+        QualType qt (QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType()));
+        return SBType(ClangASTType(m_opaque_sp->GetASTContext(),qt.getCanonicalType().getAsOpaquePtr()));
+    }
+    return SBType();
+}
+
 
 lldb::BasicType
 SBType::GetBasicType()
@@ -522,7 +546,7 @@ SBTypeList::~SBTypeList()
 bool
 SBType::IsPointerType (void *opaque_type)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     bool ret_value = ClangASTContext::IsPointerType (opaque_type);
     

@@ -51,7 +51,7 @@ LogChannelDWARF::CreateInstance ()
     return new LogChannelDWARF ();
 }
 
-const char *
+lldb_private::ConstString
 LogChannelDWARF::GetPluginNameStatic()
 {
     return SymbolFileDWARF::GetPluginNameStatic();
@@ -63,14 +63,8 @@ LogChannelDWARF::GetPluginDescriptionStatic()
     return "DWARF log channel for debugging plug-in issues.";
 }
 
-const char *
+lldb_private::ConstString
 LogChannelDWARF::GetPluginName()
-{
-    return GetPluginDescriptionStatic();
-}
-
-const char *
-LogChannelDWARF::GetShortPluginName()
 {
     return GetPluginNameStatic();
 }
@@ -86,18 +80,16 @@ void
 LogChannelDWARF::Delete ()
 {
     g_log_channel = NULL;
-    m_log_sp.reset();
 }
 
 
 void
 LogChannelDWARF::Disable (const char **categories, Stream *feedback_strm)
 {
-    if (!m_log_sp)
+    if (m_log_ap.get() == NULL)
         return;
 
-    g_log_channel = this;
-    uint32_t flag_bits = m_log_sp->GetMask().Get();
+    uint32_t flag_bits = m_log_ap->GetMask().Get();
     for (size_t i = 0; categories[i] != NULL; ++i)
     {
          const char *arg = categories[i];
@@ -122,7 +114,7 @@ LogChannelDWARF::Disable (const char **categories, Stream *feedback_strm)
     if (flag_bits == 0)
         Delete ();
     else
-        m_log_sp->GetMask().Reset (flag_bits);
+        m_log_ap->GetMask().Reset (flag_bits);
 
     return;
 }
@@ -138,7 +130,11 @@ LogChannelDWARF::Enable
 {
     Delete ();
 
-    m_log_sp.reset(new Log (log_stream_sp));
+    if (m_log_ap)
+        m_log_ap->SetStream(log_stream_sp);
+    else
+        m_log_ap.reset(new Log (log_stream_sp));
+    
     g_log_channel = this;
     uint32_t flag_bits = 0;
     bool got_unknown_category = false;
@@ -168,9 +164,9 @@ LogChannelDWARF::Enable
     }
     if (flag_bits == 0)
         flag_bits = DWARF_LOG_DEFAULT;
-    m_log_sp->GetMask().Reset(flag_bits);
-    m_log_sp->GetOptions().Reset(log_options);
-    return m_log_sp.get() != NULL;
+    m_log_ap->GetMask().Reset(flag_bits);
+    m_log_ap->GetOptions().Reset(log_options);
+    return m_log_ap.get() != NULL;
 }
 
 void
@@ -182,41 +178,41 @@ LogChannelDWARF::ListCategories (Stream *strm)
                   "  line - log the parsing if .debug_line\n"
                   "  pubnames - log the parsing if .debug_pubnames\n"
                   "  pubtypes - log the parsing if .debug_pubtypes\n"
-                  "  lookups - log any lookups that happen by name, regex, or address\n\n"
-                  "  completion - log struct/unions/class type completions\n\n"
-                  "  map - log insertions of object files into DWARF debug maps\n\n",
-                  SymbolFileDWARF::GetPluginNameStatic());
+                  "  lookups - log any lookups that happen by name, regex, or address\n"
+                  "  completion - log struct/unions/class type completions\n"
+                  "  map - log insertions of object files into DWARF debug maps\n",
+                  SymbolFileDWARF::GetPluginNameStatic().GetCString());
 }
 
-LogSP
+Log *
 LogChannelDWARF::GetLog ()
 {
     if (g_log_channel)
-        return g_log_channel->m_log_sp;
+        return g_log_channel->m_log_ap.get();
 
-    return LogSP();
+    return NULL;
 }
 
-LogSP
+Log *
 LogChannelDWARF::GetLogIfAll (uint32_t mask)
 {
-    if (g_log_channel && g_log_channel->m_log_sp)
+    if (g_log_channel && g_log_channel->m_log_ap.get())
     {
-        if (g_log_channel->m_log_sp->GetMask().AllSet(mask))
-            return g_log_channel->m_log_sp;
+        if (g_log_channel->m_log_ap->GetMask().AllSet(mask))
+            return g_log_channel->m_log_ap.get();
     }
-    return LogSP();
+    return NULL;
 }
 
-LogSP
+Log *
 LogChannelDWARF::GetLogIfAny (uint32_t mask)
 {
-    if (g_log_channel && g_log_channel->m_log_sp)
+    if (g_log_channel && g_log_channel->m_log_ap.get())
     {
-        if (g_log_channel->m_log_sp->GetMask().AnySet(mask))
-            return g_log_channel->m_log_sp;
+        if (g_log_channel->m_log_ap->GetMask().AnySet(mask))
+            return g_log_channel->m_log_ap.get();
     }
-    return LogSP();
+    return NULL;
 }
 
 void
@@ -224,10 +220,13 @@ LogChannelDWARF::LogIf (uint32_t mask, const char *format, ...)
 {
     if (g_log_channel)
     {
-        LogSP log_sp(g_log_channel->m_log_sp);
-        va_list args;
-        va_start (args, format);
-        log_sp->VAPrintf (format, args);
-        va_end (args);
+        Log *log = g_log_channel->m_log_ap.get();
+        if (log && log->GetMask().AnySet(mask))
+        {
+            va_list args;
+            va_start (args, format);
+            log->VAPrintf (format, args);
+            va_end (args);
+        }
     }
 }

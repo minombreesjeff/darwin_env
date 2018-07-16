@@ -46,19 +46,34 @@ public:
     }
 
     void
-    AddRegister (lldb_private::RegisterInfo &reg_info, 
+    AddRegister (lldb_private::RegisterInfo reg_info, 
                  lldb_private::ConstString &reg_name, 
                  lldb_private::ConstString &reg_alt_name, 
                  lldb_private::ConstString &set_name)
     {
-        const uint32_t reg_num = m_regs.size();
+        const uint32_t reg_num = (uint32_t)m_regs.size();
         m_reg_names.push_back (reg_name);
         m_reg_alt_names.push_back (reg_alt_name);
         reg_info.name = reg_name.AsCString();
         assert (reg_info.name);
         reg_info.alt_name = reg_alt_name.AsCString(NULL);
+        uint32_t i;
+        if (reg_info.value_regs)
+        {
+            for (i=0; reg_info.value_regs[i] != LLDB_INVALID_REGNUM; ++i)
+                m_value_regs_map[reg_num].push_back(reg_info.value_regs[i]);
+            m_value_regs_map[reg_num].push_back(LLDB_INVALID_REGNUM);
+            reg_info.value_regs = m_value_regs_map[reg_num].data();
+        }
+        if (reg_info.invalidate_regs)
+        {
+            for (i=0; reg_info.invalidate_regs[i] != LLDB_INVALID_REGNUM; ++i)
+                m_invalidate_regs_map[reg_num].push_back(reg_info.invalidate_regs[i]);
+            m_invalidate_regs_map[reg_num].push_back(LLDB_INVALID_REGNUM);
+            reg_info.invalidate_regs = m_invalidate_regs_map[reg_num].data();
+        }
         m_regs.push_back (reg_info);
-        uint32_t set = GetRegisterSetIndexByName (set_name, true);
+        uint32_t set = GetRegisterSetIndexByName (set_name);
         assert (set < m_sets.size());
         assert (set < m_set_reg_nums.size());
         assert (set < m_set_names.size());
@@ -114,20 +129,20 @@ public:
     }
 
     uint32_t
-    GetRegisterSetIndexByName (lldb_private::ConstString &set_name, bool can_create)
+    GetRegisterSetIndexByName (lldb_private::ConstString &set_name)
     {
         name_collection::iterator pos, end = m_set_names.end();
         for (pos = m_set_names.begin(); pos != end; ++pos)
         {
             if (*pos == set_name)
-                return std::distance (m_set_names.begin(), pos);
+                return static_cast<uint32_t>(std::distance (m_set_names.begin(), pos));
         }
 
         m_set_names.push_back(set_name);
         m_set_reg_nums.resize(m_set_reg_nums.size()+1);
         lldb_private::RegisterSet new_set = { set_name.AsCString(), NULL, 0, NULL };
         m_sets.push_back (new_set);
-        return m_sets.size() - 1;
+        return static_cast<uint32_t>(m_sets.size() - 1);
     }
 
     uint32_t
@@ -137,7 +152,7 @@ public:
         for (pos = m_regs.begin(); pos != end; ++pos)
         {
             if (pos->kinds[kind] == num)
-                return std::distance (m_regs.begin(), pos);
+                return static_cast<uint32_t>(std::distance (m_regs.begin(), pos));
         }
 
         return LLDB_INVALID_REGNUM;
@@ -156,9 +171,6 @@ public:
     void
     HardcodeARMRegisters(bool from_scratch);
 
-    void
-    Addx86_64ConvenienceRegisters();
-
 protected:
     //------------------------------------------------------------------
     // Classes that inherit from GDBRemoteRegisterContext can see and modify these
@@ -168,6 +180,7 @@ protected:
     typedef std::vector <uint32_t> reg_num_collection;
     typedef std::vector <reg_num_collection> set_reg_num_collection;
     typedef std::vector <lldb_private::ConstString> name_collection;
+    typedef std::map<uint32_t, reg_num_collection> reg_to_regs_map;
 
     reg_collection m_regs;
     set_collection m_sets;
@@ -175,6 +188,8 @@ protected:
     name_collection m_reg_names;
     name_collection m_reg_alt_names;
     name_collection m_set_names;
+    reg_to_regs_map m_value_regs_map;
+    reg_to_regs_map m_invalidate_regs_map;
     size_t m_reg_data_byte_size;   // The number of bytes required to store all registers
 };
 
@@ -202,13 +217,13 @@ public:
     GetRegisterCount ();
 
     virtual const lldb_private::RegisterInfo *
-    GetRegisterInfoAtIndex (uint32_t reg);
+    GetRegisterInfoAtIndex (size_t reg);
 
     virtual size_t
     GetRegisterSetCount ();
 
     virtual const lldb_private::RegisterSet *
-    GetRegisterSet (uint32_t reg_set);
+    GetRegisterSet (size_t reg_set);
 
     virtual bool
     ReadRegister (const lldb_private::RegisterInfo *reg_info, lldb_private::RegisterValue &value);
@@ -242,6 +257,34 @@ protected:
     
     void
     SetAllRegisterValid (bool b);
+
+    bool
+    GetRegisterIsValid (uint32_t reg) const
+    {
+#if defined (LLDB_CONFIGURATION_DEBUG)
+        assert (reg < m_reg_valid.size());
+#endif
+        if (reg < m_reg_valid.size())
+            return m_reg_valid[reg];
+        return false;
+    }
+
+    void
+    SetRegisterIsValid (const lldb_private::RegisterInfo *reg_info, bool valid)
+    {
+        if (reg_info)
+            return SetRegisterIsValid (reg_info->kinds[lldb::eRegisterKindLLDB], valid);
+    }
+
+    void
+    SetRegisterIsValid (uint32_t reg, bool valid)
+    {
+#if defined (LLDB_CONFIGURATION_DEBUG)
+        assert (reg < m_reg_valid.size());
+#endif
+        if (reg < m_reg_valid.size())
+            m_reg_valid[reg] = valid;
+    }
 
     void
     SyncThreadState(lldb_private::Process *process);  // Assumes the sequence mutex has already been acquired.

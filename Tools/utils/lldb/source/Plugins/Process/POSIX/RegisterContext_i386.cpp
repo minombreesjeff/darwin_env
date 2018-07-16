@@ -10,11 +10,13 @@
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Host/Endian.h"
+#include "llvm/Support/Compiler.h"
 
 #include "ProcessPOSIX.h"
 #include "ProcessPOSIXLog.h"
 #include "ProcessMonitor.h"
 #include "RegisterContext_i386.h"
+#include "RegisterContext_x86.h"
 
 using namespace lldb_private;
 using namespace lldb;
@@ -80,103 +82,6 @@ enum
 enum
 {
     k_num_register_sets = 2
-};
-
-enum
-{
-    gcc_eax = 0,
-    gcc_ecx,
-    gcc_edx,
-    gcc_ebx,
-    gcc_ebp,
-    gcc_esp,
-    gcc_esi,
-    gcc_edi,
-    gcc_eip,
-    gcc_eflags
-};
-
-enum
-{
-    dwarf_eax = 0,
-    dwarf_ecx,
-    dwarf_edx,
-    dwarf_ebx,
-    dwarf_esp,
-    dwarf_ebp,
-    dwarf_esi,
-    dwarf_edi,
-    dwarf_eip,
-    dwarf_eflags,
-    dwarf_stmm0 = 11,
-    dwarf_stmm1,
-    dwarf_stmm2,
-    dwarf_stmm3,
-    dwarf_stmm4,
-    dwarf_stmm5,
-    dwarf_stmm6,
-    dwarf_stmm7,
-    dwarf_xmm0 = 21,
-    dwarf_xmm1,
-    dwarf_xmm2,
-    dwarf_xmm3,
-    dwarf_xmm4,
-    dwarf_xmm5,
-    dwarf_xmm6,
-    dwarf_xmm7
-};
-
-enum
-{
-    gdb_eax        =  0,
-    gdb_ecx        =  1,
-    gdb_edx        =  2,
-    gdb_ebx        =  3,
-    gdb_esp        =  4,
-    gdb_ebp        =  5,
-    gdb_esi        =  6,
-    gdb_edi        =  7,
-    gdb_eip        =  8,
-    gdb_eflags     =  9,
-    gdb_cs         = 10,
-    gdb_ss         = 11,
-    gdb_ds         = 12,
-    gdb_es         = 13,
-    gdb_fs         = 14,
-    gdb_gs         = 15,
-    gdb_stmm0      = 16,
-    gdb_stmm1      = 17,
-    gdb_stmm2      = 18,
-    gdb_stmm3      = 19,
-    gdb_stmm4      = 20,
-    gdb_stmm5      = 21,
-    gdb_stmm6      = 22,
-    gdb_stmm7      = 23,
-    gdb_fcw        = 24,
-    gdb_fsw        = 25,
-    gdb_ftw        = 26,
-    gdb_fpu_cs     = 27,
-    gdb_ip         = 28,
-    gdb_fpu_ds     = 29,
-    gdb_dp         = 30,
-    gdb_fop        = 31,
-    gdb_xmm0       = 32,
-    gdb_xmm1       = 33,
-    gdb_xmm2       = 34,
-    gdb_xmm3       = 35,
-    gdb_xmm4       = 36,
-    gdb_xmm5       = 37,
-    gdb_xmm6       = 38,
-    gdb_xmm7       = 39,
-    gdb_mxcsr      = 40,
-    gdb_mm0        = 41,
-    gdb_mm1        = 42,
-    gdb_mm2        = 43,
-    gdb_mm3        = 44,
-    gdb_mm4        = 45,
-    gdb_mm5        = 46,
-    gdb_mm6        = 47,
-    gdb_mm7        = 48
 };
 
 static const
@@ -271,14 +176,14 @@ g_reg_sets[k_num_register_sets] =
       eFormatHex, { kind1, kind2, kind3, kind4, fpu_##reg }, NULL, NULL }
 
 #define DEFINE_FP(reg, i)                                          \
-    { #reg#i, NULL, FP_SIZE, FPR_OFFSET(reg[i]), eEncodingVector,  \
-      eFormatVectorOfUInt8,                                        \
+    { #reg#i, NULL, FP_SIZE, LLVM_EXTENSION FPR_OFFSET(reg[i]),    \
+      eEncodingVector, eFormatVectorOfUInt8,                       \
       { dwarf_##reg##i, dwarf_##reg##i,                            \
         LLDB_INVALID_REGNUM, gdb_##reg##i, fpu_##reg##i }, NULL, NULL }
 
 #define DEFINE_XMM(reg, i)                                         \
-    { #reg#i, NULL, XMM_SIZE, FPR_OFFSET(reg[i]), eEncodingVector, \
-      eFormatVectorOfUInt8,                                        \
+    { #reg#i, NULL, XMM_SIZE, LLVM_EXTENSION FPR_OFFSET(reg[i]),   \
+       eEncodingVector, eFormatVectorOfUInt8,                      \
       { dwarf_##reg##i, dwarf_##reg##i,                            \
         LLDB_INVALID_REGNUM, gdb_##reg##i, fpu_##reg##i }, NULL, NULL }
 
@@ -387,7 +292,7 @@ RegisterContext_i386::GetRegisterCount()
 }
 
 const RegisterInfo *
-RegisterContext_i386::GetRegisterInfoAtIndex(uint32_t reg)
+RegisterContext_i386::GetRegisterInfoAtIndex(size_t reg)
 {
     assert(k_num_register_infos == k_num_registers);
     if (reg < k_num_registers)
@@ -403,7 +308,7 @@ RegisterContext_i386::GetRegisterSetCount()
 }
 
 const RegisterSet *
-RegisterContext_i386::GetRegisterSet(uint32_t set)
+RegisterContext_i386::GetRegisterSet(size_t set)
 {
     if (set < k_num_register_sets)
         return &g_reg_sets[set];
@@ -437,7 +342,8 @@ RegisterContext_i386::ReadRegister(const RegisterInfo *reg_info,
 {
     const uint32_t reg = reg_info->kinds[eRegisterKindLLDB];
     ProcessMonitor &monitor = GetMonitor();
-    return monitor.ReadRegisterValue(GetRegOffset(reg), GetRegSize(reg), value);
+    return monitor.ReadRegisterValue(m_thread.GetID(), GetRegOffset(reg),
+                                     GetRegisterName(reg), GetRegSize(reg), value);
 }
 
 bool
@@ -447,11 +353,12 @@ RegisterContext_i386::ReadAllRegisterValues(DataBufferSP &data_sp)
 }
 
 bool RegisterContext_i386::WriteRegister(const RegisterInfo *reg_info,
-                                              const RegisterValue &value)
+                                         const RegisterValue &value)
 {
     const uint32_t reg = reg_info->kinds[eRegisterKindLLDB];
     ProcessMonitor &monitor = GetMonitor();
-    return monitor.WriteRegisterValue(GetRegOffset(reg), value);
+    return monitor.WriteRegisterValue(m_thread.GetID(), GetRegOffset(reg),
+                                      GetRegisterName(reg), value);
 }
 
 bool
@@ -612,7 +519,7 @@ RegisterContext_i386::HardwareSingleStep(bool enable)
 void
 RegisterContext_i386::LogGPR(const char *title)
 {
-    LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_REGISTERS));
+    Log *log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_REGISTERS));
     if (log)
     {
         if (title)
@@ -631,7 +538,7 @@ RegisterContext_i386::ReadGPR()
     bool result;
 
     ProcessMonitor &monitor = GetMonitor();
-    result = monitor.ReadGPR(&user.regs);
+    result = monitor.ReadGPR(m_thread.GetID(), &user.regs, sizeof(user.regs));
     LogGPR("RegisterContext_i386::ReadGPR()");
     return result;
 }
@@ -640,5 +547,5 @@ bool
 RegisterContext_i386::ReadFPR()
 {
     ProcessMonitor &monitor = GetMonitor();
-    return monitor.ReadFPR(&user.i387);
+    return monitor.ReadFPR(m_thread.GetID(), &user.i387, sizeof(user.i387));
 }

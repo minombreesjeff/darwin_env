@@ -60,7 +60,7 @@ RegisterContextLLDB::RegisterContextLLDB
     m_registers(),
     m_parent_unwind (unwind_lldb)
 {
-    m_sym_ctx.Clear();
+    m_sym_ctx.Clear(false);
     m_sym_ctx_valid = false;
 
     if (IsFrameZero ())
@@ -87,6 +87,7 @@ RegisterContextLLDB::RegisterContextLLDB
 void
 RegisterContextLLDB::InitializeZerothFrame()
 {
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     ExecutionContext exe_ctx(m_thread.shared_from_this());
     RegisterContextSP reg_ctx_sp = m_thread.GetRegisterContext();
 
@@ -226,7 +227,7 @@ RegisterContextLLDB::InitializeZerothFrame()
 void
 RegisterContextLLDB::InitializeNonZerothFrame()
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     if (IsFrameZero ())
     {
         m_frame_type = eNotAValidFrame;
@@ -408,7 +409,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     {
         Address temporary_pc(m_current_pc);
         temporary_pc.SetOffset(m_current_pc.GetOffset() - 1);
-        m_sym_ctx.Clear();
+        m_sym_ctx.Clear(false);
         m_sym_ctx_valid = false;
         if ((pc_module_sp->ResolveSymbolContextForAddress (temporary_pc, eSymbolContextFunction| eSymbolContextSymbol, m_sym_ctx) & eSymbolContextSymbol) == eSymbolContextSymbol)
         {
@@ -590,7 +591,7 @@ RegisterContextLLDB::GetFastUnwindPlanForFrame ()
     {
         if (unwind_plan_sp->PlanValidAtAddress (m_current_pc))
         {
-            LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+            Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
             if (log && log->GetVerbose())
             {
                 if (m_fast_unwind_plan_sp)
@@ -759,7 +760,7 @@ RegisterContextLLDB::GetRegisterCount ()
 }
 
 const RegisterInfo *
-RegisterContextLLDB::GetRegisterInfoAtIndex (uint32_t reg)
+RegisterContextLLDB::GetRegisterInfoAtIndex (size_t reg)
 {
     return m_thread.GetRegisterContext()->GetRegisterInfoAtIndex (reg);
 }
@@ -771,7 +772,7 @@ RegisterContextLLDB::GetRegisterSetCount ()
 }
 
 const RegisterSet *
-RegisterContextLLDB::GetRegisterSet (uint32_t reg_set)
+RegisterContextLLDB::GetRegisterSet (size_t reg_set)
 {
     return m_thread.GetRegisterContext()->GetRegisterSet (reg_set);
 }
@@ -919,15 +920,10 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
         }
     }
 
-    static uint32_t sp_regnum = LLDB_INVALID_REGNUM;
-    static uint32_t pc_regnum = LLDB_INVALID_REGNUM;
-    static bool generic_registers_initialized = false;
-    if (!generic_registers_initialized)
-    {
-        m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP, eRegisterKindLLDB, sp_regnum);
-        m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC, eRegisterKindLLDB, pc_regnum);
-        generic_registers_initialized = true;
-    }
+    uint32_t sp_regnum = LLDB_INVALID_REGNUM;
+    uint32_t pc_regnum = LLDB_INVALID_REGNUM;
+    m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP, eRegisterKindLLDB, sp_regnum);
+    m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC, eRegisterKindLLDB, pc_regnum);
 
     // Are we looking for the CALLER's stack pointer?  The stack pointer is defined to be the same as THIS frame's
     // CFA so just return the CFA value.  This is true on x86-32/x86-64 at least.
@@ -977,12 +973,14 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
             UnwindPlan::RowSP active_row = m_full_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
             unwindplan_registerkind = m_full_unwind_plan_sp->GetRegisterKind ();
             uint32_t row_regnum;
+            bool row_register_rewritten_to_return_address_reg = false;
 
             // If we're fetching the saved pc and this UnwindPlan defines a ReturnAddress register (e.g. lr on arm),
             // look for the return address register number in the UnwindPlan's row.
             if (lldb_regnum == pc_regnum && m_full_unwind_plan_sp->GetReturnAddressRegister() != LLDB_INVALID_REGNUM)
             {
                row_regnum = m_full_unwind_plan_sp->GetReturnAddressRegister();
+               row_register_rewritten_to_return_address_reg = true;
                UnwindLogMsg ("requested caller's saved PC but this UnwindPlan uses a RA reg; getting reg %d instead",
                        row_regnum);
             }
@@ -1004,6 +1002,28 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_privat
                 have_unwindplan_regloc = true;
                 UnwindLogMsg ("supplying caller's saved reg %d's location using %s UnwindPlan", lldb_regnum,
                               m_full_unwind_plan_sp->GetSourceName().GetCString());
+            }
+
+            // This is frame 0 and we're retrieving the PC and it's saved in a Return Address register and
+            // it hasn't been saved anywhere yet -- that is, it's still live in the actual register.
+            // Handle this specially.
+
+            if (have_unwindplan_regloc == false 
+                && row_register_rewritten_to_return_address_reg == true 
+                && IsFrameZero()
+                && row_regnum != LLDB_INVALID_REGNUM)
+            {
+                uint32_t ra_regnum_in_lldb_reg_numbering;
+                if (m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (unwindplan_registerkind, row_regnum, eRegisterKindLLDB, ra_regnum_in_lldb_reg_numbering))
+                {
+                    lldb_private::UnwindLLDB::RegisterLocation new_regloc;
+                    new_regloc.type = UnwindLLDB::RegisterLocation::eRegisterInRegister;
+                    new_regloc.location.register_number = ra_regnum_in_lldb_reg_numbering;
+                    m_registers[lldb_regnum] = new_regloc;
+                    regloc = new_regloc;
+                    UnwindLogMsg ("supplying caller's register %d from the live RegisterContext at frame 0, saved in %d", lldb_regnum, ra_regnum_in_lldb_reg_numbering);
+                    return UnwindLLDB::RegisterSearchResult::eRegisterFound;
+                }
             }
 
             // If this architecture stores the return address in a register (it defines a Return Address register)
@@ -1280,21 +1300,20 @@ RegisterContextLLDB::ReadGPRValue (int register_kind, uint32_t regnum, addr_t &v
         return false;
     }
 
-    bool pc_or_return_address = false;
+    bool pc_register = false;
     uint32_t generic_regnum;
-    if (register_kind == eRegisterKindGeneric
-        && (regnum == LLDB_REGNUM_GENERIC_PC || regnum == LLDB_REGNUM_GENERIC_RA))
+    if (register_kind == eRegisterKindGeneric && regnum == LLDB_REGNUM_GENERIC_PC)
     {
-        pc_or_return_address = true;
+        pc_register = true;
     }
     else if (m_thread.GetRegisterContext()->ConvertBetweenRegisterKinds (register_kind, regnum, eRegisterKindGeneric, generic_regnum)
-             && (generic_regnum == LLDB_REGNUM_GENERIC_PC || generic_regnum == LLDB_REGNUM_GENERIC_RA))
+             && generic_regnum == LLDB_REGNUM_GENERIC_PC)
     {
-        pc_or_return_address = true;
+        pc_register = true;
     }
 
     lldb_private::UnwindLLDB::RegisterLocation regloc;
-    if (!m_parent_unwind.SearchForSavedLocationForRegister (lldb_regnum, regloc, m_frame_number - 1, pc_or_return_address))
+    if (!m_parent_unwind.SearchForSavedLocationForRegister (lldb_regnum, regloc, m_frame_number - 1, pc_register))
     {
         return false;
     }
@@ -1455,7 +1474,7 @@ RegisterContextLLDB::ReadPC (addr_t& pc)
 void
 RegisterContextLLDB::UnwindLogMsg (const char *fmt, ...)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     if (log)
     {
         va_list args;
@@ -1481,7 +1500,7 @@ RegisterContextLLDB::UnwindLogMsg (const char *fmt, ...)
 void
 RegisterContextLLDB::UnwindLogMsgVerbose (const char *fmt, ...)
 {
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    Log *log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     if (log && log->GetVerbose())
     {
         va_list args;

@@ -132,7 +132,8 @@ public:
     /// @return
     ///     The number of errors.
 	//------------------------------------------------------------------
-    unsigned CompileFunction (Stream &errors);
+    unsigned
+    CompileFunction (Stream &errors);
     
     //------------------------------------------------------------------
 	/// Insert the default function wrapper and its default argument struct  
@@ -152,9 +153,10 @@ public:
     /// @return
     ///     True on success; false otherwise.
 	//------------------------------------------------------------------
-    bool InsertFunction (ExecutionContext &exe_ctx, 
-                         lldb::addr_t &args_addr_ref, 
-                         Stream &errors);
+    bool
+    InsertFunction (ExecutionContext &exe_ctx,
+                    lldb::addr_t &args_addr_ref,
+                    Stream &errors);
 
     //------------------------------------------------------------------
 	/// Insert the default function wrapper (using the JIT)
@@ -246,7 +248,7 @@ public:
     ///     If the timeout expires, true if other threads should run.  If
     ///     the function may try to take locks, this is useful.
     /// 
-    /// @param[in] discard_on_error
+    /// @param[in] unwind_on_error
     ///     If true, and the execution stops before completion, we unwind the
     ///     function call, and return the program state to what it was before the
     ///     execution.  If false, we leave the program in the stopped state.
@@ -272,7 +274,8 @@ public:
                      lldb::addr_t &void_arg, 
                      bool stop_others, 
                      bool try_all_threads,
-                     bool discard_on_error,
+                     bool unwind_on_error,
+                     bool ignore_breakpoints,
                      uint32_t timeout_usec,
                      Stream &errors,
                      lldb::addr_t* this_arg = 0);
@@ -404,7 +407,8 @@ public:
                     bool stop_others, 
                     uint32_t timeout_usec,
                     bool try_all_threads,
-                    bool discard_on_error, 
+                    bool unwind_on_error,
+                    bool ignore_breakpoints,
                     Value &results);
     
     //------------------------------------------------------------------
@@ -426,8 +430,11 @@ public:
     /// @param[in] stop_others
     ///     True if other threads should pause during execution.
     ///
-    /// @param[in] discard_on_error
+    /// @param[in] unwind_on_error
     ///     True if the thread plan may simply be discarded if an error occurs.
+    ///
+    /// @param[in] ignore_breakpoints
+    ///     True if the expression execution will ignore breakpoint hits and continue executing.
     ///
     /// @param[in] this_arg
     ///     If non-NULL (and cmd_arg is NULL), the function is invoked like a C++ 
@@ -447,7 +454,8 @@ public:
                                  lldb::addr_t &args_addr_ref, 
                                  Stream &errors, 
                                  bool stop_others, 
-                                 bool discard_on_error,
+                                 bool unwind_on_error,
+                                 bool ignore_breakpoints,
                                  lldb::addr_t *this_arg = 0,
                                  lldb::addr_t *cmd_arg = 0);
     
@@ -470,7 +478,7 @@ public:
     /// @param[in] stop_others
     ///     True if other threads should pause during execution.
     ///
-    /// @param[in] discard_on_error
+    /// @param[in] unwind_on_error
     ///     True if the thread plan may simply be discarded if an error occurs.
     ///
     /// @return
@@ -481,14 +489,16 @@ public:
                                  lldb::addr_t &args_addr_ref, 
                                  Stream &errors, 
                                  bool stop_others, 
-                                 bool discard_on_error = true)
+                                 bool unwind_on_error = true,
+                                 bool ignore_breakpoints = true)
     {
         return ClangFunction::GetThreadPlanToCallFunction (exe_ctx, 
                                                            m_jit_start_addr, 
                                                            args_addr_ref, 
                                                            errors, 
                                                            stop_others, 
-                                                           discard_on_error);
+                                                           unwind_on_error,
+                                                           ignore_breakpoints);
     }
     
     //------------------------------------------------------------------
@@ -599,12 +609,18 @@ public:
         return false;
     }
     
+    ValueList
+    GetArgumentValues () const
+    {
+        return m_arg_values;
+    }
 private:
 	//------------------------------------------------------------------
 	// For ClangFunction only
 	//------------------------------------------------------------------
 
-    std::auto_ptr<ClangExpressionParser>    m_parser;               ///< The parser responsible for compiling the function.
+    std::unique_ptr<ClangExpressionParser> m_parser;                 ///< The parser responsible for compiling the function.
+    std::unique_ptr<IRExecutionUnit> m_execution_unit_ap;
     
     Function                       *m_function_ptr;                 ///< The function we're going to call.  May be NULL if we don't have debug info for the function.
     Address                         m_function_addr;                ///< If we don't have the FunctionSP, we at least need the address & return type.

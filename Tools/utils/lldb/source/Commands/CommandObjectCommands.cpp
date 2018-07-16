@@ -22,9 +22,12 @@
 #include "lldb/Core/InputReaderEZ.h"
 #include "lldb/Core/StringList.h"
 #include "lldb/Interpreter/Args.h"
+#include "lldb/Interpreter/CommandHistory.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandObjectRegexCommand.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
+#include "lldb/Interpreter/OptionValueBoolean.h"
+#include "lldb/Interpreter/OptionValueUInt64.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/ScriptInterpreter.h"
 #include "lldb/Interpreter/ScriptInterpreterPython.h"
@@ -63,7 +66,11 @@ protected:
     public:
 
         CommandOptions (CommandInterpreter &interpreter) :
-            Options (interpreter)
+            Options (interpreter),
+            m_start_idx(0),
+            m_stop_idx(0),
+            m_count(0),
+            m_clear(false)
         {
         }
 
@@ -75,27 +82,27 @@ protected:
         {
             Error error;
             const int short_option = m_getopt_table[option_idx].val;
-            bool success;
             
             switch (short_option)
             {
                 case 'c':
-                    m_end_idx = Args::StringToUInt32(option_arg, UINT_MAX, 0, &success);
-                    if (!success)
-                        error.SetErrorStringWithFormat("invalid value for count: %s", option_arg);
-                    if (m_end_idx != 0)
-                        m_end_idx--;
-                    m_start_idx = 0;
-                    break;
-                case 'e':
-                    m_end_idx = Args::StringToUInt32(option_arg, 0, 0, &success);
-                    if (!success)
-                        error.SetErrorStringWithFormat("invalid value for end index: %s", option_arg);
+                    error = m_count.SetValueFromCString(option_arg,eVarSetOperationAssign);
                     break;
                 case 's':
-                    m_start_idx = Args::StringToUInt32(option_arg, 0, 0, &success);
-                    if (!success)
-                        error.SetErrorStringWithFormat("invalid value for start index: %s", option_arg);
+                    if (option_arg && strcmp("end", option_arg) == 0)
+                    {
+                        m_start_idx.SetCurrentValue(UINT64_MAX);
+                        m_start_idx.SetOptionWasSet();
+                    }
+                    else
+                        error = m_start_idx.SetValueFromCString(option_arg,eVarSetOperationAssign);
+                    break;
+                case 'e':
+                    error = m_stop_idx.SetValueFromCString(option_arg,eVarSetOperationAssign);
+                    break;
+                case 'C':
+                    m_clear.SetCurrentValue(true);
+                    m_clear.SetOptionWasSet();
                     break;
                 default:
                     error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
@@ -108,8 +115,10 @@ protected:
         void
         OptionParsingStarting ()
         {
-            m_start_idx = 0;
-            m_end_idx = UINT_MAX;
+            m_start_idx.Clear();
+            m_stop_idx.Clear();
+            m_count.Clear();
+            m_clear.Clear();
         }
 
         const OptionDefinition*
@@ -124,17 +133,90 @@ protected:
 
         // Instance variables to hold the values for command options.
 
-        uint32_t m_start_idx;
-        uint32_t m_end_idx;
+        OptionValueUInt64 m_start_idx;
+        OptionValueUInt64 m_stop_idx;
+        OptionValueUInt64 m_count;
+        OptionValueBoolean m_clear;
     };
     
     bool
     DoExecute (Args& command, CommandReturnObject &result)
     {
-        
-        m_interpreter.DumpHistory (result.GetOutputStream(),
-                                   m_options.m_start_idx, 
-                                   m_options.m_end_idx);
+        if (m_options.m_clear.GetCurrentValue() && m_options.m_clear.OptionWasSet())
+        {
+            m_interpreter.GetCommandHistory().Clear();
+            result.SetStatus(lldb::eReturnStatusSuccessFinishNoResult);
+        }
+        else
+        {
+            if (m_options.m_start_idx.OptionWasSet() && m_options.m_stop_idx.OptionWasSet() && m_options.m_count.OptionWasSet())
+            {
+                result.AppendError("--count, --start-index and --end-index cannot be all specified in the same invocation");
+                result.SetStatus(lldb::eReturnStatusFailed);
+            }
+            else
+            {
+                std::pair<bool,uint64_t> start_idx = {m_options.m_start_idx.OptionWasSet(),m_options.m_start_idx.GetCurrentValue()};
+                std::pair<bool,uint64_t> stop_idx = {m_options.m_stop_idx.OptionWasSet(),m_options.m_stop_idx.GetCurrentValue()};
+                std::pair<bool,uint64_t> count = {m_options.m_count.OptionWasSet(),m_options.m_count.GetCurrentValue()};
+                
+                const CommandHistory& history(m_interpreter.GetCommandHistory());
+                                              
+                if (start_idx.first && start_idx.second == UINT64_MAX)
+                {
+                    if (count.first)
+                    {
+                        start_idx.second = history.GetSize() - count.second;
+                        stop_idx.second = history.GetSize() - 1;
+                    }
+                    else if (stop_idx.first)
+                    {
+                        start_idx.second = stop_idx.second;
+                        stop_idx.second = history.GetSize() - 1;
+                    }
+                    else
+                    {
+                        start_idx.second = 0;
+                        stop_idx.second = history.GetSize() - 1;
+                    }
+                }
+                else
+                {
+                    if (!start_idx.first && !stop_idx.first && !count.first)
+                    {
+                        start_idx.second = 0;
+                        stop_idx.second = history.GetSize() - 1;
+                    }
+                    else if (start_idx.first)
+                    {
+                        if (count.first)
+                        {
+                            stop_idx.second = start_idx.second + count.second - 1;
+                        }
+                        else if (!stop_idx.first)
+                        {
+                            stop_idx.second = history.GetSize() - 1;
+                        }
+                    }
+                    else if (stop_idx.first)
+                    {
+                        if (count.first)
+                        {
+                            if (stop_idx.second >= count.second)
+                                start_idx.second = stop_idx.second - count.second + 1;
+                            else
+                                start_idx.second = 0;
+                        }
+                    }
+                    else /* if (count.first) */
+                    {
+                        start_idx.second = 0;
+                        stop_idx.second = count.second - 1;
+                    }
+                }
+                history.Dump(result.GetOutputStream(), start_idx.second, stop_idx.second);
+            }
+        }
         return result.Succeeded();
 
     }
@@ -146,8 +228,9 @@ OptionDefinition
 CommandObjectCommandsHistory::CommandOptions::g_option_table[] =
 {
 { LLDB_OPT_SET_1, false, "count", 'c', required_argument, NULL, 0, eArgTypeUnsignedInteger,        "How many history commands to print."},
-{ LLDB_OPT_SET_1, false, "start-index", 's', required_argument, NULL, 0, eArgTypeUnsignedInteger,  "Index at which to start printing history commands."},
+{ LLDB_OPT_SET_1, false, "start-index", 's', required_argument, NULL, 0, eArgTypeUnsignedInteger,  "Index at which to start printing history commands (or end to mean tail mode)."},
 { LLDB_OPT_SET_1, false, "end-index", 'e', required_argument, NULL, 0, eArgTypeUnsignedInteger,    "Index at which to stop printing history commands."},
+{ LLDB_OPT_SET_2, false, "clear", 'C', no_argument, NULL, 0, eArgTypeBoolean,    "Clears the current command history."},
 { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -188,7 +271,7 @@ public:
         return "";
     }
     
-    int
+    virtual int
     HandleArgumentCompletion (Args &input,
                               int &cursor_index,
                               int &cursor_char_position,
@@ -225,7 +308,8 @@ protected:
     public:
 
         CommandOptions (CommandInterpreter &interpreter) :
-            Options (interpreter)
+            Options (interpreter),
+            m_stop_on_error (true)
         {
         }
 
@@ -242,14 +326,17 @@ protected:
             switch (short_option)
             {
                 case 'e':
-                    m_stop_on_error = Args::StringToBoolean(option_arg, true, &success);
-                    if (!success)
-                        error.SetErrorStringWithFormat("invalid value for stop-on-error: %s", option_arg);
+                    error = m_stop_on_error.SetValueFromCString(option_arg);
                     break;
                 case 'c':
                     m_stop_on_continue = Args::StringToBoolean(option_arg, true, &success);
                     if (!success)
                         error.SetErrorStringWithFormat("invalid value for stop-on-continue: %s", option_arg);
+                    break;
+                case 's':
+                    m_silent_run = Args::StringToBoolean(option_arg, true, &success);
+                    if (!success)
+                        error.SetErrorStringWithFormat("invalid value for silent-run: %s", option_arg);
                     break;
                 default:
                     error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
@@ -262,7 +349,8 @@ protected:
         void
         OptionParsingStarting ()
         {
-            m_stop_on_error = true;
+            m_stop_on_error.Clear();
+            m_silent_run = false;
             m_stop_on_continue = true;
         }
 
@@ -278,14 +366,15 @@ protected:
 
         // Instance variables to hold the values for command options.
 
-        bool m_stop_on_error;
+        OptionValueBoolean m_stop_on_error;
+	    bool m_silent_run;
         bool m_stop_on_continue;
     };
     
     bool
     DoExecute(Args& command, CommandReturnObject &result)
     {
-        const int argc = command.GetArgumentCount();
+        const size_t argc = command.GetArgumentCount();
         if (argc == 1)
         {
             const char *filename = command.GetArgumentAtIndex(0);
@@ -294,13 +383,14 @@ protected:
 
             FileSpec cmd_file (filename, true);
             ExecutionContext *exe_ctx = NULL;  // Just use the default context.
-            bool echo_commands    = true;
+            bool echo_commands    = !m_options.m_silent_run;
             bool print_results    = true;
+            bool stop_on_error = m_options.m_stop_on_error.OptionWasSet() ? (bool)m_options.m_stop_on_error : m_interpreter.GetStopCmdSourceOnError();
 
-            m_interpreter.HandleCommandsFromFile (cmd_file, 
+            m_interpreter.HandleCommandsFromFile (cmd_file,
                                                   exe_ctx, 
                                                   m_options.m_stop_on_continue, 
-                                                  m_options.m_stop_on_error, 
+                                                  stop_on_error, 
                                                   echo_commands, 
                                                   print_results,
                                                   eLazyBoolCalculate,
@@ -322,6 +412,7 @@ CommandObjectCommandsSource::CommandOptions::g_option_table[] =
 {
 { LLDB_OPT_SET_ALL, false, "stop-on-error", 'e', required_argument, NULL, 0, eArgTypeBoolean,    "If true, stop executing commands on error."},
 { LLDB_OPT_SET_ALL, false, "stop-on-continue", 'c', required_argument, NULL, 0, eArgTypeBoolean, "If true, stop executing commands on continue."},
+{ LLDB_OPT_SET_ALL, false, "silent-run", 's', required_argument, NULL, 0, eArgTypeBoolean, "If true don't echo commands while executing."},
 { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -1066,7 +1157,7 @@ protected:
     }
 
 private:
-    std::auto_ptr<CommandObjectRegexCommand> m_regex_cmd_ap;    
+    std::unique_ptr<CommandObjectRegexCommand> m_regex_cmd_ap;
 
      class CommandOptions : public Options
      {
@@ -1289,7 +1380,7 @@ public:
     {
     }
     
-    int
+    virtual int
     HandleArgumentCompletion (Args &input,
                               int &cursor_index,
                               int &cursor_char_position,
@@ -1355,7 +1446,7 @@ protected:
         void
         OptionParsingStarting ()
         {
-            m_allow_reload = false;
+            m_allow_reload = true;
         }
         
         const OptionDefinition*
@@ -1397,6 +1488,13 @@ protected:
         Error error;
         
         const bool init_session = true;
+        // FIXME: this is necessary because CommandObject::CheckRequirements() assumes that
+        // commands won't ever be recursively invoked, but it's actually possible to craft
+        // a Python script that does other "command script imports" in __lldb_init_module
+        // the real fix is to have recursive commands possible with a CommandInvocation object
+        // separate from the CommandObject itself, so that recursive command invocations
+        // won't stomp on each other (wrt to execution contents, options, and more)
+        m_exe_ctx.Clear();
         if (m_interpreter.GetScriptInterpreter()->LoadScriptingModule(path.c_str(),
                                                                       m_options.m_allow_reload,
                                                                       init_session,
@@ -1419,7 +1517,7 @@ protected:
 OptionDefinition
 CommandObjectCommandsScriptImport::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "allow-reload", 'r', no_argument, NULL, 0, eArgTypeNone,        "Allow the script to be loaded even if it was already loaded before (for Python, the __lldb_init_module function will be called again, but the module will not be reloaded from disk)."},
+    { LLDB_OPT_SET_1, false, "allow-reload", 'r', no_argument, NULL, 0, eArgTypeNone,        "Allow the script to be loaded even if it was already loaded before. This argument exists for backwards compatibility, but reloading is always allowed, whether you specify it or not."},
     { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 

@@ -107,6 +107,7 @@ ThreadPlanStepOut::ThreadPlanStepOut
         {
             return_bp->SetThreadID(m_thread.GetID());
             m_return_bp_id = return_bp->GetID();
+            return_bp->SetBreakpointKind ("step-out");
         }
         
         if (immediate_return_from_sp)
@@ -173,7 +174,7 @@ ThreadPlanStepOut::ValidatePlan (Stream *error)
 }
 
 bool
-ThreadPlanStepOut::PlanExplainsStop ()
+ThreadPlanStepOut::DoPlanExplainsStop (Event *event_ptr)
 {
     // If one of our child plans just finished, then we do explain the stop.
     if (m_step_out_plan_sp)
@@ -199,7 +200,7 @@ ThreadPlanStepOut::PlanExplainsStop ()
     // We don't explain signals or breakpoints (breakpoints that handle stepping in or
     // out will be handled by a child plan.
     
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    StopInfoSP stop_info_sp = GetPrivateStopInfo ();
     if (stop_info_sp)
     {
         StopReason reason = stop_info_sp->GetStopReason();
@@ -252,6 +253,7 @@ ThreadPlanStepOut::PlanExplainsStop ()
         case eStopReasonSignal:
         case eStopReasonException:
         case eStopReasonExec:
+        case eStopReasonThreadExiting:
             return false;
 
         default:
@@ -334,9 +336,8 @@ ThreadPlanStepOut::GetPlanRunState ()
 }
 
 bool
-ThreadPlanStepOut::WillResume (StateType resume_state, bool current_plan)
+ThreadPlanStepOut::DoWillResume (StateType resume_state, bool current_plan)
 {
-    ThreadPlan::WillResume (resume_state, current_plan);
     if (m_step_out_plan_sp || m_step_through_inline_plan_sp)
         return true;
         
@@ -376,7 +377,7 @@ ThreadPlanStepOut::MischiefManaged ()
         // reason and we're now stopping for some other reason altogether, then we're done
         // with this step out operation.
 
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log)
             log->Printf("Completed step out plan.");
         if (m_return_bp_id != LLDB_INVALID_BREAK_ID)
@@ -404,7 +405,7 @@ ThreadPlanStepOut::QueueInlinedStepPlan (bool queue_now)
     if (!immediate_return_from_sp)
         return false;
         
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
     {   
         StreamString s;

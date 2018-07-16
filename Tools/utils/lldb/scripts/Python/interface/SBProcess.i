@@ -164,6 +164,12 @@ public:
     lldb::SBThread
     GetSelectedThread () const;
 
+    %feature("autodoc", "
+    Lazily create a thread on demand through the current OperatingSystem plug-in, if the current OperatingSystem plug-in supports it.
+    ") CreateOSPluginThread;
+    lldb::SBThread
+    CreateOSPluginThread (lldb::tid_t tid, lldb::addr_t context);
+
     bool
     SetSelectedThread (const lldb::SBThread &thread);
 
@@ -186,8 +192,17 @@ public:
     const char *
     GetExitDescription ();
 
+    %feature("autodoc", "
+    Returns the process ID of the process.
+    ") GetProcessID;
     lldb::pid_t
     GetProcessID ();
+    
+    %feature("autodoc", "
+    Returns an integer ID that is guaranteed to be unique across all process instances. This is not the process ID, just a unique integer for comparison and caching purposes.
+    ") GetUniqueID;
+    uint32_t
+    GetUniqueID();
 
     uint32_t
     GetAddressByteSize() const;
@@ -216,6 +231,16 @@ public:
     lldb::SBError
     Signal (int signal);
 
+    %feature("docstring", "
+    Returns a stop id that will increase every time the process executes.  If
+    include_expression_stops is true, then stops caused by expression evaluation
+    will cause the returned value to increase, otherwise the counter returned will
+    only increase when execution is continued explicitly by the user.  Note, the value
+    will always increase, but may increase by more than one per stop.
+    ") GetStopID;
+    uint32_t
+    GetStopID(bool include_expression_stops = false);
+    
     void
     SendAsyncInterrupt();
     
@@ -303,6 +328,12 @@ public:
     static bool
     GetRestartedFromEvent (const lldb::SBEvent &event);
 
+    static size_t
+    GetNumRestartedReasonsFromEvent (const lldb::SBEvent &event);
+    
+    static const char *
+    GetRestartedReasonAtIndexFromEvent (const lldb::SBEvent &event, size_t idx);
+
     static lldb::SBProcess
     GetProcessFromEvent (const lldb::SBEvent &event);
 
@@ -323,6 +354,9 @@ public:
     
     lldb::SBError
     UnloadImage (uint32_t image_token);
+    
+    lldb::SBError
+    SendEventData (const char *event_data);
 
     %pythoncode %{
         def __get_is_alive__(self):

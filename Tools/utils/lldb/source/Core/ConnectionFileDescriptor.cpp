@@ -7,6 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if defined(__APPLE__)
+// Enable this special support for Apple builds where we can have unlimited
+// select bounds. We tried switching to poll() and kqueue and we were panicing
+// the kernel, so we have to stick with select for now.
+#define _DARWIN_UNLIMITED_SELECT
+#endif
+
 #include "lldb/Core/ConnectionFileDescriptor.h"
 
 // C Includes
@@ -18,6 +25,7 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <termios.h>
 #include <sys/types.h>
 #include <string.h>
 #include <stdlib.h>
@@ -25,6 +33,9 @@
 
 // C++ Includes
 // Other libraries and framework includes
+#if defined(__APPLE__)
+#include "llvm/ADT/SmallVector.h"
+#endif
 // Project includes
 #include "lldb/lldb-private-log.h"
 #include "lldb/Interpreter/Args.h"
@@ -43,11 +54,12 @@ DecodeHostAndPort (const char *host_and_port,
                    int32_t& port,
                    Error *error_ptr)
 {
-    RegularExpression regex ("([^:]+):([0-9]+)");
-    if (regex.Execute (host_and_port, 2))
+    static RegularExpression g_regex ("([^:]+):([0-9]+)");
+    RegularExpression::Match regex_match(2);
+    if (g_regex.Execute (host_and_port, &regex_match))
     {
-        if (regex.GetMatchAtIndex (host_and_port, 1, host_str) &&
-            regex.GetMatchAtIndex (host_and_port, 2, port_str))
+        if (regex_match.GetMatchAtIndex (host_and_port, 1, host_str) &&
+            regex_match.GetMatchAtIndex (host_and_port, 2, port_str))
         {
             port = Args::StringToSInt32 (port_str.c_str(), INT32_MIN);
             if (port != INT32_MIN)
@@ -80,7 +92,7 @@ ConnectionFileDescriptor::ConnectionFileDescriptor () :
     m_mutex (Mutex::eMutexTypeRecursive),
     m_shutting_down (false)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::ConnectionFileDescriptor ()", this);
 }
@@ -99,7 +111,7 @@ ConnectionFileDescriptor::ConnectionFileDescriptor (int fd, bool owns_fd) :
     m_mutex (Mutex::eMutexTypeRecursive),
     m_shutting_down (false)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::ConnectionFileDescriptor (fd = %i, owns_fd = %i)", this, fd, owns_fd);
     OpenCommandPipe ();
@@ -108,7 +120,7 @@ ConnectionFileDescriptor::ConnectionFileDescriptor (int fd, bool owns_fd) :
 
 ConnectionFileDescriptor::~ConnectionFileDescriptor ()
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::~ConnectionFileDescriptor ()", this);
     Disconnect (NULL);
@@ -120,7 +132,7 @@ ConnectionFileDescriptor::OpenCommandPipe ()
 {
     CloseCommandPipe();
     
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     // Make the command file descriptor here:
     int filedes[2];
     int result = pipe (filedes);
@@ -164,7 +176,7 @@ ConnectionStatus
 ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
 {
     Mutex::Locker locker (m_mutex);
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Connect (url = '%s')", this, s);
 
@@ -261,6 +273,26 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
                 return eConnectionStatusError;
             }
 
+            if (::isatty(m_fd_send))
+            {
+                // Set up serial terminal emulation
+                struct termios options;
+                ::tcgetattr (m_fd_send, &options);
+
+                // Set port speed to maximum
+                ::cfsetospeed (&options, B115200);
+                ::cfsetispeed (&options, B115200);
+
+                // Raw input, disable echo and signals
+                options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+
+                // Make sure only one character is needed to return from a read
+                options.c_cc[VMIN]  = 1;
+                options.c_cc[VTIME] = 0;
+
+                ::tcsetattr (m_fd_send, TCSANOW, &options);
+            }
+
             int flags = ::fcntl (m_fd_send, F_GETFL, 0);
             if (flags >= 0)
             {
@@ -285,7 +317,7 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
 ConnectionStatus
 ConnectionFileDescriptor::Disconnect (Error *error_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Disconnect ()", this);
 
@@ -360,7 +392,7 @@ ConnectionFileDescriptor::Read (void *dst,
                                 ConnectionStatus &status, 
                                 Error *error_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Read () ::read (fd = %i, dst = %p, dst_len = %" PRIu64 ")...",
                      this, m_fd_recv, dst, (uint64_t)dst_len);
@@ -464,7 +496,6 @@ ConnectionFileDescriptor::Read (void *dst,
             return 0;
         }
 
-        //Disconnect (NULL);
         return 0;
     }
     return bytes_read;
@@ -473,7 +504,7 @@ ConnectionFileDescriptor::Read (void *dst,
 size_t
 ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStatus &status, Error *error_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Write (src = %p, src_len = %" PRIu64 ")", this, src, (uint64_t)src_len);
 
@@ -590,13 +621,28 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
     return bytes_sent;
 }
 
+
+
+#if defined(__APPLE__)
+
+// This ConnectionFileDescriptor::BytesAvailable() uses select().
+//
+// PROS:
+//  - select is consistent across most unix platforms
+//  - this Apple specific version allows for unlimited fds in the fd_sets by
+//    setting the _DARWIN_UNLIMITED_SELECT define prior to including the
+//    required header files.
+
+// CONS:
+//  - Darwin only
+
 ConnectionStatus
 ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_ptr)
 {
     // Don't need to take the mutex here separately since we are only called from Read.  If we
     // ever get used more generally we will need to lock here as well.
     
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf("%p ConnectionFileDescriptor::BytesAvailable (timeout_usec = %u)", this, timeout_usec);
     struct timeval *tv_ptr;
@@ -613,89 +659,422 @@ ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_pt
         tv = time_value.GetAsTimeVal();
         tv_ptr = &tv;
     }
-
-    while (m_fd_recv >= 0)
+    
+    // Make a copy of the file descriptors to make sure we don't
+    // have another thread change these values out from under us
+    // and cause problems in the loop below where like in FS_SET()
+    const int data_fd = m_fd_recv;
+    const int pipe_fd = m_pipe_read;
+    
+    if (data_fd >= 0)
     {
-        fd_set read_fds;
-        FD_ZERO (&read_fds);
-        FD_SET (m_fd_recv, &read_fds);
-        if (m_pipe_read != -1)
-            FD_SET (m_pipe_read, &read_fds);
-        int nfds = std::max<int>(m_fd_recv, m_pipe_read) + 1;
+        const bool have_pipe_fd = pipe_fd >= 0;
         
-        Error error;
-
-
-        if (log)
-            log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds = %i, fd = %i, NULL, NULL, timeout = %p)...",
-                        this, nfds, m_fd_recv, tv_ptr);
-
-        const int num_set_fds = ::select (nfds, &read_fds, NULL, NULL, tv_ptr);
-        if (num_set_fds < 0)
-            error.SetErrorToErrno();
-        else
-            error.Clear();
-
-        if (log)
-            log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds = %i, fd = %i, NULL, NULL, timeout = %p) => %d, error = %s",
-                        this, nfds, m_fd_recv, tv_ptr, num_set_fds, error.AsCString());
-
-        if (error_ptr)
-            *error_ptr = error;
-
-        if (error.Fail())
+        while (data_fd == m_fd_recv)
         {
-            switch (error.GetError())
+            const int nfds = std::max<int>(data_fd, pipe_fd) + 1;
+            llvm::SmallVector<fd_set, 1> read_fds;
+            read_fds.resize((nfds/FD_SETSIZE) + 1);
+            for (size_t i=0; i<read_fds.size(); ++i)
+                FD_ZERO (&read_fds[i]);
+            // FD_SET doesn't bounds check, it just happily walks off the end
+            // but we have taken care of making the extra storage with our
+            // SmallVector of fd_set objects
+            FD_SET (data_fd, read_fds.data());
+            if (have_pipe_fd)
+                FD_SET (pipe_fd, read_fds.data());
+            
+            Error error;
+            
+            if (log)
             {
-            case EBADF:     // One of the descriptor sets specified an invalid descriptor.
-                return eConnectionStatusLostConnection;
-
-            case EINVAL:    // The specified time limit is invalid. One of its components is negative or too large.
-            default:        // Other unknown error
-                return eConnectionStatusError;
-
-            case EAGAIN:    // The kernel was (perhaps temporarily) unable to
-                            // allocate the requested number of file descriptors,
-                            // or we have non-blocking IO
-            case EINTR:     // A signal was delivered before the time limit
-                            // expired and before any of the selected events
-                            // occurred.
-                break;      // Lets keep reading to until we timeout
+                if (have_pipe_fd)
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i, %i}, NULL, NULL, timeout=%p)...",
+                                this, nfds, data_fd, pipe_fd, tv_ptr);
+                else
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i}, NULL, NULL, timeout=%p)...",
+                                this, nfds, data_fd, tv_ptr);
             }
-        }
-        else if (num_set_fds == 0)
-        {
-            return eConnectionStatusTimedOut;
-        }
-        else if (num_set_fds > 0)
-        {
-            if (m_pipe_read != -1 && FD_ISSET(m_pipe_read, &read_fds))
-            {
-                // We got a command to exit.  Read the data from that pipe:
-                char buffer[16];
-                ssize_t bytes_read;
-                
-                do
-                {
-                    bytes_read = ::read (m_pipe_read, buffer, sizeof(buffer));
-                } while (bytes_read < 0 && errno == EINTR);
-                assert (bytes_read == 1 && buffer[0] == 'q');
-                
-                if (log)
-                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable() got data: %*s from the command channel.",
-                                this, (int) bytes_read, buffer);
-
-                return eConnectionStatusEndOfFile;
-            }
+            
+            const int num_set_fds = ::select (nfds, read_fds.data(), NULL, NULL, tv_ptr);
+            if (num_set_fds < 0)
+                error.SetErrorToErrno();
             else
-                return eConnectionStatusSuccess;
+                error.Clear();
+            
+            if (log)
+            {
+                if (have_pipe_fd)
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i, %i}, NULL, NULL, timeout=%p) => %d, error = %s",
+                                this, nfds, data_fd, pipe_fd, tv_ptr, num_set_fds, error.AsCString());
+                else
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i}, NULL, NULL, timeout=%p) => %d, error = %s",
+                                this, nfds, data_fd, tv_ptr, num_set_fds, error.AsCString());
+            }
+            
+            if (error_ptr)
+                *error_ptr = error;
+            
+            if (error.Fail())
+            {
+                switch (error.GetError())
+                {
+                    case EBADF:     // One of the descriptor sets specified an invalid descriptor.
+                        return eConnectionStatusLostConnection;
+                        
+                    case EINVAL:    // The specified time limit is invalid. One of its components is negative or too large.
+                    default:        // Other unknown error
+                        return eConnectionStatusError;
+                        
+                    case EAGAIN:    // The kernel was (perhaps temporarily) unable to
+                        // allocate the requested number of file descriptors,
+                        // or we have non-blocking IO
+                    case EINTR:     // A signal was delivered before the time limit
+                        // expired and before any of the selected events
+                        // occurred.
+                        break;      // Lets keep reading to until we timeout
+                }
+            }
+            else if (num_set_fds == 0)
+            {
+                return eConnectionStatusTimedOut;
+            }
+            else if (num_set_fds > 0)
+            {
+                // FD_ISSET is happy to deal with a something larger than
+                // a single fd_set.
+                if (FD_ISSET(data_fd, read_fds.data()))
+                    return eConnectionStatusSuccess;
+                if (have_pipe_fd && FD_ISSET(pipe_fd, read_fds.data()))
+                {
+                    // We got a command to exit.  Read the data from that pipe:
+                    char buffer[16];
+                    ssize_t bytes_read;
+                    
+                    do
+                    {
+                        bytes_read = ::read (pipe_fd, buffer, sizeof(buffer));
+                    } while (bytes_read < 0 && errno == EINTR);
+                    assert (bytes_read == 1 && buffer[0] == 'q');
+                    
+                    if (log)
+                        log->Printf("%p ConnectionFileDescriptor::BytesAvailable() got data: %*s from the command channel.",
+                                    this, (int) bytes_read, buffer);
+                    
+                    return eConnectionStatusEndOfFile;
+                }
+            }
         }
     }
-
+    
     if (error_ptr)
         error_ptr->SetErrorString("not connected");
     return eConnectionStatusLostConnection;
 }
+
+#else
+
+// This ConnectionFileDescriptor::BytesAvailable() uses select().
+//
+// PROS:
+//  - select is consistent across most unix platforms
+// CONS:
+//  - only supports file descriptors up to FD_SETSIZE. This implementation
+//    will assert if it runs into that hard limit to let users know that
+//    another ConnectionFileDescriptor::BytesAvailable() should be used
+//    or a new version of ConnectionFileDescriptor::BytesAvailable() should
+//    be written for the system that is running into the limitations. MacOSX
+//    uses kqueues, and there is a poll() based implementation below.
+
+ConnectionStatus
+ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_ptr)
+{
+    // Don't need to take the mutex here separately since we are only called from Read.  If we
+    // ever get used more generally we will need to lock here as well.
+    
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    if (log)
+        log->Printf("%p ConnectionFileDescriptor::BytesAvailable (timeout_usec = %u)", this, timeout_usec);
+    struct timeval *tv_ptr;
+    struct timeval tv;
+    if (timeout_usec == UINT32_MAX)
+    {
+        // Infinite wait...
+        tv_ptr = NULL;
+    }
+    else
+    {
+        TimeValue time_value;
+        time_value.OffsetWithMicroSeconds (timeout_usec);
+        tv = time_value.GetAsTimeVal();
+        tv_ptr = &tv;
+    }
+    
+    // Make a copy of the file descriptors to make sure we don't
+    // have another thread change these values out from under us
+    // and cause problems in the loop below where like in FS_SET()
+    const int data_fd = m_fd_recv;
+    const int pipe_fd = m_pipe_read;
+
+    if (data_fd >= 0)
+    {
+        // If this assert fires off on MacOSX, we will need to switch to using
+        // libdispatch to read from file descriptors because poll() is causing
+        // kernel panics and if we exceed FD_SETSIZE we will have no choice...
+        assert (data_fd < FD_SETSIZE);
+        
+        const bool have_pipe_fd = pipe_fd >= 0;
+        
+        if (have_pipe_fd)
+        {
+            assert (pipe_fd < FD_SETSIZE);            
+        }
+
+        while (data_fd == m_fd_recv)
+        {
+            fd_set read_fds;
+            FD_ZERO (&read_fds);
+            FD_SET (data_fd, &read_fds);
+            if (have_pipe_fd)
+                FD_SET (pipe_fd, &read_fds);
+
+            const int nfds = std::max<int>(data_fd, pipe_fd) + 1;
+
+            Error error;
+            
+            if (log)
+            {
+                if (have_pipe_fd)
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i, %i}, NULL, NULL, timeout=%p)...",
+                                this, nfds, data_fd, pipe_fd, tv_ptr);
+                else
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i}, NULL, NULL, timeout=%p)...",
+                                this, nfds, data_fd, tv_ptr);
+            }
+            
+            const int num_set_fds = ::select (nfds, &read_fds, NULL, NULL, tv_ptr);
+            if (num_set_fds < 0)
+                error.SetErrorToErrno();
+            else
+                error.Clear();
+            
+            if (log)
+            {
+                if (have_pipe_fd)
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i, %i}, NULL, NULL, timeout=%p) => %d, error = %s",
+                                this, nfds, data_fd, pipe_fd, tv_ptr, num_set_fds, error.AsCString());
+                else
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::select (nfds=%i, fds={%i}, NULL, NULL, timeout=%p) => %d, error = %s",
+                                this, nfds, data_fd, tv_ptr, num_set_fds, error.AsCString());
+            }
+
+            if (error_ptr)
+                *error_ptr = error;
+            
+            if (error.Fail())
+            {
+                switch (error.GetError())
+                {
+                    case EBADF:     // One of the descriptor sets specified an invalid descriptor.
+                        return eConnectionStatusLostConnection;
+                        
+                    case EINVAL:    // The specified time limit is invalid. One of its components is negative or too large.
+                    default:        // Other unknown error
+                        return eConnectionStatusError;
+                        
+                    case EAGAIN:    // The kernel was (perhaps temporarily) unable to
+                        // allocate the requested number of file descriptors,
+                        // or we have non-blocking IO
+                    case EINTR:     // A signal was delivered before the time limit
+                        // expired and before any of the selected events
+                        // occurred.
+                        break;      // Lets keep reading to until we timeout
+                }
+            }
+            else if (num_set_fds == 0)
+            {
+                return eConnectionStatusTimedOut;
+            }
+            else if (num_set_fds > 0)
+            {
+                if (FD_ISSET(data_fd, &read_fds))
+                    return eConnectionStatusSuccess;                
+                if (have_pipe_fd && FD_ISSET(pipe_fd, &read_fds))
+                {
+                    // We got a command to exit.  Read the data from that pipe:
+                    char buffer[16];
+                    ssize_t bytes_read;
+                    
+                    do
+                    {
+                        bytes_read = ::read (pipe_fd, buffer, sizeof(buffer));
+                    } while (bytes_read < 0 && errno == EINTR);
+                    assert (bytes_read == 1 && buffer[0] == 'q');
+                    
+                    if (log)
+                        log->Printf("%p ConnectionFileDescriptor::BytesAvailable() got data: %*s from the command channel.",
+                                    this, (int) bytes_read, buffer);
+                    
+                    return eConnectionStatusEndOfFile;
+                }
+            }
+        }
+    }
+    
+    if (error_ptr)
+        error_ptr->SetErrorString("not connected");
+    return eConnectionStatusLostConnection;
+}
+
+#endif
+
+#if 0
+#include <poll.h>
+
+// This ConnectionFileDescriptor::BytesAvailable() uses poll(). poll() should NOT
+// be used on MacOSX as it has all sorts of restrictions on the types of file descriptors
+// that it doesn't support.
+//
+// There may be some systems that properly support poll() that could use this
+// implementation. I will let each system opt into this on their own.
+//
+// PROS:
+//  - no restrictions on the fd value that is used
+// CONS:
+//  - varies wildly from platform to platform in its implementation restrictions
+
+ConnectionStatus
+ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_ptr)
+{
+    // Don't need to take the mutex here separately since we are only called from Read.  If we
+    // ever get used more generally we will need to lock here as well.
+    
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    if (log)
+        log->Printf("%p ConnectionFileDescriptor::BytesAvailable (timeout_usec = %u)", this, timeout_usec);
+    int timeout_msec = 0;
+    if (timeout_usec == UINT32_MAX)
+    {
+        // Infinite wait...
+        timeout_msec = -1;
+    }
+    else if (timeout_usec == 0)
+    {
+        // Return immediately, don't wait
+        timeout_msec = 0;
+    }
+    else
+    {
+        // Convert usec to msec
+        timeout_msec = (timeout_usec + 999) / 1000;
+    }
+    
+    // Make a copy of the file descriptors to make sure we don't
+    // have another thread change these values out from under us
+    // and cause problems in the loop below where like in FS_SET()
+    const int data_fd = m_fd_recv;
+    const int pipe_fd = m_pipe_read;
+    
+    // Make sure the file descriptor can be used with select as it
+    // must be in range
+    if (data_fd >= 0)
+    {
+        const bool have_pipe_fd = pipe_fd >= 0;
+        struct pollfd fds[2] =
+        {
+            { data_fd, POLLIN, 0 },
+            { pipe_fd, POLLIN, 0 }
+        };
+        const int nfds = have_pipe_fd ? 2 : 1;
+        Error error;
+        while (data_fd == m_fd_recv)
+        {
+            const int num_set_fds = ::poll (fds, nfds, timeout_msec);
+            
+            if (num_set_fds < 0)
+                error.SetErrorToErrno();
+            else
+                error.Clear();
+            
+            if (error_ptr)
+                *error_ptr = error;
+            
+            if (log)
+            {
+                if (have_pipe_fd)
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::poll (fds={{%i,POLLIN},{%i,POLLIN}}, nfds=%i, timeout_ms=%i) => %d, error = %s\n",
+                                this,
+                                data_fd,
+                                pipe_fd,
+                                nfds,
+                                timeout_msec,
+                                num_set_fds,
+                                error.AsCString());
+                else
+                    log->Printf("%p ConnectionFileDescriptor::BytesAvailable()  ::poll (fds={{%i,POLLIN}}, nfds=%i, timeout_ms=%i) => %d, error = %s\n",
+                                this,
+                                data_fd,
+                                nfds,
+                                timeout_msec,
+                                num_set_fds,
+                                error.AsCString());
+            }
+            
+            if (error.Fail())
+            {
+                switch (error.GetError())
+                {
+                    case EBADF:     // One of the descriptor sets specified an invalid descriptor.
+                        return eConnectionStatusLostConnection;
+                        
+                    case EINVAL:    // The specified time limit is invalid. One of its components is negative or too large.
+                    default:        // Other unknown error
+                        return eConnectionStatusError;
+                        
+                    case EAGAIN:    // The kernel was (perhaps temporarily) unable to
+                        // allocate the requested number of file descriptors,
+                        // or we have non-blocking IO
+                    case EINTR:     // A signal was delivered before the time limit
+                        // expired and before any of the selected events
+                        // occurred.
+                        break;      // Lets keep reading to until we timeout
+                }
+            }
+            else if (num_set_fds == 0)
+            {
+                return eConnectionStatusTimedOut;
+            }
+            else if (num_set_fds > 0)
+            {
+                if (fds[0].revents & POLLIN)
+                    return eConnectionStatusSuccess;
+                if (fds[1].revents & POLLIN)
+                {
+                    // We got a command to exit.  Read the data from that pipe:
+                    char buffer[16];
+                    ssize_t bytes_read;
+                    
+                    do
+                    {
+                        bytes_read = ::read (pipe_fd, buffer, sizeof(buffer));
+                    } while (bytes_read < 0 && errno == EINTR);
+                    assert (bytes_read == 1 && buffer[0] == 'q');
+                    
+                    if (log)
+                        log->Printf("%p ConnectionFileDescriptor::BytesAvailable() got data: %*s from the command channel.",
+                                    this, (int) bytes_read, buffer);
+                    
+                    return eConnectionStatusEndOfFile;
+                }
+            }
+        }
+    }
+    if (error_ptr)
+        error_ptr->SetErrorString("not connected");
+    return eConnectionStatusLostConnection;
+}
+
+#endif
 
 ConnectionStatus
 ConnectionFileDescriptor::Close (int& fd, Error *error_ptr)
@@ -711,7 +1090,7 @@ ConnectionFileDescriptor::Close (int& fd, Error *error_ptr)
         // can get into the close scope below
         if (fd >= 0)
         {
-            LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+            Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
             if (log)
                 log->Printf ("%p ConnectionFileDescriptor::Close (fd = %i)", this,fd);
 
@@ -820,7 +1199,7 @@ ConnectionFileDescriptor::NamedSocketConnect (const char *socket_name, Error *er
 ConnectionStatus
 ConnectionFileDescriptor::SocketListen (uint16_t listen_port_num, Error *error_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::SocketListen (port = %i)", this, listen_port_num);
 
@@ -883,7 +1262,7 @@ ConnectionFileDescriptor::SocketListen (uint16_t listen_port_num, Error *error_p
 ConnectionStatus
 ConnectionFileDescriptor::ConnectTCP (const char *host_and_port, Error *error_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::ConnectTCP (host/port = %s)", this, host_and_port);
     Disconnect (NULL);
@@ -957,7 +1336,7 @@ ConnectionFileDescriptor::ConnectTCP (const char *host_and_port, Error *error_pt
 ConnectionStatus
 ConnectionFileDescriptor::ConnectUDP (const char *host_and_port, Error *error_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::ConnectUDP (host/port = %s)", this, host_and_port);
     Disconnect (NULL);

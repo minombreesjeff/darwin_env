@@ -52,6 +52,23 @@ ThreadPlanStepInRange::ThreadPlanStepInRange
     SetFlagsToDefault ();
 }
 
+ThreadPlanStepInRange::ThreadPlanStepInRange
+(
+    Thread &thread,
+    const AddressRange &range,
+    const SymbolContext &addr_context,
+    const char *step_into_target,
+    lldb::RunMode stop_others
+) :
+    ThreadPlanStepRange (ThreadPlan::eKindStepInRange, "Step Range stepping in", thread, range, addr_context, stop_others),
+    ThreadPlanShouldStopHere (this, ThreadPlanStepInRange::DefaultShouldStopHereCallback, NULL),
+    m_step_past_prologue (true),
+    m_virtual_step (false),
+    m_step_into_target (step_into_target)
+{
+    SetFlagsToDefault ();
+}
+
 ThreadPlanStepInRange::~ThreadPlanStepInRange ()
 {
 }
@@ -65,14 +82,18 @@ ThreadPlanStepInRange::GetDescription (Stream *s, lldb::DescriptionLevel level)
     {
         s->Printf ("Stepping through range (stepping into functions): ");
         DumpRanges(s);
+        const char *step_into_target = m_step_into_target.AsCString();
+        if (step_into_target && step_into_target[0] != '\0')
+            s->Printf (" targeting %s.", m_step_into_target.AsCString());
+        else
+            s->PutChar('.');
     }
 }
 
 bool
 ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
-    m_no_more_plans = false;
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     
     if (log)
     {
@@ -85,13 +106,24 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
     if (IsPlanComplete())
         return true;
         
-    ThreadPlan* new_plan = NULL;
-
+    m_no_more_plans = false;
+    if (m_sub_plan_sp && m_sub_plan_sp->IsPlanComplete())
+    {
+        if (!m_sub_plan_sp->PlanSucceeded())
+        {
+            SetPlanComplete();
+            m_no_more_plans = true;
+            return true;
+        }
+        else
+            m_sub_plan_sp.reset();
+    }
+    
     if (m_virtual_step)
     {
         // If we've just completed a virtual step, all we need to do is check for a ShouldStopHere plan, and otherwise
         // we're done.
-        new_plan = InvokeShouldStopHereCallback();
+        m_sub_plan_sp = InvokeShouldStopHereCallback();
     }
     else
     {
@@ -113,8 +145,8 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
             // A caveat to this is if we think the frame is older but we're actually in a trampoline.
             // I'm going to make the assumption that you wouldn't RETURN to a trampoline.  So if we are
             // in a trampoline we think the frame is older because the trampoline confused the backtracer.
-            new_plan = m_thread.QueueThreadPlanForStepThrough (m_stack_id, false, stop_others);
-            if (new_plan == NULL)
+            m_sub_plan_sp = m_thread.QueueThreadPlanForStepThrough (m_stack_id, false, stop_others);
+            if (!m_sub_plan_sp)
                 return true;
             else if (log)
             {
@@ -140,6 +172,7 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
             }
         
             SetPlanComplete();
+            m_no_more_plans = true;
             return true;
         }
         
@@ -148,26 +181,26 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
         
         // We may have set the plan up above in the FrameIsOlder section:
         
-        if (new_plan == NULL)
-            new_plan = m_thread.QueueThreadPlanForStepThrough (m_stack_id, false, stop_others);
+        if (!m_sub_plan_sp)
+            m_sub_plan_sp = m_thread.QueueThreadPlanForStepThrough (m_stack_id, false, stop_others);
         
         if (log)
         {
-            if (new_plan != NULL)
-                log->Printf ("Found a step through plan: %s", new_plan->GetName());
+            if (m_sub_plan_sp)
+                log->Printf ("Found a step through plan: %s", m_sub_plan_sp->GetName());
             else
                 log->Printf ("No step through plan found.");
         }
         
         // If not, give the "should_stop" callback a chance to push a plan to get us out of here.
         // But only do that if we actually have stepped in.
-        if (!new_plan && frame_order == eFrameCompareYounger)
-            new_plan = InvokeShouldStopHereCallback();
+        if (!m_sub_plan_sp && frame_order == eFrameCompareYounger)
+            m_sub_plan_sp = InvokeShouldStopHereCallback();
 
         // If we've stepped in and we are going to stop here, check to see if we were asked to
         // run past the prologue, and if so do that.
         
-        if (new_plan == NULL && frame_order == eFrameCompareYounger && m_step_past_prologue)
+        if (!m_sub_plan_sp && frame_order == eFrameCompareYounger && m_step_past_prologue)
         {
             lldb::StackFrameSP curr_frame = m_thread.GetStackFrameAtIndex(0);
             if (curr_frame)
@@ -198,13 +231,13 @@ ThreadPlanStepInRange::ShouldStop (Event *event_ptr)
                     if (log)
                         log->Printf ("Pushing past prologue ");
                         
-                    new_plan = m_thread.QueueThreadPlanForRunToAddress(false, func_start_address,true);
+                    m_sub_plan_sp = m_thread.QueueThreadPlanForRunToAddress(false, func_start_address,true);
                 }
             }
         }
      }
     
-     if (new_plan == NULL)
+     if (!m_sub_plan_sp)
      {
         m_no_more_plans = true;
         SetPlanComplete();
@@ -255,23 +288,46 @@ ThreadPlanStepInRange::FrameMatchesAvoidRegexp ()
         {
             const char *frame_function_name = sc.GetFunctionName().GetCString();
             if (frame_function_name)
-               return avoid_regexp_to_use->Execute(frame_function_name);
+            {
+                size_t num_matches = 0;
+                Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+                if (log)
+                    num_matches = 1;
+                
+                RegularExpression::Match regex_match(num_matches);
+
+                bool return_value = avoid_regexp_to_use->Execute(frame_function_name, &regex_match);
+                if (return_value)
+                {
+                    if (log)
+                    {
+                        std::string match;
+                        regex_match.GetMatchAtIndex(frame_function_name,0, match);
+                        log->Printf ("Stepping out of function \"%s\" because it matches the avoid regexp \"%s\" - match substring: \"%s\".",
+                                     frame_function_name,
+                                     avoid_regexp_to_use->GetText(),
+                                     match.c_str());
+                    }
+
+                }
+                return return_value;
+            }
         }
     }
     return false;
 }
 
-ThreadPlan *
+ThreadPlanSP
 ThreadPlanStepInRange::DefaultShouldStopHereCallback (ThreadPlan *current_plan, Flags &flags, void *baton)
 {
     bool should_step_out = false;
     StackFrame *frame = current_plan->GetThread().GetStackFrameAtIndex(0).get();
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (flags.Test(eAvoidNoDebug))
     {
         if (!frame->HasDebugInformation())
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
             if (log)
                 log->Printf ("Stepping out of frame with no debug info");
 
@@ -279,14 +335,44 @@ ThreadPlanStepInRange::DefaultShouldStopHereCallback (ThreadPlan *current_plan, 
         }
     }
     
-    if (!should_step_out)
+    if (current_plan->GetKind() == eKindStepInRange)
     {
-        if (current_plan->GetKind() == eKindStepInRange)
+        ThreadPlanStepInRange *step_in_range_plan = static_cast<ThreadPlanStepInRange *> (current_plan);
+        if (step_in_range_plan->m_step_into_target)
+        {
+            SymbolContext sc = frame->GetSymbolContext(eSymbolContextFunction|eSymbolContextBlock|eSymbolContextSymbol);
+            if (sc.symbol != NULL)
+            {
+                // First try an exact match, since that's cheap with ConstStrings.  Then do a strstr compare.
+                if (step_in_range_plan->m_step_into_target == sc.GetFunctionName())
+                {
+                    should_step_out = false;
+                }
+                else
+                {
+                    const char *target_name = step_in_range_plan->m_step_into_target.AsCString();
+                    const char *function_name = sc.GetFunctionName().AsCString();
+                    
+                    if (function_name == NULL)
+                        should_step_out = true;
+                    else if (strstr (function_name, target_name) == NULL)
+                        should_step_out = true;
+                }
+                if (log && should_step_out)
+                    log->Printf("Stepping out of frame %s which did not match step into target %s.",
+                                sc.GetFunctionName().AsCString(),
+                                step_in_range_plan->m_step_into_target.AsCString());
+            }
+        }
+        
+        if (!should_step_out)
         {
             ThreadPlanStepInRange *step_in_range_plan = static_cast<ThreadPlanStepInRange *> (current_plan);
+            // Don't log the should_step_out here, it's easier to do it in FrameMatchesAvoidRegexp.
             should_step_out = step_in_range_plan->FrameMatchesAvoidRegexp ();
         }
     }
+    
     
     if (should_step_out)
     {
@@ -303,55 +389,73 @@ ThreadPlanStepInRange::DefaultShouldStopHereCallback (ThreadPlan *current_plan, 
                                                                     0); // Frame index
     }
 
-    return NULL;
+    return ThreadPlanSP();
 }
 
 bool
-ThreadPlanStepInRange::PlanExplainsStop ()
+ThreadPlanStepInRange::DoPlanExplainsStop (Event *event_ptr)
 {
     // We always explain a stop.  Either we've just done a single step, in which
     // case we'll do our ordinary processing, or we stopped for some
     // reason that isn't handled by our sub-plans, in which case we want to just stop right
     // away.
-    // We also set ourselves complete when we stop for this sort of unintended reason, but mark
-    // success as false so we don't end up being the reason for the stop.
+    // In general, we don't want to mark the plan as complete for unexplained stops.
+    // For instance, if you step in to some code with no debug info, so you step out
+    // and in the course of that hit a breakpoint, then you want to stop & show the user
+    // the breakpoint, but not unship the step in plan, since you still may want to complete that
+    // plan when you continue.  This is particularly true when doing "step in to target function."
+    // stepping.
     //
     // The only variation is that if we are doing "step by running to next branch" in which case
     // if we hit our branch breakpoint we don't set the plan to complete.
+            
+    bool return_value;
     
     if (m_virtual_step)
-        return true;
-    
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
-    if (stop_info_sp)
     {
-        StopReason reason = stop_info_sp->GetStopReason();
-
-        switch (reason)
-        {
-        case eStopReasonBreakpoint:
-            if (NextRangeBreakpointExplainsStop(stop_info_sp))
-                return true;
-        case eStopReasonWatchpoint:
-        case eStopReasonSignal:
-        case eStopReasonException:
-        case eStopReasonExec:
-            {
-                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
-                if (log)
-                    log->PutCString ("ThreadPlanStepInRange got asked if it explains the stop for some reason other than step.");
-                SetPlanComplete(false);
-            }
-            break;
-        default:
-            break;
-        }
+        return_value = true;
     }
-    return true;
+    else
+    {
+        StopInfoSP stop_info_sp = GetPrivateStopInfo ();
+        if (stop_info_sp)
+        {
+            StopReason reason = stop_info_sp->GetStopReason();
+
+            switch (reason)
+            {
+            case eStopReasonBreakpoint:
+                if (NextRangeBreakpointExplainsStop(stop_info_sp))
+                {
+                    return_value = true;
+                    break;
+                }
+            case eStopReasonWatchpoint:
+            case eStopReasonSignal:
+            case eStopReasonException:
+            case eStopReasonExec:
+            case eStopReasonThreadExiting:
+                {
+                    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+                    if (log)
+                        log->PutCString ("ThreadPlanStepInRange got asked if it explains the stop for some reason other than step.");
+                }
+                return_value = false;
+                break;
+            default:
+                return_value = true;
+                break;
+            }
+        }
+        else
+            return_value = true;
+    }
+    
+    return return_value;
 }
 
 bool
-ThreadPlanStepInRange::WillResume (lldb::StateType resume_state, bool current_plan)
+ThreadPlanStepInRange::DoWillResume (lldb::StateType resume_state, bool current_plan)
 {
     if (resume_state == eStateStepping && current_plan)
     {
@@ -359,9 +463,9 @@ ThreadPlanStepInRange::WillResume (lldb::StateType resume_state, bool current_pl
         bool step_without_resume = m_thread.DecrementCurrentInlinedDepth();
         if (step_without_resume)
         {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+            Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
             if (log)
-                log->Printf ("ThreadPlanStepInRange::WillResume: returning false, inline_depth: %d",
+                log->Printf ("ThreadPlanStepInRange::DoWillResume: returning false, inline_depth: %d",
                              m_thread.GetCurrentInlinedDepth());
             SetStopInfo(StopInfo::CreateStopReasonToTrace(m_thread));
             
@@ -371,7 +475,11 @@ ThreadPlanStepInRange::WillResume (lldb::StateType resume_state, bool current_pl
         }
         return !step_without_resume;
     }
-    else
-        return ThreadPlan::WillResume(resume_state, current_plan);
-    
+    return true;
+}
+
+bool
+ThreadPlanStepInRange::IsVirtualStep()
+{
+  return m_virtual_step;
 }

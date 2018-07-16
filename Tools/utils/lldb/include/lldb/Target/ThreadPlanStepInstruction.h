@@ -27,7 +27,6 @@ public:
 
     virtual void GetDescription (Stream *s, lldb::DescriptionLevel level);
     virtual bool ValidatePlan (Stream *error);
-    virtual bool PlanExplainsStop ();
     virtual bool ShouldStop (Event *event_ptr);
     virtual bool StopOthers ();
     virtual lldb::StateType GetPlanRunState ();
@@ -35,6 +34,8 @@ public:
     virtual bool MischiefManaged ();
 
 protected:
+    virtual bool DoPlanExplainsStop (Event *event_ptr);
+
     ThreadPlanStepInstruction (Thread &thread,
                                bool step_over,
                                bool stop_others,
@@ -42,14 +43,16 @@ protected:
                                Vote run_vote);
 
 private:
-    friend ThreadPlan *
+    friend lldb::ThreadPlanSP
     Thread::QueueThreadPlanForStepSingleInstruction (bool step_over, bool abort_other_plans, bool stop_other_threads);
 
     lldb::addr_t m_instruction_addr;
     bool m_stop_other_threads;
     bool m_step_over;
-    // This is used only for the step over case.
+    // These two are used only for the step over case.
+    bool m_start_has_symbol;
     StackID m_stack_id;
+    StackID m_parent_frame_id;
 
     DISALLOW_COPY_AND_ASSIGN (ThreadPlanStepInstruction);
 

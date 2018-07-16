@@ -19,6 +19,7 @@
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
 #include "lldb/lldb-types.h"
+#include "lldb/lldb-versioning.h"
 
 // Forward Declarations
 
@@ -53,6 +54,8 @@ class SBInstructionList;
 class SBLineEntry;
 class SBListener;
 class SBModule;
+class SBModuleSpec;
+class SBModuleSpecList;
 class SBProcess;
 class SBSourceManager;
 class SBStream;

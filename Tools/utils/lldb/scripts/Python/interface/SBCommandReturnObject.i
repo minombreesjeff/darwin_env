@@ -58,6 +58,13 @@ public:
 
     void
     SetStatus (lldb::ReturnStatus status);
+    
+    void
+    SetError (lldb::SBError &error,
+              const char *fallback_error_cstr = NULL);
+    
+    void
+    SetError (const char *error_cstr);
 
     lldb::ReturnStatus
     GetStatus();
@@ -84,10 +91,16 @@ public:
     SetImmediateErrorFile (FILE *fh);
 
 	void
-	PutCString(const char* string, int len = -1);
+	PutCString(const char* string, int len);
 
-	size_t
-	Printf(const char* format, ...);
+    // wrapping the variadic Printf() with a plain Print()
+    // because it is hard to support varargs in SWIG bridgings
+    %extend {
+        void Print (const char* str)
+        {
+            self->Printf("%s", str);
+        }
+    }
 
 };
 

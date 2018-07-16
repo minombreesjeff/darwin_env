@@ -40,10 +40,12 @@ MemoryCache::~MemoryCache()
 }
 
 void
-MemoryCache::Clear()
+MemoryCache::Clear(bool clear_invalid_ranges)
 {
     Mutex::Locker locker (m_mutex);
     m_cache.clear();
+    if (clear_invalid_ranges)
+        m_invalid_ranges.Clear();
 }
 
 void
@@ -128,7 +130,10 @@ MemoryCache::Read (addr_t addr,
         while (bytes_left > 0)
         {
             if (m_invalid_ranges.FindEntryThatContains(curr_addr))
+            {
+                error.SetErrorStringWithFormat("memory read failed for 0x%" PRIx64, curr_addr);
                 return dst_len - bytes_left;
+            }
 
             BlockMap::const_iterator pos = m_cache.find (curr_addr);
             BlockMap::const_iterator end = m_cache.end ();
@@ -178,7 +183,7 @@ MemoryCache::Read (addr_t addr,
             if (bytes_left > 0)
             {
                 assert ((curr_addr % cache_line_byte_size) == 0);
-                std::auto_ptr<DataBufferHeap> data_buffer_heap_ap(new DataBufferHeap (cache_line_byte_size, 0));
+                std::unique_ptr<DataBufferHeap> data_buffer_heap_ap(new DataBufferHeap (cache_line_byte_size, 0));
                 size_t process_bytes_read = m_process.ReadMemoryFromInferior (curr_addr, 
                                                                               data_buffer_heap_ap->GetBytes(), 
                                                                               data_buffer_heap_ap->GetByteSize(), 
@@ -225,7 +230,7 @@ AllocatedBlock::ReserveBlock (uint32_t size)
     if (size <= m_byte_size)
     {
         const uint32_t needed_chunks = CalculateChunksNeededForSize (size);
-        LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
+        Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
 
         if (m_offset_to_chunk_size.empty())
         {
@@ -324,7 +329,7 @@ AllocatedBlock::ReserveBlock (uint32_t size)
 //            return m_addr + m_chunk_size * first_chunk_idx;
 //        }
     }
-    LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
     if (log)
         log->Printf ("AllocatedBlock::ReserveBlock (size = %u (0x%x)) => 0x%16.16" PRIx64, size, size, (uint64_t)addr);
     return addr;
@@ -341,7 +346,7 @@ AllocatedBlock::FreeBlock (addr_t addr)
         m_offset_to_chunk_size.erase (pos);
         success = true;
     }
-    LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
     if (log)
         log->Printf ("AllocatedBlock::FreeBlock (addr = 0x%16.16" PRIx64 ") => %i", (uint64_t)addr, success);
     return success;
@@ -387,7 +392,7 @@ AllocatedMemoryCache::AllocatePage (uint32_t byte_size,
 
     addr_t addr = m_process.DoAllocateMemory(page_byte_size, permissions, error);
 
-    LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
     {
         log->Printf ("Process::DoAllocateMemory (byte_size = 0x%8.8zx, permissions = %s) => 0x%16.16" PRIx64,
@@ -426,7 +431,7 @@ AllocatedMemoryCache::AllocateMemory (size_t byte_size,
         if (block_sp)
             addr = block_sp->ReserveBlock (byte_size);
     }
-    LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
         log->Printf ("AllocatedMemoryCache::AllocateMemory (byte_size = 0x%8.8zx, permissions = %s) => 0x%16.16" PRIx64, byte_size, GetPermissionsAsCString(permissions), (uint64_t)addr);
     return addr;
@@ -447,7 +452,7 @@ AllocatedMemoryCache::DeallocateMemory (lldb::addr_t addr)
             break;
         }
     }
-    LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
+    Log *log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
         log->Printf("AllocatedMemoryCache::DeallocateMemory (addr = 0x%16.16" PRIx64 ") => %i", (uint64_t)addr, success);
     return success;

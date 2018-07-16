@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "lldb/lldb-private.h"
+#include "lldb/Core/RangeMap.h"
 #include "lldb/Core/UniqueCStringMap.h"
 #include "lldb/Host/Mutex.h"
 #include "lldb/Symbol/Symbol.h"
@@ -41,8 +42,8 @@ public:
                         Symtab(ObjectFile *objfile);
                         ~Symtab();
 
-            void        Reserve (uint32_t count);
-            Symbol *    Resize (uint32_t count);
+            void        Reserve (size_t count);
+            Symbol *    Resize (size_t count);
             uint32_t    AddSymbol(const Symbol& symbol);
             size_t      GetNumSymbols() const;
             void        Dump(Stream *s, Target *target, SortOrder sort_type);
@@ -53,10 +54,9 @@ public:
                             return m_mutex;
                         }
             Symbol *    FindSymbolByID (lldb::user_id_t uid) const;
-            Symbol *    SymbolAtIndex (uint32_t idx);
-    const   Symbol *    SymbolAtIndex (uint32_t idx) const;
+            Symbol *    SymbolAtIndex (size_t idx);
+    const   Symbol *    SymbolAtIndex (size_t idx) const;
             Symbol *    FindSymbolWithType (lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, uint32_t &start_idx);
-//    const   Symbol *    FindSymbolWithType (lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, uint32_t &start_idx) const;
             uint32_t    AppendSymbolIndexesWithType (lldb::SymbolType symbol_type, std::vector<uint32_t>& indexes, uint32_t start_idx = 0, uint32_t end_index = UINT32_MAX) const;
             uint32_t    AppendSymbolIndexesWithTypeAndFlagsValue (lldb::SymbolType symbol_type, uint32_t flags_value, std::vector<uint32_t>& indexes, uint32_t start_idx = 0, uint32_t end_index = UINT32_MAX) const;
             uint32_t    AppendSymbolIndexesWithType (lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, std::vector<uint32_t>& matches, uint32_t start_idx = 0, uint32_t end_index = UINT32_MAX) const;
@@ -70,12 +70,10 @@ public:
             size_t      FindAllSymbolsWithNameAndType (const ConstString &name, lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, std::vector<uint32_t>& symbol_indexes);
             size_t      FindAllSymbolsMatchingRexExAndType (const RegularExpression &regex, lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility, std::vector<uint32_t>& symbol_indexes);
             Symbol *    FindFirstSymbolWithNameAndType (const ConstString &name, lldb::SymbolType symbol_type, Debug symbol_debug_type, Visibility symbol_visibility);
-            Symbol *    FindSymbolWithFileAddress (lldb::addr_t file_addr);
-//            Symbol *    FindSymbolContainingAddress (const Address& value, const uint32_t* indexes, uint32_t num_indexes);
-//            Symbol *    FindSymbolContainingAddress (const Address& value);
             Symbol *    FindSymbolContainingFileAddress (lldb::addr_t file_addr, const uint32_t* indexes, uint32_t num_indexes);
             Symbol *    FindSymbolContainingFileAddress (lldb::addr_t file_addr);
-            size_t      CalculateSymbolSize (Symbol *symbol);
+            size_t      FindFunctionSymbols (const ConstString &name, uint32_t name_type_mask, SymbolContextList& sc_list);
+            void        CalculateSymbolSizes ();
 
             void        SortSymbolIndexesByValue (std::vector<uint32_t>& indexes, bool remove_duplicates) const;
 
@@ -101,21 +99,24 @@ protected:
     typedef std::vector<Symbol>         collection;
     typedef collection::iterator        iterator;
     typedef collection::const_iterator  const_iterator;
-
+    typedef RangeDataVector<lldb::addr_t, lldb::addr_t, uint32_t> FileRangeToIndexMap;
             void        InitNameIndexes ();
             void        InitAddressIndexes ();
 
     ObjectFile *        m_objfile;
     collection          m_symbols;
-    std::vector<uint32_t> m_addr_indexes;
+    FileRangeToIndexMap m_file_addr_to_index;
     UniqueCStringMap<uint32_t> m_name_to_index;
+    UniqueCStringMap<uint32_t> m_basename_to_index;
+    UniqueCStringMap<uint32_t> m_method_to_index;
+    UniqueCStringMap<uint32_t> m_selector_to_index;
     mutable Mutex       m_mutex; // Provide thread safety for this symbol table
-    bool                m_addr_indexes_computed:1,
+    bool                m_file_addr_to_index_computed:1,
                         m_name_indexes_computed:1;
 private:
 
     bool
-    CheckSymbolAtIndex (uint32_t idx, Debug symbol_debug_type, Visibility symbol_visibility) const
+    CheckSymbolAtIndex (size_t idx, Debug symbol_debug_type, Visibility symbol_visibility) const
     {
         switch (symbol_debug_type)
         {
@@ -147,6 +148,9 @@ private:
         return false;
     }
 
+    void
+    SymbolIndicesToSymbolContextList (std::vector<uint32_t> &symbol_indexes,
+                                      SymbolContextList &sc_list);
 
     DISALLOW_COPY_AND_ASSIGN (Symtab);
 };

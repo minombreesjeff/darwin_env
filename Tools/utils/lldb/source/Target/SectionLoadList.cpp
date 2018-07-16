@@ -59,74 +59,90 @@ SectionLoadList::GetSectionLoadAddress (const lldb::SectionSP &section) const
 bool
 SectionLoadList::SetSectionLoadAddress (const lldb::SectionSP &section, addr_t load_addr, bool warn_multiple)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
-    if (log)
+    ModuleSP module_sp (section->GetModule());
+    
+    if (module_sp)
     {
-        const FileSpec &module_file_spec (section->GetModule()->GetFileSpec());
-        log->Printf ("SectionLoadList::%s (section = %p (%s%s%s.%s), load_addr = 0x%16.16" PRIx64 ")",
-                     __FUNCTION__,
-                     section.get(),
-                     module_file_spec.GetDirectory().AsCString(),
-                     module_file_spec.GetDirectory() ? "/" : "",
-                     module_file_spec.GetFilename().AsCString(),
-                     section->GetName().AsCString(),
-                     load_addr);
-    }
-
-    if (section->GetByteSize() == 0)
-        return false; // No change
-
-    // Fill in the section -> load_addr map
-    Mutex::Locker locker(m_mutex);
-    sect_to_addr_collection::iterator sta_pos = m_sect_to_addr.find(section.get());
-    if (sta_pos != m_sect_to_addr.end())
-    {
-        if (load_addr == sta_pos->second)
-            return false; // No change...
-        else
-            sta_pos->second = load_addr;
-    }
-    else
-        m_sect_to_addr[section.get()] = load_addr;
-
-    // Fill in the load_addr -> section map
-    addr_to_sect_collection::iterator ats_pos = m_addr_to_sect.find(load_addr);
-    if (ats_pos != m_addr_to_sect.end())
-    {
-        // Some sections are ok to overlap, and for others we should warn. When
-        // we have multiple load addresses that correspond to a section, we will
-        // allways attribute the section to the be last section that claims it
-        // exists at that address. Sometimes it is ok for more that one section
-        // to be loaded at a specific load address, and other times it isn't.
-        // The "warn_multiple" parameter tells us if we should warn in this case
-        // or not. The DynamicLoader plug-in subclasses should know which
-        // sections should warn and which shouldn't (darwin shared cache modules
-        // all shared the same "__LINKEDIT" sections, so the dynamic loader can
-        // pass false for "warn_multiple").
-        if (warn_multiple && section != ats_pos->second)
+        if (log)
         {
-            ModuleSP module_sp (section->GetModule());
-            if (module_sp)
+            const FileSpec &module_file_spec (module_sp->GetFileSpec());
+            log->Printf ("SectionLoadList::%s (section = %p (%s.%s), load_addr = 0x%16.16" PRIx64 ") module = %p",
+                         __FUNCTION__,
+                         section.get(),
+                         module_file_spec.GetPath().c_str(),
+                         section->GetName().AsCString(),
+                         load_addr,
+                         module_sp.get());
+        }
+
+        if (section->GetByteSize() == 0)
+            return false; // No change
+
+        // Fill in the section -> load_addr map
+        Mutex::Locker locker(m_mutex);
+        sect_to_addr_collection::iterator sta_pos = m_sect_to_addr.find(section.get());
+        if (sta_pos != m_sect_to_addr.end())
+        {
+            if (load_addr == sta_pos->second)
+                return false; // No change...
+            else
+                sta_pos->second = load_addr;
+        }
+        else
+            m_sect_to_addr[section.get()] = load_addr;
+
+        // Fill in the load_addr -> section map
+        addr_to_sect_collection::iterator ats_pos = m_addr_to_sect.find(load_addr);
+        if (ats_pos != m_addr_to_sect.end())
+        {
+            // Some sections are ok to overlap, and for others we should warn. When
+            // we have multiple load addresses that correspond to a section, we will
+            // allways attribute the section to the be last section that claims it
+            // exists at that address. Sometimes it is ok for more that one section
+            // to be loaded at a specific load address, and other times it isn't.
+            // The "warn_multiple" parameter tells us if we should warn in this case
+            // or not. The DynamicLoader plug-in subclasses should know which
+            // sections should warn and which shouldn't (darwin shared cache modules
+            // all shared the same "__LINKEDIT" sections, so the dynamic loader can
+            // pass false for "warn_multiple").
+            if (warn_multiple && section != ats_pos->second)
             {
-                ModuleSP curr_module_sp (ats_pos->second->GetModule());
-                if (curr_module_sp)
+                ModuleSP module_sp (section->GetModule());
+                if (module_sp)
                 {
-                    module_sp->ReportWarning ("address 0x%16.16" PRIx64 " maps to more than one section: %s.%s and %s.%s",
-                                              load_addr, 
-                                              module_sp->GetFileSpec().GetFilename().GetCString(), 
-                                              section->GetName().GetCString(),
-                                              curr_module_sp->GetFileSpec().GetFilename().GetCString(),
-                                              ats_pos->second->GetName().GetCString());
+                    ModuleSP curr_module_sp (ats_pos->second->GetModule());
+                    if (curr_module_sp)
+                    {
+                        module_sp->ReportWarning ("address 0x%16.16" PRIx64 " maps to more than one section: %s.%s and %s.%s",
+                                                  load_addr, 
+                                                  module_sp->GetFileSpec().GetFilename().GetCString(), 
+                                                  section->GetName().GetCString(),
+                                                  curr_module_sp->GetFileSpec().GetFilename().GetCString(),
+                                                  ats_pos->second->GetName().GetCString());
+                    }
                 }
             }
+            ats_pos->second = section;
         }
-        ats_pos->second = section;
+        else
+            m_addr_to_sect[load_addr] = section;
+        return true;    // Changed
+
     }
     else
-        m_addr_to_sect[load_addr] = section;
-
-    return true;    // Changed
+    {
+        if (log)
+        {
+            log->Printf ("SectionLoadList::%s (section = %p (%s), load_addr = 0x%16.16" PRIx64 ") error: module has been deleted",
+                         __FUNCTION__,
+                         section.get(),
+                         section->GetName().AsCString(),
+                         load_addr);
+        }
+    }
+    return false;
 }
 
 size_t
@@ -136,17 +152,15 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
 
     if (section_sp)
     {
-        LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+        Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
         if (log)
         {
             const FileSpec &module_file_spec (section_sp->GetModule()->GetFileSpec());
-            log->Printf ("SectionLoadList::%s (section = %p (%s%s%s.%s))",
+            log->Printf ("SectionLoadList::%s (section = %p (%s.%s))",
                          __FUNCTION__,
                          section_sp.get(),
-                         module_file_spec.GetDirectory().AsCString(),
-                         module_file_spec.GetDirectory() ? "/" : "",
-                         module_file_spec.GetFilename().AsCString(),
+                         module_file_spec.GetPath().c_str(),
                          section_sp->GetName().AsCString());
         }
 
@@ -155,6 +169,7 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
         sect_to_addr_collection::iterator sta_pos = m_sect_to_addr.find(section_sp.get());
         if (sta_pos != m_sect_to_addr.end())
         {
+            ++unload_count;
             addr_t load_addr = sta_pos->second;
             m_sect_to_addr.erase (sta_pos);
 
@@ -169,17 +184,15 @@ SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp)
 bool
 SectionLoadList::SetSectionUnloaded (const lldb::SectionSP &section_sp, addr_t load_addr)
 {
-    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
+    Log *log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER | LIBLLDB_LOG_VERBOSE));
 
     if (log)
     {
         const FileSpec &module_file_spec (section_sp->GetModule()->GetFileSpec());
-        log->Printf ("SectionLoadList::%s (section = %p (%s%s%s.%s), load_addr = 0x%16.16" PRIx64 ")",
+        log->Printf ("SectionLoadList::%s (section = %p (%s.%s), load_addr = 0x%16.16" PRIx64 ")",
                      __FUNCTION__,
                      section_sp.get(),
-                     module_file_spec.GetDirectory().AsCString(),
-                     module_file_spec.GetDirectory() ? "/" : "",
-                     module_file_spec.GetFilename().AsCString(),
+                     module_file_spec.GetPath().c_str(),
                      section_sp->GetName().AsCString(),
                      load_addr);
     }
@@ -215,9 +228,10 @@ SectionLoadList::ResolveLoadAddress (addr_t load_addr, Address &so_addr) const
         {
             if (load_addr != pos->first && pos != m_addr_to_sect.begin())
                 --pos;
-            if (load_addr >= pos->first)
+            const addr_t pos_load_addr = pos->first;
+            if (load_addr >= pos_load_addr)
             {
-                addr_t offset = load_addr - pos->first;
+                addr_t offset = load_addr - pos_load_addr;
                 if (offset < pos->second->GetByteSize())
                 {
                     // We have found the top level section, now we need to find the

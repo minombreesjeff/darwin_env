@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "lldb/Core/Log.h"
+#include "lldb/Core/State.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/ThreadList.h"
 #include "lldb/Target/Thread.h"
@@ -24,16 +25,14 @@ ThreadList::ThreadList (Process *process) :
     m_process (process),
     m_stop_id (0),
     m_threads(),
-    m_threads_mutex (Mutex::eMutexTypeRecursive),
     m_selected_tid (LLDB_INVALID_THREAD_ID)
 {
 }
 
 ThreadList::ThreadList (const ThreadList &rhs) :
-    m_process (),
-    m_stop_id (),
+    m_process (rhs.m_process),
+    m_stop_id (rhs.m_stop_id),
     m_threads (),
-    m_threads_mutex (Mutex::eMutexTypeRecursive),
     m_selected_tid ()
 {
     // Use the assignment operator since it uses the mutex
@@ -47,8 +46,7 @@ ThreadList::operator = (const ThreadList& rhs)
     {
         // Lock both mutexes to make sure neither side changes anyone on us
         // while the assignement occurs
-        Mutex::Locker locker_lhs(m_threads_mutex);
-        Mutex::Locker locker_rhs(rhs.m_threads_mutex);
+        Mutex::Locker locker(GetMutex());
         m_process = rhs.m_process;
         m_stop_id = rhs.m_stop_id;
         m_threads = rhs.m_threads;
@@ -60,6 +58,10 @@ ThreadList::operator = (const ThreadList& rhs)
 
 ThreadList::~ThreadList()
 {
+    // Clear the thread list. Clear will take the mutex lock
+    // which will ensure that if anyone is using the list
+    // they won't get it removed while using it.
+    Clear();
 }
 
 
@@ -79,14 +81,14 @@ ThreadList::SetStopID (uint32_t stop_id)
 void
 ThreadList::AddThread (const ThreadSP &thread_sp)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     m_threads.push_back(thread_sp);
 }
 
 uint32_t
 ThreadList::GetSize (bool can_update)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     if (can_update)
         m_process->UpdateThreadListIfNeeded();
     return m_threads.size();
@@ -95,7 +97,7 @@ ThreadList::GetSize (bool can_update)
 ThreadSP
 ThreadList::GetThreadAtIndex (uint32_t idx, bool can_update)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     if (can_update)
         m_process->UpdateThreadListIfNeeded();
 
@@ -108,7 +110,7 @@ ThreadList::GetThreadAtIndex (uint32_t idx, bool can_update)
 ThreadSP
 ThreadList::FindThreadByID (lldb::tid_t tid, bool can_update)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
 
     if (can_update)
         m_process->UpdateThreadListIfNeeded();
@@ -128,12 +130,81 @@ ThreadList::FindThreadByID (lldb::tid_t tid, bool can_update)
 }
 
 ThreadSP
+ThreadList::FindThreadByProtocolID (lldb::tid_t tid, bool can_update)
+{
+    Mutex::Locker locker(GetMutex());
+    
+    if (can_update)
+        m_process->UpdateThreadListIfNeeded();
+    
+    ThreadSP thread_sp;
+    uint32_t idx = 0;
+    const uint32_t num_threads = m_threads.size();
+    for (idx = 0; idx < num_threads; ++idx)
+    {
+        if (m_threads[idx]->GetProtocolID() == tid)
+        {
+            thread_sp = m_threads[idx];
+            break;
+        }
+    }
+    return thread_sp;
+}
+
+
+ThreadSP
+ThreadList::RemoveThreadByID (lldb::tid_t tid, bool can_update)
+{
+    Mutex::Locker locker(GetMutex());
+    
+    if (can_update)
+        m_process->UpdateThreadListIfNeeded();
+    
+    ThreadSP thread_sp;
+    uint32_t idx = 0;
+    const uint32_t num_threads = m_threads.size();
+    for (idx = 0; idx < num_threads; ++idx)
+    {
+        if (m_threads[idx]->GetID() == tid)
+        {
+            thread_sp = m_threads[idx];
+            m_threads.erase(m_threads.begin()+idx);
+            break;
+        }
+    }
+    return thread_sp;
+}
+
+ThreadSP
+ThreadList::RemoveThreadByProtocolID (lldb::tid_t tid, bool can_update)
+{
+    Mutex::Locker locker(GetMutex());
+    
+    if (can_update)
+        m_process->UpdateThreadListIfNeeded();
+    
+    ThreadSP thread_sp;
+    uint32_t idx = 0;
+    const uint32_t num_threads = m_threads.size();
+    for (idx = 0; idx < num_threads; ++idx)
+    {
+        if (m_threads[idx]->GetProtocolID() == tid)
+        {
+            thread_sp = m_threads[idx];
+            m_threads.erase(m_threads.begin()+idx);
+            break;
+        }
+    }
+    return thread_sp;
+}
+
+ThreadSP
 ThreadList::GetThreadSPForThreadPtr (Thread *thread_ptr)
 {
     ThreadSP thread_sp;
     if (thread_ptr)
     {
-        Mutex::Locker locker(m_threads_mutex);
+        Mutex::Locker locker(GetMutex());
 
         uint32_t idx = 0;
         const uint32_t num_threads = m_threads.size();
@@ -154,7 +225,7 @@ ThreadList::GetThreadSPForThreadPtr (Thread *thread_ptr)
 ThreadSP
 ThreadList::FindThreadByIndexID (uint32_t index_id, bool can_update)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
 
     if (can_update)
         m_process->UpdateThreadListIfNeeded();
@@ -175,10 +246,9 @@ ThreadList::FindThreadByIndexID (uint32_t index_id, bool can_update)
 bool
 ThreadList::ShouldStop (Event *event_ptr)
 {
-    bool should_stop = false;    
     // Running events should never stop, obviously...
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     // The ShouldStop method of the threads can do a whole lot of work,
     // running breakpoint commands & conditions, etc.  So we don't want
@@ -191,7 +261,7 @@ ThreadList::ShouldStop (Event *event_ptr)
     collection threads_copy;
     {
         // Scope for locker
-        Mutex::Locker locker(m_threads_mutex);
+        Mutex::Locker locker(GetMutex());
 
         m_process->UpdateThreadListIfNeeded();
         threads_copy = m_threads;
@@ -205,15 +275,42 @@ ThreadList::ShouldStop (Event *event_ptr)
         log->Printf ("ThreadList::%s: %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
     }
 
+    bool did_anybody_stop_for_a_reason = false;
+    bool should_stop = false;
+    
+    // Now we run through all the threads and get their stop info's.  We want to make sure to do this first before
+    // we start running the ShouldStop, because one thread's ShouldStop could destroy information (like deleting a
+    // thread specific breakpoint another thread had stopped at) which could lead us to compute the StopInfo incorrectly.
+    // We don't need to use it here, we just want to make sure it gets computed.
+    
     for (pos = threads_copy.begin(); pos != end; ++pos)
     {
         ThreadSP thread_sp(*pos);
+        thread_sp->GetStopInfo();
+    }
+    
+    for (pos = threads_copy.begin(); pos != end; ++pos)
+    {
+        ThreadSP thread_sp(*pos);
+        
+        did_anybody_stop_for_a_reason |= thread_sp->ThreadStoppedForAReason();
         
         const bool thread_should_stop = thread_sp->ShouldStop(event_ptr);
         if (thread_should_stop)
             should_stop |= true;
     }
 
+    // We should never get a stop for which no thread had a stop reason, but sometimes we do see this -
+    // for instance when we first connect to a remote stub.  In that case we should stop, since we can't figure out
+    // the right thing to do and stopping gives the user control over what to do in this instance.
+    
+    if (!should_stop && !did_anybody_stop_for_a_reason)
+    {
+        should_stop = true;
+        if (log)
+            log->Printf ("ThreadList::%s we stopped but no threads had a stop reason, overriding should_stop and stopping.", __FUNCTION__);
+    }
+    
     if (log)
         log->Printf ("ThreadList::%s overall should_stop = %i", __FUNCTION__, should_stop);
 
@@ -232,13 +329,13 @@ ThreadList::ShouldStop (Event *event_ptr)
 Vote
 ThreadList::ShouldReportStop (Event *event_ptr)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
 
     Vote result = eVoteNoOpinion;
     m_process->UpdateThreadListIfNeeded();
     collection::iterator pos, end = m_threads.end();
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (log)
         log->Printf ("ThreadList::%s %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
@@ -280,11 +377,24 @@ ThreadList::ShouldReportStop (Event *event_ptr)
     return result;
 }
 
+void
+ThreadList::SetShouldReportStop (Vote vote)
+{
+    Mutex::Locker locker(GetMutex());
+    m_process->UpdateThreadListIfNeeded();
+    collection::iterator pos, end = m_threads.end();
+    for (pos = m_threads.begin(); pos != end; ++pos)
+    {
+        ThreadSP thread_sp(*pos);
+        thread_sp->SetShouldReportStop (vote);
+    }
+}
+
 Vote
 ThreadList::ShouldReportRun (Event *event_ptr)
 {
 
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
 
     Vote result = eVoteNoOpinion;
     m_process->UpdateThreadListIfNeeded();
@@ -293,7 +403,7 @@ ThreadList::ShouldReportRun (Event *event_ptr)
     // Run through the threads and ask whether we should report this event.
     // The rule is NO vote wins over everything, a YES vote wins over no opinion.
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     
     for (pos = m_threads.begin(); pos != end; ++pos)
     {
@@ -323,7 +433,7 @@ ThreadList::ShouldReportRun (Event *event_ptr)
 void
 ThreadList::Clear()
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     m_stop_id = 0;
     m_threads.clear();
     m_selected_tid = LLDB_INVALID_THREAD_ID;
@@ -332,7 +442,7 @@ ThreadList::Clear()
 void
 ThreadList::Destroy()
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     const uint32_t num_threads = m_threads.size();
     for (uint32_t idx = 0; idx < num_threads; ++idx)
     {
@@ -343,11 +453,11 @@ ThreadList::Destroy()
 void
 ThreadList::RefreshStateAfterStop ()
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
 
     m_process->UpdateThreadListIfNeeded();
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+    Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log && log->GetVerbose())
         log->Printf ("Turning off notification of new threads while single stepping a thread.");
 
@@ -361,7 +471,7 @@ ThreadList::DiscardThreadPlans ()
 {
     // You don't need to update the thread list here, because only threads
     // that you currently know about have any thread plans.
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
 
     collection::iterator pos, end = m_threads.end();
     for (pos = m_threads.begin(); pos != end; ++pos)
@@ -376,7 +486,7 @@ ThreadList::WillResume ()
     // But we only do this for threads that are running, user suspended
     // threads stay where they are.
 
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     m_process->UpdateThreadListIfNeeded();
 
     collection::iterator pos, end = m_threads.end();
@@ -395,6 +505,8 @@ ThreadList::WillResume ()
         if ((*pos)->GetResumeState() != eStateSuspended &&
                  (*pos)->GetCurrentPlan()->StopOthers())
         {
+            if ((*pos)->IsOperatingSystemPluginThread() && !(*pos)->GetBackingThread())
+                continue;
             wants_solo_run = true;
             break;
         }
@@ -402,14 +514,14 @@ ThreadList::WillResume ()
 
     if (wants_solo_run)
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log && log->GetVerbose())
             log->Printf ("Turning on notification of new threads while single stepping a thread.");
         m_process->StartNoticingNewThreads();
     }
     else
     {
-        LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
+        Log *log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
         if (log && log->GetVerbose())
             log->Printf ("Turning off notification of new threads while single stepping a thread.");
         m_process->StopNoticingNewThreads();
@@ -425,6 +537,8 @@ ThreadList::WillResume ()
         if ((*pos)->GetResumeState() != eStateSuspended
             && (!wants_solo_run || (*pos)->GetCurrentPlan()->StopOthers()))
         {
+            if ((*pos)->IsOperatingSystemPluginThread() && !(*pos)->GetBackingThread())
+                continue;
             (*pos)->SetupForResume ();
         }
     }
@@ -436,7 +550,6 @@ ThreadList::WillResume ()
     
     run_me_only_list.SetStopID(m_process->GetStopID());
 
-    ThreadSP immediate_thread_sp;
     bool run_only_current_thread = false;
 
     for (pos = m_threads.begin(); pos != end; ++pos)
@@ -445,6 +558,9 @@ ThreadList::WillResume ()
         if (thread_sp->GetResumeState() != eStateSuspended &&
                  thread_sp->GetCurrentPlan()->StopOthers())
         {
+            if ((*pos)->IsOperatingSystemPluginThread() && !(*pos)->GetBackingThread())
+                continue;
+
             // You can't say "stop others" and also want yourself to be suspended.
             assert (thread_sp->GetCurrentPlan()->RunState() != eStateSuspended);
 
@@ -463,18 +579,7 @@ ThreadList::WillResume ()
 
     bool need_to_resume = true;
     
-    if (immediate_thread_sp)
-    {
-        for (pos = m_threads.begin(); pos != end; ++pos)
-        {
-            ThreadSP thread_sp(*pos);
-            if (thread_sp.get() == immediate_thread_sp.get())
-                thread_sp->WillResume(thread_sp->GetCurrentPlan()->RunState());
-            else
-                thread_sp->WillResume (eStateSuspended);
-        }
-    }
-    else if (run_me_only_list.GetSize (false) == 0)
+    if (run_me_only_list.GetSize (false) == 0)
     {
         // Everybody runs as they wish:
         for (pos = m_threads.begin(); pos != end; ++pos)
@@ -485,7 +590,7 @@ ThreadList::WillResume ()
                 run_state = thread_sp->GetCurrentPlan()->RunState();
             else
                 run_state = eStateSuspended;
-            if (!thread_sp->WillResume(run_state))
+            if (!thread_sp->ShouldResume(run_state))
                 need_to_resume = false;
         }
     }
@@ -513,11 +618,11 @@ ThreadList::WillResume ()
             ThreadSP thread_sp(*pos);
             if (thread_sp == thread_to_run)
             {
-                if (!thread_sp->WillResume(thread_sp->GetCurrentPlan()->RunState()))
+                if (!thread_sp->ShouldResume(thread_sp->GetCurrentPlan()->RunState()))
                     need_to_resume = false;
             }
             else
-                thread_sp->WillResume (eStateSuspended);
+                thread_sp->ShouldResume (eStateSuspended);
         }
     }
 
@@ -527,7 +632,7 @@ ThreadList::WillResume ()
 void
 ThreadList::DidResume ()
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     collection::iterator pos, end = m_threads.end();
     for (pos = m_threads.begin(); pos != end; ++pos)
     {
@@ -539,10 +644,31 @@ ThreadList::DidResume ()
     }
 }
 
+void
+ThreadList::DidStop ()
+{
+    Mutex::Locker locker(GetMutex());
+    collection::iterator pos, end = m_threads.end();
+    for (pos = m_threads.begin(); pos != end; ++pos)
+    {
+        // Notify threads that the process just stopped.
+        // Note, this currently assumes that all threads in the list
+        // stop when the process stops.  In the future we will want to support
+        // a debugging model where some threads continue to run while others
+        // are stopped.  We either need to handle that somehow here or
+        // create a special thread list containing only threads which will
+        // stop in the code that calls this method (currently
+        // Process::SetPrivateState).
+        ThreadSP thread_sp(*pos);
+        if (StateIsRunningState(thread_sp->GetState()))
+            thread_sp->DidStop ();
+    }
+}
+
 ThreadSP
 ThreadList::GetSelectedThread ()
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     ThreadSP thread_sp = FindThreadByID(m_selected_tid);
     if (!thread_sp.get())
     {
@@ -555,9 +681,9 @@ ThreadList::GetSelectedThread ()
 }
 
 bool
-ThreadList::SetSelectedThreadByID (lldb::tid_t tid)
+ThreadList::SetSelectedThreadByID (lldb::tid_t tid, bool notify)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     ThreadSP selected_thread_sp(FindThreadByID(tid));
     if  (selected_thread_sp)
     {
@@ -567,13 +693,16 @@ ThreadList::SetSelectedThreadByID (lldb::tid_t tid)
     else
         m_selected_tid = LLDB_INVALID_THREAD_ID;
 
+    if (notify)
+        NotifySelectedThreadChanged(m_selected_tid);
+    
     return m_selected_tid != LLDB_INVALID_THREAD_ID;
 }
 
 bool
-ThreadList::SetSelectedThreadByIndexID (uint32_t index_id)
+ThreadList::SetSelectedThreadByIndexID (uint32_t index_id, bool notify)
 {
-    Mutex::Locker locker(m_threads_mutex);
+    Mutex::Locker locker(GetMutex());
     ThreadSP selected_thread_sp (FindThreadByIndexID(index_id));
     if  (selected_thread_sp.get())
     {
@@ -583,7 +712,19 @@ ThreadList::SetSelectedThreadByIndexID (uint32_t index_id)
     else
         m_selected_tid = LLDB_INVALID_THREAD_ID;
 
+    if (notify)
+        NotifySelectedThreadChanged(m_selected_tid);
+    
     return m_selected_tid != LLDB_INVALID_THREAD_ID;
+}
+
+void
+ThreadList::NotifySelectedThreadChanged (lldb::tid_t tid)
+{
+    ThreadSP selected_thread_sp (FindThreadByID(tid));
+    if (selected_thread_sp->EventTypeHasListeners(Thread::eBroadcastBitThreadSelected))
+        selected_thread_sp->BroadcastEvent(Thread::eBroadcastBitThreadSelected,
+                                           new Thread::ThreadEventData(selected_thread_sp));
 }
 
 void
@@ -593,8 +734,7 @@ ThreadList::Update (ThreadList &rhs)
     {
         // Lock both mutexes to make sure neither side changes anyone on us
         // while the assignement occurs
-        Mutex::Locker locker_lhs(m_threads_mutex);
-        Mutex::Locker locker_rhs(rhs.m_threads_mutex);
+        Mutex::Locker locker(GetMutex());
         m_process = rhs.m_process;
         m_stop_id = rhs.m_stop_id;
         m_threads.swap(rhs.m_threads);
@@ -631,9 +771,15 @@ ThreadList::Update (ThreadList &rhs)
 void
 ThreadList::Flush ()
 {
-    Mutex::Locker locker(m_threads_mutex);    
+    Mutex::Locker locker(GetMutex());
     collection::iterator pos, end = m_threads.end();
     for (pos = m_threads.begin(); pos != end; ++pos)
         (*pos)->Flush ();
+}
+
+Mutex &
+ThreadList::GetMutex ()
+{
+    return m_process->m_thread_mutex;
 }
 

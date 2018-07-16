@@ -23,13 +23,13 @@
 
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Communication.h"
-#include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReaderStack.h"
 #include "lldb/Core/Listener.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Core/UserID.h"
 #include "lldb/Core/UserSettingsController.h"
+#include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/Host/Terminal.h"
 #include "lldb/Interpreter/OptionValueProperties.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -47,7 +47,7 @@ namespace lldb_private {
 
 
 class Debugger :
-    public STD_ENABLE_SHARED_FROM_THIS(Debugger),
+    public std::enable_shared_from_this<Debugger>,
     public UserID,
     public Properties,
     public BroadcasterManager
@@ -159,10 +159,7 @@ public:
     // information, but it can look up files by absolute path and display them to you.
     // To get the target's source manager, call GetSourceManager on the target instead.
     SourceManager &
-    GetSourceManager ()
-    {
-        return m_source_manager;
-    }
+    GetSourceManager ();
 
 public:
     
@@ -227,11 +224,11 @@ public:
     static lldb::DebuggerSP
     FindDebuggerWithInstanceName (const ConstString &instance_name);
     
-    static uint32_t
+    static size_t
     GetNumDebuggers();
     
     static lldb::DebuggerSP
-    GetDebuggerAtIndex (uint32_t);
+    GetDebuggerAtIndex (size_t index);
 
     static bool
     FormatPrompt (const char *format,
@@ -239,7 +236,6 @@ public:
                   const ExecutionContext *exe_ctx,
                   const Address *addr,
                   Stream &s,
-                  const char **end,
                   ValueObject* valobj = NULL);
 
 
@@ -311,6 +307,12 @@ public:
     bool
     SetUseExternalEditor (bool use_external_editor_p);
     
+    bool
+    GetUseColor () const;
+    
+    bool
+    SetUseColor (bool use_color);
+    
     uint32_t
     GetStopSourceLineCount (bool before) const;
     
@@ -333,7 +335,7 @@ public:
     typedef bool (*LLDBCommandPluginInit) (lldb::SBDebugger& debugger);
     
     bool
-    LoadPlugin (const FileSpec& spec);
+    LoadPlugin (const FileSpec& spec, Error& error);
 
 protected:
 
@@ -362,14 +364,14 @@ protected:
     TargetList m_target_list;
     PlatformList m_platform_list;
     Listener m_listener;
-    SourceManager m_source_manager;    // This is a scratch source manager that we return if we have no targets.
+    std::unique_ptr<SourceManager> m_source_manager_ap;    // This is a scratch source manager that we return if we have no targets.
     SourceManager::SourceFileCache m_source_file_cache; // All the source managers for targets created in this debugger used this shared
                                                         // source file cache.
-    std::auto_ptr<CommandInterpreter> m_command_interpreter_ap;
+    std::unique_ptr<CommandInterpreter> m_command_interpreter_ap;
 
     InputReaderStack m_input_reader_stack;
     std::string m_input_reader_data;
-    typedef std::map<std::string, lldb::StreamSP> LogStreamMap;
+    typedef std::map<std::string, lldb::StreamWP> LogStreamMap;
     LogStreamMap m_log_streams;
     lldb::StreamSP m_log_callback_stream_sp;
     ConstString m_instance_name;
