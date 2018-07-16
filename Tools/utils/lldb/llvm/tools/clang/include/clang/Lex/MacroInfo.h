@@ -39,6 +39,12 @@ class MacroInfo {
   IdentifierInfo **ArgumentList;
   unsigned NumArguments;
 
+  /// \brief The location at which this macro was either explicitly exported
+  /// from its module or marked as private.
+  ///
+  /// If invalid, this macro has not been explicitly given any visibility.
+  SourceLocation VisibilityLocation;
+  
   /// ReplacementTokens - This is the list of tokens that the macro is defined
   /// to.
   SmallVector<Token, 8> ReplacementTokens;
@@ -68,6 +74,9 @@ class MacroInfo {
   /// IsFromAST - True if this macro was loaded from an AST file.
   bool IsFromAST : 1;
 
+  /// \brief Whether this macro changed after it was loaded from an AST file.
+  bool ChangedAfterLoad : 1;
+  
 private:
   //===--------------------------------------------------------------------===//
   // State that changes as the macro is used.
@@ -89,6 +98,9 @@ private:
   /// \brief Must warn if the macro is unused at the end of translation unit.
   bool IsWarnIfUnused : 1;
    
+  /// \brief Whether the macro has public (when described in a module).
+  bool IsPublic : 1;
+  
    ~MacroInfo() {
     assert(ArgumentList == 0 && "Didn't call destroy before dtor!");
   }
@@ -209,6 +221,14 @@ public:
   /// setIsFromAST - Set whether this macro was loaded from an AST file.
   void setIsFromAST(bool FromAST = true) { IsFromAST = FromAST; }
 
+  /// \brief Determine whether this macro has changed since it was loaded from
+  /// an AST file.
+  bool hasChangedAfterLoad() const { return ChangedAfterLoad; }
+  
+  /// \brief Note whether this macro has changed after it was loaded from an
+  /// AST file.
+  void setChangedAfterLoad(bool CAL = true) { ChangedAfterLoad = CAL; }
+  
   /// isUsed - Return false if this macro is defined in the main file and has
   /// not yet been used.
   bool isUsed() const { return IsUsed; }
@@ -262,6 +282,20 @@ public:
     IsDisabled = true;
   }
 
+  /// \brief Set the export location for this macro.
+  void setVisibility(bool Public, SourceLocation Loc) {
+    VisibilityLocation = Loc;
+    IsPublic = Public;
+  }
+
+  /// \brief Determine whether this macro is part of the public API of its
+  /// module.
+  bool isPublic() const { return IsPublic; }
+  
+  /// \brief Determine the location where this macro was explicitly made
+  /// public or private within its module.
+  SourceLocation getVisibilityLocation() { return VisibilityLocation; }
+  
 private:
   unsigned getDefinitionLengthSlow(SourceManager &SM) const;
 };

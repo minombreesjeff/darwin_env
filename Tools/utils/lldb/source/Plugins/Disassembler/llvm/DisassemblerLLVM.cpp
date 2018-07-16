@@ -10,6 +10,7 @@
 #include "DisassemblerLLVM.h"
 
 #include "llvm-c/EnhancedDisassembly.h"
+#include "llvm/Support/TargetSelect.h"
 
 #include "lldb/Core/Address.h"
 #include "lldb/Core/DataExtractor.h"
@@ -80,12 +81,18 @@ InstructionLLVM::InstructionLLVM (const Address &addr,
                                   llvm::Triple::ArchType arch_type) :
     Instruction (addr, addr_class),
     m_disassembler (disassembler),
+    m_inst (NULL),
     m_arch_type (arch_type)
 {
 }
 
 InstructionLLVM::~InstructionLLVM()
 {
+    if (m_inst)
+    {
+        EDReleaseInst(m_inst);
+        m_inst = NULL;
+    }
 }
 
 static void
@@ -99,13 +106,18 @@ PadString(Stream *s, const std::string &str, size_t width)
         s->Printf("%s ", str.c_str());
 }
 static void
-AddSymbolicInfo(const ExecutionContext *exe_ctx, ExecutionContextScope *exe_scope,
-                StreamString &comment, uint64_t operand_value, const Address &inst_addr)
+AddSymbolicInfo (ExecutionContextScope *exe_scope, 
+                 StreamString &comment, 
+                 uint64_t operand_value, 
+                 const Address &inst_addr)
 {
     Address so_addr;
-    if (exe_ctx && exe_ctx->target && !exe_ctx->target->GetSectionLoadList().IsEmpty())
+    Target *target = NULL;
+    if (exe_scope)
+        target = exe_scope->CalculateTarget();
+    if (target && !target->GetSectionLoadList().IsEmpty())
     {
-        if (exe_ctx->target->GetSectionLoadList().ResolveLoadAddress(operand_value, so_addr))
+        if (target->GetSectionLoadList().ResolveLoadAddress(operand_value, so_addr))
             so_addr.Dump(&comment, exe_scope, Address::DumpStyleResolvedDescriptionNoModule, Address::DumpStyleSectionNameOffset);
     }
     else
@@ -222,9 +234,16 @@ InstructionLLVM::Dump
     if (numTokens != -1 && !raw)
     {
         addr_t base_addr = LLDB_INVALID_ADDRESS;
-        
-        if (exe_ctx && exe_ctx->target && !exe_ctx->target->GetSectionLoadList().IsEmpty())
-            base_addr = GetAddress().GetLoadAddress (exe_ctx->target);
+        uint32_t addr_nibble_size = 8;
+        Target *target = NULL;
+        if (exe_ctx)
+            target = exe_ctx->GetTargetPtr();
+        if (target)
+        {
+            if (!target->GetSectionLoadList().IsEmpty())
+                base_addr = GetAddress().GetLoadAddress (target);
+            addr_nibble_size = target->GetArchitecture().GetAddressByteSize() * 2;
+        }
         if (base_addr == LLDB_INVALID_ADDRESS)
             base_addr = GetAddress().GetFileAddress ();
                     
@@ -308,16 +327,16 @@ InstructionLLVM::Dump
                                 {
                                     if (EDInstIsBranch(m_inst))
                                     {
-                                        operands.Printf("0x%llx ", operand_value);
+                                        operands.Printf("0x%*.*llx ", addr_nibble_size, addr_nibble_size, operand_value);
                                         show_token = false;
                                     }
                                     else
                                     {
                                         // Put the address value into the comment
-                                        comment.Printf("0x%llx ", operand_value);
+                                        comment.Printf("0x%*.*llx ", addr_nibble_size, addr_nibble_size, operand_value);
                                     }
 
-                                    AddSymbolicInfo(exe_ctx, exe_scope, comment, operand_value, GetAddress());
+                                    AddSymbolicInfo(exe_scope, comment, operand_value, GetAddress());
                                 } // EDEvaluateOperand
                             } // EDOperandIsMemory
                         } // EDGetOperand
@@ -345,8 +364,8 @@ InstructionLLVM::Dump
                 if (EDGetInstString(&inst_str, m_inst) == 0 && (pos = strstr(inst_str, "#")) != NULL) {
                     uint64_t operand_value = PC + atoi(++pos);
                     // Put the address value into the operands.
-                    operands.Printf("0x%llx ", operand_value);
-                    AddSymbolicInfo(exe_ctx, exe_scope, comment, operand_value, GetAddress());
+                    operands.Printf("0x%8.8llx ", operand_value);
+                    AddSymbolicInfo(exe_scope, comment, operand_value, GetAddress());
                 }
             }
             // Yet more workaround for "bl #..." and "blx #...".
@@ -363,12 +382,12 @@ InstructionLLVM::Dump
                     }
                     uint64_t operand_value = PC + atoi(++pos);
                     // Put the address value into the comment.
-                    comment.Printf("0x%llx ", operand_value);
+                    comment.Printf("0x%8.8llx ", operand_value);
                     // And the original token string into the operands.
                     llvm::StringRef Str(pos - 1);
                     RStrip(Str, '\n');
                     operands.PutCString(Str.str().c_str());
-                    AddSymbolicInfo(exe_ctx, exe_scope, comment, operand_value, GetAddress());
+                    AddSymbolicInfo(exe_scope, comment, operand_value, GetAddress());
                 }
             }
             // END of workaround.
@@ -414,6 +433,130 @@ InstructionLLVM::Dump
             // raw disassembly's opcode with the rest of output.
             Align(s, str, opcodeColumnWidth, operandColumnWidth);
         }
+    }
+}
+
+void
+InstructionLLVM::CalculateMnemonicOperandsAndComment (ExecutionContextScope *exe_scope)
+{
+    const int num_tokens = EDNumTokens(m_inst);
+    if (num_tokens > 0)
+    {
+        const char *token_cstr = NULL;
+        int currentOpIndex = -1;
+        StreamString comment;
+        uint32_t addr_nibble_size = 8;
+        addr_t base_addr = LLDB_INVALID_ADDRESS;        
+        Target *target = NULL;
+        if (exe_scope)
+            target = exe_scope->CalculateTarget();
+        if (target && !target->GetSectionLoadList().IsEmpty())
+            base_addr = GetAddress().GetLoadAddress (target);
+        if (base_addr == LLDB_INVALID_ADDRESS)
+            base_addr = GetAddress().GetFileAddress ();
+        addr_nibble_size = target->GetArchitecture().GetAddressByteSize() * 2;
+
+        lldb::addr_t PC = base_addr + EDInstByteSize(m_inst);
+        
+        // When executing an ARM instruction, PC reads as the address of the
+        // current instruction plus 8.  And for Thumb, it is plus 4.
+        if (m_arch_type == llvm::Triple::arm)
+            PC = base_addr + 8;
+        else if (m_arch_type == llvm::Triple::thumb)
+            PC = base_addr + 4;
+        
+        RegisterReaderArg rra(PC, m_disassembler);
+
+        for (int token_idx = 0; token_idx < num_tokens; ++token_idx)
+        {
+            EDTokenRef token;
+            if (EDGetToken(&token, m_inst, token_idx))
+                break;
+            
+            if (EDTokenIsOpcode(token) == 1)
+            {
+                if (EDGetTokenString(&token_cstr, token) == 0) // 0 on success
+                {
+                    if (token_cstr)
+                    m_opcode_name.assign(token_cstr);
+                }
+            }
+            else
+            {                
+                int operandIndex = EDOperandIndexForToken(token);
+
+                if (operandIndex >= 0)
+                {
+                    if (operandIndex != currentOpIndex)
+                    {
+                        currentOpIndex = operandIndex;
+                        EDOperandRef operand;
+                        
+                        if (!EDGetOperand(&operand, m_inst, currentOpIndex))
+                        {
+                            if (EDOperandIsMemory(operand))
+                            {
+                                uint64_t operand_value;
+                                
+                                if (!EDEvaluateOperand(&operand_value, operand, IPRegisterReader, &rra))
+                                {
+                                    comment.Printf("0x%*.*llx ", addr_nibble_size, addr_nibble_size, operand_value);                                    
+                                    AddSymbolicInfo (exe_scope, comment, operand_value, GetAddress());
+                                }
+                            }
+                        }
+                    }
+                }
+                if (m_mnemocics.empty() && EDTokenIsWhitespace (token) == 1)
+                    continue;
+                if (EDGetTokenString (&token_cstr, token))
+                    break;
+                m_mnemocics.append (token_cstr);
+            }
+        }
+        // FIXME!!!
+        // Workaround for llvm::tB's operands not properly parsed by ARMAsmParser.
+        if (m_arch_type == llvm::Triple::thumb && m_opcode_name.compare("b") == 0) 
+        {
+            const char *inst_str;
+            const char *pos = NULL;
+            comment.Clear();
+            if (EDGetInstString(&inst_str, m_inst) == 0 && (pos = strstr(inst_str, "#")) != NULL) 
+            {
+                uint64_t operand_value = PC + atoi(++pos);
+                // Put the address value into the operands.
+                comment.Printf("0x%*.*llx ", addr_nibble_size, addr_nibble_size, operand_value);
+                AddSymbolicInfo (exe_scope, comment, operand_value, GetAddress());
+            }
+        }
+        // Yet more workaround for "bl #..." and "blx #...".
+        if ((m_arch_type == llvm::Triple::arm || m_arch_type == llvm::Triple::thumb) &&
+            (m_opcode_name.compare("bl") == 0 || m_opcode_name.compare("blx") == 0)) 
+        {
+            const char *inst_str;
+            const char *pos = NULL;
+            comment.Clear();
+            if (EDGetInstString(&inst_str, m_inst) == 0 && (pos = strstr(inst_str, "#")) != NULL) 
+            {
+                if (m_arch_type == llvm::Triple::thumb && m_opcode_name.compare("blx") == 0)
+                {
+                    // A8.6.23 BLX (immediate)
+                    // Target Address = Align(PC,4) + offset value
+                    PC = AlignPC(PC);
+                }
+                uint64_t operand_value = PC + atoi(++pos);
+                // Put the address value into the comment.
+                comment.Printf("0x%*.*llx ", addr_nibble_size, addr_nibble_size, operand_value);
+                // And the original token string into the operands.
+//                llvm::StringRef Str(pos - 1);
+//                RStrip(Str, '\n');
+//                operands.PutCString(Str.str().c_str());
+                AddSymbolicInfo (exe_scope, comment, operand_value, GetAddress());
+            }
+        }
+        // END of workaround.
+
+        m_comment.swap (comment.GetString());
     }
 }
 
@@ -513,6 +656,16 @@ DisassemblerLLVM::DisassemblerLLVM(const ArchSpec &arch) :
     m_disassembler (NULL),
     m_disassembler_thumb (NULL) // For ARM only
 {
+    // Initialize the LLVM objects needed to use the disassembler.
+    static struct InitializeLLVM {
+        InitializeLLVM() {
+            llvm::InitializeAllTargetInfos();
+            llvm::InitializeAllTargetMCs();
+            llvm::InitializeAllAsmParsers();
+            llvm::InitializeAllDisassemblers();
+        }
+    } InitializeLLVM;
+
     const std::string &arch_triple = arch.GetTriple().str();
     if (!arch_triple.empty())
     {
@@ -526,7 +679,7 @@ DisassemblerLLVM::DisassemblerLLVM(const ArchSpec &arch) :
 		// addresses.
         if (llvm_arch == llvm::Triple::arm)
         {
-            if (EDGetDisassembler(&m_disassembler_thumb, "thumb-apple-darwin", kEDAssemblySyntaxARMUAL))
+            if (EDGetDisassembler(&m_disassembler_thumb, "thumbv7-apple-darwin", kEDAssemblySyntaxARMUAL))
                 m_disassembler_thumb = NULL;
         }
     }

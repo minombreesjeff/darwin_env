@@ -89,6 +89,22 @@ class ValueAPITestCase(TestBase):
             print cvf.format(weekdays)
             print rdf.format(g_table)
 
+        # Get variable 'my_int_ptr'.
+        value = frame0.FindVariable('my_int_ptr')
+        self.assertTrue(value, VALID_VARIABLE)
+        self.DebugSBValue(value)
+
+        # Get what 'my_int_ptr' points to.
+        pointed = value.GetChildAtIndex(0)
+        self.assertTrue(pointed, VALID_VARIABLE)
+        self.DebugSBValue(pointed)
+
+        # While we are at it, verify that 'my_int_ptr' points to 'g_my_int'.
+        symbol = target.ResolveLoadAddress(int(pointed.GetLocation(), 0)).GetSymbol()
+        self.assertTrue(symbol)
+        self.expect(symbol.GetName(), exe=False,
+            startstr = 'g_my_int')
+
         # Get variable 'str_ptr'.
         value = frame0.FindVariable('str_ptr')
         self.assertTrue(value, VALID_VARIABLE)

@@ -23,9 +23,9 @@ namespace lldb {
     typedef SharedPtr<lldb_private::AddressResolver>::Type AddressResolverSP;
     typedef SharedPtr<lldb_private::Baton>::Type BatonSP;
     typedef SharedPtr<lldb_private::Block>::Type BlockSP;
-    typedef SharedPtr<lldb_private::Breakpoint>::Type BreakpointSP;
-    typedef SharedPtr<lldb_private::BreakpointSite>::Type BreakpointSiteSP;
-    typedef SharedPtr<lldb_private::BreakpointLocation>::Type BreakpointLocationSP;
+    typedef IntrusiveSharedPtr<lldb_private::Breakpoint>::Type BreakpointSP;
+    typedef IntrusiveSharedPtr<lldb_private::BreakpointSite>::Type BreakpointSiteSP;
+    typedef IntrusiveSharedPtr<lldb_private::BreakpointLocation>::Type BreakpointLocationSP;
     typedef SharedPtr<lldb_private::BreakpointResolver>::Type BreakpointResolverSP;
     typedef SharedPtr<lldb_private::Broadcaster>::Type BroadcasterSP;
     typedef SharedPtr<lldb_private::ClangExpressionVariable>::Type ClangExpressionVariableSP;
@@ -34,7 +34,8 @@ namespace lldb {
     typedef SharedPtr<lldb_private::Connection>::Type ConnectionSP;
     typedef SharedPtr<lldb_private::CompileUnit>::Type CompUnitSP;
     typedef SharedPtr<lldb_private::DataBuffer>::Type DataBufferSP;
-    typedef SharedPtr<lldb_private::Debugger>::Type DebuggerSP;
+    typedef SharedPtr<lldb_private::DataExtractor>::Type DataExtractorSP;
+    typedef IntrusiveSharedPtr<lldb_private::Debugger>::Type DebuggerSP;
     typedef SharedPtr<lldb_private::Disassembler>::Type DisassemblerSP;
     typedef SharedPtr<lldb_private::DynamicLoader>::Type DynamicLoaderSP;
     typedef SharedPtr<lldb_private::Event>::Type EventSP;
@@ -49,16 +50,19 @@ namespace lldb {
     typedef SharedPtr<lldb_private::Listener>::Type ListenerSP;
     typedef SharedPtr<lldb_private::Log>::Type LogSP;
     typedef SharedPtr<lldb_private::LogChannel>::Type LogChannelSP;
-    typedef SharedPtr<lldb_private::Module>::Type ModuleSP;
+    typedef IntrusiveSharedPtr<lldb_private::Module>::Type ModuleSP;
+    typedef IntrusiveSharedPtr<lldb_private::ObjectFile>::Type ObjectFileSP;
     typedef SharedPtr<lldb_private::OptionValue>::Type OptionValueSP;
     typedef SharedPtr<lldb_private::Platform>::Type PlatformSP;
-    typedef SharedPtr<lldb_private::Process>::Type ProcessSP;
+    typedef IntrusiveSharedPtr<lldb_private::Process>::Type ProcessSP;
     typedef SharedPtr<lldb_private::RegisterContext>::Type RegisterContextSP;
     typedef SharedPtr<lldb_private::RegularExpression>::Type RegularExpressionSP;
     typedef SharedPtr<lldb_private::Section>::Type SectionSP;
     typedef SharedPtr<lldb_private::SearchFilter>::Type SearchFilterSP;
+#ifndef LLDB_DISABLE_PYTHON
     typedef SharedPtr<lldb_private::ScriptSummaryFormat>::Type ScriptFormatSP;
-    typedef SharedPtr<lldb_private::StackFrame>::Type StackFrameSP;
+#endif // #ifndef LLDB_DISABLE_PYTHON
+    typedef IntrusiveSharedPtr<lldb_private::StackFrame>::Type StackFrameSP;
     typedef SharedPtr<lldb_private::StackFrameList>::Type StackFrameListSP;
     typedef SharedPtr<lldb_private::StopInfo>::Type StopInfoSP;
     typedef SharedPtr<lldb_private::StoppointLocation>::Type StoppointLocationSP;
@@ -66,14 +70,15 @@ namespace lldb {
     typedef SharedPtr<lldb_private::StringSummaryFormat>::Type StringSummaryFormatSP;
     typedef SharedPtr<lldb_private::SummaryFormat>::Type SummaryFormatSP;
     typedef SharedPtr<lldb_private::SymbolFile>::Type SymbolFileSP;
+    typedef IntrusiveSharedPtr<lldb_private::SymbolFileType>::Type SymbolFileTypeSP;
     typedef SharedPtr<lldb_private::SymbolContextSpecifier>::Type SymbolContextSpecifierSP;
     typedef SharedPtr<lldb_private::SyntheticChildren>::Type SyntheticChildrenSP;
     typedef SharedPtr<lldb_private::SyntheticChildrenFrontEnd>::Type SyntheticChildrenFrontEndSP;
-    typedef SharedPtr<lldb_private::Target>::Type TargetSP;
-    typedef SharedPtr<lldb_private::Thread>::Type ThreadSP;
+    typedef IntrusiveSharedPtr<lldb_private::Target>::Type TargetSP;
+    typedef IntrusiveSharedPtr<lldb_private::Thread>::Type ThreadSP;
     typedef SharedPtr<lldb_private::ThreadPlan>::Type ThreadPlanSP;
     typedef SharedPtr<lldb_private::ThreadPlanTracer>::Type ThreadPlanTracerSP;
-    typedef SharedPtr<lldb_private::Type>::Type TypeSP;
+    typedef IntrusiveSharedPtr<lldb_private::Type>::Type TypeSP;
     typedef SharedPtr<lldb_private::TypeImpl>::Type TypeImplSP;
     typedef SharedPtr<lldb_private::FuncUnwinders>::Type FuncUnwindersSP;
     typedef SharedPtr<lldb_private::UserSettingsController>::Type UserSettingsControllerSP;
@@ -85,6 +90,7 @@ namespace lldb {
     typedef SharedPtr<lldb_private::Variable>::Type VariableSP;
     typedef SharedPtr<lldb_private::VariableList>::Type VariableListSP;
     typedef SharedPtr<lldb_private::ValueObjectList>::Type ValueObjectListSP;
+    typedef SharedPtr<lldb_private::Watchpoint>::Type WatchpointSP;
 
 } // namespace lldb
 

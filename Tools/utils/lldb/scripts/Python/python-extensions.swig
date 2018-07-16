@@ -41,6 +41,13 @@
                 return PyString_FromString (description.GetData());
         }
 }
+%extend lldb::SBData {
+        PyObject *lldb::SBData::__repr__ (){
+                lldb::SBStream description;
+                $self->GetDescription (description);
+                return PyString_FromString (description.GetData());
+        }
+}
 %extend lldb::SBDebugger {
         PyObject *lldb::SBDebugger::__repr__ (){
                 lldb::SBStream description;
@@ -111,6 +118,13 @@
                 return PyString_FromString (description.GetData());
         }
 }
+%extend lldb::SBSection {
+        PyObject *lldb::SBSection::__repr__ (){
+                lldb::SBStream description;
+                $self->GetDescription (description);
+                return PyString_FromString (description.GetData());
+        }
+}
 %extend lldb::SBSymbol {
         PyObject *lldb::SBSymbol::__repr__ (){
                 lldb::SBStream description;
@@ -132,6 +146,20 @@
                 return PyString_FromString (description.GetData());
         }
 }
+%extend lldb::SBType {
+        PyObject *lldb::SBType::__repr__ (){
+                lldb::SBStream description;
+                $self->GetDescription (description, lldb::eDescriptionLevelBrief);
+                return PyString_FromString (description.GetData());
+        }
+}
+%extend lldb::SBTypeMember {
+        PyObject *lldb::SBTypeMember::__repr__ (){
+                lldb::SBStream description;
+                $self->GetDescription (description, lldb::eDescriptionLevelBrief);
+                return PyString_FromString (description.GetData());
+        }
+}
 %extend lldb::SBThread {
         PyObject *lldb::SBThread::__repr__ (){
                 lldb::SBStream description;
@@ -143,6 +171,13 @@
         PyObject *lldb::SBValue::__repr__ (){
                 lldb::SBStream description;
                 $self->GetDescription (description);
+                return PyString_FromString (description.GetData());
+        }
+}
+%extend lldb::SBWatchpoint {
+        PyObject *lldb::SBWatchpoint::__repr__ (){
+                lldb::SBStream description;
+                $self->GetDescription (description, lldb::eDescriptionLevelVerbose);
                 return PyString_FromString (description.GetData());
         }
 }

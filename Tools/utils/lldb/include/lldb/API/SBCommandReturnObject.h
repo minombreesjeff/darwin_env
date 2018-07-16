@@ -25,8 +25,15 @@ public:
     SBCommandReturnObject (const lldb::SBCommandReturnObject &rhs);
 
 #ifndef SWIG
+
     const lldb::SBCommandReturnObject &
     operator = (const lldb::SBCommandReturnObject &rhs);
+    
+
+    SBCommandReturnObject (lldb_private::CommandReturnObject *ptr);
+    
+    lldb_private::CommandReturnObject *
+    Release ();
 #endif
 
     ~SBCommandReturnObject ();
@@ -75,6 +82,12 @@ public:
     
     void
     SetImmediateErrorFile (FILE *fh);
+    
+    void
+    PutCString(const char* string, int len = -1);
+    
+    size_t
+    Printf(const char* format, ...)  __attribute__ ((format (printf, 2, 3)));
     
 protected:
     friend class SBCommandInterpreter;

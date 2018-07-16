@@ -74,7 +74,7 @@ ReadUIntMax64 (ExecutionContextScope *exe_scope, const Address &address, uint32_
         success = false;
         return 0;
     }
-    uint64_t buf;
+    uint64_t buf = 0;
 
     success = ReadBytes (exe_scope, address, &buf, byte_size) == byte_size;
     if (success)
@@ -108,9 +108,10 @@ ReadAddress (ExecutionContextScope *exe_scope, const Address &address, uint32_t 
         exe_scope->CalculateExecutionContext(exe_ctx);
         // If we have any sections that are loaded, try and resolve using the
         // section load list
-        if (exe_ctx.target && !exe_ctx.target->GetSectionLoadList().IsEmpty())
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target && !target->GetSectionLoadList().IsEmpty())
         {
-            if (exe_ctx.target->GetSectionLoadList().ResolveLoadAddress (deref_addr, deref_so_addr))
+            if (target->GetSectionLoadList().ResolveLoadAddress (deref_addr, deref_so_addr))
                 return true;
         }
         else
@@ -384,7 +385,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
         break;
 
     case DumpStyleSectionPointerOffset:
-        s->Printf("(Section *)%.*p + ", (int)sizeof(void*) * 2, m_section);
+        s->Printf("(Section *)%p + ", m_section);
         s->Address(m_offset, addr_size);
         break;
 
@@ -702,7 +703,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                         Variable *var = variable_list.GetVariableAtIndex (var_idx).get();
                         if (var && var->LocationIsValidForAddress (*this))
                         {
-                            s->Printf ("     Variable: id = {0x%8.8x}, name = \"%s\", type= \"%s\", location =",
+                            s->Printf ("     Variable: id = {0x%8.8llx}, name = \"%s\", type= \"%s\", location =",
                                        var->GetID(),
                                        var->GetName().GetCString(),
                                        var->GetType()->GetName().GetCString());
@@ -728,7 +729,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
 }
 
 uint32_t
-Address::CalculateSymbolContext (SymbolContext *sc, uint32_t resolve_scope)
+Address::CalculateSymbolContext (SymbolContext *sc, uint32_t resolve_scope) const
 {
     sc->Clear();
     // Absolute addresses don't have enough information to reconstruct even their target.
@@ -737,7 +738,7 @@ Address::CalculateSymbolContext (SymbolContext *sc, uint32_t resolve_scope)
         Module *address_module = m_section->GetModule();
         if (address_module)
         {
-            sc->module_sp = address_module->GetSP();
+            sc->module_sp = address_module;
             if (sc->module_sp)
                 return sc->module_sp->ResolveSymbolContextForAddress (*this, resolve_scope, *sc);
         }
@@ -746,7 +747,7 @@ Address::CalculateSymbolContext (SymbolContext *sc, uint32_t resolve_scope)
 }
 
 Module *
-Address::CalculateSymbolContextModule ()
+Address::CalculateSymbolContextModule () const
 {
     if (m_section)
         return m_section->GetModule();
@@ -754,12 +755,12 @@ Address::CalculateSymbolContextModule ()
 }
 
 CompileUnit *
-Address::CalculateSymbolContextCompileUnit ()
+Address::CalculateSymbolContextCompileUnit () const
 {
     if (m_section)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule()->GetSP();
+        sc.module_sp = m_section->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextCompUnit, sc);
@@ -770,12 +771,12 @@ Address::CalculateSymbolContextCompileUnit ()
 }
 
 Function *
-Address::CalculateSymbolContextFunction ()
+Address::CalculateSymbolContextFunction () const
 {
     if (m_section)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule()->GetSP();
+        sc.module_sp = m_section->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextFunction, sc);
@@ -786,12 +787,12 @@ Address::CalculateSymbolContextFunction ()
 }
 
 Block *
-Address::CalculateSymbolContextBlock ()
+Address::CalculateSymbolContextBlock () const
 {
     if (m_section)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule()->GetSP();
+        sc.module_sp = m_section->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextBlock, sc);
@@ -802,12 +803,12 @@ Address::CalculateSymbolContextBlock ()
 }
 
 Symbol *
-Address::CalculateSymbolContextSymbol ()
+Address::CalculateSymbolContextSymbol () const
 {
     if (m_section)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule()->GetSP();
+        sc.module_sp = m_section->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextSymbol, sc);
@@ -818,12 +819,12 @@ Address::CalculateSymbolContextSymbol ()
 }
 
 bool
-Address::CalculateSymbolContextLineEntry (LineEntry &line_entry)
+Address::CalculateSymbolContextLineEntry (LineEntry &line_entry) const
 {
     if (m_section)
     {
         SymbolContext sc;
-        sc.module_sp = m_section->GetModule()->GetSP();
+        sc.module_sp = m_section->GetModule();
         if (sc.module_sp)
         {
             sc.module_sp->ResolveSymbolContextForAddress (*this, eSymbolContextLineEntry, sc);

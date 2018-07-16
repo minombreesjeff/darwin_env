@@ -79,11 +79,16 @@ public:
     LaunchProcess (lldb_private::ProcessLaunchInfo &launch_info);
 
     virtual lldb::ProcessSP
-    Attach (lldb::pid_t pid, 
+    Attach (lldb_private::ProcessAttachInfo &attach_info,
             lldb_private::Debugger &debugger,
             lldb_private::Target *target,       // Can be NULL, if NULL create a new target, else use existing one
             lldb_private::Listener &listener, 
             lldb_private::Error &error);
+
+    virtual bool
+    ModuleIsExcludedForNonModuleSpecificSearches (lldb_private::Target &target, const lldb::ModuleSP &module_sp);
+                
+    bool ARMGetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
 
 protected:
     lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote darwin OS

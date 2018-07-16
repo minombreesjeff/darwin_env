@@ -92,6 +92,16 @@ class ObjCDynamicValueTestCase(TestBase):
         myObserver_source = myObserver.GetChildMemberWithName ('_source', lldb.eDynamicCanRunTarget)
         self.examine_SourceDerived_ptr (myObserver_source)
 
+        #
+        #  Make sure a static value can be correctly turned into a dynamic value.
+
+        frame = thread.GetFrameAtIndex(0)
+        myObserver_static = frame.FindVariable('myObserver', lldb.eNoDynamicValues)
+        self.assertTrue (myObserver_static)
+        myObserver = myObserver_static.GetDynamicValue (lldb.eDynamicCanRunTarget)
+        myObserver_source = myObserver.GetChildMemberWithName ('_source', lldb.eDynamicCanRunTarget)
+        self.examine_SourceDerived_ptr (myObserver_source)
+
         # The "frame var" code uses another path to get into children, so let's
         # make sure that works as well:
 
@@ -147,10 +157,10 @@ class ObjCDynamicValueTestCase(TestBase):
         self.examine_SourceDerived_ptr (object_dynamic)
 
         # Get "this" using the EvaluateExpression:
-        # These tests fail for now because EvaluateExpression doesn't currently support dynamic typing...
-        #object_static = frame.EvaluateExpression ('object', noDynamic)
-        #object_dynamic = frame.EvaluateExpression ('object', useDynamic)
-        #self.examine_value_object_of_object_ptr (object_static, object_dynamic, myB_loc)
+        object_static = frame.EvaluateExpression ('object', noDynamic)
+        object_dynamic = frame.EvaluateExpression ('object', useDynamic)
+        del (object_static)
+        self.examine_SourceDerived_ptr (object_dynamic)
         
         # Continue again to the handle_SourceBase and make sure we get the correct dynamic value.
         # This one looks exactly the same, but in fact this is an "un-KVO'ed" version of SourceBase, so

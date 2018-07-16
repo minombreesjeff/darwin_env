@@ -26,9 +26,12 @@ class SourceManager
 {
 public:
 #ifndef SWIG
+    
     class File
     {
+    friend bool operator== (const SourceManager::File &lhs, const SourceManager::File &rhs);
     public:
+    
         File (const FileSpec &file_spec, Target *target);
         ~File();
 
@@ -37,7 +40,15 @@ public:
                             uint32_t context_before,
                             uint32_t context_after,
                             Stream *s);
+        void
+        FindLinesMatchingRegex (RegularExpression& regex, 
+                                uint32_t start_line, 
+                                uint32_t end_line, 
+                                std::vector<uint32_t> &match_lines);
 
+        bool
+        GetLine (uint32_t line_no, std::string &buffer);
+        
         uint32_t
         GetLineOffset (uint32_t line);
 
@@ -52,7 +63,7 @@ public:
         {
             return m_file_spec;
         }
-
+        
     protected:
 
         bool
@@ -65,17 +76,41 @@ public:
         typedef std::vector<uint32_t> LineOffsets;
         LineOffsets m_offsets;
     };
+
+#endif // SWIG
+
+    typedef lldb::SharedPtr<File>::Type FileSP;
+
+#ifndef SWIG
+
+   // The SourceFileCache class separates the source manager from the cache of source files, so the 
+   // cache can be stored in the Debugger, but the source managers can be per target.     
+    class SourceFileCache
+    {
+    public:
+        SourceFileCache () {};
+        ~SourceFileCache() {};
+        
+        void AddSourceFile (const FileSP &file_sp);
+        FileSP FindSourceFile (const FileSpec &file_spec) const;
+        
+    protected:
+        typedef std::map <FileSpec, FileSP> FileCache;
+        FileCache m_file_cache;
+    };
 #endif
 
 
     //------------------------------------------------------------------
     // Constructors and Destructors
     //------------------------------------------------------------------
-    SourceManager();
+    // A source manager can be made with a non-null target, in which case it can use the path remappings to find 
+    // source files that are not in their build locations.  With no target it won't be able to do this.
+    SourceManager (Debugger &debugger);
+    SourceManager (Target &target);
 
     ~SourceManager();
 
-    typedef lldb::SharedPtr<File>::Type FileSP;
 
     FileSP
     GetLastFile () 
@@ -84,16 +119,14 @@ public:
     }
 
     size_t
-    DisplaySourceLines (Target *target,
-                        const FileSpec &file,
+    DisplaySourceLines (const FileSpec &file,
                         uint32_t line,
                         uint32_t context_before,
                         uint32_t context_after,
                         Stream *s);
 
     size_t
-    DisplaySourceLinesWithLineNumbers (Target *target,
-                                       const FileSpec &file,
+    DisplaySourceLinesWithLineNumbers (const FileSpec &file,
                                        uint32_t line,
                                        uint32_t context_before,
                                        uint32_t context_after,
@@ -114,21 +147,41 @@ public:
     DisplayMoreWithLineNumbers (Stream *s,
                                 const SymbolContextList *bp_locs = NULL);
 
+    bool
+    SetDefaultFileAndLine (const FileSpec &file_spec, uint32_t line);
+    
+    bool 
+    GetDefaultFileAndLine (FileSpec &file_spec, uint32_t &line);
+    
+    bool 
+    DefaultFileAndLineSet ()
+    {
+        return (m_last_file_sp.get() != NULL);
+    }
+
+    void
+    FindLinesMatchingRegex (FileSpec &file_spec,
+                            RegularExpression& regex, 
+                            uint32_t start_line, 
+                            uint32_t end_line, 
+                            std::vector<uint32_t> &match_lines);
+
 protected:
 
     FileSP
-    GetFile (const FileSpec &file_spec, Target *target);
+    GetFile (const FileSpec &file_spec);
     
-
     //------------------------------------------------------------------
     // Classes that inherit from SourceManager can see and modify these
     //------------------------------------------------------------------
-    typedef std::map <FileSpec, FileSP> FileCache;
-    FileCache m_file_cache;
     FileSP m_last_file_sp;
     uint32_t m_last_file_line;
     uint32_t m_last_file_context_before;
     uint32_t m_last_file_context_after;
+    bool     m_default_set;
+    Target *m_target;
+    Debugger *m_debugger;
+    
 private:
     //------------------------------------------------------------------
     // For SourceManager only
@@ -136,6 +189,7 @@ private:
     DISALLOW_COPY_AND_ASSIGN (SourceManager);
 };
 
+bool operator== (const SourceManager::File &lhs, const SourceManager::File &rhs);
 } // namespace lldb_private
 
 #endif  // liblldb_SourceManager_h_

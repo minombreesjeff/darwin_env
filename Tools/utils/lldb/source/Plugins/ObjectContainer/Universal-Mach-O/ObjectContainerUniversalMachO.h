@@ -42,7 +42,7 @@ public:
                     lldb::addr_t length);
 
     static bool
-    MagicBytesMatch (lldb::DataBufferSP& dataSP);
+    MagicBytesMatch (const lldb_private::DataExtractor &data);
 
     //------------------------------------------------------------------
     // Member Functions
@@ -68,7 +68,7 @@ public:
     virtual bool
     GetArchitectureAtIndex (uint32_t cpu_idx, lldb_private::ArchSpec& arch) const;
 
-    virtual lldb_private::ObjectFile *
+    virtual lldb::ObjectFileSP
     GetObjectFile (const lldb_private::FileSpec *file);
 
     //------------------------------------------------------------------

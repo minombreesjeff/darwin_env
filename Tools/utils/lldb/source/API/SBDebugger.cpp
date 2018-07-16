@@ -29,6 +29,7 @@
 #include "lldb/Core/State.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Interpreter/OptionGroupPlatform.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/TargetList.h"
 
@@ -123,8 +124,19 @@ SBDebugger::Destroy (SBDebugger &debugger)
         debugger.m_opaque_sp.reset();
 }
 
+void
+SBDebugger::MemoryPressureDetected ()
+{
+    ModuleList::RemoveOrphanSharedModules();    
+}
+
 SBDebugger::SBDebugger () :
     m_opaque_sp ()
+{
+}
+
+SBDebugger::SBDebugger(const lldb::DebuggerSP &debugger_sp) :
+    m_opaque_sp(debugger_sp)
 {
 }
 
@@ -159,6 +171,15 @@ SBDebugger::SetAsync (bool b)
 {
     if (m_opaque_sp)
         m_opaque_sp->SetAsyncExecution(b);
+}
+
+bool
+SBDebugger::GetAsync ()
+{
+    if (m_opaque_sp)
+        return m_opaque_sp->GetAsyncExecution();
+    else
+        return false;
 }
 
 void
@@ -352,12 +373,11 @@ SBDebugger::HandleProcessEvent (const SBProcess &process, const SBEvent &event, 
     }
 }
 
-SBSourceManager &
+SBSourceManager
 SBDebugger::GetSourceManager ()
 {
-    static SourceManager g_lldb_source_manager;
-    static SBSourceManager g_sb_source_manager (&g_lldb_source_manager);
-    return g_sb_source_manager;
+    SBSourceManager sb_source_manager (*this);
+    return sb_source_manager;
 }
 
 
@@ -438,7 +458,7 @@ SBDebugger::StateIsStoppedState (StateType state)
 {
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
-    const bool result = lldb_private::StateIsStoppedState (state);
+    const bool result = lldb_private::StateIsStoppedState (state, false);
     if (log)
         log->Printf ("SBDebugger::StateIsStoppedState (state=%s) => %i", 
                      StateAsCString (state), result);
@@ -446,6 +466,52 @@ SBDebugger::StateIsStoppedState (StateType state)
     return result;
 }
 
+lldb::SBTarget
+SBDebugger::CreateTarget (const char *filename,
+                          const char *target_triple,
+                          const char *platform_name,
+                          bool add_dependent_modules,
+                          lldb::SBError& sb_error)
+{
+    SBTarget sb_target;
+    if (m_opaque_sp)
+    {
+        sb_error.Clear();
+        FileSpec filename_spec (filename, true);
+        OptionGroupPlatform platform_options (false);
+        platform_options.SetPlatformName (platform_name);
+        
+        TargetSP target_sp;
+        sb_error.ref() = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
+                                                                    filename_spec, 
+                                                                    target_triple, 
+                                                                    add_dependent_modules, 
+                                                                    &platform_options,
+                                                                    target_sp);
+    
+        if (sb_error.Success())
+            sb_target.reset (target_sp);
+    }
+    else
+    {
+        sb_error.SetErrorString("invalid target");
+    }
+    
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    if (log)
+    {
+        log->Printf ("SBDebugger(%p)::CreateTarget (filename=\"%s\", triple=%s, platform_name=%s, add_dependent_modules=%u, error=%s) => SBTarget(%p)", 
+                     m_opaque_sp.get(), 
+                     filename, 
+                     target_triple,
+                     platform_name,
+                     add_dependent_modules,
+                     sb_error.GetCString(),
+                     sb_target.get());
+    }
+    
+    return sb_target;
+}
 
 SBTarget
 SBDebugger::CreateTargetWithFileAndTargetTriple (const char *filename,
@@ -454,11 +520,15 @@ SBDebugger::CreateTargetWithFileAndTargetTriple (const char *filename,
     SBTarget target;
     if (m_opaque_sp)
     {
-        ArchSpec arch;
         FileSpec file_spec (filename, true);
-        arch.SetTriple (target_triple, m_opaque_sp->GetPlatformList().GetSelectedPlatform().get());
         TargetSP target_sp;
-        Error error (m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, file_spec, arch, true, target_sp));
+        const bool add_dependent_modules = true;
+        Error error (m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
+                                                                file_spec, 
+                                                                target_triple, 
+                                                                add_dependent_modules, 
+                                                                NULL,
+                                                                target_sp));
         target.reset (target_sp);
     }
     
@@ -481,14 +551,16 @@ SBDebugger::CreateTargetWithFileAndArch (const char *filename, const char *arch_
     if (m_opaque_sp)
     {
         FileSpec file (filename, true);
-        ArchSpec arch;
         TargetSP target_sp;
         Error error;
+        const bool add_dependent_modules = true;
 
-        if (arch_cstr)
-            arch.SetTriple (arch_cstr, m_opaque_sp->GetPlatformList().GetSelectedPlatform().get());
-
-        error = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, file, arch, true, target_sp);
+        error = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
+                                                           file, 
+                                                           arch_cstr, 
+                                                           add_dependent_modules, 
+                                                           NULL, 
+                                                           target_sp);
 
         if (error.Success())
         {
@@ -516,8 +588,14 @@ SBDebugger::CreateTarget (const char *filename)
         ArchSpec arch = Target::GetDefaultArchitecture ();
         TargetSP target_sp;
         Error error;
+        const bool add_dependent_modules = true;
 
-        error = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, file, arch, true, target_sp);
+        error = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
+                                                           file, 
+                                                           arch, 
+                                                           add_dependent_modules, 
+                                                           m_opaque_sp->GetPlatformList().GetSelectedPlatform(),
+                                                           target_sp);
 
         if (error.Success())
         {
@@ -538,10 +616,13 @@ bool
 SBDebugger::DeleteTarget (lldb::SBTarget &target)
 {
     bool result = false;
-    if (m_opaque_sp)
+    if (m_opaque_sp && target.IsValid())
     {
         // No need to lock, the target list is thread safe
         result = m_opaque_sp->GetTargetList().DeleteTarget (target.m_opaque_sp);
+        target->Destroy();
+        target.Clear();
+        ModuleList::RemoveOrphanSharedModules();
     }
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
@@ -635,6 +716,24 @@ SBDebugger::GetSelectedTarget ()
     }
 
     return sb_target;
+}
+
+void
+SBDebugger::SetSelectedTarget (SBTarget &sb_target)
+{
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    if (m_opaque_sp)
+    {
+        m_opaque_sp->GetTargetList().SetSelectedTarget (sb_target.get());
+    }
+    if (log)
+    {
+        SBStream sstr;
+        sb_target.GetDescription (sstr, eDescriptionLevelBrief);
+        log->Printf ("SBDebugger(%p)::SetSelectedTarget () => SBTarget(%p): %s", m_opaque_sp.get(),
+                     sb_target.get(), sstr.GetData());
+    }
 }
 
 void
@@ -732,6 +831,11 @@ SBDebugger::ref () const
     return *m_opaque_sp;
 }
 
+const lldb::DebuggerSP &
+SBDebugger::get_sp () const
+{
+    return m_opaque_sp;
+}
 
 SBDebugger
 SBDebugger::FindDebuggerWithID (int id)
@@ -867,14 +971,16 @@ SBDebugger::GetUseExternalEditor ()
 bool
 SBDebugger::GetDescription (SBStream &description)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_sp)
     {
         const char *name = m_opaque_sp->GetInstanceName().AsCString();
         user_id_t id = m_opaque_sp->GetID();
-        description.Printf ("Debugger (instance: \"%s\", id: %d)", name, id);
+        strm.Printf ("Debugger (instance: \"%s\", id: %llu)", name, id);
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
     
     return true;
 }

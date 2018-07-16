@@ -34,12 +34,11 @@ class ArchSpec
 public:
     enum Core
     {
-        eCore_alpha_generic,
-
         eCore_arm_generic,
         eCore_arm_armv4,
         eCore_arm_armv4t,
         eCore_arm_armv5,
+        eCore_arm_armv5e,
         eCore_arm_armv5t,
         eCore_arm_armv6,
         eCore_arm_armv7,
@@ -47,7 +46,15 @@ public:
         eCore_arm_armv7k,
         eCore_arm_armv7s,
         eCore_arm_xscale,  
-        eCore_thumb_generic,
+        eCore_thumb,
+        eCore_thumbv4t,
+        eCore_thumbv5,
+        eCore_thumbv5e,
+        eCore_thumbv6,
+        eCore_thumbv7,
+        eCore_thumbv7f,
+        eCore_thumbv7k,
+        eCore_thumbv7s,
         
         eCore_ppc_generic,
         eCore_ppc_ppc601,
@@ -112,7 +119,9 @@ public:
     /// Constructs an ArchSpec with properties consistent with the given
     /// Triple.
     //------------------------------------------------------------------
+    explicit 
     ArchSpec (const llvm::Triple &triple);
+    explicit 
     ArchSpec (const char *triple_cstr, Platform *platform);
     //------------------------------------------------------------------
     /// Constructor over architecture name.
@@ -120,6 +129,7 @@ public:
     /// Constructs an ArchSpec with properties consistent with the given
     /// object type and architecture name.
     //------------------------------------------------------------------
+    explicit 
     ArchSpec (ArchitectureType arch_type,
               uint32_t cpu_type,
               uint32_t cpu_subtype);
@@ -189,7 +199,7 @@ public:
     bool
     IsValid () const
     {
-        return m_core >= eCore_alpha_generic && m_core < kNumCores;
+        return m_core >= eCore_arm_generic && m_core < kNumCores;
     }
 
 

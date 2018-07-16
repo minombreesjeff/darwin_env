@@ -14,8 +14,8 @@
 // Other libraries and framework includes
 // Project includes
 
+#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/Debugger.h"
-
 #include "lldb/Interpreter/Args.h"
 
 #include "lldb/Interpreter/CommandReturnObject.h"
@@ -57,9 +57,10 @@ CommandObjectScript::ExecuteRawCommandString
         result.SetStatus (eReturnStatusFailed);
     }
 
-    Debugger::Formatting::ForceUpdate(); // script might change Python code we use for formatting.. make sure we keep up to date with it
+    DataVisualization::ForceUpdate(); // script might change Python code we use for formatting.. make sure we keep up to date with it
     
-    if (command == NULL || command[0] == '\0') {
+    if (command == NULL || command[0] == '\0')
+    {
         script_interpreter->ExecuteInterpreterLoop ();
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
         return result.Succeeded();

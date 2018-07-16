@@ -75,7 +75,7 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
         else
         {
             exe_file.GetPath (exe_path, sizeof(exe_path));
-            error.SetErrorStringWithFormat ("enable to find executable for '%s'", exe_path);
+            error.SetErrorStringWithFormat ("unable to find executable for '%s'", exe_path);
         }
     }
     else
@@ -87,7 +87,17 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
                                                              exe_module_sp);
         }
         else
-            error.SetErrorString ("the platform is not currently connected");
+        {
+            // We may connect to a process and use the provided executable (Don't use local $PATH).
+
+            // Resolve any executable within a bundle on MacOSX
+            Host::ResolveExecutableInBundle (resolved_exe_file);
+
+            if (resolved_exe_file.Exists())
+                error.Clear();
+            else
+                error.SetErrorStringWithFormat("the platform is not currently connected, and '%s' doesn't exist in the system root.", resolved_exe_file.GetFilename().AsCString(""));
+        }
     }
     
 
@@ -385,8 +395,15 @@ Error
 PlatformDarwin::LaunchProcess (ProcessLaunchInfo &launch_info)
 {
     Error error;
+    
     if (IsHost())
     {
+        if (launch_info.GetFlags().Test (eLaunchFlagLaunchInShell))
+        {
+            const bool is_localhost = true;
+            if (!launch_info.ConvertArgumentsForLaunchingInShell (error, is_localhost))
+                return error;
+        }
         error = Platform::LaunchProcess (launch_info);
     }
     else
@@ -400,25 +417,26 @@ PlatformDarwin::LaunchProcess (ProcessLaunchInfo &launch_info)
 }
 
 lldb::ProcessSP
-PlatformDarwin::Attach (lldb::pid_t pid, 
+PlatformDarwin::Attach (ProcessAttachInfo &attach_info,
                         Debugger &debugger,
                         Target *target,
                         Listener &listener, 
                         Error &error)
 {
     lldb::ProcessSP process_sp;
+    
     if (IsHost())
     {
         if (target == NULL)
         {
             TargetSP new_target_sp;
             FileSpec emptyFileSpec;
-            ArchSpec emptyArchSpec;
             
             error = debugger.GetTargetList().CreateTarget (debugger,
                                                            emptyFileSpec,
-                                                           emptyArchSpec, 
+                                                           NULL, 
                                                            false,
+                                                           NULL,
                                                            new_target_sp);
             target = new_target_sp.get();
         }
@@ -428,18 +446,17 @@ PlatformDarwin::Attach (lldb::pid_t pid,
         if (target && error.Success())
         {
             debugger.GetTargetList().SetSelectedTarget(target);
-            // The darwin always currently uses the GDB remote debugger plug-in
-            // so even when debugging locally we are debugging remotely!
-            process_sp = target->CreateProcess (listener, "gdb-remote");
+
+            process_sp = target->CreateProcess (listener, attach_info.GetProcessPluginName());
             
             if (process_sp)
-                error = process_sp->Attach (pid);
+                error = process_sp->Attach (attach_info);
         }
     }
     else
     {
         if (m_remote_platform_sp)
-            process_sp = m_remote_platform_sp->Attach (pid, debugger, target, listener, error);
+            process_sp = m_remote_platform_sp->Attach (attach_info, debugger, target, listener, error);
         else
             error.SetErrorString ("the platform is not currently connected");
     }
@@ -471,4 +488,127 @@ PlatformDarwin::GetGroupName (uint32_t gid)
     return NULL;
 }
 
+bool
+PlatformDarwin::ModuleIsExcludedForNonModuleSpecificSearches (lldb_private::Target &target, const lldb::ModuleSP &module_sp)
+{
+    ObjectFile *obj_file = module_sp->GetObjectFile();
+    if (!obj_file)
+        return false;
+    
+    ObjectFile::Type obj_type = obj_file->GetType();
+    if (obj_type == ObjectFile::eTypeDynamicLinker)
+        return true;
+    else
+        return false;
+}
 
+
+// The architecture selection rules for arm processors
+// These cpu subtypes have distinct names (e.g. armv7f) but armv7 binaries run fine on an armv7f processor.
+
+bool
+PlatformDarwin::ARMGetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
+{
+    ArchSpec system_arch (GetSystemArchitecture());
+    const ArchSpec::Core system_core = system_arch.GetCore();
+    switch (system_core)
+    {
+    default:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
+        case 1: arch.SetTriple ("armv7f-apple-darwin", NULL); return true;
+        case 2: arch.SetTriple ("armv7k-apple-darwin", NULL); return true;
+        case 3: arch.SetTriple ("armv7s-apple-darwin", NULL); return true;
+        case 4: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
+        case 5: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
+        case 6: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 7: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv7f:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv7f-apple-darwin", NULL); return true;
+        case 1: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
+        case 2: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
+        case 3: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
+        case 4: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 5: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv7k:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv7k-apple-darwin", NULL); return true;
+        case 1: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
+        case 2: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
+        case 3: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
+        case 4: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 5: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv7s:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv7s-apple-darwin", NULL); return true;
+        case 1: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
+        case 2: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
+        case 3: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
+        case 4: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 5: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv7:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
+        case 1: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
+        case 2: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
+        case 3: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 4: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv6:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
+        case 1: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
+        case 2: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 3: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv5:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
+        case 1: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 2: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+
+    case ArchSpec::eCore_arm_armv4:
+        switch (idx)
+        {
+        case 0: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
+        case 1: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
+        default: break;
+        }
+        break;
+    }
+    arch.Clear();
+    return false;
+}

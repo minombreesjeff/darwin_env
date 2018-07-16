@@ -18,6 +18,18 @@ class HelpCommandTestCase(TestBase):
         self.expect("help",
             startstr = 'The following is a list of built-in, permanent debugger commands')
 
+        self.expect("help", matching=False,
+                    substrs = ['next'])
+        
+        self.expect("help -a", matching=True,
+                    substrs = ['next'])
+    
+    def test_help_on_help(self):
+        """Testing the help on the help facility."""
+        self.expect("help help", matching=True,
+                    substrs = ['--show-aliases',
+                               '--hide-user-commands'])
+
     def version_number_string(self):
         """Helper function to find the version number string of lldb."""
         plist = os.path.join(os.environ["LLDB_SRC"], "resources", "LLDB-Info.plist")
@@ -58,8 +70,10 @@ class HelpCommandTestCase(TestBase):
         self.expect("help version",
             substrs = ['Show version of LLDB debugger.'])
         version_str = self.version_number_string()
+        import re
+        match = re.match('[0-9]+', version_str)
         self.expect("version",
-            patterns = ['LLDB-' + (version_str if version_str else '[0-9]+')])
+            patterns = ['LLDB-' + (version_str if match else '[0-9]+')])
 
     def test_help_should_not_crash_lldb(self):
         """Command 'help disasm' should not crash lldb."""
@@ -92,6 +106,20 @@ class HelpCommandTestCase(TestBase):
         # 'image' is an alias for 'target modules'.
         self.expect("help image du line",
             substrs = ['Dump the debug symbol file for one or more target modules'])
+
+    def test_help_target_variable_syntax(self):
+        """Command 'help target variable' should display <variable-name> ..."""
+        self.expect("help target variable",
+            substrs = ['<variable-name> [<variable-name> [...]]'])
+
+    def test_help_watchpoint_and_its_args(self):
+        """Command 'help watchpoint', 'help watchpt-id', and 'help watchpt-id-list' should work."""
+        self.expect("help watchpoint",
+            substrs = ['delete', 'disable', 'enable', 'list'])
+        self.expect("help watchpt-id",
+            substrs = ['<watchpt-id>'])
+        self.expect("help watchpt-id-list",
+            substrs = ['<watchpt-id-list>'])
 
 
 if __name__ == '__main__':

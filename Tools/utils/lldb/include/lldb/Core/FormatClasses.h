@@ -12,11 +12,20 @@
 
 // C Includes
 
+#ifdef LLDB_DISABLE_PYTHON
+
+struct PyObject;
+
+#else   // #ifdef LLDB_DISABLE_PYTHON
+
 #if defined (__APPLE__)
 #include <Python/Python.h>
 #else
 #include <Python.h>
 #endif
+
+#endif  // #ifdef LLDB_DISABLE_PYTHON
+
 
 #include <stdint.h>
 #include <unistd.h>
@@ -31,10 +40,8 @@
 #include "lldb/lldb-public.h"
 #include "lldb/lldb-enumerations.h"
 
-#include "lldb/API/SBValue.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Interpreter/ScriptInterpreterPython.h"
-#include "lldb/Symbol/SymbolContext.h"
 
 namespace lldb_private {
 
@@ -48,16 +55,10 @@ struct ValueFormat
     ValueFormat (lldb::Format f = lldb::eFormatInvalid,
                  bool casc = false,
                  bool skipptr = false,
-                 bool skipref = false) : 
-    m_cascades(casc),
-    m_skip_pointers(skipptr),
-    m_skip_references(skipref),
-    m_format (f)
-    {
-    }
+                 bool skipref = false);
     
     typedef lldb::SharedPtr<ValueFormat>::Type SharedPointer;
-    typedef bool(*ValueCallback)(void*, const char*, const ValueFormat::SharedPointer&);
+    typedef bool(*ValueCallback)(void*, ConstString, const lldb::ValueFormatSP&);
     
     ~ValueFormat()
     {
@@ -84,10 +85,7 @@ struct ValueFormat
     {
         return m_format;
     }
-    
-    std::string
-    FormatObject(lldb::ValueObjectSP object);
-    
+        
 };
     
 class SyntheticChildrenFrontEnd
@@ -169,7 +167,7 @@ public:
     GetFrontEnd(lldb::ValueObjectSP backend) = 0;
     
     typedef lldb::SharedPtr<SyntheticChildren>::Type SharedPointer;
-    typedef bool(*SyntheticChildrenCallback)(void*, const char*, const SyntheticChildren::SharedPointer&);
+    typedef bool(*SyntheticChildrenCallback)(void*, ConstString, const SyntheticChildren::SharedPointer&);
     
 };
 
@@ -280,6 +278,8 @@ public:
     
 };
 
+#ifndef LLDB_DISABLE_PYTHON
+
 class SyntheticScriptProvider : public SyntheticChildren
 {
     std::string m_python_class;
@@ -295,7 +295,10 @@ public:
     
     
     std::string
-    GetPythonClassName() { return m_python_class; }
+    GetPythonClassName()
+    {
+        return m_python_class;
+    }
     
     std::string
     GetDescription();
@@ -305,12 +308,12 @@ public:
     {
         return true;
     }
-    
+
     class FrontEnd : public SyntheticChildrenFrontEnd
     {
     private:
         std::string m_python_class;
-        PyObject* m_wrapper;
+        void *m_wrapper; // Wraps PyObject.
         ScriptInterpreter *m_interpreter;
     public:
         
@@ -318,10 +321,7 @@ public:
                  lldb::ValueObjectSP be);
         
         virtual
-        ~FrontEnd()
-        {
-            Py_XDECREF(m_wrapper);
-        }
+        ~FrontEnd();
         
         virtual uint32_t
         CalculateNumChildren()
@@ -332,25 +332,7 @@ public:
         }
         
         virtual lldb::ValueObjectSP
-        GetChildAtIndex (uint32_t idx, bool can_create)
-        {
-            if (m_wrapper == NULL || m_interpreter == NULL)
-                return lldb::ValueObjectSP();
-            
-            PyObject* py_return = (PyObject*)m_interpreter->GetChildAtIndex(m_wrapper, idx);
-            if (py_return == NULL || py_return == Py_None)
-            {
-                Py_XDECREF(py_return);
-                return lldb::ValueObjectSP();
-            }
-            
-            lldb::SBValue *sb_ptr = m_interpreter->CastPyObjectToSBValue(py_return);
-            
-            if (py_return == NULL || sb_ptr == NULL)
-                return lldb::ValueObjectSP();
-            
-            return sb_ptr->m_opaque_sp;
-        }
+        GetChildAtIndex (uint32_t idx, bool can_create);
         
         virtual void
         Update()
@@ -377,7 +359,209 @@ public:
     GetFrontEnd(lldb::ValueObjectSP backend)
     {
         return SyntheticChildrenFrontEnd::SharedPointer(new FrontEnd(m_python_class, backend));
+    }    
+};
+
+#endif // #ifndef LLDB_DISABLE_PYTHON
+class SyntheticArrayView : public SyntheticChildren
+{
+public:
+    
+    struct SyntheticArrayRange
+    {
+    private:
+        int m_low;
+        int m_high;
+        SyntheticArrayRange* m_next;
+        
+    public:
+        
+        SyntheticArrayRange () : 
+        m_low(-1),
+        m_high(-2),
+        m_next(NULL)
+        {}
+        
+        SyntheticArrayRange (int L) : 
+        m_low(L),
+        m_high(L),
+        m_next(NULL)
+        {}
+        
+        SyntheticArrayRange (int L, int H) : 
+        m_low(L),
+        m_high(H),
+        m_next(NULL)
+        {}
+        
+        SyntheticArrayRange (int L, int H, SyntheticArrayRange* N) : 
+        m_low(L),
+        m_high(H),
+        m_next(N)
+        {}
+        
+        inline int
+        GetLow ()
+        {
+            return m_low;
+        }
+        
+        inline int
+        GetHigh ()
+        {
+            return m_high;
+        }
+        
+        inline void
+        SetLow (int L)
+        {
+            m_low = L;
+        }
+        
+        inline void
+        SetHigh (int H)
+        {
+            m_high = H;
+        }
+        
+        inline  int
+        GetSelfCount()
+        {
+            return GetHigh() - GetLow() + 1;
+        }
+        
+        int
+        GetCount()
+        {
+            int count = GetSelfCount();
+            if (m_next)
+                count += m_next->GetCount();
+            return count;
+        }
+        
+        inline SyntheticArrayRange*
+        GetNext()
+        {
+            return m_next;
+        }
+        
+        void
+        SetNext(SyntheticArrayRange* N)
+        {
+            if (m_next)
+                delete m_next;
+            m_next = N;
+        }
+        
+        void
+        SetNext(int L, int H)
+        {
+            if (m_next)
+                delete m_next;
+            m_next = new SyntheticArrayRange(L, H);
+        }
+        
+        void
+        SetNext(int L)
+        {
+            if (m_next)
+                delete m_next;
+            m_next = new SyntheticArrayRange(L);
+        }
+        
+        ~SyntheticArrayRange()
+        {
+            delete m_next;
+            m_next = NULL;
+        }
+        
+    };
+    
+    SyntheticArrayView(bool casc = false,
+                       bool skipptr = false,
+                       bool skipref = false) :
+    SyntheticChildren(casc, skipptr, skipref),
+    m_head(),
+    m_tail(&m_head)
+    {
     }
+    
+    void
+    AddRange(int L, int H)
+    {
+        m_tail->SetLow(L);
+        m_tail->SetHigh(H);
+        m_tail->SetNext(new SyntheticArrayRange());
+        m_tail = m_tail->GetNext();
+    }
+    
+    int
+    GetCount()
+    {
+        return m_head.GetCount();
+    }
+    
+    int
+    GetRealIndexForIndex(int i);
+    
+    bool
+    IsScripted()
+    {
+        return false;
+    }
+    
+    std::string
+    GetDescription();
+    
+    class FrontEnd : public SyntheticChildrenFrontEnd
+    {
+    private:
+        SyntheticArrayView* filter;
+    public:
+        
+        FrontEnd(SyntheticArrayView* flt,
+                 lldb::ValueObjectSP be) :
+        SyntheticChildrenFrontEnd(be),
+        filter(flt)
+        {}
+        
+        virtual
+        ~FrontEnd()
+        {
+        }
+        
+        virtual uint32_t
+        CalculateNumChildren()
+        {
+            return filter->GetCount();
+        }
+        
+        virtual lldb::ValueObjectSP
+        GetChildAtIndex (uint32_t idx, bool can_create)
+        {
+            if (idx >= filter->GetCount())
+                return lldb::ValueObjectSP();
+            return m_backend->GetSyntheticArrayMember(filter->GetRealIndexForIndex(idx), can_create);
+        }
+        
+        virtual void
+        Update() {}
+        
+        virtual uint32_t
+        GetIndexOfChildWithName (const ConstString &name_cs);
+        
+        typedef lldb::SharedPtr<SyntheticChildrenFrontEnd>::Type SharedPointer;
+        
+    };
+    
+    virtual SyntheticChildrenFrontEnd::SharedPointer
+    GetFrontEnd(lldb::ValueObjectSP backend)
+    {
+        return SyntheticChildrenFrontEnd::SharedPointer(new FrontEnd(this, backend));
+    }
+private:
+    SyntheticArrayRange m_head;
+    SyntheticArrayRange *m_tail;
     
 };
 
@@ -397,15 +581,7 @@ struct SummaryFormat
                   bool skipref = false,
                   bool nochildren = true,
                   bool novalue = true,
-                  bool oneliner = false) :
-    m_cascades(casc),
-    m_skip_pointers(skipptr),
-    m_skip_references(skipref),
-    m_dont_show_children(nochildren),
-    m_dont_show_value(novalue),
-    m_show_members_oneliner(oneliner)
-    {
-    }
+                  bool oneliner = false);
     
     bool
     Cascades() const
@@ -453,8 +629,8 @@ struct SummaryFormat
     GetDescription() = 0;
     
     typedef lldb::SharedPtr<SummaryFormat>::Type SharedPointer;
-    typedef bool(*SummaryCallback)(void*, const char*, const SummaryFormat::SharedPointer&);
-    typedef bool(*RegexSummaryCallback)(void*, lldb::RegularExpressionSP, const SummaryFormat::SharedPointer&);
+    typedef bool(*SummaryCallback)(void*, ConstString, const lldb::SummaryFormatSP&);
+    typedef bool(*RegexSummaryCallback)(void*, lldb::RegularExpressionSP, const lldb::SummaryFormatSP&);
     
 };
 
@@ -469,11 +645,7 @@ struct StringSummaryFormat : public SummaryFormat
                         bool nochildren = true,
                         bool novalue = true,
                         bool oneliner = false,
-                        std::string f = "") :
-    SummaryFormat(casc,skipptr,skipref,nochildren,novalue,oneliner),
-    m_format(f)
-    {
-    }
+                        std::string f = "");
     
     std::string
     GetFormat() const
@@ -494,6 +666,8 @@ struct StringSummaryFormat : public SummaryFormat
         
 };
     
+#ifndef LLDB_DISABLE_PYTHON
+
 // Python-based summaries, running script code to show data
 struct ScriptSummaryFormat : public SummaryFormat
 {
@@ -507,12 +681,7 @@ struct ScriptSummaryFormat : public SummaryFormat
                         bool novalue = true,
                         bool oneliner = false,
                         std::string fname = "",
-                        std::string pscri = "") :
-    SummaryFormat(casc,skipptr,skipref,nochildren,novalue,oneliner),
-    m_function_name(fname),
-    m_python_script(pscri)
-    {
-    }
+                        std::string pscri = "");
     
     std::string
     GetFunctionName() const
@@ -540,6 +709,8 @@ struct ScriptSummaryFormat : public SummaryFormat
     typedef lldb::SharedPtr<ScriptSummaryFormat>::Type SharedPointer;
 
 };
+
+#endif // #ifndef LLDB_DISABLE_PYTHON
 
 } // namespace lldb_private
 

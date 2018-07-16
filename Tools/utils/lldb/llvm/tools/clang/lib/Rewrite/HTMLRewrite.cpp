@@ -277,7 +277,7 @@ void html::AddHeaderFooterInternalBuiltinCSS(Rewriter& R, FileID FID,
   const char* FileEnd = Buf->getBufferEnd();
 
   SourceLocation StartLoc = R.getSourceMgr().getLocForStartOfFile(FID);
-  SourceLocation EndLoc = StartLoc.getFileLocWithOffset(FileEnd-FileStart);
+  SourceLocation EndLoc = StartLoc.getLocWithOffset(FileEnd-FileStart);
 
   std::string s;
   llvm::raw_string_ostream os(s);
@@ -440,17 +440,6 @@ void html::SyntaxHighlight(Rewriter &R, FileID FID, const Preprocessor &PP) {
   }
 }
 
-namespace {
-/// IgnoringDiagClient - This is a diagnostic client that just ignores all
-/// diags.
-class IgnoringDiagClient : public DiagnosticClient {
-  void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                        const DiagnosticInfo &Info) {
-    // Just ignore it.
-  }
-};
-}
-
 /// HighlightMacros - This uses the macro table state from the end of the
 /// file, to re-expand macros and insert (into the HTML) information about the
 /// macro expansions.  This won't be perfectly perfect, but it will be
@@ -493,14 +482,14 @@ void html::HighlightMacros(Rewriter &R, FileID FID, const Preprocessor& PP) {
 
   // Temporarily change the diagnostics object so that we ignore any generated
   // diagnostics from this pass.
-  Diagnostic TmpDiags(PP.getDiagnostics().getDiagnosticIDs(),
-                      new IgnoringDiagClient);
+  DiagnosticsEngine TmpDiags(PP.getDiagnostics().getDiagnosticIDs(),
+                      new IgnoringDiagConsumer);
 
   // FIXME: This is a huge hack; we reuse the input preprocessor because we want
   // its state, but we aren't actually changing it (we hope). This should really
   // construct a copy of the preprocessor.
   Preprocessor &TmpPP = const_cast<Preprocessor&>(PP);
-  Diagnostic *OldDiags = &TmpPP.getDiagnostics();
+  DiagnosticsEngine *OldDiags = &TmpPP.getDiagnostics();
   TmpPP.setDiagnostics(TmpDiags);
 
   // Inform the preprocessor that we don't want comments.

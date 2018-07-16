@@ -16,7 +16,7 @@
 
 #include "FixedLenDecoderEmitter.h"
 #include "CodeGenTarget.h"
-#include "Record.h"
+#include "llvm/TableGen/Record.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -238,19 +238,24 @@ protected:
   // Width of instructions
   unsigned BitWidth;
 
+  // Parent emitter
+  const FixedLenDecoderEmitter *Emitter;
+
 public:
   FilterChooser(const FilterChooser &FC) :
     AllInstructions(FC.AllInstructions), Opcodes(FC.Opcodes),
       Operands(FC.Operands), Filters(FC.Filters),
       FilterBitValues(FC.FilterBitValues), Parent(FC.Parent),
-      BestIndex(FC.BestIndex), BitWidth(FC.BitWidth) { }
+    BestIndex(FC.BestIndex), BitWidth(FC.BitWidth),
+    Emitter(FC.Emitter) { }
 
   FilterChooser(const std::vector<const CodeGenInstruction*> &Insts,
                 const std::vector<unsigned> &IDs,
     std::map<unsigned, std::vector<OperandInfo> > &Ops,
-                unsigned BW) :
+                unsigned BW,
+                const FixedLenDecoderEmitter *E) :
       AllInstructions(Insts), Opcodes(IDs), Operands(Ops), Filters(),
-      Parent(NULL), BestIndex(-1), BitWidth(BW) {
+      Parent(NULL), BestIndex(-1), BitWidth(BW), Emitter(E) {
     for (unsigned i = 0; i < BitWidth; ++i)
       FilterBitValues.push_back(BIT_UNFILTERED);
 
@@ -264,7 +269,8 @@ public:
                 FilterChooser &parent) :
       AllInstructions(Insts), Opcodes(IDs), Operands(Ops),
       Filters(), FilterBitValues(ParentFilterBitValues),
-      Parent(&parent), BestIndex(-1), BitWidth(parent.BitWidth) {
+      Parent(&parent), BestIndex(-1), BitWidth(parent.BitWidth),
+      Emitter(parent.Emitter) {
     doFilter();
   }
 
@@ -323,6 +329,10 @@ protected:
   unsigned getIslands(std::vector<unsigned> &StartBits,
       std::vector<unsigned> &EndBits, std::vector<uint64_t> &FieldVals,
       insn_t &Insn);
+
+  // Emits code to check the Predicates member of an instruction are true.
+  // Returns true if predicate matches were emitted, false otherwise.
+  bool emitPredicateMatch(raw_ostream &o, unsigned &Indentation,unsigned Opc);
 
   // Emits code to decode the singleton.  Return true if we have matched all the
   // well-known bits.
@@ -563,17 +573,21 @@ unsigned Filter::usefulness() const {
 void FilterChooser::emitTop(raw_ostream &o, unsigned Indentation,
                             std::string Namespace) {
   o.indent(Indentation) <<
-    "static bool decode" << Namespace << "Instruction" << BitWidth
+    "static MCDisassembler::DecodeStatus decode" << Namespace << "Instruction" << BitWidth
     << "(MCInst &MI, uint" << BitWidth << "_t insn, uint64_t Address, "
-    << "const void *Decoder) {\n";
-  o.indent(Indentation) << "  unsigned tmp = 0;\n  (void)tmp;\n";
+    << "const void *Decoder, const MCSubtargetInfo &STI) {\n";
+  o.indent(Indentation) << "  unsigned tmp = 0;\n";
+  o.indent(Indentation) << "  (void)tmp;\n";
+  o.indent(Indentation) << Emitter->Locals << "\n";
+  o.indent(Indentation) << "  uint64_t Bits = STI.getFeatureBits();\n";
+  o.indent(Indentation) << "  (void)Bits;\n";
 
   ++Indentation; ++Indentation;
   // Emits code to decode the instructions.
   emit(o, Indentation);
 
   o << '\n';
-  o.indent(Indentation) << "return false;\n";
+  o.indent(Indentation) << "return " << Emitter->ReturnFail << ";\n";
   --Indentation; --Indentation;
 
   o.indent(Indentation) << "}\n";
@@ -738,17 +752,54 @@ void FilterChooser::emitBinaryParser(raw_ostream &o, unsigned &Indentation,
     for (OperandInfo::iterator OI = OpInfo.begin(), OE = OpInfo.end();
          OI != OE; ++OI) {
       o.indent(Indentation) << "  tmp |= (fieldFromInstruction" << BitWidth
-                            << "(insn, " << OI->Base << ", " << OI->Width 
+                            << "(insn, " << OI->Base << ", " << OI->Width
                             << ") << " << OI->Offset << ");\n";
     }
   }
 
   if (Decoder != "")
-    o.indent(Indentation) << "  if (!" << Decoder
-                          << "(MI, tmp, Address, Decoder)) return false;\n";
+    o.indent(Indentation) << "  " << Emitter->GuardPrefix << Decoder
+                          << "(MI, tmp, Address, Decoder)" << Emitter->GuardPostfix << "\n";
   else
     o.indent(Indentation) << "  MI.addOperand(MCOperand::CreateImm(tmp));\n";
 
+}
+
+static void emitSinglePredicateMatch(raw_ostream &o, StringRef str,
+                                     std::string PredicateNamespace) {
+  if (str[0] == '!')
+    o << "!(Bits & " << PredicateNamespace << "::"
+      << str.slice(1,str.size()) << ")";
+  else
+    o << "(Bits & " << PredicateNamespace << "::" << str << ")";
+}
+
+bool FilterChooser::emitPredicateMatch(raw_ostream &o, unsigned &Indentation,
+                                           unsigned Opc) {
+  ListInit *Predicates = AllInstructions[Opc]->TheDef->getValueAsListInit("Predicates");
+  for (unsigned i = 0; i < Predicates->getSize(); ++i) {
+    Record *Pred = Predicates->getElementAsRecord(i);
+    if (!Pred->getValue("AssemblerMatcherPredicate"))
+      continue;
+
+    std::string P = Pred->getValueAsString("AssemblerCondString");
+
+    if (!P.length())
+      continue;
+
+    if (i != 0)
+      o << " && ";
+
+    StringRef SR(P);
+    std::pair<StringRef, StringRef> pairs = SR.split(',');
+    while (pairs.second.size()) {
+      emitSinglePredicateMatch(o, pairs.first, Emitter->PredicateNamespace);
+      o << " && ";
+      pairs = pairs.second.split(',');
+    }
+    emitSinglePredicateMatch(o, pairs.first, Emitter->PredicateNamespace);
+  }
+  return Predicates->getSize() > 0;
 }
 
 // Emits code to decode the singleton.  Return true if we have matched all the
@@ -769,24 +820,27 @@ bool FilterChooser::emitSingletonDecoder(raw_ostream &o, unsigned &Indentation,
 
   // If we have matched all the well-known bits, just issue a return.
   if (Size == 0) {
-    o.indent(Indentation) << "{\n";
+    o.indent(Indentation) << "if (";
+    if (!emitPredicateMatch(o, Indentation, Opc))
+      o << "1";
+    o << ") {\n";
     o.indent(Indentation) << "  MI.setOpcode(" << Opc << ");\n";
     std::vector<OperandInfo>& InsnOperands = Operands[Opc];
     for (std::vector<OperandInfo>::iterator
          I = InsnOperands.begin(), E = InsnOperands.end(); I != E; ++I) {
       // If a custom instruction decoder was specified, use that.
       if (I->numFields() == 0 && I->Decoder.size()) {
-        o.indent(Indentation) << "  if (!" << I->Decoder
-                              << "(MI, insn, Address, Decoder)) return false;\n";
+        o.indent(Indentation) << "  " << Emitter->GuardPrefix << I->Decoder
+                              << "(MI, insn, Address, Decoder)" << Emitter->GuardPostfix << "\n";
         break;
       }
 
       emitBinaryParser(o, Indentation, *I);
     }
 
-    o.indent(Indentation) << "  return true; // " << nameWithID(Opc)
+    o.indent(Indentation) << "  return " << Emitter->ReturnOK << "; // " << nameWithID(Opc)
                           << '\n';
-    o.indent(Indentation) << "}\n";
+    o.indent(Indentation) << "}\n"; // Closing predicate block.
     return true;
   }
 
@@ -798,12 +852,16 @@ bool FilterChooser::emitSingletonDecoder(raw_ostream &o, unsigned &Indentation,
   for (I = Size; I != 0; --I) {
     o << "Inst{" << EndBits[I-1] << '-' << StartBits[I-1] << "} ";
     if (I > 1)
-      o << "&& ";
+      o << " && ";
     else
       o << "for singleton decoding...\n";
   }
 
   o.indent(Indentation) << "if (";
+  if (emitPredicateMatch(o, Indentation, Opc)) {
+    o << " &&\n";
+    o.indent(Indentation+4);
+  }
 
   for (I = Size; I != 0; --I) {
     NumBits = EndBits[I-1] - StartBits[I-1] + 1;
@@ -821,14 +879,14 @@ bool FilterChooser::emitSingletonDecoder(raw_ostream &o, unsigned &Indentation,
        I = InsnOperands.begin(), E = InsnOperands.end(); I != E; ++I) {
     // If a custom instruction decoder was specified, use that.
     if (I->numFields() == 0 && I->Decoder.size()) {
-      o.indent(Indentation) << "  " << I->Decoder
-                            << "(MI, insn, Address, Decoder);\n";
+      o.indent(Indentation) << "  " << Emitter->GuardPrefix << I->Decoder
+                            << "(MI, insn, Address, Decoder)" << Emitter->GuardPostfix << "\n";
       break;
     }
 
     emitBinaryParser(o, Indentation, *I);
   }
-  o.indent(Indentation) << "  return true; // " << nameWithID(Opc)
+  o.indent(Indentation) << "  return " << Emitter->ReturnOK << "; // " << nameWithID(Opc)
                         << '\n';
   o.indent(Indentation) << "}\n";
 
@@ -1426,7 +1484,7 @@ void FixedLenDecoderEmitter::run(raw_ostream &o)
 
     // Emit the decoder for this namespace+width combination.
     FilterChooser FC(NumberedInstructions, I->second, Operands,
-                     8*I->first.second);
+                     8*I->first.second, this);
     FC.emitTop(o, 0, I->first.first);
   }
 

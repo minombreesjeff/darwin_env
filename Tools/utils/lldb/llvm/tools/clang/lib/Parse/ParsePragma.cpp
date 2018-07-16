@@ -110,6 +110,12 @@ void PragmaPackHandler::HandlePragma(Preprocessor &PP,
       return;
 
     PP.Lex(Tok);
+
+    // In MSVC/gcc, #pragma pack(4) sets the alignment without affecting
+    // the push/pop stack.
+    // In Apple gcc, #pragma pack(4) is equivalent to #pragma pack(push, 4)
+    if (PP.getLangOptions().ApplePragmaPack)
+      Kind = Sema::PPK_Push;
   } else if (Tok.is(tok::identifier)) {
     const IdentifierInfo *II = Tok.getIdentifierInfo();
     if (II->isStr("show")) {
@@ -159,6 +165,11 @@ void PragmaPackHandler::HandlePragma(Preprocessor &PP,
         }
       }
     }
+  } else if (PP.getLangOptions().ApplePragmaPack) {
+    // In MSVC/gcc, #pragma pack() resets the alignment without affecting
+    // the push/pop stack.
+    // In Apple gcc #pragma pack() is equivalent to #pragma pack(pop).
+    Kind = Sema::PPK_Pop;
   }
 
   if (Tok.isNot(tok::r_paren)) {
@@ -451,8 +462,11 @@ PragmaOpenCLExtensionHandler::HandlePragma(Preprocessor &PP,
   }
 
   OpenCLOptions &f = Actions.getOpenCLOptions();
-  if (ename->isStr("all")) {
-#define OPENCLEXT(nm)   f.nm = state;
+  // OpenCL 1.1 9.1: "The all variant sets the behavior for all extensions,
+  // overriding all previously issued extension directives, but only if the
+  // behavior is set to disable."
+  if (state == 0 && ename->isStr("all")) {
+#define OPENCLEXT(nm)   f.nm = 0;
 #include "clang/Basic/OpenCLExtensions.def"
   }
 #define OPENCLEXT(nm) else if (ename->isStr(#nm)) { f.nm = state; }

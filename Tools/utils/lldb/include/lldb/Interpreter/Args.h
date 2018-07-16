@@ -205,6 +205,10 @@ public:
 
     void
     AppendArguments (const Args &rhs);
+    
+    void
+    AppendArguments (const char **argv);
+
     //------------------------------------------------------------------
     /// Insert the argument value at index \a idx to \a arg_cstr.
     ///
@@ -265,6 +269,9 @@ public:
     //------------------------------------------------------------------
     void
     SetArguments (int argc, const char **argv);
+
+    void
+    SetArguments (const char **argv);
 
     //------------------------------------------------------------------
     /// Shifts the first argument C string value of the array off the
@@ -381,7 +388,7 @@ public:
     StringToBoolean (const char *s, bool fail_value, bool *success_ptr);
     
     static int32_t
-    StringToOptionEnum (const char *s, OptionEnumValueElement *enum_values, int32_t fail_value, bool *success_ptr);
+    StringToOptionEnum (const char *s, OptionEnumValueElement *enum_values, int32_t fail_value, Error &error);
 
     static lldb::ScriptLanguage
     StringToScriptLanguage (const char *s, lldb::ScriptLanguage fail_value, bool *success_ptr);
@@ -393,6 +400,9 @@ public:
 
     static const char *
     StringToVersion (const char *s, uint32_t &major, uint32_t &minor, uint32_t &update);
+
+    static const char *
+    GetShellSafeArgument (const char *unsafe_arg, std::string &safe_arg);
 
     // This one isn't really relevant to Arguments per se, but we're using the Args as a
     // general strings container, so...

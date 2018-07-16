@@ -9,6 +9,20 @@
 
 // C Includes
 
+#ifdef LLDB_DISABLE_PYTHON
+
+struct PyObject;
+
+#else   // #ifdef LLDB_DISABLE_PYTHON
+
+#if defined (__APPLE__)
+#include <Python/Python.h>
+#else
+#include <Python.h>
+#endif
+
+#endif  // #ifdef LLDB_DISABLE_PYTHON
+
 // C++ Includes
 #include <ostream>
 
@@ -30,29 +44,49 @@
 using namespace lldb;
 using namespace lldb_private;
 
-std::string
-ValueFormat::FormatObject(lldb::ValueObjectSP object)
+ValueFormat::ValueFormat (lldb::Format f,
+                          bool casc,
+                          bool skipptr,
+                          bool skipref) : 
+    m_cascades(casc),
+    m_skip_pointers(skipptr),
+    m_skip_references(skipref),
+    m_format (f)
 {
-    if (!object.get())
-        return "NULL";
-    
-    StreamString sstr;
-    
-    if (ClangASTType::DumpTypeValue (object->GetClangAST(),            // The clang AST
-                                     object->GetClangType(),           // The clang type to display
-                                     &sstr,
-                                     m_format,                          // Format to display this type with
-                                     object->GetDataExtractor(),       // Data to extract from
-                                     0,                                // Byte offset into "data"
-                                     object->GetByteSize(),            // Byte size of item in "data"
-                                     object->GetBitfieldBitSize(),     // Bitfield bit size
-                                     object->GetBitfieldBitOffset()))  // Bitfield bit offset
-        return (sstr.GetString());
-    else
-    {
-        return ("unsufficient data for value");
-    }
 }
+
+SummaryFormat::SummaryFormat(bool casc,
+                             bool skipptr,
+                             bool skipref,
+                             bool nochildren,
+                             bool novalue,
+                             bool oneliner) :
+    m_cascades(casc),
+    m_skip_pointers(skipptr),
+    m_skip_references(skipref),
+    m_dont_show_children(nochildren),
+    m_dont_show_value(novalue),
+    m_show_members_oneliner(oneliner)
+{
+}
+
+StringSummaryFormat::StringSummaryFormat(bool casc,
+                                         bool skipptr,
+                                         bool skipref,
+                                         bool nochildren,
+                                         bool novalue,
+                                         bool oneliner,
+                                         std::string f) :
+    SummaryFormat(casc,
+                  skipptr,
+                  skipref,
+                  nochildren,
+                  novalue,
+                  oneliner),
+    m_format(f)
+{
+}
+
 
 std::string
 StringSummaryFormat::FormatObject(lldb::ValueObjectSP object)
@@ -64,20 +98,21 @@ StringSummaryFormat::FormatObject(lldb::ValueObjectSP object)
     ExecutionContext exe_ctx;
     object->GetExecutionContextScope()->CalculateExecutionContext(exe_ctx);
     SymbolContext sc;
-    if (exe_ctx.frame)
-        sc = exe_ctx.frame->GetSymbolContext(lldb::eSymbolContextEverything);
+    StackFrame *frame = exe_ctx.GetFramePtr();
+    if (frame)
+        sc = frame->GetSymbolContext(lldb::eSymbolContextEverything);
     
     if (m_show_members_oneliner)
     {
-        ValueObjectSP synth_vobj = object->GetSyntheticValue(lldb::eUseSyntheticFilter);
-        const uint32_t num_children = synth_vobj->GetNumChildren();
+        ValueObjectSP synth_valobj = object->GetSyntheticValue(lldb::eUseSyntheticFilter);
+        const uint32_t num_children = synth_valobj->GetNumChildren();
         if (num_children)
         {
             s.PutChar('(');
             
             for (uint32_t idx=0; idx<num_children; ++idx)
             {
-                lldb::ValueObjectSP child_sp(synth_vobj->GetChildAtIndex(idx, true));
+                lldb::ValueObjectSP child_sp(synth_valobj->GetChildAtIndex(idx, true));
                 if (child_sp.get())
                 {
                     if (idx)
@@ -119,32 +154,33 @@ StringSummaryFormat::GetDescription()
     return sstr.GetString();
 }
 
+#ifndef LLDB_DISABLE_PYTHON
+
+ScriptSummaryFormat::ScriptSummaryFormat(bool casc,
+                                         bool skipptr,
+                                         bool skipref,
+                                         bool nochildren,
+                                         bool novalue,
+                                         bool oneliner,
+                                         std::string fname,
+                                         std::string pscri) :
+    SummaryFormat(casc,
+                  skipptr,
+                  skipref,
+                  nochildren,
+                  novalue,
+                  oneliner),
+    m_function_name(fname),
+    m_python_script(pscri)
+{
+}
+
+
 std::string
 ScriptSummaryFormat::FormatObject(lldb::ValueObjectSP object)
 {
-    lldb::ValueObjectSP target_object;
-    if (object->GetIsExpressionResult() &&
-        ClangASTContext::IsPointerType(object->GetClangType()) &&
-        object->GetValue().GetValueType() == Value::eValueTypeHostAddress)
-    {
-        // when using the expression parser, an additional layer of "frozen data"
-        // can be created, which is basically a byte-exact copy of the data returned
-        // by the expression, but in host memory. because Python code might need to read
-        // into the object memory in non-obvious ways, we need to hand it the target version
-        // of the expression output
-        lldb::addr_t tgt_address = object->GetValueAsUnsigned();
-        target_object = ValueObjectConstResult::Create (object->GetExecutionContextScope(),
-                                                        object->GetClangAST(),
-                                                        object->GetClangType(),
-                                                        object->GetName(),
-                                                        tgt_address,
-                                                        eAddressTypeLoad,
-                                                        object->GetUpdatePoint().GetProcessSP()->GetAddressByteSize());
-    }
-    else
-        target_object = object;
     return std::string(ScriptInterpreterPython::CallPythonScriptFunction(m_function_name.c_str(),
-                                                                         target_object).c_str());
+                                                                         object).c_str());
 }
 
 std::string
@@ -161,6 +197,8 @@ ScriptSummaryFormat::GetDescription()
     return sstr.GetString();
     
 }
+
+#endif // #ifndef LLDB_DISABLE_PYTHON
 
 std::string
 SyntheticFilter::GetDescription()
@@ -181,10 +219,37 @@ SyntheticFilter::GetDescription()
     return sstr.GetString();
 }
 
+std::string
+SyntheticArrayView::GetDescription()
+{
+    StreamString sstr;
+    sstr.Printf("%s%s%s {\n",
+                m_cascades ? "" : " (not cascading)",
+                m_skip_pointers ? " (skip pointers)" : "",
+                m_skip_references ? " (skip references)" : "");
+    SyntheticArrayRange* ptr = &m_head;
+    while (ptr && ptr != m_tail)
+    {
+        if (ptr->GetLow() == ptr->GetHigh())
+            sstr.Printf("    [%d]\n",
+                        ptr->GetLow());
+        else
+            sstr.Printf("    [%d-%d]\n",
+                        ptr->GetLow(),
+                        ptr->GetHigh());
+        ptr = ptr->GetNext();
+    }
+    
+    sstr.Printf("}");
+    return sstr.GetString();
+}
+
+#ifndef LLDB_DISABLE_PYTHON
+
 SyntheticScriptProvider::FrontEnd::FrontEnd(std::string pclass,
                                             lldb::ValueObjectSP be) :
-SyntheticChildrenFrontEnd(be),
-m_python_class(pclass)
+    SyntheticChildrenFrontEnd(be),
+    m_python_class(pclass)
 {
     if (be.get() == NULL)
     {
@@ -193,31 +258,26 @@ m_python_class(pclass)
         return;
     }
     
-    if (be->GetIsExpressionResult() &&
-        ClangASTContext::IsPointerType(be->GetClangType()) &&
-        be->GetValue().GetValueType() == Value::eValueTypeHostAddress)
-    {
-        // when using the expression parser, an additional layer of "frozen data"
-        // can be created, which is basically a byte-exact copy of the data returned
-        // by the expression, but in host memory. because Python code might need to read
-        // into the object memory in non-obvious ways, we need to hand it the target version
-        // of the expression output
-        lldb::addr_t tgt_address = be->GetValueAsUnsigned();
-        m_backend = ValueObjectConstResult::Create (be->GetExecutionContextScope(),
-                                                    be->GetClangAST(),
-                                                    be->GetClangType(),
-                                                    be->GetName(),
-                                                    tgt_address,
-                                                    eAddressTypeLoad,
-                                                    be->GetUpdatePoint().GetProcessSP()->GetAddressByteSize());
-    }
-
     m_interpreter = m_backend->GetUpdatePoint().GetTargetSP()->GetDebugger().GetCommandInterpreter().GetScriptInterpreter();
     
     if (m_interpreter == NULL)
         m_wrapper = NULL;
     else
-        m_wrapper = (PyObject*)m_interpreter->CreateSyntheticScriptedProvider(m_python_class, m_backend);
+        m_wrapper = m_interpreter->CreateSyntheticScriptedProvider(m_python_class, m_backend);
+}
+
+SyntheticScriptProvider::FrontEnd::~FrontEnd()
+{
+    Py_XDECREF((PyObject*)m_wrapper);
+}
+
+lldb::ValueObjectSP
+SyntheticScriptProvider::FrontEnd::GetChildAtIndex (uint32_t idx, bool can_create)
+{
+    if (m_wrapper == NULL || m_interpreter == NULL)
+        return lldb::ValueObjectSP();
+    
+    return m_interpreter->GetChildAtIndex(m_wrapper, idx);
 }
 
 std::string
@@ -231,4 +291,46 @@ SyntheticScriptProvider::GetDescription()
                 m_python_class.c_str());
     
     return sstr.GetString();
+}
+
+#endif // #ifndef LLDB_DISABLE_PYTHON
+
+int
+SyntheticArrayView::GetRealIndexForIndex(int i)
+{
+    if (i >= GetCount())
+        return -1;
+    
+    SyntheticArrayRange* ptr = &m_head;
+    
+    int residual = i;
+    
+    while(ptr && ptr != m_tail)
+    {
+        if (residual >= ptr->GetSelfCount())
+        {
+            residual -= ptr->GetSelfCount();
+            ptr = ptr->GetNext();
+        }
+        
+        return ptr->GetLow() + residual;
+    }
+    
+    return -1;
+}
+
+uint32_t
+SyntheticArrayView::FrontEnd::GetIndexOfChildWithName (const ConstString &name_cs)
+{
+    const char* name_cstr = name_cs.GetCString();
+    if (*name_cstr != '[')
+        return UINT32_MAX;
+    std::string name(name_cstr+1);
+    if (name[name.size()-1] != ']')
+        return UINT32_MAX;
+    name = name.erase(name.size()-1,1);
+    int index = Args::StringToSInt32 (name.c_str(), -1);
+    if (index < 0)
+        return UINT32_MAX;
+    return index;
 }

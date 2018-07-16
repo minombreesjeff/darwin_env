@@ -46,6 +46,7 @@ GDBRemoteCommunicationClient::GDBRemoteCommunicationClient(bool is_platform) :
     m_supports_vCont_S (eLazyBoolCalculate),
     m_qHostInfo_is_valid (eLazyBoolCalculate),
     m_supports_alloc_dealloc_memory (eLazyBoolCalculate),
+    m_supports_memory_region_info  (eLazyBoolCalculate),
     m_supports_qProcessInfoPID (true),
     m_supports_qfProcessInfo (true),
     m_supports_qUserName (true),
@@ -123,6 +124,7 @@ GDBRemoteCommunicationClient::ResetDiscoverableSettings()
     m_supports_vCont_S = eLazyBoolCalculate;
     m_qHostInfo_is_valid = eLazyBoolCalculate;
     m_supports_alloc_dealloc_memory = eLazyBoolCalculate;
+    m_supports_memory_region_info = eLazyBoolCalculate;
 
     m_supports_qProcessInfoPID = true;
     m_supports_qfProcessInfo = true;
@@ -245,7 +247,7 @@ GDBRemoteCommunicationClient::SendPacketAndWaitForResponse
         else 
         {
             if (log)
-                log->Printf("error: failed to send '%*s'", payload_length, payload);   
+                log->Printf("error: failed to send '%*s'", (int) payload_length, payload);   
         }
     }
     else
@@ -290,6 +292,16 @@ GDBRemoteCommunicationClient::SendPacketAndWaitForResponse
                     // Make sure we wait until the continue packet has been sent again...
                     if (m_private_is_running.WaitForValueEqualTo (true, &timeout_time, &timed_out))
                     {
+                        if (log)
+                        {
+                            if (timed_out) 
+                                log->Printf ("async: timed out waiting for process to resume, but process was resumed");
+                            else
+                                log->Printf ("async: async packet sent");
+                        }
+                    }
+                    else
+                    {
                         if (log) 
                             log->Printf ("async: timed out waiting for process to resume");
                     }
@@ -311,13 +323,13 @@ GDBRemoteCommunicationClient::SendPacketAndWaitForResponse
         else
         {
             if (log) 
-                log->Printf("error: packet mutex taken and send_async == false, not sending packet '%*s'", payload_length, payload);
+                log->Printf("error: packet mutex taken and send_async == false, not sending packet '%*s'", (int) payload_length, payload);
         }
     }
     if (response_len == 0)
     {
         if (log) 
-            log->Printf("error: failed to get response for '%*s'", payload_length, payload);
+            log->Printf("error: failed to get response for '%*s'", (int) payload_length, payload);
     }        
     return response_len;
 }
@@ -379,13 +391,13 @@ GDBRemoteCommunicationClient::SendContinuePacketAndWaitForResponse
             if (SendPacket(continue_packet.c_str(), continue_packet.size()) == 0)
                 state = eStateInvalid;
         
-            m_private_is_running.SetValue (true, eBroadcastNever);
+            m_private_is_running.SetValue (true, eBroadcastAlways);
         }
         
         got_stdout = false;
 
         if (log)
-            log->Printf ("GDBRemoteCommunicationClient::%s () WaitForPacket(%.*s)", __FUNCTION__);
+            log->Printf ("GDBRemoteCommunicationClient::%s () WaitForPacket(%s)", __FUNCTION__, continue_packet.c_str());
 
         if (WaitForPacketWithTimeoutMicroSeconds (response, UINT32_MAX))
         {
@@ -949,7 +961,7 @@ GDBRemoteCommunicationClient::GetHostInfo (bool force)
                             if (!vendor_name.empty())
                                 m_host_arch.GetTriple().setVendorName (llvm::StringRef (vendor_name));
                             if (!os_name.empty())
-                                m_host_arch.GetTriple().setVendorName (llvm::StringRef (os_name));
+                                m_host_arch.GetTriple().setOSName (llvm::StringRef (os_name));
                                 
                         }
                     }
@@ -1007,7 +1019,7 @@ GDBRemoteCommunicationClient::SendAttach
     if (pid != LLDB_INVALID_PROCESS_ID)
     {
         char packet[64];
-        const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%x", pid);
+        const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%llx", pid);
         assert (packet_len < sizeof(packet));
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -1075,6 +1087,105 @@ GDBRemoteCommunicationClient::DeallocateMemory (addr_t addr)
     }
     return false;
 }
+
+Error
+GDBRemoteCommunicationClient::GetMemoryRegionInfo (lldb::addr_t addr, 
+                                                  lldb_private::MemoryRegionInfo &region_info)
+{
+    Error error;
+    region_info.Clear();
+
+    if (m_supports_memory_region_info != eLazyBoolNo)
+    {
+        m_supports_memory_region_info = eLazyBoolYes;
+        char packet[64];
+        const int packet_len = ::snprintf(packet, sizeof(packet), "qMemoryRegionInfo:%llx", (uint64_t)addr);
+        assert (packet_len < sizeof(packet));
+        StringExtractorGDBRemote response;
+        if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
+        {
+            std::string name;
+            std::string value;
+            addr_t addr_value;
+            bool success = true;
+            bool saw_permissions = false;
+            while (success && response.GetNameColonValue(name, value))
+            {
+                if (name.compare ("start") == 0)
+                {
+                    addr_value = Args::StringToUInt64(value.c_str(), LLDB_INVALID_ADDRESS, 16, &success);
+                    if (success)
+                        region_info.GetRange().SetRangeBase(addr_value);
+                }
+                else if (name.compare ("size") == 0)
+                {
+                    addr_value = Args::StringToUInt64(value.c_str(), 0, 16, &success);
+                    if (success)
+                        region_info.GetRange().SetByteSize (addr_value);
+                }
+                else if (name.compare ("permissions") == 0 && region_info.GetRange().IsValid())
+                {
+                    saw_permissions = true;
+                    if (region_info.GetRange().Contains (addr))
+                    {
+                        if (value.find('r') != std::string::npos)
+                            region_info.SetReadable (MemoryRegionInfo::eYes);
+                        else
+                            region_info.SetReadable (MemoryRegionInfo::eNo);
+
+                        if (value.find('w') != std::string::npos)
+                            region_info.SetWritable (MemoryRegionInfo::eYes);
+                        else
+                            region_info.SetWritable (MemoryRegionInfo::eNo);
+
+                        if (value.find('x') != std::string::npos)
+                            region_info.SetExecutable (MemoryRegionInfo::eYes);
+                        else
+                            region_info.SetExecutable (MemoryRegionInfo::eNo);
+                    }
+                    else
+                    {
+                        // The reported region does not contain this address -- we're looking at an unmapped page
+                        region_info.SetReadable (MemoryRegionInfo::eNo);
+                        region_info.SetWritable (MemoryRegionInfo::eNo);
+                        region_info.SetExecutable (MemoryRegionInfo::eNo);
+                    }
+                }
+                else if (name.compare ("error") == 0)
+                {
+                    StringExtractorGDBRemote name_extractor;
+                    // Swap "value" over into "name_extractor"
+                    name_extractor.GetStringRef().swap(value);
+                    // Now convert the HEX bytes into a string value
+                    name_extractor.GetHexByteString (value);
+                    error.SetErrorString(value.c_str());
+                }
+            }
+
+            // We got a valid address range back but no permissions -- which means this is an unmapped page
+            if (region_info.GetRange().IsValid() && saw_permissions == false)
+            {
+                region_info.SetReadable (MemoryRegionInfo::eNo);
+                region_info.SetWritable (MemoryRegionInfo::eNo);
+                region_info.SetExecutable (MemoryRegionInfo::eNo);
+            }
+        }
+        else
+        {
+            m_supports_memory_region_info = eLazyBoolNo;
+        }
+    }
+
+    if (m_supports_memory_region_info == eLazyBoolNo)
+    {
+        error.SetErrorString("qMemoryRegionInfo is not supported");
+    }
+    if (error.Fail())
+        region_info.Clear();
+    return error;
+
+}
+
 
 int
 GDBRemoteCommunicationClient::SetSTDIN (char const *path)
@@ -1233,7 +1344,7 @@ GDBRemoteCommunicationClient::DecodeProcessInfoResponse (StringExtractorGDBRemot
                 extractor.GetStringRef().swap(value);
                 extractor.SetFilePos(0);
                 extractor.GetHexByteString (value);
-                process_info.SetName (value.c_str());
+                process_info.GetExecutableFile().SetFile (value.c_str(), false);
             }
         }
         
@@ -1251,7 +1362,7 @@ GDBRemoteCommunicationClient::GetProcessInfo (lldb::pid_t pid, ProcessInstanceIn
     if (m_supports_qProcessInfoPID)
     {
         char packet[32];
-        const int packet_len = ::snprintf (packet, sizeof (packet), "qProcessInfoPID:%i", pid);
+        const int packet_len = ::snprintf (packet, sizeof (packet), "qProcessInfoPID:%llu", pid);
         assert (packet_len < sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
@@ -1321,9 +1432,9 @@ GDBRemoteCommunicationClient::FindProcesses (const ProcessInstanceInfoMatch &mat
             }
             
             if (match_info.GetProcessInfo().ProcessIDIsValid())
-                packet.Printf("pid:%u;",match_info.GetProcessInfo().GetProcessID());
+                packet.Printf("pid:%llu;",match_info.GetProcessInfo().GetProcessID());
             if (match_info.GetProcessInfo().ParentProcessIDIsValid())
-                packet.Printf("parent_pid:%u;",match_info.GetProcessInfo().GetParentProcessID());
+                packet.Printf("parent_pid:%llu;",match_info.GetProcessInfo().GetParentProcessID());
             if (match_info.GetProcessInfo().UserIDIsValid())
                 packet.Printf("uid:%u;",match_info.GetProcessInfo().GetUserID());
             if (match_info.GetProcessInfo().GroupIDIsValid())

@@ -18,6 +18,7 @@
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/VariableList.h"
+#include "lldb/Target/ABI.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StackFrame.h"
@@ -35,7 +36,7 @@ Variable::Variable
     lldb::user_id_t uid,
     const char *name, 
     const char *mangled,   // The mangled variable name for variables in namespaces
-    Type *type,
+    const lldb::SymbolFileTypeSP &symfile_type_sp,
     ValueType scope,
     SymbolContextScope *context,
     Declaration* decl_ptr,
@@ -46,7 +47,7 @@ Variable::Variable
     UserID(uid),
     m_name(name),
     m_mangled (mangled, true),
-    m_type(type),
+    m_symfile_type_sp(symfile_type_sp),
     m_scope(scope),
     m_owner_scope(context),
     m_declaration(decl_ptr),
@@ -80,21 +81,33 @@ Variable::NameMatches (const RegularExpression& regex) const
     return m_mangled.NameMatches (regex);
 }
 
+Type *
+Variable::GetType()
+{
+    if (m_symfile_type_sp)
+        return m_symfile_type_sp->GetType();
+    return NULL;
+}
+
 void
 Variable::Dump(Stream *s, bool show_context) const
 {
-    s->Printf("%.*p: ", (int)sizeof(void*) * 2, this);
+    s->Printf("%p: ", this);
     s->Indent();
     *s << "Variable" << (const UserID&)*this;
 
     if (m_name)
         *s << ", name = \"" << m_name << "\"";
 
-    if (m_type != NULL)
+    if (m_symfile_type_sp)
     {
-        *s << ", type = {" << m_type->GetID() << "} " << (void*)m_type << " (";
-        m_type->DumpTypeName(s);
-        s->PutChar(')');
+        Type *type = m_symfile_type_sp->GetType();
+        if (type)
+        {
+            *s << ", type = {" << type->GetID() << "} " << (void*)type << " (";
+            type->DumpTypeName(s);
+            s->PutChar(')');
+        }
     }
 
     if (m_scope != eValueTypeInvalid)
@@ -130,7 +143,13 @@ Variable::Dump(Stream *s, bool show_context) const
             if (variable_sc.function)
                 loclist_base_addr = variable_sc.function->GetAddressRange().GetBaseAddress().GetFileAddress();
         }
-        m_location.GetDescription(s, lldb::eDescriptionLevelBrief, loclist_base_addr);
+        ABI *abi = NULL;
+        if (m_owner_scope)
+        {
+            Module *module = m_owner_scope->CalculateSymbolContextModule();
+            abi = ABI::FindPlugin (module->GetArchitecture()).get();
+        }
+        m_location.GetDescription(s, lldb::eDescriptionLevelBrief, loclist_base_addr, abi);
     }
 
     if (m_external)
@@ -463,6 +482,13 @@ Variable::DumpLocationForAddress (Stream *s, const Address &address)
         CalculateSymbolContext(&sc);
         if (sc.module_sp.get() == address.GetModule())
         {
+            ABI *abi = NULL;
+            if (m_owner_scope)
+            {
+                Module *module = m_owner_scope->CalculateSymbolContextModule();
+                abi = ABI::FindPlugin (module->GetArchitecture()).get();
+            }
+
             const addr_t file_addr = address.GetFileAddress();
             if (sc.function)
             {
@@ -474,14 +500,15 @@ Variable::DumpLocationForAddress (Stream *s, const Address &address)
                     return m_location.DumpLocationForAddress (s, 
                                                               eDescriptionLevelBrief, 
                                                               loclist_base_file_addr, 
-                                                              file_addr);
+                                                              file_addr,
+                                                              abi);
                 }
             }
             return m_location.DumpLocationForAddress (s, 
                                                       eDescriptionLevelBrief, 
                                                       LLDB_INVALID_ADDRESS, 
-                                                      file_addr);
-            
+                                                      file_addr,
+                                                      abi);
         }
     }
     return false;

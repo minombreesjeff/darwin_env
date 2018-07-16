@@ -31,6 +31,8 @@ namespace clang
     class AddrLabelExpr;
     class AnalyzerOptions;
     class BinaryOperator;
+    class ClassTemplateDecl;
+    class ClassTemplateSpecializationDecl;
     class CodeGenOptions;
     class CodeGenerator;
     class CompilerInstance;
@@ -52,7 +54,8 @@ namespace clang
     class DeclStmt;
     class DependencyOutputOptions;
     class Diagnostic;
-    class DiagnosticClient;
+    class DiagnosticConsumer;
+    class DiagnosticsEngine;
     class DiagnosticOptions;
     class EnumDecl;
     class Expr;
@@ -77,6 +80,7 @@ namespace clang
     class ObjCEncodeExpr;
     class ObjCImplicitSetterGetterRefExpr;
     class ObjCInterfaceDecl;
+    class ObjCIvarDecl;
     class ObjCIvarRefExpr;
     class ObjCMessageExpr;
     class ObjCMethodDecl;
@@ -110,6 +114,7 @@ namespace clang
     class TextDiagnosticBuffer;
     class TranslationUnitDecl;
     class Type;
+    class TypeDecl;
     class TypedefDecl;
     class TypesCompatibleExpr;
     class UnaryOperator;

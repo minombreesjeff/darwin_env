@@ -24,8 +24,16 @@ namespace lldb_private {
 class ThreadPlanStepOverRange : public ThreadPlanStepRange
 {
 public:
+
+    ThreadPlanStepOverRange (Thread &thread, 
+                             const AddressRange &range, 
+                             const SymbolContext &addr_context, 
+                             lldb::RunMode stop_others, 
+                             bool okay_to_discard = false);
+                             
     virtual ~ThreadPlanStepOverRange ();
 
+    virtual bool PlanExplainsStop ();
     virtual void GetDescription (Stream *s, lldb::DescriptionLevel level);
     virtual bool ShouldStop (Event *event_ptr);
     virtual bool
@@ -35,8 +43,6 @@ public:
     }
 
 protected:
-
-    ThreadPlanStepOverRange (Thread &thread, const AddressRange &range, const SymbolContext &addr_context, lldb::RunMode stop_others, bool okay_to_discard = false);
 
 private:
 

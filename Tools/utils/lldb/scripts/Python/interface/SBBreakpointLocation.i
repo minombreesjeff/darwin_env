@@ -32,6 +32,9 @@ public:
     bool
     IsValid() const;
 
+    lldb::SBAddress
+    GetAddress();
+    
     lldb::addr_t
     GetLoadAddress ();
 
@@ -47,9 +50,20 @@ public:
     void
     SetIgnoreCount (uint32_t n);
 
+    %feature("docstring", "
+    //--------------------------------------------------------------------------
+    /// The breakpoint location stops only if the condition expression evaluates
+    /// to true.
+    //--------------------------------------------------------------------------
+    ") SetCondition;
     void 
     SetCondition (const char *condition);
     
+    %feature("docstring", "
+    //------------------------------------------------------------------
+    /// Get the condition expression for the breakpoint location.
+    //------------------------------------------------------------------
+    ") GetCondition;
     const char *
     GetCondition ();
 

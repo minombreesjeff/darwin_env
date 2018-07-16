@@ -71,7 +71,22 @@ namespace llvm {
     SmallVector<std::pair<const MCSection *,
                 const MCSection *>, 4> SectionStack;
 
+    unsigned UniqueCodeBeginSuffix;
+    unsigned UniqueDataBeginSuffix;
+
   protected:
+    /// Indicator of whether the previous data-or-code indicator was for
+    /// code or not.  Used to determine when we need to emit a new indicator.
+    enum DataType {
+      Data,
+      Code,
+      JumpTable8,
+      JumpTable16,
+      JumpTable32
+    };
+    DataType RegionIndicator;
+
+
     MCStreamer(MCContext &Ctx);
 
     const MCExpr *BuildSymbolDiff(MCContext &Context, const MCSymbol *A,
@@ -224,6 +239,41 @@ namespace llvm {
     /// used in an assignment.
     virtual void EmitLabel(MCSymbol *Symbol);
 
+    /// EmitDataRegion - Emit a label that marks the beginning of a data
+    /// region.
+    /// On ELF targets, this corresponds to an assembler statement such as:
+    ///   $d.1:
+    virtual void EmitDataRegion();
+
+    /// EmitJumpTable8Region - Emit a label that marks the beginning of a
+    /// jump table composed of 8-bit offsets.
+    /// On ELF targets, this corresponds to an assembler statement such as:
+    ///   $d.1:
+    virtual void EmitJumpTable8Region();
+
+    /// EmitJumpTable16Region - Emit a label that marks the beginning of a
+    /// jump table composed of 16-bit offsets.
+    /// On ELF targets, this corresponds to an assembler statement such as:
+    ///   $d.1:
+    virtual void EmitJumpTable16Region();
+
+    /// EmitJumpTable32Region - Emit a label that marks the beginning of a
+    /// jump table composed of 32-bit offsets.
+    /// On ELF targets, this corresponds to an assembler statement such as:
+    ///   $d.1:
+    virtual void EmitJumpTable32Region();
+
+    /// EmitCodeRegion - Emit a label that marks the beginning of a code
+    /// region.
+    /// On ELF targets, this corresponds to an assembler statement such as:
+    ///   $a.1:
+    virtual void EmitCodeRegion();
+
+    /// ForceCodeRegion - Forcibly sets the current region mode to code.  Used
+    /// at function entry points.
+    void ForceCodeRegion() { RegionIndicator = Code; }
+
+
     virtual void EmitEHSymAttributes(const MCSymbol *Symbol,
                                      MCSymbol *EHSymbol);
 
@@ -304,7 +354,9 @@ namespace llvm {
     ///
     /// @param Symbol - The common symbol to emit.
     /// @param Size - The size of the common symbol.
-    virtual void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size) = 0;
+    /// @param ByteAlignment - The alignment of the common symbol in bytes.
+    virtual void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
+                                       unsigned ByteAlignment) = 0;
 
     /// EmitZerofill - Emit the zerofill section and an optional symbol.
     ///
@@ -368,7 +420,8 @@ namespace llvm {
 
     /// EmitULEB128Value - Special case of EmitULEB128Value that avoids the
     /// client having to pass in a MCExpr for constant integers.
-    void EmitULEB128IntValue(uint64_t Value, unsigned AddrSpace = 0);
+    void EmitULEB128IntValue(uint64_t Value, unsigned AddrSpace = 0,
+                             unsigned Padding = 0);
 
     /// EmitSLEB128Value - Special case of EmitSLEB128Value that avoids the
     /// client having to pass in a MCExpr for constant integers.
@@ -453,7 +506,8 @@ namespace llvm {
     /// EmitDwarfFileDirective - Associate a filename with a specified logical
     /// file number.  This implements the DWARF2 '.file 4 "foo.c"' assembler
     /// directive.
-    virtual bool EmitDwarfFileDirective(unsigned FileNo,StringRef Filename);
+    virtual bool EmitDwarfFileDirective(unsigned FileNo, StringRef Directory,
+                                        StringRef Filename);
 
     /// EmitDwarfLocDirective - This implements the DWARF2
     // '.loc fileno lineno ...' assembler directive.
@@ -561,6 +615,7 @@ namespace llvm {
                                 bool isVerboseAsm,
                                 bool useLoc,
                                 bool useCFI,
+                                bool useDwarfDirectory,
                                 MCInstPrinter *InstPrint = 0,
                                 MCCodeEmitter *CE = 0,
                                 MCAsmBackend *TAB = 0,
@@ -586,8 +641,8 @@ namespace llvm {
   /// createELFStreamer - Create a machine code streamer which will generate
   /// ELF format object files.
   MCStreamer *createELFStreamer(MCContext &Ctx, MCAsmBackend &TAB,
-				raw_ostream &OS, MCCodeEmitter *CE,
-				bool RelaxAll, bool NoExecStack);
+                                raw_ostream &OS, MCCodeEmitter *CE,
+                                bool RelaxAll, bool NoExecStack);
 
   /// createLoggingStreamer - Create a machine code streamer which just logs the
   /// API calls and then dispatches to another streamer.

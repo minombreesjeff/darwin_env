@@ -189,11 +189,11 @@ OptionValueBoolean::SetValueFromCString (const char *value_cstr)
     else
     {
         if (value_cstr == NULL)
-            error.SetErrorString ("invalid boolean string value: NULL\n");
+            error.SetErrorString ("invalid boolean string value: NULL");
         else if (value_cstr[0] == '\0')
-            error.SetErrorString ("invalid boolean string value <empty>\n");
+            error.SetErrorString ("invalid boolean string value <empty>");
         else
-            error.SetErrorStringWithFormat ("invalid boolean string value: '%s'\n", value_cstr);
+            error.SetErrorStringWithFormat ("invalid boolean string value: '%s'", value_cstr);
     }
     return error;
 }
@@ -221,7 +221,7 @@ OptionValueSInt64::SetValueFromCString (const char *value_cstr)
     }
     else
     {
-        error.SetErrorStringWithFormat ("invalid int64_t string value: '%s'\n", value_cstr);
+        error.SetErrorStringWithFormat ("invalid int64_t string value: '%s'", value_cstr);
     }
     return error;
 }
@@ -260,7 +260,7 @@ OptionValueUInt64::SetValueFromCString (const char *value_cstr)
     }
     else
     {
-        error.SetErrorStringWithFormat ("invalid uint64_t string value: '%s'\n", value_cstr);
+        error.SetErrorStringWithFormat ("invalid uint64_t string value: '%s'", value_cstr);
     }
     return error;
 }
@@ -368,14 +368,11 @@ Error
 OptionValueFormat::SetValueFromCString (const char *value_cstr)
 {
     Format new_format;
-    uint32_t new_byte_size = UINT32_MAX;
-    Error error (Args::StringToFormat(value_cstr, new_format, m_byte_size_prefix_ok ? &new_byte_size : NULL));
+    Error error (Args::StringToFormat (value_cstr, new_format, NULL));
     if (error.Success())
     {
         m_value_was_set = true;
         m_current_value = new_format;
-        if (new_byte_size != UINT32_MAX)
-            m_current_byte_size = new_byte_size;
     }
     return error;
 }
@@ -399,7 +396,7 @@ Error
 OptionValueArray::SetValueFromCString (const char *value_cstr)
 {
     Error error;
-    error.SetErrorStringWithFormat ("array option values don't yet support being set by string: '%s'\n", value_cstr);
+    error.SetErrorStringWithFormat ("array option values don't yet support being set by string: '%s'", value_cstr);
     return error;
 }
 
@@ -422,7 +419,7 @@ Error
 OptionValueDictionary::SetValueFromCString (const char *value_cstr)
 {
     Error error;
-    error.SetErrorStringWithFormat ("dictionary option values don't yet support being set by string: '%s'\n", value_cstr);
+    error.SetErrorStringWithFormat ("dictionary option values don't yet support being set by string: '%s'", value_cstr);
     return error;
 }
 

@@ -11,7 +11,9 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/RegularExpression.h"
+#include "lldb/Core/StreamString.h"
 #include "lldb/Core/Timer.h"
+#include "lldb/Host/Host.h"
 #include "lldb/lldb-private-log.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolContext.h"
@@ -28,15 +30,31 @@ typedef std::vector<Module *> ModuleCollection;
 static ModuleCollection &
 GetModuleCollection()
 {
-    static ModuleCollection g_module_collection;
-    return g_module_collection;
+    // This module collection needs to live past any module, so we could either make it a
+    // shared pointer in each module or just leak is.  Since it is only an empty vector by
+    // the time all the modules have gone away, we just leak it for now.  If we decide this 
+    // is a big problem we can introduce a Finalize method that will tear everything down in
+    // a predictable order.
+    
+    static ModuleCollection *g_module_collection = NULL;
+    if (g_module_collection == NULL)
+        g_module_collection = new ModuleCollection();
+        
+    return *g_module_collection;
 }
 
-Mutex &
+Mutex *
 Module::GetAllocationModuleCollectionMutex()
 {
-    static Mutex g_module_collection_mutex(Mutex::eMutexTypeRecursive);
-    return g_module_collection_mutex;    
+    // NOTE: The mutex below must be leaked since the global module list in
+    // the ModuleList class will get torn at some point, and we can't know
+    // if it will tear itself down before the "g_module_collection_mutex" below
+    // will. So we leak a Mutex object below to safeguard against that
+
+    static Mutex *g_module_collection_mutex = NULL;
+    if (g_module_collection_mutex == NULL)
+        g_module_collection_mutex = new Mutex (Mutex::eMutexTypeRecursive); // NOTE: known leak
+    return g_module_collection_mutex;
 }
 
 size_t
@@ -55,8 +73,42 @@ Module::GetAllocatedModuleAtIndex (size_t idx)
         return modules[idx];
     return NULL;
 }
+#if 0
 
+// These functions help us to determine if modules are still loaded, yet don't require that
+// you have a command interpreter and can easily be called from an external debugger.
+namespace lldb {
 
+    void
+    ClearModuleInfo (void)
+    {
+        ModuleList::RemoveOrphanSharedModules();
+    }
+    
+    void
+    DumpModuleInfo (void)
+    {
+        Mutex::Locker locker (Module::GetAllocationModuleCollectionMutex());
+        ModuleCollection &modules = GetModuleCollection();
+        const size_t count = modules.size();
+        printf ("%s: %zu modules:\n", __PRETTY_FUNCTION__, count);
+        for (size_t i=0; i<count; ++i)
+        {
+            
+            StreamString strm;
+            Module *module = modules[i];
+            const bool in_shared_module_list = ModuleList::ModuleIsInCache (module);
+            module->GetDescription(&strm, eDescriptionLevelFull);
+            printf ("%p: shared = %i, ref_count = %3u, module = %s\n", 
+                    module, 
+                    in_shared_module_list,
+                    (uint32_t)module->use_count(), 
+                    strm.GetString().c_str());
+        }
+    }
+}
+
+#endif
     
 
 Module::Module(const FileSpec& file_spec, const ArchSpec& arch, const ConstString *object_name, off_t object_offset) :
@@ -68,14 +120,15 @@ Module::Module(const FileSpec& file_spec, const ArchSpec& arch, const ConstStrin
     m_platform_file(),
     m_object_name (),
     m_object_offset (object_offset),
-    m_objfile_ap (),
+    m_objfile_sp (),
     m_symfile_ap (),
     m_ast (),
     m_did_load_objfile (false),
     m_did_load_symbol_vendor (false),
     m_did_parse_uuid (false),
     m_did_init_ast (false),
-    m_is_dynamic_loader_module (false)
+    m_is_dynamic_loader_module (false),
+    m_was_modified (false)
 {
     // Scope for locker below...
     {
@@ -124,15 +177,9 @@ Module::~Module()
     // here because symbol files can require the module object file. So we tear
     // down the symbol file first, then the object file.
     m_symfile_ap.reset();
-    m_objfile_ap.reset();
+    m_objfile_sp.reset();
 }
 
-
-ModuleSP
-Module::GetSP () const
-{
-    return ModuleList::GetModuleSP (this);
-}
 
 const lldb_private::UUID&
 Module::GetUUID()
@@ -176,8 +223,8 @@ Module::ParseAllDebugSymbols()
     if (num_comp_units == 0)
         return;
 
-    TargetSP null_target;
-    SymbolContext sc(null_target, GetSP());
+    SymbolContext sc;
+    sc.module_sp = this;
     uint32_t cu_idx;
     SymbolVendor *symbols = GetSymbolVendor ();
 
@@ -211,7 +258,7 @@ Module::ParseAllDebugSymbols()
 void
 Module::CalculateSymbolContext(SymbolContext* sc)
 {
-    sc->module_sp = GetSP();
+    sc->module_sp = this;
 }
 
 Module *
@@ -223,7 +270,7 @@ Module::CalculateSymbolContextModule ()
 void
 Module::DumpSymbolContext(Stream *s)
 {
-    s->Printf(", Module{0x%8.8x}", this);
+    s->Printf(", Module{%p}", this);
 }
 
 uint32_t
@@ -281,7 +328,7 @@ Module::ResolveSymbolContextForAddress (const Address& so_addr, uint32_t resolve
     {
         // If the section offset based address resolved itself, then this
         // is the right module.
-        sc.module_sp = GetSP();
+        sc.module_sp = this;
         resolved_flags |= eSymbolContextModule;
 
         // Resolve the compile unit, function, block, line table or line
@@ -356,11 +403,11 @@ Module::ResolveSymbolContextsForFileSpec (const FileSpec &file_spec, uint32_t li
 
 
 uint32_t
-Module::FindGlobalVariables(const ConstString &name, bool append, uint32_t max_matches, VariableList& variables)
+Module::FindGlobalVariables(const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, VariableList& variables)
 {
     SymbolVendor *symbols = GetSymbolVendor ();
     if (symbols)
-        return symbols->FindGlobalVariables(name, append, max_matches, variables);
+        return symbols->FindGlobalVariables(name, namespace_decl, append, max_matches, variables);
     return 0;
 }
 uint32_t
@@ -383,7 +430,7 @@ Module::FindCompileUnits (const FileSpec &path,
     const uint32_t start_size = sc_list.GetSize();
     const uint32_t num_compile_units = GetNumCompileUnits();
     SymbolContext sc;
-    sc.module_sp = GetSP();
+    sc.module_sp = this;
     const bool compare_directory = path.GetDirectory();
     for (uint32_t i=0; i<num_compile_units; ++i)
     {
@@ -395,7 +442,8 @@ Module::FindCompileUnits (const FileSpec &path,
 }
 
 uint32_t
-Module::FindFunctions (const ConstString &name, 
+Module::FindFunctions (const ConstString &name,
+                       const ClangNamespaceDecl *namespace_decl,
                        uint32_t name_type_mask, 
                        bool include_symbols, 
                        bool append, 
@@ -409,7 +457,7 @@ Module::FindFunctions (const ConstString &name,
     // Find all the functions (not symbols, but debug information functions...
     SymbolVendor *symbols = GetSymbolVendor ();
     if (symbols)
-        symbols->FindFunctions(name, name_type_mask, append, sc_list);
+        symbols->FindFunctions(name, namespace_decl, name_type_mask, append, sc_list);
 
     // Now check our symbol table for symbols that are code symbols if requested
     if (include_symbols)
@@ -482,14 +530,14 @@ Module::FindFunctions (const RegularExpression& regex,
 }
 
 uint32_t
-Module::FindTypes_Impl (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
+Module::FindTypes_Impl (const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, TypeList& types)
 {
     Timer scoped_timer(__PRETTY_FUNCTION__, __PRETTY_FUNCTION__);
     if (sc.module_sp.get() == NULL || sc.module_sp.get() == this)
     {
         SymbolVendor *symbols = GetSymbolVendor ();
         if (symbols)
-            return symbols->FindTypes(sc, name, append, max_matches, types);
+            return symbols->FindTypes(sc, name, namespace_decl, append, max_matches, types);
     }
     return 0;
 }
@@ -501,6 +549,9 @@ Module::FindTypes_Impl (const SymbolContext& sc, const ConstString &name, bool a
 static const char*
 StripTypeName(const char* name_cstr)
 {
+    // Protect against null c string.
+    if (!name_cstr)
+        return name_cstr;
     const char* skip_namespace = strstr(name_cstr, "::");
     const char* template_arg_char = strchr(name_cstr, '<');
     while (skip_namespace != NULL)
@@ -515,14 +566,19 @@ StripTypeName(const char* name_cstr)
 }
 
 uint32_t
-Module::FindTypes (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
+Module::FindTypes (const SymbolContext& sc,  const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, TypeList& types)
 {
-    uint32_t retval = FindTypes_Impl(sc, name, append, max_matches, types);
+    uint32_t retval = FindTypes_Impl(sc, name, namespace_decl, append, max_matches, types);
     
     if (retval == 0)
     {
-        const char *stripped = StripTypeName(name.GetCString());
-        return FindTypes_Impl(sc, ConstString(stripped), append, max_matches, types);
+        const char *orig_name = name.GetCString();
+        const char *stripped = StripTypeName(orig_name);
+        // Only do this lookup if StripTypeName has stripped the name:
+        if (stripped != orig_name)
+           return FindTypes_Impl(sc, ConstString(stripped), namespace_decl, append, max_matches, types);
+        else
+            return 0;
     }
     else
         return retval;
@@ -574,21 +630,151 @@ Module::GetArchitecture () const
 }
 
 void
-Module::GetDescription (Stream *s)
+Module::GetDescription (Stream *s, lldb::DescriptionLevel level)
 {
     Mutex::Locker locker (m_mutex);
 
-    if (m_arch.IsValid())
-        s->Printf("(%s) ", m_arch.GetArchitectureName());
+    if (level >= eDescriptionLevelFull)
+    {
+        if (m_arch.IsValid())
+            s->Printf("(%s) ", m_arch.GetArchitectureName());
+    }
 
-    char path[PATH_MAX];
-    if (m_file.GetPath(path, sizeof(path)))
-        s->PutCString(path);
+    if (level == eDescriptionLevelBrief)
+    {
+        const char *filename = m_file.GetFilename().GetCString();
+        if (filename)
+            s->PutCString (filename);
+    }
+    else
+    {
+        char path[PATH_MAX];
+        if (m_file.GetPath(path, sizeof(path)))
+            s->PutCString(path);
+    }
 
     const char *object_name = m_object_name.GetCString();
     if (object_name)
         s->Printf("(%s)", object_name);
 }
+
+void
+Module::ReportError (const char *format, ...)
+{
+    if (format && format[0])
+    {
+        StreamString strm;
+        strm.PutCString("error: ");
+        GetDescription(&strm, lldb::eDescriptionLevelBrief);
+        strm.PutChar (' ');
+        va_list args;
+        va_start (args, format);
+        strm.PrintfVarArg(format, args);
+        va_end (args);
+        
+        const int format_len = strlen(format);
+        if (format_len > 0)
+        {
+            const char last_char = format[format_len-1];
+            if (last_char != '\n' || last_char != '\r')
+                strm.EOL();
+        }
+        Host::SystemLog (Host::eSystemLogError, "%s", strm.GetString().c_str());
+
+    }
+}
+
+void
+Module::ReportErrorIfModifyDetected (const char *format, ...)
+{
+    if (!GetModified(true) && GetModified(false))
+    {
+        if (format)
+        {
+            StreamString strm;
+            strm.PutCString("error: the object file ");
+            GetDescription(&strm, lldb::eDescriptionLevelFull);
+            strm.PutCString (" has been modified\n");
+            
+            va_list args;
+            va_start (args, format);
+            strm.PrintfVarArg(format, args);
+            va_end (args);
+            
+            const int format_len = strlen(format);
+            if (format_len > 0)
+            {
+                const char last_char = format[format_len-1];
+                if (last_char != '\n' || last_char != '\r')
+                    strm.EOL();
+            }
+            strm.PutCString("The debug session should be aborted as the original debug information has been overwritten.\n");
+            Host::SystemLog (Host::eSystemLogError, "%s", strm.GetString().c_str());
+        }
+    }
+}
+
+void
+Module::ReportWarning (const char *format, ...)
+{
+    if (format && format[0])
+    {
+        StreamString strm;
+        strm.PutCString("warning: ");
+        GetDescription(&strm, lldb::eDescriptionLevelFull);
+        strm.PutChar (' ');
+        
+        va_list args;
+        va_start (args, format);
+        strm.PrintfVarArg(format, args);
+        va_end (args);
+        
+        const int format_len = strlen(format);
+        if (format_len > 0)
+        {
+            const char last_char = format[format_len-1];
+            if (last_char != '\n' || last_char != '\r')
+                strm.EOL();
+        }
+        Host::SystemLog (Host::eSystemLogWarning, "%s", strm.GetString().c_str());        
+    }
+}
+
+void
+Module::LogMessage (Log *log, const char *format, ...)
+{
+    if (log)
+    {
+        StreamString log_message;
+        GetDescription(&log_message, lldb::eDescriptionLevelFull);
+        log_message.PutCString (": ");
+        va_list args;
+        va_start (args, format);
+        log_message.PrintfVarArg (format, args);
+        va_end (args);
+        log->PutCString(log_message.GetString().c_str());
+    }
+}
+
+bool
+Module::GetModified (bool use_cached_only)
+{
+    if (m_was_modified == false && use_cached_only == false)
+    {
+        TimeValue curr_mod_time (m_file.GetModificationTime());
+        m_was_modified = curr_mod_time != m_mod_time;
+    }
+    return m_was_modified;
+}
+
+bool
+Module::SetModified (bool b)
+{
+    const bool prev_value = m_was_modified;
+    m_was_modified = b;
+    return prev_value;
+}
+
 
 void
 Module::Dump(Stream *s)
@@ -642,9 +828,17 @@ Module::GetObjectFile()
         m_did_load_objfile = true;
         Timer scoped_timer(__PRETTY_FUNCTION__,
                            "Module::GetObjectFile () module = %s", GetFileSpec().GetFilename().AsCString(""));
-        m_objfile_ap.reset(ObjectFile::FindPlugin(this, &m_file, m_object_offset, m_file.GetByteSize()));
+        DataBufferSP file_data_sp;
+        m_objfile_sp = ObjectFile::FindPlugin(this, &m_file, m_object_offset, m_file.GetByteSize(), file_data_sp);
+        if (m_objfile_sp)
+        {
+			// Once we get the object file, update our module with the object file's 
+			// architecture since it might differ in vendor/os if some parts were
+			// unknown.
+            m_objfile_sp->GetArchitecture (m_arch);
+        }
     }
-    return m_objfile_ap.get();
+    return m_objfile_sp.get();
 }
 
 

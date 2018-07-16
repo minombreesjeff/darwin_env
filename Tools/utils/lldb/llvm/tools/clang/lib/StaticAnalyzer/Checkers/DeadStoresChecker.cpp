@@ -72,6 +72,7 @@ class DeadStoreObs : public LiveVariables::Observer {
   const CFG &cfg;
   ASTContext &Ctx;
   BugReporter& BR;
+  AnalysisDeclContext* AC;
   ParentMap& Parents;
   llvm::SmallPtrSet<const VarDecl*, 20> Escaped;
   llvm::OwningPtr<ReachableCode> reachableCode;
@@ -81,15 +82,15 @@ class DeadStoreObs : public LiveVariables::Observer {
 
 public:
   DeadStoreObs(const CFG &cfg, ASTContext &ctx,
-               BugReporter& br, ParentMap& parents,
+               BugReporter& br, AnalysisDeclContext* ac, ParentMap& parents,
                llvm::SmallPtrSet<const VarDecl*, 20> &escaped)
-    : cfg(cfg), Ctx(ctx), BR(br), Parents(parents),
+    : cfg(cfg), Ctx(ctx), BR(br), AC(ac), Parents(parents),
       Escaped(escaped), currentBlock(0) {}
 
   virtual ~DeadStoreObs() {}
 
-  void Report(const VarDecl* V, DeadStoreKind dsk,
-              SourceLocation L, SourceRange R) {
+  void Report(const VarDecl *V, DeadStoreKind dsk,
+              PathDiagnosticLocation L, SourceRange R) {
     if (Escaped.count(V))
       return;
     
@@ -103,26 +104,25 @@ public:
     if (!reachableCode->isReachable(currentBlock))
       return;
 
-    const std::string &name = V->getNameAsString();
-
-    const char* BugType = 0;
-    std::string msg;
+    llvm::SmallString<64> buf;
+    llvm::raw_svector_ostream os(buf);
+    const char *BugType = 0;
 
     switch (dsk) {
       default:
-        assert(false && "Impossible dead store type.");
+        llvm_unreachable("Impossible dead store type.");
 
       case DeadInit:
         BugType = "Dead initialization";
-        msg = "Value stored to '" + name +
-          "' during its initialization is never read";
+        os << "Value stored to '" << *V
+           << "' during its initialization is never read";
         break;
 
       case DeadIncrement:
         BugType = "Dead increment";
       case Standard:
         if (!BugType) BugType = "Dead assignment";
-        msg = "Value stored to '" + name + "' is never read";
+        os << "Value stored to '" << *V << "' is never read";
         break;
 
       case Enclosing:
@@ -132,10 +132,10 @@ public:
         return;
     }
 
-    BR.EmitBasicReport(BugType, "Dead store", msg, L, R);
+    BR.EmitBasicReport(BugType, "Dead store", os.str(), L, R);
   }
 
-  void CheckVarDecl(const VarDecl* VD, const Expr* Ex, const Expr* Val,
+  void CheckVarDecl(const VarDecl *VD, const Expr *Ex, const Expr *Val,
                     DeadStoreKind dsk,
                     const LiveVariables::LivenessValues &Live) {
 
@@ -147,22 +147,25 @@ public:
       return;
 
     if (!Live.isLive(VD) && 
-        !(VD->getAttr<UnusedAttr>() || VD->getAttr<BlocksAttr>()))
-      Report(VD, dsk, Ex->getSourceRange().getBegin(),
-             Val->getSourceRange());
+        !(VD->getAttr<UnusedAttr>() || VD->getAttr<BlocksAttr>())) {
+
+      PathDiagnosticLocation ExLoc =
+        PathDiagnosticLocation::createBegin(Ex, BR.getSourceManager(), AC);
+      Report(VD, dsk, ExLoc, Val->getSourceRange());
+    }
   }
 
-  void CheckDeclRef(const DeclRefExpr* DR, const Expr* Val, DeadStoreKind dsk,
+  void CheckDeclRef(const DeclRefExpr *DR, const Expr *Val, DeadStoreKind dsk,
                     const LiveVariables::LivenessValues& Live) {
-    if (const VarDecl* VD = dyn_cast<VarDecl>(DR->getDecl()))
+    if (const VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl()))
       CheckVarDecl(VD, DR, Val, dsk, Live);
   }
 
-  bool isIncrement(VarDecl* VD, const BinaryOperator* B) {
+  bool isIncrement(VarDecl *VD, const BinaryOperator* B) {
     if (B->isCompoundAssignmentOp())
       return true;
 
-    const Expr* RHS = B->getRHS()->IgnoreParenCasts();
+    const Expr *RHS = B->getRHS()->IgnoreParenCasts();
     const BinaryOperator* BRHS = dyn_cast<BinaryOperator>(RHS);
 
     if (!BRHS)
@@ -181,7 +184,7 @@ public:
     return false;
   }
 
-  virtual void observeStmt(const Stmt* S, const CFGBlock *block,
+  virtual void observeStmt(const Stmt *S, const CFGBlock *block,
                            const LiveVariables::LivenessValues &Live) {
 
     currentBlock = block;
@@ -195,7 +198,7 @@ public:
     if (const BinaryOperator* B = dyn_cast<BinaryOperator>(S)) {
       if (!B->isAssignmentOp()) return; // Skip non-assignments.
 
-      if (DeclRefExpr* DR = dyn_cast<DeclRefExpr>(B->getLHS()))
+      if (DeclRefExpr *DR = dyn_cast<DeclRefExpr>(B->getLHS()))
         if (VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl())) {
           // Special case: check for assigning null to a pointer.
           //  This is a common form of defensive programming.
@@ -206,10 +209,10 @@ public:
               return;
           }
 
-          Expr* RHS = B->getRHS()->IgnoreParenCasts();
+          Expr *RHS = B->getRHS()->IgnoreParenCasts();
           // Special case: self-assignments.  These are often used to shut up
           //  "unused variable" compiler warnings.
-          if (DeclRefExpr* RhsDR = dyn_cast<DeclRefExpr>(RHS))
+          if (DeclRefExpr *RhsDR = dyn_cast<DeclRefExpr>(RHS))
             if (VD == dyn_cast<VarDecl>(RhsDR->getDecl()))
               return;
 
@@ -231,16 +234,16 @@ public:
 
       const Expr *Ex = U->getSubExpr()->IgnoreParenCasts();
 
-      if (const DeclRefExpr* DR = dyn_cast<DeclRefExpr>(Ex))
+      if (const DeclRefExpr *DR = dyn_cast<DeclRefExpr>(Ex))
         CheckDeclRef(DR, U, DeadIncrement, Live);
     }
-    else if (const DeclStmt* DS = dyn_cast<DeclStmt>(S))
+    else if (const DeclStmt *DS = dyn_cast<DeclStmt>(S))
       // Iterate through the decls.  Warn if any initializers are complex
       // expressions that are not live (never used).
       for (DeclStmt::const_decl_iterator DI=DS->decl_begin(), DE=DS->decl_end();
            DI != DE; ++DI) {
 
-        VarDecl* V = dyn_cast<VarDecl>(*DI);
+        VarDecl *V = dyn_cast<VarDecl>(*DI);
 
         if (!V)
           continue;
@@ -251,7 +254,7 @@ public:
           if (V->getType()->getAs<ReferenceType>())
             return;
             
-          if (Expr* E = V->getInit()) {
+          if (Expr *E = V->getInit()) {
             while (ExprWithCleanups *exprClean = dyn_cast<ExprWithCleanups>(E))
               E = exprClean->getSubExpr();
             
@@ -271,7 +274,7 @@ public:
               // If x is EVER assigned a new value later, don't issue
               // a warning.  This is because such initialization can be
               // due to defensive programming.
-              if (E->isConstantInitializer(Ctx, false))
+              if (E->isEvaluatable(Ctx))
                 return;
 
               if (DeclRefExpr *DRE=dyn_cast<DeclRefExpr>(E->IgnoreParenCasts()))
@@ -294,7 +297,9 @@ public:
                     return;
                 }
 
-              Report(V, DeadInit, V->getLocation(), E->getSourceRange());
+              PathDiagnosticLocation Loc =
+                PathDiagnosticLocation::create(V, BR.getSourceManager());
+              Report(V, DeadInit, Loc, E->getSourceRange());
             }
           }
         }
@@ -321,10 +326,10 @@ public:
   void VisitUnaryOperator(UnaryOperator* U) {
     // Check for '&'.  Any VarDecl whose value has its address-taken we
     // treat as escaped.
-    Expr* E = U->getSubExpr()->IgnoreParenCasts();
+    Expr *E = U->getSubExpr()->IgnoreParenCasts();
     if (U->getOpcode() == UO_AddrOf)
-      if (DeclRefExpr* DR = dyn_cast<DeclRefExpr>(E))
-        if (VarDecl* VD = dyn_cast<VarDecl>(DR->getDecl())) {
+      if (DeclRefExpr *DR = dyn_cast<DeclRefExpr>(E))
+        if (VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl())) {
           Escaped.insert(VD);
           return;
         }
@@ -343,12 +348,13 @@ class DeadStoresChecker : public Checker<check::ASTCodeBody> {
 public:
   void checkASTCodeBody(const Decl *D, AnalysisManager& mgr,
                         BugReporter &BR) const {
-    if (LiveVariables *L = mgr.getLiveVariables(D)) {
+    if (LiveVariables *L = mgr.getAnalysis<LiveVariables>(D)) {
       CFG &cfg = *mgr.getCFG(D);
+      AnalysisDeclContext *AC = mgr.getAnalysisDeclContext(D);
       ParentMap &pmap = mgr.getParentMap(D);
       FindEscaped FS(&cfg);
       FS.getCFG().VisitBlockStmts(FS);
-      DeadStoreObs A(cfg, BR.getContext(), BR, pmap, FS.Escaped);
+      DeadStoreObs A(cfg, BR.getContext(), BR, AC, pmap, FS.Escaped);
       L->runOnAllBlocks(A);
     }
   }

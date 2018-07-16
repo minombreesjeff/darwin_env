@@ -16,94 +16,158 @@
 // Project includes
 #include "lldb/Target/Platform.h"
 
-namespace lldb_private {
+class PlatformFreeBSD : public lldb_private::Platform
+{
+public:
+    // Mostly taken from PlatformDarwin and PlatformMacOSX
 
-    class PlatformFreeBSD : public Platform
+    //------------------------------------------------------------
+    // Class functions
+    //------------------------------------------------------------
+    static lldb_private::Platform*
+    CreateInstance ();
+
+    static void
+    Initialize ();
+
+    static void
+    Terminate ();
+
+    static const char *
+    GetPluginNameStatic();
+
+    static const char *
+    GetShortPluginNameStatic(bool is_host);
+
+    static const char *
+    GetDescriptionStatic(bool is_host);
+
+    //------------------------------------------------------------
+    // Class Methods
+    //------------------------------------------------------------
+    PlatformFreeBSD (bool is_host);
+
+    virtual
+    ~PlatformFreeBSD();
+
+    //------------------------------------------------------------
+    // lldb_private::PluginInterface functions
+    //------------------------------------------------------------
+    virtual const char *
+    GetPluginName()
     {
-    public:
+        return GetPluginNameStatic();
+    }
 
-        static void
-        Initialize ();
+    virtual const char *
+    GetShortPluginName()
+    {
+        return GetShortPluginNameStatic (IsHost());
+    }
 
-        static void
-        Terminate ();
-        
-        PlatformFreeBSD ();
+    virtual uint32_t
+    GetPluginVersion()
+    {
+        return 1;
+    }
 
-        virtual
-        ~PlatformFreeBSD();
+    virtual const char *
+    GetDescription ()
+    {
+        return GetDescriptionStatic(IsHost());
+    }
 
-        //------------------------------------------------------------
-        // lldb_private::PluginInterface functions
-        //------------------------------------------------------------
-        static Platform *
-        CreateInstance ();
+    //------------------------------------------------------------
+    // lldb_private::Platform functions
+    //------------------------------------------------------------
+    virtual lldb_private::Error
+    ResolveExecutable (const lldb_private::FileSpec &exe_file,
+                       const lldb_private::ArchSpec &arch,
+                       lldb::ModuleSP &module_sp);
 
-        static const char *
-        GetPluginNameStatic();
+    virtual size_t
+    GetSoftwareBreakpointTrapOpcode (lldb_private::Target &target,
+                                     lldb_private::BreakpointSite *bp_site);
 
-        static const char *
-        GetPluginDescriptionStatic();
+    virtual bool
+    GetRemoteOSVersion ();
 
-        virtual const char *
-        GetPluginName()
-        {
-            return GetPluginNameStatic();
-        }
-        
-        virtual const char *
-        GetShortPluginName()
-        {
-            return "PlatformFreeBSD";
-        }
-        
-        virtual uint32_t
-        GetPluginVersion()
-        {
-            return 1;
-        }
+    virtual bool
+    GetRemoteOSBuildString (std::string &s);
 
-        //------------------------------------------------------------
-        // lldb_private::Platform functions
-        //------------------------------------------------------------
-        virtual Error
-        ResolveExecutable (const FileSpec &exe_file,
-                           const ArchSpec &arch,
-                           lldb::ModuleSP &module_sp);
+    virtual bool
+    GetRemoteOSKernelDescription (std::string &s);
 
-        virtual const char *
-        GetDescription ()
-        {
-            return GetPluginDescriptionStatic();
-        }
+    // Remote Platform subclasses need to override this function
+    virtual lldb_private::ArchSpec
+    GetRemoteSystemArchitecture ();
 
-        virtual void
-        GetStatus (Stream &strm);
+    virtual bool
+    IsConnected () const;
 
-        virtual Error
-        GetFile (const FileSpec &platform_file,
-                 const UUID* uuid, FileSpec &local_file);
+    virtual lldb_private::Error
+    ConnectRemote (lldb_private::Args& args);
 
-        virtual bool
-        GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &proc_info);
+    virtual lldb_private::Error
+    DisconnectRemote ();
 
-        virtual bool
-        GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch);
+    virtual const char *
+    GetHostname ();
 
-        virtual size_t
-        GetSoftwareBreakpointTrapOpcode (Target &target, 
-                                         BreakpointSite *bp_site);
+    virtual const char *
+    GetUserName (uint32_t uid);
 
-        virtual lldb::ProcessSP
-        Attach(lldb::pid_t pid, Debugger &debugger, Target *target,
-               Listener &listener, Error &error);
+    virtual const char *
+    GetGroupName (uint32_t gid);
 
-    protected:
-        
-        
-    private:
-        DISALLOW_COPY_AND_ASSIGN (PlatformFreeBSD);
-    };
-} // namespace lldb_private
+    virtual bool
+    GetProcessInfo (lldb::pid_t pid,
+                    lldb_private::ProcessInstanceInfo &proc_info);
+
+    virtual uint32_t
+    FindProcesses (const lldb_private::ProcessInstanceInfoMatch &match_info,
+                   lldb_private::ProcessInstanceInfoList &process_infos);
+
+    virtual lldb_private::Error
+    LaunchProcess (lldb_private::ProcessLaunchInfo &launch_info);
+
+    virtual lldb::ProcessSP
+    Attach(lldb_private::ProcessAttachInfo &attach_info,
+           lldb_private::Debugger &debugger,
+           lldb_private::Target *target,
+           lldb_private::Listener &listener,
+           lldb_private::Error &error);
+
+    // FreeBSD processes can not be launched by spawning and attaching.
+    virtual bool
+    CanDebugProcess () { return false; }
+
+    // Only on PlatformMacOSX:
+    virtual lldb_private::Error
+    GetFile (const lldb_private::FileSpec &platform_file,
+             const lldb_private::UUID* uuid, lldb_private::FileSpec &local_file);
+
+    lldb_private::Error
+    GetSharedModule (const lldb_private::FileSpec &platform_file,
+                     const lldb_private::ArchSpec &arch,
+                     const lldb_private::UUID *uuid_ptr,
+                     const lldb_private::ConstString *object_name_ptr,
+                     off_t object_offset,
+                     lldb::ModuleSP &module_sp,
+                     lldb::ModuleSP *old_module_sp_ptr,
+                     bool *did_create_ptr);
+
+    virtual bool
+    GetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
+
+    virtual void
+    GetStatus (lldb_private::Stream &strm);
+
+protected:
+    lldb::PlatformSP m_remote_platform_sp; // Allow multiple ways to connect to a remote freebsd OS
+
+private:
+    DISALLOW_COPY_AND_ASSIGN (PlatformFreeBSD);
+};
 
 #endif  // liblldb_PlatformFreeBSD_h_

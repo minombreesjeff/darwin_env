@@ -162,6 +162,7 @@ const char *Instruction::getOpcodeName(unsigned OpCode) {
   case ShuffleVector:  return "shufflevector";
   case ExtractValue:   return "extractvalue";
   case InsertValue:    return "insertvalue";
+  case LandingPad:     return "landingpad";
 
   default: return "<Invalid operator> ";
   }
@@ -195,10 +196,14 @@ bool Instruction::isIdenticalToWhenDefined(const Instruction *I) const {
   // Check special state that is a part of some instructions.
   if (const LoadInst *LI = dyn_cast<LoadInst>(this))
     return LI->isVolatile() == cast<LoadInst>(I)->isVolatile() &&
-           LI->getAlignment() == cast<LoadInst>(I)->getAlignment();
+           LI->getAlignment() == cast<LoadInst>(I)->getAlignment() &&
+           LI->getOrdering() == cast<LoadInst>(I)->getOrdering() &&
+           LI->getSynchScope() == cast<LoadInst>(I)->getSynchScope();
   if (const StoreInst *SI = dyn_cast<StoreInst>(this))
     return SI->isVolatile() == cast<StoreInst>(I)->isVolatile() &&
-           SI->getAlignment() == cast<StoreInst>(I)->getAlignment();
+           SI->getAlignment() == cast<StoreInst>(I)->getAlignment() &&
+           SI->getOrdering() == cast<StoreInst>(I)->getOrdering() &&
+           SI->getSynchScope() == cast<StoreInst>(I)->getSynchScope();
   if (const CmpInst *CI = dyn_cast<CmpInst>(this))
     return CI->getPredicate() == cast<CmpInst>(I)->getPredicate();
   if (const CallInst *CI = dyn_cast<CallInst>(this))
@@ -246,10 +251,14 @@ bool Instruction::isSameOperationAs(const Instruction *I) const {
   // Check special state that is a part of some instructions.
   if (const LoadInst *LI = dyn_cast<LoadInst>(this))
     return LI->isVolatile() == cast<LoadInst>(I)->isVolatile() &&
-           LI->getAlignment() == cast<LoadInst>(I)->getAlignment();
+           LI->getAlignment() == cast<LoadInst>(I)->getAlignment() &&
+           LI->getOrdering() == cast<LoadInst>(I)->getOrdering() &&
+           LI->getSynchScope() == cast<LoadInst>(I)->getSynchScope();
   if (const StoreInst *SI = dyn_cast<StoreInst>(this))
     return SI->isVolatile() == cast<StoreInst>(I)->isVolatile() &&
-           SI->getAlignment() == cast<StoreInst>(I)->getAlignment();
+           SI->getAlignment() == cast<StoreInst>(I)->getAlignment() &&
+           SI->getOrdering() == cast<StoreInst>(I)->getOrdering() &&
+           SI->getSynchScope() == cast<StoreInst>(I)->getSynchScope();
   if (const CmpInst *CI = dyn_cast<CmpInst>(this))
     return CI->getPredicate() == cast<CmpInst>(I)->getPredicate();
   if (const CallInst *CI = dyn_cast<CallInst>(this))
@@ -317,7 +326,7 @@ bool Instruction::mayReadFromMemory() const {
   case Instruction::Invoke:
     return !cast<InvokeInst>(this)->doesNotAccessMemory();
   case Instruction::Store:
-    return cast<StoreInst>(this)->isVolatile();
+    return !cast<StoreInst>(this)->isUnordered();
   }
 }
 
@@ -337,7 +346,7 @@ bool Instruction::mayWriteToMemory() const {
   case Instruction::Invoke:
     return !cast<InvokeInst>(this)->onlyReadsMemory();
   case Instruction::Load:
-    return cast<LoadInst>(this)->isVolatile();
+    return !cast<LoadInst>(this)->isUnordered();
   }
 }
 
@@ -346,7 +355,7 @@ bool Instruction::mayWriteToMemory() const {
 bool Instruction::mayThrow() const {
   if (const CallInst *CI = dyn_cast<CallInst>(this))
     return !CI->doesNotThrow();
-  return false;
+  return isa<ResumeInst>(this);
 }
 
 /// isAssociative - Return true if the instruction is associative:
@@ -379,55 +388,6 @@ bool Instruction::isCommutative(unsigned op) {
     return true;
   default:
     return false;
-  }
-}
-
-bool Instruction::isSafeToSpeculativelyExecute() const {
-  for (unsigned i = 0, e = getNumOperands(); i != e; ++i)
-    if (Constant *C = dyn_cast<Constant>(getOperand(i)))
-      if (C->canTrap())
-        return false;
-
-  switch (getOpcode()) {
-  default:
-    return true;
-  case UDiv:
-  case URem: {
-    // x / y is undefined if y == 0, but calcuations like x / 3 are safe.
-    ConstantInt *Op = dyn_cast<ConstantInt>(getOperand(1));
-    return Op && !Op->isNullValue();
-  }
-  case SDiv:
-  case SRem: {
-    // x / y is undefined if y == 0, and might be undefined if y == -1,
-    // but calcuations like x / 3 are safe.
-    ConstantInt *Op = dyn_cast<ConstantInt>(getOperand(1));
-    return Op && !Op->isNullValue() && !Op->isAllOnesValue();
-  }
-  case Load: {
-    const LoadInst *LI = cast<LoadInst>(this);
-    if (LI->isVolatile())
-      return false;
-    return LI->getPointerOperand()->isDereferenceablePointer();
-  }
-  case Call:
-    return false; // The called function could have undefined behavior or
-                  // side-effects.
-                  // FIXME: We should special-case some intrinsics (bswap,
-                  // overflow-checking arithmetic, etc.)
-  case VAArg:
-  case Alloca:
-  case Invoke:
-  case PHI:
-  case Store:
-  case Ret:
-  case Br:
-  case IndirectBr:
-  case Switch:
-  case Unwind:
-  case Unreachable:
-  case Fence:
-    return false; // Misc instructions which have effects
   }
 }
 

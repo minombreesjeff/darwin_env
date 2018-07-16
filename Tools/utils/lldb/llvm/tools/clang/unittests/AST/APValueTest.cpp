@@ -21,22 +21,26 @@ using namespace clang;
 namespace {
 
 class DiagnosticOutputGetter {
-  class LastDiagnosticString : public DiagnosticClient {
+  class LastDiagnosticString : public DiagnosticConsumer {
     SmallString<64> LastDiagnostic;
   public:
-    virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                  const DiagnosticInfo &Info) {
+    virtual void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
+                                  const Diagnostic &Info) {
       LastDiagnostic.clear();
       Info.FormatDiagnostic(LastDiagnostic);
     }
 
     StringRef get() const { return LastDiagnostic; }
+
+    virtual DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const {
+      return new LastDiagnosticString();
+    }
   };
 
   const IntrusiveRefCntPtr<DiagnosticIDs> DiagIDs;
   const unsigned diag_just_format;
   LastDiagnosticString LastDiagnostic;
-  Diagnostic Diag;
+  DiagnosticsEngine Diag;
 
 public:
   DiagnosticOutputGetter()

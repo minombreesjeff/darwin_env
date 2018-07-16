@@ -14,19 +14,20 @@
 
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Section.h"
-#include "lldb/Symbol/DWARFCallFrameInfo.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Module.h"
-#include "lldb/Symbol/ObjectFile.h"
-#include "lldb/Target/RegisterContext.h"
 #include "lldb/Core/Section.h"
-#include "lldb/Target/Thread.h"
+#include "lldb/Host/Host.h"
+#include "lldb/Symbol/DWARFCallFrameInfo.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/UnwindPlan.h"
+#include "lldb/Target/RegisterContext.h"
+#include "lldb/Target/Thread.h"
 
 using namespace lldb;
 using namespace lldb_private;
 
-DWARFCallFrameInfo::DWARFCallFrameInfo(ObjectFile& objfile, SectionSP& section, uint32_t reg_kind, bool is_eh_frame) :
+DWARFCallFrameInfo::DWARFCallFrameInfo(ObjectFile& objfile, SectionSP& section, lldb::RegisterKind reg_kind, bool is_eh_frame) :
     m_objfile (objfile),
     m_section (section),
     m_reg_kind (reg_kind),  // The flavor of registers that the CFI data uses (enum RegisterKind)
@@ -118,10 +119,7 @@ DWARFCallFrameInfo::ParseCIE (const dw_offset_t cie_offset)
     CIESP cie_sp(new CIE(cie_offset));
     dw_offset_t offset = cie_offset;
     if (m_cfi_data_initialized == false)
-    {
-        m_section->ReadSectionDataFromObjectFile (&m_objfile, m_cfi_data);
-        m_cfi_data_initialized = true;
-    }
+        GetCFIData();
     const uint32_t length = m_cfi_data.GetU32(&offset);
     const dw_offset_t cie_id = m_cfi_data.GetU32(&offset);
     const dw_offset_t end_offset = cie_offset + length + 4;
@@ -149,7 +147,7 @@ DWARFCallFrameInfo::ParseCIE (const dw_offset_t cie_offset)
 
         if (i == CFI_AUG_MAX_SIZE && cie_sp->augmentation[CFI_AUG_MAX_SIZE-1] != '\0')
         {
-            fprintf(stderr, "CIE parse error: CIE augmentation string was too large for the fixed sized buffer of %d bytes.\n", CFI_AUG_MAX_SIZE);
+            Host::SystemLog (Host::eSystemLogError, "CIE parse error: CIE augmentation string was too large for the fixed sized buffer of %d bytes.\n", CFI_AUG_MAX_SIZE);
             return cie_sp;
         }
         cie_sp->code_align = (uint32_t)m_cfi_data.GetULEB128(&offset);
@@ -274,6 +272,18 @@ DWARFCallFrameInfo::ParseCIE (const dw_offset_t cie_offset)
     return cie_sp;
 }
 
+void
+DWARFCallFrameInfo::GetCFIData()
+{
+    if (m_cfi_data_initialized == false)
+    {
+        LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+        if (log)
+            m_objfile.GetModule()->LogMessage(log.get(), "Reading EH frame info");
+        m_section->ReadSectionDataFromObjectFile (&m_objfile, m_cfi_data);
+        m_cfi_data_initialized = true;
+    }
+}
 // Scan through the eh_frame or debug_frame section looking for FDEs and noting the start/end addresses
 // of the functions and a pointer back to the function's FDE for later expansion.
 // Internalize CIEs as we come across them.
@@ -289,15 +299,7 @@ DWARFCallFrameInfo::GetFDEIndex ()
 
     dw_offset_t offset = 0;
     if (m_cfi_data_initialized == false)
-    {
-        LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
-        if (log)
-        { 
-            log->Printf ("Reading eh_frame information for %s", m_objfile.GetFileSpec().GetFilename().GetCString());
-        }
-        m_section->ReadSectionDataFromObjectFile (&m_objfile, m_cfi_data);
-        m_cfi_data_initialized = true;
-    }
+        GetCFIData();
     while (m_cfi_data.ValidOffsetForDataOfSize (offset, 8))
     {
         const dw_offset_t current_entry = offset;
@@ -329,11 +331,11 @@ DWARFCallFrameInfo::GetFDEIndex ()
         }
         else
         {
-            fprintf (stderr, 
-                     "error: unable to find CIE at 0x%8.8x for cie_id = 0x%8.8x for entry at 0x%8.8x.\n", 
-                     cie_offset,
-                     cie_id,
-                     current_entry);
+            Host::SystemLog (Host::eSystemLogError, 
+                             "error: unable to find CIE at 0x%8.8x for cie_id = 0x%8.8x for entry at 0x%8.8x.\n", 
+                             cie_offset,
+                             cie_id,
+                             current_entry);
         }
         offset = next_entry;
     }
@@ -350,10 +352,7 @@ DWARFCallFrameInfo::FDEToUnwindPlan (dw_offset_t offset, Address startaddr, Unwi
         return false;
 
     if (m_cfi_data_initialized == false)
-    {
-        m_section->ReadSectionDataFromObjectFile (&m_objfile, m_cfi_data);
-        m_cfi_data_initialized = true;
-    }
+        GetCFIData();
 
     uint32_t length = m_cfi_data.GetU32 (&offset);
     dw_offset_t cie_offset = m_cfi_data.GetU32 (&offset);

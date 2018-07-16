@@ -57,7 +57,7 @@ class CommandObjectSourceInfo : public CommandObject
             case 'l':
                 start_line = Args::StringToUInt32 (option_arg, 0);
                 if (start_line == 0)
-                    error.SetErrorStringWithFormat("Invalid line number: '%s'.\n", option_arg);
+                    error.SetErrorStringWithFormat("invalid line number: '%s'", option_arg);
                 break;
 
              case 'f':
@@ -65,7 +65,7 @@ class CommandObjectSourceInfo : public CommandObject
                 break;
 
            default:
-                error.SetErrorStringWithFormat("Unrecognized short option '%c'.\n", short_option);
+                error.SetErrorStringWithFormat("unrecognized short option '%c'", short_option);
                 break;
             }
 
@@ -169,13 +169,13 @@ class CommandObjectSourceList : public CommandObject
             case 'l':
                 start_line = Args::StringToUInt32 (option_arg, 0);
                 if (start_line == 0)
-                    error.SetErrorStringWithFormat("Invalid line number: '%s'.\n", option_arg);
+                    error.SetErrorStringWithFormat("invalid line number: '%s'", option_arg);
                 break;
 
             case 'c':
                 num_lines = Args::StringToUInt32 (option_arg, 0);
                 if (num_lines == 0)
-                    error.SetErrorStringWithFormat("Invalid line count: '%s'.\n", option_arg);
+                    error.SetErrorStringWithFormat("invalid line count: '%s'", option_arg);
                 break;
 
             case 'f':
@@ -194,7 +194,7 @@ class CommandObjectSourceList : public CommandObject
                 show_bp_locs = true;
                 break;
            default:
-                error.SetErrorStringWithFormat("Unrecognized short option '%c'.\n", short_option);
+                error.SetErrorStringWithFormat("unrecognized short option '%c'", short_option);
                 break;
             }
 
@@ -277,21 +277,25 @@ public:
         {
             result.AppendErrorWithFormat("'%s' takes no arguments, only flags.\n", GetCommandName());
             result.SetStatus (eReturnStatusFailed);
+            return false;
         }
 
         ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        
+        Target *target = exe_ctx.GetTargetPtr();
+
+        if (target == NULL)
+            target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+            
+        if (target == NULL)
+        {
+            result.AppendError ("invalid target, create a debug target using the 'target create' command");
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+
         if (!m_options.symbol_name.empty())
         {
             // Displaying the source for a symbol:
-            Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
-            if (target == NULL)
-            {
-                result.AppendError ("invalid target, create a debug target using the 'target create' command");
-                result.SetStatus (eReturnStatusFailed);
-                return false;
-            }
-            
             SymbolContextList sc_list;
             ConstString name(m_options.symbol_name.c_str());
             bool include_symbols = false;
@@ -308,13 +312,13 @@ public:
                     {
                         matching_modules.Clear();
                         target->GetImages().FindModules (&module_spec, NULL, NULL, NULL, matching_modules);
-                        num_matches += matching_modules.FindFunctions (name, eFunctionNameTypeBase, include_symbols, append, sc_list);
+                        num_matches += matching_modules.FindFunctions (name, eFunctionNameTypeAuto, include_symbols, append, sc_list);
                     }
                 }
             }
             else
             {
-                num_matches = target->GetImages().FindFunctions (name, eFunctionNameTypeBase, include_symbols, append, sc_list);
+                num_matches = target->GetImages().FindFunctions (name, eFunctionNameTypeAuto, include_symbols, append, sc_list);
             }
             
             SymbolContext sc;
@@ -384,7 +388,7 @@ public:
                         sc_list.GetContextAtIndex (i, scratch_sc);
                         if (scratch_sc.function != NULL)
                         {
-                            s.Printf("\n%d: ", i); 
+                            s.Printf("\n%lu: ", i); 
                             scratch_sc.function->Dump (&s, true);
                         }
                     }
@@ -418,25 +422,24 @@ public:
             char path_buf[PATH_MAX];
             start_file.GetPath(path_buf, sizeof(path_buf));
             
-            if (m_options.show_bp_locs && exe_ctx.target)
+            if (m_options.show_bp_locs)
             {
                 const bool show_inlines = true;
                 m_breakpoint_locations.Reset (start_file, 0, show_inlines);
-                SearchFilter target_search_filter (exe_ctx.target->GetSP());
+                SearchFilter target_search_filter (exe_ctx.GetTargetSP());
                 target_search_filter.Search (m_breakpoint_locations);
             }
             else
                 m_breakpoint_locations.Clear();
 
             result.AppendMessageWithFormat("File: %s.\n", path_buf);
-            m_interpreter.GetDebugger().GetSourceManager().DisplaySourceLinesWithLineNumbers (target,
-                                                                                              start_file,
-                                                                                              line_no,
-                                                                                              0,
-                                                                                              m_options.num_lines,
-                                                                                              "",
-                                                                                              &result.GetOutputStream(),
-                                                                                              GetBreakpointLocations ());
+            target->GetSourceManager().DisplaySourceLinesWithLineNumbers (start_file,
+                                                                          line_no,
+                                                                          0,
+                                                                          m_options.num_lines,
+                                                                          "",
+                                                                          &result.GetOutputStream(),
+                                                                          GetBreakpointLocations ());
             
             result.SetStatus (eReturnStatusSuccessFinishResult);
             return true;
@@ -450,7 +453,7 @@ public:
             // more likely because you typed it once, then typed it again
             if (m_options.start_line == 0)
             {
-                if (m_interpreter.GetDebugger().GetSourceManager().DisplayMoreWithLineNumbers (&result.GetOutputStream(),
+                if (target->GetSourceManager().DisplayMoreWithLineNumbers (&result.GetOutputStream(),
                                                                                                GetBreakpointLocations ()))
                 {
                     result.SetStatus (eReturnStatusSuccessFinishResult);
@@ -458,21 +461,21 @@ public:
             }
             else
             {
-                if (m_options.show_bp_locs && exe_ctx.target)
+                if (m_options.show_bp_locs)
                 {
-                    SourceManager::FileSP last_file_sp (m_interpreter.GetDebugger().GetSourceManager().GetLastFile ());
+                    SourceManager::FileSP last_file_sp (target->GetSourceManager().GetLastFile ());
                     if (last_file_sp)
                     {
                         const bool show_inlines = true;
                         m_breakpoint_locations.Reset (last_file_sp->GetFileSpec(), 0, show_inlines);
-                        SearchFilter target_search_filter (exe_ctx.target->GetSP());
+                        SearchFilter target_search_filter (target->GetSP());
                         target_search_filter.Search (m_breakpoint_locations);
                     }
                 }
                 else
                     m_breakpoint_locations.Clear();
 
-                if (m_interpreter.GetDebugger().GetSourceManager().DisplaySourceLinesWithLineNumbersUsingLastFile(
+                if (target->GetSourceManager().DisplaySourceLinesWithLineNumbersUsingLastFile(
                             m_options.start_line,   // Line to display
                             0,                      // Lines before line to display
                             m_options.num_lines,    // Lines after line to display
@@ -488,14 +491,6 @@ public:
         else
         {
             const char *filename = m_options.file_name.c_str();
-            Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
-            if (target == NULL)
-            {
-                result.AppendError ("invalid target, create a debug target using the 'target create' command");
-                result.SetStatus (eReturnStatusFailed);
-                return false;
-            }
-
 
             bool check_inlines = false;
             SymbolContextList sc_list;
@@ -571,24 +566,23 @@ public:
             {
                 if (sc.comp_unit)
                 {
-                    if (m_options.show_bp_locs && exe_ctx.target)
+                    if (m_options.show_bp_locs)
                     {
                         const bool show_inlines = true;
                         m_breakpoint_locations.Reset (*sc.comp_unit, 0, show_inlines);
-                        SearchFilter target_search_filter (exe_ctx.target->GetSP());
+                        SearchFilter target_search_filter (target->GetSP());
                         target_search_filter.Search (m_breakpoint_locations);
                     }
                     else
                         m_breakpoint_locations.Clear();
 
-                    m_interpreter.GetDebugger().GetSourceManager().DisplaySourceLinesWithLineNumbers (target,
-                                                                                                      sc.comp_unit,
-                                                                                                      m_options.start_line,
-                                                                                                      0,
-                                                                                                      m_options.num_lines,
-                                                                                                      "",
-                                                                                                      &result.GetOutputStream(),
-                                                                                                      GetBreakpointLocations ());
+                    target->GetSourceManager().DisplaySourceLinesWithLineNumbers (sc.comp_unit,
+                                                                                  m_options.start_line,
+                                                                                  0,
+                                                                                  m_options.num_lines,
+                                                                                  "",
+                                                                                  &result.GetOutputStream(),
+                                                                                  GetBreakpointLocations ());
 
                     result.SetStatus (eReturnStatusSuccessFinishResult);
                 }

@@ -21,10 +21,23 @@
 #include <cassert>
 
 namespace clang {
-class Diagnostic;
+class DiagnosticsEngine;
 class SourceManager;
 class Preprocessor;
 class DiagnosticBuilder;
+
+/// ConflictMarkerKind - Kinds of conflict marker which the lexer might be
+/// recovering from.
+enum ConflictMarkerKind {
+  /// Not within a conflict marker.
+  CMK_None,
+  /// A normal or diff3 conflict marker, initiated by at least 7 <s,
+  /// separated by at least 7 =s or |s, and terminated by at least 7 >s.
+  CMK_Normal,
+  /// A Perforce-style conflict marker, initiated by 4 >s, separated by 4 =s,
+  /// and terminated by 4 <s.
+  CMK_Perforce
+};
 
 /// Lexer - This provides a simple interface that turns a text buffer into a
 /// stream of tokens.  This provides no support for file reading or buffering,
@@ -37,8 +50,7 @@ class Lexer : public PreprocessorLexer {
   const char *BufferEnd;         // End of the buffer.
   SourceLocation FileLoc;        // Location for start of file.
   LangOptions Features;          // Features enabled by this language (cache).
-  bool Is_PragmaLexer : 1;       // True if lexer for _Pragma handling.
-  bool IsInConflictMarker : 1;   // True if in a VCS conflict marker '<<<<<<<'
+  bool Is_PragmaLexer;           // True if lexer for _Pragma handling.
   
   //===--------------------------------------------------------------------===//
   // Context-specific lexing flags set by the preprocessor.
@@ -65,6 +77,9 @@ class Lexer : public PreprocessorLexer {
   // IsAtStartOfLine - True if the next lexed token should get the "start of
   // line" flag set on it.
   bool IsAtStartOfLine;
+
+  // CurrentConflictMarkerState - The kind of conflict marker we are handling.
+  ConflictMarkerKind CurrentConflictMarkerState;
 
   Lexer(const Lexer&);          // DO NOT IMPLEMENT
   void operator=(const Lexer&); // DO NOT IMPLEMENT
@@ -322,7 +337,8 @@ public:
   /// of the file begins along with a boolean value indicating whether 
   /// the preamble ends at the beginning of a new line.
   static std::pair<unsigned, bool>
-  ComputePreamble(const llvm::MemoryBuffer *Buffer, unsigned MaxLines = 0);
+  ComputePreamble(const llvm::MemoryBuffer *Buffer, const LangOptions &Features,
+                  unsigned MaxLines = 0);
                                         
   //===--------------------------------------------------------------------===//
   // Internal implementation interfaces.
@@ -485,6 +501,8 @@ private:
   void LexNumericConstant    (Token &Result, const char *CurPtr);
   void LexStringLiteral      (Token &Result, const char *CurPtr,
                               tok::TokenKind Kind);
+  void LexRawStringLiteral   (Token &Result, const char *CurPtr,
+                              tok::TokenKind Kind);
   void LexAngledStringLiteral(Token &Result, const char *CurPtr);
   void LexCharConstant       (Token &Result, const char *CurPtr,
                               tok::TokenKind Kind);
@@ -497,6 +515,9 @@ private:
   
   bool IsStartOfConflictMarker(const char *CurPtr);
   bool HandleEndOfConflictMarker(const char *CurPtr);
+
+  bool isCodeCompletionPoint(const char *CurPtr) const;
+  void cutOffLexing() { BufferPtr = BufferEnd; }
 };
 
 

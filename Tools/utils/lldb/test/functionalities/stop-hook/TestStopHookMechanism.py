@@ -29,6 +29,7 @@ class StopHookMechanismTestCase(TestBase):
         # Find the line numbers inside main.cpp.
         self.begl = line_number('main.cpp', '// Set breakpoint here to test target stop-hook.')
         self.endl = line_number('main.cpp', '// End of the line range for which stop-hook is to be run.')
+        self.correct_step_line = line_number ('main.cpp', '// We should stop here after stepping.')
         self.line = line_number('main.cpp', '// Another breakpoint which is outside of the stop-hook range.')
 
     def stop_hook_firing(self):
@@ -39,7 +40,7 @@ class StopHookMechanismTestCase(TestBase):
         add_prompt1 = "\r\n> "
 
         # So that the child gets torn down after the test.
-        self.child = pexpect.spawn('%s %s' % (self.lldbExec, exe))
+        self.child = pexpect.spawn('%s %s %s' % (self.lldbHere, self.lldbOption, exe))
         child = self.child
         # Turn on logging for what the child sends back.
         if self.TraceOn():
@@ -64,12 +65,15 @@ class StopHookMechanismTestCase(TestBase):
         child.sendline('run')
         child.expect_exact(prompt)
         child.sendline('thread step-over')
-        #self.DebugPExpect(child)
-        child.expect_exact('** End Stop Hooks **')
-        #self.DebugPExpect(child)
-        # Verify that the 'Stop Hooks' mechanism is fired off.
-        self.expect(child.before, exe=False,
-            substrs = ['(void *) $'])
+        # Expecting to find the output emitted by the firing of our stop hook.
+        child.expect_exact('(void *) $')
+        # This is orthogonal to the main stop hook test, but this example shows a bug in
+        # CLANG where the line table entry for the "return -1" actually includes some code
+        # from the other branch of the if/else, so we incorrectly stop at the "return -1" line.
+        # I fixed that in lldb and I'm sticking in a test here because I don't want to have to
+        # make up a whole nother test case for it.
+        child.sendline('frame info')
+        child.expect_exact('at main.cpp:%d'%self.correct_step_line)
 
         # Now continue the inferior, we'll stop at another breakpoint which is outside the stop-hook range.
         child.sendline('process continue')

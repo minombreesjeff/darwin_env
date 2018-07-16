@@ -38,7 +38,7 @@ bool CapturedDiagList::clearDiagnostic(ArrayRef<unsigned> IDs,
            diagLoc.isBeforeInTranslationUnitThan(range.getEnd()))) {
       cleared = true;
       ListTy::iterator eraseS = I++;
-      while (I != List.end() && I->getLevel() == Diagnostic::Note)
+      while (I != List.end() && I->getLevel() == DiagnosticsEngine::Note)
         ++I;
       // Clear the diagnostic and any notes following it.
       List.erase(eraseS, I);
@@ -73,14 +73,14 @@ bool CapturedDiagList::hasDiagnostic(ArrayRef<unsigned> IDs,
   return false;
 }
 
-void CapturedDiagList::reportDiagnostics(Diagnostic &Diags) const {
+void CapturedDiagList::reportDiagnostics(DiagnosticsEngine &Diags) const {
   for (ListTy::const_iterator I = List.begin(), E = List.end(); I != E; ++I)
     Diags.Report(*I);
 }
 
 bool CapturedDiagList::hasErrors() const {
   for (ListTy::const_iterator I = List.begin(), E = List.end(); I != E; ++I)
-    if (I->getLevel() >= Diagnostic::Error)
+    if (I->getLevel() >= DiagnosticsEngine::Error)
       return true;
 
   return false;
@@ -88,24 +88,30 @@ bool CapturedDiagList::hasErrors() const {
 
 namespace {
 
-class CaptureDiagnosticClient : public DiagnosticClient {
-  Diagnostic &Diags;
+class CaptureDiagnosticConsumer : public DiagnosticConsumer {
+  DiagnosticsEngine &Diags;
   CapturedDiagList &CapturedDiags;
 public:
-  CaptureDiagnosticClient(Diagnostic &diags,
-                          CapturedDiagList &capturedDiags)
+  CaptureDiagnosticConsumer(DiagnosticsEngine &diags,
+                           CapturedDiagList &capturedDiags)
     : Diags(diags), CapturedDiags(capturedDiags) { }
 
-  virtual void HandleDiagnostic(Diagnostic::Level level,
-                                const DiagnosticInfo &Info) {
-    if (arcmt::isARCDiagnostic(Info.getID(), Diags) ||
-        level >= Diagnostic::Error || level == Diagnostic::Note) {
+  virtual void HandleDiagnostic(DiagnosticsEngine::Level level,
+                                const Diagnostic &Info) {
+    if (DiagnosticIDs::isARCDiagnostic(Info.getID()) ||
+        level >= DiagnosticsEngine::Error || level == DiagnosticsEngine::Note) {
       CapturedDiags.push_back(StoredDiagnostic(level, Info));
       return;
     }
 
     // Non-ARC warnings are ignored.
     Diags.setLastDiagnosticIgnored();
+  }
+  
+  DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const {
+    // Just drop any diagnostics that come from cloned consumers; they'll
+    // have different source managers anyway.
+    return new IgnoringDiagConsumer();
   }
 };
 
@@ -153,7 +159,7 @@ static bool HasARCRuntime(CompilerInvocation &origCI) {
       continue;
     if (!define.startswith(SimulatorVersionDefineName()))
       continue;
-    unsigned Major, Minor, Micro;
+    unsigned Major = 0, Minor = 0, Micro = 0;
     if (GetVersionFromSimulatorDefine(define, Major, Minor, Micro) &&
         Major < 10 && Minor < 100 && Micro < 100)
       return Major >= 5;
@@ -185,11 +191,12 @@ createInvocationForMigration(CompilerInvocation &origCI) {
   std::string define = getARCMTMacroName();
   define += '=';
   CInvok->getPreprocessorOpts().addMacroDef(define);
-  CInvok->getLangOpts().ObjCAutoRefCount = true;
+  CInvok->getLangOpts()->ObjCAutoRefCount = true;
+  CInvok->getLangOpts()->setGC(LangOptions::NonGC);
   CInvok->getDiagnosticOpts().ErrorLimit = 0;
   CInvok->getDiagnosticOpts().Warnings.push_back(
                                             "error=arc-unsafe-retained-assign");
-  CInvok->getLangOpts().ObjCRuntimeHasWeak = HasARCRuntime(origCI);
+  CInvok->getLangOpts()->ObjCRuntimeHasWeak = HasARCRuntime(origCI);
 
   return CInvok.take();
 }
@@ -199,8 +206,8 @@ static void emitPremigrationErrors(const CapturedDiagList &arcDiags,
                                    Preprocessor &PP) {
   TextDiagnosticPrinter printer(llvm::errs(), diagOpts);
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags(
-                   new Diagnostic(DiagID, &printer, /*ShouldOwnClient=*/false));
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+      new DiagnosticsEngine(DiagID, &printer, /*ShouldOwnClient=*/false));
   Diags->setSourceManager(&PP.getSourceManager());
   
   printer.BeginSourceFile(PP.getLangOptions(), &PP);
@@ -214,13 +221,15 @@ static void emitPremigrationErrors(const CapturedDiagList &arcDiags,
 
 bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
                                  StringRef Filename, InputKind Kind,
-                                 DiagnosticClient *DiagClient,
+                                 DiagnosticConsumer *DiagClient,
                                  bool emitPremigrationARCErrors,
                                  StringRef plistOut) {
-  if (!origCI.getLangOpts().ObjC1)
+  if (!origCI.getLangOpts()->ObjC1)
     return false;
 
-  std::vector<TransformFn> transforms = arcmt::getAllTransformations();
+  LangOptions::GCMode OrigGCMode = origCI.getLangOpts()->getGC();
+
+  std::vector<TransformFn> transforms = arcmt::getAllTransformations(OrigGCMode);
   assert(!transforms.empty());
 
   llvm::OwningPtr<CompilerInvocation> CInvok;
@@ -232,11 +241,11 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
 
   assert(DiagClient);
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags(
-                 new Diagnostic(DiagID, DiagClient, /*ShouldOwnClient=*/false));
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+      new DiagnosticsEngine(DiagID, DiagClient, /*ShouldOwnClient=*/false));
 
   // Filter of all diagnostics.
-  CaptureDiagnosticClient errRec(*Diags, capturedDiags);
+  CaptureDiagnosticConsumer errRec(*Diags, capturedDiags);
   Diags->setClient(&errRec, /*ShouldOwnClient=*/false);
 
   llvm::OwningPtr<ASTUnit> Unit(
@@ -271,7 +280,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
 
   // After parsing of source files ended, we want to reuse the
   // diagnostics objects to emit further diagnostics.
-  // We call BeginSourceFile because DiagnosticClient requires that 
+  // We call BeginSourceFile because DiagnosticConsumer requires that 
   // diagnostics with source range information are emitted only in between
   // BeginSourceFile() and EndSourceFile().
   DiagClient->BeginSourceFile(Ctx.getLangOptions(), &Unit->getPreprocessor());
@@ -281,7 +290,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
   std::vector<SourceLocation> ARCMTMacroLocs;
 
   TransformActions testAct(*Diags, capturedDiags, Ctx, Unit->getPreprocessor());
-  MigrationPass pass(Ctx, Unit->getSema(), testAct, ARCMTMacroLocs);
+  MigrationPass pass(Ctx, OrigGCMode, Unit->getSema(), testAct, ARCMTMacroLocs);
 
   for (unsigned i=0, e = transforms.size(); i != e; ++i)
     transforms[i](pass);
@@ -292,7 +301,7 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
 
   // If we are migrating code that gets the '-fobjc-arc' flag, make sure
   // to remove it so that we don't get errors from normal compilation.
-  origCI.getLangOpts().ObjCAutoRefCount = false;
+  origCI.getLangOpts()->ObjCAutoRefCount = false;
 
   return capturedDiags.hasErrors() || testAct.hasReportedErrors();
 }
@@ -303,12 +312,14 @@ bool arcmt::checkForManualIssues(CompilerInvocation &origCI,
 
 static bool applyTransforms(CompilerInvocation &origCI,
                             StringRef Filename, InputKind Kind,
-                            DiagnosticClient *DiagClient,
+                            DiagnosticConsumer *DiagClient,
                             StringRef outputDir,
                             bool emitPremigrationARCErrors,
                             StringRef plistOut) {
-  if (!origCI.getLangOpts().ObjC1)
+  if (!origCI.getLangOpts()->ObjC1)
     return false;
+
+  LangOptions::GCMode OrigGCMode = origCI.getLangOpts()->getGC();
 
   // Make sure checking is successful first.
   CompilerInvocation CInvokForCheck(origCI);
@@ -322,7 +333,7 @@ static bool applyTransforms(CompilerInvocation &origCI,
   
   MigrationProcess migration(CInvok, DiagClient, outputDir);
 
-  std::vector<TransformFn> transforms = arcmt::getAllTransformations();
+  std::vector<TransformFn> transforms = arcmt::getAllTransformations(OrigGCMode);
   assert(!transforms.empty());
 
   for (unsigned i=0, e = transforms.size(); i != e; ++i) {
@@ -331,30 +342,30 @@ static bool applyTransforms(CompilerInvocation &origCI,
   }
 
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags(
-                 new Diagnostic(DiagID, DiagClient, /*ShouldOwnClient=*/false));
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+      new DiagnosticsEngine(DiagID, DiagClient, /*ShouldOwnClient=*/false));
 
   if (outputDir.empty()) {
-    origCI.getLangOpts().ObjCAutoRefCount = true;
+    origCI.getLangOpts()->ObjCAutoRefCount = true;
     return migration.getRemapper().overwriteOriginal(*Diags);
   } else {
     // If we are migrating code that gets the '-fobjc-arc' flag, make sure
     // to remove it so that we don't get errors from normal compilation.
-    origCI.getLangOpts().ObjCAutoRefCount = false;
+    origCI.getLangOpts()->ObjCAutoRefCount = false;
     return migration.getRemapper().flushToDisk(outputDir, *Diags);
   }
 }
 
 bool arcmt::applyTransformations(CompilerInvocation &origCI,
                                  StringRef Filename, InputKind Kind,
-                                 DiagnosticClient *DiagClient) {
+                                 DiagnosticConsumer *DiagClient) {
   return applyTransforms(origCI, Filename, Kind, DiagClient,
                          StringRef(), false, StringRef());
 }
 
 bool arcmt::migrateWithTemporaryFiles(CompilerInvocation &origCI,
                                       StringRef Filename, InputKind Kind,
-                                      DiagnosticClient *DiagClient,
+                                      DiagnosticConsumer *DiagClient,
                                       StringRef outputDir,
                                       bool emitPremigrationARCErrors,
                                       StringRef plistOut) {
@@ -366,12 +377,12 @@ bool arcmt::migrateWithTemporaryFiles(CompilerInvocation &origCI,
 bool arcmt::getFileRemappings(std::vector<std::pair<std::string,std::string> > &
                                   remap,
                               StringRef outputDir,
-                              DiagnosticClient *DiagClient) {
+                              DiagnosticConsumer *DiagClient) {
   assert(!outputDir.empty());
 
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags(
-                 new Diagnostic(DiagID, DiagClient, /*ShouldOwnClient=*/false));
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+      new DiagnosticsEngine(DiagID, DiagClient, /*ShouldOwnClient=*/false));
 
   FileRemapper remapper;
   bool err = remapper.initFromDisk(outputDir, *Diags,
@@ -399,7 +410,8 @@ public:
   ARCMTMacroTrackerPPCallbacks(std::vector<SourceLocation> &ARCMTMacroLocs)
     : ARCMTMacroLocs(ARCMTMacroLocs) { }
 
-  virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo *MI) {
+  virtual void MacroExpands(const Token &MacroNameTok, const MacroInfo *MI,
+                            SourceRange Range) {
     if (MacroNameTok.getIdentifierInfo()->getName() == getARCMTMacroName())
       ARCMTMacroLocs.push_back(MacroNameTok.getLocation());
   }
@@ -467,13 +479,13 @@ public:
 MigrationProcess::RewriteListener::~RewriteListener() { }
 
 MigrationProcess::MigrationProcess(const CompilerInvocation &CI,
-                                   DiagnosticClient *diagClient,
+                                   DiagnosticConsumer *diagClient,
                                    StringRef outputDir)
   : OrigCI(CI), DiagClient(diagClient) {
   if (!outputDir.empty()) {
     llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-    llvm::IntrusiveRefCntPtr<Diagnostic> Diags(
-                 new Diagnostic(DiagID, DiagClient, /*ShouldOwnClient=*/false));
+    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+      new DiagnosticsEngine(DiagID, DiagClient, /*ShouldOwnClient=*/false));
     Remapper.initFromDisk(outputDir, *Diags, /*ignoreIfFilesChanges=*/true);
   }
 }
@@ -491,11 +503,11 @@ bool MigrationProcess::applyTransform(TransformFn trans,
 
   assert(DiagClient);
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diags(
-               new Diagnostic(DiagID, DiagClient, /*ShouldOwnClient=*/false));
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(
+      new DiagnosticsEngine(DiagID, DiagClient, /*ShouldOwnClient=*/false));
 
   // Filter of all diagnostics.
-  CaptureDiagnosticClient errRec(*Diags, capturedDiags);
+  CaptureDiagnosticConsumer errRec(*Diags, capturedDiags);
   Diags->setClient(&errRec, /*ShouldOwnClient=*/false);
 
   llvm::OwningPtr<ARCMTMacroTrackerAction> ASTAction;
@@ -523,14 +535,15 @@ bool MigrationProcess::applyTransform(TransformFn trans,
 
   // After parsing of source files ended, we want to reuse the
   // diagnostics objects to emit further diagnostics.
-  // We call BeginSourceFile because DiagnosticClient requires that 
+  // We call BeginSourceFile because DiagnosticConsumer requires that 
   // diagnostics with source range information are emitted only in between
   // BeginSourceFile() and EndSourceFile().
   DiagClient->BeginSourceFile(Ctx.getLangOptions(), &Unit->getPreprocessor());
 
   Rewriter rewriter(Ctx.getSourceManager(), Ctx.getLangOptions());
   TransformActions TA(*Diags, capturedDiags, Ctx, Unit->getPreprocessor());
-  MigrationPass pass(Ctx, Unit->getSema(), TA, ARCMTMacroLocs);
+  MigrationPass pass(Ctx, OrigCI.getLangOpts()->getGC(),
+                     Unit->getSema(), TA, ARCMTMacroLocs);
 
   trans(pass);
 
@@ -564,13 +577,4 @@ bool MigrationProcess::applyTransform(TransformFn trans,
   }
 
   return false;
-}
-
-//===----------------------------------------------------------------------===//
-// isARCDiagnostic.
-//===----------------------------------------------------------------------===//
-
-bool arcmt::isARCDiagnostic(unsigned diagID, Diagnostic &Diag) {
-  return Diag.getDiagnosticIDs()->getCategoryNumberForDiag(diagID) ==
-           diag::DiagCat_Automatic_Reference_Counting_Issue;
 }

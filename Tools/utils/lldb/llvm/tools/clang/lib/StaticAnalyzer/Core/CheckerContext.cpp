@@ -16,18 +16,19 @@
 using namespace clang;
 using namespace ento;
 
-CheckerContext::~CheckerContext() {
-  // Do we need to autotransition?  'Dst' can get populated in a variety of
-  // ways, including 'addTransition()' adding the predecessor node to Dst
-  // without actually generated a new node.  We also shouldn't autotransition
-  // if we are building sinks or we generated a node and decided to not
-  // add it as a transition.
-  if (Dst.size() == size && !B.BuildSinks && !B.hasGeneratedNode) {
-    if (ST && ST != B.GetState(Pred)) {
-      static int autoTransitionTag = 0;
-      addTransition(ST, &autoTransitionTag);
-    }
-    else
-      Dst.Add(Pred);
-  }
+const FunctionDecl *CheckerContext::getCalleeDecl(const CallExpr *CE) const {
+  const ProgramState *State = getState();
+  const Expr *Callee = CE->getCallee();
+  SVal L = State->getSVal(Callee);
+  return L.getAsFunctionDecl();
+}
+
+StringRef CheckerContext::getCalleeName(const CallExpr *CE) const {
+  const FunctionDecl *funDecl = getCalleeDecl(CE);
+  if (!funDecl)
+    return StringRef();
+  IdentifierInfo *funI = funDecl->getIdentifier();
+  if (!funI)
+    return StringRef();
+  return funI->getName();
 }

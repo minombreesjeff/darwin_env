@@ -13,8 +13,8 @@
 
 #include "CodeGenInstruction.h"
 #include "CodeGenTarget.h"
-#include "Error.h"
-#include "Record.h"
+#include "llvm/TableGen/Error.h"
+#include "llvm/TableGen/Record.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -245,7 +245,7 @@ static void ParseConstraint(const std::string &CStr, CGIOperandList &Ops) {
   if (!Ops[DestOp.first].Constraints[DestOp.second].isNone())
     throw "Operand '" + DestOpName + "' cannot have multiple constraints!";
   Ops[DestOp.first].Constraints[DestOp.second] =
-  CGIOperandList::ConstraintInfo::getTied(FlatOpNo);
+    CGIOperandList::ConstraintInfo::getTied(FlatOpNo);
 }
 
 static void ParseConstraints(const std::string &CStr, CGIOperandList &Ops) {
@@ -309,6 +309,7 @@ CodeGenInstruction::CodeGenInstruction(Record *R) : TheDef(R), Operands(R) {
   isReMaterializable = R->getValueAsBit("isReMaterializable");
   hasDelaySlot = R->getValueAsBit("hasDelaySlot");
   usesCustomInserter = R->getValueAsBit("usesCustomInserter");
+  hasPostISelHook = R->getValueAsBit("hasPostISelHook");
   hasCtrlDep   = R->getValueAsBit("hasCtrlDep");
   isNotDuplicable = R->getValueAsBit("isNotDuplicable");
   hasSideEffects = R->getValueAsBit("hasSideEffects");
@@ -422,8 +423,27 @@ bool CodeGenInstAlias::tryAliasOpMatch(DagInit *Result, unsigned AliasOpNo,
     return true;
   }
 
+  // For register operands, the source register class can be a subclass
+  // of the instruction register class, not just an exact match.
+  if (ADI && ADI->getDef()->isSubClassOf("RegisterClass")) {
+    if (!InstOpRec->isSubClassOf("RegisterClass"))
+      return false;
+    if (!T.getRegisterClass(InstOpRec)
+              .hasSubClass(&T.getRegisterClass(ADI->getDef())))
+      return false;
+    ResOp = ResultOperand(Result->getArgName(AliasOpNo), ADI->getDef());
+    return true;
+  }
+
   // Handle explicit registers.
   if (ADI && ADI->getDef()->isSubClassOf("Register")) {
+    if (InstOpRec->isSubClassOf("OptionalDefOperand")) {
+      DagInit *DI = InstOpRec->getValueAsDag("MIOperandInfo");
+      // The operand info should only have a single (register) entry. We
+      // want the register class of it.
+      InstOpRec = dynamic_cast<DefInit*>(DI->getArg(0))->getDef();
+    }
+
     if (InstOpRec->isSubClassOf("RegisterOperand"))
       InstOpRec = InstOpRec->getValueAsDef("RegClass");
 
@@ -432,8 +452,8 @@ bool CodeGenInstAlias::tryAliasOpMatch(DagInit *Result, unsigned AliasOpNo,
 
     if (!T.getRegisterClass(InstOpRec)
         .contains(T.getRegBank().getReg(ADI->getDef())))
-      throw TGError(Loc, "fixed register " +ADI->getDef()->getName()
-                    + " is not a member of the " + InstOpRec->getName() +
+      throw TGError(Loc, "fixed register " + ADI->getDef()->getName() +
+                    " is not a member of the " + InstOpRec->getName() +
                     " register class!");
 
     if (!Result->getArgName(AliasOpNo).empty())
@@ -448,14 +468,19 @@ bool CodeGenInstAlias::tryAliasOpMatch(DagInit *Result, unsigned AliasOpNo,
   if (ADI && ADI->getDef()->getName() == "zero_reg") {
 
     // Check if this is an optional def.
-    if (!InstOpRec->isSubClassOf("OptionalDefOperand"))
-      throw TGError(Loc, "reg0 used for result that is not an "
-                    "OptionalDefOperand!");
+    // Tied operands where the source is a sub-operand of a complex operand
+    // need to represent both operands in the alias destination instruction.
+    // Allow zero_reg for the tied portion. This can and should go away once
+    // the MC representation of things doesn't use tied operands at all.
+    //if (!InstOpRec->isSubClassOf("OptionalDefOperand"))
+    //  throw TGError(Loc, "reg0 used for result that is not an "
+    //                "OptionalDefOperand!");
 
     ResOp = ResultOperand(static_cast<Record*>(0));
     return true;
   }
 
+  // Literal integers.
   if (IntInit *II = dynamic_cast<IntInit*>(Arg)) {
     if (hasSubOps || !InstOpRec->isSubClassOf("Operand"))
       return false;
@@ -464,6 +489,19 @@ bool CodeGenInstAlias::tryAliasOpMatch(DagInit *Result, unsigned AliasOpNo,
       throw TGError(Loc, "result argument #" + utostr(AliasOpNo) +
                     " must not have a name!");
     ResOp = ResultOperand(II->getValue());
+    return true;
+  }
+
+  // If both are Operands with the same MVT, allow the conversion. It's
+  // up to the user to make sure the values are appropriate, just like
+  // for isel Pat's.
+  if (InstOpRec->isSubClassOf("Operand") &&
+      ADI->getDef()->isSubClassOf("Operand")) {
+    // FIXME: What other attributes should we check here? Identical
+    // MIOperandInfo perhaps?
+    if (InstOpRec->getValueInit("Type") != ADI->getDef()->getValueInit("Type"))
+      return false;
+    ResOp = ResultOperand(Result->getArgName(AliasOpNo), ADI->getDef());
     return true;
   }
 
@@ -503,8 +541,11 @@ CodeGenInstAlias::CodeGenInstAlias(Record *R, CodeGenTarget &T) : TheDef(R) {
   unsigned AliasOpNo = 0;
   for (unsigned i = 0, e = ResultInst->Operands.size(); i != e; ++i) {
 
-    // Tied registers don't have an entry in the result dag.
-    if (ResultInst->Operands[i].getTiedRegister() != -1)
+    // Tied registers don't have an entry in the result dag unless they're part
+    // of a complex operand, in which case we include them anyways, as we
+    // don't have any other way to specify the whole operand.
+    if (ResultInst->Operands[i].MINumOperands == 1 &&
+        ResultInst->Operands[i].getTiedRegister() != -1)
       continue;
 
     if (AliasOpNo >= Result->getNumArgs())

@@ -58,6 +58,12 @@ SBModule::IsValid () const
     return m_opaque_sp.get() != NULL;
 }
 
+void
+SBModule::Clear()
+{
+    m_opaque_sp.reset();
+}
+
 SBFileSpec
 SBModule::GetFileSpec () const
 {
@@ -217,6 +223,11 @@ SBModule::get() const
     return m_opaque_sp.get();
 }
 
+const lldb::ModuleSP &
+SBModule::get_sp() const
+{
+    return m_opaque_sp;
+}
 
 void
 SBModule::SetModule (const lldb::ModuleSP& module_sp)
@@ -225,15 +236,17 @@ SBModule::SetModule (const lldb::ModuleSP& module_sp)
 }
 
 
-bool
-SBModule::ResolveFileAddress (lldb::addr_t vm_addr, SBAddress& addr)
+SBAddress
+SBModule::ResolveFileAddress (lldb::addr_t vm_addr)
 {
-    if (m_opaque_sp && addr.IsValid())
-        return m_opaque_sp->ResolveFileAddress (vm_addr, addr.ref());
-    
-    if (addr.IsValid())
-        addr->Clear();
-    return false;
+    lldb::SBAddress sb_addr;
+    if (m_opaque_sp)
+    {
+        Address addr;
+        if (m_opaque_sp->ResolveFileAddress (vm_addr, addr))
+            sb_addr.ref() = addr;
+    }
+    return sb_addr;
 }
 
 SBSymbolContext
@@ -248,13 +261,14 @@ SBModule::ResolveSymbolContextForAddress (const SBAddress& addr, uint32_t resolv
 bool
 SBModule::GetDescription (SBStream &description)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_sp)
     {
-        description.ref();
-        m_opaque_sp->GetDescription (description.get());
+        m_opaque_sp->GetDescription (&strm);
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
 
     return true;
 }
@@ -292,6 +306,40 @@ SBModule::GetSymbolAtIndex (size_t idx)
     return sb_symbol;
 }
 
+size_t
+SBModule::GetNumSections ()
+{
+    if (m_opaque_sp)
+    {
+        ObjectFile *obj_file = m_opaque_sp->GetObjectFile();
+        if (obj_file)
+        {
+            SectionList *section_list = obj_file->GetSectionList ();
+            if (section_list)
+                return section_list->GetSize();
+        }
+    }
+    return 0;
+}
+
+SBSection
+SBModule::GetSectionAtIndex (size_t idx)
+{
+    SBSection sb_section;
+    if (m_opaque_sp)
+    {
+        ObjectFile *obj_file = m_opaque_sp->GetObjectFile();
+        if (obj_file)
+        {
+            SectionList *section_list = obj_file->GetSectionList ();
+
+            if (section_list)
+                sb_section.SetSection(section_list->GetSectionAtIndex (idx).get());
+        }
+    }
+    return sb_section;
+}
+
 uint32_t
 SBModule::FindFunctions (const char *name, 
                          uint32_t name_type_mask, 
@@ -300,10 +348,11 @@ SBModule::FindFunctions (const char *name,
 {
     if (!append)
         sc_list.Clear();
-    if (m_opaque_sp)
+    if (name && m_opaque_sp)
     {
         const bool symbols_ok = true;
-        return m_opaque_sp->FindFunctions (ConstString(name), 
+        return m_opaque_sp->FindFunctions (ConstString(name),
+                                           NULL,
                                            name_type_mask, 
                                            symbols_ok, 
                                            append, 
@@ -317,10 +366,11 @@ SBValueList
 SBModule::FindGlobalVariables (SBTarget &target, const char *name, uint32_t max_matches)
 {
     SBValueList sb_value_list;
-    if (m_opaque_sp)
+    if (name && m_opaque_sp)
     {
         VariableList variable_list;
-        const uint32_t match_count = m_opaque_sp->FindGlobalVariables (ConstString (name), 
+        const uint32_t match_count = m_opaque_sp->FindGlobalVariables (ConstString (name),
+                                                                       NULL,
                                                                        false, 
                                                                        max_matches,
                                                                        variable_list);
@@ -345,10 +395,10 @@ SBModule::FindGlobalVariables (SBTarget &target, const char *name, uint32_t max_
 }
 
 lldb::SBType
-SBModule::FindFirstType (const char* name_cstr)
+SBModule::FindFirstType (const char *name_cstr)
 {
     SBType sb_type;
-    if (IsValid())
+    if (name_cstr && IsValid())
     {
         SymbolContext sc;
         TypeList type_list;
@@ -357,6 +407,7 @@ SBModule::FindFirstType (const char* name_cstr)
 
         num_matches = m_opaque_sp->FindTypes(sc,
                                              name,
+                                             NULL,
                                              false,
                                              1,
                                              type_list);
@@ -368,12 +419,12 @@ SBModule::FindFirstType (const char* name_cstr)
 }
 
 lldb::SBTypeList
-SBModule::FindTypes (const char* type)
+SBModule::FindTypes (const char *type)
 {
     
     SBTypeList retval;
     
-    if (IsValid())
+    if (type && IsValid())
     {
         SymbolContext sc;
         TypeList type_list;
@@ -382,6 +433,7 @@ SBModule::FindTypes (const char* type)
         
         num_matches = m_opaque_sp->FindTypes(sc,
                                              name,
+                                             NULL,
                                              false,
                                              UINT32_MAX,
                                              type_list);
@@ -396,3 +448,30 @@ SBModule::FindTypes (const char* type)
 
     return retval;
 }
+
+
+SBSection
+SBModule::FindSection (const char *sect_name)
+{
+    SBSection sb_section;
+    
+    if (sect_name && IsValid())
+    {
+        ObjectFile *objfile = m_opaque_sp->GetObjectFile();
+        if (objfile)
+        {
+            SectionList *section_list = objfile->GetSectionList();
+            if (section_list)
+            {
+                ConstString const_sect_name(sect_name);
+                SectionSP section_sp (section_list->FindSectionByName(const_sect_name));
+                if (section_sp)
+                {
+                    sb_section.SetSection(section_sp.get());
+                }
+            }
+        }
+    }
+    return sb_section;
+}
+

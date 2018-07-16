@@ -13,6 +13,7 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Breakpoint/Watchpoint.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Target/Process.h"
@@ -245,7 +246,8 @@ StopInfoMachException::CreateStopReasonWithMachException
     uint32_t exc_type, 
     uint32_t exc_data_count,
     uint64_t exc_code,
-    uint64_t exc_sub_code
+    uint64_t exc_sub_code,
+    uint64_t exc_sub_sub_code
 )
 {
     if (exc_type != 0)
@@ -299,7 +301,21 @@ StopInfoMachException::CreateStopReasonWithMachException
                 case llvm::Triple::x86_64:
                     if (exc_code == 1) // EXC_I386_SGL
                     {
-                        return StopInfo::CreateStopReasonToTrace(thread);
+                        if (!exc_sub_code)
+                            return StopInfo::CreateStopReasonToTrace(thread);
+
+                        // It's a watchpoint, then.
+                        // The exc_sub_code indicates the data break address.
+                        lldb::WatchpointSP wp_sp =
+                            thread.GetProcess().GetTarget().GetWatchpointList().FindByAddress((lldb::addr_t)exc_sub_code);
+                        if (wp_sp)
+                        {
+                            // Debugserver may piggyback the hardware index of the fired watchpoint in the exception data.
+                            // Set the hardware index if that's the case.
+                            if (exc_data_count >=3)
+                                wp_sp->SetHardwareIndex((uint32_t)exc_sub_sub_code);
+                            return StopInfo::CreateStopReasonWithWatchpointID(thread, wp_sp->GetID());
+                        }
                     }
                     else if (exc_code == 2) // EXC_I386_BPT
                     {

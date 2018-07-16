@@ -19,7 +19,7 @@ namespace clang {
 class DiagnosticOptions;
 class LangOptions;
 
-class LogDiagnosticPrinter : public DiagnosticClient {
+class LogDiagnosticPrinter : public DiagnosticConsumer {
   struct DiagEntry {
     /// The primary message line of the diagnostic.
     std::string Message;
@@ -37,7 +37,7 @@ class LogDiagnosticPrinter : public DiagnosticClient {
     unsigned DiagnosticID;
   
     /// The level of the diagnostic.
-    Diagnostic::Level DiagnosticLevel;
+    DiagnosticsEngine::Level DiagnosticLevel;
   };
   
   raw_ostream &OS;
@@ -68,8 +68,10 @@ public:
 
   void EndSourceFile();
 
-  virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info);
+  virtual void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
+                                const Diagnostic &Info);
+  
+  DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const;
 };
 
 } // end namespace clang

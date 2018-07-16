@@ -35,6 +35,7 @@ add_clang_library(clangAST
   ParentMap.cpp
   RecordLayout.cpp
   RecordLayoutBuilder.cpp
+  SelectorLocationsKind.cpp
   Stmt.cpp
   StmtDumper.cpp
   StmtIterator.cpp
@@ -46,6 +47,8 @@ add_clang_library(clangAST
   Type.cpp
   TypeLoc.cpp
   TypePrinter.cpp
+  VTableBuilder.cpp
+  VTTBuilder.cpp
   )
 
 add_dependencies(clangAST ClangARMNeon ClangAttrClasses ClangAttrList 

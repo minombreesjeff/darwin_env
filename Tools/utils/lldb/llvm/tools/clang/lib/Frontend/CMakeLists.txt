@@ -13,6 +13,7 @@ add_clang_library(clangFrontend
   ASTMerge.cpp
   ASTUnit.cpp
   CacheTokens.cpp
+  ChainedIncludesSource.cpp
   CompilerInstance.cpp
   CompilerInvocation.cpp
   CreateInvocationFromCommandLine.cpp
@@ -27,9 +28,11 @@ add_clang_library(clangFrontend
   LogDiagnosticPrinter.cpp
   MultiplexConsumer.cpp
   PrintPreprocessedOutput.cpp
+  SerializedDiagnosticPrinter.cpp
+  TextDiagnostic.cpp
   TextDiagnosticBuffer.cpp
   TextDiagnosticPrinter.cpp
-  VerifyDiagnosticsClient.cpp
+  VerifyDiagnosticConsumer.cpp
   Warnings.cpp
   )
 
@@ -48,5 +51,6 @@ add_dependencies(clangFrontend
   ClangDiagnosticFrontend 
   ClangDiagnosticLex
   ClangDiagnosticSema
+  ClangDriverOptions
   ClangDeclNodes
   ClangStmtNodes)

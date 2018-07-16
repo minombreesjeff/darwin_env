@@ -18,6 +18,7 @@
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendOptions.h"
 #include "clang/Frontend/PreprocessorOptions.h"
+#include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
@@ -31,7 +32,7 @@ using namespace clang;
 // in which case we emit "#define XXX 1" or "XXX=Y z W" in which case we emit
 // "#define XXX Y z W".  To get a #define with no value, use "XXX=".
 static void DefineBuiltinMacro(MacroBuilder &Builder, StringRef Macro,
-                               Diagnostic &Diags) {
+                               DiagnosticsEngine &Diags) {
   std::pair<StringRef, StringRef> MacroPair = Macro.split('=');
   StringRef MacroName = MacroPair.first;
   StringRef MacroBody = MacroPair.second;
@@ -48,39 +49,19 @@ static void DefineBuiltinMacro(MacroBuilder &Builder, StringRef Macro,
   }
 }
 
-std::string clang::NormalizeDashIncludePath(StringRef File,
-                                            FileManager &FileMgr) {
-  // Implicit include paths should be resolved relative to the current
-  // working directory first, and then use the regular header search
-  // mechanism. The proper way to handle this is to have the
-  // predefines buffer located at the current working directory, but
-  // it has no file entry. For now, workaround this by using an
-  // absolute path if we find the file here, and otherwise letting
-  // header search handle it.
-  llvm::SmallString<128> Path(File);
-  llvm::sys::fs::make_absolute(Path);
-  bool exists;
-  if (llvm::sys::fs::exists(Path.str(), exists) || !exists)
-    Path = File;
-  else if (exists)
-    FileMgr.getFile(File);
-
-  return Lexer::Stringify(Path.str());
-}
-
 /// AddImplicitInclude - Add an implicit #include of the specified file to the
 /// predefines buffer.
 static void AddImplicitInclude(MacroBuilder &Builder, StringRef File,
                                FileManager &FileMgr) {
-  Builder.append("#include \"" +
-                 Twine(NormalizeDashIncludePath(File, FileMgr)) + "\"");
+  Builder.append(Twine("#include \"") +
+                 HeaderSearch::NormalizeDashIncludePath(File, FileMgr) + "\"");
 }
 
 static void AddImplicitIncludeMacros(MacroBuilder &Builder,
                                      StringRef File,
                                      FileManager &FileMgr) {
-  Builder.append("#__include_macros \"" +
-                 Twine(NormalizeDashIncludePath(File, FileMgr)) + "\"");
+  Builder.append(Twine("#__include_macros \"") +
+                 HeaderSearch::NormalizeDashIncludePath(File, FileMgr) + "\"");
   // Marker token to stop the __include_macros fetch loop.
   Builder.append("##"); // ##?
 }
@@ -222,72 +203,6 @@ static void DefineExactWidthIntType(TargetInfo::IntType Ty,
 }
 
 /// \brief Add definitions required for a smooth interaction between
-/// Objective-C++ automatic reference counting and libc++.
-static void AddObjCXXARCLibcxxDefines(const LangOptions &LangOpts, 
-                                      MacroBuilder &Builder) {
-  Builder.defineMacro("_LIBCPP_PREDEFINED_OBJC_ARC_ADDRESSOF");
-  
-  std::string Result;
-  {
-    // Provide overloads of the function std::__1::addressof() that accept
-    // references to lifetime-qualified objects. libc++'s (more general)
-    // std::__1::addressof() template fails to instantiate with such types,
-    // because it attempts to convert the object to a char& before 
-    // dereferencing.
-    llvm::raw_string_ostream Out(Result);
-    
-    Out << "#pragma clang diagnostic push\n"
-        << "#pragma clang diagnostic ignored \"-Wc++0x-extensions\"\n"
-        << "namespace std { inline namespace __1 {\n"
-        << "\n";
-    
-    Out << "template <class _Tp>\n"
-        << "inline __attribute__ ((__visibility__(\"hidden\"), "
-        << "__always_inline__))\n"
-        << "__attribute__((objc_ownership(strong))) _Tp*\n"
-        << "addressof(__attribute__((objc_ownership(strong))) _Tp& __x) {\n"
-        << "  return &__x;\n"
-        << "}\n"
-        << "\n";
-      
-    if (LangOpts.ObjCRuntimeHasWeak) {
-      Out << "template <class _Tp>\n"
-          << "inline __attribute__ ((__visibility__(\"hidden\"),"
-          << "__always_inline__))\n"
-          << "__attribute__((objc_ownership(weak))) _Tp*\n"
-          << "addressof(__attribute__((objc_ownership(weak))) _Tp& __x) {\n"
-          << "  return &__x;\n"
-          << "};\n"
-          << "\n";
-    }
-      
-    Out << "template <class _Tp>\n"
-        << "inline __attribute__ ((__visibility__(\"hidden\"),"
-        << "__always_inline__))\n"
-        << "__attribute__((objc_ownership(autoreleasing))) _Tp*\n"
-        << "addressof(__attribute__((objc_ownership(autoreleasing))) _Tp& __x) "
-        << "{\n"
-        << " return &__x;\n"
-        << "}\n"
-        << "\n";
-    
-    Out << "template <class _Tp>\n"
-        << "inline __attribute__ ((__visibility__(\"hidden\"), "
-        << "__always_inline__))\n"
-        << "__unsafe_unretained _Tp* addressof(__unsafe_unretained _Tp& __x)"
-        << " {\n"
-        << "  return &__x;\n"
-        << "}\n";
-      
-    Out << "\n"
-        << "} }\n"
-        << "#pragma clang diagnostic pop\n"
-        << "\n";    
-  }
-  Builder.append(Result);
-}
-
-/// \brief Add definitions required for a smooth interaction between
 /// Objective-C++ automated reference counting and libstdc++ (4.2).
 static void AddObjCXXARCLibstdcxxDefines(const LangOptions &LangOpts, 
                                          MacroBuilder &Builder) {
@@ -344,7 +259,7 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
                                                const LangOptions &LangOpts,
                                                const FrontendOptions &FEOpts,
                                                MacroBuilder &Builder) {
-  if (!LangOpts.Microsoft && !LangOpts.TraditionalCPP)
+  if (!LangOpts.MicrosoftMode && !LangOpts.TraditionalCPP)
     Builder.defineMacro("__STDC__");
   if (LangOpts.Freestanding)
     Builder.defineMacro("__STDC_HOSTED__", "0");
@@ -352,7 +267,12 @@ static void InitializeStandardPredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__STDC_HOSTED__");
 
   if (!LangOpts.CPlusPlus) {
-    if (LangOpts.C99)
+    // FIXME: C1x doesn't have a defined version number yet, so pick something
+    // that is the minimum possible according to their placeholder scheme
+    // 201ymmL.
+    if (LangOpts.C1X)
+      Builder.defineMacro("__STDC_VERSION__", "201001L");
+    else if (LangOpts.C99)
       Builder.defineMacro("__STDC_VERSION__", "199901L");
     else if (!LangOpts.GNUMode && LangOpts.Digraphs)
       Builder.defineMacro("__STDC_VERSION__", "199409L");
@@ -426,10 +346,12 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (LangOpts.ObjC1) {
     if (LangOpts.ObjCNonFragileABI) {
       Builder.defineMacro("__OBJC2__");
-      Builder.defineMacro("OBJC_ZEROCOST_EXCEPTIONS");
+      
+      if (LangOpts.ObjCExceptions)
+        Builder.defineMacro("OBJC_ZEROCOST_EXCEPTIONS");
     }
 
-    if (LangOpts.getGCMode() != LangOptions::NonGC)
+    if (LangOpts.getGC() != LangOptions::NonGC)
       Builder.defineMacro("__OBJC_GC__");
 
     if (LangOpts.NeXTRuntime)
@@ -452,7 +374,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__BLOCKS__");
   }
 
-  if (LangOpts.Exceptions)
+  if (LangOpts.CXXExceptions)
     Builder.defineMacro("__EXCEPTIONS");
   if (LangOpts.RTTI)
     Builder.defineMacro("__GXX_RTTI");
@@ -468,7 +390,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__private_extern__", "extern");
   }
 
-  if (LangOpts.Microsoft) {
+  if (LangOpts.MicrosoftExt) {
     // Both __PRETTY_FUNCTION__ and __FUNCTION__ are GCC extensions, however
     // VC++ appears to only like __FUNCTION__.
     Builder.defineMacro("__PRETTY_FUNCTION__", "__FUNCTION__");
@@ -554,9 +476,6 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   if (!TargetInfo::isTypeSigned(TI.getWIntType()))
     Builder.defineMacro("__WINT_UNSIGNED__");
 
-  if (!TargetInfo::isTypeSigned(TI.getWCharType()))
-    Builder.defineMacro("__WCHAR_UNSIGNED__");
-
   // Define exact-width integer types for stdint.h
   Builder.defineMacro("__INT" + Twine(TI.getCharWidth()) + "_TYPE__",
                       "char");
@@ -602,9 +521,9 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   int Dig = PickFP(&TI.getLongDoubleFormat(), -1/*FIXME*/, 17, 21, 33, 36);
   Builder.defineMacro("__DECIMAL_DIG__", Twine(Dig));
 
-  if (LangOpts.getStackProtectorMode() == LangOptions::SSPOn)
+  if (LangOpts.getStackProtector() == LangOptions::SSPOn)
     Builder.defineMacro("__SSP__");
-  else if (LangOpts.getStackProtectorMode() == LangOptions::SSPReq)
+  else if (LangOpts.getStackProtector() == LangOptions::SSPReq)
     Builder.defineMacro("__SSP_ALL__", "2");
 
   if (FEOpts.ProgramAction == frontend::RewriteObjC)
@@ -632,7 +551,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
 
 // Initialize the remapping of files to alternative contents, e.g.,
 // those specified through other files.
-static void InitializeFileRemapping(Diagnostic &Diags,
+static void InitializeFileRemapping(DiagnosticsEngine &Diags,
                                     SourceManager &SourceMgr,
                                     FileManager &FileMgr,
                                     const PreprocessorOptions &InitOpts) {
@@ -708,6 +627,10 @@ void clang::InitializePreprocessor(Preprocessor &PP,
   InitializeFileRemapping(PP.getDiagnostics(), PP.getSourceManager(),
                           PP.getFileManager(), InitOpts);
 
+  // Specify whether the preprocessor should replace #include/#import with
+  // module imports when plausible.
+  PP.setAutoModuleImport(InitOpts.AutoModuleImport);
+
   // Emit line markers for various builtin sections of the file.  We don't do
   // this in asm preprocessor mode, because "# 4" is not a line marker directive
   // in this mode.
@@ -723,10 +646,7 @@ void clang::InitializePreprocessor(Preprocessor &PP,
     if (LangOpts.ObjC1 && LangOpts.CPlusPlus && LangOpts.ObjCAutoRefCount) {
       switch (InitOpts.ObjCXXARCStandardLibrary) {
       case ARCXX_nolib:
-        break;
-
-      case ARCXX_libcxx:
-        AddObjCXXARCLibcxxDefines(LangOpts, Builder);
+        case ARCXX_libcxx:
         break;
 
       case ARCXX_libstdcxx:
@@ -781,7 +701,7 @@ void clang::InitializePreprocessor(Preprocessor &PP,
                           
   // Copy PredefinedBuffer into the Preprocessor.
   PP.setPredefines(Predefines.str());
-
+  
   // Initialize the header search object.
   ApplyHeaderSearchOptions(PP.getHeaderSearchInfo(), HSOpts,
                            PP.getLangOptions(),

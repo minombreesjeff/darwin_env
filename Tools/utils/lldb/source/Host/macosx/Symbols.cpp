@@ -25,23 +25,24 @@
 #include "lldb/Core/UUID.h"
 #include "lldb/Host/Endian.h"
 #include "lldb/Utility/CleanUp.h"
+#include "Host/macosx/cfcpp/CFCBundle.h"
 #include "Host/macosx/cfcpp/CFCReleaser.h"
 #include "Host/macosx/cfcpp/CFCString.h"
 #include "mach/machine.h"
-
-#include "CFCBundle.h"
 
 
 using namespace lldb;
 using namespace lldb_private;
 using namespace llvm::MachO;
 
+#if !defined (__arm__) // No DebugSymbols on the iOS devices
 extern "C" {
 
 CFURLRef DBGCopyFullDSYMURLForUUID (CFUUIDRef uuid, CFURLRef exec_url);
 CFDictionaryRef DBGCopyDSYMPropertyLists (CFURLRef dsym_url);
 
 }
+#endif
 
 static bool
 SkinnyMachOFileContainsArchAndUUID
@@ -288,6 +289,8 @@ LocateMacOSXFilesUsingDebugSymbols
     if (out_dsym_fspec)
         out_dsym_fspec->Clear();
 
+#if !defined (__arm__) // No DebugSymbols on the iOS devices
+
     if (uuid && uuid->IsValid())
     {
         // Try and locate the dSYM file using DebugSymbols first
@@ -425,6 +428,8 @@ LocateMacOSXFilesUsingDebugSymbols
             }
         }
     }
+#endif // #if !defined (__arm__)
+
     return items_found;
 }
 
@@ -445,7 +450,7 @@ LocateDSYMInVincinityOfExecutable (const FileSpec *exec_fspec, const ArchSpec* a
 
                 dsym_fspec.SetFile(path, false);
 
-                if (FileAtPathContainsArchAndUUID (dsym_fspec, arch, uuid))
+                if (dsym_fspec.Exists() && FileAtPathContainsArchAndUUID (dsym_fspec, arch, uuid))
                 {
                     return true;
                 }
@@ -463,7 +468,7 @@ LocateDSYMInVincinityOfExecutable (const FileSpec *exec_fspec, const ArchSpec* a
                             strncat(path, ".dSYM/Contents/Resources/DWARF/", sizeof(path));
                             strncat(path, exec_fspec->GetFilename().AsCString(), sizeof(path));
                             dsym_fspec.SetFile(path, false);
-                            if (dsym_fspec.Exists())
+                            if (dsym_fspec.Exists() && FileAtPathContainsArchAndUUID (dsym_fspec, arch, uuid))
                                 return true;
                             else
                             {

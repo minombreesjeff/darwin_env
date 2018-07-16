@@ -44,7 +44,7 @@ ThreadPlanCallUserExpression::ThreadPlanCallUserExpression (Thread &thread,
                                                 lldb::addr_t *this_arg,
                                                 lldb::addr_t *cmd_arg,
                                                 ClangUserExpression::ClangUserExpressionSP &user_expression_sp) :
-    ThreadPlanCallFunction (thread, function, arg, stop_other_threads, discard_on_error, this_arg, cmd_arg),
+    ThreadPlanCallFunction (thread, function, ClangASTType(), arg, stop_other_threads, discard_on_error, this_arg, cmd_arg),
     m_user_expression_sp (user_expression_sp)
 {
 }
@@ -55,6 +55,20 @@ ThreadPlanCallUserExpression::~ThreadPlanCallUserExpression ()
 
 void
 ThreadPlanCallUserExpression::GetDescription (Stream *s, lldb::DescriptionLevel level)
-{
+{        
     ThreadPlanCallFunction::GetDescription (s, level);
+}
+
+StopInfoSP
+ThreadPlanCallUserExpression::GetRealStopInfo()
+{
+    StopInfoSP stop_info_sp = ThreadPlanCallFunction::GetRealStopInfo();
+    lldb::addr_t addr = GetStopAddress();
+    DynamicCheckerFunctions *checkers = m_thread.GetProcess().GetDynamicCheckers();
+    StreamString s;
+    
+    if (checkers && checkers->DoCheckersExplainStop(addr, s))
+        stop_info_sp->SetDescription(s.GetData());
+
+    return stop_info_sp;
 }

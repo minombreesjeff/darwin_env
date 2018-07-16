@@ -889,7 +889,7 @@ SDValue DAGTypeLegalizer::CreateStackStoreLoad(SDValue Op,
                                MachinePointerInfo(), false, false, 0);
   // Result is a load from the stack slot.
   return DAG.getLoad(DestVT, dl, Store, StackPtr, MachinePointerInfo(),
-                     false, false, 0);
+                     false, false, false, 0);
 }
 
 /// CustomLowerNode - Replace the node's results with custom code provided
@@ -944,6 +944,13 @@ bool DAGTypeLegalizer::CustomWidenLowerNode(SDNode *N, EVT VT) {
   for (unsigned i = 0, e = Results.size(); i != e; ++i)
     SetWidenedVector(SDValue(N, i), Results[i]);
   return true;
+}
+
+SDValue DAGTypeLegalizer::DisintegrateMERGE_VALUES(SDNode *N, unsigned ResNo) {
+  for (unsigned i = 0, e = N->getNumValues(); i != e; ++i)
+    if (i != ResNo)
+      ReplaceValueWith(SDValue(N, i), SDValue(N->getOperand(i)));
+  return SDValue(N, ResNo);
 }
 
 /// GetSplitDestVTs - Compute the VTs needed for the low/hi parts of a type
@@ -1077,7 +1084,6 @@ DAGTypeLegalizer::ExpandChainLibCall(RTLIB::Libcall LC,
   SDValue Callee = DAG.getExternalSymbol(TLI.getLibcallName(LC),
                                          TLI.getPointerTy());
 
-  // Splice the libcall in wherever FindInputOutputChains tells us to.
   Type *RetTy = Node->getValueType(0).getTypeForEVT(*DAG.getContext());
   std::pair<SDValue, SDValue> CallInfo =
     TLI.LowerCallTo(InChain, RetTy, isSigned, !isSigned, false, false,
@@ -1093,24 +1099,8 @@ DAGTypeLegalizer::ExpandChainLibCall(RTLIB::Libcall LC,
 /// type i1, the bits of which conform to getBooleanContents.
 SDValue DAGTypeLegalizer::PromoteTargetBoolean(SDValue Bool, EVT VT) {
   DebugLoc dl = Bool.getDebugLoc();
-  ISD::NodeType ExtendCode;
-  switch (TLI.getBooleanContents()) {
-  default:
-    assert(false && "Unknown BooleanContent!");
-  case TargetLowering::UndefinedBooleanContent:
-    // Extend to VT by adding rubbish bits.
-    ExtendCode = ISD::ANY_EXTEND;
-    break;
-  case TargetLowering::ZeroOrOneBooleanContent:
-    // Extend to VT by adding zero bits.
-    ExtendCode = ISD::ZERO_EXTEND;
-    break;
-  case TargetLowering::ZeroOrNegativeOneBooleanContent: {
-    // Extend to VT by copying the sign bit.
-    ExtendCode = ISD::SIGN_EXTEND;
-    break;
-  }
-  }
+  ISD::NodeType ExtendCode =
+    TargetLowering::getExtendForContent(TLI.getBooleanContents(VT.isVector()));
   return DAG.getNode(ExtendCode, dl, VT, Bool);
 }
 

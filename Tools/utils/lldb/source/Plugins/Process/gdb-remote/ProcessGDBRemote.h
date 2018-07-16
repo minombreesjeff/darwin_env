@@ -79,14 +79,8 @@ public:
     WillLaunch (lldb_private::Module* module);
 
     virtual lldb_private::Error
-    DoLaunch (lldb_private::Module* module,
-              char const *argv[],           // Can be NULL
-              char const *envp[],           // Can be NULL
-              uint32_t flags,
-              const char *stdin_path,       // Can be NULL
-              const char *stdout_path,      // Can be NULL
-              const char *stderr_path,      // Can be NULL
-              const char *working_dir);     // Can be NULL
+    DoLaunch (lldb_private::Module *exe_module, 
+              const lldb_private::ProcessLaunchInfo &launch_info);
 
     virtual void
     DidLaunch ();
@@ -173,17 +167,15 @@ public:
     DoAllocateMemory (size_t size, uint32_t permissions, lldb_private::Error &error);
 
     virtual lldb_private::Error
+    GetMemoryRegionInfo (lldb::addr_t load_addr, 
+                         lldb_private::MemoryRegionInfo &region_info);
+    
+    virtual lldb_private::Error
     DoDeallocateMemory (lldb::addr_t ptr);
 
     //------------------------------------------------------------------
     // Process STDIO
     //------------------------------------------------------------------
-    virtual size_t
-    GetSTDOUT (char *buf, size_t buf_size, lldb_private::Error &error);
-
-    virtual size_t
-    GetSTDERR (char *buf, size_t buf_size, lldb_private::Error &error);
-
     virtual size_t
     PutSTDIN (const char *buf, size_t buf_size, lldb_private::Error &error);
 
@@ -200,10 +192,10 @@ public:
     // Process Watchpoints
     //----------------------------------------------------------------------
     virtual lldb_private::Error
-    EnableWatchpoint (lldb_private::WatchpointLocation *wp_loc);
+    EnableWatchpoint (lldb_private::Watchpoint *wp);
 
     virtual lldb_private::Error
-    DisableWatchpoint (lldb_private::WatchpointLocation *wp_loc);
+    DisableWatchpoint (lldb_private::Watchpoint *wp);
 
     virtual bool
     StartNoticingNewThreads();    
@@ -245,12 +237,6 @@ protected:
     bool
     ProcessIDIsValid ( ) const;
 
-//    static void
-//    STDIOReadThreadBytesReceived (void *baton, const void *src, size_t src_len);
-
-//    void
-//    AppendSTDOUT (const char* s, size_t len);
-
     void
     Clear ( );
 
@@ -267,7 +253,8 @@ protected:
     }
 
     uint32_t
-    UpdateThreadListIfNeeded ();
+    UpdateThreadList (lldb_private::ThreadList &old_thread_list, 
+                      lldb_private::ThreadList &new_thread_list);
 
     lldb_private::Error
     StartDebugserverProcess (const char *debugserver_url);
@@ -284,6 +271,12 @@ protected:
         return m_gdb_comm;
     }
 
+    void
+    SetLastStopPacket (const StringExtractorGDBRemote &response)
+    {
+        lldb_private::Mutex::Locker locker (m_last_stop_packet_mutex);
+        m_last_stop_packet = response;
+    }
     //------------------------------------------------------------------
     /// Broadcaster event bits definitions.
     //------------------------------------------------------------------
@@ -294,11 +287,10 @@ protected:
     };
 
     lldb_private::Flags m_flags;            // Process specific flags (see eFlags enums)
-    lldb_private::Mutex m_stdio_mutex;      // Multithreaded protection for stdio
     GDBRemoteCommunicationClient m_gdb_comm;
     lldb::pid_t m_debugserver_pid;
-    lldb::thread_t m_debugserver_thread;
     StringExtractorGDBRemote m_last_stop_packet;
+    lldb_private::Mutex m_last_stop_packet_mutex;
     GDBRemoteDynamicRegisterInfo m_register_info;
     lldb_private::Broadcaster m_async_broadcaster;
     lldb::thread_t m_async_thread;
@@ -326,8 +318,9 @@ protected:
     static bool
     MonitorDebugserverProcess (void *callback_baton,
                                lldb::pid_t pid,
-                               int signo,           // Zero for no signal
-                               int exit_status);    // Exit value of process if signal is zero
+                               bool exited,
+                               int signo,
+                               int exit_status);
 
     lldb::StateType
     SetThreadStopInfo (StringExtractor& stop_packet);

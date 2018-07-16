@@ -24,10 +24,12 @@ namespace lldb_private
 class Error;
 class Module;
 class Scalar;
+
 } // End lldb_private namespace.
 
 class ProcessLinux;
 class Operation;
+class ProcessPOSIX;
 
 /// @class ProcessMonitor
 /// @brief Manages communication with the inferior (debugee) process.
@@ -47,7 +49,7 @@ public:
 
     /// Launches an inferior process ready for debugging.  Forms the
     /// implementation of Process::DoLaunch.
-    ProcessMonitor(ProcessLinux *process,
+    ProcessMonitor(ProcessPOSIX *process,
                    lldb_private::Module *module,
                    char const *argv[],
                    char const *envp[],
@@ -56,7 +58,7 @@ public:
                    const char *stderr_path,
                    lldb_private::Error &error);
 
-    ProcessMonitor(ProcessLinux *process,
+    ProcessMonitor(ProcessPOSIX *process,
                    lldb::pid_t pid,
                    lldb_private::Error &error);
 
@@ -104,7 +106,7 @@ public:
     ///
     /// This method is provided for use by RegisterContextLinux derivatives.
     bool
-    ReadRegisterValue(unsigned offset, lldb_private::RegisterValue &value);
+    ReadRegisterValue(unsigned offset, unsigned size, lldb_private::RegisterValue &value);
 
     /// Writes the given value to the register identified by the given
     /// (architecture dependent) offset.
@@ -253,27 +255,27 @@ private:
 
     static bool
     MonitorCallback(void *callback_baton,
-                    lldb::pid_t pid, int signal, int status);
+                    lldb::pid_t pid, bool exited, int signal, int status);
 
     static ProcessMessage
     MonitorSIGTRAP(ProcessMonitor *monitor,
-                   const struct siginfo *info, lldb::pid_t pid);
+                   const siginfo_t *info, lldb::pid_t pid);
 
     static ProcessMessage
     MonitorSignal(ProcessMonitor *monitor, 
-                  const struct siginfo *info, lldb::pid_t pid);
+                  const siginfo_t *info, lldb::pid_t pid);
 
     static ProcessMessage::CrashReason
-    GetCrashReasonForSIGSEGV(const struct siginfo *info);
+    GetCrashReasonForSIGSEGV(const siginfo_t *info);
 
     static ProcessMessage::CrashReason
-    GetCrashReasonForSIGILL(const struct siginfo *info);
+    GetCrashReasonForSIGILL(const siginfo_t *info);
 
     static ProcessMessage::CrashReason
-    GetCrashReasonForSIGFPE(const struct siginfo *info);
+    GetCrashReasonForSIGFPE(const siginfo_t *info);
 
     static ProcessMessage::CrashReason
-    GetCrashReasonForSIGBUS(const struct siginfo *info);
+    GetCrashReasonForSIGBUS(const siginfo_t *info);
 
     void
     DoOperation(Operation *op);

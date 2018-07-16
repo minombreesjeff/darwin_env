@@ -27,7 +27,6 @@
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
-#include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 
@@ -114,6 +113,7 @@ AppleObjCRuntimeV1::SetExceptionBreakpoints ()
     if (!m_objc_exception_bp_sp)
     {
         m_objc_exception_bp_sp = m_process->GetTarget().CreateBreakpoint (NULL,
+                                                                          NULL,
                                                                           "objc_exception_throw",
                                                                           eFunctionNameTypeBase, 
                                                                           true);
@@ -146,7 +146,7 @@ AppleObjCRuntimeV1::CreateObjectChecker(const char *name)
                     "};                                                                     \n"
                     "                                                                       \n"
                     "extern \"C\" void                                                      \n"
-                    "%s(void *$__lldb_arg_obj)                                              \n"
+                    "%s(void *$__lldb_arg_obj, void *$__lldb_arg_selector)                  \n"
                     "{                                                                      \n"
                     "   struct __objc_object *obj = (struct __objc_object*)$__lldb_arg_obj; \n"
                     "   (int)strlen(obj->isa->name);                                        \n"

@@ -24,8 +24,8 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ELF.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetRegistry.h"
 using namespace llvm;
 
 // Option to allow disabling arithmetic relaxation to workaround PR9807, which
@@ -98,14 +98,7 @@ public:
     // Specifically ignore overflow/underflow as long as the leakage is
     // limited to the lower bits. This is to remain compatible with
     // other assemblers.
-
-    const uint64_t Mask = ~0ULL;
-    const uint64_t UpperV = (Value >> (Size * 8));
-    const uint64_t MaskF = (Mask >> (Size * 8));
-    (void)UpperV;
-    (void)MaskF;
-    assert(((Size == 8) ||
-            ((UpperV & MaskF) == 0ULL) || ((UpperV & MaskF) == MaskF)) &&
+    assert(isIntN(Size * 8 + 1, Value) &&
            "Value does not fit in the Fixup field");
 
     for (unsigned i = 0; i != Size; ++i)
@@ -113,6 +106,11 @@ public:
   }
 
   bool MayNeedRelaxation(const MCInst &Inst) const;
+
+  bool fixupNeedsRelaxation(const MCFixup &Fixup,
+                            uint64_t Value,
+                            const MCInstFragment *DF,
+                            const MCAsmLayout &Layout) const;
 
   void RelaxInstruction(const MCInst &Inst, MCInst &Res) const;
 
@@ -249,6 +247,14 @@ bool X86AsmBackend::MayNeedRelaxation(const MCInst &Inst) const {
   // FIXME: Why exactly do we need the !hasRIP? Is it just a limitation on
   // how we do relaxations?
   return hasExp && !hasRIP;
+}
+
+bool X86AsmBackend::fixupNeedsRelaxation(const MCFixup &Fixup,
+                                         uint64_t Value,
+                                         const MCInstFragment *DF,
+                                         const MCAsmLayout &Layout) const {
+  // Relax if the value is too big for a (signed) i8.
+  return int64_t(Value) != int64_t(int8_t(Value));
 }
 
 // FIXME: Can tblgen help at all here to verify there aren't other instructions

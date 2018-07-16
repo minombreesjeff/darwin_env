@@ -200,8 +200,55 @@ typedef enum InstructionType
 
 }  InstructionType;
     
+    
+//------------------------------------------------------------------
+/// Format category entry types
+//------------------------------------------------------------------    
+typedef enum FormatCategoryItem
+{
+    eFormatCategoryItemSummary =         0x0001,
+    eFormatCategoryItemRegexSummary =    0x0002,
+    eFormatCategoryItemFilter =          0x0004,
+    eFormatCategoryItemRegexFilter =     0x0008,
+    eFormatCategoryItemSynth =           0x0010,
+    eFormatCategoryItemRegexSynth =      0x0020
+} FormatCategoryItem;
 
-} // namespace lldb
+//------------------------------------------------------------------
+/// Expression execution policies
+//------------------------------------------------------------------  
+typedef enum {
+    eExecutionPolicyOnlyWhenNeeded,
+    eExecutionPolicyNever,
+    eExecutionPolicyAlways
+} ExecutionPolicy;
+
+//----------------------------------------------------------------------
+// Ways that the FormatManager picks a particular format for a type
+//----------------------------------------------------------------------
+typedef enum FormatterChoiceCriterion
+{
+    eFormatterChoiceCriterionDirectChoice =                  0x00000000,
+    eFormatterChoiceCriterionStrippedPointerReference =      0x00000001,
+    eFormatterChoiceCriterionNavigatedTypedefs =             0x00000002,
+    eFormatterChoiceCriterionNavigatedBaseClasses =          0x00000004,
+    eFormatterChoiceCriterionRegularExpressionSummary =      0x00000008,
+    eFormatterChoiceCriterionRegularExpressionFilter =       0x00000008,
+    eFormatterChoiceCriterionDynamicObjCHierarchy =          0x00000010,
+    eFormatterChoiceCriterionStrippedBitField =              0x00000020
+} FormatterChoiceCriterion;
+
+//----------------------------------------------------------------------
+// Synchronicity behavior of scripted commands
+//----------------------------------------------------------------------
+typedef enum ScriptedCommandSynchronicity
+{
+    eScriptedCommandSynchronicitySynchronous,
+    eScriptedCommandSynchronicityAsynchronous,
+    eScriptedCommandSynchronicityCurrentValue // use whatever the current synchronicity is
+} ScriptedCommandSynchronicity;
+        
+} // namespace lldb_private
 
 
 #endif  // LLDB_lldb_private_enumerations_h_

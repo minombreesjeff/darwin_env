@@ -36,9 +36,9 @@ public:
   bool FixWhatYouCan;
 };
 
-class FixItRewriter : public DiagnosticClient {
+class FixItRewriter : public DiagnosticConsumer {
   /// \brief The diagnostics machinery.
-  Diagnostic &Diags;
+  DiagnosticsEngine &Diags;
 
   /// \brief The rewriter used to perform the various code
   /// modifications.
@@ -46,7 +46,7 @@ class FixItRewriter : public DiagnosticClient {
 
   /// \brief The diagnostic client that performs the actual formatting
   /// of error messages.
-  DiagnosticClient *Client;
+  DiagnosticConsumer *Client;
 
   /// \brief Turn an input path into an output path. NULL implies overwriting
   /// the original.
@@ -59,7 +59,7 @@ public:
   typedef Rewriter::buffer_iterator iterator;
 
   /// \brief Initialize a new fix-it rewriter.
-  FixItRewriter(Diagnostic &Diags, SourceManager &SourceMgr,
+  FixItRewriter(DiagnosticsEngine &Diags, SourceManager &SourceMgr,
                 const LangOptions &LangOpts, FixItOptions *FixItOpts);
 
   /// \brief Destroy the fix-it rewriter.
@@ -86,17 +86,19 @@ public:
 
   /// IncludeInDiagnosticCounts - This method (whose default implementation
   /// returns true) indicates whether the diagnostics handled by this
-  /// DiagnosticClient should be included in the number of diagnostics
-  /// reported by Diagnostic.
+  /// DiagnosticConsumer should be included in the number of diagnostics
+  /// reported by DiagnosticsEngine.
   virtual bool IncludeInDiagnosticCounts() const;
 
   /// HandleDiagnostic - Handle this diagnostic, reporting it to the user or
   /// capturing it to a log as needed.
-  virtual void HandleDiagnostic(Diagnostic::Level DiagLevel,
-                                const DiagnosticInfo &Info);
+  virtual void HandleDiagnostic(DiagnosticsEngine::Level DiagLevel,
+                                const Diagnostic &Info);
 
   /// \brief Emit a diagnostic via the adapted diagnostic client.
   void Diag(SourceLocation Loc, unsigned DiagID);
+  
+  DiagnosticConsumer *clone(DiagnosticsEngine &Diags) const;
 };
 
 }

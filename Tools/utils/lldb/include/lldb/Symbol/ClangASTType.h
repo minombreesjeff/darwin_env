@@ -107,6 +107,10 @@ public:
     GetMinimumLanguage (clang::ASTContext *ctx,
                         lldb::clang_type_t clang_type);
 
+    static lldb::TypeClass
+    GetTypeClass (clang::ASTContext *ast_context, 
+                  lldb::clang_type_t clang_type);
+
     void
     DumpValue (ExecutionContext *exe_ctx,
                Stream *s,
@@ -144,7 +148,8 @@ public:
                    uint32_t data_offset,
                    size_t data_byte_size,
                    uint32_t bitfield_bit_size,
-                   uint32_t bitfield_bit_offset);
+                   uint32_t bitfield_bit_offset,
+                   ExecutionContextScope *exe_scope);
     
     
     static bool
@@ -156,7 +161,8 @@ public:
                    uint32_t data_offset,
                    size_t data_byte_size,
                    uint32_t bitfield_bit_size,
-                   uint32_t bitfield_bit_offset);
+                   uint32_t bitfield_bit_offset,
+                   ExecutionContextScope *exe_scope);
 
     void
     DumpSummary (ExecutionContext *exe_ctx,
@@ -285,6 +291,21 @@ public:
 
     static lldb::clang_type_t
     GetPointeeType (lldb::clang_type_t opaque_clang_qual_type);
+    
+    lldb::clang_type_t
+    GetArrayElementType (uint32_t& stride);
+    
+    static lldb::clang_type_t
+    GetArrayElementType (clang::ASTContext* ast,
+                         lldb::clang_type_t opaque_clang_qual_type,
+						 uint32_t& stride);
+    
+    lldb::clang_type_t
+    GetPointerType ();
+    
+    static lldb::clang_type_t
+    GetPointerType (clang::ASTContext *ast_context,
+                    lldb::clang_type_t opaque_clang_qual_type);
 
     static lldb::clang_type_t
     RemoveFastQualifiers (lldb::clang_type_t);

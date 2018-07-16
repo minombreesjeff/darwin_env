@@ -41,13 +41,14 @@ ThreadPlanStepRange::ThreadPlanStepRange (ThreadPlanKind kind,
                                           lldb::RunMode stop_others) :
     ThreadPlan (kind, name, thread, eVoteNoOpinion, eVoteNoOpinion),
     m_addr_context (addr_context),
-    m_address_range (range),
+    m_address_ranges (),
     m_stop_others (stop_others),
     m_stack_depth (0),
     m_stack_id (),
     m_no_more_plans (false),
     m_first_run_event (true)
 {
+    AddRange(range);
     m_stack_depth = m_thread.GetStackFrameCount();
     m_stack_id = m_thread.GetStackFrameAtIndex(0)->GetStackID();
 }
@@ -62,30 +63,6 @@ ThreadPlanStepRange::ValidatePlan (Stream *error)
     return true;
 }
 
-bool
-ThreadPlanStepRange::PlanExplainsStop ()
-{
-    // We don't explain signals or breakpoints (breakpoints that handle stepping in or
-    // out will be handled by a child plan.
-    StopInfoSP stop_info_sp = GetPrivateStopReason();
-    if (stop_info_sp)
-    {
-        StopReason reason = stop_info_sp->GetStopReason();
-
-        switch (reason)
-        {
-        case eStopReasonBreakpoint:
-        case eStopReasonWatchpoint:
-        case eStopReasonSignal:
-        case eStopReasonException:
-            return false;
-        default:
-            return true;
-        }
-    }
-    return true;
-}
-
 Vote
 ThreadPlanStepRange::ShouldReportStop (Event *event_ptr)
 {
@@ -97,6 +74,33 @@ ThreadPlanStepRange::ShouldReportStop (Event *event_ptr)
     return vote;
 }
 
+void
+ThreadPlanStepRange::AddRange(const AddressRange &new_range)
+{
+    // For now I'm just adding the ranges.  At some point we may want to 
+    // condense the ranges if they overlap, though I don't think it is likely
+    // to be very important.
+    m_address_ranges.push_back (new_range);
+}
+
+void
+ThreadPlanStepRange::DumpRanges(Stream *s)
+{
+    size_t num_ranges = m_address_ranges.size();
+    if (num_ranges == 1)
+    {
+        m_address_ranges[0].Dump (s, &m_thread.GetProcess().GetTarget(), Address::DumpStyleLoadAddress);
+    }
+    else
+    {
+        for (size_t i = 0; i < num_ranges; i++)
+        {
+            s->PutCString("%d: ");
+            m_address_ranges[i].Dump (s, &m_thread.GetProcess().GetTarget(), Address::DumpStyleLoadAddress);
+        }
+    }
+}
+
 bool
 ThreadPlanStepRange::InRange ()
 {
@@ -105,7 +109,13 @@ ThreadPlanStepRange::InRange ()
 
     lldb::addr_t pc_load_addr = m_thread.GetRegisterContext()->GetPC();
 
-    ret_value = m_address_range.ContainsLoadAddress(pc_load_addr, &m_thread.GetProcess().GetTarget());
+    size_t num_ranges = m_address_ranges.size();
+    for (size_t i = 0; i < num_ranges; i++)
+    {
+        ret_value = m_address_ranges[i].ContainsLoadAddress(pc_load_addr, &m_thread.GetProcess().GetTarget());
+        if (ret_value)
+            break;
+    }
     
     if (!ret_value)
     {
@@ -115,20 +125,49 @@ ThreadPlanStepRange::InRange ()
         SymbolContext new_context(frame->GetSymbolContext(eSymbolContextEverything));
         if (m_addr_context.line_entry.IsValid() && new_context.line_entry.IsValid())
         {
-           if ((m_addr_context.line_entry.file == new_context.line_entry.file)
-               && (m_addr_context.line_entry.line == new_context.line_entry.line))
+            if (m_addr_context.line_entry.file == new_context.line_entry.file)
             {
-                m_addr_context = new_context;
-                m_address_range = m_addr_context.line_entry.range;
-                ret_value = true;
-                if (log)
+                if (m_addr_context.line_entry.line == new_context.line_entry.line)
                 {
-                    StreamString s;
-                    m_address_range.Dump (&s, &m_thread.GetProcess().GetTarget(), Address::DumpStyleLoadAddress);
+                    m_addr_context = new_context;
+                    AddRange(m_addr_context.line_entry.range);
+                    ret_value = true;
+                    if (log)
+                    {
+                        StreamString s;
+                        m_addr_context.line_entry.range.Dump (&s, 
+                                                              &m_thread.GetProcess().GetTarget(), 
+                                                              Address::DumpStyleLoadAddress);
 
-                    log->Printf ("Step range plan stepped to another range of same line: %s", s.GetData());
+                        log->Printf ("Step range plan stepped to another range of same line: %s", s.GetData());
+                    }
+                }
+                else if (new_context.line_entry.range.GetBaseAddress().GetLoadAddress(&m_thread.GetProcess().GetTarget())
+                         != pc_load_addr)
+                {
+                    // Another thing that sometimes happens here is that we step out of one line into the MIDDLE of another
+                    // line.  So far I mostly see this due to bugs in the debug information.
+                    // But we probably don't want to be in the middle of a line range, so in that case reset the stepping
+                    // range to the line we've stepped into the middle of and continue.
+                    m_addr_context = new_context;
+                    m_address_ranges.clear();
+                    AddRange(m_addr_context.line_entry.range);
+                    ret_value = true;
+                    if (log)
+                    {
+                        StreamString s;
+                        m_addr_context.line_entry.range.Dump (&s, 
+                                                              &m_thread.GetProcess().GetTarget(), 
+                                                              Address::DumpStyleLoadAddress);
+
+                        log->Printf ("Step range plan stepped to the middle of new line(%d): %s, continuing to clear this line.", 
+                                     new_context.line_entry.line, 
+                                     s.GetData());
+                    }
+                
                 }
             }
+            
         }
         
     }

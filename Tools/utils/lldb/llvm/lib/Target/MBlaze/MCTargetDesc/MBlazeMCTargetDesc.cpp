@@ -14,12 +14,13 @@
 #include "MBlazeMCTargetDesc.h"
 #include "MBlazeMCAsmInfo.h"
 #include "InstPrinter/MBlazeInstPrinter.h"
+#include "llvm/MC/MCCodeGenInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TargetRegistry.h"
 
 #define GET_INSTRINFO_MC_DESC
 #include "MBlazeGenInstrInfo.inc"
@@ -61,13 +62,14 @@ static MCAsmInfo *createMCAsmInfo(const Target &T, StringRef TT) {
 }
 
 static MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM,
-                                                CodeModel::Model CM) {
+                                                CodeModel::Model CM,
+                                                CodeGenOpt::Level OL) {
   MCCodeGenInfo *X = new MCCodeGenInfo();
   if (RM == Reloc::Default)
     RM = Reloc::Static;
   if (CM == CodeModel::Default)
     CM = CodeModel::Small;
-  X->InitMCCodeGenInfo(RM, CM);
+  X->InitMCCodeGenInfo(RM, CM, OL);
   return X;
 }
 
@@ -94,7 +96,8 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
 
 static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,
                                                 unsigned SyntaxVariant,
-                                                const MCAsmInfo &MAI) {
+                                                const MCAsmInfo &MAI,
+                                                const MCSubtargetInfo &STI) {
   if (SyntaxVariant == 0)
     return new MBlazeInstPrinter(MAI);
   return 0;

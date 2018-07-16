@@ -1,4 +1,4 @@
-//===-- AlphaMCTargetDesc.h - Alpha Target Descriptions ---------*- C++ -*-===//
+//===-- MipsMCTargetDesc.h - Mips Target Descriptions -----------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,20 +7,34 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file provides Alpha specific target descriptions.
+// This file provides Mips specific target descriptions.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ALPHAMCTARGETDESC_H
-#define ALPHAMCTARGETDESC_H
+#ifndef MIPSMCTARGETDESC_H
+#define MIPSMCTARGETDESC_H
 
 namespace llvm {
+class MCAsmBackend;
+class MCCodeEmitter;
+class MCContext;
+class MCInstrInfo;
+class MCObjectWriter;
 class MCSubtargetInfo;
-class Target;
 class StringRef;
+class Target;
+class raw_ostream;
 
 extern Target TheMipsTarget;
 extern Target TheMipselTarget;
+extern Target TheMips64Target;
+extern Target TheMips64elTarget;
+
+MCCodeEmitter *createMipsMCCodeEmitter(const MCInstrInfo &MCII,
+                                       const MCSubtargetInfo &STI,
+                                       MCContext &Ctx);
+
+MCAsmBackend *createMipsAsmBackend(const Target &T, StringRef TT);
 
 } // End llvm namespace
 

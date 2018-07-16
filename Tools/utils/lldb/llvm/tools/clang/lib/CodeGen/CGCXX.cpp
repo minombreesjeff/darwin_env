@@ -305,7 +305,7 @@ llvm::Value *
 CodeGenFunction::BuildVirtualCall(const CXXMethodDecl *MD, llvm::Value *This,
                                   llvm::Type *Ty) {
   MD = MD->getCanonicalDecl();
-  uint64_t VTableIndex = CGM.getVTables().getMethodVTableIndex(MD);
+  uint64_t VTableIndex = CGM.getVTableContext().getMethodVTableIndex(MD);
   
   return ::BuildVirtualCall(*this, VTableIndex, This, Ty);
 }
@@ -335,9 +335,10 @@ CodeGenFunction::BuildAppleKextVirtualCall(const CXXMethodDecl *MD,
   VTable = Builder.CreateBitCast(VTable, Ty);
   assert(VTable && "BuildVirtualCall = kext vtbl pointer is null");
   MD = MD->getCanonicalDecl();
-  uint64_t VTableIndex = CGM.getVTables().getMethodVTableIndex(MD);
+  uint64_t VTableIndex = CGM.getVTableContext().getMethodVTableIndex(MD);
   uint64_t AddressPoint = 
-    CGM.getVTables().getAddressPoint(BaseSubobject(RD, CharUnits::Zero()), RD);
+    CGM.getVTableContext().getVTableLayout(RD)
+       .getAddressPoint(BaseSubobject(RD, CharUnits::Zero()));
   VTableIndex += AddressPoint;
   llvm::Value *VFuncPtr = 
     Builder.CreateConstInBoundsGEP1_64(VTable, VTableIndex, "vfnkxt");
@@ -370,9 +371,10 @@ CodeGenFunction::BuildAppleKextVirtualDestructorCall(
     VTable = Builder.CreateBitCast(VTable, Ty);
     DD = cast<CXXDestructorDecl>(DD->getCanonicalDecl());
     uint64_t VTableIndex = 
-      CGM.getVTables().getMethodVTableIndex(GlobalDecl(DD, Type));
+      CGM.getVTableContext().getMethodVTableIndex(GlobalDecl(DD, Type));
     uint64_t AddressPoint =
-      CGM.getVTables().getAddressPoint(BaseSubobject(RD, CharUnits::Zero()), RD);
+      CGM.getVTableContext().getVTableLayout(RD)
+         .getAddressPoint(BaseSubobject(RD, CharUnits::Zero()));
     VTableIndex += AddressPoint;
     llvm::Value *VFuncPtr =
       Builder.CreateConstInBoundsGEP1_64(VTable, VTableIndex, "vfnkxt");
@@ -386,7 +388,7 @@ CodeGenFunction::BuildVirtualCall(const CXXDestructorDecl *DD, CXXDtorType Type,
                                   llvm::Value *This, llvm::Type *Ty) {
   DD = cast<CXXDestructorDecl>(DD->getCanonicalDecl());
   uint64_t VTableIndex = 
-    CGM.getVTables().getMethodVTableIndex(GlobalDecl(DD, Type));
+    CGM.getVTableContext().getMethodVTableIndex(GlobalDecl(DD, Type));
 
   return ::BuildVirtualCall(*this, VTableIndex, This, Ty);
 }

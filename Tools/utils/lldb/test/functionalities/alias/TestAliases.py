@@ -51,7 +51,7 @@ class AliasTestCase(TestBase):
         self.runCmd ("command alias alias command alias")
         self.runCmd ("command alias unalias command unalias")
 
-        self.runCmd ("alias myrun process launch -t%1 --")
+        self.runCmd ("alias myrun process launch -t %1 --")
         self.runCmd ("alias bp breakpoint")
 
         self.expect ("alias bpa bp add",
@@ -90,6 +90,14 @@ class AliasTestCase(TestBase):
         self.expect ("help run",
                      substrs = [ "'run' is an abbreviation for 'process launch --'" ])
 
+        self.expect ("help -a run",
+                     substrs = [ "'run' is an abbreviation for 'process launch --'" ])
+
+        self.expect ("help -a",
+                     substrs = [ 'run', 'process launch' ])
+
+        self.expect ("help", matching=False,
+                     substrs = [ "'run'", 'process launch' ])
 
         self.expect ("run",
                      patterns = [ "Process .* launched: .*a.out" ])
@@ -129,32 +137,6 @@ class AliasTestCase(TestBase):
                      COMMAND_FAILED_AS_EXPECTED, error = True,
                      substrs = [ "use of undeclared identifier 'f'",
                                  "1 errors parsing expression" ])
-
-        self.runCmd("command source py_import")
-
-        self.expect('welcome Enrico',
-            substrs = ['Hello Enrico, welcome to LLDB']);
-
-        self.runCmd("command unalias welcome");
-
-        self.expect('welcome Enrico', matching=False, error=True,
-                    substrs = ['Hello Enrico, welcome to LLDB']);
-
-        self.expect('targetname',
-            substrs = ['a.out'])
-
-        self.expect('targetname fail', error=True,
-                    substrs = ['a test for error in command'])
-
-        self.expect('help',
-            substrs = ['targetname',
-                       'Run Python function target_name_impl'])
-
-        self.expect("help targetname",
-                    substrs = ['Run Python function target_name_imp',
-                               'This command takes \'raw\' input',
-                               'quote stuff'])
-
 
 if __name__ == '__main__':
     import atexit

@@ -225,9 +225,10 @@ namespace clang {
   /// UserDefinedConversionSequence - Represents a user-defined
   /// conversion sequence (C++ 13.3.3.1.2).
   struct UserDefinedConversionSequence {
-    /// Before - Represents the standard conversion that occurs before
-    /// the actual user-defined conversion. (C++ 13.3.3.1.2p1):
+    /// \brief Represents the standard conversion that occurs before
+    /// the actual user-defined conversion.
     ///
+    /// C++11 13.3.3.1.2p1:
     ///   If the user-defined conversion is specified by a constructor
     ///   (12.3.1), the initial standard conversion sequence converts
     ///   the source type to the type required by the argument of the
@@ -244,20 +245,26 @@ namespace clang {
     // a gcc code gen. bug which causes a crash in a test. Putting it here seems
     // to work around the crash.
     bool EllipsisConversion : 1;
-    
+
+    /// HadMultipleCandidates - When this is true, it means that the
+    /// conversion function was resolved from an overloaded set having
+    /// size greater than 1.
+    bool HadMultipleCandidates : 1;
+
     /// After - Represents the standard conversion that occurs after
     /// the actual user-defined conversion.
     StandardConversionSequence After;
 
     /// ConversionFunction - The function that will perform the
-    /// user-defined conversion.
+    /// user-defined conversion. Null if the conversion is an
+    /// aggregate initialization from an initializer list.
     FunctionDecl* ConversionFunction;
 
     /// \brief The declaration that we found via name lookup, which might be
     /// the same as \c ConversionFunction or it might be a using declaration
     /// that refers to \c ConversionFunction.
-    NamedDecl *FoundConversionFunction;
-    
+    DeclAccessPair FoundConversionFunction;
+
     void DebugPrint() const;
   };
 
@@ -374,7 +381,10 @@ namespace clang {
     };
 
     /// ConversionKind - The kind of implicit conversion sequence.
-    unsigned ConversionKind;
+    unsigned ConversionKind : 31;
+
+    /// \brief Whether the argument is an initializer list.
+    bool ListInitializationSequence : 1;
 
     void setKind(Kind K) {
       destruct();
@@ -404,12 +414,14 @@ namespace clang {
       BadConversionSequence Bad;
     };
 
-    ImplicitConversionSequence() : ConversionKind(Uninitialized) {}
+    ImplicitConversionSequence() 
+      : ConversionKind(Uninitialized), ListInitializationSequence(false) {}
     ~ImplicitConversionSequence() {
       destruct();
     }
     ImplicitConversionSequence(const ImplicitConversionSequence &Other)
-      : ConversionKind(Other.ConversionKind)
+      : ConversionKind(Other.ConversionKind), 
+        ListInitializationSequence(Other.ListInitializationSequence)
     {
       switch (ConversionKind) {
       case Uninitialized: break;
@@ -464,6 +476,7 @@ namespace clang {
     bool isEllipsis() const { return getKind() == EllipsisConversion; }
     bool isAmbiguous() const { return getKind() == AmbiguousConversion; }
     bool isUserDefined() const { return getKind() == UserDefinedConversion; }
+    bool isFailure() const { return isBad() || isAmbiguous(); }
 
     /// Determines whether this conversion sequence has been
     /// initialized.  Most operations should never need to query
@@ -491,6 +504,16 @@ namespace clang {
       if (ConversionKind == AmbiguousConversion) return;
       ConversionKind = AmbiguousConversion;
       Ambiguous.construct();
+    }
+
+    /// \brief Whether this sequence was created by the rules of
+    /// list-initialization sequences.
+    bool isListInitializationSequence() const {
+      return ListInitializationSequence;
+    }
+
+    void setListInitializationSequence() {
+      ListInitializationSequence = true;
     }
 
     // The result of a comparison between implicit conversion
@@ -526,7 +549,12 @@ namespace clang {
     
     /// This conversion function template specialization candidate is not 
     /// viable because the final conversion was not an exact match.
-    ovl_fail_final_conversion_not_exact
+    ovl_fail_final_conversion_not_exact,
+
+    /// (CUDA) This candidate was not viable because the callee
+    /// was not accessible from the caller's target (i.e. host->device,
+    /// global->host, device->host).
+    ovl_fail_bad_target
   };
 
   /// OverloadCandidate - A single candidate in an overload set (C++ 13.3).

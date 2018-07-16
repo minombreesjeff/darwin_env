@@ -143,6 +143,31 @@ public:
 
 
     //------------------------------------------------------------------
+    /// Some dynamic loaders provide features where there are a group of symbols "equivalent to"
+    /// a given symbol one of which will be chosen when the symbol is bound.  If you want to
+    /// set a breakpoint on one of these symbols, you really need to set it on all the
+    /// equivalent symbols.
+    ///
+    ///
+    /// @param[in] original_symbol
+    ///     The symbol for which we are finding equivalences.
+    ///
+    /// @param[in] module_list
+    ///     The set of modules in which to search.
+    ///
+    /// @param[out] equivalent_symbols
+    ///     The equivalent symbol list - any equivalent symbols found are appended to this list.
+    ///
+    /// @return
+    ///    Number of equivalent symbols found.
+    //------------------------------------------------------------------
+    virtual size_t
+    FindEquivalentSymbols (Symbol *original_symbol, ModuleList &module_list, SymbolContextList &equivalent_symbols)
+    {
+        return 0;
+    }
+
+    //------------------------------------------------------------------
     /// Ask if it is ok to try and load or unload an shared library 
     /// (image).
     ///
@@ -152,11 +177,39 @@ public:
     /// sure it is an ok time to load a shared library.
     ///
     /// @return
-    ///     \b True if it is currently ok to try and load a shared 
+    ///     \b true if it is currently ok to try and load a shared 
     ///     library into the process, \b false otherwise.
     //------------------------------------------------------------------
     virtual Error
     CanLoadImage () = 0;
+
+    //------------------------------------------------------------------
+    /// Ask if the eh_frame information for the given SymbolContext should
+    /// be relied on even when it's the first frame in a stack unwind.
+    /// 
+    /// The CFI instructions from the eh_frame section are normally only
+    /// valid at call sites -- places where a program could throw an 
+    /// exception and need to unwind out.  But some Modules may be known 
+    /// to the system as having reliable eh_frame information at all call 
+    /// sites.  This would be the case if the Module's contents are largely
+    /// hand-written assembly with hand-written eh_frame information.
+    /// Normally when unwinding from a function at the beginning of a stack
+    /// unwind lldb will examine the assembly instructions to understand
+    /// how the stack frame is set up and where saved registers are stored.
+    /// But with hand-written assembly this is not reliable enough -- we need
+    /// to consult those function's hand-written eh_frame information.
+    ///
+    /// @return
+    ///     \b True if the symbol context should use eh_frame instructions
+    ///     unconditionally when unwinding from this frame.  Else \b false,
+    ///     the normal lldb unwind behavior of only using eh_frame when the
+    ///     function appears in the middle of the stack.
+    //------------------------------------------------------------------
+    virtual bool
+    AlwaysRelyOnEHUnwindInfo (SymbolContext &sym_ctx)
+    {
+       return false;
+    }
 
 protected:
     //------------------------------------------------------------------

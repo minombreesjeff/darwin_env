@@ -33,11 +33,9 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MemoryObject.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetSelect.h"
+#include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
-bool EDDisassembler::sInitialized = false;
 EDDisassembler::DisassemblerMap_t EDDisassembler::sDisassemblers;
 
 struct TripleMap {
@@ -98,32 +96,25 @@ static int getLLVMSyntaxVariant(Triple::ArchType arch,
   }
 }
 
-void EDDisassembler::initialize() {
-  if (sInitialized)
-    return;
-  
-  sInitialized = true;
-  
-  InitializeAllTargetInfos();
-  InitializeAllTargetMCs();
-  InitializeAllAsmParsers();
-  InitializeAllDisassemblers();
-}
-
-#undef BRINGUP_TARGET
-
 EDDisassembler *EDDisassembler::getDisassembler(Triple::ArchType arch,
                                                 AssemblySyntax syntax) {
+  const char *triple = tripleFromArch(arch);
+  return getDisassembler(StringRef(triple), syntax);
+}
+
+EDDisassembler *EDDisassembler::getDisassembler(StringRef str,
+                                                AssemblySyntax syntax) {
   CPUKey key;
-  key.Arch = arch;
+  key.Triple = str.str();
   key.Syntax = syntax;
   
   EDDisassembler::DisassemblerMap_t::iterator i = sDisassemblers.find(key);
-  
+    
   if (i != sDisassemblers.end()) {
-    return i->second;
-  } else {
-    EDDisassembler* sdd = new EDDisassembler(key);
+    return i->second;  
+  }
+  else {
+    EDDisassembler *sdd = new EDDisassembler(key);
     if (!sdd->valid()) {
       delete sdd;
       return NULL;
@@ -135,10 +126,7 @@ EDDisassembler *EDDisassembler::getDisassembler(Triple::ArchType arch,
   }
   
   return NULL;
-}
-
-EDDisassembler *EDDisassembler::getDisassembler(StringRef str,
-                                                AssemblySyntax syntax) {
+    
   return getDisassembler(Triple(str).getArch(), syntax);
 }
 
@@ -146,21 +134,20 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   Valid(false), 
   HasSemantics(false), 
   ErrorStream(nulls()), 
-  Key(key) {
-  const char *triple = tripleFromArch(key.Arch);
-    
-  if (!triple)
+  Key(key),
+  TgtTriple(key.Triple.c_str()) {        
+  if (TgtTriple.getArch() == Triple::InvalidArch)
     return;
   
-  LLVMSyntaxVariant = getLLVMSyntaxVariant(key.Arch, key.Syntax);
+  LLVMSyntaxVariant = getLLVMSyntaxVariant(TgtTriple.getArch(), key.Syntax);
   
   if (LLVMSyntaxVariant < 0)
     return;
   
-  std::string tripleString(triple);
+  std::string tripleString(key.Triple);
   std::string errorString;
   
-  Tgt = TargetRegistry::lookupTarget(tripleString, 
+  Tgt = TargetRegistry::lookupTarget(key.Triple, 
                                      errorString);
   
   if (!Tgt)
@@ -178,7 +165,12 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   if (!AsmInfo)
     return;
 
-  Disassembler.reset(Tgt->createMCDisassembler());
+  STI.reset(Tgt->createMCSubtargetInfo(tripleString, "", ""));
+  
+  if (!STI)
+    return;
+
+  Disassembler.reset(Tgt->createMCDisassembler(*STI));
   
   if (!Disassembler)
     return;
@@ -187,7 +179,7 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   
   InstString.reset(new std::string);
   InstStream.reset(new raw_string_ostream(*InstString));
-  InstPrinter.reset(Tgt->createMCInstPrinter(LLVMSyntaxVariant, *AsmInfo));
+  InstPrinter.reset(Tgt->createMCInstPrinter(LLVMSyntaxVariant, *AsmInfo, *STI));
   
   if (!InstPrinter)
     return;
@@ -239,14 +231,17 @@ EDInst *EDDisassembler::createInst(EDByteReaderCallback byteReader,
   MCInst* inst = new MCInst;
   uint64_t byteSize;
   
-  if (!Disassembler->getInstruction(*inst,
-                                    byteSize,
-                                    memoryObject,
-                                    address,
-                                    ErrorStream)) {
+  MCDisassembler::DecodeStatus S;
+  S = Disassembler->getInstruction(*inst, byteSize, memoryObject, address,
+                                   ErrorStream, nulls());
+  switch (S) {
+  case MCDisassembler::Fail:
+  case MCDisassembler::SoftFail:
+    // FIXME: Do something different on soft failure mode?
     delete inst;
     return NULL;
-  } else {
+    
+  case MCDisassembler::Success: {
     const llvm::EDInstInfo *thisInstInfo = NULL;
 
     if (InstInfos) {
@@ -256,6 +251,8 @@ EDInst *EDDisassembler::createInst(EDByteReaderCallback byteReader,
     EDInst* sdInst = new EDInst(inst, byteSize, *this, thisInstInfo);
     return sdInst;
   }
+  }
+  return NULL;
 }
 
 void EDDisassembler::initMaps(const MCRegisterInfo &registerInfo) {
@@ -269,7 +266,7 @@ void EDDisassembler::initMaps(const MCRegisterInfo &registerInfo) {
     RegRMap[registerName] = registerIndex;
   }
   
-  switch (Key.Arch) {
+  switch (TgtTriple.getArch()) {
   default:
     break;
   case Triple::x86:
@@ -317,7 +314,7 @@ bool EDDisassembler::registerIsProgramCounter(unsigned registerID) {
 int EDDisassembler::printInst(std::string &str, MCInst &inst) {
   PrinterMutex.acquire();
   
-  InstPrinter->printInst(&inst, *InstStream);
+  InstPrinter->printInst(&inst, *InstStream, "");
   InstStream->flush();
   str = *InstString;
   InstString->clear();
@@ -327,13 +324,9 @@ int EDDisassembler::printInst(std::string &str, MCInst &inst) {
   return 0;
 }
 
-static void diag_handler(const SMDiagnostic &diag,
-                         void *context)
-{
-  if (context) {
-    EDDisassembler *disassembler = static_cast<EDDisassembler*>(context);
-    diag.Print("", disassembler->ErrorStream);
-  }
+static void diag_handler(const SMDiagnostic &diag, void *context) {
+  if (context)
+    diag.print("", static_cast<EDDisassembler*>(context)->ErrorStream);
 }
 
 int EDDisassembler::parseInst(SmallVectorImpl<MCParsedAsmOperand*> &operands,
@@ -341,7 +334,7 @@ int EDDisassembler::parseInst(SmallVectorImpl<MCParsedAsmOperand*> &operands,
                               const std::string &str) {
   int ret = 0;
   
-  switch (Key.Arch) {
+  switch (TgtTriple.getArch()) {
   default:
     return -1;
   case Triple::x86:
@@ -362,12 +355,11 @@ int EDDisassembler::parseInst(SmallVectorImpl<MCParsedAsmOperand*> &operands,
   sourceMgr.AddNewSourceBuffer(buf, SMLoc()); // ownership of buf handed over
   MCContext context(*AsmInfo, *MRI, NULL);
   OwningPtr<MCStreamer> streamer(createNullStreamer(context));
-  OwningPtr<MCAsmParser> genericParser(createMCAsmParser(*Tgt, sourceMgr,
+  OwningPtr<MCAsmParser> genericParser(createMCAsmParser(sourceMgr,
                                                          context, *streamer,
                                                          *AsmInfo));
 
-  StringRef triple = tripleFromArch(Key.Arch);
-  OwningPtr<MCSubtargetInfo> STI(Tgt->createMCSubtargetInfo(triple, "", ""));
+  OwningPtr<MCSubtargetInfo> STI(Tgt->createMCSubtargetInfo(Key.Triple.c_str(), "", ""));
   OwningPtr<MCTargetAsmParser>
     TargetParser(Tgt->createMCAsmParser(*STI, *genericParser));
   

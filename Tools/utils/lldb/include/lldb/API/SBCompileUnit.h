@@ -47,6 +47,12 @@ public:
                         uint32_t line,
                         lldb::SBFileSpec *inline_file_spec) const;
 
+    uint32_t
+    FindLineEntryIndex (uint32_t start_idx,
+                        uint32_t line,
+                        lldb::SBFileSpec *inline_file_spec,
+                        bool exact) const;
+
 #ifndef SWIG
 
     bool
@@ -75,9 +81,9 @@ private:
     const lldb_private::CompileUnit &
     operator*() const;
     
-    const lldb_private::CompileUnit *
-    get () const;
-
+    lldb_private::CompileUnit *
+    get ();
+    
     void
     reset (lldb_private::CompileUnit *lldb_object_ptr);
 

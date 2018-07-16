@@ -14,7 +14,9 @@
 #include "lldb/API/SBAddress.h"
 #include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBFileSpec.h"
+#include "lldb/API/SBFileSpecList.h"
 #include "lldb/API/SBType.h"
+#include "lldb/API/SBWatchpoint.h"
 
 namespace lldb {
 
@@ -179,6 +181,14 @@ public:
                            lldb::pid_t pid,
                            lldb::SBError& error);
 
+#if defined(__APPLE__)
+    // We need to keep this around for a build or two since Xcode links
+    // to the 32 bit version of this function. We will take it out soon.
+    lldb::SBProcess
+    AttachToProcessWithID (SBListener &listener,
+                           ::pid_t pid,           // 32 bit int process ID
+                           lldb::SBError& error); // DEPRECATED 
+#endif
     //------------------------------------------------------------------
     /// Attach to process with name.
     ///
@@ -236,17 +246,98 @@ public:
     lldb::SBFileSpec
     GetExecutable ();
 
+    bool
+    AddModule (lldb::SBModule &module);
+
+    lldb::SBModule
+    AddModule (const char *path,
+               const char *triple,
+               const char *uuid);
+
     uint32_t
     GetNumModules () const;
 
     lldb::SBModule
     GetModuleAtIndex (uint32_t idx);
 
+    bool
+    RemoveModule (lldb::SBModule module);
+
     lldb::SBDebugger
     GetDebugger() const;
 
     lldb::SBModule
     FindModule (const lldb::SBFileSpec &file_spec);
+
+    //------------------------------------------------------------------
+    /// Set the base load address for a module section.
+    ///
+    /// @param[in] section
+    ///     The section whose base load address will be set within this
+    ///     target.
+    ///
+    /// @param[in] section_base_addr
+    ///     The base address for the section.
+    ///
+    /// @return
+    ///      An error to indicate success, fail, and any reason for 
+    ///     failure.
+    //------------------------------------------------------------------
+    lldb::SBError
+    SetSectionLoadAddress (lldb::SBSection section,
+                           lldb::addr_t section_base_addr);
+    
+    //------------------------------------------------------------------
+    /// Clear the base load address for a module section.
+    ///
+    /// @param[in] section
+    ///     The section whose base load address will be cleared within
+    ///     this target.
+    ///
+    /// @return
+    ///      An error to indicate success, fail, and any reason for 
+    ///     failure.
+    //------------------------------------------------------------------
+    lldb::SBError
+    ClearSectionLoadAddress (lldb::SBSection section);
+    
+    //------------------------------------------------------------------
+    /// Slide all file addresses for all module sections so that \a module
+    /// appears to loaded at these slide addresses.
+    /// 
+    /// When you need all sections within a module to be loaded at a 
+    /// rigid slide from the addresses found in the module object file,
+    /// this function will allow you to easily and quickly slide all
+    /// module sections.
+    ///
+    /// @param[in] module
+    ///     The module to load.
+    ///
+    /// @param[in] sections_offset
+    ///     An offset that will be applied to all section file addresses
+    ///     (the virtual addresses found in the object file itself).
+    ///
+    /// @return
+    ///     An error to indicate success, fail, and any reason for 
+    ///     failure.
+    //------------------------------------------------------------------
+    lldb::SBError
+    SetModuleLoadAddress (lldb::SBModule module,
+                          int64_t sections_offset);
+    
+
+    //------------------------------------------------------------------
+    /// The the section base load addresses for all sections in a module.
+    /// 
+    /// @param[in] module
+    ///     The module to unload.
+    ///
+    /// @return
+    ///     An error to indicate success, fail, and any reason for 
+    ///     failure.
+    //------------------------------------------------------------------
+    lldb::SBError
+    ClearModuleLoadAddress (lldb::SBModule module);
 
     //------------------------------------------------------------------
     /// Find functions by name.
@@ -314,8 +405,35 @@ public:
     lldb::SBBreakpoint
     BreakpointCreateByName (const char *symbol_name, const char *module_name = NULL);
 
+    // This version uses name_type_mask = eFunctionNameTypeAuto
+    lldb::SBBreakpoint
+    BreakpointCreateByName (const char *symbol_name, 
+                            const SBFileSpecList &module_list, 
+                            const SBFileSpecList &comp_unit_list);
+
+    lldb::SBBreakpoint
+    BreakpointCreateByName (const char *symbol_name,
+                            uint32_t name_type_mask,           // Logical OR one or more FunctionNameType enum bits
+                            const SBFileSpecList &module_list, 
+                            const SBFileSpecList &comp_unit_list);
+
     lldb::SBBreakpoint
     BreakpointCreateByRegex (const char *symbol_name_regex, const char *module_name = NULL);
+    
+    lldb::SBBreakpoint
+    BreakpointCreateByRegex (const char *symbol_name_regex, 
+                             const SBFileSpecList &module_list, 
+                             const SBFileSpecList &comp_unit_list);
+    
+    lldb::SBBreakpoint
+    BreakpointCreateBySourceRegex (const char *source_regex, 
+                                   const lldb::SBFileSpec &source_file, 
+                                   const char *module_name = NULL);
+
+    lldb::SBBreakpoint
+    BreakpointCreateBySourceRegex (const char *source_regex, 
+                                   const SBFileSpecList &module_list, 
+                                   const lldb::SBFileSpecList &source_file);
 
     lldb::SBBreakpoint
     BreakpointCreateByAddress (addr_t address);
@@ -341,6 +459,30 @@ public:
     bool
     DeleteAllBreakpoints ();
 
+    uint32_t
+    GetNumWatchpoints () const;
+
+    lldb::SBWatchpoint
+    GetWatchpointAtIndex (uint32_t idx) const;
+
+    bool
+    DeleteWatchpoint (lldb::watch_id_t watch_id);
+
+    lldb::SBWatchpoint
+    FindWatchpointByID (lldb::watch_id_t watch_id);
+
+    lldb::SBWatchpoint
+    WatchAddress (lldb::addr_t addr, size_t size, bool read, bool write);
+
+    bool
+    EnableAllWatchpoints ();
+
+    bool
+    DisableAllWatchpoints ();
+
+    bool
+    DeleteAllWatchpoints ();
+
     lldb::SBBroadcaster
     GetBroadcaster () const;
     
@@ -349,6 +491,15 @@ public:
     
     lldb::SBTypeList
     FindTypes (const char* type);
+    
+    SBSourceManager
+    GetSourceManager();
+    
+    lldb::SBInstructionList
+    GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
+    
+    lldb::SBInstructionList
+    GetInstructions (lldb::addr_t base_addr, const void *buf, size_t size);
 
 #ifndef SWIG
     bool
@@ -359,21 +510,18 @@ public:
 
 #endif
 
-#ifndef SWIG
     bool
     GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
-#endif
-
-    bool
-    GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level) const;
 
 protected:
     friend class SBAddress;
     friend class SBDebugger;
     friend class SBFunction;
-    friend class SBProcess;
-    friend class SBSymbol;
+    friend class SBInstruction;
     friend class SBModule;
+    friend class SBProcess;
+    friend class SBSourceManager;
+    friend class SBSymbol;
     friend class SBValue;
 
     //------------------------------------------------------------------
@@ -391,6 +539,9 @@ protected:
 
     lldb_private::Target *
     get() const;
+
+    const lldb::TargetSP &
+    get_sp () const;
 
 private:
     //------------------------------------------------------------------

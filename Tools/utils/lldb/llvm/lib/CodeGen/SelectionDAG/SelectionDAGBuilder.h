@@ -67,6 +67,7 @@ class SIToFPInst;
 class StoreInst;
 class SwitchInst;
 class TargetData;
+class TargetLibraryInfo;
 class TargetLowering;
 class TruncInst;
 class UIToFPInst;
@@ -294,6 +295,7 @@ public:
   SelectionDAG &DAG;
   const TargetData *TD;
   AliasAnalysis *AA;
+  const TargetLibraryInfo *LibInfo;
 
   /// SwitchCases - Vector of CaseBlock structures used to communicate
   /// SwitchInst code generation information.
@@ -320,6 +322,9 @@ public:
   /// GFI - Garbage collection metadata for the function.
   GCFunctionInfo *GFI;
 
+  /// LPadToCallSiteMap - Map a landing pad to the call site indexes.
+  DenseMap<MachineBasicBlock*, SmallVector<unsigned, 4> > LPadToCallSiteMap;
+
   /// HasTailCall - This is set to true if a call in the current
   /// block has been translated as a tail call. In this case,
   /// no subsequent DAG nodes should be created.
@@ -335,7 +340,8 @@ public:
       HasTailCall(false), Context(dag.getContext()) {
   }
 
-  void init(GCFunctionInfo *gfi, AliasAnalysis &aa);
+  void init(GCFunctionInfo *gfi, AliasAnalysis &aa,
+            const TargetLibraryInfo *li);
 
   /// clear - Clear out the current SelectionDAG and the associated
   /// state and prepare this SelectionDAGBuilder object to be used
@@ -512,6 +518,7 @@ private:
 
   void visitExtractValue(const ExtractValueInst &I);
   void visitInsertValue(const InsertValueInst &I);
+  void visitLandingPad(const LandingPadInst &I);
 
   void visitGetElementPtr(const User &I);
   void visitSelect(const User &I);
@@ -525,7 +532,9 @@ private:
   void visitPHI(const PHINode &I);
   void visitCall(const CallInst &I);
   bool visitMemCmpCall(const CallInst &I);
-  
+  void visitAtomicLoad(const LoadInst &I);
+  void visitAtomicStore(const StoreInst &I);
+
   void visitInlineAsm(ImmutableCallSite CS);
   const char *visitIntrinsicCall(const CallInst &I, unsigned Intrinsic);
   void visitTargetIntrinsic(const CallInst &I, unsigned Intrinsic);
@@ -549,7 +558,6 @@ private:
     llvm_unreachable("UserOp2 should not exist at instruction selection time!");
   }
   
-  const char *implVisitBinaryAtomic(const CallInst& I, ISD::NodeType Op);
   const char *implVisitAluOverflow(const CallInst &I, ISD::NodeType Op);
 
   void HandlePHINodesInSuccessorBlocks(const BasicBlock *LLVMBB);

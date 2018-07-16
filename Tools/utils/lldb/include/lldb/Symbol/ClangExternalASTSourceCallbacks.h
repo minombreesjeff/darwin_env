@@ -18,55 +18,40 @@
 #include <stdint.h>
 
 // Other libraries and framework includes
-
-// Clang headers like to use NDEBUG inside of them to enable/disable debug 
-// releated features using "#ifndef NDEBUG" preprocessor blocks to do one thing
-// or another. This is bad because it means that if clang was built in release
-// mode, it assumes that you are building in release mode which is not always
-// the case. You can end up with functions that are defined as empty in header
-// files when NDEBUG is not defined, and this can cause link errors with the
-// clang .a files that you have since you might be missing functions in the .a
-// file. So we have to define NDEBUG when including clang headers to avoid any
-// mismatches. This is covered by rdar://problem/8691220
-
-#ifndef NDEBUG
-#define LLDB_DEFINED_NDEBUG_FOR_CLANG
-#define NDEBUG
-// Need to include assert.h so it is as clang would expect it to be (disabled)
-#include <assert.h>
-#endif
-
-#include "clang/AST/ExternalASTSource.h"
-
-#ifdef LLDB_DEFINED_NDEBUG_FOR_CLANG
-#undef NDEBUG
-#undef LLDB_DEFINED_NDEBUG_FOR_CLANG
-// Need to re-include assert.h so it is as _we_ would expect it to be (enabled)
-#include <assert.h>
-#endif
+#include "clang/AST/CharUnits.h"
 
 // Project includes
 #include "lldb/lldb-enumerations.h"
 #include "lldb/Core/ClangForward.h"
 #include "lldb/Symbol/ClangASTType.h"
+#include "lldb/Symbol/ClangExternalASTSourceCommon.h"
 
 namespace lldb_private {
 
-class ClangExternalASTSourceCallbacks : public clang::ExternalASTSource 
+class ClangExternalASTSourceCallbacks : public ClangExternalASTSourceCommon
 {
 public:
 
     typedef void (*CompleteTagDeclCallback)(void *baton, clang::TagDecl *);
     typedef void (*CompleteObjCInterfaceDeclCallback)(void *baton, clang::ObjCInterfaceDecl *);
     typedef void (*FindExternalVisibleDeclsByNameCallback)(void *baton, const clang::DeclContext *DC, clang::DeclarationName Name, llvm::SmallVectorImpl <clang::NamedDecl *> *results);
+    typedef bool (*LayoutRecordTypeCallback)(void *baton, 
+                                             const clang::RecordDecl *Record,
+                                             uint64_t &Size, 
+                                             uint64_t &Alignment,
+                                             llvm::DenseMap <const clang::FieldDecl *, uint64_t> &FieldOffsets,
+                                             llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> &BaseOffsets,
+                                             llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> &VirtualBaseOffsets);
 
     ClangExternalASTSourceCallbacks (CompleteTagDeclCallback tag_decl_callback,
                                      CompleteObjCInterfaceDeclCallback objc_decl_callback,
                                      FindExternalVisibleDeclsByNameCallback find_by_name_callback,
+                                     LayoutRecordTypeCallback layout_record_type_callback,
                                      void *callback_baton) :
         m_callback_tag_decl (tag_decl_callback),
         m_callback_objc_decl (objc_decl_callback),
         m_callback_find_by_name (find_by_name_callback),
+        m_callback_layout_record_type (layout_record_type_callback),
         m_callback_baton (callback_baton)
     {
     }
@@ -142,11 +127,13 @@ public:
     SetExternalSourceCallbacks (CompleteTagDeclCallback tag_decl_callback,
                                 CompleteObjCInterfaceDeclCallback objc_decl_callback,
                                 FindExternalVisibleDeclsByNameCallback find_by_name_callback,
+                                LayoutRecordTypeCallback layout_record_type_callback,
                                 void *callback_baton)
     {
         m_callback_tag_decl = tag_decl_callback;
         m_callback_objc_decl = objc_decl_callback;
         m_callback_find_by_name = find_by_name_callback;
+        m_callback_layout_record_type = layout_record_type_callback;
         m_callback_baton = callback_baton;    
     }
 
@@ -158,6 +145,7 @@ public:
             m_callback_tag_decl = NULL;
             m_callback_objc_decl = NULL;
             m_callback_find_by_name = NULL;
+            m_callback_layout_record_type = NULL;
         }
     }
 
@@ -168,6 +156,7 @@ protected:
     CompleteTagDeclCallback                 m_callback_tag_decl;
     CompleteObjCInterfaceDeclCallback       m_callback_objc_decl;
     FindExternalVisibleDeclsByNameCallback  m_callback_find_by_name;
+    LayoutRecordTypeCallback                m_callback_layout_record_type;
     void *                                  m_callback_baton;
 };
 

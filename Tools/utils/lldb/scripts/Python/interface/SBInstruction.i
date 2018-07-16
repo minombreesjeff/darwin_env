@@ -30,6 +30,18 @@ public:
     SBAddress
     GetAddress();
 
+    const char *
+    GetMnemonic (lldb::SBTarget target);
+    
+    const char *
+    GetOperands (lldb::SBTarget target);
+    
+    const char *
+    GetComment (lldb::SBTarget target);
+    
+    lldb::SBData
+    GetData (lldb::SBTarget target);
+    
     size_t
     GetByteSize ();
 

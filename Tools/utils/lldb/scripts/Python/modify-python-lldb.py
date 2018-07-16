@@ -15,7 +15,7 @@
 #
 # In addition to the 'residues' removal during the cleanup step, it also
 # transforms the 'char' data type (which was actually 'char *' but the 'autodoc'
-# feature of swig removes ' *' from it into 'str' (as a Python str type).
+# feature of swig removes ' *' from it) into 'str' (as a Python str type).
 #
 # It also calls SBDebugger.Initialize() to initialize the lldb debugger
 # subsystem.
@@ -59,8 +59,31 @@ EIGHT_SPACES = ' ' * 8
 one_liner_docstring_pattern = re.compile('^(%s|%s)""".*"""$' % (TWO_SPACES, EIGHT_SPACES))
 
 #
-# lldb_iter() should appear before our first SB* class definition.
+# lldb_helpers and lldb_iter() should appear before our first SB* class definition.
 #
+lldb_helpers = '''
+# ==================================
+# Helper function for SBModule class
+# ==================================
+def in_range(symbol, section):
+    """Test whether a symbol is within the range of a section."""
+    symSA = symbol.GetStartAddress().GetFileAddress()
+    symEA = symbol.GetEndAddress().GetFileAddress()
+    secSA = section.GetFileAddress()
+    secEA = secSA + section.GetByteSize()
+
+    if symEA != LLDB_INVALID_ADDRESS:
+        if secSA <= symSA and symEA <= secEA:
+            return True
+        else:
+            return False
+    else:
+        if secSA <= symSA and symSA < secEA:
+            return True
+        else:
+            return False
+'''
+
 lldb_iter_def = '''
 # ===================================
 # Iterator for lldb container objects
@@ -150,6 +173,8 @@ linked_list_iter_def = '''
 iter_def = "    def __iter__(self): return lldb_iter(self, '%s', '%s')"
 module_iter = "    def module_iter(self): return lldb_iter(self, '%s', '%s')"
 breakpoint_iter = "    def breakpoint_iter(self): return lldb_iter(self, '%s', '%s')"
+watchpoint_iter = "    def watchpoint_iter(self): return lldb_iter(self, '%s', '%s')"
+section_iter = "    def section_iter(self): return lldb_iter(self, '%s', '%s')"
 
 # Called to implement the built-in function len().
 # Eligible objects are those containers with unambiguous iteration support.
@@ -164,6 +189,16 @@ ne_def = "    def __ne__(self, other): return not self.__eq__(other)"
 # Delegate to self.IsValid() if it is defined for the current lldb object.
 nonzero_def = "    def __nonzero__(self): return self.IsValid()"
 
+# A convenience iterator for SBSymbol!
+symbol_in_section_iter_def = '''
+    def symbol_in_section_iter(self, section):
+        """Given a module and its contained section, returns an iterator on the
+        symbols within the section."""
+        for sym in self:
+            if in_range(sym, section):
+                yield sym
+'''
+
 #
 # This dictionary defines a mapping from classname to (getsize, getelem) tuple.
 #
@@ -172,6 +207,7 @@ d = { 'SBBreakpoint':  ('GetNumLocations',   'GetLocationAtIndex'),
       'SBDebugger':    ('GetNumTargets',     'GetTargetAtIndex'),
       'SBModule':      ('GetNumSymbols',     'GetSymbolAtIndex'),
       'SBProcess':     ('GetNumThreads',     'GetThreadAtIndex'),
+      'SBSection':     ('GetNumSubSections', 'GetSubSectionAtIndex'),
       'SBThread':      ('GetNumFrames',      'GetFrameAtIndex'),
 
       'SBInstructionList':   ('GetSize', 'GetInstructionAtIndex'),
@@ -185,18 +221,25 @@ d = { 'SBBreakpoint':  ('GetNumLocations',   'GetLocationAtIndex'),
 
       # SBTarget needs special processing, see below.
       'SBTarget': {'module':     ('GetNumModules', 'GetModuleAtIndex'),
-                   'breakpoint': ('GetNumBreakpoints', 'GetBreakpointAtIndex')
-                   }
+                   'breakpoint': ('GetNumBreakpoints', 'GetBreakpointAtIndex'),
+                   'watchpoint': ('GetNumWatchpoints', 'GetWatchpointAtIndex')
+                   },
+
+      # SBModule has an additional section_iter(), see below.
+      'SBModule-section': ('GetNumSections', 'GetSectionAtIndex'),
+      # As well as symbol_in_section_iter().
+      'SBModule-symbol-in-section': symbol_in_section_iter_def
       }
 
 #
 # This dictionary defines a mapping from classname to equality method name(s).
 #
-e = { 'SBAddress':    ['GetFileAddress', 'GetModule'],
-      'SBBreakpoint': ['GetID'],
-      'SBFileSpec':   ['GetFilename', 'GetDirectory'],
-      'SBModule':     ['GetFileSpec', 'GetUUIDString'],
-      'SBType':       ['GetByteSize', 'GetName']
+e = { 'SBAddress':            ['GetFileAddress', 'GetModule'],
+      'SBBreakpoint':         ['GetID'],
+      'SBWatchpoint':         ['GetID'],
+      'SBFileSpec':           ['GetFilename', 'GetDirectory'],
+      'SBModule':             ['GetFileSpec', 'GetUUIDString'],
+      'SBType':               ['GetByteSize', 'GetName']
       }
 
 def list_to_frag(list):
@@ -297,8 +340,10 @@ for line in content.splitlines():
 
     if state == NORMAL:
         match = class_pattern.search(line)
-        # Inserts the lldb_iter() definition before the first class definition.
+        # Inserts lldb_helpers and the lldb_iter() definition before the first
+        # class definition.
         if not lldb_iter_defined and match:
+            new_content.add_line(lldb_helpers)
             new_content.add_line(lldb_iter_def)
             lldb_iter_defined = True
 
@@ -320,10 +365,11 @@ for line in content.splitlines():
             # We found the beginning of the __init__ method definition.
             # This is a good spot to insert the iter and/or eq-ne support.
             #
-            # But note that SBTarget has two types of iterations.
+            # But note that SBTarget has three types of iterations.
             if cls == "SBTarget":
                 new_content.add_line(module_iter % (d[cls]['module']))
                 new_content.add_line(breakpoint_iter % (d[cls]['breakpoint']))
+                new_content.add_line(watchpoint_iter % (d[cls]['watchpoint']))
             else:
                 if (state & DEFINING_ITERATOR):
                     new_content.add_line(iter_def % d[cls])
@@ -332,6 +378,11 @@ for line in content.splitlines():
                     new_content.add_line(eq_def % (cls, list_to_frag(e[cls])))
                     new_content.add_line(ne_def)
 
+            # SBModule has an extra SBSection iterator and symbol_in_section_iter()!
+            if cls == "SBModule":
+                new_content.add_line(section_iter % d[cls+'-section'])
+                new_content.add_line(d[cls+'-symbol-in-section'])
+            
             # This special purpose iterator is for SBValue only!!!
             if cls == "SBValue":
                 new_content.add_line(linked_list_iter_def)

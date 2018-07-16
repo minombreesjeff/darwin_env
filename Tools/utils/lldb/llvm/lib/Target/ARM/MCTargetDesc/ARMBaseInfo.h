@@ -188,6 +188,19 @@ inline static unsigned getARMRegisterNumbering(unsigned Reg) {
   }
 }
 
+/// isARMLowRegister - Returns true if the register is a low register (r0-r7).
+///
+static inline bool isARMLowRegister(unsigned Reg) {
+  using namespace ARM;
+  switch (Reg) {
+  case R0:  case R1:  case R2:  case R3:
+  case R4:  case R5:  case R6:  case R7:
+    return true;
+  default:
+    return false;
+  }
+}
+
 /// ARMII - This namespace holds all of the target specific flags that
 /// instruction info tracks.
 ///
@@ -383,6 +396,12 @@ namespace ARMII {
     // Xform16Bit - Indicates this Thumb2 instruction may be transformed into
     // a 16-bit Thumb instruction if certain conditions are met.
     Xform16Bit    = 1 << 14,
+
+    // ThumbArithFlagSetting - The instruction is a 16-bit flag setting Thumb
+    // instruction. Used by the parser to determine whether to require the 'S'
+    // suffix on the mnemonic (when not in an IT block) or preclude it (when
+    // in an IT block).
+    ThumbArithFlagSetting = 1 << 18,
 
     //===------------------------------------------------------------------===//
     // Code domain.

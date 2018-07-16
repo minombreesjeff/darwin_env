@@ -14,6 +14,7 @@
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Frontend/ASTUnit.h"
+#include "clang/Frontend/ChainedIncludesSource.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
@@ -21,7 +22,6 @@
 #include "clang/Parse/ParseAST.h"
 #include "clang/Serialization/ASTDeserializationListener.h"
 #include "clang/Serialization/ASTReader.h"
-#include "clang/Serialization/ChainedIncludesSource.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -30,13 +30,47 @@ using namespace clang;
 
 namespace {
 
-/// \brief Dumps deserialized declarations.
-class DeserializedDeclsDumper : public ASTDeserializationListener {
+class DelegatingDeserializationListener : public ASTDeserializationListener {
   ASTDeserializationListener *Previous;
 
 public:
-  DeserializedDeclsDumper(ASTDeserializationListener *Previous)
+  explicit DelegatingDeserializationListener(
+                                           ASTDeserializationListener *Previous)
     : Previous(Previous) { }
+
+  virtual void ReaderInitialized(ASTReader *Reader) {
+    if (Previous)
+      Previous->ReaderInitialized(Reader);
+  }
+  virtual void IdentifierRead(serialization::IdentID ID,
+                              IdentifierInfo *II) {
+    if (Previous)
+      Previous->IdentifierRead(ID, II);
+  }
+  virtual void TypeRead(serialization::TypeIdx Idx, QualType T) {
+    if (Previous)
+      Previous->TypeRead(Idx, T);
+  }
+  virtual void DeclRead(serialization::DeclID ID, const Decl *D) {
+    if (Previous)
+      Previous->DeclRead(ID, D);
+  }
+  virtual void SelectorRead(serialization::SelectorID ID, Selector Sel) {
+    if (Previous)
+      Previous->SelectorRead(ID, Sel);
+  }
+  virtual void MacroDefinitionRead(serialization::PreprocessedEntityID PPID, 
+                                   MacroDefinition *MD) {
+    if (Previous)
+      Previous->MacroDefinitionRead(PPID, MD);
+  }
+};
+
+/// \brief Dumps deserialized declarations.
+class DeserializedDeclsDumper : public DelegatingDeserializationListener {
+public:
+  explicit DeserializedDeclsDumper(ASTDeserializationListener *Previous)
+    : DelegatingDeserializationListener(Previous) { }
 
   virtual void DeclRead(serialization::DeclID ID, const Decl *D) {
     llvm::outs() << "PCH DECL: " << D->getDeclKindName();
@@ -44,36 +78,34 @@ public:
       llvm::outs() << " - " << ND->getNameAsString();
     llvm::outs() << "\n";
 
-    if (Previous)
-      Previous->DeclRead(ID, D);
+    DelegatingDeserializationListener::DeclRead(ID, D);
   }
 };
 
   /// \brief Checks deserialized declarations and emits error if a name
   /// matches one given in command-line using -error-on-deserialized-decl.
-  class DeserializedDeclsChecker : public ASTDeserializationListener {
+  class DeserializedDeclsChecker : public DelegatingDeserializationListener {
     ASTContext &Ctx;
     std::set<std::string> NamesToCheck;
-    ASTDeserializationListener *Previous;
 
   public:
     DeserializedDeclsChecker(ASTContext &Ctx,
                              const std::set<std::string> &NamesToCheck, 
                              ASTDeserializationListener *Previous)
-      : Ctx(Ctx), NamesToCheck(NamesToCheck), Previous(Previous) { }
+      : DelegatingDeserializationListener(Previous),
+        Ctx(Ctx), NamesToCheck(NamesToCheck) { }
 
     virtual void DeclRead(serialization::DeclID ID, const Decl *D) {
       if (const NamedDecl *ND = dyn_cast<NamedDecl>(D))
         if (NamesToCheck.find(ND->getNameAsString()) != NamesToCheck.end()) {
           unsigned DiagID
-            = Ctx.getDiagnostics().getCustomDiagID(Diagnostic::Error,
+            = Ctx.getDiagnostics().getCustomDiagID(DiagnosticsEngine::Error,
                                                    "%0 was deserialized");
           Ctx.getDiagnostics().Report(Ctx.getFullLoc(D->getLocation()), DiagID)
               << ND->getNameAsString();
         }
 
-      if (Previous)
-        Previous->DeclRead(ID, D);
+      DelegatingDeserializationListener::DeclRead(ID, D);
     }
 };
 
@@ -142,7 +174,7 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
     assert(hasASTFileSupport() &&
            "This action does not have AST file support!");
 
-    llvm::IntrusiveRefCntPtr<Diagnostic> Diags(&CI.getDiagnostics());
+    llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags(&CI.getDiagnostics());
     std::string Error;
     ASTUnit *AST = ASTUnit::LoadFromASTFile(Filename, Diags,
                                             CI.getFileSystemOpts());
@@ -238,30 +270,6 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
                                 CI.getPreprocessorOpts().DisablePCHValidation,
                                 CI.getPreprocessorOpts().DisableStatCache,
                                 DeserialListener);
-      if (!CI.getASTContext().getExternalSource())
-        goto failure;
-    } else if (!CI.getPreprocessorOpts().Modules.empty()) {
-      // Use PCH.
-      assert(hasPCHSupport() && "This action does not have PCH support!");
-      ASTDeserializationListener *DeserialListener =
-          Consumer->GetASTDeserializationListener();
-      if (CI.getPreprocessorOpts().DumpDeserializedPCHDecls)
-        DeserialListener = new DeserializedDeclsDumper(DeserialListener);
-      if (!CI.getPreprocessorOpts().DeserializedPCHDeclsToErrorOn.empty())
-        DeserialListener = new DeserializedDeclsChecker(CI.getASTContext(),
-                         CI.getPreprocessorOpts().DeserializedPCHDeclsToErrorOn,
-                                                        DeserialListener);
-
-      CI.createPCHExternalASTSource(CI.getPreprocessorOpts().Modules[0],
-                                    true, true, DeserialListener);
-
-      for (unsigned I = 1, E = CI.getPreprocessorOpts().Modules.size(); I != E;
-          ++I) {
-
-        ASTReader *ModMgr = CI.getModuleManager();
-        ModMgr->ReadAST(CI.getPreprocessorOpts().Modules[I],
-            serialization::MK_Module);
-      }
       if (!CI.getASTContext().getExternalSource())
         goto failure;
     }
@@ -398,7 +406,7 @@ void ASTFrontendAction::ExecuteAction() {
     CompletionConsumer = &CI.getCodeCompletionConsumer();
 
   if (!CI.hasSema())
-    CI.createSema(usesCompleteTranslationUnit(), CompletionConsumer);
+    CI.createSema(getTranslationUnitKind(), CompletionConsumer);
 
   ParseAST(CI.getSema(), CI.getFrontendOpts().ShowStats);
 }
@@ -432,8 +440,8 @@ void WrapperFrontendAction::EndSourceFileAction() {
 bool WrapperFrontendAction::usesPreprocessorOnly() const {
   return WrappedAction->usesPreprocessorOnly();
 }
-bool WrapperFrontendAction::usesCompleteTranslationUnit() {
-  return WrappedAction->usesCompleteTranslationUnit();
+TranslationUnitKind WrapperFrontendAction::getTranslationUnitKind() {
+  return WrappedAction->getTranslationUnitKind();
 }
 bool WrapperFrontendAction::hasPCHSupport() const {
   return WrappedAction->hasPCHSupport();

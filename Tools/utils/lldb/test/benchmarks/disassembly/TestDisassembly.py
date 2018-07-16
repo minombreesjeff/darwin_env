@@ -6,24 +6,48 @@ import lldb
 import pexpect
 from lldbbench import *
 
+def is_exe(fpath):
+    """Returns true if fpath is an executable."""
+    return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
 class DisassembleDriverMainLoop(BenchBase):
 
-    mydir = os.path.join("benchmarks", "example")
+    mydir = os.path.join("benchmarks", "disassembly")
 
     def setUp(self):
+        """
+        Note that lldbExec can be specified with the LLDB_EXEC env variable (see
+        dotest.py), and gdbExec can be specified with the GDB_EXEC env variable.
+        This provides a flexibility in specifying different versions of gdb for
+        comparison purposes.
+        """
         BenchBase.setUp(self)
-        self.exe = self.lldbExec
+        # If env var GDB_EXEC is specified, use it; otherwise, use gdb in your
+        # PATH env var.
+        if "GDB_EXEC" in os.environ and is_exe(os.environ["GDB_EXEC"]):
+            self.gdbExec = os.environ["GDB_EXEC"]
+        else:
+            self.gdbExec = "gdb"
+
+        self.exe = self.lldbHere
         self.function = 'Driver::MainLoop()'
         self.lldb_avg = None
         self.gdb_avg = None
+        self.count = lldb.bmIterationCount
+        if self.count <= 0:
+            self.count = 5
 
     @benchmarks_test
     def test_run_lldb_then_gdb(self):
         """Test disassembly on a large function with lldb vs. gdb."""
         print
-        self.run_lldb_disassembly(self.exe, self.function, 5)
+        print "lldb path: %s" % self.lldbExec
+        print "gdb path: %s" % self.gdbExec
+
+        print
+        self.run_lldb_disassembly(self.exe, self.function, self.count)
         print "lldb benchmark:", self.stopwatch
-        self.run_gdb_disassembly(self.exe, self.function, 5)
+        self.run_gdb_disassembly(self.exe, self.function, self.count)
         print "gdb benchmark:", self.stopwatch
         print "lldb_avg/gdb_avg: %f" % (self.lldb_avg/self.gdb_avg)
 
@@ -31,9 +55,13 @@ class DisassembleDriverMainLoop(BenchBase):
     def test_run_gdb_then_lldb(self):
         """Test disassembly on a large function with lldb vs. gdb."""
         print
-        self.run_gdb_disassembly(self.exe, self.function, 5)
+        print "lldb path: %s" % self.lldbExec
+        print "gdb path: %s" % self.gdbExec
+
+        print
+        self.run_gdb_disassembly(self.exe, self.function, self.count)
         print "gdb benchmark:", self.stopwatch
-        self.run_lldb_disassembly(self.exe, self.function, 5)
+        self.run_lldb_disassembly(self.exe, self.function, self.count)
         print "lldb benchmark:", self.stopwatch
         print "lldb_avg/gdb_avg: %f" % (self.lldb_avg/self.gdb_avg)
 
@@ -43,7 +71,7 @@ class DisassembleDriverMainLoop(BenchBase):
         prompt = self.child_prompt
 
         # So that the child gets torn down after the test.
-        self.child = pexpect.spawn('%s %s' % (self.lldbExec, exe))
+        self.child = pexpect.spawn('%s %s %s' % (self.lldbExec, self.lldbOption, exe))
         child = self.child
 
         # Turn on logging for what the child sends back.
@@ -83,7 +111,7 @@ class DisassembleDriverMainLoop(BenchBase):
         prompt = self.child_prompt
 
         # So that the child gets torn down after the test.
-        self.child = pexpect.spawn('gdb %s' % exe)
+        self.child = pexpect.spawn('%s --nx %s' % (self.gdbExec, exe))
         child = self.child
 
         # Turn on logging for what the child sends back.

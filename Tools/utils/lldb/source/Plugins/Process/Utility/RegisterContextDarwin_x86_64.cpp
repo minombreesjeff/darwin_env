@@ -19,6 +19,13 @@
 #include "lldb/Core/RegisterValue.h"
 #include "lldb/Core/Scalar.h"
 #include "lldb/Host/Endian.h"
+#include "llvm/Support/Compiler.h"
+
+// Support building against older versions of LLVM, this macro was added
+// recently.
+#ifndef LLVM_EXTENSION
+#define LLVM_EXTENSION
+#endif
 
 // Project includes
 #include "RegisterContextDarwin_x86_64.h"
@@ -98,7 +105,7 @@ enum
     fpu_fiseg = fpu_cs,
     fpu_fioff = fpu_ip,
     fpu_foseg = fpu_ds,
-    fpu_fooff = fpu_dp,
+    fpu_fooff = fpu_dp
 };
 
 enum gcc_dwarf_regnums
@@ -143,7 +150,7 @@ enum gcc_dwarf_regnums
     gcc_dwarf_fpu_stmm4,
     gcc_dwarf_fpu_stmm5,
     gcc_dwarf_fpu_stmm6,
-    gcc_dwarf_fpu_stmm7,
+    gcc_dwarf_fpu_stmm7
 
 };
 
@@ -205,7 +212,7 @@ enum gdb_regnums
     gdb_fpu_xmm13   =  53,
     gdb_fpu_xmm14   =  54,
     gdb_fpu_xmm15   =  55,
-    gdb_fpu_mxcsr   =  56,
+    gdb_fpu_mxcsr   =  56
 };
 
 RegisterContextDarwin_x86_64::RegisterContextDarwin_x86_64 (Thread &thread, uint32_t concrete_frame_idx) :
@@ -227,9 +234,9 @@ RegisterContextDarwin_x86_64::~RegisterContextDarwin_x86_64()
 {
 }
 
-#define GPR_OFFSET(reg) (offsetof (RegisterContextDarwin_x86_64::GPR, reg))
-#define FPU_OFFSET(reg) (offsetof (RegisterContextDarwin_x86_64::FPU, reg) + sizeof (RegisterContextDarwin_x86_64::GPR))
-#define EXC_OFFSET(reg) (offsetof (RegisterContextDarwin_x86_64::EXC, reg) + sizeof (RegisterContextDarwin_x86_64::GPR) + sizeof (RegisterContextDarwin_x86_64::FPU))
+#define GPR_OFFSET(reg) (LLVM_EXTENSION offsetof (RegisterContextDarwin_x86_64::GPR, reg))
+#define FPU_OFFSET(reg) (LLVM_EXTENSION offsetof (RegisterContextDarwin_x86_64::FPU, reg) + sizeof (RegisterContextDarwin_x86_64::GPR))
+#define EXC_OFFSET(reg) (LLVM_EXTENSION offsetof (RegisterContextDarwin_x86_64::EXC, reg) + sizeof (RegisterContextDarwin_x86_64::GPR) + sizeof (RegisterContextDarwin_x86_64::FPU))
 
 // These macros will auto define the register name, alt name, register size,
 // register offset, encoding, format and native register. This ensures that

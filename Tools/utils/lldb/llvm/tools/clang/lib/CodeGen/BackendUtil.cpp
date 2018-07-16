@@ -24,13 +24,13 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
@@ -41,9 +41,9 @@ using namespace llvm;
 namespace {
 
 class EmitAssemblyHelper {
-  Diagnostic &Diags;
+  DiagnosticsEngine &Diags;
   const CodeGenOptions &CodeGenOpts;
-  const TargetOptions &TargetOpts;
+  const clang::TargetOptions &TargetOpts;
   const LangOptions &LangOpts;
   Module *TheModule;
 
@@ -86,8 +86,9 @@ private:
   bool AddEmitPasses(BackendAction Action, formatted_raw_ostream &OS);
 
 public:
-  EmitAssemblyHelper(Diagnostic &_Diags,
-                     const CodeGenOptions &CGOpts, const TargetOptions &TOpts,
+  EmitAssemblyHelper(DiagnosticsEngine &_Diags,
+                     const CodeGenOptions &CGOpts,
+                     const clang::TargetOptions &TOpts,
                      const LangOptions &LOpts,
                      Module *M)
     : Diags(_Diags), CodeGenOpts(CGOpts), TargetOpts(TOpts), LangOpts(LOpts),
@@ -115,6 +116,11 @@ static void addObjCARCOptPass(const PassManagerBuilder &Builder, PassManagerBase
     PM.add(createObjCARCOptPass());
 }
 
+static void addAddressSanitizerPass(const PassManagerBuilder &Builder,
+                                    PassManagerBase &PM) {
+  PM.add(createAddressSanitizerPass());
+}
+
 void EmitAssemblyHelper::CreatePasses() {
   unsigned OptLevel = CodeGenOpts.OptimizationLevel;
   CodeGenOptions::InliningMethod Inlining = CodeGenOpts.Inlining;
@@ -140,6 +146,13 @@ void EmitAssemblyHelper::CreatePasses() {
                            addObjCARCExpandPass);
     PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
                            addObjCARCOptPass);
+  }
+
+  if (LangOpts.AddressSanitizer) {
+    PMBuilder.addExtension(PassManagerBuilder::EP_ScalarOptimizerLate,
+                           addAddressSanitizerPass);
+    PMBuilder.addExtension(PassManagerBuilder::EP_EnabledOnOptLevel0,
+                           addAddressSanitizerPass);
   }
   
   // Figure out TargetLibraryInfo.
@@ -206,35 +219,6 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   // being gross, this is also totally broken if we ever care about
   // concurrency.
 
-  // Set frame pointer elimination mode.
-  if (!CodeGenOpts.DisableFPElim) {
-    llvm::NoFramePointerElim = false;
-    llvm::NoFramePointerElimNonLeaf = false;
-  } else if (CodeGenOpts.OmitLeafFramePointer) {
-    llvm::NoFramePointerElim = false;
-    llvm::NoFramePointerElimNonLeaf = true;
-  } else {
-    llvm::NoFramePointerElim = true;
-    llvm::NoFramePointerElimNonLeaf = true;
-  }
-
-  // Set float ABI type.
-  if (CodeGenOpts.FloatABI == "soft" || CodeGenOpts.FloatABI == "softfp")
-    llvm::FloatABIType = llvm::FloatABI::Soft;
-  else if (CodeGenOpts.FloatABI == "hard")
-    llvm::FloatABIType = llvm::FloatABI::Hard;
-  else {
-    assert(CodeGenOpts.FloatABI.empty() && "Invalid float abi!");
-    llvm::FloatABIType = llvm::FloatABI::Default;
-  }
-
-  llvm::LessPreciseFPMADOption = CodeGenOpts.LessPreciseFPMAD;
-  llvm::NoInfsFPMath = CodeGenOpts.NoInfsFPMath;
-  llvm::NoNaNsFPMath = CodeGenOpts.NoNaNsFPMath;
-  NoZerosInBSS = CodeGenOpts.NoZeroInitializedInBSS;
-  llvm::UnsafeFPMath = CodeGenOpts.UnsafeFPMath;
-  llvm::UseSoftFloat = CodeGenOpts.SoftFloat;
-
   TargetMachine::setAsmVerbosityDefault(CodeGenOpts.AsmVerbose);
 
   TargetMachine::setFunctionSections(CodeGenOpts.FunctionSections);
@@ -269,6 +253,8 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     BackendArgs.push_back("-time-passes");
   for (unsigned i = 0, e = CodeGenOpts.BackendOptions.size(); i != e; ++i)
     BackendArgs.push_back(CodeGenOpts.BackendOptions[i].c_str());
+  if (CodeGenOpts.NoGlobalMerge)
+    BackendArgs.push_back("-global-merge=false");
   BackendArgs.push_back(0);
   llvm::cl::ParseCommandLineOptions(BackendArgs.size() - 1,
                                     const_cast<char **>(&BackendArgs[0]));
@@ -294,8 +280,49 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     RM = llvm::Reloc::DynamicNoPIC;
   }
 
+  CodeGenOpt::Level OptLevel = CodeGenOpt::Default;
+  switch (CodeGenOpts.OptimizationLevel) {
+  default: break;
+  case 0: OptLevel = CodeGenOpt::None; break;
+  case 3: OptLevel = CodeGenOpt::Aggressive; break;
+  }
+
+  llvm::TargetOptions Options;
+
+  // Set frame pointer elimination mode.
+  if (!CodeGenOpts.DisableFPElim) {
+    Options.NoFramePointerElim = false;
+    Options.NoFramePointerElimNonLeaf = false;
+  } else if (CodeGenOpts.OmitLeafFramePointer) {
+    Options.NoFramePointerElim = false;
+    Options.NoFramePointerElimNonLeaf = true;
+  } else {
+    Options.NoFramePointerElim = true;
+    Options.NoFramePointerElimNonLeaf = true;
+  }
+
+  // Set float ABI type.
+  if (CodeGenOpts.FloatABI == "soft" || CodeGenOpts.FloatABI == "softfp")
+    Options.FloatABIType = llvm::FloatABI::Soft;
+  else if (CodeGenOpts.FloatABI == "hard")
+    Options.FloatABIType = llvm::FloatABI::Hard;
+  else {
+    assert(CodeGenOpts.FloatABI.empty() && "Invalid float abi!");
+    Options.FloatABIType = llvm::FloatABI::Default;
+  }
+
+  Options.LessPreciseFPMADOption = CodeGenOpts.LessPreciseFPMAD;
+  Options.NoInfsFPMath = CodeGenOpts.NoInfsFPMath;
+  Options.NoNaNsFPMath = CodeGenOpts.NoNaNsFPMath;
+  Options.NoZerosInBSS = CodeGenOpts.NoZeroInitializedInBSS;
+  Options.UnsafeFPMath = CodeGenOpts.UnsafeFPMath;
+  Options.UseSoftFloat = CodeGenOpts.SoftFloat;
+  Options.StackAlignmentOverride = CodeGenOpts.StackAlignment;
+  Options.RealignStack = CodeGenOpts.StackRealignment;
+
   TargetMachine *TM = TheTarget->createTargetMachine(Triple, TargetOpts.CPU,
-                                                     FeaturesStr, RM, CM);
+                                                     FeaturesStr, Options,
+                                                     RM, CM, OptLevel);
 
   if (CodeGenOpts.RelaxAll)
     TM->setMCRelaxAll(true);
@@ -303,18 +330,13 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
     TM->setMCSaveTempLabels(true);
   if (CodeGenOpts.NoDwarf2CFIAsm)
     TM->setMCUseCFI(false);
+  if (!CodeGenOpts.NoDwarfDirectoryAsm)
+    TM->setMCUseDwarfDirectory(true);
   if (CodeGenOpts.NoExecStack)
     TM->setMCNoExecStack(true);
 
   // Create the code generator passes.
   PassManager *PM = getCodeGenPasses();
-  CodeGenOpt::Level OptLevel = CodeGenOpt::Default;
-
-  switch (CodeGenOpts.OptimizationLevel) {
-  default: break;
-  case 0: OptLevel = CodeGenOpt::None; break;
-  case 3: OptLevel = CodeGenOpt::Aggressive; break;
-  }
 
   // Normal mode, emit a .s or .o file by running the code generator. Note,
   // this also adds codegenerator level optimization passes.
@@ -332,7 +354,7 @@ bool EmitAssemblyHelper::AddEmitPasses(BackendAction Action,
   if (LangOpts.ObjCAutoRefCount)
     PM->add(createObjCARCContractPass());
 
-  if (TM->addPassesToEmitFile(*PM, OS, CGFT, OptLevel,
+  if (TM->addPassesToEmitFile(*PM, OS, CGFT,
                               /*DisableVerify=*/!CodeGenOpts.VerifyModule)) {
     Diags.Report(diag::err_fe_unable_to_interface_with_target);
     return false;
@@ -393,8 +415,9 @@ void EmitAssemblyHelper::EmitAssembly(BackendAction Action, raw_ostream *OS) {
   }
 }
 
-void clang::EmitBackendOutput(Diagnostic &Diags, const CodeGenOptions &CGOpts,
-                              const TargetOptions &TOpts,
+void clang::EmitBackendOutput(DiagnosticsEngine &Diags,
+                              const CodeGenOptions &CGOpts,
+                              const clang::TargetOptions &TOpts,
                               const LangOptions &LOpts,
                               Module *M,
                               BackendAction Action, raw_ostream *OS) {

@@ -18,7 +18,6 @@
 #include "lldb/API/SBBroadcaster.h"
 #include "lldb/API/SBDebugger.h"
 #include "lldb/API/SBCommandReturnObject.h"
-#include "lldb/API/SBSourceManager.h"
 #include "lldb/API/SBCommandInterpreter.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBTarget.h"
@@ -66,7 +65,7 @@ SBCommandInterpreter::IsValid() const
 bool
 SBCommandInterpreter::CommandExists (const char *cmd)
 {
-    if (m_opaque_ptr)
+    if (cmd && m_opaque_ptr)
         return m_opaque_ptr->CommandExists (cmd);
     return false;
 }
@@ -74,7 +73,7 @@ SBCommandInterpreter::CommandExists (const char *cmd)
 bool
 SBCommandInterpreter::AliasExists (const char *cmd)
 {
-    if (m_opaque_ptr)
+    if (cmd && m_opaque_ptr)
         return m_opaque_ptr->AliasExists (cmd);
     return false;
 }
@@ -89,7 +88,7 @@ SBCommandInterpreter::HandleCommand (const char *command_line, SBCommandReturnOb
                      m_opaque_ptr, command_line, result.get(), add_to_history);
 
     result.Clear();
-    if (m_opaque_ptr)
+    if (command_line && m_opaque_ptr)
     {
         TargetSP target_sp(m_opaque_ptr->GetDebugger().GetSelectedTarget());
         Mutex::Locker api_locker;
@@ -99,7 +98,7 @@ SBCommandInterpreter::HandleCommand (const char *command_line, SBCommandReturnOb
     }
     else
     {
-        result->AppendError ("SBCommandInterpreter is not valid");
+        result->AppendError ("SBCommandInterpreter or the command line is not valid");
         result->SetStatus (eReturnStatusFailed);
     }
 
@@ -125,6 +124,19 @@ SBCommandInterpreter::HandleCompletion (const char *current_line,
                                         SBStringList &matches)
 {
     int num_completions = 0;
+    
+    // Sanity check the arguments that are passed in:
+    // cursor & last_char have to be within the current_line.
+    if (current_line == NULL || cursor == NULL || last_char == NULL)
+        return 0;
+    
+    if (cursor < current_line || last_char < current_line)
+        return 0;
+        
+    size_t current_line_size = strlen (current_line);
+    if (cursor - current_line > current_line_size || last_char - current_line > current_line_size)
+        return 0;
+        
     if (m_opaque_ptr)
     {
         lldb_private::StringList lldb_matches;
@@ -135,6 +147,18 @@ SBCommandInterpreter::HandleCompletion (const char *current_line,
         matches.AppendList (temp_list);
     }
     return num_completions;
+}
+
+int
+SBCommandInterpreter::HandleCompletion (const char *current_line,
+                  uint32_t cursor_pos,
+                  int match_start_point,
+                  int max_return_elements,
+                  lldb::SBStringList &matches)
+{
+    const char *cursor = current_line + cursor_pos;
+    const char *last_char = current_line + strlen (current_line);
+    return HandleCompletion (current_line, cursor, last_char, match_start_point, max_return_elements, matches);
 }
 
 bool
@@ -183,32 +207,6 @@ SBCommandInterpreter::GetProcess ()
     
     return process;
 }
-
-ssize_t
-SBCommandInterpreter::WriteToScriptInterpreter (const char *src)
-{
-    return WriteToScriptInterpreter (src, strlen(src));
-}
-
-ssize_t
-SBCommandInterpreter::WriteToScriptInterpreter (const char *src, size_t src_len)
-{
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
-
-    ssize_t bytes_written = 0;
-    if (m_opaque_ptr && src && src[0])
-    {
-        ScriptInterpreter *script_interpreter = m_opaque_ptr->GetScriptInterpreter();
-        if (script_interpreter)
-            bytes_written = ::write (script_interpreter->GetMasterFileDescriptor(), src, src_len);
-    }
-    if (log)
-        log->Printf ("SBCommandInterpreter(%p)::WriteToScriptInterpreter (src=\"%s\", src_len=%zu) => %zi", 
-                     m_opaque_ptr, src, src_len, bytes_written);
-
-    return bytes_written;
-}
-
 
 CommandInterpreter *
 SBCommandInterpreter::get ()
@@ -305,6 +303,7 @@ SBCommandInterpreter::GetArgumentDescriptionAsCString (const lldb::CommandArgume
 }
 
 
+#ifndef LLDB_DISABLE_PYTHON
 extern "C" bool
 LLDBSwigPythonBreakpointCallbackFunction 
 (
@@ -334,7 +333,7 @@ LLDBSwigPythonCreateSyntheticProvider
 extern "C" uint32_t       LLDBSwigPython_CalculateNumChildren        (void *implementor);
 extern "C" void*          LLDBSwigPython_GetChildAtIndex             (void *implementor, uint32_t idx);
 extern "C" int            LLDBSwigPython_GetIndexOfChildWithName     (void *implementor, const char* child_name);
-extern "C" lldb::SBValue* LLDBSWIGPython_CastPyObjectToSBValue       (void* data);
+extern "C" void*          LLDBSWIGPython_CastPyObjectToSBValue       (void* data);
 extern "C" void           LLDBSwigPython_UpdateSynthProviderInstance (void* implementor);
 
 extern "C" bool           LLDBSwigPythonCallCommand 
@@ -344,11 +343,31 @@ extern "C" bool           LLDBSwigPythonCallCommand
     lldb::DebuggerSP& debugger,
     const char* args,
     std::string& err_msg,
-    lldb::SBStream& stream
+    lldb_private::CommandReturnObject& cmd_retobj
 );
 
+// Defined in the SWIG source file
+extern "C" void 
+init_lldb(void);
+
+extern "C" bool           LLDBSwigPythonCallModuleInit 
+(
+    const std::string python_module_name,
+    const char *session_dictionary_name,
+    lldb::DebuggerSP& debugger
+);
+
+#else
 
 extern "C" void init_lldb(void);
+
+// Usually defined in the SWIG source file, but we have sripting disabled
+extern "C" void 
+init_lldb(void)
+{
+}
+
+#endif
 
 void
 SBCommandInterpreter::InitializeSWIG ()
@@ -357,6 +376,7 @@ SBCommandInterpreter::InitializeSWIG ()
     if (!g_initialized)
     {
         g_initialized = true;
+#ifndef LLDB_DISABLE_PYTHON
         ScriptInterpreter::InitializeInterpreter (init_lldb, 
                                                   LLDBSwigPythonBreakpointCallbackFunction,
                                                   LLDBSwigPythonCallTypeScript,
@@ -366,6 +386,8 @@ SBCommandInterpreter::InitializeSWIG ()
                                                   LLDBSwigPython_GetIndexOfChildWithName,
                                                   LLDBSWIGPython_CastPyObjectToSBValue,
                                                   LLDBSwigPython_UpdateSynthProviderInstance,
-                                                  LLDBSwigPythonCallCommand);
+                                                  LLDBSwigPythonCallCommand,
+                                                  LLDBSwigPythonCallModuleInit);
+#endif
     }
 }

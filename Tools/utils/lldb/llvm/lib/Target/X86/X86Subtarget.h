@@ -78,6 +78,9 @@ protected:
   /// HasAVX - Target has AVX instructions
   bool HasAVX;
 
+  /// HasAVX2 - Target has AVX2 instructions
+  bool HasAVX2;
+
   /// HasAES - Target has AES instructions
   bool HasAES;
 
@@ -90,6 +93,30 @@ protected:
   /// HasFMA4 - Target has 4-operand fused multiply-add
   bool HasFMA4;
 
+  /// HasXOP - Target has XOP instructions
+  bool HasXOP;
+
+  /// HasMOVBE - True if the processor has the MOVBE instruction.
+  bool HasMOVBE;
+
+  /// HasRDRAND - True if the processor has the RDRAND instruction.
+  bool HasRDRAND;
+
+  /// HasF16C - Processor has 16-bit floating point conversion instructions.
+  bool HasF16C;
+
+  /// HasFSGSBase - Processor has FS/GS base insturctions.
+  bool HasFSGSBase;
+
+  /// HasLZCNT - Processor has LZCNT instruction.
+  bool HasLZCNT;
+
+  /// HasBMI - Processor has BMI1 instructions.
+  bool HasBMI;
+
+  /// HasBMI2 - Processor has BMI2 instructions.
+  bool HasBMI2;
+
   /// IsBTMemSlow - True if BT (bit test) of memory instructions are slow.
   bool IsBTMemSlow;
 
@@ -99,6 +126,10 @@ protected:
   /// HasVectorUAMem - True if SIMD operations can have unaligned memory
   /// operands. This may require setting a feature bit in the processor.
   bool HasVectorUAMem;
+
+  /// HasCmpxchg16b - True if this processor has the CMPXCHG16B instruction;
+  /// this is true for most x86-64 chips, but not the first AMD chips.
+  bool HasCmpxchg16b;
 
   /// stackAlignment - The minimum alignment known to hold of the stack frame on
   /// entry to the function and which must be maintained by every function.
@@ -159,15 +190,29 @@ public:
   bool has3DNowA() const { return X863DNowLevel >= ThreeDNowA; }
   bool hasPOPCNT() const { return HasPOPCNT; }
   bool hasAVX() const { return HasAVX; }
+  bool hasAVX2() const { return HasAVX2; }
   bool hasXMM() const { return hasSSE1() || hasAVX(); }
   bool hasXMMInt() const { return hasSSE2() || hasAVX(); }
+  bool hasSSE3orAVX() const { return hasSSE3() || hasAVX(); }
+  bool hasSSSE3orAVX() const { return hasSSSE3() || hasAVX(); }
+  bool hasSSE41orAVX() const { return hasSSE41() || hasAVX(); }
+  bool hasSSE42orAVX() const { return hasSSE42() || hasAVX(); }
   bool hasAES() const { return HasAES; }
   bool hasCLMUL() const { return HasCLMUL; }
   bool hasFMA3() const { return HasFMA3; }
   bool hasFMA4() const { return HasFMA4; }
+  bool hasXOP() const { return HasXOP; }
+  bool hasMOVBE() const { return HasMOVBE; }
+  bool hasRDRAND() const { return HasRDRAND; }
+  bool hasF16C() const { return HasF16C; }
+  bool hasFSGSBase() const { return HasFSGSBase; }
+  bool hasLZCNT() const { return HasLZCNT; }
+  bool hasBMI() const { return HasBMI; }
+  bool hasBMI2() const { return HasBMI2; }
   bool isBTMemSlow() const { return IsBTMemSlow; }
   bool isUnalignedMemAccessFast() const { return IsUAMemFast; }
   bool hasVectorUAMem() const { return HasVectorUAMem; }
+  bool hasCmpxchg16b() const { return HasCmpxchg16b; }
 
   const Triple &getTargetTriple() const { return TargetTriple; }
 
@@ -185,6 +230,11 @@ public:
     return !isTargetDarwin() && !isTargetWindows() && !isTargetCygMing();
   }
   bool isTargetLinux() const { return TargetTriple.getOS() == Triple::Linux; }
+  bool isTargetNaCl() const {
+    return TargetTriple.getOS() == Triple::NativeClient;
+  }
+  bool isTargetNaCl32() const { return isTargetNaCl() && !is64Bit(); }
+  bool isTargetNaCl64() const { return isTargetNaCl() && is64Bit(); }
 
   bool isTargetWindows() const { return TargetTriple.getOS() == Triple::Win32; }
   bool isTargetMingw() const { return TargetTriple.getOS() == Triple::MinGW32; }

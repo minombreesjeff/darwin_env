@@ -41,7 +41,6 @@ class PreprocessorOptions {
 public:
   std::vector<std::pair<std::string, bool/*isUndef*/> > Macros;
   std::vector<std::string> Includes;
-  std::vector<std::string> Modules;
   std::vector<std::string> MacroIncludes;
 
   unsigned UsePredefines : 1; /// Initialize the preprocessor with the compiler
@@ -51,6 +50,10 @@ public:
                                /// record of all macro definitions and
                                /// expansions.
   
+  /// \brief Whether we should automatically translate #include or #import
+  /// operations into module imports when possible.
+  unsigned AutoModuleImport : 1;
+
   /// \brief Whether the detailed preprocessing record includes nested macro 
   /// expansions.
   unsigned DetailedRecordIncludesNestedMacroExpansions : 1;
@@ -118,6 +121,14 @@ public:
   /// by providing appropriate definitions to retrofit the standard library
   /// with support for lifetime-qualified pointers.
   ObjCXXARCStandardLibraryKind ObjCXXARCStandardLibrary;
+    
+  /// \brief The path of modules being build, which is used to detect
+  /// cycles in the module dependency graph as modules are being built.
+  ///
+  /// There is no way to set this value from the command line. If we ever need
+  /// to do so (e.g., if on-demand module construction moves out-of-process),
+  /// we can add a cc1-level option to do so.
+  SmallVector<std::string, 2> ModuleBuildPath;
   
   typedef std::vector<std::pair<std::string, std::string> >::iterator
     remapped_file_iterator;
@@ -155,6 +166,7 @@ public:
   
 public:
   PreprocessorOptions() : UsePredefines(true), DetailedRecord(false),
+                          AutoModuleImport(false),
                           DetailedRecordIncludesNestedMacroExpansions(true),
                           DisablePCHValidation(false), DisableStatCache(false),
                           DumpDeserializedPCHDecls(false),
@@ -189,6 +201,21 @@ public:
   void clearRemappedFiles() {
     RemappedFiles.clear();
     RemappedFileBuffers.clear();
+  }
+  
+  /// \brief Reset any options that are not considered when building a
+  /// module.
+  void resetNonModularOptions() {
+    Includes.clear();
+    MacroIncludes.clear();
+    ChainedIncludes.clear();
+    DumpDeserializedPCHDecls = false;
+    ImplicitPCHInclude.clear();
+    ImplicitPTHInclude.clear();
+    TokenCache.clear();
+    RetainRemappedFileBuffers = true;
+    PrecompiledPreambleBytes.first = 0;
+    PrecompiledPreambleBytes.second = 0;
   }
 };
 

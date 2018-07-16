@@ -45,10 +45,19 @@ public:
     GetArgumentValues (Thread &thread,
                        ValueList &values) const = 0;
     
-    virtual bool
-    GetReturnValue (Thread &thread,
-                    Value &value) const = 0;
+public:
+    lldb::ValueObjectSP
+    GetReturnValueObject (Thread &thread,
+                          ClangASTType &type,
+                          bool persistent = true) const;
 
+protected:    
+    // This is the method the ABI will call to actually calculate the return value.
+    // Don't put it in a persistant value object, that will be done by the ABI::GetReturnValueObject.
+    virtual lldb::ValueObjectSP
+    GetReturnValueObjectImpl (Thread &thread,
+                          ClangASTType &type) const = 0;
+public:
     virtual bool
     CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan) = 0;
 
@@ -66,6 +75,28 @@ public:
 
     virtual bool
     CodeAddressIsValid (lldb::addr_t pc) = 0;    
+
+    virtual lldb::addr_t
+    FixCodeAddress (lldb::addr_t pc)
+    {
+        // Some targets might use bits in a code address to indicate
+        // a mode switch. ARM uses bit zero to signify a code address is
+        // thumb, so any ARM ABI plug-ins would strip those bits.
+        return pc;
+    }
+
+    virtual const RegisterInfo *
+    GetRegisterInfoArray (uint32_t &count) = 0;
+
+    
+    
+    bool
+    GetRegisterInfoByName (const ConstString &name, RegisterInfo &info);
+
+    bool
+    GetRegisterInfoByKind (lldb::RegisterKind reg_kind, 
+                           uint32_t reg_num, 
+                           RegisterInfo &info);
 
     static lldb::ABISP
     FindPlugin (const ArchSpec &arch);

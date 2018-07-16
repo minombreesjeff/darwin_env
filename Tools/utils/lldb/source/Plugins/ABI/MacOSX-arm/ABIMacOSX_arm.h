@@ -41,10 +41,12 @@ public:
     GetArgumentValues (lldb_private::Thread &thread,
                        lldb_private::ValueList &values) const;
     
-    virtual bool
-    GetReturnValue (lldb_private::Thread &thread,
-                    lldb_private::Value &value) const;
+protected:
+    virtual lldb::ValueObjectSP
+    GetReturnValueObjectImpl (lldb_private::Thread &thread,
+                    lldb_private::ClangASTType &ast_type) const;
 
+public:
     virtual bool
     CreateFunctionEntryUnwindPlan (lldb_private::UnwindPlan &unwind_plan);
     
@@ -79,6 +81,17 @@ public:
         // alignment
         return pc <= UINT32_MAX;
     }
+    
+    virtual lldb::addr_t
+    FixCodeAddress (lldb::addr_t pc)
+    {
+        // ARM uses bit zero to signify a code address is thumb, so we must
+        // strip bit zero in any code addresses.
+        return pc & ~(lldb::addr_t)1;
+    }
+
+    virtual const lldb_private::RegisterInfo *
+    GetRegisterInfoArray (uint32_t &count);
 
     //------------------------------------------------------------------
     // Static Functions

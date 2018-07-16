@@ -180,8 +180,7 @@ public:
     ///     A pointer to this object if either the directory or filename
     ///     is valid, NULL otherwise.
     //------------------------------------------------------------------
-    operator
-    void* () const;
+    operator bool() const;
 
     //------------------------------------------------------------------
     /// Logical NOT operator.
@@ -358,6 +357,34 @@ public:
     size_t
     GetPath (char *path, size_t max_path_length) const;
 
+    //------------------------------------------------------------------
+    /// Extract the extension of the file.
+    ///
+    /// Returns a ConstString that represents the extension of the filename
+    /// for this FileSpec object. If this object does not represent a file,
+    /// or the filename has no extension, ConstString(NULL) is returned.
+    /// The dot ('.') character is not returned as part of the extension
+    ///
+    /// @return
+    ///     Returns the extension of the file as a ConstString object.
+    //------------------------------------------------------------------
+    ConstString
+    GetFileNameExtension () const;
+
+    //------------------------------------------------------------------
+    /// Return the filename without the extension part
+    ///
+    /// Returns a ConstString that represents the filename of this object
+    /// without the extension part (e.g. for a file named "foo.bar", "foo"
+    /// is returned)
+    ///
+    /// @return
+    ///     Returns the filename without extension
+    ///     as a ConstString object.
+    //------------------------------------------------------------------
+    ConstString
+    GetFileNameStrippingExtension () const;
+    
     FileType
     GetFileType () const;
 
@@ -435,10 +462,10 @@ public:
     ///     pointer must be checked prior to using it.
     //------------------------------------------------------------------
     lldb::DataBufferSP
-    ReadFileContents (off_t offset = 0, size_t length = SIZE_MAX) const;
+    ReadFileContents (off_t offset = 0, size_t length = SIZE_MAX, Error *error_ptr = NULL) const;
 
     size_t
-    ReadFileContents (off_t file_offset, void *dst, size_t dst_len) const;
+    ReadFileContents (off_t file_offset, void *dst, size_t dst_len, Error *error_ptr) const;
 
     //------------------------------------------------------------------
     /// Change the file specificed with a new path.

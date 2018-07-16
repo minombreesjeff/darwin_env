@@ -21,9 +21,11 @@
 namespace llvm {
 
 class AllocaInst;
+class Constant;
 class ConstantFP;
 class FunctionLoweringInfo;
 class Instruction;
+class LoadInst;
 class MachineBasicBlock;
 class MachineConstantPool;
 class MachineFunction;
@@ -36,7 +38,8 @@ class TargetLowering;
 class TargetMachine;
 class TargetRegisterClass;
 class TargetRegisterInfo;
-class LoadInst;
+class User;
+class Value;
 
 /// FastISel - This is a fast-path instruction selection class that
 /// generates poor code and doesn't support illegal types or non-trivial
@@ -54,7 +57,17 @@ protected:
   const TargetInstrInfo &TII;
   const TargetLowering &TLI;
   const TargetRegisterInfo &TRI;
+
+  /// The position of the last instruction for materializing constants
+  /// for use in the current block. It resets to EmitStartPt when it
+  /// makes sense (for example, it's usually profitable to avoid function
+  /// calls between the definition and the use)
   MachineInstr *LastLocalValue;
+
+  /// The top most instruction in the current block that is allowed for
+  /// emitting local variables. LastLocalValue resets to EmitStartPt when
+  /// it makes sense (for example, on function calls)
+  MachineInstr *EmitStartPt;
 
 public:
   /// getLastLocalValue - Return the position of the last instruction
@@ -63,7 +76,10 @@ public:
 
   /// setLastLocalValue - Update the position of the last instruction
   /// emitted for materializing constants for use in the current block.
-  void setLastLocalValue(MachineInstr *I) { LastLocalValue = I; }
+  void setLastLocalValue(MachineInstr *I) {
+    EmitStartPt = I;
+    LastLocalValue = I;
+  }
 
   /// startNewBlock - Set the current block to which generated machine
   /// instructions will be appended, and clear the local CSE map.
@@ -345,6 +361,8 @@ private:
 
   bool SelectExtractValue(const User *I);
 
+  bool SelectInsertValue(const User *I);
+
   /// HandlePHINodesInSuccessorBlocks - Handle PHI nodes in successor blocks.
   /// Emit code to ensure constants are copied into registers when needed.
   /// Remember the virtual registers that need to be added to the Machine PHI
@@ -358,8 +376,17 @@ private:
   /// be materialized with new instructions.
   unsigned materializeRegForValue(const Value *V, MVT VT);
 
+  /// flushLocalValueMap - clears LocalValueMap and moves the area for the
+  /// new local variables to the beginning of the block. It helps to avoid
+  /// spilling cached variables across heavy instructions like calls.
+  void flushLocalValueMap();
+
   /// hasTrivialKill - Test whether the given value has exactly one use.
   bool hasTrivialKill(const Value *V) const;
+
+  /// removeDeadCode - Remove all dead instructions between the I and E.
+  void removeDeadCode(MachineBasicBlock::iterator I,
+                      MachineBasicBlock::iterator E);
 };
 
 }

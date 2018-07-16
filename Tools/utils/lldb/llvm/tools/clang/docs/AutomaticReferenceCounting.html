@@ -581,7 +581,7 @@ respectively, is poor form.</p>
 convert a value of retainable object pointer type to any
 non-retainable type, or vice-versa, is ill-formed.  For example, an
 Objective-C object pointer shall not be converted to <tt>void*</tt>. 
-As an exception, cast to <tt>intptr_t</tt> is allowed becuase such 
+As an exception, cast to <tt>intptr_t</tt> is allowed because such 
 casts are not transferring ownership. The <a href="#objects.operands.casts">bridged
 casts</a> may be used to perform these conversions where
 necessary.</p>
@@ -1006,7 +1006,7 @@ with a <tt>void*</tt> or an <tt>__unsafe_unretained</tt>
 object.</p></div>
 
 <p>This restriction does not apply in Objective-C++.  However,
-nontrivally ownership-qualified types are considered non-POD: in C++0x
+nontrivally ownership-qualified types are considered non-POD: in C++11
 terms, they are not trivially default constructible, copy
 constructible, move constructible, copy assignable, move assignable,
 or destructible.  It is a violation of C++ One Definition Rule to use
@@ -1482,9 +1482,12 @@ implementation.</p></div>
 <p>The <tt>self</tt> parameter variable of an Objective-C method is
 never actually retained by the implementation.  It is undefined
 behavior, or at least dangerous, to cause an object to be deallocated
-during a message send to that object.  To make this
-safe, <tt>self</tt> is implicitly <tt>const</tt> unless the method is
-in the <a href="#family.semantics.init"><tt>init</tt> family</a>.</p>
+during a message send to that object.</p>
+
+<p>To make this safe, for Objective-C instance methods <tt>self</tt> is
+implicitly <tt>const</tt> unless the method is in the <a
+href="#family.semantics.init"><tt>init</tt> family</a>. Further, <tt>self</tt>
+is <b>always</b> implicitly <tt>const</tt> within a class method.</p>
 
 <div class="rationale"><p>Rationale: the cost of
 retaining <tt>self</tt> in all methods was found to be prohibitive, as

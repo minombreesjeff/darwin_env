@@ -26,10 +26,14 @@ namespace lldb_private {
 class OptionGroupFormat : public OptionGroup
 {
 public:
+    static const uint32_t OPTION_GROUP_FORMAT   = LLDB_OPT_SET_1;
+    static const uint32_t OPTION_GROUP_GDB_FMT  = LLDB_OPT_SET_2;
+    static const uint32_t OPTION_GROUP_SIZE     = LLDB_OPT_SET_3;
+    static const uint32_t OPTION_GROUP_COUNT    = LLDB_OPT_SET_4;
     
     OptionGroupFormat (lldb::Format default_format, 
-                       uint32_t default_byte_size,
-                       bool byte_size_prefix_ok);
+                       uint64_t default_byte_size = UINT64_MAX,  // Pass UINT64_MAX to disable the "--size" option
+                       uint64_t default_count = UINT64_MAX);     // Pass UINT64_MAX to disable the "--count" option
     
     virtual
     ~OptionGroupFormat ();
@@ -55,15 +59,61 @@ public:
         return m_format.GetCurrentValue();
     }
 
-    uint32_t
-    GetByteSize() const
+    OptionValueFormat &
+    GetFormatValue()
     {
-        return m_format.GetCurrentByteSize();
+        return m_format;
     }
     
+    const OptionValueFormat &
+    GetFormatValue() const
+    {
+        return m_format;
+    }
+    
+    OptionValueUInt64  &
+    GetByteSizeValue()
+    {
+        return m_byte_size;
+    }
+
+    const OptionValueUInt64  &
+    GetByteSizeValue() const 
+    {
+        return m_byte_size;
+    }
+
+    OptionValueUInt64  &
+    GetCountValue()
+    {
+        return m_count;
+    }
+
+    const OptionValueUInt64  &
+    GetCountValue() const
+    {
+        return m_count;
+    }
+    
+    
+    bool
+    AnyOptionWasSet () const
+    {
+        return m_format.OptionWasSet() ||
+               m_byte_size.OptionWasSet() ||
+               m_count.OptionWasSet();
+    }
+
 protected:
 
+    bool
+    ParserGDBFormatLetter (char format_letter, lldb::Format &format, uint32_t &byte_size);
+
     OptionValueFormat m_format;
+    OptionValueUInt64 m_byte_size;
+    OptionValueUInt64 m_count;
+    char m_prev_gdb_format;
+    char m_prev_gdb_size;
 };
 
 } // namespace lldb_private

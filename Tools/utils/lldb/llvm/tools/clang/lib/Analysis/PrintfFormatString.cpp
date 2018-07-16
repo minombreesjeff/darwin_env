@@ -38,8 +38,7 @@ static bool ParsePrecision(FormatStringHandler &H, PrintfSpecifier &FS,
                            unsigned *argIndex) {
   if (argIndex) {
     FS.setPrecision(ParseNonPositionAmount(Beg, E, *argIndex));
-  }
-  else {
+  } else {
     const OptionalAmount Amt = ParsePositionAmount(H, Start, Beg, E,
                                            analyze_format_string::PrecisionPos);
     if (Amt.isInvalid())
@@ -236,46 +235,6 @@ bool clang::analyze_format_string::ParsePrintfString(FormatStringHandler &H,
 }
 
 //===----------------------------------------------------------------------===//
-// Methods on ConversionSpecifier.
-//===----------------------------------------------------------------------===//
-const char *ConversionSpecifier::toString() const {
-  switch (kind) {
-  case dArg: return "d";
-  case iArg: return "i";
-  case oArg: return "o";
-  case uArg: return "u";
-  case xArg: return "x";
-  case XArg: return "X";
-  case fArg: return "f";
-  case FArg: return "F";
-  case eArg: return "e";
-  case EArg: return "E";
-  case gArg: return "g";
-  case GArg: return "G";
-  case aArg: return "a";
-  case AArg: return "A";
-  case cArg: return "c";
-  case sArg: return "s";
-  case pArg: return "p";
-  case nArg: return "n";
-  case PercentArg:  return "%";
-  case ScanListArg: return "[";
-  case InvalidSpecifier: return NULL;
-
-  // MacOS X unicode extensions.
-  case CArg: return "C";
-  case SArg: return "S";
-
-  // Objective-C specific specifiers.
-  case ObjCObjArg: return "@";
-
-  // GlibC specific specifiers.
-  case PrintErrno: return "m";
-  }
-  return NULL;
-}
-
-//===----------------------------------------------------------------------===//
 // Methods on PrintfSpecifier.
 //===----------------------------------------------------------------------===//
 
@@ -288,7 +247,8 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
   if (CS.getKind() == ConversionSpecifier::cArg)
     switch (LM.getKind()) {
       case LengthModifier::None: return Ctx.IntTy;
-      case LengthModifier::AsLong: return ArgTypeResult::WIntTy;
+      case LengthModifier::AsLong:
+        return ArgTypeResult(ArgTypeResult::WIntTy, "wint_t");
       default:
         return ArgTypeResult::Invalid();
     }
@@ -298,15 +258,17 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
       case LengthModifier::AsLongDouble:
         return ArgTypeResult::Invalid();
       case LengthModifier::None: return Ctx.IntTy;
-      case LengthModifier::AsChar: return Ctx.SignedCharTy;
+      case LengthModifier::AsChar: return ArgTypeResult::AnyCharTy;
       case LengthModifier::AsShort: return Ctx.ShortTy;
       case LengthModifier::AsLong: return Ctx.LongTy;
       case LengthModifier::AsLongLong: return Ctx.LongLongTy;
       case LengthModifier::AsIntMax:
-        // FIXME: Return unknown for now.
+        return ArgTypeResult(Ctx.getIntMaxType(), "intmax_t");
+      case LengthModifier::AsSizeT:
+        // FIXME: How to get the corresponding signed version of size_t?
         return ArgTypeResult();
-      case LengthModifier::AsSizeT: return Ctx.getSizeType();
-      case LengthModifier::AsPtrDiff: return Ctx.getPointerDiffType();
+      case LengthModifier::AsPtrDiff:
+        return ArgTypeResult(Ctx.getPointerDiffType(), "ptrdiff_t");
     }
 
   if (CS.isUIntArg())
@@ -319,12 +281,9 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
       case LengthModifier::AsLong: return Ctx.UnsignedLongTy;
       case LengthModifier::AsLongLong: return Ctx.UnsignedLongLongTy;
       case LengthModifier::AsIntMax:
-        // FIXME: Return unknown for now.
-        return ArgTypeResult();
+        return ArgTypeResult(Ctx.getUIntMaxType(), "uintmax_t");
       case LengthModifier::AsSizeT:
-        // FIXME: How to get the corresponding unsigned
-        // version of size_t?
-        return ArgTypeResult();
+        return ArgTypeResult(Ctx.getSizeType(), "size_t");
       case LengthModifier::AsPtrDiff:
         // FIXME: How to get the corresponding unsigned
         // version of ptrdiff_t?
@@ -339,13 +298,14 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
 
   switch (CS.getKind()) {
     case ConversionSpecifier::sArg:
-      return ArgTypeResult(LM.getKind() == LengthModifier::AsWideChar ?
-          ArgTypeResult::WCStrTy : ArgTypeResult::CStrTy);
+      if (LM.getKind() == LengthModifier::AsWideChar)
+        return ArgTypeResult(ArgTypeResult::WCStrTy, "wchar_t *");
+      return ArgTypeResult::CStrTy;
     case ConversionSpecifier::SArg:
       // FIXME: This appears to be Mac OS X specific.
-      return ArgTypeResult::WCStrTy;
+      return ArgTypeResult(ArgTypeResult::WCStrTy, "wchar_t *");
     case ConversionSpecifier::CArg:
-      return Ctx.WCharTy;
+      return ArgTypeResult(Ctx.WCharTy, "wchar_t");
     case ConversionSpecifier::pArg:
       return ArgTypeResult::CPointerTy;
     default:
@@ -356,7 +316,7 @@ ArgTypeResult PrintfSpecifier::getArgType(ASTContext &Ctx) const {
   return ArgTypeResult();
 }
 
-bool PrintfSpecifier::fixType(QualType QT) {
+bool PrintfSpecifier::fixType(QualType QT, const LangOptions &LangOpt) {
   // Handle strings first (char *, wchar_t *)
   if (QT->isPointerType() && (QT->getPointeeType()->isAnyCharacterType())) {
     CS.setKind(ConversionSpecifier::sArg);
@@ -368,16 +328,16 @@ bool PrintfSpecifier::fixType(QualType QT) {
     // Set the long length modifier for wide characters
     if (QT->getPointeeType()->isWideCharType())
       LM.setKind(LengthModifier::AsWideChar);
+    else
+      LM.setKind(LengthModifier::None);
 
     return true;
   }
 
   // We can only work with builtin types.
-  if (!QT->isBuiltinType())
-    return false;
-
-  // Everything else should be a base type
   const BuiltinType *BT = QT->getAs<BuiltinType>();
+  if (!BT)
+    return false;
 
   // Set length modifier
   switch (BT->getKind()) {
@@ -388,18 +348,16 @@ bool PrintfSpecifier::fixType(QualType QT) {
   case BuiltinType::Char32:
   case BuiltinType::UInt128:
   case BuiltinType::Int128:
-    // Integral types which are non-trivial to correct.
+  case BuiltinType::Half:
+    // Various types which are non-trivial to correct.
     return false;
 
-  case BuiltinType::Void:
-  case BuiltinType::NullPtr:
-  case BuiltinType::ObjCId:
-  case BuiltinType::ObjCClass:
-  case BuiltinType::ObjCSel:
-  case BuiltinType::Dependent:
-  case BuiltinType::Overload:
-  case BuiltinType::BoundMember:
-  case BuiltinType::UnknownAny:
+#define SIGNED_TYPE(Id, SingletonId)
+#define UNSIGNED_TYPE(Id, SingletonId)
+#define FLOATING_TYPE(Id, SingletonId)
+#define BUILTIN_TYPE(Id, SingletonId) \
+  case BuiltinType::Id:
+#include "clang/AST/BuiltinTypes.def"
     // Misc other stuff which doesn't make sense here.
     return false;
 
@@ -437,6 +395,23 @@ bool PrintfSpecifier::fixType(QualType QT) {
     break;
   }
 
+  // Handle size_t, ptrdiff_t, etc. that have dedicated length modifiers in C99.
+  if (isa<TypedefType>(QT) && (LangOpt.C99 || LangOpt.CPlusPlus0x)) {
+    const IdentifierInfo *Identifier = QT.getBaseTypeIdentifier();
+    if (Identifier->getName() == "size_t") {
+      LM.setKind(LengthModifier::AsSizeT);
+    } else if (Identifier->getName() == "ssize_t") {
+      // Not C99, but common in Unix.
+      LM.setKind(LengthModifier::AsSizeT);
+    } else if (Identifier->getName() == "intmax_t") {
+      LM.setKind(LengthModifier::AsIntMax);
+    } else if (Identifier->getName() == "uintmax_t") {
+      LM.setKind(LengthModifier::AsIntMax);
+    } else if (Identifier->getName() == "ptrdiff_t") {
+      LM.setKind(LengthModifier::AsPtrDiff);
+    }
+  }
+
   // Set conversion specifier and disable any flags which do not apply to it.
   // Let typedefs to char fall through to int, as %c is silly for uint8_t.
   if (isa<TypedefType>(QT) && QT->isAnyCharacterType()) {
@@ -461,9 +436,8 @@ bool PrintfSpecifier::fixType(QualType QT) {
       CS.setKind(ConversionSpecifier::uArg);
     HasAlternativeForm = 0;
     HasPlusPrefix = 0;
-  }
-  else {
-    assert(0 && "Unexpected type");
+  } else {
+    llvm_unreachable("Unexpected type");
   }
 
   return true;

@@ -25,20 +25,6 @@ namespace lldb_private {
 class ThreadPlanStepRange : public ThreadPlan
 {
 public:
-    virtual ~ThreadPlanStepRange ();
-
-    virtual void GetDescription (Stream *s, lldb::DescriptionLevel level) = 0;
-    virtual bool ValidatePlan (Stream *error);
-    virtual bool PlanExplainsStop ();
-    virtual bool ShouldStop (Event *event_ptr) = 0;
-    virtual Vote ShouldReportStop (Event *event_ptr);
-    virtual bool StopOthers ();
-    virtual lldb::StateType GetPlanRunState ();
-    virtual bool WillStop ();
-    virtual bool MischiefManaged ();
-
-protected:
-
     ThreadPlanStepRange (ThreadPlanKind kind,
                          const char *name,
                          Thread &thread,
@@ -46,13 +32,29 @@ protected:
                          const SymbolContext &addr_context,
                          lldb::RunMode stop_others);
 
+    virtual ~ThreadPlanStepRange ();
+
+    virtual void GetDescription (Stream *s, lldb::DescriptionLevel level) = 0;
+    virtual bool ValidatePlan (Stream *error);
+    virtual bool ShouldStop (Event *event_ptr) = 0;
+    virtual Vote ShouldReportStop (Event *event_ptr);
+    virtual bool StopOthers ();
+    virtual lldb::StateType GetPlanRunState ();
+    virtual bool WillStop ();
+    virtual bool MischiefManaged ();
+
+    void AddRange(const AddressRange &new_range);
+
+protected:
+
     bool InRange();
     bool FrameIsYounger();
     bool FrameIsOlder();
     bool InSymbol();
+    void DumpRanges (Stream *s);
     
     SymbolContext m_addr_context;
-    AddressRange m_address_range;
+    std::vector<AddressRange> m_address_ranges;
     lldb::RunMode m_stop_others;
     uint32_t m_stack_depth;
     StackID m_stack_id;    // Use the stack ID so we can tell step out from step in.
@@ -61,11 +63,6 @@ protected:
     bool m_first_run_event;  // We want to broadcast only one running event, our first.
 
 private:
-
-    // friend ThreadPlan *
-    // Thread::QueueThreadPlanForStepRange (bool abort_other_plans, StepType type, const AddressRange &range, SymbolContext *addr_context, bool stop_others);
-
-
     DISALLOW_COPY_AND_ASSIGN (ThreadPlanStepRange);
 
 };

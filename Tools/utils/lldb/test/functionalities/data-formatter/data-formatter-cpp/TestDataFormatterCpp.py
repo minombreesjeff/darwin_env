@@ -7,7 +7,7 @@ import unittest2
 import lldb
 from lldbtest import *
 
-class DataFormatterTestCase(TestBase):
+class CppDataFormatterTestCase(TestBase):
 
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-cpp")
 
@@ -94,25 +94,35 @@ class DataFormatterTestCase(TestBase):
         self.expect("type format delete Speed", error=True,
             substrs = ['no custom format for Speed'])
         
-        self.runCmd("type summary add -f \"arr = ${var%s}\" -x \"char \\[[0-9]+\\]\" -v")
+        self.runCmd("type summary add --summary-string \"arr = ${var%s}\" -x \"char \\[[0-9]+\\]\" -v")
         
         self.expect("frame variable strarr",
                     substrs = ['arr = "Hello world!"'])
         
         self.runCmd("type summary clear")
         
-        self.runCmd("type summary add -f \"ptr = ${var%s}\" \"char *\" -v")
+        self.runCmd("type summary add --summary-string \"ptr = ${var%s}\" \"char *\" -v")
         
         self.expect("frame variable strptr",
                     substrs = ['ptr = "Hello world!"'])
         
-        self.runCmd("type summary add -f \"arr = ${var%s}\" -x \"char \\[[0-9]+\\]\" -v")
+        self.runCmd("type summary add --summary-string \"arr = ${var%s}\" -x \"char \\[[0-9]+\\]\" -v")
         
         self.expect("frame variable strarr",
                     substrs = ['arr = "Hello world!'])
-        
+
+        # check that rdar://problem/10011145 (Standard summary format for char[] doesn't work as the result of "expr".) is solved
+        self.expect("p strarr",
+                    substrs = ['arr = "Hello world!'])
+
         self.expect("frame variable strptr",
                     substrs = ['ptr = "Hello world!"'])
+
+        self.expect("p strptr",
+                    substrs = ['ptr = "Hello world!"'])
+
+        self.expect("p (char*)\"1234567890123456789012345678901234567890123456789012345678901234ABC\"",
+            substrs = ['(char *) $', ' = ptr = ', ' "1234567890123456789012345678901234567890123456789012345678901234ABC"'])
 
         self.runCmd("type summary add -c Point")
             
@@ -124,18 +134,18 @@ class DataFormatterTestCase(TestBase):
             substrs = ['Point',
                        'one-line'])
 
-        self.runCmd("type summary add -f \"y=${var.y%x}\" Point")
+        self.runCmd("type summary add --summary-string \"y=${var.y%x}\" Point")
 
         self.expect("frame variable iAmSomewhere",
             substrs = ['y=0x'])
         
-        self.runCmd("type summary add -f \"y=${var.y},x=${var.x}\" Point")
+        self.runCmd("type summary add --summary-string \"y=${var.y},x=${var.x}\" Point")
         
         self.expect("frame variable iAmSomewhere",
                     substrs = ['y=6',
                                'x=4'])
 
-        self.runCmd("type summary add -f \"hello\" Point -e")
+        self.runCmd("type summary add --summary-string \"hello\" Point -e")
 
         self.expect("type summary list",
             substrs = ['Point',
@@ -146,25 +156,25 @@ class DataFormatterTestCase(TestBase):
                        'x = 4',
                        '}'])
 
-        self.runCmd("type summary add -f \"Sign: ${var[31]%B} Exponent: ${var[23-30]%x} Mantissa: ${var[0-22]%u}\" ShowMyGuts")
+        self.runCmd("type summary add --summary-string \"Sign: ${var[31]%B} Exponent: ${var[23-30]%x} Mantissa: ${var[0-22]%u}\" ShowMyGuts")
 
         self.expect("frame variable cool_pointer->floating",
             substrs = ['Sign: true',
                        'Exponent: 0x',
                        '80'])
 
-        self.runCmd("type summary add -f \"a test\" i_am_cool")
+        self.runCmd("type summary add --summary-string \"a test\" i_am_cool")
 
         self.expect("frame variable cool_pointer",
             substrs = ['a test'])
 
-        self.runCmd("type summary add -f \"a test\" i_am_cool --skip-pointers")
+        self.runCmd("type summary add --summary-string \"a test\" i_am_cool --skip-pointers")
         
         self.expect("frame variable cool_pointer",
             substrs = ['a test'],
             matching = False)
 
-        self.runCmd("type summary add -f \"${var[1-3]}\" \"int [5]\"")
+        self.runCmd("type summary add --summary-string \"${var[1-3]}\" \"int [5]\"")
 
         self.expect("frame variable int_array",
             substrs = ['2',
@@ -173,8 +183,8 @@ class DataFormatterTestCase(TestBase):
 
         self.runCmd("type summary clear")
 
-        self.runCmd("type summary add -f \"${var[0-2].integer}\" \"i_am_cool *\"")
-        self.runCmd("type summary add -f \"${var[2-4].integer}\" \"i_am_cool [5]\"")
+        self.runCmd("type summary add --summary-string \"${var[0-2].integer}\" \"i_am_cool *\"")
+        self.runCmd("type summary add --summary-string \"${var[2-4].integer}\" \"i_am_cool [5]\"")
 
         self.expect("frame variable cool_array",
             substrs = ['1,1,6'])
@@ -183,7 +193,7 @@ class DataFormatterTestCase(TestBase):
             substrs = ['3,0,0'])
 
         # test special symbols for formatting variables into summaries
-        self.runCmd("type summary add -f \"cool object @ ${var%L}\" i_am_cool")
+        self.runCmd("type summary add --summary-string \"cool object @ ${var%L}\" i_am_cool")
         self.runCmd("type summary delete \"i_am_cool [5]\"")
         
         # this test might fail if the compiler tries to store
@@ -195,12 +205,68 @@ class DataFormatterTestCase(TestBase):
                        '[2] = cool object @ 0x',
                        '[3] = cool object @ 0x',
                        '[4] = cool object @ 0x'])
+                            
+        # test getting similar output by exploiting ${var} = 'type @ location' for aggregates
+        self.runCmd("type summary add --summary-string \"${var}\" i_am_cool")
+        
+        # this test might fail if the compiler tries to store
+        # these values into registers.. hopefully this is not
+        # going to be the case
+        self.expect("frame variable cool_array",
+                    substrs = ['[0] = i_am_cool @ 0x',
+                               '[1] = i_am_cool @ 0x',
+                               '[2] = i_am_cool @ 0x',
+                               '[3] = i_am_cool @ 0x',
+                               '[4] = i_am_cool @ 0x'])
+
             
-        self.runCmd("type summary add -f \"goofy\" i_am_cool")
-        self.runCmd("type summary add -f \"${var.second_cool%S}\" i_am_cooler")
+        # test getting same output by exploiting %T and %L together for aggregates
+        self.runCmd("type summary add --summary-string \"${var%T} @ ${var%L}\" i_am_cool")
+        
+        # this test might fail if the compiler tries to store
+        # these values into registers.. hopefully this is not
+        # going to be the case
+        self.expect("frame variable cool_array",
+                    substrs = ['[0] = i_am_cool @ 0x',
+                               '[1] = i_am_cool @ 0x',
+                               '[2] = i_am_cool @ 0x',
+                               '[3] = i_am_cool @ 0x',
+                               '[4] = i_am_cool @ 0x'])
+                            
+        self.runCmd("type summary add --summary-string \"goofy\" i_am_cool")
+        self.runCmd("type summary add --summary-string \"${var.second_cool%S}\" i_am_cooler")
 
         self.expect("frame variable the_coolest_guy",
             substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
+
+        # check that unwanted type specifiers are removed
+        self.runCmd("type summary delete i_am_cool")
+        self.runCmd("type summary add --summary-string \"goofy\" \"class i_am_cool\"")
+        self.expect("frame variable the_coolest_guy",
+                substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
+
+        self.runCmd("type summary delete i_am_cool")
+        self.runCmd("type summary add --summary-string \"goofy\" \"enum i_am_cool\"")
+        self.expect("frame variable the_coolest_guy",
+                    substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
+
+        self.runCmd("type summary delete i_am_cool")
+        self.runCmd("type summary add --summary-string \"goofy\" \"struct i_am_cool\"")
+        self.expect("frame variable the_coolest_guy",
+                    substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
+
+        # many spaces, but we still do the right thing
+        self.runCmd("type summary delete i_am_cool")
+        self.runCmd("type summary add --summary-string \"goofy\" \"union     i_am_cool\"")
+        self.expect("frame variable the_coolest_guy",
+                    substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
+
+        # but that not *every* specifier is removed
+        self.runCmd("type summary delete i_am_cool")
+        self.runCmd("type summary add --summary-string \"goofy\" \"wrong i_am_cool\"")
+        self.expect("frame variable the_coolest_guy", matching=False,
+                    substrs = ['(i_am_cooler) the_coolest_guy = goofy'])
+
 
 if __name__ == '__main__':
     import atexit

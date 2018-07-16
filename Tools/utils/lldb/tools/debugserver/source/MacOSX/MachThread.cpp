@@ -95,8 +95,13 @@ MachThread::SetSuspendCountBeforeResume(bool others_stopped)
         
     if (others_stopped)
     {
-        times_to_resume = GetBasicInfo()->suspend_count;
-        m_suspend_count = - (times_to_resume - m_suspend_count);
+        if (GetBasicInfo())
+        {
+            times_to_resume = m_basic_info.suspend_count;
+            m_suspend_count = - (times_to_resume - m_suspend_count);
+        }
+        else
+            times_to_resume = 0;
     }
     else
     {
@@ -349,7 +354,7 @@ MachThread::Dump(uint32_t index)
     default:                        thread_run_state = "???"; break;
     }
 
-    DNBLogThreaded("[%3u] #%3u tid: 0x%4.4x, pc: 0x%16.16llx, sp: 0x%16.16llx, breakID: %3d, user: %d.%06.6d, system: %d.%06.6d, cpu: %2d, policy: %2d, run_state: %2d (%s), flags: %2d, suspend_count: %2d (current %2d), sleep_time: %d",
+    DNBLogThreaded("[%3u] #%3u tid: 0x%4.4x, pc: 0x%16.16llx, sp: 0x%16.16llx, breakID: %3d, user: %d.%6.6d, system: %d.%6.6d, cpu: %2d, policy: %2d, run_state: %2d (%s), flags: %2d, suspend_count: %2d (current %2d), sleep_time: %d",
         index,
         m_seq_id,
         m_tid,
@@ -547,6 +552,11 @@ MachThread::ThreadDidStop()
 bool
 MachThread::NotifyException(MachException::Data& exc)
 {
+    // Allow the arch specific protocol to process (MachException::Data &)exc
+    // first before possible reassignment of m_stop_exception with exc.
+    // See also MachThread::GetStopException().
+    bool handled = m_arch_ap->NotifyException(exc);
+
     if (m_stop_exception.IsValid())
     {
         // We may have more than one exception for a thread, but we need to
@@ -560,32 +570,7 @@ MachThread::NotifyException(MachException::Data& exc)
     {
         m_stop_exception = exc;
     }
-    bool handled = m_arch_ap->NotifyException(exc);
-    if (!handled)
-    {
-        handled = true;
-//        switch (exc.exc_type)
-//        {
-//        case EXC_BAD_ACCESS:
-//            break;
-//        case EXC_BAD_INSTRUCTION:
-//            break;
-//        case EXC_ARITHMETIC:
-//            break;
-//        case EXC_EMULATION:
-//            break;
-//        case EXC_SOFTWARE:
-//            break;
-//        case EXC_BREAKPOINT:
-//            break;
-//        case EXC_SYSCALL:
-//            break;
-//        case EXC_MACH_SYSCALL:
-//            break;
-//        case EXC_RPC_ALERT:
-//            break;
-//        }
-    }
+
     return handled;
 }
 
@@ -705,6 +690,13 @@ MachThread::EnableHardwareWatchpoint (const DNBBreakpoint *wp)
     if (wp != NULL && wp->IsWatchpoint())
         return m_arch_ap->EnableHardwareWatchpoint(wp->Address(), wp->ByteSize(), wp->WatchpointRead(), wp->WatchpointWrite());
     return INVALID_NUB_HW_INDEX;
+}
+
+// Provide a chance to update the global view of the hardware watchpoint state.
+void
+MachThread::HardwareWatchpointStateChanged ()
+{
+    m_arch_ap->HardwareWatchpointStateChanged();
 }
 
 bool

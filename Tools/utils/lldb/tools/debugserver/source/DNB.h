@@ -64,8 +64,10 @@ nub_bool_t      DNBProcessSignal        (nub_process_t pid, int signal) DNB_EXPO
 nub_bool_t      DNBProcessKill          (nub_process_t pid) DNB_EXPORT;
 nub_size_t      DNBProcessMemoryRead    (nub_process_t pid, nub_addr_t addr, nub_size_t size, void *buf) DNB_EXPORT;
 nub_size_t      DNBProcessMemoryWrite   (nub_process_t pid, nub_addr_t addr, nub_size_t size, const void *buf) DNB_EXPORT;
-nub_addr_t      DNBProcessMemoryAllocate (nub_process_t pid, nub_size_t size, uint32_t permissions) DNB_EXPORT;
-nub_bool_t      DNBProcessMemoryDeallocate (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
+nub_addr_t      DNBProcessMemoryAllocate    (nub_process_t pid, nub_size_t size, uint32_t permissions) DNB_EXPORT;
+nub_bool_t      DNBProcessMemoryDeallocate  (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
+int             DNBProcessMemoryRegionInfo  (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *region_info) DNB_EXPORT;
+
 //----------------------------------------------------------------------
 // Process status
 //----------------------------------------------------------------------
@@ -87,6 +89,7 @@ nub_size_t      DNBProcessGetAvailableSTDOUT            (nub_process_t pid, char
 nub_size_t      DNBProcessGetAvailableSTDERR            (nub_process_t pid, char *buf, nub_size_t buf_size) DNB_EXPORT;
 nub_size_t      DNBProcessGetStopCount                  (nub_process_t pid) DNB_EXPORT;
 uint32_t        DNBProcessGetCPUType                    (nub_process_t pid) DNB_EXPORT; 
+
 //----------------------------------------------------------------------
 // Process executable and arguments
 //----------------------------------------------------------------------

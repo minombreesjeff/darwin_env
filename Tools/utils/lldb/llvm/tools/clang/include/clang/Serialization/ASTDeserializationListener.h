@@ -23,6 +23,7 @@ class Decl;
 class ASTReader;
 class QualType;
 class MacroDefinition;
+class Module;
   
 class ASTDeserializationListener {
 protected:
@@ -45,8 +46,10 @@ public:
   /// \brief A selector was read from the AST file.
   virtual void SelectorRead(serialization::SelectorID iD, Selector Sel) { }
   /// \brief A macro definition was read from the AST file.
-  virtual void MacroDefinitionRead(serialization::MacroID, 
+  virtual void MacroDefinitionRead(serialization::PreprocessedEntityID, 
                                    MacroDefinition *MD) { }
+  /// \brief A module definition was read from the AST file.
+  virtual void ModuleRead(serialization::SubmoduleID ID, Module *Mod) { }
 };
 
 }

@@ -36,6 +36,9 @@
 #include "lldb/Target/ThreadPlanStepUntil.h"
 #include "lldb/Target/ThreadSpec.h"
 #include "lldb/Target/Unwind.h"
+#include "Plugins/Process/Utility/UnwindLLDB.h"
+#include "UnwindMacOSXFrameBackchain.h"
+
 
 using namespace lldb;
 using namespace lldb_private;
@@ -62,7 +65,7 @@ Thread::Thread (Process &process, lldb::tid_t tid) :
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
-        log->Printf ("%p Thread::Thread(tid = 0x%4.4x)", this, GetID());
+        log->Printf ("%p Thread::Thread(tid = 0x%4.4llx)", this, GetID());
 
     QueueFundamentalPlan(true);
     UpdateInstanceName();
@@ -73,7 +76,7 @@ Thread::~Thread()
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
     if (log)
-        log->Printf ("%p Thread::~Thread(tid = 0x%4.4x)", this, GetID());
+        log->Printf ("%p Thread::~Thread(tid = 0x%4.4llx)", this, GetID());
     /// If you hit this assert, it means your derived class forgot to call DoDestroy in its destructor.
     assert (m_destroy_called);
 }
@@ -92,7 +95,7 @@ Thread::GetStopInfo ()
 {
     ThreadPlanSP plan_sp (GetCompletedPlan());
     if (plan_sp)
-        return StopInfo::CreateStopReasonWithPlan (plan_sp);
+        return StopInfo::CreateStopReasonWithPlan (plan_sp, GetReturnValueObject());
     else
     {
         if (m_actual_stop_info_sp 
@@ -259,18 +262,75 @@ Thread::ShouldStop (Event* event_ptr)
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
     {
+        log->Printf ("^^^^^^^^ Thread::ShouldStop Begin ^^^^^^^^");
         StreamString s;
+        s.IndentMore();
         DumpThreadPlans(&s);
-        log->PutCString (s.GetData());
+        log->Printf ("Plan stack initial state:\n%s", s.GetData());
     }
     
     // The top most plan always gets to do the trace log...
     current_plan->DoTraceLog ();
 
-    if (current_plan->PlanExplainsStop())
+    // If the base plan doesn't understand why we stopped, then we have to find a plan that does.
+    // If that plan is still working, then we don't need to do any more work.  If the plan that explains 
+    // the stop is done, then we should pop all the plans below it, and pop it, and then let the plans above it decide
+    // whether they still need to do more work.
+    
+    bool done_processing_current_plan = false;
+    
+    if (!current_plan->PlanExplainsStop())
+    {
+        if (current_plan->TracerExplainsStop())
+        {
+            done_processing_current_plan = true;
+            should_stop = false;
+        }
+        else
+        {
+            // If the current plan doesn't explain the stop, then, find one that
+            // does and let it handle the situation.
+            ThreadPlan *plan_ptr = current_plan;
+            while ((plan_ptr = GetPreviousPlan(plan_ptr)) != NULL)
+            {
+                if (plan_ptr->PlanExplainsStop())
+                {
+                    should_stop = plan_ptr->ShouldStop (event_ptr);
+                    
+                    // plan_ptr explains the stop, next check whether plan_ptr is done, if so, then we should take it 
+                    // and all the plans below it off the stack.
+                    
+                    if (plan_ptr->MischiefManaged())
+                    {
+                        // We're going to pop the plans up to AND INCLUDING the plan that explains the stop.
+                        plan_ptr = GetPreviousPlan(plan_ptr);
+                        
+                        do 
+                        {
+                            if (should_stop)
+                                current_plan->WillStop();
+                            PopPlan();
+                        }
+                        while ((current_plan = GetCurrentPlan()) != plan_ptr);
+                        done_processing_current_plan = false;
+                    }
+                    else
+                        done_processing_current_plan = true;
+                        
+                    break;
+                }
+
+            }
+        }
+    }
+    
+    if (!done_processing_current_plan)
     {
         bool over_ride_stop = current_plan->ShouldAutoContinue(event_ptr);
         
+        if (log)
+            log->Printf("Plan %s explains stop, auto-continue %i.", current_plan->GetName(), over_ride_stop);
+            
         // We're starting from the base plan, so just let it decide;
         if (PlanIsBasePlan(current_plan))
         {
@@ -325,26 +385,15 @@ Thread::ShouldStop (Event* event_ptr)
         if (over_ride_stop)
             should_stop = false;
     }
-    else if (current_plan->TracerExplainsStop())
-    {
-        return false;
-    }
-    else
-    {
-        // If the current plan doesn't explain the stop, then, find one that
-        // does and let it handle the situation.
-        ThreadPlan *plan_ptr = current_plan;
-        while ((plan_ptr = GetPreviousPlan(plan_ptr)) != NULL)
-        {
-            if (plan_ptr->PlanExplainsStop())
-            {
-                should_stop = plan_ptr->ShouldStop (event_ptr);
-                break;
-            }
 
-        }
+    if (log)
+    {
+        StreamString s;
+        s.IndentMore();
+        DumpThreadPlans(&s);
+        log->Printf ("Plan stack final state:\n%s", s.GetData());
+        log->Printf ("vvvvvvvv Thread::ShouldStop End (returning %i) vvvvvvvv", should_stop);
     }
-
     return should_stop;
 }
 
@@ -357,7 +406,7 @@ Thread::ShouldReportStop (Event* event_ptr)
     if (thread_state == eStateSuspended || thread_state == eStateInvalid)
     {
         if (log)
-            log->Printf ("Thread::ShouldReportStop() tid = 0x%4.4x: returning vote %i (state was suspended or invalid)\n", GetID(), eVoteNoOpinion);
+            log->Printf ("Thread::ShouldReportStop() tid = 0x%4.4llx: returning vote %i (state was suspended or invalid)\n", GetID(), eVoteNoOpinion);
         return eVoteNoOpinion;
     }
 
@@ -365,13 +414,13 @@ Thread::ShouldReportStop (Event* event_ptr)
     {
         // Don't use GetCompletedPlan here, since that suppresses private plans.
         if (log)
-            log->Printf ("Thread::ShouldReportStop() tid = 0x%4.4x: returning vote  for complete stack's back plan\n", GetID());
+            log->Printf ("Thread::ShouldReportStop() tid = 0x%4.4llx: returning vote  for complete stack's back plan\n", GetID());
         return m_completed_plan_stack.back()->ShouldReportStop (event_ptr);
     }
     else
     {
         if (log)
-            log->Printf ("Thread::ShouldReportStop() tid = 0x%4.4x: returning vote  for current plan\n", GetID());
+            log->Printf ("Thread::ShouldReportStop() tid = 0x%4.4llx: returning vote  for current plan\n", GetID());
         return GetCurrentPlan()->ShouldReportStop (event_ptr);
     }
 }
@@ -392,7 +441,7 @@ Thread::ShouldReportRun (Event* event_ptr)
     {
         // Don't use GetCompletedPlan here, since that suppresses private plans.
         if (log)
-            log->Printf ("Current Plan for thread %d (0x%4.4x): %s being asked whether we should report run.", 
+            log->Printf ("Current Plan for thread %d (0x%4.4llx): %s being asked whether we should report run.", 
                          GetIndexID(), 
                          GetID(),
                          m_completed_plan_stack.back()->GetName());
@@ -402,7 +451,7 @@ Thread::ShouldReportRun (Event* event_ptr)
     else
     {
         if (log)
-            log->Printf ("Current Plan for thread %d (0x%4.4x): %s being asked whether we should report run.", 
+            log->Printf ("Current Plan for thread %d (0x%4.4llx): %s being asked whether we should report run.", 
                          GetIndexID(), 
                          GetID(),
                          GetCurrentPlan()->GetName());
@@ -437,7 +486,7 @@ Thread::PushPlan (ThreadPlanSP &thread_plan_sp)
         {
             StreamString s;
             thread_plan_sp->GetDescription (&s, lldb::eDescriptionLevelFull);
-            log->Printf("Pushing plan: \"%s\", tid = 0x%4.4x.",
+            log->Printf("Pushing plan: \"%s\", tid = 0x%4.4llx.",
                         s.GetData(),
                         thread_plan_sp->GetThread().GetID());
         }
@@ -456,7 +505,7 @@ Thread::PopPlan ()
         ThreadPlanSP &plan = m_plan_stack.back();
         if (log)
         {
-            log->Printf("Popping plan: \"%s\", tid = 0x%4.4x.", plan->GetName(), plan->GetThread().GetID());
+            log->Printf("Popping plan: \"%s\", tid = 0x%4.4llx.", plan->GetName(), plan->GetThread().GetID());
         }
         m_completed_plan_stack.push_back (plan);
         plan->WillPop();
@@ -500,6 +549,22 @@ Thread::GetCompletedPlan ()
         }
     }
     return empty_plan_sp;
+}
+
+ValueObjectSP
+Thread::GetReturnValueObject ()
+{
+    if (!m_completed_plan_stack.empty())
+    {
+        for (int i = m_completed_plan_stack.size() - 1; i >= 0; i--)
+        {
+            ValueObjectSP return_valobj_sp;
+            return_valobj_sp = m_completed_plan_stack[i]->GetReturnValueObject();
+            if (return_valobj_sp)
+            return return_valobj_sp;
+        }
+    }
+    return ValueObjectSP();
 }
 
 bool
@@ -598,7 +663,7 @@ Thread::DiscardThreadPlansUpToPlan (lldb::ThreadPlanSP &up_to_plan_sp)
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
     {
-        log->Printf("Discarding thread plans for thread tid = 0x%4.4x, up to %p", GetID(), up_to_plan_sp.get());
+        log->Printf("Discarding thread plans for thread tid = 0x%4.4llx, up to %p", GetID(), up_to_plan_sp.get());
     }
 
     int stack_size = m_plan_stack.size();
@@ -639,7 +704,7 @@ Thread::DiscardThreadPlans(bool force)
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
     {
-        log->Printf("Discarding thread plans for thread (tid = 0x%4.4x, force %d)", GetID(), force);
+        log->Printf("Discarding thread plans for thread (tid = 0x%4.4llx, force %d)", GetID(), force);
     }
 
     if (force)
@@ -781,22 +846,10 @@ Thread::QueueThreadPlanForStepOut
 ThreadPlan *
 Thread::QueueThreadPlanForStepThrough (bool abort_other_plans, bool stop_other_threads)
 {
-    // Try the dynamic loader first:
-    ThreadPlanSP thread_plan_sp(GetProcess().GetDynamicLoader()->GetStepThroughTrampolinePlan (*this, stop_other_threads));
-    // If that didn't come up with anything, try the ObjC runtime plugin:
-    if (thread_plan_sp.get() == NULL)
-    {
-        ObjCLanguageRuntime *objc_runtime = GetProcess().GetObjCLanguageRuntime();
-        if (objc_runtime)
-            thread_plan_sp = objc_runtime->GetStepThroughTrampolinePlan (*this, stop_other_threads);
-    }
-    
-    if (thread_plan_sp.get() == NULL)
-    {
-        thread_plan_sp.reset(new ThreadPlanStepThrough (*this, stop_other_threads));
-        if (thread_plan_sp && !thread_plan_sp->ValidatePlan (NULL))
-            return NULL;
-    }
+    ThreadPlanSP thread_plan_sp(new ThreadPlanStepThrough (*this, stop_other_threads));
+    if (!thread_plan_sp || !thread_plan_sp->ValidatePlan (NULL))
+        return NULL;
+
     QueueThreadPlan (thread_plan_sp, abort_other_plans);
     return thread_plan_sp.get();
 }
@@ -808,7 +861,7 @@ Thread::QueueThreadPlanForCallFunction (bool abort_other_plans,
                                         bool stop_other_threads,
                                         bool discard_on_error)
 {
-    ThreadPlanSP thread_plan_sp (new ThreadPlanCallFunction (*this, function, arg, stop_other_threads, discard_on_error));
+    ThreadPlanSP thread_plan_sp (new ThreadPlanCallFunction (*this, function, ClangASTType(), arg, stop_other_threads, discard_on_error));
     QueueThreadPlan (thread_plan_sp, abort_other_plans);
     return thread_plan_sp.get();
 }
@@ -847,36 +900,48 @@ Thread::DumpThreadPlans (lldb_private::Stream *s) const
 {
     uint32_t stack_size = m_plan_stack.size();
     int i;
-    s->Printf ("Plan Stack for thread #%u: tid = 0x%4.4x, stack_size = %d\n", GetIndexID(), GetID(), stack_size);
+    s->Indent();
+    s->Printf ("Plan Stack for thread #%u: tid = 0x%4.4llx, stack_size = %d\n", GetIndexID(), GetID(), stack_size);
     for (i = stack_size - 1; i >= 0; i--)
     {
-        s->Printf ("Element %d: ", i);
         s->IndentMore();
+        s->Indent();
+        s->Printf ("Element %d: ", i);
         m_plan_stack[i]->GetDescription (s, eDescriptionLevelFull);
-        s->IndentLess();
         s->EOL();
+        s->IndentLess();
     }
 
     stack_size = m_completed_plan_stack.size();
-    s->Printf ("Completed Plan Stack: %d elements.\n", stack_size);
-    for (i = stack_size - 1; i >= 0; i--)
+    if (stack_size > 0)
     {
-        s->Printf ("Element %d: ", i);
-        s->IndentMore();
-        m_completed_plan_stack[i]->GetDescription (s, eDescriptionLevelFull);
-        s->IndentLess();
-        s->EOL();
+        s->Indent();
+        s->Printf ("Completed Plan Stack: %d elements.\n", stack_size);
+        for (i = stack_size - 1; i >= 0; i--)
+        {
+            s->IndentMore();
+            s->Indent();
+            s->Printf ("Element %d: ", i);
+            m_completed_plan_stack[i]->GetDescription (s, eDescriptionLevelFull);
+            s->EOL();
+            s->IndentLess();
+        }
     }
 
     stack_size = m_discarded_plan_stack.size();
-    s->Printf ("Discarded Plan Stack: %d elements.\n", stack_size);
-    for (i = stack_size - 1; i >= 0; i--)
+    if (stack_size > 0)
     {
-        s->Printf ("Element %d: ", i);
-        s->IndentMore();
-        m_discarded_plan_stack[i]->GetDescription (s, eDescriptionLevelFull);
-        s->IndentLess();
-        s->EOL();
+        s->Indent();
+        s->Printf ("Discarded Plan Stack: %d elements.\n", stack_size);
+        for (i = stack_size - 1; i >= 0; i--)
+        {
+            s->IndentMore();
+            s->Indent();
+            s->Printf ("Element %d: ", i);
+            m_discarded_plan_stack[i]->GetDescription (s, eDescriptionLevelFull);
+            s->EOL();
+            s->IndentLess();
+        }
     }
 
 }
@@ -909,8 +974,8 @@ void
 Thread::CalculateExecutionContext (ExecutionContext &exe_ctx)
 {
     m_process.CalculateExecutionContext (exe_ctx);
-    exe_ctx.thread = this;
-    exe_ctx.frame = NULL;
+    exe_ctx.SetThreadPtr (this);
+    exe_ctx.SetFramePtr (NULL);
 }
 
 
@@ -922,15 +987,6 @@ Thread::GetStackFrameList ()
     return *m_curr_frames_sp;
 }
 
-
-
-uint32_t
-Thread::GetStackFrameCount()
-{
-    return GetStackFrameList().GetNumFrames();
-}
-
-
 void
 Thread::ClearStackFrames ()
 {
@@ -940,62 +996,26 @@ Thread::ClearStackFrames ()
 }
 
 lldb::StackFrameSP
-Thread::GetStackFrameAtIndex (uint32_t idx)
-{
-    return GetStackFrameList().GetFrameAtIndex(idx);
-}
-
-uint32_t
-Thread::GetSelectedFrameIndex ()
-{
-    return GetStackFrameList().GetSelectedFrameIndex();
-}
-
-lldb::StackFrameSP
 Thread::GetFrameWithConcreteFrameIndex (uint32_t unwind_idx)
 {
     return GetStackFrameList().GetFrameWithConcreteFrameIndex (unwind_idx);
-}
-
-lldb::StackFrameSP
-Thread::GetFrameWithStackID(StackID &stack_id)
-{
-    return GetStackFrameList().GetFrameWithStackID (stack_id);
-}
-
-
-lldb::StackFrameSP
-Thread::GetSelectedFrame ()
-{
-    return GetStackFrameAtIndex (GetStackFrameList().GetSelectedFrameIndex());
-}
-
-uint32_t
-Thread::SetSelectedFrame (lldb_private::StackFrame *frame)
-{
-    return GetStackFrameList().SetSelectedFrame(frame);
-}
-
-void
-Thread::SetSelectedFrameByIndex (uint32_t idx)
-{
-    GetStackFrameList().SetSelectedFrameByIndex(idx);
 }
 
 void
 Thread::DumpUsingSettingsFormat (Stream &strm, uint32_t frame_idx)
 {
     ExecutionContext exe_ctx;
+    StackFrameSP frame_sp;
     SymbolContext frame_sc;
     CalculateExecutionContext (exe_ctx);
 
     if (frame_idx != LLDB_INVALID_INDEX32)
     {
-        StackFrameSP frame_sp(GetStackFrameAtIndex (frame_idx));
+        frame_sp = GetStackFrameAtIndex (frame_idx);
         if (frame_sp)
         {
-            exe_ctx.frame = frame_sp.get();
-            frame_sc = exe_ctx.frame->GetSymbolContext(eSymbolContextEverything);
+            exe_ctx.SetFrameSP(frame_sp);
+            frame_sc = frame_sp->GetSymbolContext(eSymbolContextEverything);
         }
     }
 
@@ -1003,7 +1023,7 @@ Thread::DumpUsingSettingsFormat (Stream &strm, uint32_t frame_idx)
     assert (thread_format);
     const char *end = NULL;
     Debugger::FormatPrompt (thread_format, 
-                            exe_ctx.frame ? &frame_sc : NULL,
+                            frame_sp ? &frame_sc : NULL,
                             &exe_ctx, 
                             NULL,
                             strm, 
@@ -1013,7 +1033,9 @@ Thread::DumpUsingSettingsFormat (Stream &strm, uint32_t frame_idx)
 lldb::ThreadSP
 Thread::GetSP ()
 {
-    return m_process.GetThreadList().GetThreadSPForThreadPtr(this);
+    // This object contains an instrusive ref count base class so we can
+    // easily make a shared pointer to this object
+    return ThreadSP(this);
 }
 
 
@@ -1059,7 +1081,7 @@ Thread::UpdateInstanceName ()
     if (name && name[0] != '\0')
         sstr.Printf ("%s", name);
     else if ((GetIndexID() != 0) || (GetID() != 0))
-        sstr.Printf ("0x%4.4x", GetIndexID(), GetID());
+        sstr.Printf ("0x%4.4x", GetIndexID());
 
     if (sstr.GetSize() > 0)
 	Thread::GetSettingsController()->RenameInstanceSettings (GetInstanceName().AsCString(), sstr.GetData());
@@ -1195,6 +1217,32 @@ Thread::RestoreSaveFrameZero (const RegisterCheckpoint &checkpoint)
     }
     return false;
 }
+
+Unwind *
+Thread::GetUnwinder ()
+{
+    if (m_unwinder_ap.get() == NULL)
+    {
+        const ArchSpec target_arch (GetProcess().GetTarget().GetArchitecture ());
+        const llvm::Triple::ArchType machine = target_arch.GetMachine();
+        switch (machine)
+        {
+            case llvm::Triple::x86_64:
+            case llvm::Triple::x86:
+            case llvm::Triple::arm:
+            case llvm::Triple::thumb:
+                m_unwinder_ap.reset (new UnwindLLDB (*this));
+                break;
+                
+            default:
+                if (target_arch.GetTriple().getVendor() == llvm::Triple::Apple)
+                    m_unwinder_ap.reset (new UnwindMacOSXFrameBackchain (*this));
+                break;
+        }
+    }
+    return m_unwinder_ap.get();
+}
+
 
 #pragma mark "Thread::SettingsController"
 //--------------------------------------------------------------

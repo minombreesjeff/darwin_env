@@ -172,11 +172,23 @@ namespace llvm {
       /// ANDNP - Bitwise Logical AND NOT of Packed FP values.
       ANDNP,
 
-      /// PSIGNB/W/D - Copy integer sign.
-      PSIGNB, PSIGNW, PSIGND,
+      /// PSIGN - Copy integer sign.
+      PSIGN,
 
-      /// PBLENDVB - Variable blend
-      PBLENDVB,
+      /// BLEND family of opcodes
+      BLENDV,
+
+      /// HADD - Integer horizontal add.
+      HADD,
+
+      /// HSUB - Integer horizontal sub.
+      HSUB,
+
+      /// FHADD - Floating point horizontal add.
+      FHADD,
+
+      /// FHSUB - Floating point horizontal sub.
+      FHSUB,
 
       /// FMAX, FMIN - Floating point max and min.
       ///
@@ -222,6 +234,12 @@ namespace llvm {
       ADD, SUB, ADC, SBB, SMUL,
       INC, DEC, OR, XOR, AND,
 
+      ANDN, // ANDN - Bitwise AND NOT with FLAGS results.
+
+      BLSI,   // BLSI - Extract lowest set isolated bit
+      BLSMSK, // BLSMSK - Get mask up to lowest set bit
+      BLSR,   // BLSR - Reset lowest set bit
+
       UMUL, // LOW, HI, FLAGS = umul LHS, RHS
 
       // MUL_IMM - X86 specific multiply by immediate.
@@ -255,26 +273,11 @@ namespace llvm {
       MOVLPD,
       MOVSD,
       MOVSS,
-      UNPCKLPS,
-      UNPCKLPD,
-      VUNPCKLPSY,
-      VUNPCKLPDY,
-      UNPCKHPS,
-      UNPCKHPD,
-      VUNPCKHPSY,
-      VUNPCKHPDY,
-      PUNPCKLBW,
-      PUNPCKLWD,
-      PUNPCKLDQ,
-      PUNPCKLQDQ,
-      PUNPCKHBW,
-      PUNPCKHWD,
-      PUNPCKHDQ,
-      PUNPCKHQDQ,
-      VPERMILPS,
-      VPERMILPSY,
-      VPERMILPD,
-      VPERMILPDY,
+      UNPCKL,
+      UNPCKH,
+      VPERMILP,
+      VPERM2X128,
+      VBROADCAST,
 
       // VASTART_SAVE_XMM_REGS - Save xmm argument registers to the stack,
       // according to %al. An operator is needed so that this can be expanded
@@ -283,6 +286,11 @@ namespace llvm {
 
       // WIN_ALLOCA - Windows's _chkstk call to do stack probing.
       WIN_ALLOCA,
+
+      // SEG_ALLOCA - For allocating variable amounts of stack space when using
+      // segmented stacks. Check if the current stacklet has enough space, and
+      // falls back to heap allocation if not.
+      SEG_ALLOCA,
 
       // Memory barrier
       MEMBARRIER,
@@ -301,9 +309,10 @@ namespace llvm {
       ATOMNAND64_DAG,
       ATOMSWAP64_DAG,
 
-      // LCMPXCHG_DAG, LCMPXCHG8_DAG - Compare and swap.
+      // LCMPXCHG_DAG, LCMPXCHG8_DAG, LCMPXCHG16_DAG - Compare and swap.
       LCMPXCHG_DAG,
       LCMPXCHG8_DAG,
+      LCMPXCHG16_DAG,
 
       // VZEXT_LOAD - Load, scalar_to_vector, and zero extend.
       VZEXT_LOAD,
@@ -388,11 +397,13 @@ namespace llvm {
 
     /// isUNPCKLMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to UNPCKL.
-    bool isUNPCKLMask(ShuffleVectorSDNode *N, bool V2IsSplat = false);
+    bool isUNPCKLMask(ShuffleVectorSDNode *N, bool HasAVX2,
+                      bool V2IsSplat = false);
 
     /// isUNPCKHMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a shuffle of elements that is suitable for input to UNPCKH.
-    bool isUNPCKHMask(ShuffleVectorSDNode *N, bool V2IsSplat = false);
+    bool isUNPCKHMask(ShuffleVectorSDNode *N, bool HasAVX2,
+                      bool V2IsSplat = false);
 
     /// isUNPCKL_v_undef_Mask - Special case of isUNPCKLMask for canonical form
     /// of vector_shuffle v, v, <0, 4, 1, 5>, i.e. vector_shuffle v, undef,
@@ -443,10 +454,6 @@ namespace llvm {
     /// getShufflePSHUFLWImmediate - Return the appropriate immediate to shuffle
     /// the specified VECTOR_SHUFFLE mask with PSHUFLW instruction.
     unsigned getShufflePSHUFLWImmediate(SDNode *N);
-
-    /// getShufflePALIGNRImmediate - Return the appropriate immediate to shuffle
-    /// the specified VECTOR_SHUFFLE mask with the PALIGNR instruction.
-    unsigned getShufflePALIGNRImmediate(SDNode *N);
 
     /// getExtractVEXTRACTF128Immediate - Return the appropriate
     /// immediate to extract the specified EXTRACT_SUBVECTOR index
@@ -513,7 +520,7 @@ namespace llvm {
     /// alignment can satisfy any constraint. Similarly if SrcAlign is zero it
     /// means there isn't a need to check it against alignment requirement,
     /// probably because the source does not need to be loaded. If
-    /// 'NonScalarIntSafe' is true, that means it's safe to return a
+    /// 'IsZeroVal' is true, that means it's safe to return a
     /// non-scalar-integer type, e.g. empty string source, constant, or loaded
     /// from memory. 'MemcpyStrSrc' indicates whether the memcpy source is
     /// constant so it does not need to be loaded.
@@ -521,7 +528,7 @@ namespace llvm {
     /// target-independent logic.
     virtual EVT
     getOptimalMemOpType(uint64_t Size, unsigned DstAlign, unsigned SrcAlign,
-                        bool NonScalarIntSafe, bool MemcpyStrSrc,
+                        bool IsZeroVal, bool MemcpyStrSrc,
                         MachineFunction &MF) const;
 
     /// allowsUnalignedMemoryAccesses - Returns true if the target allows
@@ -564,8 +571,8 @@ namespace llvm {
     /// DAG node.
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
-    /// getSetCCResultType - Return the ISD::SETCC ValueType
-    virtual MVT::SimpleValueType getSetCCResultType(EVT VT) const;
+    /// getSetCCResultType - Return the value type to use for ISD::SETCC.
+    virtual EVT getSetCCResultType(EVT VT) const;
 
     /// computeMaskedBitsForTargetNode - Determine which of the bits specified
     /// in Mask are known to be either zero or one and return them in the
@@ -813,11 +820,14 @@ namespace llvm {
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFRAME_TO_ARGS_OFFSET(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEH_RETURN(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerTRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerADJUST_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerCTTZ(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerMUL_V2I64(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerADD(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSUB(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerMUL(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShift(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerXALUO(SDValue Op, SelectionDAG &DAG) const;
 
@@ -931,6 +941,10 @@ namespace llvm {
 
     MachineBasicBlock *EmitLoweredWinAlloca(MachineInstr *MI,
                                               MachineBasicBlock *BB) const;
+
+    MachineBasicBlock *EmitLoweredSegAlloca(MachineInstr *MI,
+                                            MachineBasicBlock *BB,
+                                            bool Is64Bit) const;
 
     MachineBasicBlock *EmitLoweredTLSCall(MachineInstr *MI,
                                           MachineBasicBlock *BB) const;

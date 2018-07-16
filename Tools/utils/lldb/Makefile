@@ -33,12 +33,13 @@ PYTHON_INC_DIR = $(shell python-config --includes)
 # Set common LLDB build flags.
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/include 
 CPP.Flags += -I$(PROJ_OBJ_DIR)/$(LLDB_LEVEL)/include
-CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/../clang/include
-CPP.Flags += -I$(PROJ_OBJ_DIR)/$(LLDB_LEVEL)/../clang/include
+CPP.Flags += -I$(LLVM_SRC_ROOT)/tools/clang/include
+CPP.Flags += -I$(LLVM_OBJ_ROOT)/tools/clang/include
 CPP.Flags +=   $(PYTHON_INC_DIR)
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Utility
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Plugins/Process/Utility
+CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLDB_LEVEL)/source/Plugins/Process/POSIX
 ifeq ($(HOST_OS),Darwin)
 CPP.Flags += -F/System/Library/Frameworks -F/System/Library/PrivateFrameworks
 endif
@@ -59,6 +60,13 @@ CXX.Flags += -fno-strict-aliasing
 # Do not warn about pragmas.  In particular, we are looking to ignore the
 # "#pragma mark" construct which GCC warns about on platforms other than Darwin.
 EXTRA_OPTIONS += -Wno-unknown-pragmas
+
+# Drop -Wsign-compare, which we are not currently clean with.
+EXTRA_OPTIONS += -Wno-sign-compare
+
+# Drop -Wunused-function and -Wunneeded-internal-declaration, which we are not
+# currently clean with.
+EXTRA_OPTIONS += -Wno-sign-compare -Wno-unused-function -Wno-unneeded-internal-declaration
 
 ###
 # LLDB Top Level specific stuff.

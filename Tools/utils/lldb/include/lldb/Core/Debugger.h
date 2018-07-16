@@ -44,6 +44,14 @@ class DebuggerInstanceSettings : public InstanceSettings
 {
 public:
     
+    enum StopDisassemblyType
+    {
+        eStopDisassemblyTypeNever = 0,
+        eStopDisassemblyTypeNoSource,
+        eStopDisassemblyTypeAlways
+    };
+    
+
     DebuggerInstanceSettings (UserSettingsController &owner, bool live_instance = true, const char *name = NULL);
 
     DebuggerInstanceSettings (const DebuggerInstanceSettings &rhs);
@@ -80,6 +88,44 @@ public:
     SetTerminalWidth (uint32_t term_width)
     {
         m_term_width = term_width;
+    }
+
+    uint32_t
+    GetStopSourceLineCount (bool before) const
+    {
+        if (before)
+            return m_stop_source_before_count;
+        else
+            return m_stop_source_after_count;
+    }
+
+    
+    void
+    SetStopSourceLineCount (bool before, uint32_t n)
+    {
+        if (before)
+            m_stop_source_before_count = n;
+        else
+            m_stop_source_after_count = n;
+    }
+
+    StopDisassemblyType
+    GetStopDisassemblyDisplay () const
+    {
+        return m_stop_disassembly_display;
+    }
+    
+
+    uint32_t
+    GetDisassemblyLineCount () const
+    {
+        return m_stop_disassembly_count;
+    }
+    
+    void
+    SetDisassemblyLineCount (uint32_t n)
+    {
+        m_stop_disassembly_count = n;
     }
     
     const char *
@@ -169,7 +215,7 @@ public:
     {
         m_auto_confirm_on = auto_confirm_on;
     }
-        
+    
 protected:
 
     void
@@ -185,30 +231,15 @@ protected:
     const ConstString
     CreateInstanceName ();
 
-    static const ConstString &
-    PromptVarName ();
-
-    static const ConstString &
-    GetFrameFormatName ();
-
-    static const ConstString &
-    GetThreadFormatName ();
-
-    static const ConstString &
-    ScriptLangVarName ();
-  
-    static const ConstString &
-    TermWidthVarName ();
-  
-    static const ConstString &
-    UseExternalEditorVarName ();
-    
-    static const ConstString &
-    AutoConfirmName ();
+    static OptionEnumValueElement g_show_disassembly_enum_values[];
 
 private:
 
     uint32_t m_term_width;
+    uint32_t m_stop_source_before_count;
+    uint32_t m_stop_source_after_count;
+    uint32_t m_stop_disassembly_count;
+    StopDisassemblyType m_stop_disassembly_display;
     std::string m_prompt;
     std::string m_frame_format;
     std::string m_thread_format;
@@ -220,9 +251,12 @@ private:
 
 
 class Debugger :
+    public ReferenceCountedBaseVirtual<Debugger>,
     public UserID,
     public DebuggerInstanceSettings
 {
+friend class SourceManager;  // For GetSourceFileCache.
+
 public:
 
     class SettingsController : public UserSettingsController
@@ -257,6 +291,9 @@ public:
 
     static lldb::TargetSP
     FindTargetWithProcessID (lldb::pid_t pid);
+    
+    static lldb::TargetSP
+    FindTargetWithProcess (Process *process);
 
     static void
     Initialize ();
@@ -273,7 +310,10 @@ public:
     static void
     Destroy (lldb::DebuggerSP &debugger_sp);
 
+    virtual
     ~Debugger ();
+    
+    void Clear();
 
     lldb::DebuggerSP
     GetSP ();
@@ -342,12 +382,17 @@ public:
         return m_listener;
     }
 
+    // This returns the Debugger's scratch source manager.  It won't be able to look up files in debug
+    // information, but it can look up files by absolute path and display them to you.
+    // To get the target's source manager, call GetSourceManager on the target instead.
     SourceManager &
     GetSourceManager ()
     {
         return m_source_manager;
     }
 
+public:
+    
     lldb::TargetSP
     GetSelectedTarget ()
     {
@@ -416,7 +461,7 @@ public:
                   const Address *addr,
                   Stream &s,
                   const char **end,
-                  ValueObject* vobj = NULL);
+                  ValueObject* valobj = NULL);
 
 
     void
@@ -451,6 +496,12 @@ protected:
         m_input_comm.Clear ();
     }
 
+    SourceManager::SourceFileCache &
+    GetSourceFileCache ()
+    {
+        return m_source_file_cache;
+    }
+
     Communication m_input_comm;
     StreamFile m_input_file;
     StreamFile m_output_file;
@@ -458,7 +509,9 @@ protected:
     TargetList m_target_list;
     PlatformList m_platform_list;
     Listener m_listener;
-    SourceManager m_source_manager;
+    SourceManager m_source_manager;    // This is a scratch source manager that we return if we have no targets.
+    SourceManager::SourceFileCache m_source_file_cache; // All the source managers for targets created in this debugger used this shared
+                                                        // source file cache.
     std::auto_ptr<CommandInterpreter> m_command_interpreter_ap;
 
     InputReaderStack m_input_reader_stack;
@@ -472,117 +525,6 @@ private:
 
     DISALLOW_COPY_AND_ASSIGN (Debugger);
     
-public:
-    
-    class Formatting
-    {
-    public:
-        
-        // use this call to force the FM to consider itself updated even when there is no apparent reason for that
-        static void
-        ForceUpdate();
-        
-        class ValueFormats
-        {
-        public:
-            static bool
-            Get(ValueObject& vobj, lldb::DynamicValueType use_dynamic, ValueFormat::SharedPointer &entry);
-            
-            static void
-            Add(const ConstString &type, const ValueFormat::SharedPointer &entry);
-            
-            static bool
-            Delete(const ConstString &type);
-            
-            static void
-            Clear();
-            
-            static void
-            LoopThrough(ValueFormat::ValueCallback callback, void* callback_baton);
-            
-            static uint32_t
-            GetCurrentRevision();
-            
-            static uint32_t
-            GetCount();
-        };
-
-        static bool
-        GetSummaryFormat(ValueObject& vobj,
-                         lldb::DynamicValueType use_dynamic,
-                         lldb::SummaryFormatSP& entry);
-        static bool
-        GetSyntheticChildren(ValueObject& vobj,
-                             lldb::DynamicValueType use_dynamic,
-                             lldb::SyntheticChildrenSP& entry);
-        
-        static bool
-        AnyMatches(ConstString type_name,
-                   FormatCategory::FormatCategoryItems items = FormatCategory::ALL_ITEM_TYPES,
-                   bool only_enabled = true,
-                   const char** matching_category = NULL,
-                   FormatCategory::FormatCategoryItems* matching_type = NULL);
-        
-        class NamedSummaryFormats
-        {
-        public:
-            static bool
-            Get(const ConstString &type, SummaryFormat::SharedPointer &entry);
-            
-            static void
-            Add(const ConstString &type, const SummaryFormat::SharedPointer &entry);
-            
-            static bool
-            Delete(const ConstString &type);
-            
-            static void
-            Clear();
-            
-            static void
-            LoopThrough(SummaryFormat::SummaryCallback callback, void* callback_baton);
-            
-            static uint32_t
-            GetCurrentRevision();
-            
-            static uint32_t
-            GetCount();
-        };
-                
-        class Categories
-        {
-        public:
-            
-            static bool
-            Get(const ConstString &category, lldb::FormatCategorySP &entry);
-            
-            static void
-            Add(const ConstString &category);
-            
-            static bool
-            Delete(const ConstString &category);
-            
-            static void
-            Clear();
-            
-            static void
-            Clear(ConstString &category);
-            
-            static void
-            Enable(ConstString& category);
-            
-            static void
-            Disable(ConstString& category);
-            
-            static void
-            LoopThrough(FormatManager::CategoryCallback callback, void* callback_baton);
-            
-            static uint32_t
-            GetCurrentRevision();
-            
-            static uint32_t
-            GetCount();
-        };
-    };
 };
 
 } // namespace lldb_private

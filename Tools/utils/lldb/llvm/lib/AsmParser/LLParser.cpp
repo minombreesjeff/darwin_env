@@ -120,8 +120,6 @@ bool LLParser::ValidateEndOfModule() {
   for (Module::iterator FI = M->begin(), FE = M->end(); FI != FE; )
     UpgradeCallsToIntrinsic(FI++); // must be post-increment, as we remove
 
-  // Check debug info intrinsics.
-  CheckDebugInfoIntrinsics(M);
   return false;
 }
 
@@ -908,6 +906,7 @@ bool LLParser::ParseOptionalAttrs(unsigned &Attrs, unsigned AttrKind) {
     case lltok::kw_noreturn:        Attrs |= Attribute::NoReturn; break;
     case lltok::kw_nounwind:        Attrs |= Attribute::NoUnwind; break;
     case lltok::kw_uwtable:         Attrs |= Attribute::UWTable; break;
+    case lltok::kw_returns_twice:   Attrs |= Attribute::ReturnsTwice; break;
     case lltok::kw_noinline:        Attrs |= Attribute::NoInline; break;
     case lltok::kw_readnone:        Attrs |= Attribute::ReadNone; break;
     case lltok::kw_readonly:        Attrs |= Attribute::ReadOnly; break;
@@ -919,7 +918,6 @@ bool LLParser::ParseOptionalAttrs(unsigned &Attrs, unsigned AttrKind) {
     case lltok::kw_noredzone:       Attrs |= Attribute::NoRedZone; break;
     case lltok::kw_noimplicitfloat: Attrs |= Attribute::NoImplicitFloat; break;
     case lltok::kw_naked:           Attrs |= Attribute::Naked; break;
-    case lltok::kw_hotpatch:        Attrs |= Attribute::Hotpatch; break;
     case lltok::kw_nonlazybind:     Attrs |= Attribute::NonLazyBind; break;
 
     case lltok::kw_alignstack: {
@@ -1066,7 +1064,7 @@ bool LLParser::ParseInstructionMetadata(Instruction *Inst,
       return TokError("expected metadata after comma");
 
     std::string Name = Lex.getStrVal();
-    unsigned MDK = M->getMDKindID(Name.c_str());
+    unsigned MDK = M->getMDKindID(Name);
     Lex.Lex();
 
     MDNode *Node;
@@ -1263,7 +1261,7 @@ bool LLParser::ParseType(Type *&Result, bool AllowVoid) {
     // If the type hasn't been defined yet, create a forward definition and
     // remember where that forward def'n was seen (in case it never is defined).
     if (Entry.first == 0) {
-      Entry.first = StructType::createNamed(Context, Lex.getStrVal());
+      Entry.first = StructType::create(Context, Lex.getStrVal());
       Entry.second = Lex.getLoc();
     }
     Result = Entry.first;
@@ -1280,7 +1278,7 @@ bool LLParser::ParseType(Type *&Result, bool AllowVoid) {
     // If the type hasn't been defined yet, create a forward definition and
     // remember where that forward def'n was seen (in case it never is defined).
     if (Entry.first == 0) {
-      Entry.first = StructType::createNamed(Context, "");
+      Entry.first = StructType::create(Context);
       Entry.second = Lex.getLoc();
     }
     Result = Entry.first;
@@ -1502,7 +1500,7 @@ bool LLParser::ParseStructDefinition(SMLoc TypeLoc, StringRef Name,
     
     // If this type number has never been uttered, create it.
     if (Entry.first == 0)
-      Entry.first = StructType::createNamed(Context, Name);
+      Entry.first = StructType::create(Context, Name);
     ResultTy = Entry.first;
     return false;
   }
@@ -1528,7 +1526,7 @@ bool LLParser::ParseStructDefinition(SMLoc TypeLoc, StringRef Name,
   
   // If this type number has never been uttered, create it.
   if (Entry.first == 0)
-    Entry.first = StructType::createNamed(Context, Name);
+    Entry.first = StructType::create(Context, Name);
   
   StructType *STy = cast<StructType>(Entry.first);
  
@@ -1609,7 +1607,8 @@ bool LLParser::ParseArrayVectorType(Type *&Result, bool isVector) {
     if ((unsigned)Size != Size)
       return Error(SizeLoc, "size too large for vector");
     if (!VectorType::isValidElementType(EltTy))
-      return Error(TypeLoc, "vector element type must be fp or integer");
+      return Error(TypeLoc,
+       "vector element type must be fp, integer or a pointer to these types");
     Result = VectorType::get(EltTy, unsigned(Size));
   } else {
     if (!ArrayType::isValidElementType(EltTy))
@@ -1968,9 +1967,10 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
       return Error(ID.Loc, "constant vector must not be empty");
 
     if (!Elts[0]->getType()->isIntegerTy() &&
-        !Elts[0]->getType()->isFloatingPointTy())
+        !Elts[0]->getType()->isFloatingPointTy() &&
+        !Elts[0]->getType()->isPointerTy())
       return Error(FirstEltLoc,
-                   "vector elements must have integer or floating point type");
+            "vector elements must have integer, pointer or floating point type");
 
     // Verify that all the vector elements have the same type.
     for (unsigned i = 1, e = Elts.size(); i != e; ++i)
@@ -2162,7 +2162,7 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
     } else {
       assert(Opc == Instruction::ICmp && "Unexpected opcode for CmpInst!");
       if (!Val0->getType()->isIntOrIntVectorTy() &&
-          !Val0->getType()->isPointerTy())
+          !Val0->getType()->getScalarType()->isPointerTy())
         return Error(ID.Loc, "icmp requires pointer or integer operands");
       ID.ConstantVal = ConstantExpr::getICmp(Pred, Val0, Val1);
     }
@@ -2296,7 +2296,8 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
       return true;
 
     if (Opc == Instruction::GetElementPtr) {
-      if (Elts.size() == 0 || !Elts[0]->getType()->isPointerTy())
+      if (Elts.size() == 0 ||
+          !Elts[0]->getType()->getScalarType()->isPointerTy())
         return Error(ID.Loc, "getelementptr requires pointer operand");
 
       ArrayRef<Constant *> Indices(Elts.begin() + 1, Elts.end());
@@ -2945,26 +2946,16 @@ int LLParser::ParseInstruction(Instruction *&Inst, BasicBlock *BB,
   case lltok::kw_insertelement:  return ParseInsertElement(Inst, PFS);
   case lltok::kw_shufflevector:  return ParseShuffleVector(Inst, PFS);
   case lltok::kw_phi:            return ParsePHI(Inst, PFS);
+  case lltok::kw_landingpad:     return ParseLandingPad(Inst, PFS);
   case lltok::kw_call:           return ParseCall(Inst, PFS, false);
   case lltok::kw_tail:           return ParseCall(Inst, PFS, true);
   // Memory.
   case lltok::kw_alloca:         return ParseAlloc(Inst, PFS);
-  case lltok::kw_load:           return ParseLoad(Inst, PFS, false);
-  case lltok::kw_store:          return ParseStore(Inst, PFS, false);
-  case lltok::kw_cmpxchg:        return ParseCmpXchg(Inst, PFS, false);
-  case lltok::kw_atomicrmw:      return ParseAtomicRMW(Inst, PFS, false);
+  case lltok::kw_load:           return ParseLoad(Inst, PFS);
+  case lltok::kw_store:          return ParseStore(Inst, PFS);
+  case lltok::kw_cmpxchg:        return ParseCmpXchg(Inst, PFS);
+  case lltok::kw_atomicrmw:      return ParseAtomicRMW(Inst, PFS);
   case lltok::kw_fence:          return ParseFence(Inst, PFS);
-  case lltok::kw_volatile:
-    if (EatIfPresent(lltok::kw_load))
-      return ParseLoad(Inst, PFS, true);
-    else if (EatIfPresent(lltok::kw_store))
-      return ParseStore(Inst, PFS, true);
-    else if (EatIfPresent(lltok::kw_cmpxchg))
-      return ParseCmpXchg(Inst, PFS, true);
-    else if (EatIfPresent(lltok::kw_atomicrmw))
-      return ParseAtomicRMW(Inst, PFS, true);
-    else
-      return TokError("expected 'load' or 'store'");
   case lltok::kw_getelementptr: return ParseGetElementPtr(Inst, PFS);
   case lltok::kw_extractvalue:  return ParseExtractValue(Inst, PFS);
   case lltok::kw_insertvalue:   return ParseInsertValue(Inst, PFS);
@@ -3341,7 +3332,7 @@ bool LLParser::ParseCompare(Instruction *&Inst, PerFunctionState &PFS,
   } else {
     assert(Opc == Instruction::ICmp && "Unknown opcode for CmpInst!");
     if (!LHS->getType()->isIntOrIntVectorTy() &&
-        !LHS->getType()->isPointerTy())
+        !LHS->getType()->getScalarType()->isPointerTy())
       return Error(Loc, "icmp requires integer operands");
     Inst = new ICmpInst(CmpInst::Predicate(Pred), LHS, RHS);
   }
@@ -3512,6 +3503,56 @@ int LLParser::ParsePHI(Instruction *&Inst, PerFunctionState &PFS) {
   return AteExtraComma ? InstExtraComma : InstNormal;
 }
 
+/// ParseLandingPad
+///   ::= 'landingpad' Type 'personality' TypeAndValue 'cleanup'? Clause+
+/// Clause
+///   ::= 'catch' TypeAndValue
+///   ::= 'filter'
+///   ::= 'filter' TypeAndValue ( ',' TypeAndValue )*
+bool LLParser::ParseLandingPad(Instruction *&Inst, PerFunctionState &PFS) {
+  Type *Ty = 0; LocTy TyLoc;
+  Value *PersFn; LocTy PersFnLoc;
+
+  if (ParseType(Ty, TyLoc) ||
+      ParseToken(lltok::kw_personality, "expected 'personality'") ||
+      ParseTypeAndValue(PersFn, PersFnLoc, PFS))
+    return true;
+
+  LandingPadInst *LP = LandingPadInst::Create(Ty, PersFn, 0);
+  LP->setCleanup(EatIfPresent(lltok::kw_cleanup));
+
+  while (Lex.getKind() == lltok::kw_catch || Lex.getKind() == lltok::kw_filter){
+    LandingPadInst::ClauseType CT;
+    if (EatIfPresent(lltok::kw_catch))
+      CT = LandingPadInst::Catch;
+    else if (EatIfPresent(lltok::kw_filter))
+      CT = LandingPadInst::Filter;
+    else
+      return TokError("expected 'catch' or 'filter' clause type");
+
+    Value *V; LocTy VLoc;
+    if (ParseTypeAndValue(V, VLoc, PFS)) {
+      delete LP;
+      return true;
+    }
+
+    // A 'catch' type expects a non-array constant. A filter clause expects an
+    // array constant.
+    if (CT == LandingPadInst::Catch) {
+      if (isa<ArrayType>(V->getType()))
+        Error(VLoc, "'catch' clause has an invalid type");
+    } else {
+      if (!isa<ArrayType>(V->getType()))
+        Error(VLoc, "'filter' clause has an invalid type");
+    }
+
+    LP->addClause(V);
+  }
+
+  Inst = LP;
+  return false;
+}
+
 /// ParseCall
 ///   ::= 'tail'? 'call' OptionalCallingConv OptionalAttrs Type Value
 ///       ParameterList OptionalAttrs
@@ -3635,34 +3676,73 @@ int LLParser::ParseAlloc(Instruction *&Inst, PerFunctionState &PFS) {
 }
 
 /// ParseLoad
-///   ::= 'volatile'? 'load' TypeAndValue (',' OptionalInfo)?
-int LLParser::ParseLoad(Instruction *&Inst, PerFunctionState &PFS,
-                        bool isVolatile) {
+///   ::= 'load' 'volatile'? TypeAndValue (',' 'align' i32)?
+///   ::= 'load' 'atomic' 'volatile'? TypeAndValue 
+///       'singlethread'? AtomicOrdering (',' 'align' i32)?
+int LLParser::ParseLoad(Instruction *&Inst, PerFunctionState &PFS) {
   Value *Val; LocTy Loc;
   unsigned Alignment = 0;
   bool AteExtraComma = false;
+  bool isAtomic = false;
+  AtomicOrdering Ordering = NotAtomic;
+  SynchronizationScope Scope = CrossThread;
+
+  if (Lex.getKind() == lltok::kw_atomic) {
+    isAtomic = true;
+    Lex.Lex();
+  }
+
+  bool isVolatile = false;
+  if (Lex.getKind() == lltok::kw_volatile) {
+    isVolatile = true;
+    Lex.Lex();
+  }
+
   if (ParseTypeAndValue(Val, Loc, PFS) ||
+      ParseScopeAndOrdering(isAtomic, Scope, Ordering) ||
       ParseOptionalCommaAlign(Alignment, AteExtraComma))
     return true;
 
   if (!Val->getType()->isPointerTy() ||
       !cast<PointerType>(Val->getType())->getElementType()->isFirstClassType())
     return Error(Loc, "load operand must be a pointer to a first class type");
+  if (isAtomic && !Alignment)
+    return Error(Loc, "atomic load must have explicit non-zero alignment");
+  if (Ordering == Release || Ordering == AcquireRelease)
+    return Error(Loc, "atomic load cannot use Release ordering");
 
-  Inst = new LoadInst(Val, "", isVolatile, Alignment);
+  Inst = new LoadInst(Val, "", isVolatile, Alignment, Ordering, Scope);
   return AteExtraComma ? InstExtraComma : InstNormal;
 }
 
 /// ParseStore
-///   ::= 'volatile'? 'store' TypeAndValue ',' TypeAndValue (',' 'align' i32)?
-int LLParser::ParseStore(Instruction *&Inst, PerFunctionState &PFS,
-                         bool isVolatile) {
+
+///   ::= 'store' 'volatile'? TypeAndValue ',' TypeAndValue (',' 'align' i32)?
+///   ::= 'store' 'atomic' 'volatile'? TypeAndValue ',' TypeAndValue
+///       'singlethread'? AtomicOrdering (',' 'align' i32)?
+int LLParser::ParseStore(Instruction *&Inst, PerFunctionState &PFS) {
   Value *Val, *Ptr; LocTy Loc, PtrLoc;
   unsigned Alignment = 0;
   bool AteExtraComma = false;
+  bool isAtomic = false;
+  AtomicOrdering Ordering = NotAtomic;
+  SynchronizationScope Scope = CrossThread;
+
+  if (Lex.getKind() == lltok::kw_atomic) {
+    isAtomic = true;
+    Lex.Lex();
+  }
+
+  bool isVolatile = false;
+  if (Lex.getKind() == lltok::kw_volatile) {
+    isVolatile = true;
+    Lex.Lex();
+  }
+
   if (ParseTypeAndValue(Val, Loc, PFS) ||
       ParseToken(lltok::comma, "expected ',' after store operand") ||
       ParseTypeAndValue(Ptr, PtrLoc, PFS) ||
+      ParseScopeAndOrdering(isAtomic, Scope, Ordering) ||
       ParseOptionalCommaAlign(Alignment, AteExtraComma))
     return true;
 
@@ -3672,20 +3752,28 @@ int LLParser::ParseStore(Instruction *&Inst, PerFunctionState &PFS,
     return Error(Loc, "store operand must be a first class value");
   if (cast<PointerType>(Ptr->getType())->getElementType() != Val->getType())
     return Error(Loc, "stored value and pointer type do not match");
+  if (isAtomic && !Alignment)
+    return Error(Loc, "atomic store must have explicit non-zero alignment");
+  if (Ordering == Acquire || Ordering == AcquireRelease)
+    return Error(Loc, "atomic store cannot use Acquire ordering");
 
-  Inst = new StoreInst(Val, Ptr, isVolatile, Alignment);
+  Inst = new StoreInst(Val, Ptr, isVolatile, Alignment, Ordering, Scope);
   return AteExtraComma ? InstExtraComma : InstNormal;
 }
 
 /// ParseCmpXchg
-///   ::= 'volatile'? 'cmpxchg' TypeAndValue ',' TypeAndValue ',' TypeAndValue
-///        'singlethread'? AtomicOrdering
-int LLParser::ParseCmpXchg(Instruction *&Inst, PerFunctionState &PFS,
-                           bool isVolatile) {
+///   ::= 'cmpxchg' 'volatile'? TypeAndValue ',' TypeAndValue ',' TypeAndValue
+///       'singlethread'? AtomicOrdering
+int LLParser::ParseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
   Value *Ptr, *Cmp, *New; LocTy PtrLoc, CmpLoc, NewLoc;
   bool AteExtraComma = false;
   AtomicOrdering Ordering = NotAtomic;
   SynchronizationScope Scope = CrossThread;
+  bool isVolatile = false;
+
+  if (EatIfPresent(lltok::kw_volatile))
+    isVolatile = true;
+
   if (ParseTypeAndValue(Ptr, PtrLoc, PFS) ||
       ParseToken(lltok::comma, "expected ',' after cmpxchg address") ||
       ParseTypeAndValue(Cmp, CmpLoc, PFS) ||
@@ -3717,15 +3805,19 @@ int LLParser::ParseCmpXchg(Instruction *&Inst, PerFunctionState &PFS,
 }
 
 /// ParseAtomicRMW
-///   ::= 'volatile'? 'atomicrmw' BinOp TypeAndValue ',' TypeAndValue
-///        'singlethread'? AtomicOrdering
-int LLParser::ParseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS,
-                             bool isVolatile) {
+///   ::= 'atomicrmw' 'volatile'? BinOp TypeAndValue ',' TypeAndValue
+///       'singlethread'? AtomicOrdering
+int LLParser::ParseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
   Value *Ptr, *Val; LocTy PtrLoc, ValLoc;
   bool AteExtraComma = false;
   AtomicOrdering Ordering = NotAtomic;
   SynchronizationScope Scope = CrossThread;
+  bool isVolatile = false;
   AtomicRMWInst::BinOp Operation;
+
+  if (EatIfPresent(lltok::kw_volatile))
+    isVolatile = true;
+
   switch (Lex.getKind()) {
   default: return TokError("expected binary operation in atomicrmw");
   case lltok::kw_xchg: Operation = AtomicRMWInst::Xchg; break;
@@ -3788,13 +3880,15 @@ int LLParser::ParseFence(Instruction *&Inst, PerFunctionState &PFS) {
 /// ParseGetElementPtr
 ///   ::= 'getelementptr' 'inbounds'? TypeAndValue (',' TypeAndValue)*
 int LLParser::ParseGetElementPtr(Instruction *&Inst, PerFunctionState &PFS) {
-  Value *Ptr, *Val; LocTy Loc, EltLoc;
+  Value *Ptr = 0;
+  Value *Val = 0;
+  LocTy Loc, EltLoc;
 
   bool InBounds = EatIfPresent(lltok::kw_inbounds);
 
   if (ParseTypeAndValue(Ptr, Loc, PFS)) return true;
 
-  if (!Ptr->getType()->isPointerTy())
+  if (!Ptr->getType()->getScalarType()->isPointerTy())
     return Error(Loc, "base of getelementptr must be a pointer");
 
   SmallVector<Value*, 16> Indices;
@@ -3805,10 +3899,22 @@ int LLParser::ParseGetElementPtr(Instruction *&Inst, PerFunctionState &PFS) {
       break;
     }
     if (ParseTypeAndValue(Val, EltLoc, PFS)) return true;
-    if (!Val->getType()->isIntegerTy())
+    if (!Val->getType()->getScalarType()->isIntegerTy())
       return Error(EltLoc, "getelementptr index must be an integer");
+    if (Val->getType()->isVectorTy() != Ptr->getType()->isVectorTy())
+      return Error(EltLoc, "getelementptr index type missmatch");
+    if (Val->getType()->isVectorTy()) {
+      unsigned ValNumEl = cast<VectorType>(Val->getType())->getNumElements();
+      unsigned PtrNumEl = cast<VectorType>(Ptr->getType())->getNumElements();
+      if (ValNumEl != PtrNumEl)
+        return Error(EltLoc,
+          "getelementptr vector index has a wrong number of elements");
+    }
     Indices.push_back(Val);
   }
+
+  if (Val && Val->getType()->isVectorTy() && Indices.size() != 1)
+    return Error(EltLoc, "vector getelementptrs must have a single index");
 
   if (!GetElementPtrInst::getIndexedType(Ptr->getType(), Indices))
     return Error(Loc, "invalid getelementptr indices");

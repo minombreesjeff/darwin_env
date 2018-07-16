@@ -13,21 +13,28 @@ include $(LLDB_LEVEL)/../../Makefile.config
 
 
 DIRS := ABI/MacOSX-arm ABI/MacOSX-i386 ABI/SysV-x86_64 Disassembler/llvm \
-	ObjectContainer/BSD-Archive ObjectFile/ELF SymbolFile/DWARF \
-	SymbolFile/Symtab Process/Utility DynamicLoader/Static \
-	Platform Process/gdb-remote Instruction/ARM \
+	ObjectContainer/BSD-Archive ObjectFile/ELF ObjectFile/PECOFF \
+	SymbolFile/DWARF SymbolFile/Symtab Process/Utility \
+	DynamicLoader/Static Platform Process/gdb-remote Instruction/ARM \
 	UnwindAssembly/InstEmulation UnwindAssembly/x86 \
 	LanguageRuntime/CPlusPlus/ItaniumABI \
 	LanguageRuntime/ObjC/AppleObjCRuntime
 
 ifeq ($(HOST_OS),Darwin)
-DIRS += Process/Darwin DynamicLoader/MacOSX-DYLD ObjectContainer/Universal-Mach-O \
-	ObjectFile/Mach-O SymbolVendor/MacOSX
+DIRS += Process/MacOSX-Kernel
+DIRS += DynamicLoader/MacOSX-DYLD DynamicLoader/Darwin-Kernel
+DIRS +=	ObjectContainer/Universal-Mach-O ObjectFile/Mach-O
+DIRS += SymbolVendor/MacOSX
+DIRS += OperatingSystem/Darwin-Kernel
 #DIRS += Process/MacOSX-User
 endif
 
 ifeq ($(HOST_OS),Linux)
-DIRS += Process/Linux DynamicLoader/Linux-DYLD
+DIRS += Process/Linux Process/POSIX DynamicLoader/POSIX-DYLD
+endif
+
+ifeq ($(HOST_OS),FreeBSD)
+DIRS += Process/FreeBSD Process/POSIX DynamicLoader/POSIX-DYLD
 endif
 
 include $(LLDB_LEVEL)/Makefile

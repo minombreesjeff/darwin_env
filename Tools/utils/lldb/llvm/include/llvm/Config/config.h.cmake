@@ -5,14 +5,32 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/* Bug report URL. */
+#define BUG_REPORT_URL "${BUG_REPORT_URL}"
+
+/* Relative directory for resource files */
+#define CLANG_RESOURCE_DIR "${CLANG_RESOURCE_DIR}"
+
+/* 32 bit multilib directory. */
+#define CXX_INCLUDE_32BIT_DIR "${CXX_INCLUDE_32BIT_DIR}"
+
+/* 64 bit multilib directory. */
+#define CXX_INCLUDE_64BIT_DIR "${CXX_INCLUDE_64BIT_DIR}"
+
+/* Arch the libstdc++ headers. */
+#define CXX_INCLUDE_ARCH "${CXX_INCLUDE_ARCH}"
+
+/* Directory with the libstdc++ headers. */
+#define CXX_INCLUDE_ROOT "${CXX_INCLUDE_ROOT}"
+
+/* Directories clang will search for headers */
+#define C_INCLUDE_DIRS "${C_INCLUDE_DIRS}"
+
 /* Define if CBE is enabled for printf %a output */
 #cmakedefine ENABLE_CBE_PRINTF_A ${ENABLE_CBE_PRINTF_A}
 
 /* Define if position independent code is enabled */
 #cmakedefine ENABLE_PIC
-
-/* Define if threads enabled */
-#cmakedefine ENABLE_THREADS ${ENABLE_THREADS}
 
 /* Define if timestamp information (e.g., __DATE___) is allowed */
 #cmakedefine ENABLE_TIMESTAMPS ${ENABLE_TIMESTAMPS}
@@ -276,6 +294,9 @@
 /* Define to 1 if you have the `powf' function. */
 #cmakedefine HAVE_POWF ${HAVE_POWF}
 
+/* Define to 1 if you have the `pread' function. */
+#cmakedefine HAVE_PREAD ${HAVE_PREAD}
+
 /* Define if libtool can extract symbol lists from object files. */
 #undef HAVE_PRELOADED_SYMBOLS
 
@@ -516,52 +537,58 @@
 #undef HOST_LINK_VERSION
 
 /* Installation directory for binary executables */
-#undef LLVM_BINDIR
+#cmakedefine LLVM_BINDIR "${LLVM_BINDIR}"
 
 /* Time at which LLVM was configured */
-#undef LLVM_CONFIGTIME
+#cmakedefine LLVM_CONFIGTIME "${LLVM_CONFIGTIME}"
+
+/* Installation directory for data files */
+#cmakedefine LLVM_DATADIR "${LLVM_DATADIR}"
+
+/* Target triple LLVM will generate code for by default */
+#cmakedefine LLVM_DEFAULT_TARGET_TRIPLE "${LLVM_DEFAULT_TARGET_TRIPLE}"
 
 /* Installation directory for documentation */
-#undef LLVM_DATADIR
+#cmakedefine LLVM_DOCSDIR "${LLVM_DOCSDIR}"
 
-/* Installation directory for documentation */
-#undef LLVM_DOCSDIR
+/* Define if threads enabled */
+#cmakedefine01 LLVM_ENABLE_THREADS
 
 /* Installation directory for config files */
-#undef LLVM_ETCDIR
+#cmakedefine LLVM_ETCDIR "${LLVM_ETCDIR}"
 
-/* Host triple we were built on */
-#cmakedefine LLVM_HOSTTRIPLE "${LLVM_HOSTTRIPLE}"
+/* Has gcc/MSVC atomic intrinsics */
+#cmakedefine01 LLVM_HAS_ATOMICS
 
 /* Installation directory for include files */
-#undef LLVM_INCLUDEDIR
+#cmakedefine LLVM_INCLUDEDIR "${LLVM_INCLUDEDIR}"
 
 /* Installation directory for .info files */
-#undef LLVM_INFODIR
+#cmakedefine LLVM_INFODIR "${LLVM_INFODIR}"
 
 /* Installation directory for libraries */
-#undef LLVM_LIBDIR
+#cmakedefine LLVM_LIBDIR "${LLVM_LIBDIR}"
 
 /* Installation directory for man pages */
-#undef LLVM_MANDIR
-
-/* Build multithreading support into LLVM */
-#cmakedefine LLVM_MULTITHREADED ${LLVM_MULTITHREADED}
+#cmakedefine LLVM_MANDIR "${LLVM_MANDIR}"
 
 /* LLVM architecture name for the native architecture, if available */
 #cmakedefine LLVM_NATIVE_ARCH ${LLVM_NATIVE_ARCH}
 
+/* LLVM name for the native AsmParser init function, if available */
+#cmakedefine LLVM_NATIVE_ASMPARSER LLVMInitialize${LLVM_NATIVE_ARCH}AsmParser
+
 /* LLVM name for the native AsmPrinter init function, if available */
 #cmakedefine LLVM_NATIVE_ASMPRINTER LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter
-
-/* LLVM name for the native TargetMC init function, if available */
-#cmakedefine LLVM_NATIVE_TARGETMC LLVMInitialize${LLVM_NATIVE_ARCH}TargetMC
 
 /* LLVM name for the native Target init function, if available */
 #cmakedefine LLVM_NATIVE_TARGET LLVMInitialize${LLVM_NATIVE_ARCH}Target
 
 /* LLVM name for the native TargetInfo init function, if available */
 #cmakedefine LLVM_NATIVE_TARGETINFO LLVMInitialize${LLVM_NATIVE_ARCH}TargetInfo
+
+/* LLVM name for the native target MC init function, if available */
+#cmakedefine LLVM_NATIVE_TARGETMC LLVMInitialize${LLVM_NATIVE_ARCH}TargetMC
 
 /* Define if this is Unixish platform */
 #cmakedefine LLVM_ON_UNIX ${LLVM_ON_UNIX}
@@ -582,7 +609,7 @@
 #cmakedefine LLVM_PATH_FDP "${LLVM_PATH_FDP}"
 
 /* Define to path to Graphviz program if found or 'echo Graphviz' otherwise */
-#undef LLVM_PATH_GRAPHVIZ
+#cmakedefine LLVM_PATH_GRAPHVIZ "${LLVM_PATH_GRAPHVIZ}"
 
 /* Define to path to gv program if found or 'echo gv' otherwise */
 #cmakedefine LLVM_PATH_GV "${LLVM_PATH_GV}"
@@ -674,21 +701,6 @@
 /* Define to `unsigned int' if <sys/types.h> does not define. */
 #undef size_t
 
-/* Define to 1 if the `S_IS*' macros in <sys/stat.h> do not work properly. */
-#undef STAT_MACROS_BROKEN
-
-/* If using the C implementation of alloca, define if you know the
-   direction of stack growth for your system; otherwise it will be
-   automatically deduced at runtime.
-	STACK_DIRECTION > 0 => grows toward higher addresses
-	STACK_DIRECTION < 0 => grows toward lower addresses
-	STACK_DIRECTION = 0 => direction of growth unknown */
-#undef STACK_DIRECTION
-
-/* Define to 1 if `lex' declares `yytext' as a `char *' by default, not a
-   `char[]'. */
-#undef YYTEXT_POINTER
-
 /* Define to a function replacing strtoll */
 #cmakedefine strtoll ${strtoll}
 
@@ -703,36 +715,6 @@
 
 /* Define to 1 if you have the `_chsize_s' function. */
 #cmakedefine HAVE__CHSIZE_S ${HAVE__CHSIZE_S}
-
-/* define if the compiler implements namespaces */
-#undef HAVE_NAMESPACES
-
-/* Does not have std namespace iterator */
-#undef HAVE_STD_ITERATOR
-
-/* Does not have forward iterator */
-#undef HAVE_FWD_ITERATOR
-
-/* Does not have bi-directional iterator */
-#undef HAVE_BI_ITERATOR
-
-/* Does not have <hash_map> */
-#undef HAVE_GLOBAL_HASH_MAP
-
-/* Does not have hash_set in global namespace */
-#undef HAVE_GLOBAL_HASH_SET
-
-/* Does not have ext/hash_map */
-#undef HAVE_GNU_EXT_HASH_MAP
-
-/* Does not have hash_set in gnu namespace */
-#undef HAVE_GNU_EXT_HASH_SET
-
-/* Does not have ext/hash_map> */
-#undef HAVE_STD_EXT_HASH_MAP
-
-/* Does not have hash_set in std namespace */
-#undef HAVE_STD_EXT_HASH_SET
 
 /* Added by Kevin -- Maximum path length */
 #cmakedefine MAXPATHLEN ${MAXPATHLEN}

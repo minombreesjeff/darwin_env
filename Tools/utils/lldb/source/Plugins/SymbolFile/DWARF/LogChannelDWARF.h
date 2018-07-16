@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_LogChannelDWARF_h_
-#define liblldb_LogChannelDWARF_h_
+#ifndef SymbolFileDWARF_LogChannelDWARF_h_
+#define SymbolFileDWARF_LogChannelDWARF_h_
 
 // C Includes
 // C++ Includes
@@ -22,6 +22,8 @@
 #define DWARF_LOG_DEBUG_LINE        (1u << 2)
 #define DWARF_LOG_DEBUG_PUBNAMES    (1u << 3)
 #define DWARF_LOG_DEBUG_PUBTYPES    (1u << 4)
+#define DWARF_LOG_DEBUG_ARANGES     (1u << 5)
+#define DWARF_LOG_LOOKUPS           (1u << 6)
 #define DWARF_LOG_ALL               (UINT32_MAX)
 #define DWARF_LOG_DEFAULT           (DWARF_LOG_DEBUG_INFO)
 
@@ -72,14 +74,17 @@ public:
     virtual void
     ListCategories (lldb_private::Stream *strm);
 
-    static lldb_private::Log *
+    static lldb::LogSP
     GetLog ();
 
-    static lldb_private::Log *
+    static lldb::LogSP
     GetLogIfAll (uint32_t mask);
-
+    
+    static lldb::LogSP
+    GetLogIfAny (uint32_t mask);
+    
     static void
     LogIf (uint32_t mask, const char *format, ...);
 };
 
-#endif  // liblldb_LogChannelDWARF_h_
+#endif  // SymbolFileDWARF_LogChannelDWARF_h_

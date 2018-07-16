@@ -169,7 +169,8 @@ static const char *getLLVMArchSuffixForARM(StringRef CPU) {
   return "";
 }
 
-std::string ToolChain::ComputeLLVMTriple(const ArgList &Args) const {
+std::string ToolChain::ComputeLLVMTriple(const ArgList &Args, 
+                                         types::ID InputType) const {
   switch (getTriple().getArch()) {
   default:
     return getTripleString();
@@ -184,10 +185,12 @@ std::string ToolChain::ComputeLLVMTriple(const ArgList &Args) const {
     // FIXME: Thumb should just be another -target-feaure, not in the triple.
     StringRef Suffix =
       getLLVMArchSuffixForARM(getARMTargetCPU(Args, Triple));
-    bool ThumbDefault =
-      (Suffix == "v7" && getTriple().getOS() == llvm::Triple::Darwin);
+    bool ThumbDefault = (Suffix == "v7" && getTriple().isOSDarwin());
     std::string ArchName = "arm";
-    if (Args.hasFlag(options::OPT_mthumb, options::OPT_mno_thumb, ThumbDefault))
+
+    // Assembly files should start in ARM mode.
+    if (InputType != types::TY_PP_Asm &&
+        Args.hasFlag(options::OPT_mthumb, options::OPT_mno_thumb, ThumbDefault))
       ArchName = "thumb";
     Triple.setArchName(ArchName + Suffix.str());
 
@@ -196,7 +199,8 @@ std::string ToolChain::ComputeLLVMTriple(const ArgList &Args) const {
   }
 }
 
-std::string ToolChain::ComputeEffectiveClangTriple(const ArgList &Args) const {
+std::string ToolChain::ComputeEffectiveClangTriple(const ArgList &Args, 
+                                                   types::ID InputType) const {
   // Diagnose use of Darwin OS deployment target arguments on non-Darwin.
   if (Arg *A = Args.getLastArg(options::OPT_mmacosx_version_min_EQ,
                                options::OPT_miphoneos_version_min_EQ,
@@ -204,7 +208,28 @@ std::string ToolChain::ComputeEffectiveClangTriple(const ArgList &Args) const {
     getDriver().Diag(diag::err_drv_clang_unsupported)
       << A->getAsString(Args);
 
-  return ComputeLLVMTriple(Args);
+  return ComputeLLVMTriple(Args, InputType);
+}
+
+void ToolChain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
+                                          ArgStringList &CC1Args) const {
+  // Each toolchain should provide the appropriate include flags.
+}
+
+ToolChain::RuntimeLibType ToolChain::GetRuntimeLibType(
+  const ArgList &Args) const
+{
+  if (Arg *A = Args.getLastArg(options::OPT_rtlib_EQ)) {
+    StringRef Value = A->getValue(Args);
+    if (Value == "compiler-rt")
+      return ToolChain::RLT_CompilerRT;
+    if (Value == "libgcc")
+      return ToolChain::RLT_Libgcc;
+    getDriver().Diag(diag::err_drv_invalid_rtlib_name)
+      << A->getAsString(Args);
+  }
+
+  return GetDefaultRuntimeLibType();
 }
 
 ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
@@ -221,24 +246,18 @@ ToolChain::CXXStdlibType ToolChain::GetCXXStdlibType(const ArgList &Args) const{
   return ToolChain::CST_Libstdcxx;
 }
 
-void ToolChain::AddClangCXXStdlibIncludeArgs(const ArgList &Args,
-                                             ArgStringList &CmdArgs,
-                                             bool ObjCXXAutoRefCount) const {
-  CXXStdlibType Type = GetCXXStdlibType(Args);
-
-  // Header search paths are handled by the mass of goop in InitHeaderSearch.
-
-  switch (Type) {
-  case ToolChain::CST_Libcxx:
-    if (ObjCXXAutoRefCount)
-      CmdArgs.push_back("-fobjc-arc-cxxlib=libc++");
-    break;
-
-  case ToolChain::CST_Libstdcxx:
-    if (ObjCXXAutoRefCount)
-      CmdArgs.push_back("-fobjc-arc-cxxlib=libstdc++");
-    break;
-  }
+void ToolChain::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
+                                             ArgStringList &CC1Args) const {
+  // Header search paths should be handled by each of the subclasses.
+  // Historically, they have not been, and instead have been handled inside of
+  // the CC1-layer frontend. As the logic is hoisted out, this generic function
+  // will slowly stop being called.
+  //
+  // While it is being called, replicate a bit of a hack to propagate the
+  // '-stdlib=' flag down to CC1 so that it can in turn customize the C++
+  // header search paths with it. Once all systems are overriding this
+  // function, the CC1 flag and this line can be removed.
+  DriverArgs.AddAllArgs(CC1Args, options::OPT_stdlib_EQ);
 }
 
 void ToolChain::AddCXXStdlibLibArgs(const ArgList &Args,

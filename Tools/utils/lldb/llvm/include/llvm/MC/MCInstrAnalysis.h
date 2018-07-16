@@ -23,8 +23,9 @@ protected:
   friend class Target;
   const MCInstrInfo *Info;
 
-  MCInstrAnalysis(const MCInstrInfo *Info) : Info(Info) {}
 public:
+  MCInstrAnalysis(const MCInstrInfo *Info) : Info(Info) {}
+
   virtual ~MCInstrAnalysis() {}
 
   virtual bool isBranch(const MCInst &Inst) const {
@@ -32,7 +33,7 @@ public:
   }
 
   virtual bool isConditionalBranch(const MCInst &Inst) const {
-    return Info->get(Inst.getOpcode()).isBranch();
+    return Info->get(Inst.getOpcode()).isConditionalBranch();
   }
 
   virtual bool isUnconditionalBranch(const MCInst &Inst) const {
@@ -41,6 +42,10 @@ public:
 
   virtual bool isIndirectBranch(const MCInst &Inst) const {
     return Info->get(Inst.getOpcode()).isIndirectBranch();
+  }
+
+  virtual bool isCall(const MCInst &Inst) const {
+    return Info->get(Inst.getOpcode()).isCall();
   }
 
   virtual bool isReturn(const MCInst &Inst) const {

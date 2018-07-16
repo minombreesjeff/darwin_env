@@ -34,16 +34,19 @@ class SBCommandInterpreter;
 class SBCommandReturnObject;
 class SBCommunication;
 class SBCompileUnit;
+class SBData;
 class SBDebugger;
 class SBError;
 class SBEvent;
 class SBEventList;
 class SBFileSpec;
+class SBFileSpecList;
 class SBFrame;
 class SBFunction;
 class SBHostOS;
 class SBInputReader;
 class SBInstruction;
+class SBInstructionList;
 class SBLineEntry;
 class SBListener;
 class SBModule;
@@ -60,6 +63,7 @@ class SBType;
 class SBTypeList;
 class SBValue;
 class SBValueList;
+class SBWatchpoint;
 
 }
 

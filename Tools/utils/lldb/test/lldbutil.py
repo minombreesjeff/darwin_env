@@ -44,7 +44,6 @@ def disassemble(target, function_or_symbol):
         print >> buf, i
     return buf.getvalue()
 
-
 # ==========================================================
 # Integer (byte size 1, 2, 4, and 8) to bytearray conversion
 # ==========================================================
@@ -106,8 +105,9 @@ def bytearray_to_int(bytes, bytesize):
 def get_description(obj, option=None):
     """Calls lldb_obj.GetDescription() and returns a string, or None.
 
-    For SBTarget and SBBreakpointLocation lldb objects, an extra option can be
-    passed in to describe the detailed level of description desired:
+    For SBTarget, SBBreakpointLocation, and SBWatchpoint lldb objects, an extra
+    option can be passed in to describe the detailed level of description
+    desired:
         o lldb.eDescriptionLevelBrief
         o lldb.eDescriptionLevelFull
         o lldb.eDescriptionLevelVerbose
@@ -115,7 +115,8 @@ def get_description(obj, option=None):
     method = getattr(obj, 'GetDescription')
     if not method:
         return None
-    if isinstance(obj, lldb.SBTarget) or isinstance(obj, lldb.SBBreakpointLocation):
+    tuple = (lldb.SBTarget, lldb.SBBreakpointLocation, lldb.SBWatchpoint)
+    if isinstance(obj, tuple):
         if option is None:
             option = lldb.eDescriptionLevelBrief
 
@@ -182,6 +183,57 @@ def stop_reason_to_str(enum):
         return "plancomplete"
     else:
         raise Exception("Unknown StopReason enum")
+
+def symbol_type_to_str(enum):
+    """Returns the symbolType string given an enum."""
+    if enum == lldb.eSymbolTypeInvalid:
+        return "invalid"
+    elif enum == lldb.eSymbolTypeAbsolute:
+        return "absolute"
+    elif enum == lldb.eSymbolTypeCode:
+        return "code"
+    elif enum == lldb.eSymbolTypeData:
+        return "data"
+    elif enum == lldb.eSymbolTypeTrampoline:
+        return "trampoline"
+    elif enum == lldb.eSymbolTypeRuntime:
+        return "runtime"
+    elif enum == lldb.eSymbolTypeException:
+        return "exception"
+    elif enum == lldb.eSymbolTypeSourceFile:
+        return "sourcefile"
+    elif enum == lldb.eSymbolTypeHeaderFile:
+        return "headerfile"
+    elif enum == lldb.eSymbolTypeObjectFile:
+        return "objectfile"
+    elif enum == lldb.eSymbolTypeCommonBlock:
+        return "commonblock"
+    elif enum == lldb.eSymbolTypeBlock:
+        return "block"
+    elif enum == lldb.eSymbolTypeLocal:
+        return "local"
+    elif enum == lldb.eSymbolTypeParam:
+        return "param"
+    elif enum == lldb.eSymbolTypeVariable:
+        return "variable"
+    elif enum == lldb.eSymbolTypeVariableType:
+        return "variabletype"
+    elif enum == lldb.eSymbolTypeLineEntry:
+        return "lineentry"
+    elif enum == lldb.eSymbolTypeLineHeader:
+        return "lineheader"
+    elif enum == lldb.eSymbolTypeScopeBegin:
+        return "scopebegin"
+    elif enum == lldb.eSymbolTypeScopeEnd:
+        return "scopeend"
+    elif enum == lldb.eSymbolTypeAdditional:
+        return "additional"
+    elif enum == lldb.eSymbolTypeCompiler:
+        return "compiler"
+    elif enum == lldb.eSymbolTypeInstrumentation:
+        return "instrumentation"
+    elif enum == lldb.eSymbolTypeUndefined:
+        return "undefined"
 
 def value_type_to_str(enum):
     """Returns the valueType string given an enum."""
@@ -259,7 +311,7 @@ def get_threads_stopped_at_breakpoint (process, bkpt):
         return threads
     
     for thread in stopped_threads:
-    # Make sure we've hit our breakpoint...
+        # Make sure we've hit our breakpoint...
         break_id = thread.GetStopReasonDataAtIndex (0)
         if break_id == bkpt.GetID():
             threads.append(thread)

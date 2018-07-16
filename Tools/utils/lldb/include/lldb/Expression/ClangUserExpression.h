@@ -48,7 +48,7 @@ class ClangUserExpression : public ClangExpression
 {
 public:
     typedef lldb::SharedPtr<ClangUserExpression>::Type ClangUserExpressionSP;
-
+    
     //------------------------------------------------------------------
     /// Constructor
     ///
@@ -58,9 +58,20 @@ public:
     /// @param[in] expr_prefix
     ///     If non-NULL, a C string containing translation-unit level
     ///     definitions to be included when the expression is parsed.
+    ///
+    /// @param[in] language
+    ///     If not eLanguageTypeUnknown, a language to use when parsing
+    ///     the expression.  Currently restricted to those languages 
+    ///     supported by Clang.
+    ///
+    /// @param[in] desired_type
+    ///     If not eResultTypeAny, the type to use for the expression
+    ///     result.
     //------------------------------------------------------------------
     ClangUserExpression (const char *expr,
-                         const char *expr_prefix);
+                         const char *expr_prefix,
+                         lldb::LanguageType language,
+                         ResultType desired_type);
     
     //------------------------------------------------------------------
     /// Destructor
@@ -79,9 +90,8 @@ public:
     ///     are needed for parsing (locations of functions, types of
     ///     variables, persistent variables, etc.)
     ///
-    /// @param[in] desired_type
-    ///     The type that the expression should be coerced to.  If NULL,
-    ///     inferred from the expression itself.
+    /// @param[in] execution_policy
+    ///     Determines whether interpretation is possible or mandatory.
     ///
     /// @param[in] keep_result_in_memory
     ///     True if the resulting persistent variable should reside in 
@@ -93,7 +103,7 @@ public:
     bool
     Parse (Stream &error_stream, 
            ExecutionContext &exe_ctx,
-           TypeFromUser desired_type,
+           lldb_private::ExecutionPolicy execution_policy,
            bool keep_result_in_memory);
     
     //------------------------------------------------------------------
@@ -196,6 +206,16 @@ public:
     }
     
     //------------------------------------------------------------------
+    /// Return the language that should be used when parsing.  To use
+    /// the default, return eLanguageTypeUnknown.
+    //------------------------------------------------------------------
+    virtual lldb::LanguageType
+    Language ()
+    {
+        return m_language;
+    }
+    
+    //------------------------------------------------------------------
     /// Return the object that the parser should use when resolving external
     /// values.  May be NULL if everything should be self-contained.
     //------------------------------------------------------------------
@@ -227,11 +247,14 @@ public:
     ASTTransformer (clang::ASTConsumer *passthrough);
     
     //------------------------------------------------------------------
-    /// Return the stream that the parser should use to write DWARF
-    /// opcodes.
+    /// Return the desired result type of the function, or 
+    /// eResultTypeAny if indifferent.
     //------------------------------------------------------------------
-    StreamString &
-    DwarfOpcodeStream ();
+    virtual ResultType
+    DesiredResultType ()
+    {
+        return m_desired_type;
+    }
     
     //------------------------------------------------------------------
     /// Return true if validation code should be inserted into the
@@ -259,9 +282,22 @@ public:
     /// @param[in] exe_ctx
     ///     The execution context to use when evaluating the expression.
     ///
+    /// @param[in] execution_policy
+    ///     Determines whether or not to try using the IR interpreter to
+    ///     avoid running the expression on the parser.
+    ///
+    /// @param[in] language
+    ///     If not eLanguageTypeUnknown, a language to use when parsing
+    ///     the expression.  Currently restricted to those languages 
+    ///     supported by Clang.
+    ///
     /// @param[in] discard_on_error
     ///     True if the thread's state should be restored in the case 
     ///     of an error.
+    ///
+    /// @param[in] result_type
+    ///     If not eResultTypeAny, the type of the desired result.  Will
+    ///     result in parse errors if impossible.
     ///
     /// @param[in] expr_cstr
     ///     A C string containing the expression to be evaluated.
@@ -277,27 +313,35 @@ public:
     ///      A Process::ExecutionResults value.  eExecutionCompleted for success.
     //------------------------------------------------------------------
     static ExecutionResults
-    Evaluate (ExecutionContext &exe_ctx, 
+    Evaluate (ExecutionContext &exe_ctx,
+              lldb_private::ExecutionPolicy execution_policy,
+              lldb::LanguageType language,
+              ResultType desired_type,
               bool discard_on_error,
               const char *expr_cstr,
               const char *expr_prefix,
               lldb::ValueObjectSP &result_valobj_sp);
               
     static ExecutionResults
-    EvaluateWithError (ExecutionContext &exe_ctx, 
-              bool discard_on_error,
-              const char *expr_cstr,
-              const char *expr_prefix,
-              lldb::ValueObjectSP &result_valobj_sp,
-              Error &error);
-
+    EvaluateWithError (ExecutionContext &exe_ctx,
+                       lldb_private::ExecutionPolicy execution_policy,
+                       lldb::LanguageType language,
+                       ResultType desired_type,
+                       bool discard_on_error,
+                       const char *expr_cstr,
+                       const char *expr_prefix,
+                       lldb::ValueObjectSP &result_valobj_sp,
+                       Error &error);
+    
+    static const Error::ValueType kNoResult = 0x1001; ///< ValueObject::GetError() returns this if there is no result from the expression.
 private:
     //------------------------------------------------------------------
     /// Populate m_cplusplus and m_objetivec based on the environment.
     //------------------------------------------------------------------
     
     void
-    ScanContext(ExecutionContext &exe_ctx);
+    ScanContext (ExecutionContext &exe_ctx, 
+                 lldb_private::Error &err);
 
     bool
     PrepareToExecuteJITExpression (Stream &error_stream,
@@ -306,21 +350,35 @@ private:
                                    lldb::addr_t &object_ptr,
                                    lldb::addr_t &cmd_ptr);
     
+    bool
+    EvaluatedStatically ()
+    {
+        return m_evaluated_statically;
+    }
+    
     std::string                                 m_expr_text;            ///< The text of the expression, as typed by the user
     std::string                                 m_expr_prefix;          ///< The text of the translation-level definitions, as provided by the user
+    lldb::LanguageType                          m_language;             ///< The language to use when parsing (eLanguageTypeUnknown means use defaults)
+    bool                                        m_allow_cxx;            ///< True if the language allows C++.
+    bool                                        m_allow_objc;           ///< True if the language allows Objective-C.
     std::string                                 m_transformed_text;     ///< The text of the expression, as send to the parser
-    TypeFromUser                                m_desired_type;         ///< The type to coerce the expression's result to.  If NULL, inferred from the expression.
+    ResultType                                  m_desired_type;         ///< The type to coerce the expression's result to.  If eResultTypeAny, inferred from the expression.
     
     std::auto_ptr<ClangExpressionDeclMap>       m_expr_decl_map;        ///< The map to use when parsing and materializing the expression.
     std::auto_ptr<ClangExpressionVariableList>  m_local_variables;      ///< The local expression variables, if the expression is DWARF.
-    std::auto_ptr<StreamString>                 m_dwarf_opcodes;        ///< The DWARF opcodes for the expression.  May be NULL.
     std::auto_ptr<ProcessDataAllocator>         m_data_allocator;       ///< The allocator that the parser uses to place strings for use by JIT-compiled code.
     
+    std::auto_ptr<ASTResultSynthesizer>         m_result_synthesizer;   ///< The result synthesizer, if one is needed.
+    
+    bool                                        m_enforce_valid_object; ///< True if the expression parser should enforce the presence of a valid class pointer in order to generate the expression as a method.
     bool                                        m_cplusplus;            ///< True if the expression is compiled as a C++ member function (true if it was parsed when exe_ctx was in a C++ method).
     bool                                        m_objectivec;           ///< True if the expression is compiled as an Objective-C method (true if it was parsed when exe_ctx was in an Objective-C method).
+    bool                                        m_static_method;        ///< True if the expression is compiled as a static (or class) method (currently true if it was parsed when exe_ctx was in an Objective-C class method).
     bool                                        m_needs_object_ptr;     ///< True if "this" or "self" must be looked up and passed in.  False if the expression doesn't really use them and they can be NULL.
     bool                                        m_const_object;         ///< True if "this" is const.
+    Target                                     *m_target;               ///< The target for storing persistent data like types and variables.
     
+    bool                                        m_evaluated_statically; ///< True if the expression could be evaluated statically; false otherwise.
     lldb::ClangExpressionVariableSP             m_const_result;         ///< The statically-computed result of the expression.  NULL if it could not be computed statically or the expression has side effects.
 };
     

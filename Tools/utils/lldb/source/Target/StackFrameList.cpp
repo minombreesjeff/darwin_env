@@ -14,11 +14,14 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/StreamFile.h"
+#include "lldb/Core/SourceManager.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/Symbol.h"
+#include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StackFrame.h"
+#include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/Unwind.h"
 
@@ -63,7 +66,7 @@ StackFrameList::GetNumFrames (bool can_create)
         if (m_show_inlined_frames)
         {
 #if defined (DEBUG_STACK_FRAMES)
-            StreamFile s(stdout);
+            StreamFile s(stdout, false);
 #endif
             Unwind *unwinder = m_thread.GetUnwinder ();
             addr_t pc = LLDB_INVALID_ADDRESS;
@@ -109,64 +112,36 @@ StackFrameList::GetNumFrames (bool can_create)
                     m_frames.push_back (unwind_frame_sp);
                 }
 
-                Block *unwind_block = unwind_frame_sp->GetSymbolContext (eSymbolContextBlock).block;
-                
+                SymbolContext unwind_sc = unwind_frame_sp->GetSymbolContext (eSymbolContextBlock | eSymbolContextFunction);
+                Block *unwind_block = unwind_sc.block;
                 if (unwind_block)
                 {
-                    Block *inlined_block = unwind_block->GetContainingInlinedBlock();
-                    if (inlined_block)
+                    Address curr_frame_address (unwind_frame_sp->GetFrameCodeAddress());
+                    // Be sure to adjust the frame address to match the address
+                    // that was used to lookup the symbol context above. If we are
+                    // in the first concrete frame, then we lookup using the current
+                    // address, else we decrement the address by one to get the correct
+                    // location.
+                    if (idx > 0)
+                        curr_frame_address.Slide(-1);
+                        
+                    SymbolContext next_frame_sc;
+                    Address next_frame_address;
+                    
+                    while (unwind_sc.GetParentOfInlinedScope(curr_frame_address, next_frame_sc, next_frame_address))
                     {
-                        for (; inlined_block != NULL; inlined_block = inlined_block->GetInlinedParent ())
-                        {
-                            SymbolContext inline_sc;
-                            Block *parent_block = inlined_block->GetInlinedParent();
-
-                            const bool is_inlined_frame = parent_block != NULL;
-                        
-                            if (parent_block == NULL)
-                                parent_block = inlined_block->GetParent();
-                            
-                            parent_block->CalculateSymbolContext (&inline_sc);
-                        
-                            Address previous_frame_lookup_addr (m_frames.back()->GetFrameCodeAddress());
-                            if (unwind_frame_sp->GetFrameIndex() > 0 && m_frames.back().get() == unwind_frame_sp.get())
-                                previous_frame_lookup_addr.Slide (-1);
-                        
-                            AddressRange range;
-                            inlined_block->GetRangeContainingAddress (previous_frame_lookup_addr, range);
-                        
-                            const InlineFunctionInfo* inline_info = inlined_block->GetInlinedFunctionInfo();
-                            assert (inline_info);
-                            inline_sc.line_entry.range.GetBaseAddress() = m_frames.back()->GetFrameCodeAddress();
-                            inline_sc.line_entry.file = inline_info->GetCallSite().GetFile();
-                            inline_sc.line_entry.line = inline_info->GetCallSite().GetLine();
-                            inline_sc.line_entry.column = inline_info->GetCallSite().GetColumn();
-                                            
                             StackFrameSP frame_sp(new StackFrame (m_frames.size(),
                                                                   idx,
                                                                   m_thread,
                                                                   unwind_frame_sp->GetRegisterContextSP (),
                                                                   cfa,
-                                                                  range.GetBaseAddress(),
-                                                                  &inline_sc));                                           // The symbol context for this inline frame
-                            
-                            if (is_inlined_frame)
-                            {
-                                // Use the block with the inlined function info
-                                // as the symbol context since we want this frame
-                                // to have only the variables for the inlined function
-                                frame_sp->SetSymbolContextScope (parent_block);
-                            }
-                            else
-                            {
-                                // This block is not inlined with means it has no
-                                // inlined parents either, so we want to use the top
-                                // most function block.
-                                frame_sp->SetSymbolContextScope (&unwind_frame_sp->GetSymbolContext (eSymbolContextFunction).function->GetBlock(false));
-                            }
-                            
+                                                                  next_frame_address,
+                                                                  &next_frame_sc));  
+                                                        
                             m_frames.push_back (frame_sp);
-                        }
+                            unwind_sc = next_frame_sc;
+                            curr_frame_address = next_frame_address;
+
                     }
                 }
             }
@@ -263,7 +238,7 @@ StackFrameList::Dump (Stream *s)
             frame->DumpUsingSettingsFormat (s);
         }
         else
-            s->Printf("frame #%u", std::distance (begin, pos));
+            s->Printf("frame #%u", (uint32_t)std::distance (begin, pos));
         s->EOL();
     }
     s->EOL();
@@ -401,15 +376,16 @@ StackFrameList::SetSelectedFrame (lldb_private::StackFrame *frame)
     const_iterator pos;
     const_iterator begin = m_frames.begin();
     const_iterator end = m_frames.end();
+    m_selected_frame_idx = 0;
     for (pos = begin; pos != end; ++pos)
     {
         if (pos->get() == frame)
         {
             m_selected_frame_idx = std::distance (begin, pos);
-            return m_selected_frame_idx;
+            break;
         }
     }
-    m_selected_frame_idx = 0;
+    SetDefaultFileAndLineToSelectedFrame();
     return m_selected_frame_idx;
 }
 
@@ -419,6 +395,23 @@ StackFrameList::SetSelectedFrameByIndex (uint32_t idx)
 {
     Mutex::Locker locker (m_mutex);
     m_selected_frame_idx = idx;
+    SetDefaultFileAndLineToSelectedFrame();
+}
+
+void
+StackFrameList::SetDefaultFileAndLineToSelectedFrame()
+{
+    if (m_thread.GetID() == m_thread.GetProcess().GetThreadList().GetSelectedThread()->GetID())
+    {
+        StackFrameSP frame_sp (GetFrameAtIndex (GetSelectedFrameIndex()));
+        if (frame_sp)
+        {
+            SymbolContext sc = frame_sp->GetSymbolContext(eSymbolContextLineEntry);
+            if (sc.line_entry.file)
+                m_thread.GetProcess().GetTarget().GetSourceManager().SetDefaultFileAndLine (sc.line_entry.file, 
+                                                                                            sc.line_entry.line);
+        }
+    }
 }
 
 // The thread has been run, reset the number stack frames to zero so we can
@@ -456,7 +449,7 @@ StackFrameList::Merge (std::auto_ptr<StackFrameList>& curr_ap, lldb::StackFrameL
     Mutex::Locker prev_locker (prev_sp.get() ? prev_sp->m_mutex.GetMutex() : NULL);
 
 #if defined (DEBUG_STACK_FRAMES)
-    StreamFile s(stdout);
+    StreamFile s(stdout, false);
     s.PutCString("\n\nStackFrameList::Merge():\nPrev:\n");
     if (prev_sp.get())
         prev_sp->Dump (&s);
@@ -514,9 +507,8 @@ StackFrameList::Merge (std::auto_ptr<StackFrameList>& curr_ap, lldb::StackFrameL
     StackID curr_stack_id (curr_frame_zero_sp->GetStackID());
     StackID prev_stack_id (prev_frame_zero_sp->GetStackID());
 
-    //const uint32_t num_prev_frames = prev_sp->GetNumFrames (false);
-
 #if defined (DEBUG_STACK_FRAMES)
+    const uint32_t num_prev_frames = prev_sp->GetNumFrames (false);
     s.Printf("\n%u previous frames with one current frame\n", num_prev_frames);
 #endif
 

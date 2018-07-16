@@ -19,7 +19,6 @@
 #include "lldb/Expression/ClangExpression.h"
 #include "lldb/Expression/ClangExpressionDeclMap.h"
 #include "lldb/Expression/IRDynamicChecks.h"
-#include "lldb/Expression/IRToDWARF.h"
 #include "lldb/Expression/RecordingMemoryManager.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
@@ -42,7 +41,6 @@
 #include "clang/Frontend/FrontendPluginRegistry.h"
 #include "clang/Frontend/TextDiagnosticBuffer.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
-#include "clang/Frontend/VerifyDiagnosticsClient.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Parse/ParseAST.h"
 #include "clang/Rewrite/FrontendActions.h"
@@ -51,6 +49,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/Support/TargetSelect.h"
 
 #if !defined(__APPLE__)
 #define USE_STANDARD_JIT
@@ -68,8 +67,6 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetSelect.h"
 
 using namespace clang;
 using namespace llvm;
@@ -104,12 +101,12 @@ std::string GetBuiltinIncludePath(const char *Argv0) {
 //===----------------------------------------------------------------------===//
 
 static void LLVMErrorHandler(void *UserData, const std::string &Message) {
-    Diagnostic &Diags = *static_cast<Diagnostic*>(UserData);
+    DiagnosticsEngine &Diags = *static_cast<DiagnosticsEngine*>(UserData);
     
     Diags.Report(diag::err_fe_error_backend) << Message;
     
     // We cannot recover from llvm errors.
-    exit(1);
+    assert(0);
 }
 
 static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
@@ -190,7 +187,6 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     m_expr (expr),
     m_compiler (),
     m_code_generator (NULL),
-    m_execution_engine (),
     m_jitted_functions ()
 {
     // Initialize targets first, so that --version shows registered targets.
@@ -199,6 +195,7 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
             llvm::InitializeAllTargets();
             llvm::InitializeAllAsmPrinters();
             llvm::InitializeAllTargetMCs();
+            llvm::InitializeAllDisassemblers();
         }
     } InitializeLLVM;
         
@@ -207,19 +204,32 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     
     // 2. Set options.
     
-    // Parse expressions as Objective C++ regardless of context.
-    // Our hook into Clang's lookup mechanism only works in C++.
-    m_compiler->getLangOpts().CPlusPlus = true;
+    lldb::LanguageType language = expr.Language();
     
-    // Setup objective C
-    m_compiler->getLangOpts().ObjC1 = true;
-    m_compiler->getLangOpts().ObjC2 = true;
+    switch (language)
+    {
+    case lldb::eLanguageTypeC:
+        break;
+    case lldb::eLanguageTypeObjC:
+        m_compiler->getLangOpts().ObjC1 = true;
+        m_compiler->getLangOpts().ObjC2 = true;
+        break;
+    case lldb::eLanguageTypeC_plus_plus:
+        m_compiler->getLangOpts().CPlusPlus = true;
+        break;
+    case lldb::eLanguageTypeObjC_plus_plus:
+    default:
+        m_compiler->getLangOpts().ObjC1 = true;
+        m_compiler->getLangOpts().ObjC2 = true;
+        m_compiler->getLangOpts().CPlusPlus = true;
+        break;
+    }
     
     Process *process = NULL;
     if (exe_scope)
         process = exe_scope->CalculateProcess();
 
-    if (process)
+    if (process && m_compiler->getLangOpts().ObjC1)
     {
         if (process->GetObjCLanguageRuntime())
         {
@@ -234,6 +244,10 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     m_compiler->getLangOpts().ThreadsafeStatics = false;
     m_compiler->getLangOpts().AccessControl = false; // Debuggers get universal access
     m_compiler->getLangOpts().DollarIdents = true; // $ indicates a persistent variable name
+    
+    m_compiler->getLangOpts().DebuggerSupport = true; // Features specifically for debugger clients
+    if (expr.DesiredResultType() == ClangExpression::eResultTypeId)
+        m_compiler->getLangOpts().DebuggerCastResultToId = true;
     
     // Set CodeGen options
     m_compiler->getCodeGenOpts().EmitDeclMetadata = true;
@@ -272,7 +286,7 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     }
     else
     {
-        m_compiler->getTargetOpts().Triple = llvm::sys::getHostTriple();
+        m_compiler->getTargetOpts().Triple = llvm::sys::getDefaultTargetTriple();
     }
         
     // 3. Set up various important bits of infrastructure.
@@ -308,11 +322,11 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     // 6. Most of this we get from the CompilerInstance, but we 
     // also want to give the context an ExternalASTSource.
     m_selector_table.reset(new SelectorTable());
-    m_builtin_context.reset(new Builtin::Context(m_compiler->getTarget()));
+    m_builtin_context.reset(new Builtin::Context());
     
     std::auto_ptr<clang::ASTContext> ast_context(new ASTContext(m_compiler->getLangOpts(),
                                                                 m_compiler->getSourceManager(),
-                                                                m_compiler->getTarget(),
+                                                                &m_compiler->getTarget(),
                                                                 m_compiler->getPreprocessor().getIdentifierTable(),
                                                                 *m_selector_table.get(),
                                                                 *m_builtin_context.get(),
@@ -322,7 +336,8 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     
     if (decl_map)
     {
-        OwningPtr<clang::ExternalASTSource> ast_source(new ClangASTSource(*ast_context, *decl_map));
+        llvm::OwningPtr<clang::ExternalASTSource> ast_source(decl_map->CreateProxy());
+        decl_map->InstallASTContext(ast_context.get());
         ast_context->setExternalSource(ast_source);
     }
     
@@ -417,72 +432,22 @@ static bool FindFunctionInModule (std::string &mangled_name,
 }
 
 Error
-ClangExpressionParser::MakeDWARF ()
-{
-    Error err;
-    
-    llvm::Module *module = m_code_generator->GetModule();
-    
-    if (!module)
-    {
-        err.SetErrorToGenericError();
-        err.SetErrorString("IR doesn't contain a module");
-        return err;
-    }
-    
-    ClangExpressionVariableList *local_variables = m_expr.LocalVariables();
-    ClangExpressionDeclMap *decl_map = m_expr.DeclMap();
-    
-    if (!local_variables)
-    {
-        err.SetErrorToGenericError();
-        err.SetErrorString("Can't convert an expression without a VariableList to DWARF");
-        return err;
-    }
-    
-    if (!decl_map)
-    {
-        err.SetErrorToGenericError();
-        err.SetErrorString("Can't convert an expression without a DeclMap to DWARF");
-        return err;
-    }
-    
-    std::string function_name;
-    
-    if (!FindFunctionInModule(function_name, module, m_expr.FunctionName()))
-    {
-        err.SetErrorToGenericError();
-        err.SetErrorStringWithFormat("Couldn't find %s() in the module", m_expr.FunctionName());
-        return err;
-    }
-    
-    IRToDWARF ir_to_dwarf(*local_variables, decl_map, m_expr.DwarfOpcodeStream(), function_name.c_str());
-    
-    if (!ir_to_dwarf.runOnModule(*module))
-    {
-        err.SetErrorToGenericError();
-        err.SetErrorString("Couldn't convert the expression to DWARF");
-        return err;
-    }
-    
-    err.Clear();
-    return err;
-}
-
-Error
-ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr, 
-                                lldb::addr_t &func_addr, 
-                                lldb::addr_t &func_end, 
-                                ExecutionContext &exe_ctx,
-                                IRForTarget::StaticDataAllocator *data_allocator,
-                                lldb::ClangExpressionVariableSP &const_result,
-                                bool jit_only_if_needed)
+ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr, 
+                                            lldb::addr_t &func_addr, 
+                                            lldb::addr_t &func_end, 
+                                            ExecutionContext &exe_ctx,
+                                            IRForTarget::StaticDataAllocator *data_allocator,
+                                            bool &evaluated_statically,
+                                            lldb::ClangExpressionVariableSP &const_result,
+                                            ExecutionPolicy execution_policy)
 {
     func_allocation_addr = LLDB_INVALID_ADDRESS;
 	func_addr = LLDB_INVALID_ADDRESS;
 	func_end = LLDB_INVALID_ADDRESS;
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
+    std::auto_ptr<llvm::ExecutionEngine> execution_engine;
+    
     Error err;
     
     llvm::Module *module = m_code_generator->ReleaseModule();
@@ -515,12 +480,13 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
     if (decl_map)
     {
         Stream *error_stream = NULL;
-        
-        if (exe_ctx.target)
-            error_stream = &exe_ctx.target->GetDebugger().GetErrorStream();
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target)
+            error_stream = &target->GetDebugger().GetErrorStream();
     
-        IRForTarget ir_for_target(decl_map, 
+        IRForTarget ir_for_target(decl_map,
                                   m_expr.NeedsVariableResolution(),
+                                  execution_policy,
                                   const_result,
                                   data_allocator,
                                   error_stream,
@@ -529,19 +495,60 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
         if (!ir_for_target.runOnModule(*module))
         {
             err.SetErrorToGenericError();
-            err.SetErrorString("Couldn't convert the expression to DWARF");
+            err.SetErrorString("Couldn't prepare the expression for execution in the target");
             return err;
         }
         
-        if (jit_only_if_needed && const_result.get())
+        Error &interpreter_error(ir_for_target.getInterpreterError());
+        
+        if (execution_policy != eExecutionPolicyAlways && interpreter_error.Success())
         {
+            if (const_result)
+                const_result->TransferAddress();
+            evaluated_statically = true;
             err.Clear();
             return err;
         }
         
-        if (m_expr.NeedsValidation() && exe_ctx.process->GetDynamicCheckers())
+        Process *process = exe_ctx.GetProcessPtr();
+
+        if (!process || execution_policy == eExecutionPolicyNever)
         {
-            IRDynamicChecks ir_dynamic_checks(*exe_ctx.process->GetDynamicCheckers(), function_name.c_str());
+            err.SetErrorToGenericError();
+            if (execution_policy == eExecutionPolicyAlways)
+                err.SetErrorString("Execution needed to run in the target, but the target can't be run");
+            else
+                err.SetErrorStringWithFormat("Interpreting the expression locally failed: %s", interpreter_error.AsCString());
+            return err;
+        }
+        
+        if (execution_policy != eExecutionPolicyNever &&
+            m_expr.NeedsValidation() && 
+            process)
+        {
+            if (!process->GetDynamicCheckers())
+            {                
+                DynamicCheckerFunctions *dynamic_checkers = new DynamicCheckerFunctions();
+                
+                StreamString install_errors;
+                
+                if (!dynamic_checkers->Install(install_errors, exe_ctx))
+                {
+                    if (install_errors.GetString().empty())
+                        err.SetErrorString ("couldn't install checkers, unknown error");
+                    else
+                        err.SetErrorString (install_errors.GetString().c_str());
+                    
+                    return err;
+                }
+                
+                process->SetDynamicCheckers(dynamic_checkers);
+                
+                if (log)
+                    log->Printf("== [ClangUserExpression::Evaluate] Finished installing dynamic checkers ==");
+            }
+            
+            IRDynamicChecks ir_dynamic_checks(*process->GetDynamicCheckers(), function_name.c_str());
         
             if (!ir_dynamic_checks.runOnModule(*module))
             {
@@ -557,16 +564,19 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
     RecordingMemoryManager *jit_memory_manager = new RecordingMemoryManager();
     
     std::string error_string;
-            
-#if defined (USE_STANDARD_JIT)
-    m_execution_engine.reset(llvm::ExecutionEngine::createJIT (module, 
-                                                               &error_string, 
-                                                               jit_memory_manager,
-                                                               CodeGenOpt::Less,
-                                                               true,
-                                                               Reloc::Default,
-                                                               CodeModel::Small));
-#else
+
+    if (log)
+    {
+        std::string s;
+        raw_string_ostream oss(s);
+        
+        module->print(oss, NULL);
+        
+        oss.flush();
+        
+        log->Printf ("Module being sent to JIT: \n%s", s.c_str());
+    }
+    
     EngineBuilder builder(module);
     builder.setEngineKind(EngineKind::JIT)
         .setErrorStr(&error_string)
@@ -575,39 +585,45 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
         .setOptLevel(CodeGenOpt::Less)
         .setAllocateGVsWithCode(true)
         .setCodeModel(CodeModel::Small)
-    .setUseMCJIT(true);
-    m_execution_engine.reset(builder.create());
-#endif
+        .setUseMCJIT(true);
+    execution_engine.reset(builder.create());
         
-    if (!m_execution_engine.get())
+    if (!execution_engine.get())
     {
         err.SetErrorToGenericError();
         err.SetErrorStringWithFormat("Couldn't JIT the function: %s", error_string.c_str());
         return err;
     }
     
-    m_execution_engine->DisableLazyCompilation();
+    execution_engine->DisableLazyCompilation();
     
     llvm::Function *function = module->getFunction (function_name.c_str());
     
     // We don't actually need the function pointer here, this just forces it to get resolved.
     
-    void *fun_ptr = m_execution_engine->getPointerToFunction(function);
-    
+    void *fun_ptr = execution_engine->getPointerToFunction(function);
+        
     // Errors usually cause failures in the JIT, but if we're lucky we get here.
+    
+    if (!function)
+    {
+        err.SetErrorToGenericError();
+        err.SetErrorStringWithFormat("Couldn't find '%s' in the JITted module", function_name.c_str());
+        return err;
+    }
     
     if (!fun_ptr)
     {
         err.SetErrorToGenericError();
-        err.SetErrorString("Couldn't JIT the function");
+        err.SetErrorStringWithFormat("'%s' was in the JITted module but wasn't lowered", function_name.c_str());
         return err;
     }
     
     m_jitted_functions.push_back (ClangExpressionParser::JittedFunction(function_name.c_str(), (lldb::addr_t)fun_ptr));
     
-    ExecutionContext &exc_context(exe_ctx);
-    
-    if (exc_context.process == NULL)
+
+    Process *process = exe_ctx.GetProcessPtr();
+    if (process == NULL)
     {
         err.SetErrorToGenericError();
         err.SetErrorString("Couldn't write the JIT compiled code into the target because there is no target");
@@ -634,7 +650,7 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
     }
     
     Error alloc_error;
-    func_allocation_addr = exc_context.process->AllocateMemory (alloc_size, 
+    func_allocation_addr = process->AllocateMemory (alloc_size, 
                                                                 lldb::ePermissionsReadable|lldb::ePermissionsExecutable, 
                                                                 alloc_error);
     
@@ -655,7 +671,7 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
         
         Error write_error;
         
-        if (exc_context.process->WriteMemory(cursor, (void *) lstart, size, write_error) != size)
+        if (process->WriteMemory(cursor, (void *) lstart, size, write_error) != size)
         {
             err.SetErrorToGenericError();
             err.SetErrorStringWithFormat("Couldn't copy JIT code for function into the target: %s", write_error.AsCString("unknown error"));
@@ -696,6 +712,8 @@ ClangExpressionParser::MakeJIT (lldb::addr_t &func_allocation_addr,
             log->Printf("Function disassembly:\n%s", disassembly_stream.GetData());
         }
     }
+    
+    execution_engine.reset();
     
     err.Clear();
     return err;
@@ -750,7 +768,8 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     if (log)
         log->Printf("Function's code range is [0x%llx-0x%llx]", func_range.first, func_range.second);
     
-    if (!exe_ctx.target)
+    Target *target = exe_ctx.GetTargetPtr();
+    if (!target)
     {
         ret.SetErrorToGenericError();
         ret.SetErrorString("Couldn't find the target");
@@ -758,8 +777,9 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     
     lldb::DataBufferSP buffer_sp(new DataBufferHeap(func_range.second - func_remote_addr, 0));
     
+    Process *process = exe_ctx.GetProcessPtr();
     Error err;
-    exe_ctx.process->ReadMemory(func_remote_addr, buffer_sp->GetBytes(), buffer_sp->GetByteSize(), err);
+    process->ReadMemory(func_remote_addr, buffer_sp->GetBytes(), buffer_sp->GetByteSize(), err);
     
     if (!err.Success())
     {
@@ -768,7 +788,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
         return ret;
     }
     
-    ArchSpec arch(exe_ctx.target->GetArchitecture());
+    ArchSpec arch(target->GetArchitecture());
     
     Disassembler *disassembler = Disassembler::FindPlugin(arch, NULL);
     
@@ -779,7 +799,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
         return ret;
     }
     
-    if (!exe_ctx.process)
+    if (!process)
     {
         ret.SetErrorToGenericError();
         ret.SetErrorString("Couldn't find the process");
@@ -787,8 +807,8 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     }
     
     DataExtractor extractor(buffer_sp, 
-                            exe_ctx.process->GetByteOrder(),
-                            exe_ctx.target->GetArchitecture().GetAddressByteSize());
+                            process->GetByteOrder(),
+                            target->GetArchitecture().GetAddressByteSize());
     
     if (log)
     {

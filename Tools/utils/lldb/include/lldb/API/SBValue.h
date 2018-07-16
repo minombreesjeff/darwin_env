@@ -10,14 +10,10 @@
 #ifndef LLDB_SBValue_h_
 #define LLDB_SBValue_h_
 
+#include "lldb/API/SBData.h"
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBType.h"
 
-#include <stdio.h>
-
-#ifndef SWIG
-class lldb_private::SyntheticScriptProvider;
-#endif
 
 namespace lldb {
 
@@ -26,17 +22,20 @@ class SBValue
 public:
     SBValue ();
 
-    SBValue (const SBValue &rhs);
+    SBValue (const lldb::SBValue &rhs);
 
 #ifndef SWIG
-    const SBValue &
-    operator =(const SBValue &rhs);
+    lldb::SBValue &
+    operator =(const lldb::SBValue &rhs);
 #endif
 
     ~SBValue ();
 
     bool
-    IsValid() const;
+    IsValid();
+    
+    void
+    Clear();
     
     SBError
     GetError();
@@ -54,28 +53,22 @@ public:
     GetByteSize ();
 
     bool
-    IsInScope (const lldb::SBFrame &frame);  // DEPRECATED - SBValues know their own frames.
-
-    bool
     IsInScope ();
 
     lldb::Format
-    GetFormat () const;
+    GetFormat ();
     
     void
     SetFormat (lldb::Format format);
 
     const char *
-    GetValue (const lldb::SBFrame &frame);   // DEPRECATED - SBValues know their own frames.
-
-    const char *
     GetValue ();
 
     int64_t
-    GetValueAsSigned(SBError& error, int64_t fail_value=0);
+    GetValueAsSigned (lldb::SBError& error, int64_t fail_value=0);
     
     uint64_t
-    GetValueAsUnsigned(SBError& error, uint64_t fail_value=0);
+    GetValueAsUnsigned (lldb::SBError& error, uint64_t fail_value=0);
     
     int64_t
     GetValueAsSigned(int64_t fail_value=0);
@@ -87,31 +80,25 @@ public:
     GetValueType ();
 
     bool
-    GetValueDidChange (const lldb::SBFrame &frame);  // DEPRECATED - SBValues know their own frames.
-
-    bool
     GetValueDidChange ();
 
-    const char *
-    GetSummary (const lldb::SBFrame &frame);  // DEPRECATED - SBValues know their own frames.
-    
     const char *
     GetSummary ();
     
     const char *
-    GetObjectDescription (const lldb::SBFrame &frame);  // DEPRECATED - SBValues know their own frames.
-
-    const char *
     GetObjectDescription ();
-
-    const char *
-    GetLocation (const lldb::SBFrame &frame);  // DEPRECATED - SBValues know their own frames.
+    
+    lldb::SBValue
+    GetDynamicValue (lldb::DynamicValueType use_dynamic);
+    
+    lldb::SBValue
+    GetStaticValue ();
+    
+    bool
+    IsDynamic();
 
     const char *
     GetLocation ();
-
-    bool
-    SetValueFromCString (const lldb::SBFrame &frame, const char *value_str);  // DEPRECATED - SBValues know their own frames.
 
     bool
     SetValueFromCString (const char *value_str);
@@ -120,16 +107,25 @@ public:
     GetChildAtIndex (uint32_t idx);
     
     lldb::SBValue
-    CreateChildAtOffset (const char *name, uint32_t offset, const SBType& type);
+    CreateChildAtOffset (const char *name, uint32_t offset, lldb::SBType type);
     
     lldb::SBValue
-    Cast(const SBType& type);
+    Cast (lldb::SBType type);
     
     lldb::SBValue
     CreateValueFromExpression (const char *name, const char* expression);
     
     lldb::SBValue
-    CreateValueFromAddress(const char* name, lldb::addr_t address, const SBType& type);
+    CreateValueFromAddress (const char* name, 
+                            lldb::addr_t address, 
+                            lldb::SBType type);
+    
+    // this has no address! GetAddress() and GetLoadAddress() as well as AddressOf()
+    // on the return of this call all return invalid
+    lldb::SBValue
+    CreateValueFromData (const char* name,
+                         lldb::SBData data,
+                         lldb::SBType type);
 
     //------------------------------------------------------------------
     /// Get a child value by index from a value.
@@ -207,7 +203,51 @@ public:
     
     lldb::SBValue
     AddressOf();
+    
+    lldb::addr_t
+    GetLoadAddress();
+    
+    lldb::SBAddress
+    GetAddress();
 
+    //------------------------------------------------------------------
+    /// Get an SBData wrapping what this SBValue points to.
+    ///
+    /// This method will dereference the current SBValue, if its
+    /// data type is a T* or T[], and extract item_count elements
+    /// of type T from it, copying their contents in an SBData. 
+    ///
+    /// @param[in] item_idx
+    ///     The index of the first item to retrieve. For an array
+    ///     this is equivalent to array[item_idx], for a pointer
+    ///     to *(pointer + item_idx). In either case, the measurement
+    ///     unit for item_idx is the sizeof(T) rather than the byte
+    ///
+    /// @param[in] item_count
+    ///     How many items should be copied into the output. By default
+    ///     only one item is copied, but more can be asked for.
+    ///
+    /// @return
+    ///     An SBData with the contents of the copied items, on success.
+    ///     An empty SBData otherwise.
+    //------------------------------------------------------------------
+    lldb::SBData
+    GetPointeeData (uint32_t item_idx = 0,
+                    uint32_t item_count = 1);
+    
+    //------------------------------------------------------------------
+    /// Get an SBData wrapping the contents of this SBValue.
+    ///
+    /// This method will read the contents of this object in memory
+    /// and copy them into an SBData for future use. 
+    ///
+    /// @return
+    ///     An SBData with the contents of this SBValue, on success.
+    ///     An empty SBData otherwise.
+    //------------------------------------------------------------------
+    lldb::SBData
+    GetData ();
+    
     uint32_t
     GetNumChildren ();
 
@@ -232,7 +272,7 @@ public:
     bool
     TypeIsPointerType ();
     
-    SBType
+    lldb::SBType
     GetType();
 
     bool
@@ -242,18 +282,80 @@ public:
     GetExpressionPath (lldb::SBStream &description);
     
     bool
-    GetExpressionPath (lldb::SBStream &description, bool qualify_cxx_base_classes);
+    GetExpressionPath (lldb::SBStream &description, 
+                       bool qualify_cxx_base_classes);
 
     SBValue (const lldb::ValueObjectSP &value_sp);
-    
+
+    //------------------------------------------------------------------
+    /// Watch this value if it resides in memory.
+    ///
+    /// Sets a watchpoint on the value.
+    ///
+    /// @param[in] resolve_location
+    ///     Resolve the location of this value once and watch its address.
+    ///     This value must currently be set to \b true as watching all
+    ///     locations of a variable or a variable path is not yet supported,
+    ///     though we plan to support it in the future.
+    ///
+    /// @param[in] read
+    ///     Stop when this value is accessed.
+    ///
+    /// @param[in] write
+    ///     Stop when this value is modified
+    ///
+    /// @return
+    ///     An SBWatchpoint object. This object might not be valid upon
+    ///     return due to a value not being contained in memory, too 
+    ///     large, or watchpoint resources are not available or all in
+    ///     use.
+    //------------------------------------------------------------------
+    lldb::SBWatchpoint
+    Watch (bool resolve_location, bool read, bool write);
+
+    //------------------------------------------------------------------
+    /// Watch this value that this value points to in memory
+    ///
+    /// Sets a watchpoint on the value.
+    ///
+    /// @param[in] resolve_location
+    ///     Resolve the location of this value once and watch its address.
+    ///     This value must currently be set to \b true as watching all
+    ///     locations of a variable or a variable path is not yet supported,
+    ///     though we plan to support it in the future.
+    ///
+    /// @param[in] read
+    ///     Stop when this value is accessed.
+    ///
+    /// @param[in] write
+    ///     Stop when this value is modified
+    ///
+    /// @return
+    ///     An SBWatchpoint object. This object might not be valid upon
+    ///     return due to a value not being contained in memory, too 
+    ///     large, or watchpoint resources are not available or all in
+    ///     use.
+    //------------------------------------------------------------------
+    lldb::SBWatchpoint
+    WatchPointee (bool resolve_location, bool read, bool write);
+
+#ifndef SWIG
+    // this must be defined in the .h file because synthetic children as implemented in the core
+    // currently rely on being able to extract the SharedPointer out of an SBValue. if the implementation
+    // is deferred to the .cpp file instead of being inlined here, the platform will fail to link
+    // correctly. however, this is temporary till a better general solution is found. FIXME
+    lldb::ValueObjectSP&
+    get_sp()
+    {
+        return m_opaque_sp;
+    }
+#endif
+
 protected:
     friend class SBValueList;
     friend class SBFrame;
 
 #ifndef SWIG
-    // need this to decapsulate the SP from here
-    friend class lldb_private::SyntheticScriptProvider;
-    
     // Mimic shared pointer...
     lldb_private::ValueObject *
     get() const;
@@ -270,6 +372,10 @@ protected:
 #endif
 
 private:
+    // Helper function for SBValue::Watch() and SBValue::WatchPointee().
+    lldb::SBWatchpoint
+    WatchValue(bool read, bool write, bool watch_pointee);
+
     lldb::ValueObjectSP m_opaque_sp;
 };
 

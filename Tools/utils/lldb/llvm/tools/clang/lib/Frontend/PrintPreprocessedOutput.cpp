@@ -109,7 +109,7 @@ public:
     Initialized = false;
 
     // If we're in microsoft mode, use normal #line instead of line markers.
-    UseLineDirective = PP.getLangOptions().Microsoft;
+    UseLineDirective = PP.getLangOptions().MicrosoftExt;
   }
 
   void SetEmittedTokensOnThisLine() { EmittedTokensOnThisLine = true; }
@@ -118,7 +118,8 @@ public:
   bool StartNewLineIfNeeded();
   
   virtual void FileChanged(SourceLocation Loc, FileChangeReason Reason,
-                           SrcMgr::CharacteristicKind FileType);
+                           SrcMgr::CharacteristicKind FileType,
+                           FileID PrevFID);
   virtual void Ident(SourceLocation Loc, const std::string &str);
   virtual void PragmaComment(SourceLocation Loc, const IdentifierInfo *Kind,
                              const std::string &Str);
@@ -235,7 +236,8 @@ bool PrintPPOutputPPCallbacks::StartNewLineIfNeeded() {
 /// position.
 void PrintPPOutputPPCallbacks::FileChanged(SourceLocation Loc,
                                            FileChangeReason Reason,
-                                       SrcMgr::CharacteristicKind NewFileType) {
+                                       SrcMgr::CharacteristicKind NewFileType,
+                                       FileID PrevFID) {
   // Unless we are exiting a #include, make sure to skip ahead to the line the
   // #include directive was at.
   SourceManager &SourceMgr = SM;

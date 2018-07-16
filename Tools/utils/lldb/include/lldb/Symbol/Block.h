@@ -12,9 +12,9 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/AddressRange.h"
+#include "lldb/Core/RangeMap.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/UserID.h"
-#include "lldb/Core/VMRange.h"
 #include "lldb/Symbol/LineEntry.h"
 #include "lldb/Symbol/SymbolContext.h"
 
@@ -43,6 +43,8 @@ class Block :
     public SymbolContextScope
 {
 public:
+    typedef RangeArray<uint32_t, uint32_t, 1> RangeList;
+    typedef RangeList::Entry Range;
 
     //------------------------------------------------------------------
     /// Construct with a User ID \a uid, \a depth.
@@ -73,7 +75,7 @@ public:
     //------------------------------------------------------------------
     /// Destructor.
     //------------------------------------------------------------------
-    ~Block ();
+    virtual ~Block ();
 
     //------------------------------------------------------------------
     /// Add a child to this object.
@@ -97,7 +99,10 @@ public:
     ///     describes the end address of a range for this block.
     //------------------------------------------------------------------
     void
-    AddRange(lldb::addr_t start_offset, lldb::addr_t end_offset);
+    AddRange (const Range& range);
+
+    void
+    FinalizeRanges ();
 
     //------------------------------------------------------------------
     /// @copydoc SymbolContextScope::CalculateSymbolContext(SymbolContext*)
@@ -143,7 +148,7 @@ public:
     ///     block's ranges, \b false otherwise.
     //------------------------------------------------------------------
     bool
-    Contains (const VMRange& range) const;
+    Contains (const Range& range) const;
 
     //------------------------------------------------------------------
     /// Check if this object contains "block" as a child block at any
@@ -180,13 +185,6 @@ public:
     //------------------------------------------------------------------
     void
     Dump (Stream *s, lldb::addr_t base_addr, int32_t depth, bool show_context) const;
-
-    void
-    DumpStopContext (Stream *s, 
-                     const SymbolContext *sc, 
-                     const Declaration *child_inline_call_site,
-                     bool show_fullpaths,
-                     bool show_inline_blocks);
 
     //------------------------------------------------------------------
     /// @copydoc SymbolContextScope::DumpSymbolContext(Stream*)
@@ -247,10 +245,7 @@ public:
     ///     sibling.
     //------------------------------------------------------------------
     Block *
-    GetSibling () const
-    {
-        return m_sibling;
-    }
+    GetSibling () const;
 
     //------------------------------------------------------------------
     /// Get the first child block.
@@ -398,12 +393,6 @@ public:
         m_parent_scope = parent_scope;
     }
 
-    void
-    SetSibling (Block *block)
-    {
-        m_sibling = block;
-    }
-
     //------------------------------------------------------------------
     /// Set accessor for the variable list.
     ///
@@ -434,11 +423,20 @@ public:
     Block *
     FindBlockByID (lldb::user_id_t block_id);
 
+    uint32_t
+    GetNumRanges () const
+    {
+        return m_ranges.GetSize();
+    }
+
     bool
-    GetRangeContainingOffset (const lldb::addr_t offset, VMRange &range);
+    GetRangeContainingOffset (const lldb::addr_t offset, Range &range);
 
     bool
     GetRangeContainingAddress (const Address& addr, AddressRange &range);
+
+    uint32_t
+    GetRangeIndexContainingAddress (const Address& addr);
 
     //------------------------------------------------------------------
     // Since blocks might have multiple discontiguous addresss ranges,
@@ -460,14 +458,18 @@ protected:
     // Member variables.
     //------------------------------------------------------------------
     SymbolContextScope *m_parent_scope;
-    Block *m_sibling;
     collection m_children;
-    VMRange::collection m_ranges; ///< A list of address offset ranges relative to the function's section/offset address.
+    RangeList m_ranges;
     lldb::InlineFunctionInfoSP m_inlineInfoSP; ///< Inlined function information.
     lldb::VariableListSP m_variable_list_sp; ///< The variable list for all local, static and paramter variables scoped to this block.
     bool m_parsed_block_info:1,         ///< Set to true if this block and it's children have all been parsed
          m_parsed_block_variables:1,
          m_parsed_child_blocks:1;
+
+    // A parent of child blocks can be asked to find a sibling block given
+    // one of its child blocks
+    Block *
+    GetSiblingForChild (const Block *child_block) const;
 
 private:
     DISALLOW_COPY_AND_ASSIGN (Block);

@@ -13,8 +13,6 @@
 #include "lldb/lldb-types.h"
 
 #include "lldb/Interpreter/Args.h"
-#include "lldb/Core/DataBufferHeap.h"
-#include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/State.h"
@@ -126,7 +124,21 @@ SBProcess::RemoteLaunch (char const **argv,
         Mutex::Locker api_locker (m_opaque_sp->GetTarget().GetAPIMutex());
         if (m_opaque_sp->GetState() == eStateConnected)
         {
-            error.SetError (m_opaque_sp->Launch (argv, envp, launch_flags, stdin_path, stdout_path, stderr_path, working_directory));            
+            if (stop_at_entry)
+                launch_flags |= eLaunchFlagStopAtEntry;
+            ProcessLaunchInfo launch_info (stdin_path, 
+                                           stdout_path,
+                                           stderr_path,
+                                           working_directory,
+                                           launch_flags);
+            Module *exe_module = m_opaque_sp->GetTarget().GetExecutableModulePointer();
+            if (exe_module)
+                launch_info.SetExecutableFile(exe_module->GetFileSpec(), true);
+            if (argv)
+                launch_info.GetArguments().AppendArguments (argv);
+            if (envp)
+                launch_info.GetEnvironmentEntries ().SetArguments (envp);
+            error.SetError (m_opaque_sp->Launch (launch_info));
         }
         else
         {
@@ -155,7 +167,9 @@ SBProcess::RemoteAttachToProcessWithID (lldb::pid_t pid, lldb::SBError& error)
         Mutex::Locker api_locker (m_opaque_sp->GetTarget().GetAPIMutex());
         if (m_opaque_sp->GetState() == eStateConnected)
         {
-            error.SetError (m_opaque_sp->Attach (pid));            
+            ProcessAttachInfo attach_info;
+            attach_info.SetProcessID (pid);
+            error.SetError (m_opaque_sp->Attach (attach_info));            
         }
         else
         {
@@ -171,7 +185,7 @@ SBProcess::RemoteAttachToProcessWithID (lldb::pid_t pid, lldb::SBError& error)
     if (log) {
         SBStream sstr;
         error.GetDescription (sstr);
-        log->Printf ("SBProcess(%p)::RemoteAttachToProcessWithID (%d) => SBError (%p): %s", m_opaque_sp.get(), pid, error.get(), sstr.GetData());
+        log->Printf ("SBProcess(%p)::RemoteAttachToProcessWithID (%llu) => SBError (%p): %s", m_opaque_sp.get(), pid, error.get(), sstr.GetData());
     }
 
     return error.Success();
@@ -246,7 +260,7 @@ SBProcess::PutSTDIN (const char *src, size_t src_len)
     }
     
     if (log)
-        log->Printf ("SBProcess(%p)::PutSTDIN (src=\"%s\", src_len=%d) => %d", 
+        log->Printf ("SBProcess(%p)::PutSTDIN (src=\"%s\", src_len=%d) => %lu", 
                      m_opaque_sp.get(), 
                      src, 
                      (uint32_t) src_len, 
@@ -303,7 +317,7 @@ SBProcess::ReportEventState (const SBEvent &event, FILE *out) const
         char message[1024];
         int message_len = ::snprintf (message,
                                       sizeof (message),
-                                      "Process %d %s\n",
+                                      "Process %llu %s\n",
                                       m_opaque_sp->GetID(),
                                       SBDebugger::StateAsCString (event_state));
 
@@ -321,7 +335,7 @@ SBProcess::AppendEventStateReport (const SBEvent &event, SBCommandReturnObject &
         char message[1024];
         ::snprintf (message,
                     sizeof (message),
-                    "Process %d %s\n",
+                    "Process %llu %s\n",
                     m_opaque_sp->GetID(),
                     SBDebugger::StateAsCString (event_state));
 
@@ -443,7 +457,7 @@ SBProcess::GetProcessID ()
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBProcess(%p)::GetProcessID () => %d", m_opaque_sp.get(), ret_val);
+        log->Printf ("SBProcess(%p)::GetProcessID () => %llu", m_opaque_sp.get(), ret_val);
 
     return ret_val;
 }
@@ -646,7 +660,7 @@ SBProcess::GetThreadByID (tid_t tid)
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
     {
-        log->Printf ("SBProcess(%p)::GetThreadByID (tid=0x%4.4x) => SBThread (%p)", 
+        log->Printf ("SBProcess(%p)::GetThreadByID (tid=0x%4.4llx) => SBThread (%p)", 
                      m_opaque_sp.get(), 
                      tid,
                      sb_thread.get());
@@ -716,7 +730,7 @@ SBProcess::ReadMemory (addr_t addr, void *dst, size_t dst_len, SBError &sb_error
                      m_opaque_sp.get(), 
                      addr, 
                      dst, 
-                     (uint32_t) dst_len, 
+                     dst_len, 
                      sb_error.get());
     }
 
@@ -736,17 +750,71 @@ SBProcess::ReadMemory (addr_t addr, void *dst, size_t dst_len, SBError &sb_error
     {
         SBStream sstr;
         sb_error.GetDescription (sstr);
-        log->Printf ("SBProcess(%p)::ReadMemory (addr=0x%llx, dst=%p, dst_len=%zu, SBError (%p): %s) => %d", 
+        log->Printf ("SBProcess(%p)::ReadMemory (addr=0x%llx, dst=%p, dst_len=%zu, SBError (%p): %s) => %zu", 
                      m_opaque_sp.get(), 
                      addr, 
                      dst, 
-                     (uint32_t) dst_len, 
+                     dst_len, 
                      sb_error.get(), 
                      sstr.GetData(),
-                     (uint32_t) bytes_read);
+                     bytes_read);
     }
 
     return bytes_read;
+}
+
+size_t
+SBProcess::ReadCStringFromMemory (addr_t addr, void *buf, size_t size, lldb::SBError &sb_error)
+{
+    size_t bytes_read = 0;
+    if (m_opaque_sp)
+    {
+        Error error;
+        Mutex::Locker api_locker (m_opaque_sp->GetTarget().GetAPIMutex());
+        bytes_read = m_opaque_sp->ReadCStringFromMemory (addr, (char *)buf, size, error);
+        sb_error.SetError (error);
+    }
+    else
+    {
+        sb_error.SetErrorString ("SBProcess is invalid");
+    }
+    return bytes_read;
+}
+
+uint64_t
+SBProcess::ReadUnsignedFromMemory (addr_t addr, uint32_t byte_size, lldb::SBError &sb_error)
+{
+    if (m_opaque_sp)
+    {
+        Error error;
+        Mutex::Locker api_locker (m_opaque_sp->GetTarget().GetAPIMutex());
+        uint64_t value = m_opaque_sp->ReadUnsignedIntegerFromMemory (addr, byte_size, 0, error);
+        sb_error.SetError (error);
+        return value;
+    }
+    else
+    {
+        sb_error.SetErrorString ("SBProcess is invalid");
+    }
+    return 0;
+}
+
+lldb::addr_t
+SBProcess::ReadPointerFromMemory (addr_t addr, lldb::SBError &sb_error)
+{
+    lldb::addr_t ptr = LLDB_INVALID_ADDRESS;
+    if (m_opaque_sp)
+    {
+        Error error;
+        Mutex::Locker api_locker (m_opaque_sp->GetTarget().GetAPIMutex());
+        ptr = m_opaque_sp->ReadPointerFromMemory (addr, error);
+        sb_error.SetError (error);
+    }
+    else
+    {
+        sb_error.SetErrorString ("SBProcess is invalid");
+    }
+    return ptr;
 }
 
 size_t
@@ -761,7 +829,7 @@ SBProcess::WriteMemory (addr_t addr, const void *src, size_t src_len, SBError &s
                      m_opaque_sp.get(), 
                      addr, 
                      src, 
-                     (uint32_t) src_len, 
+                     src_len, 
                      sb_error.get());
     }
 
@@ -777,14 +845,14 @@ SBProcess::WriteMemory (addr_t addr, const void *src, size_t src_len, SBError &s
     {
         SBStream sstr;
         sb_error.GetDescription (sstr);
-        log->Printf ("SBProcess(%p)::WriteMemory (addr=0x%llx, src=%p, dst_len=%zu, SBError (%p): %s) => %d", 
+        log->Printf ("SBProcess(%p)::WriteMemory (addr=0x%llx, src=%p, dst_len=%zu, SBError (%p): %s) => %zu", 
                      m_opaque_sp.get(), 
                      addr, 
                      src, 
-                     (uint32_t) src_len, 
+                     src_len, 
                      sb_error.get(), 
                      sstr.GetData(),
-                     (uint32_t) bytes_written);
+                     bytes_written);
     }
 
     return bytes_written;
@@ -800,6 +868,8 @@ SBProcess::get() const
 bool
 SBProcess::GetDescription (SBStream &description)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_sp)
     {
         char path[PATH_MAX];
@@ -809,15 +879,15 @@ SBProcess::GetDescription (SBStream &description)
         if (exe_module)
             exe_name = exe_module->GetFileSpec().GetFilename().AsCString();
 
-        description.Printf ("SBProcess: pid = %d, state = %s, threads = %d%s%s", 
-                            m_opaque_sp->GetID(),
-                            lldb_private::StateAsCString (GetState()), 
-                            GetNumThreads(),
-                            exe_name ? ", executable = " : "",
-                            exe_name ? exe_name : "");
+        strm.Printf ("SBProcess: pid = %llu, state = %s, threads = %d%s%s", 
+                     m_opaque_sp->GetID(),
+                     lldb_private::StateAsCString (GetState()), 
+                     GetNumThreads(),
+                     exe_name ? ", executable = " : "",
+                     exe_name ? exe_name : "");
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
 
     return true;
 }
@@ -846,5 +916,3 @@ SBProcess::UnloadImage (uint32_t image_token)
         sb_error.SetErrorString("invalid process");
     return sb_error;
 }
-
-

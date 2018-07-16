@@ -133,9 +133,10 @@ public:
     return Child->EmitCommonSymbol(Symbol, Size, ByteAlignment);
   }
 
-  virtual void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size) {
+  virtual void EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
+                                     unsigned ByteAlignment) {
     LogCall("EmitLocalCommonSymbol");
-    return Child->EmitLocalCommonSymbol(Symbol, Size);
+    return Child->EmitLocalCommonSymbol(Symbol, Size, ByteAlignment);
   }
   
   virtual void EmitZerofill(const MCSection *Section, MCSymbol *Symbol = 0,
@@ -207,10 +208,12 @@ public:
     return Child->EmitFileDirective(Filename);
   }
 
-  virtual bool EmitDwarfFileDirective(unsigned FileNo, StringRef Filename) {
+  virtual bool EmitDwarfFileDirective(unsigned FileNo, StringRef Directory,
+                                      StringRef Filename) {
     LogCall("EmitDwarfFileDirective",
-            "FileNo:" + Twine(FileNo) + " Filename:" + Filename);
-    return Child->EmitDwarfFileDirective(FileNo, Filename);
+            "FileNo:" + Twine(FileNo) + " Directory:" + Directory +
+            " Filename:" + Filename);
+    return Child->EmitDwarfFileDirective(FileNo, Directory, Filename);
   }
 
   virtual void EmitDwarfLocDirective(unsigned FileNo, unsigned Line,

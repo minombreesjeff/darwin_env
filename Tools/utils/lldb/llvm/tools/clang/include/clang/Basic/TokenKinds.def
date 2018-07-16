@@ -89,6 +89,10 @@ PPKEYWORD(sccs)
 PPKEYWORD(assert)
 PPKEYWORD(unassert)
 
+// Clang extensions
+PPKEYWORD(__export_macro__)
+PPKEYWORD(__private_macro__)
+
 //===----------------------------------------------------------------------===//
 // Language keywords.
 //===----------------------------------------------------------------------===//
@@ -246,6 +250,8 @@ KEYWORD(unsigned                    , KEYALL)
 KEYWORD(void                        , KEYALL)
 KEYWORD(volatile                    , KEYALL)
 KEYWORD(while                       , KEYALL)
+KEYWORD(_Alignas                    , KEYALL)
+KEYWORD(_Atomic                     , KEYALL)
 KEYWORD(_Bool                       , KEYNOCXX)
 KEYWORD(_Complex                    , KEYALL)
 KEYWORD(_Generic                    , KEYALL)
@@ -299,6 +305,7 @@ CXX_KEYWORD_OPERATOR(xor     , caret)
 CXX_KEYWORD_OPERATOR(xor_eq  , caretequal)
 
 // C++0x keywords
+KEYWORD(alignas                     , KEYCXX0X)
 KEYWORD(alignof                     , KEYCXX0X)
 KEYWORD(char16_t                    , KEYCXX0X)
 KEYWORD(char32_t                    , KEYCXX0X)
@@ -346,6 +353,7 @@ KEYWORD(__is_class                  , KEYCXX)
 KEYWORD(__is_convertible_to         , KEYCXX)
 KEYWORD(__is_empty                  , KEYCXX)
 KEYWORD(__is_enum                   , KEYCXX)
+KEYWORD(__is_final                  , KEYCXX)
 // Tentative name - there's no implementation of std::is_literal_type yet.
 KEYWORD(__is_literal                , KEYCXX)
 // Name for GCC 4.6 compatibility - people have already written libraries using
@@ -397,6 +405,8 @@ KEYWORD(__array_extent              , KEYCXX)
 
 // Apple Extension.
 KEYWORD(__private_extern__          , KEYALL)
+KEYWORD(__import_module__           , KEYALL)
+KEYWORD(__module_private__          , KEYALL)
 
 // Microsoft Extension.
 KEYWORD(__declspec                  , KEYALL)
@@ -405,6 +415,7 @@ KEYWORD(__stdcall                   , KEYALL)
 KEYWORD(__fastcall                  , KEYALL)
 KEYWORD(__thiscall                  , KEYALL)
 KEYWORD(__forceinline               , KEYALL)
+KEYWORD(__unaligned                 , KEYMS)
 
 // OpenCL-specific keywords
 KEYWORD(__kernel                    , KEYOPENCL)
@@ -431,6 +442,12 @@ KEYWORD(__pascal                    , KEYALL)
 // Altivec Extension.
 KEYWORD(__vector                    , KEYALTIVEC)
 KEYWORD(__pixel                     , KEYALTIVEC)
+
+// ARM NEON extensions.
+ALIAS("__fp16", half                , KEYALL)
+
+// OpenCL Extension.
+KEYWORD(half                        , KEYOPENCL)
 
 // Objective-C ARC keywords.
 KEYWORD(__bridge                     , KEYARC)
@@ -465,10 +482,10 @@ ALIAS("__volatile__" , volatile   , KEYALL)
 
 // Microsoft extensions which should be disabled in strict conformance mode
 KEYWORD(__ptr64                   , KEYMS)
+KEYWORD(__ptr32                   , KEYMS)
 KEYWORD(__w64                     , KEYMS)
 KEYWORD(__uuidof                  , KEYMS | KEYBORLAND)
 KEYWORD(__try                     , KEYMS | KEYBORLAND)
-KEYWORD(__except                  , KEYMS | KEYBORLAND)
 KEYWORD(__finally                 , KEYMS | KEYBORLAND)
 KEYWORD(__leave                   , KEYMS | KEYBORLAND)
 KEYWORD(__int64                   , KEYMS)
@@ -485,7 +502,7 @@ ALIAS("_thiscall"    , __thiscall , KEYMS)
 ALIAS("_uuidof"      , __uuidof   , KEYMS | KEYBORLAND)
 ALIAS("_inline"      , inline     , KEYMS)
 ALIAS("_declspec"    , __declspec , KEYMS)
-ALIAS("__interface"  , class      , KEYMS)
+ALIAS("__interface"  , struct     , KEYMS)
 
 // Borland Extensions which should be disabled in strict conformance mode.
 ALIAS("_pascal"      , __pascal   , KEYBORLAND)
@@ -543,6 +560,8 @@ ANNOTATION(template_id)  // annotation for a C++ template-id that names a
                          // function template specialization (not a type),
                          // e.g., "std::swap<int>"
 ANNOTATION(primary_expr) // annotation for a primary expression
+ANNOTATION(decltype)     // annotation for a decltype expression,
+                         // e.g., "decltype(foo.bar())"
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

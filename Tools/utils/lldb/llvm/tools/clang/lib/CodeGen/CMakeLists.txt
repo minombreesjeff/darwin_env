@@ -4,6 +4,7 @@ set(LLVM_LINK_COMPONENTS
   bitwriter
   instrumentation
   ipo
+  linker
   )
 
 set(LLVM_USED_LIBS clangBasic clangAST clangFrontend)
@@ -14,6 +15,8 @@ add_clang_library(clangCodeGen
   CGBuiltin.cpp
   CGCall.cpp
   CGClass.cpp
+  CGCUDANV.cpp
+  CGCUDARuntime.cpp
   CGCXX.cpp
   CGCXXABI.cpp
   CGCleanup.cpp
@@ -31,10 +34,10 @@ add_clang_library(clangCodeGen
   CGObjCGNU.cpp
   CGObjCMac.cpp
   CGObjCRuntime.cpp
+  CGOpenCLRuntime.cpp
   CGRecordLayoutBuilder.cpp
   CGRTTI.cpp
   CGStmt.cpp
-  CGTemporaries.cpp
   CGVTables.cpp
   CGVTT.cpp
   CodeGenAction.cpp

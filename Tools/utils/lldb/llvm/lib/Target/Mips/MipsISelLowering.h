@@ -40,13 +40,6 @@ namespace llvm {
       // Handle gp_rel (small data/bss sections) relocation.
       GPRel,
 
-      // General Dynamic TLS
-      TlsGd,
-
-      // Local Exec TLS
-      TprelHi,
-      TprelLo,
-
       // Thread Pointer
       ThreadPointer,
 
@@ -79,11 +72,14 @@ namespace llvm {
       BuildPairF64,
       ExtractElementF64,
 
-      WrapperPIC,
+      Wrapper,
 
       DynAlloc,
 
-      Sync
+      Sync,
+
+      Ext,
+      Ins
     };
   }
 
@@ -95,6 +91,10 @@ namespace llvm {
   public:
     explicit MipsTargetLowering(MipsTargetMachine &TM);
 
+    virtual MVT getShiftAmountTy(EVT LHSTy) const { return MVT::i32; }
+
+    virtual bool allowsUnalignedMemoryAccesses (EVT VT) const;
+
     /// LowerOperation - Provide custom lowering hooks for some operations.
     virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
 
@@ -103,13 +103,14 @@ namespace llvm {
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
     /// getSetCCResultType - get the ISD::SETCC result ValueType
-    MVT::SimpleValueType getSetCCResultType(EVT VT) const;
+    EVT getSetCCResultType(EVT VT) const;
 
     virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   private:
     // Subtarget Info
     const MipsSubtarget *Subtarget;
-
+    
+    bool HasMips64, IsN64, IsO32;
 
     // Lower Operand helpers
     SDValue LowerCallResult(SDValue Chain, SDValue InFlag,

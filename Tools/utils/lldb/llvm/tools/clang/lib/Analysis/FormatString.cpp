@@ -183,13 +183,13 @@ clang::analyze_format_string::ParseLengthModifier(FormatSpecifier &FS,
       return false;
     case 'h':
       ++I;
-      lmKind = (I != E && *I == 'h') ?
-      ++I, LengthModifier::AsChar : LengthModifier::AsShort;
+      lmKind = (I != E && *I == 'h') ? (++I, LengthModifier::AsChar)
+                                     : LengthModifier::AsShort;
       break;
     case 'l':
       ++I;
-      lmKind = (I != E && *I == 'l') ?
-      ++I, LengthModifier::AsLongLong : LengthModifier::AsLong;
+      lmKind = (I != E && *I == 'l') ? (++I, LengthModifier::AsLongLong)
+                                     : LengthModifier::AsLong;
       break;
     case 'j': lmKind = LengthModifier::AsIntMax;     ++I; break;
     case 'z': lmKind = LengthModifier::AsSizeT;      ++I; break;
@@ -209,12 +209,25 @@ clang::analyze_format_string::ParseLengthModifier(FormatSpecifier &FS,
 bool ArgTypeResult::matchesType(ASTContext &C, QualType argTy) const {
   switch (K) {
     case InvalidTy:
-      assert(false && "ArgTypeResult must be valid");
-      return true;
+      llvm_unreachable("ArgTypeResult must be valid");
 
     case UnknownTy:
       return true;
-
+      
+    case AnyCharTy: {
+      if (const BuiltinType *BT = argTy->getAs<BuiltinType>())
+        switch (BT->getKind()) {
+          default:
+            break;
+          case BuiltinType::Char_S:
+          case BuiltinType::SChar:
+          case BuiltinType::UChar:
+          case BuiltinType::Char_U:
+            return true;            
+        }
+      return false;
+    }
+      
     case SpecificTy: {
       argTy = C.getCanonicalType(argTy).getUnqualifiedType();
       if (T == argTy)
@@ -312,10 +325,11 @@ bool ArgTypeResult::matchesType(ASTContext &C, QualType argTy) const {
 QualType ArgTypeResult::getRepresentativeType(ASTContext &C) const {
   switch (K) {
     case InvalidTy:
-      assert(false && "No representative type for Invalid ArgTypeResult");
-      // Fall-through.
+      llvm_unreachable("No representative type for Invalid ArgTypeResult");
     case UnknownTy:
       return QualType();
+    case AnyCharTy:
+      return C.CharTy;
     case SpecificTy:
       return T;
     case CStrTy:
@@ -336,6 +350,14 @@ QualType ArgTypeResult::getRepresentativeType(ASTContext &C) const {
   // a warning.
   return QualType();
 }
+
+std::string ArgTypeResult::getRepresentativeTypeName(ASTContext &C) const {
+  std::string S = getRepresentativeType(C).getAsString();
+  if (Name)
+    return std::string("'") + Name + "' (aka '" + S + "')";
+  return std::string("'") + S + "'";
+}
+
 
 //===----------------------------------------------------------------------===//
 // Methods on OptionalAmount.
@@ -376,6 +398,47 @@ analyze_format_string::LengthModifier::toString() const {
 }
 
 //===----------------------------------------------------------------------===//
+// Methods on ConversionSpecifier.
+//===----------------------------------------------------------------------===//
+
+const char *ConversionSpecifier::toString() const {
+  switch (kind) {
+  case dArg: return "d";
+  case iArg: return "i";
+  case oArg: return "o";
+  case uArg: return "u";
+  case xArg: return "x";
+  case XArg: return "X";
+  case fArg: return "f";
+  case FArg: return "F";
+  case eArg: return "e";
+  case EArg: return "E";
+  case gArg: return "g";
+  case GArg: return "G";
+  case aArg: return "a";
+  case AArg: return "A";
+  case cArg: return "c";
+  case sArg: return "s";
+  case pArg: return "p";
+  case nArg: return "n";
+  case PercentArg:  return "%";
+  case ScanListArg: return "[";
+  case InvalidSpecifier: return NULL;
+
+  // MacOS X unicode extensions.
+  case CArg: return "C";
+  case SArg: return "S";
+
+  // Objective-C specific specifiers.
+  case ObjCObjArg: return "@";
+
+  // GlibC specific specifiers.
+  case PrintErrno: return "m";
+  }
+  return NULL;
+}
+
+//===----------------------------------------------------------------------===//
 // Methods on OptionalAmount.
 //===----------------------------------------------------------------------===//
 
@@ -399,10 +462,6 @@ void OptionalAmount::toString(raw_ostream &os) const {
     break;
   }
 }
-
-//===----------------------------------------------------------------------===//
-// Methods on ConversionSpecifier.
-//===----------------------------------------------------------------------===//
 
 bool FormatSpecifier::hasValidLengthModifier() const {
   switch (LM.getKind()) {
@@ -471,5 +530,3 @@ bool FormatSpecifier::hasValidLengthModifier() const {
   }
   return false;
 }
-
-

@@ -106,10 +106,11 @@ public:
         set_stdout,                     // 'QSetSTDOUT:'
         set_stderr,                     // 'QSetSTDERR:'
         set_working_dir,                // 'QSetWorkingDir:'
+        memory_region_info,             // 'qMemoryRegionInfo:'
         allocate_memory,                // '_M'
         deallocate_memory,              // '_m'
 
-        unknown_type,
+        unknown_type
     } PacketEnum;
 
     typedef rnb_err_t (RNBRemote::*HandlePacketCallback)(const char *p);
@@ -198,6 +199,7 @@ public:
     rnb_err_t HandlePacket_ILLFORMED (const char *file, int line, const char *p, const char *description);
     rnb_err_t HandlePacket_AllocateMemory (const char *p);
     rnb_err_t HandlePacket_DeallocateMemory (const char *p);
+    rnb_err_t HandlePacket_MemoryRegionInfo (const char *p);
 
     rnb_err_t HandlePacket_stop_process (const char *p);
 

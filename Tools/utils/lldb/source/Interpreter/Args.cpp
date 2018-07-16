@@ -168,7 +168,7 @@ Args::SetCommandString (const char *command)
     if (command && command[0])
     {
         static const char *k_space_separators = " \t";
-        static const char *k_space_separators_with_slash_and_quotes = " \t \\'\"`";
+        static const char *k_space_separators_with_slash_and_quotes = " \t \\'\"";
         const char *arg_end = NULL;
         const char *arg_pos;
         for (arg_pos = command;
@@ -280,10 +280,7 @@ Args::SetCommandString (const char *command)
                             first_quote_char = quote_char;
 
                         arg_pos = arg_end;
-                        
-                        if (quote_char != '`')
-                            ++arg_pos; // Skip the quote character if it is not a backtick
-
+                        ++arg_pos;                 // Skip the quote character
                         arg_piece_start = arg_pos; // Note we are starting from later in the string
                         
                         // Skip till the next quote character
@@ -298,13 +295,7 @@ Args::SetCommandString (const char *command)
                         if (end_quote)
                         {
                             if (end_quote > arg_piece_start)
-                            {
-                                // Keep the backtick quote on commands
-                                if (quote_char == '`')
-                                    arg.append (arg_piece_start, end_quote + 1 - arg_piece_start);
-                                else
-                                    arg.append (arg_piece_start, end_quote - arg_piece_start);
-                            }
+                                arg.append (arg_piece_start, end_quote - arg_piece_start);
 
                             // If the next character is a space or the end of 
                             // string, this argument is complete...
@@ -476,6 +467,16 @@ Args::AppendArguments (const Args &rhs)
         AppendArgument(rhs.GetArgumentAtIndex(i));
 }
 
+void
+Args::AppendArguments (const char **argv)
+{
+    if (argv)
+    {
+        for (uint32_t i=0; argv[i]; ++i)
+            AppendArgument(argv[i]);
+    }
+}
+
 const char *
 Args::AppendArgument (const char *arg_cstr, char quote_char)
 {
@@ -560,10 +561,8 @@ Args::SetArguments (int argc, const char **argv)
     m_args.clear();
     m_args_quote_char.clear();
 
-    // Make a copy of the arguments in our internal buffer
-    size_t i;
     // First copy each string
-    for (i=0; i<argc; ++i)
+    for (size_t i=0; i<argc; ++i)
     {
         m_args.push_back (argv[i]);
         if ((argv[i][0] == '\'') || (argv[i][0] == '"') || (argv[i][0] == '`'))
@@ -572,6 +571,30 @@ Args::SetArguments (int argc, const char **argv)
             m_args_quote_char.push_back ('\0');
     }
 
+    UpdateArgvFromArgs();
+}
+
+void
+Args::SetArguments (const char **argv)
+{
+    // m_argv will be rebuilt in UpdateArgvFromArgs() below, so there is
+    // no need to clear it here.
+    m_args.clear();
+    m_args_quote_char.clear();
+    
+    if (argv)
+    {
+        // First copy each string
+        for (size_t i=0; argv[i]; ++i)
+        {
+            m_args.push_back (argv[i]);
+            if ((argv[i][0] == '\'') || (argv[i][0] == '"') || (argv[i][0] == '`'))
+                m_args_quote_char.push_back (argv[i][0]);
+            else
+                m_args_quote_char.push_back ('\0');
+        }
+    }
+    
     UpdateArgvFromArgs();
 }
 
@@ -584,7 +607,7 @@ Args::ParseOptions (Options &options)
     struct option *long_options = options.GetLongOptions();
     if (long_options == NULL)
     {
-        error.SetErrorStringWithFormat("Invalid long options.\n");
+        error.SetErrorStringWithFormat("invalid long options");
         return error;
     }
 
@@ -620,7 +643,7 @@ Args::ParseOptions (Options &options)
         // Did we get an error?
         if (val == '?')
         {
-            error.SetErrorStringWithFormat("Unknown or ambiguous option.\n");
+            error.SetErrorStringWithFormat("unknown or ambiguous option");
             break;
         }
         // The option auto-set itself
@@ -651,7 +674,7 @@ Args::ParseOptions (Options &options)
         }
         else
         {
-            error.SetErrorStringWithFormat("Invalid option with value '%i'.\n", val);
+            error.SetErrorStringWithFormat("invalid option with value '%i'", val);
         }
         if (error.Fail())
             break;
@@ -832,23 +855,58 @@ Args::StringToVersion (const char *s, uint32_t &major, uint32_t &minor, uint32_t
     return 0;
 }
 
+const char *
+Args::GetShellSafeArgument (const char *unsafe_arg, std::string &safe_arg)
+{
+    safe_arg.assign (unsafe_arg);
+    size_t prev_pos = 0;
+    while (prev_pos < safe_arg.size())
+    {
+        // Escape spaces and quotes
+        size_t pos = safe_arg.find_first_of(" '\"", prev_pos);
+        if (pos != std::string::npos)
+        {
+            safe_arg.insert (pos, 1, '\\');
+            prev_pos = pos + 2;
+        }
+        else
+            break;
+    }
+    return safe_arg.c_str();
+}
+
 
 int32_t
-Args::StringToOptionEnum (const char *s, OptionEnumValueElement *enum_values, int32_t fail_value, bool *success_ptr)
+Args::StringToOptionEnum (const char *s, OptionEnumValueElement *enum_values, int32_t fail_value, Error &error)
 {    
-    if (enum_values && s && s[0])
+    if (enum_values)
     {
-        for (int i = 0; enum_values[i].string_value != NULL ; i++) 
+        if (s && s[0])
         {
-            if (strstr(enum_values[i].string_value, s) == enum_values[i].string_value)
+            for (int i = 0; enum_values[i].string_value != NULL ; i++) 
             {
-                if (success_ptr) *success_ptr = true;
-                return enum_values[i].value;
+                if (strstr(enum_values[i].string_value, s) == enum_values[i].string_value)
+                {
+                    error.Clear();
+                    return enum_values[i].value;
+                }
             }
         }
+
+        StreamString strm;
+        strm.PutCString ("invalid enumeration value, valid values are: ");
+        for (int i = 0; enum_values[i].string_value != NULL; i++) 
+        {
+            strm.Printf ("%s\"%s\"", 
+                         i > 0 ? ", " : "",
+                         enum_values[i].string_value);
+        }
+        error.SetErrorString(strm.GetData());
     }
-    if (success_ptr) *success_ptr = false;
-    
+    else
+    {
+        error.SetErrorString ("invalid enumeration argument");
+    }
     return fail_value;
 }
 
@@ -925,7 +983,7 @@ Args::StringToFormat
     }
     else
     {
-        error.SetErrorStringWithFormat("%s option string.\n", s ? "empty" : "invalid");
+        error.SetErrorStringWithFormat("%s option string", s ? "empty" : "invalid");
     }
     return error;
 }

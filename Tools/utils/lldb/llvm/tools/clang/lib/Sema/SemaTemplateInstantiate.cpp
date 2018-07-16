@@ -98,8 +98,9 @@ Sema::getTemplateInstantiationArgs(NamedDecl *D,
     // Add template arguments from a function template specialization.
     else if (FunctionDecl *Function = dyn_cast<FunctionDecl>(Ctx)) {
       if (!RelativeToPrimary &&
-          Function->getTemplateSpecializationKind() 
-                                                  == TSK_ExplicitSpecialization)
+          (Function->getTemplateSpecializationKind() == 
+                                                  TSK_ExplicitSpecialization &&
+           !Function->getClassScopeSpecializationPattern()))
         break;
           
       if (const TemplateArgumentList *TemplateArgs
@@ -483,7 +484,7 @@ void Sema::PrintInstantiationStack() {
         = TemplateSpecializationType::PrintTemplateArgumentList(
                                                          Active->TemplateArgs,
                                                       Active->NumTemplateArgs,
-                                                      Context.PrintingPolicy);
+                                                      getPrintingPolicy());
       Diags.Report(Active->PointOfInstantiation,
                    diag::note_default_arg_instantiation_here)
         << (Template->getNameAsString() + TemplateArgsStr)
@@ -537,7 +538,7 @@ void Sema::PrintInstantiationStack() {
         = TemplateSpecializationType::PrintTemplateArgumentList(
                                                          Active->TemplateArgs,
                                                       Active->NumTemplateArgs,
-                                                      Context.PrintingPolicy);
+                                                      getPrintingPolicy());
       Diags.Report(Active->PointOfInstantiation,
                    diag::note_default_function_arg_instantiation_here)
         << (FD->getNameAsString() + TemplateArgsStr)
@@ -680,14 +681,12 @@ namespace {
 
     bool TryExpandParameterPacks(SourceLocation EllipsisLoc,
                                  SourceRange PatternRange,
-                                 const UnexpandedParameterPack *Unexpanded,
-                                 unsigned NumUnexpanded,
+                             llvm::ArrayRef<UnexpandedParameterPack> Unexpanded,
                                  bool &ShouldExpand,
                                  bool &RetainExpansion,
                                  llvm::Optional<unsigned> &NumExpansions) {
       return getSema().CheckParameterPacksForExpansion(EllipsisLoc, 
                                                        PatternRange, Unexpanded,
-                                                       NumUnexpanded, 
                                                        TemplateArgs, 
                                                        ShouldExpand,
                                                        RetainExpansion,
@@ -1579,7 +1578,7 @@ Sema::SubstBaseSpecifiers(CXXRecordDecl *Instantiation,
       llvm::Optional<unsigned> NumExpansions;
       if (CheckParameterPacksForExpansion(Base->getEllipsisLoc(), 
                                           Base->getSourceRange(),
-                                          Unexpanded.data(), Unexpanded.size(),
+                                          Unexpanded,
                                           TemplateArgs, ShouldExpand, 
                                           RetainExpansion,
                                           NumExpansions)) {
@@ -1684,6 +1683,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
                        TemplateSpecializationKind TSK,
                        bool Complain) {
   bool Invalid = false;
+    
+  RequireCompleteType(Pattern->getLocation(), 
+                      QualType(Pattern->getTypeForDecl(), 0), 
+                      diag::err_incomplete_type);
 
   CXXRecordDecl *PatternDef
     = cast_or_null<CXXRecordDecl>(Pattern->getDefinition());
@@ -1795,9 +1798,8 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   }
 
   // Finish checking fields.
-  ActOnFields(0, Instantiation->getLocation(), Instantiation,
-              Fields.data(), Fields.size(), SourceLocation(), SourceLocation(),
-              0);
+  ActOnFields(0, Instantiation->getLocation(), Instantiation, Fields, 
+              SourceLocation(), SourceLocation(), 0);
   CheckCompletedCXXClass(Instantiation);
 
   // Attach any in-class member initializers now the class is complete.
@@ -1819,6 +1821,11 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   if (!FieldsWithMemberInitializers.empty())
     ActOnFinishDelayedMemberInitializers(Instantiation);
+
+  if (TSK == TSK_ImplicitInstantiation) {
+    Instantiation->setLocStart(Pattern->getInnerLocStart());
+    Instantiation->setRBraceLoc(Pattern->getRBraceLoc());
+  }
 
   if (Instantiation->isInvalidDecl())
     Invalid = true;

@@ -127,7 +127,7 @@ bool LowerInvoke::doInitialization(Module &M) {
     JBSize = JBSize ? JBSize : 200;
     Type *JmpBufTy = ArrayType::get(VoidPtrTy, JBSize);
 
-    JBLinkTy = StructType::createNamed(M.getContext(), "llvm.sjljeh.jmpbufty");
+    JBLinkTy = StructType::create(M.getContext(), "llvm.sjljeh.jmpbufty");
     Type *Elts[] = { JmpBufTy, PointerType::getUnqual(JBLinkTy) };
     JBLinkTy->setBody(Elts);
 
@@ -240,14 +240,14 @@ void LowerInvoke::rewriteExpensiveInvoke(InvokeInst *II, unsigned InvokeNo,
   CallInst* StackSaveRet = CallInst::Create(StackSaveFn, "ssret", II);
   new StoreInst(StackSaveRet, StackPtr, true, II); // volatile
 
-  BasicBlock::iterator NI = II->getNormalDest()->getFirstNonPHI();
+  BasicBlock::iterator NI = II->getNormalDest()->getFirstInsertionPt();
   // nonvolatile.
   new StoreInst(Constant::getNullValue(Type::getInt32Ty(II->getContext())), 
                 InvokeNum, false, NI);
 
-  Instruction* StackPtrLoad = new LoadInst(StackPtr, "stackptr.restore", true,
-                                           II->getUnwindDest()->getFirstNonPHI()
-                                           );
+  Instruction* StackPtrLoad =
+    new LoadInst(StackPtr, "stackptr.restore", true,
+                 II->getUnwindDest()->getFirstInsertionPt());
   CallInst::Create(StackRestoreFn, StackPtrLoad, "")->insertAfter(StackPtrLoad);
     
   // Add a switch case to our unwind block.

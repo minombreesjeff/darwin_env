@@ -14,6 +14,7 @@
 #ifndef LLVM_CLANG_LIVEVARIABLES_H
 #define LLVM_CLANG_LIVEVARIABLES_H
 
+#include "clang/Analysis/AnalysisContext.h"
 #include "clang/AST/Decl.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ImmutableSet.h"
@@ -25,9 +26,8 @@ class CFGBlock;
 class Stmt;
 class DeclRefExpr;
 class SourceManager;
-class AnalysisContext;
   
-class LiveVariables {
+class LiveVariables : public ManagedAnalysis {
 public:
   class LivenessValues {
   public:
@@ -57,45 +57,60 @@ public:
     
     /// A callback invoked right before invoking the
     ///  liveness transfer function on the given statement.
-    virtual void observeStmt(const Stmt* S,
+    virtual void observeStmt(const Stmt *S,
                              const CFGBlock *currentBlock,
                              const LivenessValues& V) {}
     
     /// Called when the live variables analysis registers
     /// that a variable is killed.
-    virtual void observerKill(const DeclRefExpr* DR) {}
+    virtual void observerKill(const DeclRefExpr *DR) {}
   };    
 
 
-  ~LiveVariables();
+  virtual ~LiveVariables();
   
   /// Compute the liveness information for a given CFG.
-  static LiveVariables *computeLiveness(AnalysisContext &analysisContext,
-                                          bool killAtAssign = true);
+  static LiveVariables *computeLiveness(AnalysisDeclContext &analysisContext,
+                                        bool killAtAssign);
   
   /// Return true if a variable is live at the end of a
   /// specified block.
-  bool isLive(const CFGBlock* B, const VarDecl* D);
+  bool isLive(const CFGBlock *B, const VarDecl *D);
   
   /// Returns true if a variable is live at the beginning of the
   ///  the statement.  This query only works if liveness information
   ///  has been recorded at the statement level (see runOnAllBlocks), and
   ///  only returns liveness information for block-level expressions.
-  bool isLive(const Stmt* S, const VarDecl* D);
+  bool isLive(const Stmt *S, const VarDecl *D);
   
   /// Returns true the block-level expression "value" is live
   ///  before the given block-level expression (see runOnAllBlocks).
-  bool isLive(const Stmt* Loc, const Stmt* StmtVal);
+  bool isLive(const Stmt *Loc, const Stmt *StmtVal);
     
   /// Print to stderr the liveness information associated with
   /// each basic block.
   void dumpBlockLiveness(const SourceManager& M);
 
   void runOnAllBlocks(Observer &obs);
-
+  
+  static LiveVariables *create(AnalysisDeclContext &analysisContext) {
+    return computeLiveness(analysisContext, true);
+  }
+  
+  static const void *getTag();
+  
 private:
   LiveVariables(void *impl);
   void *impl;
+};
+  
+class RelaxedLiveVariables : public LiveVariables {
+public:
+  static LiveVariables *create(AnalysisDeclContext &analysisContext) {
+    return computeLiveness(analysisContext, false);
+  }
+  
+  static const void *getTag();
 };
   
 } // end namespace clang

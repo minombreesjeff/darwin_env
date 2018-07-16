@@ -60,7 +60,7 @@ BreakpointOptions::BreakpointOptions(const BreakpointOptions& rhs) :
     if (rhs.m_thread_spec_ap.get() != NULL)
         m_thread_spec_ap.reset (new ThreadSpec(*rhs.m_thread_spec_ap.get()));
     if (rhs.m_condition_ap.get())
-        m_condition_ap.reset (new ClangUserExpression (rhs.m_condition_ap->GetUserText(), NULL));
+        m_condition_ap.reset (new ClangUserExpression (rhs.m_condition_ap->GetUserText(), NULL, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny));
 }
 
 //----------------------------------------------------------------------
@@ -77,7 +77,7 @@ BreakpointOptions::operator=(const BreakpointOptions& rhs)
     if (rhs.m_thread_spec_ap.get() != NULL)
         m_thread_spec_ap.reset(new ThreadSpec(*rhs.m_thread_spec_ap.get()));
     if (rhs.m_condition_ap.get())
-        m_condition_ap.reset (new ClangUserExpression (rhs.m_condition_ap->GetUserText(), NULL));
+        m_condition_ap.reset (new ClangUserExpression (rhs.m_condition_ap->GetUserText(), NULL, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny));
     return *this;
 }
 
@@ -166,13 +166,13 @@ BreakpointOptions::SetCondition (const char *condition)
     }
     else
     {
-        m_condition_ap.reset(new ClangUserExpression (condition, NULL));
+        m_condition_ap.reset(new ClangUserExpression (condition, NULL, lldb::eLanguageTypeUnknown, ClangUserExpression::eResultTypeAny));
     }
 }
 
 ThreadPlan * 
 BreakpointOptions::GetThreadPlanToTestCondition (ExecutionContext &exe_ctx, 
-                                                 lldb::BreakpointLocationSP break_loc_sp,
+                                                 const BreakpointLocationSP &break_loc_sp,
                                                  Stream &error_stream)
 {
     // No condition means we should stop, so return NULL.
@@ -180,7 +180,8 @@ BreakpointOptions::GetThreadPlanToTestCondition (ExecutionContext &exe_ctx,
         return NULL;
         
     // FIXME: I shouldn't have to do this, the process should handle it for me:
-    if (!exe_ctx.process->GetDynamicCheckers())
+    Process *process = exe_ctx.GetProcessPtr();
+    if (!process->GetDynamicCheckers())
     {
         DynamicCheckerFunctions *dynamic_checkers = new DynamicCheckerFunctions();
         
@@ -192,14 +193,12 @@ BreakpointOptions::GetThreadPlanToTestCondition (ExecutionContext &exe_ctx,
             return NULL;
         }
         
-        exe_ctx.process->SetDynamicCheckers(dynamic_checkers);
+        process->SetDynamicCheckers(dynamic_checkers);
     }
     
-    // Get the boolean type from the process's scratch AST context
-    ClangASTContext *ast_context = exe_ctx.target->GetScratchClangASTContext();
-    TypeFromUser bool_type(ast_context->GetBuiltInType_bool(), ast_context->getASTContext());
-
-    if (!m_condition_ap->Parse (error_stream, exe_ctx, bool_type, false /* keep_in_memory */))
+    const bool keep_in_memory = false;
+    
+    if (!m_condition_ap->Parse (error_stream, exe_ctx, eExecutionPolicyAlways, keep_in_memory))
     {
         // Errors mean we should stop.
         return NULL;
@@ -207,7 +206,7 @@ BreakpointOptions::GetThreadPlanToTestCondition (ExecutionContext &exe_ctx,
     // FIXME: When we can execute static expressions without running the target, we should check that here,
     // and return something to indicate we should stop or just continue.
 
-    ThreadPlan *new_plan = new ThreadPlanTestCondition (*exe_ctx.thread, 
+    ThreadPlan *new_plan = new ThreadPlanTestCondition (exe_ctx.GetThreadRef(), 
                                                         exe_ctx, 
                                                         m_condition_ap.get(), 
                                                         break_loc_sp, 

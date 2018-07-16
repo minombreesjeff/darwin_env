@@ -35,10 +35,11 @@
 #include "Plugins/SymbolFile/Symtab/SymbolFileSymtab.h"
 #include "Plugins/UnwindAssembly/x86/UnwindAssembly-x86.h"
 #include "Plugins/UnwindAssembly/InstEmulation/UnwindAssemblyInstEmulation.h"
-
+#include "Plugins/ObjectFile/PECOFF/ObjectFilePECOFF.h"
 #if defined (__APPLE__)
 #include "Plugins/DynamicLoader/MacOSX-DYLD/DynamicLoaderMacOSXDYLD.h"
-#include "Plugins/DynamicLoader/MacOSX-Kernel/DynamicLoaderMacOSXKernel.h"
+#include "Plugins/DynamicLoader/Darwin-Kernel/DynamicLoaderDarwinKernel.h"
+#include "Plugins/OperatingSystem/Darwin-Kernel/OperatingSystemDarwinKernel.h"
 #include "Plugins/LanguageRuntime/CPlusPlus/ItaniumABI/ItaniumABILanguageRuntime.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV1.h"
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntimeV2.h"
@@ -51,13 +52,16 @@
 #endif
 
 #if defined (__linux__)
-#include "Plugins/DynamicLoader/Linux-DYLD/DynamicLoaderLinuxDYLD.h"
+#include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
 #include "Plugins/Platform/Linux/PlatformLinux.h"
 #include "Plugins/Process/Linux/ProcessLinux.h"
 #endif
 
 #if defined (__FreeBSD__)
+#include "Plugins/DynamicLoader/POSIX-DYLD/DynamicLoaderPOSIXDYLD.h"
 #include "Plugins/Platform/FreeBSD/PlatformFreeBSD.h"
+#include "Plugins/Process/POSIX/ProcessPOSIX.h"
+#include "Plugins/Process/FreeBSD/ProcessFreeBSD.h"
 #endif
 
 #include "Plugins/Platform/gdb-server/PlatformRemoteGDBServer.h"
@@ -93,13 +97,14 @@ lldb_private::Initialize ()
         UnwindAssemblyInstEmulation::Initialize();
         UnwindAssembly_x86::Initialize();
         EmulateInstructionARM::Initialize ();
-
+        ObjectFilePECOFF::Initialize ();
 #if defined (__APPLE__)
         //----------------------------------------------------------------------
         // Apple/Darwin hosted plugins
         //----------------------------------------------------------------------
         DynamicLoaderMacOSXDYLD::Initialize();
-        DynamicLoaderMacOSXKernel::Initialize();
+        DynamicLoaderDarwinKernel::Initialize();
+        OperatingSystemDarwinKernel::Initialize();
         SymbolFileDWARFDebugMap::Initialize();
         ItaniumABILanguageRuntime::Initialize();
         AppleObjCRuntimeV2::Initialize();
@@ -118,10 +123,12 @@ lldb_private::Initialize ()
         //----------------------------------------------------------------------
         PlatformLinux::Initialize();
         ProcessLinux::Initialize();
-        DynamicLoaderLinuxDYLD::Initialize();
+        DynamicLoaderPOSIXDYLD::Initialize();
 #endif
 #if defined (__FreeBSD__)
-		PlatformFreeBSD::Initialize();
+        PlatformFreeBSD::Initialize();
+        ProcessFreeBSD::Initialize();
+        DynamicLoaderPOSIXDYLD::Initialize();
 #endif
         //----------------------------------------------------------------------
         // Platform agnostic plugins
@@ -164,10 +171,12 @@ lldb_private::Terminate ()
     UnwindAssembly_x86::Terminate();
     UnwindAssemblyInstEmulation::Terminate();
     EmulateInstructionARM::Terminate ();
+    ObjectFilePECOFF::Terminate ();
 
 #if defined (__APPLE__)
     DynamicLoaderMacOSXDYLD::Terminate();
-    DynamicLoaderMacOSXKernel::Terminate();
+    DynamicLoaderDarwinKernel::Terminate();
+    OperatingSystemDarwinKernel::Terminate();
     SymbolFileDWARFDebugMap::Terminate();
     ItaniumABILanguageRuntime::Terminate();
     AppleObjCRuntimeV2::Terminate();
@@ -186,11 +195,13 @@ lldb_private::Terminate ()
 #if defined (__linux__)
     PlatformLinux::Terminate();
     ProcessLinux::Terminate();
-    DynamicLoaderLinuxDYLD::Terminate();
+    DynamicLoaderPOSIXDYLD::Terminate();
 #endif
 
 #if defined (__FreeBSD__)
-	PlatformFreeBSD::Terminate();
+    PlatformFreeBSD::Terminate();
+    ProcessFreeBSD::Terminate();
+    DynamicLoaderPOSIXDYLD::Terminate();
 #endif
     
     DynamicLoaderStatic::Terminate();
@@ -255,6 +266,10 @@ lldb_private::GetSectionTypeAsCString (SectionType sect_type)
     case eSectionTypeDWARFDebugPubTypes: return "dwarf-pubtypes";
     case eSectionTypeDWARFDebugRanges: return "dwarf-ranges";
     case eSectionTypeDWARFDebugStr: return "dwarf-str";
+    case eSectionTypeDWARFAppleNames: return "apple-names";
+    case eSectionTypeDWARFAppleTypes: return "apple-types";
+    case eSectionTypeDWARFAppleNamespaces: return "apple-namespaces";
+    case eSectionTypeDWARFAppleObjC: return "apple-objc";
     case eSectionTypeEHFrame: return "eh-frame";
     case eSectionTypeOther: return "regular";
     }

@@ -27,9 +27,10 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetSelect.h"
+#include "llvm/LinkAllPasses.h"
 #include <cstdio>
 using namespace clang;
 
@@ -38,7 +39,7 @@ using namespace clang;
 //===----------------------------------------------------------------------===//
 
 static void LLVMErrorHandler(void *UserData, const std::string &Message) {
-  Diagnostic &Diags = *static_cast<Diagnostic*>(UserData);
+  DiagnosticsEngine &Diags = *static_cast<DiagnosticsEngine*>(UserData);
 
   Diags.Report(diag::err_fe_error_backend) << Message;
 
@@ -47,7 +48,7 @@ static void LLVMErrorHandler(void *UserData, const std::string &Message) {
 }
 
 // FIXME: Define the need for this testing away.
-static int cc1_test(Diagnostic &Diags,
+static int cc1_test(DiagnosticsEngine &Diags,
                     const char **ArgBegin, const char **ArgEnd) {
   using namespace clang::driver;
 
@@ -119,7 +120,7 @@ int cc1_main(const char **ArgBegin, const char **ArgEnd,
 
   // Run clang -cc1 test.
   if (ArgBegin != ArgEnd && StringRef(ArgBegin[0]) == "-cc1test") {
-    Diagnostic Diags(DiagID, new TextDiagnosticPrinter(llvm::errs(), 
+    DiagnosticsEngine Diags(DiagID, new TextDiagnosticPrinter(llvm::errs(), 
                                                        DiagnosticOptions()));
     return cc1_test(Diags, ArgBegin + 1, ArgEnd);
   }
@@ -133,7 +134,7 @@ int cc1_main(const char **ArgBegin, const char **ArgEnd,
   // Buffer diagnostics from argument parsing so that we can output them using a
   // well formed diagnostic object.
   TextDiagnosticBuffer *DiagsBuffer = new TextDiagnosticBuffer;
-  Diagnostic Diags(DiagID, DiagsBuffer);
+  DiagnosticsEngine Diags(DiagID, DiagsBuffer);
   CompilerInvocation::CreateFromArgs(Clang->getInvocation(), ArgBegin, ArgEnd,
                                      Diags);
 

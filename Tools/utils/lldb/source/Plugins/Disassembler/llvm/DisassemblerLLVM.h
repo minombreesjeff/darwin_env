@@ -43,6 +43,9 @@ public:
             const lldb_private::DataExtractor &data,
             uint32_t data_offset);
     
+    virtual void
+    CalculateMnemonicOperandsAndComment (lldb_private::ExecutionContextScope *exe_scope);
+    
 protected:
     EDDisassemblerRef m_disassembler;
     EDInstRef m_inst;

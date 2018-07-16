@@ -122,6 +122,8 @@ public:
                        ASTContext &ctx, Preprocessor &PP)
     : CapturedDiags(capturedDiags), Ctx(ctx), PP(PP), IsInTransaction(false) { }
 
+  ASTContext &getASTContext() { return Ctx; }
+
   void startTransaction();
   bool commitTransaction();
   void abortTransaction();
@@ -479,7 +481,7 @@ void TransformActionsImpl::commitReplaceText(SourceLocation loc,
   SourceManager &SM = Ctx.getSourceManager();
   loc = SM.getExpansionLoc(loc);
   // canReplaceText already checked if loc points at text.
-  SourceLocation afterText = loc.getFileLocWithOffset(text.size());
+  SourceLocation afterText = loc.getLocWithOffset(text.size());
 
   addRemoval(CharSourceRange::getCharRange(loc, afterText));
   commitInsert(loc, replacementText);  
@@ -595,7 +597,7 @@ SourceLocation TransformActionsImpl::getLocForEndOfToken(SourceLocation loc,
 
 TransformActions::RewriteReceiver::~RewriteReceiver() { }
 
-TransformActions::TransformActions(Diagnostic &diag,
+TransformActions::TransformActions(DiagnosticsEngine &diag,
                                    CapturedDiagList &capturedDiags,
                                    ASTContext &ctx, Preprocessor &PP)
   : Diags(diag), CapturedDiags(capturedDiags), ReportedErrors(false) {
@@ -674,6 +676,12 @@ void TransformActions::reportError(StringRef error, SourceLocation loc,
                                    SourceRange range) {
   assert(!static_cast<TransformActionsImpl*>(Impl)->isInTransaction() &&
          "Errors should be emitted out of a transaction");
+
+  SourceManager &SM = static_cast<TransformActionsImpl*>(Impl)->
+                                             getASTContext().getSourceManager();
+  if (SM.isInSystemHeader(SM.getExpansionLoc(loc)))
+    return;
+
   // FIXME: Use a custom category name to distinguish rewriter errors.
   std::string rewriteErr = "[rewriter] ";
   rewriteErr += error;
@@ -688,6 +696,12 @@ void TransformActions::reportNote(StringRef note, SourceLocation loc,
                                   SourceRange range) {
   assert(!static_cast<TransformActionsImpl*>(Impl)->isInTransaction() &&
          "Errors should be emitted out of a transaction");
+
+  SourceManager &SM = static_cast<TransformActionsImpl*>(Impl)->
+                                             getASTContext().getSourceManager();
+  if (SM.isInSystemHeader(SM.getExpansionLoc(loc)))
+    return;
+
   // FIXME: Use a custom category name to distinguish rewriter errors.
   std::string rewriteNote = "[rewriter] ";
   rewriteNote += note;

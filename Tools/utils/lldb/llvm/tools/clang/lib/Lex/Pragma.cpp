@@ -304,6 +304,8 @@ void Preprocessor::HandlePragmaPoison(Token &PoisonTok) {
 
     // Finally, poison it!
     II->setIsPoisoned();
+    if (II->isFromAST())
+      II->setChangedSinceDeserialization();
   }
 }
 
@@ -366,9 +368,11 @@ void Preprocessor::HandlePragmaDependency(Token &DependencyTok) {
 
   // Search include directories for this file.
   const DirectoryLookup *CurDir;
-  const FileEntry *File = LookupFile(Filename, isAngled, 0, CurDir, NULL, NULL);
+  const FileEntry *File = LookupFile(Filename, isAngled, 0, CurDir, NULL, NULL,
+                                     NULL);
   if (File == 0) {
-    Diag(FilenameTok, diag::warn_pp_file_not_found) << Filename;
+    if (!SuppressIncludeNotFoundError)
+      Diag(FilenameTok, diag::err_pp_file_not_found) << Filename;
     return;
   }
 
@@ -802,7 +806,7 @@ struct PragmaDebugHandler : public PragmaHandler {
     IdentifierInfo *II = Tok.getIdentifierInfo();
 
     if (II->isStr("assert")) {
-      assert(0 && "This is an assertion!");
+      llvm_unreachable("This is an assertion!");
     } else if (II->isStr("crash")) {
       *(volatile int*) 0x11 = 0;
     } else if (II->isStr("llvm_fatal_error")) {
@@ -1003,6 +1007,60 @@ struct PragmaSTDC_UnknownHandler : public PragmaHandler {
   }
 };
 
+/// PragmaARCCFCodeAuditedHandler - 
+///   #pragma clang arc_cf_code_audited begin/end
+struct PragmaARCCFCodeAuditedHandler : public PragmaHandler {
+  PragmaARCCFCodeAuditedHandler() : PragmaHandler("arc_cf_code_audited") {}
+  virtual void HandlePragma(Preprocessor &PP, PragmaIntroducerKind Introducer,
+                            Token &NameTok) {
+    SourceLocation Loc = NameTok.getLocation();
+    bool IsBegin;
+
+    Token Tok;
+
+    // Lex the 'begin' or 'end'.
+    PP.LexUnexpandedToken(Tok);
+    const IdentifierInfo *BeginEnd = Tok.getIdentifierInfo();
+    if (BeginEnd && BeginEnd->isStr("begin")) {
+      IsBegin = true;
+    } else if (BeginEnd && BeginEnd->isStr("end")) {
+      IsBegin = false;
+    } else {
+      PP.Diag(Tok.getLocation(), diag::err_pp_arc_cf_code_audited_syntax);
+      return;
+    }
+
+    // Verify that this is followed by EOD.
+    PP.LexUnexpandedToken(Tok);
+    if (Tok.isNot(tok::eod))
+      PP.Diag(Tok, diag::ext_pp_extra_tokens_at_eol) << "pragma";
+
+    // The start location of the active audit.
+    SourceLocation BeginLoc = PP.getPragmaARCCFCodeAuditedLoc();
+
+    // The start location we want after processing this.
+    SourceLocation NewLoc;
+
+    if (IsBegin) {
+      // Complain about attempts to re-enter an audit.
+      if (BeginLoc.isValid()) {
+        PP.Diag(Loc, diag::err_pp_double_begin_of_arc_cf_code_audited);
+        PP.Diag(BeginLoc, diag::note_pragma_entered_here);
+      }
+      NewLoc = Loc;
+    } else {
+      // Complain about attempts to leave an audit that doesn't exist.
+      if (!BeginLoc.isValid()) {
+        PP.Diag(Loc, diag::err_pp_unmatched_end_of_arc_cf_code_audited);
+        return;
+      }
+      NewLoc = SourceLocation();
+    }
+
+    PP.setPragmaARCCFCodeAuditedLoc(NewLoc);
+  }
+};
+
 }  // end anonymous namespace
 
 
@@ -1026,13 +1084,14 @@ void Preprocessor::RegisterBuiltinPragmas() {
   AddPragmaHandler("clang", new PragmaDebugHandler());
   AddPragmaHandler("clang", new PragmaDependencyHandler());
   AddPragmaHandler("clang", new PragmaDiagnosticHandler("clang"));
+  AddPragmaHandler("clang", new PragmaARCCFCodeAuditedHandler());
 
   AddPragmaHandler("STDC", new PragmaSTDC_FENV_ACCESSHandler());
   AddPragmaHandler("STDC", new PragmaSTDC_CX_LIMITED_RANGEHandler());
   AddPragmaHandler("STDC", new PragmaSTDC_UnknownHandler());
 
   // MS extensions.
-  if (Features.Microsoft) {
+  if (Features.MicrosoftExt) {
     AddPragmaHandler(new PragmaCommentHandler());
   }
 }

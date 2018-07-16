@@ -9,6 +9,7 @@
 
 #include "lldb/API/SBBreakpointLocation.h"
 #include "lldb/API/SBDefines.h"
+#include "lldb/API/SBAddress.h"
 #include "lldb/API/SBDebugger.h"
 #include "lldb/API/SBStream.h"
 
@@ -68,6 +69,15 @@ bool
 SBBreakpointLocation::IsValid() const
 {
     return m_opaque_sp.get() != NULL;
+}
+
+SBAddress
+SBBreakpointLocation::GetAddress ()
+{
+    if (m_opaque_sp)
+        return SBAddress(&m_opaque_sp->GetAddress());
+    else
+        return SBAddress();
 }
 
 addr_t
@@ -265,15 +275,16 @@ SBBreakpointLocation::SetLocation (const lldb::BreakpointLocationSP &break_loc_s
 bool
 SBBreakpointLocation::GetDescription (SBStream &description, DescriptionLevel level)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_sp)
     {
         Mutex::Locker api_locker (m_opaque_sp->GetBreakpoint().GetTarget().GetAPIMutex());
-        description.ref();
-        m_opaque_sp->GetDescription (description.get(), level);
-        description.get()->EOL();
+        m_opaque_sp->GetDescription (&strm, level);
+        strm.EOL();
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
 
     return true;
 }

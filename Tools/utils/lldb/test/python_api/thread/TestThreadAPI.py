@@ -148,7 +148,7 @@ class ThreadAPITestCase(TestBase):
         #self.runCmd("process status")
 
         # Due to the typemap magic (see lldb.swig), we pass in an (int)length to GetStopDescription
-        # and expect to get a Python string as the result object!
+        # and expect to get a Python string as the return object!
         # The 100 is just an arbitrary number specifying the buffer size.
         stop_description = thread.GetStopDescription(100)
         self.expect(stop_description, exe=False,
@@ -221,6 +221,11 @@ class ThreadAPITestCase(TestBase):
         frame0 = thread.GetFrameAtIndex(0)
         lineEntry = frame0.GetLineEntry()
         self.assertTrue(thread.GetStopReason() == lldb.eStopReasonPlanComplete)
+        # Expected failure with clang as the compiler.
+        # rdar://problem/9223880
+        #
+        # Which has been fixed on the lldb by compensating for inaccurate line
+        # table information with r140416.
         self.assertTrue(lineEntry.GetLine() == self.after_3_step_overs)
 
     def run_to_address(self, exe_name):

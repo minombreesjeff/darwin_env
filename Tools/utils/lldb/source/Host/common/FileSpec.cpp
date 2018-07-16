@@ -24,6 +24,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 
+#include "lldb/Host/File.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/DataBufferMemoryMap.h"
@@ -352,10 +353,9 @@ FileSpec::SetFile (const char *pathname, bool resolve)
 //  if (file_spec)
 //  {}
 //----------------------------------------------------------------------
-FileSpec::operator
-void*() const
+FileSpec::operator bool() const
 {
-    return (m_directory || m_filename) ? const_cast<FileSpec*>(this) : NULL;
+    return m_filename || m_directory;
 }
 
 //----------------------------------------------------------------------
@@ -507,10 +507,10 @@ FileSpec::Compare(const FileSpec& a, const FileSpec& b, bool full)
 bool
 FileSpec::Equal (const FileSpec& a, const FileSpec& b, bool full)
 {
-    if (full)
-        return a == b;
-    else
+    if (!full && (a.GetDirectory().IsEmpty() || b.GetDirectory().IsEmpty()))
         return a.m_filename == b.m_filename;
+    else
+        return a == b;
 }
 
 
@@ -700,8 +700,37 @@ FileSpec::GetPath(char *path, size_t path_max_len) const
             return ::snprintf (path, path_max_len, "%s", filename);
         }
     }
-    path[0] = '\0';
+    if (path)
+        path[0] = '\0';
     return 0;
+}
+
+ConstString
+FileSpec::GetFileNameExtension () const
+{
+    const char *filename = m_filename.GetCString();
+    if (filename == NULL)
+        return ConstString();
+    
+    const char* dot_pos = strrchr(filename, '.');
+    if (dot_pos == NULL)
+        return ConstString();
+    
+    return ConstString(dot_pos+1);
+}
+
+ConstString
+FileSpec::GetFileNameStrippingExtension () const
+{
+    const char *filename = m_filename.GetCString();
+    if (filename == NULL)
+        return ConstString();
+    
+    const char* dot_pos = strrchr(filename, '.');
+    if (dot_pos == NULL)
+        return m_filename;
+    
+    return ConstString(filename, dot_pos-filename);
 }
 
 //------------------------------------------------------------------
@@ -742,36 +771,28 @@ FileSpec::MemorySize() const
 
 
 size_t
-FileSpec::ReadFileContents (off_t file_offset, void *dst, size_t dst_len) const
+FileSpec::ReadFileContents (off_t file_offset, void *dst, size_t dst_len, Error *error_ptr) const
 {
+    Error error;
     size_t bytes_read = 0;
     char resolved_path[PATH_MAX];
     if (GetPath(resolved_path, sizeof(resolved_path)))
     {
-        int fd = ::open (resolved_path, O_RDONLY, 0);
-        if (fd != -1)
+        File file;
+        error = file.Open(resolved_path, File::eOpenOptionRead);
+        if (error.Success())
         {
-            struct stat file_stats;
-            if (::fstat (fd, &file_stats) == 0)
-            {
-                // Read bytes directly into our basic_string buffer
-                if (file_stats.st_size > 0)
-                {
-                    off_t lseek_result = 0;
-                    if (file_offset > 0)
-                        lseek_result = ::lseek (fd, file_offset, SEEK_SET);
-
-                    if (lseek_result == file_offset)
-                    {
-                        ssize_t n = ::read (fd, dst, dst_len);
-                        if (n >= 0)
-                            bytes_read = n;
-                    }
-                }
-            }
+            off_t file_offset_after_seek = file_offset;
+            bytes_read = dst_len;
+            error = file.Read(dst, bytes_read, file_offset_after_seek);
         }
-        close(fd);
     }
+    else
+    {
+        error.SetErrorString("invalid file specification");
+    }
+    if (error_ptr)
+        *error_ptr = error;
     return bytes_read;
 }
 
@@ -787,56 +808,24 @@ FileSpec::ReadFileContents (off_t file_offset, void *dst, size_t dst_len) const
 // verified using the DataBuffer::GetByteSize() function.
 //------------------------------------------------------------------
 DataBufferSP
-FileSpec::ReadFileContents (off_t file_offset, size_t file_size) const
+FileSpec::ReadFileContents (off_t file_offset, size_t file_size, Error *error_ptr) const
 {
+    Error error;
     DataBufferSP data_sp;
     char resolved_path[PATH_MAX];
     if (GetPath(resolved_path, sizeof(resolved_path)))
     {
-        int fd = ::open (resolved_path, O_RDONLY, 0);
-        if (fd != -1)
-        {
-            struct stat file_stats;
-            if (::fstat (fd, &file_stats) == 0)
-            {
-                if (file_stats.st_size > 0)
-                {
-                    off_t lseek_result = 0;
-                    if (file_offset > 0)
-                        lseek_result = ::lseek (fd, file_offset, SEEK_SET);
-
-                    if (lseek_result < 0)
-                    {
-                        // Get error from errno
-                    }
-                    else if (lseek_result == file_offset)
-                    {
-                        const size_t bytes_left = file_stats.st_size - file_offset;
-                        size_t num_bytes_to_read = file_size;
-                        if (num_bytes_to_read > bytes_left)
-                            num_bytes_to_read = bytes_left;
-
-                        std::auto_ptr<DataBufferHeap> data_heap_ap;
-                        data_heap_ap.reset(new DataBufferHeap(num_bytes_to_read, '\0'));
-
-                        if (data_heap_ap.get())
-                        {
-                            ssize_t bytesRead = ::read (fd, (void *)data_heap_ap->GetBytes(), data_heap_ap->GetByteSize());
-                            if (bytesRead >= 0)
-                            {
-                                // Make sure we read exactly what we asked for and if we got
-                                // less, adjust the array
-                                if ((size_t)bytesRead < data_heap_ap->GetByteSize())
-                                    data_heap_ap->SetByteSize(bytesRead);
-                                data_sp.reset(data_heap_ap.release());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        close(fd);
+        File file;
+        error = file.Open(resolved_path, File::eOpenOptionRead);
+        if (error.Success())
+            error = file.Read (file_size, file_offset, data_sp);
     }
+    else
+    {
+        error.SetErrorString("invalid file specification");
+    }
+    if (error_ptr)
+        *error_ptr = error;
     return data_sp;
 }
 

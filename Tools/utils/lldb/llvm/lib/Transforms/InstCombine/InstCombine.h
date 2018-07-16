@@ -11,6 +11,7 @@
 #define INSTCOMBINE_INSTCOMBINE_H
 
 #include "InstCombineWorklist.h"
+#include "llvm/IntrinsicInst.h"
 #include "llvm/Operator.h"
 #include "llvm/Pass.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -21,6 +22,7 @@
 namespace llvm {
   class CallSite;
   class TargetData;
+  class TargetLibraryInfo;
   class DbgDeclareInst;
   class MemIntrinsic;
   class MemSetInst;
@@ -70,6 +72,7 @@ class LLVM_LIBRARY_VISIBILITY InstCombiner
                              : public FunctionPass,
                                public InstVisitor<InstCombiner, Instruction*> {
   TargetData *TD;
+  TargetLibraryInfo *TLI;
   bool MadeIRChange;
 public:
   /// Worklist - All of the instructions that need to be simplified.
@@ -91,8 +94,10 @@ public:
   bool DoOneIteration(Function &F, unsigned ItNum);
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const;
-                                 
+
   TargetData *getTargetData() const { return TD; }
+
+  TargetLibraryInfo *getTargetLibraryInfo() const { return TLI; }
 
   // Visitation implementation - Implement instruction combining for different
   // instruction types.  The semantics are as follows:
@@ -192,6 +197,7 @@ public:
   Instruction *visitExtractElementInst(ExtractElementInst &EI);
   Instruction *visitShuffleVectorInst(ShuffleVectorInst &SVI);
   Instruction *visitExtractValueInst(ExtractValueInst &EV);
+  Instruction *visitLandingPadInst(LandingPadInst &LI);
 
   // visitInstruction - Specify what to return for unhandled instructions...
   Instruction *visitInstruction(Instruction &I) { return 0; }
@@ -214,7 +220,8 @@ private:
   Instruction *visitCallSite(CallSite CS);
   Instruction *tryOptimizeCall(CallInst *CI, const TargetData *TD);
   bool transformConstExprCastCall(CallSite CS);
-  Instruction *transformCallThroughTrampoline(CallSite CS);
+  Instruction *transformCallThroughTrampoline(CallSite CS,
+                                              IntrinsicInst *Tramp);
   Instruction *transformZExtICmp(ICmpInst *ICI, Instruction &CI,
                                  bool DoXform = true);
   Instruction *transformSExtICmp(ICmpInst *ICI, Instruction &CI);

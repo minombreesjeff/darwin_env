@@ -16,7 +16,7 @@
 
 #include "CodeGenTarget.h"
 #include "CodeGenIntrinsics.h"
-#include "Record.h"
+#include "llvm/TableGen/Record.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/CommandLine.h"
@@ -90,7 +90,7 @@ std::string llvm::getEnumName(MVT::SimpleValueType T) {
   case MVT::Metadata: return "MVT::Metadata";
   case MVT::iPTR:     return "MVT::iPTR";
   case MVT::iPTRAny:  return "MVT::iPTRAny";
-  case MVT::untyped:  return "MVT::untyped";
+  case MVT::Untyped:  return "MVT::Untyped";
   default: assert(0 && "ILLEGAL VALUE TYPE!"); return "";
   }
 }
@@ -184,9 +184,9 @@ std::vector<MVT::SimpleValueType> CodeGenTarget::
 getRegisterVTs(Record *R) const {
   const CodeGenRegister *Reg = getRegBank().getReg(R);
   std::vector<MVT::SimpleValueType> Result;
-  const std::vector<CodeGenRegisterClass> &RCs = getRegisterClasses();
+  ArrayRef<CodeGenRegisterClass*> RCs = getRegBank().getRegClasses();
   for (unsigned i = 0, e = RCs.size(); i != e; ++i) {
-    const CodeGenRegisterClass &RC = RCs[i];
+    const CodeGenRegisterClass &RC = *RCs[i];
     if (RC.contains(Reg)) {
       const std::vector<MVT::SimpleValueType> &InVTs = RC.getValueTypes();
       Result.insert(Result.end(), InVTs.begin(), InVTs.end());
@@ -201,10 +201,10 @@ getRegisterVTs(Record *R) const {
 
 
 void CodeGenTarget::ReadLegalValueTypes() const {
-  const std::vector<CodeGenRegisterClass> &RCs = getRegisterClasses();
+  ArrayRef<CodeGenRegisterClass*> RCs = getRegBank().getRegClasses();
   for (unsigned i = 0, e = RCs.size(); i != e; ++i)
-    for (unsigned ri = 0, re = RCs[i].VTs.size(); ri != re; ++ri)
-      LegalValueTypes.push_back(RCs[i].VTs[ri]);
+    for (unsigned ri = 0, re = RCs[i]->VTs.size(); ri != re; ++ri)
+      LegalValueTypes.push_back(RCs[i]->VTs[ri]);
 
   // Remove duplicates.
   std::sort(LegalValueTypes.begin(), LegalValueTypes.end());
@@ -267,6 +267,7 @@ void CodeGenTarget::ComputeInstrsByEnum() const {
     "DBG_VALUE",
     "REG_SEQUENCE",
     "COPY",
+    "BUNDLE",
     0
   };
   const DenseMap<const Record*, CodeGenInstruction*> &Insts = getInstructions();

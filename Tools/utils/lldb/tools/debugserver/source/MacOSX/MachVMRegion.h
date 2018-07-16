@@ -27,6 +27,7 @@ public:
     void Clear();
     mach_vm_address_t StartAddress() const { return m_start; }
     mach_vm_address_t EndAddress() const { return m_start + m_size; }
+    mach_vm_size_t GetByteSize () const { return m_size; }
     mach_vm_address_t BytesRemaining(mach_vm_address_t addr) const
     {
         if (ContainsAddress(addr))
@@ -42,6 +43,15 @@ public:
     bool SetProtections(mach_vm_address_t addr, mach_vm_size_t size, vm_prot_t prot);
     bool RestoreProtections();
     bool GetRegionForAddress(nub_addr_t addr);
+
+    uint32_t
+    GetDNBPermissions () const;
+
+    const DNBError &
+    GetError ()
+    {
+        return m_err;
+    }
 protected:
 #if defined (VM_REGION_SUBMAP_SHORT_INFO_COUNT_64)
     typedef vm_region_submap_short_info_data_64_t RegionInfo;

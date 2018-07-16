@@ -19,10 +19,17 @@
 
 namespace lldb_private {
 
-
 class ThreadPlanStepOut : public ThreadPlan
 {
 public:
+    ThreadPlanStepOut (Thread &thread,
+                       SymbolContext *addr_context,
+                       bool first_insn,
+                       bool stop_others,
+                       Vote stop_vote,
+                       Vote run_vote,
+                       uint32_t frame_idx);
+
     virtual ~ThreadPlanStepOut ();
 
     virtual void GetDescription (Stream *s, lldb::DescriptionLevel level);
@@ -34,16 +41,16 @@ public:
     virtual bool WillResume (lldb::StateType resume_state, bool current_plan);
     virtual bool WillStop ();
     virtual bool MischiefManaged ();
+    virtual void DidPush();
+    
+    virtual lldb::ValueObjectSP GetReturnValueObject()
+    {
+        return m_return_valobj_sp;
+    }
 
-    ThreadPlanStepOut (Thread &thread,
-                       SymbolContext *addr_context,
-                       bool first_insn,
-                       bool stop_others,
-                       Vote stop_vote,
-                       Vote run_vote,
-                       uint32_t frame_idx);
 protected:
-
+    bool QueueInlinedStepPlan (bool queue_now);
+    
 private:
     SymbolContext *m_step_from_context;
     lldb::addr_t m_step_from_insn;
@@ -52,6 +59,10 @@ private:
     lldb::addr_t m_return_addr;
     bool m_first_insn;
     bool m_stop_others;
+    lldb::ThreadPlanSP m_step_through_inline_plan_sp;
+    lldb::ThreadPlanSP m_step_out_plan_sp;
+    Function          *m_immediate_step_from_function;
+    lldb::ValueObjectSP m_return_valobj_sp;
 
     friend ThreadPlan *
     Thread::QueueThreadPlanForStepOut (bool abort_other_plans,
@@ -65,6 +76,9 @@ private:
     // Need an appropriate marker for the current stack so we can tell step out
     // from step in.
 
+    void
+    CalculateReturnValue();
+    
     DISALLOW_COPY_AND_ASSIGN (ThreadPlanStepOut);
 
 };

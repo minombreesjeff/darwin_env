@@ -16,6 +16,7 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegularExpression.h"
+#include "lldb/Core/Timer.h"
 #include "lldb/Host/Mutex.h"
 #include "lldb/Symbol/ObjectFile.h"
 
@@ -160,14 +161,33 @@ ObjectContainerBSDArchive::Archive::FindCachedArchive (const FileSpec &file, con
     Mutex::Locker locker(Archive::GetArchiveCacheMutex ());
     shared_ptr archive_sp;
     Archive::Map &archive_map = Archive::GetArchiveCache ();
-    Archive::Map::iterator pos;
-    for (pos = archive_map.find (file); pos != archive_map.end() && pos->first == file; ++pos)
+    Archive::Map::iterator pos = archive_map.find (file);
+    // Don't cache a value for "archive_map.end()" below since we might
+    // delete an archive entry...
+    while (pos != archive_map.end() && pos->first == file)
     {
-        if (pos->second->GetArchitecture() == arch &&
-            pos->second->GetModificationTime() == time)
+        if (pos->second->GetArchitecture() == arch)
         {
-            archive_sp = pos->second;
+            if (pos->second->GetModificationTime() == time)
+            {
+                return pos->second;
+            }
+            else
+            {
+                // We have a file at the same path with the same architecture
+                // whose modification time doesn't match. It doesn't make sense
+                // for us to continue to use this BSD archive since we cache only
+                // the object info which consists of file time info and also the
+                // file offset and file size of any contianed objects. Since
+                // this information is now out of date, we won't get the correct
+                // information if we go and extract the file data, so we should 
+                // remove the old and outdated entry.
+                archive_map.erase (pos);
+                pos = archive_map.find (file);
+                continue;
+            }
         }
+        ++pos;
     }
     return archive_sp;
 }
@@ -249,28 +269,31 @@ ObjectContainerBSDArchive::CreateInstance
     addr_t offset,
     addr_t length)
 {
-    if (file && data_sp && ObjectContainerBSDArchive::MagicBytesMatch(data_sp))
+    DataExtractor data;
+    data.SetData (data_sp, offset, length);
+    if (file && data_sp && ObjectContainerBSDArchive::MagicBytesMatch(data))
     {
+        Timer scoped_timer (__PRETTY_FUNCTION__,
+                            "ObjectContainerBSDArchive::CreateInstance (module = %s/%s, file = %p, file_offset = 0x%z8.8x, file_size = 0x%z8.8x)",
+                            module->GetFileSpec().GetDirectory().AsCString(),
+                            module->GetFileSpec().GetFilename().AsCString(),
+                            file, offset, length);
+
         Archive::shared_ptr archive_sp (Archive::FindCachedArchive (*file, module->GetArchitecture(), module->GetModificationTime()));
-        
-        if (archive_sp)
+
+        std::auto_ptr<ObjectContainerBSDArchive> container_ap(new ObjectContainerBSDArchive (module, data_sp, file, offset, length));
+
+        if (container_ap.get())
         {
-            // We already have this archive in our cache, use it
-            std::auto_ptr<ObjectContainerBSDArchive> container_ap(new ObjectContainerBSDArchive (module, data_sp, file, offset, length));
-            if (container_ap.get())
+            if (archive_sp)
             {
+                // We already have this archive in our cache, use it
                 container_ap->SetArchive (archive_sp);
                 return container_ap.release();
             }
+            else if (container_ap->ParseHeader())
+                return container_ap.release();
         }
-        
-        // Read everything since we need that in order to index all the
-        // objects in the archive
-        data_sp = file->ReadFileContents(offset, length);
-
-        std::auto_ptr<ObjectContainerBSDArchive> container_ap(new ObjectContainerBSDArchive (module, data_sp, file, offset, length));
-        if (container_ap->ParseHeader())
-            return container_ap.release();
     }
     return NULL;
 }
@@ -278,9 +301,8 @@ ObjectContainerBSDArchive::CreateInstance
 
 
 bool
-ObjectContainerBSDArchive::MagicBytesMatch (DataBufferSP& dataSP)
+ObjectContainerBSDArchive::MagicBytesMatch (const DataExtractor &data)
 {
-    DataExtractor data(dataSP, lldb::endian::InlHostByteOrder(), 4);
     uint32_t offset = 0;
     const char* armag = (const char* )data.PeekData (offset, sizeof(ar_hdr));
     if (armag && ::strncmp(armag, ARMAG, SARMAG) == 0)
@@ -327,11 +349,6 @@ ObjectContainerBSDArchive::ParseHeader ()
                                                                  m_module->GetArchitecture(),
                                                                  m_module->GetModificationTime(),
                                                                  m_data);
-            // The archive might be huge, so clear "m_data" to free up the
-            // memory since it will contain the entire file (possibly more than
-            // one architecture slice). We already have an index of all objects
-            // in the file, so we will be ready to serve up those objects.
-            m_data.Clear();
         }
     }
     return m_archive_sp.get() != NULL;
@@ -340,11 +357,11 @@ ObjectContainerBSDArchive::ParseHeader ()
 void
 ObjectContainerBSDArchive::Dump (Stream *s) const
 {
-    s->Printf("%.*p: ", (int)sizeof(void*) * 2, this);
+    s->Printf("%p: ", this);
     s->Indent();
     const size_t num_archs = GetNumArchitectures();
     const size_t num_objects = GetNumObjects();
-    s->Printf("ObjectContainerBSDArchive, num_archs = %u, num_objects = %u", num_archs, num_objects);
+    s->Printf("ObjectContainerBSDArchive, num_archs = %lu, num_objects = %lu", num_archs, num_objects);
     uint32_t i;
     ArchSpec arch;
     s->IndentMore();
@@ -352,27 +369,31 @@ ObjectContainerBSDArchive::Dump (Stream *s) const
     {
         s->Indent();
         GetArchitectureAtIndex(i, arch);
-        s->Printf("arch[%u] = %s\n", arch.GetArchitectureName());
+        s->Printf("arch[%u] = %s\n", i, arch.GetArchitectureName());
     }
     for (i=0; i<num_objects; i++)
     {
         s->Indent();
-        s->Printf("object[%u] = %s\n", GetObjectNameAtIndex (i));
+        s->Printf("object[%u] = %s\n", i, GetObjectNameAtIndex (i));
     }
     s->IndentLess();
     s->EOL();
 }
 
-ObjectFile *
+ObjectFileSP
 ObjectContainerBSDArchive::GetObjectFile (const FileSpec *file)
 {
     if (m_module->GetObjectName() && m_archive_sp)
     {
         Object *object = m_archive_sp->FindObject (m_module->GetObjectName());
         if (object)
-            return ObjectFile::FindPlugin (m_module, file, m_offset + object->ar_file_offset, object->ar_file_size);
+            return ObjectFile::FindPlugin (m_module, 
+                                           file, 
+                                           object->ar_file_offset, 
+                                           object->ar_file_size, 
+                                           m_data.GetSharedDataBuffer());
     }
-    return NULL;
+    return ObjectFileSP();
 }
 
 

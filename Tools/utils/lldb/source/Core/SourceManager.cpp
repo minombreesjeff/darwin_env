@@ -14,7 +14,9 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/DataBuffer.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Core/Stream.h"
+#include "lldb/Symbol/ClangNamespaceDecl.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/Target.h"
 
@@ -29,12 +31,26 @@ static inline bool is_newline_char(char ch)
 //----------------------------------------------------------------------
 // SourceManager constructor
 //----------------------------------------------------------------------
-SourceManager::SourceManager() :
-    m_file_cache (),
+SourceManager::SourceManager(Target &target) :
     m_last_file_sp (),
     m_last_file_line (0),
     m_last_file_context_before (0),
-    m_last_file_context_after (0)
+    m_last_file_context_after (10),
+    m_default_set(false),
+    m_target (&target),
+    m_debugger(NULL)
+{
+    m_debugger = &(m_target->GetDebugger());
+}
+
+SourceManager::SourceManager(Debugger &debugger) :
+    m_last_file_sp (),
+    m_last_file_line (0),
+    m_last_file_context_before (0),
+    m_last_file_context_after (10),
+    m_default_set(false),
+    m_target (NULL),
+    m_debugger (&debugger)
 {
 }
 
@@ -48,7 +64,6 @@ SourceManager::~SourceManager()
 size_t
 SourceManager::DisplaySourceLines
 (
-    Target *target,
     const FileSpec &file_spec,
     uint32_t line,
     uint32_t context_before,
@@ -56,7 +71,7 @@ SourceManager::DisplaySourceLines
     Stream *s
 )
 {
-    m_last_file_sp = GetFile (file_spec, target);
+    m_last_file_sp = GetFile (file_spec);
     m_last_file_line = line + context_after + 1;
     m_last_file_context_before = context_before;
     m_last_file_context_after = context_after;
@@ -67,16 +82,16 @@ SourceManager::DisplaySourceLines
 }
 
 SourceManager::FileSP
-SourceManager::GetFile (const FileSpec &file_spec, Target *target)
+SourceManager::GetFile (const FileSpec &file_spec)
 {
     FileSP file_sp;
-    FileCache::iterator pos = m_file_cache.find(file_spec);
-    if (pos != m_file_cache.end())
-        file_sp = pos->second;
-    else
+    file_sp = m_debugger->GetSourceFileCache().FindSourceFile (file_spec);
+    // If file_sp is no good or it points to a non-existent file, reset it.
+    if (!file_sp || !file_sp->GetFileSpec().Exists())
     {
-        file_sp.reset (new File (file_spec, target));
-        m_file_cache[file_spec] = file_sp;
+        file_sp.reset (new File (file_spec, m_target));
+
+        m_debugger->GetSourceFileCache().AddSourceFile(file_sp);
     }
     return file_sp;
 }
@@ -92,6 +107,7 @@ SourceManager::DisplaySourceLinesWithLineNumbersUsingLastFile
     const SymbolContextList *bp_locs
 )
 {
+    size_t return_value = 0;
     if (line == 0)
     {
         if (m_last_file_line != 0
@@ -134,24 +150,26 @@ SourceManager::DisplaySourceLinesWithLineNumbersUsingLastFile
                     ::snprintf (prefix, sizeof (prefix), "    ");
             }
 
-            s->Printf("%s%2.2s %-4u\t", 
+            return_value += s->Printf("%s%2.2s %-4u\t", 
                       prefix,
                       curr_line == line ? current_line_cstr : "", 
                       curr_line);
-            if (m_last_file_sp->DisplaySourceLines (curr_line, 0, 0, s) == 0)
+            size_t this_line_size = m_last_file_sp->DisplaySourceLines (curr_line, 0, 0, s); 
+            if (this_line_size == 0)
             {
                 m_last_file_line = UINT32_MAX;
                 break;
             }
+            else
+                return_value += this_line_size;
         }
     }
-    return 0;
+    return return_value;
 }
 
 size_t
 SourceManager::DisplaySourceLinesWithLineNumbers
 (
-    Target *target,
     const FileSpec &file_spec,
     uint32_t line,
     uint32_t context_before,
@@ -164,7 +182,7 @@ SourceManager::DisplaySourceLinesWithLineNumbers
     bool same_as_previous = m_last_file_sp && m_last_file_sp->FileSpecMatches (file_spec);
 
     if (!same_as_previous)
-        m_last_file_sp = GetFile (file_spec, target);
+        m_last_file_sp = GetFile (file_spec);
 
     if (line == 0)
     {
@@ -182,12 +200,88 @@ SourceManager::DisplayMoreWithLineNumbers (Stream *s, const SymbolContextList *b
     {
         if (m_last_file_line == UINT32_MAX)
             return 0;
-        DisplaySourceLinesWithLineNumbersUsingLastFile (0, m_last_file_context_before, m_last_file_context_after, "", s, bp_locs);
+        return DisplaySourceLinesWithLineNumbersUsingLastFile (0, m_last_file_context_before, m_last_file_context_after, "", s, bp_locs);
     }
     return 0;
 }
 
+bool
+SourceManager::SetDefaultFileAndLine (const FileSpec &file_spec, uint32_t line)
+{
+    FileSP old_file_sp = m_last_file_sp;
+    m_last_file_sp = GetFile (file_spec);
+    
+    m_default_set = true;
+    if (m_last_file_sp)
+    {
+        m_last_file_line = line;
+        return true;
+    }
+    else
+    {
+        m_last_file_sp = old_file_sp;
+        return false;
+    }
+}
 
+bool 
+SourceManager::GetDefaultFileAndLine (FileSpec &file_spec, uint32_t &line)
+{
+    if (m_last_file_sp)
+    {
+        file_spec = m_last_file_sp->GetFileSpec();
+        line = m_last_file_line;
+        return true;
+    }
+    else if (!m_default_set)
+    {
+        // If nobody has set the default file and line then try here.  If there's no executable, then we
+        // will try again later when there is one.  Otherwise, if we can't find it we won't look again,
+        // somebody will have to set it (for instance when we stop somewhere...)
+        Module *executable_ptr = m_target->GetExecutableModulePointer();
+        if (executable_ptr)
+        {
+            SymbolContextList sc_list;
+            uint32_t num_matches;
+            ConstString main_name("main");
+            bool symbols_okay = false;  // Force it to be a debug symbol.
+            bool append = false;
+            num_matches = executable_ptr->FindFunctions (main_name, NULL, lldb::eFunctionNameTypeBase, symbols_okay, append, sc_list);
+            for (uint32_t idx = 0; idx < num_matches; idx++)
+            {
+                SymbolContext sc;
+                sc_list.GetContextAtIndex(idx, sc);
+                if (sc.function)
+                {
+                    lldb_private::LineEntry line_entry;
+                    if (sc.function->GetAddressRange().GetBaseAddress().CalculateSymbolContextLineEntry (line_entry))
+                    {
+                        SetDefaultFileAndLine (line_entry.file, 
+                                               line_entry.line);
+                        file_spec = m_last_file_sp->GetFileSpec();
+                        line = m_last_file_line;
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void
+SourceManager::FindLinesMatchingRegex (FileSpec &file_spec,
+                        RegularExpression& regex, 
+                        uint32_t start_line, 
+                        uint32_t end_line, 
+                        std::vector<uint32_t> &match_lines)
+{
+    match_lines.clear();
+    FileSP file_sp = GetFile (file_spec);
+    if (!file_sp)
+        return;
+    return file_sp->FindLinesMatchingRegex (regex, start_line, end_line, match_lines);
+}
 
 SourceManager::File::File(const FileSpec &file_spec, Target *target) :
     m_file_spec_orig (file_spec),
@@ -198,8 +292,64 @@ SourceManager::File::File(const FileSpec &file_spec, Target *target) :
 {
     if (!m_mod_time.IsValid())
     {
-        if (target->GetSourcePathMap().RemapPath(file_spec.GetDirectory(), m_file_spec.GetDirectory()))
-            m_mod_time = file_spec.GetModificationTime();
+        if (target)
+        {
+            if (!file_spec.GetDirectory() && file_spec.GetFilename())
+            {
+                // If this is just a file name, lets see if we can find it in the target:
+                bool check_inlines = false;
+                SymbolContextList sc_list;
+                size_t num_matches = target->GetImages().ResolveSymbolContextForFilePath (file_spec.GetFilename().AsCString(),
+                                                                                          0,
+                                                                                          check_inlines,
+                                                                                          lldb::eSymbolContextModule | lldb::eSymbolContextCompUnit,
+                                                                                          sc_list);
+                bool got_multiple = false;
+                if (num_matches != 0)
+                {
+                    if (num_matches > 1)
+                    {
+                        SymbolContext sc;
+                        FileSpec *test_cu_spec = NULL;
+
+                        for (unsigned i = 0; i < num_matches; i++)
+                        {
+                            sc_list.GetContextAtIndex(i, sc);
+                            if (sc.comp_unit)
+                            {
+                                if (test_cu_spec)
+                                {
+                                    if (test_cu_spec != static_cast<FileSpec *> (sc.comp_unit))
+                                        got_multiple = true;
+                                        break;
+                                }
+                                else
+                                    test_cu_spec = sc.comp_unit;
+                            }
+                        }
+                    }
+                    if (!got_multiple)
+                    {
+                        SymbolContext sc;
+                        sc_list.GetContextAtIndex (0, sc);
+                        m_file_spec = static_cast<FileSpec *>(sc.comp_unit);
+                        m_mod_time = m_file_spec.GetModificationTime();
+                    }
+                }
+            }
+            // Try remapping if m_file_spec does not correspond to an existing file.
+            if (!m_file_spec.Exists())
+            {
+                ConstString new_path;
+                if (target->GetSourcePathMap().RemapPath(m_file_spec.GetDirectory(), new_path))
+                {
+                    char resolved_path[PATH_MAX];
+                    ::snprintf(resolved_path, PATH_MAX, "%s/%s", new_path.AsCString(), m_file_spec.GetFilename().AsCString());
+                    m_file_spec = new FileSpec(resolved_path, true);
+                    m_mod_time = m_file_spec.GetModificationTime();
+                }
+            }
+        }
     }
     
     if (m_mod_time.IsValid())
@@ -245,12 +395,17 @@ SourceManager::File::DisplaySourceLines (uint32_t line, uint32_t context_before,
     // source cache and only update when we determine a file has been updated.
     // For now we check each time we want to display info for the file.
     TimeValue curr_mod_time (m_file_spec.GetModificationTime());
-    if (m_mod_time != curr_mod_time)
+
+    if (curr_mod_time.IsValid() && m_mod_time != curr_mod_time)
     {
         m_mod_time = curr_mod_time;
         m_data_sp = m_file_spec.ReadFileContents ();
         m_offsets.clear();
     }
+
+    // Sanity check m_data_sp before proceeding.
+    if (!m_data_sp)
+        return 0;
 
     const uint32_t start_line = line <= context_before ? 1 : line - context_before;
     const uint32_t start_line_offset = GetLineOffset (start_line);
@@ -276,12 +431,62 @@ SourceManager::File::DisplaySourceLines (uint32_t line, uint32_t context_before,
     return 0;
 }
 
+void
+SourceManager::File::FindLinesMatchingRegex (RegularExpression& regex, uint32_t start_line, uint32_t end_line, std::vector<uint32_t> &match_lines)
+{
+    TimeValue curr_mod_time (m_file_spec.GetModificationTime());
+    if (m_mod_time != curr_mod_time)
+    {
+        m_mod_time = curr_mod_time;
+        m_data_sp = m_file_spec.ReadFileContents ();
+        m_offsets.clear();
+    }
+    
+    match_lines.clear();
+    
+    if (!LineIsValid(start_line) || (end_line != UINT32_MAX && !LineIsValid(end_line)))
+        return;
+    if (start_line > end_line)
+        return;
+        
+    for (uint32_t line_no = start_line; line_no < end_line; line_no++)
+    {
+        std::string buffer;
+        if (!GetLine (line_no, buffer))
+            break;
+        if (regex.Execute(buffer.c_str()))
+        {
+            match_lines.push_back(line_no);
+        }
+    }
+}
+
 bool
 SourceManager::File::FileSpecMatches (const FileSpec &file_spec)
 {
     return FileSpec::Equal (m_file_spec, file_spec, false);
 }
 
+bool
+lldb_private::operator== (const SourceManager::File &lhs, const SourceManager::File &rhs)
+{
+    if (lhs.m_file_spec == rhs.m_file_spec)
+    {
+        if (lhs.m_mod_time.IsValid())
+        {
+            if (rhs.m_mod_time.IsValid())
+                return lhs.m_mod_time == rhs.m_mod_time;
+            else
+                return false;
+        }
+        else if (rhs.m_mod_time.IsValid())
+            return false;
+        else
+            return true;
+    }
+    else
+        return false;
+}
 
 bool
 SourceManager::File::CalculateLineOffsets (uint32_t line)
@@ -344,3 +549,45 @@ SourceManager::File::CalculateLineOffsets (uint32_t line)
     }
     return false;
 }
+
+bool
+SourceManager::File::GetLine (uint32_t line_no, std::string &buffer)
+{
+    if (!LineIsValid(line_no))
+        return false;
+
+    uint32_t start_offset = GetLineOffset (line_no);
+    uint32_t end_offset = GetLineOffset (line_no + 1);
+    if (end_offset == UINT32_MAX)
+    {
+        end_offset = m_data_sp->GetByteSize();
+    }
+    buffer.assign((char *) m_data_sp->GetBytes() + start_offset, end_offset - start_offset);
+    
+    return true;
+}
+
+void 
+SourceManager::SourceFileCache::AddSourceFile (const FileSP &file_sp)
+{
+    FileSpec file_spec;
+    FileCache::iterator pos = m_file_cache.find(file_spec);
+    if (pos == m_file_cache.end())
+        m_file_cache[file_spec] = file_sp;
+    else
+    {
+        if (file_sp != pos->second)
+            m_file_cache[file_spec] = file_sp;
+    }
+}
+
+SourceManager::FileSP 
+SourceManager::SourceFileCache::FindSourceFile (const FileSpec &file_spec) const
+{
+    FileSP file_sp;
+    FileCache::const_iterator pos = m_file_cache.find(file_spec);
+    if (pos != m_file_cache.end())
+        file_sp = pos->second;
+    return file_sp;
+}
+

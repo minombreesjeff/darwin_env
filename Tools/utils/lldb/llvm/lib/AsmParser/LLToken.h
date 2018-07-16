@@ -90,6 +90,7 @@ namespace lltok {
     kw_readnone,
     kw_readonly,
     kw_uwtable,
+    kw_returns_twice,
 
     kw_inlinehint,
     kw_noinline,
@@ -100,7 +101,6 @@ namespace lltok {
     kw_noredzone,
     kw_noimplicitfloat,
     kw_naked,
-    kw_hotpatch,
     kw_nonlazybind,
 
     kw_type,
@@ -123,6 +123,8 @@ namespace lltok {
     kw_trunc, kw_zext, kw_sext, kw_fptrunc, kw_fpext, kw_uitofp, kw_sitofp,
     kw_fptoui, kw_fptosi, kw_inttoptr, kw_ptrtoint, kw_bitcast,
     kw_select, kw_va_arg,
+
+    kw_landingpad, kw_personality, kw_cleanup, kw_catch, kw_filter,
 
     kw_ret, kw_br, kw_switch, kw_indirectbr, kw_invoke, kw_unwind, kw_resume,
     kw_unreachable,

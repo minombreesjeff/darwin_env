@@ -12,6 +12,7 @@
 
 #include "lldb/lldb-public.h"
 #include "lldb/Core/ConstString.h"
+#include "lldb/Core/Error.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Symbol/TaggedASTType.h"
 #include "llvm/Pass.h"
@@ -27,6 +28,7 @@ namespace llvm {
     class Instruction;
     class Module;
     class StoreInst;
+    class TargetData;
     class Type;
     class Value;
 }
@@ -73,6 +75,10 @@ public:
     ///     variables) should be resolved.  If not, only external functions
     ///     are resolved.
     ///
+    /// @param[in] execution_policy
+    ///     Determines whether an IR interpreter can be used to statically
+    ///     evaluate the expression.
+    ///
     /// @param[in] const_result
     ///     This variable is populated with the statically-computed result
     ///     of the function, if it has no side-effects and the result can
@@ -89,6 +95,7 @@ public:
     //------------------------------------------------------------------
     IRForTarget(lldb_private::ClangExpressionDeclMap *decl_map,
                 bool resolve_vars,
+                lldb_private::ExecutionPolicy execution_policy,
                 lldb::ClangExpressionVariableSP &const_result,
                 StaticDataAllocator *data_allocator,
                 lldb_private::Stream *error_stream,
@@ -108,6 +115,10 @@ public:
     ///     The module to run on.  This module is searched for the function
     ///     $__lldb_expr, and that function is passed to the passes one by 
     ///     one.
+    ///
+    /// @param[in] interpreter_error
+    ///     An error.  If the expression fails to be interpreted, this error
+    ///     is set to a reason why.
     ///
     /// @return
     ///     True on success; false otherwise
@@ -133,6 +144,18 @@ public:
     //------------------------------------------------------------------
     virtual llvm::PassManagerType 
     getPotentialPassManagerType() const;
+    
+    //------------------------------------------------------------------
+    /// Checks whether the IR interpreter successfully interpreted the
+    /// expression.
+    ///
+    /// Returns true if it did; false otherwise.
+    //------------------------------------------------------------------
+    lldb_private::Error &
+    getInterpreterError ()
+    {
+        return m_interpreter_error;
+    }
 
 private:
     //------------------------------------------------------------------
@@ -215,6 +238,11 @@ private:
     BuildFunctionPointer (llvm::Type *type,
                           uint64_t ptr);
     
+    void
+    RegisterFunctionMetadata (llvm::LLVMContext &context,
+                              llvm::Value *function_ptr,
+                              const char *name);
+    
     //------------------------------------------------------------------
     /// The top-level pass implementation
     ///
@@ -236,16 +264,22 @@ private:
     //------------------------------------------------------------------
     
     //------------------------------------------------------------------
-    /// Set the constant result variable m_const_result to the provided
-    /// constant, assuming it can be evaluated.  The result variable
-    /// will be reset to NULL later if the expression has side effects.
+    /// Find the NamedDecl corresponding to a Value.  This interface is
+    /// exposed for the IR interpreter.
+    ///
+    /// @param[in] module
+    ///     The module containing metadata to search
     ///
     /// @param[in] global
     ///     The global entity to search for
     ///
     /// @return
     ///     The corresponding variable declaration
-    //------------------------------------------------------------------   
+    //------------------------------------------------------------------
+public:
+    static clang::NamedDecl *
+    DeclForGlobal (const llvm::GlobalValue *global_val, llvm::Module *module);
+private:
     clang::NamedDecl *
     DeclForGlobal (llvm::GlobalValue *global);
     
@@ -409,6 +443,34 @@ private:
     //------------------------------------------------------------------
     
     //------------------------------------------------------------------
+    /// Write an initializer to a memory array of assumed sufficient
+    /// size.
+    ///
+    /// @param[in] data
+    ///     A pointer to the data to write to.
+    ///
+    /// @param[in] initializer
+    ///     The initializer itself.
+    ///
+    /// @return
+    ///     True on success; false otherwise
+    //------------------------------------------------------------------
+    bool
+    MaterializeInitializer (uint8_t *data, llvm::Constant *initializer);
+    
+    //------------------------------------------------------------------
+    /// Move an internal variable into the static allocation section.
+    ///
+    /// @param[in] global_variable
+    ///     The variable.
+    ///
+    /// @return
+    ///     True on success; false otherwise
+    //------------------------------------------------------------------
+    bool
+    MaterializeInternalVariable (llvm::GlobalVariable *global_variable);
+    
+    //------------------------------------------------------------------
     /// Handle a single externally-defined variable
     ///
     /// @param[in] value
@@ -431,6 +493,19 @@ private:
     //------------------------------------------------------------------
     bool
     HandleSymbol (llvm::Value *symbol);
+    
+    //------------------------------------------------------------------
+    /// Handle a single externally-defined Objective-C class
+    ///
+    /// @param[in] classlist_reference
+    ///     The reference, usually "01L_OBJC_CLASSLIST_REFERENCES_$_n"
+    ///     where n (if present) is an index.
+    ///
+    /// @return
+    ///     True on success; false otherwise
+    //------------------------------------------------------------------
+    bool
+    HandleObjCClass(llvm::Value *classlist_reference);
 
     //------------------------------------------------------------------
     /// Handle all the arguments to a function call
@@ -549,15 +624,20 @@ private:
     
     /// Flags
     bool                                    m_resolve_vars;             ///< True if external variable references and persistent variable references should be resolved
+    lldb_private::ExecutionPolicy           m_execution_policy;         ///< True if the interpreter should be used to attempt to get a static result
+    bool                                    m_interpret_success;        ///< True if the interpreter successfully handled the whole expression
     std::string                             m_func_name;                ///< The name of the function to translate
     lldb_private::ConstString               m_result_name;              ///< The name of the result variable ($0, $1, ...)
+    lldb_private::TypeFromParser            m_result_type;              ///< The type of the result variable.
     llvm::Module                           *m_module;                   ///< The module being processed, or NULL if that has not been determined yet.
+    std::auto_ptr<llvm::TargetData>         m_target_data;              ///< The target data for the module being processed, or NULL if there is no module.
     lldb_private::ClangExpressionDeclMap   *m_decl_map;                 ///< The DeclMap containing the Decls 
     StaticDataAllocator                    *m_data_allocator;           ///< If non-NULL, the allocator to use for constant strings
     llvm::Constant                         *m_CFStringCreateWithBytes;  ///< The address of the function CFStringCreateWithBytes, cast to the appropriate function pointer type
     llvm::Constant                         *m_sel_registerName;         ///< The address of the function sel_registerName, cast to the appropriate function pointer type
     lldb::ClangExpressionVariableSP        &m_const_result;             ///< This value should be set to the return value of the expression if it is constant and the expression has no side effects
     lldb_private::Stream                   *m_error_stream;             ///< If non-NULL, the stream on which errors should be printed
+    lldb_private::Error                     m_interpreter_error;        ///< The error result from the IR interpreter
     
     bool                                    m_has_side_effects;         ///< True if the function's result cannot be simply determined statically
     llvm::StoreInst                        *m_result_store;             ///< If non-NULL, the store instruction that writes to the result variable.  If m_has_side_effects is true, this is NULL.

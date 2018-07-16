@@ -149,11 +149,11 @@ BreakpointLocation::SetCondition (const char *condition)
 ThreadPlan *
 BreakpointLocation::GetThreadPlanToTestCondition (ExecutionContext &exe_ctx, Stream &error)
 {
-    lldb::BreakpointLocationSP my_sp(m_owner.GetLocationSP(this));
+    lldb::BreakpointLocationSP this_sp(this);
     if (m_options_ap.get())
-        return m_options_ap->GetThreadPlanToTestCondition (exe_ctx, my_sp, error);
+        return m_options_ap->GetThreadPlanToTestCondition (exe_ctx, this_sp, error);
     else
-        return m_owner.GetThreadPlanToTestCondition (exe_ctx, my_sp, error);
+        return m_owner.GetThreadPlanToTestCondition (exe_ctx, this_sp, error);
 }
 
 const char *
@@ -212,12 +212,12 @@ BreakpointLocation::ShouldStop (StoppointCallbackContext *context)
     bool should_stop = true;
     LogSP log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
 
-    m_hit_count++;
+    IncrementHitCount();
 
     if (!IsEnabled())
         return false;
 
-    if (m_hit_count <= GetIgnoreCount())
+    if (GetHitCount() <= GetIgnoreCount())
         return false;
 
     // We only run synchronous callbacks in ShouldStop:
@@ -259,9 +259,9 @@ BreakpointLocation::ResolveBreakpointSite ()
     if (m_owner.GetTarget().GetSectionLoadList().IsEmpty())
         return false;
 
-    BreakpointLocationSP myself_sp(m_owner.GetLocationSP (this));
+    BreakpointLocationSP this_sp(this);
 
-    lldb::break_id_t new_id = process->CreateBreakpointSite (myself_sp, false);
+    lldb::break_id_t new_id = process->CreateBreakpointSite (this_sp, false);
 
     if (new_id == LLDB_INVALID_BREAK_ID)
     {
@@ -412,14 +412,14 @@ BreakpointLocation::Dump(Stream *s) const
     if (s == NULL)
         return;
 
-    s->Printf("BreakpointLocation %u: tid = %4.4x  load addr = 0x%8.8llx  state = %s  type = %s breakpoint  "
+    s->Printf("BreakpointLocation %u: tid = %4.4llx  load addr = 0x%8.8llx  state = %s  type = %s breakpoint  "
               "hw_index = %i  hit_count = %-4u  ignore_count = %-4u",
-            GetID(),
-            GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetTID(),
-            (uint64_t) m_address.GetOpcodeLoadAddress (&m_owner.GetTarget()),
-            (m_options_ap.get() ? m_options_ap->IsEnabled() : m_owner.IsEnabled()) ? "enabled " : "disabled",
-            IsHardware() ? "hardware" : "software",
-            GetHardwareIndex(),
-            GetHitCount(),
-            m_options_ap.get() ? m_options_ap->GetIgnoreCount() : m_owner.GetIgnoreCount());
+              GetID(),
+              GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetTID(),
+              (uint64_t) m_address.GetOpcodeLoadAddress (&m_owner.GetTarget()),
+              (m_options_ap.get() ? m_options_ap->IsEnabled() : m_owner.IsEnabled()) ? "enabled " : "disabled",
+              IsHardware() ? "hardware" : "software",
+              GetHardwareIndex(),
+              GetHitCount(),
+              GetOptionsNoCreate()->GetIgnoreCount());
 }

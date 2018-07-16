@@ -16,7 +16,8 @@
 #include "llvm/PassManager.h"
 #include "llvm/CodeGen/RegAllocRegistry.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
-#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
 
@@ -33,8 +34,10 @@ SPUFrameLowering::getCalleeSaveSpillSlots(unsigned &NumEntries) const {
 
 SPUTargetMachine::SPUTargetMachine(const Target &T, StringRef TT,
                                    StringRef CPU, StringRef FS,
-                                   Reloc::Model RM, CodeModel::Model CM)
-  : LLVMTargetMachine(T, TT, CPU, FS, RM, CM),
+                                   const TargetOptions &Options,
+                                   Reloc::Model RM, CodeModel::Model CM,
+                                   CodeGenOpt::Level OL)
+  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     Subtarget(TT, CPU, FS),
     DataLayout(Subtarget.getTargetDataString()),
     InstrInfo(*this),
@@ -48,8 +51,7 @@ SPUTargetMachine::SPUTargetMachine(const Target &T, StringRef TT,
 // Pass Pipeline Configuration
 //===----------------------------------------------------------------------===//
 
-bool SPUTargetMachine::addInstSelector(PassManagerBase &PM,
-                                       CodeGenOpt::Level OptLevel) {
+bool SPUTargetMachine::addInstSelector(PassManagerBase &PM) {
   // Install an instruction selector.
   PM.add(createSPUISelDag(*this));
   return false;
@@ -57,8 +59,16 @@ bool SPUTargetMachine::addInstSelector(PassManagerBase &PM,
 
 // passes to run just before printing the assembly
 bool SPUTargetMachine::
-addPreEmitPass(PassManagerBase &PM, CodeGenOpt::Level OptLevel) 
-{
+addPreEmitPass(PassManagerBase &PM) {
+  // load the TCE instruction scheduler, if available via
+  // loaded plugins
+  typedef llvm::FunctionPass* (*BuilderFunc)(const char*);
+  BuilderFunc schedulerCreator =
+    (BuilderFunc)(intptr_t)sys::DynamicLibrary::SearchForAddressOfSymbol(
+          "createTCESchedulerPass");
+  if (schedulerCreator != NULL)
+      PM.add(schedulerCreator("cellspu"));
+
   //align instructions with nops/lnops for dual issue
   PM.add(createSPUNopFillerPass(*this));
   return true;

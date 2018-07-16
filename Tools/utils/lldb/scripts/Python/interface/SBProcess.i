@@ -64,12 +64,26 @@ public:
     lldb::ByteOrder
     GetByteOrder() const;
 
+    %feature("autodoc", "
+    Writes data into the current process's stdin. API client specifies a Python
+    string as the only argument.
+    ") PutSTDIN;
     size_t
     PutSTDIN (const char *src, size_t src_len);
 
+    %feature("autodoc", "
+    Reads data from the current process's stdout stream. API client specifies
+    the size of the buffer to read data into. It returns the byte buffer in a
+    Python string.
+    ") GetSTDOUT;
     size_t
     GetSTDOUT (char *dst, size_t dst_len) const;
 
+    %feature("autodoc", "
+    Reads data from the current process's stderr stream. API client specifies
+    the size of the buffer to read data into. It returns the byte buffer in a
+    Python string.
+    ") GetSTDERR;
     size_t
     GetSTDERR (char *dst, size_t dst_len) const;
 
@@ -194,6 +208,57 @@ public:
     size_t
     WriteMemory (addr_t addr, const void *buf, size_t size, lldb::SBError &error);
 
+    %feature("autodoc", "
+    Reads a NULL terminated C string from the current process's address space.
+    It returns a python string of the exact length, or truncates the string if
+    the maximum character limit is reached. Example:
+    
+    # Read a C string of at most 256 bytes from address '0x1000' 
+    error = lldb.SBError()
+    cstring = process.ReadCStringFromMemory(0x1000, 256, error)
+    if error.Success():
+        print 'cstring: ', cstring
+    else
+        print 'error: ', error
+    ") ReadCStringFromMemory;
+
+    size_t
+    ReadCStringFromMemory (addr_t addr, void *buf, size_t size, lldb::SBError &error);
+
+    %feature("autodoc", "
+    Reads an unsigned integer from memory given a byte size and an address. 
+    Returns the unsigned integer that was read. Example:
+    
+    # Read a 4 byte unsigned integer from address 0x1000
+    error = lldb.SBError()
+    uint = ReadUnsignedFromMemory(0x1000, 4, error)
+    if error.Success():
+        print 'integer: %u' % uint
+    else
+        print 'error: ', error
+
+    ") ReadUnsignedFromMemory;
+
+    uint64_t
+    ReadUnsignedFromMemory (addr_t addr, uint32_t byte_size, lldb::SBError &error);
+    
+    %feature("autodoc", "
+    Reads a pointer from memory from an address and returns the value. Example:
+    
+    # Read a pointer from address 0x1000
+    error = lldb.SBError()
+    ptr = ReadPointerFromMemory(0x1000, error)
+    if error.Success():
+        print 'pointer: 0x%x' % ptr
+    else
+        print 'error: ', error
+    
+    ") ReadPointerFromMemory;
+    
+    lldb::addr_t
+    ReadPointerFromMemory (addr_t addr, lldb::SBError &error);
+    
+
     // Events
     static lldb::StateType
     GetStateFromEvent (const lldb::SBEvent &event);
@@ -215,6 +280,7 @@ public:
     
     lldb::SBError
     UnloadImage (uint32_t image_token);
+
 };
 
 }  // namespace lldb

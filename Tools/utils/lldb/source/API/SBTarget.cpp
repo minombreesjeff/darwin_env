@@ -16,6 +16,7 @@
 #include "lldb/API/SBFileSpec.h"
 #include "lldb/API/SBListener.h"
 #include "lldb/API/SBModule.h"
+#include "lldb/API/SBSourceManager.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBStream.h"
 #include "lldb/API/SBSymbolContextList.h"
@@ -230,7 +231,17 @@ SBTarget::Launch
             if (getenv("LLDB_LAUNCH_FLAG_DISABLE_STDIO"))
                 launch_flags |= eLaunchFlagDisableSTDIO;
 
-            error.SetError (sb_process->Launch (argv, envp, launch_flags, stdin_path, stdout_path, stderr_path, working_directory));
+            ProcessLaunchInfo launch_info (stdin_path, stdout_path, stderr_path, working_directory, launch_flags);
+            
+            Module *exe_module = m_opaque_sp->GetExecutableModulePointer();
+            if (exe_module)
+                launch_info.SetExecutableFile(exe_module->GetPlatformFileSpec(), true);
+            if (argv)
+                launch_info.GetArguments().AppendArguments (argv);
+            if (envp)
+                launch_info.GetEnvironmentEntries ().SetArguments (envp);
+
+            error.SetError (sb_process->Launch (launch_info));
             if (error.Success())
             {
                 // We we are stopping at the entry point, we can return now!
@@ -273,6 +284,17 @@ SBTarget::Launch
     return sb_process;
 }
 
+#if defined(__APPLE__)
+
+lldb::SBProcess
+SBTarget::AttachToProcessWithID (SBListener &listener,
+                                ::pid_t pid,
+                                 lldb::SBError& error)
+{
+    return AttachToProcessWithID (listener, (lldb::pid_t)pid, error);
+}
+
+#endif // #if defined(__APPLE__)
 
 lldb::SBProcess
 SBTarget::AttachToProcessWithID 
@@ -326,7 +348,9 @@ SBTarget::AttachToProcessWithID
 
         if (sb_process.IsValid())
         {
-            error.SetError (sb_process->Attach (pid));
+            ProcessAttachInfo attach_info;
+            attach_info.SetProcessID (pid);
+            error.SetError (sb_process->Attach (attach_info));            
             // If we are doing synchronous mode, then wait for the
             // process to stop!
             if (m_opaque_sp->GetDebugger().GetAsyncExecution () == false)
@@ -355,7 +379,7 @@ SBTarget::AttachToProcessWithName
 )
 {
     SBProcess sb_process;
-    if (m_opaque_sp)
+    if (name && m_opaque_sp)
     {
         Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
 
@@ -398,7 +422,10 @@ SBTarget::AttachToProcessWithName
 
         if (sb_process.IsValid())
         {
-            error.SetError (sb_process->Attach (name, wait_for));
+            ProcessAttachInfo attach_info;
+            attach_info.GetExecutableFile().SetFile(name, false);
+            attach_info.SetWaitForLaunch(wait_for);
+            error.SetError (sb_process->Attach (attach_info));
             // If we are doing synchronous mode, then wait for the
             // process to stop!
             if (m_opaque_sp->GetDebugger().GetAsyncExecution () == false)
@@ -498,6 +525,12 @@ SBTarget::get() const
     return m_opaque_sp.get();
 }
 
+const lldb::TargetSP &
+SBTarget::get_sp () const
+{
+    return m_opaque_sp;
+}
+
 void
 SBTarget::reset (const lldb::TargetSP& target_sp)
 {
@@ -574,17 +607,18 @@ SBTarget::BreakpointCreateByName (const char *symbol_name, const char *module_na
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     SBBreakpoint sb_bp;
-    if (m_opaque_sp.get() && symbol_name && symbol_name[0])
+    if (m_opaque_sp.get())
     {
         Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
         if (module_name && module_name[0])
         {
-            FileSpec module_file_spec(module_name, false);
-            *sb_bp = m_opaque_sp->CreateBreakpoint (&module_file_spec, symbol_name, eFunctionNameTypeFull | eFunctionNameTypeBase, false);
+            FileSpecList module_spec_list;
+            module_spec_list.Append (FileSpec (module_name, false));
+            *sb_bp = m_opaque_sp->CreateBreakpoint (&module_spec_list, NULL, symbol_name, eFunctionNameTypeAuto, false);
         }
         else
         {
-            *sb_bp = m_opaque_sp->CreateBreakpoint (NULL, symbol_name, eFunctionNameTypeFull | eFunctionNameTypeBase, false);
+            *sb_bp = m_opaque_sp->CreateBreakpoint (NULL, NULL, symbol_name, eFunctionNameTypeAuto, false);
         }
     }
     
@@ -596,6 +630,44 @@ SBTarget::BreakpointCreateByName (const char *symbol_name, const char *module_na
 
     return sb_bp;
 }
+
+lldb::SBBreakpoint
+SBTarget::BreakpointCreateByName (const char *symbol_name, 
+                            const SBFileSpecList &module_list, 
+                            const SBFileSpecList &comp_unit_list)
+{
+    uint32_t name_type_mask = eFunctionNameTypeAuto;
+    return BreakpointCreateByName (symbol_name, name_type_mask, module_list, comp_unit_list);
+}
+
+lldb::SBBreakpoint
+SBTarget::BreakpointCreateByName (const char *symbol_name,
+                            uint32_t name_type_mask,
+                            const SBFileSpecList &module_list, 
+                            const SBFileSpecList &comp_unit_list)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    SBBreakpoint sb_bp;
+    if (m_opaque_sp.get() && symbol_name && symbol_name[0])
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        *sb_bp = m_opaque_sp->CreateBreakpoint (module_list.get(), 
+                                                comp_unit_list.get(), 
+                                                symbol_name, 
+                                                name_type_mask, 
+                                                false);
+    }
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::BreakpointCreateByName (symbol=\"%s\", name_type: %d) => SBBreakpoint(%p)", 
+                     m_opaque_sp.get(), symbol_name, name_type_mask, sb_bp.get());
+    }
+
+    return sb_bp;
+}
+
 
 SBBreakpoint
 SBTarget::BreakpointCreateByRegex (const char *symbol_name_regex, const char *module_name)
@@ -610,13 +682,14 @@ SBTarget::BreakpointCreateByRegex (const char *symbol_name_regex, const char *mo
         
         if (module_name && module_name[0])
         {
-            FileSpec module_file_spec(module_name, false);
+            FileSpecList module_spec_list;
+            module_spec_list.Append (FileSpec (module_name, false));
             
-            *sb_bp = m_opaque_sp->CreateBreakpoint (&module_file_spec, regexp, false);
+            *sb_bp = m_opaque_sp->CreateFuncRegexBreakpoint (&module_spec_list, NULL, regexp, false);
         }
         else
         {
-            *sb_bp = m_opaque_sp->CreateBreakpoint (NULL, regexp, false);
+            *sb_bp = m_opaque_sp->CreateFuncRegexBreakpoint (NULL, NULL, regexp, false);
         }
     }
 
@@ -629,7 +702,30 @@ SBTarget::BreakpointCreateByRegex (const char *symbol_name_regex, const char *mo
     return sb_bp;
 }
 
+lldb::SBBreakpoint
+SBTarget::BreakpointCreateByRegex (const char *symbol_name_regex, 
+                         const SBFileSpecList &module_list, 
+                         const SBFileSpecList &comp_unit_list)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
+    SBBreakpoint sb_bp;
+    if (m_opaque_sp.get() && symbol_name_regex && symbol_name_regex[0])
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        RegularExpression regexp(symbol_name_regex);
+        
+        *sb_bp = m_opaque_sp->CreateFuncRegexBreakpoint (module_list.get(), comp_unit_list.get(), regexp, false);
+    }
+
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::BreakpointCreateByRegex (symbol_regex=\"%s\") => SBBreakpoint(%p)", 
+                     m_opaque_sp.get(), symbol_name_regex, sb_bp.get());
+    }
+
+    return sb_bp;
+}
 
 SBBreakpoint
 SBTarget::BreakpointCreateByAddress (addr_t address)
@@ -645,31 +741,71 @@ SBTarget::BreakpointCreateByAddress (addr_t address)
     
     if (log)
     {
-        log->Printf ("SBTarget(%p)::BreakpointCreateByAddress (%p, address=%p) => SBBreakpoint(%p)", m_opaque_sp.get(), address, sb_bp.get());
+        log->Printf ("SBTarget(%p)::BreakpointCreateByAddress (address=%llu) => SBBreakpoint(%p)", m_opaque_sp.get(), (uint64_t) address, sb_bp.get());
     }
 
     return sb_bp;
 }
 
-SBBreakpoint
-SBTarget::FindBreakpointByID (break_id_t bp_id)
+lldb::SBBreakpoint
+SBTarget::BreakpointCreateBySourceRegex (const char *source_regex, const lldb::SBFileSpec &source_file, const char *module_name)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
-    SBBreakpoint sb_breakpoint;
-    if (m_opaque_sp && bp_id != LLDB_INVALID_BREAK_ID)
+    SBBreakpoint sb_bp;
+    if (m_opaque_sp.get() && source_regex && source_regex[0])
     {
         Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
-        *sb_breakpoint = m_opaque_sp->GetBreakpointByID (bp_id);
+        RegularExpression regexp(source_regex);
+        FileSpecList source_file_spec_list;
+        source_file_spec_list.Append (source_file.ref());
+        
+        if (module_name && module_name[0])
+        {
+            FileSpecList module_spec_list;
+            module_spec_list.Append (FileSpec (module_name, false));
+            
+            *sb_bp = m_opaque_sp->CreateSourceRegexBreakpoint (&module_spec_list, &source_file_spec_list, regexp, false);
+        }
+        else
+        {
+            *sb_bp = m_opaque_sp->CreateSourceRegexBreakpoint (NULL, &source_file_spec_list, regexp, false);
+        }
     }
 
     if (log)
     {
-        log->Printf ("SBTarget(%p)::FindBreakpointByID (bp_id=%d) => SBBreakpoint(%p)", 
-                     m_opaque_sp.get(), (uint32_t) bp_id, sb_breakpoint.get());
+        char path[PATH_MAX];
+        source_file->GetPath (path, sizeof(path));
+        log->Printf ("SBTarget(%p)::BreakpointCreateByRegex (source_regex=\"%s\", file=\"%s\", module_name=\"%s\") => SBBreakpoint(%p)", 
+                     m_opaque_sp.get(), source_regex, path, module_name, sb_bp.get());
     }
 
-    return sb_breakpoint;
+    return sb_bp;
+}
+
+lldb::SBBreakpoint
+SBTarget::BreakpointCreateBySourceRegex (const char *source_regex, 
+                               const SBFileSpecList &module_list, 
+                               const lldb::SBFileSpecList &source_file_list)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    SBBreakpoint sb_bp;
+    if (m_opaque_sp.get() && source_regex && source_regex[0])
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        RegularExpression regexp(source_regex);
+        *sb_bp = m_opaque_sp->CreateSourceRegexBreakpoint (module_list.get(), source_file_list.get(), regexp, false);
+    }
+
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::BreakpointCreateByRegex (source_regex=\"%s\") => SBBreakpoint(%p)", 
+                     m_opaque_sp.get(), source_regex, sb_bp.get());
+    }
+
+    return sb_bp;
 }
 
 uint32_t
@@ -715,6 +851,27 @@ SBTarget::BreakpointDelete (break_id_t bp_id)
     return result;
 }
 
+SBBreakpoint
+SBTarget::FindBreakpointByID (break_id_t bp_id)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    SBBreakpoint sb_breakpoint;
+    if (m_opaque_sp && bp_id != LLDB_INVALID_BREAK_ID)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        *sb_breakpoint = m_opaque_sp->GetBreakpointByID (bp_id);
+    }
+
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::FindBreakpointByID (bp_id=%d) => SBBreakpoint(%p)", 
+                     m_opaque_sp.get(), (uint32_t) bp_id, sb_breakpoint.get());
+    }
+
+    return sb_breakpoint;
+}
+
 bool
 SBTarget::EnableAllBreakpoints ()
 {
@@ -751,6 +908,168 @@ SBTarget::DeleteAllBreakpoints ()
     return false;
 }
 
+uint32_t
+SBTarget::GetNumWatchpoints () const
+{
+    if (m_opaque_sp)
+    {
+        // The watchpoint list is thread safe, no need to lock
+        return m_opaque_sp->GetWatchpointList().GetSize();
+    }
+    return 0;
+}
+
+SBWatchpoint
+SBTarget::GetWatchpointAtIndex (uint32_t idx) const
+{
+    SBWatchpoint sb_watchpoint;
+    if (m_opaque_sp)
+    {
+        // The watchpoint list is thread safe, no need to lock
+        *sb_watchpoint = m_opaque_sp->GetWatchpointList().GetByIndex(idx);
+    }
+    return sb_watchpoint;
+}
+
+bool
+SBTarget::DeleteWatchpoint (watch_id_t wp_id)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    bool result = false;
+    if (m_opaque_sp)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        result = m_opaque_sp->RemoveWatchpointByID (wp_id);
+    }
+
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::WatchpointDelete (wp_id=%d) => %i", m_opaque_sp.get(), (uint32_t) wp_id, result);
+    }
+
+    return result;
+}
+
+SBWatchpoint
+SBTarget::FindWatchpointByID (lldb::watch_id_t wp_id)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
+    SBWatchpoint sb_watchpoint;
+    if (m_opaque_sp && wp_id != LLDB_INVALID_WATCH_ID)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        *sb_watchpoint = m_opaque_sp->GetWatchpointList().FindByID(wp_id);
+    }
+
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::FindWatchpointByID (bp_id=%d) => SBWatchpoint(%p)", 
+                     m_opaque_sp.get(), (uint32_t) wp_id, sb_watchpoint.get());
+    }
+
+    return sb_watchpoint;
+}
+
+lldb::SBWatchpoint
+SBTarget::WatchAddress (lldb::addr_t addr, size_t size, bool read, bool write)
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    
+    SBWatchpoint sb_watchpoint;
+    if (m_opaque_sp)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        uint32_t watch_type = (read ? LLDB_WATCH_TYPE_READ : 0) |
+            (write ? LLDB_WATCH_TYPE_WRITE : 0);
+        sb_watchpoint = m_opaque_sp->CreateWatchpoint(addr, size, watch_type);
+    }
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::WatchAddress (addr=0x%llx, 0x%u) => SBWatchpoint(%p)", 
+                     m_opaque_sp.get(), addr, (uint32_t) size, sb_watchpoint.get());
+    }
+    
+    return sb_watchpoint;
+}
+
+bool
+SBTarget::EnableAllWatchpoints ()
+{
+    if (m_opaque_sp)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        m_opaque_sp->EnableAllWatchpoints ();
+        return true;
+    }
+    return false;
+}
+
+bool
+SBTarget::DisableAllWatchpoints ()
+{
+    if (m_opaque_sp)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        m_opaque_sp->DisableAllWatchpoints ();
+        return true;
+    }
+    return false;
+}
+
+bool
+SBTarget::DeleteAllWatchpoints ()
+{
+    if (m_opaque_sp)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetAPIMutex());
+        m_opaque_sp->RemoveAllWatchpoints ();
+        return true;
+    }
+    return false;
+}
+
+
+lldb::SBModule
+SBTarget::AddModule (const char *path,
+                     const char *triple,
+                     const char *uuid_cstr)
+{
+    lldb::SBModule sb_module;
+    if (m_opaque_sp)
+    {
+        FileSpec module_file_spec;
+        UUID module_uuid;
+        ArchSpec module_arch;
+
+        if (path)
+            module_file_spec.SetFile(path, false);
+
+        if (uuid_cstr)
+            module_uuid.SetfromCString(uuid_cstr);
+
+        if (triple)
+            module_arch.SetTriple (triple, m_opaque_sp->GetPlatform ().get());
+
+        sb_module.SetModule(m_opaque_sp->GetSharedModule (module_file_spec,
+                                                          module_arch,
+                                                          uuid_cstr ? &module_uuid : NULL));
+    }
+    return sb_module;
+}
+
+bool
+SBTarget::AddModule (lldb::SBModule &module)
+{
+    if (m_opaque_sp)
+    {
+        m_opaque_sp->GetImages().AppendIfNeeded (module.get_sp());
+        return true;
+    }
+    return false;
+}
 
 uint32_t
 SBTarget::GetNumModules () const
@@ -815,6 +1134,14 @@ SBTarget::GetModuleAtIndex (uint32_t idx)
     return sb_module;
 }
 
+bool
+SBTarget::RemoveModule (lldb::SBModule module)
+{
+    if (m_opaque_sp)
+        return m_opaque_sp->GetImages().Remove(module.get_sp());
+    return false;
+}
+
 
 SBBroadcaster
 SBTarget::GetBroadcaster () const
@@ -834,31 +1161,17 @@ SBTarget::GetBroadcaster () const
 bool
 SBTarget::GetDescription (SBStream &description, lldb::DescriptionLevel description_level)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_sp)
     {
-        description.ref();
-        m_opaque_sp->Dump (description.get(), description_level);
+        m_opaque_sp->Dump (&strm, description_level);
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
     
     return true;
 }
-
-bool
-SBTarget::GetDescription (SBStream &description, lldb::DescriptionLevel description_level) const
-{
-    if (m_opaque_sp)
-    {
-        description.ref();
-        m_opaque_sp->Dump (description.get(), description_level);
-    }
-    else
-        description.Printf ("No value");
-    
-    return true;
-}
-
 
 uint32_t
 SBTarget::FindFunctions (const char *name, 
@@ -868,7 +1181,7 @@ SBTarget::FindFunctions (const char *name,
 {
     if (!append)
         sc_list.Clear();
-    if (m_opaque_sp)
+    if (name && m_opaque_sp)
     {
         const bool symbols_ok = true;
         return m_opaque_sp->GetImages().FindFunctions (ConstString(name), 
@@ -883,7 +1196,7 @@ SBTarget::FindFunctions (const char *name,
 lldb::SBType
 SBTarget::FindFirstType (const char* type)
 {
-    if (m_opaque_sp)
+    if (type && m_opaque_sp)
     {
         size_t count = m_opaque_sp->GetImages().GetSize();
         for (size_t idx = 0; idx < count; idx++)
@@ -903,7 +1216,7 @@ SBTarget::FindTypes (const char* type)
     
     SBTypeList retval;
     
-    if (m_opaque_sp)
+    if (type && m_opaque_sp)
     {
         ModuleList& images = m_opaque_sp->GetImages();
         ConstString name_const(type);
@@ -931,7 +1244,7 @@ SBTarget::FindGlobalVariables (const char *name, uint32_t max_matches)
 {
     SBValueList sb_value_list;
     
-    if (m_opaque_sp)
+    if (name && m_opaque_sp)
     {
         VariableList variable_list;
         const bool append = true;
@@ -957,4 +1270,183 @@ SBTarget::FindGlobalVariables (const char *name, uint32_t max_matches)
 
     return sb_value_list;
 }
+
+SBSourceManager
+SBTarget::GetSourceManager()
+{
+    SBSourceManager source_manager (*this);
+    return source_manager;
+}
+
+lldb::SBInstructionList
+SBTarget::GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size)
+{
+    SBInstructionList sb_instructions;
+    
+    if (m_opaque_sp)
+    {
+        Address addr;
+        
+        if (base_addr.get())
+            addr = *base_addr.get();
+        
+        sb_instructions.SetDisassembler (Disassembler::DisassembleBytes (m_opaque_sp->GetArchitecture(),
+                                                                         NULL,
+                                                                         addr,
+                                                                         buf,
+                                                                         size));
+    }
+
+    return sb_instructions;
+}
+
+lldb::SBInstructionList
+SBTarget::GetInstructions (lldb::addr_t base_addr, const void *buf, size_t size)
+{
+    return GetInstructions (ResolveLoadAddress(base_addr), buf, size);
+}
+
+SBError
+SBTarget::SetSectionLoadAddress (lldb::SBSection section,
+                                 lldb::addr_t section_base_addr)
+{
+    SBError sb_error;
+    
+    if (IsValid())
+    {
+        if (!section.IsValid())
+        {
+            sb_error.SetErrorStringWithFormat ("invalid section");
+        }
+        else
+        {
+            m_opaque_sp->GetSectionLoadList().SetSectionLoadAddress (section.GetSection(), section_base_addr);
+        }
+    }
+    else
+    {
+        sb_error.SetErrorStringWithFormat ("invalid target");
+    }
+    return sb_error;
+}
+
+SBError
+SBTarget::ClearSectionLoadAddress (lldb::SBSection section)
+{
+    SBError sb_error;
+    
+    if (IsValid())
+    {
+        if (!section.IsValid())
+        {
+            sb_error.SetErrorStringWithFormat ("invalid section");
+        }
+        else
+        {
+            m_opaque_sp->GetSectionLoadList().SetSectionUnloaded (section.GetSection());
+        }
+    }
+    else
+    {
+        sb_error.SetErrorStringWithFormat ("invalid target");
+    }
+    return sb_error;
+}
+
+SBError
+SBTarget::SetModuleLoadAddress (lldb::SBModule module, int64_t slide_offset)
+{
+    SBError sb_error;
+    
+    char path[PATH_MAX];
+    if (IsValid())
+    {
+        if (!module.IsValid())
+        {
+            sb_error.SetErrorStringWithFormat ("invalid module");
+        }
+        else
+        {
+            ObjectFile *objfile = module->GetObjectFile();
+            if (objfile)
+            {
+                SectionList *section_list = objfile->GetSectionList();
+                if (section_list)
+                {
+                    const size_t num_sections = section_list->GetSize();
+                    for (size_t sect_idx = 0; sect_idx < num_sections; ++sect_idx)
+                    {
+                        SectionSP section_sp (section_list->GetSectionAtIndex(sect_idx));
+                        if (section_sp)
+                            m_opaque_sp->GetSectionLoadList().SetSectionLoadAddress (section_sp.get(), section_sp->GetFileAddress() + slide_offset);
+                    }
+                }
+                else
+                {
+                    module->GetFileSpec().GetPath (path, sizeof(path));
+                    sb_error.SetErrorStringWithFormat ("no sections in object file '%s'", path);
+                }
+            }
+            else
+            {
+                module->GetFileSpec().GetPath (path, sizeof(path));
+                sb_error.SetErrorStringWithFormat ("no object file for module '%s'", path);
+            }
+        }
+    }
+    else
+    {
+        sb_error.SetErrorStringWithFormat ("invalid target");
+    }
+    return sb_error;
+}
+
+SBError
+SBTarget::ClearModuleLoadAddress (lldb::SBModule module)
+{
+    SBError sb_error;
+    
+    char path[PATH_MAX];
+    if (IsValid())
+    {
+        if (!module.IsValid())
+        {
+            sb_error.SetErrorStringWithFormat ("invalid module");
+        }
+        else
+        {
+            ObjectFile *objfile = module->GetObjectFile();
+            if (objfile)
+            {
+                SectionList *section_list = objfile->GetSectionList();
+                if (section_list)
+                {
+                    const size_t num_sections = section_list->GetSize();
+                    for (size_t sect_idx = 0; sect_idx < num_sections; ++sect_idx)
+                    {
+                        SectionSP section_sp (section_list->GetSectionAtIndex(sect_idx));
+                        if (section_sp)
+                            m_opaque_sp->GetSectionLoadList().SetSectionUnloaded (section_sp.get());
+                    }
+                }
+                else
+                {
+                    module->GetFileSpec().GetPath (path, sizeof(path));
+                    sb_error.SetErrorStringWithFormat ("no sections in object file '%s'", path);
+                }
+            }
+            else
+            {
+                module->GetFileSpec().GetPath (path, sizeof(path));
+                sb_error.SetErrorStringWithFormat ("no object file for module '%s'", path);
+            }
+        }
+    }
+    else
+    {
+        sb_error.SetErrorStringWithFormat ("invalid target");
+    }
+    return sb_error;
+}
+
 

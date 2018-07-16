@@ -147,12 +147,12 @@ RNBRemote::CreatePacketTable  ()
 //  t.push_back (Packet (write_data_to_memory,          &RNBRemote::HandlePacket_X,             NULL, "X", "Write data to memory"));
 //  t.push_back (Packet (insert_hardware_bp,            &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "Z1", "Insert hardware breakpoint"));
 //  t.push_back (Packet (remove_hardware_bp,            &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "z1", "Remove hardware breakpoint"));
-//  t.push_back (Packet (insert_write_watch_bp,         &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "Z2", "Insert write watchpoint"));
-//  t.push_back (Packet (remove_write_watch_bp,         &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "z2", "Remove write watchpoint"));
-//  t.push_back (Packet (insert_read_watch_bp,          &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "Z3", "Insert read watchpoint"));
-//  t.push_back (Packet (remove_read_watch_bp,          &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "z3", "Remove read watchpoint"));
-//  t.push_back (Packet (insert_access_watch_bp,        &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "Z4", "Insert access watchpoint"));
-//  t.push_back (Packet (remove_access_watch_bp,        &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "z4", "Remove access watchpoint"));
+    t.push_back (Packet (insert_write_watch_bp,         &RNBRemote::HandlePacket_z,             NULL, "Z2", "Insert write watchpoint"));
+    t.push_back (Packet (remove_write_watch_bp,         &RNBRemote::HandlePacket_z,             NULL, "z2", "Remove write watchpoint"));
+    t.push_back (Packet (insert_read_watch_bp,          &RNBRemote::HandlePacket_z,             NULL, "Z3", "Insert read watchpoint"));
+    t.push_back (Packet (remove_read_watch_bp,          &RNBRemote::HandlePacket_z,             NULL, "z3", "Remove read watchpoint"));
+    t.push_back (Packet (insert_access_watch_bp,        &RNBRemote::HandlePacket_z,             NULL, "Z4", "Insert access watchpoint"));
+    t.push_back (Packet (remove_access_watch_bp,        &RNBRemote::HandlePacket_z,             NULL, "z4", "Remove access watchpoint"));
     t.push_back (Packet (query_current_thread_id,       &RNBRemote::HandlePacket_qC,            NULL, "qC", "Query current thread ID"));
     t.push_back (Packet (query_get_pid,                 &RNBRemote::HandlePacket_qGetPid,       NULL, "qGetPid", "Query process id"));
 //  t.push_back (Packet (query_memory_crc,              &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "qCRC:", "Compute CRC of memory region"));
@@ -186,6 +186,8 @@ RNBRemote::CreatePacketTable  ()
 //  t.push_back (Packet (pass_signals_to_inferior,      &RNBRemote::HandlePacket_UNIMPLEMENTED, NULL, "QPassSignals:", "Specify which signals are passed to the inferior"));
     t.push_back (Packet (allocate_memory,               &RNBRemote::HandlePacket_AllocateMemory, NULL, "_M", "Allocate memory in the inferior process."));
     t.push_back (Packet (deallocate_memory,             &RNBRemote::HandlePacket_DeallocateMemory, NULL, "_m", "Deallocate memory in the inferior process."));
+    t.push_back (Packet (memory_region_info,            &RNBRemote::HandlePacket_MemoryRegionInfo, NULL, "qMemoryRegionInfo", "Return size and attributes of a memory region that contains the given address"));
+
 }
 
 
@@ -2480,7 +2482,8 @@ RNBRemote::HandlePacket_G (const char *p)
             std::vector<uint8_t> reg_ctx;
             reg_ctx.resize(reg_ctx_size);
             
-            if (packet.GetHexBytes (&reg_ctx[0], reg_ctx.size(), 0xcc) == reg_ctx.size())
+            const nub_size_t bytes_extracted = packet.GetHexBytes (&reg_ctx[0], reg_ctx.size(), 0xcc);
+            if (bytes_extracted == reg_ctx.size())
             {
                 // Now write the register context
                 reg_ctx_size = DNBThreadSetRegisterContext(pid, tid, reg_ctx.data(), reg_ctx.size());
@@ -2489,7 +2492,14 @@ RNBRemote::HandlePacket_G (const char *p)
                 else 
                     return SendPacket ("E55");
             }
+            else
+            {
+                DNBLogError("RNBRemote::HandlePacket_G(%s): extracted %zu of %zu bytes, size mismatch\n", p, bytes_extracted, reg_ctx_size);
+                return SendPacket ("E64");
+            }
         }
+        else
+            return SendPacket ("E65");
     }
 
 
@@ -2679,8 +2689,6 @@ RNBRemote::HandlePacket_v (const char *p)
                 case 's':
                     // Step
                     thread_action.state = eStateStepping;
-                    break;
-
                     break;
 
                 default:
@@ -2887,7 +2895,7 @@ RNBRemote::HandlePacket_z (const char *p)
                     // We do NOT already have a breakpoint at this address, So lets
                     // create one.
                     nub_break_t break_id = DNBBreakpointSet (pid, addr, byte_size, hardware);
-                    if (break_id != INVALID_NUB_BREAK_ID)
+                    if (NUB_BREAK_ID_IS_VALID(break_id))
                     {
                         // We successfully created a breakpoint, now lets full out
                         // a ref count structure with the breakID and add it to our
@@ -2929,10 +2937,10 @@ RNBRemote::HandlePacket_z (const char *p)
                 }
                 else
                 {
-                    // We do NOT already have a breakpoint at this address, So lets
+                    // We do NOT already have a watchpoint at this address, So lets
                     // create one.
                     nub_watch_t watch_id = DNBWatchpointSet (pid, addr, byte_size, watch_flags, hardware);
-                    if (watch_id != INVALID_NUB_BREAK_ID)
+                    if (NUB_WATCH_ID_IS_VALID(watch_id))
                     {
                         // We successfully created a watchpoint, now lets full out
                         // a ref count structure with the watch_id and add it to our
@@ -3231,6 +3239,74 @@ RNBRemote::HandlePacket_c (const char *p)
     // Don't send an "OK" packet; response is the stopped/exited message.
     return rnb_success;
 }
+
+rnb_err_t
+RNBRemote::HandlePacket_MemoryRegionInfo (const char *p)
+{
+    /* This packet will find memory attributes (e.g. readable, writable, executable, stack, jitted code)
+       for the memory region containing a given address and return that information.
+       
+       Users of this packet must be prepared for three results:  
+
+           Region information is returned
+           Region information is unavailable for this address because the address is in unmapped memory
+           Region lookup cannot be performed on this platform or process is not yet launched
+           This packet isn't implemented 
+
+       Examples of use:
+          qMemoryRegionInfo:3a55140
+          start:3a50000,size:100000,permissions:rwx
+
+          qMemoryRegionInfo:0
+          error:address in unmapped region
+
+          qMemoryRegionInfo:3a551140   (on a different platform)
+          error:region lookup cannot be performed
+
+          qMemoryRegionInfo
+          OK                   // this packet is implemented by the remote nub
+    */
+
+    p += sizeof ("qMemoryRegionInfo") - 1;
+    if (*p == '\0')
+       return SendPacket ("OK");
+    if (*p++ != ':')
+       return SendPacket ("E67");
+    if (*p == '0' && (*(p + 1) == 'x' || *(p + 1) == 'X'))
+       p += 2;
+
+    errno = 0;
+    uint64_t address = strtoul (p, NULL, 16);
+    if (errno != 0 && address == 0)
+    {
+        return HandlePacket_ILLFORMED (__FILE__, __LINE__, p, "Invalid address in qMemoryRegionInfo packet");
+    }
+
+    DNBRegionInfo region_info = { 0, 0, 0 };
+    DNBProcessMemoryRegionInfo (m_ctx.ProcessID(), address, &region_info);
+    std::ostringstream ostrm;
+
+        // start:3a50000,size:100000,permissions:rwx
+    ostrm << "start:" << std::hex << region_info.addr << ';';
+
+    if (region_info.size > 0)
+        ostrm << "size:"  << std::hex << region_info.size << ';';
+        
+    if (region_info.permissions)
+    {
+        ostrm << "permissions:";
+        
+        if (region_info.permissions & eMemoryPermissionsReadable)
+            ostrm << 'r';
+        if (region_info.permissions & eMemoryPermissionsWritable)
+            ostrm << 'w';
+        if (region_info.permissions & eMemoryPermissionsExecutable)
+            ostrm << 'x';
+        ostrm << ';';
+    }
+    return SendPacket (ostrm.str());
+}
+
 
 /* `C sig [;addr]'
  Resume with signal sig, optionally at address addr.  */

@@ -3,7 +3,7 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
 <link href="style.css" rel="stylesheet" type="text/css" />
-<title>LLDB Homepage</title>
+<title>LLDB Stack and Frame Formats</title>
 </head>
 
 <body>
@@ -36,8 +36,8 @@
                    </code></b></p>
 
 				   <p>The two format strings can currently be set using the <b>settings set</b> command:</p>
-				   <p><code><b>(lldb)</b> settings set frame-prompt STRING
-				   <br><b>(lldb)</b> settings set thread-prompt STRING
+				   <p><code><b>(lldb)</b> settings set frame-format STRING
+				   <br><b>(lldb)</b> settings set thread-format STRING
 				   </p></code>
 
                    </div>
@@ -79,7 +79,8 @@
                     <tr valign=top><td><b>frame.fp</b></td><td>The generic frame register for the frame pointer.</td></tr>
                     <tr valign=top><td><b>frame.flags</b></td><td>The generic frame register for the flags register.</td></tr>
                     <tr valign=top><td><b>frame.reg.NAME</b></td><td>Access to any platform specific register by name (replace <b>NAME</b> with the name of the desired register).</td></tr>
-                    <tr valign=top><td><b>function.name</b></td><td>The name of the current function or symbol</td></tr>
+                    <tr valign=top><td><b>function.name</b></td><td>The name of the current function or symbol.</td></tr>
+                    <tr valign=top><td><b>function.name-with-args</b></td><td>The name of the current function with arguments and values or the symbol name.</td></tr>
                     <tr valign=top><td><b>function.pc-offset</b></td><td>The program counter offset within the current function or symbol</td></tr>
                     <tr valign=top><td><b>line.file.basename</b></td><td>The line table entry basename to the file for the current line entry in the current frame.</td></tr>
                     <tr valign=top><td><b>line.file.fullpath</b></td><td>The line table entry fullpath to the file for the current line entry in the current frame.</td></tr>
@@ -97,6 +98,7 @@
                     <tr valign=top><td><b>thread.name</b></td><td>The name of the thread if the target OS supports naming threads</td></tr>
                     <tr valign=top><td><b>thread.queue</b></td><td>The queue name of the thread if the target OS supports dispatch queues</td></tr>
                     <tr valign=top><td><b>thread.stop-reason</b></td><td>A textual reason each thread stopped</td></tr>
+                    <tr valign=top><td><b>thread.return-value</b></td><td>The return value of the latest step operation (currently only for step-out.)</td></tr>
                     <tr valign=top><td><b>target.arch</b></td><td>The architecture of the current target</td></tr>
                     </table>
                     

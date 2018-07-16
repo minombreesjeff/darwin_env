@@ -13,18 +13,24 @@
 #include <bitset>
 #include <string>
 
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/MathExtras.h"
 
+#include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/DataBuffer.h"
+#include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/UUID.h"
 #include "lldb/Core/dwarf.h"
 #include "lldb/Host/Endian.h"
+#include "lldb/Target/ExecutionContext.h"
+#include "lldb/Target/ExecutionContextScope.h"
+#include "lldb/Target/Target.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -178,15 +184,6 @@ DataExtractor::Clear ()
 }
 
 //------------------------------------------------------------------
-// Returns the total number of bytes that this object refers to
-//------------------------------------------------------------------
-size_t
-DataExtractor::GetByteSize () const
-{
-    return m_end - m_start;
-}
-
-//------------------------------------------------------------------
 // If this object contains shared data, this function returns the
 // offset into that shared data. Else zero is returned.
 //------------------------------------------------------------------
@@ -207,16 +204,6 @@ DataExtractor::GetSharedDataOffset () const
         }
     }
     return 0;
-}
-
-//------------------------------------------------------------------
-// Returns true if OFFSET is a valid offset into the data in this
-// object.
-//------------------------------------------------------------------
-bool
-DataExtractor::ValidOffset (uint32_t offset) const
-{
-    return offset < GetByteSize();
 }
 
 //------------------------------------------------------------------
@@ -243,65 +230,6 @@ DataExtractor::ValidOffsetForDataOfSize (uint32_t offset, uint32_t length) const
     // length must be greater than zero for this to be a
     // valid expression, and we have already checked for this.
     return ((offset + length) <= size);
-}
-
-//------------------------------------------------------------------
-// Returns a pointer to the first byte contained in this object's
-// data, or NULL of there is no data in this object.
-//------------------------------------------------------------------
-const uint8_t *
-DataExtractor::GetDataStart () const
-{
-    return m_start;
-}
-//------------------------------------------------------------------
-// Returns a pointer to the byte past the last byte contained in
-// this object's data, or NULL of there is no data in this object.
-//------------------------------------------------------------------
-const uint8_t *
-DataExtractor::GetDataEnd () const
-{
-    return m_end;
-}
-
-//------------------------------------------------------------------
-// Returns true if this object will endian swap values as it
-// extracts data.
-//------------------------------------------------------------------
-ByteOrder
-DataExtractor::GetByteOrder () const
-{
-    return m_byte_order;
-}
-//------------------------------------------------------------------
-// Set whether this object will endian swap values as it extracts
-// data.
-//------------------------------------------------------------------
-void
-DataExtractor::SetByteOrder (ByteOrder endian)
-{
-    m_byte_order = endian;
-}
-
-
-//------------------------------------------------------------------
-// Return the size in bytes of any address values this object will
-// extract
-//------------------------------------------------------------------
-uint8_t
-DataExtractor::GetAddressByteSize () const
-{
-    return m_addr_size;
-}
-
-//------------------------------------------------------------------
-// Set the size in bytes that will be used when extracting any
-// address values from data contained in this object.
-//------------------------------------------------------------------
-void
-DataExtractor::SetAddressByteSize (uint8_t addr_size)
-{
-    m_addr_size = addr_size;
 }
 
 //----------------------------------------------------------------------
@@ -731,6 +659,22 @@ DataExtractor::GetMaxU64 (uint32_t *offset_ptr, uint32_t size) const
     return 0;
 }
 
+uint64_t
+DataExtractor::GetMaxU64_unchecked (uint32_t *offset_ptr, uint32_t size) const
+{
+    switch (size)
+    {
+        case 1: return GetU8_unchecked  (offset_ptr); break;
+        case 2: return GetU16_unchecked (offset_ptr); break;
+        case 4: return GetU32_unchecked (offset_ptr); break;
+        case 8: return GetU64_unchecked (offset_ptr); break;
+        default:
+            assert(!"GetMax64 unhandled case!");
+            break;
+    }
+    return 0;
+}
+
 int64_t
 DataExtractor::GetMaxS64 (uint32_t *offset_ptr, uint32_t size) const
 {
@@ -873,6 +817,12 @@ uint64_t
 DataExtractor::GetAddress (uint32_t *offset_ptr) const
 {
     return GetMaxU64 (offset_ptr, m_addr_size);
+}
+
+uint64_t
+DataExtractor::GetAddress_unchecked (uint32_t *offset_ptr) const
+{
+    return GetMaxU64_unchecked (offset_ptr, m_addr_size);
 }
 
 //------------------------------------------------------------------
@@ -1219,27 +1169,30 @@ DataExtractor::PeekCStr (uint32_t offset) const
 uint64_t
 DataExtractor::GetULEB128 (uint32_t *offset_ptr) const
 {
-    uint64_t result = 0;
-    if ( m_start < m_end )
+    const uint8_t *src = m_start + *offset_ptr;
+    const uint8_t *end = m_end;
+    
+    if (src < end)
     {
-        int shift = 0;
-        const uint8_t *src = m_start + *offset_ptr;
-        uint8_t byte;
-        int bytecount = 0;
-
-        while (src < m_end)
+        uint64_t result = *src++;
+        if (result >= 0x80)
         {
-            bytecount++;
-            byte = *src++;
-            result |= (byte & 0x7f) << shift;
-            shift += 7;
-            if ((byte & 0x80) == 0)
-                break;
+            result &= 0x7f;
+            int shift = 7;
+            while (src < end)
+            {
+                uint8_t byte = *src++;
+                result |= (byte & 0x7f) << shift;
+                if ((byte & 0x80) == 0)
+                    break;
+                shift += 7;
+            }
         }
-
-        *offset_ptr += bytecount;
+        *offset_ptr = (uint32_t)(src - m_start);
+        return result;
     }
-    return result;
+    
+    return 0;
 }
 
 //----------------------------------------------------------------------
@@ -1377,25 +1330,19 @@ DumpAPInt (Stream *s, const DataExtractor &data, uint32_t offset, uint32_t byte_
 }
 
 uint32_t
-DataExtractor::Dump
-(
-    Stream *s,
-    uint32_t start_offset,
-    lldb::Format item_format,
-    uint32_t item_byte_size,
-    uint32_t item_count,
-    uint32_t num_per_line,
-    uint64_t base_addr,
-    uint32_t item_bit_size,     // If zero, this is not a bitfield value, if non-zero, the value is a bitfield
-    uint32_t item_bit_offset    // If "item_bit_size" is non-zero, this is the shift amount to apply to a bitfield
-) const
+DataExtractor::Dump (Stream *s,
+                     uint32_t start_offset,
+                     lldb::Format item_format,
+                     uint32_t item_byte_size,
+                     uint32_t item_count,
+                     uint32_t num_per_line,
+                     uint64_t base_addr,
+                     uint32_t item_bit_size,     // If zero, this is not a bitfield value, if non-zero, the value is a bitfield
+                     uint32_t item_bit_offset,    // If "item_bit_size" is non-zero, this is the shift amount to apply to a bitfield
+                     ExecutionContextScope *exe_scope) const
 {
     if (s == NULL)
         return start_offset;
-
-    uint32_t offset;
-    uint32_t count;
-    uint32_t line_start_offset;
 
     if (item_format == eFormatPointer)
     {
@@ -1403,10 +1350,50 @@ DataExtractor::Dump
             item_byte_size = s->GetAddressByteSize();
     }
     
-    if (item_format == eFormatOSType && item_byte_size > 8)
+    uint32_t offset = start_offset;
+
+    if (item_format == eFormatInstruction)
+    {
+        Target *target = NULL;
+        if (exe_scope)
+            target = exe_scope->CalculateTarget();
+        if (target)
+        {
+            DisassemblerSP disassembler_sp (Disassembler::FindPlugin(target->GetArchitecture(), NULL));
+            if (disassembler_sp)
+            {
+                lldb::addr_t addr = base_addr + start_offset;
+                lldb_private::Address so_addr;
+                if (!target->GetSectionLoadList().ResolveLoadAddress(addr, so_addr))
+                {
+                    so_addr.SetOffset(addr);
+                    so_addr.SetSection(NULL);
+                }
+
+                size_t bytes_consumed = disassembler_sp->DecodeInstructions (so_addr, *this, start_offset, item_count, false);
+                
+                if (bytes_consumed)
+                {
+                    offset += bytes_consumed;
+                    const bool show_address = base_addr != LLDB_INVALID_ADDRESS;
+                    const bool show_bytes = true;
+                    ExecutionContext exe_ctx;
+                    exe_scope->CalculateExecutionContext(exe_ctx);
+                    disassembler_sp->GetInstructionList().Dump (s,  show_address, show_bytes, &exe_ctx);
+                }
+            }
+        }
+        else
+            s->Printf ("invalid target");
+
+        return offset;
+    }
+
+    if ((item_format == eFormatOSType || item_format == eFormatAddressInfo) && item_byte_size > 8)
         item_format = eFormatHex;
 
-    for (offset = start_offset, line_start_offset = start_offset, count = 0; ValidOffset(offset) && count < item_count; ++count)
+    uint32_t line_start_offset = start_offset;
+    for (uint32_t count = 0; ValidOffset(offset) && count < item_count; ++count)
     {
         if ((count % num_per_line) == 0)
         {
@@ -1484,27 +1471,27 @@ DataExtractor::Dump
                 if (item_count == 1 && item_format == eFormatChar)
                     s->PutChar('\'');
 
-                uint32_t ch = GetMaxU64(&offset, item_byte_size);
+                const uint64_t ch = GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset);
                 if (isprint(ch))
-                    s->Printf ("%c", ch);
+                    s->Printf ("%c", (char)ch);
                 else if (item_format != eFormatCharPrintable)
                 {
                     switch (ch)
                     {
-                    case '\e': s->Printf ("\\e", (uint8_t)ch); break;
-                    case '\a': s->Printf ("\\a", ch); break;
-                    case '\b': s->Printf ("\\b", ch); break;
-                    case '\f': s->Printf ("\\f", ch); break;
-                    case '\n': s->Printf ("\\n", ch); break;
-                    case '\r': s->Printf ("\\r", ch); break;
-                    case '\t': s->Printf ("\\t", ch); break;
-                    case '\v': s->Printf ("\\v", ch); break;
-                    case '\0': s->Printf ("\\0", ch); break;
+                    case '\033': s->Printf ("\\e"); break;
+                    case '\a': s->Printf ("\\a"); break;
+                    case '\b': s->Printf ("\\b"); break;
+                    case '\f': s->Printf ("\\f"); break;
+                    case '\n': s->Printf ("\\n"); break;
+                    case '\r': s->Printf ("\\r"); break;
+                    case '\t': s->Printf ("\\t"); break;
+                    case '\v': s->Printf ("\\v"); break;
+                    case '\0': s->Printf ("\\0"); break;
                     default:   
                         if (item_byte_size == 1)
-                            s->Printf ("\\x%2.2x", ch); 
+                            s->Printf ("\\x%2.2x", (uint8_t)ch); 
                         else
-                            s->Printf ("\\u%x", ch); 
+                            s->Printf ("%llu", ch); 
                         break;
                     }
                 }
@@ -1558,26 +1545,22 @@ DataExtractor::Dump
                 s->PutChar('\'');
                 for (i=0; i<item_byte_size; ++i)
                 {
-                    uint8_t ch;
-                    if (i > 0)
-                        ch = (uint8_t)(uval64 >> ((item_byte_size - i - 1) * 8));
-                    else
-                        ch = (uint8_t)uval64;
+                    uint8_t ch = (uint8_t)(uval64 >> ((item_byte_size - i - 1) * 8));
                     if (isprint(ch))
                         s->Printf ("%c", ch);
                     else
                     {
                         switch (ch)
                         {
-                        case '\e': s->Printf ("\\e", (uint8_t)ch); break;
-                        case '\a': s->Printf ("\\a", ch); break;
-                        case '\b': s->Printf ("\\b", ch); break;
-                        case '\f': s->Printf ("\\f", ch); break;
-                        case '\n': s->Printf ("\\n", ch); break;
-                        case '\r': s->Printf ("\\r", ch); break;
-                        case '\t': s->Printf ("\\t", ch); break;
-                        case '\v': s->Printf ("\\v", ch); break;
-                        case '\0': s->Printf ("\\0", ch); break;
+                        case '\033': s->Printf ("\\e"); break;
+                        case '\a': s->Printf ("\\a"); break;
+                        case '\b': s->Printf ("\\b"); break;
+                        case '\f': s->Printf ("\\f"); break;
+                        case '\n': s->Printf ("\\n"); break;
+                        case '\r': s->Printf ("\\r"); break;
+                        case '\t': s->Printf ("\\t"); break;
+                        case '\v': s->Printf ("\\v"); break;
+                        case '\0': s->Printf ("\\0"); break;
                         default:   s->Printf ("\\x%2.2x", ch); break;
                         }
                     }
@@ -1594,12 +1577,42 @@ DataExtractor::Dump
         case eFormatCString:
             {
                 const char *cstr = GetCStr(&offset);
-                if (cstr)
-                    s->Printf("\"%s\"", cstr);
+                
+                if (!cstr)
+                {
+                    s->Printf("NULL");
+                    offset = UINT32_MAX;
+                }
                 else
                 {
-                    s->Printf("NULL", cstr);
-                    offset = UINT32_MAX;
+                    s->PutChar('\"');
+                    
+                    while (const char c = *cstr)
+                    {                    
+                        if (isprint(c))
+                        {
+                            s->PutChar(c);
+                        }
+                        else
+                        {
+                            switch (c)
+                            {
+                            case '\033': s->Printf ("\\e"); break;
+                            case '\a': s->Printf ("\\a"); break;
+                            case '\b': s->Printf ("\\b"); break;
+                            case '\f': s->Printf ("\\f"); break;
+                            case '\n': s->Printf ("\\n"); break;
+                            case '\r': s->Printf ("\\r"); break;
+                            case '\t': s->Printf ("\\t"); break;
+                            case '\v': s->Printf ("\\v"); break;
+                            default:   s->Printf ("\\x%2.2x", c); break;
+                            }
+                        }
+                        
+                        ++cstr;
+                    }
+                    
+                    s->PutChar('\"');
                 }
             }
             break;
@@ -1703,6 +1716,51 @@ DataExtractor::Dump
 
         case eFormatUnicode32:
             s->Printf("0x%8.8x", GetU32 (&offset));
+            break;
+
+        case eFormatAddressInfo:
+            {
+                addr_t addr = GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset);
+                s->Printf("0x%*.*llx", 2 * item_byte_size, 2 * item_byte_size, addr);
+                if (exe_scope)
+                {
+                    Target *target = exe_scope->CalculateTarget();
+                    lldb_private::Address so_addr;
+                    if (target && target->GetSectionLoadList().ResolveLoadAddress(addr, so_addr))
+                    {
+                        s->PutChar(' ');
+                        so_addr.Dump (s, 
+                                      exe_scope, 
+                                      Address::DumpStyleResolvedDescription, 
+                                      Address::DumpStyleModuleWithFileAddress);
+                        break;
+                    }
+                }
+            }
+            break;
+
+        case eFormatHexFloat:
+            if (sizeof(float) == item_byte_size)
+            {
+                char float_cstr[256];
+                llvm::APFloat ap_float (GetFloat (&offset));
+                ap_float.convertToHexString (float_cstr, 0, false, llvm::APFloat::rmNearestTiesToEven);
+                s->Printf ("%s", float_cstr);
+                break;
+            }
+            else if (sizeof(double) == item_byte_size)
+            {
+                char float_cstr[256];
+                llvm::APFloat ap_float (GetDouble (&offset));
+                ap_float.convertToHexString (float_cstr, 0, false, llvm::APFloat::rmNearestTiesToEven);
+                s->Printf ("%s", float_cstr);
+                break;
+            }
+            else if (sizeof(long double) * 2 == item_byte_size)
+            {
+                s->Printf ("unsupported hex float byte size %u", item_byte_size);
+                return start_offset;
+            }
             break;
 
 // please keep the single-item formats below in sync with FormatManager::GetSingleItemFormat
@@ -1900,4 +1958,80 @@ DataExtractor::DumpHexBytes (Stream *s,
                bytes_per_line,  // Num bytes per line
                base_addr,       // Base address
                0, 0);           // Bitfield info
+}
+
+size_t
+DataExtractor::Copy (DataExtractor &dest_data) const
+{
+    if (m_data_sp.get())
+    {
+        // we can pass along the SP to the data
+        dest_data.SetData(m_data_sp);
+    }
+    else
+    {
+        const uint8_t *base_ptr = m_start;
+        size_t data_size = GetByteSize();
+        dest_data.SetData(DataBufferSP(new DataBufferHeap(base_ptr, data_size)));
+    }
+    return GetByteSize();
+}
+
+bool
+DataExtractor::Append(DataExtractor& rhs)
+{
+    if (rhs.GetByteOrder() != GetByteOrder())
+        return false;
+    
+    if (rhs.GetByteSize() == 0)
+        return true;
+    
+    if (GetByteSize() == 0)
+        return (rhs.Copy(*this) > 0);
+    
+    size_t bytes = GetByteSize() + rhs.GetByteSize();
+
+    DataBufferHeap *buffer_heap_ptr = NULL;
+    DataBufferSP buffer_sp(buffer_heap_ptr = new DataBufferHeap(bytes, 0));
+    
+    if (buffer_sp.get() == NULL || buffer_heap_ptr == NULL)
+        return false;
+    
+    uint8_t* bytes_ptr = buffer_heap_ptr->GetBytes();
+    
+    memcpy(bytes_ptr, GetDataStart(), GetByteSize());
+    memcpy(bytes_ptr + GetByteSize(), rhs.GetDataStart(), rhs.GetByteSize());
+    
+    SetData(buffer_sp);
+    
+    return true;
+}
+
+bool
+DataExtractor::Append(void* buf, uint32_t length)
+{
+    if (buf == NULL)
+        return false;
+    
+    if (length == 0)
+        return true;
+    
+    size_t bytes = GetByteSize() + length;
+    
+    DataBufferHeap *buffer_heap_ptr = NULL;
+    DataBufferSP buffer_sp(buffer_heap_ptr = new DataBufferHeap(bytes, 0));
+    
+    if (buffer_sp.get() == NULL || buffer_heap_ptr == NULL)
+        return false;
+    
+    uint8_t* bytes_ptr = buffer_heap_ptr->GetBytes();
+    
+    if (GetByteSize() > 0)
+        memcpy(bytes_ptr, GetDataStart(), GetByteSize());
+
+    memcpy(bytes_ptr + GetByteSize(), buf, length);
+    
+    SetData(buffer_sp);
+    
+    return true;
 }

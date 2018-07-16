@@ -9,6 +9,7 @@
 
 #include "lldb/Host/Host.h"
 
+#include <asl.h>
 #include <crt_externs.h>
 #include <execinfo.h>
 #include <grp.h>
@@ -47,16 +48,29 @@
 
 #include <objc/objc-auto.h>
 
+#if defined(__arm__)
+#include <UIKit/UIKit.h>
+#else
 #include <ApplicationServices/ApplicationServices.h>
 #include <Carbon/Carbon.h>
+#endif
 #include <Foundation/Foundation.h>
 
 #ifndef _POSIX_SPAWN_DISABLE_ASLR
 #define _POSIX_SPAWN_DISABLE_ASLR       0x0100
 #endif
 
+extern "C" 
+{
+    int __pthread_chdir(const char *path);
+    int __pthread_fchdir (int fildes);
+}
+
 using namespace lldb;
 using namespace lldb_private;
+
+static pthread_once_t g_thread_create_once = PTHREAD_ONCE_INIT;
+static pthread_key_t g_thread_create_key = 0;
 
 class MacOSXDarwinThread
 {
@@ -88,12 +102,17 @@ public:
     ~MacOSXDarwinThread()
     {
         if (m_pool)
+        {
             [m_pool release];
+            m_pool = nil;
+        }
     }
 
     static void PThreadDestructor (void *v)
     {
-        delete (MacOSXDarwinThread*)v;
+        if (v)
+            delete static_cast<MacOSXDarwinThread*>(v);
+        ::pthread_setspecific (g_thread_create_key, NULL);
     }
 
 protected:
@@ -101,9 +120,6 @@ protected:
 private:
     DISALLOW_COPY_AND_ASSIGN (MacOSXDarwinThread);
 };
-
-static pthread_once_t g_thread_create_once = PTHREAD_ONCE_INIT;
-static pthread_key_t g_thread_create_key = 0;
 
 static void
 InitThreadCreated()
@@ -150,6 +166,9 @@ Host::ResolveExecutableInBundle (FileSpec &file)
 lldb::pid_t
 Host::LaunchApplication (const FileSpec &app_file_spec)
 {
+#if defined (__arm__)
+    return LLDB_INVALID_PROCESS_ID;
+#else
     char app_path[PATH_MAX];
     app_file_spec.GetPath(app_path, sizeof(app_path));
 
@@ -181,6 +200,7 @@ Host::LaunchApplication (const FileSpec &app_file_spec)
     ::pid_t pid = LLDB_INVALID_PROCESS_ID;
     error = ::GetProcessPID(&psn, &pid);
     return pid;
+#endif
 }
 
 
@@ -237,6 +257,7 @@ WaitForProcessToSIGSTOP (const lldb::pid_t pid, const int timeout_in_seconds)
     }
     return false;
 }
+#if !defined(__arm__)
 
 static lldb::pid_t
 LaunchInNewTerminalWithCommandFile 
@@ -422,17 +443,11 @@ tell application \"Terminal\"\n\
 	do script the_shell_script\n\
 end tell\n";
 
+
 static Error
-LaunchInNewTerminalWithAppleScript (const char *exe_path,
-                                    ProcessLaunchInfo &launch_info)
+LaunchInNewTerminalWithAppleScript (const char *exe_path, ProcessLaunchInfo &launch_info)
 {
     Error error;
-    if (exe_path == NULL || exe_path[0] == '\0')
-    {
-        error.SetErrorString ("invalid executable path");
-        return error;
-    }
-    
     char unix_socket_name[PATH_MAX] = "/tmp/XXXXXX";    
     if (::mktemp (unix_socket_name) == NULL)
     {
@@ -476,16 +491,23 @@ LaunchInNewTerminalWithAppleScript (const char *exe_path,
     
     if (launch_info.GetFlags().Test (eLaunchFlagDisableASLR))
         command.PutCString(" --disable-aslr");
-        
-    command.Printf(" -- '%s'", exe_path);
+    
+    command.PutCString(" -- ");
 
     const char **argv = launch_info.GetArguments().GetConstArgumentVector ();
     if (argv)
     {
         for (size_t i=0; argv[i] != NULL; ++i)
         {
-            command.Printf(" '%s'", argv[i]);
+            if (i==0)
+                command.Printf(" '%s'", exe_path);
+            else
+                command.Printf(" '%s'", argv[i]);
         }
+    }
+    else
+    {
+        command.Printf(" '%s'", exe_path);
     }
     command.PutCString (" ; echo Process exited with status $?");
     
@@ -552,6 +574,8 @@ LaunchInNewTerminalWithAppleScript (const char *exe_path,
     return error;
 }
 
+#endif // #if !defined(__arm__)
+
 
 // On MacOSX CrashReporter will display a string for each shared library if
 // the shared library has an exported symbol named "__crashreporter_info__".
@@ -594,12 +618,24 @@ void
 Host::SetCrashDescription (const char *cstr)
 {
     Mutex::Locker locker (GetCrashReporterMutex ());
-    __crashreporter_info__ = cstr;
+    static std::string g_crash_description;
+    if (cstr)
+    {
+        g_crash_description.assign (cstr);
+        __crashreporter_info__ = g_crash_description.c_str();
+    }
+    else
+    {
+        __crashreporter_info__ = NULL;
+    }
 }
 
 bool
 Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
 {
+#if defined(__arm__)
+    return false;
+#else
     // We attach this to an 'odoc' event to specify a particular selection
     typedef struct {
         int16_t   reserved0;  // must be zero
@@ -622,7 +658,7 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
     if (log)
         log->Printf("Sending source file: \"%s\" and line: %d to external editor.\n", file_path, line_no);
     
-    OSStatus error;	
+    long error;	
     BabelAESelInfo file_and_line_info = 
     {
         0,              // reserved0
@@ -643,7 +679,7 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
     if (error != noErr)
     {
         if (log)
-            log->Printf("Error creating AEDesc: %d.\n", error);
+            log->Printf("Error creating AEDesc: %ld.\n", error);
         return false;
     }
     
@@ -678,7 +714,7 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
             if (error != noErr)
             {
                 if (log)
-                    log->Printf("Could not find External Editor application, error: %d.\n", error);
+                    log->Printf("Could not find External Editor application, error: %ld.\n", error);
                 return false;
             }
                 
@@ -700,7 +736,7 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
     if (error != noErr)
     {
         if (log)
-            log->Printf("LSOpenURLsWithRole failed, error: %d.\n", error);
+            log->Printf("LSOpenURLsWithRole failed, error: %ld.\n", error);
 
         return false;
     }
@@ -715,7 +751,7 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
     if (error != noErr)
     {
         if (log)
-            log->Printf("GetProcessInformation failed, error: %d.\n", error);
+            log->Printf("GetProcessInformation failed, error: %ld.\n", error);
         using_xcode = false;
     }
     else
@@ -772,7 +808,7 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
         if (error != noErr)
         {
             if (log)
-                log->Printf("Failed to create AEDesc for Xcode AppleEvent: %d.\n", error);
+                log->Printf("Failed to create AEDesc for Xcode AppleEvent: %ld.\n", error);
             return false;
         }
             
@@ -790,12 +826,12 @@ Host::OpenFileInExternalEditor (const FileSpec &file_spec, uint32_t line_no)
         if (error != noErr)
         {
             if (log)
-                log->Printf("Sending AppleEvent to Xcode failed, error: %d.\n", error);
+                log->Printf("Sending AppleEvent to Xcode failed, error: %ld.\n", error);
             return false;
         }
     }
-      
     return true;
+#endif // #if !defined(__arm__)
 }
 
 
@@ -881,6 +917,19 @@ Host::GetOSVersion
 )
 {
     
+#if defined (__arm__)
+    major = UINT32_MAX;
+    minor = UINT32_MAX;
+    update = UINT32_MAX;
+
+    NSString *system_version_nstr = [[UIDevice currentDevice] systemVersion];
+    if (system_version_nstr)
+    {
+        const char *system_version_cstr = system_version_nstr.UTF8String;
+        Args::StringToVersion(system_version_cstr, major, minor, update);
+    }
+    return major != UINT32_MAX;    
+#else
     SInt32 version;
     
     OSErr err = ::Gestalt (gestaltSystemVersion, &version);
@@ -911,6 +960,7 @@ Host::GetOSVersion
     }
     
     return true;
+#endif
 }
 
 static bool
@@ -928,11 +978,11 @@ GetMacOSXProcessName (const ProcessInstanceInfoMatch *match_info_ptr,
                                                   match_info_ptr->GetNameMatchType(),
                                                   match_info_ptr->GetProcessInfo().GetName()))
         {
-            process_info.SetName (process_name);
+            process_info.GetExecutableFile().SetFile (process_name, false);
             return true;
         }
     }
-    process_info.SetName (NULL);
+    process_info.GetExecutableFile().Clear();
     return false;
 }
 
@@ -1095,6 +1145,10 @@ Host::FindProcesses (const ProcessInstanceInfoMatch &match_info, ProcessInstance
         else
             kinfo_user_matches = kinfo.kp_eproc.e_pcred.p_ruid == our_uid;
 
+        // Special case, if lldb is being run as root we can attach to anything.
+        if (our_uid == 0)
+          kinfo_user_matches = true;
+
         if (kinfo_user_matches == false         || // Make sure the user is acceptable
             kinfo.kp_proc.p_pid == our_pid      || // Skip this process
             kinfo.kp_proc.p_pid == 0            || // Skip kernel (kernel pid is zero)
@@ -1142,7 +1196,6 @@ Host::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
     process_info.Clear();
     return false;
 }
-
 
 Error
 Host::LaunchProcess (ProcessLaunchInfo &launch_info)
@@ -1206,7 +1259,14 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
     // we return in the middle of this function.
     lldb_utility::CleanUp <posix_spawnattr_t *, int> posix_spawnattr_cleanup(&attr, posix_spawnattr_destroy);
     
-    short flags = 0;
+    sigset_t no_signals;
+    sigset_t all_signals;
+    sigemptyset (&no_signals);
+    sigfillset (&all_signals);
+    ::posix_spawnattr_setsigmask(&attr, &no_signals);
+    ::posix_spawnattr_setsigdefault(&attr, &all_signals);
+
+    short flags = POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK;
     if (launch_info.GetFlags().Test (eLaunchFlagExec))
         flags |= POSIX_SPAWN_SETEXEC;           // Darwin specific posix_spawn flag
 
@@ -1216,6 +1276,11 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
     if (launch_info.GetFlags().Test (eLaunchFlagDisableASLR))
         flags |= _POSIX_SPAWN_DISABLE_ASLR;     // Darwin specific posix_spawn flag
     
+//#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+//    // Close all files exception those with file actions if this is supported.
+//    flags |= POSIX_SPAWN_CLOEXEC_DEFAULT;       
+//#endif
+
     error.SetError( ::posix_spawnattr_setflags (&attr, flags), eErrorTypePOSIX);
     if (error.Fail() || log)
         error.PutToLog(log.get(), "::posix_spawnattr_setflags ( &attr, flags=0x%8.8x )", flags);
@@ -1242,7 +1307,7 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
     }
     
 #endif
-    lldb::pid_t pid = LLDB_INVALID_PROCESS_ID;
+    ::pid_t pid = LLDB_INVALID_PROCESS_ID;
     const char *tmp_argv[2];
     char * const *argv = (char * const*)launch_info.GetArguments().GetConstArgumentVector();
     char * const *envp = (char * const*)launch_info.GetEnvironmentEntries().GetConstArgumentVector();
@@ -1257,6 +1322,13 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
     }
 
 
+    const char *working_dir = launch_info.GetWorkingDirectory();
+    if (working_dir)
+    {
+        // No more thread specific current working directory
+        __pthread_chdir (working_dir);
+    }
+    
     const size_t num_file_actions = launch_info.GetNumFileActions ();
     if (num_file_actions > 0)
     {
@@ -1320,10 +1392,26 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
                            envp);
     }
     
+    if (working_dir)
+    {
+        // No more thread specific current working directory
+        __pthread_fchdir (-1);
+    }
+
     if (pid != LLDB_INVALID_PROCESS_ID)
     {
         // If all went well, then set the process ID into the launch info
-        launch_info.SetProcessID(pid);        
+        launch_info.SetProcessID(pid);
+        
+        // Make sure we reap any processes we spawn or we will have zombies.
+        if (!launch_info.MonitorProcess())
+        {
+            const bool monitor_signals = false;
+            StartMonitoringChildProcess (Process::SetProcessExitStatus, 
+                                         NULL, 
+                                         pid, 
+                                         monitor_signals);
+        }
     }
     else
     {
@@ -1334,4 +1422,139 @@ Host::LaunchProcess (ProcessLaunchInfo &launch_info)
     return error;
 }
 
+lldb::thread_t
+Host::StartMonitoringChildProcess (Host::MonitorChildProcessCallback callback,
+                                   void *callback_baton,
+                                   lldb::pid_t pid,
+                                   bool monitor_signals)
+{
+    lldb::thread_t thread = LLDB_INVALID_HOST_THREAD;
+    unsigned long mask = DISPATCH_PROC_EXIT;
+    if (monitor_signals)
+        mask |= DISPATCH_PROC_SIGNAL;
 
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_HOST | LIBLLDB_LOG_PROCESS));
+
+
+    dispatch_source_t source = ::dispatch_source_create (DISPATCH_SOURCE_TYPE_PROC, 
+                                                         pid, 
+                                                         mask, 
+                                                         ::dispatch_get_global_queue (DISPATCH_QUEUE_PRIORITY_DEFAULT,0));
+
+    if (log)
+        log->Printf ("Host::StartMonitoringChildProcess (callback=%p, baton=%p, pid=%i, monitor_signals=%i) source = %p\n", 
+                     callback, 
+                     callback_baton, 
+                     (int)pid, 
+                     monitor_signals, 
+                     source);
+
+    if (source)
+    {
+        ::dispatch_source_set_cancel_handler (source, ^{
+            ::dispatch_release (source);
+        });
+        ::dispatch_source_set_event_handler (source, ^{
+            
+            int status= 0;
+            int wait_pid = 0;
+            bool cancel = false;
+            bool exited = false;
+            do
+            {
+                wait_pid = ::waitpid (pid, &status, 0);
+            } while (wait_pid < 0 && errno == EINTR);
+
+            if (wait_pid >= 0)
+            {
+                int signal = 0;
+                int exit_status = 0;
+                const char *status_cstr = NULL;
+                if (WIFSTOPPED(status))
+                {
+                    signal = WSTOPSIG(status);
+                    status_cstr = "STOPPED";
+                }
+                else if (WIFEXITED(status))
+                {
+                    exit_status = WEXITSTATUS(status);
+                    status_cstr = "EXITED";
+                    exited = true;
+                }
+                else if (WIFSIGNALED(status))
+                {
+                    signal = WTERMSIG(status);
+                    status_cstr = "SIGNALED";
+                    exited = true;
+                    exit_status = -1;
+                }
+                else
+                {
+                    status_cstr = "???";
+                }
+
+                if (log)
+                    log->Printf ("::waitpid (pid = %llu, &status, 0) => pid = %i, status = 0x%8.8x (%s), signal = %i, exit_status = %i",
+                                 pid,
+                                 wait_pid,
+                                 status,
+                                 status_cstr,
+                                 signal,
+                                 exit_status);
+                
+                if (callback)
+                    cancel = callback (callback_baton, pid, exited, signal, exit_status);
+                
+                if (exited)
+                {
+                    ::dispatch_source_cancel(source);
+                }
+            }
+        });
+
+        ::dispatch_resume (source);
+    }
+    return thread;
+}
+
+//----------------------------------------------------------------------
+// Log to both stderr and to ASL Logging when running on MacOSX.
+//----------------------------------------------------------------------
+void
+Host::SystemLog (SystemLogType type, const char *format, va_list args)
+{
+    if (format && format[0])
+    {
+        static aslmsg g_aslmsg = NULL;
+        if (g_aslmsg == NULL)
+        {
+            g_aslmsg = ::asl_new (ASL_TYPE_MSG);
+            char asl_key_sender[PATH_MAX];
+            snprintf(asl_key_sender, sizeof(asl_key_sender), "com.apple.LLDB.framework");
+            ::asl_set (g_aslmsg, ASL_KEY_SENDER, asl_key_sender);
+        }
+        
+        // Copy the va_list so we can log this message twice
+        va_list copy_args;
+        va_copy (copy_args, args);
+        // Log to stderr
+        ::vfprintf (stderr, format, copy_args);
+        va_end (copy_args);
+
+        int asl_level;
+        switch (type)
+        {
+            default:
+            case eSystemLogError:
+                asl_level = ASL_LEVEL_ERR;
+                break;
+                
+            case eSystemLogWarning:
+                asl_level = ASL_LEVEL_WARNING;
+                break;
+        }
+        
+        // Log to ASL
+        ::asl_vlog (NULL, g_aslmsg, asl_level, format, args);
+    }
+}

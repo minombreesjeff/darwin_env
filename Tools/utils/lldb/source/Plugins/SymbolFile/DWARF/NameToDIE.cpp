@@ -9,60 +9,67 @@
 
 #include "NameToDIE.h"
 #include "lldb/Core/ConstString.h"
+#include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/Stream.h"
+#include "lldb/Core/StreamString.h"
 #include "lldb/Core/RegularExpression.h"
+#include "lldb/Symbol/ObjectFile.h"
+
+#include "DWARFCompileUnit.h"
+#include "DWARFDebugInfo.h"
+#include "DWARFDebugInfoEntry.h"
+#include "SymbolFileDWARF.h"
+using namespace lldb;
+using namespace lldb_private;
 
 void
-NameToDIE::Insert (const lldb_private::ConstString& name, const Info &info)
+NameToDIE::Finalize()
 {
-    m_collection.insert (std::make_pair(name.AsCString(), info));
-}
-
-size_t
-NameToDIE::Find (const lldb_private::ConstString &name, std::vector<Info> &info_array) const
-{
-    const char *name_cstr = name.AsCString();
-    const size_t initial_info_array_size = info_array.size();
-    collection::const_iterator pos, end = m_collection.end();
-    for (pos = m_collection.lower_bound (name_cstr); pos != end && pos->first == name_cstr; ++pos)
-    {
-        info_array.push_back (pos->second);
-    }
-    return info_array.size() - initial_info_array_size;
-}
-
-size_t
-NameToDIE::Find (const lldb_private::RegularExpression& regex, std::vector<Info> &info_array) const
-{
-    const size_t initial_info_array_size = info_array.size();
-    collection::const_iterator pos, end = m_collection.end();
-    for (pos = m_collection.begin(); pos != end; ++pos)
-    {
-        if (regex.Execute(pos->first))
-            info_array.push_back (pos->second);
-    }
-    return info_array.size() - initial_info_array_size;
-}
-
-size_t
-NameToDIE::FindAllEntriesForCompileUnitWithIndex (const uint32_t cu_idx, std::vector<Info> &info_array) const
-{
-    const size_t initial_info_array_size = info_array.size();
-    collection::const_iterator pos, end = m_collection.end();
-    for (pos = m_collection.begin(); pos != end; ++pos)
-    {
-        if (cu_idx == pos->second.cu_idx)
-            info_array.push_back (pos->second);
-    }
-    return info_array.size() - initial_info_array_size;
+    m_map.Sort ();
+    m_map.SizeToFit ();
 }
 
 void
-NameToDIE::Dump (lldb_private::Stream *s)
+NameToDIE::Insert (const ConstString& name, uint32_t die_offset)
 {
-    collection::const_iterator pos, end = m_collection.end();
-    for (pos = m_collection.begin(); pos != end; ++pos)
+    m_map.Append(name.GetCString(), die_offset);
+}
+
+size_t
+NameToDIE::Find (const ConstString &name, DIEArray &info_array) const
+{
+    return m_map.GetValues (name.GetCString(), info_array);
+}
+
+size_t
+NameToDIE::Find (const RegularExpression& regex, DIEArray &info_array) const
+{
+    return m_map.GetValues (regex, info_array);
+}
+
+size_t
+NameToDIE::FindAllEntriesForCompileUnit (uint32_t cu_offset, 
+                                         uint32_t cu_end_offset, 
+                                         DIEArray &info_array) const
+{
+    const size_t initial_size = info_array.size();
+    const uint32_t size = m_map.GetSize();
+    for (uint32_t i=0; i<size; ++i)
     {
-        s->Printf("%p: 0x%8.8x 0x%8.8x \"%s\"\n", pos->first, pos->second.cu_idx, pos->second.die_idx, pos->first);
+        const uint32_t die_offset = m_map.GetValueAtIndexUnchecked(i);
+        if (cu_offset < die_offset && die_offset < cu_end_offset)
+            info_array.push_back (die_offset);
+    }
+    return info_array.size() - initial_size;
+}
+
+void
+NameToDIE::Dump (Stream *s)
+{
+    const uint32_t size = m_map.GetSize();
+    for (uint32_t i=0; i<size; ++i)
+    {
+        const char *cstr = m_map.GetCStringAtIndex(i);
+        s->Printf("%p: {0x%8.8x} \"%s\"\n", cstr, m_map.GetValueAtIndexUnchecked(i), cstr);
     }
 }

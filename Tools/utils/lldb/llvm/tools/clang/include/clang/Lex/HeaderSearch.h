@@ -15,13 +15,15 @@
 #define LLVM_CLANG_LEX_HEADERSEARCH_H
 
 #include "clang/Lex/DirectoryLookup.h"
+#include "clang/Lex/ModuleMap.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Allocator.h"
 #include <vector>
 
 namespace clang {
-
+  
+class DiagnosticsEngine;  
 class ExternalIdentifierLookup;
 class FileEntry;
 class FileManager;
@@ -118,6 +120,7 @@ public:
 /// file referenced by a #include or #include_next, (sub-)framework lookup, etc.
 class HeaderSearch {
   FileManager &FileMgr;
+  DiagnosticsEngine &Diags;
   /// #include search path information.  Requests for #include "x" search the
   /// directory of the #including file first, then each directory in SearchDirs
   /// consecutively. Requests for <x> search the current dir first, then each
@@ -129,6 +132,9 @@ class HeaderSearch {
   unsigned SystemDirIdx;
   bool NoCurDirSearch;
 
+  /// \brief The path to the module cache.
+  std::string ModuleCachePath;
+  
   /// FileInfo - This contains all of the preprocessor-specific data about files
   /// that are included.  The vector is indexed by the FileEntry's UID.
   ///
@@ -143,7 +149,6 @@ class HeaderSearch {
   llvm::StringMap<std::pair<unsigned, unsigned>, llvm::BumpPtrAllocator>
     LookupFileCache;
 
-
   /// FrameworkMap - This is a collection mapping a framework or subframework
   /// name like "Carbon" to the Carbon.framework directory.
   llvm::StringMap<const DirectoryEntry *, llvm::BumpPtrAllocator>
@@ -153,6 +158,12 @@ class HeaderSearch {
   /// headermaps.  This vector owns the headermap.
   std::vector<std::pair<const FileEntry*, const HeaderMap*> > HeaderMaps;
 
+  /// \brief The mapping between modules and headers.
+  ModuleMap ModMap;
+  
+  /// \brief Describes whether a given directory has a module map in it.
+  llvm::DenseMap<const DirectoryEntry *, bool> DirectoryHasModuleMap;
+  
   /// \brief Uniqued set of framework names, which is used to track which 
   /// headers were included as framework headers.
   llvm::StringSet<llvm::BumpPtrAllocator> FrameworkNames;
@@ -174,7 +185,7 @@ class HeaderSearch {
   explicit HeaderSearch(const HeaderSearch&);
   void operator=(const HeaderSearch&);
 public:
-  HeaderSearch(FileManager &FM);
+  HeaderSearch(FileManager &FM, DiagnosticsEngine &Diags);
   ~HeaderSearch();
 
   FileManager &getFileMgr() const { return FileMgr; }
@@ -193,6 +204,23 @@ public:
     //LookupFileCache.clear();
   }
 
+  /// AddSearchPath - Add an additional search path.
+  void AddSearchPath(const DirectoryLookup &dir, bool isAngled) {
+    unsigned idx = isAngled ? SystemDirIdx : AngledDirIdx;
+    SearchDirs.insert(SearchDirs.begin() + idx, dir);
+    if (!isAngled)
+      AngledDirIdx++;
+    SystemDirIdx++;
+  }
+
+  /// \brief Set the path to the module cache.
+  void setModuleCachePath(StringRef CachePath) {
+    ModuleCachePath = CachePath;
+  }
+  
+  /// \brief Retrieve the path to the module cache.
+  StringRef getModuleCachePath() const { return ModuleCachePath; }
+  
   /// ClearFileInfo - Forget everything we know about headers so far.
   void ClearFileInfo() {
     FileInfo.clear();
@@ -232,12 +260,18 @@ public:
   /// \param RelativePath If non-null, will be set to the path relative to
   /// SearchPath at which the file was found. This only differs from the
   /// Filename for framework includes.
+  ///
+  /// \param SuggestedModule If non-null, and the file found is semantically
+  /// part of a known module, this will be set to the module that should
+  /// be imported instead of preprocessing/parsing the file found.
   const FileEntry *LookupFile(StringRef Filename, bool isAngled,
                               const DirectoryLookup *FromDir,
                               const DirectoryLookup *&CurDir,
                               const FileEntry *CurFileEnt,
                               SmallVectorImpl<char> *SearchPath,
-                              SmallVectorImpl<char> *RelativePath);
+                              SmallVectorImpl<char> *RelativePath,
+                              Module **SuggestedModule,
+                              bool SkipCache = false);
 
   /// LookupSubframeworkHeader - Look up a subframework for the specified
   /// #include file.  For example, if #include'ing <HIToolbox/HIToolbox.h> from
@@ -308,15 +342,79 @@ public:
   /// FileEntry, uniquing them through the the 'HeaderMaps' datastructure.
   const HeaderMap *CreateHeaderMap(const FileEntry *FE);
 
+  /// \brief Search in the module cache path for a module with the given
+  /// name.
+  ///
+  /// \param Module The module that was found with the given name, which 
+  /// describes the module and how to build it.
+  ///
+  /// \param If non-NULL, will be set to the module file name we expected to
+  /// find (regardless of whether it was actually found or not).
+  ///
+  /// \returns A file describing the named module, if already available in the
+  /// cases, or NULL to indicate that the module could not be found.
+  const FileEntry *lookupModule(StringRef ModuleName,
+                                Module *&Module,
+                                std::string *ModuleFileName = 0);
+  
   void IncrementFrameworkLookupCount() { ++NumFrameworkLookups; }
 
-  typedef std::vector<HeaderFileInfo>::const_iterator header_file_iterator;
-  header_file_iterator header_file_begin() const { return FileInfo.begin(); }
-  header_file_iterator header_file_end() const { return FileInfo.end(); }
+  /// \brief Determine whether there is a module map that may map the header
+  /// with the given file name to a (sub)module.
+  ///
+  /// \param Filename The name of the file.
+  ///
+  /// \param Root The "root" directory, at which we should stop looking for
+  /// module maps.
+  bool hasModuleMap(StringRef Filename, const DirectoryEntry *Root);
+  
+  /// \brief Retrieve the module that corresponds to the given file, if any.
+  Module *findModuleForHeader(const FileEntry *File);
+  
+  
+  /// \brief Read the contents of the given module map file.
+  ///
+  /// \param File The module map file.
+  ///
+  /// \param OnlyModule If non-NULL, this will receive the 
+  ///
+  /// \returns true if an error occurred, false otherwise.
+  bool loadModuleMapFile(const FileEntry *File);
+  
+  /// \brief Retrieve a module with the given name.
+  ///
+  /// \param Name The name of the module to retrieve.
+  ///
+  /// \param AllowSearch If true, we're allowed to look for module maps within
+  /// the header search path. Otherwise, the module must already be known.
+  ///
+  /// \returns The module, if found; otherwise, null.
+  Module *getModule(StringRef Name, bool AllowSearch = true);
+
+  /// \brief Retrieve a module with the given name, which may be part of the
+  /// given framework.
+  ///
+  /// \param Name The name of the module to retrieve.
+  ///
+  /// \param Dir The framework directory (e.g., ModuleName.framework).
+  ///
+  /// \returns The module, if found; otherwise, null.
+  Module *getFrameworkModule(StringRef Name, 
+                                        const DirectoryEntry *Dir);
+
+  /// \brief Retrieve the module map.
+  ModuleMap &getModuleMap() { return ModMap; }
+  
   unsigned header_file_size() const { return FileInfo.size(); }
 
   // Used by ASTReader.
   void setHeaderFileInfoForUID(HeaderFileInfo HFI, unsigned UID);
+
+  /// getFileInfo - Return the HeaderFileInfo structure for the specified
+  /// FileEntry.
+  const HeaderFileInfo &getFileInfo(const FileEntry *FE) const {
+    return const_cast<HeaderSearch*>(this)->getFileInfo(FE);
+  }
 
   // Used by external tools
   typedef std::vector<DirectoryLookup>::const_iterator search_dir_iterator;
@@ -350,7 +448,39 @@ public:
   
   size_t getTotalMemory() const;
 
+  static std::string NormalizeDashIncludePath(StringRef File,
+                                              FileManager &FileMgr);
+
 private:
+  /// \brief Describes what happened when we tried to load a module map file.
+  enum LoadModuleMapResult {
+    /// \brief The module map file had already been loaded.
+    LMM_AlreadyLoaded,
+    /// \brief The module map file was loaded by this invocation.
+    LMM_NewlyLoaded,
+    /// \brief There is was directory with the given name.
+    LMM_NoDirectory,
+    /// \brief There was either no module map file or the module map file was
+    /// invalid.
+    LMM_InvalidModuleMap
+  };
+  
+  /// \brief Try to load the module map file in the given directory.
+  ///
+  /// \param DirName The name of the directory where we will look for a module
+  /// map file.
+  ///
+  /// \returns The result of attempting to load the module map file from the
+  /// named directory.
+  LoadModuleMapResult loadModuleMapFile(StringRef DirName);
+
+  /// \brief Try to load the module map file in the given directory.
+  ///
+  /// \param Dir The directory where we will look for a module map file.
+  ///
+  /// \returns The result of attempting to load the module map file from the
+  /// named directory.
+  LoadModuleMapResult loadModuleMapFile(const DirectoryEntry *Dir);
 
   /// getFileInfo - Return the HeaderFileInfo structure for the specified
   /// FileEntry.

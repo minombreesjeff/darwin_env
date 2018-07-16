@@ -19,16 +19,11 @@
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Unwind.h"
-#include "lldb/Breakpoint/WatchpointLocation.h"
+#include "lldb/Breakpoint/Watchpoint.h"
 
 #include "ProcessGDBRemote.h"
 #include "ProcessGDBRemoteLog.h"
-#include "Plugins/Process/Utility/UnwindLLDB.h"
 #include "Utility/StringExtractorGDBRemote.h"
-
-#if defined(__APPLE__)
-#include "UnwindMacOSXFrameBackchain.h"
-#endif
 
 using namespace lldb;
 using namespace lldb_private;
@@ -51,14 +46,6 @@ ThreadGDBRemote::~ThreadGDBRemote ()
     ProcessGDBRemoteLog::LogIf(GDBR_LOG_THREAD, "%p: ThreadGDBRemote::~ThreadGDBRemote (pid = %i, tid = 0x%4.4x)", this, m_process.GetID(), GetID());
     DestroyThread();
 }
-
-
-const char *
-ThreadGDBRemote::GetInfo ()
-{
-    return NULL;
-}
-
 
 const char *
 ThreadGDBRemote::GetName ()
@@ -88,9 +75,9 @@ ThreadGDBRemote::WillResume (StateType resume_state)
     Thread::WillResume(resume_state);
 
     int signo = GetResumeSignal();
-    lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP));
+    lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (GDBR_LOG_THREAD));
     if (log)
-        log->Printf ("Resuming thread: %4.4x with state: %s.", GetID(), StateAsCString(resume_state));
+        log->Printf ("Resuming thread: %4.4llx with state: %s.", GetID(), StateAsCString(resume_state));
 
     ProcessGDBRemote &process = GetGDBProcess();
     switch (resume_state)
@@ -133,32 +120,6 @@ ThreadGDBRemote::RefreshStateAfterStop()
     // the right thing.
     const bool force = false;
     GetRegisterContext()->InvalidateIfNeeded (force);
-}
-
-Unwind *
-ThreadGDBRemote::GetUnwinder ()
-{
-    if (m_unwinder_ap.get() == NULL)
-    {
-        const ArchSpec target_arch (GetProcess().GetTarget().GetArchitecture ());
-        const llvm::Triple::ArchType machine = target_arch.GetMachine();
-        switch (machine)
-        {
-            case llvm::Triple::x86_64:
-            case llvm::Triple::x86:
-            case llvm::Triple::arm:
-            case llvm::Triple::thumb:
-                m_unwinder_ap.reset (new UnwindLLDB (*this));
-                break;
-
-            default:
-#if defined(__APPLE__)
-                m_unwinder_ap.reset (new UnwindMacOSXFrameBackchain (*this));
-#endif
-                break;
-        }
-    }
-    return m_unwinder_ap.get();
 }
 
 void

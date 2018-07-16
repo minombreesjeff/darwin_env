@@ -229,19 +229,19 @@ DynamicLoaderMacOSXDYLD::LocateDYLD()
 
     if (executable)
     {
-        if (executable->GetArchitecture().GetAddressByteSize() == 8)
+        const ArchSpec &exe_arch = executable->GetArchitecture();
+        if (exe_arch.GetAddressByteSize() == 8)
         {
             return ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x7fff5fc00000ull);
         }
-#if defined (__arm__)
+        else if (exe_arch.GetMachine() == llvm::Triple::arm || exe_arch.GetMachine() == llvm::Triple::thumb)
+        {
+            return ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x2fe00000);
+        }
         else
         {
-            ArchSpec arm_arch("arm");
-            if (arm_arch == executable->Arch())
-                return ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x2fe00000);
+            return ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x8fe00000);
         }
-#endif
-        return ReadDYLDInfoFromMemoryAndSetNotificationCallback(0x8fe00000);
     }
     return false;
 }
@@ -419,12 +419,12 @@ DynamicLoaderMacOSXDYLD::UpdateImageLoadAddress (Module *module, DYLDImageInfo& 
                     }
                     else
                     {
-                        fprintf (stderr, 
-                                 "warning: unable to find and load segment named '%s' at 0x%llx in '%s/%s' in macosx dynamic loader plug-in.\n",
-                                 info.segments[i].name.AsCString("<invalid>"),
-                                 (uint64_t)new_section_load_addr,
-                                 image_object_file->GetFileSpec().GetDirectory().AsCString(),
-                                 image_object_file->GetFileSpec().GetFilename().AsCString());
+                        Host::SystemLog (Host::eSystemLogWarning, 
+                                         "warning: unable to find and load segment named '%s' at 0x%llx in '%s/%s' in macosx dynamic loader plug-in.\n",
+                                         info.segments[i].name.AsCString("<invalid>"),
+                                         (uint64_t)new_section_load_addr,
+                                         image_object_file->GetFileSpec().GetDirectory().AsCString(),
+                                         image_object_file->GetFileSpec().GetFilename().AsCString());
                     }
                 }
             }
@@ -461,11 +461,11 @@ DynamicLoaderMacOSXDYLD::UnloadImageLoadAddress (Module *module, DYLDImageInfo& 
                     }
                     else
                     {
-                        fprintf (stderr, 
-                                 "warning: unable to find and unload segment named '%s' in '%s/%s' in macosx dynamic loader plug-in.\n",
-                                 info.segments[i].name.AsCString("<invalid>"),
-                                 image_object_file->GetFileSpec().GetDirectory().AsCString(),
-                                 image_object_file->GetFileSpec().GetFilename().AsCString());
+                        Host::SystemLog (Host::eSystemLogWarning, 
+                                         "warning: unable to find and unload segment named '%s' in '%s/%s' in macosx dynamic loader plug-in.\n",
+                                         info.segments[i].name.AsCString("<invalid>"),
+                                         image_object_file->GetFileSpec().GetDirectory().AsCString(),
+                                         image_object_file->GetFileSpec().GetFilename().AsCString());
                     }
                 }
             }
@@ -505,7 +505,7 @@ DynamicLoaderMacOSXDYLD::NotifyBreakpointHit (void *baton,
     if (dyld_instance->InitializeFromAllImageInfos())
         return dyld_instance->GetStopWhenImagesChange(); 
 
-    Process *process = context->exe_ctx.process;
+    Process *process = context->exe_ctx.GetProcessPtr();
     const lldb::ABISP &abi = process->GetABI();
     if (abi != NULL)
     {
@@ -524,7 +524,7 @@ DynamicLoaderMacOSXDYLD::NotifyBreakpointHit (void *baton,
         input_value.SetContext (Value::eContextTypeClangType, clang_void_ptr_type);
         argument_values.PushValue (input_value);
         
-        if (abi->GetArgumentValues (*context->exe_ctx.thread, argument_values))
+        if (abi->GetArgumentValues (context->exe_ctx.GetThreadRef(), argument_values))
         {
             uint32_t dyld_mode = argument_values.GetValueAtIndex(0)->GetScalar().UInt (-1);
             if (dyld_mode != -1)
@@ -686,7 +686,7 @@ DynamicLoaderMacOSXDYLD::AddModulesUsingImageInfosAddress (lldb::addr_t image_in
     DYLDImageInfo::collection image_infos;
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_DYNAMIC_LOADER));
     if (log)
-        log->Printf ("Adding %d modules.\n");
+        log->Printf ("Adding %d modules.\n", image_infos_count);
         
     Mutex::Locker locker(m_mutex);
     if (m_process->GetStopID() == m_dyld_image_infos_stop_id)
@@ -918,10 +918,13 @@ DynamicLoaderMacOSXDYLD::ReadImageInfos (lldb::addr_t image_infos_addr,
             image_infos[i].mod_date = info_data_ref.GetPointer(&info_data_offset);
 
             char raw_path[PATH_MAX];
-            m_process->ReadCStringFromMemory (path_addr, raw_path, sizeof(raw_path));
+            m_process->ReadCStringFromMemory (path_addr, raw_path, sizeof(raw_path), error);
             // don't resolve the path
-            const bool resolve_path = false;
-            image_infos[i].file_spec.SetFile(raw_path, resolve_path);
+            if (error.Success())
+            {
+                const bool resolve_path = false;
+                image_infos[i].file_spec.SetFile(raw_path, resolve_path);
+            }
         }
         return true;
     }
@@ -1230,6 +1233,50 @@ DynamicLoaderMacOSXDYLD::UpdateImageInfosHeaderAndLoadCommands(DYLDImageInfo::co
 }
 
 //----------------------------------------------------------------------
+// On Mac OS X libobjc (the Objective-C runtime) has several critical dispatch
+// functions written in hand-written assembly, and also have hand-written unwind
+// information in the eh_frame section.  Normally we prefer analyzing the 
+// assembly instructions of a curently executing frame to unwind from that frame --
+// but on hand-written functions this profiling can fail.  We should use the
+// eh_frame instructions for these functions all the time.
+//
+// As an aside, it would be better if the eh_frame entries had a flag (or were
+// extensible so they could have an Apple-specific flag) which indicates that
+// the instructions are asynchronous -- accurate at every instruction, instead
+// of our normal default assumption that they are not.
+//----------------------------------------------------------------------
+
+bool
+DynamicLoaderMacOSXDYLD::AlwaysRelyOnEHUnwindInfo (SymbolContext &sym_ctx)
+{
+    ModuleSP module_sp;
+    if (sym_ctx.symbol)
+    {
+        AddressRange *ar = sym_ctx.symbol->GetAddressRangePtr();
+        if (ar)
+        {
+            module_sp = ar->GetBaseAddress().GetModule();
+        }
+    }
+    if (module_sp.get() == NULL && sym_ctx.function)
+    {
+        module_sp = sym_ctx.function->GetAddressRange().GetBaseAddress().GetModule();
+    }
+    if (module_sp.get() == NULL)
+        return false;
+
+    ObjCLanguageRuntime *objc_runtime = m_process->GetObjCLanguageRuntime();
+    if (objc_runtime != NULL && objc_runtime->IsModuleObjCLibrary (module_sp))
+    {
+        return true;
+    }
+
+    return false;
+}
+
+
+
+//----------------------------------------------------------------------
 // Dump a Segment to the file handle provided.
 //----------------------------------------------------------------------
 void
@@ -1423,6 +1470,14 @@ DynamicLoaderMacOSXDYLD::PrivateProcessStateChanged (Process *process, StateType
     }
 }
 
+// This bit in the n_desc field of the mach file means that this is a
+// stub that runs arbitrary code to determine the trampoline target.
+// We've established a naming convention with the CoreOS folks for the
+// equivalent symbols they will use for this (which the objc guys didn't follow...) 
+// For now we'll just look for all symbols matching that naming convention...
+
+#define MACH_O_N_SYMBOL_RESOLVER 0x100
+
 ThreadPlanSP
 DynamicLoaderMacOSXDYLD::GetStepThroughTrampolinePlan (Thread &thread, bool stop_others)
 {
@@ -1442,46 +1497,80 @@ DynamicLoaderMacOSXDYLD::GetStepThroughTrampolinePlan (Thread &thread, bool stop
             {
                 SymbolContextList target_symbols;
                 ModuleList &images = thread.GetProcess().GetTarget().GetImages();
+                
                 images.FindSymbolsWithNameAndType(trampoline_name, eSymbolTypeCode, target_symbols);
-                // FIXME - Make the Run to Address take multiple addresses, and
-                // run to any of them.
-                uint32_t num_symbols = target_symbols.GetSize();
-                if (num_symbols == 1)
+
+                size_t num_original_symbols = target_symbols.GetSize();
+                // FIXME: The resolver symbol is only valid in object files.  In binaries it is reused for the
+                // shared library slot number.  So we'll have to look this up in the dyld info.
+                // For now, just turn this off.
+                
+                // bool orig_is_resolver = (current_symbol->GetFlags() & MACH_O_N_SYMBOL_RESOLVER) == MACH_O_N_SYMBOL_RESOLVER;
+                bool orig_is_resolver = false;
+                
+                if (num_original_symbols > 0)
                 {
-                    SymbolContext context;
-                    AddressRange addr_range;
-                    if (target_symbols.GetContextAtIndex(0, context))
+                    // We found symbols that look like they are the targets to our symbol.  Now look through the
+                    // modules containing our symbols to see if there are any for our symbol.  
+                    
+                    ModuleList modules_to_search;
+                    
+                    for (size_t i = 0; i < num_original_symbols; i++)
                     {
-                        context.GetAddressRange (eSymbolContextEverything, 0, false, addr_range);
-                        thread_plan_sp.reset (new ThreadPlanRunToAddress (thread, addr_range.GetBaseAddress(), stop_others));
+                        SymbolContext sc;
+                        target_symbols.GetContextAtIndex(i, sc);
+                        
+                        Module* module_to_add = sc.symbol->CalculateSymbolContextModule();
+                        if (module_to_add)
+                             modules_to_search.AppendIfNeeded(static_cast<ModuleSP>(module_to_add));
                     }
-                    else
+                    
+                    // If the original stub symbol is a resolver, then we don't want to break on the symbol with the
+                    // original name, but instead on all the symbols it could resolve to since otherwise we would stop 
+                    // in the middle of the resolution...
+                    // Note that the stub is not of the resolver type it will point to the equivalent symbol,
+                    // not the original name, so in that case we don't need to do anything.
+                    
+                    if (orig_is_resolver)
                     {
-                        if (log)
-                            log->Printf ("Couldn't resolve the symbol context.");
+                        target_symbols.Clear();
+                        
+                        FindEquivalentSymbols (current_symbol, modules_to_search, target_symbols);
                     }
-                }
-                else if (num_symbols > 1)
-                {
-                    std::vector<lldb::addr_t>  addresses;
-                    addresses.resize (num_symbols);
-                    for (uint32_t i = 0; i < num_symbols; i++)
+                                            
+                    // FIXME - Make the Run to Address take multiple addresses, and
+                    // run to any of them.
+                    uint32_t num_symbols = target_symbols.GetSize();
+                    if (num_symbols > 0)
                     {
-                        SymbolContext context;
-                        AddressRange addr_range;
-                        if (target_symbols.GetContextAtIndex(i, context))
+                        std::vector<lldb::addr_t>  addresses;
+                        addresses.resize (num_symbols);
+                        for (uint32_t i = 0; i < num_symbols; i++)
                         {
-                            context.GetAddressRange (eSymbolContextEverything, 0, false, addr_range);
-                            lldb::addr_t load_addr = addr_range.GetBaseAddress().GetLoadAddress(&thread.GetProcess().GetTarget());
-                            addresses[i] = load_addr;
+                            SymbolContext context;
+                            AddressRange addr_range;
+                            if (target_symbols.GetContextAtIndex(i, context))
+                            {
+                                context.GetAddressRange (eSymbolContextEverything, 0, false, addr_range);
+                                lldb::addr_t load_addr = addr_range.GetBaseAddress().GetLoadAddress(&thread.GetProcess().GetTarget());
+                                addresses[i] = load_addr;
+                            }
+                        }
+                        if (addresses.size() > 0)
+                            thread_plan_sp.reset (new ThreadPlanRunToAddress (thread, addresses, stop_others));
+                        else
+                        {
+                            if (log)
+                                log->Printf ("Couldn't resolve the symbol contexts.");
                         }
                     }
-                    if (addresses.size() > 0)
-                        thread_plan_sp.reset (new ThreadPlanRunToAddress (thread, addresses, stop_others));
                     else
                     {
                         if (log)
-                            log->Printf ("Couldn't resolve the symbol contexts.");
+                        {
+                            log->Printf ("Found a resolver stub for: \"%s\" but could not find any symbols it resolves to.", 
+                                         trampoline_name.AsCString());
+                        }
                     }
                 }
                 else
@@ -1501,6 +1590,29 @@ DynamicLoaderMacOSXDYLD::GetStepThroughTrampolinePlan (Thread &thread, bool stop
     }
 
     return thread_plan_sp;
+}
+
+size_t
+DynamicLoaderMacOSXDYLD::FindEquivalentSymbols (lldb_private::Symbol *original_symbol, 
+                                               lldb_private::ModuleList &images, 
+                                               lldb_private::SymbolContextList &equivalent_symbols)
+{
+    const ConstString &trampoline_name = original_symbol->GetMangled().GetName(Mangled::ePreferMangled);
+    if (!trampoline_name)
+        return 0;
+        
+    size_t initial_size = equivalent_symbols.GetSize();
+    
+    static const char *resolver_name_regex = "(_gc|_non_gc|\\$[A-Z0-9]+)$";
+    std::string equivalent_regex_buf("^");
+    equivalent_regex_buf.append (trampoline_name.GetCString());
+    equivalent_regex_buf.append (resolver_name_regex);
+
+    RegularExpression equivalent_name_regex (equivalent_regex_buf.c_str());
+    const bool append = true;
+    images.FindSymbolsMatchingRegExAndType (equivalent_name_regex, eSymbolTypeCode, equivalent_symbols, append);
+    
+    return equivalent_symbols.GetSize() - initial_size;
 }
 
 Error

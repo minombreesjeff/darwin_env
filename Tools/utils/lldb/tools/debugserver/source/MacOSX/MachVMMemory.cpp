@@ -52,6 +52,42 @@ MachVMMemory::MaxBytesLeftInPage(nub_addr_t addr, nub_size_t count)
     return count;
 }
 
+nub_bool_t
+MachVMMemory::GetMemoryRegionInfo(task_t task, nub_addr_t address, DNBRegionInfo *region_info)
+{
+    MachVMRegion vmRegion(task);
+
+    if (vmRegion.GetRegionForAddress(address))
+    {
+        region_info->addr = vmRegion.StartAddress();
+        region_info->size = vmRegion.GetByteSize();
+        region_info->permissions = vmRegion.GetDNBPermissions();
+    }
+    else
+    {
+        region_info->addr = address;
+        region_info->size = 0;
+        if (vmRegion.GetError().Success())
+        {
+            // vmRegion.GetRegionForAddress() return false, indicating that "address"
+            // wasn't in a valid region, but the "vmRegion" info was successfully 
+            // read from the task which means the info describes the next valid
+            // region from which we can infer the size of this invalid region
+            mach_vm_address_t start_addr = vmRegion.StartAddress();
+            if (address < start_addr)
+                region_info->size = start_addr - address;
+        }
+        // If we can't get any infor about the size from the next region, just fill
+        // 1 in as the byte size
+        if (region_info->size == 0)
+            region_info->size = 1;
+
+        // Not readable, writeable or executable
+        region_info->permissions = 0;
+    }
+    return true;
+}
+
 nub_size_t
 MachVMMemory::Read(task_t task, nub_addr_t address, void *data, nub_size_t data_count)
 {
@@ -67,7 +103,10 @@ MachVMMemory::Read(task_t task, nub_addr_t address, void *data, nub_size_t data_
         mach_msg_type_number_t curr_bytes_read = 0;
         vm_offset_t vm_memory = NULL;
         m_err = ::mach_vm_read (task, curr_addr, curr_size, &vm_memory, &curr_bytes_read);
-        if (DNBLogCheckLogBit(LOG_MEMORY) || m_err.Fail())
+        
+        // We end up being asked to read memory at 0x0 a lot without that being a real error, so that ends up just
+        // causing a lot of useless log spam.  Only complain on failing reads if the address is not 0x0.
+        if (DNBLogCheckLogBit(LOG_MEMORY) || (m_err.Fail() && curr_addr != 0))
             m_err.LogThreaded("::mach_vm_read ( task = 0x%4.4x, addr = 0x%8.8llx, size = %llu, data => %8.8p, dataCnt => %i )", task, (uint64_t)curr_addr, (uint64_t)curr_size, vm_memory, curr_bytes_read);
 
         if (m_err.Success())

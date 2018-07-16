@@ -11,10 +11,12 @@
 
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
+#include "lldb/Host/Host.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Symbol.h"
+#include "lldb/Symbol/SymbolFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Target/Target.h"
 
@@ -82,6 +84,10 @@ SymbolContext::SymbolContext (SymbolContextScope *sc_scope) :
     sc_scope->CalculateSymbolContext (this);
 }
 
+SymbolContext::~SymbolContext ()
+{
+}
+
 const SymbolContext&
 SymbolContext::operator= (const SymbolContext& rhs)
 {
@@ -134,12 +140,14 @@ SymbolContext::DumpStopContext
 
     if (function != NULL)
     {
+        SymbolContext inline_parent_sc;
+        Address inline_parent_addr;
         if (function->GetMangled().GetName())
         {
             dumped_something = true;
             function->GetMangled().GetName().Dump(s);
         }
-
+        
         if (addr.IsValid())
         {
             const addr_t function_offset = addr.GetOffset() - function->GetAddressRange().GetBaseAddress().GetOffset();
@@ -150,12 +158,34 @@ SymbolContext::DumpStopContext
             }
         }
 
-        if (block != NULL)
+        if (GetParentOfInlinedScope (addr, inline_parent_sc, inline_parent_addr))
         {
-            s->IndentMore();
-            block->DumpStopContext (s, this, NULL, show_fullpaths, show_inlined_frames);
-            s->IndentLess();
             dumped_something = true;
+            Block *inlined_block = block->GetContainingInlinedBlock();
+            const InlineFunctionInfo* inlined_block_info = inlined_block->GetInlinedFunctionInfo();
+            s->Printf (" [inlined] %s", inlined_block_info->GetName().GetCString());
+            
+            lldb_private::AddressRange block_range;
+            if (inlined_block->GetRangeContainingAddress(addr, block_range))
+            {
+                const addr_t inlined_function_offset = addr.GetOffset() - block_range.GetBaseAddress().GetOffset();
+                if (inlined_function_offset)
+                {
+                    s->Printf(" + %llu", inlined_function_offset);                
+                }
+            }
+            const Declaration &call_site = inlined_block_info->GetCallSite();
+            if (call_site.IsValid())
+            {
+                s->PutCString(" at ");
+                call_site.DumpStopContext (s, show_fullpaths);
+            }
+            if (show_inlined_frames)
+            {
+                s->EOL();
+                s->Indent();
+                return inline_parent_sc.DumpStopContext (s, exe_scope, inline_parent_addr, show_fullpaths, show_module, show_inlined_frames);
+            }
         }
         else
         {
@@ -423,64 +453,123 @@ SymbolContext::GetAddressRange (uint32_t scope,
     return false;
 }
 
-ClangNamespaceDecl
-SymbolContext::FindNamespace (const ConstString &name) const
+bool
+SymbolContext::GetParentOfInlinedScope (const Address &curr_frame_pc, 
+                                        SymbolContext &next_frame_sc, 
+                                        Address &next_frame_pc) const
 {
-    ClangNamespaceDecl namespace_decl;
-    if (module_sp)
-        namespace_decl = module_sp->GetSymbolVendor()->FindNamespace (*this, name);
-    return namespace_decl;
-}
+    next_frame_sc.Clear();
+    next_frame_pc.Clear();
 
-size_t
-SymbolContext::FindFunctionsByName (const ConstString &name, 
-                                    bool include_symbols, 
-                                    bool append, 
-                                    SymbolContextList &sc_list) const
-{    
-    if (!append)
-        sc_list.Clear();
-    
-    if (function != NULL)
+    if (block)
     {
-        // FIXME: Look in the class of the current function, if it exists,
-        // for methods matching name.
+        //const addr_t curr_frame_file_addr = curr_frame_pc.GetFileAddress();
+        
+        // In order to get the parent of an inlined function we first need to
+        // see if we are in an inlined block as "this->block" could be an 
+        // inlined block, or a parent of "block" could be. So lets check if
+        // this block or one of this blocks parents is an inlined function.
+        Block *curr_inlined_block = block->GetContainingInlinedBlock();
+        if (curr_inlined_block)
+        {
+            // "this->block" is contained in an inline function block, so to
+            // get the scope above the inlined block, we get the parent of the
+            // inlined block itself
+            Block *next_frame_block = curr_inlined_block->GetParent();
+            // Now calculate the symbol context of the containing block
+            next_frame_block->CalculateSymbolContext (&next_frame_sc);
+            
+            // If we get here we weren't able to find the return line entry using the nesting of the blocks and
+            // the line table.  So just use the call site info from our inlined block.
+            
+            AddressRange range;
+            if (curr_inlined_block->GetRangeContainingAddress (curr_frame_pc, range))
+            {
+                // To see there this new frame block it, we need to look at the
+                // call site information from 
+                const InlineFunctionInfo* curr_inlined_block_inlined_info = curr_inlined_block->GetInlinedFunctionInfo();
+                next_frame_pc = range.GetBaseAddress();
+                next_frame_sc.line_entry.range.GetBaseAddress() = next_frame_pc;
+                next_frame_sc.line_entry.file = curr_inlined_block_inlined_info->GetCallSite().GetFile();
+                next_frame_sc.line_entry.line = curr_inlined_block_inlined_info->GetCallSite().GetLine();
+                next_frame_sc.line_entry.column = curr_inlined_block_inlined_info->GetCallSite().GetColumn();
+                return true;
+            }
+            else
+            {
+                LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_SYMBOLS));
+
+                if (log)
+                {
+                    log->Printf ("warning: inlined block 0x%8.8llx doesn't have a range that contains file address 0x%llx", 
+                                 curr_inlined_block->GetID(), curr_frame_pc.GetFileAddress());
+                }
+#ifdef LLDB_CONFIGURATION_DEBUG
+                else
+                {
+                    ObjectFile *objfile = NULL;
+                    if (module_sp)
+                    {
+                        SymbolVendor *symbol_vendor = module_sp->GetSymbolVendor();
+                        if (symbol_vendor)
+                        {
+                            SymbolFile *symbol_file = symbol_vendor->GetSymbolFile();
+                            if (symbol_file)
+                                objfile = symbol_file->GetObjectFile();
+                        }
+                    }
+                    if (objfile)
+                    {
+                        Host::SystemLog (Host::eSystemLogWarning, 
+                                         "warning: inlined block 0x%8.8llx doesn't have a range that contains file address 0x%llx in %s/%s\n", 
+                                         curr_inlined_block->GetID(), 
+                                         curr_frame_pc.GetFileAddress(),
+                                         objfile->GetFileSpec().GetDirectory().GetCString(),
+                                         objfile->GetFileSpec().GetFilename().GetCString());
+                    }
+                    else
+                    {
+                        Host::SystemLog (Host::eSystemLogWarning, 
+                                         "warning: inlined block 0x%8.8llx doesn't have a range that contains file address 0x%llx\n", 
+                                         curr_inlined_block->GetID(), 
+                                         curr_frame_pc.GetFileAddress());
+                    }
+                }
+#endif
+            }
+        }
     }
-
-    if (module_sp != NULL)
-        module_sp->FindFunctions (name, eFunctionNameTypeBase | eFunctionNameTypeFull, include_symbols, true, sc_list);
-
-    if (target_sp)
-        target_sp->GetImages().FindFunctions (name, eFunctionNameTypeBase | eFunctionNameTypeFull, include_symbols, true, sc_list);
-
-    return sc_list.GetSize();
+    
+    return false;
 }
 
-//lldb::VariableSP
-//SymbolContext::FindVariableByName (const char *name) const
-//{
-//    lldb::VariableSP return_value;
-//    return return_value;
-//}
-
-lldb::TypeSP
-SymbolContext::FindTypeByName (const ConstString &name) const
+ConstString 
+SymbolContext::GetFunctionName (Mangled::NamePreference preference)
 {
-    lldb::TypeSP return_value;
-        
-    TypeList types;
-    
-    if (module_sp && module_sp->FindTypes (*this, name, false, 1, types))
-        return types.GetTypeAtIndex(0);
-    
-    SymbolContext sc_for_global_search;
-    
-    sc_for_global_search.target_sp = target_sp;
-    
-    if (!return_value.get() && target_sp && target_sp->GetImages().FindTypes (sc_for_global_search, name, false, 1, types))
-        return types.GetTypeAtIndex(0);
-    
-    return return_value;
+    if (function)
+    {
+        if (block)
+        {
+            Block *inlined_block = block->GetContainingInlinedBlock();
+            
+            if (inlined_block)
+            {
+                const InlineFunctionInfo *inline_info = inlined_block->GetInlinedFunctionInfo();
+                if (inline_info)
+                    return inline_info->GetName();
+            }
+        }
+        return function->GetMangled().GetName(preference);
+    }
+    else if (symbol && symbol->GetAddressRangePtr())
+    {
+        return symbol->GetMangled().GetName(preference);
+    }
+    else
+    {
+        // No function, return an empty string.
+        return ConstString();
+    }
 }
 
 //----------------------------------------------------------------------
@@ -488,6 +577,24 @@ SymbolContext::FindTypeByName (const ConstString &name) const
 //  SymbolContextSpecifier
 //
 //----------------------------------------------------------------------
+
+SymbolContextSpecifier::SymbolContextSpecifier (const TargetSP &target_sp) :
+    m_target_sp (target_sp),
+    m_module_spec (),
+    m_module_sp (),
+    m_file_spec_ap (),
+    m_start_line (0),
+    m_end_line (0),
+    m_function_spec (),
+    m_class_name (),
+    m_address_range_ap (),
+    m_type (eNothingSpecified)
+{
+}   
+
+SymbolContextSpecifier::~SymbolContextSpecifier()
+{
+}
 
 bool
 SymbolContextSpecifier::AddLineSpecification (uint32_t line_no, SpecificationType type)
@@ -727,15 +834,15 @@ SymbolContextSpecifier::GetDescription (Stream *s, lldb::DescriptionLevel level)
         s->Printf ("File: %s", path_str);
         if (m_type == eLineStartSpecified)
         {
-            s->Printf (" from line %d", m_start_line);
+            s->Printf (" from line %lu", m_start_line);
             if (m_type == eLineEndSpecified)
-                s->Printf ("to line %d", m_end_line);
+                s->Printf ("to line %lu", m_end_line);
             else
-                s->Printf ("to end", m_end_line);
+                s->Printf ("to end");
         }
         else if (m_type == eLineEndSpecified)
         {
-            s->Printf (" from start to line %d", m_end_line);
+            s->Printf (" from start to line %ld", m_end_line);
         }
         s->Printf (".\n");
     }
@@ -743,16 +850,16 @@ SymbolContextSpecifier::GetDescription (Stream *s, lldb::DescriptionLevel level)
     if (m_type == eLineStartSpecified)
     {
         s->Indent();
-        s->Printf ("From line %d", m_start_line);
+        s->Printf ("From line %lu", m_start_line);
         if (m_type == eLineEndSpecified)
-            s->Printf ("to line %d", m_end_line);
+            s->Printf ("to line %lu", m_end_line);
         else
-            s->Printf ("to end", m_end_line);
+            s->Printf ("to end");
         s->Printf (".\n");
     }
     else if (m_type == eLineEndSpecified)
     {
-        s->Printf ("From start to line %d.\n", m_end_line);
+        s->Printf ("From start to line %ld.\n", m_end_line);
     }
     
     if (m_type == eFunctionSpecified)
@@ -859,7 +966,8 @@ SymbolContextList::Dump(Stream *s, Target *target) const
     collection::const_iterator pos, end = m_symbol_contexts.end();
     for (pos = m_symbol_contexts.begin(); pos != end; ++pos)
     {
-        pos->Dump(s, target);
+        //pos->Dump(s, target);
+        pos->GetDescription(s, eDescriptionLevelVerbose, target);
     }
     s->IndentLess();
 }
@@ -903,5 +1011,30 @@ SymbolContextList::NumLineEntriesWithLine (uint32_t line) const
             ++match_count;
     }
     return match_count;
+}
+
+bool
+lldb_private::operator== (const SymbolContextList& lhs, const SymbolContextList& rhs)
+{
+    const uint32_t size = lhs.GetSize();
+    if (size != rhs.GetSize())
+        return false;
+    
+    SymbolContext lhs_sc;
+    SymbolContext rhs_sc;
+    for (uint32_t i=0; i<size; ++i)
+    {
+        lhs.GetContextAtIndex(i, lhs_sc);
+        rhs.GetContextAtIndex(i, rhs_sc);
+        if (lhs_sc != rhs_sc)
+            return false;
+    }
+    return true;
+}
+
+bool
+lldb_private::operator!= (const SymbolContextList& lhs, const SymbolContextList& rhs)
+{
+    return !(lhs == rhs);
 }
 

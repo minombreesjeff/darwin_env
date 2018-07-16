@@ -18,7 +18,7 @@ class CommandRegexTestCase(TestBase):
         regex_prompt = "Enter regular expressions in the form 's/<regex>/<subst>/' and terminate with an empty line:\r\n"
         regex_prompt1 = "\r\n"
 
-        child = pexpect.spawn('%s' % self.lldbExec)
+        child = pexpect.spawn('%s %s' % (self.lldbHere, self.lldbOption))
         # Turn on logging for what the child sends back.
         if self.TraceOn():
             child.logfile_read = sys.stdout
@@ -27,13 +27,13 @@ class CommandRegexTestCase(TestBase):
 
         # Substitute 'Help!' for 'help' using the 'commands regex' mechanism.
         child.expect_exact(prompt)
-        child.sendline("command regex 'Help!'")
+        child.sendline("command regex 'Help__'")
         child.expect_exact(regex_prompt)
         child.sendline('s/^$/help/')
         child.expect_exact(regex_prompt1)
         child.sendline('')
         # Help!
-        child.sendline('Help!')
+        child.sendline('Help__')
         # If we see the familiar 'help' output, the test is done.
         child.expect('The following is a list of built-in, permanent debugger commands:')
 

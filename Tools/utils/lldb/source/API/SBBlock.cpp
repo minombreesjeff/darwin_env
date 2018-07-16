@@ -8,8 +8,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/API/SBBlock.h"
+#include "lldb/API/SBAddress.h"
 #include "lldb/API/SBFileSpec.h"
 #include "lldb/API/SBStream.h"
+#include "lldb/Core/AddressRange.h"
 #include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/SymbolContext.h"
@@ -127,6 +129,15 @@ SBBlock::GetParent ()
     return sb_block;
 }
 
+lldb::SBBlock
+SBBlock::GetContainingInlinedBlock  ()
+{
+    SBBlock sb_block;
+    if (m_opaque_ptr)
+        sb_block.m_opaque_ptr = m_opaque_ptr->GetContainingInlinedBlock ();
+    return sb_block;
+}
+
 SBBlock
 SBBlock::GetSibling ()
 {
@@ -145,8 +156,8 @@ SBBlock::GetFirstChild ()
     return sb_block;
 }
 
-const lldb_private::Block *
-SBBlock::get () const
+lldb_private::Block *
+SBBlock::get ()
 {
     return m_opaque_ptr;
 }
@@ -160,24 +171,77 @@ SBBlock::reset (lldb_private::Block *block)
 bool
 SBBlock::GetDescription (SBStream &description)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_ptr)
     {
         lldb::user_id_t id = m_opaque_ptr->GetID();
-        description.Printf ("Block: {id: %d} ", id);
+        strm.Printf ("Block: {id: %llu} ", id);
         if (IsInlined())
         {
-            description.Printf (" (inlined, '%s') ", GetInlinedName());
+            strm.Printf (" (inlined, '%s') ", GetInlinedName());
         }
         lldb_private::SymbolContext sc;
         m_opaque_ptr->CalculateSymbolContext (&sc);
         if (sc.function)
         {
-            m_opaque_ptr->DumpAddressRanges (description.get(), 
+            m_opaque_ptr->DumpAddressRanges (&strm,
                                              sc.function->GetAddressRange().GetBaseAddress().GetFileAddress());
         }
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
     
     return true;
 }
+
+uint32_t
+SBBlock::GetNumRanges ()
+{
+    if (m_opaque_ptr)
+        return m_opaque_ptr->GetNumRanges();
+    return 0;
+}
+
+lldb::SBAddress
+SBBlock::GetRangeStartAddress (uint32_t idx)
+{
+    lldb::SBAddress sb_addr;
+    if (m_opaque_ptr)
+    {
+        AddressRange range;
+        if (m_opaque_ptr->GetRangeAtIndex(idx, range))
+        {
+            sb_addr.ref() = range.GetBaseAddress();
+        }
+    }
+    return sb_addr;
+}
+
+lldb::SBAddress
+SBBlock::GetRangeEndAddress (uint32_t idx)
+{
+    lldb::SBAddress sb_addr;
+    if (m_opaque_ptr)
+    {
+        AddressRange range;
+        if (m_opaque_ptr->GetRangeAtIndex(idx, range))
+        {
+            sb_addr.ref() = range.GetBaseAddress();
+            sb_addr.ref().Slide(range.GetByteSize());
+        }
+    }
+    return sb_addr;
+}
+
+uint32_t
+SBBlock::GetRangeIndexForBlockAddress (lldb::SBAddress block_addr)
+{
+    if (m_opaque_ptr && block_addr.IsValid())
+    {
+        return m_opaque_ptr->GetRangeIndexContainingAddress (block_addr.ref());
+    }
+
+    return UINT32_MAX;
+}
+

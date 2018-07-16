@@ -15,14 +15,17 @@
 
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
+#include "llvm-c/Transforms/PassManagerBuilder.h"
+
 #include "llvm/PassManager.h"
 #include "llvm/DefaultPasses.h"
 #include "llvm/PassManager.h"
 #include "llvm/Analysis/Passes.h"
-#include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/IPO.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ManagedStatic.h"
 
 using namespace llvm;
 
@@ -41,12 +44,25 @@ PassManagerBuilder::~PassManagerBuilder() {
   delete Inliner;
 }
 
+/// Set of global extensions, automatically added as part of the standard set.
+static ManagedStatic<SmallVector<std::pair<PassManagerBuilder::ExtensionPointTy,
+   PassManagerBuilder::ExtensionFn>, 8> > GlobalExtensions;
+
+void PassManagerBuilder::addGlobalExtension(
+    PassManagerBuilder::ExtensionPointTy Ty,
+    PassManagerBuilder::ExtensionFn Fn) {
+  GlobalExtensions->push_back(std::make_pair(Ty, Fn));
+}
+
 void PassManagerBuilder::addExtension(ExtensionPointTy Ty, ExtensionFn Fn) {
   Extensions.push_back(std::make_pair(Ty, Fn));
 }
 
 void PassManagerBuilder::addExtensionsToPM(ExtensionPointTy ETy,
                                            PassManagerBase &PM) const {
+  for (unsigned i = 0, e = GlobalExtensions->size(); i != e; ++i)
+    if ((*GlobalExtensions)[i].first == ETy)
+      (*GlobalExtensions)[i].second(*this, PM);
   for (unsigned i = 0, e = Extensions.size(); i != e; ++i)
     if (Extensions[i].first == ETy)
       Extensions[i].second(*this, PM);
@@ -84,6 +100,7 @@ void PassManagerBuilder::populateModulePassManager(PassManagerBase &MPM) {
       MPM.add(Inliner);
       Inliner = 0;
     }
+    addExtensionsToPM(EP_EnabledOnOptLevel0, MPM);
     return;
   }
 
@@ -245,4 +262,81 @@ void PassManagerBuilder::populateLTOPassManager(PassManagerBase &PM,
 
   // Now that we have optimized the program, discard unreachable functions.
   PM.add(createGlobalDCEPass());
+}
+
+LLVMPassManagerBuilderRef LLVMPassManagerBuilderCreate(void) {
+  PassManagerBuilder *PMB = new PassManagerBuilder();
+  return wrap(PMB);
+}
+
+void LLVMPassManagerBuilderDispose(LLVMPassManagerBuilderRef PMB) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  delete Builder;
+}
+
+void
+LLVMPassManagerBuilderSetOptLevel(LLVMPassManagerBuilderRef PMB,
+                                  unsigned OptLevel) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  Builder->OptLevel = OptLevel;
+}
+
+void
+LLVMPassManagerBuilderSetSizeLevel(LLVMPassManagerBuilderRef PMB,
+                                   unsigned SizeLevel) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  Builder->SizeLevel = SizeLevel;
+}
+
+void
+LLVMPassManagerBuilderSetDisableUnitAtATime(LLVMPassManagerBuilderRef PMB,
+                                            LLVMBool Value) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  Builder->DisableUnitAtATime = Value;
+}
+
+void
+LLVMPassManagerBuilderSetDisableUnrollLoops(LLVMPassManagerBuilderRef PMB,
+                                            LLVMBool Value) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  Builder->DisableUnrollLoops = Value;
+}
+
+void
+LLVMPassManagerBuilderSetDisableSimplifyLibCalls(LLVMPassManagerBuilderRef PMB,
+                                                 LLVMBool Value) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  Builder->DisableSimplifyLibCalls = Value;
+}
+
+void
+LLVMPassManagerBuilderUseInlinerWithThreshold(LLVMPassManagerBuilderRef PMB,
+                                              unsigned Threshold) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  Builder->Inliner = createFunctionInliningPass(Threshold);
+}
+
+void
+LLVMPassManagerBuilderPopulateFunctionPassManager(LLVMPassManagerBuilderRef PMB,
+                                                  LLVMPassManagerRef PM) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  FunctionPassManager *FPM = unwrap<FunctionPassManager>(PM);
+  Builder->populateFunctionPassManager(*FPM);
+}
+
+void
+LLVMPassManagerBuilderPopulateModulePassManager(LLVMPassManagerBuilderRef PMB,
+                                                LLVMPassManagerRef PM) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  PassManagerBase *MPM = unwrap(PM);
+  Builder->populateModulePassManager(*MPM);
+}
+
+void LLVMPassManagerBuilderPopulateLTOPassManager(LLVMPassManagerBuilderRef PMB,
+                                                  LLVMPassManagerRef PM,
+                                                  bool Internalize,
+                                                  bool RunInliner) {
+  PassManagerBuilder *Builder = unwrap(PMB);
+  PassManagerBase *LPM = unwrap(PM);
+  Builder->populateLTOPassManager(*LPM, Internalize, RunInliner);
 }

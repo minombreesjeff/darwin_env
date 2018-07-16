@@ -286,7 +286,7 @@ DNBProcessAttachByName (const char *name, struct timespec *timeout, char *err_st
     }
     else if (num_matching_proc_infos > 1)
     {
-        DNBLogError ("error: %u processes match '%s':\n", num_matching_proc_infos, name);
+        DNBLogError ("error: %zu processes match '%s':\n", num_matching_proc_infos, name);
         size_t i;
         for (i=0; i<num_matching_proc_infos; ++i)
             DNBLogError ("%6u - %s\n", matching_proc_infos[i].kp_proc.p_pid, matching_proc_infos[i].kp_proc.p_comm);
@@ -972,13 +972,13 @@ DNBWatchpointSet (nub_process_t pid, nub_addr_t addr, nub_size_t size, uint32_t 
     {
         return procSP->CreateWatchpoint(addr, size, watch_flags, hardware, THREAD_NULL);
     }
-    return INVALID_NUB_BREAK_ID;
+    return INVALID_NUB_WATCH_ID;
 }
 
 nub_bool_t
 DNBWatchpointClear (nub_process_t pid, nub_watch_t watchID)
 {
-    if (NUB_BREAK_ID_IS_VALID(watchID))
+    if (NUB_WATCH_ID_IS_VALID(watchID))
     {
         MachProcessSP procSP;
         if (GetProcessSP (pid, procSP))
@@ -992,7 +992,7 @@ DNBWatchpointClear (nub_process_t pid, nub_watch_t watchID)
 nub_ssize_t
 DNBWatchpointGetHitCount (nub_process_t pid, nub_watch_t watchID)
 {
-    if (NUB_BREAK_ID_IS_VALID(watchID))
+    if (NUB_WATCH_ID_IS_VALID(watchID))
     {
         MachProcessSP procSP;
         if (GetProcessSP (pid, procSP))
@@ -1008,7 +1008,7 @@ DNBWatchpointGetHitCount (nub_process_t pid, nub_watch_t watchID)
 nub_ssize_t
 DNBWatchpointGetIgnoreCount (nub_process_t pid, nub_watch_t watchID)
 {
-    if (NUB_BREAK_ID_IS_VALID(watchID))
+    if (NUB_WATCH_ID_IS_VALID(watchID))
     {
         MachProcessSP procSP;
         if (GetProcessSP (pid, procSP))
@@ -1024,7 +1024,7 @@ DNBWatchpointGetIgnoreCount (nub_process_t pid, nub_watch_t watchID)
 nub_bool_t
 DNBWatchpointSetIgnoreCount (nub_process_t pid, nub_watch_t watchID, nub_size_t ignore_count)
 {
-    if (NUB_BREAK_ID_IS_VALID(watchID))
+    if (NUB_WATCH_ID_IS_VALID(watchID))
     {
         MachProcessSP procSP;
         if (GetProcessSP (pid, procSP))
@@ -1047,7 +1047,7 @@ DNBWatchpointSetIgnoreCount (nub_process_t pid, nub_watch_t watchID, nub_size_t 
 nub_bool_t
 DNBWatchpointSetCallback (nub_process_t pid, nub_watch_t watchID, DNBCallbackBreakpointHit callback, void *baton)
 {
-    if (NUB_BREAK_ID_IS_VALID(watchID))
+    if (NUB_WATCH_ID_IS_VALID(watchID))
     {
         MachProcessSP procSP;
         if (GetProcessSP (pid, procSP))
@@ -1122,6 +1122,30 @@ DNBProcessMemoryDeallocate (nub_process_t pid, nub_addr_t addr)
     if (GetProcessSP (pid, procSP))
         return procSP->Task().DeallocateMemory (addr);
     return 0;
+}
+
+//----------------------------------------------------------------------
+// Find attributes of the memory region that contains ADDR for process PID,
+// if possible, and return a string describing those attributes.
+//
+// Returns 1 if we could find attributes for this region and OUTBUF can
+// be sent to the remote debugger.
+//
+// Returns 0 if we couldn't find the attributes for a region of memory at
+// that address and OUTBUF should not be sent.
+//
+// Returns -1 if this platform cannot look up information about memory regions
+// or if we do not yet have a valid launched process.
+//
+//----------------------------------------------------------------------
+int
+DNBProcessMemoryRegionInfo (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *region_info)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->Task().GetMemoryRegionInfo (addr, region_info);
+
+    return -1;
 }
 
 

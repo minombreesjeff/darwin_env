@@ -21,6 +21,7 @@ for available options.
 """
 
 import os, signal, sys, time
+import subprocess
 import unittest2
 
 def is_exe(fpath):
@@ -102,11 +103,25 @@ delay = False
 # Dump the Python sys.path variable.  Use '-D' to dump sys.path.
 dumpSysPath = False
 
+# Full path of the benchmark executable, as specified by the '-e' option.
+bmExecutable = None
+# The breakpoint specification of bmExecutable, as specified by the '-x' option.
+bmBreakpointSpec = None
+# The benchamrk iteration count, as specified by the '-y' option.
+bmIterationCount = -1
+
+# By default, don't exclude any directories.  Use '-X' to add one excluded directory.
+excluded = set(['.svn', '.git'])
+
 # By default, failfast is False.  Use '-F' to overwrite it.
 failfast = False
 
 # The filters (testclass.testmethod) used to admit tests into our test suite.
 filters = []
+
+# The runhooks is a list of lldb commands specifically for the debugger.
+# Use '-k' to specify a runhook.
+runHooks = []
 
 # If '-g' is specified, the filterspec is not exclusive.  If a test module does
 # not contain testclass.testmethod which matches the filterspec, the whole test
@@ -116,8 +131,15 @@ fs4all = True
 # Ignore the build search path relative to this script to locate the lldb.py module.
 ignore = False
 
+# By default, we do not skip build and cleanup.  Use '-S' option to override.
+skip_build_and_cleanup = False
+
 # By default, we skip long running test case.  Use '-l' option to override.
-skipLongRunningTest = True
+skip_long_running_test = True
+
+# By default, we print the build dir, lldb version, and svn info.  Use '-n' option to
+# turn it off.
+noHeaders = False
 
 # The regular expression pattern to match against eligible filenames as our test cases.
 regexp = None
@@ -142,6 +164,9 @@ svn_info = ''
 # Default verbosity is 0.
 verbose = 0
 
+# Set to True only if verbose is 0 and LLDB trace mode is off.
+progress_bar = False
+
 # By default, search from the script directory.
 testdirs = [ sys.path[0] ]
 
@@ -159,6 +184,7 @@ where options:
        -A x86_64^i386 => launch inferior with x86_64 and i386 architectures
 -C   : specify the compiler(s) used to build the inferior executable
        -C clang => build debuggee using clang compiler
+       -C /my/full/path/to/clang => specify a full path to the clang binary
        -C clang^gcc => build debuggee using clang and gcc compilers
 -D   : dump the Python sys.path variable
 -a   : don't do lldb Python API tests
@@ -173,6 +199,8 @@ where options:
        will override those specified via a config file
        (see also lldb-trunk/example/test/usage-config)
 -d   : delay startup for 10 seconds (in order for the debugger to attach)
+-e   : specify the full path of an executable used for benchmark purpose;
+       see also '-x', which provides the breakpoint sepcification
 -F   : failfast, stop the test suite on the first error/failure
 -f   : specify a filter, which consists of the test class name, a dot, followed by
        the test method, to only admit such test into the test suite
@@ -182,16 +210,34 @@ where options:
        still admitted to the test suite
 -i   : ignore (don't bailout) if 'lldb.py' module cannot be located in the build
        tree relative to this script; use PYTHONPATH to locate the module
+-k   : specify a runhook, which is an lldb command to be executed by the debugger;
+       '-k' option can occur multiple times, the commands are executed one after the
+       other to bring the debugger to a desired state, so that, for example, further
+       benchmarking can be done
 -l   : don't skip long running test
+-n   : don't print the headers like build dir, lldb version, and svn info at all
 -p   : specify a regexp filename pattern for inclusion in the test suite
 -r   : specify a dir to relocate the tests and their intermediate files to;
        the directory must not exist before running this test driver;
        no cleanup of intermediate test files is performed in this case
+-S   : skip the build and cleanup while running the test
+       use this option with care as you would need to build the inferior(s) by hand
+       and build the executable(s) with the correct name(s)
+       this can be used with '-# n' to stress test certain test cases for n number of
+       times
 -s   : specify the name of the dir created to store the session files of tests
        with errored or failed status; if not specified, the test driver uses the
        timestamp as the session dir name
 -t   : turn on tracing of lldb command and other detailed test executions
 -v   : do verbose mode of unittest framework (print out each test case invocation)
+-X   : exclude a directory from consideration for test discovery
+       -X types => if 'types' appear in the pathname components of a potential testfile
+                   it will be ignored
+-x   : specify the breakpoint specification for the benchmark executable;
+       see also '-e', which provides the full path of the executable
+-y   : specify the iteration count used to collect our benchmarks; an example is
+       the number of times to do 'thread step-over' to measure stepping speed
+       see also '-e' and '-x' options
 -w   : insert some wait time (currently 0.5 sec) between consecutive test cases
 -#   : Repeat the test suite for a specified number of times
 
@@ -301,11 +347,18 @@ def parseOptionsAndInitTestdirs():
     global count
     global delay
     global dumpSysPath
+    global bmExecutable
+    global bmBreakpointSpec
+    global bmIterationCount
     global failfast
     global filters
     global fs4all
     global ignore
-    global skipLongRunningTest
+    global progress_bar
+    global runHooks
+    global skip_build_and_cleanup
+    global skip_long_running_test
+    global noHeaders
     global regexp
     global rdir
     global sdir_name
@@ -382,6 +435,15 @@ def parseOptionsAndInitTestdirs():
         elif sys.argv[index].startswith('-d'):
             delay = True
             index += 1
+        elif sys.argv[index].startswith('-e'):
+            # Increment by 1 to fetch the full path of the benchmark executable.
+            index += 1
+            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
+                usage()
+            bmExecutable = sys.argv[index]
+            if not is_exe(bmExecutable):
+                usage()
+            index += 1
         elif sys.argv[index].startswith('-F'):
             failfast = True
             index += 1
@@ -398,8 +460,18 @@ def parseOptionsAndInitTestdirs():
         elif sys.argv[index].startswith('-i'):
             ignore = True
             index += 1
+        elif sys.argv[index].startswith('-k'):
+            # Increment by 1 to fetch the runhook lldb command.
+            index += 1
+            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
+                usage()
+            runHooks.append(sys.argv[index])
+            index += 1
         elif sys.argv[index].startswith('-l'):
-            skipLongRunningTest = False
+            skip_long_running_test = False
+            index += 1
+        elif sys.argv[index].startswith('-n'):
+            noHeaders = True
             index += 1
         elif sys.argv[index].startswith('-p'):
             # Increment by 1 to fetch the reg exp pattern argument.
@@ -418,6 +490,9 @@ def parseOptionsAndInitTestdirs():
                 print "Relocated directory:", rdir, "must not exist!"
                 usage()
             index += 1
+        elif sys.argv[index].startswith('-S'):
+            skip_build_and_cleanup = True
+            index += 1
         elif sys.argv[index].startswith('-s'):
             # Increment by 1 to fetch the session dir name.
             index += 1
@@ -433,6 +508,27 @@ def parseOptionsAndInitTestdirs():
             index += 1
         elif sys.argv[index].startswith('-w'):
             os.environ["LLDB_WAIT_BETWEEN_TEST_CASES"] = 'YES'
+            index += 1
+        elif sys.argv[index].startswith('-X'):
+            # Increment by 1 to fetch an excluded directory.
+            index += 1
+            if index >= len(sys.argv):
+                usage()
+            excluded.add(sys.argv[index])
+            index += 1
+        elif sys.argv[index].startswith('-x'):
+            # Increment by 1 to fetch the breakpoint specification of the benchmark executable.
+            index += 1
+            if index >= len(sys.argv):
+                usage()
+            bmBreakpointSpec = sys.argv[index]
+            index += 1
+        elif sys.argv[index].startswith('-y'):
+            # Increment by 1 to fetch the the benchmark iteration count.
+            index += 1
+            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
+                usage()
+            bmIterationCount = int(sys.argv[index])
             index += 1
         elif sys.argv[index].startswith('-#'):
             # Increment by 1 to fetch the repeat count argument.
@@ -451,6 +547,10 @@ def parseOptionsAndInitTestdirs():
     # Do not specify both '-a' and '+a' at the same time.
     if dont_do_python_api_test and just_do_python_api_test:
         usage()
+
+    # The simple progress bar is turned on only if verbose == 0 and LLDB_COMMAND_TRACE is not 'YES'
+    if ("LLDB_COMMAND_TRACE" not in os.environ or os.environ["LLDB_COMMAND_TRACE"]!="YES") and verbose==0:
+        progress_bar = True
 
     # Gather all the dirs passed on the command line.
     if len(sys.argv) > index:
@@ -518,6 +618,7 @@ def setupSysPath():
     global rdir
     global testdirs
     global dumpSysPath
+    global noHeaders
     global svn_info
 
     # Get the directory containing the current script.
@@ -567,6 +668,13 @@ def setupSysPath():
     # Some of the tests can invoke the 'lldb' command directly.
     # We'll try to locate the appropriate executable right here.
 
+    # First, you can define an environment variable LLDB_EXEC specifying the
+    # full pathname of the lldb executable.
+    if "LLDB_EXEC" in os.environ and is_exe(os.environ["LLDB_EXEC"]):
+        lldbExec = os.environ["LLDB_EXEC"]
+    else:
+        lldbExec = None
+
     executable = ['lldb']
     dbgExec  = os.path.join(base, *(xcode3_build_dir + dbg + executable))
     dbgExec2 = os.path.join(base, *(xcode4_build_dir + dbg + executable))
@@ -575,42 +683,51 @@ def setupSysPath():
     baiExec  = os.path.join(base, *(xcode3_build_dir + bai + executable))
     baiExec2 = os.path.join(base, *(xcode4_build_dir + bai + executable))
 
-    lldbExec = None
+    # The 'lldb' executable built here in the source tree.
+    lldbHere = None
     if is_exe(dbgExec):
-        lldbExec = dbgExec
+        lldbHere = dbgExec
     elif is_exe(dbgExec2):
-        lldbExec = dbgExec2
+        lldbHere = dbgExec2
     elif is_exe(relExec):
-        lldbExec = relExec
+        lldbHere = relExec
     elif is_exe(relExec2):
-        lldbExec = relExec2
+        lldbHere = relExec2
     elif is_exe(baiExec):
-        lldbExec = baiExec
+        lldbHere = baiExec
     elif is_exe(baiExec2):
-        lldbExec = baiExec2
+        lldbHere = baiExec2
+    elif lldbExec:
+        lldbHere = lldbExec
 
-    if lldbExec:
-        os.environ["LLDB_BUILD_DIR"] = os.path.split(lldbExec)[0]
-        print os.environ["LLDB_BUILD_DIR"]
+    if lldbHere:
+        os.environ["LLDB_HERE"] = lldbHere
+        os.environ["LLDB_BUILD_DIR"] = os.path.split(lldbHere)[0]
+        if not noHeaders:
+            print "LLDB build dir:", os.environ["LLDB_BUILD_DIR"]
+            os.system('%s -v' % lldbHere)
 
+    # One last chance to locate the 'lldb' executable.
     if not lldbExec:
         lldbExec = which('lldb')
+        if lldbHere and not lldbExec:
+            lldbExec = lldbHere
+
 
     if not lldbExec:
         print "The 'lldb' executable cannot be located.  Some of the tests may not be run as a result."
     else:
         os.environ["LLDB_EXEC"] = lldbExec
-        #print "The 'lldb' executable path is", lldbExec
-        os.system('%s -v' % lldbExec)
+        #print "The 'lldb' from PATH env variable", lldbExec
     
-    import subprocess
     if os.path.isdir(os.path.join(base, '.svn')):
         pipe = subprocess.Popen(["svn", "info", base], stdout = subprocess.PIPE)
         svn_info = pipe.stdout.read()
     elif os.path.isdir(os.path.join(base, '.git')):
         pipe = subprocess.Popen(["git", "svn", "info", base], stdout = subprocess.PIPE)
         svn_info = pipe.stdout.read()
-    print svn_info
+    if not noHeaders:
+        print svn_info
 
     global ignore
 
@@ -677,6 +794,11 @@ def visit(prefix, dir, names):
     global regexp
     global filters
     global fs4all
+    global excluded
+
+    if set(dir.split(os.sep)).intersection(excluded):
+        #print "Detected an excluded dir component: %s" % dir
+        return
 
     for name in names:
         if os.path.isdir(os.path.join(dir, name)):
@@ -769,7 +891,6 @@ def lldbLoggings():
             raise Exception('log enable failed (check GDB_REMOTE_LOG env variable.')
 
 def getMyCommandLine():
-    import subprocess
     ps = subprocess.Popen(['ps', '-o', "command=CMD", str(os.getpid())], stdout=subprocess.PIPE).communicate()[0]
     lines = ps.split('\n')
     cmd_line = lines[1]
@@ -780,6 +901,22 @@ def getMyCommandLine():
 # Execution of the test driver starts here #
 #                                          #
 # ======================================== #
+
+def checkDsymForUUIDIsNotOn():
+    cmd = ["defaults", "read", "com.apple.DebugSymbols"]
+    pipe = subprocess.Popen(cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT)
+    cmd_output = pipe.stdout.read()
+    if cmd_output and "DBGFileMappedPaths = " in cmd_output:
+        print "%s =>" % ' '.join(cmd)
+        print cmd_output
+        print "Disable automatic lookup and caching of dSYMs before running the test suite!"
+        print "Exiting..."
+        sys.exit(0)
+
+# On MacOS X, check to make sure that domain for com.apple.DebugSymbols defaults
+# does not exist before proceeding to running the test suite.
+if sys.platform.startswith("darwin"):
+    checkDsymForUUIDIsNotOn()
 
 #
 # Start the actions by first parsing the options while setting up the test
@@ -797,7 +934,7 @@ if delay:
 
 #
 # If '-l' is specified, do not skip the long running tests.
-if not skipLongRunningTest:
+if not skip_long_running_test:
     os.environ["LLDB_SKIP_LONG_RUNNING_TEST"] = "NO"
 
 #
@@ -824,10 +961,21 @@ lldb.DBG = lldb.SBDebugger.Create()
 # Put the blacklist in the lldb namespace, to be used by lldb.TestBase.
 lldb.blacklist = blacklist
 
-# Put dont/just_do_python_api_test in the lldb namespace, too.
+# Put dont/just_do_python_api_test in the lldb namespace.
 lldb.dont_do_python_api_test = dont_do_python_api_test
 lldb.just_do_python_api_test = just_do_python_api_test
 lldb.just_do_benchmarks_test = just_do_benchmarks_test
+
+# Do we need to skip build and cleanup?
+lldb.skip_build_and_cleanup = skip_build_and_cleanup
+
+# Put bmExecutable, bmBreakpointSpec, and bmIterationCount into the lldb namespace, too.
+lldb.bmExecutable = bmExecutable
+lldb.bmBreakpointSpec = bmBreakpointSpec
+lldb.bmIterationCount = bmIterationCount
+
+# And don't forget the runHooks!
+lldb.runHooks = runHooks
 
 # Turn on lldb loggings if necessary.
 lldbLoggings()
@@ -848,9 +996,10 @@ if not sdir_name:
     sdir_name = timestamp
 os.environ["LLDB_SESSION_DIRNAME"] = os.path.join(os.getcwd(), sdir_name)
 
-sys.stderr.write("\nSession logs for test failures/errors/unexpected successes"
-                 " will go into directory '%s'\n" % sdir_name)
-sys.stderr.write("Command invoked: %s\n" % getMyCommandLine())
+if not noHeaders:
+    sys.stderr.write("\nSession logs for test failures/errors/unexpected successes"
+                     " will go into directory '%s'\n" % sdir_name)
+    sys.stderr.write("Command invoked: %s\n" % getMyCommandLine())
 
 if not os.path.isdir(sdir_name):
     os.mkdir(sdir_name)
@@ -999,6 +1148,16 @@ for ia in range(len(archs) if iterArchs else 1):
                     self.stream.write(self.fmt % self.counter)
                 super(LLDBTestResult, self).startTest(test)
 
+            def stopTest(self, test):
+                """Called when the given test has been run"""
+                if progress_bar:
+                    sys.__stdout__.write('.')
+                    sys.__stdout__.flush()
+                    if self.counter == suite.countTestCases():
+                        sys.__stdout__.write('\n')
+
+                super(LLDBTestResult, self).stopTest(test)
+
             def addError(self, test, err):
                 global sdir_has_content
                 sdir_has_content = True
@@ -1064,7 +1223,6 @@ if sdir_has_content:
 # Terminate the test suite if ${LLDB_TESTSUITE_FORCE_FINISH} is defined.
 # This should not be necessary now.
 if ("LLDB_TESTSUITE_FORCE_FINISH" in os.environ):
-    import subprocess
     print "Terminating Test suite..."
     subprocess.Popen(["/bin/sh", "-c", "kill %s; exit 0" % (os.getpid())])
 

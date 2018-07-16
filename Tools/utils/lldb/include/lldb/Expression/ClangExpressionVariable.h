@@ -206,6 +206,15 @@ public:
 
     void
     ValueUpdated ();
+    
+    // this function is used to copy the address-of m_live_sp into m_frozen_sp
+    // this is necessary because the results of certain cast and pointer-arithmetic
+    // operations (such as those described in bugzilla issues 11588 and 11618) generate
+    // frozen objcts that do not have a valid address-of, which can be troublesome when
+    // using synthetic children providers. transferring the address-of the live object
+    // solves these issues and provides the expected user-level behavior
+    void
+    TransferAddress (bool force = false);
 
     typedef lldb::SharedPtr<ValueObjectConstResult>::Type ValueObjectConstResultSP;
 
@@ -224,7 +233,8 @@ public:
         EVIsFreezeDried         = 1 << 3,   ///< This variable's authoritative version is in m_frozen_sp (for example, for statically-computed results)
         EVNeedsFreezeDry        = 1 << 4,   ///< Copy from m_live_sp to m_frozen_sp during dematerialization
         EVKeepInTarget          = 1 << 5,   ///< Keep the allocation after the expression is complete rather than freeze drying its contents and freeing it
-        EVUnknownType           = 1 << 6    ///< This is a symbol of unknown type, and the type must be resolved after parsing is complete
+        EVTypeIsReference       = 1 << 6,   ///< The original type of this variable is a reference, so materialize the value rather than the location
+        EVUnknownType           = 1 << 7    ///< This is a symbol of unknown type, and the type must be resolved after parsing is complete
     };
     
     uint16_t m_flags; // takes elements of Flags
@@ -314,6 +324,8 @@ public:
             {
                 var_sp = GetVariableAtIndex(index);
                 const char *var_name_cstr = var_sp->GetName().GetCString();
+                if (!var_name_cstr || !name)
+                    continue;
                 if (::strcmp (var_name_cstr, name) == 0)
                     return var_sp;
             }

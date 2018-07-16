@@ -87,17 +87,105 @@ public:
     virtual ObjCISA
     GetParentClass(ObjCISA isa) = 0;
     
+    virtual SymbolVendor *
+    GetSymbolVendor()
+    {
+        return NULL;
+    }
+    
     // Finds the byte offset of the child_type ivar in parent_type.  If it can't find the
     // offset, returns LLDB_INVALID_IVAR_OFFSET.
     
     virtual size_t
     GetByteOffsetForIvar (ClangASTType &parent_qual_type, const char *ivar_name);
     
-    // If the passed in "name" is an ObjC method, return true.  Also, fill in any of the
-    // sub-parts that are passed in non-NULL.  The base_name means the name stripped of
-    // category attributes.
+    //------------------------------------------------------------------
+    /// Chop up an objective C function prototype.
+    ///
+    /// Chop up an objective C function fullname and optionally fill in
+    /// any non-NULL ConstString objects. If a ConstString * is NULL,
+    /// then this name doesn't get filled in
+    ///
+    /// @param[in] name
+    ///     A fully specified objective C function name. The string might
+    ///     contain a category and it includes the leading "+" or "-" and
+    ///     the square brackets, no types for the arguments, just the plain
+    ///     selector. A few examples:
+    ///         "-[NSStringDrawingContext init]"
+    ///         "-[NSStringDrawingContext addString:inRect:]"
+    ///         "-[NSString(NSStringDrawing) sizeWithAttributes:]"
+    ///         "+[NSString(NSStringDrawing) usesFontLeading]"
+    ///         
+    /// @param[out] class_name
+    ///     If non-NULL, this string will be filled in with the class
+    ///     name including the category. The examples above would return:
+    ///         "NSStringDrawingContext"
+    ///         "NSStringDrawingContext"
+    ///         "NSString(NSStringDrawing)"
+    ///         "NSString(NSStringDrawing)"
+    ///
+    /// @param[out] selector_name
+    ///     If non-NULL, this string will be filled in with the selector
+    ///     name. The examples above would return:
+    ///         "init"
+    ///         "addString:inRect:"
+    ///         "sizeWithAttributes:"
+    ///         "usesFontLeading"
+    ///
+    /// @param[out] name_sans_category
+    ///     If non-NULL, this string will be filled in with the class
+    ///     name _without_ the category. If there is no category, and empty
+    ///     string will be returned (as the result would be normally returned
+    ///     in the "class_name" argument). The examples above would return:
+    ///         <empty>
+    ///         <empty>
+    ///         "-[NSString sizeWithAttributes:]"
+    ///         "+[NSString usesFontLeading]"
+    ///
+    /// @param[out] class_name_sans_category
+    ///     If non-NULL, this string will be filled in with the prototype
+    ///     name _without_ the category. If there is no category, and empty
+    ///     string will be returned (as this is already the value that was
+    ///     passed in). The examples above would return:
+    ///         <empty>
+    ///         <empty>
+    ///         "NSString"
+    ///         "NSString"
+    ///
+    /// @return
+    ///     Returns the number of strings that were successfully filled
+    ///     in.
+    //------------------------------------------------------------------
+    static uint32_t
+    ParseMethodName (const char *name, 
+                     ConstString *class_name,               // Class name (with category if there is one)
+                     ConstString *selector_name,            // selector only
+                     ConstString *name_sans_category,       // full function name with no category (empty if no category)
+                     ConstString *class_name_sans_category);// Class name without category (empty if no category)
+    
     static bool
-    ParseMethodName (const char *name, ConstString *class_name, ConstString *method_name, ConstString *base_name);
+    IsPossibleObjCMethodName (const char *name)
+    {
+        if (!name)
+            return false;
+        bool starts_right = (name[0] == '+' || name[0] == '-') && name[1] == '[';
+        bool ends_right = (name[strlen(name) - 1] == ']');
+        return (starts_right && ends_right);
+    }
+    
+    static bool
+    IsPossibleObjCSelector (const char *name)
+    {
+        if (!name)
+            return false;
+            
+        if (strchr(name, ':') == NULL)
+            return true;
+        else if (name[strlen(name) - 1] == ':')
+            return true;
+        else
+            return false;
+    }
     
 protected:
     //------------------------------------------------------------------

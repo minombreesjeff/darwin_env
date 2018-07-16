@@ -35,12 +35,12 @@
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/Target/Mangler.h"
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/COFF.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Target/Mangler.h"
-#include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/ADT/SmallString.h"
 using namespace llvm;
 
@@ -504,8 +504,8 @@ void X86AsmPrinter::EmitEndOfAsmFile(Module &M) {
         //   .indirect_symbol _foo
         OutStreamer.EmitSymbolAttribute(Stubs[i].second.getPointer(),
                                         MCSA_IndirectSymbol);
-        // hlt; hlt; hlt; hlt; hlt     hlt = 0xf4 = -12.
-        const char HltInsts[] = { -12, -12, -12, -12, -12 };
+        // hlt; hlt; hlt; hlt; hlt     hlt = 0xf4.
+        const char HltInsts[] = "\xf4\xf4\xf4\xf4\xf4";
         OutStreamer.EmitBytes(StringRef(HltInsts, 5), 0/*addrspace*/);
       }
 

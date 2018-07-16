@@ -11,6 +11,12 @@
 #ifndef liblldb_ScriptInterpreterPython_h_
 #define liblldb_ScriptInterpreterPython_h_
 
+#ifdef LLDB_DISABLE_PYTHON
+
+// Python is disabled in this build
+
+#else
+
 #if defined (__APPLE__)
 #include <Python/Python.h>
 #else
@@ -23,7 +29,7 @@
 #include "lldb/Host/Terminal.h"
 
 namespace lldb_private {
-
+    
 class ScriptInterpreterPython : public ScriptInterpreter
 {
 public:
@@ -40,7 +46,7 @@ public:
 
     bool
     ExecuteOneLineWithReturn (const char *in_string, 
-                              ScriptInterpreter::ReturnType return_type,
+                              ScriptInterpreter::ScriptReturnType return_type,
                               void *ret_value);
 
     bool
@@ -69,7 +75,7 @@ public:
     virtual uint32_t
     CalculateNumChildren (void *implementor);
     
-    virtual void*
+    virtual lldb::ValueObjectSP
     GetChildAtIndex (void *implementor, uint32_t idx);
     
     virtual int
@@ -78,13 +84,11 @@ public:
     virtual void
     UpdateSynthProviderInstance (void* implementor);
     
-    virtual lldb::SBValue*
-    CastPyObjectToSBValue (void* data);
-    
     virtual bool
     RunScriptBasedCommand(const char* impl_function,
                           const char* args,
-                          lldb::SBStream& stream,
+                          ScriptedCommandSynchronicity synchronicity,
+                          lldb_private::CommandReturnObject& cmd_retobj,
                           Error& error);
     
     bool
@@ -109,6 +113,14 @@ public:
     static std::string
     CallPythonScriptFunction (const char *python_function_name,
                               lldb::ValueObjectSP valobj);
+    
+    virtual std::string
+    GetDocumentationForItem (const char* item);
+    
+    virtual bool
+    LoadScriptingModule (const char* filename,
+                         bool can_reload,
+                         lldb_private::Error& error);
 
     void
     CollectDataForBreakpointCommandCallback (BreakpointOptions *bp_options,
@@ -141,7 +153,8 @@ public:
                            SWIGPythonGetIndexOfChildWithName python_swig_get_index_child,
                            SWIGPythonCastPyObjectToSBValue python_swig_cast_to_sbvalue,
                            SWIGPythonUpdateSynthProviderInstance python_swig_update_provider,
-                           SWIGPythonCallCommand python_swig_call_command);
+                           SWIGPythonCallCommand python_swig_call_command,
+                           SWIGPythonCallModuleInit python_swig_call_mod_init);
 
 protected:
 
@@ -158,6 +171,71 @@ protected:
     RestoreTerminalState ();
     
 private:
+    
+    class SynchronicityHandler
+    {
+    private:
+        lldb::DebuggerSP             m_debugger_sp;
+        ScriptedCommandSynchronicity m_synch_wanted;
+        bool                         m_old_asynch;
+    public:
+        SynchronicityHandler(lldb::DebuggerSP,
+                             ScriptedCommandSynchronicity);
+        ~SynchronicityHandler();
+    };
+    
+	class Locker
+	{
+	public:
+        
+        enum OnEntry
+        {
+            AcquireLock         = 0x0001,
+            InitSession         = 0x0002
+        };
+        
+        enum OnLeave
+        {
+            FreeLock            = 0x0001,
+            FreeAcquiredLock    = 0x0002,    // do not free the lock if we already held it when calling constructor
+            TearDownSession     = 0x0004
+        };
+        
+        Locker (ScriptInterpreterPython *py_interpreter = NULL,
+                uint16_t on_entry = AcquireLock | InitSession,
+                uint16_t on_leave = FreeLock | TearDownSession,
+                FILE* wait_msg_handle = NULL);
+        
+    	~Locker ();
+    
+        static bool
+        CurrentThreadHasPythonLock ();
+        
+	private:
+        
+        bool
+        DoAcquireLock ();
+        
+        bool
+        DoInitSession ();
+        
+        bool
+        DoFreeLock ();
+        
+        bool
+        DoTearDownSession ();
+        
+        static bool
+        TryGetPythonLock (uint32_t seconds_to_wait);
+        
+        static void
+        ReleasePythonLock ();
+        
+    	bool                     m_need_session;
+    	bool                     m_release_lock;
+    	ScriptInterpreterPython *m_python_interpreter;
+    	FILE*                    m_tmp_fh;
+	};
 
     static size_t
     InputReaderCallback (void *baton, 
@@ -170,7 +248,7 @@ private:
     lldb_utility::PseudoTerminal m_embedded_python_pty;
     lldb::InputReaderSP m_embedded_thread_input_reader_sp;
     FILE *m_dbg_stdout;
-    PyObject *m_new_sysout;
+    void *m_new_sysout; // This is a PyObject.
     std::string m_dictionary_name;
     TerminalState m_terminal_state;
     bool m_session_is_active;
@@ -178,8 +256,8 @@ private:
     bool m_valid_session;
                          
 };
-
 } // namespace lldb_private
 
+#endif // #ifdef LLDB_DISABLE_PYTHON
 
 #endif // #ifndef liblldb_ScriptInterpreterPython_h_

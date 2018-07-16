@@ -63,7 +63,7 @@ ObjCLanguageRuntime::AddToClassNameCache (lldb::addr_t class_addr, const char *n
     
     TypeAndOrName class_type_or_name;
     
-    if (type_sp != NULL)
+    if (type_sp)
         class_type_or_name.SetTypeSP (type_sp);
     else if (name && *name != '\0')
         class_type_or_name.SetName (name);
@@ -101,17 +101,25 @@ ObjCLanguageRuntime::GetByteOffsetForIvar (ClangASTType &parent_qual_type, const
 }
 
 
-bool
+uint32_t
 ObjCLanguageRuntime::ParseMethodName (const char *name, 
-                                      ConstString *class_name, 
-                                      ConstString *method_name, 
-                                      ConstString *base_name)
+                                      ConstString *class_name,              // Class name (with category if any)
+                                      ConstString *selector_name,           // selector on its own
+                                      ConstString *name_sans_category,      // Full function prototype with no category
+                                      ConstString *class_name_sans_category)// Class name with no category (or empty if no category as answer will be in "class_name"
 {
-    if (class_name) { class_name->Clear(); }
-    if (method_name) { method_name->Clear(); }
-    if (base_name) { base_name->Clear(); }
+    if (class_name)
+        class_name->Clear();
+    if (selector_name)
+        selector_name->Clear();
+    if (name_sans_category)
+        name_sans_category->Clear();
+    if (class_name_sans_category)
+        class_name_sans_category->Clear();
     
-    if (name && (name[0] == '-' || name[0] == '+') && name[1] == '[')
+    uint32_t result = 0;
+
+    if (IsPossibleObjCMethodName (name))
     {
         int name_len = strlen (name);
         // Objective C methods must have at least:
@@ -122,44 +130,55 @@ ObjCLanguageRuntime::ParseMethodName (const char *name,
         //      "]" suffix
         if (name_len >= 6 && name[name_len - 1] == ']')
         {
-            const char *method_name_ptr;
-            method_name_ptr = strchr (name, ' ');
-            if (method_name_ptr)
+            const char *selector_name_ptr = strchr (name, ' ');
+            if (selector_name_ptr)
             {
                 if (class_name)
-                    class_name->SetCStringWithLength (name + 2, method_name_ptr - name - 2);
+                {
+                    class_name->SetCStringWithLength (name + 2, selector_name_ptr - name - 2);
+                    ++result;
+                }    
                 
                 // Skip the space
-                ++method_name_ptr;
+                ++selector_name_ptr;
                 // Extract the objective C basename and add it to the
                 // accelerator tables
-                size_t method_name_len = name_len - (method_name_ptr - name) - 1;
-                if (method_name)
-                    method_name->SetCStringWithLength (method_name_ptr, method_name_len);                                
+                size_t selector_name_len = name_len - (selector_name_ptr - name) - 1;
+                if (selector_name)
+                {
+                    selector_name->SetCStringWithLength (selector_name_ptr, selector_name_len);                                
+                    ++result;
+                }
                 
                 // Also see if this is a "category" on our class.  If so strip off the category name,
                 // and add the class name without it to the basename table. 
                 
-                if (base_name)
+                if (name_sans_category || class_name_sans_category)
                 {
-                    const char *first_paren = (char *) memchr (name, '(', method_name_ptr - name);
-                    if (first_paren)
+                    const char *open_paren = strchr (name, '(');
+                    if (open_paren)
                     {
-                        const char *second_paren = (char *) memchr (first_paren, ')', method_name_ptr - first_paren);
-                        if (second_paren)
+                        if (class_name_sans_category)
                         {
-                            std::string buffer (name, first_paren - name);
-                            buffer.append (second_paren + 1);
-                            base_name->SetCString (buffer.c_str());
-
+                            class_name_sans_category->SetCStringWithLength (name + 2, open_paren - name - 2);
+                            ++result;
+                        }
+                        
+                        if (name_sans_category)
+                        {
+                            const char *close_paren = strchr (open_paren, ')');
+                            if (open_paren < close_paren)
+                            {
+                                std::string buffer (name, open_paren - name);
+                                buffer.append (close_paren + 1);
+                                name_sans_category->SetCString (buffer.c_str());
+                                ++result;
+                            }
                         }
                     }
                 }
             }
-            return true;
         }
-        return false;
     }
-    else
-        return false;
+    return result;
 }

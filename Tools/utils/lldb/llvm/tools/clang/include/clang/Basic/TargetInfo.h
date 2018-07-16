@@ -32,7 +32,7 @@ struct fltSemantics;
 }
 
 namespace clang {
-class Diagnostic;
+class DiagnosticsEngine;
 class LangOptions;
 class MacroBuilder;
 class SourceLocation;
@@ -69,16 +69,19 @@ protected:
   unsigned char PointerWidth, PointerAlign;
   unsigned char BoolWidth, BoolAlign;
   unsigned char IntWidth, IntAlign;
+  unsigned char HalfWidth, HalfAlign;
   unsigned char FloatWidth, FloatAlign;
   unsigned char DoubleWidth, DoubleAlign;
   unsigned char LongDoubleWidth, LongDoubleAlign;
   unsigned char LargeArrayMinWidth, LargeArrayAlign;
   unsigned char LongWidth, LongAlign;
   unsigned char LongLongWidth, LongLongAlign;
+  unsigned char MaxAtomicPromoteWidth, MaxAtomicInlineWidth;
   const char *DescriptionString;
   const char *UserLabelPrefix;
   const char *MCountName;
-  const llvm::fltSemantics *FloatFormat, *DoubleFormat, *LongDoubleFormat;
+  const llvm::fltSemantics *HalfFormat, *FloatFormat, *DoubleFormat,
+    *LongDoubleFormat;
   unsigned char RegParmMax, SSERegParmMax;
   TargetCXXABI CXXABI;
   const LangAS::Map *AddrSpaceMap;
@@ -88,6 +91,7 @@ protected:
 
   unsigned HasAlignMac68kSupport : 1;
   unsigned RealTypeUsesObjCFPRet : 3;
+  unsigned ComplexLongDoubleUsesFP2Ret : 1;
 
   // TargetInfo Constructor.  Default initializes all fields.
   TargetInfo(const std::string &T);
@@ -98,7 +102,8 @@ public:
   /// \param Opts - The options to use to initialize the target. The target may
   /// modify the options to canonicalize the target feature information to match
   /// what the backend expects.
-  static TargetInfo* CreateTargetInfo(Diagnostic &Diags, TargetOptions &Opts);
+  static TargetInfo* CreateTargetInfo(DiagnosticsEngine &Diags,
+                                      TargetOptions &Opts);
 
   virtual ~TargetInfo();
 
@@ -222,6 +227,11 @@ public:
   unsigned getChar32Width() const { return getTypeWidth(Char32Type); }
   unsigned getChar32Align() const { return getTypeAlign(Char32Type); }
 
+  /// getHalfWidth/Align/Format - Return the size/align/format of 'half'.
+  unsigned getHalfWidth() const { return HalfWidth; }
+  unsigned getHalfAlign() const { return HalfAlign; }
+  const llvm::fltSemantics &getHalfFormat() const { return *HalfFormat; }
+
   /// getFloatWidth/Align/Format - Return the size/align/format of 'float'.
   unsigned getFloatWidth() const { return FloatWidth; }
   unsigned getFloatAlign() const { return FloatAlign; }
@@ -244,6 +254,14 @@ public:
   // 'large' and its alignment.
   unsigned getLargeArrayMinWidth() const { return LargeArrayMinWidth; }
   unsigned getLargeArrayAlign() const { return LargeArrayAlign; }
+
+  /// getMaxAtomicPromoteWidth - Return the maximum width lock-free atomic
+  /// operation which will ever be supported for the given target
+  unsigned getMaxAtomicPromoteWidth() const { return MaxAtomicPromoteWidth; }
+  /// getMaxAtomicInlineWidth - Return the maximum width lock-free atomic
+  /// operation which can be inlined given the supported features of the
+  /// given target.
+  unsigned getMaxAtomicInlineWidth() const { return MaxAtomicInlineWidth; }
 
   /// getIntMaxTWidth - Return the size of intmax_t and uintmax_t for this
   /// target, in bits.
@@ -308,6 +326,12 @@ public:
   /// Obj-C message passing on this target.
   bool useObjCFPRetForRealType(RealType T) const {
     return RealTypeUsesObjCFPRet & (1 << T);
+  }
+
+  /// \brief Check whether _Complex long double should use the "fp2ret" flavor
+  /// of Obj-C message passing on this target.
+  bool useObjCFP2RetForComplexLongDouble() const {
+    return ComplexLongDoubleUsesFP2Ret;
   }
 
   ///===---- Other target property query methods --------------------------===//
@@ -478,11 +502,9 @@ public:
   /// language options which change the target configuration.
   virtual void setForcedLangOptions(LangOptions &Opts);
 
-  /// getDefaultFeatures - Get the default set of target features for
-  /// the \args CPU; this should include all legal feature strings on
-  /// the target.
-  virtual void getDefaultFeatures(const std::string &CPU,
-                                  llvm::StringMap<bool> &Features) const {
+  /// getDefaultFeatures - Get the default set of target features for the CPU;
+  /// this should include all legal feature strings on the target.
+  virtual void getDefaultFeatures(llvm::StringMap<bool> &Features) const {
   }
 
   /// getABI - Get the ABI in use.
@@ -498,10 +520,8 @@ public:
   /// setCPU - Target the specific CPU.
   ///
   /// \return - False on error (invalid CPU name).
-  //
-  // FIXME: Remove this.
   virtual bool setCPU(const std::string &Name) {
-    return true;
+    return false;
   }
 
   /// setABI - Use the specific ABI.

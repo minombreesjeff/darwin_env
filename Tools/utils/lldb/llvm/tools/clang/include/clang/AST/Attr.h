@@ -22,6 +22,8 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cassert>
 #include <cstring>
 #include <algorithm>
@@ -57,7 +59,7 @@ namespace clang {
 /// Attr - This represents one attribute.
 class Attr {
 private:
-  SourceLocation Loc;
+  SourceRange Range;
   unsigned AttrKind : 16;
 
 protected:
@@ -66,11 +68,10 @@ protected:
   virtual ~Attr();
   
   void* operator new(size_t bytes) throw() {
-    assert(0 && "Attrs cannot be allocated with regular 'new'.");
-    return 0;
+    llvm_unreachable("Attrs cannot be allocated with regular 'new'.");
   }
   void operator delete(void* data) throw() {
-    assert(0 && "Attrs cannot be released with regular 'delete'.");
+    llvm_unreachable("Attrs cannot be released with regular 'delete'.");
   }
 
 public:
@@ -85,8 +86,8 @@ public:
   }
 
 protected:
-  Attr(attr::Kind AK, SourceLocation L)
-    : Loc(L), AttrKind(AK), Inherited(false) {}
+  Attr(attr::Kind AK, SourceRange R)
+    : Range(R), AttrKind(AK), Inherited(false) {}
 
 public:
 
@@ -94,13 +95,17 @@ public:
     return static_cast<attr::Kind>(AttrKind);
   }
 
-  SourceLocation getLocation() const { return Loc; }
-  void setLocation(SourceLocation L) { Loc = L; }
+  SourceLocation getLocation() const { return Range.getBegin(); }
+  SourceRange getRange() const { return Range; }
+  void setRange(SourceRange R) { Range = R; }
 
   bool isInherited() const { return Inherited; }
 
   // Clone this attribute.
   virtual Attr* clone(ASTContext &C) const = 0;
+
+  // Pretty print this attribute.
+  virtual void printPretty(llvm::raw_ostream &OS, ASTContext &C) const = 0;
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Attr *) { return true; }
@@ -108,8 +113,8 @@ public:
 
 class InheritableAttr : public Attr {
 protected:
-  InheritableAttr(attr::Kind AK, SourceLocation L)
-    : Attr(AK, L) {}
+  InheritableAttr(attr::Kind AK, SourceRange R)
+    : Attr(AK, R) {}
 
 public:
   void setInherited(bool I) { Inherited = I; }
@@ -123,8 +128,8 @@ public:
 
 class InheritableParamAttr : public InheritableAttr {
 protected:
-  InheritableParamAttr(attr::Kind AK, SourceLocation L)
-    : InheritableAttr(AK, L) {}
+  InheritableParamAttr(attr::Kind AK, SourceRange R)
+    : InheritableAttr(AK, R) {}
 
 public:
   // Implement isa/cast/dyncast/etc.

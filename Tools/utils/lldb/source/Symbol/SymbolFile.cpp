@@ -7,10 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "lldb/lldb-private.h"
 #include "lldb/Symbol/SymbolFile.h"
+
+#include "lldb/lldb-private.h"
+#include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/StreamString.h"
 #include "lldb/Symbol/ObjectFile.h"
 
 using namespace lldb_private;
@@ -67,4 +70,3 @@ SymbolFile::GetClangASTContext ()
 {
     return m_obj_file->GetModule()->GetClangASTContext();
 }
-

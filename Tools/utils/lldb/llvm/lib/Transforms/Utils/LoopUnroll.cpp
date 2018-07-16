@@ -21,6 +21,7 @@
 #include "llvm/BasicBlock.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Support/Debug.h"
@@ -28,6 +29,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/SimplifyIndVar.h"
 using namespace llvm;
 
 // TODO: Should these be here or in LoopUnroll?
@@ -129,8 +131,12 @@ static BasicBlock *FoldBlockIntoPredecessor(BasicBlock *BB, LoopInfo* LI,
 ///
 /// If a LoopPassManager is passed in, and the loop is fully removed, it will be
 /// removed from the LoopPassManager as well. LPM can also be NULL.
+///
+/// This utility preserves LoopInfo. If DominatorTree or ScalarEvolution are
+/// available it must also preserve those analyses.
 bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
-                      unsigned TripMultiple, LoopInfo *LI, LPPassManager *LPM) {
+                      bool AllowRuntime, unsigned TripMultiple,
+                      LoopInfo *LI, LPPassManager *LPM) {
   BasicBlock *Preheader = L->getLoopPreheader();
   if (!Preheader) {
     DEBUG(dbgs() << "  Can't unroll; loop preheader-insertion failed.\n");
@@ -160,11 +166,6 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
     return false;
   }
 
-  // Notify ScalarEvolution that the loop will be substantially changed,
-  // if not outright eliminated.
-  if (ScalarEvolution *SE = LPM->getAnalysisIfAvailable<ScalarEvolution>())
-    SE->forgetLoop(L);
-
   if (TripCount != 0)
     DEBUG(dbgs() << "  Trip Count = " << TripCount << "\n");
   if (TripMultiple != 1)
@@ -181,6 +182,20 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
 
   // Are we eliminating the loop control altogether?
   bool CompletelyUnroll = Count == TripCount;
+
+  // We assume a run-time trip count if the compiler cannot
+  // figure out the loop trip count and the unroll-runtime
+  // flag is specified.
+  bool RuntimeTripCount = (TripCount == 0 && Count > 0 && AllowRuntime);
+
+  if (RuntimeTripCount && !UnrollRuntimeLoopProlog(L, Count, LI, LPM))
+    return false;
+
+  // Notify ScalarEvolution that the loop will be substantially changed,
+  // if not outright eliminated.
+  ScalarEvolution *SE = LPM->getAnalysisIfAvailable<ScalarEvolution>();
+  if (SE)
+    SE->forgetLoop(L);
 
   // If we know the trip count, we know the multiple...
   unsigned BreakoutTrip = 0;
@@ -203,6 +218,8 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
       DEBUG(dbgs() << " with a breakout at trip " << BreakoutTrip);
     } else if (TripMultiple != 1) {
       DEBUG(dbgs() << " with " << TripMultiple << " trips per branch");
+    } else if (RuntimeTripCount) {
+      DEBUG(dbgs() << " with run-time trip count");
     }
     DEBUG(dbgs() << "!\n");
   }
@@ -225,11 +242,20 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
   Headers.push_back(Header);
   Latches.push_back(LatchBlock);
 
+  // The current on-the-fly SSA update requires blocks to be processed in
+  // reverse postorder so that LastValueMap contains the correct value at each
+  // exit.
+  LoopBlocksDFS DFS(L);
+  DFS.perform(LI);
+
+  // Stash the DFS iterators before adding blocks to the loop.
+  LoopBlocksDFS::RPOIterator BlockBegin = DFS.beginRPO();
+  LoopBlocksDFS::RPOIterator BlockEnd = DFS.endRPO();
+
   for (unsigned It = 1; It != Count; ++It) {
     std::vector<BasicBlock*> NewBlocks;
 
-    for (std::vector<BasicBlock*>::iterator BB = LoopBlocks.begin(),
-         E = LoopBlocks.end(); BB != E; ++BB) {
+    for (LoopBlocksDFS::RPOIterator BB = BlockBegin; BB != BlockEnd; ++BB) {
       ValueToValueMapTy VMap;
       BasicBlock *New = CloneBasicBlock(*BB, VMap, "." + Twine(It));
       Header->getParent()->getBasicBlockList().push_back(New);
@@ -255,34 +281,26 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
 
       L->addBasicBlockToLoop(New, LI->getBase());
 
-      // Add phi entries for newly created values to all exit blocks except
-      // the successor of the latch block.  The successor of the exit block will
-      // be updated specially after unrolling all the way.
-      if (*BB != LatchBlock)
-        for (succ_iterator SI = succ_begin(*BB), SE = succ_end(*BB); SI != SE;
-             ++SI)
-          if (!L->contains(*SI))
-            for (BasicBlock::iterator BBI = (*SI)->begin();
-                 PHINode *phi = dyn_cast<PHINode>(BBI); ++BBI) {
-              Value *Incoming = phi->getIncomingValueForBlock(*BB);
-              phi->addIncoming(Incoming, New);
-            }
-
+      // Add phi entries for newly created values to all exit blocks.
+      for (succ_iterator SI = succ_begin(*BB), SE = succ_end(*BB);
+           SI != SE; ++SI) {
+        if (L->contains(*SI))
+          continue;
+        for (BasicBlock::iterator BBI = (*SI)->begin();
+             PHINode *phi = dyn_cast<PHINode>(BBI); ++BBI) {
+          Value *Incoming = phi->getIncomingValueForBlock(*BB);
+          ValueToValueMapTy::iterator It = LastValueMap.find(Incoming);
+          if (It != LastValueMap.end())
+            Incoming = It->second;
+          phi->addIncoming(Incoming, New);
+        }
+      }
       // Keep track of new headers and latches as we create them, so that
       // we can insert the proper branches later.
       if (*BB == Header)
         Headers.push_back(New);
-      if (*BB == LatchBlock) {
+      if (*BB == LatchBlock)
         Latches.push_back(New);
-
-        // Also, clear out the new latch's back edge so that it doesn't look
-        // like a new loop, so that it's amenable to being merged with adjacent
-        // blocks later on.
-        TerminatorInst *Term = New->getTerminator();
-        assert(L->contains(Term->getSuccessor(!ContinueOnTrue)));
-        assert(Term->getSuccessor(ContinueOnTrue) == LoopExit);
-        Term->setSuccessor(!ContinueOnTrue, NULL);
-      }
 
       NewBlocks.push_back(New);
     }
@@ -294,35 +312,23 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
         ::RemapInstruction(I, LastValueMap);
   }
 
-  // The latch block exits the loop.  If there are any PHI nodes in the
-  // successor blocks, update them to use the appropriate values computed as the
-  // last iteration of the loop.
-  if (Count != 1) {
-    BasicBlock *LastIterationBB = cast<BasicBlock>(LastValueMap[LatchBlock]);
-    for (succ_iterator SI = succ_begin(LatchBlock), SE = succ_end(LatchBlock);
-         SI != SE; ++SI) {
-      for (BasicBlock::iterator BBI = (*SI)->begin();
-           PHINode *PN = dyn_cast<PHINode>(BBI); ++BBI) {
-        Value *InVal = PN->removeIncomingValue(LatchBlock, false);
-        // If this value was defined in the loop, take the value defined by the
-        // last iteration of the loop.
-        if (Instruction *InValI = dyn_cast<Instruction>(InVal)) {
-          if (L->contains(InValI))
-            InVal = LastValueMap[InVal];
-        }
-        PN->addIncoming(InVal, LastIterationBB);
-      }
-    }
-  }
-
-  // Now, if we're doing complete unrolling, loop over the PHI nodes in the
-  // original block, setting them to their incoming values.
-  if (CompletelyUnroll) {
-    BasicBlock *Preheader = L->getLoopPreheader();
-    for (unsigned i = 0, e = OrigPHINode.size(); i != e; ++i) {
-      PHINode *PN = OrigPHINode[i];
+  // Loop over the PHI nodes in the original block, setting incoming values.
+  for (unsigned i = 0, e = OrigPHINode.size(); i != e; ++i) {
+    PHINode *PN = OrigPHINode[i];
+    if (CompletelyUnroll) {
       PN->replaceAllUsesWith(PN->getIncomingValueForBlock(Preheader));
       Header->getInstList().erase(PN);
+    }
+    else if (Count > 1) {
+      Value *InVal = PN->removeIncomingValue(LatchBlock, false);
+      // If this value was defined in the loop, take the value defined by the
+      // last iteration of the loop.
+      if (Instruction *InValI = dyn_cast<Instruction>(InVal)) {
+        if (L->contains(InValI))
+          InVal = LastValueMap[InVal];
+      }
+      assert(Latches.back() == LastValueMap[LatchBlock] && "bad last latch");
+      PN->addIncoming(InVal, Latches.back());
     }
   }
 
@@ -336,6 +342,10 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
     unsigned j = (i + 1) % e;
     BasicBlock *Dest = Headers[j];
     bool NeedConditional = true;
+
+    if (RuntimeTripCount && j != 0) {
+      NeedConditional = false;
+    }
 
     // For a complete unroll, make the last iteration end with a branch
     // to the exit block.
@@ -355,6 +365,19 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
       // iteration.
       Term->setSuccessor(!ContinueOnTrue, Dest);
     } else {
+      // Remove phi operands at this loop exit
+      if (Dest != LoopExit) {
+        BasicBlock *BB = Latches[i];
+        for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB);
+             SI != SE; ++SI) {
+          if (*SI == Headers[i])
+            continue;
+          for (BasicBlock::iterator BBI = (*SI)->begin();
+               PHINode *Phi = dyn_cast<PHINode>(BBI); ++BBI) {
+            Phi->removeIncomingValue(BB, false);
+          }
+        }
+      }
       // Replace the conditional branch with an unconditional one.
       BranchInst::Create(Dest, Term);
       Term->eraseFromParent();
@@ -369,6 +392,24 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount,
       if (BasicBlock *Fold = FoldBlockIntoPredecessor(Dest, LI, LPM))
         std::replace(Latches.begin(), Latches.end(), Dest, Fold);
     }
+  }
+
+  // FIXME: Reconstruct dom info, because it is not preserved properly.
+  // Incrementally updating domtree after loop unrolling would be easy.
+  if (DominatorTree *DT = LPM->getAnalysisIfAvailable<DominatorTree>())
+    DT->runOnFunction(*L->getHeader()->getParent());
+
+  // Simplify any new induction variables in the partially unrolled loop.
+  if (SE && !CompletelyUnroll) {
+    SmallVector<WeakVH, 16> DeadInsts;
+    simplifyLoopIVs(L, SE, LPM, DeadInsts);
+
+    // Aggressively clean up dead instructions that simplifyLoopIVs already
+    // identified. Any remaining should be cleaned up below.
+    while (!DeadInsts.empty())
+      if (Instruction *Inst =
+          dyn_cast_or_null<Instruction>(&*DeadInsts.pop_back_val()))
+        RecursivelyDeleteTriviallyDeadInstructions(Inst);
   }
 
   // At this point, the code is well formed.  We now do a quick sweep over the

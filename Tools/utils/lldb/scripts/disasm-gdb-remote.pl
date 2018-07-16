@@ -20,10 +20,17 @@ our $reg32_href = { extract => \&get32, format => "0x%8.8x" };
 our $reg64_href = { extract => \&get64, format => "0x%s" };
 our $reg80_href = { extract => \&get80, format => "0x%s" };
 our $reg128_href = { extract => \&get128, format => "0x%s" };
+our $reg256_href = { extract => \&get256, format => "0x%s" };
 our $float32_href = { extract => \&get32, format => "0x%8.8x" };
 our $float64_href = { extract => \&get64, format => "0x%s" };
 our $float96_href = { extract => \&get96, format => "0x%s" };
 our $curr_cmd = undef;
+our $curr_full_cmd = undef;
+our %packet_times;
+our $curr_time = 0.0;
+our $last_time = 0.0;
+our $base_time = 0.0;
+our $packet_start_time = 0.0;
 our $reg_cmd_reg;
 our %reg_map = (
 	'i386-gdb' => [ 
@@ -505,7 +512,9 @@ our %cmd_callbacks =
 	'k' => \&dump_kill_cmd,
 	'A' => \&dump_A_command,
 	'c' => \&dump_continue_cmd,
+	's' => \&dump_continue_cmd,
 	'C' => \&dump_continue_with_signal_cmd,
+	'S' => \&dump_continue_with_signal_cmd,
 	'_M' => \&dump_allocate_memory_cmd,
 	'_m' => \&dump_deallocate_memory_cmd,
 	# extended commands
@@ -520,6 +529,7 @@ our %cmd_callbacks =
 our %rsp_callbacks = 
 (
 	'c' => \&dump_stop_reply_packet,
+	's' => \&dump_stop_reply_packet,
 	'C' => \&dump_stop_reply_packet,
 	'?' => \&dump_stop_reply_packet,
 	'T' => \&dump_thread_is_alive_rsp,
@@ -770,9 +780,12 @@ sub dump_general_query_rsp
 				{
 					if    ($byte_size == 4)  {push @$registers_aref, { name => $reg_name, info => $reg32_href };}
 					elsif ($byte_size == 8)  {push @$registers_aref, { name => $reg_name, info => $reg64_href };}
+					elsif ($byte_size == 1)  {push @$registers_aref, { name => $reg_name, info => $reg8_href };}
+					elsif ($byte_size == 2)  {push @$registers_aref, { name => $reg_name, info => $reg16_href };}
 					elsif ($byte_size == 10) {push @$registers_aref, { name => $reg_name, info => $reg80_href };}
 					elsif ($byte_size == 12) {push @$registers_aref, { name => $reg_name, info => $float96_href };}
 					elsif ($byte_size == 16) {push @$registers_aref, { name => $reg_name, info => $reg128_href };}
+					elsif ($byte_size == 32) {push @$registers_aref, { name => $reg_name, info => $reg256_href };}
 				}
 			}
 			elsif ($gen_query_rsp_len == 3 and index($gen_query_rsp, 'E') == 0)
@@ -964,9 +977,9 @@ sub dump_deallocate_memory_cmd
 sub dump_read_single_register_cmd
 {
 	my $cmd = shift;
-	my $reg_num = get_hex(\@_);
+	$reg_cmd_reg = get_hex(\@_);
 	my $thread = get_thread_from_thread_suffix (\@_);
-	my $reg_href = $$registers_aref[$reg_num];
+	my $reg_href = $$registers_aref[$reg_cmd_reg];
   
 	if (defined $thread)
 	{
@@ -1056,30 +1069,37 @@ sub dump_read_mem_rsp
 }
 
 #----------------------------------------------------------------------
-# 'c' command
+# 'c' or 's' command
 #----------------------------------------------------------------------
 sub dump_continue_cmd
 {	
 	my $cmd = shift;
+	my $cmd_str;
+	$cmd eq 'c' and $cmd_str = 'continue';
+	$cmd eq 's' and $cmd_str = 'step';
 	my $address = -1;
 	if (@_)
 	{
 		my $address = get_addr(\@_);
-		printf("continue ($addr_format)\n", $address);
+		printf("%s ($addr_format)\n", $cmd_str, $address);
 	}
 	else
 	{
-		printf("continue ()\n");
+		printf("%s ()\n", $cmd_str);
 	}
 }
 
 #----------------------------------------------------------------------
 # 'Css' continue (C) with signal (ss where 'ss' is two hex digits)
+# 'Sss' step (S) with signal (ss where 'ss' is two hex digits)
 #----------------------------------------------------------------------
 sub dump_continue_with_signal_cmd
 {	
 	my $cmd = shift;
 	my $address = -1;
+	my $cmd_str;
+	$cmd eq 'c' and $cmd_str = 'continue';
+	$cmd eq 's' and $cmd_str = 'step';
 	my $signal = get_hex(\@_);
 	if (@_)
 	{
@@ -1093,11 +1113,11 @@ sub dump_continue_with_signal_cmd
 
 	if ($address != -1)
 	{
-		printf("continue_with_signal (signal = 0x%2.2x, address = $addr_format)\n", $signal, $address);
+		printf("%s_with_signal (signal = 0x%2.2x, address = $addr_format)\n", $cmd_str, $signal, $address);
 	}
 	else
 	{
-		printf("continue_with_signal (signal = 0x%2.2x)\n", $signal);
+		printf("%s_with_signal (signal = 0x%2.2x)\n", $cmd_str, $signal);
 	}
 }
 
@@ -1455,7 +1475,7 @@ sub get64
 	}
 	else
 	{
-	    (@nibbles) = splice(@$arrayref, 0, 24);
+	    (@nibbles) = splice(@$arrayref, 0, ((64/8) * 2));
 	}
     $val = join('', @nibbles);        
 	return $val;
@@ -1488,7 +1508,7 @@ sub get80
 	}
 	else
 	{
-	    (@nibbles) = splice(@$arrayref, 0, 24);
+	    (@nibbles) = splice(@$arrayref, 0, ((80/8) * 2));
 	}
     $val = join('', @nibbles);        
 	return $val;
@@ -1523,7 +1543,7 @@ sub get96
 	}
 	else
 	{
-	    (@nibbles) = splice(@$arrayref, 0, 24);
+	    (@nibbles) = splice(@$arrayref, 0, ((96/8) * 2));
 	}
     $val = join('', @nibbles);        
 	return $val;
@@ -1562,7 +1582,62 @@ sub get128
 	}
 	else
 	{
-	    (@nibbles) = splice(@$arrayref, 0, 24);
+	    (@nibbles) = splice(@$arrayref, 0, ((128/8) * 2));
+	}
+    $val = join('', @nibbles);        
+	return $val;
+}
+
+#----------------------------------------------------------------------
+# Get a 256 bit hex value as a string
+#
+# The argument for this function needs to be a reference to an array 
+# that contains single character strings and the array will get 
+# updated by shifting characters off the front of it (no leading # "0x")
+#----------------------------------------------------------------------
+sub get256
+{
+	my $arrayref = shift;
+	my $val = '';
+	my @nibbles;
+	if ($swap)
+	{
+        push @nibbles, splice(@$arrayref, 62, 2);
+        push @nibbles, splice(@$arrayref, 60, 2);
+        push @nibbles, splice(@$arrayref, 58, 2);
+        push @nibbles, splice(@$arrayref, 56, 2);
+        push @nibbles, splice(@$arrayref, 54, 2);
+        push @nibbles, splice(@$arrayref, 52, 2);
+        push @nibbles, splice(@$arrayref, 50, 2);
+        push @nibbles, splice(@$arrayref, 48, 2);
+        push @nibbles, splice(@$arrayref, 46, 2);
+        push @nibbles, splice(@$arrayref, 44, 2);
+        push @nibbles, splice(@$arrayref, 42, 2);
+        push @nibbles, splice(@$arrayref, 40, 2);
+        push @nibbles, splice(@$arrayref, 38, 2);
+        push @nibbles, splice(@$arrayref, 36, 2);
+        push @nibbles, splice(@$arrayref, 34, 2);
+        push @nibbles, splice(@$arrayref, 32, 2);
+        push @nibbles, splice(@$arrayref, 30, 2);
+        push @nibbles, splice(@$arrayref, 28, 2);
+        push @nibbles, splice(@$arrayref, 26, 2);
+        push @nibbles, splice(@$arrayref, 24, 2);
+        push @nibbles, splice(@$arrayref, 22, 2);
+        push @nibbles, splice(@$arrayref, 20, 2);
+        push @nibbles, splice(@$arrayref, 18, 2);
+        push @nibbles, splice(@$arrayref, 16, 2);
+        push @nibbles, splice(@$arrayref, 14, 2);
+        push @nibbles, splice(@$arrayref, 12, 2);
+        push @nibbles, splice(@$arrayref, 10, 2);
+        push @nibbles, splice(@$arrayref, 8, 2);
+        push @nibbles, splice(@$arrayref, 6, 2);
+        push @nibbles, splice(@$arrayref, 4, 2);
+        push @nibbles, splice(@$arrayref, 2, 2);
+        push @nibbles, splice(@$arrayref, 0, 2);
+	}
+	else
+	{
+	    (@nibbles) = splice(@$arrayref, 0, ((256/8) * 2));
 	}
     $val = join('', @nibbles);        
 	return $val;
@@ -1760,8 +1835,22 @@ sub dump_raw_command
 	my $cmd_aref = shift;
 	my $callback_ref;
 	$curr_cmd = $$cmd_aref[0];
-	$curr_cmd eq '_' and $curr_cmd .= $$cmd_aref[1];
-	    
+
+    if ($curr_cmd eq 'q' or $curr_cmd eq 'Q' or $curr_cmd eq '_')
+    {
+        $curr_full_cmd = '';
+        foreach my $ch (@$cmd_aref)
+        {
+            $ch !~ /[A-Za-z_]/ and last;
+            $curr_full_cmd .= $ch;
+        }
+    }
+    else
+    {
+        $curr_full_cmd = $curr_cmd;
+    }
+	
+	$curr_cmd eq '_' and $curr_cmd .= $$cmd_aref[1];	
 	$callback_ref = $cmd_callbacks{$curr_cmd};
 	if ($callback_ref)
 	{
@@ -1804,6 +1893,19 @@ sub dump_raw_response
 {
 	my $cmd_aref = shift;
 	my $callback_ref;
+	
+	if ($packet_start_time != 0.0)
+	{
+	    if (length($curr_full_cmd) > 0)
+	    {
+            $packet_times{$curr_full_cmd} += $curr_time - $packet_start_time;
+	    }
+	    else
+	    {
+            $packet_times{$curr_cmd} += $curr_time - $packet_start_time;
+	    }
+        $packet_start_time = 0.0;
+	}
 	
 	$callback_ref = $rsp_callbacks{$curr_cmd};
 
@@ -1887,16 +1989,41 @@ sub dump_command
 #----------------------------------------------------------------------
 # Process a gdbserver log line by looking for getpkt and putkpt and
 # tossing any other lines.
+
 #----------------------------------------------------------------------
 sub process_log_line
 {
 	my $line = shift;
 	#($opt_v and $opt_g) and print "# $line";
+
 	my $extract_cmd = 0;
+	my $delta_time = 0.0;
+	if ($line =~ /^(\s*)([1-9][0-9]+\.[0-9]+)([^0-9].*)$/)
+	{
+	    my $leading_space = $1;
+	    $curr_time = $2;
+	    $line = $3;
+	    if ($base_time == 0.0)
+	    {
+	        $base_time = $curr_time;
+	    }
+	    else
+	    {
+	        $delta_time = $curr_time - $last_time;
+	    }
+	    printf ("(%.6f, %+.6f): ",  $curr_time - $base_time, $delta_time);
+	    $last_time = $curr_time;
+	}
+	else
+	{
+	    $curr_time = 0.0
+	}
+
 	if ($line =~ /getpkt /)
 	{
 		$extract_cmd = 1;
 		print "\n--> ";
+		$packet_start_time = $curr_time;
 	}
 	elsif ($line =~ /putpkt /)
 	{
@@ -1907,6 +2034,7 @@ sub process_log_line
 	{
 		$opt_g and print "maintenance dump-packets command: $1\n";
 		my @raw_cmd_bytes = split(/ */, $1);
+		$packet_start_time = $curr_time;
 		print "\n--> ";
 		dump_raw_command(\@raw_cmd_bytes);
 		process_log_line($2);
@@ -1926,6 +2054,7 @@ sub process_log_line
 			$opt_g and print "command: $1\n";
 			my @raw_cmd_bytes = split(/ */, $1);
 			print "--> ";
+    		$packet_start_time = $curr_time;
 			dump_raw_command(\@raw_cmd_bytes);			
 		}
 		elsif ($1 =~ /\+/)
@@ -1963,6 +2092,7 @@ sub process_log_line
 			$opt_g and print "command: $1\n";
 			my @raw_cmd_bytes = split(/ */, $1);
 			print "--> ";
+    		$packet_start_time = $curr_time;
 			dump_raw_command(\@raw_cmd_bytes);			
 		}
 		elsif ($1 =~ /\+/)
@@ -1998,6 +2128,7 @@ sub process_log_line
 		$opt_g and print "command: $1\n";
 		my @raw_cmd_bytes = split(/ */, $1);
 		print "\n--> ";
+		$packet_start_time = $curr_time;
 		dump_raw_command(\@raw_cmd_bytes);
 		process_log_line($2);
 	}
@@ -2014,6 +2145,7 @@ sub process_log_line
 	{
 		my $beg = index($line, '("') + 2;
 		my $end = rindex($line, '");');
+		$packet_start_time = $curr_time;
 		dump_command(substr($line, $beg, $end - $beg));
 	}
 }
@@ -2026,6 +2158,38 @@ while(<>)
 	$opt_q or printf("# %5d: $_", $line_num);
 	process_log_line($_);
 }
+
+if (%packet_times)
+{
+    print "----------------------------------------------------------------------\n";
+    print "Packet timing summary:\n";
+    print "----------------------------------------------------------------------\n";
+    print "Packet                 Time       %\n";
+    print "---------------------- -------- ------\n";
+    my @packet_names = keys %packet_times;
+    my $total_packet_times = 0.0;
+    foreach my $key (@packet_names)
+    {
+        $total_packet_times += $packet_times{$key};
+    }
+
+    foreach my $value (sort {$packet_times{$b} cmp $packet_times{$a}} @packet_names)
+    {
+        my $percent = ($packet_times{$value} / $total_packet_times) * 100.0;
+        if ($percent < 10.0)
+        {
+            printf("%22s %1.6f   %2.2f\n", $value, $packet_times{$value}, $percent);
+            
+        }
+        else
+        {
+            printf("%22s %1.6f  %2.2f\n", $value, $packet_times{$value}, $percent);            
+        }
+    }   
+    print "---------------------- -------- ------\n";
+    printf ("                 Total %1.6f 100.00\n", $total_packet_times);
+}
+
 
 
 

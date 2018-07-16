@@ -8,7 +8,7 @@ import lldb
 def fuzz_obj(obj):
     obj.GetTarget()
     obj.GetByteOrder()
-    obj.PutSTDIN("my data", 7)
+    obj.PutSTDIN("my data")
     obj.GetSTDOUT(6)
     obj.GetSTDERR(6)
     event = lldb.SBEvent()
@@ -36,8 +36,13 @@ def fuzz_obj(obj):
     obj.Signal(7)
     obj.ReadMemory(0x0000ffff, 10, error)
     obj.WriteMemory(0x0000ffff, "hi data", error)
+    obj.ReadCStringFromMemory(0x0, 128, error)
+    obj.ReadUnsignedFromMemory(0xff, 4, error)
+    obj.ReadPointerFromMemory(0xff, error)
     obj.GetBroadcaster()
     obj.GetDescription(lldb.SBStream())
     obj.LoadImage(lldb.SBFileSpec(), error)
     obj.UnloadImage(0)
     obj.Clear()
+    for thread in obj:
+        print thread

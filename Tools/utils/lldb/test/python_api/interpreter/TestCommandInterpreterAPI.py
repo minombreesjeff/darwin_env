@@ -59,6 +59,16 @@ class CommandInterpreterAPICase(TestBase):
         ci.HandleCommand("process launch", res)
         self.assertTrue(res.Succeeded())
 
+        # Boundary conditions should not crash lldb!
+        self.assertFalse(ci.CommandExists(None))
+        self.assertFalse(ci.AliasExists(None))
+        ci.HandleCommand(None, res)
+        self.assertFalse(res.Succeeded())
+        res.AppendMessage("Just appended a message.")
+        res.AppendMessage(None)
+        if self.TraceOn():
+            print res
+
         process = ci.GetProcess()
         self.assertTrue(process)
 

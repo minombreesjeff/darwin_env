@@ -1145,7 +1145,7 @@ public:
 
   CallInst *CreateCall(Value *Callee, ArrayRef<Value *> Args,
                        const Twine &Name = "") {
-    return Insert(CallInst::Create(Callee, Args, Name));
+    return Insert(CallInst::Create(Callee, Args), Name);
   }
 
   Value *CreateSelect(Value *C, Value *True, Value *False,
@@ -1202,6 +1202,11 @@ public:
       if (Constant *ValC = dyn_cast<Constant>(Val))
         return Insert(Folder.CreateInsertValue(AggC, ValC, Idxs), Name);
     return Insert(InsertValueInst::Create(Agg, Val, Idxs), Name);
+  }
+
+  LandingPadInst *CreateLandingPad(Type *Ty, Value *PersFn, unsigned NumClauses,
+                                   const Twine &Name = "") {
+    return Insert(LandingPadInst::Create(Ty, PersFn, NumClauses, Name));
   }
 
   //===--------------------------------------------------------------------===//

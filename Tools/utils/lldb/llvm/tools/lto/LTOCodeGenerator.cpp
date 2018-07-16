@@ -33,8 +33,6 @@
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetSelect.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -43,6 +41,8 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/system_error.h"
 #include "llvm/Config/config.h"
 #include "llvm/Transforms/IPO.h"
@@ -90,10 +90,6 @@ LTOCodeGenerator::~LTOCodeGenerator()
 
 bool LTOCodeGenerator::addModule(LTOModule* mod, std::string& errMsg)
 {
-
-  if(mod->getLLVVMModule()->MaterializeAllPermanently(&errMsg))
-    return true;
-
   bool ret = _linker.LinkInModule(mod->getLLVVMModule(), &errMsg);
 
   const std::vector<const char*> &undefs = mod->getAsmUndefinedRefs();
@@ -193,7 +189,7 @@ bool LTOCodeGenerator::compile_to_file(const char** name, std::string& errMsg)
   bool genResult = false;
   tool_output_file objFile(uniqueObjPath.c_str(), errMsg);
   if (!errMsg.empty())
-    return NULL;
+    return true;
   genResult = this->generateObjectFile(objFile.os(), errMsg);
   objFile.os().close();
   if (objFile.os().has_error()) {
@@ -243,7 +239,7 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg)
     if ( _target == NULL ) {
         std::string Triple = _linker.getModule()->getTargetTriple();
         if (Triple.empty())
-          Triple = sys::getHostTriple();
+          Triple = sys::getDefaultTargetTriple();
 
         // create target machine from info for merged modules
         const Target *march = TargetRegistry::lookupTarget(Triple, errMsg);
@@ -269,7 +265,8 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg)
         SubtargetFeatures Features;
         Features.getDefaultSubtargetFeatures(llvm::Triple(Triple));
         std::string FeatureStr = Features.getString();
-        _target = march->createTargetMachine(Triple, _mCpu, FeatureStr,
+        TargetOptions Options;
+        _target = march->createTargetMachine(Triple, _mCpu, FeatureStr, Options,
                                              RelocModel);
     }
     return false;

@@ -19,8 +19,39 @@
 #include <set>
 
 namespace lldb_private {
+
+class SymbolFileType :
+    public ReferenceCountedBaseVirtual<SymbolFileType>,
+    public UserID
+    {
+    public:
+        SymbolFileType (SymbolFile &symbol_file, lldb::user_id_t uid) :
+            UserID (uid),
+            m_symbol_file (symbol_file)
+        {
+        }
+
+        ~SymbolFileType ()
+        {
+        }
+
+        Type *
+        operator->()
+        {
+            return GetType ();
+        }
+
+        Type *
+        GetType ();
+
+    protected:
+        SymbolFile &m_symbol_file;
+        lldb::TypeSP m_type_sp;
+    };
     
-class Type : public UserID
+class Type :
+    public ReferenceCountedBaseVirtual<Type>,
+    public UserID
 {
 public:
     typedef enum EncodingDataTypeTag
@@ -231,7 +262,9 @@ public:
     // For C++0x references (&&)
     void *
     CreateClangRValueReferenceType (Type *type);
-
+    
+    bool
+    IsRealObjCClass();
 
 protected:
     ConstString m_name;
@@ -353,6 +386,11 @@ public:
     lldb::clang_type_t
     GetOpaqueQualType();    
 
+    bool
+    GetDescription (lldb_private::Stream &strm, 
+                    lldb::DescriptionLevel description_level);
+    
+
 private:
     ClangASTType m_clang_ast_type;
     lldb::TypeSP m_type_sp;
@@ -389,6 +427,57 @@ public:
     
 private:
     std::vector<lldb::TypeImplSP> m_content;
+};
+    
+class TypeMemberImpl
+{
+public:
+    TypeMemberImpl () :
+        m_type_impl_sp (),
+        m_bit_offset (0),
+        m_name ()
+    {
+    }
+
+    TypeMemberImpl (const lldb::TypeImplSP &type_impl_sp, 
+                    uint64_t bit_offset,
+                    const ConstString &name) :
+        m_type_impl_sp (type_impl_sp),
+        m_bit_offset (bit_offset),
+        m_name (name)
+    {
+    }
+    
+    TypeMemberImpl (const lldb::TypeImplSP &type_impl_sp, 
+                    uint64_t bit_offset):
+        m_type_impl_sp (type_impl_sp),
+        m_bit_offset (bit_offset),
+        m_name ()
+    {
+    }
+
+    const lldb::TypeImplSP &
+    GetTypeImpl ()
+    {
+        return m_type_impl_sp;
+    }
+
+    const ConstString &
+    GetName () const
+    {
+        return m_name;
+    }
+
+    uint64_t
+    GetBitOffset () const
+    {
+        return m_bit_offset;
+    }
+
+protected:
+    lldb::TypeImplSP m_type_impl_sp;
+    uint64_t m_bit_offset;
+    ConstString m_name;
 };
 
     

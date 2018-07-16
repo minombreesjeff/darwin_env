@@ -10,6 +10,7 @@
 #include "lldb/API/SBSymbolContext.h"
 #include "lldb/API/SBStream.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/SymbolContext.h"
@@ -173,6 +174,46 @@ SBSymbolContext::GetSymbol ()
     return sb_symbol; 
 }
 
+void
+SBSymbolContext::SetModule (lldb::SBModule module)
+{
+    ref().module_sp = module.get_sp();
+}
+
+void
+SBSymbolContext::SetCompileUnit (lldb::SBCompileUnit compile_unit)
+{
+    ref().comp_unit = compile_unit.get();
+}
+
+void 
+SBSymbolContext::SetFunction (lldb::SBFunction function)
+{
+    ref().function = function.get();
+}
+
+void 
+SBSymbolContext::SetBlock (lldb::SBBlock block)
+{
+    ref().block = block.get();
+}
+
+void 
+SBSymbolContext::SetLineEntry (lldb::SBLineEntry line_entry)
+{
+    if (line_entry.IsValid())
+        ref().line_entry = line_entry.ref();
+    else
+        ref().line_entry.Clear();
+}
+
+void 
+SBSymbolContext::SetSymbol (lldb::SBSymbol symbol)
+{
+    ref().symbol = symbol.get();
+}
+
+
 lldb_private::SymbolContext*
 SBSymbolContext::operator->() const
 {
@@ -213,13 +254,28 @@ SBSymbolContext::get() const
 bool
 SBSymbolContext::GetDescription (SBStream &description)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_ap.get())
     {
-        description.ref();
-        m_opaque_ap->GetDescription (description.get(), lldb::eDescriptionLevelFull, NULL);
+        m_opaque_ap->GetDescription (&strm, lldb::eDescriptionLevelFull, NULL);
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
 
     return true;
 }
+
+SBSymbolContext
+SBSymbolContext::GetParentOfInlinedScope (const SBAddress &curr_frame_pc, 
+                                          SBAddress &parent_frame_addr) const
+{
+    SBSymbolContext sb_sc;
+    if (m_opaque_ap.get() && curr_frame_pc.IsValid())
+    {
+        if (m_opaque_ap->GetParentOfInlinedScope (curr_frame_pc.ref(), sb_sc.ref(), parent_frame_addr.ref()))
+            return sb_sc;
+    }
+    return SBSymbolContext();
+}
+

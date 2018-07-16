@@ -176,6 +176,8 @@ STOPPED_DUE_TO_SIGNAL = "Process state is stopped due to signal"
 
 STOPPED_DUE_TO_STEP_IN = "Process state is stopped due to step in"
 
+STOPPED_DUE_TO_WATCHPOINT = "Process should be stopped due to watchpoint"
+
 DATA_TYPES_DISPLAYED_CORRECTLY = "Data type(s) displayed correctly"
 
 VALID_BREAKPOINT = "Got a valid breakpoint"
@@ -198,10 +200,15 @@ VALID_VARIABLE = "Got a valid variable"
 
 VARIABLES_DISPLAYED_CORRECTLY = "Variable(s) displayed correctly"
 
+WATCHPOINT_CREATED = "Watchpoint created successfully"
 
 def CMD_MSG(str):
     '''A generic "Command '%s' returns successfully" message generator.'''
     return "Command '%s' returns successfully" % str
+
+def COMPLETIOND_MSG(str_before, str_after):
+    '''A generic message generator for the completion mechanism.'''
+    return "'%s' successfully completes to '%s'" % (str_before, str_after)
 
 def EXP_MSG(str, exe):
     '''A generic "'%s' returns expected result" message generator if exe.
@@ -267,7 +274,7 @@ class recording(StringIO.StringIO):
 # From 2.7's subprocess.check_output() convenience function.
 # Return a tuple (stdoutdata, stderrdata).
 def system(*popenargs, **kwargs):
-    r"""Run command with arguments and return its output as a byte string.
+    r"""Run an os command with arguments and return its output as a byte string.
 
     If the exit code was non-zero it raises a CalledProcessError.  The
     CalledProcessError object will have the return code in the returncode
@@ -293,6 +300,7 @@ def system(*popenargs, **kwargs):
     if 'stdout' in kwargs:
         raise ValueError('stdout argument not allowed, it will be overridden.')
     process = Popen(stdout=PIPE, stderr=PIPE, *popenargs, **kwargs)
+    pid = process.pid
     output, error = process.communicate()
     retcode = process.poll()
 
@@ -303,6 +311,7 @@ def system(*popenargs, **kwargs):
             args = list(popenargs)
         print >> sbuf
         print >> sbuf, "os command:", args
+        print >> sbuf, "with pid:", pid
         print >> sbuf, "stdout:", output
         print >> sbuf, "stderr:", error
         print >> sbuf, "retcode:", retcode
@@ -351,7 +360,6 @@ def python_api_test(func):
     wrapper.__python_api_test__ = True
     return wrapper
 
-from functools import wraps
 def benchmarks_test(func):
     """Decorate the item as a benchmarks test."""
     if isinstance(func, type) and issubclass(func, unittest2.TestCase):
@@ -367,6 +375,48 @@ def benchmarks_test(func):
 
     # Mark this function as such to separate them from the regular tests.
     wrapper.__benchmarks_test__ = True
+    return wrapper
+
+def expectedFailureClang(func):
+    """Decorate the item as a Clang only expectedFailure."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@expectedFailureClang can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        compiler = self.getCompiler()
+        try:
+            func(*args, **kwargs)
+        except Exception:
+            if "clang" in compiler:
+                raise case._ExpectedFailure(sys.exc_info())
+            else:
+                raise
+
+        if "clang" in compiler:
+            raise case._UnexpectedSuccess
+    return wrapper
+
+def expectedFailurei386(func):
+    """Decorate the item as an i386 only expectedFailure."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@expectedFailurei386 can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        arch = self.getArchitecture()
+        try:
+            func(*args, **kwargs)
+        except Exception:
+            if "i386" in arch:
+                raise case._ExpectedFailure(sys.exc_info())
+            else:
+                raise
+
+        if "i386" in arch:
+            raise case._UnexpectedSuccess
     return wrapper
 
 class Base(unittest2.TestCase):
@@ -413,7 +463,7 @@ class Base(unittest2.TestCase):
         Do class-wide cleanup.
         """
 
-        if doCleanup:
+        if doCleanup and not lldb.skip_build_and_cleanup:
             # First, let's do the platform-specific cleanup.
             module = builder_module()
             if not module.cleanup():
@@ -455,6 +505,18 @@ class Base(unittest2.TestCase):
 
         if "LLDB_EXEC" in os.environ:
             self.lldbExec = os.environ["LLDB_EXEC"]
+        else:
+            self.lldbExec = None
+        if "LLDB_HERE" in os.environ:
+            self.lldbHere = os.environ["LLDB_HERE"]
+        else:
+            self.lldbHere = None
+        # If we spawn an lldb process for test (via pexpect), do not load the
+        # init file unless told otherwise.
+        if "NO_LLDBINIT" in os.environ and "NO" == os.environ["NO_LLDBINIT"]:
+            self.lldbOption = ""
+        else:
+            self.lldbOption = "--no-lldbinit"
 
         # Assign the test method name to self.testMethodName.
         #
@@ -529,6 +591,30 @@ class Base(unittest2.TestCase):
 
         # See HideStdout(self).
         self.sys_stdout_hidden = False
+
+    def runHooks(self, child=None, child_prompt=None, use_cmd_api=False):
+        """Perform the run hooks to bring lldb debugger to the desired state.
+
+        By default, expect a pexpect spawned child and child prompt to be
+        supplied (use_cmd_api=False).  If use_cmd_api is true, ignore the child
+        and child prompt and use self.runCmd() to run the hooks one by one.
+
+        Note that child is a process spawned by pexpect.spawn().  If not, your
+        test case is mostly likely going to fail.
+
+        See also dotest.py where lldb.runHooks are processed/populated.
+        """
+        if not lldb.runHooks:
+            self.skipTest("No runhooks specified for lldb, skip the test")
+        if use_cmd_api:
+            for hook in lldb.runhooks:
+                self.runCmd(hook)
+        else:
+            if not child or not child_prompt:
+                self.fail("Both child and child_prompt need to be defined.")
+            for hook in lldb.runHooks:
+                child.sendline(hook)
+                child.expect_exact(child_prompt)
 
     def HideStdout(self):
         """Hide output to stdout from the user.
@@ -612,17 +698,13 @@ class Base(unittest2.TestCase):
 
         # Perform registered teardown cleanup.
         if doCleanup and self.doTearDownCleanup:
-            module = builder_module()
-            if not module.cleanup(self, dictionary=self.dict):
-                raise Exception("Don't know how to do cleanup with dictionary: " + self.dict)
+            self.cleanup(dictionary=self.dict)
 
         # In rare cases where there are multiple teardown cleanups added.
         if doCleanup and self.doTearDownCleanups:
-            module = builder_module()
             if self.dicts:
                 for dict in reversed(self.dicts):
-                    if not module.cleanup(self, dictionary=dict):
-                        raise Exception("Don't know how to do cleanup with dictionary: " + dict)
+                    self.cleanup(dictionary=dict)
 
         # Decide whether to dump the session info.
         self.dumpSessionInfo()
@@ -722,6 +804,9 @@ class Base(unittest2.TestCase):
         else:
             benchmarks = False
 
+        # This records the compiler version used for the test.
+        system([self.getCompiler(), "-v"], sender=self)
+
         dname = os.path.join(os.environ["LLDB_TEST"],
                              os.environ["LLDB_SESSION_DIRNAME"])
         if not os.path.isdir(dname):
@@ -757,11 +842,13 @@ class Base(unittest2.TestCase):
         self.dumpSessionInfo()."""
         arch = self.getArchitecture()
         comp = self.getCompiler()
-        if not arch and not comp:
-            return ""
+        if arch:
+            option_str = "-A " + arch
         else:
-            return "%s %s" % ("-A "+arch if arch else "",
-                              "-C "+comp if comp else "")
+            option_str = ""
+        if comp:
+            option_str += "-C " + comp
+        return option_str
 
     # ==================================================
     # Build methods supported through a plugin interface
@@ -769,27 +856,35 @@ class Base(unittest2.TestCase):
 
     def buildDefault(self, architecture=None, compiler=None, dictionary=None):
         """Platform specific way to build the default binaries."""
+        if lldb.skip_build_and_cleanup:
+            return
         module = builder_module()
         if not module.buildDefault(self, architecture, compiler, dictionary):
             raise Exception("Don't know how to build default binary")
 
     def buildDsym(self, architecture=None, compiler=None, dictionary=None):
         """Platform specific way to build binaries with dsym info."""
+        if lldb.skip_build_and_cleanup:
+            return
         module = builder_module()
         if not module.buildDsym(self, architecture, compiler, dictionary):
             raise Exception("Don't know how to build binary with dsym")
 
     def buildDwarf(self, architecture=None, compiler=None, dictionary=None):
         """Platform specific way to build binaries with dwarf maps."""
+        if lldb.skip_build_and_cleanup:
+            return
         module = builder_module()
         if not module.buildDwarf(self, architecture, compiler, dictionary):
             raise Exception("Don't know how to build binary with dwarf")
 
     def cleanup(self, dictionary=None):
         """Platform specific way to do cleanup after build."""
+        if lldb.skip_build_and_cleanup:
+            return
         module = builder_module()
         if not module.cleanup(self, dictionary):
-            raise Exception("Don't know how to do cleanup")
+            raise Exception("Don't know how to do cleanup with dictionary: "+dictionary)
 
 
 class TestBase(Base):
@@ -931,6 +1026,21 @@ class TestBase(Base):
 
         del self.dbg
 
+    def switch_to_thread_with_stop_reason(self, stop_reason):
+        """
+        Run the 'thread list' command, and select the thread with stop reason as
+        'stop_reason'.  If no such thread exists, no select action is done.
+        """
+        from lldbutil import stop_reason_to_str
+        self.runCmd('thread list')
+        output = self.res.GetOutput()
+        thread_line_pattern = re.compile("^[ *] thread #([0-9]+):.*stop reason = %s" %
+                                         stop_reason_to_str(stop_reason))
+        for line in output.splitlines():
+            matched = thread_line_pattern.match(line)
+            if matched:
+                self.runCmd('thread select %s' % matched.group(1))
+
     def runCmd(self, cmd, msg=None, check=True, trace=False):
         """
         Ask the command interpreter to handle the command and then check its
@@ -969,7 +1079,7 @@ class TestBase(Base):
             self.assertTrue(self.res.Succeeded(),
                             msg if msg else CMD_MSG(cmd))
 
-    def expect(self, str, msg=None, patterns=None, startstr=None, substrs=None, trace=False, error=False, matching=True, exe=True):
+    def expect(self, str, msg=None, patterns=None, startstr=None, endstr=None, substrs=None, trace=False, error=False, matching=True, exe=True):
         """
         Similar to runCmd; with additional expect style output matching ability.
 
@@ -1023,6 +1133,14 @@ class TestBase(Base):
         if startstr:
             with recording(self, trace) as sbuf:
                 print >> sbuf, "%s start string: %s" % (heading, startstr)
+                print >> sbuf, "Matched" if matched else "Not matched"
+
+        # Look for endstr, if specified.
+        keepgoing = matched if matching else not matched
+        if endstr:
+            matched = output.endswith(endstr)
+            with recording(self, trace) as sbuf:
+                print >> sbuf, "%s end string: %s" % (heading, endstr)
                 print >> sbuf, "Matched" if matched else "Not matched"
 
         # Look for sub strings, if specified.
@@ -1079,14 +1197,15 @@ class TestBase(Base):
 
         err = sys.stderr
         err.write(val.GetName() + ":\n")
-        err.write('\t' + "TypeName      -> " + val.GetTypeName()            + '\n')
-        err.write('\t' + "ByteSize      -> " + str(val.GetByteSize())       + '\n')
-        err.write('\t' + "NumChildren   -> " + str(val.GetNumChildren())    + '\n')
-        err.write('\t' + "Value         -> " + str(val.GetValue())          + '\n')
-        err.write('\t' + "ValueType     -> " + value_type_to_str(val.GetValueType()) + '\n')
-        err.write('\t' + "Summary       -> " + str(val.GetSummary())        + '\n')
-        err.write('\t' + "IsPointerType -> " + str(val.TypeIsPointerType()) + '\n')
-        err.write('\t' + "Location      -> " + val.GetLocation()            + '\n')
+        err.write('\t' + "TypeName         -> " + val.GetTypeName()            + '\n')
+        err.write('\t' + "ByteSize         -> " + str(val.GetByteSize())       + '\n')
+        err.write('\t' + "NumChildren      -> " + str(val.GetNumChildren())    + '\n')
+        err.write('\t' + "Value            -> " + str(val.GetValue())          + '\n')
+        err.write('\t' + "ValueAsUnsigned  -> " + str(val.GetValueAsUnsigned())+ '\n')
+        err.write('\t' + "ValueType        -> " + value_type_to_str(val.GetValueType()) + '\n')
+        err.write('\t' + "Summary          -> " + str(val.GetSummary())        + '\n')
+        err.write('\t' + "IsPointerType    -> " + str(val.TypeIsPointerType()) + '\n')
+        err.write('\t' + "Location         -> " + val.GetLocation()            + '\n')
 
     def DebugSBType(self, type):
         """Debug print a SBType object, if traceAlways is True."""

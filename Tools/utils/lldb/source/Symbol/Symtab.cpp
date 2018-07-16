@@ -87,7 +87,7 @@ Symtab::Dump (Stream *s, Target *target, SortOrder sort_order)
         object_name = m_objfile->GetModule()->GetObjectName().GetCString();
 
     if (file_spec)
-        s->Printf("Symtab, file = %s/%s%s%s%s, num_symbols = %u",
+        s->Printf("Symtab, file = %s/%s%s%s%s, num_symbols = %lu",
         file_spec.GetDirectory().AsCString(),
         file_spec.GetFilename().AsCString(),
         object_name ? "(" : "",
@@ -95,7 +95,7 @@ Symtab::Dump (Stream *s, Target *target, SortOrder sort_order)
         object_name ? ")" : "",
         m_symbols.size());
     else
-        s->Printf("Symtab, num_symbols = %u", m_symbols.size());
+        s->Printf("Symtab, num_symbols = %lu", m_symbols.size());
 
     if (!m_symbols.empty())
     {
@@ -169,7 +169,7 @@ Symtab::Dump(Stream *s, Target *target, std::vector<uint32_t>& indexes) const
     const size_t num_symbols = GetNumSymbols();
     //s->Printf("%.*p: ", (int)sizeof(void*) * 2, this);
     s->Indent();
-    s->Printf("Symtab %u symbol indexes (%u symbols total):\n", indexes.size(), m_symbols.size());
+    s->Printf("Symtab %lu symbol indexes (%lu symbols total):\n", indexes.size(), m_symbols.size());
     s->IndentMore();
 
     if (!indexes.empty())
@@ -262,9 +262,6 @@ Symtab::InitNameIndexes()
         Timer scoped_timer (__PRETTY_FUNCTION__, "%s", __PRETTY_FUNCTION__);
         // Create the name index vector to be able to quickly search by name
         const size_t count = m_symbols.size();
-        assert(m_objfile != NULL);
-        assert(m_objfile->GetModule() != NULL);
-
 #if 1
         m_name_to_index.Reserve (count);
 #else
@@ -287,7 +284,7 @@ Symtab::InitNameIndexes()
         m_name_to_index.Reserve (actual_count);
 #endif
 
-        UniqueCStringMap<uint32_t>::Entry entry;
+        NameToIndexMap::Entry entry;
 
         for (entry.value = 0; entry.value < count; ++entry.value)
         {
@@ -316,8 +313,8 @@ Symtab::InitNameIndexes()
             if (ObjCLanguageRuntime::ParseMethodName (entry.cstring,
                                                       NULL,
                                                       NULL,
-                                                      &objc_base_name)
-                && !objc_base_name.IsEmpty())
+                                                      &objc_base_name,
+                                                      NULL))
             {
                 entry.cstring = objc_base_name.GetCString();
                 m_name_to_index.Append (entry);
@@ -325,6 +322,45 @@ Symtab::InitNameIndexes()
                                                         
         }
         m_name_to_index.Sort();
+        m_name_to_index.SizeToFit();
+    }
+}
+
+void
+Symtab::AppendSymbolNamesToMap (const IndexCollection &indexes, 
+                                bool add_demangled,
+                                bool add_mangled,
+                                NameToIndexMap &name_to_index_map) const
+{
+    if (add_demangled || add_mangled)
+    {
+        Timer scoped_timer (__PRETTY_FUNCTION__, "%s", __PRETTY_FUNCTION__);
+        Mutex::Locker locker (m_mutex);
+
+        // Create the name index vector to be able to quickly search by name
+        NameToIndexMap::Entry entry;
+        const size_t num_indexes = indexes.size();
+        for (size_t i=0; i<num_indexes; ++i)
+        {
+            entry.value = indexes[i];
+            assert (i < m_symbols.size());
+            const Symbol *symbol = &m_symbols[entry.value];
+
+            const Mangled &mangled = symbol->GetMangled();
+            if (add_demangled)
+            {
+                entry.cstring = mangled.GetDemangledName().GetCString();
+                if (entry.cstring && entry.cstring[0])
+                    name_to_index_map.Append (entry);
+            }
+                
+            if (add_mangled)
+            {
+                entry.cstring = mangled.GetMangledName().GetCString();
+                if (entry.cstring && entry.cstring[0])
+                    name_to_index_map.Append (entry);
+            }
+        }
     }
 }
 
@@ -462,20 +498,11 @@ Symtab::AppendSymbolIndexesWithName (const ConstString& symbol_name, std::vector
     Timer scoped_timer (__PRETTY_FUNCTION__, "%s", __PRETTY_FUNCTION__);
     if (symbol_name)
     {
-        const size_t old_size = indexes.size();
+        const char *symbol_cstr = symbol_name.GetCString();
         if (!m_name_indexes_computed)
             InitNameIndexes();
 
-        const char *symbol_cstr = symbol_name.GetCString();
-        const UniqueCStringMap<uint32_t>::Entry *entry_ptr;
-
-        for (entry_ptr = m_name_to_index.FindFirstValueForName (symbol_cstr);
-             entry_ptr!= NULL;
-             entry_ptr = m_name_to_index.FindNextValueForName (symbol_cstr, entry_ptr))
-        {
-            indexes.push_back (entry_ptr->value);
-        }
-        return indexes.size() - old_size;
+        return m_name_to_index.GetValues (symbol_cstr, indexes);
     }
     return 0;
 }
@@ -493,13 +520,13 @@ Symtab::AppendSymbolIndexesWithName (const ConstString& symbol_name, Debug symbo
             InitNameIndexes();
 
         const char *symbol_cstr = symbol_name.GetCString();
-        const UniqueCStringMap<uint32_t>::Entry *entry_ptr;
-        for (entry_ptr = m_name_to_index.FindFirstValueForName (symbol_cstr);
-             entry_ptr!= NULL;
-             entry_ptr = m_name_to_index.FindNextValueForName (symbol_cstr, entry_ptr))
+        
+        std::vector<uint32_t> all_name_indexes;
+        const size_t name_match_count = m_name_to_index.GetValues (symbol_cstr, all_name_indexes);
+        for (size_t i=0; i<name_match_count; ++i)
         {
-            if (CheckSymbolAtIndex(entry_ptr->value, symbol_debug_type, symbol_visibility))
-                indexes.push_back (entry_ptr->value);
+            if (CheckSymbolAtIndex(all_name_indexes[i], symbol_debug_type, symbol_visibility))
+                indexes.push_back (all_name_indexes[i]);
         }
         return indexes.size() - old_size;
     }

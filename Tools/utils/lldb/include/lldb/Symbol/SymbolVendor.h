@@ -58,7 +58,7 @@ public:
     ~SymbolVendor();
 
     void
-    AddSymbolFileRepresendation(ObjectFile *obj_file);
+    AddSymbolFileRepresentation(const lldb::ObjectFileSP &objfile_sp);
 
     virtual void
     Dump(Stream *s);
@@ -99,6 +99,7 @@ public:
 
     virtual uint32_t
     FindGlobalVariables (const ConstString &name,
+                         const ClangNamespaceDecl *namespace_decl,
                          bool append,
                          uint32_t max_matches,
                          VariableList& variables);
@@ -111,6 +112,7 @@ public:
 
     virtual uint32_t
     FindFunctions (const ConstString &name,
+                   const ClangNamespaceDecl *namespace_decl,
                    uint32_t name_type_mask, 
                    bool append,
                    SymbolContextList& sc_list);
@@ -122,14 +124,16 @@ public:
 
     virtual uint32_t
     FindTypes (const SymbolContext& sc, 
-               const ConstString &name, 
+               const ConstString &name,
+               const ClangNamespaceDecl *namespace_decl, 
                bool append, 
                uint32_t max_matches, 
                TypeList& types);
 
     virtual lldb_private::ClangNamespaceDecl
     FindNamespace (const SymbolContext& sc, 
-                   const ConstString &name);
+                   const ConstString &name,
+                   const ClangNamespaceDecl *parent_namespace_decl);
     
     virtual uint32_t
     GetNumCompileUnits();
@@ -182,6 +186,7 @@ protected:
     mutable Mutex m_mutex;
     TypeList m_type_list; // Uniqued types for all parsers owned by this module
     CompileUnits m_compile_units; // The current compile units
+    lldb::ObjectFileSP m_objfile_sp;    // Keep a reference to the object file in case it isn't the same as the module object file (debug symbols in a separate file)
     std::auto_ptr<SymbolFile> m_sym_file_ap; // A single symbol file. Suclasses can add more of these if needed.
 
 private:

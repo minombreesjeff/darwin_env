@@ -7,7 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RegisterContextLLDB.h"
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/Address.h"
@@ -27,21 +26,23 @@
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
+#include "lldb/Target/DynamicLoader.h"
+
+#include "RegisterContextLLDB.h"
 
 using namespace lldb;
 using namespace lldb_private;
-
 
 RegisterContextLLDB::RegisterContextLLDB 
 (
     Thread& thread, 
     const SharedPtr &next_frame,
     SymbolContext& sym_ctx,
-    uint32_t frame_number
+    uint32_t frame_number,
+    UnwindLLDB& unwind_lldb
 ) :
     RegisterContext (thread, frame_number), 
     m_thread(thread), 
-    m_next_frame(next_frame),
     m_fast_unwind_plan_sp (),
     m_full_unwind_plan_sp (),
     m_all_registers_available(false),
@@ -54,7 +55,8 @@ RegisterContextLLDB::RegisterContextLLDB
     m_sym_ctx(sym_ctx),
     m_sym_ctx_valid (false),
     m_frame_number (frame_number),
-    m_registers()
+    m_registers(),
+    m_parent_unwind (unwind_lldb)
 {
     m_sym_ctx.Clear();
     m_sym_ctx_valid = false;
@@ -70,8 +72,8 @@ RegisterContextLLDB::RegisterContextLLDB
 
     // This same code exists over in the GetFullUnwindPlanForFrame() but it may not have been executed yet
     if (IsFrameZero() 
-        || m_next_frame->m_frame_type == eSigtrampFrame 
-        || m_next_frame->m_frame_type == eDebuggerFrame)
+        || next_frame->m_frame_type == eSigtrampFrame 
+        || next_frame->m_frame_type == eDebuggerFrame)
     {
         m_all_registers_available = true;
     }
@@ -85,13 +87,19 @@ RegisterContextLLDB::InitializeZerothFrame()
 {
     StackFrameSP frame_sp (m_thread.GetStackFrameAtIndex (0));
 
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+
     if (m_thread.GetRegisterContext() == NULL)
     {
         m_frame_type = eNotAValidFrame;
         return;
     }
     m_sym_ctx = frame_sp->GetSymbolContext (eSymbolContextFunction | eSymbolContextSymbol);
-    m_sym_ctx_valid = true;
+    
+    // We require that eSymbolContextSymbol be successfully filled in or this context is of no use to us.
+    if ((m_sym_ctx.GetResolvedMask() & eSymbolContextSymbol) == eSymbolContextSymbol)
+        m_sym_ctx_valid = true;
+
     AddressRange addr_range;
     m_sym_ctx.GetAddressRange (eSymbolContextFunction | eSymbolContextSymbol, 0, false, addr_range);
     
@@ -147,6 +155,13 @@ RegisterContextLLDB::InitializeZerothFrame()
     {
         active_row = m_full_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
         row_register_kind = m_full_unwind_plan_sp->GetRegisterKind ();
+        if (active_row && log)
+        {
+            StreamString active_row_strm;
+            active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(&m_thread.GetProcess().GetTarget()));
+            log->Printf("%*sFrame %u active row: %s",
+                        m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, active_row_strm.GetString().c_str());
+        }
     }
 
     if (active_row == NULL)
@@ -155,6 +170,7 @@ RegisterContextLLDB::InitializeZerothFrame()
         return;
     }
 
+    
     addr_t cfa_regval;
     if (!ReadGPRValue (row_register_kind, active_row->GetCFARegister(), cfa_regval))
     {
@@ -168,7 +184,13 @@ RegisterContextLLDB::InitializeZerothFrame()
 
     m_cfa = cfa_regval + cfa_offset;
 
-    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+    if (log)
+    {
+        log->Printf("%*sFrame %u cfa_regval = 0x%16.16llx (cfa_regval = 0x%16.16llx, cfa_offset = %i)",
+                    m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
+                    m_cfa, cfa_regval, cfa_offset);
+    }
+    
 
     // A couple of sanity checks..
     if (cfa_regval == LLDB_INVALID_ADDRESS || cfa_regval == 0 || cfa_regval == 1)
@@ -201,13 +223,14 @@ void
 RegisterContextLLDB::InitializeNonZerothFrame()
 {
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
+
     if (IsFrameZero ())
     {
         m_frame_type = eNotAValidFrame;
         return;
     }
     
-    if (!m_next_frame->IsValid())
+    if (!GetNextFrame().get() || !GetNextFrame()->IsValid())
     {
         m_frame_type = eNotAValidFrame;
         return;
@@ -229,12 +252,34 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         m_frame_type = eNotAValidFrame;
         return;
     }
-    // A pc value of 0 up on the stack indicates we've hit the end of the stack
+    
+    if (log)
+    {
+        log->Printf("%*sFrame %u pc = 0x%16.16llx",
+                    m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, pc);
+        addr_t reg_val;
+        if (ReadGPRValue (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_FP, reg_val))
+            log->Printf("%*sFrame %u fp = 0x%16.16llx",
+                        m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, reg_val);
+
+        if (ReadGPRValue (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_SP, reg_val))
+            log->Printf("%*sFrame %u sp = 0x%16.16llx",
+                        m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, reg_val);
+    }
+
+    // A pc of 0x0 means it's the end of the stack crawl
     if (pc == 0)
     {
         m_frame_type = eNotAValidFrame;
         return;
     }
+    
+    // Let ABIs fixup code addresses to make sure they are valid. In ARM ABIs
+    // this will strip bit zero in case we read a PC from memory or from the LR.   
+    ABI *abi = m_thread.GetProcess().GetABI().get();
+    if (abi)
+        pc = abi->FixCodeAddress(pc);
+
     m_thread.GetProcess().GetTarget().GetSectionLoadList().ResolveLoadAddress (pc, m_current_pc);
 
     // If we don't have a Module for some reason, we're not going to find symbol/function information - just
@@ -246,13 +291,42 @@ RegisterContextLLDB::InitializeNonZerothFrame()
             log->Printf("%*sFrame %u using architectural default unwind method",
                         m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number);
         }
-        ABI *abi = m_thread.GetProcess().GetABI().get();
+        
+        // Test the pc value to see if we know it's in an unmapped/non-executable region of memory.
+        uint32_t permissions;
+        if (m_thread.GetProcess().GetLoadAddressPermissions(pc, permissions)
+            && (permissions & ePermissionsExecutable) == 0)
+        {
+            // If this is the second frame off the stack, we may have unwound the first frame
+            // incorrectly.  But using the architecture default unwind plan may get us back on
+            // track -- albeit possibly skipping a real frame.  Give this frame a clearly-invalid
+            // pc and see if we can get any further.
+            if (GetNextFrame().get() && GetNextFrame()->IsValid() && GetNextFrame()->IsFrameZero())
+            {
+                if (log)
+                {
+                    log->Printf("%*sFrame %u had a pc of 0x%llx which is not in executable memory but on frame 1 -- allowing it once.",
+                                m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, (uint64_t) pc);
+                }
+                m_frame_type = eSkipFrame;
+            }
+            else
+            {
+                // anywhere other than the second frame, a non-executable pc means we're off in the weeds -- stop now.
+                m_frame_type = eNotAValidFrame;
+                return;
+            }
+        }
+
         if (abi)
         {
             m_fast_unwind_plan_sp.reset ();
             m_full_unwind_plan_sp.reset (new UnwindPlan (lldb::eRegisterKindGeneric));
             abi->CreateDefaultUnwindPlan(*m_full_unwind_plan_sp);
-            m_frame_type = eNormalFrame;
+            if (m_frame_type != eSkipFrame)  // don't override eSkipFrame
+            {
+                m_frame_type = eNormalFrame;
+            }
             m_all_registers_available = false;
             m_current_offset = -1;
             m_current_offset_backed_up_one = -1;
@@ -270,7 +344,10 @@ RegisterContextLLDB::InitializeNonZerothFrame()
                         log->Printf("%*sFrame %u failed to get cfa value",
                                     m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number);
                     }
-                    m_frame_type = eNormalFrame;
+                    if (m_frame_type != eSkipFrame)   // don't override eSkipFrame
+                    {
+                        m_frame_type = eNormalFrame;
+                    }
                     return;
                 }
                 m_cfa = cfa_regval + cfa_offset;
@@ -283,6 +360,15 @@ RegisterContextLLDB::InitializeNonZerothFrame()
                         log->Printf("%*sFrame %u could not find a valid cfa address",
                                     m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number);
                     }
+                    m_frame_type = eNotAValidFrame;
+                    return;
+                }
+
+                // cfa_regval should point into the stack memory; if we can query memory region permissions,
+                // see if the memory is allocated & readable.
+                if (m_thread.GetProcess().GetLoadAddressPermissions(cfa_regval, permissions)
+                    && (permissions & ePermissionsReadable) == 0)
+                {
                     m_frame_type = eNotAValidFrame;
                     return;
                 }
@@ -331,8 +417,8 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     // Or if we're in the middle of the stack (and not "above" an asynchronous event like sigtramp),
     // and our "current" pc is the start of a function...
     if (m_sym_ctx_valid
-        && m_next_frame->m_frame_type != eSigtrampFrame
-        && m_next_frame->m_frame_type != eDebuggerFrame
+        && GetNextFrame()->m_frame_type != eSigtrampFrame
+        && GetNextFrame()->m_frame_type != eDebuggerFrame
         && addr_range.GetBaseAddress().IsValid()
         && addr_range.GetBaseAddress().GetSection() == m_current_pc.GetSection()
         && addr_range.GetBaseAddress().GetOffset() == m_current_pc.GetOffset())
@@ -386,7 +472,10 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     else
     {
         // FIXME:  Detect eDebuggerFrame here.
-        m_frame_type = eNormalFrame;
+        if (m_frame_type != eSkipFrame) // don't override eSkipFrame
+        {
+            m_frame_type = eNormalFrame;
+        }
     }
 
     // We've set m_frame_type and m_sym_ctx before this call.
@@ -403,6 +492,13 @@ RegisterContextLLDB::InitializeNonZerothFrame()
     {
         active_row = m_fast_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
         row_register_kind = m_fast_unwind_plan_sp->GetRegisterKind ();
+        if (active_row && log)
+        {
+            StreamString active_row_strm;
+            active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(&m_thread.GetProcess().GetTarget()));
+            log->Printf("%*sFrame %u active row: %s",
+                        m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, active_row_strm.GetString().c_str());
+        }
     }
     else 
     {
@@ -411,6 +507,13 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         {
             active_row = m_full_unwind_plan_sp->GetRowForFunctionOffset (m_current_offset);
             row_register_kind = m_full_unwind_plan_sp->GetRegisterKind ();
+            if (active_row && log)
+            {
+                StreamString active_row_strm;
+                active_row->Dump(active_row_strm, m_full_unwind_plan_sp.get(), &m_thread, m_start_pc.GetLoadAddress(&m_thread.GetProcess().GetTarget()));
+                log->Printf("%*sFrame %u active row: %s",
+                            m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number, active_row_strm.GetString().c_str());
+            }
         }
     }
 
@@ -436,6 +539,13 @@ RegisterContextLLDB::InitializeNonZerothFrame()
 
     m_cfa = cfa_regval + cfa_offset;
 
+    if (log)
+    {
+        log->Printf("%*sFrame %u cfa_regval = 0x%16.16llx (cfa_regval = 0x%16.16llx, cfa_offset = %i)",
+                    m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
+                    m_cfa, cfa_regval, cfa_offset);
+    }
+
     // A couple of sanity checks..
     if (cfa_regval == LLDB_INVALID_ADDRESS || cfa_regval == 0 || cfa_regval == 1)
     { 
@@ -446,6 +556,38 @@ RegisterContextLLDB::InitializeNonZerothFrame()
         }
         m_frame_type = eNotAValidFrame;
         return;
+    }
+
+    // If we have a bad stack setup, we can get the same CFA value multiple times -- or even
+    // more devious, we can actually oscillate between two CFA values.  Detect that here and
+    // break out to avoid a possible infinite loop in lldb trying to unwind the stack.
+    addr_t next_frame_cfa;
+    addr_t next_next_frame_cfa = LLDB_INVALID_ADDRESS;
+    if (GetNextFrame().get() && GetNextFrame()->GetCFA(next_frame_cfa))
+    {
+        bool repeating_frames = false;
+        if (next_frame_cfa == m_cfa)
+        {
+            repeating_frames = true;
+        }
+        else
+        {
+            if (GetNextFrame()->GetNextFrame() && GetNextFrame()->GetNextFrame()->GetCFA(next_next_frame_cfa)
+                && next_next_frame_cfa == m_cfa)
+            {
+                repeating_frames = true;
+            }
+        }
+        if (repeating_frames)
+        {
+            if (log)
+            {
+                log->Printf("%*sFrame %u same CFA address as next frame, assuming the unwind is looping - stopping",
+                            m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number);
+            }
+            m_frame_type = eNotAValidFrame;
+            return;
+        }
     }
 
     if (log)
@@ -460,10 +602,7 @@ RegisterContextLLDB::InitializeNonZerothFrame()
 bool
 RegisterContextLLDB::IsFrameZero () const
 {
-    if (m_next_frame.get () == NULL)
-        return true;
-    else
-        return false;
+    return m_frame_number == 0;
 }
 
 
@@ -500,7 +639,7 @@ RegisterContextLLDB::GetFastUnwindPlanForFrame ()
         if (unwind_plan_sp->PlanValidAtAddress (m_current_pc))
         {
             LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
-            if (log && IsLogVerbose())
+            if (log && log->GetVerbose())
             {
                 const char *has_fast = "";
                 if (m_fast_unwind_plan_sp)
@@ -532,8 +671,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     UnwindPlanSP unwind_plan_sp;
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
     UnwindPlanSP arch_default_unwind_plan_sp;
-    
-    
+
     ABI *abi = m_thread.GetProcess().GetABI().get();
     if (abi)
     {
@@ -543,13 +681,34 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
 
     bool behaves_like_zeroth_frame = false;
     if (IsFrameZero () 
-        || m_next_frame->m_frame_type == eSigtrampFrame
-        || m_next_frame->m_frame_type == eDebuggerFrame)
+        || GetNextFrame()->m_frame_type == eSigtrampFrame
+        || GetNextFrame()->m_frame_type == eDebuggerFrame)
     {
         behaves_like_zeroth_frame = true;
         // If this frame behaves like a 0th frame (currently executing or 
         // interrupted asynchronously), all registers can be retrieved.
         m_all_registers_available = true;
+    }
+
+    // If we've done a jmp 0x0 / bl 0x0 (called through a null function pointer) so the pc is 0x0
+    // in the zeroth frame, we need to use the "unwind at first instruction" arch default UnwindPlan
+    // Also, if this Process can report on memory region attributes, any non-executable region means
+    // we jumped through a bad function pointer - handle the same way as 0x0.
+    // Note, if the symbol context has a function for the symbol, then we don't need to do this check. 
+
+    if ((!m_sym_ctx_valid  || m_sym_ctx.function == NULL) && behaves_like_zeroth_frame && m_current_pc.IsValid())
+    {
+        uint32_t permissions;
+        addr_t current_pc_addr = m_current_pc.GetLoadAddress (&m_thread.GetProcess().GetTarget());
+        if (current_pc_addr == 0
+            || (m_thread.GetProcess().GetLoadAddressPermissions(current_pc_addr, permissions)
+                && (permissions & ePermissionsExecutable) == 0))
+        {
+            unwind_plan_sp.reset (new UnwindPlan (lldb::eRegisterKindGeneric));
+            abi->CreateFunctionEntryUnwindPlan(*unwind_plan_sp);
+            m_frame_type = eNormalFrame;
+            return unwind_plan_sp;
+        }
     }
 
     // No Module for the current pc, try using the architecture default unwind.
@@ -584,14 +743,35 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
             return unwind_plan_sp;
     }
 
-    
+    // Ask the DynamicLoader if the eh_frame CFI should be trusted in this frame even when it's frame zero
+    // This comes up if we have hand-written functions in a Module and hand-written eh_frame.  The assembly
+    // instruction inspection may fail and the eh_frame CFI were probably written with some care to do the
+    // right thing.  It'd be nice if there was a way to ask the eh_frame directly if it is asynchronous
+    // (can be trusted at every instruction point) or synchronous (the normal case - only at call sites).
+    // But there is not.
+    if (m_thread.GetProcess().GetDynamicLoader() 
+        && m_thread.GetProcess().GetDynamicLoader()->AlwaysRelyOnEHUnwindInfo (m_sym_ctx))
+    {
+        unwind_plan_sp = func_unwinders_sp->GetUnwindPlanAtCallSite (m_current_offset_backed_up_one);
+        if (unwind_plan_sp && unwind_plan_sp->PlanValidAtAddress (m_current_pc))
+        {
+            if (log && log->GetVerbose())
+            {
+                log->Printf("%*sFrame %u frame uses %s for full UnwindPlan because the DynamicLoader suggested we prefer it",
+                            m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
+                            unwind_plan_sp->GetSourceName().GetCString());
+            }
+            return unwind_plan_sp;
+        }
+    }
+
     // Typically the NonCallSite UnwindPlan is the unwind created by inspecting the assembly language instructions
     if (behaves_like_zeroth_frame)
     {
         unwind_plan_sp = func_unwinders_sp->GetUnwindPlanAtNonCallSite (m_thread);
         if (unwind_plan_sp && unwind_plan_sp->PlanValidAtAddress (m_current_pc))
         {
-            if (log && IsLogVerbose())
+            if (log && log->GetVerbose())
             {
                 log->Printf("%*sFrame %u frame uses %s for full UnwindPlan",
                             m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -605,7 +785,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     unwind_plan_sp = func_unwinders_sp->GetUnwindPlanAtCallSite (m_current_offset_backed_up_one);
     if (unwind_plan_sp && unwind_plan_sp->PlanValidAtAddress (m_current_pc))
     {
-        if (log && IsLogVerbose())
+        if (log && log->GetVerbose())
         {
             log->Printf("%*sFrame %u frame uses %s for full UnwindPlan",
                         m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -619,7 +799,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     unwind_plan_sp = func_unwinders_sp->GetUnwindPlanAtNonCallSite (m_thread);
     if (unwind_plan_sp && unwind_plan_sp->PlanValidAtAddress (m_current_pc))
     {
-        if (log && IsLogVerbose())
+        if (log && log->GetVerbose())
         {
             log->Printf("%*sFrame %u frame uses %s for full UnwindPlan",
                         m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -629,7 +809,7 @@ RegisterContextLLDB::GetFullUnwindPlanForFrame ()
     }
 
     // If nothing else, use the architectural default UnwindPlan and hope that does the job.
-    if (log && IsLogVerbose())
+    if (log && log->GetVerbose())
     {
         log->Printf("%*sFrame %u frame uses %s for full UnwindPlan",
                     m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -676,7 +856,7 @@ RegisterContextLLDB::ConvertRegisterKindToRegisterNumber (uint32_t kind, uint32_
 }
 
 bool
-RegisterContextLLDB::ReadRegisterValueFromRegisterLocation (RegisterLocation regloc, 
+RegisterContextLLDB::ReadRegisterValueFromRegisterLocation (lldb_private::UnwindLLDB::RegisterLocation regloc, 
                                                             const RegisterInfo *reg_info,
                                                             RegisterValue &value)
 {
@@ -686,7 +866,7 @@ RegisterContextLLDB::ReadRegisterValueFromRegisterLocation (RegisterLocation reg
 
     switch (regloc.type)
     {
-    case eRegisterInRegister:
+    case UnwindLLDB::RegisterLocation::eRegisterInRegister:
         {
             const RegisterInfo *other_reg_info = GetRegisterInfoAtIndex(regloc.location.register_number);
             if (IsFrameZero ()) 
@@ -695,20 +875,20 @@ RegisterContextLLDB::ReadRegisterValueFromRegisterLocation (RegisterLocation reg
             }
             else
             {
-                success = m_next_frame->ReadRegister (other_reg_info, value);
+                success = GetNextFrame()->ReadRegister (other_reg_info, value);
             }
         }
         break;
-    case eRegisterValueInferred:
+    case UnwindLLDB::RegisterLocation::eRegisterValueInferred:
         success = value.SetUInt (regloc.location.inferred_value, reg_info->byte_size);
         break;
             
-    case eRegisterNotSaved:
+    case UnwindLLDB::RegisterLocation::eRegisterNotSaved:
         break;
-    case eRegisterSavedAtHostMemoryLocation:
+    case UnwindLLDB::RegisterLocation::eRegisterSavedAtHostMemoryLocation:
         assert ("FIXME debugger inferior function call unwind");
         break;
-    case eRegisterSavedAtMemoryLocation:
+    case UnwindLLDB::RegisterLocation::eRegisterSavedAtMemoryLocation:
         {
             Error error (ReadRegisterValueFromMemory(reg_info, 
                                                      regloc.location.target_memory_location, 
@@ -725,7 +905,7 @@ RegisterContextLLDB::ReadRegisterValueFromRegisterLocation (RegisterLocation reg
 }
 
 bool
-RegisterContextLLDB::WriteRegisterValueToRegisterLocation (RegisterLocation regloc, 
+RegisterContextLLDB::WriteRegisterValueToRegisterLocation (lldb_private::UnwindLLDB::RegisterLocation regloc, 
                                                            const RegisterInfo *reg_info,
                                                            const RegisterValue &value)
 {
@@ -736,7 +916,7 @@ RegisterContextLLDB::WriteRegisterValueToRegisterLocation (RegisterLocation regl
     
     switch (regloc.type)
     {
-        case eRegisterInRegister:
+        case UnwindLLDB::RegisterLocation::eRegisterInRegister:
             {
                 const RegisterInfo *other_reg_info = GetRegisterInfoAtIndex(regloc.location.register_number);
                 if (IsFrameZero ()) 
@@ -745,17 +925,17 @@ RegisterContextLLDB::WriteRegisterValueToRegisterLocation (RegisterLocation regl
                 }
                 else
                 {
-                    success = m_next_frame->WriteRegister (other_reg_info, value);
+                    success = GetNextFrame()->WriteRegister (other_reg_info, value);
                 }
             }
             break;
-        case eRegisterValueInferred:
-        case eRegisterNotSaved:
+        case UnwindLLDB::RegisterLocation::eRegisterValueInferred:
+        case UnwindLLDB::RegisterLocation::eRegisterNotSaved:
             break;
-        case eRegisterSavedAtHostMemoryLocation:
+        case UnwindLLDB::RegisterLocation::eRegisterSavedAtHostMemoryLocation:
             assert ("FIXME debugger inferior function call unwind");
             break;
-        case eRegisterSavedAtMemoryLocation:
+        case UnwindLLDB::RegisterLocation::eRegisterSavedAtMemoryLocation:
             {
                 Error error (WriteRegisterValueToMemory (reg_info, 
                                                          regloc.location.target_memory_location, 
@@ -778,17 +958,29 @@ RegisterContextLLDB::IsValid () const
     return m_frame_type != eNotAValidFrame;
 }
 
+// A skip frame is a bogus frame on the stack -- but one where we're likely to find a real frame farther
+// up the stack if we keep looking.  It's always the second frame in an unwind (i.e. the first frame after
+// frame zero) where unwinding can be the trickiest.  Ideally we'll mark up this frame in some way so the
+// user knows we're displaying bad data and we may have skipped one frame of their real program in the 
+// process of getting back on track.
+
+bool
+RegisterContextLLDB::IsSkipFrame () const
+{
+    return m_frame_type == eSkipFrame;
+}
+
 // Answer the question: Where did THIS frame save the CALLER frame ("previous" frame)'s register value?
 
 bool
-RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLocation &regloc)
+RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, lldb_private::UnwindLLDB::RegisterLocation &regloc, bool check_next_frame)
 {
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_UNWIND));
 
     // Have we already found this register location?
     if (!m_registers.empty())
     {
-        std::map<uint32_t, RegisterLocation>::const_iterator iterator;
+        std::map<uint32_t, lldb_private::UnwindLLDB::RegisterLocation>::const_iterator iterator;
         iterator = m_registers.find (lldb_regnum);
         if (iterator != m_registers.end())
         {
@@ -805,7 +997,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
     {
         // make sure we won't lose precision copying an addr_t (m_cfa) into a uint64_t (.inferred_value)
         assert (sizeof (addr_t) <= sizeof (uint64_t));
-        regloc.type = eRegisterValueInferred;
+        regloc.type = UnwindLLDB::RegisterLocation::eRegisterValueInferred;
         regloc.location.inferred_value = m_cfa;
         m_registers[lldb_regnum] = regloc;
         return true;
@@ -815,7 +1007,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
 
     UnwindPlan::Row::RegisterLocation unwindplan_regloc;
     bool have_unwindplan_regloc = false;
-    int unwindplan_registerkind = -1;
+    RegisterKind unwindplan_registerkind = (RegisterKind)-1;
 
     if (m_fast_unwind_plan_sp)
     {
@@ -874,7 +1066,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
             if (active_row->GetRegisterInfo (row_regnum, unwindplan_regloc))
             {
                 have_unwindplan_regloc = true;
-                if (log && IsLogVerbose ())
+                if (log)
                 {                
                     log->Printf("%*sFrame %u supplying caller's saved reg %d's location using %s UnwindPlan",
                                 m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -886,7 +1078,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
 
     if (have_unwindplan_regloc == false)
     {
-        // If a volatile register is being requested, we don't want to forward m_next_frame's register contents 
+        // If a volatile register is being requested, we don't want to forward the next frame's register contents 
         // up the stack -- the register is not retrievable at this frame.
         ABI *abi = m_thread.GetProcess().GetABI().get();
         if (abi)
@@ -894,7 +1086,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
             const RegisterInfo *reg_info = GetRegisterInfoAtIndex(lldb_regnum);
             if (reg_info && abi->RegisterIsVolatile (reg_info))
             {
-                if (log)
+                if (log && log->GetVerbose ())
                 {
                     log->Printf("%*sFrame %u did not supply reg location for %d because it is volatile",
                                 m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -907,8 +1099,8 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
         if (IsFrameZero ())
         {
             // This is frame 0 - we should return the actual live register context value
-            RegisterLocation new_regloc;
-            new_regloc.type = eRegisterInRegister;
+            lldb_private::UnwindLLDB::RegisterLocation new_regloc;
+            new_regloc.type = UnwindLLDB::RegisterLocation::eRegisterInRegister;
             new_regloc.location.register_number = lldb_regnum;
             m_registers[lldb_regnum] = new_regloc;
             regloc = new_regloc;
@@ -916,7 +1108,8 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
         }
         else
         {
-            return m_next_frame->SavedLocationForRegister (lldb_regnum, regloc);
+            if (check_next_frame)
+                return m_parent_unwind.SearchForSavedLocationForRegister (lldb_regnum, regloc, m_frame_number - 1);
         }
         if (log)
         {
@@ -930,8 +1123,8 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
     // unwindplan_regloc has valid contents about where to retrieve the register
     if (unwindplan_regloc.IsUnspecified())
     {
-        RegisterLocation new_regloc;
-        new_regloc.type = eRegisterNotSaved;
+        lldb_private::UnwindLLDB::RegisterLocation new_regloc;
+        new_regloc.type = UnwindLLDB::RegisterLocation::eRegisterNotSaved;
         m_registers[lldb_regnum] = new_regloc;
         if (log)
         {
@@ -956,14 +1149,17 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
         }
         else
         {
-            return m_next_frame->SavedLocationForRegister (lldb_regnum, regloc);
+            if (check_next_frame)
+                return m_parent_unwind.SearchForSavedLocationForRegister (lldb_regnum, regloc, m_frame_number - 1);
+            else
+                return false;
         }
     }
 
     if (unwindplan_regloc.IsCFAPlusOffset())
     {
         int offset = unwindplan_regloc.GetOffset();
-        regloc.type = eRegisterValueInferred;
+        regloc.type = UnwindLLDB::RegisterLocation::eRegisterValueInferred;
         regloc.location.inferred_value = m_cfa + offset;
         m_registers[lldb_regnum] = regloc;
         return true;
@@ -972,7 +1168,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
     if (unwindplan_regloc.IsAtCFAPlusOffset())
     {
         int offset = unwindplan_regloc.GetOffset();
-        regloc.type = eRegisterSavedAtMemoryLocation;
+        regloc.type = UnwindLLDB::RegisterLocation::eRegisterSavedAtMemoryLocation;
         regloc.location.target_memory_location = m_cfa + offset;
         m_registers[lldb_regnum] = regloc;
         return true;
@@ -992,7 +1188,7 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
             }
             return false;
         }
-        regloc.type = eRegisterInRegister;
+        regloc.type = UnwindLLDB::RegisterLocation::eRegisterInRegister;
         regloc.location.register_number = row_regnum_in_lldb;
         m_registers[lldb_regnum] = regloc;
         return true;
@@ -1014,14 +1210,14 @@ RegisterContextLLDB::SavedLocationForRegister (uint32_t lldb_regnum, RegisterLoc
             val = result.GetScalar().ULongLong();
             if (unwindplan_regloc.IsDWARFExpression())
              {
-                regloc.type = eRegisterValueInferred;
+                regloc.type = UnwindLLDB::RegisterLocation::eRegisterValueInferred;
                 regloc.location.inferred_value = val;
                 m_registers[lldb_regnum] = regloc;
                 return true;
             }
             else
             {
-               regloc.type = eRegisterSavedAtMemoryLocation;
+               regloc.type = UnwindLLDB::RegisterLocation::eRegisterSavedAtMemoryLocation;
                regloc.location.target_memory_location = val;
                m_registers[lldb_regnum] = regloc;
                return true;
@@ -1091,8 +1287,8 @@ RegisterContextLLDB::ReadGPRValue (int register_kind, uint32_t regnum, addr_t &v
         return false;
     }
 
-    RegisterLocation regloc;
-    if (!m_next_frame->SavedLocationForRegister (lldb_regnum, regloc))
+    lldb_private::UnwindLLDB::RegisterLocation regloc;
+    if (!m_parent_unwind.SearchForSavedLocationForRegister (lldb_regnum, regloc, m_frame_number - 1))
     {
         return false;
     }
@@ -1114,7 +1310,7 @@ RegisterContextLLDB::ReadRegister (const RegisterInfo *reg_info, RegisterValue &
         return false;
 
     const uint32_t lldb_regnum = reg_info->kinds[eRegisterKindLLDB];
-    if (log && IsLogVerbose ())
+    if (log && log->GetVerbose ())
     {
         log->Printf("%*sFrame %u looking for register saved location for reg %d",
                     m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -1124,7 +1320,7 @@ RegisterContextLLDB::ReadRegister (const RegisterInfo *reg_info, RegisterValue &
     // If this is the 0th frame, hand this over to the live register context
     if (IsFrameZero ())
     {
-        if (log)
+        if (log && log->GetVerbose ())
         {
             log->Printf("%*sFrame %u passing along to the live register context for reg %d",
                         m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -1133,9 +1329,9 @@ RegisterContextLLDB::ReadRegister (const RegisterInfo *reg_info, RegisterValue &
         return m_thread.GetRegisterContext()->ReadRegister (reg_info, value);
     }
 
-    RegisterLocation regloc;
+    lldb_private::UnwindLLDB::RegisterLocation regloc;
     // Find out where the NEXT frame saved THIS frame's register contents
-    if (!m_next_frame->SavedLocationForRegister (lldb_regnum, regloc))
+    if (!m_parent_unwind.SearchForSavedLocationForRegister (lldb_regnum, regloc, m_frame_number - 1))
         return false;
 
     return ReadRegisterValueFromRegisterLocation (regloc, reg_info, value);
@@ -1149,7 +1345,7 @@ RegisterContextLLDB::WriteRegister (const RegisterInfo *reg_info, const Register
         return false;
 
     const uint32_t lldb_regnum = reg_info->kinds[eRegisterKindLLDB];
-    if (log && IsLogVerbose ())
+    if (log && log->GetVerbose ())
     {
         log->Printf("%*sFrame %u looking for register saved location for reg %d",
                     m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -1159,7 +1355,7 @@ RegisterContextLLDB::WriteRegister (const RegisterInfo *reg_info, const Register
     // If this is the 0th frame, hand this over to the live register context
     if (IsFrameZero ())
     {
-        if (log)
+        if (log && log->GetVerbose ())
         {
             log->Printf("%*sFrame %u passing along to the live register context for reg %d",
                         m_frame_number < 100 ? m_frame_number : 100, "", m_frame_number,
@@ -1168,9 +1364,9 @@ RegisterContextLLDB::WriteRegister (const RegisterInfo *reg_info, const Register
         return m_thread.GetRegisterContext()->WriteRegister (reg_info, value);
     }
 
-    RegisterLocation regloc;
+    lldb_private::UnwindLLDB::RegisterLocation regloc;
     // Find out where the NEXT frame saved THIS frame's register contents
-    if (!m_next_frame->SavedLocationForRegister (lldb_regnum, regloc))
+    if (!m_parent_unwind.SearchForSavedLocationForRegister (lldb_regnum, regloc, m_frame_number - 1))
         return false;
 
     return WriteRegisterValueToRegisterLocation (regloc, reg_info, value);
@@ -1207,6 +1403,23 @@ RegisterContextLLDB::GetCFA (addr_t& cfa)
     return true;
 }
 
+
+RegisterContextLLDB::SharedPtr
+RegisterContextLLDB::GetNextFrame () const
+{
+    RegisterContextLLDB::SharedPtr regctx;
+    if (m_frame_number == 0)
+      return regctx;
+    return m_parent_unwind.GetRegisterContextForFrameNum (m_frame_number - 1);
+}
+
+RegisterContextLLDB::SharedPtr
+RegisterContextLLDB::GetPrevFrame () const
+{
+    RegisterContextLLDB::SharedPtr regctx;
+    return m_parent_unwind.GetRegisterContextForFrameNum (m_frame_number + 1);
+}
+
 // Retrieve the address of the start of the function of THIS frame
 
 bool
@@ -1214,6 +1427,7 @@ RegisterContextLLDB::GetStartPC (addr_t& start_pc)
 {
     if (!IsValid())
         return false;
+
     if (!m_start_pc.IsValid())
     {
         return ReadPC (start_pc); 
@@ -1229,6 +1443,7 @@ RegisterContextLLDB::ReadPC (addr_t& pc)
 {
     if (!IsValid())
         return false;
+
     if (ReadGPRValue (eRegisterKindGeneric, LLDB_REGNUM_GENERIC_PC, pc))
     {
         // A pc value of 0 or 1 is impossible in the middle of the stack -- it indicates the end of a stack walk.

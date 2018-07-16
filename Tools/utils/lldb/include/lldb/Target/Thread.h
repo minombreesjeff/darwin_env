@@ -85,6 +85,7 @@ private:
 };
 
 class Thread :
+    public ReferenceCountedBaseVirtual<Thread>,
     public UserID,
     public ExecutionContextScope,
     public ThreadInstanceSettings
@@ -206,10 +207,16 @@ public:
     virtual ~Thread();
 
     Process &
-    GetProcess() { return m_process; }
+    GetProcess() 
+    {
+        return m_process; 
+    }
 
     const Process &
-    GetProcess() const { return m_process; }
+    GetProcess() const 
+    {
+        return m_process; 
+    }
 
     int
     GetResumeSignal () const
@@ -302,7 +309,10 @@ public:
     StopReasonAsCString (lldb::StopReason reason);
 
     virtual const char *
-    GetInfo () = 0;
+    GetInfo ()
+    {
+        return NULL;
+    }
 
     virtual const char *
     GetName ()
@@ -317,28 +327,55 @@ public:
     }
 
     virtual uint32_t
-    GetStackFrameCount();
+    GetStackFrameCount()
+    {
+        return GetStackFrameList().GetNumFrames();
+    }
 
     virtual lldb::StackFrameSP
-    GetStackFrameAtIndex (uint32_t idx);
+    GetStackFrameAtIndex (uint32_t idx)
+    {
+        return GetStackFrameList().GetFrameAtIndex(idx);
+    }
     
     virtual lldb::StackFrameSP
     GetFrameWithConcreteFrameIndex (uint32_t unwind_idx);
     
     virtual lldb::StackFrameSP
-    GetFrameWithStackID(StackID &stack_id);
+    GetFrameWithStackID(StackID &stack_id)
+    {
+        return GetStackFrameList().GetFrameWithStackID (stack_id);
+    }
 
     uint32_t
-    GetSelectedFrameIndex ();
+    GetSelectedFrameIndex ()
+    {
+        return GetStackFrameList().GetSelectedFrameIndex();
+    }
 
     lldb::StackFrameSP
-    GetSelectedFrame ();
+    GetSelectedFrame ()
+    {
+        return GetStackFrameAtIndex (GetStackFrameList().GetSelectedFrameIndex());
+    }
 
     uint32_t
-    SetSelectedFrame (lldb_private::StackFrame *frame);
+    SetSelectedFrame (lldb_private::StackFrame *frame)
+    {
+        return GetStackFrameList().SetSelectedFrame(frame);
+    }
 
     void
-    SetSelectedFrameByIndex (uint32_t frame_idx);
+    SetSelectedFrameByIndex (uint32_t frame_idx)
+    {
+        GetStackFrameList().SetSelectedFrameByIndex(frame_idx);
+    }
+
+    void
+    SetDefaultFileAndLineToSelectedFrame()
+    {
+        GetStackFrameList().SetDefaultFileAndLineToSelectedFrame();
+    }
 
     virtual lldb::RegisterContextSP
     GetRegisterContext () = 0;
@@ -567,7 +604,7 @@ private:
 public:
 
     //------------------------------------------------------------------
-    /// Gets the inner-most plan that was popped off the plan stack in the
+    /// Gets the outer-most plan that was popped off the plan stack in the
     /// most recent stop.  Useful for printing the stop reason accurately.
     ///
     /// @return
@@ -575,6 +612,16 @@ public:
     //------------------------------------------------------------------
     lldb::ThreadPlanSP
     GetCompletedPlan ();
+
+    //------------------------------------------------------------------
+    /// Gets the outer-most return value from the completed plans
+    ///
+    /// @return
+    ///     A ValueObjectSP, either empty if there is no return value,
+    ///     or containing the return value.
+    //------------------------------------------------------------------
+    lldb::ValueObjectSP
+    GetReturnValueObject ();
 
     //------------------------------------------------------------------
     ///  Checks whether the given plan is in the completed plans for this
@@ -722,6 +769,7 @@ public:
 protected:
 
     friend class ThreadPlan;
+    friend class ThreadList;
     friend class StackFrameList;
     
     // This is necessary to make sure thread assets get destroyed while the thread is still in good shape
@@ -757,7 +805,7 @@ protected:
     RestoreSaveFrameZero (const RegisterCheckpoint &checkpoint);
 
     virtual lldb_private::Unwind *
-    GetUnwinder () = 0;
+    GetUnwinder ();
 
     StackFrameList &
     GetStackFrameList ();

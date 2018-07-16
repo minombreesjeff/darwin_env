@@ -22,6 +22,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/UnrollLoop.h"
+#include "llvm/Target/TargetData.h"
 #include <climits>
 
 using namespace llvm;
@@ -38,6 +39,10 @@ static cl::opt<bool>
 UnrollAllowPartial("unroll-allow-partial", cl::init(false), cl::Hidden,
   cl::desc("Allows loops to be partially unrolled until "
            "-unroll-threshold loop size is reached."));
+
+static cl::opt<bool>
+UnrollRuntime("unroll-runtime", cl::ZeroOrMore, cl::init(false), cl::Hidden,
+  cl::desc("Unroll loops with run-time trip counts"));
 
 namespace {
   class LoopUnroll : public LoopPass {
@@ -62,6 +67,10 @@ namespace {
     // explicit -unroll-threshold).
     static const unsigned OptSizeUnrollThreshold = 50;
 
+    // Default unroll count for loops with run-time trip count if
+    // -unroll-count is not set
+    static const unsigned UnrollRuntimeCount = 8;
+
     unsigned CurrentCount;
     unsigned CurrentThreshold;
     bool     CurrentAllowPartial;
@@ -79,6 +88,7 @@ namespace {
       AU.addPreservedID(LoopSimplifyID);
       AU.addRequiredID(LCSSAID);
       AU.addPreservedID(LCSSAID);
+      AU.addRequired<ScalarEvolution>();
       AU.addPreserved<ScalarEvolution>();
       // FIXME: Loop unroll requires LCSSA. And LCSSA requires dom info.
       // If loop unroll does not preserve dom info then LCSSA pass on next
@@ -94,6 +104,7 @@ INITIALIZE_PASS_BEGIN(LoopUnroll, "loop-unroll", "Unroll loops", false, false)
 INITIALIZE_PASS_DEPENDENCY(LoopInfo)
 INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
 INITIALIZE_PASS_DEPENDENCY(LCSSA)
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
 INITIALIZE_PASS_END(LoopUnroll, "loop-unroll", "Unroll loops", false, false)
 
 Pass *llvm::createLoopUnrollPass(int Threshold, int Count, int AllowPartial) {
@@ -101,11 +112,12 @@ Pass *llvm::createLoopUnrollPass(int Threshold, int Count, int AllowPartial) {
 }
 
 /// ApproximateLoopSize - Approximate the size of the loop.
-static unsigned ApproximateLoopSize(const Loop *L, unsigned &NumCalls) {
+static unsigned ApproximateLoopSize(const Loop *L, unsigned &NumCalls,
+                                    const TargetData *TD) {
   CodeMetrics Metrics;
   for (Loop::block_iterator I = L->block_begin(), E = L->block_end();
        I != E; ++I)
-    Metrics.analyzeBasicBlock(*I);
+    Metrics.analyzeBasicBlock(*I, TD);
   NumCalls = Metrics.NumInlineCandidates;
 
   unsigned LoopSize = Metrics.NumInsts;
@@ -120,6 +132,7 @@ static unsigned ApproximateLoopSize(const Loop *L, unsigned &NumCalls) {
 
 bool LoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
   LoopInfo *LI = &getAnalysis<LoopInfo>();
+  ScalarEvolution *SE = &getAnalysis<ScalarEvolution>();
 
   BasicBlock *Header = L->getHeader();
   DEBUG(dbgs() << "Loop Unroll: F[" << Header->getParent()->getName()
@@ -135,16 +148,24 @@ bool LoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
       Header->getParent()->hasFnAttr(Attribute::OptimizeForSize))
     Threshold = OptSizeUnrollThreshold;
 
-  // Find trip count
-  unsigned TripCount = L->getSmallConstantTripCount();
-
-  // Find trip multiple if count is not available
+  // Find trip count and trip multiple if count is not available
+  unsigned TripCount = 0;
   unsigned TripMultiple = 1;
-  if (TripCount == 0)
-    TripMultiple = L->getSmallConstantTripMultiple();
-
-  // Automatically select an unroll count.
+  // Find "latch trip count". UnrollLoop assumes that control cannot exit
+  // via the loop latch on any iteration prior to TripCount. The loop may exit
+  // early via an earlier branch.
+  BasicBlock *LatchBlock = L->getLoopLatch();
+  if (LatchBlock) {
+    TripCount = SE->getSmallConstantTripCount(L, LatchBlock);
+    TripMultiple = SE->getSmallConstantTripMultiple(L, LatchBlock);
+  }
+  // Use a default unroll-count if the user doesn't specify a value
+  // and the trip count is a run-time value.  The default is different
+  // for run-time or compile-time trip count loops.
   unsigned Count = CurrentCount;
+  if (UnrollRuntime && CurrentCount == 0 && TripCount == 0)
+    Count = UnrollRuntimeCount;
+
   if (Count == 0) {
     // Conservative heuristic: if we know the trip count, see if we can
     // completely unroll (subject to the threshold, checked below); otherwise
@@ -157,8 +178,9 @@ bool LoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   // Enforce the threshold.
   if (Threshold != NoThreshold) {
+    const TargetData *TD = getAnalysisIfAvailable<TargetData>();
     unsigned NumInlineCandidates;
-    unsigned LoopSize = ApproximateLoopSize(L, NumInlineCandidates);
+    unsigned LoopSize = ApproximateLoopSize(L, NumInlineCandidates, TD);
     DEBUG(dbgs() << "  Loop Size = " << LoopSize << "\n");
     if (NumInlineCandidates != 0) {
       DEBUG(dbgs() << "  Not unrolling loop with inlinable calls.\n");
@@ -168,15 +190,23 @@ bool LoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
     if (TripCount != 1 && Size > Threshold) {
       DEBUG(dbgs() << "  Too large to fully unroll with count: " << Count
             << " because size: " << Size << ">" << Threshold << "\n");
-      if (!CurrentAllowPartial) {
+      if (!CurrentAllowPartial && !(UnrollRuntime && TripCount == 0)) {
         DEBUG(dbgs() << "  will not try to unroll partially because "
               << "-unroll-allow-partial not given\n");
         return false;
       }
-      // Reduce unroll count to be modulo of TripCount for partial unrolling
-      Count = Threshold / LoopSize;
-      while (Count != 0 && TripCount%Count != 0) {
-        Count--;
+      if (TripCount) {
+        // Reduce unroll count to be modulo of TripCount for partial unrolling
+        Count = CurrentThreshold / LoopSize;
+        while (Count != 0 && TripCount%Count != 0)
+          Count--;
+      }
+      else if (UnrollRuntime) {
+        // Reduce unroll count to be a lower power-of-two value
+        while (Count != 0 && Size > CurrentThreshold) {
+          Count >>= 1;
+          Size = LoopSize*Count;
+        }
       }
       if (Count < 2) {
         DEBUG(dbgs() << "  could not unroll partially\n");
@@ -187,12 +217,8 @@ bool LoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
   }
 
   // Unroll the loop.
-  Function *F = L->getHeader()->getParent();
-  if (!UnrollLoop(L, Count, TripCount, TripMultiple, LI, &LPM))
+  if (!UnrollLoop(L, Count, TripCount, UnrollRuntime, TripMultiple, LI, &LPM))
     return false;
 
-  // FIXME: Reconstruct dom info, because it is not preserved properly.
-  if (DominatorTree *DT = getAnalysisIfAvailable<DominatorTree>())
-    DT->runOnFunction(*F);
   return true;
 }

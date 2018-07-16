@@ -81,6 +81,7 @@ XCoreTargetLowering::XCoreTargetLowering(XCoreTargetMachine &XTM)
 
   // Use i32 for setcc operations results (slt, sgt, ...).
   setBooleanContents(ZeroOrOneBooleanContent);
+  setBooleanVectorContents(ZeroOrOneBooleanContent); // FIXME: Is this correct?
 
   // XCore does not have the NodeTypes below.
   setOperationAction(ISD::BR_CC,     MVT::Other, Expand);
@@ -108,6 +109,8 @@ XCoreTargetLowering::XCoreTargetLowering(XCoreTargetMachine &XTM)
   setOperationAction(ISD::CTPOP, MVT::i32, Expand);
   setOperationAction(ISD::ROTL , MVT::i32, Expand);
   setOperationAction(ISD::ROTR , MVT::i32, Expand);
+  setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::i32, Expand);
+  setOperationAction(ISD::CTLZ_ZERO_UNDEF, MVT::i32, Expand);
 
   setOperationAction(ISD::TRAP, MVT::Other, Legal);
 
@@ -147,7 +150,8 @@ XCoreTargetLowering::XCoreTargetLowering(XCoreTargetMachine &XTM)
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Expand);
 
   // TRAMPOLINE is custom lowered.
-  setOperationAction(ISD::TRAMPOLINE, MVT::Other, Custom);
+  setOperationAction(ISD::INIT_TRAMPOLINE, MVT::Other, Custom);
+  setOperationAction(ISD::ADJUST_TRAMPOLINE, MVT::Other, Custom);
 
   maxStoresPerMemset = maxStoresPerMemsetOptSize = 4;
   maxStoresPerMemmove = maxStoresPerMemmoveOptSize
@@ -180,7 +184,8 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::ADD:
   case ISD::SUB:              return ExpandADDSUB(Op.getNode(), DAG);
   case ISD::FRAMEADDR:        return LowerFRAMEADDR(Op, DAG);
-  case ISD::TRAMPOLINE:       return LowerTRAMPOLINE(Op, DAG);
+  case ISD::INIT_TRAMPOLINE:  return LowerINIT_TRAMPOLINE(Op, DAG);
+  case ISD::ADJUST_TRAMPOLINE: return LowerADJUST_TRAMPOLINE(Op, DAG);
   default:
     llvm_unreachable("unimplemented operand");
     return SDValue();
@@ -383,6 +388,15 @@ IsWordAlignedBasePlusConstantOffset(SDValue Addr, SDValue &AlignedBase,
     Offset = off;
     return true;
   }
+  // Check for an aligned global variable.
+  if (GlobalAddressSDNode *GA = dyn_cast<GlobalAddressSDNode>(*Root)) {
+    const GlobalValue *GV = GA->getGlobal();
+    if (GA->getOffset() == 0 && GV->getAlignment() >= 4) {
+      AlignedBase = Base;
+      Offset = off;
+      return true;
+    }
+  }
   return false;
 }
 
@@ -415,7 +429,7 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
       //
       return DAG.getLoad(getPointerTy(), DL, Chain, BasePtr,
                          MachinePointerInfo(),
-                         false, false, 0);
+                         false, false, false, 0);
     }
     // Lower to
     // ldw low, base[offset >> 2]
@@ -432,9 +446,11 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
     SDValue HighAddr = DAG.getNode(ISD::ADD, DL, MVT::i32, Base, HighOffset);
 
     SDValue Low = DAG.getLoad(getPointerTy(), DL, Chain,
-                              LowAddr, MachinePointerInfo(), false, false, 0);
+                              LowAddr, MachinePointerInfo(),
+                              false, false, false, 0);
     SDValue High = DAG.getLoad(getPointerTy(), DL, Chain,
-                               HighAddr, MachinePointerInfo(), false, false, 0);
+                               HighAddr, MachinePointerInfo(),
+                               false, false, false, 0);
     SDValue LowShifted = DAG.getNode(ISD::SRL, DL, MVT::i32, Low, LowShift);
     SDValue HighShifted = DAG.getNode(ISD::SHL, DL, MVT::i32, High, HighShift);
     SDValue Result = DAG.getNode(ISD::OR, DL, MVT::i32, LowShifted, HighShifted);
@@ -749,7 +765,7 @@ LowerVAARG(SDValue Op, SelectionDAG &DAG) const
   EVT VT = Node->getValueType(0);
   SDValue VAList = DAG.getLoad(getPointerTy(), dl, Node->getOperand(0),
                                Node->getOperand(1), MachinePointerInfo(V),
-                               false, false, 0);
+                               false, false, false, 0);
   // Increment the pointer, VAList, to the next vararg
   SDValue Tmp3 = DAG.getNode(ISD::ADD, dl, getPointerTy(), VAList,
                      DAG.getConstant(VT.getSizeInBits(),
@@ -759,7 +775,7 @@ LowerVAARG(SDValue Op, SelectionDAG &DAG) const
                       MachinePointerInfo(V), false, false, 0);
   // Load the actual argument out of the pointer VAList
   return DAG.getLoad(VT, dl, Tmp3, VAList, MachinePointerInfo(),
-                     false, false, 0);
+                     false, false, false, 0);
 }
 
 SDValue XCoreTargetLowering::
@@ -789,7 +805,12 @@ SDValue XCoreTargetLowering::LowerFRAMEADDR(SDValue Op,
 }
 
 SDValue XCoreTargetLowering::
-LowerTRAMPOLINE(SDValue Op, SelectionDAG &DAG) const {
+LowerADJUST_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const {
+  return Op.getOperand(0);
+}
+
+SDValue XCoreTargetLowering::
+LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const {
   SDValue Chain = Op.getOperand(0);
   SDValue Trmp = Op.getOperand(1); // trampoline
   SDValue FPtr = Op.getOperand(2); // nested function
@@ -841,9 +862,7 @@ LowerTRAMPOLINE(SDValue Op, SelectionDAG &DAG) const {
                               MachinePointerInfo(TrmpAddr, 16), false, false,
                               0);
 
-  SDValue Ops[] =
-    { Trmp, DAG.getNode(ISD::TokenFactor, dl, MVT::Other, OutChains, 5) };
-  return DAG.getMergeValues(Ops, 2, dl);
+  return DAG.getNode(ISD::TokenFactor, dl, MVT::Other, OutChains, 5);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1131,7 +1150,7 @@ XCoreTargetLowering::LowerCCCArguments(SDValue Chain,
       SDValue FIN = DAG.getFrameIndex(FI, MVT::i32);
       InVals.push_back(DAG.getLoad(VA.getLocVT(), dl, Chain, FIN,
                                    MachinePointerInfo::getFixedStack(FI),
-                                   false, false, 0));
+                                   false, false, false, 0));
     }
   }
 
@@ -1409,7 +1428,8 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
     // operands are constant canonicalize smallest to RHS.
     if ((N0C && !N1C) ||
         (N0C && N1C && N0C->getZExtValue() < N1C->getZExtValue()))
-      return DAG.getNode(XCoreISD::LMUL, dl, DAG.getVTList(VT, VT), N1, N0, N2, N3);
+      return DAG.getNode(XCoreISD::LMUL, dl, DAG.getVTList(VT, VT),
+                         N1, N0, N2, N3);
 
     // lmul(x, 0, a, b)
     if (N1C && N1C->isNullValue()) {

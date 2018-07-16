@@ -58,6 +58,9 @@ ProcessKDP::CreateInstance (Target &target, Listener &listener)
 bool
 ProcessKDP::CanDebug(Target &target, bool plugin_specified_by_name)
 {
+    if (plugin_specified_by_name)
+        return true;
+
     // For now we are just making sure the file exists for a given module
     Module *exe_module = target.GetExecutableModulePointer();
     if (exe_module)
@@ -71,10 +74,8 @@ ProcessKDP::CanDebug(Target &target, bool plugin_specified_by_name)
                 exe_objfile->GetStrata() == ObjectFile::eStrataKernel)
                 return true;
         }
-        return false;
     }
-    // No target executable, assume we can debug if our plug-in was specified by name
-    return plugin_specified_by_name;
+    return false;
 }
 
 //----------------------------------------------------------------------
@@ -96,6 +97,11 @@ ProcessKDP::ProcessKDP(Target& target, Listener &listener) :
 ProcessKDP::~ProcessKDP()
 {
     Clear();
+    // We need to call finalize on the process before destroying ourselves
+    // to make sure all of the broadcaster cleanup goes as planned. If we
+    // destruct this class, then Process::~Process() might have problems
+    // trying to fully destroy the broadcaster.
+    Finalize();
 }
 
 //----------------------------------------------------------------------
@@ -185,7 +191,7 @@ ProcessKDP::DoConnectRemote (const char *remote_url)
                     kernel_arch.SetArchitecture(eArchTypeMachO, cpu, sub);
                     m_target.SetArchitecture(kernel_arch);
                     SetID (1);
-                    UpdateThreadListIfNeeded ();
+                    GetThreadList ();
                     SetPrivateState (eStateStopped);
                     StreamSP async_strm_sp(m_target.GetDebugger().GetAsyncOutputStream());
                     if (async_strm_sp)
@@ -229,14 +235,8 @@ ProcessKDP::DoConnectRemote (const char *remote_url)
 // Process Control
 //----------------------------------------------------------------------
 Error
-ProcessKDP::DoLaunch (Module* module,
-                      char const *argv[],
-                      char const *envp[],
-                      uint32_t launch_flags,
-                      const char *stdin_path,
-                      const char *stdout_path,
-                      const char *stderr_path,
-                      const char *working_dir)
+ProcessKDP::DoLaunch (Module *exe_module, 
+                      const ProcessLaunchInfo &launch_info)
 {
     Error error;
     error.SetErrorString ("launching not supported in kdp-remote plug-in");
@@ -266,7 +266,7 @@ ProcessKDP::DidAttach ()
 {
     LogSP log (ProcessKDPLog::GetLogIfAllCategoriesSet (KDP_LOG_PROCESS));
     if (log)
-        log->Printf ("ProcessKDP::DidLaunch()");
+        log->Printf ("ProcessKDP::DidAttach()");
     if (GetID() != LLDB_INVALID_PROCESS_ID)
     {
         // TODO: figure out the register context that we will use
@@ -289,34 +289,28 @@ ProcessKDP::DoResume ()
 }
 
 uint32_t
-ProcessKDP::UpdateThreadListIfNeeded ()
+ProcessKDP::UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list)
 {
     // locker will keep a mutex locked until it goes out of scope
     LogSP log (ProcessKDPLog::GetLogIfAllCategoriesSet (KDP_LOG_THREAD));
     if (log && log->GetMask().Test(KDP_LOG_VERBOSE))
-        log->Printf ("ProcessKDP::%s (pid = %i)", __FUNCTION__, GetID());
+        log->Printf ("ProcessKDP::%s (pid = %llu)", __FUNCTION__, GetID());
     
-    Mutex::Locker locker (m_thread_list.GetMutex ());
-    const uint32_t stop_id = GetStopID();
-    if (m_thread_list.GetSize(false) == 0)
+    // We currently are making only one thread per core and we
+    // actually don't know about actual threads. Eventually we
+    // want to get the thread list from memory and note which
+    // threads are on CPU as those are the only ones that we 
+    // will be able to resume.
+    const uint32_t cpu_mask = m_comm.GetCPUMask();
+    for (uint32_t cpu_mask_bit = 1; cpu_mask_bit & cpu_mask; cpu_mask_bit <<= 1)
     {
-        // We currently are making only one thread per core and we
-        // actually don't know about actual threads. Eventually we
-        // want to get the thread list from memory and note which
-        // threads are on CPU as those are the only ones that we 
-        // will be able to resume.
-        ThreadList curr_thread_list (this);
-        curr_thread_list.SetStopID(stop_id);
-        const uint32_t cpu_mask = m_comm.GetCPUMask();
-        for (uint32_t cpu_mask_bit = 1; cpu_mask_bit & cpu_mask; cpu_mask_bit <<= 1)
-        {
-            // The thread ID is currently the CPU mask bit
-            ThreadSP thread_sp (new ThreadKDP (*this, cpu_mask_bit));
-                curr_thread_list.AddThread(thread_sp);
-        }
-        m_thread_list = curr_thread_list;
+        lldb::tid_t tid = cpu_mask_bit;
+        ThreadSP thread_sp (old_thread_list.FindThreadByID (tid, false));
+        if (!thread_sp)
+            thread_sp.reset(new ThreadKDP (*this, tid));
+        new_thread_list.AddThread(thread_sp);
     }
-    return GetThreadList().GetSize(false);
+    return new_thread_list.GetSize(false);
 }
 
 
@@ -475,8 +469,7 @@ ProcessKDP::DoDetach()
     // Sleep for one second to let the process get all detached...
     StopAsyncThread ();
     
-    m_comm.StopReadThread();
-    m_comm.Disconnect();    // Disconnect from the debug server.
+    m_comm.Clear();
     
     SetPrivateState (eStateDetached);
     ResumePrivateStateThread();
@@ -514,8 +507,7 @@ ProcessKDP::DoDestroy ()
         }
     }
     StopAsyncThread ();
-    m_comm.StopReadThread();
-    m_comm.Disconnect();    // Disconnect from the debug server.
+    m_comm.Clear();
     return error;
 }
 
@@ -613,7 +605,7 @@ ProcessKDP::DisableBreakpoint (BreakpointSite *bp_site)
 }
 
 Error
-ProcessKDP::EnableWatchpoint (WatchpointLocation *wp)
+ProcessKDP::EnableWatchpoint (Watchpoint *wp)
 {
     Error error;
     error.SetErrorString ("watchpoints are not suppported in kdp remote debugging");
@@ -621,7 +613,7 @@ ProcessKDP::EnableWatchpoint (WatchpointLocation *wp)
 }
 
 Error
-ProcessKDP::DisableWatchpoint (WatchpointLocation *wp)
+ProcessKDP::DisableWatchpoint (Watchpoint *wp)
 {
     Error error;
     error.SetErrorString ("watchpoints are not suppported in kdp remote debugging");
@@ -631,7 +623,6 @@ ProcessKDP::DisableWatchpoint (WatchpointLocation *wp)
 void
 ProcessKDP::Clear()
 {
-    Mutex::Locker locker (m_thread_list.GetMutex ());
     m_thread_list.Clear();
 }
 
@@ -704,7 +695,7 @@ ProcessKDP::AsyncThread (void *arg)
     
     LogSP log (ProcessKDPLog::GetLogIfAllCategoriesSet (KDP_LOG_PROCESS));
     if (log)
-        log->Printf ("ProcessKDP::%s (arg = %p, pid = %i) thread starting...", __FUNCTION__, arg, process->GetID());
+        log->Printf ("ProcessKDP::%s (arg = %p, pid = %llu) thread starting...", __FUNCTION__, arg, process->GetID());
     
     Listener listener ("ProcessKDP::AsyncThread");
     EventSP event_sp;
@@ -719,14 +710,14 @@ ProcessKDP::AsyncThread (void *arg)
         while (!done)
         {
             if (log)
-                log->Printf ("ProcessKDP::%s (arg = %p, pid = %i) listener.WaitForEvent (NULL, event_sp)...", __FUNCTION__, arg, process->GetID());
+                log->Printf ("ProcessKDP::%s (arg = %p, pid = %llu) listener.WaitForEvent (NULL, event_sp)...", __FUNCTION__, arg, process->GetID());
             if (listener.WaitForEvent (NULL, event_sp))
             {
                 const uint32_t event_type = event_sp->GetType();
                 if (event_sp->BroadcasterIs (&process->m_async_broadcaster))
                 {
                     if (log)
-                        log->Printf ("ProcessKDP::%s (arg = %p, pid = %i) Got an event of type: %d...", __FUNCTION__, arg, process->GetID(), event_type);
+                        log->Printf ("ProcessKDP::%s (arg = %p, pid = %llu) Got an event of type: %d...", __FUNCTION__, arg, process->GetID(), event_type);
                     
                     switch (event_type)
                     {
@@ -778,13 +769,13 @@ ProcessKDP::AsyncThread (void *arg)
                             
                         case eBroadcastBitAsyncThreadShouldExit:
                             if (log)
-                                log->Printf ("ProcessKDP::%s (arg = %p, pid = %i) got eBroadcastBitAsyncThreadShouldExit...", __FUNCTION__, arg, process->GetID());
+                                log->Printf ("ProcessKDP::%s (arg = %p, pid = %llu) got eBroadcastBitAsyncThreadShouldExit...", __FUNCTION__, arg, process->GetID());
                             done = true;
                             break;
                             
                         default:
                             if (log)
-                                log->Printf ("ProcessKDP::%s (arg = %p, pid = %i) got unknown event 0x%8.8x", __FUNCTION__, arg, process->GetID(), event_type);
+                                log->Printf ("ProcessKDP::%s (arg = %p, pid = %llu) got unknown event 0x%8.8x", __FUNCTION__, arg, process->GetID(), event_type);
                             done = true;
                             break;
                     }
@@ -801,14 +792,14 @@ ProcessKDP::AsyncThread (void *arg)
             else
             {
                 if (log)
-                    log->Printf ("ProcessKDP::%s (arg = %p, pid = %i) listener.WaitForEvent (NULL, event_sp) => false", __FUNCTION__, arg, process->GetID());
+                    log->Printf ("ProcessKDP::%s (arg = %p, pid = %llu) listener.WaitForEvent (NULL, event_sp) => false", __FUNCTION__, arg, process->GetID());
                 done = true;
             }
         }
     }
     
     if (log)
-        log->Printf ("ProcessKDP::%s (arg = %p, pid = %i) thread exiting...", __FUNCTION__, arg, process->GetID());
+        log->Printf ("ProcessKDP::%s (arg = %p, pid = %llu) thread exiting...", __FUNCTION__, arg, process->GetID());
     
     process->m_async_thread = LLDB_INVALID_HOST_THREAD;
     return NULL;

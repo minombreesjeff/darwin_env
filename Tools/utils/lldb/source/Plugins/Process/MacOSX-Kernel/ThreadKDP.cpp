@@ -21,18 +21,13 @@
 #include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Unwind.h"
-#include "lldb/Breakpoint/WatchpointLocation.h"
+#include "lldb/Breakpoint/Watchpoint.h"
 
 #include "ProcessKDP.h"
 #include "ProcessKDPLog.h"
 #include "RegisterContextKDP_arm.h"
 #include "RegisterContextKDP_i386.h"
 #include "RegisterContextKDP_x86_64.h"
-#include "Plugins/Process/Utility/UnwindLLDB.h"
-
-#if defined(__APPLE__)
-#include "UnwindMacOSXFrameBackchain.h"
-#endif
 
 using namespace lldb;
 using namespace lldb_private;
@@ -55,14 +50,6 @@ ThreadKDP::~ThreadKDP ()
     ProcessKDPLog::LogIf(KDP_LOG_THREAD, "%p: ThreadKDP::~ThreadKDP (pid = %i, tid = 0x%4.4x)", this, m_process.GetID(), GetID());
     DestroyThread();
 }
-
-
-const char *
-ThreadKDP::GetInfo ()
-{
-    return NULL;
-}
-
 
 const char *
 ThreadKDP::GetName ()
@@ -89,7 +76,7 @@ ThreadKDP::WillResume (StateType resume_state)
 
     lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
-        log->Printf ("Resuming thread: %4.4x with state: %s.", GetID(), StateAsCString(resume_state));
+        log->Printf ("Resuming thread: %4.4llx with state: %s.", GetID(), StateAsCString(resume_state));
 
 //    ProcessKDP &process = GetKDPProcess();
 //    switch (resume_state)
@@ -122,32 +109,6 @@ ThreadKDP::RefreshStateAfterStop()
     // the right thing.
     const bool force = false;
     GetRegisterContext()->InvalidateIfNeeded (force);
-}
-
-Unwind *
-ThreadKDP::GetUnwinder ()
-{
-    if (m_unwinder_ap.get() == NULL)
-    {
-        const ArchSpec target_arch (GetProcess().GetTarget().GetArchitecture ());
-        const llvm::Triple::ArchType machine = target_arch.GetMachine();
-        switch (machine)
-        {
-            case llvm::Triple::x86_64:
-            case llvm::Triple::x86:
-            case llvm::Triple::arm:
-            case llvm::Triple::thumb:
-                m_unwinder_ap.reset (new UnwindLLDB (*this));
-                break;
-
-            default:
-#if defined(__APPLE__)
-                m_unwinder_ap.reset (new UnwindMacOSXFrameBackchain (*this));
-#endif
-                break;
-        }
-    }
-    return m_unwinder_ap.get();
 }
 
 void

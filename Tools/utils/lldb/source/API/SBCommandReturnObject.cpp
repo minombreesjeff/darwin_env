@@ -28,6 +28,17 @@ SBCommandReturnObject::SBCommandReturnObject (const SBCommandReturnObject &rhs):
         m_opaque_ap.reset (new CommandReturnObject (*rhs.m_opaque_ap));
 }
 
+SBCommandReturnObject::SBCommandReturnObject (CommandReturnObject *ptr) :
+    m_opaque_ap (ptr)
+{
+}
+
+CommandReturnObject *
+SBCommandReturnObject::Release ()
+{
+    return m_opaque_ap.release();
+}
+
 const SBCommandReturnObject &
 SBCommandReturnObject::operator = (const SBCommandReturnObject &rhs)
 {
@@ -57,7 +68,7 @@ SBCommandReturnObject::IsValid() const
 const char *
 SBCommandReturnObject::GetOutput ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (m_opaque_ap.get())
     {
@@ -77,7 +88,7 @@ SBCommandReturnObject::GetOutput ()
 const char *
 SBCommandReturnObject::GetError ()
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (m_opaque_ap.get())
     {
@@ -210,27 +221,29 @@ SBCommandReturnObject::SetLLDBObjectPtr (CommandReturnObject *ptr)
 bool
 SBCommandReturnObject::GetDescription (SBStream &description)
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_ap.get())
     {
         description.Printf ("Status:  ");
         lldb::ReturnStatus status = m_opaque_ap->GetStatus();
         if (status == lldb::eReturnStatusStarted)
-            description.Printf ("Started");
+            strm.PutCString ("Started");
         else if (status == lldb::eReturnStatusInvalid)
-            description.Printf ("Invalid");
+            strm.PutCString ("Invalid");
         else if (m_opaque_ap->Succeeded())
-            description.Printf ("Success");
+            strm.PutCString ("Success");
         else
-            description.Printf ("Fail");
+            strm.PutCString ("Fail");
 
         if (GetOutputSize() > 0)
-            description.Printf ("\nOutput Message:\n%s", GetOutput());
+            strm.Printf ("\nOutput Message:\n%s", GetOutput());
 
         if (GetErrorSize() > 0)
-            description.Printf ("\nError Message:\n%s", GetError());
+            strm.Printf ("\nError Message:\n%s", GetError());
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
 
     return true;
 }
@@ -248,3 +261,27 @@ SBCommandReturnObject::SetImmediateErrorFile (FILE *fh)
     if (m_opaque_ap.get())
         m_opaque_ap->SetImmediateErrorFile (fh);
 }
+
+void
+SBCommandReturnObject::PutCString(const char* string, int len)
+{
+    if (m_opaque_ap.get())
+    {
+        m_opaque_ap->AppendMessage(string, len);
+    }
+}
+
+size_t
+SBCommandReturnObject::Printf(const char* format, ...)
+{
+    if (m_opaque_ap.get())
+    {
+        va_list args;
+        va_start (args, format);
+        size_t result = m_opaque_ap->GetOutputStream().PrintfVarArg(format, args);
+        va_end (args);
+        return result;
+    }
+    return 0;
+}
+

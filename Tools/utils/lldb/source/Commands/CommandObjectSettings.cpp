@@ -83,14 +83,14 @@ CommandObjectSettingsSet::CommandObjectSettingsSet (CommandInterpreter &interpre
 "When setting a dictionary or array variable, you can set multiple entries \n\
 at once by giving the values to the set command.  For example: \n\
 \n\
-(lldb) settings set target.process.run-args value1  value2 value3 \n\
-(lldb) settings set target.process.env-vars [\"MYPATH\"]=~/.:/usr/bin  [\"SOME_ENV_VAR\"]=12345 \n\
+(lldb) settings set target.run-args value1  value2 value3 \n\
+(lldb) settings set target.env-vars [\"MYPATH\"]=~/.:/usr/bin  [\"SOME_ENV_VAR\"]=12345 \n\
 \n\
-(lldb) settings show target.process.run-args \n\
+(lldb) settings show target.run-args \n\
   [0]: 'value1' \n\
   [1]: 'value2' \n\
   [3]: 'value3' \n\
-(lldb) settings show target.process.env-vars \n\
+(lldb) settings show target.env-vars \n\
   'MYPATH=~/.:/usr/bin'\n\
   'SOME_ENV_VAR=12345' \n\
 \n\
@@ -108,13 +108,24 @@ CommandObjectSettingsSet::~CommandObjectSettingsSet()
 }
 
 
+#include "llvm/ADT/StringRef.h"
+static inline void StripLeadingSpaces(llvm::StringRef &Str)
+{
+    while (!Str.empty() && isspace(Str[0]))
+        Str = Str.substr(1);
+}
 bool
-CommandObjectSettingsSet::Execute (Args& command, CommandReturnObject &result)
+CommandObjectSettingsSet::ExecuteRawCommandString (const char *raw_command, CommandReturnObject &result)
 {
     UserSettingsControllerSP usc_sp (Debugger::GetSettingsController ());
 
-    const int argc = command.GetArgumentCount ();
+    Args cmd_args(raw_command);
 
+    // Process possible options.
+    if (!ParseOptions (cmd_args, result))
+        return false;
+
+    const int argc = cmd_args.GetArgumentCount ();
     if ((argc < 2) && (!m_options.m_reset))
     {
         result.AppendError ("'settings set' takes more arguments");
@@ -122,8 +133,7 @@ CommandObjectSettingsSet::Execute (Args& command, CommandReturnObject &result)
         return false;
     }
 
-    const char *var_name = command.GetArgumentAtIndex (0);
-    std::string var_name_string;
+    const char *var_name = cmd_args.GetArgumentAtIndex (0);
     if ((var_name == NULL) || (var_name[0] == '\0'))
     {
         result.AppendError ("'settings set' command requires a valid variable name; No value supplied");
@@ -131,17 +141,15 @@ CommandObjectSettingsSet::Execute (Args& command, CommandReturnObject &result)
         return false;
     }
 
-    var_name_string = var_name;
-    command.Shift();
-
-    const char *var_value;
-    std::string value_string;
-
-    command.GetQuotedCommandString (value_string);
-    var_value = value_string.c_str();
+    // Split the raw command into var_name and value pair.
+    std::string var_name_string = var_name;
+    llvm::StringRef raw_str(raw_command);
+    llvm::StringRef var_value_str = raw_str.split(var_name).second;
+    StripLeadingSpaces(var_value_str);
+    std::string var_value_string = var_value_str.str();
 
     if (!m_options.m_reset
-        && var_value == NULL)
+        && var_value_string.empty())
     {
         result.AppendError ("'settings set' command requires a valid variable value unless using '--reset' option;"
                             " No value supplied");
@@ -150,7 +158,7 @@ CommandObjectSettingsSet::Execute (Args& command, CommandReturnObject &result)
     else
     {
       Error err = usc_sp->SetVariable (var_name_string.c_str(), 
-                                       var_value, 
+                                       var_value_string.c_str(), 
                                        eVarSetOperationAssign, 
                                        m_options.m_override, 
                                        m_interpreter.GetDebugger().GetInstanceName().AsCString());
@@ -180,7 +188,11 @@ CommandObjectSettingsSet::HandleArgumentCompletion (Args &input,
     completion_str.erase (cursor_char_position);
 
     // Attempting to complete variable name
-    if (cursor_index == 1)
+    llvm::StringRef prev_str(cursor_index == 2 ? input.GetArgumentAtIndex(1) : "");
+    if (cursor_index == 1 ||
+        (cursor_index == 2 && prev_str.startswith("-")) // "settings set -r th", followed by Tab.
+        )
+    {
         CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter,
                                                              CommandCompletions::eSettingsNameCompletion,
                                                              completion_str.c_str(),
@@ -189,6 +201,10 @@ CommandObjectSettingsSet::HandleArgumentCompletion (Args &input,
                                                              NULL,
                                                              word_complete,
                                                              matches);
+        // If there is only 1 match which fulfills the completion request, do an early return.
+        if (matches.GetSize() == 1 && completion_str.compare(matches.GetStringAtIndex(0)) != 0)
+            return 1;
+    }
 
     // Attempting to complete value
     if ((cursor_index == 2)   // Partly into the variable's value
@@ -265,7 +281,7 @@ CommandObjectSettingsSet::CommandOptions::SetOptionValue (uint32_t option_idx, c
             m_reset = true;
             break;
         default:
-            error.SetErrorStringWithFormat ("Unrecognized options '%c'.\n", short_option);
+            error.SetErrorStringWithFormat ("unrecognized options '%c'", short_option);
             break;
     }
 
@@ -674,11 +690,12 @@ CommandObjectSettingsReplace::~CommandObjectSettingsReplace ()
 }
 
 bool
-CommandObjectSettingsReplace::Execute (Args& command, CommandReturnObject &result)
+CommandObjectSettingsReplace::ExecuteRawCommandString (const char *raw_command, CommandReturnObject &result)
 {
     UserSettingsControllerSP usc_sp (Debugger::GetSettingsController ());
 
-    const int argc = command.GetArgumentCount ();
+    Args cmd_args(raw_command);
+    const int argc = cmd_args.GetArgumentCount ();
 
     if (argc < 3)
     {
@@ -687,7 +704,7 @@ CommandObjectSettingsReplace::Execute (Args& command, CommandReturnObject &resul
         return false;
     }
 
-    const char *var_name = command.GetArgumentAtIndex (0);
+    const char *var_name = cmd_args.GetArgumentAtIndex (0);
     std::string var_name_string;
     if ((var_name == NULL) || (var_name[0] == '\0'))
     {
@@ -697,9 +714,9 @@ CommandObjectSettingsReplace::Execute (Args& command, CommandReturnObject &resul
     }
 
     var_name_string = var_name;
-    command.Shift();
+    cmd_args.Shift();
 
-    const char *index_value = command.GetArgumentAtIndex (0);
+    const char *index_value = cmd_args.GetArgumentAtIndex (0);
     std::string index_value_string;
     if ((index_value == NULL) || (index_value[0] == '\0'))
     {
@@ -709,15 +726,15 @@ CommandObjectSettingsReplace::Execute (Args& command, CommandReturnObject &resul
     }
 
     index_value_string = index_value;
-    command.Shift();
+    cmd_args.Shift();
 
-    const char *var_value;
-    std::string value_string;
+    // Split the raw command into var_name, index_value, and value triple.
+    llvm::StringRef raw_str(raw_command);
+    llvm::StringRef var_value_str = raw_str.split(var_name).second.split(index_value).second;
+    StripLeadingSpaces(var_value_str);
+    std::string var_value_string = var_value_str.str();
 
-    command.GetQuotedCommandString (value_string);
-    var_value = value_string.c_str();
-
-    if ((var_value == NULL) || (var_value[0] == '\0'))
+    if (var_value_string.empty())
     {
         result.AppendError ("'settings replace' command requires a valid variable value; no value supplied");
         result.SetStatus (eReturnStatusFailed);
@@ -725,7 +742,7 @@ CommandObjectSettingsReplace::Execute (Args& command, CommandReturnObject &resul
     else
     {
         Error err = usc_sp->SetVariable (var_name_string.c_str(), 
-                                         var_value, 
+                                         var_value_string.c_str(), 
                                          eVarSetOperationReplace, 
                                          true, 
                                          m_interpreter.GetDebugger().GetInstanceName().AsCString(),
@@ -818,11 +835,12 @@ CommandObjectSettingsInsertBefore::~CommandObjectSettingsInsertBefore ()
 }
 
 bool
-CommandObjectSettingsInsertBefore::Execute (Args& command, CommandReturnObject &result)
+CommandObjectSettingsInsertBefore::ExecuteRawCommandString (const char *raw_command, CommandReturnObject &result)
 {
     UserSettingsControllerSP usc_sp (Debugger::GetSettingsController ());
 
-    const int argc = command.GetArgumentCount ();
+    Args cmd_args(raw_command);
+    const int argc = cmd_args.GetArgumentCount ();
 
     if (argc < 3)
     {
@@ -831,7 +849,7 @@ CommandObjectSettingsInsertBefore::Execute (Args& command, CommandReturnObject &
         return false;
     }
 
-    const char *var_name = command.GetArgumentAtIndex (0);
+    const char *var_name = cmd_args.GetArgumentAtIndex (0);
     std::string var_name_string;
     if ((var_name == NULL) || (var_name[0] == '\0'))
     {
@@ -841,9 +859,9 @@ CommandObjectSettingsInsertBefore::Execute (Args& command, CommandReturnObject &
     }
 
     var_name_string = var_name;
-    command.Shift();
+    cmd_args.Shift();
 
-    const char *index_value = command.GetArgumentAtIndex (0);
+    const char *index_value = cmd_args.GetArgumentAtIndex (0);
     std::string index_value_string;
     if ((index_value == NULL) || (index_value[0] == '\0'))
     {
@@ -853,15 +871,15 @@ CommandObjectSettingsInsertBefore::Execute (Args& command, CommandReturnObject &
     }
 
     index_value_string = index_value;
-    command.Shift();
+    cmd_args.Shift();
 
-    const char *var_value;
-    std::string value_string;
+    // Split the raw command into var_name, index_value, and value triple.
+    llvm::StringRef raw_str(raw_command);
+    llvm::StringRef var_value_str = raw_str.split(var_name).second.split(index_value).second;
+    StripLeadingSpaces(var_value_str);
+    std::string var_value_string = var_value_str.str();
 
-    command.GetQuotedCommandString (value_string);
-    var_value = value_string.c_str();
-
-    if ((var_value == NULL) || (var_value[0] == '\0'))
+    if (var_value_string.empty())
     {
         result.AppendError ("'settings insert-before' command requires a valid variable value;"
                             " No value supplied");
@@ -870,7 +888,7 @@ CommandObjectSettingsInsertBefore::Execute (Args& command, CommandReturnObject &
     else
     {
         Error err = usc_sp->SetVariable (var_name_string.c_str(), 
-                                         var_value, 
+                                         var_value_string.c_str(), 
                                          eVarSetOperationInsertBefore,
                                          true, 
                                          m_interpreter.GetDebugger().GetInstanceName().AsCString(),
@@ -964,11 +982,12 @@ CommandObjectSettingsInsertAfter::~CommandObjectSettingsInsertAfter ()
 }
 
 bool
-CommandObjectSettingsInsertAfter::Execute (Args& command, CommandReturnObject &result)
+CommandObjectSettingsInsertAfter::ExecuteRawCommandString (const char *raw_command, CommandReturnObject &result)
 {
     UserSettingsControllerSP usc_sp (Debugger::GetSettingsController ());
 
-    const int argc = command.GetArgumentCount ();
+    Args cmd_args(raw_command);
+    const int argc = cmd_args.GetArgumentCount ();
 
     if (argc < 3)
     {
@@ -977,7 +996,7 @@ CommandObjectSettingsInsertAfter::Execute (Args& command, CommandReturnObject &r
         return false;
     }
 
-    const char *var_name = command.GetArgumentAtIndex (0);
+    const char *var_name = cmd_args.GetArgumentAtIndex (0);
     std::string var_name_string;
     if ((var_name == NULL) || (var_name[0] == '\0'))
     {
@@ -987,9 +1006,9 @@ CommandObjectSettingsInsertAfter::Execute (Args& command, CommandReturnObject &r
     }
 
     var_name_string = var_name;
-    command.Shift();
+    cmd_args.Shift();
 
-    const char *index_value = command.GetArgumentAtIndex (0);
+    const char *index_value = cmd_args.GetArgumentAtIndex (0);
     std::string index_value_string;
     if ((index_value == NULL) || (index_value[0] == '\0'))
     {
@@ -999,15 +1018,15 @@ CommandObjectSettingsInsertAfter::Execute (Args& command, CommandReturnObject &r
     }
 
     index_value_string = index_value;
-    command.Shift();
+    cmd_args.Shift();
 
-    const char *var_value;
-    std::string value_string;
+    // Split the raw command into var_name, index_value, and value triple.
+    llvm::StringRef raw_str(raw_command);
+    llvm::StringRef var_value_str = raw_str.split(var_name).second.split(index_value).second;
+    StripLeadingSpaces(var_value_str);
+    std::string var_value_string = var_value_str.str();
 
-    command.GetQuotedCommandString (value_string);
-    var_value = value_string.c_str();
-
-    if ((var_value == NULL) || (var_value[0] == '\0'))
+    if (var_value_string.empty())
     {
         result.AppendError ("'settings insert-after' command requires a valid variable value;"
                             " No value supplied");
@@ -1016,7 +1035,7 @@ CommandObjectSettingsInsertAfter::Execute (Args& command, CommandReturnObject &r
     else
     {
         Error err = usc_sp->SetVariable (var_name_string.c_str(), 
-                                         var_value, 
+                                         var_value_string.c_str(), 
                                          eVarSetOperationInsertAfter,
                                          true, 
                                          m_interpreter.GetDebugger().GetInstanceName().AsCString(), 
@@ -1100,11 +1119,12 @@ CommandObjectSettingsAppend::~CommandObjectSettingsAppend ()
 }
 
 bool
-CommandObjectSettingsAppend::Execute (Args& command, CommandReturnObject &result)
+CommandObjectSettingsAppend::ExecuteRawCommandString (const char *raw_command, CommandReturnObject &result)
 {
     UserSettingsControllerSP usc_sp (Debugger::GetSettingsController ());
 
-    const int argc = command.GetArgumentCount ();
+    Args cmd_args(raw_command);
+    const int argc = cmd_args.GetArgumentCount ();
 
     if (argc < 2)
     {
@@ -1113,7 +1133,7 @@ CommandObjectSettingsAppend::Execute (Args& command, CommandReturnObject &result
         return false;
     }
 
-    const char *var_name = command.GetArgumentAtIndex (0);
+    const char *var_name = cmd_args.GetArgumentAtIndex (0);
     std::string var_name_string;
     if ((var_name == NULL) || (var_name[0] == '\0'))
     {
@@ -1123,15 +1143,15 @@ CommandObjectSettingsAppend::Execute (Args& command, CommandReturnObject &result
     }
 
     var_name_string = var_name;
-    command.Shift();
+    cmd_args.Shift();
 
-    const char *var_value;
-    std::string value_string;
+    // Split the raw command into var_name and value pair.
+    llvm::StringRef raw_str(raw_command);
+    llvm::StringRef var_value_str = raw_str.split(var_name).second;
+    StripLeadingSpaces(var_value_str);
+    std::string var_value_string = var_value_str.str();
 
-    command.GetQuotedCommandString (value_string);
-    var_value = value_string.c_str();
-
-    if ((var_value == NULL) || (var_value[0] == '\0'))
+    if (var_value_string.empty())
     {
         result.AppendError ("'settings append' command requires a valid variable value;"
                             " No value supplied");
@@ -1140,7 +1160,7 @@ CommandObjectSettingsAppend::Execute (Args& command, CommandReturnObject &result
     else
     {
         Error err = usc_sp->SetVariable (var_name_string.c_str(), 
-                                         var_value, 
+                                         var_value_string.c_str(), 
                                          eVarSetOperationAppend, 
                                          true, 
                                          m_interpreter.GetDebugger().GetInstanceName().AsCString());

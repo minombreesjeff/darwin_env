@@ -1,4 +1,4 @@
-//===--- GeneratePCH.cpp - AST Consumer for PCH Generation ------*- C++ -*-===//
+//===--- GeneratePCH.cpp - Sema Consumer for PCH Generation -----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,12 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//  This file defines the CreatePCHGenerate function, which creates an
-//  ASTConsumer that generates a PCH file.
+//  This file defines the PCHGenerator, which as a SemaConsumer that generates
+//  a PCH file.
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/Frontend/ASTConsumers.h"
 #include "clang/Serialization/ASTWriter.h"
 #include "clang/Sema/SemaConsumer.h"
 #include "clang/AST/ASTContext.h"
@@ -27,19 +26,17 @@
 using namespace clang;
 
 PCHGenerator::PCHGenerator(const Preprocessor &PP,
-                           const std::string &OutputFile,
-                           bool Chaining,
+                           StringRef OutputFile,
+                           clang::Module *Module,
                            StringRef isysroot,
                            raw_ostream *OS)
-  : PP(PP), OutputFile(OutputFile), isysroot(isysroot.str()), Out(OS), 
-    SemaPtr(0), StatCalls(0), Stream(Buffer), Writer(Stream), Chaining(Chaining) {
+  : PP(PP), OutputFile(OutputFile), Module(Module), 
+    isysroot(isysroot.str()), Out(OS), 
+    SemaPtr(0), StatCalls(0), Stream(Buffer), Writer(Stream) {
   // Install a stat() listener to keep track of all of the stat()
   // calls.
   StatCalls = new MemorizeStatCalls();
-  // If we have a chain, we want new stat calls only, so install the memorizer
-  // *after* the already installed ASTReader's stat cache.
-  PP.getFileManager().addStatCache(StatCalls,
-    /*AtBeginning=*/!Chaining);
+  PP.getFileManager().addStatCache(StatCalls, /*AtBeginning=*/false);
 }
 
 PCHGenerator::~PCHGenerator() {
@@ -48,13 +45,10 @@ PCHGenerator::~PCHGenerator() {
 void PCHGenerator::HandleTranslationUnit(ASTContext &Ctx) {
   if (PP.getDiagnostics().hasErrorOccurred())
     return;
-
-  // Set up the serialization listener.
-  Writer.SetSerializationListener(GetASTSerializationListener());
   
   // Emit the PCH file
   assert(SemaPtr && "No Sema?");
-  Writer.WriteAST(*SemaPtr, StatCalls, OutputFile, isysroot);
+  Writer.WriteAST(*SemaPtr, StatCalls, OutputFile, Module, isysroot);
 
   // Write the generated bitstream to "Out".
   Out->write((char *)&Buffer.front(), Buffer.size());
@@ -67,13 +61,7 @@ void PCHGenerator::HandleTranslationUnit(ASTContext &Ctx) {
 }
 
 ASTMutationListener *PCHGenerator::GetASTMutationListener() {
-  if (Chaining)
-    return &Writer;
-  return 0;
-}
-
-ASTSerializationListener *PCHGenerator::GetASTSerializationListener() {
-  return 0;
+  return &Writer;
 }
 
 ASTDeserializationListener *PCHGenerator::GetASTDeserializationListener() {

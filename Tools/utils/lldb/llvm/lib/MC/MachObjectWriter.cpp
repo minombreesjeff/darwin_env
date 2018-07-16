@@ -291,7 +291,7 @@ void MachObjectWriter::WriteNlist(MachSymbolData &MSD,
   const MCSymbol &Symbol = Data.getSymbol();
   uint8_t Type = 0;
   uint16_t Flags = Data.getFlags();
-  uint32_t Address = 0;
+  uint64_t Address = 0;
 
   // Set the N_TYPE bits. See <mach-o/nlist.h>.
   //
@@ -584,10 +584,25 @@ IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
     // requires the compiler to use .set to absolutize the differences between
     // symbols which the compiler knows to be assembly time constants, so we
     // don't need to worry about considering symbol differences fully resolved.
+    //
+    // If the file isn't using sub-sections-via-symbols, we can make the
+    // same assumptions about any symbol that we normally make about
+    // assembler locals.
 
     if (!Asm.getBackend().hasReliableSymbolDifference()) {
-      if (!SA.isTemporary() || !SA.isInSection() || &SecA != &SecB)
+      if ((!SA.isTemporary() && Asm.getSubsectionsViaSymbols()) ||
+           !SA.isInSection() || &SecA != &SecB)
         return false;
+      return true;
+    }
+    // For Darwin x86_64, there is one special case when the reference IsPCRel.
+    // If the fragment with the reference does not have a base symbol but meets
+    // the simple way of dealing with this, in that it is a temporary symbol in
+    // the same atom then it is assumed to be fully resolved.  This is needed so
+    // a relocation entry is not created and so the static linker does not
+    // mess up the reference later.
+    else if(!FB.getAtom() &&
+            SA.isTemporary() && SA.isInSection() && &SecA == &SecB){
       return true;
     }
   } else {
@@ -595,9 +610,13 @@ IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
       return false;
   }
 
-  const MCFragment &FA = *Asm.getSymbolData(SA).getFragment();
+  const MCFragment *FA = Asm.getSymbolData(SA).getFragment();
 
-  A_Base = FA.getAtom();
+  // Bail if the symbol has no fragment.
+  if (!FA)
+    return false;
+
+  A_Base = FA->getAtom();
   if (!A_Base)
     return false;
 
@@ -613,7 +632,8 @@ IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
   return false;
 }
 
-void MachObjectWriter::WriteObject(MCAssembler &Asm, const MCAsmLayout &Layout) {
+void MachObjectWriter::WriteObject(MCAssembler &Asm,
+                                   const MCAsmLayout &Layout) {
   unsigned NumSections = Asm.size();
 
   // The section data starts after the header, the segment load command (and
@@ -716,7 +736,7 @@ void MachObjectWriter::WriteObject(MCAssembler &Asm, const MCAsmLayout &Layout) 
   // Write the actual section data.
   for (MCAssembler::const_iterator it = Asm.begin(),
          ie = Asm.end(); it != ie; ++it) {
-    Asm.WriteSectionData(it, Layout);
+    Asm.writeSectionData(it, Layout);
 
     uint64_t Pad = getPaddingSize(it, Layout);
     for (unsigned int i = 0; i < Pad; ++i)

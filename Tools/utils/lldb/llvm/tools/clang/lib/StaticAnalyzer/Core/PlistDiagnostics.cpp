@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/StaticAnalyzer/Core/PathDiagnosticClients.h"
+#include "clang/StaticAnalyzer/Core/PathDiagnosticConsumers.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/FileManager.h"
@@ -60,21 +60,21 @@ struct CompareDiagnostics {
 }
 
 namespace {
-  class PlistDiagnostics : public PathDiagnosticClient {
+  class PlistDiagnostics : public PathDiagnosticConsumer {
     std::vector<const PathDiagnostic*> BatchedDiags;
     const std::string OutputFile;
     const LangOptions &LangOpts;
-    llvm::OwningPtr<PathDiagnosticClient> SubPD;
+    llvm::OwningPtr<PathDiagnosticConsumer> SubPD;
     bool flushed;
   public:
     PlistDiagnostics(const std::string& prefix, const LangOptions &LangOpts,
-                     PathDiagnosticClient *subPD);
+                     PathDiagnosticConsumer *subPD);
 
     ~PlistDiagnostics() { FlushDiagnostics(NULL); }
 
     void FlushDiagnostics(SmallVectorImpl<std::string> *FilesMade);
     
-    void HandlePathDiagnostic(const PathDiagnostic* D);
+    void HandlePathDiagnosticImpl(const PathDiagnostic* D);
     
     virtual StringRef getName() const {
       return "PlistDiagnostics";
@@ -89,18 +89,18 @@ namespace {
 
 PlistDiagnostics::PlistDiagnostics(const std::string& output,
                                    const LangOptions &LO,
-                                   PathDiagnosticClient *subPD)
+                                   PathDiagnosticConsumer *subPD)
   : OutputFile(output), LangOpts(LO), SubPD(subPD), flushed(false) {}
 
-PathDiagnosticClient*
-ento::createPlistDiagnosticClient(const std::string& s, const Preprocessor &PP,
-                                  PathDiagnosticClient *subPD) {
+PathDiagnosticConsumer*
+ento::createPlistDiagnosticConsumer(const std::string& s, const Preprocessor &PP,
+                                  PathDiagnosticConsumer *subPD) {
   return new PlistDiagnostics(s, PP.getLangOptions(), subPD);
 }
 
-PathDiagnosticClient::PathGenerationScheme
+PathDiagnosticConsumer::PathGenerationScheme
 PlistDiagnostics::getGenerationScheme() const {
-  if (const PathDiagnosticClient *PD = SubPD.get())
+  if (const PathDiagnosticConsumer *PD = SubPD.get())
     return PD->getGenerationScheme();
 
   return Extensive;
@@ -124,12 +124,12 @@ static unsigned GetFID(const FIDMap& FIDs, const SourceManager &SM,
   return I->second;
 }
 
-static raw_ostream& Indent(raw_ostream& o, const unsigned indent) {
+static raw_ostream &Indent(raw_ostream &o, const unsigned indent) {
   for (unsigned i = 0; i < indent; ++i) o << ' ';
   return o;
 }
 
-static void EmitLocation(raw_ostream& o, const SourceManager &SM,
+static void EmitLocation(raw_ostream &o, const SourceManager &SM,
                          const LangOptions &LangOpts,
                          SourceLocation L, const FIDMap &FM,
                          unsigned indent, bool extend = false) {
@@ -150,14 +150,14 @@ static void EmitLocation(raw_ostream& o, const SourceManager &SM,
   Indent(o, indent) << "</dict>\n";
 }
 
-static void EmitLocation(raw_ostream& o, const SourceManager &SM,
+static void EmitLocation(raw_ostream &o, const SourceManager &SM,
                          const LangOptions &LangOpts,
                          const PathDiagnosticLocation &L, const FIDMap& FM,
                          unsigned indent, bool extend = false) {
   EmitLocation(o, SM, LangOpts, L.asLocation(), FM, indent, extend);
 }
 
-static void EmitRange(raw_ostream& o, const SourceManager &SM,
+static void EmitRange(raw_ostream &o, const SourceManager &SM,
                       const LangOptions &LangOpts,
                       PathDiagnosticRange R, const FIDMap &FM,
                       unsigned indent) {
@@ -167,7 +167,7 @@ static void EmitRange(raw_ostream& o, const SourceManager &SM,
   Indent(o, indent) << "</array>\n";
 }
 
-static raw_ostream& EmitString(raw_ostream& o,
+static raw_ostream &EmitString(raw_ostream &o,
                                      const std::string& s) {
   o << "<string>";
   for (std::string::const_iterator I=s.begin(), E=s.end(); I!=E; ++I) {
@@ -185,7 +185,7 @@ static raw_ostream& EmitString(raw_ostream& o,
   return o;
 }
 
-static void ReportControlFlow(raw_ostream& o,
+static void ReportControlFlow(raw_ostream &o,
                               const PathDiagnosticControlFlowPiece& P,
                               const FIDMap& FM,
                               const SourceManager &SM,
@@ -228,7 +228,7 @@ static void ReportControlFlow(raw_ostream& o,
   Indent(o, indent) << "</dict>\n";
 }
 
-static void ReportEvent(raw_ostream& o, const PathDiagnosticPiece& P,
+static void ReportEvent(raw_ostream &o, const PathDiagnosticPiece& P,
                         const FIDMap& FM,
                         const SourceManager &SM,
                         const LangOptions &LangOpts,
@@ -275,7 +275,7 @@ static void ReportEvent(raw_ostream& o, const PathDiagnosticPiece& P,
   Indent(o, indent); o << "</dict>\n";
 }
 
-static void ReportMacro(raw_ostream& o,
+static void ReportMacro(raw_ostream &o,
                         const PathDiagnosticMacroPiece& P,
                         const FIDMap& FM, const SourceManager &SM,
                         const LangOptions &LangOpts,
@@ -299,7 +299,7 @@ static void ReportMacro(raw_ostream& o,
   }
 }
 
-static void ReportDiag(raw_ostream& o, const PathDiagnosticPiece& P,
+static void ReportDiag(raw_ostream &o, const PathDiagnosticPiece& P,
                        const FIDMap& FM, const SourceManager &SM,
                        const LangOptions &LangOpts) {
 
@@ -321,7 +321,7 @@ static void ReportDiag(raw_ostream& o, const PathDiagnosticPiece& P,
   }
 }
 
-void PlistDiagnostics::HandlePathDiagnostic(const PathDiagnostic* D) {
+void PlistDiagnostics::HandlePathDiagnosticImpl(const PathDiagnostic* D) {
   if (!D)
     return;
 

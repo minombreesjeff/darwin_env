@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/StaticAnalyzer/Core/PathDiagnosticClients.h"
+#include "clang/StaticAnalyzer/Core/PathDiagnosticConsumers.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
@@ -35,7 +35,7 @@ using namespace ento;
 
 namespace {
 
-class HTMLDiagnostics : public PathDiagnosticClient {
+class HTMLDiagnostics : public PathDiagnosticConsumer {
   llvm::sys::Path Directory, FilePrefix;
   bool createdDir, noDir;
   const Preprocessor &PP;
@@ -47,13 +47,13 @@ public:
 
   virtual void FlushDiagnostics(SmallVectorImpl<std::string> *FilesMade);
 
-  virtual void HandlePathDiagnostic(const PathDiagnostic* D);
+  virtual void HandlePathDiagnosticImpl(const PathDiagnostic* D);
 
   virtual StringRef getName() const {
     return "HTMLDiagnostics";
   }
 
-  unsigned ProcessMacroPiece(raw_ostream& os,
+  unsigned ProcessMacroPiece(raw_ostream &os,
                              const PathDiagnosticMacroPiece& P,
                              unsigned num);
 
@@ -78,8 +78,8 @@ HTMLDiagnostics::HTMLDiagnostics(const std::string& prefix,
   FilePrefix.appendComponent("report");
 }
 
-PathDiagnosticClient*
-ento::createHTMLDiagnosticClient(const std::string& prefix,
+PathDiagnosticConsumer*
+ento::createHTMLDiagnosticConsumer(const std::string& prefix,
                                  const Preprocessor &PP) {
   return new HTMLDiagnostics(prefix, PP);
 }
@@ -88,7 +88,7 @@ ento::createHTMLDiagnosticClient(const std::string& prefix,
 // Report processing.
 //===----------------------------------------------------------------------===//
 
-void HTMLDiagnostics::HandlePathDiagnostic(const PathDiagnostic* D) {
+void HTMLDiagnostics::HandlePathDiagnosticImpl(const PathDiagnostic* D) {
   if (!D)
     return;
 
@@ -474,7 +474,7 @@ void HTMLDiagnostics::HandlePiece(Rewriter& R, FileID BugFileID,
   // Insert the new html.
   unsigned DisplayPos = LineEnd - FileStart;
   SourceLocation Loc =
-    SM.getLocForStartOfFile(LPosInfo.first).getFileLocWithOffset(DisplayPos);
+    SM.getLocForStartOfFile(LPosInfo.first).getLocWithOffset(DisplayPos);
 
   R.InsertTextBefore(Loc, os.str());
 
@@ -504,7 +504,7 @@ void HTMLDiagnostics::HandlePiece(Rewriter& R, FileID BugFileID,
 #endif
 }
 
-static void EmitAlphaCounter(raw_ostream& os, unsigned n) {
+static void EmitAlphaCounter(raw_ostream &os, unsigned n) {
   unsigned x = n % ('z' - 'a');
   n /= 'z' - 'a';
 
@@ -514,7 +514,7 @@ static void EmitAlphaCounter(raw_ostream& os, unsigned n) {
   os << char('a' + x);
 }
 
-unsigned HTMLDiagnostics::ProcessMacroPiece(raw_ostream& os,
+unsigned HTMLDiagnostics::ProcessMacroPiece(raw_ostream &os,
                                             const PathDiagnosticMacroPiece& P,
                                             unsigned num) {
 
@@ -575,7 +575,7 @@ void HTMLDiagnostics::HighlightRange(Rewriter& R, FileID BugFileID,
   // selected range.
 
   SourceLocation E =
-    InstantiationEnd.getFileLocWithOffset(EndColNo - OldEndColNo);
+    InstantiationEnd.getLocWithOffset(EndColNo - OldEndColNo);
 
   html::HighlightRange(R, InstantiationStart, E, HighlightStart, HighlightEnd);
 }

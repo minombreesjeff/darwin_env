@@ -15,12 +15,14 @@
 #include "ARMMCAsmInfo.h"
 #include "ARMBaseInfo.h"
 #include "InstPrinter/ARMInstPrinter.h"
+#include "llvm/MC/MCCodeGenInfo.h"
+#include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TargetRegistry.h"
 
 #define GET_REGINFO_MC_DESC
 #include "ARMGenRegisterInfo.inc"
@@ -39,7 +41,7 @@ std::string ARM_MC::ParseARMTriple(StringRef TT) {
   unsigned Len = TT.size();
   unsigned Idx = 0;
 
-  // FIXME: Enahnce Triple helper class to extract ARM version.
+  // FIXME: Enhance Triple helper class to extract ARM version.
   bool isThumb = false;
   if (Len >= 5 && TT.substr(0, 4) == "armv")
     Idx = 4;
@@ -54,18 +56,21 @@ std::string ARM_MC::ParseARMTriple(StringRef TT) {
     unsigned SubVer = TT[Idx];
     if (SubVer >= '7' && SubVer <= '9') {
       if (Len >= Idx+2 && TT[Idx+1] == 'm') {
-        // v7m: FeatureNoARM, FeatureDB, FeatureHWDiv
-        ARMArchFeature = "+v7,+noarm,+db,+hwdiv";
+        // v7m: FeatureNoARM, FeatureDB, FeatureHWDiv, FeatureMClass
+        ARMArchFeature = "+v7,+noarm,+db,+hwdiv,+mclass";
       } else if (Len >= Idx+3 && TT[Idx+1] == 'e'&& TT[Idx+2] == 'm') {
         // v7em: FeatureNoARM, FeatureDB, FeatureHWDiv, FeatureDSPThumb2,
-        //       FeatureT2XtPk
-        ARMArchFeature = "+v7,+noarm,+db,+hwdiv,+t2dsp,t2xtpk";
+        //       FeatureT2XtPk, FeatureMClass
+        ARMArchFeature = "+v7,+noarm,+db,+hwdiv,+t2dsp,t2xtpk,+mclass";
       } else
-        // v7a: FeatureNEON, FeatureDB, FeatureDSPThumb2
-        ARMArchFeature = "+v7,+neon,+db,+t2dsp";
+        // v7a: FeatureNEON, FeatureDB, FeatureDSPThumb2, FeatureT2XtPk
+        ARMArchFeature = "+v7,+neon,+db,+t2dsp,+t2xtpk";
     } else if (SubVer == '6') {
       if (Len >= Idx+3 && TT[Idx+1] == 't' && TT[Idx+2] == '2')
         ARMArchFeature = "+v6t2";
+      else if (Len >= Idx+2 && TT[Idx+1] == 'm')
+        // v6m: FeatureNoARM, FeatureMClass
+        ARMArchFeature = "+v6t2,+noarm,+mclass";
       else
         ARMArchFeature = "+v6";
     } else if (SubVer == '5') {
@@ -124,11 +129,15 @@ static MCAsmInfo *createARMMCAsmInfo(const Target &T, StringRef TT) {
 }
 
 static MCCodeGenInfo *createARMMCCodeGenInfo(StringRef TT, Reloc::Model RM,
-                                             CodeModel::Model CM) {
+                                             CodeModel::Model CM,
+                                             CodeGenOpt::Level OL) {
   MCCodeGenInfo *X = new MCCodeGenInfo();
-  if (RM == Reloc::Default)
-    RM = Reloc::DynamicNoPIC;
-  X->InitMCCodeGenInfo(RM, CM);
+  if (RM == Reloc::Default) {
+    Triple TheTriple(TT);
+    // Default relocation model on Darwin is PIC, not DynamicNoPIC.
+    RM = TheTriple.isOSDarwin() ? Reloc::PIC_ : Reloc::DynamicNoPIC;
+  }
+  X->InitMCCodeGenInfo(RM, CM, OL);
   return X;
 }
 
@@ -154,9 +163,10 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
 
 static MCInstPrinter *createARMMCInstPrinter(const Target &T,
                                              unsigned SyntaxVariant,
-                                             const MCAsmInfo &MAI) {
+                                             const MCAsmInfo &MAI,
+                                             const MCSubtargetInfo &STI) {
   if (SyntaxVariant == 0)
-    return new ARMInstPrinter(MAI);
+    return new ARMInstPrinter(MAI, STI);
   return 0;
 }
 
@@ -165,11 +175,6 @@ namespace {
 class ARMMCInstrAnalysis : public MCInstrAnalysis {
 public:
   ARMMCInstrAnalysis(const MCInstrInfo *Info) : MCInstrAnalysis(Info) {}
-  virtual bool isBranch(const MCInst &Inst) const {
-    // Don't flag "bx lr" as a branch.
-    return MCInstrAnalysis::isBranch(Inst) && (Inst.getOpcode() != ARM::BX ||
-           Inst.getOperand(0).getReg() != ARM::LR);
-  }
 
   virtual bool isUnconditionalBranch(const MCInst &Inst) const {
     // BCCs with the "always" predicate are unconditional branches.
@@ -183,11 +188,6 @@ public:
     if (Inst.getOpcode() == ARM::Bcc && Inst.getOperand(1).getImm()==ARMCC::AL)
       return false;
     return MCInstrAnalysis::isConditionalBranch(Inst);
-  }
-
-  virtual bool isReturn(const MCInst &Inst) const {
-    // Recognize "bx lr" as return.
-    return Inst.getOpcode() == ARM::BX && Inst.getOperand(0).getReg()==ARM::LR;
   }
 
   uint64_t evaluateBranch(const MCInst &Inst, uint64_t Addr,
@@ -226,16 +226,17 @@ extern "C" void LLVMInitializeARMTargetMC() {
   TargetRegistry::RegisterMCRegInfo(TheARMTarget, createARMMCRegisterInfo);
   TargetRegistry::RegisterMCRegInfo(TheThumbTarget, createARMMCRegisterInfo);
 
-  TargetRegistry::RegisterMCInstrAnalysis(TheARMTarget,
-                                          createARMMCInstrAnalysis);
-  TargetRegistry::RegisterMCInstrAnalysis(TheThumbTarget,
-                                          createARMMCInstrAnalysis);
-
   // Register the MC subtarget info.
   TargetRegistry::RegisterMCSubtargetInfo(TheARMTarget,
                                           ARM_MC::createARMMCSubtargetInfo);
   TargetRegistry::RegisterMCSubtargetInfo(TheThumbTarget,
                                           ARM_MC::createARMMCSubtargetInfo);
+
+  // Register the MC instruction analyzer.
+  TargetRegistry::RegisterMCInstrAnalysis(TheARMTarget,
+                                          createARMMCInstrAnalysis);
+  TargetRegistry::RegisterMCInstrAnalysis(TheThumbTarget,
+                                          createARMMCInstrAnalysis);
 
   // Register the MC Code Emitter
   TargetRegistry::RegisterMCCodeEmitter(TheARMTarget, createARMMCCodeEmitter);

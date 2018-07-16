@@ -85,17 +85,11 @@ class ProcessAPITestCase(TestBase):
         val = frame.FindValue("my_char", lldb.eValueTypeVariableGlobal)
         self.DebugSBValue(val)
 
-        # If the variable does not have a load address, there's no sense continuing.
-        if not val.GetLocation().startswith("0x"):
-            return
-
-        # OK, let's get the hex location of the variable.
-        location = int(val.GetLocation(), 16)
-
         # Due to the typemap magic (see lldb.swig), we pass in 1 to ReadMemory and
         # expect to get a Python string as the result object!
         error = lldb.SBError()
-        content = process.ReadMemory(location, 1, error)
+        self.assertFalse(val.TypeIsPointerType())
+        content = process.ReadMemory(val.AddressOf().GetValueAsUnsigned(), 1, error)
         if not error.Success():
             self.fail("SBProcess.ReadMemory() failed")
         if self.TraceOn():
@@ -104,6 +98,52 @@ class ProcessAPITestCase(TestBase):
         self.expect(content, "Result from SBProcess.ReadMemory() matches our expected output: 'x'",
                     exe=False,
             startstr = 'x')
+
+        # Read (char *)my_char_ptr.
+        val = frame.FindValue("my_char_ptr", lldb.eValueTypeVariableGlobal)
+        self.DebugSBValue(val)
+        cstring = process.ReadCStringFromMemory(val.GetValueAsUnsigned(), 256, error)
+        if not error.Success():
+            self.fail("SBProcess.ReadCStringFromMemory() failed")
+        if self.TraceOn():
+            print "cstring read is:", cstring
+
+        self.expect(cstring, "Result from SBProcess.ReadCStringFromMemory() matches our expected output",
+                    exe=False,
+            startstr = 'Does it work?')
+
+        # Get the SBValue for the global variable 'my_cstring'.
+        val = frame.FindValue("my_cstring", lldb.eValueTypeVariableGlobal)
+        self.DebugSBValue(val)
+
+        # Due to the typemap magic (see lldb.swig), we pass in 256 to read at most 256 bytes
+        # from the address, and expect to get a Python string as the result object!
+        self.assertFalse(val.TypeIsPointerType())
+        cstring = process.ReadCStringFromMemory(val.AddressOf().GetValueAsUnsigned(), 256, error)
+        if not error.Success():
+            self.fail("SBProcess.ReadCStringFromMemory() failed")
+        if self.TraceOn():
+            print "cstring read is:", cstring
+
+        self.expect(cstring, "Result from SBProcess.ReadCStringFromMemory() matches our expected output",
+                    exe=False,
+            startstr = 'lldb.SBProcess.ReadCStringFromMemory() works!')
+
+        # Get the SBValue for the global variable 'my_uint32'.
+        val = frame.FindValue("my_uint32", lldb.eValueTypeVariableGlobal)
+        self.DebugSBValue(val)
+
+        # Due to the typemap magic (see lldb.swig), we pass in 4 to read 4 bytes
+        # from the address, and expect to get an int as the result!
+        self.assertFalse(val.TypeIsPointerType())
+        my_uint32 = process.ReadUnsignedFromMemory(val.AddressOf().GetValueAsUnsigned(), 4, error)
+        if not error.Success():
+            self.fail("SBProcess.ReadCStringFromMemory() failed")
+        if self.TraceOn():
+            print "uint32 read is:", my_uint32
+
+        if my_uint32 != 12345:
+            self.fail("Result from SBProcess.ReadUnsignedFromMemory() does not match our expected output")
 
     def write_memory(self):
         """Test Python SBProcess.WriteMemory() API."""

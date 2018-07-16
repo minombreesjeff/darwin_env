@@ -51,15 +51,17 @@ ObjectContainer *
 ObjectContainerUniversalMachO::CreateInstance
 (
     Module* module,
-    DataBufferSP& dataSP,
+    DataBufferSP& data_sp,
     const FileSpec *file,
     addr_t offset,
     addr_t length
 )
 {
-    if (ObjectContainerUniversalMachO::MagicBytesMatch(dataSP))
+    DataExtractor data;
+    data.SetData (data_sp, offset, length);
+    if (ObjectContainerUniversalMachO::MagicBytesMatch(data))
     {
-        std::auto_ptr<ObjectContainerUniversalMachO> container_ap(new ObjectContainerUniversalMachO (module, dataSP, file, offset, length));
+        std::auto_ptr<ObjectContainerUniversalMachO> container_ap(new ObjectContainerUniversalMachO (module, data_sp, file, offset, length));
         if (container_ap->ParseHeader())
         {
             return container_ap.release();
@@ -71,9 +73,8 @@ ObjectContainerUniversalMachO::CreateInstance
 
 
 bool
-ObjectContainerUniversalMachO::MagicBytesMatch (DataBufferSP& dataSP)
+ObjectContainerUniversalMachO::MagicBytesMatch (const DataExtractor &data)
 {
-    DataExtractor data(dataSP, lldb::endian::InlHostByteOrder(), 4);
     uint32_t offset = 0;
     uint32_t magic = data.GetU32(&offset);
     return magic == UniversalMagic || magic == UniversalMagicSwapped;
@@ -115,17 +116,6 @@ ObjectContainerUniversalMachO::ParseHeader ()
 
         m_header.nfat_arch = m_data.GetU32(&offset);
 
-        const size_t nfat_arch_size = sizeof(fat_arch) * m_header.nfat_arch;
-        // See if the current data we have is enough for all of the fat headers?
-        if (!m_data.ValidOffsetForDataOfSize(offset, nfat_arch_size))
-        {
-            // The fat headers are larger than the number of bytes we have been
-            // given when this class was constructed. We will read the exact number
-            // of bytes that we need.
-            DataBufferSP data_sp(m_file.ReadFileContents(m_offset, nfat_arch_size + sizeof(fat_header)));
-            m_data.SetData (data_sp);
-        }
-
         // Now we should have enough data for all of the fat headers, so lets index
         // them so we know how many architectures that this universal binary contains.
         uint32_t arch_idx = 0;
@@ -140,9 +130,6 @@ ObjectContainerUniversalMachO::ParseHeader ()
                 }
             }
         }
-        // Now that we have indexed the universal headers, we no longer need any cached data.
-        m_data.Clear();
-
         return true;
     }
     else
@@ -156,11 +143,11 @@ ObjectContainerUniversalMachO::ParseHeader ()
 void
 ObjectContainerUniversalMachO::Dump (Stream *s) const
 {
-    s->Printf("%.*p: ", (int)sizeof(void*) * 2, this);
+    s->Printf("%p: ", this);
     s->Indent();
     const size_t num_archs = GetNumArchitectures();
     const size_t num_objects = GetNumObjects();
-    s->Printf("ObjectContainerUniversalMachO, num_archs = %u, num_objects = %u", num_archs, num_objects);
+    s->Printf("ObjectContainerUniversalMachO, num_archs = %lu, num_objects = %lu", num_archs, num_objects);
     uint32_t i;
     ArchSpec arch;
     s->IndentMore();
@@ -168,12 +155,12 @@ ObjectContainerUniversalMachO::Dump (Stream *s) const
     {
         s->Indent();
         GetArchitectureAtIndex(i, arch);
-        s->Printf("arch[%u] = %s\n", arch.GetArchitectureName());
+        s->Printf("arch[%u] = %s\n", i, arch.GetArchitectureName());
     }
     for (i=0; i<num_objects; i++)
     {
         s->Indent();
-        s->Printf("object[%u] = %s\n", GetObjectNameAtIndex (i));
+        s->Printf("object[%u] = %s\n", i, GetObjectNameAtIndex (i));
     }
     s->IndentLess();
     s->EOL();
@@ -196,7 +183,7 @@ ObjectContainerUniversalMachO::GetArchitectureAtIndex (uint32_t idx, ArchSpec& a
     return false;
 }
 
-ObjectFile *
+ObjectFileSP
 ObjectContainerUniversalMachO::GetObjectFile (const FileSpec *file)
 {
     uint32_t arch_idx = 0;
@@ -219,11 +206,15 @@ ObjectContainerUniversalMachO::GetObjectFile (const FileSpec *file)
         {
             if (arch == curr_arch)
             {
-                return ObjectFile::FindPlugin (m_module, file, m_offset + m_fat_archs[arch_idx].offset, m_fat_archs[arch_idx].size);
+                return ObjectFile::FindPlugin (m_module, 
+                                               file, 
+                                               m_offset + m_fat_archs[arch_idx].offset, 
+                                               m_fat_archs[arch_idx].size,
+                                               m_data.GetSharedDataBuffer());
             }
         }
     }
-    return NULL;
+    return ObjectFileSP();
 }
 
 

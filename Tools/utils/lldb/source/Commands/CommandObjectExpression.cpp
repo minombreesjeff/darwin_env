@@ -37,11 +37,9 @@
 using namespace lldb;
 using namespace lldb_private;
 
-CommandObjectExpression::CommandOptions::CommandOptions (CommandInterpreter &interpreter) :
-    Options(interpreter)
+CommandObjectExpression::CommandOptions::CommandOptions () :
+    OptionGroup()
 {
-    // Keep only one place to reset the values to their defaults
-    OptionParsingStarting();
 }
 
 
@@ -49,30 +47,39 @@ CommandObjectExpression::CommandOptions::~CommandOptions ()
 {
 }
 
+OptionDefinition
+CommandObjectExpression::CommandOptions::g_option_table[] =
+{
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "dynamic-value",      'd', required_argument, NULL, 0, eArgTypeBoolean,    "Upcast the value resulting from the expression to its dynamic type if available."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "unwind-on-error",    'u', required_argument, NULL, 0, eArgTypeBoolean,    "Clean up program state if the expression causes a crash, breakpoint hit or signal."},
+    { LLDB_OPT_SET_2                 , false, "object-description", 'o', no_argument,       NULL, 0, eArgTypeNone,       "Print the object description of the value resulting from the expression."},
+};
+
+
+uint32_t
+CommandObjectExpression::CommandOptions::GetNumDefinitions ()
+{
+    return sizeof(g_option_table)/sizeof(OptionDefinition);
+}
+
 Error
-CommandObjectExpression::CommandOptions::SetOptionValue (uint32_t option_idx, const char *option_arg)
+CommandObjectExpression::CommandOptions::SetOptionValue (CommandInterpreter &interpreter,
+                                                         uint32_t option_idx,
+                                                         const char *option_arg)
 {
     Error error;
 
-    char short_option = (char) m_getopt_table[option_idx].val;
+    const char short_option = (char) g_option_table[option_idx].short_option;
 
     switch (short_option)
     {
       //case 'l':
       //if (language.SetLanguageFromCString (option_arg) == false)
       //{
-      //    error.SetErrorStringWithFormat("Invalid language option argument '%s'.\n", option_arg);
+      //    error.SetErrorStringWithFormat("invalid language option argument '%s'", option_arg);
       //}
       //break;
 
-    case 'g':
-        debug = true;
-        break;
-
-    case 'f':
-        error = Args::StringToFormat(option_arg, format, NULL);
-        break;
-        
     case 'o':
         print_object = true;
         break;
@@ -83,7 +90,7 @@ CommandObjectExpression::CommandOptions::SetOptionValue (uint32_t option_idx, co
             bool result;
             result = Args::StringToBoolean(option_arg, true, &success);
             if (!success)
-                error.SetErrorStringWithFormat("Invalid dynamic value setting: \"%s\".\n", option_arg);
+                error.SetErrorStringWithFormat("invalid dynamic value setting: \"%s\"", option_arg);
             else
             {
                 if (result)
@@ -95,14 +102,15 @@ CommandObjectExpression::CommandOptions::SetOptionValue (uint32_t option_idx, co
         break;
         
     case 'u':
-        bool success;
-        unwind_on_error = Args::StringToBoolean(option_arg, true, &success);
-        if (!success)
-            error.SetErrorStringWithFormat("Could not convert \"%s\" to a boolean value.", option_arg);
-        break;
-
+        {
+            bool success;
+            unwind_on_error = Args::StringToBoolean(option_arg, true, &success);
+            if (!success)
+                error.SetErrorStringWithFormat("could not convert \"%s\" to a boolean value.", option_arg);
+            break;
+        }
     default:
-        error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
+        error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
         break;
     }
 
@@ -110,13 +118,10 @@ CommandObjectExpression::CommandOptions::SetOptionValue (uint32_t option_idx, co
 }
 
 void
-CommandObjectExpression::CommandOptions::OptionParsingStarting ()
+CommandObjectExpression::CommandOptions::OptionParsingStarting (CommandInterpreter &interpreter)
 {
-    //language.Clear();
-    debug = false;
-    format = eFormatDefault;
-    print_object = false;
     use_dynamic = eLazyBoolCalculate;
+    print_object = false;
     unwind_on_error = true;
     show_types = true;
     show_summary = true;
@@ -133,7 +138,9 @@ CommandObjectExpression::CommandObjectExpression (CommandInterpreter &interprete
                    "expression",
                    "Evaluate a C/ObjC/C++ expression in the current program context, using variables currently in scope.",
                    NULL),
-    m_options (interpreter),
+    m_option_group (interpreter),
+    m_format_options (eFormatDefault),
+    m_command_options (),
     m_expr_line_count (0),
     m_expr_lines ()
 {
@@ -156,6 +163,11 @@ CommandObjectExpression::CommandObjectExpression (CommandInterpreter &interprete
 
     // Push the data for the first argument into the m_arguments vector.
     m_arguments.push_back (arg);
+    
+    // Add the "--format" and "--gdb-format"
+    m_option_group.Append (&m_format_options, OptionGroupFormat::OPTION_GROUP_FORMAT | OptionGroupFormat::OPTION_GROUP_GDB_FMT, LLDB_OPT_SET_1);
+    m_option_group.Append (&m_command_options);
+    m_option_group.Finalize();
 }
 
 CommandObjectExpression::~CommandObjectExpression ()
@@ -165,7 +177,7 @@ CommandObjectExpression::~CommandObjectExpression ()
 Options *
 CommandObjectExpression::GetOptions ()
 {
-    return &m_options;
+    return &m_option_group;
 }
 
 
@@ -270,7 +282,12 @@ CommandObjectExpression::EvaluateExpression
     CommandReturnObject *result
 )
 {
-    if (m_exe_ctx.target)
+    Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
+    
+    if (!target)
+        target = Host::GetDummyTarget(m_interpreter.GetDebugger()).get();
+    
+    if (target)
     {
         lldb::ValueObjectSP result_valobj_sp;
 
@@ -279,10 +296,10 @@ CommandObjectExpression::EvaluateExpression
         bool keep_in_memory = true;
         lldb::DynamicValueType use_dynamic;
         // If use dynamic is not set, get it from the target:
-        switch (m_options.use_dynamic)
+        switch (m_command_options.use_dynamic)
         {
         case eLazyBoolCalculate:
-            use_dynamic = m_exe_ctx.target->GetPreferDynamicValue();
+            use_dynamic = target->GetPreferDynamicValue();
             break;
         case eLazyBoolYes:
             use_dynamic = lldb::eDynamicCanRunTarget;
@@ -292,28 +309,40 @@ CommandObjectExpression::EvaluateExpression
             break;
         }
         
-        exe_results = m_exe_ctx.target->EvaluateExpression(expr, m_exe_ctx.frame, m_options.unwind_on_error, keep_in_memory, use_dynamic, result_valobj_sp);
+        exe_results = target->EvaluateExpression (expr, 
+                                                  m_interpreter.GetExecutionContext().GetFramePtr(),
+                                                  eExecutionPolicyOnlyWhenNeeded,
+                                                  m_command_options.print_object,
+                                                  m_command_options.unwind_on_error,
+                                                  keep_in_memory, 
+                                                  use_dynamic, 
+                                                  result_valobj_sp);
         
-        if (exe_results == eExecutionInterrupted && !m_options.unwind_on_error)
+        if (exe_results == eExecutionInterrupted && !m_command_options.unwind_on_error)
         {
             uint32_t start_frame = 0;
             uint32_t num_frames = 1;
             uint32_t num_frames_with_source = 0;
-            if (m_exe_ctx.thread)
+            Thread *thread = m_interpreter.GetExecutionContext().GetThreadPtr();
+            if (thread)
             {
-                m_exe_ctx.thread->GetStatus (result->GetOutputStream(), 
-                                             start_frame, 
-                                             num_frames, 
-                                             num_frames_with_source);
+                thread->GetStatus (result->GetOutputStream(), 
+                                   start_frame, 
+                                   num_frames, 
+                                   num_frames_with_source);
             }
-            else if (m_exe_ctx.process)
+            else 
             {
-                bool only_threads_with_stop_reason = true;
-                m_exe_ctx.process->GetThreadStatus (result->GetOutputStream(), 
-                                                    only_threads_with_stop_reason, 
-                                                    start_frame, 
-                                                    num_frames, 
-                                                    num_frames_with_source);
+                Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+                if (process)
+                {
+                    bool only_threads_with_stop_reason = true;
+                    process->GetThreadStatus (result->GetOutputStream(), 
+                                              only_threads_with_stop_reason, 
+                                              start_frame, 
+                                              num_frames, 
+                                              num_frames_with_source);
+                }
             }
         }
 
@@ -321,11 +350,9 @@ CommandObjectExpression::EvaluateExpression
         {
             if (result_valobj_sp->GetError().Success())
             {
-                
-                result_valobj_sp.get()->SetIsExpressionResult(true);
-                
-                if (m_options.format != eFormatDefault)
-                    result_valobj_sp->SetFormat (m_options.format);
+                Format format = m_format_options.GetFormat();
+                if (format != eFormatDefault)
+                    result_valobj_sp->SetFormat (format);
 
                 ValueObject::DumpValueObject (*(output_stream),
                                               result_valobj_sp.get(),   // Variable object to dump
@@ -333,38 +360,49 @@ CommandObjectExpression::EvaluateExpression
                                               0,                        // Pointer depth to traverse (zero means stop at pointers)
                                               0,                        // Current depth, this is the top most, so zero...
                                               UINT32_MAX,               // Max depth to go when dumping concrete types, dump everything...
-                                              m_options.show_types,     // Show types when dumping?
+                                              m_command_options.show_types,     // Show types when dumping?
                                               false,                    // Show locations of variables, no since this is a host address which we don't care to see
-                                              m_options.print_object,   // Print the objective C object?
+                                              m_command_options.print_object,   // Print the objective C object?
                                               use_dynamic,
                                               true,                     // Use synthetic children if available
                                               true,                     // Scope is already checked. Const results are always in scope.
                                               false,                    // Don't flatten output
                                               0,                        // Always use summaries (you might want an option --no-summary like there is for frame variable)
-                                              false);                   // Do not show more children than settings allow
+                                              false,                    // Do not show more children than settings allow
+                                              format);                  // Format override
                 if (result)
                     result->SetStatus (eReturnStatusSuccessFinishResult);
             }
             else
             {
-                const char *error_cstr = result_valobj_sp->GetError().AsCString();
-                if (error_cstr && error_cstr[0])
+                if (result_valobj_sp->GetError().GetError() == ClangUserExpression::kNoResult)
                 {
-                    int error_cstr_len = strlen (error_cstr);
-                    const bool ends_with_newline = error_cstr[error_cstr_len - 1] == '\n';
-                    if (strstr(error_cstr, "error:") != error_cstr)
-                        error_stream->PutCString ("error: ");
-                    error_stream->Write(error_cstr, error_cstr_len);
-                    if (!ends_with_newline)
-                        error_stream->EOL();
+                    error_stream->PutCString("<no result>\n");
+                    
+                    if (result)
+                        result->SetStatus (eReturnStatusSuccessFinishResult);
                 }
                 else
                 {
-                    error_stream->PutCString ("error: unknown error\n");
+                    const char *error_cstr = result_valobj_sp->GetError().AsCString();
+                    if (error_cstr && error_cstr[0])
+                    {
+                        int error_cstr_len = strlen (error_cstr);
+                        const bool ends_with_newline = error_cstr[error_cstr_len - 1] == '\n';
+                        if (strstr(error_cstr, "error:") != error_cstr)
+                            error_stream->PutCString ("error: ");
+                        error_stream->Write(error_cstr, error_cstr_len);
+                        if (!ends_with_newline)
+                            error_stream->EOL();
+                    }
+                    else
+                    {
+                        error_stream->PutCString ("error: unknown error\n");
+                    }
+                    
+                    if (result)
+                        result->SetStatus (eReturnStatusFailed);
                 }
-
-                if (result)
-                    result->SetStatus (eReturnStatusFailed);
             }
         }
     }
@@ -384,9 +422,7 @@ CommandObjectExpression::ExecuteRawCommandString
     CommandReturnObject &result
 )
 {
-    m_exe_ctx = m_interpreter.GetExecutionContext();
-
-    m_options.NotifyOptionParsingStarting();
+    m_option_group.NotifyOptionParsingStarting();
 
     const char * expr = NULL;
 
@@ -451,7 +487,7 @@ CommandObjectExpression::ExecuteRawCommandString
             if (!ParseOptions (args, result))
                 return false;
             
-            Error error (m_options.NotifyOptionParsingFinished());
+            Error error (m_option_group.NotifyOptionParsingFinished());
             if (error.Fail())
             {
                 result.AppendError (error.AsCString());
@@ -470,18 +506,4 @@ CommandObjectExpression::ExecuteRawCommandString
     result.SetStatus (eReturnStatusFailed);
     return false;
 }
-
-OptionDefinition
-CommandObjectExpression::CommandOptions::g_option_table[] =
-{
-//{ LLDB_OPT_SET_ALL, false, "language",   'l', required_argument, NULL, 0, "[c|c++|objc|objc++]",          "Sets the language to use when parsing the expression."},
-//{ LLDB_OPT_SET_1, false, "format",     'f', required_argument, NULL, 0, "[ [bool|b] | [bin] | [char|c] | [oct|o] | [dec|i|d|u] | [hex|x] | [float|f] | [cstr|s] ]",  "Specify the format that the expression output should use."},
-{ LLDB_OPT_SET_1,   false, "format",             'f', required_argument, NULL, 0, eArgTypeExprFormat, "Specify the format that the expression output should use."},
-{ LLDB_OPT_SET_2,   false, "object-description", 'o', no_argument,       NULL, 0, eArgTypeNone,       "Print the object description of the value resulting from the expression."},
-{ LLDB_OPT_SET_2,   false, "dynamic-value",      'd', required_argument, NULL, 0, eArgTypeBoolean,    "Upcast the value resulting from the expression to its dynamic type if available."},
-{ LLDB_OPT_SET_ALL, false, "unwind-on-error",    'u', required_argument, NULL, 0, eArgTypeBoolean,    "Clean up program state if the expression causes a crash, breakpoint hit or signal."},
-{ LLDB_OPT_SET_ALL, false, "debug",              'g', no_argument,       NULL, 0, eArgTypeNone,       "Enable verbose debug logging of the expression parsing and evaluation."},
-{ LLDB_OPT_SET_ALL, false, "use-ir",             'i', no_argument,       NULL, 0, eArgTypeNone,       "[Temporary] Instructs the expression evaluator to use IR instead of ASTs."},
-{ 0,                false, NULL,                 0,   0,                 NULL, 0, eArgTypeNone,       NULL }
-};
 

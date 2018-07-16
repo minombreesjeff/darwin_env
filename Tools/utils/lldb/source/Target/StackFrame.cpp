@@ -39,15 +39,12 @@ using namespace lldb_private;
 #define RESOLVED_VARIABLES              (GOT_FRAME_BASE << 1)
 #define RESOLVED_GLOBAL_VARIABLES       (RESOLVED_VARIABLES << 1)
 
-StackFrame::StackFrame 
-(
-    lldb::user_id_t frame_idx, 
-    lldb::user_id_t unwind_frame_index, 
-    Thread &thread, 
-    lldb::addr_t cfa, 
-    lldb::addr_t pc, 
-    const SymbolContext *sc_ptr
-) :
+StackFrame::StackFrame (user_id_t frame_idx, 
+                        user_id_t unwind_frame_index, 
+                        Thread &thread, 
+                        addr_t cfa, 
+                        addr_t pc, 
+                        const SymbolContext *sc_ptr) :
     m_thread (thread),
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
@@ -69,16 +66,13 @@ StackFrame::StackFrame
     }
 }
 
-StackFrame::StackFrame 
-(
-    lldb::user_id_t frame_idx, 
-    lldb::user_id_t unwind_frame_index, 
-    Thread &thread, 
-    const RegisterContextSP &reg_context_sp, 
-    lldb::addr_t cfa, 
-    lldb::addr_t pc, 
-    const SymbolContext *sc_ptr
-) :
+StackFrame::StackFrame (user_id_t frame_idx, 
+                        user_id_t unwind_frame_index, 
+                        Thread &thread, 
+                        const RegisterContextSP &reg_context_sp, 
+                        addr_t cfa, 
+                        addr_t pc, 
+                        const SymbolContext *sc_ptr) :
     m_thread (thread),
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
@@ -106,16 +100,13 @@ StackFrame::StackFrame
     }
 }
 
-StackFrame::StackFrame 
-(
-    lldb::user_id_t frame_idx, 
-    lldb::user_id_t unwind_frame_index, 
-    Thread &thread, 
-    const RegisterContextSP &reg_context_sp, 
-    lldb::addr_t cfa, 
-    const Address& pc_addr,
-    const SymbolContext *sc_ptr
-) :
+StackFrame::StackFrame (user_id_t frame_idx, 
+                        user_id_t unwind_frame_index, 
+                        Thread &thread, 
+                        const RegisterContextSP &reg_context_sp, 
+                        addr_t cfa, 
+                        const Address& pc_addr,
+                        const SymbolContext *sc_ptr) :
     m_thread (thread),
     m_frame_index (frame_idx),
     m_concrete_frame_index (unwind_frame_index),    
@@ -147,7 +138,7 @@ StackFrame::StackFrame
     {
         if (pc_module)
         {
-            m_sc.module_sp = pc_module->GetSP();
+            m_sc.module_sp = pc_module;
             m_flags.Set (eSymbolContextModule);
         }
         else
@@ -227,7 +218,7 @@ StackFrame::GetFrameCodeAddress()
                 Module *module = section->GetModule();
                 if (module)
                 {
-                    m_sc.module_sp = module->GetSP();
+                    m_sc.module_sp = module;
                     if (m_sc.module_sp)
                         m_flags.Set(eSymbolContextModule);
                 }
@@ -515,9 +506,9 @@ StackFrame::GetInScopeVariableList (bool get_file_globals)
 
 ValueObjectSP
 StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr, 
-                                               lldb::DynamicValueType use_dynamic,
+                                               DynamicValueType use_dynamic,
                                                uint32_t options, 
-                                               lldb::VariableSP &var_sp,
+                                               VariableSP &var_sp,
                                                Error &error)
 {
 
@@ -526,6 +517,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
         const bool check_ptr_vs_member = (options & eExpressionPathOptionCheckPtrVsMember) != 0;
         const bool no_fragile_ivar = (options & eExpressionPathOptionsNoFragileObjcIvar) != 0;
         const bool no_synth_child = (options & eExpressionPathOptionsNoSyntheticChildren) != 0;
+        //const bool no_synth_array = (options & eExpressionPathOptionsNoSyntheticArrayRange) != 0;
         error.Clear();
         bool deref = false;
         bool address_of = false;
@@ -642,7 +634,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             if (!child_valobj_sp)
                             {
                                 if (no_synth_child == false)
-                                    child_valobj_sp = valobj_sp->GetSyntheticValue(lldb::eUseSyntheticFilter)->GetChildMemberWithName (child_name, true);
+                                    child_valobj_sp = valobj_sp->GetSyntheticValue(eUseSyntheticFilter)->GetChildMemberWithName (child_name, true);
                                 
                                 if (no_synth_child || !child_valobj_sp)
                                 {
@@ -666,7 +658,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                             }
                             // Remove the child name from the path
                             var_path.erase(0, child_name.GetLength());
-                            if (use_dynamic != lldb::eNoDynamicValues)
+                            if (use_dynamic != eNoDynamicValues)
                             {
                                 ValueObjectSP dynamic_value_sp(child_valobj_sp->GetDynamicValue(use_dynamic));
                                 if (dynamic_value_sp)
@@ -727,12 +719,12 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                     if (no_synth_child == false
                                         && 
                                         ClangASTType::GetMinimumLanguage(valobj_sp->GetClangAST(),
-                                                                         valobj_sp->GetClangType()) == lldb::eLanguageTypeObjC /* is ObjC pointer */
+                                                                         valobj_sp->GetClangType()) == eLanguageTypeObjC /* is ObjC pointer */
                                         &&
                                         ClangASTContext::IsPointerType(ClangASTType::GetPointeeType(valobj_sp->GetClangType())) == false /* is not double-ptr */)
                                     {
                                         // dereferencing ObjC variables is not valid.. so let's try and recur to synthetic children
-                                        lldb::ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(lldb::eUseSyntheticFilter);
+                                        ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(eUseSyntheticFilter);
                                         if (synthetic.get() == NULL /* no synthetic */
                                             || synthetic == valobj_sp) /* synthetic is the same as the original object */
                                         {
@@ -744,7 +736,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         else if (child_index >= synthetic->GetNumChildren() /* synthetic does not have that many values */)
                                         {
                                             valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                            error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                            error.SetErrorStringWithFormat ("array index %ld is not valid for \"(%s) %s\"", 
                                                                             child_index, 
                                                                             valobj_sp->GetTypeName().AsCString("<invalid type>"),
                                                                             var_expr_path_strm.GetString().c_str());
@@ -755,7 +747,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                             if (!child_valobj_sp)
                                             {
                                                 valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                                error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                                error.SetErrorStringWithFormat ("array index %ld is not valid for \"(%s) %s\"", 
                                                                                 child_index, 
                                                                                 valobj_sp->GetTypeName().AsCString("<invalid type>"),
                                                                                 var_expr_path_strm.GetString().c_str());
@@ -768,7 +760,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         if (!child_valobj_sp)
                                         {
                                             valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                            error.SetErrorStringWithFormat ("failed to use pointer as array for index %i for \"(%s) %s\"", 
+                                            error.SetErrorStringWithFormat ("failed to use pointer as array for index %ld for \"(%s) %s\"", 
                                                                             child_index, 
                                                                             valobj_sp->GetTypeName().AsCString("<invalid type>"),
                                                                             var_expr_path_strm.GetString().c_str());
@@ -783,7 +775,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                     if (!child_valobj_sp)
                                     {
                                         valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                        error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                        error.SetErrorStringWithFormat ("array index %ld is not valid for \"(%s) %s\"", 
                                                                         child_index, 
                                                                         valobj_sp->GetTypeName().AsCString("<invalid type>"),
                                                                         var_expr_path_strm.GetString().c_str());
@@ -796,7 +788,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                     if (!child_valobj_sp)
                                     {
                                         valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                        error.SetErrorStringWithFormat ("bitfield range %i-%i is not valid for \"(%s) %s\"", 
+                                        error.SetErrorStringWithFormat ("bitfield range %ld-%ld is not valid for \"(%s) %s\"", 
                                                                         child_index, child_index, 
                                                                         valobj_sp->GetTypeName().AsCString("<invalid type>"),
                                                                         var_expr_path_strm.GetString().c_str());
@@ -804,7 +796,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 }
                                 else
                                 {
-                                    lldb::ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(lldb::eUseSyntheticFilter);
+                                    ValueObjectSP synthetic = valobj_sp->GetSyntheticValue(eUseSyntheticFilter);
                                     if (no_synth_child /* synthetic is forbidden */ ||
                                         synthetic.get() == NULL /* no synthetic */
                                         || synthetic == valobj_sp) /* synthetic is the same as the original object */
@@ -817,7 +809,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                     else if (child_index >= synthetic->GetNumChildren() /* synthetic does not have that many values */)
                                     {
                                         valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                        error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                        error.SetErrorStringWithFormat ("array index %ld is not valid for \"(%s) %s\"", 
                                                                         child_index, 
                                                                         valobj_sp->GetTypeName().AsCString("<invalid type>"),
                                                                         var_expr_path_strm.GetString().c_str());
@@ -828,7 +820,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         if (!child_valobj_sp)
                                         {
                                             valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                            error.SetErrorStringWithFormat ("array index %i is not valid for \"(%s) %s\"", 
+                                            error.SetErrorStringWithFormat ("array index %ld is not valid for \"(%s) %s\"", 
                                                                             child_index, 
                                                                             valobj_sp->GetTypeName().AsCString("<invalid type>"),
                                                                             var_expr_path_strm.GetString().c_str());
@@ -846,7 +838,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 // %i is the array index
                                 var_path.erase(0, (end - var_path.c_str()) + 1);
                                 separator_idx = var_path.find_first_of(".-[");
-                                if (use_dynamic != lldb::eNoDynamicValues)
+                                if (use_dynamic != eNoDynamicValues)
                                 {
                                     ValueObjectSP dynamic_value_sp(child_valobj_sp->GetDynamicValue(use_dynamic));
                                     if (dynamic_value_sp)
@@ -861,6 +853,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 // this is most probably a BitField, let's take a look
                                 char *real_end = NULL;
                                 long final_index = ::strtol (end+1, &real_end, 0);
+                                bool expand_bitfield = true;
                                 if (real_end && *real_end == ']')
                                 {
                                     // if the format given is [high-low], swap range
@@ -908,15 +901,31 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                         valobj_sp = temp;
                                         deref = false;
                                     }
-
-                                    child_valobj_sp = valobj_sp->GetSyntheticBitFieldChild(child_index, final_index, true);
-                                    if (!child_valobj_sp)
+                                    /*else if (valobj_sp->IsArrayType() || valobj_sp->IsPointerType())
                                     {
-                                        valobj_sp->GetExpressionPath (var_expr_path_strm, false);
-                                        error.SetErrorStringWithFormat ("bitfield range %i-%i is not valid for \"(%s) %s\"", 
-                                                                        child_index, final_index, 
-                                                                        valobj_sp->GetTypeName().AsCString("<invalid type>"),
-                                                                        var_expr_path_strm.GetString().c_str());
+                                        child_valobj_sp = valobj_sp->GetSyntheticArrayRangeChild(child_index, final_index, true);
+                                        expand_bitfield = false;
+                                        if (!child_valobj_sp)
+                                        {
+                                            valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                            error.SetErrorStringWithFormat ("array range %i-%i is not valid for \"(%s) %s\"", 
+                                                                            child_index, final_index, 
+                                                                            valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                            var_expr_path_strm.GetString().c_str());
+                                        }
+                                    }*/
+
+                                    if (expand_bitfield)
+                                    {
+                                        child_valobj_sp = valobj_sp->GetSyntheticBitFieldChild(child_index, final_index, true);
+                                        if (!child_valobj_sp)
+                                        {
+                                            valobj_sp->GetExpressionPath (var_expr_path_strm, false);
+                                            error.SetErrorStringWithFormat ("bitfield range %ld-%ld is not valid for \"(%s) %s\"", 
+                                                                            child_index, final_index, 
+                                                                            valobj_sp->GetTypeName().AsCString("<invalid type>"),
+                                                                            var_expr_path_strm.GetString().c_str());
+                                        }
                                     }
                                 }
                                 
@@ -930,7 +939,7 @@ StackFrame::GetValueForVariableExpressionPath (const char *var_expr_cstr,
                                 // %i is the index
                                 var_path.erase(0, (real_end - var_path.c_str()) + 1);
                                 separator_idx = var_path.find_first_of(".-[");
-                                if (use_dynamic != lldb::eNoDynamicValues)
+                                if (use_dynamic != eNoDynamicValues)
                                 {
                                     ValueObjectSP dynamic_value_sp(child_valobj_sp->GetDynamicValue(use_dynamic));
                                     if (dynamic_value_sp)
@@ -1059,7 +1068,7 @@ StackFrame::HasDebugInformation ()
 
 
 ValueObjectSP
-StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, lldb::DynamicValueType use_dynamic)
+StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, DynamicValueType use_dynamic)
 {
     ValueObjectSP valobj_sp;
     VariableList *var_list = GetVariableList (true);
@@ -1080,7 +1089,7 @@ StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, lldb:
             }
         }
     }
-    if (use_dynamic != lldb::eNoDynamicValues && valobj_sp)
+    if (use_dynamic != eNoDynamicValues && valobj_sp)
     {
         ValueObjectSP dynamic_sp = valobj_sp->GetDynamicValue (use_dynamic);
         if (dynamic_sp)
@@ -1090,7 +1099,7 @@ StackFrame::GetValueObjectForFrameVariable (const VariableSP &variable_sp, lldb:
 }
 
 ValueObjectSP
-StackFrame::TrackGlobalVariable (const VariableSP &variable_sp, lldb::DynamicValueType use_dynamic)
+StackFrame::TrackGlobalVariable (const VariableSP &variable_sp, DynamicValueType use_dynamic)
 {
     // Check to make sure we aren't already tracking this variable?
     ValueObjectSP valobj_sp (GetValueObjectForFrameVariable (variable_sp, use_dynamic));
@@ -1150,7 +1159,7 @@ void
 StackFrame::CalculateExecutionContext (ExecutionContext &exe_ctx)
 {
     m_thread.CalculateExecutionContext (exe_ctx);
-    exe_ctx.frame = this;
+    exe_ctx.SetFramePtr(this);
 }
 
 void
@@ -1236,10 +1245,12 @@ StackFrame::HasCachedData () const
     return false;
 }
 
-lldb::StackFrameSP
+StackFrameSP
 StackFrame::GetSP ()
 {
-    return m_thread.GetStackFrameSPForStackFramePtr (this);
+    // This object contains an instrusive ref count base class so we can
+    // easily make a shared pointer to this object
+    return StackFrameSP (this);
 }
 
 
@@ -1259,20 +1270,62 @@ StackFrame::GetStatus (Stream& strm,
     
     if (show_source)
     {
-        GetSymbolContext(eSymbolContextCompUnit | eSymbolContextLineEntry);
-    
-        if (m_sc.comp_unit && m_sc.line_entry.IsValid())
+        Target &target = GetThread().GetProcess().GetTarget();
+        Debugger &debugger = target.GetDebugger();
+        const uint32_t source_before = debugger.GetStopSourceLineCount(true);
+        const uint32_t source_after = debugger.GetStopSourceLineCount(false);
+        bool have_source = false;
+        if (source_before || source_after)
         {
-            Target &target = GetThread().GetProcess().GetTarget();
-            target.GetDebugger().GetSourceManager().DisplaySourceLinesWithLineNumbers (
-                &target,
-                m_sc.line_entry.file,
-                m_sc.line_entry.line,
-                3,
-                3,
-                "->",
-                &strm);
+            GetSymbolContext(eSymbolContextCompUnit | eSymbolContextLineEntry);
+
+            if (m_sc.comp_unit && m_sc.line_entry.IsValid())
+            {
+                if (target.GetSourceManager().DisplaySourceLinesWithLineNumbers (m_sc.line_entry.file,
+                                                                                 m_sc.line_entry.line,
+                                                                                 source_before,
+                                                                                 source_after,
+                                                                                 "->",
+                                                                                 &strm))
+                {
+                    have_source = true;
+                }
+            }
+        }
+        DebuggerInstanceSettings::StopDisassemblyType disasm_display = debugger.GetStopDisassemblyDisplay ();
         
+        switch (disasm_display)
+        {
+        case DebuggerInstanceSettings::eStopDisassemblyTypeNever:
+            break;
+
+        case DebuggerInstanceSettings::eStopDisassemblyTypeNoSource:
+            if (have_source)
+                break;
+            // Fall through to next case
+        case DebuggerInstanceSettings::eStopDisassemblyTypeAlways:
+            {
+                const uint32_t disasm_lines = debugger.GetDisassemblyLineCount();
+                if (disasm_lines > 0)
+                {
+                    const ArchSpec &target_arch = target.GetArchitecture();
+                    AddressRange pc_range;
+                    pc_range.GetBaseAddress() = GetFrameCodeAddress();
+                    pc_range.SetByteSize(disasm_lines * target_arch.GetMaximumOpcodeByteSize());
+                    ExecutionContext exe_ctx;
+                    CalculateExecutionContext(exe_ctx);
+                    Disassembler::Disassemble (debugger,
+                                               target_arch,
+                                               NULL,
+                                               exe_ctx,
+                                               pc_range,
+                                               disasm_lines,
+                                               0,
+                                               Disassembler::eOptionMarkPCAddress,
+                                               strm);
+                }
+            }
+            break;
         }
     }
     return true;

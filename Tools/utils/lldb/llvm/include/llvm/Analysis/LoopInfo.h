@@ -23,7 +23,6 @@
 //  * whether or not a particular block branches out of the loop
 //  * the successor blocks of the loop
 //  * the loop depth
-//  * the trip count
 //  * etc...
 //
 //===----------------------------------------------------------------------===//
@@ -33,6 +32,7 @@
 
 #include "llvm/Pass.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/SmallVector.h"
@@ -133,6 +133,11 @@ public:
   typedef typename std::vector<BlockT*>::const_iterator block_iterator;
   block_iterator block_begin() const { return Blocks.begin(); }
   block_iterator block_end() const { return Blocks.end(); }
+
+  /// getNumBlocks - Get the number of blocks in this loop in constant time.
+  unsigned getNumBlocks() const {
+    return Blocks.size();
+  }
 
   /// isLoopExiting - True if terminator in the block can branch to another
   /// block that is outside of the current loop.
@@ -410,14 +415,26 @@ public:
 #ifndef NDEBUG
     assert(!Blocks.empty() && "Loop header is missing");
 
+    // Setup for using a depth-first iterator to visit every block in the loop.
+    SmallVector<BlockT*, 8> ExitBBs;
+    getExitBlocks(ExitBBs);
+    llvm::SmallPtrSet<BlockT*, 8> VisitSet;
+    VisitSet.insert(ExitBBs.begin(), ExitBBs.end());
+    df_ext_iterator<BlockT*, llvm::SmallPtrSet<BlockT*, 8> >
+        BI = df_ext_begin(getHeader(), VisitSet),
+        BE = df_ext_end(getHeader(), VisitSet);
+
+    // Keep track of the number of BBs visited.
+    unsigned NumVisited = 0;
+
     // Sort the blocks vector so that we can use binary search to do quick
     // lookups.
     SmallVector<BlockT*, 128> LoopBBs(block_begin(), block_end());
     std::sort(LoopBBs.begin(), LoopBBs.end());
 
     // Check the individual blocks.
-    for (block_iterator I = block_begin(), E = block_end(); I != E; ++I) {
-      BlockT *BB = *I;
+    for ( ; BI != BE; ++BI) {
+      BlockT *BB = *BI;
       bool HasInsideLoopSuccs = false;
       bool HasInsideLoopPreds = false;
       SmallVector<BlockT *, 2> OutsideLoopPreds;
@@ -434,7 +451,7 @@ public:
       for (typename InvBlockTraits::ChildIteratorType PI =
            InvBlockTraits::child_begin(BB), PE = InvBlockTraits::child_end(BB);
            PI != PE; ++PI) {
-        typename InvBlockTraits::NodeType *N = *PI;
+        BlockT *N = *PI;
         if (std::binary_search(LoopBBs.begin(), LoopBBs.end(), N))
           HasInsideLoopPreds = true;
         else
@@ -458,7 +475,11 @@ public:
       assert(HasInsideLoopSuccs && "Loop block has no in-loop successors!");
       assert(BB != getHeader()->getParent()->begin() &&
              "Loop contains function entry block!");
+
+      NumVisited++;
     }
+
+    assert(NumVisited == getNumBlocks() && "Unreachable block in loop");
 
     // Check the subloops.
     for (iterator I = begin(), E = end(); I != E; ++I)
@@ -479,12 +500,13 @@ public:
   }
 
   /// verifyLoop - Verify loop structure of this loop and all nested loops.
-  void verifyLoopNest() const {
+  void verifyLoopNest(DenseSet<const LoopT*> *Loops) const {
+    Loops->insert(static_cast<const LoopT *>(this));
     // Verify this loop.
     verifyLoop();
     // Verify the subloops.
     for (iterator I = begin(), E = end(); I != E; ++I)
-      (*I)->verifyLoopNest();
+      (*I)->verifyLoopNest(Loops);
   }
 
   void print(raw_ostream &OS, unsigned Depth = 0) const {
@@ -564,37 +586,6 @@ public:
   ///
   PHINode *getCanonicalInductionVariable() const;
 
-  /// getTripCount - Return a loop-invariant LLVM value indicating the number of
-  /// times the loop will be executed.  Note that this means that the backedge
-  /// of the loop executes N-1 times.  If the trip-count cannot be determined,
-  /// this returns null.
-  ///
-  /// The IndVarSimplify pass transforms loops to have a form that this
-  /// function easily understands.
-  ///
-  Value *getTripCount() const;
-
-  /// getSmallConstantTripCount - Returns the trip count of this loop as a
-  /// normal unsigned value, if possible. Returns 0 if the trip count is unknown
-  /// of not constant. Will also return 0 if the trip count is very large
-  /// (>= 2^32)
-  ///
-  /// The IndVarSimplify pass transforms loops to have a form that this
-  /// function easily understands.
-  ///
-  unsigned getSmallConstantTripCount() const;
-
-  /// getSmallConstantTripMultiple - Returns the largest constant divisor of the
-  /// trip count of this loop as a normal unsigned value, if possible. This
-  /// means that the actual trip count is always a multiple of the returned
-  /// value (don't forget the trip count could very well be zero as well!).
-  ///
-  /// Returns 1 if the trip count is unknown or not guaranteed to be the
-  /// multiple of a constant (which is also the case if the trip count is simply
-  /// constant, use getSmallConstantTripCount for that case), Will also return 1
-  /// if the trip count is very large (>= 2^32).
-  unsigned getSmallConstantTripMultiple() const;
-
   /// isLCSSAForm - Return true if the Loop is in LCSSA form
   bool isLCSSAForm(DominatorTree &DT) const;
 
@@ -635,6 +626,7 @@ class LoopInfoBase {
   DenseMap<BlockT *, LoopT *> BBMap;
   std::vector<LoopT *> TopLevelLoops;
   friend class LoopBase<BlockT, LoopT>;
+  friend class LoopInfo;
 
   void operator=(const LoopInfoBase &); // do not implement
   LoopInfoBase(const LoopInfo &);       // do not implement
@@ -703,9 +695,13 @@ public:
   /// specified loop.  This should be used by transformations that restructure
   /// the loop hierarchy tree.
   void changeLoopFor(BlockT *BB, LoopT *L) {
-    LoopT *&OldLoop = BBMap[BB];
-    assert(OldLoop && "Block not in a loop yet!");
-    OldLoop = L;
+    if (!L) {
+      typename DenseMap<BlockT *, LoopT *>::iterator I = BBMap.find(BB);
+      if (I != BBMap.end())
+        BBMap.erase(I);
+      return;
+    }
+    BBMap[BB] = L;
   }
 
   /// changeTopLevelLoop - Replace the specified loop in the top-level loops
@@ -1023,6 +1019,12 @@ public:
   void removeBlock(BasicBlock *BB) {
     LI.removeBlock(BB);
   }
+
+  /// updateUnloop - Update LoopInfo after removing the last backedge from a
+  /// loop--now the "unloop". This updates the loop forest and parent loops for
+  /// each block so that Unloop is no longer referenced, but the caller must
+  /// actually delete the Unloop object.
+  void updateUnloop(Loop *Unloop);
 
   /// replacementPreservesLCSSAForm - Returns true if replacing From with To
   /// everywhere is guaranteed to preserve LCSSA form.

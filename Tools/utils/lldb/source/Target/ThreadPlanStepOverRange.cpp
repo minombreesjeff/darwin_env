@@ -58,9 +58,34 @@ ThreadPlanStepOverRange::GetDescription (Stream *s, lldb::DescriptionLevel level
     else
     {
         s->Printf ("stepping through range (stepping over functions): ");
-        m_address_range.Dump (s, &m_thread.GetProcess().GetTarget(), Address::DumpStyleLoadAddress);
+        DumpRanges(s);    
     }
 }
+
+bool
+ThreadPlanStepOverRange::PlanExplainsStop ()
+{
+    // We don't explain signals or breakpoints (breakpoints that handle stepping in or
+    // out will be handled by a child plan.
+    StopInfoSP stop_info_sp = GetPrivateStopReason();
+    if (stop_info_sp)
+    {
+        StopReason reason = stop_info_sp->GetStopReason();
+
+        switch (reason)
+        {
+        case eStopReasonBreakpoint:
+        case eStopReasonWatchpoint:
+        case eStopReasonSignal:
+        case eStopReasonException:
+            return false;
+        default:
+            return true;
+        }
+    }
+    return true;
+}
+
 
 bool
 ThreadPlanStepOverRange::ShouldStop (Event *event_ptr)

@@ -109,7 +109,7 @@ namespace {
         State = 1;
 
       case 1:
-        // Find all 'return' and 'unwind' instructions.
+        // Find all 'return', 'resume', and 'unwind' instructions.
         while (StateBB != StateE) {
           BasicBlock *CurBB = StateBB++;
 
@@ -141,9 +141,19 @@ namespace {
           return 0;
 
         // Create a cleanup block.
-        BasicBlock *CleanupBB = BasicBlock::Create(F.getContext(),
-                                                   CleanupBBName, &F);
-        UnwindInst *UI = new UnwindInst(F.getContext(), CleanupBB);
+        LLVMContext &C = F.getContext();
+        BasicBlock *CleanupBB = BasicBlock::Create(C, CleanupBBName, &F);
+        Type *ExnTy = StructType::get(Type::getInt8PtrTy(C),
+                                      Type::getInt32Ty(C), NULL);
+        Constant *PersFn =
+          F.getParent()->
+          getOrInsertFunction("__gcc_personality_v0",
+                              FunctionType::get(Type::getInt32Ty(C), true));
+        LandingPadInst *LPad = LandingPadInst::Create(ExnTy, PersFn, 1,
+                                                      "cleanup.lpad",
+                                                      CleanupBB);
+        LPad->setCleanup(true);
+        ResumeInst *RI = ResumeInst::Create(LPad, CleanupBB);
 
         // Transform the 'call' instructions into 'invoke's branching to the
         // cleanup block. Go in reverse order to make prettier BB names.
@@ -174,7 +184,7 @@ namespace {
           delete CI;
         }
 
-        Builder.SetInsertPoint(UI->getParent(), UI);
+        Builder.SetInsertPoint(RI->getParent(), RI);
         return &Builder;
       }
     }
@@ -218,7 +228,7 @@ Constant *ShadowStackGC::GetFrameMap(Function &F) {
   };
 
   Type *EltTys[] = { DescriptorElts[0]->getType(),DescriptorElts[1]->getType()};
-  StructType *STy = StructType::createNamed("gc_map."+utostr(NumMeta), EltTys);
+  StructType *STy = StructType::create(EltTys, "gc_map."+utostr(NumMeta));
   
   Constant *FrameMap = ConstantStruct::get(STy, DescriptorElts);
 
@@ -253,7 +263,7 @@ Type* ShadowStackGC::GetConcreteStackEntryType(Function &F) {
   for (size_t I = 0; I != Roots.size(); I++)
     EltTys.push_back(Roots[I].second->getAllocatedType());
   
-  return StructType::createNamed("gc_stackentry."+F.getName().str(), EltTys);
+  return StructType::create(EltTys, "gc_stackentry."+F.getName().str());
 }
 
 /// doInitialization - If this module uses the GC intrinsics, find them now. If
@@ -269,7 +279,7 @@ bool ShadowStackGC::initializeCustomLowering(Module &M) {
   EltTys.push_back(Type::getInt32Ty(M.getContext()));
   // Specifies length of variable length array. 
   EltTys.push_back(Type::getInt32Ty(M.getContext()));
-  FrameMapTy = StructType::createNamed("gc_map", EltTys);
+  FrameMapTy = StructType::create(EltTys, "gc_map");
   PointerType *FrameMapPtrTy = PointerType::getUnqual(FrameMapTy);
 
   // struct StackEntry {
@@ -278,7 +288,7 @@ bool ShadowStackGC::initializeCustomLowering(Module &M) {
   //   void *Roots[];          // Stack roots (in-place array, so we pretend).
   // };
   
-  StackEntryTy = StructType::createNamed(M.getContext(), "gc_stackentry");
+  StackEntryTy = StructType::create(M.getContext(), "gc_stackentry");
   
   EltTys.clear();
   EltTys.push_back(PointerType::getUnqual(StackEntryTy));

@@ -305,6 +305,22 @@ void StmtPrinter::VisitCXXForRangeStmt(CXXForRangeStmt *Node) {
   Indent() << "}\n";
 }
 
+void StmtPrinter::VisitMSDependentExistsStmt(MSDependentExistsStmt *Node) {
+  Indent();
+  if (Node->isIfExists())
+    OS << "__if_exists (";
+  else
+    OS << "__if_not_exists (";
+  
+  if (NestedNameSpecifier *Qualifier
+        = Node->getQualifierLoc().getNestedNameSpecifier())
+    Qualifier->print(OS, Policy);
+  
+  OS << Node->getNameInfo() << ") ";
+  
+  PrintRawCompoundStmt(Node->getSubStmt());
+}
+
 void StmtPrinter::VisitGotoStmt(GotoStmt *Node) {
   Indent() << "goto " << Node->getLabel()->getName() << ";\n";
 }
@@ -564,7 +580,7 @@ void StmtPrinter::VisitObjCIvarRefExpr(ObjCIvarRefExpr *Node) {
     PrintExpr(Node->getBase());
     OS << (Node->isArrow() ? "->" : ".");
   }
-  OS << Node->getDecl();
+  OS << *Node->getDecl();
 }
 
 void StmtPrinter::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
@@ -584,7 +600,7 @@ void StmtPrinter::VisitObjCPropertyRefExpr(ObjCPropertyRefExpr *Node) {
 void StmtPrinter::VisitPredefinedExpr(PredefinedExpr *Node) {
   switch (Node->getIdentType()) {
     default:
-      assert(0 && "unknown case");
+      llvm_unreachable("unknown case");
     case PredefinedExpr::Func:
       OS << "__func__";
       break;
@@ -658,18 +674,26 @@ void StmtPrinter::VisitIntegerLiteral(IntegerLiteral *Node) {
 
   // Emit suffixes.  Integer literals are always a builtin integer type.
   switch (Node->getType()->getAs<BuiltinType>()->getKind()) {
-  default: assert(0 && "Unexpected type for integer literal!");
+  default: llvm_unreachable("Unexpected type for integer literal!");
+  // FIXME: The Short and UShort cases are to handle cases where a short
+  // integeral literal is formed during template instantiation.  They should
+  // be removed when template instantiation no longer needs integer literals.
+  case BuiltinType::Short:
+  case BuiltinType::UShort:
   case BuiltinType::Int:       break; // no suffix.
   case BuiltinType::UInt:      OS << 'U'; break;
   case BuiltinType::Long:      OS << 'L'; break;
   case BuiltinType::ULong:     OS << "UL"; break;
   case BuiltinType::LongLong:  OS << "LL"; break;
   case BuiltinType::ULongLong: OS << "ULL"; break;
+  case BuiltinType::Int128:    OS << "i128"; break;
+  case BuiltinType::UInt128:   OS << "Ui128"; break;
   }
 }
 void StmtPrinter::VisitFloatingLiteral(FloatingLiteral *Node) {
-  // FIXME: print value more precisely.
-  OS << Node->getValueAsApproximateDouble();
+  llvm::SmallString<16> Str;
+  Node->getValue().toString(Str);
+  OS << Str;
 }
 
 void StmtPrinter::VisitImaginaryLiteral(ImaginaryLiteral *Node) {
@@ -1010,6 +1034,63 @@ void StmtPrinter::VisitVAArgExpr(VAArgExpr *Node) {
   OS << ")";
 }
 
+void StmtPrinter::VisitPseudoObjectExpr(PseudoObjectExpr *Node) {
+  PrintExpr(Node->getSyntacticForm());
+}
+
+void StmtPrinter::VisitAtomicExpr(AtomicExpr *Node) {
+  const char *Name = 0;
+  switch (Node->getOp()) {
+    case AtomicExpr::Load:
+      Name = "__atomic_load(";
+      break;
+    case AtomicExpr::Store:
+      Name = "__atomic_store(";
+      break;
+    case AtomicExpr::CmpXchgStrong:
+      Name = "__atomic_compare_exchange_strong(";
+      break;
+    case AtomicExpr::CmpXchgWeak:
+      Name = "__atomic_compare_exchange_weak(";
+      break;
+    case AtomicExpr::Xchg:
+      Name = "__atomic_exchange(";
+      break;
+    case AtomicExpr::Add:
+      Name = "__atomic_fetch_add(";
+      break;
+    case AtomicExpr::Sub:
+      Name = "__atomic_fetch_sub(";
+      break;
+    case AtomicExpr::And:
+      Name = "__atomic_fetch_and(";
+      break;
+    case AtomicExpr::Or:
+      Name = "__atomic_fetch_or(";
+      break;
+    case AtomicExpr::Xor:
+      Name = "__atomic_fetch_xor(";
+      break;
+  }
+  OS << Name;
+  PrintExpr(Node->getPtr());
+  OS << ", ";
+  if (Node->getOp() != AtomicExpr::Load) {
+    PrintExpr(Node->getVal1());
+    OS << ", ";
+  }
+  if (Node->isCmpXChg()) {
+    PrintExpr(Node->getVal2());
+    OS << ", ";
+  }
+  PrintExpr(Node->getOrder());
+  if (Node->isCmpXChg()) {
+    OS << ", ";
+    PrintExpr(Node->getOrderFail());
+  }
+  OS << ")";
+}
+
 // C++
 void StmtPrinter::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *Node) {
   const char *OpStrings[NUM_OVERLOADED_OPERATORS] = {
@@ -1051,7 +1132,7 @@ void StmtPrinter::VisitCXXOperatorCallExpr(CXXOperatorCallExpr *Node) {
     OS << ' ' << OpStrings[Kind] << ' ';
     PrintExpr(Node->getArg(1));
   } else {
-    assert(false && "unknown overloaded operator");
+    llvm_unreachable("unknown overloaded operator");
   }
 }
 
@@ -1328,6 +1409,7 @@ static const char *getTypeTraitName(UnaryTypeTrait UTT) {
   case UTT_IsConst:                 return "__is_const";
   case UTT_IsEmpty:               return "__is_empty";
   case UTT_IsEnum:                return "__is_enum";
+  case UTT_IsFinal:                 return "__is_final";
   case UTT_IsFloatingPoint:         return "__is_floating_point";
   case UTT_IsFunction:              return "__is_function";
   case UTT_IsFundamental:           return "__is_fundamental";
@@ -1450,7 +1532,7 @@ void StmtPrinter::VisitObjCSelectorExpr(ObjCSelectorExpr *Node) {
 }
 
 void StmtPrinter::VisitObjCProtocolExpr(ObjCProtocolExpr *Node) {
-  OS << "@protocol(" << Node->getProtocol() << ')';
+  OS << "@protocol(" << *Node->getProtocol() << ')';
 }
 
 void StmtPrinter::VisitObjCMessageExpr(ObjCMessageExpr *Mess) {
@@ -1532,10 +1614,12 @@ void StmtPrinter::VisitBlockExpr(BlockExpr *Node) {
 }
 
 void StmtPrinter::VisitBlockDeclRefExpr(BlockDeclRefExpr *Node) {
-  OS << Node->getDecl();
+  OS << *Node->getDecl();
 }
 
-void StmtPrinter::VisitOpaqueValueExpr(OpaqueValueExpr *Node) {}
+void StmtPrinter::VisitOpaqueValueExpr(OpaqueValueExpr *Node) { 
+  PrintExpr(Node->getSourceExpr());
+}
 
 void StmtPrinter::VisitAsTypeExpr(AsTypeExpr *Node) {
   OS << "__builtin_astype(";

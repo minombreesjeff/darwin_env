@@ -12,6 +12,8 @@ add_clang_library(clangARCMigrate
   TransEmptyStatementsAndDealloc.cpp
   TransformActions.cpp
   Transforms.cpp
+  TransGCAttrs.cpp
+  TransGCCalls.cpp
   TransProperties.cpp
   TransRetainReleaseDealloc.cpp
   TransUnbridgedCasts.cpp

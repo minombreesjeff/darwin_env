@@ -47,7 +47,8 @@ bool SPUFrameLowering::hasFP(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
 
   return MFI->getStackSize() &&
-    (DisableFramePointerElim(MF) || MFI->hasVarSizedObjects());
+    (MF.getTarget().Options.DisableFramePointerElim(MF) ||
+     MFI->hasVarSizedObjects());
 }
 
 
@@ -180,18 +181,6 @@ void SPUFrameLowering::emitPrologue(MachineFunction &MF) const {
       MachineLocation FPDst(SPU::R1);
       MachineLocation FPSrc(MachineLocation::VirtualFP);
       Moves.push_back(MachineMove(ReadyLabel, FPDst, FPSrc));
-    }
-  } else {
-    // This is a leaf function -- insert a branch hint iff there are
-    // sufficient number instructions in the basic block. Note that
-    // this is just a best guess based on the basic block's size.
-    if (MBB.size() >= (unsigned) SPUFrameLowering::branchHintPenalty()) {
-      MachineBasicBlock::iterator MBBI = MBB.getLastNonDebugInstr();
-      dl = MBBI->getDebugLoc();
-
-      // Insert terminator label
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::PROLOG_LABEL))
-        .addSym(MMI.getContext().CreateTempSymbol());
     }
   }
 }

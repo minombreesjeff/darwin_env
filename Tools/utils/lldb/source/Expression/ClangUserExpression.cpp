@@ -28,6 +28,7 @@
 #include "lldb/Expression/ClangExpressionParser.h"
 #include "lldb/Expression/ClangFunction.h"
 #include "lldb/Expression/ClangUserExpression.h"
+#include "lldb/Expression/ExpressionSourceCode.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -43,18 +44,39 @@
 using namespace lldb_private;
 
 ClangUserExpression::ClangUserExpression (const char *expr,
-                                          const char *expr_prefix) :
+                                          const char *expr_prefix,
+                                          lldb::LanguageType language,
+                                          ResultType desired_type) :
     ClangExpression (),
     m_expr_text (expr),
     m_expr_prefix (expr_prefix ? expr_prefix : ""),
+    m_language (language),
     m_transformed_text (),
-    m_desired_type (NULL, NULL),
+    m_desired_type (desired_type),
     m_cplusplus (false),
     m_objectivec (false),
     m_needs_object_ptr (false),
     m_const_object (false),
-    m_const_result ()
+    m_static_method(false),
+    m_target (NULL),
+    m_evaluated_statically (false),
+    m_const_result (),
+    m_enforce_valid_object (false)
 {
+    switch (m_language)
+    {
+    case lldb::eLanguageTypeC_plus_plus:
+        m_allow_cxx = true;
+        break;
+    case lldb::eLanguageTypeObjC:
+        m_allow_objc = true;
+        break;
+    case lldb::eLanguageTypeObjC_plus_plus:
+    default:
+        m_allow_cxx = true;
+        m_allow_objc = true;
+        break;
+    }
 }
 
 ClangUserExpression::~ClangUserExpression ()
@@ -63,18 +85,32 @@ ClangUserExpression::~ClangUserExpression ()
 
 clang::ASTConsumer *
 ClangUserExpression::ASTTransformer (clang::ASTConsumer *passthrough)
-{
-    return new ASTResultSynthesizer(passthrough,
-                                    m_desired_type);
+{    
+    ClangASTContext *clang_ast_context = m_target->GetScratchClangASTContext();
+    
+    if (!clang_ast_context)
+        return NULL;
+    
+    if (!m_result_synthesizer.get())
+        m_result_synthesizer.reset(new ASTResultSynthesizer(passthrough,
+                                                            *m_target));
+    
+    return m_result_synthesizer.get();
 }
 
 void
-ClangUserExpression::ScanContext(ExecutionContext &exe_ctx)
+ClangUserExpression::ScanContext(ExecutionContext &exe_ctx, Error &err)
 {
-    if (!exe_ctx.frame)
+    m_target = exe_ctx.GetTargetPtr();
+    
+    if (!(m_allow_cxx || m_allow_objc))
         return;
     
-    SymbolContext sym_ctx = exe_ctx.frame->GetSymbolContext(lldb::eSymbolContextFunction);
+    StackFrame *frame = exe_ctx.GetFramePtr();
+    if (frame == NULL)
+        return;
+    
+    SymbolContext sym_ctx = frame->GetSymbolContext(lldb::eSymbolContextFunction);
     
     if (!sym_ctx.function)
         return;
@@ -88,17 +124,43 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx)
         
     if (!decl_context)
         return;
-        
+            
     if (clang::CXXMethodDecl *method_decl = llvm::dyn_cast<clang::CXXMethodDecl>(decl_context))
     {
-        if (method_decl->isInstance())
+        if (m_allow_cxx && method_decl->isInstance())
         {
+            if (m_enforce_valid_object)
+            {
+                VariableList *vars = frame->GetVariableList(false);
+                
+                const char *thisErrorString = "Stopped in a C++ method, but 'this' isn't available; pretending we are in a generic context";
+                
+                if (!vars)
+                {
+                    err.SetErrorToGenericError();
+                    err.SetErrorString(thisErrorString);
+                    return;
+                }
+                
+                lldb::VariableSP this_var = vars->FindVariable(ConstString("this"));
+                
+                if (!this_var ||
+                    !this_var->IsInScope(frame) || 
+                    !this_var->LocationIsValidForFrame (frame))
+                {
+                    err.SetErrorToGenericError();
+                    err.SetErrorString(thisErrorString);
+                    return;
+                }
+            }
+            
             m_cplusplus = true;
+            m_needs_object_ptr = true;
             
             do {
                 clang::QualType this_type = method_decl->getThisType(decl_context->getParentASTContext());
 
-                const clang::PointerType *this_pointer_type = llvm::dyn_cast<clang::PointerType>(this_type.getTypePtr());
+                const clang::PointerType *this_pointer_type = this_type->getAs<clang::PointerType>();
 
                 if (!this_pointer_type)
                     break;
@@ -108,9 +170,40 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx)
         }
     }
     else if (clang::ObjCMethodDecl *method_decl = llvm::dyn_cast<clang::ObjCMethodDecl>(decl_context))
-    {
-        if (method_decl->isInstanceMethod())
+    {        
+        if (m_allow_objc)
+        {
+            if (m_enforce_valid_object)
+            {
+                VariableList *vars = frame->GetVariableList(false);
+                
+                const char *selfErrorString = "Stopped in an Objective-C method, but 'self' isn't available; pretending we are in a generic context";
+                
+                if (!vars)
+                {
+                    err.SetErrorToGenericError();
+                    err.SetErrorString(selfErrorString);
+                    return;
+                }
+                
+                lldb::VariableSP self_var = vars->FindVariable(ConstString("self"));
+                
+                if (!self_var || 
+                    !self_var->IsInScope(frame) || 
+                    !self_var->LocationIsValidForFrame (frame))
+                {
+                    err.SetErrorToGenericError();
+                    err.SetErrorString(selfErrorString);
+                    return;
+                }
+            }
+            
             m_objectivec = true;
+            m_needs_object_ptr = true;
+            
+            if (!method_decl->isInstanceMethod())
+                m_static_method = true;
+        }
     }
 }
 
@@ -156,12 +249,19 @@ ApplyUnicharHack(std::string &expr)
 bool
 ClangUserExpression::Parse (Stream &error_stream, 
                             ExecutionContext &exe_ctx,
-                            TypeFromUser desired_type,
+                            lldb_private::ExecutionPolicy execution_policy,
                             bool keep_result_in_memory)
 {
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
     
-    ScanContext(exe_ctx);
+    Error err;
+    
+    ScanContext(exe_ctx, err);
+    
+    if (!err.Success())
+    {
+        error_stream.Printf("warning: %s\n", err.AsCString());
+    }
     
     StreamString m_transformed_stream;
     
@@ -172,60 +272,22 @@ ClangUserExpression::Parse (Stream &error_stream,
     ApplyObjcCastHack(m_expr_text);
     //ApplyUnicharHack(m_expr_text);
 
+    std::auto_ptr <ExpressionSourceCode> source_code (ExpressionSourceCode::CreateWrapped(m_expr_prefix.c_str(), m_expr_text.c_str()));
+    
+    lldb::LanguageType lang_type;
+    
     if (m_cplusplus)
-    {
-        m_transformed_stream.Printf("%s                                     \n"
-                                    "typedef unsigned short unichar;        \n"
-                                    "void                                   \n"
-                                    "$__lldb_class::%s(void *$__lldb_arg) %s\n"
-                                    "{                                      \n"
-                                    "    %s;                                \n" 
-                                    "}                                      \n",
-                                    m_expr_prefix.c_str(),
-                                    FunctionName(),
-                                    (m_const_object ? "const" : ""),
-                                    m_expr_text.c_str());
-        
-        m_needs_object_ptr = true;
-    }
-    else if (m_objectivec)
-    {
-        const char *function_name = FunctionName();
-        
-        m_transformed_stream.Printf("%s                                                     \n"
-                                    "typedef unsigned short unichar;                        \n"
-                                    "@interface $__lldb_objc_class ($__lldb_category)       \n"
-                                    "-(void)%s:(void *)$__lldb_arg;                         \n"
-                                    "@end                                                   \n"
-                                    "@implementation $__lldb_objc_class ($__lldb_category)  \n"
-                                    "-(void)%s:(void *)$__lldb_arg                          \n"
-                                    "{                                                      \n"
-                                    "    %s;                                                \n"
-                                    "}                                                      \n"
-                                    "@end                                                   \n",
-                                    m_expr_prefix.c_str(),
-                                    function_name,
-                                    function_name,
-                                    m_expr_text.c_str());
-        
-        m_needs_object_ptr = true;
-    }
+        lang_type = lldb::eLanguageTypeC_plus_plus;
+    else if(m_objectivec)
+        lang_type = lldb::eLanguageTypeObjC;
     else
+        lang_type = lldb::eLanguageTypeC;
+    
+    if (!source_code->GetText(m_transformed_text, lang_type, m_const_object, m_static_method))
     {
-        m_transformed_stream.Printf("%s                             \n"
-                                    "typedef unsigned short unichar;\n"
-                                    "void                           \n"
-                                    "%s(void *$__lldb_arg)          \n"
-                                    "{                              \n"
-                                    "    %s;                        \n" 
-                                    "}                              \n",
-                                    m_expr_prefix.c_str(),
-                                    FunctionName(),
-                                    m_expr_text.c_str());
+        error_stream.PutCString ("error: couldn't construct expression body");
+        return false;
     }
-    
-    m_transformed_text = m_transformed_stream.GetData();
-    
     
     if (log)
         log->Printf("Parsing the following code:\n%s", m_transformed_text.c_str());
@@ -234,7 +296,7 @@ ClangUserExpression::Parse (Stream &error_stream,
     // Set up the target and compiler
     //
     
-    Target *target = exe_ctx.target;
+    Target *target = exe_ctx.GetTargetPtr();
     
     if (!target)
     {
@@ -245,10 +307,8 @@ ClangUserExpression::Parse (Stream &error_stream,
     //////////////////////////
     // Parse the expression
     //
-    
-    m_desired_type = desired_type;
-    
-    m_expr_decl_map.reset(new ClangExpressionDeclMap(keep_result_in_memory));
+        
+    m_expr_decl_map.reset(new ClangExpressionDeclMap(keep_result_in_memory, exe_ctx));
     
     if (!m_expr_decl_map->WillParse(exe_ctx))
     {
@@ -256,7 +316,8 @@ ClangUserExpression::Parse (Stream &error_stream,
         return false;
     }
     
-    ClangExpressionParser parser(exe_ctx.process, *this);
+    Process *process = exe_ctx.GetProcessPtr();
+    ClangExpressionParser parser(process, *this);
     
     unsigned num_errors = parser.Parse (error_stream);
     
@@ -269,52 +330,34 @@ ClangUserExpression::Parse (Stream &error_stream,
         return false;
     }
     
-    ///////////////////////////////////////////////
-    // Convert the output of the parser to DWARF
+    //////////////////////////////////////////////////////////////////////////////////////////
+    // Prepare the output of the parser for execution, evaluating it statically if possible
     //
-
-    m_dwarf_opcodes.reset(new StreamString);
-    m_dwarf_opcodes->SetByteOrder (lldb::endian::InlHostByteOrder());
-    m_dwarf_opcodes->GetFlags ().Set (Stream::eBinary);
-    
-    m_local_variables.reset(new ClangExpressionVariableList());
-            
-    Error dwarf_error = parser.MakeDWARF ();
-    
-    if (dwarf_error.Success())
-    {
-        if (log)
-            log->Printf("Code can be interpreted.");
         
-        m_expr_decl_map->DidParse();
-        
-        return true;
-    }
+    if (execution_policy != eExecutionPolicyNever && process)
+        m_data_allocator.reset(new ProcessDataAllocator(*process));
     
-    //////////////////////////////////
-    // JIT the output of the parser
-    //
+    Error jit_error = parser.PrepareForExecution (m_jit_alloc,
+                                                  m_jit_start_addr,
+                                                  m_jit_end_addr,
+                                                  exe_ctx,
+                                                  m_data_allocator.get(),
+                                                  m_evaluated_statically,
+                                                  m_const_result,
+                                                  execution_policy);
     
-    m_dwarf_opcodes.reset();
-    
-    m_data_allocator.reset(new ProcessDataAllocator(*exe_ctx.process));
-    
-    Error jit_error = parser.MakeJIT (m_jit_alloc, m_jit_start_addr, m_jit_end_addr, exe_ctx, m_data_allocator.get(), m_const_result, true);
-    
-    if (log)
+    if (log && m_data_allocator.get())
     {
         StreamString dump_string;
         m_data_allocator->Dump(dump_string);
         
         log->Printf("Data buffer contents:\n%s", dump_string.GetString().c_str());
     }
-    
-    m_expr_decl_map->DidParse();
-    
+        
     if (jit_error.Success())
     {
-        if (exe_ctx.process && m_jit_alloc != LLDB_INVALID_ADDRESS)
-            m_jit_process_sp = exe_ctx.process->GetSP();        
+        if (process && m_jit_alloc != LLDB_INVALID_ADDRESS)
+            m_jit_process_sp = process->GetSP();        
         return true;
     }
     else
@@ -323,7 +366,7 @@ ClangUserExpression::Parse (Stream &error_stream,
         if (error_cstr && error_cstr[0])
             error_stream.Printf ("error: %s\n", error_cstr);
         else
-            error_stream.Printf ("error: expression can't be interpreted or run\n", num_errors);
+            error_stream.Printf ("error: expression can't be interpreted or run\n");
         return false;
     }
 }
@@ -361,8 +404,8 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
             
             if (!(m_expr_decl_map->GetObjectPointer(object_ptr, object_name, exe_ctx, materialize_error)))
             {
-                error_stream.Printf("Couldn't get required object pointer: %s\n", materialize_error.AsCString());
-                return false;
+                error_stream.Printf("warning: couldn't get required object pointer (substituting NULL): %s\n", materialize_error.AsCString());
+                object_ptr = 0;
             }
             
             if (m_objectivec)
@@ -371,8 +414,8 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
                 
                 if (!(m_expr_decl_map->GetObjectPointer(cmd_ptr, cmd_name, exe_ctx, materialize_error, true)))
                 {
-                    error_stream.Printf("Couldn't get required object pointer: %s\n", materialize_error.AsCString());
-                    return false;
+                    error_stream.Printf("warning: couldn't get object pointer (substituting NULL): %s\n", materialize_error.AsCString());
+                    cmd_ptr = 0;
                 }
             }
         }
@@ -481,6 +524,10 @@ ClangUserExpression::FinalizeJITExecution (Stream &error_stream,
         error_stream.Printf ("Couldn't dematerialize struct : %s\n", expr_error.AsCString("unknown error"));
         return false;
     }
+    
+    if (result)
+        result->TransferAddress();
+    
     return true;
 }        
 
@@ -495,15 +542,7 @@ ClangUserExpression::Execute (Stream &error_stream,
     // expression, it's quite convenient to have these logs come out with the STEP log as well.
     lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
 
-    if (m_dwarf_opcodes.get())
-    {
-        // TODO execute the JITted opcodes
-        
-        error_stream.Printf("We don't currently support executing DWARF expressions");
-        
-        return eExecutionSetupError;
-    }
-    else if (m_jit_start_addr != LLDB_INVALID_ADDRESS)
+    if (m_jit_start_addr != LLDB_INVALID_ADDRESS)
     {
         lldb::addr_t struct_address;
                 
@@ -517,7 +556,7 @@ ClangUserExpression::Execute (Stream &error_stream,
         const bool try_all_threads = true;
         
         Address wrapper_address (NULL, m_jit_start_addr);
-        lldb::ThreadPlanSP call_plan_sp(new ThreadPlanCallUserExpression (*(exe_ctx.thread), 
+        lldb::ThreadPlanSP call_plan_sp(new ThreadPlanCallUserExpression (exe_ctx.GetThreadRef(), 
                                                                           wrapper_address, 
                                                                           struct_address, 
                                                                           stop_others, 
@@ -538,14 +577,20 @@ ClangUserExpression::Execute (Stream &error_stream,
         if (log)
             log->Printf("-- [ClangUserExpression::Execute] Execution of expression begins --");
         
-        ExecutionResults execution_result = exe_ctx.process->RunThreadPlan (exe_ctx, 
-                                                                            call_plan_sp, 
-                                                                            stop_others, 
-                                                                            try_all_threads, 
-                                                                            discard_on_error,
-                                                                            single_thread_timeout_usec, 
-                                                                            error_stream);
+        if (exe_ctx.GetProcessPtr())
+            exe_ctx.GetProcessPtr()->SetRunningUserExpression(true);
+            
+        ExecutionResults execution_result = exe_ctx.GetProcessRef().RunThreadPlan (exe_ctx, 
+                                                                                   call_plan_sp, 
+                                                                                   stop_others, 
+                                                                                   try_all_threads, 
+                                                                                   discard_on_error,
+                                                                                   single_thread_timeout_usec, 
+                                                                                   error_stream);
         
+        if (exe_ctx.GetProcessPtr())
+            exe_ctx.GetProcessPtr()->SetRunningUserExpression(false);
+            
         if (log)
             log->Printf("-- [ClangUserExpression::Execute] Execution of expression completed --");
 
@@ -562,7 +607,7 @@ ClangUserExpression::Execute (Stream &error_stream,
             if (error_desc)
                 error_stream.Printf ("Execution was interrupted, reason: %s.", error_desc);
             else
-                error_stream.Printf ("Execution was interrupted.", error_desc);
+                error_stream.Printf ("Execution was interrupted.");
                 
             if (discard_on_error)
                 error_stream.Printf ("\nThe process has been returned to the state before execution.");
@@ -584,85 +629,68 @@ ClangUserExpression::Execute (Stream &error_stream,
     }
     else
     {
-        error_stream.Printf("Expression can't be run; neither DWARF nor a JIT compiled function is present");
+        error_stream.Printf("Expression can't be run, because there is no JIT compiled function");
         return eExecutionSetupError;
     }
 }
 
-StreamString &
-ClangUserExpression::DwarfOpcodeStream ()
-{
-    if (!m_dwarf_opcodes.get())
-        m_dwarf_opcodes.reset(new StreamString());
-    
-    return *m_dwarf_opcodes.get();
-}
-
 ExecutionResults
-ClangUserExpression::Evaluate (ExecutionContext &exe_ctx, 
+ClangUserExpression::Evaluate (ExecutionContext &exe_ctx,
+                               lldb_private::ExecutionPolicy execution_policy,
+                               lldb::LanguageType language,
+                               ResultType desired_type,
                                bool discard_on_error,
                                const char *expr_cstr,
                                const char *expr_prefix,
                                lldb::ValueObjectSP &result_valobj_sp)
 {
     Error error;
-    return EvaluateWithError (exe_ctx, discard_on_error, expr_cstr, expr_prefix, result_valobj_sp, error);
+    return EvaluateWithError (exe_ctx, execution_policy, language, desired_type, discard_on_error, expr_cstr, expr_prefix, result_valobj_sp, error);
 }
 
 ExecutionResults
-ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx, 
-                               bool discard_on_error,
-                               const char *expr_cstr,
-                               const char *expr_prefix,
-                               lldb::ValueObjectSP &result_valobj_sp,
-                               Error &error)
+ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx,
+                                        lldb_private::ExecutionPolicy execution_policy,
+                                        lldb::LanguageType language,
+                                        ResultType desired_type,
+                                        bool discard_on_error,
+                                        const char *expr_cstr,
+                                        const char *expr_prefix,
+                                        lldb::ValueObjectSP &result_valobj_sp,
+                                        Error &error)
 {
     lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
 
     ExecutionResults execution_results = eExecutionSetupError;
     
-    if (exe_ctx.process == NULL || exe_ctx.process->GetState() != lldb::eStateStopped)
+    Process *process = exe_ctx.GetProcessPtr();
+
+    if (process == NULL || process->GetState() != lldb::eStateStopped)
     {
-        error.SetErrorString ("must have a stopped process to evaluate expressions.");
-            
-        result_valobj_sp = ValueObjectConstResult::Create (NULL, error);
-        return eExecutionSetupError;
-    }
-    
-    if (!exe_ctx.process->GetDynamicCheckers())
-    {
-        if (log)
-            log->Printf("== [ClangUserExpression::Evaluate] Installing dynamic checkers ==");
-        
-        DynamicCheckerFunctions *dynamic_checkers = new DynamicCheckerFunctions();
-        
-        StreamString install_errors;
-        
-        if (!dynamic_checkers->Install(install_errors, exe_ctx))
+        if (execution_policy == eExecutionPolicyAlways)
         {
-            if (install_errors.GetString().empty())
-                error.SetErrorString ("couldn't install checkers, unknown error");
-            else
-                error.SetErrorString (install_errors.GetString().c_str());
+            if (log)
+                log->Printf("== [ClangUserExpression::Evaluate] Expression may not run, but is not constant ==");
             
-            result_valobj_sp = ValueObjectConstResult::Create (NULL, error);
-            return eExecutionSetupError;
+            error.SetErrorString ("expression needed to run but couldn't");
+            
+            return execution_results;
         }
-            
-        exe_ctx.process->SetDynamicCheckers(dynamic_checkers);
-        
-        if (log)
-            log->Printf("== [ClangUserExpression::Evaluate] Finished installing dynamic checkers ==");
     }
     
-    ClangUserExpressionSP user_expression_sp (new ClangUserExpression (expr_cstr, expr_prefix));
+    if (process == NULL || !process->CanJIT())
+        execution_policy = eExecutionPolicyNever;
+    
+    ClangUserExpressionSP user_expression_sp (new ClangUserExpression (expr_cstr, expr_prefix, language, desired_type));
 
     StreamString error_stream;
         
     if (log)
         log->Printf("== [ClangUserExpression::Evaluate] Parsing expression %s ==", expr_cstr);
     
-    if (!user_expression_sp->Parse (error_stream, exe_ctx, TypeFromUser(NULL, NULL), true))
+    const bool keep_expression_in_memory = true;
+    
+    if (!user_expression_sp->Parse (error_stream, exe_ctx, execution_policy, keep_expression_in_memory))
     {
         if (error_stream.GetString().empty())
             error.SetErrorString ("expression failed to parse, unknown error");
@@ -673,13 +701,25 @@ ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx,
     {
         lldb::ClangExpressionVariableSP expr_result;
 
-        if (user_expression_sp->m_const_result.get())
+        if (user_expression_sp->EvaluatedStatically())
         {
             if (log)
                 log->Printf("== [ClangUserExpression::Evaluate] Expression evaluated as a constant ==");
             
-            result_valobj_sp = user_expression_sp->m_const_result->GetValueObject();
+            if (user_expression_sp->m_const_result)
+                result_valobj_sp = user_expression_sp->m_const_result->GetValueObject();
+            else
+                error.SetError(ClangUserExpression::kNoResult, lldb::eErrorTypeGeneric);
+            
             execution_results = eExecutionCompleted;
+        }
+        else if (execution_policy == eExecutionPolicyNever)
+        {
+            if (log)
+                log->Printf("== [ClangUserExpression::Evaluate] Expression may not run, but is not constant ==");
+            
+            if (error_stream.GetString().empty())
+                error.SetErrorString ("expression needed to run but couldn't");
         }
         else
         {    
@@ -718,7 +758,7 @@ ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx,
                     if (log)
                         log->Printf("== [ClangUserExpression::Evaluate] Execution completed normally with no result ==");
                     
-                    error.SetErrorString ("Expression did not return a result");
+                    error.SetError(ClangUserExpression::kNoResult, lldb::eErrorTypeGeneric);
                 }
             }
         }

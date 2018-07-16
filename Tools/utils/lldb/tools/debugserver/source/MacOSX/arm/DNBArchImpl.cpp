@@ -252,7 +252,7 @@ DNBArchMachARM::GetEXCState(bool force)
 }
 
 static void
-DumpDBGState(const arm_debug_state_t& dbg)
+DumpDBGState(const DNBArchMachARM::DBG& dbg)
 {
     uint32_t i = 0;
     for (i=0; i<16; i++)
@@ -423,10 +423,13 @@ DNBArchMachARM::ThreadDidStop()
                     }
                     m_sw_single_step_itblock_break_count = 0;
 
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
+
                     // Decode instructions up to the current PC to ensure the internal decoder state is valid for the IT block
                     // The decoder has to decode each instruction in the IT block even if it is not executed so that
                     // the fields are correctly updated
                     DecodeITBlockInstructions(m_state.context.gpr.__pc);
+#endif
                 }
 
             }
@@ -442,6 +445,36 @@ DNBArchMachARM::ThreadDidStop()
         }
     }
     return success;
+}
+
+bool
+DNBArchMachARM::NotifyException(MachException::Data& exc)
+{
+    switch (exc.exc_type)
+    {
+        default:
+            break;
+        case EXC_BREAKPOINT:
+            if (exc.exc_data.size() >= 2 && exc.exc_data[0] == 1)
+            {
+                // exc_code = EXC_ARM_WATCHPOINT
+                //
+                // Check whether this corresponds to a watchpoint hit event.
+                // If yes, set the exc_sub_code to the data break address.
+                nub_addr_t addr = 0;
+                uint32_t hw_index = GetHardwareWatchpointHit(addr);
+                if (hw_index != INVALID_NUB_HW_INDEX)
+                {
+                    exc.exc_data[1] = addr;
+                    // Piggyback the hw_index in the exc.data.
+                    exc.exc_data.push_back(hw_index);
+                }
+
+                return true;
+            }
+            break;
+    }
+    return false;
 }
 
 bool
@@ -465,6 +498,8 @@ DNBArchMachARM::StepNotComplete ()
     return false;
 }
 
+
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
 
 void
 DNBArchMachARM::DecodeITBlockInstructions(nub_addr_t curr_pc)
@@ -497,7 +532,7 @@ DNBArchMachARM::DecodeITBlockInstructions(nub_addr_t curr_pc)
             }
             else
             {
-                DNBLogError("%s: Unable to read opcode bits 31:16 for a 32 bit thumb opcode at pc=0x%8.8lx", __FUNCTION__, pc_in_itblock);
+                DNBLogError("%s: Unable to read opcode bits 31:16 for a 32 bit thumb opcode at pc=0x%8.8llx", __FUNCTION__, (uint64_t)pc_in_itblock);
             }
         }
     }
@@ -520,7 +555,7 @@ DNBArchMachARM::DecodeITBlockInstructions(nub_addr_t curr_pc)
         DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: next_pc_in_itblock=0x%8.8x", __FUNCTION__, next_pc_in_itblock);
     }
 }
-
+#endif
 
 // Set the single step bit in the processor status register.
 kern_return_t
@@ -684,6 +719,8 @@ DNBArchMachARM::ConditionPassed(uint8_t condition, uint32_t cpsr)
 
     return false;
 }
+
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
 
 bool
 DNBArchMachARM::ComputeNextPC(nub_addr_t currentPC, arm_decoded_instruction_t decodedInstruction, bool currentPCIsThumb, nub_addr_t *targetPC)
@@ -1623,7 +1660,7 @@ DNBArchMachARM::EvaluateNextInstructionForSoftwareBreakpointSetup(nub_addr_t cur
             decodeError = DecodeInstructionUsingDisassembler(currentPCInITBlock, cpsr, &m_last_decode_arm, &m_last_decode_thumb, &nextPCInITBlock);
 
             if (decodeError != ARM_SUCCESS)
-                DNBLogError("unable to disassemble instruction at 0x%8.8lx", currentPCInITBlock);
+                DNBLogError("unable to disassemble instruction at 0x%8.8llx", (uint64_t)currentPCInITBlock);
 
             DNBLogThreadedIf(LOG_STEP | LOG_VERBOSE, "%s: condition=%d", __FUNCTION__, m_last_decode_arm.condition);
             if (ConditionPassed(m_last_decode_arm.condition, cpsr))
@@ -1676,7 +1713,7 @@ DNBArchMachARM::EvaluateNextInstructionForSoftwareBreakpointSetup(nub_addr_t cur
             // if targetPC is not known at compile time (PC-relative target), compute targetPC
             if (!ComputeNextPC(currentPC, m_last_decode_arm, currentPCIsThumb, &targetPC))
             {
-                DNBLogError("%s: Unable to compute targetPC for instruction at 0x%8.8lx", __FUNCTION__, currentPC);
+                DNBLogError("%s: Unable to compute targetPC for instruction at 0x%8.8llx", __FUNCTION__, (uint64_t)currentPC);
                 targetPC = INVALID_NUB_ADDRESS;
             }
         }
@@ -1760,7 +1797,7 @@ DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t 
             // Read the ARM opcode
             if (m_thread->Process()->Task().ReadMemory(curr_pc, 4, &opcode32) != 4)
             {
-                DNBLogError("unable to read opcode bits 31:0 for an ARM opcode at 0x%8.8lx", curr_pc);
+                DNBLogError("unable to read opcode bits 31:0 for an ARM opcode at 0x%8.8llx", (uint64_t)curr_pc);
                 decodeReturnCode = ARM_ERROR;
             }
             else
@@ -1769,7 +1806,7 @@ DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t 
                 decodeReturnCode = ArmDisassembler((uint64_t)curr_pc, opcode32, false, decodedInstruction, NULL, 0, NULL, 0);
 
                 if (decodeReturnCode != ARM_SUCCESS)
-                    DNBLogError("Unable to decode ARM instruction 0x%8.8x at 0x%8.8lx", opcode32, curr_pc);
+                    DNBLogError("Unable to decode ARM instruction 0x%8.8x at 0x%8.8llx", opcode32, (uint64_t)curr_pc);
             }
             break;
 
@@ -1778,7 +1815,7 @@ DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t 
             // Read the a 16 bit Thumb opcode
             if (m_thread->Process()->Task().ReadMemory(curr_pc, 2, &opcode16) != 2)
             {
-                DNBLogError("unable to read opcode bits 15:0 for a thumb opcode at 0x%8.8lx", curr_pc);
+                DNBLogError("unable to read opcode bits 15:0 for a thumb opcode at 0x%8.8llx", (uint64_t)curr_pc);
                 decodeReturnCode = ARM_ERROR;
             }
             else
@@ -1794,7 +1831,7 @@ DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t 
                         nextPC += 2;
                         if (m_thread->Process()->Task().ReadMemory(curr_pc+2, 2, &opcode16) != 2)
                         {
-                            DNBLogError("unable to read opcode bits 15:0 for a thumb opcode at 0x%8.8lx", curr_pc+2);
+                            DNBLogError("unable to read opcode bits 15:0 for a thumb opcode at 0x%8.8llx", (uint64_t)curr_pc+2);
                         }
                         else
                         {
@@ -1803,7 +1840,7 @@ DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t 
                             decodeReturnCode = ThumbDisassembler((uint64_t)(curr_pc+2), opcode16, false, false, thumbStaticData, decodedInstruction, NULL, 0, NULL, 0);
 
                             if (decodeReturnCode != ARM_SUCCESS)
-                                DNBLogError("Unable to decode 2nd half of Thumb instruction 0x%8.4hx at 0x%8.8lx", opcode16, curr_pc+2);
+                                DNBLogError("Unable to decode 2nd half of Thumb instruction 0x%8.4hx at 0x%8.8llx", opcode16, (uint64_t)curr_pc+2);
                             break;
                         }
                         break;
@@ -1813,7 +1850,7 @@ DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t 
                         break;
 
                     default:
-                        DNBLogError("Unable to decode Thumb instruction 0x%8.4hx at 0x%8.8lx", opcode16, curr_pc);
+                        DNBLogError("Unable to decode Thumb instruction 0x%8.4hx at 0x%8.8llx", opcode16, (uint64_t)curr_pc);
                         decodeReturnCode = ARM_ERROR;
                         break;
                 }
@@ -1829,6 +1866,8 @@ DNBArchMachARM::DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t 
 
     return decodeReturnCode;
 }
+
+#endif
 
 nub_bool_t
 DNBArchMachARM::BreakpointHit (nub_process_t pid, nub_thread_t tid, nub_break_t breakID, void *baton)
@@ -1847,6 +1886,8 @@ kern_return_t
 DNBArchMachARM::SetSingleStepSoftwareBreakpoints()
 {
     DNBError err;
+
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
     err = GetGPRState(false);
 
     if (err.Fail())
@@ -1878,7 +1919,7 @@ DNBArchMachARM::SetSingleStepSoftwareBreakpoints()
         if (decodeReturnCode != ARM_SUCCESS)
         {
             err = KERN_INVALID_ARGUMENT;
-            DNBLogError("DNBArchMachARM::SetSingleStepSoftwareBreakpoints: Unable to disassemble instruction at 0x%8.8lx", curr_pc);
+            DNBLogError("DNBArchMachARM::SetSingleStepSoftwareBreakpoints: Unable to disassemble instruction at 0x%8.8llx", (uint64_t)curr_pc);
         }
     }
     else
@@ -1970,7 +2011,7 @@ DNBArchMachARM::SetSingleStepSoftwareBreakpoints()
                         }
                         else
                         {
-                            DNBLogError("FunctionProfiler::SetSingleStepSoftwareBreakpoints(): Unable to read opcode bits 31:16 for a 32 bit thumb opcode at pc=0x%8.8lx", nextPCInITBlock);
+                            DNBLogError("FunctionProfiler::SetSingleStepSoftwareBreakpoints(): Unable to read opcode bits 31:16 for a 32 bit thumb opcode at pc=0x%8.8llx", (uint64_t)nextPCInITBlock);
                         }
                     }
                 }
@@ -2043,7 +2084,9 @@ DNBArchMachARM::SetSingleStepSoftwareBreakpoints()
         }
 #endif
     }
-
+#else
+    err.LogThreaded("%s: ARMDisassembler.framework support is disabled", __FUNCTION__);
+#endif
     return err.Error();
 }
 
@@ -2198,13 +2241,13 @@ DNBArchMachARM::EnableHardwareBreakpoint (nub_addr_t addr, nub_size_t size)
                                         byte_addr_select |  // Set the correct byte address select so we only trigger on the correct opcode
                                         S_USER |            // Which modes should this breakpoint stop in?
                                         BCR_ENABLE;         // Enable this hardware breakpoint
-                DNBLogThreadedIf(LOG_BREAKPOINTS, "DNBArchMachARM::EnableHardwareBreakpoint( addr = %8.8p, size = %u ) - BVR%u/BCR%u = 0x%8.8x / 0x%8.8x (Thumb)",
-                        addr,
-                        size,
-                        i,
-                        i,
-                        m_state.dbg.__bvr[i],
-                        m_state.dbg.__bcr[i]);
+                DNBLogThreadedIf (LOG_BREAKPOINTS, "DNBArchMachARM::EnableHardwareBreakpoint( addr = 0x%8.8llx, size = %zu ) - BVR%u/BCR%u = 0x%8.8x / 0x%8.8x (Thumb)",
+                                  (uint64_t)addr,
+                                  size,
+                                  i,
+                                  i,
+                                  m_state.dbg.__bvr[i],
+                                  m_state.dbg.__bcr[i]);
             }
             else if (size == 4)
             {
@@ -2213,13 +2256,13 @@ DNBArchMachARM::EnableHardwareBreakpoint (nub_addr_t addr, nub_size_t size)
                                         BAS_IMVA_ALL |      // Stop on any of the four bytes following the IMVA
                                         S_USER |            // Which modes should this breakpoint stop in?
                                         BCR_ENABLE;         // Enable this hardware breakpoint
-                DNBLogThreadedIf(LOG_BREAKPOINTS, "DNBArchMachARM::EnableHardwareBreakpoint( addr = %8.8p, size = %u ) - BVR%u/BCR%u = 0x%8.8x / 0x%8.8x (ARM)",
-                        addr,
-                        size,
-                        i,
-                        i,
-                        m_state.dbg.__bvr[i],
-                        m_state.dbg.__bcr[i]);
+                DNBLogThreadedIf (LOG_BREAKPOINTS, "DNBArchMachARM::EnableHardwareBreakpoint( addr = 0x%8.8llx, size = %zu ) - BVR%u/BCR%u = 0x%8.8x / 0x%8.8x (ARM)",
+                                  (uint64_t)addr,
+                                  size,
+                                  i,
+                                  i,
+                                  m_state.dbg.__bvr[i],
+                                  m_state.dbg.__bcr[i]);
             }
 
             kret = SetDBGState();
@@ -2230,7 +2273,7 @@ DNBArchMachARM::EnableHardwareBreakpoint (nub_addr_t addr, nub_size_t size)
         }
         else
         {
-            DNBLogThreadedIf(LOG_BREAKPOINTS, "DNBArchMachARM::EnableHardwareBreakpoint(addr = %8.8p, size = %u) => all hardware breakpoint resources are being used.", addr, size);
+            DNBLogThreadedIf (LOG_BREAKPOINTS, "DNBArchMachARM::EnableHardwareBreakpoint(addr = 0x%8.8llx, size = %zu) => all hardware breakpoint resources are being used.", (uint64_t)addr, size);
         }
     }
 
@@ -2267,7 +2310,7 @@ DNBArchMachARM::DisableHardwareBreakpoint (uint32_t hw_index)
 uint32_t
 DNBArchMachARM::EnableHardwareWatchpoint (nub_addr_t addr, nub_size_t size, bool read, bool write)
 {
-    DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchMachARM::EnableHardwareWatchpoint(addr = %8.8p, size = %u, read = %u, write = %u)", addr, size, read, write);
+    DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchMachARM::EnableHardwareWatchpoint(addr = 0x%8.8llx, size = %zu, read = %u, write = %u)", (uint64_t)addr, size, read, write);
 
     const uint32_t num_hw_watchpoints = NumSupportedHardwareWatchpoints();
 
@@ -2284,9 +2327,8 @@ DNBArchMachARM::EnableHardwareWatchpoint (nub_addr_t addr, nub_size_t size, bool
         return INVALID_NUB_HW_INDEX;
 
     // We can only watch up to four bytes that follow a 4 byte aligned address
-    // per watchpoint register pair. Since we have at most so we can only watch
-    // until the next 4 byte boundary and we need to make sure we can properly
-    // encode this.
+    // per watchpoint register pair. Since we can only watch until the next 4
+    // byte boundary, we need to make sure we can properly encode this.
     uint32_t addr_word_offset = addr % 4;
     DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchMachARM::EnableHardwareWatchpoint() - addr_word_offset = 0x%8.8x", addr_word_offset);
 
@@ -2315,8 +2357,8 @@ DNBArchMachARM::EnableHardwareWatchpoint (nub_addr_t addr, nub_size_t size, bool
             // Make the byte_mask into a valid Byte Address Select mask
             uint32_t byte_address_select = byte_mask << 5;
             // Make sure bits 1:0 are clear in our address
-            m_state.dbg.__wvr[i] = addr & ~((nub_addr_t)3);
-            m_state.dbg.__wcr[i] =  byte_address_select |       // Which bytes that follow the IMVA that we will watch
+            m_state.dbg.__wvr[i] = addr & ~((nub_addr_t)3);     // DVA (Data Virtual Address)
+            m_state.dbg.__wcr[i] =  byte_address_select |       // Which bytes that follow the DVA that we will watch
                                     S_USER |                    // Stop only in user mode
                                     (read ? WCR_LOAD : 0) |     // Stop on read access?
                                     (write ? WCR_STORE : 0) |   // Stop on write access?
@@ -2361,6 +2403,91 @@ DNBArchMachARM::DisableHardwareWatchpoint (uint32_t hw_index)
         }
     }
     return false;
+}
+
+// {0} -> __bvr[16], {0} -> __bcr[16], {0} --> __wvr[16], {0} -> __wcr{16}
+DNBArchMachARM::DBG DNBArchMachARM::Global_Debug_State = {{0},{0},{0},{0}};
+bool DNBArchMachARM::Valid_Global_Debug_State = false;
+
+// Use this callback from MachThread, which in turn was called from MachThreadList, to update
+// the global view of the hardware watchpoint state, so that when new thread comes along, they
+// get to inherit the existing hardware watchpoint state.
+void
+DNBArchMachARM::HardwareWatchpointStateChanged ()
+{
+    Global_Debug_State = m_state.dbg;
+    Valid_Global_Debug_State = true;
+}
+
+// Iterate through the debug status register; return the index of the first hit.
+uint32_t
+DNBArchMachARM::GetHardwareWatchpointHit(nub_addr_t &addr)
+{
+    // Read the debug state
+    kern_return_t kret = GetDBGState(true);
+    DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchMachARM::GetHardwareWatchpointHit() GetDBGState() => 0x%8.8x.", kret);
+    if (kret == KERN_SUCCESS)
+    {
+        DBG &debug_state = m_state.dbg;
+        uint32_t i, num = NumSupportedHardwareWatchpoints();
+        for (i = 0; i < num; ++i)
+        {
+            // FIXME: IsWatchpointHit() currently returns the first enabled watchpoint,
+            //        instead of finding the watchpoint that actually triggered.
+            if (IsWatchpointHit(debug_state, i))
+            {
+                addr = GetWatchAddress(debug_state, i);
+                DNBLogThreadedIf(LOG_WATCHPOINTS,
+                                 "DNBArchMachARM::GetHardwareWatchpointHit() found => %u (addr = 0x%llx).",
+                                 i, 
+                                 (uint64_t)addr);
+                return i;
+            }
+        }
+    }
+    return INVALID_NUB_HW_INDEX;
+}
+
+// ThreadWillResume() calls this to clear bits[5:2] (Method of entry bits) of
+// the Debug Status and Control Register (DSCR).
+// 
+// b0010 = a watchpoint occurred
+// b0000 is the reset value
+void
+DNBArchMachARM::ClearWatchpointOccurred()
+{
+    // See also IsWatchpointHit().
+    uint32_t register_DBGDSCR;
+    asm("mrc p14, 0, %0, c0, c1, 0" : "=r" (register_DBGDSCR));
+    if (bits(register_DBGDSCR, 5, 2) == 0x2)
+    {
+        uint32_t mask = ~(0xF << 2);
+        register_DBGDSCR &= mask;
+        asm("mcr p14, 0, %0, c0, c1, 0" : "=r" (register_DBGDSCR));
+    }
+    return;
+}
+
+// FIXME: IsWatchpointHit() currently returns the first enabled watchpoint,
+//        instead of finding the watchpoint that actually triggered.
+bool
+DNBArchMachARM::IsWatchpointHit(const DBG &debug_state, uint32_t hw_index)
+{
+    // Watchpoint Control Registers, bitfield definitions
+    // ...
+    // Bits    Value    Description
+    // [0]	   0        Watchpoint disabled
+    //         1        Watchpoint enabled.
+    return (debug_state.__wcr[hw_index] & 1u);
+}
+
+nub_addr_t
+DNBArchMachARM::GetWatchAddress(const DBG &debug_state, uint32_t hw_index)
+{
+    // Watchpoint Value Registers, bitfield definitions
+    // Bits        Description
+    // [31:2]      Watchpoint address
+    return bits(debug_state.__wvr[hw_index], 31, 2);
 }
 
 //----------------------------------------------------------------------

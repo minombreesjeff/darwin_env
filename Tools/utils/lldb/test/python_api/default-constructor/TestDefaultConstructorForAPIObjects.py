@@ -2,6 +2,10 @@
 Test lldb Python API object's default constructor and make sure it is invalid
 after initial construction.
 
+There are also some cases of boundary condition testings sprinkled throughout
+the tests where None is passed to SB API which expects (const char *) in the
+C++ API counterpart.  Passing None should not crash lldb!
+
 There are three exceptions to the above general rules, though; API objects
 SBCommadnReturnObject, SBStream, and SBSymbolContextList, are all valid objects
 after default construction.
@@ -130,6 +134,8 @@ class APIDefaultConstructorTestCase(TestBase):
     @python_api_test
     def test_SBFileSpec(self):
         obj = lldb.SBFileSpec()
+        # This is just to test that FileSpec(None) does not crash.
+        obj2 = lldb.SBFileSpec(None, True)
         if self.TraceOn():
             print obj
         self.assertFalse(obj)
@@ -226,6 +232,16 @@ class APIDefaultConstructorTestCase(TestBase):
         # Do fuzz testing on the invalid obj, it should not crash lldb.
         import sb_process
         sb_process.fuzz_obj(obj)
+
+    @python_api_test
+    def test_SBSection(self):
+        obj = lldb.SBSection()
+        if self.TraceOn():
+            print obj
+        self.assertFalse(obj)
+        # Do fuzz testing on the invalid obj, it should not crash lldb.
+        import sb_section
+        sb_section.fuzz_obj(obj)
 
     @python_api_test
     def test_SBStream(self):
@@ -338,6 +354,16 @@ class APIDefaultConstructorTestCase(TestBase):
         # Do fuzz testing on the invalid obj, it should not crash lldb.
         import sb_valuelist
         sb_valuelist.fuzz_obj(obj)
+
+    @python_api_test
+    def test_SBWatchpoint(self):
+        obj = lldb.SBWatchpoint()
+        if self.TraceOn():
+            print obj
+        self.assertFalse(obj)
+        # Do fuzz testing on the invalid obj, it should not crash lldb.
+        import sb_watchpoint
+        sb_watchpoint.fuzz_obj(obj)
 
 
 if __name__ == '__main__':

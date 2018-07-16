@@ -222,7 +222,7 @@ static Module *TestMergedProgram(const BugDriver &BD, Module *M1, Module *M2,
     M1 = CloneModule(M1);
     M2 = CloneModule(M2);
   }
-  if (Linker::LinkModules(M1, M2, &ErrorMsg)) {
+  if (Linker::LinkModules(M1, M2, Linker::DestroySource, &ErrorMsg)) {
     errs() << BD.getToolName() << ": Error linking modules together:"
            << ErrorMsg << '\n';
     exit(1);
@@ -396,7 +396,8 @@ static bool ExtractLoops(BugDriver &BD,
     // Replace the current program with the loop extracted version, and try to
     // extract another loop.
     std::string ErrorMsg;
-    if (Linker::LinkModules(ToNotOptimize, ToOptimizeLoopExtracted, &ErrorMsg)){
+    if (Linker::LinkModules(ToNotOptimize, ToOptimizeLoopExtracted, 
+                            Linker::DestroySource, &ErrorMsg)){
       errs() << BD.getToolName() << ": Error linking modules together:"
              << ErrorMsg << '\n';
       exit(1);
@@ -411,8 +412,6 @@ static bool ExtractLoops(BugDriver &BD,
       Function *NewF = ToNotOptimize->getFunction(MisCompFunctions[i].first);
 
       assert(NewF && "Function not found??");
-      assert(NewF->getFunctionType() == MisCompFunctions[i].second &&
-             "found wrong function type?");
       MiscompiledFunctions.push_back(NewF);
     }
 
@@ -577,7 +576,8 @@ static bool ExtractBlocks(BugDriver &BD,
                                                 I->getFunctionType()));
 
   std::string ErrorMsg;
-  if (Linker::LinkModules(ProgClone, Extracted, &ErrorMsg)) {
+  if (Linker::LinkModules(ProgClone, Extracted, Linker::DestroySource, 
+                          &ErrorMsg)) {
     errs() << BD.getToolName() << ": Error linking modules together:"
            << ErrorMsg << '\n';
     exit(1);
@@ -593,8 +593,6 @@ static bool ExtractBlocks(BugDriver &BD,
   for (unsigned i = 0, e = MisCompFunctions.size(); i != e; ++i) {
     Function *NewF = ProgClone->getFunction(MisCompFunctions[i].first);
     assert(NewF && "Function not found??");
-    assert(NewF->getFunctionType() == MisCompFunctions[i].second &&
-           "Function has wrong type??");
     MiscompiledFunctions.push_back(NewF);
   }
 

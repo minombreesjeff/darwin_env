@@ -23,6 +23,7 @@
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/LexDiagnostic.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/Support/ErrorHandling.h"
 using namespace clang;
 
 namespace {
@@ -96,6 +97,7 @@ static bool EvaluateDefined(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
   if (PeekTok.is(tok::code_completion)) {
     if (PP.getCodeCompletionHandler())
       PP.getCodeCompletionHandler()->CodeCompleteMacroName(false);
+    PP.setCodeCompletionReached();
     PP.LexUnexpandedNonComment(PeekTok);
   }
   
@@ -114,6 +116,10 @@ static bool EvaluateDefined(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
     MacroInfo *Macro = PP.getMacroInfo(II);
     PP.markMacroAsUsed(Macro);
   }
+
+  // Invoke the 'defined' callback.
+  if (PPCallbacks *Callbacks = PP.getPPCallbacks())
+    Callbacks->Defined(PeekTok);
 
   // If we are in parens, ensure we have a trailing ).
   if (LParenLoc.isValid()) {
@@ -156,6 +162,7 @@ static bool EvaluateValue(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
   if (PeekTok.is(tok::code_completion)) {
     if (PP.getCodeCompletionHandler())
       PP.getCodeCompletionHandler()->CodeCompletePreprocessorExpression();
+    PP.setCodeCompletionReached();
     PP.LexNonComment(PeekTok);
   }
       
@@ -209,9 +216,9 @@ static bool EvaluateValue(PPValue &Result, Token &PeekTok, DefinedTracker &DT,
     assert(Literal.isIntegerLiteral() && "Unknown ppnumber");
 
     // long long is a C99 feature.
-    if (!PP.getLangOptions().C99 && !PP.getLangOptions().CPlusPlus0x
-        && Literal.isLongLong)
-      PP.Diag(PeekTok, diag::ext_longlong);
+    if (!PP.getLangOptions().C99 && Literal.isLongLong)
+      PP.Diag(PeekTok, PP.getLangOptions().CPlusPlus0x ?
+              diag::warn_cxx98_compat_longlong : diag::ext_longlong);
 
     // Parse the integer literal into Result.
     if (Literal.GetIntegerValue(Result.Val)) {
@@ -533,7 +540,7 @@ static bool EvaluateDirectiveSubExpr(PPValue &LHS, unsigned MinPrec,
 
     bool Overflow = false;
     switch (Operator) {
-    default: assert(0 && "Unknown operator token!");
+    default: llvm_unreachable("Unknown operator token!");
     case tok::percent:
       if (RHS.Val != 0)
         Res = LHS.Val % RHS.Val;
@@ -771,4 +778,3 @@ EvaluateDirectiveExpression(IdentifierInfo *&IfNDefMacro) {
   DisableMacroExpansion = DisableMacroExpansionAtStartOfDirective;
   return ResVal.Val != 0;
 }
-

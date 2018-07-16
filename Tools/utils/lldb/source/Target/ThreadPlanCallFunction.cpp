@@ -37,6 +37,7 @@ using namespace lldb_private;
 
 ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
                                                 Address &function,
+                                                const ClangASTType &return_type,
                                                 addr_t arg,
                                                 bool stop_other_threads,
                                                 bool discard_on_error,
@@ -47,9 +48,9 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     m_stop_other_threads (stop_other_threads),
     m_function_addr (function),
     m_function_sp (NULL),
-    m_process (thread.GetProcess()),
-    m_thread (thread),
-    m_takedown_done (false)
+    m_return_type (return_type),
+    m_takedown_done (false),
+    m_stop_address (LLDB_INVALID_ADDRESS)
 {
     SetOkayToDiscard (discard_on_error);
 
@@ -150,6 +151,7 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
 
 ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
                                                 Address &function,
+                                                const ClangASTType &return_type,
                                                 bool stop_other_threads,
                                                 bool discard_on_error,
                                                 addr_t *arg1_ptr,
@@ -163,8 +165,7 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     m_stop_other_threads (stop_other_threads),
     m_function_addr (function),
     m_function_sp(NULL),
-    m_process (thread.GetProcess()),
-    m_thread (thread),
+    m_return_type (return_type),
     m_takedown_done (false)
 {
     SetOkayToDiscard (discard_on_error);
@@ -284,16 +285,16 @@ ThreadPlanCallFunction::DoTakedown ()
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (!m_takedown_done)
     {
-        // TODO: how do we tell if all went well?
-        if (m_return_value_sp)
+        const ABI *abi = m_thread.GetProcess().GetABI().get();
+        if (abi && m_return_type.IsValid())
         {
-            const ABI *abi = m_thread.GetProcess().GetABI().get();
-            if (abi)
-                abi->GetReturnValue(m_thread, *m_return_value_sp);
+            m_return_valobj_sp = abi->GetReturnValueObject (m_thread, m_return_type);
         }
+
         if (log)
-            log->Printf ("DoTakedown called for thread 0x%4.4x, m_valid: %d complete: %d.\n", m_thread.GetID(), m_valid, IsPlanComplete());
+            log->Printf ("DoTakedown called for thread 0x%4.4llx, m_valid: %d complete: %d.\n", m_thread.GetID(), m_valid, IsPlanComplete());
         m_takedown_done = true;
+        m_stop_address = m_thread.GetStackFrameAtIndex(0)->GetRegisterContext()->GetPC();
         m_real_stop_info_sp = GetPrivateStopReason();
         m_thread.RestoreThreadStateFromCheckpoint(m_stored_thread_state);
         SetPlanComplete();
@@ -305,7 +306,7 @@ ThreadPlanCallFunction::DoTakedown ()
     else
     {
         if (log)
-            log->Printf ("DoTakedown called as no-op for thread 0x%4.4x, m_valid: %d complete: %d.\n", m_thread.GetID(), m_valid, IsPlanComplete());
+            log->Printf ("DoTakedown called as no-op for thread 0x%4.4llx, m_valid: %d complete: %d.\n", m_thread.GetID(), m_valid, IsPlanComplete());
     }
 }
 
@@ -324,7 +325,7 @@ ThreadPlanCallFunction::GetDescription (Stream *s, DescriptionLevel level)
     }
     else
     {
-        s->Printf("Thread plan to call 0x%llx", m_function_addr.GetLoadAddress(&m_process.GetTarget()));
+        s->Printf("Thread plan to call 0x%llx", m_function_addr.GetLoadAddress(&m_thread.GetProcess().GetTarget()));
     }
 }
 
@@ -474,8 +475,8 @@ ThreadPlanCallFunction::MischiefManaged ()
 void
 ThreadPlanCallFunction::SetBreakpoints ()
 {
-    m_cxx_language_runtime = m_process.GetLanguageRuntime(eLanguageTypeC_plus_plus);
-    m_objc_language_runtime = m_process.GetLanguageRuntime(eLanguageTypeObjC);
+    m_cxx_language_runtime = m_thread.GetProcess().GetLanguageRuntime(eLanguageTypeC_plus_plus);
+    m_objc_language_runtime = m_thread.GetProcess().GetLanguageRuntime(eLanguageTypeObjC);
     
     if (m_cxx_language_runtime)
         m_cxx_language_runtime->SetExceptionBreakpoints();

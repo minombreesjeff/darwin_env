@@ -30,7 +30,7 @@ using namespace clang;
 /// argument vector.
 CompilerInvocation *
 clang::createInvocationFromCommandLine(ArrayRef<const char *> ArgList,
-                                   llvm::IntrusiveRefCntPtr<Diagnostic> Diags) {
+                            llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags) {
   if (!Diags.getPtr()) {
     // No diagnostics engine was provided, so create our own diagnostics object
     // with the default options.
@@ -48,8 +48,8 @@ clang::createInvocationFromCommandLine(ArrayRef<const char *> ArgList,
   Args.push_back("-fsyntax-only");
 
   // FIXME: We shouldn't have to pass in the path info.
-  driver::Driver TheDriver("clang", llvm::sys::getHostTriple(),
-                           "a.out", false, false, *Diags);
+  driver::Driver TheDriver("clang", llvm::sys::getDefaultTargetTriple(),
+                           "a.out", false, *Diags);
 
   // Don't check that inputs exist, they may have been remapped.
   TheDriver.setCheckInputsExist(false);

@@ -13,6 +13,7 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Utility/Utils.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -29,15 +30,13 @@ OptionGroupUUID::~OptionGroupUUID ()
 static OptionDefinition
 g_option_table[] =
 {
-{ LLDB_OPT_SET_1 , false, "uuid", 'u', required_argument, NULL, 0, eArgTypeNone, "A module UUID value."},
+    { LLDB_OPT_SET_1 , false, "uuid", 'u', required_argument, NULL, 0, eArgTypeNone, "A module UUID value."},
 };
-
-const uint32_t k_num_file_options = sizeof(g_option_table)/sizeof(OptionDefinition);
 
 uint32_t
 OptionGroupUUID::GetNumDefinitions ()
 {
-    return k_num_file_options;
+    return arraysize(g_option_table);
 }
 
 const OptionDefinition *
@@ -58,10 +57,12 @@ OptionGroupUUID::SetOptionValue (CommandInterpreter &interpreter,
     {
         case 'u':
             error = m_uuid.SetValueFromCString (option_arg);
+            if (error.Success())
+                m_uuid.SetOptionWasSet();
             break;
 
         default:
-            error.SetErrorStringWithFormat ("Unrecognized option '%c'.\n", short_option);
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
     }
 

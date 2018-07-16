@@ -131,14 +131,22 @@ class X86InstrInfo : public X86GenInstrInfo {
   /// RegOp2MemOpTable2Addr, RegOp2MemOpTable0, RegOp2MemOpTable1,
   /// RegOp2MemOpTable2 - Load / store folding opcode maps.
   ///
-  DenseMap<unsigned, std::pair<unsigned,unsigned> > RegOp2MemOpTable2Addr;
-  DenseMap<unsigned, std::pair<unsigned,unsigned> > RegOp2MemOpTable0;
-  DenseMap<unsigned, std::pair<unsigned,unsigned> > RegOp2MemOpTable1;
-  DenseMap<unsigned, std::pair<unsigned,unsigned> > RegOp2MemOpTable2;
+  typedef DenseMap<unsigned,
+                   std::pair<unsigned, unsigned> > RegOp2MemOpTableType;
+  RegOp2MemOpTableType RegOp2MemOpTable2Addr;
+  RegOp2MemOpTableType RegOp2MemOpTable0;
+  RegOp2MemOpTableType RegOp2MemOpTable1;
+  RegOp2MemOpTableType RegOp2MemOpTable2;
 
   /// MemOp2RegOpTable - Load / store unfolding opcode map.
   ///
-  DenseMap<unsigned, std::pair<unsigned, unsigned> > MemOp2RegOpTable;
+  typedef DenseMap<unsigned,
+                   std::pair<unsigned, unsigned> > MemOp2RegOpTableType;
+  MemOp2RegOpTableType MemOp2RegOpTable;
+
+  void AddTableEntry(RegOp2MemOpTableType &R2MTable,
+                     MemOp2RegOpTableType &M2RTable,
+                     unsigned RegOp, unsigned MemOp, unsigned Flags);
 
 public:
   explicit X86InstrInfo(X86TargetMachine &tm);
@@ -239,6 +247,9 @@ public:
                                MachineInstr::mmo_iterator MMOBegin,
                                MachineInstr::mmo_iterator MMOEnd,
                                SmallVectorImpl<MachineInstr*> &NewMIs) const;
+
+  virtual bool expandPostRAPseudo(MachineBasicBlock::iterator MI) const;
+
   virtual
   MachineInstr *emitFrameIndexDebugValue(MachineFunction &MF,
                                          int FrameIx, uint64_t Offset,
@@ -329,12 +340,15 @@ public:
   ///
   unsigned getGlobalBaseReg(MachineFunction *MF) const;
 
-  /// GetSSEDomain - Return the SSE execution domain of MI as the first element,
-  /// and a bitmask of possible arguments to SetSSEDomain ase the second.
-  std::pair<uint16_t, uint16_t> GetSSEDomain(const MachineInstr *MI) const;
+  std::pair<uint16_t, uint16_t>
+  getExecutionDomain(const MachineInstr *MI) const;
 
-  /// SetSSEDomain - Set the SSEDomain of MI.
-  void SetSSEDomain(MachineInstr *MI, unsigned Domain) const;
+  void setExecutionDomain(MachineInstr *MI, unsigned Domain) const;
+
+  unsigned getPartialRegUpdateClearance(const MachineInstr *MI, unsigned OpNum,
+                                        const TargetRegisterInfo *TRI) const;
+  void breakPartialRegDependency(MachineBasicBlock::iterator MI, unsigned OpNum,
+                                 const TargetRegisterInfo *TRI) const;
 
   MachineInstr* foldMemoryOperandImpl(MachineFunction &MF,
                                       MachineInstr* MI,

@@ -35,9 +35,9 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/system_error.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetSelect.h"
 #include <cctype>
 using namespace clang;
 using namespace clang::driver;
@@ -375,22 +375,15 @@ int main(int argc_, const char **argv_) {
     = new TextDiagnosticPrinter(llvm::errs(), DiagnosticOptions());
   DiagClient->setPrefix(llvm::sys::path::stem(Path.str()));
   llvm::IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
-  Diagnostic Diags(DiagID, DiagClient);
+  DiagnosticsEngine Diags(DiagID, DiagClient);
 
 #ifdef CLANG_IS_PRODUCTION
   const bool IsProduction = true;
-#  ifdef CLANGXX_IS_PRODUCTION
-  const bool CXXIsProduction = true;
-#  else
-  const bool CXXIsProduction = false;
-#  endif
 #else
   const bool IsProduction = false;
-  const bool CXXIsProduction = false;
 #endif
-  Driver TheDriver(Path.str(), llvm::sys::getHostTriple(),
-                   "a.out", IsProduction, CXXIsProduction,
-                   Diags);
+  Driver TheDriver(Path.str(), llvm::sys::getDefaultTargetTriple(),
+                   "a.out", IsProduction, Diags);
 
   // Attempt to find the original path used to invoke the driver, to determine
   // the installed path. We do this manually, because we want to support that

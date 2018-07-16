@@ -60,7 +60,7 @@ public:
     SetErrorString (const char *err_str);
 
     int
-    SetErrorStringWithFormat (const char *format, ...);
+    SetErrorStringWithFormat (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
 
     bool
     IsValid () const;
@@ -72,6 +72,7 @@ protected:
 
 #ifndef SWIG
     friend class SBArguments;
+    friend class SBData;
     friend class SBDebugger;
     friend class SBCommunication;
     friend class SBHostOS;
@@ -80,6 +81,7 @@ protected:
     friend class SBThread;
     friend class SBTarget;
     friend class SBValue;
+    friend class SBWatchpoint;
 
     lldb_private::Error *
     get();

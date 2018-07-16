@@ -23,12 +23,16 @@ class StaticVariableTestCase(TestBase):
         self.static_variable_commands()
 
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
+    #rdar://problem/9980907
+    @expectedFailureClang
     @python_api_test
     def test_with_dsym_and_python_api(self):
         """Test Python APIs on file and class static variables."""
         self.buildDsym()
         self.static_variable_python()
 
+    #rdar://problem/9980907
+    @expectedFailureClang
     @python_api_test
     def test_with_dwarf_and_python_api(self):
         """Test Python APIs on file and class static variables."""
@@ -57,18 +61,16 @@ class StaticVariableTestCase(TestBase):
             substrs = ['stopped',
                        'stop reason = breakpoint'])
 
+        # global variables are no longer displayed with the "frame variable" command. 
+        self.expect('target variable A::g_points', VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['(PointType [2]) A::g_points'])
+        self.expect('target variable g_points', VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['(PointType [2]) g_points'])
+
         # On Mac OS X, gcc 4.2 emits the wrong debug info for A::g_points.
-        slist = ['(PointType [2]) g_points', 'A::g_points']
-
-# global variables are no longer displayed with the "frame variable" command. 
-# add tests for the "target variable" command soon
-        # 'frame variable -G' finds and displays global variable(s) by name.
-        # self.expect('frame variable -G g_points', VARIABLES_DISPLAYED_CORRECTLY,
-        #     substrs = slist)
-
         # A::g_points is an array of two elements.
         if sys.platform.startswith("darwin") and self.getCompiler() in ['clang', 'llvm-gcc']:
-            self.expect("frame variable A::g_points[1].x", VARIABLES_DISPLAYED_CORRECTLY,
+            self.expect("target variable A::g_points[1].x", VARIABLES_DISPLAYED_CORRECTLY,
                 startstr = "(int) A::g_points[1].x = 11")
 
     def static_variable_python(self):

@@ -62,6 +62,23 @@ bool Constant::isNullValue() const {
   return isa<ConstantAggregateZero>(this) || isa<ConstantPointerNull>(this);
 }
 
+bool Constant::isAllOnesValue() const {
+  // Check for -1 integers
+  if (const ConstantInt *CI = dyn_cast<ConstantInt>(this))
+    return CI->isMinusOne();
+
+  // Check for FP which are bitcasted from -1 integers
+  if (const ConstantFP *CFP = dyn_cast<ConstantFP>(this))
+    return CFP->getValueAPF().bitcastToAPInt().isAllOnesValue();
+
+  // Check for constant vectors which are splats of -1 values.
+  if (const ConstantVector *CV = dyn_cast<ConstantVector>(this))
+    if (Constant *Splat = CV->getSplatValue())
+      return Splat->isAllOnesValue();
+
+  return false;
+}
+
 // Constructor to create a '0' constant of arbitrary type...
 Constant *Constant::getNullValue(Type *Ty) {
   switch (Ty->getTypeID()) {
@@ -90,7 +107,7 @@ Constant *Constant::getNullValue(Type *Ty) {
     return ConstantAggregateZero::get(Ty);
   default:
     // Function, Label, or Opaque type?
-    assert(!"Cannot create a null constant of that type!");
+    assert(0 && "Cannot create a null constant of that type!");
     return 0;
   }
 }
@@ -126,7 +143,7 @@ Constant *Constant::getAllOnesValue(Type *Ty) {
   SmallVector<Constant*, 16> Elts;
   VectorType *VTy = cast<VectorType>(Ty);
   Elts.resize(VTy->getNumElements(), getAllOnesValue(VTy->getElementType()));
-  assert(Elts[0] && "Not a vector integer type!");
+  assert(Elts[0] && "Invalid AllOnes value!");
   return cast<ConstantVector>(ConstantVector::get(Elts));
 }
 
@@ -1056,23 +1073,6 @@ void ConstantVector::destroyConstant() {
   destroyConstantImpl();
 }
 
-/// This function will return true iff every element in this vector constant
-/// is set to all ones.
-/// @returns true iff this constant's elements are all set to all ones.
-/// @brief Determine if the value is all ones.
-bool ConstantVector::isAllOnesValue() const {
-  // Check out first element.
-  const Constant *Elt = getOperand(0);
-  const ConstantInt *CI = dyn_cast<ConstantInt>(Elt);
-  if (!CI || !CI->isAllOnesValue()) return false;
-  // Then make sure all remaining elements point to the same value.
-  for (unsigned I = 1, E = getNumOperands(); I < E; ++I)
-    if (getOperand(I) != Elt)
-      return false;
-  
-  return true;
-}
-
 /// getSplatValue - If this is a splat constant, where all of the
 /// elements have the same value, return that value. Otherwise return null.
 Constant *ConstantVector::getSplatValue() const {
@@ -1398,14 +1398,22 @@ Constant *ConstantExpr::getFPToSI(Constant *C, Type *Ty) {
 }
 
 Constant *ConstantExpr::getPtrToInt(Constant *C, Type *DstTy) {
-  assert(C->getType()->isPointerTy() && "PtrToInt source must be pointer");
-  assert(DstTy->isIntegerTy() && "PtrToInt destination must be integral");
+  assert(C->getType()->getScalarType()->isPointerTy() &&
+         "PtrToInt source must be pointer or pointer vector");
+  assert(DstTy->getScalarType()->isIntegerTy() && 
+         "PtrToInt destination must be integer or integer vector");
+  assert(C->getType()->getNumElements() == DstTy->getNumElements() &&
+    "Invalid cast between a different number of vector elements");
   return getFoldedCast(Instruction::PtrToInt, C, DstTy);
 }
 
 Constant *ConstantExpr::getIntToPtr(Constant *C, Type *DstTy) {
-  assert(C->getType()->isIntegerTy() && "IntToPtr source must be integral");
-  assert(DstTy->isPointerTy() && "IntToPtr destination must be a pointer");
+  assert(C->getType()->getScalarType()->isIntegerTy() &&
+         "IntToPtr source must be integer or integer vector");
+  assert(DstTy->getScalarType()->isPointerTy() &&
+         "IntToPtr destination must be a pointer or pointer vector");
+  assert(C->getType()->getNumElements() == DstTy->getNumElements() &&
+    "Invalid cast between a different number of vector elements");
   return getFoldedCast(Instruction::IntToPtr, C, DstTy);
 }
 

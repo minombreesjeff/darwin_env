@@ -27,6 +27,11 @@ class ThreadPlanStepInRange :
     public ThreadPlanShouldStopHere
 {
 public:
+    ThreadPlanStepInRange (Thread &thread,
+                           const AddressRange &range,
+                           const SymbolContext &addr_context,
+                           lldb::RunMode stop_others);
+
     virtual
     ~ThreadPlanStepInRange ();
 
@@ -37,6 +42,9 @@ public:
     ShouldStop (Event *event_ptr);
 
     void SetAvoidRegexp(const char *name);
+    
+    virtual bool
+    PlanExplainsStop ();
 
     static ThreadPlan *
     DefaultShouldStopHereCallback (ThreadPlan *current_plan, Flags &flags, void *baton);
@@ -45,11 +53,6 @@ public:
     SetDefaultFlagValue (uint32_t new_value);
 
 protected:
-
-    ThreadPlanStepInRange (Thread &thread,
-                           const AddressRange &range,
-                           const SymbolContext &addr_context,
-                           lldb::RunMode stop_others);
 
     virtual void
     SetFlagsToDefault ();

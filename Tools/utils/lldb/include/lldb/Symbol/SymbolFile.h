@@ -30,14 +30,15 @@ public:
         TypeAcceleratorTable                = (1 << 3),
         MacroInformation                    = (1 << 4),
         CallFrameInformation                = (1 << 5),
-        CompileUnits                        = (1 << 6),
-        LineTables                          = (1 << 7),
-        LineColumns                         = (1 << 8),
-        Functions                           = (1 << 9),
-        Blocks                              = (1 << 10),
-        GlobalVariables                     = (1 << 11),
-        LocalVariables                      = (1 << 12),
-        VariableTypes                       = (1 << 13)
+        RuntimeTypes                        = (1 << 6),
+        CompileUnits                        = (1 << 7),
+        LineTables                          = (1 << 8),
+        LineColumns                         = (1 << 9),
+        Functions                           = (1 << 10),
+        Blocks                              = (1 << 11),
+        GlobalVariables                     = (1 << 12),
+        LocalVariables                      = (1 << 13),
+        VariableTypes                       = (1 << 14)
     };
 
     static SymbolFile *
@@ -47,7 +48,9 @@ public:
     // Constructors and Destructors
     //------------------------------------------------------------------
     SymbolFile(ObjectFile* obj_file) :
-        m_obj_file(obj_file)
+        m_obj_file(obj_file),
+        m_abilities(0),
+        m_calculated_abilities(false)
     {
     }
 
@@ -85,7 +88,18 @@ public:
     ///     enumeration. Any bits that are set represent an ability that
     ///     this symbol plug-in can parse from the object file.
     ///------------------------------------------------------------------
-    virtual uint32_t        GetAbilities () = 0;
+    uint32_t                GetAbilities ()
+    {
+        if (!m_calculated_abilities)
+        {
+            m_abilities = CalculateAbilities();
+            m_calculated_abilities = true;
+        }
+            
+        return m_abilities;
+    }
+    
+    virtual uint32_t        CalculateAbilities() = 0;
     
     //------------------------------------------------------------------
     /// Initialize the SymbolFile object.
@@ -117,24 +131,27 @@ public:
     virtual clang::DeclContext* GetClangDeclContextContainingTypeUID (lldb::user_id_t type_uid) { return NULL; }
     virtual uint32_t        ResolveSymbolContext (const Address& so_addr, uint32_t resolve_scope, SymbolContext& sc) = 0;
     virtual uint32_t        ResolveSymbolContext (const FileSpec& file_spec, uint32_t line, bool check_inlines, uint32_t resolve_scope, SymbolContextList& sc_list) = 0;
-    virtual uint32_t        FindGlobalVariables (const ConstString &name, bool append, uint32_t max_matches, VariableList& variables) = 0;
+    virtual uint32_t        FindGlobalVariables (const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, VariableList& variables) = 0;
     virtual uint32_t        FindGlobalVariables (const RegularExpression& regex, bool append, uint32_t max_matches, VariableList& variables) = 0;
-    virtual uint32_t        FindFunctions (const ConstString &name, uint32_t name_type_mask, bool append, SymbolContextList& sc_list) = 0;
+    virtual uint32_t        FindFunctions (const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, SymbolContextList& sc_list) = 0;
     virtual uint32_t        FindFunctions (const RegularExpression& regex, bool append, SymbolContextList& sc_list) = 0;
-    virtual uint32_t        FindTypes (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types) = 0;
+    virtual uint32_t        FindTypes (const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, TypeList& types) = 0;
 //  virtual uint32_t        FindTypes (const SymbolContext& sc, const RegularExpression& regex, bool append, uint32_t max_matches, TypeList& types) = 0;
     virtual TypeList *      GetTypeList ();
     virtual ClangASTContext &
                             GetClangASTContext ();
     virtual ClangNamespaceDecl
                             FindNamespace (const SymbolContext& sc, 
-                                           const ConstString &name) = 0;
+                                           const ConstString &name,
+                                           const ClangNamespaceDecl *parent_namespace_decl) = 0;
 
     ObjectFile*             GetObjectFile() { return m_obj_file; }
     const ObjectFile*       GetObjectFile() const { return m_obj_file; }
+    
 protected:
     ObjectFile*             m_obj_file; // The object file that symbols can be extracted from.
-
+    uint32_t                m_abilities;
+    bool                    m_calculated_abilities;
 private:
     DISALLOW_COPY_AND_ASSIGN (SymbolFile);
 };

@@ -129,19 +129,6 @@ void TargetInstrInfo::insertNoop(MachineBasicBlock &MBB,
 }
 
 
-bool TargetInstrInfo::isUnpredicatedTerminator(const MachineInstr *MI) const {
-  const MCInstrDesc &MCID = MI->getDesc();
-  if (!MCID.isTerminator()) return false;
-
-  // Conditional branch is a special case.
-  if (MCID.isBranch() && !MCID.isBarrier())
-    return true;
-  if (!MCID.isPredicable())
-    return true;
-  return !isPredicated(MI);
-}
-
-
 /// Measure the specified inline asm to determine an approximation of its
 /// length.
 /// Comments (which run till the next SeparatorString or newline) do not

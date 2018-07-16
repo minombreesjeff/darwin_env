@@ -26,8 +26,6 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetSelect.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileUtilities.h"
@@ -39,6 +37,8 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/system_error.h"
 #include "Disassembler.h"
 using namespace llvm;
@@ -108,6 +108,12 @@ MCPU("mcpu",
      cl::value_desc("cpu-name"),
      cl::init(""));
 
+static cl::list<std::string>
+MAttrs("mattr",
+  cl::CommaSeparated,
+  cl::desc("Target specific attributes (-mattr=help for details)"),
+  cl::value_desc("a1,+a2,-a3,..."));
+
 static cl::opt<Reloc::Model>
 RelocModel("relocation-model",
              cl::desc("Choose relocation model"),
@@ -146,6 +152,10 @@ NoInitialTextSection("n", cl::desc("Don't assume assembly file starts "
 static cl::opt<bool>
 SaveTempLabels("L", cl::desc("Don't discard temporary labels"));
 
+static cl::opt<bool>
+GenDwarfForAssembly("g", cl::desc("Generate dwarf debugging info for assembly "
+                                  "source files"));
+
 enum ActionType {
   AC_AsLex,
   AC_Assemble,
@@ -169,7 +179,7 @@ Action(cl::desc("Action to perform:"),
 static const Target *GetTarget(const char *ProgName) {
   // Figure out the target triple.
   if (TripleName.empty())
-    TripleName = sys::getHostTriple();
+    TripleName = sys::getDefaultTargetTriple();
   Triple TheTriple(Triple::normalize(TripleName));
 
   const Target *TheTarget = 0;
@@ -224,6 +234,17 @@ static tool_output_file *GetOutputStream() {
   return Out;
 }
 
+static std::string DwarfDebugFlags;
+static void setDwarfDebugFlags(int argc, char **argv) {
+  if (!getenv("RC_DEBUG_OPTIONS"))
+    return;
+  for (int i = 0; i < argc; i++) {
+    DwarfDebugFlags += argv[i];
+    if (i + 1 < argc)
+      DwarfDebugFlags += " ";
+  }
+}
+
 static int AsLexInput(const char *ProgName) {
   OwningPtr<MemoryBuffer> BufferPtr;
   if (error_code ec = MemoryBuffer::getFileOrSTDIN(InputFilename, BufferPtr)) {
@@ -261,7 +282,8 @@ static int AsLexInput(const char *ProgName) {
 
     switch (Tok.getKind()) {
     default:
-      SrcMgr.PrintMessage(Lexer.getLoc(), "unknown token", "warning");
+      SrcMgr.PrintMessage(Lexer.getLoc(), SourceMgr::DK_Warning,
+                          "unknown token");
       Error = true;
       break;
     case AsmToken::Error:
@@ -361,9 +383,6 @@ static int AssembleInput(const char *ProgName) {
   llvm::OwningPtr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
   assert(MRI && "Unable to create target register info!");
 
-  // Package up features to be passed to target/subtarget
-  std::string FeaturesStr;
-
   // FIXME: This is not pretty. MCContext has a ptr to MCObjectFileInfo and
   // MCObjectFileInfo needs a MCContext reference in order to initialize itself.
   OwningPtr<MCObjectFileInfo> MOFI(new MCObjectFileInfo());
@@ -372,6 +391,19 @@ static int AssembleInput(const char *ProgName) {
 
   if (SaveTempLabels)
     Ctx.setAllowTemporaryLabels(false);
+
+  Ctx.setGenDwarfForAssembly(GenDwarfForAssembly);
+  if (!DwarfDebugFlags.empty()) 
+    Ctx.setDwarfDebugFlags(StringRef(DwarfDebugFlags));
+
+  // Package up features to be passed to target/subtarget
+  std::string FeaturesStr;
+  if (MAttrs.size()) {
+    SubtargetFeatures Features;
+    for (unsigned i = 0; i != MAttrs.size(); ++i)
+      Features.AddFeature(MAttrs[i]);
+    FeaturesStr = Features.getString();
+  }
 
   OwningPtr<tool_output_file> Out(GetOutputStream());
   if (!Out)
@@ -387,7 +419,7 @@ static int AssembleInput(const char *ProgName) {
   // FIXME: There is a bit of code duplication with addPassesToEmitFile.
   if (FileType == OFT_AssemblyFile) {
     MCInstPrinter *IP =
-      TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI);
+      TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI, *STI);
     MCCodeEmitter *CE = 0;
     MCAsmBackend *MAB = 0;
     if (ShowEncoding) {
@@ -396,8 +428,10 @@ static int AssembleInput(const char *ProgName) {
     }
     Str.reset(TheTarget->createAsmStreamer(Ctx, FOS, /*asmverbose*/true,
                                            /*useLoc*/ true,
-                                           /*useCFI*/ true, IP, CE, MAB,
-                                           ShowInst));
+                                           /*useCFI*/ true,
+                                           /*useDwarfDirectory*/ true,
+                                           IP, CE, MAB, ShowInst));
+
   } else if (FileType == OFT_Null) {
     Str.reset(createNullStreamer(Ctx));
   } else {
@@ -413,8 +447,8 @@ static int AssembleInput(const char *ProgName) {
     Str.reset(createLoggingStreamer(Str.take(), errs()));
   }
 
-  OwningPtr<MCAsmParser> Parser(createMCAsmParser(*TheTarget, SrcMgr, Ctx,
-                                                   *Str.get(), *MAI));
+  OwningPtr<MCAsmParser> Parser(createMCAsmParser(SrcMgr, Ctx,
+                                                  *Str.get(), *MAI));
   OwningPtr<MCTargetAsmParser> TAP(TheTarget->createMCAsmParser(*STI, *Parser));
   if (!TAP) {
     errs() << ProgName
@@ -453,7 +487,16 @@ static int DisassembleInput(const char *ProgName, bool Enhanced) {
     Res =
       Disassembler::disassembleEnhanced(TripleName, *Buffer.take(), Out->os());
   } else {
-    Res = Disassembler::disassemble(*TheTarget, TripleName,
+    // Package up features to be passed to target/subtarget
+    std::string FeaturesStr;
+    if (MAttrs.size()) {
+      SubtargetFeatures Features;
+      for (unsigned i = 0; i != MAttrs.size(); ++i)
+        Features.AddFeature(MAttrs[i]);
+      FeaturesStr = Features.getString();
+    }
+
+    Res = Disassembler::disassemble(*TheTarget, TripleName, MCPU, FeaturesStr,
                                     *Buffer.take(), Out->os());
   }
 
@@ -478,6 +521,7 @@ int main(int argc, char **argv) {
 
   cl::ParseCommandLineOptions(argc, argv, "llvm machine code playground\n");
   TripleName = Triple::normalize(TripleName);
+  setDwarfDebugFlags(argc, argv);
 
   switch (Action) {
   default:
@@ -493,4 +537,3 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-

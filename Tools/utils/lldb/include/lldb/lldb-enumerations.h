@@ -44,7 +44,8 @@ namespace lldb {
         eLaunchFlagStopAtEntry  = (1u << 2),  ///< Stop at the program entry point instead of auto-continuing when launching or attaching at entry point
         eLaunchFlagDisableASLR  = (1u << 3),  ///< Disable Address Space Layout Randomization
         eLaunchFlagDisableSTDIO = (1u << 4),  ///< Disable stdio for inferior process (e.g. for a GUI app)
-        eLaunchFlagLaunchInTTY  = (1u << 5)   ///< Launch the process in a new TTY if supported by the host 
+        eLaunchFlagLaunchInTTY  = (1u << 5),  ///< Launch the process in a new TTY if supported by the host 
+        eLaunchFlagLaunchInShell= (1u << 6)   ///< Launch the process inside a shell to get shell expansion
     } LaunchFlags;
         
     //----------------------------------------------------------------------
@@ -117,8 +118,11 @@ namespace lldb {
         eFormatVectorOfFloat32,
         eFormatVectorOfFloat64,
         eFormatVectorOfUInt128,
-        eFormatComplexInteger,   // Integer complex type
-        eFormatCharArray,       // Print characters with no single quotes, used for character arrays that can contain non printable characters
+        eFormatComplexInteger,      // Integer complex type
+        eFormatCharArray,           // Print characters with no single quotes, used for character arrays that can contain non printable characters
+        eFormatAddressInfo,         // Describe what an address points to (func + offset with file/line, symbol + offset, data, etc)
+        eFormatHexFloat,            // ISO C99 hex float string
+        eFormatInstruction,         // Disassemble an opcode
         kNumFormats
     } Format;
 
@@ -354,12 +358,14 @@ namespace lldb {
         eArgTypeCount,
         eArgTypeEndAddress,
         eArgTypeExpression,
+        eArgTypeExpressionPath,
         eArgTypeExprFormat,
         eArgTypeFilename,
         eArgTypeFormat,
         eArgTypeFrameIndex,
         eArgTypeFullName,
         eArgTypeFunctionName,
+        eArgTypeGDBFormat,
         eArgTypeIndex,
         eArgTypeLineNum,
         eArgTypeLogCategory,
@@ -376,11 +382,15 @@ namespace lldb {
         eArgTypePid,
         eArgTypePlugin,
         eArgTypeProcessName,
+        eArgTypePythonClass,
+        eArgTypePythonFunction,
+        eArgTypePythonScript,
         eArgTypeQueueName,
         eArgTypeRegisterName,
         eArgTypeRegularExpression,
         eArgTypeRunArgs,
         eArgTypeRunMode,
+        eArgTypeScriptedCommandSynchronicity,
         eArgTypeScriptLang,
         eArgTypeSearchWord,
         eArgTypeSelector,
@@ -404,6 +414,9 @@ namespace lldb {
         eArgTypeWidth,
         eArgTypeNone,
         eArgTypePlatform,
+        eArgTypeWatchpointID,
+        eArgTypeWatchpointIDRange,
+        eArgTypeWatchType,
         eArgTypeLastArg  // Always keep this entry as the last entry in this enumeration!!
     } CommandArgumentType;
 
@@ -415,7 +428,6 @@ namespace lldb {
         eSymbolTypeAny = 0,
         eSymbolTypeInvalid = 0,
         eSymbolTypeAbsolute,
-        eSymbolTypeExtern,
         eSymbolTypeCode,
         eSymbolTypeData,
         eSymbolTypeTrampoline,
@@ -437,7 +449,10 @@ namespace lldb {
         eSymbolTypeAdditional, // When symbols take more than one entry, the extra entries get this type
         eSymbolTypeCompiler,
         eSymbolTypeInstrumentation,
-        eSymbolTypeUndefined
+        eSymbolTypeUndefined,
+        eSymbolTypeObjCClass,
+        eSymbolTypeObjCMetaClass,
+        eSymbolTypeObjCIVar
     } SymbolType;
     
     typedef enum SectionType
@@ -468,6 +483,10 @@ namespace lldb {
         eSectionTypeDWARFDebugPubTypes,
         eSectionTypeDWARFDebugRanges,
         eSectionTypeDWARFDebugStr,
+        eSectionTypeDWARFAppleNames,
+        eSectionTypeDWARFAppleTypes,
+        eSectionTypeDWARFAppleNamespaces,
+        eSectionTypeDWARFAppleObjC,
         eSectionTypeEHFrame,
         eSectionTypeOther
         
@@ -496,20 +515,6 @@ namespace lldb {
         eFunctionNameTypeSelector   = (1u << 5)     // Find function by selector name (ObjC) names
     } FunctionNameType;
     
-    //----------------------------------------------------------------------
-    // Ways that the FormatManager picks a particular format for a type
-    //----------------------------------------------------------------------
-    typedef enum FormatterChoiceCriterion
-    {
-        eFormatterChoiceCriterionDirectChoice =                  0x00000000,
-        eFormatterChoiceCriterionStrippedPointerReference =      0x00000001,
-        eFormatterChoiceCriterionNavigatedTypedefs =             0x00000002,
-        eFormatterChoiceCriterionNavigatedBaseClasses =          0x00000004,
-        eFormatterChoiceCriterionRegularExpressionSummary =      0x00000008,
-        eFormatterChoiceCriterionRegularExpressionFilter =       0x00000008,
-        eFormatterChoiceCriterionDynamicObjCHierarchy =          0x00000010,
-        eFormatterChoiceCriterionStrippedBitField =              0x00000020
-    } FormatterChoiceCriterion;
     
     //----------------------------------------------------------------------
     // Basic types enumeration for the public API SBType::GetBasicType()
@@ -544,7 +549,34 @@ namespace lldb {
         eBasicTypeObjCClass,
         eBasicTypeObjCSel
     } BasicType;
-        
+
+    typedef enum TypeClass
+    {
+        eTypeClassInvalid           = (0u),
+        eTypeClassArray             = (1u << 0),
+        eTypeClassBlockPointer      = (1u << 1),
+        eTypeClassBuiltin           = (1u << 2),
+        eTypeClassClass             = (1u << 3),
+        eTypeClassComplexFloat      = (1u << 4),
+        eTypeClassComplexInteger    = (1u << 5),
+        eTypeClassEnumeration       = (1u << 6),
+        eTypeClassFunction          = (1u << 7),
+        eTypeClassMemberPointer     = (1u << 8),
+        eTypeClassObjCObject        = (1u << 9),
+        eTypeClassObjCInterface     = (1u << 10),
+        eTypeClassObjCObjectPointer = (1u << 11),
+        eTypeClassPointer           = (1u << 12),
+        eTypeClassReference         = (1u << 13),
+        eTypeClassStruct            = (1u << 14),
+        eTypeClassTypedef           = (1u << 15),
+        eTypeClassUnion             = (1u << 16),
+        eTypeClassVector            = (1u << 17),
+        // Define the last type class as the MSBit of a 32 bit value
+        eTypeClassOther             = (1u << 31),
+        // Define a mask that can be used for any type when finding types
+        eTypeClassAny               = (0xffffffffu)
+    }TypeClass;
+
 } // namespace lldb
 
 

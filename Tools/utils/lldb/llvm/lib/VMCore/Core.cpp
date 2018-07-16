@@ -167,6 +167,11 @@ LLVMTypeKind LLVMGetTypeKind(LLVMTypeRef Ty) {
   }
 }
 
+LLVMBool LLVMTypeIsSized(LLVMTypeRef Ty)
+{
+    return unwrap(Ty)->isSized();
+}
+
 LLVMContextRef LLVMGetTypeContext(LLVMTypeRef Ty) {
   return wrap(&unwrap(Ty)->getContext());
 }
@@ -299,7 +304,15 @@ LLVMTypeRef LLVMStructType(LLVMTypeRef *ElementTypes,
 
 LLVMTypeRef LLVMStructCreateNamed(LLVMContextRef C, const char *Name)
 {
-  return wrap(StructType::createNamed(*unwrap(C), Name));
+  return wrap(StructType::create(*unwrap(C), Name));
+}
+
+const char *LLVMGetStructName(LLVMTypeRef Ty)
+{
+  StructType *Type = unwrap<StructType>(Ty);
+  if (!Type->hasName())
+    return 0;
+  return Type->getName().data();
 }
 
 void LLVMStructSetBody(LLVMTypeRef StructTy, LLVMTypeRef *ElementTypes,
@@ -448,7 +461,10 @@ LLVMValueRef LLVMGetUsedValue(LLVMUseRef U) {
 
 /*--.. Operations on Users .................................................--*/
 LLVMValueRef LLVMGetOperand(LLVMValueRef Val, unsigned Index) {
-  return wrap(unwrap<User>(Val)->getOperand(Index));
+  Value *V = unwrap(Val);
+  if (MDNode *MD = dyn_cast<MDNode>(V))
+      return wrap(MD->getOperand(Index));
+  return wrap(cast<User>(V)->getOperand(Index));
 }
 
 void LLVMSetOperand(LLVMValueRef Val, unsigned Index, LLVMValueRef Op) {
@@ -456,7 +472,10 @@ void LLVMSetOperand(LLVMValueRef Val, unsigned Index, LLVMValueRef Op) {
 }
 
 int LLVMGetNumOperands(LLVMValueRef Val) {
-  return unwrap<User>(Val)->getNumOperands();
+  Value *V = unwrap(Val);
+  if (MDNode *MD = dyn_cast<MDNode>(V))
+      return MD->getNumOperands();
+  return cast<User>(V)->getNumOperands();
 }
 
 /*--.. Operations on constants of any type .................................--*/
@@ -511,6 +530,32 @@ LLVMValueRef LLVMMDNodeInContext(LLVMContextRef C, LLVMValueRef *Vals,
 
 LLVMValueRef LLVMMDNode(LLVMValueRef *Vals, unsigned Count) {
   return LLVMMDNodeInContext(LLVMGetGlobalContext(), Vals, Count);
+}
+
+const char *LLVMGetMDString(LLVMValueRef V, unsigned* Len) {
+  if (const MDString *S = dyn_cast<MDString>(unwrap(V))) {
+    *Len = S->getString().size();
+    return S->getString().data();
+  }
+  *Len = 0;
+  return 0;
+}
+
+unsigned LLVMGetNamedMetadataNumOperands(LLVMModuleRef M, const char* name)
+{
+  if (NamedMDNode *N = unwrap(M)->getNamedMetadata(name)) {
+    return N->getNumOperands();
+  }
+  return 0;
+}
+
+void LLVMGetNamedMetadataOperands(LLVMModuleRef M, const char* name, LLVMValueRef *Dest)
+{
+  NamedMDNode *N = unwrap(M)->getNamedMetadata(name);
+  if (!N)
+    return;
+  for (unsigned i=0;i<N->getNumOperands();i++)
+    Dest[i] = wrap(N->getOperand(i));
 }
 
 /*--.. Operations on scalar constants ......................................--*/
@@ -609,10 +654,35 @@ LLVMValueRef LLVMConstVector(LLVMValueRef *ScalarConstantVals, unsigned Size) {
   return wrap(ConstantVector::get(makeArrayRef(
                             unwrap<Constant>(ScalarConstantVals, Size), Size)));
 }
+
+/*-- Opcode mapping */
+
+static LLVMOpcode map_to_llvmopcode(int opcode)
+{
+    switch (opcode) {
+      default:
+        assert(0 && "Unhandled Opcode.");
+#define HANDLE_INST(num, opc, clas) case num: return LLVM##opc;
+#include "llvm/Instruction.def"
+#undef HANDLE_INST
+    }
+}
+
+static int map_from_llvmopcode(LLVMOpcode code)
+{
+    switch (code) {
+      default:
+        assert(0 && "Unhandled Opcode.");
+#define HANDLE_INST(num, opc, clas) case LLVM##opc: return num;
+#include "llvm/Instruction.def"
+#undef HANDLE_INST
+    }
+}
+
 /*--.. Constant expressions ................................................--*/
 
 LLVMOpcode LLVMGetConstOpcode(LLVMValueRef ConstantVal) {
-  return (LLVMOpcode)unwrap<ConstantExpr>(ConstantVal)->getOpcode();
+  return map_to_llvmopcode(unwrap<ConstantExpr>(ConstantVal)->getOpcode());
 }
 
 LLVMValueRef LLVMAlignOf(LLVMTypeRef Ty) {
@@ -1382,6 +1452,10 @@ LLVMValueRef LLVMGetBasicBlockParent(LLVMBasicBlockRef BB) {
   return wrap(unwrap(BB)->getParent());
 }
 
+LLVMValueRef LLVMGetBasicBlockTerminator(LLVMBasicBlockRef BB) {
+  return wrap(unwrap(BB)->getTerminator());
+}
+
 unsigned LLVMCountBasicBlocks(LLVMValueRef FnRef) {
   return unwrap<Function>(FnRef)->size();
 }
@@ -1454,6 +1528,10 @@ void LLVMDeleteBasicBlock(LLVMBasicBlockRef BBRef) {
   unwrap(BBRef)->eraseFromParent();
 }
 
+void LLVMRemoveBasicBlockFromParent(LLVMBasicBlockRef BBRef) {
+  unwrap(BBRef)->removeFromParent();
+}
+
 void LLVMMoveBasicBlockBefore(LLVMBasicBlockRef BB, LLVMBasicBlockRef MovePos) {
   unwrap(BB)->moveBefore(unwrap(MovePos));
 }
@@ -1498,6 +1576,25 @@ LLVMValueRef LLVMGetPreviousInstruction(LLVMValueRef Inst) {
   if (I == Instr->getParent()->begin())
     return 0;
   return wrap(--I);
+}
+
+void LLVMInstructionEraseFromParent(LLVMValueRef Inst) {
+  unwrap<Instruction>(Inst)->eraseFromParent();
+}
+
+LLVMIntPredicate LLVMGetICmpPredicate(LLVMValueRef Inst) {
+  if (ICmpInst *I = dyn_cast<ICmpInst>(unwrap(Inst)))
+    return (LLVMIntPredicate)I->getPredicate();
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(unwrap(Inst)))
+    if (CE->getOpcode() == Instruction::ICmp)
+      return (LLVMIntPredicate)CE->getPredicate();
+  return (LLVMIntPredicate)0;
+}
+
+LLVMOpcode LLVMGetInstructionOpcode(LLVMValueRef Inst) {
+  if (Instruction *C = dyn_cast<Instruction>(unwrap(Inst)))
+    return map_to_llvmopcode(C->getOpcode());
+  return (LLVMOpcode)0;
 }
 
 /*--.. Call and invoke instructions ........................................--*/
@@ -1551,6 +1648,12 @@ LLVMBool LLVMIsTailCall(LLVMValueRef Call) {
 
 void LLVMSetTailCall(LLVMValueRef Call, LLVMBool isTailCall) {
   unwrap<CallInst>(Call)->setTailCall(isTailCall);
+}
+
+/*--.. Operations on switch instructions (only) ............................--*/
+
+LLVMBasicBlockRef LLVMGetSwitchDefaultDest(LLVMValueRef Switch) {
+  return wrap(unwrap<SwitchInst>(Switch)->getDefaultDest());
 }
 
 /*--.. Operations on phi nodes .............................................--*/
@@ -1683,6 +1786,14 @@ LLVMValueRef LLVMBuildInvoke(LLVMBuilderRef B, LLVMValueRef Fn,
                                       Name));
 }
 
+LLVMValueRef LLVMBuildLandingPad(LLVMBuilderRef B, LLVMTypeRef Ty,
+                                 LLVMValueRef PersFn, unsigned NumClauses,
+                                 const char *Name) {
+  return wrap(unwrap(B)->CreateLandingPad(unwrap(Ty),
+                                          cast<Function>(unwrap(PersFn)),
+                                          NumClauses, Name));
+}
+
 LLVMValueRef LLVMBuildResume(LLVMBuilderRef B, LLVMValueRef Exn) {
   return wrap(unwrap(B)->CreateResume(unwrap(Exn)));
 }
@@ -1698,6 +1809,15 @@ void LLVMAddCase(LLVMValueRef Switch, LLVMValueRef OnVal,
 
 void LLVMAddDestination(LLVMValueRef IndirectBr, LLVMBasicBlockRef Dest) {
   unwrap<IndirectBrInst>(IndirectBr)->addDestination(unwrap(Dest));
+}
+
+void LLVMAddClause(LLVMValueRef LandingPad, LLVMValueRef ClauseVal) {
+  unwrap<LandingPadInst>(LandingPad)->
+    addClause(cast<Constant>(unwrap(ClauseVal)));
+}
+
+void LLVMSetCleanup(LLVMValueRef LandingPad, LLVMBool Val) {
+  unwrap<LandingPadInst>(LandingPad)->setCleanup(Val);
 }
 
 /*--.. Arithmetic ..........................................................--*/
@@ -1830,7 +1950,7 @@ LLVMValueRef LLVMBuildXor(LLVMBuilderRef B, LLVMValueRef LHS, LLVMValueRef RHS,
 LLVMValueRef LLVMBuildBinOp(LLVMBuilderRef B, LLVMOpcode Op,
                             LLVMValueRef LHS, LLVMValueRef RHS,
                             const char *Name) {
-  return wrap(unwrap(B)->CreateBinOp(Instruction::BinaryOps(Op), unwrap(LHS),
+  return wrap(unwrap(B)->CreateBinOp(Instruction::BinaryOps(map_from_llvmopcode(Op)), unwrap(LHS),
                                      unwrap(RHS), Name));
 }
 
@@ -2017,7 +2137,7 @@ LLVMValueRef LLVMBuildTruncOrBitCast(LLVMBuilderRef B, LLVMValueRef Val,
 
 LLVMValueRef LLVMBuildCast(LLVMBuilderRef B, LLVMOpcode Op, LLVMValueRef Val,
                            LLVMTypeRef DestTy, const char *Name) {
-  return wrap(unwrap(B)->CreateCast(Instruction::CastOps(Op), unwrap(Val),
+  return wrap(unwrap(B)->CreateCast(Instruction::CastOps(map_from_llvmopcode(Op)), unwrap(Val),
                                     unwrap(DestTy), Name));
 }
 

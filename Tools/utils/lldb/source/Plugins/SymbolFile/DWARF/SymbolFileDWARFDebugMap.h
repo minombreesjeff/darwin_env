@@ -7,12 +7,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_SymbolFileDWARFDebugMap_h_
-#define liblldb_SymbolFileDWARFDebugMap_h_
+#ifndef SymbolFileDWARF_SymbolFileDWARFDebugMap_h_
+#define SymbolFileDWARF_SymbolFileDWARFDebugMap_h_
 
 
 #include <vector>
 #include <bitset>
+
+#include "clang/AST/CharUnits.h"
+
 #include "lldb/Symbol/SymbolFile.h"
 
 #include "UniqueDWARFASTType.h"
@@ -48,7 +51,7 @@ public:
                             SymbolFileDWARFDebugMap (lldb_private::ObjectFile* ofile);
     virtual               ~ SymbolFileDWARFDebugMap ();
 
-    virtual uint32_t        GetAbilities ();
+    virtual uint32_t        CalculateAbilities ();
 
     virtual void            InitializeObject();
 
@@ -66,17 +69,20 @@ public:
     virtual size_t          ParseVariablesForContext (const lldb_private::SymbolContext& sc);
 
     virtual lldb_private::Type* ResolveTypeUID (lldb::user_id_t type_uid);
+    virtual clang::DeclContext* GetClangDeclContextContainingTypeUID (lldb::user_id_t type_uid);
+    virtual clang::DeclContext* GetClangDeclContextForTypeUID (const lldb_private::SymbolContext &sc, lldb::user_id_t type_uid);
     virtual lldb::clang_type_t  ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_Type);
     virtual uint32_t        ResolveSymbolContext (const lldb_private::Address& so_addr, uint32_t resolve_scope, lldb_private::SymbolContext& sc);
     virtual uint32_t        ResolveSymbolContext (const lldb_private::FileSpec& file_spec, uint32_t line, bool check_inlines, uint32_t resolve_scope, lldb_private::SymbolContextList& sc_list);
-    virtual uint32_t        FindGlobalVariables (const lldb_private::ConstString &name, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
+    virtual uint32_t        FindGlobalVariables (const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
     virtual uint32_t        FindGlobalVariables (const lldb_private::RegularExpression& regex, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
-    virtual uint32_t        FindFunctions (const lldb_private::ConstString &name, uint32_t name_type_mask, bool append, lldb_private::SymbolContextList& sc_list);
+    virtual uint32_t        FindFunctions (const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, lldb_private::SymbolContextList& sc_list);
     virtual uint32_t        FindFunctions (const lldb_private::RegularExpression& regex, bool append, lldb_private::SymbolContextList& sc_list);
-    virtual uint32_t        FindTypes (const lldb_private::SymbolContext& sc, const lldb_private::ConstString &name, bool append, uint32_t max_matches, lldb_private::TypeList& types);
+    virtual uint32_t        FindTypes (const lldb_private::SymbolContext& sc, const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::TypeList& types);
     virtual lldb_private::ClangNamespaceDecl
             FindNamespace (const lldb_private::SymbolContext& sc, 
-                           const lldb_private::ConstString &name);
+                           const lldb_private::ConstString &name,
+                           const lldb_private::ClangNamespaceDecl *parent_namespace_decl);
 
 
     //------------------------------------------------------------------
@@ -87,6 +93,16 @@ public:
     
     static void
     CompleteObjCInterfaceDecl (void *baton, clang::ObjCInterfaceDecl *);
+    
+    static bool 
+    LayoutRecordType (void *baton, 
+                      const clang::RecordDecl *record_decl,
+                      uint64_t &size, 
+                      uint64_t &alignment,
+                      llvm::DenseMap <const clang::FieldDecl *, uint64_t> &field_offsets,
+                      llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> &base_offsets,
+                      llvm::DenseMap <const clang::CXXRecordDecl *, clang::CharUnits> &vbase_offsets);
+
 
     //------------------------------------------------------------------
     // PluginInterface protocol
@@ -150,6 +166,11 @@ protected:
     void
     InitOSO ();
 
+    static uint32_t
+    GetOSOIndexFromUserID (lldb::user_id_t uid)
+    {
+        return (uint32_t)((uid >> 32ull) - 1ull);
+    }
     bool
     GetFileSpecForSO (uint32_t oso_idx, lldb_private::FileSpec &file_spec);
 
@@ -167,6 +188,9 @@ protected:
 
     lldb_private::ObjectFile *
     GetObjectFileByOSOIndex (uint32_t oso_idx);
+
+    uint32_t
+    GetCompUnitInfoIndex (const CompileUnitInfo *comp_unit_info);
 
     SymbolFileDWARF *
     GetSymbolFile (const lldb_private::SymbolContext& sc);
@@ -191,6 +215,7 @@ protected:
 
     uint32_t
     PrivateFindGlobalVariables (const lldb_private::ConstString &name,
+                                const lldb_private::ClangNamespaceDecl *namespace_decl,
                                 const std::vector<uint32_t> &name_symbol_indexes,
                                 uint32_t max_matches,
                                 lldb_private::VariableList& variables);
@@ -203,6 +228,15 @@ protected:
     FindDefinitionTypeForDIE (DWARFCompileUnit* cu, 
                               const DWARFDebugInfoEntry *die, 
                               const lldb_private::ConstString &type_name);    
+
+    bool
+    Supports_DW_AT_APPLE_objc_complete_type (SymbolFileDWARF *skip_dwarf_oso);
+
+    lldb::TypeSP
+    FindCompleteObjCDefinitionTypeForDIE (const DWARFDebugInfoEntry *die, 
+                                          const lldb_private::ConstString &type_name,
+                                          bool must_be_implementation);
+    
 
     UniqueDWARFASTTypeMap &
     GetUniqueDWARFASTTypeMap ()
@@ -217,6 +251,7 @@ protected:
     std::vector<uint32_t> m_func_indexes;   // Sorted by address
     std::vector<uint32_t> m_glob_indexes;
     UniqueDWARFASTTypeMap m_unique_ast_type_map;
+    lldb_private::LazyBool m_supports_DW_AT_APPLE_objc_complete_type;
 };
 
-#endif // #ifndef liblldb_SymbolFileDWARFDebugMap_h_
+#endif // #ifndef SymbolFileDWARF_SymbolFileDWARFDebugMap_h_

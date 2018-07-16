@@ -11,11 +11,15 @@
 
 // C Includes
 // C++ Includes
+#include <string>
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Breakpoint/Watchpoint.h"
+#include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/StreamFile.h"
+#include "lldb/Core/StreamString.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Core/ValueObject.h"
@@ -25,8 +29,10 @@
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Interpreter/Options.h"
+#include "lldb/Interpreter/OptionGroupFormat.h"
 #include "lldb/Interpreter/OptionGroupValueObjectDisplay.h"
 #include "lldb/Interpreter/OptionGroupVariable.h"
+#include "lldb/Interpreter/OptionGroupWatchpoint.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -70,9 +76,10 @@ public:
              CommandReturnObject &result)
     {
         ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        if (exe_ctx.frame)
+        StackFrame *frame = exe_ctx.GetFramePtr();
+        if (frame)
         {
-            exe_ctx.frame->DumpUsingSettingsFormat (&result.GetOutputStream());
+            frame->DumpUsingSettingsFormat (&result.GetOutputStream());
             result.SetStatus (eReturnStatusSuccessFinishResult);
         }
         else
@@ -120,11 +127,11 @@ public:
             case 'r':   
                 relative_frame_offset = Args::StringToSInt32 (option_arg, INT32_MIN, 0, &success);
                 if (!success)
-                    error.SetErrorStringWithFormat ("invalid frame offset argument '%s'.\n", option_arg);
+                    error.SetErrorStringWithFormat ("invalid frame offset argument '%s'", option_arg);
                 break;
 
             default:
-                error.SetErrorStringWithFormat ("Invalid short option character '%c'.\n", short_option);
+                error.SetErrorStringWithFormat ("invalid short option character '%c'", short_option);
                 break;
             }
 
@@ -188,14 +195,15 @@ public:
              CommandReturnObject &result)
     {
         ExecutionContext exe_ctx (m_interpreter.GetExecutionContext());
-        if (exe_ctx.thread)
+        Thread *thread = exe_ctx.GetThreadPtr();
+        if (thread)
         {
-            const uint32_t num_frames = exe_ctx.thread->GetStackFrameCount();
+            const uint32_t num_frames = thread->GetStackFrameCount();
             uint32_t frame_idx = UINT32_MAX;
             if (m_options.relative_frame_offset != INT32_MIN)
             {
                 // The one and only argument is a signed relative frame index
-                frame_idx = exe_ctx.thread->GetSelectedFrameIndex ();
+                frame_idx = thread->GetSelectedFrameIndex ();
                 if (frame_idx == UINT32_MAX)
                     frame_idx = 0;
                 
@@ -204,14 +212,34 @@ public:
                     if (frame_idx >= -m_options.relative_frame_offset)
                         frame_idx += m_options.relative_frame_offset;
                     else
-                        frame_idx = 0;
+                    {
+                        if (frame_idx == 0)
+                        {
+                            //If you are already at the bottom of the stack, then just warn and don't reset the frame.
+                            result.AppendError("Already at the bottom of the stack");
+                            result.SetStatus(eReturnStatusFailed);
+                            return false;
+                        }
+                        else
+                            frame_idx = 0;
+                    }
                 }
                 else if (m_options.relative_frame_offset > 0)
                 {
                     if (num_frames - frame_idx > m_options.relative_frame_offset)
                         frame_idx += m_options.relative_frame_offset;
                     else
-                        frame_idx = num_frames - 1;
+                    {
+                        if (frame_idx == num_frames - 1)
+                        {
+                            //If we are already at the top of the stack, just warn and don't reset the frame.
+                            result.AppendError("Already at the top of the stack");
+                            result.SetStatus(eReturnStatusFailed);
+                            return false;
+                        }
+                        else
+                            frame_idx = num_frames - 1;
+                    }
                 }
             }
             else 
@@ -220,6 +248,14 @@ public:
                 {
                     const char *frame_idx_cstr = command.GetArgumentAtIndex(0);
                     frame_idx = Args::StringToUInt32 (frame_idx_cstr, UINT32_MAX, 0);
+                }
+                else if (command.GetArgumentCount() == 0)
+                {
+                    frame_idx = thread->GetSelectedFrameIndex ();
+                    if (frame_idx == UINT32_MAX)
+                    {
+                        frame_idx = 0;
+                    }
                 }
                 else
                 {
@@ -230,13 +266,13 @@ public:
                 
             if (frame_idx < num_frames)
             {
-                exe_ctx.thread->SetSelectedFrameByIndex (frame_idx);
-                exe_ctx.frame = exe_ctx.thread->GetSelectedFrame ().get();
-
-                if (exe_ctx.frame)
+                thread->SetSelectedFrameByIndex (frame_idx);
+                exe_ctx.SetFrameSP(thread->GetSelectedFrame ());
+                StackFrame *frame = exe_ctx.GetFramePtr();
+                if (frame)
                 {
                     bool already_shown = false;
-                    SymbolContext frame_sc(exe_ctx.frame->GetSymbolContext(eSymbolContextLineEntry));
+                    SymbolContext frame_sc(frame->GetSymbolContext(eSymbolContextLineEntry));
                     if (m_interpreter.GetDebugger().GetUseExternalEditor() && frame_sc.line_entry.file && frame_sc.line_entry.line != 0)
                     {
                         already_shown = Host::OpenFileInExternalEditor (frame_sc.line_entry.file, frame_sc.line_entry.line);
@@ -246,11 +282,11 @@ public:
                     bool show_source = !already_shown;
                     uint32_t source_lines_before = 3;
                     uint32_t source_lines_after = 3;
-                    if (exe_ctx.frame->GetStatus(result.GetOutputStream(),
-                                                 show_frame_info,
-                                                 show_source,
-                                                 source_lines_before,
-                                                 source_lines_after))
+                    if (frame->GetStatus (result.GetOutputStream(),
+                                          show_frame_info,
+                                          show_source,
+                                          source_lines_before,
+                                          source_lines_after))
                     {
                         result.SetStatus (eReturnStatusSuccessFinishResult);
                         return result.Succeeded();
@@ -286,86 +322,6 @@ class CommandObjectFrameVariable : public CommandObject
 {
 public:
 
-    class OptionGroupFrameVariable : public OptionGroup
-    {
-    public:
-
-        OptionGroupFrameVariable ()
-        {
-        }
-
-        virtual
-        ~OptionGroupFrameVariable ()
-        {
-        }
-
-        virtual uint32_t
-        GetNumDefinitions ();
-
-        virtual const OptionDefinition*
-        GetDefinitions ()
-        {
-            return g_option_table;
-        }
-    
-        virtual Error
-        SetOptionValue (CommandInterpreter &interpreter,
-                        uint32_t option_idx, 
-                        const char *option_arg)
-        {
-            Error error;
-            char short_option = (char) g_option_table[option_idx].short_option;
-            switch (short_option)
-            {
-            case 'r':   use_regex    = true;  break;
-            case 'a':   show_args    = false; break;
-            case 'l':   show_locals  = false; break;
-            case 'g':   show_globals = true;  break;
-            case 'c':   show_decl    = true;  break;
-            case 'f':   error = Args::StringToFormat(option_arg, format, NULL); break;
-            case 'G':
-                globals.push_back(ConstString (option_arg));
-                break;
-            case 's':
-                show_scope = true;
-                break;
-
-            default:
-                error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
-                break;
-            }
-
-            return error;
-        }
-
-        virtual void
-        OptionParsingStarting (CommandInterpreter &interpreter)
-        {
-            show_args     = true;
-            show_decl     = false;
-            format        = eFormatDefault;
-            show_globals  = false;
-            show_locals   = true;
-            use_regex     = false;
-            show_scope    = false;
-            globals.clear();
-        }
-
-        // Options table: Required for subclasses of Options.
-
-        static OptionDefinition g_option_table[];
-        
-        bool use_regex:1,
-             show_args:1,
-             show_locals:1,
-             show_globals:1,
-             show_scope:1,
-             show_decl:1;
-        lldb::Format format; // The format to use when dumping variables or children of variables
-        std::vector<ConstString> globals;
-        // Instance variables to hold the values for command options.
-    };
-
     CommandObjectFrameVariable (CommandInterpreter &interpreter) :
         CommandObject (interpreter,
                        "frame variable",
@@ -374,11 +330,15 @@ public:
                        "If any arguments are specified, they can be names of "
                        "argument, local, file static and file global variables. "
                        "Children of aggregate variables can be specified such as "
-                       "'var->child.x'.",
+                       "'var->child.x'. "
+                       "You can choose to watch a variable with the '-w' option. "
+                       "Note that hardware resources for watching are often limited.",
                        NULL,
                        eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
         m_option_group (interpreter),
         m_option_variable(true), // Include the frame specific options by passing "true"
+        m_option_format (eFormatDefault),
+        m_option_watchpoint(),
         m_varobj_options()
     {
         CommandArgumentEntry arg;
@@ -395,6 +355,8 @@ public:
         m_arguments.push_back (arg);
         
         m_option_group.Append (&m_option_variable, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_option_format, OptionGroupFormat::OPTION_GROUP_FORMAT | OptionGroupFormat::OPTION_GROUP_GDB_FMT, LLDB_OPT_SET_1);
+        m_option_group.Append (&m_option_watchpoint, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Append (&m_varobj_options, LLDB_OPT_SET_ALL, LLDB_OPT_SET_1);
         m_option_group.Finalize();
     }
@@ -420,167 +382,228 @@ public:
     )
     {
         ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        if (exe_ctx.frame == NULL)
+        StackFrame *frame = exe_ctx.GetFramePtr();
+        if (frame == NULL)
         {
             result.AppendError ("you must be stopped in a valid stack frame to view frame variables.");
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
-        else
+
+        Stream &s = result.GetOutputStream();
+
+        bool get_file_globals = true;
+        
+        // Be careful about the stack frame, if any summary formatter runs code, it might clear the StackFrameList
+        // for the thread.  So hold onto a shared pointer to the frame so it stays alive.
+        
+        VariableList *variable_list = frame->GetVariableList (get_file_globals);
+
+        VariableSP var_sp;
+        ValueObjectSP valobj_sp;
+
+        const char *name_cstr = NULL;
+        size_t idx;
+        
+        SummaryFormatSP summary_format_sp;
+        if (!m_option_variable.summary.empty())
+            DataVisualization::NamedSummaryFormats::GetSummaryFormat(ConstString(m_option_variable.summary.c_str()), summary_format_sp);
+        
+        ValueObject::DumpValueObjectOptions options;
+        
+        options.SetPointerDepth(m_varobj_options.ptr_depth)
+            .SetMaximumDepth(m_varobj_options.max_depth)
+            .SetShowTypes(m_varobj_options.show_types)
+            .SetShowLocation(m_varobj_options.show_location)
+            .SetUseObjectiveC(m_varobj_options.use_objc)
+            .SetUseDynamicType(m_varobj_options.use_dynamic)
+            .SetUseSyntheticValue((lldb::SyntheticValueType)m_varobj_options.use_synth)
+            .SetFlatOutput(m_varobj_options.flat_output)
+            .SetOmitSummaryDepth(m_varobj_options.no_summary_depth)
+            .SetIgnoreCap(m_varobj_options.ignore_cap);
+
+        if (m_varobj_options.be_raw)
+            options.SetRawDisplay(true);
+        
+        if (variable_list)
         {
-            Stream &s = result.GetOutputStream();
-
-            bool get_file_globals = true;
-            
-            // Be careful about the stack frame, if any summary formatter runs code, it might clear the StackFrameList
-            // for the thread.  So hold onto a shared pointer to the frame so it stays alive.
-            
-            StackFrameSP frame_sp = exe_ctx.frame->GetSP();
-            
-            VariableList *variable_list = frame_sp->GetVariableList (get_file_globals);
-
-            VariableSP var_sp;
-            ValueObjectSP valobj_sp;
-
-            const char *name_cstr = NULL;
-            size_t idx;
-            
-            SummaryFormatSP summary_format_sp;
-            if (!m_option_variable.summary.empty())
-                Debugger::Formatting::NamedSummaryFormats::Get(ConstString(m_option_variable.summary.c_str()), summary_format_sp);
-            
-            ValueObject::DumpValueObjectOptions options;
-            
-            options.SetPointerDepth(m_varobj_options.ptr_depth)
-                   .SetMaximumDepth(m_varobj_options.max_depth)
-                   .SetShowTypes(m_varobj_options.show_types)
-                   .SetShowLocation(m_varobj_options.show_location)
-                   .SetUseObjectiveC(m_varobj_options.use_objc)
-                   .SetUseDynamicType(m_varobj_options.use_dynamic)
-                   .SetUseSyntheticValue((lldb::SyntheticValueType)m_varobj_options.use_synth)
-                   .SetFlatOutput(m_varobj_options.flat_output)
-                   .SetOmitSummaryDepth(m_varobj_options.no_summary_depth)
-                   .SetIgnoreCap(m_varobj_options.ignore_cap);
-
-            if (m_varobj_options.be_raw)
-                options.SetRawDisplay(true);
-            
-            if (variable_list)
+            // If watching a variable, there are certain restrictions to be followed.
+            if (m_option_watchpoint.watch_variable)
             {
-                if (command.GetArgumentCount() > 0)
-                {
-                    VariableList regex_var_list;
+                if (command.GetArgumentCount() != 1) {
+                    result.GetErrorStream().Printf("error: specify exactly one variable when using the '-w' option\n");
+                    result.SetStatus(eReturnStatusFailed);
+                    return false;
+                } else if (m_option_variable.use_regex) {
+                    result.GetErrorStream().Printf("error: specify your variable name exactly (no regex) when using the '-w' option\n");
+                    result.SetStatus(eReturnStatusFailed);
+                    return false;
+                }
 
-                    // If we have any args to the variable command, we will make
-                    // variable objects from them...
-                    for (idx = 0; (name_cstr = command.GetArgumentAtIndex(idx)) != NULL; ++idx)
+                // Things have checked out ok...
+                // m_option_watchpoint.watch_type specifies the type of watching.
+            }
+            
+            const Format format = m_option_format.GetFormat();
+
+            if (command.GetArgumentCount() > 0)
+            {
+                VariableList regex_var_list;
+
+                // If we have any args to the variable command, we will make
+                // variable objects from them...
+                for (idx = 0; (name_cstr = command.GetArgumentAtIndex(idx)) != NULL; ++idx)
+                {
+                    if (m_option_variable.use_regex)
                     {
-                        if (m_option_variable.use_regex)
+                        const uint32_t regex_start_index = regex_var_list.GetSize();
+                        RegularExpression regex (name_cstr);
+                        if (regex.Compile(name_cstr))
                         {
-                            const uint32_t regex_start_index = regex_var_list.GetSize();
-                            RegularExpression regex (name_cstr);
-                            if (regex.Compile(name_cstr))
+                            size_t num_matches = 0;
+                            const size_t num_new_regex_vars = variable_list->AppendVariablesIfUnique(regex, 
+                                                                                                     regex_var_list, 
+                                                                                                     num_matches);
+                            if (num_new_regex_vars > 0)
                             {
-                                size_t num_matches = 0;
-                                const size_t num_new_regex_vars = variable_list->AppendVariablesIfUnique(regex, 
-                                                                                                         regex_var_list, 
-                                                                                                         num_matches);
-                                if (num_new_regex_vars > 0)
+                                for (uint32_t regex_idx = regex_start_index, end_index = regex_var_list.GetSize(); 
+                                     regex_idx < end_index;
+                                     ++regex_idx)
                                 {
-                                    for (uint32_t regex_idx = regex_start_index, end_index = regex_var_list.GetSize(); 
-                                         regex_idx < end_index;
-                                         ++regex_idx)
+                                    var_sp = regex_var_list.GetVariableAtIndex (regex_idx);
+                                    if (var_sp)
                                     {
-                                        var_sp = regex_var_list.GetVariableAtIndex (regex_idx);
-                                        if (var_sp)
+                                        valobj_sp = frame->GetValueObjectForFrameVariable (var_sp, m_varobj_options.use_dynamic);
+                                        if (valobj_sp)
                                         {
-                                            valobj_sp = frame_sp->GetValueObjectForFrameVariable (var_sp, m_varobj_options.use_dynamic);
-                                            if (valobj_sp)
-                                            {                                        
-                                                if (m_option_variable.format != eFormatDefault)
-                                                    valobj_sp->SetFormat (m_option_variable.format);
-                                                
-                                                if (m_option_variable.show_decl && var_sp->GetDeclaration ().GetFile())
-                                                {
-                                                    bool show_fullpaths = false;
-                                                    bool show_module = true;
-                                                    if (var_sp->DumpDeclaration(&s, show_fullpaths, show_module))
-                                                        s.PutCString (": ");
-                                                }
-                                                if (summary_format_sp)
-                                                    valobj_sp->SetCustomSummaryFormat(summary_format_sp);
-                                                ValueObject::DumpValueObject (result.GetOutputStream(), 
-                                                                              valobj_sp.get(),
-                                                                              options);                                        
+//                                            if (format != eFormatDefault)
+//                                                valobj_sp->SetFormat (format);
+                                            
+                                            if (m_option_variable.show_decl && var_sp->GetDeclaration ().GetFile())
+                                            {
+                                                bool show_fullpaths = false;
+                                                bool show_module = true;
+                                                if (var_sp->DumpDeclaration(&s, show_fullpaths, show_module))
+                                                    s.PutCString (": ");
                                             }
+                                            if (summary_format_sp)
+                                                valobj_sp->SetCustomSummaryFormat(summary_format_sp);
+                                            ValueObject::DumpValueObject (result.GetOutputStream(), 
+                                                                          valobj_sp.get(),
+                                                                          options,
+                                                                          format);
                                         }
                                     }
                                 }
-                                else if (num_matches == 0)
-                                {
-                                    result.GetErrorStream().Printf ("error: no variables matched the regular expression '%s'.\n", name_cstr);
-                                }
                             }
-                            else
+                            else if (num_matches == 0)
                             {
-                                char regex_error[1024];
-                                if (regex.GetErrorAsCString(regex_error, sizeof(regex_error)))
-                                    result.GetErrorStream().Printf ("error: %s\n", regex_error);
-                                else
-                                    result.GetErrorStream().Printf ("error: unkown regex error when compiling '%s'\n", name_cstr);
+                                result.GetErrorStream().Printf ("error: no variables matched the regular expression '%s'.\n", name_cstr);
                             }
                         }
                         else
                         {
-                            Error error;
-                            uint32_t expr_path_options = StackFrame::eExpressionPathOptionCheckPtrVsMember;
-                            lldb::VariableSP var_sp;
-                            valobj_sp = frame_sp->GetValueForVariableExpressionPath (name_cstr, 
-                                                                                          m_varobj_options.use_dynamic, 
-                                                                                          expr_path_options,
-                                                                                          var_sp,
-                                                                                          error);
-                            if (valobj_sp)
-                            {
-                                if (m_option_variable.format != eFormatDefault)
-                                    valobj_sp->SetFormat (m_option_variable.format);
-                                if (m_option_variable.show_decl && var_sp && var_sp->GetDeclaration ().GetFile())
-                                {
-                                    var_sp->GetDeclaration ().DumpStopContext (&s, false);
-                                    s.PutCString (": ");
-                                }
-                                if (summary_format_sp)
-                                    valobj_sp->SetCustomSummaryFormat(summary_format_sp);
-                                ValueObject::DumpValueObject (result.GetOutputStream(), 
-                                                              valobj_sp.get(), 
-                                                              valobj_sp->GetParent() ? name_cstr : NULL,
-                                                              options);
-                            }
+                            char regex_error[1024];
+                            if (regex.GetErrorAsCString(regex_error, sizeof(regex_error)))
+                                result.GetErrorStream().Printf ("error: %s\n", regex_error);
                             else
+                                result.GetErrorStream().Printf ("error: unkown regex error when compiling '%s'\n", name_cstr);
+                        }
+                    }
+                    else // No regex, either exact variable names or variable expressions.
+                    {
+                        Error error;
+                        uint32_t expr_path_options = StackFrame::eExpressionPathOptionCheckPtrVsMember;
+                        lldb::VariableSP var_sp;
+                        valobj_sp = frame->GetValueForVariableExpressionPath (name_cstr, 
+                                                                              m_varobj_options.use_dynamic, 
+                                                                              expr_path_options,
+                                                                              var_sp,
+                                                                              error);
+                        if (valobj_sp)
+                        {
+//                            if (format != eFormatDefault)
+//                                valobj_sp->SetFormat (format);
+                            if (m_option_variable.show_decl && var_sp && var_sp->GetDeclaration ().GetFile())
                             {
-                                const char *error_cstr = error.AsCString(NULL);
-                                if (error_cstr)
-                                    result.GetErrorStream().Printf("error: %s\n", error_cstr);
-                                else
-                                    result.GetErrorStream().Printf ("error: unable to find any variable expression path that matches '%s'\n", name_cstr);
+                                var_sp->GetDeclaration ().DumpStopContext (&s, false);
+                                s.PutCString (": ");
                             }
+                            if (summary_format_sp)
+                                valobj_sp->SetCustomSummaryFormat(summary_format_sp);
+
+                            Stream &output_stream = result.GetOutputStream();
+                            ValueObject::DumpValueObject (output_stream, 
+                                                          valobj_sp.get(), 
+                                                          valobj_sp->GetParent() ? name_cstr : NULL,
+                                                          options,
+                                                          format);
+                            // Process watchpoint if necessary.
+                            if (m_option_watchpoint.watch_variable)
+                            {
+                                AddressType addr_type;
+                                lldb::addr_t addr = 0;
+                                size_t size = 0;
+                                if (m_option_watchpoint.watch_size == 0) {
+                                    addr = valobj_sp->GetAddressOf(false, &addr_type);
+                                    if (addr_type == eAddressTypeLoad) {
+                                        // We're in business.
+                                        // Find out the size of this variable.
+                                        size = valobj_sp->GetByteSize();
+                                    }
+                                } else {
+                                    // The '-xsize'/'-x' option means to treat the value object as
+                                    // a pointer and to watch the pointee with the specified size.
+                                    addr = valobj_sp->GetValueAsUnsigned(0);
+                                    size = m_option_watchpoint.watch_size;
+                                }
+                                uint32_t watch_type = m_option_watchpoint.watch_type;
+                                Watchpoint *wp = exe_ctx.GetTargetRef().CreateWatchpoint(addr, size, watch_type).get();
+                                if (wp)
+                                {
+                                    if (var_sp && var_sp->GetDeclaration().GetFile())
+                                    {
+                                        StreamString ss;
+                                        // True to show fullpath for declaration file.
+                                        var_sp->GetDeclaration().DumpStopContext(&ss, true);
+                                        wp->SetDeclInfo(ss.GetString());
+                                    }
+                                    StreamString ss;
+                                    output_stream.Printf("Watchpoint created: ");
+                                    wp->GetDescription(&output_stream, lldb::eDescriptionLevelFull);
+                                    output_stream.EOL();
+                                    result.SetStatus(eReturnStatusSuccessFinishResult);
+                                }
+                                else
+                                {
+                                    result.AppendErrorWithFormat("Watchpoint creation failed.\n");
+                                    result.SetStatus(eReturnStatusFailed);
+                                }
+                                return (wp != NULL);
+                            }
+                        }
+                        else
+                        {
+                            const char *error_cstr = error.AsCString(NULL);
+                            if (error_cstr)
+                                result.GetErrorStream().Printf("error: %s\n", error_cstr);
+                            else
+                                result.GetErrorStream().Printf ("error: unable to find any variable expression path that matches '%s'\n", name_cstr);
                         }
                     }
                 }
-                else
+            }
+            else // No command arg specified.  Use variable_list, instead.
+            {
+                const uint32_t num_variables = variable_list->GetSize();
+                if (num_variables > 0)
                 {
-                    const uint32_t num_variables = variable_list->GetSize();
-        
-                    if (num_variables > 0)
+                    for (uint32_t i=0; i<num_variables; i++)
                     {
-                        for (uint32_t i=0; i<num_variables; i++)
+                        var_sp = variable_list->GetVariableAtIndex(i);
+                        bool dump_variable = true;
+                        switch (var_sp->GetScope())
                         {
-                            var_sp = variable_list->GetVariableAtIndex(i);
-                            
-                            bool dump_variable = true;
-                            
-                            switch (var_sp->GetScope())
-                            {
                             case eValueTypeVariableGlobal:
                                 dump_variable = m_option_variable.show_globals;
                                 if (dump_variable && m_option_variable.show_scope)
@@ -592,13 +615,13 @@ public:
                                 if (dump_variable && m_option_variable.show_scope)
                                     s.PutCString("STATIC: ");
                                 break;
-                                
+
                             case eValueTypeVariableArgument:
                                 dump_variable = m_option_variable.show_args;
                                 if (dump_variable && m_option_variable.show_scope)
                                     s.PutCString("   ARG: ");
                                 break;
-                                
+
                             case eValueTypeVariableLocal:
                                 dump_variable = m_option_variable.show_locals;
                                 if (dump_variable && m_option_variable.show_scope)
@@ -607,44 +630,43 @@ public:
 
                             default:
                                 break;
-                            }
-                            
-                            if (dump_variable)
-                            {
+                        }
 
-                                // Use the variable object code to make sure we are
-                                // using the same APIs as the the public API will be
-                                // using...
-                                valobj_sp = frame_sp->GetValueObjectForFrameVariable (var_sp, 
-                                                                                           m_varobj_options.use_dynamic);
-                                if (valobj_sp)
+                        if (dump_variable)
+                        {
+                            // Use the variable object code to make sure we are
+                            // using the same APIs as the the public API will be
+                            // using...
+                            valobj_sp = frame->GetValueObjectForFrameVariable (var_sp, 
+                                                                               m_varobj_options.use_dynamic);
+                            if (valobj_sp)
+                            {
+//                                if (format != eFormatDefault)
+//                                    valobj_sp->SetFormat (format);
+
+                                // When dumping all variables, don't print any variables
+                                // that are not in scope to avoid extra unneeded output
+                                if (valobj_sp->IsInScope ())
                                 {
-                                    if (m_option_variable.format != eFormatDefault)
-                                        valobj_sp->SetFormat (m_option_variable.format);
-                                    
-                                    // When dumping all variables, don't print any variables
-                                    // that are not in scope to avoid extra unneeded output
-                                    if (valobj_sp->IsInScope ())
+                                    if (m_option_variable.show_decl && var_sp->GetDeclaration ().GetFile())
                                     {
-                                        if (m_option_variable.show_decl && var_sp->GetDeclaration ().GetFile())
-                                        {
-                                            var_sp->GetDeclaration ().DumpStopContext (&s, false);
-                                            s.PutCString (": ");
-                                        }
-                                        if (summary_format_sp)
-                                            valobj_sp->SetCustomSummaryFormat(summary_format_sp);
-                                        ValueObject::DumpValueObject (result.GetOutputStream(), 
-                                                                      valobj_sp.get(), 
-                                                                      name_cstr,
-                                                                      options);                                        
+                                        var_sp->GetDeclaration ().DumpStopContext (&s, false);
+                                        s.PutCString (": ");
                                     }
+                                    if (summary_format_sp)
+                                        valobj_sp->SetCustomSummaryFormat(summary_format_sp);
+                                    ValueObject::DumpValueObject (result.GetOutputStream(), 
+                                                                  valobj_sp.get(), 
+                                                                  name_cstr,
+                                                                  options,
+                                                                  format);
                                 }
                             }
                         }
                     }
                 }
-                result.SetStatus (eReturnStatusSuccessFinishResult);
             }
+            result.SetStatus (eReturnStatusSuccessFinishResult);
         }
         
         if (m_interpreter.TruncationWarningNecessary())
@@ -660,6 +682,8 @@ protected:
 
     OptionGroupOptions m_option_group;
     OptionGroupVariable m_option_variable;
+    OptionGroupFormat m_option_format;
+    OptionGroupWatchpoint m_option_watchpoint;
     OptionGroupValueObjectDisplay m_varobj_options;
 };
 

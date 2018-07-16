@@ -37,7 +37,8 @@ bool ARMFrameLowering::hasFP(const MachineFunction &MF) const {
 
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   // Always eliminate non-leaf frame pointers.
-  return ((DisableFramePointerElim(MF) && MFI->hasCalls()) ||
+  return ((MF.getTarget().Options.DisableFramePointerElim(MF) &&
+           MFI->hasCalls()) ||
           RegInfo->needsStackRealignment(MF) ||
           MFI->hasVarSizedObjects() ||
           MFI->isFrameAddressTaken());
@@ -309,8 +310,7 @@ void ARMFrameLowering::emitPrologue(MachineFunction &MF) const {
 void ARMFrameLowering::emitEpilogue(MachineFunction &MF,
                                     MachineBasicBlock &MBB) const {
   MachineBasicBlock::iterator MBBI = MBB.getLastNonDebugInstr();
-  assert(MBBI->getDesc().isReturn() &&
-         "Can only insert epilog into returning blocks");
+  assert(MBBI->isReturn() && "Can only insert epilog into returning blocks");
   unsigned RetOpcode = MBBI->getOpcode();
   DebugLoc dl = MBBI->getDebugLoc();
   MachineFrameInfo *MFI = MF.getFrameInfo();
@@ -414,6 +414,9 @@ void ARMFrameLowering::emitEpilogue(MachineFunction &MF,
         MIB.addExternalSymbol(JumpTarget.getSymbolName(),
                               JumpTarget.getTargetFlags());
       }
+
+      // Add the default predicate in Thumb mode.
+      if (STI.isThumb()) MIB.addImm(ARMCC::AL).addReg(0);
     } else if (RetOpcode == ARM::TCRETURNri) {
       BuildMI(MBB, MBBI, dl,
               TII.get(STI.isThumb() ? ARM::tTAILJMPr : ARM::TAILJMPr)).
@@ -503,7 +506,7 @@ ARMFrameLowering::ResolveFrameIndexReference(const MachineFunction &MF,
         }
       }
     } else if (AFI->isThumb2Function()) {
-      // Use  add <rd>, sp, #<imm8> 
+      // Use  add <rd>, sp, #<imm8>
       //      ldr <rd>, [sp, #<imm8>]
       // if at all possible to save space.
       if (Offset >= 0 && (Offset & 3) == 0 && Offset <= 1020)
@@ -646,8 +649,10 @@ void ARMFrameLowering::emitPopInst(MachineBasicBlock &MBB,
                        .addReg(ARM::SP));
       for (unsigned i = 0, e = Regs.size(); i < e; ++i)
         MIB.addReg(Regs[i], getDefRegState(true));
-      if (DeleteRet)
+      if (DeleteRet) {
+        MIB->copyImplicitOps(&*MI);
         MI->eraseFromParent();
+      }
       MI = MIB;
     } else if (Regs.size() == 1) {
       // If we adjusted the reg to PC from LR above, switch it back here. We
@@ -682,7 +687,8 @@ bool ARMFrameLowering::spillCalleeSavedRegisters(MachineBasicBlock &MBB,
   ARMFunctionInfo *AFI = MF.getInfo<ARMFunctionInfo>();
 
   unsigned PushOpc = AFI->isThumbFunction() ? ARM::t2STMDB_UPD : ARM::STMDB_UPD;
-  unsigned PushOneOpc = AFI->isThumbFunction() ? ARM::t2STR_PRE : ARM::STR_PRE_IMM;
+  unsigned PushOneOpc = AFI->isThumbFunction() ?
+    ARM::t2STR_PRE : ARM::STR_PRE_IMM;
   unsigned FltOpc = ARM::VSTMDDB_UPD;
   emitPushInst(MBB, MI, CSI, PushOpc, PushOneOpc, false, &isARMArea1Register,
                MachineInstr::FrameSetup);
@@ -706,7 +712,7 @@ bool ARMFrameLowering::restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
   bool isVarArg = AFI->getVarArgsRegSaveSize() > 0;
 
   unsigned PopOpc = AFI->isThumbFunction() ? ARM::t2LDMIA_UPD : ARM::LDMIA_UPD;
-  unsigned LdrOpc = AFI->isThumbFunction() ? ARM::t2LDR_POST : ARM::LDR_POST_IMM;
+  unsigned LdrOpc = AFI->isThumbFunction() ? ARM::t2LDR_POST :ARM::LDR_POST_IMM;
   unsigned FltOpc = ARM::VLDMDIA_UPD;
   emitPopInst(MBB, MI, CSI, FltOpc, 0, isVarArg, true, &isARMArea3Register);
   emitPopInst(MBB, MI, CSI, PopOpc, LdrOpc, isVarArg, false,

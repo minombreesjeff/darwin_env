@@ -373,18 +373,22 @@ public:
         {
             Error error;
             const uint32_t argc = args.GetArgumentCount();
-            Target *target = m_interpreter.GetExecutionContext().target;
-            if (target)
+            Target *target = m_interpreter.GetExecutionContext().GetTargetPtr();
+            if (target == NULL)
             {
-                Module *exe_module = target->GetExecutableModulePointer();
-                if (exe_module)
-                {
-                    m_options.launch_info.GetExecutableFile () = exe_module->GetFileSpec();
-                    char exe_path[PATH_MAX];
-                    if (m_options.launch_info.GetExecutableFile ().GetPath (exe_path, sizeof(exe_path)))
-                        m_options.launch_info.GetArguments().AppendArgument (exe_path);
-                    m_options.launch_info.GetArchitecture() = exe_module->GetArchitecture();
-                }
+                result.AppendError ("invalid target, create a debug target using the 'target create' command");
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
+
+            Module *exe_module = target->GetExecutableModulePointer();
+            if (exe_module)
+            {
+                m_options.launch_info.GetExecutableFile () = exe_module->GetFileSpec();
+                char exe_path[PATH_MAX];
+                if (m_options.launch_info.GetExecutableFile ().GetPath (exe_path, sizeof(exe_path)))
+                    m_options.launch_info.GetArguments().AppendArgument (exe_path);
+                m_options.launch_info.GetArchitecture() = exe_module->GetArchitecture();
             }
 
             if (argc > 0)
@@ -400,9 +404,9 @@ public:
                     // We don't have any file yet, so the first argument is our
                     // executable, and the rest are program arguments
                     const bool first_arg_is_executable = true;
-                    m_options.launch_info.SetArgumentsFromArgs (args, 
-                                                                first_arg_is_executable, 
-                                                                first_arg_is_executable);
+                    m_options.launch_info.SetArguments (args, 
+                                                        first_arg_is_executable, 
+                                                        first_arg_is_executable);
                 }
             }
             
@@ -412,21 +416,9 @@ public:
 
                 if (argc == 0)
                 {
-                    lldb::UserSettingsControllerSP process_usc_sp (Process::GetSettingsController ());
-                    if (process_usc_sp)
-                    {
-                        SettableVariableType type;
-                        StringList settings_args (process_usc_sp->GetVariable ("process.run-args", 
-                                                                               type,
-                                                                               m_interpreter.GetDebugger().GetInstanceName().GetCString(),
-                                                                               error));
-                        if (error.Success())
-                        {
-                            const size_t num_settings_args = settings_args.GetSize();
-                            for (size_t i=0; i<num_settings_args; ++i)
-                                m_options.launch_info.GetArguments().AppendArgument (settings_args.GetStringAtIndex(i));
-                        }
-                    }
+                    const Args &target_settings_args = target->GetRunArguments();
+                    if (target_settings_args.GetArgumentCount())
+                        m_options.launch_info.GetArguments() = target_settings_args;
                 }
 
                 ProcessSP process_sp (platform_sp->DebugProcess (m_options.launch_info, 
@@ -520,7 +512,7 @@ public:
                         }
                         else
                         {
-                            result.AppendErrorWithFormat ("no process found with pid = %i\n", pid);
+                            result.AppendErrorWithFormat ("no process found with pid = %llu\n", pid);
                             result.SetStatus (eReturnStatusFailed);
                         }
                     }
@@ -661,27 +653,27 @@ protected:
                     break;
 
                 case 'n':
-                    match_info.GetProcessInfo().SetName (option_arg);
+                    match_info.GetProcessInfo().GetExecutableFile().SetFile (option_arg, false);
                     match_info.SetNameMatchType (eNameMatchEquals);
                     break;
 
                 case 'e':
-                    match_info.GetProcessInfo().SetName (option_arg);
+                    match_info.GetProcessInfo().GetExecutableFile().SetFile (option_arg, false);
                     match_info.SetNameMatchType (eNameMatchEndsWith);
                     break;
 
                 case 's':
-                    match_info.GetProcessInfo().SetName (option_arg);
+                    match_info.GetProcessInfo().GetExecutableFile().SetFile (option_arg, false);
                     match_info.SetNameMatchType (eNameMatchStartsWith);
                     break;
                     
                 case 'c':
-                    match_info.GetProcessInfo().SetName (option_arg);
+                    match_info.GetProcessInfo().GetExecutableFile().SetFile (option_arg, false);
                     match_info.SetNameMatchType (eNameMatchContains);
                     break;
                     
                 case 'r':
-                    match_info.GetProcessInfo().SetName (option_arg);
+                    match_info.GetProcessInfo().GetExecutableFile().SetFile (option_arg, false);
                     match_info.SetNameMatchType (eNameMatchRegularExpression);
                     break;
 
@@ -804,12 +796,12 @@ public:
                             ProcessInstanceInfo proc_info;
                             if (platform_sp->GetProcessInfo (pid, proc_info))
                             {
-                                ostrm.Printf ("Process information for process %i:\n", pid);
+                                ostrm.Printf ("Process information for process %llu:\n", pid);
                                 proc_info.Dump (ostrm, platform_sp.get());
                             }
                             else
                             {
-                                ostrm.Printf ("error: no process information is available for process %i\n", pid);
+                                ostrm.Printf ("error: no process information is available for process %llu\n", pid);
                             }
                             ostrm.EOL();
                         }

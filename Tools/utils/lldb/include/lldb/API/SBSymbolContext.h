@@ -37,12 +37,23 @@ public:
     operator = (const lldb::SBSymbolContext &rhs);
 #endif
 
-    SBModule        GetModule ();
-    SBCompileUnit   GetCompileUnit ();
-    SBFunction      GetFunction ();
-    SBBlock         GetBlock ();
-    SBLineEntry     GetLineEntry ();
-    SBSymbol        GetSymbol ();
+    lldb::SBModule        GetModule ();
+    lldb::SBCompileUnit   GetCompileUnit ();
+    lldb::SBFunction      GetFunction ();
+    lldb::SBBlock         GetBlock ();
+    lldb::SBLineEntry     GetLineEntry ();
+    lldb::SBSymbol        GetSymbol ();
+
+    void SetModule (lldb::SBModule module);
+    void SetCompileUnit (lldb::SBCompileUnit compile_unit);
+    void SetFunction (lldb::SBFunction function);
+    void SetBlock (lldb::SBBlock block);
+    void SetLineEntry (lldb::SBLineEntry line_entry);
+    void SetSymbol (lldb::SBSymbol symbol);
+
+    SBSymbolContext
+    GetParentOfInlinedScope (const SBAddress &curr_frame_pc, 
+                             SBAddress &parent_frame_addr) const;
 
     bool
     GetDescription (lldb::SBStream &description);

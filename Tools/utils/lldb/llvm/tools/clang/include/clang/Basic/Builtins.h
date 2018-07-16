@@ -62,8 +62,11 @@ class Context {
   const Info *TSRecords;
   unsigned NumTSRecords;
 public:
-  Context(const TargetInfo &Target);
+  Context();
 
+  /// \brief Perform target-specific initialization
+  void InitializeTarget(const TargetInfo &Target);
+  
   /// InitializeBuiltins - Mark the identifiers for all the builtins with their
   /// appropriate builtin ID # and mark any non-portable builtin identifiers as
   /// such.
@@ -98,6 +101,11 @@ public:
   /// isNoReturn - Return true if we know this builtin never returns.
   bool isNoReturn(unsigned ID) const {
     return strchr(GetRecord(ID).Attributes, 'r') != 0;
+  }
+
+  /// isReturnsTwice - Return true if we know this builtin can return twice.
+  bool isReturnsTwice(unsigned ID) const {
+    return strchr(GetRecord(ID).Attributes, 'j') != 0;
   }
 
   /// isLibFunction - Return true if this is a builtin for a libc/libm function,

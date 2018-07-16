@@ -31,10 +31,10 @@
 
 
 #include "lldb/API/SBAddress.h"
-#include "lldb/API/SBFrame.h"
-#include "lldb/API/SBSourceManager.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBFrame.h"
 #include "lldb/API/SBProcess.h"
+#include "lldb/API/SBValue.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -79,7 +79,7 @@ SBThread::~SBThread()
 bool
 SBThread::IsValid() const
 {
-    return m_opaque_sp != NULL;
+    return m_opaque_sp;
 }
 
 void
@@ -141,8 +141,7 @@ SBThread::GetStopReasonDataCount ()
                 break;
 
             case eStopReasonWatchpoint:
-                assert (!"implement watchpoint support in SBThread::GetStopReasonDataCount ()");
-                return 0; // We don't have watchpoint support yet...
+                return 1;
 
             case eStopReasonSignal:
                 return 1;
@@ -201,8 +200,7 @@ SBThread::GetStopReasonDataAtIndex (uint32_t idx)
                 break;
 
             case eStopReasonWatchpoint:
-                assert (!"implement watchpoint support in SBThread::GetStopReasonDataCount ()");
-                return 0; // We don't have watchpoint support yet...
+                return stop_info_sp->GetValue();
 
             case eStopReasonSignal:
                 return stop_info_sp->GetValue();
@@ -316,6 +314,30 @@ SBThread::GetStopDescription (char *dst, size_t dst_len)
     return 0;
 }
 
+SBValue
+SBThread::GetStopReturnValue ()
+{
+    ValueObjectSP return_valobj_sp;
+    if (m_opaque_sp)
+    {
+        Mutex::Locker api_locker (m_opaque_sp->GetProcess().GetTarget().GetAPIMutex());
+        StopInfoSP stop_info_sp = m_opaque_sp->GetStopInfo ();
+        if (stop_info_sp)
+        {
+            return_valobj_sp = StopInfo::GetReturnValueObject (stop_info_sp);
+        }
+    }
+    
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    if (log)
+        log->Printf ("SBThread(%p)::GetStopReturnValue () => %s", m_opaque_sp.get(), 
+                                                                  return_valobj_sp.get() 
+                                                                      ? return_valobj_sp->GetValueAsCString() 
+                                                                        : "<no return value>");
+        
+    return SBValue (return_valobj_sp);
+}
+
 void
 SBThread::SetThread (const ThreadSP& lldb_object_sp)
 {
@@ -333,7 +355,7 @@ SBThread::GetThreadID () const
         tid = m_opaque_sp->GetID();
 
     if (log)
-        log->Printf ("SBThread(%p)::GetThreadID () => 0x%4.4x", m_opaque_sp.get(), tid);
+        log->Printf ("SBThread(%p)::GetThreadID () => 0x%4.4llx", m_opaque_sp.get(), tid);
 
     return tid;
 }
@@ -729,10 +751,10 @@ SBThread::StepOverUntil (lldb::SBFrame &sb_frame,
             if (all_in_function)
             {
                 step_file_spec.GetPath (path, sizeof(path));
-                sb_error.SetErrorStringWithFormat("No line entries for %s:u", path, line);
+                sb_error.SetErrorStringWithFormat("No line entries for %s:%u", path, line);
             }
             else
-                sb_error.SetErrorString ("Step until target not in current function.\n");
+                sb_error.SetErrorString ("step until target not in current function");
         }
         else
         {
@@ -951,13 +973,14 @@ SBThread::operator*()
 bool
 SBThread::GetDescription (SBStream &description) const
 {
+    Stream &strm = description.ref();
+
     if (m_opaque_sp)
     {
-        StreamString strm;
-        description.Printf("SBThread: tid = 0x%4.4x", m_opaque_sp->GetID());
+        strm.Printf("SBThread: tid = 0x%4.4llx", m_opaque_sp->GetID());
     }
     else
-        description.Printf ("No value");
+        strm.PutCString ("No value");
     
     return true;
 }

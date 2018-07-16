@@ -154,6 +154,53 @@ ClangASTType::GetPointeeType (clang_type_t clang_type)
     return NULL;
 }
 
+lldb::clang_type_t
+ClangASTType::GetArrayElementType (uint32_t& stride)
+{
+    return GetArrayElementType(m_ast, m_type, stride);
+}
+
+lldb::clang_type_t
+ClangASTType::GetArrayElementType (clang::ASTContext* ast,
+                                   lldb::clang_type_t opaque_clang_qual_type,
+                                   uint32_t& stride)
+{
+    if (opaque_clang_qual_type)
+    {
+        clang::QualType qual_type(clang::QualType::getFromOpaquePtr(opaque_clang_qual_type));
+        
+        lldb::clang_type_t ret_type = qual_type.getTypePtr()->getArrayElementTypeNoTypeQual()->getCanonicalTypeUnqualified().getAsOpaquePtr();
+        
+        // TODO: the real stride will be >= this value.. find the real one!
+        stride = GetTypeByteSize(ast, ret_type);
+        
+        return ret_type;
+        
+    }
+    return NULL;
+
+}
+
+lldb::clang_type_t
+ClangASTType::GetPointerType ()
+{
+    return GetPointerType (m_ast,
+                           m_type);
+}
+
+lldb::clang_type_t
+ClangASTType::GetPointerType (clang::ASTContext *ast_context,
+                              lldb::clang_type_t opaque_clang_qual_type)
+{
+    if (opaque_clang_qual_type)
+    {
+        clang::QualType qual_type(clang::QualType::getFromOpaquePtr(opaque_clang_qual_type));
+        
+        return ast_context->getPointerType(qual_type).getAsOpaquePtr();
+    }
+    return NULL;
+}
+
 lldb::Encoding
 ClangASTType::GetEncoding (uint32_t &count)
 {
@@ -167,6 +214,80 @@ ClangASTType::GetMinimumLanguage ()
     return ClangASTType::GetMinimumLanguage (m_ast,
                                              m_type);
 }
+
+lldb::TypeClass
+ClangASTType::GetTypeClass (clang::ASTContext *ast_context, lldb::clang_type_t clang_type)
+{
+    if (clang_type == NULL)
+        return lldb::eTypeClassInvalid;
+
+    clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
+    
+    switch (qual_type->getTypeClass())
+    {
+        case clang::Type::UnaryTransform:           break;
+        case clang::Type::FunctionNoProto:          return lldb::eTypeClassFunction;
+        case clang::Type::FunctionProto:            return lldb::eTypeClassFunction;
+        case clang::Type::IncompleteArray:          return lldb::eTypeClassArray;
+        case clang::Type::VariableArray:            return lldb::eTypeClassArray;
+        case clang::Type::ConstantArray:            return lldb::eTypeClassArray;
+        case clang::Type::DependentSizedArray:      return lldb::eTypeClassArray;
+        case clang::Type::DependentSizedExtVector:  return lldb::eTypeClassVector;
+        case clang::Type::ExtVector:                return lldb::eTypeClassVector;
+        case clang::Type::Vector:                   return lldb::eTypeClassVector;
+        case clang::Type::Builtin:                  return lldb::eTypeClassBuiltin;
+        case clang::Type::ObjCObjectPointer:        return lldb::eTypeClassObjCObjectPointer;
+        case clang::Type::BlockPointer:             return lldb::eTypeClassBlockPointer;
+        case clang::Type::Pointer:                  return lldb::eTypeClassPointer;
+        case clang::Type::LValueReference:          return lldb::eTypeClassReference;
+        case clang::Type::RValueReference:          return lldb::eTypeClassReference;
+        case clang::Type::MemberPointer:            return lldb::eTypeClassMemberPointer;
+        case clang::Type::Complex:
+            if (qual_type->isComplexType())
+                return lldb::eTypeClassComplexFloat;
+            else
+                return lldb::eTypeClassComplexInteger;
+        case clang::Type::ObjCObject:               return lldb::eTypeClassObjCObject;
+        case clang::Type::ObjCInterface:            return lldb::eTypeClassObjCInterface;
+        case clang::Type::Record:
+            if (ClangASTContext::GetCompleteType (ast_context, clang_type))
+            {
+                const clang::RecordType *record_type = llvm::cast<clang::RecordType>(qual_type.getTypePtr());
+                const clang::RecordDecl *record_decl = record_type->getDecl();
+                if (record_decl->isUnion())
+                    return lldb::eTypeClassUnion;
+                else if (record_decl->isStruct())
+                    return lldb::eTypeClassStruct;
+                else
+                    return lldb::eTypeClassClass;
+            }
+            break;
+        case clang::Type::Enum:                     return lldb::eTypeClassEnumeration;
+        case clang::Type::Typedef:                  return lldb::eTypeClassTypedef;
+        case clang::Type::UnresolvedUsing:          break;
+        case clang::Type::Paren:                    break;
+        case clang::Type::Elaborated:               break;
+        case clang::Type::Attributed:               break;
+        case clang::Type::TemplateTypeParm:         break;
+        case clang::Type::SubstTemplateTypeParm:    break;
+        case clang::Type::SubstTemplateTypeParmPack:break;
+        case clang::Type::Auto:                     break;
+        case clang::Type::InjectedClassName:        break;
+        case clang::Type::DependentName:            break;
+        case clang::Type::DependentTemplateSpecialization: break;
+        case clang::Type::PackExpansion:            break;
+            
+        case clang::Type::TypeOfExpr:               break;
+        case clang::Type::TypeOf:                   break;
+        case clang::Type::Decltype:                 break;
+        case clang::Type::TemplateSpecialization:   break;
+        case clang::Type::Atomic:                   break;
+    }
+    // We don't know hot to display this type...
+    return lldb::eTypeClassOther;
+
+}
+
 
 lldb::LanguageType
 ClangASTType::GetMinimumLanguage (clang::ASTContext *ctx,
@@ -372,8 +493,10 @@ ClangASTType::GetEncoding (clang_type_t clang_type, uint32_t &count)
     case clang::Type::TypeOfExpr:
     case clang::Type::TypeOf:
     case clang::Type::Decltype:
-//    case clang::Type::QualifiedName:
-    case clang::Type::TemplateSpecialization:   break;
+    case clang::Type::TemplateSpecialization:
+    case clang::Type::Atomic:
+        break;
+
     }
     count = 0;
     return lldb::eEncodingInvalid;
@@ -446,7 +569,11 @@ ClangASTType::GetFormat (clang_type_t clang_type)
         case clang::BuiltinType::Dependent:
         case clang::BuiltinType::ObjCId:
         case clang::BuiltinType::ObjCClass:
-        case clang::BuiltinType::ObjCSel:       return lldb::eFormatHex;
+        case clang::BuiltinType::ObjCSel:       
+        case clang::BuiltinType::Half:          
+        case clang::BuiltinType::ARCUnbridgedCast:          
+        case clang::BuiltinType::PseudoObject:
+            return lldb::eFormatHex;
         }
         break;
     case clang::Type::ObjCObjectPointer:        return lldb::eFormatHex;
@@ -487,8 +614,9 @@ ClangASTType::GetFormat (clang_type_t clang_type)
     case clang::Type::TypeOfExpr:
     case clang::Type::TypeOf:
     case clang::Type::Decltype:
-//    case clang::Type::QualifiedName:
-    case clang::Type::TemplateSpecialization:   break;
+    case clang::Type::TemplateSpecialization:
+    case clang::Type::Atomic:
+            break;
     }
     // We don't know hot to display this type...
     return lldb::eFormatBytes;
@@ -810,16 +938,14 @@ ClangASTType::DumpValue
 
 
 bool
-ClangASTType::DumpTypeValue
-(
-    Stream *s,
-    lldb::Format format,
-    const lldb_private::DataExtractor &data,
-    uint32_t byte_offset,
-    size_t byte_size,
-    uint32_t bitfield_bit_size,
-    uint32_t bitfield_bit_offset
-)
+ClangASTType::DumpTypeValue (Stream *s,
+                             lldb::Format format,
+                             const lldb_private::DataExtractor &data,
+                             uint32_t byte_offset,
+                             size_t byte_size,
+                             uint32_t bitfield_bit_size,
+                             uint32_t bitfield_bit_offset,
+                             ExecutionContextScope *exe_scope)
 {
     return DumpTypeValue (m_ast,
                           m_type,
@@ -829,23 +955,22 @@ ClangASTType::DumpTypeValue
                           byte_offset,
                           byte_size,
                           bitfield_bit_size,
-                          bitfield_bit_offset);
+                          bitfield_bit_offset,
+                          exe_scope);
 }
 
 
 bool
-ClangASTType::DumpTypeValue
-(
-    clang::ASTContext *ast_context,
-    clang_type_t clang_type,
-    Stream *s,
-    lldb::Format format,
-    const lldb_private::DataExtractor &data,
-    uint32_t byte_offset,
-    size_t byte_size,
-    uint32_t bitfield_bit_size,
-    uint32_t bitfield_bit_offset
-)
+ClangASTType::DumpTypeValue (clang::ASTContext *ast_context,
+                             clang_type_t clang_type,
+                             Stream *s,
+                             lldb::Format format,
+                             const lldb_private::DataExtractor &data,
+                             uint32_t byte_offset,
+                             size_t byte_size,
+                             uint32_t bitfield_bit_size,
+                             uint32_t bitfield_bit_offset,
+                             ExecutionContextScope *exe_scope)
 {
     clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
     if (ClangASTContext::IsAggregateType (clang_type))
@@ -874,7 +999,8 @@ ClangASTType::DumpTypeValue
                                                     byte_offset,            // Offset into "data" where to grab value from
                                                     typedef_byte_size,      // Size of this type in bytes
                                                     bitfield_bit_size,      // Size in bits of a bitfield value, if zero don't treat as a bitfield
-                                                    bitfield_bit_offset);   // Offset in bits of a bitfield value if bitfield_bit_size != 0
+                                                    bitfield_bit_offset,    // Offset in bits of a bitfield value if bitfield_bit_size != 0
+                                                    exe_scope);
             }
             break;
 
@@ -967,7 +1093,8 @@ ClangASTType::DumpTypeValue
                                   UINT32_MAX,
                                   LLDB_INVALID_ADDRESS,
                                   bitfield_bit_size,
-                                  bitfield_bit_offset);
+                                  bitfield_bit_offset,
+                                  exe_scope);
             }
             break;
         }
@@ -1012,37 +1139,40 @@ ClangASTType::DumpSummary
     clang::QualType qual_type(clang::QualType::getFromOpaquePtr(clang_type));
     if (ClangASTContext::IsCStringType (clang_type, length))
     {
-
-        if (exe_ctx && exe_ctx->process)
+        if (exe_ctx)
         {
-            uint32_t offset = data_byte_offset;
-            lldb::addr_t pointer_addresss = data.GetMaxU64(&offset, data_byte_size);
-            std::vector<uint8_t> buf;
-            if (length > 0)
-                buf.resize (length);
-            else
-                buf.resize (256);
-
-            lldb_private::DataExtractor cstr_data(&buf.front(), buf.size(), exe_ctx->process->GetByteOrder(), 4);
-            buf.back() = '\0';
-            size_t bytes_read;
-            size_t total_cstr_len = 0;
-            Error error;
-            while ((bytes_read = exe_ctx->process->ReadMemory (pointer_addresss, &buf.front(), buf.size(), error)) > 0)
+            Process *process = exe_ctx->GetProcessPtr();
+            if (process)
             {
-                const size_t len = strlen((const char *)&buf.front());
-                if (len == 0)
-                    break;
-                if (total_cstr_len == 0)
-                    s->PutCString (" \"");
-                cstr_data.Dump(s, 0, lldb::eFormatChar, 1, len, UINT32_MAX, LLDB_INVALID_ADDRESS, 0, 0);
-                total_cstr_len += len;
-                if (len < buf.size())
-                    break;
-                pointer_addresss += total_cstr_len;
+                uint32_t offset = data_byte_offset;
+                lldb::addr_t pointer_addresss = data.GetMaxU64(&offset, data_byte_size);
+                std::vector<uint8_t> buf;
+                if (length > 0)
+                    buf.resize (length);
+                else
+                    buf.resize (256);
+
+                lldb_private::DataExtractor cstr_data(&buf.front(), buf.size(), process->GetByteOrder(), 4);
+                buf.back() = '\0';
+                size_t bytes_read;
+                size_t total_cstr_len = 0;
+                Error error;
+                while ((bytes_read = process->ReadMemory (pointer_addresss, &buf.front(), buf.size(), error)) > 0)
+                {
+                    const size_t len = strlen((const char *)&buf.front());
+                    if (len == 0)
+                        break;
+                    if (total_cstr_len == 0)
+                        s->PutCString (" \"");
+                    cstr_data.Dump(s, 0, lldb::eFormatChar, 1, len, UINT32_MAX, LLDB_INVALID_ADDRESS, 0, 0);
+                    total_cstr_len += len;
+                    if (len < buf.size())
+                        break;
+                    pointer_addresss += total_cstr_len;
+                }
+                if (total_cstr_len > 0)
+                    s->PutChar ('"');
             }
-            if (total_cstr_len > 0)
-                s->PutChar ('"');
         }
     }
 }
@@ -1142,46 +1272,68 @@ ClangASTType::DumpTypeDescription (clang::ASTContext *ast_context, clang_type_t 
         llvm::SmallVector<char, 1024> buf;
         llvm::raw_svector_ostream llvm_ostrm (buf);
 
-        const clang::TagType *tag_type = llvm::dyn_cast<clang::TagType>(qual_type.getTypePtr());
-        if (tag_type)
+        const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+        switch (type_class)
         {
-            clang::TagDecl *tag_decl = tag_type->getDecl();
-            if (tag_decl)
-                tag_decl->print(llvm_ostrm, 0);
-        }
-        else
-        {
-            const clang::Type::TypeClass type_class = qual_type->getTypeClass();
-            switch (type_class)
+        case clang::Type::ObjCObject:
+        case clang::Type::ObjCInterface:
+            if (ClangASTContext::GetCompleteType (ast_context, clang_type))
             {
-            case clang::Type::ObjCObject:
-            case clang::Type::ObjCInterface:
+                const clang::ObjCObjectType *objc_class_type = llvm::dyn_cast<clang::ObjCObjectType>(qual_type.getTypePtr());
+                assert (objc_class_type);
+                if (objc_class_type)
                 {
-                    const clang::ObjCObjectType *objc_class_type = llvm::dyn_cast<clang::ObjCObjectType>(qual_type.getTypePtr());
-                    assert (objc_class_type);
-                    if (objc_class_type)
+                    clang::ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
+                    if (class_interface_decl)
                     {
-                        clang::ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
-                        if (class_interface_decl)
-                            class_interface_decl->print(llvm_ostrm, ast_context->PrintingPolicy, s->GetIndentLevel());
+                        clang::PrintingPolicy policy = ast_context->getPrintingPolicy();
+                        policy.Dump = 1;
+                        class_interface_decl->print(llvm_ostrm, policy, s->GetIndentLevel());
                     }
                 }
-                break;
-            
-            case clang::Type::Typedef:
+            }
+            break;
+        
+        case clang::Type::Typedef:
+            {
+                const clang::TypedefType *typedef_type = qual_type->getAs<clang::TypedefType>();
+                if (typedef_type)
                 {
-                    const clang::TypedefType *typedef_type = qual_type->getAs<clang::TypedefType>();
-                    if (typedef_type)
+                    const clang::TypedefNameDecl *typedef_decl = typedef_type->getDecl();
+                    std::string clang_typedef_name (typedef_decl->getQualifiedNameAsString());
+                    if (!clang_typedef_name.empty())
                     {
-                        const clang::TypedefNameDecl *typedef_decl = typedef_type->getDecl();
-                        std::string clang_typedef_name (typedef_decl->getQualifiedNameAsString());
-                        if (!clang_typedef_name.empty())
-                            s->PutCString (clang_typedef_name.c_str());
+                        s->PutCString ("typedef ");
+                        s->PutCString (clang_typedef_name.c_str());
                     }
                 }
-                break;
+            }
+            break;
 
-            default:
+        case clang::Type::Record:
+            if (ClangASTContext::GetCompleteType (ast_context, clang_type))
+            {
+                const clang::RecordType *record_type = llvm::cast<clang::RecordType>(qual_type.getTypePtr());
+                const clang::RecordDecl *record_decl = record_type->getDecl();
+                const clang::CXXRecordDecl *cxx_record_decl = llvm::dyn_cast<clang::CXXRecordDecl>(record_decl);
+
+                if (cxx_record_decl)
+                    cxx_record_decl->print(llvm_ostrm, ast_context->getPrintingPolicy(), s->GetIndentLevel());
+                else
+                    record_decl->print(llvm_ostrm, ast_context->getPrintingPolicy(), s->GetIndentLevel());
+            }
+            break;
+
+        default:
+            {
+                const clang::TagType *tag_type = llvm::dyn_cast<clang::TagType>(qual_type.getTypePtr());
+                if (tag_type)
+                {
+                    clang::TagDecl *tag_decl = tag_type->getDecl();
+                    if (tag_decl)
+                        tag_decl->print(llvm_ostrm, 0);
+                }
+                else
                 {
                     std::string clang_type_name(qual_type.getAsString());
                     if (!clang_type_name.empty())
@@ -1536,10 +1688,13 @@ ClangASTType::ReadFromMemory
         }
         else
         {
-            if (exe_ctx && exe_ctx->process)
+            Process *process = NULL;
+            if (exe_ctx)
+                process = exe_ctx->GetProcessPtr();
+            if (process)
             {
                 Error error;
-                return exe_ctx->process->ReadMemory(addr, dst, byte_size, error) == byte_size;
+                return process->ReadMemory(addr, dst, byte_size, error) == byte_size;
             }
         }
     }
@@ -1593,10 +1748,13 @@ ClangASTType::WriteToMemory
         }
         else
         {
-            if (exe_ctx && exe_ctx->process)
+            Process *process = NULL;
+            if (exe_ctx)
+                process = exe_ctx->GetProcessPtr();
+            if (process)
             {
                 Error error;
-                return exe_ctx->process->WriteMemory(addr, new_value.GetData(), byte_size, error) == byte_size;
+                return process->WriteMemory(addr, new_value.GetData(), byte_size, error) == byte_size;
             }
         }
     }

@@ -15,8 +15,8 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCTargetAsmParser.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallVector.h"
@@ -323,6 +323,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   unsigned ErrorInfo;
 
   switch (MatchInstructionImpl(Operands, Inst, ErrorInfo)) {
+  default: break;
   case Match_Success:
     Out.EmitInstruction(Inst);
     return false;
@@ -518,7 +519,7 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
   return false;
 }
 
-/// ParseDirective parses the arm specific directives
+/// ParseDirective parses the MBlaze specific directives
 bool MBlazeAsmParser::ParseDirective(AsmToken DirectiveID) {
   StringRef IDVal = DirectiveID.getIdentifier();
   if (IDVal == ".word")

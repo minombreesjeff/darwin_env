@@ -11,6 +11,7 @@
 #define liblldb_Host_h_
 #if defined(__cplusplus)
 
+#include <stdarg.h>
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/StringList.h"
@@ -29,6 +30,7 @@ class Host
 public:
     typedef bool (*MonitorChildProcessCallback) (void *callback_baton,
                                                  lldb::pid_t pid,
+                                                 bool exited,
                                                  int signal,    // Zero for no signal
                                                  int status);   // Exit value of process if signal is zero
 
@@ -115,7 +117,19 @@ public:
     
     static const char *
     GetGroupName (uint32_t gid, std::string &group_name);
-    
+
+    enum SystemLogType
+    {
+        eSystemLogWarning,
+        eSystemLogError
+    };
+
+    static void
+    SystemLog (SystemLogType type, const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+
+    static void
+    SystemLog (SystemLogType type, const char *format, va_list args);
+
     //------------------------------------------------------------------
     /// Gets the host architecture.
     ///
@@ -337,7 +351,7 @@ public:
     ///     description string.
     //------------------------------------------------------------------
     static void
-    SetCrashDescriptionWithFormat (const char *format, ...);
+    SetCrashDescriptionWithFormat (const char *format, ...)  __attribute__ ((format (printf, 1, 2)));
 
     static void
     SetCrashDescription (const char *description);
@@ -354,6 +368,12 @@ public:
 
     static Error
     LaunchProcess (ProcessLaunchInfo &launch_info);
+
+    static lldb::DataBufferSP
+    GetAuxvData (lldb_private::Process *process);
+
+    static lldb::TargetSP
+    GetDummyTarget (Debugger &debugger);
     
     static bool
     OpenFileInExternalEditor (const FileSpec &file_spec, 

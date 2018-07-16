@@ -10,6 +10,7 @@
 #include "lldb/Symbol/Function.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Host/Host.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/CompileUnit.h"
@@ -313,12 +314,12 @@ Function::GetBlock (bool can_create)
         }
         else
         {
-            ::fprintf (stderr, 
-                       "unable to find module shared pointer for function '%s' in %s%s%s\n", 
-                       GetName().GetCString(),
-                       m_comp_unit->GetDirectory().GetCString(),
-                       m_comp_unit->GetDirectory() ? "/" : "",
-                       m_comp_unit->GetFilename().GetCString());
+            Host::SystemLog (Host::eSystemLogError, 
+                             "error: unable to find module shared pointer for function '%s' in %s%s%s\n", 
+                             GetName().GetCString(),
+                             m_comp_unit->GetDirectory().GetCString(),
+                             m_comp_unit->GetDirectory() ? "/" : "",
+                             m_comp_unit->GetFilename().GetCString());
         }
         m_block.SetBlockInfoHasBeenParsed (true, true);
     }
@@ -355,7 +356,7 @@ Function::GetDescription(Stream *s, lldb::DescriptionLevel level, Target *target
 void
 Function::Dump(Stream *s, bool show_context) const
 {
-    s->Printf("%.*p: ", (int)sizeof(void*) * 2, this);
+    s->Printf("%p: ", this);
     s->Indent();
     *s << "Function" << (const UserID&)*this;
 
@@ -363,11 +364,11 @@ Function::Dump(Stream *s, bool show_context) const
 
     if (m_type)
     {
-        s->Printf(", type = %.*p", (int)sizeof(void*) * 2, m_type);
+        s->Printf(", type = %p", m_type);
     }
     else if (m_type_uid != LLDB_INVALID_UID)
     {
-        s->Printf(", type_uid = 0x%8.8x", m_type_uid);
+        s->Printf(", type_uid = 0x%8.8llx", m_type_uid);
     }
 
     s->EOL();
@@ -387,6 +388,16 @@ Function::CalculateSymbolContext(SymbolContext* sc)
 Module *
 Function::CalculateSymbolContextModule ()
 {
+    const Section *section = m_range.GetBaseAddress().GetSection();
+    if (section)
+    {
+        const Section *linked_section = section->GetLinkedSection();
+        if (linked_section)
+            return linked_section->GetModule();
+        else
+            return section->GetModule();
+    }
+    
     return this->GetCompileUnit()->GetModule();
 }
 
@@ -413,7 +424,7 @@ void
 Function::DumpSymbolContext(Stream *s)
 {
     m_comp_unit->DumpSymbolContext(s);
-    s->Printf(", Function{0x%8.8x}", GetID());
+    s->Printf(", Function{0x%8.8llx}", GetID());
 }
 
 size_t
@@ -449,6 +460,27 @@ Function::GetClangDeclContext()
 Type*
 Function::GetType()
 {
+    if (m_type == NULL)
+    {
+        SymbolContext sc;
+        
+        CalculateSymbolContext (&sc);
+        
+        if (!sc.module_sp)
+            return NULL;
+        
+        SymbolVendor *sym_vendor = sc.module_sp->GetSymbolVendor();
+        
+        if (sym_vendor == NULL)
+            return NULL;
+        
+        SymbolFile *sym_file = sym_vendor->GetSymbolFile();
+        
+        if (sym_file == NULL)
+            return NULL;
+        
+        m_type = sym_file->ResolveTypeUID(m_type_uid);
+    }
     return m_type;
 }
 

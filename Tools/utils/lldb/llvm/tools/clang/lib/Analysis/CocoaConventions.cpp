@@ -40,6 +40,7 @@ cocoa::NamingConvention cocoa::deriveNamingConvention(Selector S,
   case OMF_None:
   case OMF_autorelease:
   case OMF_dealloc:
+  case OMF_finalize:
   case OMF_release:
   case OMF_retain:
   case OMF_retainCount:
@@ -124,7 +125,13 @@ bool cocoa::isCocoaObjectRef(QualType Ty) {
   return false;
 }
 
-bool coreFoundation::followsCreateRule(StringRef functionName) {
+bool coreFoundation::followsCreateRule(const FunctionDecl *fn) {
+  // For now, *just* base this on the function name, not on anything else.
+
+  const IdentifierInfo *ident = fn->getIdentifier();
+  if (!ident) return false;
+  StringRef functionName = ident->getName();
+  
   StringRef::iterator it = functionName.begin();
   StringRef::iterator start = it;
   StringRef::iterator endI = functionName.end();
@@ -135,6 +142,10 @@ bool coreFoundation::followsCreateRule(StringRef functionName) {
       // Search for the first character.  It can either be 'C' or 'c'.
       char ch = *it;
       if (ch == 'C' || ch == 'c') {
+        // Make sure this isn't something like 'recreate' or 'Scopy'.
+        if (ch == 'c' && it != start && isalpha(*(it - 1)))
+          continue;
+
         ++it;
         break;
       }
@@ -152,8 +163,7 @@ bool coreFoundation::followsCreateRule(StringRef functionName) {
     }
     else if (suffix.startswith("opy")) {
       it += 3;
-    }
-    else {
+    } else {
       // Keep scanning.
       continue;
     }

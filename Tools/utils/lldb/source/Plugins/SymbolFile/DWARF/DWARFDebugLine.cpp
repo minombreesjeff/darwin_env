@@ -15,10 +15,12 @@
 #include "lldb/Core/FileSpecList.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Timer.h"
+#include "lldb/Host/Host.h"
 
 #include "SymbolFileDWARF.h"
 #include "LogChannelDWARF.h"
 
+using namespace lldb;
 using namespace lldb_private;
 using namespace std;
 
@@ -274,7 +276,7 @@ DWARFDebugLine::DumpStatementOpcodes(Log *log, const DataExtractor& debug_line_d
                 {
                     dw_uleb128_t addr_offset_n = debug_line_data.GetULEB128(&offset);
                     dw_uleb128_t addr_offset = addr_offset_n * prologue.min_inst_length;
-                    log->Printf( "0x%8.8x: DW_LNS_advance_pc (0x%llx)", op_offset, addr_offset);
+                    log->Printf( "0x%8.8x: DW_LNS_advance_pc (0x%x)", op_offset, addr_offset);
                     row.address += addr_offset;
                 }
                 break;
@@ -455,8 +457,11 @@ DWARFDebugLine::ParsePrologue(const DataExtractor& debug_line_data, dw_offset_t*
 
     if (*offset_ptr != end_prologue_offset)
     {
-        fprintf (stderr, "warning: parsing line table prologue at 0x%8.8x should have ended at 0x%8.8x but it ended ad 0x%8.8x\n", 
-                 prologue_offset, end_prologue_offset, *offset_ptr);
+        Host::SystemLog (Host::eSystemLogWarning, 
+                         "warning: parsing line table prologue at 0x%8.8x should have ended at 0x%8.8x but it ended ad 0x%8.8x\n", 
+                         prologue_offset, 
+                         end_prologue_offset, 
+                         *offset_ptr);
     }
     return end_prologue_offset;
 }
@@ -538,8 +543,11 @@ DWARFDebugLine::ParseSupportFiles(const DataExtractor& debug_line_data, const ch
 
     if (offset != end_prologue_offset)
     {
-        fprintf (stderr, "warning: parsing line table prologue at 0x%8.8x should have ended at 0x%8.8x but it ended ad 0x%8.8x\n", 
-                 stmt_list, end_prologue_offset, offset);
+        Host::SystemLog (Host::eSystemLogError, 
+                         "warning: parsing line table prologue at 0x%8.8x should have ended at 0x%8.8x but it ended ad 0x%8.8x\n", 
+                         stmt_list, 
+                         end_prologue_offset, 
+                         offset);
     }
     return end_prologue_offset;
 }
@@ -560,7 +568,7 @@ DWARFDebugLine::ParseStatementTable
     void* userData
 )
 {
-    Log *log = LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_LINE);
+    LogSP log (LogChannelDWARF::GetLogIfAll(DWARF_LOG_DEBUG_LINE));
     Prologue::shared_ptr prologue(new Prologue());
 
 
@@ -580,11 +588,11 @@ DWARFDebugLine::ParseStatementTable
     }
 
     if (log)
-        prologue->Dump (log);
+        prologue->Dump (log.get());
 
     const dw_offset_t end_offset = debug_line_offset + prologue->total_length + sizeof(prologue->total_length);
 
-    State state(prologue, log, callback, userData);
+    State state(prologue, log.get(), callback, userData);
 
     while (*offset_ptr < end_offset)
     {

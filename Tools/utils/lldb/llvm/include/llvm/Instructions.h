@@ -143,11 +143,19 @@ public:
   LoadInst(Value *Ptr, const Twine &NameStr, bool isVolatile = false,
            Instruction *InsertBefore = 0);
   LoadInst(Value *Ptr, const Twine &NameStr, bool isVolatile,
-           unsigned Align, Instruction *InsertBefore = 0);
-  LoadInst(Value *Ptr, const Twine &NameStr, bool isVolatile,
            BasicBlock *InsertAtEnd);
   LoadInst(Value *Ptr, const Twine &NameStr, bool isVolatile,
+           unsigned Align, Instruction *InsertBefore = 0);
+  LoadInst(Value *Ptr, const Twine &NameStr, bool isVolatile,
            unsigned Align, BasicBlock *InsertAtEnd);
+  LoadInst(Value *Ptr, const Twine &NameStr, bool isVolatile,
+           unsigned Align, AtomicOrdering Order,
+           SynchronizationScope SynchScope = CrossThread,
+           Instruction *InsertBefore = 0);
+  LoadInst(Value *Ptr, const Twine &NameStr, bool isVolatile,
+           unsigned Align, AtomicOrdering Order,
+           SynchronizationScope SynchScope,
+           BasicBlock *InsertAtEnd);
 
   LoadInst(Value *Ptr, const char *NameStr, Instruction *InsertBefore);
   LoadInst(Value *Ptr, const char *NameStr, BasicBlock *InsertAtEnd);
@@ -171,10 +179,46 @@ public:
   /// getAlignment - Return the alignment of the access that is being performed
   ///
   unsigned getAlignment() const {
-    return (1 << (getSubclassDataFromInstruction() >> 1)) >> 1;
+    return (1 << ((getSubclassDataFromInstruction() >> 1) & 31)) >> 1;
   }
 
   void setAlignment(unsigned Align);
+
+  /// Returns the ordering effect of this fence.
+  AtomicOrdering getOrdering() const {
+    return AtomicOrdering((getSubclassDataFromInstruction() >> 7) & 7);
+  }
+
+  /// Set the ordering constraint on this load. May not be Release or
+  /// AcquireRelease.
+  void setOrdering(AtomicOrdering Ordering) {
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~(7 << 7)) |
+                               (Ordering << 7));
+  }
+
+  SynchronizationScope getSynchScope() const {
+    return SynchronizationScope((getSubclassDataFromInstruction() >> 6) & 1);
+  }
+
+  /// Specify whether this load is ordered with respect to all
+  /// concurrently executing threads, or only with respect to signal handlers
+  /// executing in the same thread.
+  void setSynchScope(SynchronizationScope xthread) {
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~(1 << 6)) |
+                               (xthread << 6));
+  }
+
+  bool isAtomic() const { return getOrdering() != NotAtomic; }
+  void setAtomic(AtomicOrdering Ordering,
+                 SynchronizationScope SynchScope = CrossThread) {
+    setOrdering(Ordering);
+    setSynchScope(SynchScope);
+  }
+
+  bool isSimple() const { return !isAtomic() && !isVolatile(); }
+  bool isUnordered() const {
+    return getOrdering() <= Unordered && !isVolatile();
+  }
 
   Value *getPointerOperand() { return getOperand(0); }
   const Value *getPointerOperand() const { return getOperand(0); }
@@ -222,19 +266,27 @@ public:
   StoreInst(Value *Val, Value *Ptr, BasicBlock *InsertAtEnd);
   StoreInst(Value *Val, Value *Ptr, bool isVolatile = false,
             Instruction *InsertBefore = 0);
-  StoreInst(Value *Val, Value *Ptr, bool isVolatile,
-            unsigned Align, Instruction *InsertBefore = 0);
   StoreInst(Value *Val, Value *Ptr, bool isVolatile, BasicBlock *InsertAtEnd);
   StoreInst(Value *Val, Value *Ptr, bool isVolatile,
+            unsigned Align, Instruction *InsertBefore = 0);
+  StoreInst(Value *Val, Value *Ptr, bool isVolatile,
             unsigned Align, BasicBlock *InsertAtEnd);
+  StoreInst(Value *Val, Value *Ptr, bool isVolatile,
+            unsigned Align, AtomicOrdering Order,
+            SynchronizationScope SynchScope = CrossThread,
+            Instruction *InsertBefore = 0);
+  StoreInst(Value *Val, Value *Ptr, bool isVolatile,
+            unsigned Align, AtomicOrdering Order,
+            SynchronizationScope SynchScope,
+            BasicBlock *InsertAtEnd);
+          
 
-
-  /// isVolatile - Return true if this is a load from a volatile memory
+  /// isVolatile - Return true if this is a store to a volatile memory
   /// location.
   ///
   bool isVolatile() const { return getSubclassDataFromInstruction() & 1; }
 
-  /// setVolatile - Specify whether this is a volatile load or not.
+  /// setVolatile - Specify whether this is a volatile store or not.
   ///
   void setVolatile(bool V) {
     setInstructionSubclassData((getSubclassDataFromInstruction() & ~1) |
@@ -247,10 +299,46 @@ public:
   /// getAlignment - Return the alignment of the access that is being performed
   ///
   unsigned getAlignment() const {
-    return (1 << (getSubclassDataFromInstruction() >> 1)) >> 1;
+    return (1 << ((getSubclassDataFromInstruction() >> 1) & 31)) >> 1;
   }
 
   void setAlignment(unsigned Align);
+
+  /// Returns the ordering effect of this store.
+  AtomicOrdering getOrdering() const {
+    return AtomicOrdering((getSubclassDataFromInstruction() >> 7) & 7);
+  }
+
+  /// Set the ordering constraint on this store.  May not be Acquire or
+  /// AcquireRelease.
+  void setOrdering(AtomicOrdering Ordering) {
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~(7 << 7)) |
+                               (Ordering << 7));
+  }
+
+  SynchronizationScope getSynchScope() const {
+    return SynchronizationScope((getSubclassDataFromInstruction() >> 6) & 1);
+  }
+
+  /// Specify whether this store instruction is ordered with respect to all
+  /// concurrently executing threads, or only with respect to signal handlers
+  /// executing in the same thread.
+  void setSynchScope(SynchronizationScope xthread) {
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~(1 << 6)) |
+                               (xthread << 6));
+  }
+
+  bool isAtomic() const { return getOrdering() != NotAtomic; }
+  void setAtomic(AtomicOrdering Ordering,
+                 SynchronizationScope SynchScope = CrossThread) {
+    setOrdering(Ordering);
+    setSynchScope(SynchScope);
+  }
+
+  bool isSimple() const { return !isAtomic() && !isVolatile(); }
+  bool isUnordered() const {
+    return getOrdering() <= Unordered && !isVolatile();
+  }
 
   Value *getValueOperand() { return getOperand(0); }
   const Value *getValueOperand() const { return getOperand(0); }
@@ -319,18 +407,8 @@ public:
   /// Set the ordering constraint on this fence.  May only be Acquire, Release,
   /// AcquireRelease, or SequentiallyConsistent.
   void setOrdering(AtomicOrdering Ordering) {
-    switch (Ordering) {
-    case Acquire:
-    case Release:
-    case AcquireRelease:
-    case SequentiallyConsistent:
-      setInstructionSubclassData((getSubclassDataFromInstruction() & 1) |
-                                 (Ordering << 1));
-      return;
-    default:
-      llvm_unreachable("FenceInst ordering must be Acquire, Release,"
-                       " AcquireRelease, or SequentiallyConsistent");
-    }
+    setInstructionSubclassData((getSubclassDataFromInstruction() & 1) |
+                               (Ordering << 1));
   }
 
   SynchronizationScope getSynchScope() const {
@@ -555,7 +633,7 @@ public:
   void setOrdering(AtomicOrdering Ordering) {
     assert(Ordering != NotAtomic &&
            "atomicrmw instructions can only be atomic.");
-    setInstructionSubclassData((getSubclassDataFromInstruction() & ~28) |
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~(7 << 2)) |
                                (Ordering << 2));
   }
 
@@ -569,7 +647,7 @@ public:
 
   /// Returns the ordering constraint on this RMW.
   AtomicOrdering getOrdering() const {
-    return AtomicOrdering((getSubclassDataFromInstruction() & 28) >> 2);
+    return AtomicOrdering((getSubclassDataFromInstruction() >> 2) & 7);
   }
 
   /// Returns whether this RMW is atomic between threads or only within a
@@ -698,6 +776,10 @@ public:
   static Type *getIndexedType(Type *Ptr, ArrayRef<Constant *> IdxList);
   static Type *getIndexedType(Type *Ptr, ArrayRef<uint64_t> IdxList);
 
+  /// getIndexedType - Returns the address space used by the GEP pointer.
+  ///
+  static unsigned getAddressSpace(Value *Ptr);
+
   inline op_iterator       idx_begin()       { return op_begin()+1; }
   inline const_op_iterator idx_begin() const { return op_begin()+1; }
   inline op_iterator       idx_end()         { return op_end(); }
@@ -710,7 +792,7 @@ public:
     return getOperand(0);
   }
   static unsigned getPointerOperandIndex() {
-    return 0U;                      // get index for modifying correct operand
+    return 0U;    // get index for modifying correct operand.
   }
 
   unsigned getPointerAddressSpace() const {
@@ -719,10 +801,25 @@ public:
 
   /// getPointerOperandType - Method to return the pointer operand as a
   /// PointerType.
-  PointerType *getPointerOperandType() const {
-    return reinterpret_cast<PointerType*>(getPointerOperand()->getType());
+  Type *getPointerOperandType() const {
+    return getPointerOperand()->getType();
   }
 
+  /// GetGEPReturnType - Returns the pointer type returned by the GEP
+  /// instruction, which may be a vector of pointers.
+  static Type *getGEPReturnType(Value *Ptr, ArrayRef<Value *> IdxList) {
+    Type *PtrTy = PointerType::get(checkGEPType(
+                                   getIndexedType(Ptr->getType(), IdxList)),
+                                   getAddressSpace(Ptr));
+    // Vector GEP
+    if (Ptr->getType()->isVectorTy()) {
+      unsigned NumElem = cast<VectorType>(Ptr->getType())->getNumElements();
+      return VectorType::get(PtrTy, NumElem);
+    }
+
+    // Scalar GEP
+    return PtrTy;
+  }
 
   unsigned getNumIndices() const {  // Note: always non-negative
     return getNumOperands() - 1;
@@ -769,10 +866,7 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr,
                                      unsigned Values,
                                      const Twine &NameStr,
                                      Instruction *InsertBefore)
-  : Instruction(PointerType::get(checkGEPType(
-                                   getIndexedType(Ptr->getType(), IdxList)),
-                                 cast<PointerType>(Ptr->getType())
-                                   ->getAddressSpace()),
+  : Instruction(getGEPReturnType(Ptr, IdxList),
                 GetElementPtr,
                 OperandTraits<GetElementPtrInst>::op_end(this) - Values,
                 Values, InsertBefore) {
@@ -783,10 +877,7 @@ GetElementPtrInst::GetElementPtrInst(Value *Ptr,
                                      unsigned Values,
                                      const Twine &NameStr,
                                      BasicBlock *InsertAtEnd)
-  : Instruction(PointerType::get(checkGEPType(
-                                   getIndexedType(Ptr->getType(), IdxList)),
-                                 cast<PointerType>(Ptr->getType())
-                                   ->getAddressSpace()),
+  : Instruction(getGEPReturnType(Ptr, IdxList),
                 GetElementPtr,
                 OperandTraits<GetElementPtrInst>::op_end(this) - Values,
                 Values, InsertAtEnd) {
@@ -827,7 +918,7 @@ public:
           "Both operands to ICmp instruction are not of the same type!");
     // Check that the operands are the right type
     assert((getOperand(0)->getType()->isIntOrIntVectorTy() ||
-            getOperand(0)->getType()->isPointerTy()) &&
+            getOperand(0)->getType()->getScalarType()->isPointerTy()) &&
            "Invalid operand types for ICmp instruction");
   }
 
@@ -867,7 +958,7 @@ public:
           "Both operands to ICmp instruction are not of the same type!");
     // Check that the operands are the right type
     assert((getOperand(0)->getType()->isIntOrIntVectorTy() ||
-            getOperand(0)->getType()->isPointerTy()) &&
+            getOperand(0)->getType()->getScalarType()->isPointerTy()) &&
            "Invalid operand types for ICmp instruction");
   }
 
@@ -1187,6 +1278,15 @@ public:
   void setIsNoInline(bool Value = true) {
     if (Value) addAttribute(~0, Attribute::NoInline);
     else removeAttribute(~0, Attribute::NoInline);
+  }
+
+  /// @brief Return true if the call can return twice
+  bool canReturnTwice() const {
+    return paramHasAttr(~0, Attribute::ReturnsTwice);
+  }
+  void setCanReturnTwice(bool Value = true) {
+    if (Value) addAttribute(~0, Attribute::ReturnsTwice);
+    else removeAttribute(~0, Attribute::ReturnsTwice);
   }
 
   /// @brief Determine if the call does not access memory.
@@ -2028,6 +2128,111 @@ struct OperandTraits<PHINode> : public HungoffOperandTraits<2> {
 
 DEFINE_TRANSPARENT_OPERAND_ACCESSORS(PHINode, Value)
 
+//===----------------------------------------------------------------------===//
+//                           LandingPadInst Class
+//===----------------------------------------------------------------------===//
+
+//===---------------------------------------------------------------------------
+/// LandingPadInst - The landingpad instruction holds all of the information
+/// necessary to generate correct exception handling. The landingpad instruction
+/// cannot be moved from the top of a landing pad block, which itself is
+/// accessible only from the 'unwind' edge of an invoke. This uses the
+/// SubclassData field in Value to store whether or not the landingpad is a
+/// cleanup.
+///
+class LandingPadInst : public Instruction {
+  /// ReservedSpace - The number of operands actually allocated.  NumOperands is
+  /// the number actually in use.
+  unsigned ReservedSpace;
+  LandingPadInst(const LandingPadInst &LP);
+public:
+  enum ClauseType { Catch, Filter };
+private:
+  void *operator new(size_t, unsigned);  // DO NOT IMPLEMENT
+  // Allocate space for exactly zero operands.
+  void *operator new(size_t s) {
+    return User::operator new(s, 0);
+  }
+  void growOperands(unsigned Size);
+  void init(Value *PersFn, unsigned NumReservedValues, const Twine &NameStr);
+
+  explicit LandingPadInst(Type *RetTy, Value *PersonalityFn,
+                          unsigned NumReservedValues, const Twine &NameStr,
+                          Instruction *InsertBefore);
+  explicit LandingPadInst(Type *RetTy, Value *PersonalityFn,
+                          unsigned NumReservedValues, const Twine &NameStr,
+                          BasicBlock *InsertAtEnd);
+protected:
+  virtual LandingPadInst *clone_impl() const;
+public:
+  /// Constructors - NumReservedClauses is a hint for the number of incoming
+  /// clauses that this landingpad will have (use 0 if you really have no idea).
+  static LandingPadInst *Create(Type *RetTy, Value *PersonalityFn,
+                                unsigned NumReservedClauses,
+                                const Twine &NameStr = "",
+                                Instruction *InsertBefore = 0);
+  static LandingPadInst *Create(Type *RetTy, Value *PersonalityFn,
+                                unsigned NumReservedClauses,
+                                const Twine &NameStr, BasicBlock *InsertAtEnd);
+  ~LandingPadInst();
+
+  /// Provide fast operand accessors
+  DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
+
+  /// getPersonalityFn - Get the personality function associated with this
+  /// landing pad.
+  Value *getPersonalityFn() const { return getOperand(0); }
+
+  /// isCleanup - Return 'true' if this landingpad instruction is a
+  /// cleanup. I.e., it should be run when unwinding even if its landing pad
+  /// doesn't catch the exception.
+  bool isCleanup() const { return getSubclassDataFromInstruction() & 1; }
+
+  /// setCleanup - Indicate that this landingpad instruction is a cleanup.
+  void setCleanup(bool V) {
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~1) |
+                               (V ? 1 : 0));
+  }
+
+  /// addClause - Add a catch or filter clause to the landing pad.
+  void addClause(Value *ClauseVal);
+
+  /// getClause - Get the value of the clause at index Idx. Use isCatch/isFilter
+  /// to determine what type of clause this is.
+  Value *getClause(unsigned Idx) const { return OperandList[Idx + 1]; }
+
+  /// isCatch - Return 'true' if the clause and index Idx is a catch clause.
+  bool isCatch(unsigned Idx) const {
+    return !isa<ArrayType>(OperandList[Idx + 1]->getType());
+  }
+
+  /// isFilter - Return 'true' if the clause and index Idx is a filter clause.
+  bool isFilter(unsigned Idx) const {
+    return isa<ArrayType>(OperandList[Idx + 1]->getType());
+  }
+
+  /// getNumClauses - Get the number of clauses for this landing pad.
+  unsigned getNumClauses() const { return getNumOperands() - 1; }
+
+  /// reserveClauses - Grow the size of the operand list to accomodate the new
+  /// number of clauses.
+  void reserveClauses(unsigned Size) { growOperands(Size); }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const LandingPadInst *) { return true; }
+  static inline bool classof(const Instruction *I) {
+    return I->getOpcode() == Instruction::LandingPad;
+  }
+  static inline bool classof(const Value *V) {
+    return isa<Instruction>(V) && classof(cast<Instruction>(V));
+  }
+};
+
+template <>
+struct OperandTraits<LandingPadInst> : public HungoffOperandTraits<2> {
+};
+
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(LandingPadInst, Value)
 
 //===----------------------------------------------------------------------===//
 //                               ReturnInst Class
@@ -2174,6 +2379,13 @@ public:
     assert(idx < getNumSuccessors() && "Successor # out of range for Branch!");
     *(&Op<-1>() - idx) = (Value*)NewSucc;
   }
+
+  /// \brief Swap the successors of this branch instruction.
+  ///
+  /// Swaps the successors of the branch instruction. This also swaps any
+  /// branch weight metadata associated with the instruction so that it
+  /// continues to map correctly to each operand.
+  void swapSuccessors();
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const BranchInst *) { return true; }
@@ -2324,6 +2536,13 @@ public:
   ConstantInt *getSuccessorValue(unsigned idx) const {
     assert(idx < getNumSuccessors() && "Successor # out of range!");
     return reinterpret_cast<ConstantInt*>(getOperand(idx*2));
+  }
+
+  // setSuccessorValue - Updates the value associated with the specified
+  // successor.
+  void setSuccessorValue(unsigned idx, ConstantInt* SuccessorValue) {
+    assert(idx < getNumSuccessors() && "Successor # out of range!");
+    setOperand(idx*2, reinterpret_cast<Value*>(SuccessorValue));
   }
 
   // Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -2616,6 +2835,10 @@ public:
   void setUnwindDest(BasicBlock *B) {
     Op<-1>() = reinterpret_cast<Value*>(B);
   }
+
+  /// getLandingPadInst - Get the landingpad instruction from the landing pad
+  /// block (the unwind destination).
+  LandingPadInst *getLandingPadInst() const;
 
   BasicBlock *getSuccessor(unsigned i) const {
     assert(i < 2 && "Successor # out of range for invoke!");

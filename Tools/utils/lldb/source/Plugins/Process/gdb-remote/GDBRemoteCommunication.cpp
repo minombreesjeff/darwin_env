@@ -391,7 +391,7 @@ GDBRemoteCommunication::CheckForPacket (const uint8_t *src, size_t src_len, Stri
                 {
                     success = false;
                     if (log)
-                        log->Printf ("error: invalid checksum in packet: '%s'\n", (int)(total_length), m_bytes.c_str());
+                        log->Printf ("error: invalid checksum in packet: '%s'\n", m_bytes.c_str());
                 }
             }
             m_bytes.erase(0, total_length);
@@ -526,7 +526,7 @@ GDBRemoteCommunication::StartDebugserverProcess (const char *debugserver_url,
     }
     else
     {
-        error.SetErrorStringWithFormat ("Unable to locate " DEBUGSERVER_BASENAME ".\n");
+        error.SetErrorStringWithFormat ("unable to locate " DEBUGSERVER_BASENAME );
     }
     return error;
 }

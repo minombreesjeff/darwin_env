@@ -51,10 +51,12 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 #include "lldb/API/SBCommandReturnObject.h"
 #include "lldb/API/SBCommunication.h"
 #include "lldb/API/SBCompileUnit.h"
+#include "lldb/API/SBData.h"
 #include "lldb/API/SBDebugger.h"
 #include "lldb/API/SBError.h"
 #include "lldb/API/SBEvent.h"
 #include "lldb/API/SBFileSpec.h"
+#include "lldb/API/SBFileSpecList.h"
 #include "lldb/API/SBFrame.h"
 #include "lldb/API/SBFunction.h"
 #include "lldb/API/SBHostOS.h"
@@ -65,6 +67,7 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 #include "lldb/API/SBListener.h"
 #include "lldb/API/SBModule.h"
 #include "lldb/API/SBProcess.h"
+#include "lldb/API/SBSection.h"
 #include "lldb/API/SBSourceManager.h"
 #include "lldb/API/SBStream.h"
 #include "lldb/API/SBStringList.h"
@@ -76,6 +79,7 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 #include "lldb/API/SBType.h"
 #include "lldb/API/SBValue.h"
 #include "lldb/API/SBValueList.h"
+#include "lldb/API/SBWatchpoint.h"
 %}
 
 /* Various liblldb typedefs that SWIG needs to know about.  */
@@ -100,10 +104,12 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 %include "./Python/interface/SBCommandReturnObject.i"
 %include "./Python/interface/SBCommunication.i"
 %include "./Python/interface/SBCompileUnit.i"
+%include "./Python/interface/SBData.i"
 %include "./Python/interface/SBDebugger.i"
 %include "./Python/interface/SBError.i"
 %include "./Python/interface/SBEvent.i"
 %include "./Python/interface/SBFileSpec.i"
+%include "./Python/interface/SBFileSpecList.i"
 %include "./Python/interface/SBFrame.i"
 %include "./Python/interface/SBFunction.i"
 %include "./Python/interface/SBHostOS.i"
@@ -114,6 +120,7 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 %include "./Python/interface/SBListener.i"
 %include "./Python/interface/SBModule.i"
 %include "./Python/interface/SBProcess.i"
+%include "./Python/interface/SBSection.i"
 %include "./Python/interface/SBSourceManager.i"
 %include "./Python/interface/SBStream.i"
 %include "./Python/interface/SBStringList.i"
@@ -125,6 +132,7 @@ o SBLineEntry: Specifies an association with a contiguous range of instructions
 %include "./Python/interface/SBType.i"
 %include "./Python/interface/SBValue.i"
 %include "./Python/interface/SBValueList.i"
+%include "./Python/interface/SBWatchpoint.i"
 
 %include "./Python/python-extensions.swig"
 

@@ -22,6 +22,7 @@
 #include "llvm/Function.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -91,6 +92,7 @@ void MemoryDependenceAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 bool MemoryDependenceAnalysis::runOnFunction(Function &) {
   AA = &getAnalysis<AliasAnalysis>();
   TD = getAnalysisIfAvailable<TargetData>();
+  DT = getAnalysisIfAvailable<DominatorTree>();
   if (PredCache == 0)
     PredCache.reset(new PredIteratorCache());
   return false;
@@ -120,21 +122,27 @@ AliasAnalysis::ModRefResult GetLocation(const Instruction *Inst,
                                         AliasAnalysis::Location &Loc,
                                         AliasAnalysis *AA) {
   if (const LoadInst *LI = dyn_cast<LoadInst>(Inst)) {
-    if (LI->isVolatile()) {
-      Loc = AliasAnalysis::Location();
+    if (LI->isUnordered()) {
+      Loc = AA->getLocation(LI);
+      return AliasAnalysis::Ref;
+    } else if (LI->getOrdering() == Monotonic) {
+      Loc = AA->getLocation(LI);
       return AliasAnalysis::ModRef;
     }
-    Loc = AA->getLocation(LI);
-    return AliasAnalysis::Ref;
+    Loc = AliasAnalysis::Location();
+    return AliasAnalysis::ModRef;
   }
 
   if (const StoreInst *SI = dyn_cast<StoreInst>(Inst)) {
-    if (SI->isVolatile()) {
-      Loc = AliasAnalysis::Location();
+    if (SI->isUnordered()) {
+      Loc = AA->getLocation(SI);
+      return AliasAnalysis::Mod;
+    } else if (SI->getOrdering() == Monotonic) {
+      Loc = AA->getLocation(SI);
       return AliasAnalysis::ModRef;
     }
-    Loc = AA->getLocation(SI);
-    return AliasAnalysis::Mod;
+    Loc = AliasAnalysis::Location();
+    return AliasAnalysis::ModRef;
   }
 
   if (const VAArgInst *V = dyn_cast<VAArgInst>(Inst)) {
@@ -232,7 +240,7 @@ getCallSiteDependencyFrom(CallSite CS, bool isReadOnlyCall,
   // unknown, otherwise it is non-local.
   if (BB != &BB->getParent()->getEntryBlock())
     return MemDepResult::getNonLocal();
-  return MemDepResult::getUnknown();
+  return MemDepResult::getNonFuncLocal();
 }
 
 /// isLoadLoadClobberIfExtendedToFullWidth - Return true if LI is a load that
@@ -270,8 +278,8 @@ unsigned MemoryDependenceAnalysis::
 getLoadLoadClobberFullWidthSize(const Value *MemLocBase, int64_t MemLocOffs,
                                 unsigned MemLocSize, const LoadInst *LI,
                                 const TargetData &TD) {
-  // We can only extend non-volatile integer loads.
-  if (!isa<IntegerType>(LI->getType()) || LI->isVolatile()) return 0;
+  // We can only extend simple integer loads.
+  if (!isa<IntegerType>(LI->getType()) || !LI->isSimple()) return 0;
   
   // Get the base of this load.
   int64_t LIOffs = 0;
@@ -325,6 +333,81 @@ getLoadLoadClobberFullWidthSize(const Value *MemLocBase, int64_t MemLocOffs,
   return 0;
 }
 
+namespace {
+  /// Only find pointer captures which happen before the given instruction. Uses
+  /// the dominator tree to determine whether one instruction is before another.
+  struct CapturesBefore : public CaptureTracker {
+    CapturesBefore(const Instruction *I, DominatorTree *DT)
+      : BeforeHere(I), DT(DT), Captured(false) {}
+
+    void tooManyUses() { Captured = true; }
+
+    bool shouldExplore(Use *U) {
+      Instruction *I = cast<Instruction>(U->getUser());
+      if (BeforeHere != I && DT->dominates(BeforeHere, I))
+        return false;
+      return true;
+    }
+
+    bool captured(Instruction *I) {
+      if (BeforeHere != I && DT->dominates(BeforeHere, I))
+        return false;
+      Captured = true;
+      return true;
+    }
+
+    const Instruction *BeforeHere;
+    DominatorTree *DT;
+
+    bool Captured;
+  };
+}
+
+AliasAnalysis::ModRefResult
+MemoryDependenceAnalysis::getModRefInfo(const Instruction *Inst,
+                                        const AliasAnalysis::Location &MemLoc) {
+  AliasAnalysis::ModRefResult MR = AA->getModRefInfo(Inst, MemLoc);
+  if (MR != AliasAnalysis::ModRef) return MR;
+
+  // FIXME: this is really just shoring-up a deficiency in alias analysis.
+  // BasicAA isn't willing to spend linear time determining whether an alloca
+  // was captured before or after this particular call, while we are. However,
+  // with a smarter AA in place, this test is just wasting compile time.
+  if (!DT) return AliasAnalysis::ModRef;
+  const Value *Object = GetUnderlyingObject(MemLoc.Ptr, TD);
+  if (!isIdentifiedObject(Object) || isa<GlobalValue>(Object))
+    return AliasAnalysis::ModRef;
+  ImmutableCallSite CS(Inst);
+  if (!CS.getInstruction()) return AliasAnalysis::ModRef;
+
+  CapturesBefore CB(Inst, DT);
+  llvm::PointerMayBeCaptured(Object, &CB);
+
+  if (isa<Constant>(Object) || CS.getInstruction() == Object || CB.Captured)
+    return AliasAnalysis::ModRef;
+
+  unsigned ArgNo = 0;
+  for (ImmutableCallSite::arg_iterator CI = CS.arg_begin(), CE = CS.arg_end();
+       CI != CE; ++CI, ++ArgNo) {
+    // Only look at the no-capture or byval pointer arguments.  If this
+    // pointer were passed to arguments that were neither of these, then it
+    // couldn't be no-capture.
+    if (!(*CI)->getType()->isPointerTy() ||
+        (!CS.doesNotCapture(ArgNo) && !CS.isByValArgument(ArgNo)))
+      continue;
+
+    // If this is a no-capture pointer argument, see if we can tell that it
+    // is impossible to alias the pointer we're checking.  If not, we have to
+    // assume that the call could touch the pointer, even though it doesn't
+    // escape.
+    if (!AA->isNoAlias(AliasAnalysis::Location(*CI),
+                       AliasAnalysis::Location(Object))) {
+      return AliasAnalysis::ModRef;
+    }
+  }
+  return AliasAnalysis::NoModRef;
+}
+
 /// getPointerDependencyFrom - Return the instruction on which a memory
 /// location depends.  If isLoad is true, this routine ignores may-aliases with
 /// read-only operations.  If isLoad is false, this routine ignores may-aliases
@@ -369,6 +452,11 @@ getPointerDependencyFrom(const AliasAnalysis::Location &MemLoc, bool isLoad,
     // Values depend on loads if the pointers are must aliased.  This means that
     // a load depends on another must aliased load from the same value.
     if (LoadInst *LI = dyn_cast<LoadInst>(Inst)) {
+      // Atomic loads have complications involved.
+      // FIXME: This is overly conservative.
+      if (!LI->isUnordered())
+        return MemDepResult::getClobber(LI);
+
       AliasAnalysis::Location LoadLoc = AA->getLocation(LI);
       
       // If we found a pointer, check if it could be the same as our pointer.
@@ -424,6 +512,11 @@ getPointerDependencyFrom(const AliasAnalysis::Location &MemLoc, bool isLoad,
     }
     
     if (StoreInst *SI = dyn_cast<StoreInst>(Inst)) {
+      // Atomic stores have complications involved.
+      // FIXME: This is overly conservative.
+      if (!SI->isUnordered())
+        return MemDepResult::getClobber(SI);
+
       // If alias analysis can tell that this store is guaranteed to not modify
       // the query pointer, ignore it.  Use getModRefInfo to handle cases where
       // the query pointer points to constant memory etc.
@@ -462,7 +555,7 @@ getPointerDependencyFrom(const AliasAnalysis::Location &MemLoc, bool isLoad,
     }
 
     // See if this instruction (e.g. a call or vaarg) mod/ref's the pointer.
-    switch (AA->getModRefInfo(Inst, MemLoc)) {
+    switch (getModRefInfo(Inst, MemLoc)) {
     case AliasAnalysis::NoModRef:
       // If the call has no effect on the queried pointer, just ignore it.
       continue;
@@ -483,7 +576,7 @@ getPointerDependencyFrom(const AliasAnalysis::Location &MemLoc, bool isLoad,
   // unknown, otherwise it is non-local.
   if (BB != &BB->getParent()->getEntryBlock())
     return MemDepResult::getNonLocal();
-  return MemDepResult::getUnknown();
+  return MemDepResult::getNonFuncLocal();
 }
 
 /// getDependency - Return the instruction on which a memory operation
@@ -516,7 +609,7 @@ MemDepResult MemoryDependenceAnalysis::getDependency(Instruction *QueryInst) {
     if (QueryParent != &QueryParent->getParent()->getEntryBlock())
       LocalCache = MemDepResult::getNonLocal();
     else
-      LocalCache = MemDepResult::getUnknown();
+      LocalCache = MemDepResult::getNonFuncLocal();
   } else {
     AliasAnalysis::Location MemLoc;
     AliasAnalysis::ModRefResult MR = GetLocation(QueryInst, MemLoc, AA);
@@ -672,7 +765,7 @@ MemoryDependenceAnalysis::getNonLocalCallDependency(CallSite QueryCS) {
       // a clobber, otherwise it is unknown.
       Dep = MemDepResult::getNonLocal();
     } else {
-      Dep = MemDepResult::getUnknown();
+      Dep = MemDepResult::getNonFuncLocal();
     }
     
     // If we had a dirty entry for the block, update it.  Otherwise, just add
@@ -790,7 +883,7 @@ GetNonLocalInfoForBlock(const AliasAnalysis::Location &Loc,
   // If the block has a dependency (i.e. it isn't completely transparent to
   // the value), remember the reverse association because we just added it
   // to Cache!
-  if (Dep.isNonLocal() || Dep.isUnknown())
+  if (!Dep.isDef() && !Dep.isClobber())
     return Dep;
   
   // Keep the ReverseNonLocalPtrDeps map up to date so we can efficiently

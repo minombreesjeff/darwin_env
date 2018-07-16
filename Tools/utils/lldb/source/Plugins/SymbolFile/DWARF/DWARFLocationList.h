@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_DWARFLocationList_h_
+#ifndef SymbolFileDWARF_DWARFLocationList_h_
 #define SymbolFileDWARF_DWARFLocationList_h_
 
 #include "SymbolFileDWARF.h"
@@ -16,7 +16,7 @@ class DWARFLocationList
 {
 public:
     static dw_offset_t
-    Dump (lldb_private::Stream *s,
+    Dump (lldb_private::Stream &s,
           const DWARFCompileUnit* cu,
           const lldb_private::DataExtractor& debug_loc_data,
           dw_offset_t offset);

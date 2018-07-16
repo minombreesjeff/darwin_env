@@ -46,6 +46,14 @@ public:
         eUnwarnedTruncation = 1, // truncated but did not notify
         eWarnedTruncation = 2 // truncated and notified
     };
+    
+    enum CommandTypes
+    {
+        eCommandTypesBuiltin = 0x0001,  // native commands such as "frame"
+        eCommandTypesUserDef = 0x0002,  // scripted commands
+        eCommandTypesAliases = 0x0004,  // aliases such as "po"
+        eCommandTypesAllThem = 0xFFFF   // all commands
+    };
 
     void
     SourceInitFile (bool in_cwd, 
@@ -62,6 +70,11 @@ public:
     AddCommand (const char *name, 
                 const lldb::CommandObjectSP &cmd_sp,
                 bool can_replace);
+    
+    bool
+    AddUserCommand (std::string name, 
+                    const lldb::CommandObjectSP &cmd_sp,
+                    bool can_replace);
     
     lldb::CommandObjectSP
     GetCommandSPExact (const char *cmd, 
@@ -93,6 +106,12 @@ public:
 
     bool
     RemoveUser (const char *alias_name);
+    
+    void
+    RemoveAllUser ()
+    {
+        m_user_dict.clear();
+    }
 
     OptionArgVectorSP
     GetAliasOptions (const char *alias_name);
@@ -110,17 +129,10 @@ public:
     AddOrReplaceAliasOptions (const char *alias_name, 
                               OptionArgVectorSP &option_arg_vector_sp);
 
-    bool
-    StripFirstWord (std::string &command_string, 
-                    std::string &next_word,
-                    bool &was_quoted,
-                    char &quote_char);
-
-    void
+    CommandObject *
     BuildAliasResult (const char *alias_name, 
                       std::string &raw_input_string, 
                       std::string &alias_result, 
-                      CommandObject *&alias_cmd_obj, 
                       CommandReturnObject &result);
 
     bool
@@ -128,7 +140,8 @@ public:
                    bool add_to_history, 
                    CommandReturnObject &result, 
                    ExecutionContext *override_context = NULL,
-                   bool repeat_on_empty_command = true);
+                   bool repeat_on_empty_command = true,
+                   bool no_context_switching = false);
     
     //------------------------------------------------------------------
     /// Execute a list of commands in sequence.
@@ -195,7 +208,7 @@ public:
 
     // This handles command line completion.  You are given a pointer to the command string buffer, to the current cursor,
     // and to the end of the string (in case it is not NULL terminated).
-    // You also passed in an Args object to fill with the returns.
+    // You also passed in an StringList object to fill with the returns.
     // The first element of the array will be filled with the string that you would need to insert at
     // the cursor point to complete the cursor point to the longest common matching prefix.
     // If you want to limit the number of elements returned, set max_return_elements to the number of elements
@@ -239,7 +252,8 @@ public:
                                           StringList &matches);
 
     void
-    GetHelp (CommandReturnObject &result);
+    GetHelp (CommandReturnObject &result,
+             uint32_t types = eCommandTypesAllThem);
 
     void
     GetAliasHelp (const char *alias_name, 
@@ -434,6 +448,9 @@ protected:
     GetCommandSP (const char *cmd, bool include_aliases = true, bool exact = true, StringList *matches = NULL);
 
 private:
+    
+    Error
+    PreprocessCommand (std::string &command);
 
     Debugger &m_debugger;                       // The debugger session that this interpreter is associated with
     ExecutionContext m_exe_ctx;                 // The current execution context to use when handling commands

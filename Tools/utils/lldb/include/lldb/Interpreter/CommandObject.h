@@ -112,6 +112,9 @@ public:
     SetHelpLong (const char * str);
 
     void
+    SetHelpLong (std::string str);
+
+    void
     SetSyntax (const char *str);
 
     virtual void
@@ -119,6 +122,12 @@ public:
 
     virtual bool
     IsCrossRefObject () { return false; }
+    
+    // override this to return true if you want to enable the user to delete
+    // the Command object from the Command dictionary (aliases have their own
+    // deletion scheme, so they do not need to care about this)
+    virtual bool
+    IsRemovable() { return false; }
     
     bool
     IsAlias () { return m_is_alias; }
@@ -131,6 +140,12 @@ public:
 
     virtual bool
     WantsRawCommandString() { return false; }
+
+    // By default, WantsCompletion = !WantsRawCommandString.
+    // Subclasses who want raw command string but desire, for example,
+    // argument completion should override this method to return true.
+    virtual bool
+    WantsCompletion() { return !WantsRawCommandString(); }
 
     virtual Options *
     GetOptions ();
@@ -352,6 +367,12 @@ protected:
     bool m_is_alias;
     Flags       m_flags;
     std::vector<CommandArgumentEntry> m_arguments;
+
+    // Helper function to populate IDs or ID ranges as the command argument data
+    // to the specified command argument entry.
+    static void
+    AddIDsArgumentData(CommandArgumentEntry &arg, lldb::CommandArgumentType ID, lldb::CommandArgumentType IDRange);
+
 };
 
 } // namespace lldb_private

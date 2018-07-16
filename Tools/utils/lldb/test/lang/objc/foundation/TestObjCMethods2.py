@@ -42,6 +42,36 @@ class FoundationTestCase2(TestBase):
         self.buildDwarf()
         self.NSString_expr()
 
+    def test_MyString_dump_with_dsym(self):
+        """Test dump of a known Objective-C object by dereferencing it."""
+        self.buildDsym()
+        self.MyString_dump()
+
+    def test_MyString_dump_with_dwarf(self):
+        """Test dump of a known Objective-C object by dereferencing it."""
+        self.buildDwarf()
+        self.MyString_dump()
+
+	def test_NSError_po_with_dsym(self):
+		"""Test that po of the result of an unknown method doesn't require a cast."""
+		self.buildDsym()
+		self.NSError_po()
+
+	def test_NSError_po_with_dwarf(self):
+		"""Test that po of the result of an unknown method doesn't require a cast."""
+		self.buildDsym()
+		self.NSError_po()
+		
+	def test_NSError_p_with_dsym(self):
+		"""Test that p of the result of an unknown method does require a cast."""
+		self.buildDsym()
+		self.NSError_p()
+
+	def test_NSError_p_with_dwarf(self):
+		"""Test that p of the result of an unknown method does require a cast."""
+		self.buildDsym()
+		self.NSError_p()
+				
     def setUp(self):
         # Call super's setUp().
         TestBase.setUp(self)
@@ -51,7 +81,8 @@ class FoundationTestCase2(TestBase):
         self.lines.append(line_number('main.m', '// Expressions to test here for NSArray:'))
         self.lines.append(line_number('main.m', '// Expressions to test here for NSString:'))
         self.lines.append(line_number('main.m', "// Set a breakpoint on '-[MyString description]' and test expressions:"))
-
+        self.lines.append(line_number('main.m', '// Set break point at this line'))
+    
     def more_expr_objc(self):
         """More expression commands for objective-c."""
         exe = os.path.join(os.getcwd(), "a.out")
@@ -149,6 +180,57 @@ class FoundationTestCase2(TestBase):
         self.expect('expression str = [NSString stringWithFormat: @"%cew", \'N\']')
         self.runCmd("process continue")
 
+    def MyString_dump(self):
+        """Test dump of a known Objective-C object by dereferencing it."""
+        exe = os.path.join(os.getcwd(), "a.out")
+        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
+        
+        line = self.lines[4]
+
+        self.expect("breakpoint set -f main.m -l %d" % line, BREAKPOINT_CREATED,
+                    substrs = ["Breakpoint created:",
+                               "file ='main.m', line = %d, locations = 1" % line])
+        
+        self.runCmd("run", RUN_SUCCEEDED)
+        
+        self.expect("expression *my",
+            patterns = ["\(MyString\) \$.* = ", "\(MyBase\)", "\(NSObject\)", "\(Class\)"])
+        self.runCmd("process continue")
+
+	def NSError_po(self):
+		"""Test that po of the result of an unknown method doesn't require a cast."""
+		exe = os.path.join(os.getcwd(), "a.out")
+        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
+        
+        line = self.lines[4]
+
+        self.expect("breakpoint set -f main.m -l %d" % line, BREAKPOINT_CREATED,
+                    substrs = ["Breakpoint created:",
+                               "file ='main.m', line = %d, locations = 1" % line])
+
+        self.runCmd("run", RUN_SUCCEEDED)
+
+        self.expect("po [NSError errorWithDomain:@\"Hello\" code:35 userInfo:nil]",
+            patterns = ["\(id\) \$.* = ", "Error Domain=Hello", "Code=35", "be completed."])
+        self.runCmd("process continue")
+
+	def NSError_p(self):
+		"""Test that p of the result of an unknown method does require a cast."""
+		exe = os.path.join(os.getcwd(), "a.out")
+        self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
+        
+        line = self.lines[4]
+
+        self.expect("breakpoint set -f main.m -l %d" % line, BREAKPOINT_CREATED,
+                    substrs = ["Breakpoint created:",
+                               "file ='main.m', line = %d, locations = 1" % line])
+
+        self.runCmd("run", RUN_SUCCEEDED)
+
+        self.expect("p [NSError errorWithDomain:@\"Hello\" code:35 userInfo:nil]",
+                    error = True, 
+                    patterns = ["no known method", "cast the message send to the method's return type"])
+        self.runCmd("process continue")
 
 if __name__ == '__main__':
     import atexit

@@ -16,6 +16,8 @@
 
 namespace clang {
 
+class Module;
+  
 //===----------------------------------------------------------------------===//
 // Custom Consumer Actions
 //===----------------------------------------------------------------------===//
@@ -71,7 +73,9 @@ protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
                                          StringRef InFile);
 
-  virtual bool usesCompleteTranslationUnit() { return false; }
+  virtual TranslationUnitKind getTranslationUnitKind() {
+    return TU_Prefix;
+  }
 
   virtual bool hasASTFileSupport() const { return false; }
 
@@ -84,10 +88,36 @@ public:
                                           StringRef InFile,
                                           std::string &Sysroot,
                                           std::string &OutputFile,
-                                          raw_ostream *&OS,
-                                          bool &Chaining);
+                                          raw_ostream *&OS);
 };
 
+class GenerateModuleAction : public ASTFrontendAction {
+  clang::Module *Module;
+  
+protected:
+  virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
+                                         StringRef InFile);
+  
+  virtual TranslationUnitKind getTranslationUnitKind() { 
+    return TU_Module;
+  }
+  
+  virtual bool hasASTFileSupport() const { return false; }
+  
+public:
+  virtual bool BeginSourceFileAction(CompilerInstance &CI, StringRef Filename);
+  
+  /// \brief Compute the AST consumer arguments that will be used to
+  /// create the PCHGenerator instance returned by CreateASTConsumer.
+  ///
+  /// \returns true if an error occurred, false otherwise.
+  static bool ComputeASTConsumerArguments(CompilerInstance &CI,
+                                          StringRef InFile,
+                                          std::string &Sysroot,
+                                          std::string &OutputFile,
+                                          raw_ostream *&OS);
+};
+  
 class SyntaxOnlyAction : public ASTFrontendAction {
 protected:
   virtual ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
@@ -128,7 +158,7 @@ public:
   virtual ~ASTMergeAction();
 
   virtual bool usesPreprocessorOnly() const;
-  virtual bool usesCompleteTranslationUnit();
+  virtual TranslationUnitKind getTranslationUnitKind();
   virtual bool hasPCHSupport() const;
   virtual bool hasASTFileSupport() const;
   virtual bool hasCodeCompletionSupport() const;

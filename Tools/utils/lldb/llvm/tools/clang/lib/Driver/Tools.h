@@ -29,7 +29,8 @@ namespace tools {
 
   /// \brief Clang compiler tool.
   class LLVM_LIBRARY_VISIBILITY Clang : public Tool {
-    void AddPreprocessingOptions(const Driver &D,
+    void AddPreprocessingOptions(Compilation &C,
+                                 const Driver &D,
                                  const ArgList &Args,
                                  ArgStringList &CmdArgs,
                                  const InputInfo &Output,
@@ -40,6 +41,7 @@ namespace tools {
     void AddMIPSTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddSparcTargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
     void AddX86TargetArgs(const ArgList &Args, ArgStringList &CmdArgs) const;
+    void AddHexagonTargetArgs (const ArgList &Args, ArgStringList &CmdArgs) const;
 
   public:
     Clang(const ToolChain &TC) : Tool("clang", "clang frontend", TC) {}
@@ -151,6 +153,43 @@ namespace gcc {
   };
 } // end namespace gcc
 
+namespace hexagon {
+  // For Hexagon, we do not need to instantiate tools for PreProcess, PreCompile and Compile.
+  // We simply use "clang -cc1" for those actions.
+  class LLVM_LIBRARY_VISIBILITY Assemble : public Tool {
+  public:
+    Assemble(const ToolChain &TC) : Tool("hexagon::Assemble",
+      "hexagon-as", TC) {}
+
+    virtual bool hasIntegratedCPP() const { return false; }
+
+    virtual void RenderExtraToolArgs(const JobAction &JA,
+                                     ArgStringList &CmdArgs) const;
+    virtual void ConstructJob(Compilation &C, const JobAction &JA,
+                              const InputInfo &Output,
+                              const InputInfoList &Inputs,
+                              const ArgList &TCArgs,
+                              const char *LinkingOutput) const;
+  };
+
+  class LLVM_LIBRARY_VISIBILITY Link : public Tool {
+  public:
+    Link(const ToolChain &TC) : Tool("hexagon::Link",
+      "hexagon-ld", TC) {}
+
+    virtual bool hasIntegratedCPP() const { return false; }
+
+    virtual void RenderExtraToolArgs(const JobAction &JA,
+                                     ArgStringList &CmdArgs) const;
+    virtual void ConstructJob(Compilation &C, const JobAction &JA,
+                              const InputInfo &Output,
+                              const InputInfoList &Inputs,
+                              const ArgList &TCArgs,
+                              const char *LinkingOutput) const;
+  };
+} // end namespace hexagon.
+
+
 namespace darwin {
   class LLVM_LIBRARY_VISIBILITY DarwinTool : public Tool {
   protected:
@@ -178,6 +217,7 @@ namespace darwin {
     const char *getCC1Name(types::ID Type) const;
 
     void AddCC1Args(const ArgList &Args, ArgStringList &CmdArgs) const;
+    void RemoveCC1UnsupportedArgs(ArgStringList &CmdArgs) const;
     void AddCC1OptionsArgs(const ArgList &Args, ArgStringList &CmdArgs,
                            const InputInfoList &Inputs,
                            const ArgStringList &OutputArgs) const;
@@ -276,6 +316,21 @@ namespace darwin {
                               const ArgList &TCArgs,
                               const char *LinkingOutput) const;
   };
+
+  class LLVM_LIBRARY_VISIBILITY VerifyDebug : public DarwinTool  {
+  public:
+    VerifyDebug(const ToolChain &TC) : DarwinTool("darwin::VerifyDebug",
+						  "dwarfdump", TC) {}
+
+    virtual bool hasIntegratedCPP() const { return false; }
+
+    virtual void ConstructJob(Compilation &C, const JobAction &JA,
+			      const InputInfo &Output,
+			      const InputInfoList &Inputs,
+			      const ArgList &TCArgs,
+			      const char *LinkingOutput) const;
+  };
+
 }
 
   /// openbsd -- Directly call GNU Binutils assembler and linker

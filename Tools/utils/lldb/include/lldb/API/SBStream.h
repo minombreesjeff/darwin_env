@@ -39,7 +39,7 @@ public:
     GetSize();
 
     void
-    Printf (const char *format, ...);
+    Printf (const char *format, ...)  __attribute__ ((format (printf, 2, 3)));
 
     void
     RedirectToFile (const char *path, bool append);
@@ -61,20 +61,30 @@ protected:
     friend class SBBlock;
     friend class SBBreakpoint;
     friend class SBBreakpointLocation;
+    friend class SBCommandReturnObject;
     friend class SBCompileUnit;
+    friend class SBData;
+    friend class SBDebugger;
     friend class SBEvent;
+    friend class SBFileSpec;
+    friend class SBFileSpecList;
     friend class SBFrame;
     friend class SBFunction;
     friend class SBInstruction;
     friend class SBInstructionList;
+    friend class SBLineEntry;
     friend class SBModule;
+    friend class SBProcess;
+    friend class SBSection;
     friend class SBSourceManager;
     friend class SBSymbol;
     friend class SBSymbolContext;
     friend class SBTarget;
     friend class SBThread;
+    friend class SBType;
+    friend class SBTypeMember;
     friend class SBValue;
-    friend class SBCommandReturnObject;
+    friend class SBWatchpoint;
 
 #ifndef SWIG
 

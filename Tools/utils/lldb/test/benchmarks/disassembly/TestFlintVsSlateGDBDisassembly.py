@@ -8,25 +8,28 @@ from lldbbench import *
 
 class FlintVsSlateGDBDisassembly(BenchBase):
 
-    mydir = os.path.join("benchmarks", "example")
+    mydir = os.path.join("benchmarks", "disassembly")
 
     def setUp(self):
         BenchBase.setUp(self)
         self.gdb_41_exe = '/Flint/usr/bin/gdb'
         self.gdb_42_exe = '/Developer/usr/bin/gdb'
-        self.exe = self.lldbExec
+        self.exe = self.lldbHere
         self.function = 'Driver::MainLoop()'
         self.gdb_41_avg = None
         self.gdb_42_avg = None
+        self.count = lldb.bmIterationCount
+        if self.count <= 0:
+            self.count = 5
 
     @benchmarks_test
     def test_run_41_then_42(self):
         """Test disassembly on a large function with 4.1 vs. 4.2's gdb."""
         print
-        self.run_gdb_disassembly(self.gdb_41_exe, self.exe, self.function, 5)
+        self.run_gdb_disassembly(self.gdb_41_exe, self.exe, self.function, self.count)
         print "4.1 gdb benchmark:", self.stopwatch
         self.gdb_41_avg = self.stopwatch.avg()
-        self.run_gdb_disassembly(self.gdb_42_exe, self.exe, self.function, 5)
+        self.run_gdb_disassembly(self.gdb_42_exe, self.exe, self.function, self.count)
         print "4.2 gdb benchmark:", self.stopwatch
         self.gdb_42_avg = self.stopwatch.avg()
         print "gdb_42_avg/gdb_41_avg: %f" % (self.gdb_42_avg/self.gdb_41_avg)
@@ -35,10 +38,10 @@ class FlintVsSlateGDBDisassembly(BenchBase):
     def test_run_42_then_41(self):
         """Test disassembly on a large function with 4.1 vs. 4.2's gdb."""
         print
-        self.run_gdb_disassembly(self.gdb_42_exe, self.exe, self.function, 5)
+        self.run_gdb_disassembly(self.gdb_42_exe, self.exe, self.function, self.count)
         print "4.2 gdb benchmark:", self.stopwatch
         self.gdb_42_avg = self.stopwatch.avg()
-        self.run_gdb_disassembly(self.gdb_41_exe, self.exe, self.function, 5)
+        self.run_gdb_disassembly(self.gdb_41_exe, self.exe, self.function, self.count)
         print "4.1 gdb benchmark:", self.stopwatch
         self.gdb_41_avg = self.stopwatch.avg()
         print "gdb_42_avg/gdb_41_avg: %f" % (self.gdb_42_avg/self.gdb_41_avg)
@@ -49,7 +52,7 @@ class FlintVsSlateGDBDisassembly(BenchBase):
         prompt = self.child_prompt
 
         # So that the child gets torn down after the test.
-        self.child = pexpect.spawn('%s %s' % (gdb_exe_path, exe))
+        self.child = pexpect.spawn('%s --nx %s' % (gdb_exe_path, exe))
         child = self.child
 
         # Turn on logging for what the child sends back.

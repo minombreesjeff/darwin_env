@@ -49,13 +49,14 @@ AddBreakpointDescription (Stream *s, Breakpoint *bp, lldb::DescriptionLevel leve
 
 CommandObjectBreakpointSet::CommandOptions::CommandOptions(CommandInterpreter &interpreter) :
     Options (interpreter),
-    m_filename (),
+    m_filenames (),
     m_line_num (0),
     m_column (0),
     m_check_inlines (true),
     m_func_name (),
     m_func_name_type_mask (0),
     m_func_regexp (),
+    m_source_text_regexp(),
     m_modules (),
     m_load_addr(),
     m_ignore_count (0),
@@ -69,6 +70,8 @@ CommandObjectBreakpointSet::CommandOptions::CommandOptions(CommandInterpreter &i
 CommandObjectBreakpointSet::CommandOptions::~CommandOptions ()
 {
 }
+
+#define LLDB_OPT_FILE (LLDB_OPT_SET_1 | LLDB_OPT_SET_3 | LLDB_OPT_SET_4 | LLDB_OPT_SET_5 | LLDB_OPT_SET_6 | LLDB_OPT_SET_7 | LLDB_OPT_SET_8 | LLDB_OPT_SET_9 )
 
 OptionDefinition
 CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
@@ -91,11 +94,11 @@ CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
     { LLDB_OPT_SET_ALL, false, "queue-name", 'q', required_argument, NULL, NULL, eArgTypeQueueName,
         "The breakpoint stops only for threads in the queue whose name is given by this argument."},
 
-    { LLDB_OPT_SET_1, false, "file", 'f', required_argument, NULL, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
-        "Set the breakpoint by source location in this particular file."},
+    { LLDB_OPT_FILE, false, "file", 'f', required_argument, NULL, CommandCompletions::eSourceFileCompletion, eArgTypeFilename,
+        "Specifies the source file in which to set this breakpoint."},
 
     { LLDB_OPT_SET_1, true, "line", 'l', required_argument, NULL, 0, eArgTypeLineNum,
-        "Set the breakpoint by source location at this particular line."},
+        "Specifies the line number on which to set this breakpoint."},
 
     // Comment out this option for the moment, as we don't actually use it, but will in the future.
     // This way users won't see it, but the infrastructure is left in place.
@@ -124,6 +127,10 @@ CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
     { LLDB_OPT_SET_8, true, "basename", 'b', required_argument, NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,
         "Set the breakpoint by function basename (C++ namespaces and arguments will be ignored)." },
 
+    { LLDB_OPT_SET_9, true, "source-pattern-regexp", 'p', required_argument, NULL, 0, eArgTypeRegularExpression,
+        "Set the breakpoint specifying a regular expression to match a pattern in the source text in a given source file." },
+
+
     { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
@@ -147,7 +154,7 @@ CommandObjectBreakpointSet::CommandOptions::SetOptionValue (uint32_t option_idx,
                 m_load_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 16);
 
             if (m_load_addr == LLDB_INVALID_ADDRESS)
-                error.SetErrorStringWithFormat ("Invalid address string '%s'.\n", option_arg);
+                error.SetErrorStringWithFormat ("invalid address string '%s'", option_arg);
             break;
 
         case 'c':
@@ -155,7 +162,7 @@ CommandObjectBreakpointSet::CommandOptions::SetOptionValue (uint32_t option_idx,
             break;
 
         case 'f':
-            m_filename.assign (option_arg);
+            m_filenames.AppendIfUnique (FileSpec(option_arg, false));
             break;
 
         case 'l':
@@ -187,27 +194,31 @@ CommandObjectBreakpointSet::CommandOptions::SetOptionValue (uint32_t option_idx,
             m_func_name_type_mask |= eFunctionNameTypeMethod;
             break;
 
+        case 'p':
+            m_source_text_regexp.assign (option_arg);
+            break;
+            
         case 'r':
             m_func_regexp.assign (option_arg);
             break;
 
         case 's':
             {
-                m_modules.push_back (std::string (option_arg));
+                m_modules.AppendIfUnique (FileSpec (option_arg, false));
                 break;
             }
         case 'i':
         {
             m_ignore_count = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
             if (m_ignore_count == UINT32_MAX)
-               error.SetErrorStringWithFormat ("Invalid ignore count '%s'.\n", option_arg);
+               error.SetErrorStringWithFormat ("invalid ignore count '%s'", option_arg);
         }
         break;
         case 't' :
         {
             m_thread_id = Args::StringToUInt64(option_arg, LLDB_INVALID_THREAD_ID, 0);
             if (m_thread_id == LLDB_INVALID_THREAD_ID)
-               error.SetErrorStringWithFormat ("Invalid thread id string '%s'.\n", option_arg);
+               error.SetErrorStringWithFormat ("invalid thread id string '%s'", option_arg);
         }
         break;
         case 'T':
@@ -220,12 +231,12 @@ CommandObjectBreakpointSet::CommandOptions::SetOptionValue (uint32_t option_idx,
         {
             m_thread_index = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
             if (m_thread_id == UINT32_MAX)
-               error.SetErrorStringWithFormat ("Invalid thread index string '%s'.\n", option_arg);
+               error.SetErrorStringWithFormat ("invalid thread index string '%s'", option_arg);
             
         }
         break;
         default:
-            error.SetErrorStringWithFormat ("Unrecognized option '%c'.\n", short_option);
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
     }
 
@@ -235,14 +246,14 @@ CommandObjectBreakpointSet::CommandOptions::SetOptionValue (uint32_t option_idx,
 void
 CommandObjectBreakpointSet::CommandOptions::OptionParsingStarting ()
 {
-    m_filename.clear();
+    m_filenames.Clear();
     m_line_num = 0;
     m_column = 0;
     m_func_name.clear();
     m_func_name_type_mask = 0;
     m_func_regexp.clear();
     m_load_addr = LLDB_INVALID_ADDRESS;
-    m_modules.clear();
+    m_modules.Clear();
     m_ignore_count = 0;
     m_thread_id = LLDB_INVALID_THREAD_ID;
     m_thread_index = UINT32_MAX;
@@ -275,6 +286,45 @@ CommandObjectBreakpointSet::GetOptions ()
 }
 
 bool
+CommandObjectBreakpointSet::GetDefaultFile (Target *target, FileSpec &file, CommandReturnObject &result)
+{
+    uint32_t default_line;
+    // First use the Source Manager's default file. 
+    // Then use the current stack frame's file.
+    if (!target->GetSourceManager().GetDefaultFileAndLine(file, default_line))
+    {
+        StackFrame *cur_frame = m_interpreter.GetExecutionContext().GetFramePtr();
+        if (cur_frame == NULL)
+        {
+            result.AppendError ("No selected frame to use to find the default file.");
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+        else if (!cur_frame->HasDebugInformation())
+        {
+            result.AppendError ("Cannot use the selected frame to find the default file, it has no debug info.");
+            result.SetStatus (eReturnStatusFailed);
+            return false;
+        }
+        else
+        {
+            const SymbolContext &sc = cur_frame->GetSymbolContext (eSymbolContextLineEntry);
+            if (sc.line_entry.file)
+            {
+                file = sc.line_entry.file;
+            }
+            else
+            {
+                result.AppendError ("Can't find the file for the selected frame to use as the default file.");
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool
 CommandObjectBreakpointSet::Execute
 (
     Args& command,
@@ -294,6 +344,7 @@ CommandObjectBreakpointSet::Execute
     //   2).  -a  [-s -g]         (setting breakpoint by address)
     //   3).  -n  [-s -g]         (setting breakpoint by function name)
     //   4).  -r  [-s -g]         (setting breakpoint by function name regular expression)
+    //   5).  -p -f               (setting a breakpoint by comparing a reg-exp to source text)
 
     BreakpointSetType break_type = eSetTypeInvalid;
 
@@ -305,88 +356,45 @@ CommandObjectBreakpointSet::Execute
         break_type = eSetTypeFunctionName;
     else if  (!m_options.m_func_regexp.empty())
         break_type = eSetTypeFunctionRegexp;
+    else if (!m_options.m_source_text_regexp.empty())
+        break_type = eSetTypeSourceRegexp;
 
     Breakpoint *bp = NULL;
     FileSpec module_spec;
     bool use_module = false;
-    int num_modules = m_options.m_modules.size();
+    int num_modules = m_options.m_modules.GetSize();
 
     if ((num_modules > 0) && (break_type != eSetTypeAddress))
         use_module = true;
-     
+
     switch (break_type)
     {
         case eSetTypeFileAndLine: // Breakpoint by source position
             {
                 FileSpec file;
-                if (m_options.m_filename.empty())
+                uint32_t num_files = m_options.m_filenames.GetSize();
+                if (num_files == 0)
                 {
-                    StackFrame *cur_frame = m_interpreter.GetExecutionContext().frame;
-                    if (cur_frame == NULL)
+                    if (!GetDefaultFile (target, file, result))
                     {
-                        result.AppendError ("Attempting to set breakpoint by line number alone with no selected frame.");
+                        result.AppendError("No file supplied and no default file available.");
                         result.SetStatus (eReturnStatusFailed);
-                        break;
+                        return false;
                     }
-                    else if (!cur_frame->HasDebugInformation())
-                    {
-                        result.AppendError ("Attempting to set breakpoint by line number alone but selected frame has no debug info.");
-                        result.SetStatus (eReturnStatusFailed);
-                        break;
-                    }
-                    else
-                    {
-                        const SymbolContext &sc = cur_frame->GetSymbolContext (eSymbolContextLineEntry);
-                        if (sc.line_entry.file)
-                        {
-                            file = sc.line_entry.file;
-                        }
-                        else
-                        {
-                            result.AppendError ("Attempting to set breakpoint by line number alone but can't find the file for the selected frame.");
-                            result.SetStatus (eReturnStatusFailed);
-                            break;
-                        }
-                    }
+                }
+                else if (num_files > 1)
+                {
+                    result.AppendError("Only one file at a time is allowed for file and line breakpoints.");
+                    result.SetStatus (eReturnStatusFailed);
+                    return false;
                 }
                 else
-                {
-                    file.SetFile(m_options.m_filename.c_str(), false);
-                }
-
-                if (use_module)
-                {
-                    for (int i = 0; i < num_modules; ++i)
-                    {
-                        module_spec.SetFile(m_options.m_modules[i].c_str(), false);
-                        bp = target->CreateBreakpoint (&module_spec,
-                                                       file,
-                                                       m_options.m_line_num,
-                                                       m_options.m_check_inlines).get();
-                        if (bp)
-                        {
-                            Stream &output_stream = result.GetOutputStream();
-                            result.AppendMessage ("Breakpoint created: ");
-                            bp->GetDescription(&output_stream, lldb::eDescriptionLevelBrief);
-                            output_stream.EOL();
-                            if (bp->GetNumLocations() == 0)
-                                output_stream.Printf ("WARNING:  Unable to resolve breakpoint to any actual"
-                                                      " locations.\n");
-                            result.SetStatus (eReturnStatusSuccessFinishResult);
-                        }
-                        else
-                        {
-                            result.AppendErrorWithFormat("Breakpoint creation failed: No breakpoint created in module '%s'.\n",
-                                                        m_options.m_modules[i].c_str());
-                            result.SetStatus (eReturnStatusFailed);
-                        }
-                    }
-                }
-                else
-                    bp = target->CreateBreakpoint (NULL,
-                                                   file,
-                                                   m_options.m_line_num,
-                                                   m_options.m_check_inlines).get();
+                    file = m_options.m_filenames.GetFileSpecAtIndex(0);
+                    
+                bp = target->CreateBreakpoint (&(m_options.m_modules),
+                                               file,
+                                               m_options.m_line_num,
+                                               m_options.m_check_inlines).get();
             }
             break;
 
@@ -400,73 +408,63 @@ CommandObjectBreakpointSet::Execute
                 
                 if (name_type_mask == 0)
                     name_type_mask = eFunctionNameTypeAuto;
-                                    
-                if (use_module)
-                {
-                    for (int i = 0; i < num_modules; ++i)
-                    {
-                        module_spec.SetFile(m_options.m_modules[i].c_str(), false);
-                        bp = target->CreateBreakpoint (&module_spec, 
-                                                       m_options.m_func_name.c_str(), 
-                                                       name_type_mask, 
-                                                       Breakpoint::Exact).get();
-                        if (bp)
-                        {
-                            Stream &output_stream = result.GetOutputStream();
-                            output_stream.Printf ("Breakpoint created: ");
-                            bp->GetDescription(&output_stream, lldb::eDescriptionLevelBrief);
-                            output_stream.EOL();
-                            if (bp->GetNumLocations() == 0)
-                                output_stream.Printf ("WARNING:  Unable to resolve breakpoint to any actual"
-                                                      " locations.\n");
-                            result.SetStatus (eReturnStatusSuccessFinishResult);
-                        }
-                        else
-                        {
-                            result.AppendErrorWithFormat("Breakpoint creation failed: No breakpoint created in module '%s'.\n",
-                                                        m_options.m_modules[i].c_str());
-                            result.SetStatus (eReturnStatusFailed);
-                        }
-                    }
-                }
-                else
-                    bp = target->CreateBreakpoint (NULL, m_options.m_func_name.c_str(), name_type_mask, Breakpoint::Exact).get();
+                                                
+                bp = target->CreateBreakpoint (&(m_options.m_modules),
+                                               &(m_options.m_filenames),
+                                               m_options.m_func_name.c_str(), 
+                                               name_type_mask, 
+                                               Breakpoint::Exact).get();
             }
             break;
 
         case eSetTypeFunctionRegexp: // Breakpoint by regular expression function name
             {
                 RegularExpression regexp(m_options.m_func_regexp.c_str());
-                if (use_module)
+                if (!regexp.IsValid())
                 {
-                    for (int i = 0; i < num_modules; ++i)
-                    {
-                        module_spec.SetFile(m_options.m_modules[i].c_str(), false);
-                        bp = target->CreateBreakpoint (&module_spec, regexp).get();
-                        if (bp)
-                        {
-                            Stream &output_stream = result.GetOutputStream();
-                            output_stream.Printf ("Breakpoint created: ");
-                            bp->GetDescription(&output_stream, lldb::eDescriptionLevelBrief);
-                            output_stream.EOL();
-                            if (bp->GetNumLocations() == 0)
-                                output_stream.Printf ("WARNING:  Unable to resolve breakpoint to any actual"
-                                                      " locations.\n");
-                            result.SetStatus (eReturnStatusSuccessFinishResult);
-                        }
-                        else
-                        {
-                            result.AppendErrorWithFormat("Breakpoint creation failed: No breakpoint created in module '%s'.\n",
-                                                        m_options.m_modules[i].c_str());
-                            result.SetStatus (eReturnStatusFailed);
-                        }
-                    }
+                    char err_str[1024];
+                    regexp.GetErrorAsCString(err_str, sizeof(err_str));
+                    result.AppendErrorWithFormat("Function name regular expression could not be compiled: \"%s\"",
+                                                 err_str);
+                    result.SetStatus (eReturnStatusFailed);
+                    return false;
                 }
-                else
-                    bp = target->CreateBreakpoint (NULL, regexp).get();
+                
+                bp = target->CreateFuncRegexBreakpoint (&(m_options.m_modules), &(m_options.m_filenames), regexp).get();
             }
             break;
-
+        case eSetTypeSourceRegexp: // Breakpoint by regexp on source text.
+            {
+                int num_files = m_options.m_filenames.GetSize();
+                
+                if (num_files == 0)
+                {
+                    FileSpec file;
+                    if (!GetDefaultFile (target, file, result))
+                    {
+                        result.AppendError ("No files provided and could not find default file.");
+                        result.SetStatus (eReturnStatusFailed);
+                        return false;
+                    }
+                    else
+                    {
+                        m_options.m_filenames.Append (file);
+                    }
+                }
+                
+                RegularExpression regexp(m_options.m_source_text_regexp.c_str());
+                if (!regexp.IsValid())
+                {
+                    char err_str[1024];
+                    regexp.GetErrorAsCString(err_str, sizeof(err_str));
+                    result.AppendErrorWithFormat("Source text regular expression could not be compiled: \"%s\"",
+                                                 err_str);
+                    result.SetStatus (eReturnStatusFailed);
+                    return false;
+                }
+                bp = target->CreateSourceRegexBreakpoint (&(m_options.m_modules), &(m_options.m_filenames), regexp).get();
+            }
+            break;
         default:
             break;
     }
@@ -490,7 +488,7 @@ CommandObjectBreakpointSet::Execute
             bp->GetOptions()->SetIgnoreCount(m_options.m_ignore_count);
     }
     
-    if (bp && !use_module)
+    if (bp)
     {
         Stream &output_stream = result.GetOutputStream();
         output_stream.Printf ("Breakpoint created: ");
@@ -568,7 +566,7 @@ CommandObjectMultiwordBreakpoint::VerifyBreakpointIDs (Args &args, Target *targe
 
     if (args.GetArgumentCount() == 0)
     {
-        if (target->GetLastCreatedBreakpoint() != NULL)
+        if (target->GetLastCreatedBreakpoint())
         {
             valid_ids->AddBreakpointID (BreakpointID(target->GetLastCreatedBreakpoint()->GetID(), LLDB_INVALID_BREAK_ID));
             result.SetStatus (eReturnStatusSuccessFinishNoResult);
@@ -691,7 +689,7 @@ CommandObjectBreakpointList::CommandOptions::SetOptionValue (uint32_t option_idx
             m_internal = true;
             break;
         default:
-            error.SetErrorStringWithFormat ("Unrecognized option '%c'.\n", short_option);
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
     }
 
@@ -820,22 +818,7 @@ CommandObjectBreakpointEnable::CommandObjectBreakpointEnable (CommandInterpreter
                    NULL)
 {
     CommandArgumentEntry arg;
-    CommandArgumentData bp_id_arg;
-    CommandArgumentData bp_id_range_arg;
-
-    // Create the first variant for the first (and only) argument for this command.
-    bp_id_arg.arg_type = eArgTypeBreakpointID;
-    bp_id_arg.arg_repetition = eArgRepeatOptional;
-
-    // Create the second variant for the first (and only) argument for this command.
-    bp_id_range_arg.arg_type = eArgTypeBreakpointIDRange;
-    bp_id_range_arg.arg_repetition = eArgRepeatOptional;
-
-    // The first (and only) argument for this command could be either a bp_id or a bp_id_range.
-    // Push both variants into the entry for the first argument for this command.
-    arg.push_back (bp_id_arg);         
-    arg.push_back (bp_id_range_arg);    
-    
+    CommandObject::AddIDsArgumentData(arg, eArgTypeBreakpointID, eArgTypeBreakpointIDRange);
     // Add the entry for the first argument for this command to the object's arguments vector.
     m_arguments.push_back (arg);   
 }
@@ -879,7 +862,7 @@ CommandObjectBreakpointEnable::Execute
     {
         // No breakpoint selected; enable all currently set breakpoints.
         target->EnableAllBreakpoints ();
-        result.AppendMessageWithFormat ("All breakpoints enabled. (%d breakpoints)\n", num_breakpoints);
+        result.AppendMessageWithFormat ("All breakpoints enabled. (%lu breakpoints)\n", num_breakpoints);
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
     }
     else
@@ -936,22 +919,7 @@ CommandObjectBreakpointDisable::CommandObjectBreakpointDisable (CommandInterpret
                    NULL)
 {
     CommandArgumentEntry arg;
-    CommandArgumentData bp_id_arg;
-    CommandArgumentData bp_id_range_arg;
-
-    // Create the first variant for the first (and only) argument for this command.
-    bp_id_arg.arg_type = eArgTypeBreakpointID;
-    bp_id_arg.arg_repetition = eArgRepeatOptional;
-
-    // Create the second variant for the first (and only) argument for this command.
-    bp_id_range_arg.arg_type = eArgTypeBreakpointIDRange;
-    bp_id_range_arg.arg_repetition = eArgRepeatOptional;
-
-    // The first (and only) argument for this command could be either a bp_id or a bp_id_range.
-    // Push both variants into the entry for the first argument for this command.
-    arg.push_back (bp_id_arg);         
-    arg.push_back (bp_id_range_arg);    
-    
+    CommandObject::AddIDsArgumentData(arg, eArgTypeBreakpointID, eArgTypeBreakpointIDRange);
     // Add the entry for the first argument for this command to the object's arguments vector.
     m_arguments.push_back (arg);   
 }
@@ -992,7 +960,7 @@ CommandObjectBreakpointDisable::Execute
     {
         // No breakpoint selected; disable all currently set breakpoints.
         target->DisableAllBreakpoints ();
-        result.AppendMessageWithFormat ("All breakpoints disabled. (%d breakpoints)\n", num_breakpoints);
+        result.AppendMessageWithFormat ("All breakpoints disabled. (%lu breakpoints)\n", num_breakpoints);
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
     }
     else
@@ -1089,7 +1057,7 @@ CommandObjectBreakpointClear::CommandOptions::SetOptionValue (uint32_t option_id
             break;
 
         default:
-            error.SetErrorStringWithFormat ("Unrecognized option '%c'.\n", short_option);
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
     }
 
@@ -1232,22 +1200,7 @@ CommandObjectBreakpointDelete::CommandObjectBreakpointDelete(CommandInterpreter 
                    NULL)
 {
     CommandArgumentEntry arg;
-    CommandArgumentData bp_id_arg;
-    CommandArgumentData bp_id_range_arg;
-
-    // Create the first variant for the first (and only) argument for this command.
-    bp_id_arg.arg_type = eArgTypeBreakpointID;
-    bp_id_arg.arg_repetition = eArgRepeatOptional;
-
-    // Create the second variant for the first (and only) argument for this command.
-    bp_id_range_arg.arg_type = eArgTypeBreakpointIDRange;
-    bp_id_range_arg.arg_repetition = eArgRepeatOptional;
-
-    // The first (and only) argument for this command could be either a bp_id or a bp_id_range.
-    // Push both variants into the entry for the first argument for this command.
-    arg.push_back (bp_id_arg);         
-    arg.push_back (bp_id_range_arg);    
-    
+    CommandObject::AddIDsArgumentData(arg, eArgTypeBreakpointID, eArgTypeBreakpointIDRange);
     // Add the entry for the first argument for this command to the object's arguments vector.
     m_arguments.push_back (arg);   
 }
@@ -1295,7 +1248,7 @@ CommandObjectBreakpointDelete::Execute
         else
         {
             target->RemoveAllBreakpoints ();
-            result.AppendMessageWithFormat ("All breakpoints removed. (%d breakpoints)\n", num_breakpoints);
+            result.AppendMessageWithFormat ("All breakpoints removed. (%lu breakpoints)\n", num_breakpoints);
         }
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
     }
@@ -1416,7 +1369,7 @@ CommandObjectBreakpointModify::CommandOptions::SetOptionValue (uint32_t option_i
         {
             m_ignore_count = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
             if (m_ignore_count == UINT32_MAX)
-               error.SetErrorStringWithFormat ("Invalid ignore count '%s'.\n", option_arg);
+               error.SetErrorStringWithFormat ("invalid ignore count '%s'", option_arg);
         }
         break;
         case 't' :
@@ -1430,7 +1383,7 @@ CommandObjectBreakpointModify::CommandOptions::SetOptionValue (uint32_t option_i
             {
                 m_thread_id = Args::StringToUInt64(option_arg, LLDB_INVALID_THREAD_ID, 0);
                 if (m_thread_id == LLDB_INVALID_THREAD_ID)
-                   error.SetErrorStringWithFormat ("Invalid thread id string '%s'.\n", option_arg);
+                   error.SetErrorStringWithFormat ("invalid thread id string '%s'", option_arg);
                 else
                     m_thread_id_passed = true;
             }
@@ -1461,14 +1414,14 @@ CommandObjectBreakpointModify::CommandOptions::SetOptionValue (uint32_t option_i
             {
                 m_thread_index = Args::StringToUInt32 (option_arg, UINT32_MAX, 0);
                 if (m_thread_id == UINT32_MAX)
-                   error.SetErrorStringWithFormat ("Invalid thread index string '%s'.\n", option_arg);
+                   error.SetErrorStringWithFormat ("invalid thread index string '%s'", option_arg);
                 else
                     m_thread_index_passed = true;
             }
         }
         break;
         default:
-            error.SetErrorStringWithFormat ("Unrecognized option '%c'.\n", short_option);
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
     }
 
@@ -1507,22 +1460,7 @@ CommandObjectBreakpointModify::CommandObjectBreakpointModify (CommandInterpreter
     m_options (interpreter)
 {
     CommandArgumentEntry arg;
-    CommandArgumentData bp_id_arg;
-    CommandArgumentData bp_id_range_arg;
-
-    // Create the first variant for the first (and only) argument for this command.
-    bp_id_arg.arg_type = eArgTypeBreakpointID;
-    bp_id_arg.arg_repetition = eArgRepeatPlain;
-
-    // Create the second variant for the first (and only) argument for this command.
-    bp_id_range_arg.arg_type = eArgTypeBreakpointIDRange;
-    bp_id_range_arg.arg_repetition = eArgRepeatPlain;
-
-    // The first (and only) argument for this command could be either a bp_id or a bp_id_range.
-    // Push both variants into the entry for the first argument for this command.
-    arg.push_back (bp_id_arg);         
-    arg.push_back (bp_id_range_arg);    
-    
+    CommandObject::AddIDsArgumentData(arg, eArgTypeBreakpointID, eArgTypeBreakpointIDRange);
     // Add the entry for the first argument for this command to the object's arguments vector.
     m_arguments.push_back (arg);   
 }

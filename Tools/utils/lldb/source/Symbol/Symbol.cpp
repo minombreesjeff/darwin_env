@@ -20,10 +20,9 @@ using namespace lldb_private;
 
 
 Symbol::Symbol() :
-    UserID (),
     SymbolContextScope (),
+    m_uid (UINT32_MAX),
     m_mangled (),
-    m_type (eSymbolTypeInvalid),
     m_type_data (0),
     m_type_data_resolved (false),
     m_is_synthetic (false),
@@ -31,16 +30,15 @@ Symbol::Symbol() :
     m_is_external (false),
     m_size_is_sibling (false),
     m_size_is_synthesized (false),
-    m_searched_for_function (false),
-    m_addr_range (),
+    m_type (eSymbolTypeInvalid),
     m_flags (),
-    m_function (NULL)
+    m_addr_range ()
 {
 }
 
 Symbol::Symbol
 (
-    user_id_t symID,
+    uint32_t symID,
     const char *name,
     bool name_is_mangled,
     SymbolType type,
@@ -53,10 +51,9 @@ Symbol::Symbol
     uint32_t size,
     uint32_t flags
 ) :
-    UserID (symID),
     SymbolContextScope (),
+    m_uid (symID),
     m_mangled (name, name_is_mangled),
-    m_type (type),
     m_type_data (0),
     m_type_data_resolved (false),
     m_is_synthetic (is_artificial),
@@ -64,16 +61,15 @@ Symbol::Symbol
     m_is_external (external),
     m_size_is_sibling (false),
     m_size_is_synthesized (false),
-    m_searched_for_function (false),
-    m_addr_range (section, offset, size),
+    m_type (type),
     m_flags (flags),
-    m_function (NULL)
+    m_addr_range (section, offset, size)
 {
 }
 
 Symbol::Symbol
 (
-    user_id_t symID,
+    uint32_t symID,
     const char *name,
     bool name_is_mangled,
     SymbolType type,
@@ -84,10 +80,9 @@ Symbol::Symbol
     const AddressRange &range,
     uint32_t flags
 ) :
-    UserID (symID),
     SymbolContextScope (),
+    m_uid (symID),
     m_mangled (name, name_is_mangled),
-    m_type (type),
     m_type_data (0),
     m_type_data_resolved (false),
     m_is_synthetic (is_artificial),
@@ -95,18 +90,16 @@ Symbol::Symbol
     m_is_external (external),
     m_size_is_sibling (false),
     m_size_is_synthesized (false),
-    m_searched_for_function (false),
-    m_addr_range (range),
+    m_type (type),
     m_flags (flags),
-    m_function (NULL)
+    m_addr_range (range)
 {
 }
 
 Symbol::Symbol(const Symbol& rhs):
-    UserID (rhs),
     SymbolContextScope (rhs),
+    m_uid (rhs.m_uid),
     m_mangled (rhs.m_mangled),
-    m_type (rhs.m_type),
     m_type_data (rhs.m_type_data),
     m_type_data_resolved (rhs.m_type_data_resolved),
     m_is_synthetic (rhs.m_is_synthetic),
@@ -114,10 +107,9 @@ Symbol::Symbol(const Symbol& rhs):
     m_is_external (rhs.m_is_external),
     m_size_is_sibling (rhs.m_size_is_sibling),
     m_size_is_synthesized (false),
-    m_searched_for_function (false),
-    m_addr_range (rhs.m_addr_range),
+    m_type (rhs.m_type),
     m_flags (rhs.m_flags),
-    m_function (NULL)
+    m_addr_range (rhs.m_addr_range)
 {
 }
 
@@ -127,9 +119,8 @@ Symbol::operator= (const Symbol& rhs)
     if (this != &rhs)
     {
         SymbolContextScope::operator= (rhs);
-        UserID::operator= (rhs);
+        m_uid = rhs.m_uid;
         m_mangled = rhs.m_mangled;
-        m_type = rhs.m_type;
         m_type_data = rhs.m_type_data;
         m_type_data_resolved = rhs.m_type_data_resolved;
         m_is_synthetic = rhs.m_is_synthetic;
@@ -137,12 +128,28 @@ Symbol::operator= (const Symbol& rhs)
         m_is_external = rhs.m_is_external;
         m_size_is_sibling = rhs.m_size_is_sibling;
         m_size_is_synthesized = rhs.m_size_is_sibling;
-        m_searched_for_function = rhs.m_searched_for_function;
-        m_addr_range = rhs.m_addr_range;
+        m_type = rhs.m_type;
         m_flags = rhs.m_flags;
-        m_function = rhs.m_function;
+        m_addr_range = rhs.m_addr_range;
     }
     return *this;
+}
+
+void
+Symbol::Clear()
+{
+    m_uid = UINT32_MAX;
+    m_mangled.Clear();
+    m_type_data = 0;
+    m_type_data_resolved = false;
+    m_is_synthetic = false;
+    m_is_debug = false;
+    m_is_external = false;
+    m_size_is_sibling = false;
+    m_size_is_synthesized = false;
+    m_type = eSymbolTypeInvalid;
+    m_flags = 0;
+    m_addr_range.Clear();
 }
 
 AddressRange *
@@ -177,6 +184,7 @@ void
 Symbol::GetDescription (Stream *s, lldb::DescriptionLevel level, Target *target) const
 {
     *s << "id = " << (const UserID&)*this << ", name = \"" << m_mangled.GetName() << '"';
+    
     const Section *section = m_addr_range.GetBaseAddress().GetSection();
     if (section != NULL)
     {
@@ -194,12 +202,14 @@ Symbol::GetDescription (Stream *s, lldb::DescriptionLevel level, Target *target)
             }
         }
         else
-        {
-            if (m_size_is_sibling)                
-                s->Printf (", sibling = %5llu", m_addr_range.GetBaseAddress().GetOffset());
-            else
-                s->Printf (", value = 0x%16.16llx", m_addr_range.GetBaseAddress().GetOffset());
-        }
+            s->Printf (", value = 0x%16.16llx", m_addr_range.GetBaseAddress().GetOffset());
+    }
+    else
+    {
+        if (m_size_is_sibling)                
+            s->Printf (", sibling = %5llu", m_addr_range.GetBaseAddress().GetOffset());
+        else
+            s->Printf (", value = 0x%16.16llx", m_addr_range.GetBaseAddress().GetOffset());
     }
 }
 
@@ -249,23 +259,6 @@ Symbol::Dump(Stream *s, Target *target, uint32_t index) const
     }
 }
 
-Function *
-Symbol::GetFunction ()
-{
-    if (m_function == NULL && !m_searched_for_function)
-    {
-        m_searched_for_function = true;
-        Module *module = m_addr_range.GetBaseAddress().GetModule();
-        if (module)
-        {
-            SymbolContext sc;
-            if (module->ResolveSymbolContextForAddress(m_addr_range.GetBaseAddress(), eSymbolContextFunction, sc))
-                m_function = sc.function;
-        }
-    }
-    return m_function;
-}
-
 uint32_t
 Symbol::GetPrologueByteSize ()
 {
@@ -304,7 +297,7 @@ Symbol::SetValue(addr_t value)
 bool
 Symbol::Compare(const ConstString& name, SymbolType type) const
 {
-    if (m_type == eSymbolTypeAny || m_type == type)
+    if (type == eSymbolTypeAny || m_type == type)
         return m_mangled.GetMangledName() == name || m_mangled.GetDemangledName() == name;
     return false;
 }
@@ -318,7 +311,6 @@ Symbol::GetTypeAsString() const
     {
     ENUM_TO_CSTRING(Invalid);
     ENUM_TO_CSTRING(Absolute);
-    ENUM_TO_CSTRING(Extern);
     ENUM_TO_CSTRING(Code);
     ENUM_TO_CSTRING(Data);
     ENUM_TO_CSTRING(Trampoline);
@@ -341,6 +333,9 @@ Symbol::GetTypeAsString() const
     ENUM_TO_CSTRING(Compiler);
     ENUM_TO_CSTRING(Instrumentation);
     ENUM_TO_CSTRING(Undefined);
+    ENUM_TO_CSTRING(ObjCClass);
+    ENUM_TO_CSTRING(ObjCMetaClass);
+    ENUM_TO_CSTRING(ObjCIVar);
     default:
         break;
     }
@@ -359,7 +354,7 @@ Symbol::CalculateSymbolContext (SymbolContext *sc)
         Module *module = range->GetBaseAddress().GetModule ();
         if (module)
         {
-            sc->module_sp = module->GetSP();
+            sc->module_sp = module;
             return;
         }
     }

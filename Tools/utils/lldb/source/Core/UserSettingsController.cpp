@@ -83,6 +83,10 @@ UserSettingsController::UserSettingsController (const char *level_name,
 UserSettingsController::~UserSettingsController ()
 {
     Mutex::Locker locker (m_live_settings_mutex);
+
+    // Notify all instance settings that their owner is shutting down, first.
+    for (InstanceSettingsMap::iterator pos = m_live_settings.begin(); pos != m_live_settings.end(); ++pos)
+        pos->second->NotifyOwnerIsShuttingDown();
     m_live_settings.clear();
 }
 
@@ -280,12 +284,14 @@ UserSettingsController::SetVariable (const char *full_dot_name,
     ConstString const_var_name;
     const ConstString &default_name = InstanceSettings::GetDefaultName();
 
-    Args names = UserSettingsController::BreakNameIntoPieces (full_dot_name);
+    Args names;
+    if (full_dot_name )
+        names = UserSettingsController::BreakNameIntoPieces (full_dot_name);
     int num_pieces = names.GetArgumentCount();
 
     if (num_pieces < 1)
     {
-        err.SetErrorStringWithFormat ("'%s' is not a valid variable name; cannot assign value.\n", full_dot_name);
+        err.SetErrorStringWithFormat ("'%s' is not a valid variable name; cannot assign value", full_dot_name);
         return err;
     }
 
@@ -303,7 +309,7 @@ UserSettingsController::SetVariable (const char *full_dot_name,
 
         if (num_pieces == 0)
         {
-            err.SetErrorString ("No variable name specified; cannot assign value.\n");
+            err.SetErrorString ("no variable name specified, cannot assign value");
             return err;
         }
         else if (num_pieces == 1)
@@ -337,7 +343,7 @@ UserSettingsController::SetVariable (const char *full_dot_name,
                 entry = GetInstanceEntry (const_var_name);
                 if (entry == NULL)
                 {
-                    err.SetErrorStringWithFormat ("Unable to find variable '%s.%s'; cannot assign value.\n",
+                    err.SetErrorStringWithFormat ("unable to find variable '%s.%s', cannot assign value",
                                                   prefix.GetCString(), const_var_name.GetCString());
                     return err;
                 }
@@ -412,7 +418,7 @@ UserSettingsController::SetVariable (const char *full_dot_name,
                 
                 if (names.GetArgumentCount() != 1)
                 {
-                    err.SetErrorStringWithFormat ("Invalid variable name format '%s'; cannot assign value.\n",
+                    err.SetErrorStringWithFormat ("invalid variable name format '%s', cannot assign value",
                                                   full_dot_name);
                     return err;
                 }
@@ -424,7 +430,7 @@ UserSettingsController::SetVariable (const char *full_dot_name,
 
                 if (entry == NULL)
                 {
-                    err.SetErrorStringWithFormat ("Unknown instance variable '%s'; cannot assign value.\n",
+                    err.SetErrorStringWithFormat ("unknown instance variable '%s', cannot assign value",
                                                   const_var_name.GetCString());
                     return err;
                 }
@@ -513,7 +519,7 @@ UserSettingsController::SetVariable (const char *full_dot_name,
                 }
                 if (!found)
                 {
-                    err.SetErrorStringWithFormat ("Unable to find variable '%s'; cannot assign value.\n", 
+                    err.SetErrorStringWithFormat ("unable to find variable '%s', cannot assign value", 
                                                   full_dot_name);
                     return err;
                 }
@@ -522,7 +528,7 @@ UserSettingsController::SetVariable (const char *full_dot_name,
     }
     else
     {
-        err.SetErrorStringWithFormat ("'%s' is not a valid level name; was expecting '%s'. Cannot assign value.\n",
+        err.SetErrorStringWithFormat ("'%s' is not a valid level name; was expecting '%s', cannot assign value",
                                       prefix.GetCString(), m_settings.level_name.GetCString());
     }
 
@@ -538,11 +544,17 @@ UserSettingsController::GetVariable
     Error &err
 )
 {
-    Args names = UserSettingsController::BreakNameIntoPieces (full_dot_name);
-    ConstString const_var_name;
     StringList value;
+    if (!full_dot_name)
+    {
+        err.SetErrorString ("invalid variable name");
+        return value;
+    }
 
+    Args names = UserSettingsController::BreakNameIntoPieces (full_dot_name);
     int num_pieces = names.GetArgumentCount();
+
+    ConstString const_var_name;
 
     ConstString prefix (names.GetArgumentAtIndex (0));
     const_var_name.SetCString (names.GetArgumentAtIndex (num_pieces - 1));
@@ -553,7 +565,7 @@ UserSettingsController::GetVariable
     if ((prefix != m_settings.level_name)
         && (m_settings.level_name.GetLength () > 0))
     {
-        err.SetErrorString ("Invalid variable name");
+        err.SetErrorString ("invalid variable name");
         return value;
     }
 
@@ -638,7 +650,7 @@ UserSettingsController::GetVariable
                 }
             }
             else
-                err.SetErrorString ("Invalid variable name");
+                err.SetErrorString ("invalid variable name");
         }
     }
     else
@@ -647,7 +659,7 @@ UserSettingsController::GetVariable
         if ((global_entry == NULL)
             && (instance_entry == NULL))
         {
-            err.SetErrorString ("Invalid variable name");
+            err.SetErrorString ("invalid variable name");
         }
         else if (global_entry)
         {
@@ -859,9 +871,7 @@ UserSettingsController::GetAllPendingSettingValues (Stream &strm)
 
             StreamString value_str;
 
-            if (tmp_value.GetSize() == 0)
-                value_str.Printf ("");
-            else if (tmp_value.GetSize() == 1)
+            if (tmp_value.GetSize() == 1)
                 value_str.Printf ("%s", tmp_value.GetStringAtIndex (0));
             else
             {
@@ -1141,7 +1151,7 @@ UserSettingsController::FindSettingsDescriptions (CommandInterpreter &interprete
         {
             std::string parent_prefix;
             usc_sp->BuildParentPrefix (parent_prefix);
-            err.SetErrorStringWithFormat ("Cannot find match for '%s.%s'\n", parent_prefix.c_str(), 
+            err.SetErrorStringWithFormat ("cannot find match for '%s.%s'", parent_prefix.c_str(), 
                                           prefix.GetCString());
             return;
         }
@@ -1229,7 +1239,7 @@ UserSettingsController::FindSettingsDescriptions (CommandInterpreter &interprete
             {
                 std::string parent_prefix;
                 usc_sp->BuildParentPrefix (parent_prefix);
-                err.SetErrorStringWithFormat ("Cannot find match for '%s.%s'\n", parent_prefix.c_str(), search_name);
+                err.SetErrorStringWithFormat ("cannot find match for '%s.%s'", parent_prefix.c_str(), search_name);
                 return;
             }
         }
@@ -1268,7 +1278,7 @@ UserSettingsController::FindSettingsDescriptions (CommandInterpreter &interprete
         {
             std::string parent_prefix;
             usc_sp->BuildParentPrefix (parent_prefix);
-            err.SetErrorStringWithFormat ("Cannot find match for '%s.%s'\n", parent_prefix.c_str(), search_name);
+            err.SetErrorStringWithFormat ("cannot find match for '%s.%s'", parent_prefix.c_str(), search_name);
             return;
         }
     }
@@ -1708,19 +1718,21 @@ UserSettingsController::CompleteSettingsNames (const UserSettingsControllerSP& u
             
         }
 
+        // The variable my_usc_sp keeps track of the user settings controller as
+        // we descend through the tree hierarchy.
+        UserSettingsControllerSP my_usc_sp = usc_sp;
         for (int i = 0; i < num_extra_levels; ++i)
         {
             ConstString child_level (partial_setting_name_pieces.GetArgumentAtIndex (0));
             bool found = false;
-            int num_children = usc_sp->GetNumChildren();
-            UserSettingsControllerSP child_usc_sp = usc_sp;
+            int num_children = my_usc_sp->GetNumChildren();
 
             for (int j = 0; j < num_children && !found; ++j)
             {
-                if (child_usc_sp->GetChildAtIndex (j)->GetLevelName() == child_level)
+                if (my_usc_sp->GetChildAtIndex (j)->GetLevelName() == child_level)
                 {
                     found = true;
-                    child_usc_sp = child_usc_sp->GetChildAtIndex (j);
+                    my_usc_sp = my_usc_sp->GetChildAtIndex (j);
                     partial_setting_name_pieces.Shift();
                 }
             }
@@ -1744,15 +1756,15 @@ UserSettingsController::CompleteSettingsNames (const UserSettingsControllerSP& u
             // 'next_name' is an instance name.  The last name piece must be a non-empty partial match against an
             // instance_name, assuming 'next_name' is valid.
 
-            if (usc_sp->IsLiveInstance (next_name))
+            if (my_usc_sp->IsLiveInstance (next_name))
             {
                 std::string complete_prefix;
-                usc_sp->BuildParentPrefix (complete_prefix);
+                my_usc_sp->BuildParentPrefix (complete_prefix);
 
-                num_matches = usc_sp->InstanceVariableMatches(partial_setting_name_pieces.GetArgumentAtIndex(0),
-                                                                     complete_prefix,
-                                                                     next_name.c_str(),
-                                                                     matches);
+                num_matches = my_usc_sp->InstanceVariableMatches(partial_setting_name_pieces.GetArgumentAtIndex(0),
+                                                                 complete_prefix,
+                                                                 next_name.c_str(),
+                                                                 matches);
                 word_complete = true;
                 if (num_matches > 1)
                     word_complete = false;
@@ -1766,14 +1778,14 @@ UserSettingsController::CompleteSettingsNames (const UserSettingsControllerSP& u
         {
             // 'next_name' must be a child name.  Find the correct child and pass the remaining piece to be resolved.
             bool found = false;
-            int num_children = usc_sp->GetNumChildren();
+            int num_children = my_usc_sp->GetNumChildren();
             ConstString child_level (next_name.c_str());
             for (int i = 0; i < num_children; ++i)
             {
-                if (usc_sp->GetChildAtIndex (i)->GetLevelName() == child_level)
+                if (my_usc_sp->GetChildAtIndex (i)->GetLevelName() == child_level)
                 {
                     found = true;
-                    return UserSettingsController::CompleteSettingsNames (usc_sp->GetChildAtIndex (i),
+                    return UserSettingsController::CompleteSettingsNames (my_usc_sp->GetChildAtIndex (i),
                                                                           partial_setting_name_pieces,
                                                                           word_complete, matches);
                 }
@@ -1978,7 +1990,7 @@ UserSettingsController::VerifyOperationForType (SettableVariableType var_type,
 
     if (op == eVarSetOperationInvalid)
     {
-        err.SetErrorString ("Invalid 'settings ' subcommand operation.\n");  
+        err.SetErrorString ("invalid 'settings' subcommand operation");  
         return;
     }
 
@@ -1987,22 +1999,20 @@ UserSettingsController::VerifyOperationForType (SettableVariableType var_type,
         case eVarSetOperationInsertBefore:
         case eVarSetOperationInsertAfter:
             if (var_type != eSetVarTypeArray)
-                err.SetErrorString ("Invalid operation:  This operation can only be performed on array variables.\n");
+                err.SetErrorString ("invalid operation: this operation can only be performed on array variables");
             break;
         case eVarSetOperationReplace:
         case eVarSetOperationRemove:
             if ((var_type != eSetVarTypeArray)
                 && (var_type != eSetVarTypeDictionary))
-                err.SetErrorString ("Invalid operation:  This operation can only be performed on array or dictionary"
-                                    " variables.\n");
+                err.SetErrorString ("invalid operation: this operation can only be performed on array or dictionary variables");
             break;
         case eVarSetOperationAppend:
         case eVarSetOperationClear:
             if ((var_type != eSetVarTypeArray)
                 && (var_type != eSetVarTypeDictionary)
                 && (var_type != eSetVarTypeString))
-                err.SetErrorString ("Invalid operation:  This operation can only be performed on array, dictionary "
-                                    "or string variables.\n");
+                err.SetErrorString ("invalid operation: this operation can only be performed on array, dictionary or string variables");
             break;
         default:
             break;
@@ -2032,7 +2042,7 @@ UserSettingsController::UpdateStringVariable (VarSetOperationType op,
     else if (op == eVarSetOperationClear)
         string_var.clear();
     else
-        err.SetErrorString ("Unrecognized operation. Cannot update value.\n");
+        err.SetErrorString ("unrecognized operation. Cannot update value");
 }
 
 Error
@@ -2055,7 +2065,7 @@ UserSettingsController::UpdateStringOptionValue (const char *value,
     }
     else
     {
-        error.SetErrorString ("Unrecognized operation. Cannot update value.\n");
+        error.SetErrorString ("unrecognized operation, cannot update value");
     }
     return error;
 }
@@ -2120,7 +2130,7 @@ UserSettingsController::UpdateBooleanVariable (VarSetOperationType op,
     case eVarSetOperationAppend:
     case eVarSetOperationInvalid:
     default:
-        err.SetErrorString ("Invalid operation for Boolean variable.  Cannot update value.\n");
+        err.SetErrorString ("invalid operation for Boolean variable, cannot update value");
         break;
 
     case eVarSetOperationClear:
@@ -2134,9 +2144,9 @@ UserSettingsController::UpdateBooleanVariable (VarSetOperationType op,
             
             
             if (value_cstr == NULL)
-                err.SetErrorStringWithFormat ("invalid boolean string value (NULL)\n", value_cstr);
+                err.SetErrorStringWithFormat ("invalid boolean string value (NULL)");
             else if (value_cstr[0] == '\0')
-                err.SetErrorStringWithFormat ("invalid boolean string value (empty)\n", value_cstr);
+                err.SetErrorStringWithFormat ("invalid boolean string value (empty)");
             else
             {
                 bool new_value = Args::StringToBoolean (value_cstr, false, &success);
@@ -2146,7 +2156,7 @@ UserSettingsController::UpdateBooleanVariable (VarSetOperationType op,
                     bool_value = new_value;
                 }
                 else
-                    err.SetErrorStringWithFormat ("invalid boolean string value: '%s'\n", value_cstr);
+                    err.SetErrorStringWithFormat ("invalid boolean string value: '%s'", value_cstr);
             }
         }
         break;
@@ -2180,9 +2190,9 @@ UserSettingsController::UpdateBooleanOptionValue (const char *value,
             error = option_value.SetValueFromCString(value);
             
             if (value == NULL)
-                error.SetErrorStringWithFormat ("invalid boolean string value (NULL)\n", value);
+                error.SetErrorStringWithFormat ("invalid boolean string value (NULL)\n");
             else if (value[0] == '\0')
-                error.SetErrorStringWithFormat ("invalid boolean string value (empty)\n", value);
+                error.SetErrorStringWithFormat ("invalid boolean string value (empty)\n");
             else
             {
                 bool new_value = Args::StringToBoolean (value, false, &success);
@@ -2216,7 +2226,7 @@ UserSettingsController::UpdateStringArrayVariable (VarSetOperationType op,
             if (!isdigit (index_value[i]))
             {
                 valid_index = false;
-                err.SetErrorStringWithFormat ("'%s' is not a valid integer index. Cannot update array value.\n", 
+                err.SetErrorStringWithFormat ("'%s' is not a valid integer index, cannot update array value", 
                                               index_value);
             }
                 
@@ -2227,8 +2237,8 @@ UserSettingsController::UpdateStringArrayVariable (VarSetOperationType op,
             || index >= array_var.GetArgumentCount())
         {
             valid_index = false;
-            err.SetErrorStringWithFormat ("%d is outside the bounds of the specified array variable. "
-                                          "Cannot update array value.\n", index);
+            err.SetErrorStringWithFormat ("%d is outside the bounds of the specified array variable, "
+                                          "cannot update array value", index);
         }
     }
 
@@ -2272,7 +2282,7 @@ UserSettingsController::UpdateStringArrayVariable (VarSetOperationType op,
             array_var.Clear();
             break;
         default:
-            err.SetErrorString ("Unrecognized operation. Cannot update value.\n");
+            err.SetErrorString ("unrecognized operation, cannot update value");
             break;
     }
 }
@@ -2296,10 +2306,10 @@ UserSettingsController::UpdateDictionaryVariable (VarSetOperationType op,
                 if (pos != dictionary.end())
                     dictionary[key] = new_value;
                 else
-                    err.SetErrorStringWithFormat ("'%s' is not an existing key; cannot replace value.\n", index_value);
+                    err.SetErrorStringWithFormat ("'%s' is not an existing key; cannot replace value", index_value);
             }
             else
-                err.SetErrorString ("'settings replace' requires a key for dictionary variables. No key supplied.\n");
+                err.SetErrorString ("'settings replace' requires a key for dictionary variables, no key supplied");
             break;
         case eVarSetOperationRemove:
             if (index_value != NULL)
@@ -2308,7 +2318,7 @@ UserSettingsController::UpdateDictionaryVariable (VarSetOperationType op,
                 dictionary.erase (key);
             }
             else
-                err.SetErrorString ("'settings remove' requires a key for dictionary variables. No key supplied.\n");
+                err.SetErrorString ("'settings remove' requires a key for dictionary variables, no key supplied");
             break;
         case eVarSetOperationClear:
             dictionary.clear ();
@@ -2348,17 +2358,17 @@ UserSettingsController::UpdateDictionaryVariable (VarSetOperationType op,
                     }
                     else
                     {
-                        err.SetErrorString ("Invalid format for dictionary value.  Expected one of '[\"<key>\"]=<value>', '[<key>]=<value>', or '<key>=<value>'\n");
+                        err.SetErrorString ("invalid format for dictionary value, expected one of '[\"<key>\"]=<value>', '[<key>]=<value>', or '<key>=<value>'");
                     }
                 }
             }  
             break;
         case eVarSetOperationInsertBefore:
         case eVarSetOperationInsertAfter:
-            err.SetErrorString ("Specified operation cannot be performed on dictionary variables.\n");
+            err.SetErrorString ("specified operation cannot be performed on dictionary variables");
             break;
         default:
-            err.SetErrorString ("Unrecognized operation.\n");
+            err.SetErrorString ("unrecognized operation");
             break;
     }
 }
@@ -2383,14 +2393,9 @@ void
 UserSettingsController::UpdateEnumVariable (OptionEnumValueElement *enum_values,
                                             int *enum_var,
                                             const char *new_value,
-                                            Error &err)
+                                            Error &error)
 {
-    bool found_one;
-    
-    *enum_var = Args::StringToOptionEnum (new_value, enum_values, enum_values[0].value, &found_one);
-
-    if (!found_one)
-        err.SetErrorString ("Invalid enumeration value; cannot update variable.\n");
+    *enum_var = Args::StringToOptionEnum (new_value, enum_values, enum_values[0].value, error);
 }
 
 void
@@ -2457,7 +2462,8 @@ UserSettingsController::RenameInstanceSettings (const char *old_name, const char
 
 InstanceSettings::InstanceSettings (UserSettingsController &owner, const char *instance_name, bool live_instance) :
     m_owner (owner),
-    m_instance_name (instance_name)
+    m_instance_name (instance_name),
+    m_owner_is_live (true)
 {
     if ((m_instance_name != InstanceSettings::GetDefaultName())
         && (m_instance_name !=  InstanceSettings::InvalidName())
@@ -2467,8 +2473,14 @@ InstanceSettings::InstanceSettings (UserSettingsController &owner, const char *i
 
 InstanceSettings::~InstanceSettings ()
 {
-    if (m_instance_name != InstanceSettings::GetDefaultName())
+    if (m_instance_name != InstanceSettings::GetDefaultName() && m_owner_is_live)
         m_owner.UnregisterInstanceSettings (this);
+}
+
+void
+InstanceSettings::NotifyOwnerIsShuttingDown()
+{
+    m_owner_is_live = false;
 }
 
 const ConstString &

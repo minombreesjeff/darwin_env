@@ -1,5 +1,112 @@
 %wrapper %{
 
+class PyErr_Cleaner
+{
+public:
+    PyErr_Cleaner(bool print=false) :
+        m_print(print)
+    {
+    }
+
+    ~PyErr_Cleaner()
+    {
+        if (PyErr_Occurred())
+        {
+            if(m_print)
+                PyErr_Print();
+            PyErr_Clear();
+        }
+    }
+
+private:
+    bool m_print;
+};
+
+// resolve a dotted Python name in the form
+// foo.bar.baz.Foobar to an actual Python object
+// if pmodule is NULL, the __main__ module will be used
+// as the starting point for the search
+
+static PyObject*
+ResolvePythonName(const char* name,
+                  PyObject* pmodule = NULL)
+{
+
+    //printf("Resolving %s\n", name);
+
+    if (!name || !name[0])
+        return pmodule;
+
+    PyErr_Cleaner pyerr_cleanup(true);  // show Python errors
+
+    PyObject* main_dict;
+
+    if (!pmodule)
+    {
+        pmodule = PyImport_AddModule ("__main__");
+        if (!pmodule)
+            return NULL;
+    }
+
+    if (!PyDict_Check(pmodule))
+    {
+        main_dict = PyModule_GetDict (pmodule);
+        if (!main_dict)
+            return NULL;
+    }
+    else
+        main_dict = pmodule;
+
+    const char* dot_pos = ::strchr(name, '.');
+
+    PyObject *dest_object;
+    PyObject *key, *value;
+    Py_ssize_t pos = 0;
+
+    if (!dot_pos)
+    {
+        if (PyDict_Check (main_dict))
+        {
+            dest_object = NULL;   
+            while (PyDict_Next (main_dict, &pos, &key, &value))
+            {
+                // We have stolen references to the key and value objects in the dictionary; we need to increment 
+                // them now so that Python's garbage collector doesn't collect them out from under us.
+                Py_INCREF (key);
+                Py_INCREF (value);
+                //printf("Comparing %s and %s\n", name, PyString_AsString (key));
+                if (strcmp (PyString_AsString (key), name) == 0)
+                {
+                    dest_object = value;
+                    break;
+                }
+            }
+        }
+        
+        if (!dest_object || dest_object == Py_None)
+            return NULL;
+        return dest_object;
+    }
+    // foo.bar.ba
+    // 0123456789
+    // len = 3 - 0 
+    size_t len = dot_pos - name;
+    std::string piece(name,len);
+    dest_object = ResolvePythonName(piece.c_str(), main_dict);
+    //printf("Resolved %s to %p\n", piece.c_str(), dest_object);
+    if (!dest_object)
+        return NULL;
+    //printf("Now moving to resolve %s\n", dot_pos+1);
+    return ResolvePythonName(dot_pos+1,dest_object); // tail recursion.. should be optimized by the compiler
+
+}
+
+static PyObject*
+FindSessionDictionary(const char *session_dictionary_name)
+{
+    return ResolvePythonName(session_dictionary_name, NULL);
+}
+
 // This function is called by lldb_private::ScriptInterpreterPython::BreakpointCallbackFunction(...)
 // and is used when a script command is attached to a breakpoint for execution.
 
@@ -25,63 +132,18 @@ LLDBSwigPythonBreakpointCallbackFunction
     if (!python_function_name || !session_dictionary_name)
         return stop_at_breakpoint;
 
-    PyObject *pmodule, *main_dict, *session_dict, *pfunc;
+    PyObject *session_dict, *pfunc;
     PyObject *pargs, *pvalue;
     
-    pmodule = PyImport_AddModule ("__main__");
-    if (pmodule != NULL)
+    session_dict = FindSessionDictionary (session_dictionary_name);
+    if (session_dict != NULL)
     {
-        main_dict = PyModule_GetDict (pmodule);
-        if (main_dict != NULL)
+        pfunc = ResolvePythonName (python_function_name, session_dict);
+        if (pfunc != NULL)
         {
-            PyObject *key, *value;
-            Py_ssize_t pos = 0;
-             
-            // Find the current session's dictionary in the main module's dictionary.
-
-            if (PyDict_Check (main_dict))
-            {
-                session_dict = NULL;   
-                while (PyDict_Next (main_dict, &pos, &key, &value))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), session_dictionary_name) == 0)
-                    {
-                        session_dict = value;
-                        break;
-                    }
-                }
-            }
-            
-            if (!session_dict || !PyDict_Check (session_dict))
-                return stop_at_breakpoint;
-                
-            // Find the function we need to call in the current session's dictionary.
-
-            pos = 0;
-            pfunc = NULL;
-            while (PyDict_Next (session_dict, &pos, &key, &value))
-            {
-                if (PyString_Check (key))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), python_function_name) == 0)
-                    {
-                        pfunc = value;
-                        break;
-                    }
-                }
-            }
-
             // Set up the arguments and call the function.
                 
-            if (pfunc && PyCallable_Check (pfunc))
+            if (PyCallable_Check (pfunc))
             {
                 pargs = PyTuple_New (3);
                 if (pargs == NULL)
@@ -136,7 +198,7 @@ LLDBSwigPythonCallTypeScript
 
     std::string retval = "";
 
-    PyObject *ValObj_PyObj = SWIG_NewPointerObj((void *) &valobj_sp, SWIGTYPE_p_lldb__SBValue, 0);
+    PyObject *ValObj_PyObj = SWIG_NewPointerObj((void *) &sb_value, SWIGTYPE_p_lldb__SBValue, 0);
     
     if (ValObj_PyObj == NULL)
         return retval;
@@ -144,63 +206,18 @@ LLDBSwigPythonCallTypeScript
     if (!python_function_name || !session_dictionary_name)
         return retval;
 
-    PyObject *pmodule, *main_dict, *session_dict, *pfunc;
+    PyObject *session_dict, *pfunc;
     PyObject *pargs, *pvalue;
     
-    pmodule = PyImport_AddModule ("__main__");
-    if (pmodule != NULL)
+    session_dict = FindSessionDictionary (session_dictionary_name);
+    if (session_dict != NULL)
     {
-        main_dict = PyModule_GetDict (pmodule);
-        if (main_dict != NULL)
+        pfunc = ResolvePythonName (python_function_name, session_dict);
+        if (pfunc != NULL)
         {
-            PyObject *key, *value;
-            Py_ssize_t pos = 0;
-             
-            // Find the current session's dictionary in the main module's dictionary.
-
-            if (PyDict_Check (main_dict))
-            {
-                session_dict = NULL;   
-                while (PyDict_Next (main_dict, &pos, &key, &value))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), session_dictionary_name) == 0)
-                    {
-                        session_dict = value;
-                        break;
-                    }
-                }
-            }
-            
-            if (!session_dict || !PyDict_Check (session_dict))
-                return retval;
-                
-            // Find the function we need to call in the current session's dictionary.
-
-            pos = 0;
-            pfunc = NULL;
-            while (PyDict_Next (session_dict, &pos, &key, &value))
-            {
-                if (PyString_Check (key))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), python_function_name) == 0)
-                    {
-                        pfunc = value;
-                        break;
-                    }
-                }
-            }
-
             // Set up the arguments and call the function.
                 
-            if (pfunc && PyCallable_Check (pfunc))
+            if (PyCallable_Check (pfunc))
             {
                 pargs = PyTuple_New (2);
                 if (pargs == NULL)
@@ -217,7 +234,7 @@ LLDBSwigPythonCallTypeScript
                 
                 if (pvalue != NULL)
                 {
-                    if (pvalue != Py_None)
+                    if (pvalue != Py_None && PyString_CheckExact(pvalue))
                         retval = std::string(PyString_AsString(pvalue));
                     else
                         retval = "None";
@@ -263,72 +280,29 @@ LLDBSwigPythonCreateSyntheticProvider
     if (python_class_name.empty() || !session_dictionary_name)
         Py_RETURN_NONE;
 
-    lldb::ValueObjectSP* valobj_sp_ptr = new lldb::ValueObjectSP(valobj_sp);
+    // I do not want the SBValue to be deallocated when going out of scope because python
+    // has ownership of it and will manage memory for this object by itself
+    lldb::SBValue *valobj_sb = new lldb::SBValue(valobj_sp);
 
-    PyObject *ValObj_PyObj = SWIG_NewPointerObj((void *) valobj_sp_ptr, SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN);
+    PyObject *ValObj_PyObj = SWIG_NewPointerObj((void *)valobj_sb, SWIGTYPE_p_lldb__SBValue, SWIG_POINTER_OWN);
 
     if (ValObj_PyObj == NULL)
         Py_RETURN_NONE;
 
     const char* python_function_name = python_class_name.c_str();
 
-    PyObject *pmodule, *main_dict, *session_dict, *pfunc;
+    PyObject *session_dict, *pfunc;
     PyObject *pvalue;
-
-    pmodule = PyImport_AddModule ("__main__");
-    if (pmodule != NULL)
+    
+    session_dict = FindSessionDictionary (session_dictionary_name);
+    if (session_dict != NULL)
     {
-        main_dict = PyModule_GetDict (pmodule);
-        if (main_dict != NULL)
+        pfunc = ResolvePythonName (python_function_name, session_dict);
+        if (pfunc != NULL)
         {
-            PyObject *key, *value;
-            Py_ssize_t pos = 0;
-
-            // Find the current session's dictionary in the main module's dictionary.
-
-            if (PyDict_Check (main_dict))
-            {
-                session_dict = NULL;   
-                while (PyDict_Next (main_dict, &pos, &key, &value))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), session_dictionary_name) == 0)
-                    {
-                        session_dict = value;
-                        break;
-                    }
-                }
-            }
-
-            if (!session_dict || !PyDict_Check (session_dict))
-                return retval;
-
-            // Find the function we need to call in the current session's dictionary.
-
-            pos = 0;
-            pfunc = NULL;
-            while (PyDict_Next (session_dict, &pos, &key, &value))
-            {
-                if (PyString_Check (key))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), python_function_name) == 0)
-                    {
-                        pfunc = value;
-                        break;
-                    }
-                }
-            }
-
             // Set up the arguments and call the function.
-
-            if (pfunc && PyCallable_Check (pfunc))
+                
+            if (PyCallable_Check (pfunc))
             {
                 PyObject *argList = Py_BuildValue("SS", ValObj_PyObj, session_dict);
 
@@ -566,7 +540,7 @@ LLDBSwigPython_UpdateSynthProviderInstance
 
 }
 
-SWIGEXPORT lldb::SBValue*
+SWIGEXPORT void*
 LLDBSWIGPython_CastPyObjectToSBValue
 (
     PyObject* data
@@ -582,6 +556,30 @@ LLDBSWIGPython_CastPyObjectToSBValue
     return sb_ptr;
 }
 
+// Currently, SBCommandReturnObjectReleaser wraps an std::auto_ptr to an
+// lldb_private::CommandReturnObject. This means that the destructor for the
+// SB object will deallocate its contained CommandReturnObject. Because that
+// object is used as the real return object for Python-based commands, we want
+// it to stay around. Thus, we release the auto_ptr before returning from
+// LLDBSwigPythonCallCommand, and to guarantee that the release will occur no
+// matter how we exit from the function, we have a releaser object whose
+// destructor does the right thing for us
+class SBCommandReturnObjectReleaser
+{
+public:
+    SBCommandReturnObjectReleaser (lldb::SBCommandReturnObject &obj) :
+        m_command_return_object_ref (obj)
+    {
+    }
+
+    ~SBCommandReturnObjectReleaser ()
+    {
+        m_command_return_object_ref.Release();
+    }
+private:
+    lldb::SBCommandReturnObject &m_command_return_object_ref;
+};
+
 SWIGEXPORT bool
 LLDBSwigPythonCallCommand 
 (
@@ -590,81 +588,40 @@ LLDBSwigPythonCallCommand
     lldb::DebuggerSP& debugger,
     const char* args,
     std::string& err_msg,
-    lldb::SBStream& stream
+    lldb_private::CommandReturnObject& cmd_retobj
 )
 {
 
+    lldb::SBCommandReturnObject cmd_retobj_sb(&cmd_retobj);
+    SBCommandReturnObjectReleaser cmd_retobj_sb_releaser(cmd_retobj_sb);
+    lldb::SBDebugger debugger_sb(debugger);
+
     bool retval = false;
 
-    PyObject *DebuggerObj_PyObj = SWIG_NewPointerObj((void *) &debugger, SWIGTYPE_p_lldb__SBDebugger, 0);
-    PyObject *StreamObj_PyObj = SWIG_NewPointerObj((void *) &stream, SWIGTYPE_p_lldb__SBStream, 0);
+    PyObject *DebuggerObj_PyObj = SWIG_NewPointerObj((void *) &debugger_sb, SWIGTYPE_p_lldb__SBDebugger, 0);
+    PyObject *CmdRetObj_PyObj = SWIG_NewPointerObj((void *) &cmd_retobj_sb, SWIGTYPE_p_lldb__SBCommandReturnObject, 0);
 
     if (DebuggerObj_PyObj == NULL)
         return retval;
         
-    if (StreamObj_PyObj == NULL)
+    if (CmdRetObj_PyObj == NULL)
         return retval;
 
     if (!python_function_name || !session_dictionary_name)
         return retval;
 
-    PyObject *pmodule, *main_dict, *session_dict, *pfunc;
+    PyObject *session_dict, *pfunc;
     PyObject *pargs, *pvalue;
     
-    pmodule = PyImport_AddModule ("__main__");
-    if (pmodule != NULL)
+    session_dict = FindSessionDictionary (session_dictionary_name);
+    if (session_dict != NULL)
     {
-        main_dict = PyModule_GetDict (pmodule);
-        if (main_dict != NULL)
+        pfunc = ResolvePythonName (python_function_name, session_dict);
+        if (pfunc != NULL)
         {
-            PyObject *key, *value;
-            Py_ssize_t pos = 0;
-             
-            // Find the current session's dictionary in the main module's dictionary.
-
-            if (PyDict_Check (main_dict))
-            {
-                session_dict = NULL;   
-                while (PyDict_Next (main_dict, &pos, &key, &value))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), session_dictionary_name) == 0)
-                    {
-                        session_dict = value;
-                        break;
-                    }
-                }
-            }
-            
-            if (!session_dict || !PyDict_Check (session_dict))
-                return retval;
-                
-            // Find the function we need to call in the current session's dictionary.
-
-            pos = 0;
-            pfunc = NULL;
-            while (PyDict_Next (session_dict, &pos, &key, &value))
-            {
-                if (PyString_Check (key))
-                {
-                    // We have stolen references to the key and value objects in the dictionary; we need to increment 
-                    // them now so that Python's garbage collector doesn't collect them out from under us.
-                    Py_INCREF (key);
-                    Py_INCREF (value);
-                    if (strcmp (PyString_AsString (key), python_function_name) == 0)
-                    {
-                        pfunc = value;
-                        break;
-                    }
-                }
-            }
-
             // Set up the arguments and call the function.
                 
-            if (pfunc && PyCallable_Check (pfunc))
+            if (PyCallable_Check (pfunc))
             {
                 pargs = PyTuple_New (4);
                 if (pargs == NULL)
@@ -676,7 +633,7 @@ LLDBSwigPythonCallCommand
                 
                 PyTuple_SetItem (pargs, 0, DebuggerObj_PyObj);  // This "steals" a reference to DebuggerObj_PyObj
                 PyTuple_SetItem (pargs, 1, PyString_FromString(args));
-                PyTuple_SetItem (pargs, 2, StreamObj_PyObj);  // This "steals" a reference to StreamObj_PyObj
+                PyTuple_SetItem (pargs, 2, CmdRetObj_PyObj);  // This "steals" a reference to CmdRetObj_PyObj
                 PyTuple_SetItem (pargs, 3, session_dict); // This "steals" a reference to session_dict
                 pvalue = PyObject_CallObject (pfunc, pargs);
                 Py_DECREF (pargs);
@@ -688,9 +645,11 @@ LLDBSwigPythonCallCommand
                         err_msg.clear();
                         retval = true;
                     }
-                    else // return value is an error string
+                    else
                     {
-                        err_msg.assign(PyString_AsString(pvalue));
+                        // return value is an error string
+                        if (PyString_CheckExact(pvalue))
+                            err_msg.assign(PyString_AsString(pvalue));
                         retval = false;
                     }
                     Py_DECREF (pvalue);
@@ -718,6 +677,88 @@ LLDBSwigPythonCallCommand
     {
         PyErr_Print();
         PyErr_Clear ();
+    }
+    return retval;
+}
+
+SWIGEXPORT bool
+LLDBSwigPythonCallModuleInit 
+(
+    const std::string python_module_name,
+    const char *session_dictionary_name,
+    lldb::DebuggerSP& debugger
+)
+{
+
+    lldb::SBDebugger debugger_sb(debugger);
+
+    bool retval = false;
+
+    PyObject *DebuggerObj_PyObj = SWIG_NewPointerObj((void *) &debugger_sb, SWIGTYPE_p_lldb__SBDebugger, 0);
+
+    if (DebuggerObj_PyObj == NULL)
+        return retval;
+        
+    if (!(python_module_name.length()) || !session_dictionary_name)
+        return retval;
+
+    PyObject *session_dict, *pfunc;
+    PyObject *pargs, *pvalue;
+    
+    session_dict = FindSessionDictionary (session_dictionary_name);
+    
+    std::string python_function_name_string = python_module_name + (".__lldb_init_module");
+    const char* python_function_name = python_function_name_string.c_str();
+    
+    if (session_dict != NULL)
+    {
+        pfunc = ResolvePythonName (python_function_name, session_dict);
+        
+        if (PyErr_Occurred()) // this might not exist.. let's make sure we handle that
+        {
+            PyErr_Clear();
+            return true;
+        }
+
+        if (pfunc == NULL)
+            return true;
+        else
+        {
+            // Set up the arguments and call the function.
+                
+            if (PyCallable_Check (pfunc))
+            {
+                pargs = PyTuple_New (2);
+                if (pargs == NULL)
+                {
+                    if (PyErr_Occurred())
+                        PyErr_Clear();
+                    return retval;
+                }
+                
+                PyTuple_SetItem (pargs, 0, DebuggerObj_PyObj);  // This "steals" a reference to DebuggerObj_PyObj
+                PyTuple_SetItem (pargs, 1, session_dict); // This "steals" a reference to session_dict
+                pvalue = PyObject_CallObject (pfunc, pargs);
+                Py_DECREF (pargs);
+                
+                if (PyErr_Occurred ())
+                {
+                    PyErr_Print();
+                    PyErr_Clear();
+                }
+                else
+                {
+                    retval = true;
+                    Py_XDECREF (pvalue);
+                }
+                Py_INCREF (session_dict);
+            }
+            else if (PyErr_Occurred())
+            {
+                PyErr_Print();
+                PyErr_Clear();
+            }
+        }
     }
     return retval;
 }

@@ -10,10 +10,11 @@
 #ifndef liblldb_ScriptInterpreter_h_
 #define liblldb_ScriptInterpreter_h_
 
-#include "lldb/API/SBValue.h"
-
 #include "lldb/lldb-private.h"
+
 #include "lldb/Core/Broadcaster.h"
+#include "lldb/Core/Error.h"
+
 #include "lldb/Utility/PseudoTerminal.h"
 
 
@@ -41,7 +42,7 @@ public:
     typedef uint32_t       (*SWIGPythonCalculateNumChildren)        (void *implementor);
     typedef void*          (*SWIGPythonGetChildAtIndex)             (void *implementor, uint32_t idx);
     typedef int            (*SWIGPythonGetIndexOfChildWithName)     (void *implementor, const char* child_name);
-    typedef lldb::SBValue* (*SWIGPythonCastPyObjectToSBValue)       (void* data);
+    typedef void*          (*SWIGPythonCastPyObjectToSBValue)       (void* data);
     typedef void           (*SWIGPythonUpdateSynthProviderInstance) (void* data);    
     
     typedef bool           (*SWIGPythonCallCommand)                 (const char *python_function_name,
@@ -49,27 +50,30 @@ public:
                                                                      lldb::DebuggerSP& debugger,
                                                                      const char* args,
                                                                      std::string& err_msg,
-                                                                     lldb::SBStream& stream);
+                                                                     lldb_private::CommandReturnObject& cmd_retobj);
+    
+    typedef bool           (*SWIGPythonCallModuleInit)              (const std::string python_module_name,
+                                                                     const char *session_dictionary_name,
+                                                                     lldb::DebuggerSP& debugger);
 
     typedef enum
     {
-        eCharPtr,
-        eBool,
-        eShortInt,
-        eShortIntUnsigned,
-        eInt,
-        eIntUnsigned,
-        eLongInt,
-        eLongIntUnsigned,
-        eLongLong,
-        eLongLongUnsigned,
-        eFloat,
-        eDouble,
-        eChar,
-        eCharStrOrNone,
-    } ReturnType;
-
-
+        eScriptReturnTypeCharPtr,
+        eScriptReturnTypeBool,
+        eScriptReturnTypeShortInt,
+        eScriptReturnTypeShortIntUnsigned,
+        eScriptReturnTypeInt,
+        eScriptReturnTypeIntUnsigned,
+        eScriptReturnTypeLongInt,
+        eScriptReturnTypeLongIntUnsigned,
+        eScriptReturnTypeLongLong,
+        eScriptReturnTypeLongLongUnsigned,
+        eScriptReturnTypeFloat,
+        eScriptReturnTypeDouble,
+        eScriptReturnTypeChar,
+        eScriptReturnTypeCharStrOrNone
+    } ScriptReturnType;
+    
     ScriptInterpreter (CommandInterpreter &interpreter, lldb::ScriptLanguage script_lang);
 
     virtual ~ScriptInterpreter ();
@@ -81,7 +85,7 @@ public:
     ExecuteInterpreterLoop () = 0;
 
     virtual bool
-    ExecuteOneLineWithReturn (const char *in_string, ReturnType return_type, void *ret_value)
+    ExecuteOneLineWithReturn (const char *in_string, ScriptReturnType return_type, void *ret_value)
     {
         return true;
     }
@@ -160,10 +164,10 @@ public:
         return 0;
     }
     
-    virtual void*
+    virtual lldb::ValueObjectSP
     GetChildAtIndex (void *implementor, uint32_t idx)
     {
-        return NULL;
+        return lldb::ValueObjectSP();
     }
     
     virtual int
@@ -177,18 +181,28 @@ public:
     {
     }
         
-    virtual lldb::SBValue*
-    CastPyObjectToSBValue (void* data)
+    virtual bool
+    RunScriptBasedCommand (const char* impl_function,
+                           const char* args,
+                           ScriptedCommandSynchronicity synchronicity,
+                           lldb_private::CommandReturnObject& cmd_retobj,
+                           Error& error)
     {
-        return NULL;
+        return false;
     }
     
-    virtual bool
-    RunScriptBasedCommand(const char* impl_function,
-                          const char* args,
-                          lldb::SBStream& stream,
-                          Error& error)
+    virtual std::string
+    GetDocumentationForItem (const char* item)
     {
+        return std::string("");
+    }
+
+    virtual bool
+    LoadScriptingModule (const char* filename,
+                         bool can_reload,
+                         lldb_private::Error& error)
+    {
+        error.SetErrorString("loading unimplemented");
         return false;
     }
 
@@ -214,7 +228,8 @@ public:
                            SWIGPythonGetIndexOfChildWithName python_swig_get_index_child,
                            SWIGPythonCastPyObjectToSBValue python_swig_cast_to_sbvalue,
                            SWIGPythonUpdateSynthProviderInstance python_swig_update_provider,
-                           SWIGPythonCallCommand python_swig_call_command);
+                           SWIGPythonCallCommand python_swig_call_command,
+                           SWIGPythonCallModuleInit python_swig_call_mod_init);
 
     static void
     TerminateInterpreter ();
@@ -225,18 +240,6 @@ public:
 protected:
     CommandInterpreter &m_interpreter;
     lldb::ScriptLanguage m_script_lang;
-
-    // Scripting languages may need to use stdin for their interactive loops;
-    // however we don't want them to grab the real system stdin because that
-    // resource needs to be shared among the debugger UI, the inferior process and these
-    // embedded scripting loops.  Therefore we need to set up a pseudoterminal and use that
-    // as stdin for the script interpreter interactive loops/prompts.
-
-    lldb_utility::PseudoTerminal m_interpreter_pty; // m_session_pty
-    std::string m_pty_slave_name;                   //m_session_pty_slave_name
-
-private:
-
 };
 
 } // namespace lldb_private

@@ -39,7 +39,7 @@ namespace sys { class Path; }
 namespace clang {
 class FileManager;
 class FileSystemStatCache;
-  
+
 /// DirectoryEntry - Cached information about one directory (either on
 /// the disk or in the virtual file system).
 ///
@@ -64,12 +64,12 @@ class FileEntry {
   dev_t Device;               // ID for the device containing the file.
   ino_t Inode;                // Inode number for the file.
   mode_t FileMode;            // The file mode as returned by 'stat'.
-  
+
   /// FD - The file descriptor for the file entry if it is opened and owned
   /// by the FileEntry.  If not, this is set to -1.
   mutable int FD;
   friend class FileManager;
-  
+
 public:
   FileEntry(dev_t device, ino_t inode, mode_t m)
     : Name(0), Device(device), Inode(inode), FileMode(m), FD(-1) {}
@@ -80,7 +80,7 @@ public:
     memcpy(this, &FE, sizeof(FE));
     assert(FD == -1 && "Cannot copy a file-owning FileEntry");
   }
-  
+
   void operator=(const FileEntry &FE) {
     memcpy(this, &FE, sizeof(FE));
     assert(FD == -1 && "Cannot assign a file-owning FileEntry");
@@ -116,7 +116,8 @@ class FileManager : public llvm::RefCountedBase<FileManager> {
   class UniqueDirContainer;
   class UniqueFileContainer;
 
-  /// UniqueRealDirs/UniqueRealFiles - Cache for existing real directories/files.
+  /// UniqueRealDirs/UniqueRealFiles - Cache for existing real
+  /// directories/files.
   ///
   UniqueDirContainer &UniqueRealDirs;
   UniqueFileContainer &UniqueRealFiles;
@@ -179,13 +180,20 @@ public:
   /// getDirectory - Lookup, cache, and verify the specified directory
   /// (real or virtual).  This returns NULL if the directory doesn't exist.
   ///
-  const DirectoryEntry *getDirectory(StringRef DirName);
+  /// \param CacheFailure If true and the file does not exist, we'll cache
+  /// the failure to find this file.
+  const DirectoryEntry *getDirectory(StringRef DirName,
+                                     bool CacheFailure = true);
 
   /// \brief Lookup, cache, and verify the specified file (real or
   /// virtual).  This returns NULL if the file doesn't exist.
   ///
-  /// \param openFile if true and the file exists, it will be opened.
-  const FileEntry *getFile(StringRef Filename, bool openFile = false);
+  /// \param OpenFile if true and the file exists, it will be opened.
+  ///
+  /// \param CacheFailure If true and the file does not exist, we'll cache
+  /// the failure to find this file.
+  const FileEntry *getFile(StringRef Filename, bool OpenFile = false,
+                           bool CacheFailure = true);
 
   /// \brief Returns the current file system options
   const FileSystemOptions &getFileSystemOptions() { return FileSystemOpts; }
@@ -217,7 +225,7 @@ public:
   /// file to the corresponding FileEntry pointer.
   void GetUniqueIDMapping(
                     SmallVectorImpl<const FileEntry *> &UIDToFiles) const;
-  
+
   void PrintStats() const;
 };
 

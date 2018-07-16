@@ -13,9 +13,30 @@
 #include <algorithm>
 #include <memory>
 
+//#define ENABLE_SP_LOGGING 1 // DON'T CHECK THIS LINE IN UNLESS COMMENTED OUT
+#if defined (ENABLE_SP_LOGGING)
+
+extern "C" void track_sp (void *sp_this, void *ptr, long count);
+
+#endif
+
 namespace lldb_private {
 
 namespace imp {
+    
+template <class T>
+inline T
+increment(T& t)
+{
+    return __sync_add_and_fetch(&t, 1);
+}
+
+template <class T>
+inline T
+decrement(T& t)
+{
+    return __sync_add_and_fetch(&t, -1);
+}
 
 class shared_count
 {
@@ -531,7 +552,265 @@ public:
         baton_ = 0;
     }
 };
+    
+    
+template <class T>
+class IntrusiveSharingPtr;
 
-} // namespace lldb
+template <class T>
+class ReferenceCountedBase
+{
+public:
+    explicit ReferenceCountedBase()
+        : shared_owners_(-1) 
+    {
+    }
+    
+    void
+    add_shared();
+
+    void
+    release_shared();
+
+    long 
+    use_count() const 
+    {
+        return shared_owners_ + 1;
+    }
+    
+protected:
+    long shared_owners_;
+   
+    friend class IntrusiveSharingPtr<T>;
+    
+private:
+    ReferenceCountedBase(const ReferenceCountedBase&);
+    ReferenceCountedBase& operator=(const ReferenceCountedBase&);
+};
+
+    template <class T>
+    void
+    lldb_private::ReferenceCountedBase<T>::add_shared()
+    {
+        imp::increment(shared_owners_);
+    }
+    
+    template <class T>
+    void
+    lldb_private::ReferenceCountedBase<T>::release_shared()
+    {
+        if (imp::decrement(shared_owners_) == -1)
+            delete static_cast<T*>(this);
+    }
+
+    
+template <class T>
+class ReferenceCountedBaseVirtual : public imp::shared_count
+{
+public:
+    explicit ReferenceCountedBaseVirtual () : 
+        imp::shared_count(-1)
+    {
+    }
+    
+    virtual
+    ~ReferenceCountedBaseVirtual ()
+    {
+    }
+    
+    virtual void on_zero_shared ();
+    
+};
+
+template <class T>
+void
+ReferenceCountedBaseVirtual<T>::on_zero_shared()
+{
+}
+
+template <typename T>
+class IntrusiveSharingPtr 
+{
+public:
+    typedef T element_type;
+    
+    explicit 
+    IntrusiveSharingPtr () : 
+        ptr_(0) 
+    {
+    }
+    
+    explicit
+    IntrusiveSharingPtr (T* ptr) : 
+        ptr_(ptr) 
+    {
+        add_shared();
+    }
+    
+    IntrusiveSharingPtr (const IntrusiveSharingPtr& rhs) : 
+        ptr_(rhs.ptr_) 
+    {
+        add_shared();
+    }
+    
+    template <class X>
+    IntrusiveSharingPtr (const IntrusiveSharingPtr<X>& rhs)
+        : ptr_(rhs.get()) 
+    {
+        add_shared();
+    }
+    
+    IntrusiveSharingPtr& 
+    operator= (const IntrusiveSharingPtr& rhs) 
+    {
+        reset(rhs.get());
+        return *this;
+    }
+    
+    template <class X> IntrusiveSharingPtr& 
+    operator= (const IntrusiveSharingPtr<X>& rhs) 
+    {
+        reset(rhs.get());
+        return *this;
+    }
+    
+    IntrusiveSharingPtr& 
+    operator= (T *ptr) 
+    {
+        reset(ptr);
+        return *this;
+    }
+    
+    ~IntrusiveSharingPtr() 
+    {
+        release_shared(); 
+#if defined (LLDB_CONFIGURATION_DEBUG) || defined (LLDB_CONFIGURATION_RELEASE)
+        // NULL out the pointer in objects which can help with leaks detection.
+        // We don't enable this for LLDB_CONFIGURATION_BUILD_AND_INTEGRATION or
+        // when none of the LLDB_CONFIGURATION_XXX macros are defined since
+        // those would be builds for release. But for debug and release builds
+        // that are for development, we NULL out the pointers to catch potential
+        // issues.
+        ptr_ = NULL; 
+#endif  // #if defined (LLDB_CONFIGURATION_DEBUG) || defined (LLDB_CONFIGURATION_RELEASE)
+    }
+    
+    T& 
+    operator*() const 
+    {
+        return *ptr_; 
+    }
+    
+    T* 
+    operator->() const
+    {
+        return ptr_; 
+    }
+    
+    T* 
+    get() const
+    {
+        return ptr_; 
+    }
+    
+    operator bool() const
+    {
+        return ptr_ != 0;
+    }
+    
+    void 
+    swap (IntrusiveSharingPtr& rhs) 
+    {
+        std::swap(ptr_, rhs.ptr_);
+#if defined (ENABLE_SP_LOGGING)
+        track_sp (this, ptr_, use_count());
+        track_sp (&rhs, rhs.ptr_, rhs.use_count());
+#endif
+    }
+
+    void 
+    reset(T* ptr = NULL) 
+    {
+        IntrusiveSharingPtr(ptr).swap(*this);
+    }
+
+    long
+    use_count () const
+    {
+        if (ptr_)
+            return ptr_->use_count();
+        return 0;
+    }
+    
+    bool
+    unique () const
+    {
+        return use_count () == 1;
+    }
+
+private:
+    element_type *ptr_;
+    
+    void
+    add_shared() 
+    {
+        if (ptr_) 
+        {
+            ptr_->add_shared(); 
+#if defined (ENABLE_SP_LOGGING)
+            track_sp (this, ptr_, ptr_->use_count());
+#endif
+        }
+    }
+    void
+    release_shared()
+    { 
+        if (ptr_) 
+        {
+#if defined (ENABLE_SP_LOGGING)
+            track_sp (this, NULL, ptr_->use_count() - 1);
+#endif
+            ptr_->release_shared(); 
+        }
+    }
+};
+
+template<class T, class U>
+inline bool operator== (const IntrusiveSharingPtr<T>& lhs, const IntrusiveSharingPtr<U>& rhs)
+{
+    return lhs.get() == rhs.get();
+}
+
+template<class T, class U>
+inline bool operator!= (const IntrusiveSharingPtr<T>& lhs, const IntrusiveSharingPtr<U>& rhs)
+{
+    return lhs.get() != rhs.get();
+}
+
+template<class T, class U>
+inline bool operator== (const IntrusiveSharingPtr<T>& lhs, U* rhs)
+{
+    return lhs.get() == rhs;
+}
+
+template<class T, class U>
+inline bool operator!= (const IntrusiveSharingPtr<T>& lhs, U* rhs)
+{
+    return lhs.get() != rhs;
+}
+
+template<class T, class U>
+inline bool operator== (T* lhs, const IntrusiveSharingPtr<U>& rhs)
+{
+    return lhs == rhs.get();
+}
+
+template<class T, class U>
+inline bool operator!= (T* lhs, const IntrusiveSharingPtr<U>& rhs)
+{
+    return lhs != rhs.get();
+}
+
+} // namespace lldb_private
 
 #endif  // utility_SharingPtr_h_

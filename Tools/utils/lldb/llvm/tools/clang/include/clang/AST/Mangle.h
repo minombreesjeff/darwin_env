@@ -65,21 +65,21 @@ private:
 /// calls to the C++ name mangler.
 class MangleContext {
   ASTContext &Context;
-  Diagnostic &Diags;
+  DiagnosticsEngine &Diags;
 
   llvm::DenseMap<const BlockDecl*, unsigned> GlobalBlockIds;
   llvm::DenseMap<const BlockDecl*, unsigned> LocalBlockIds;
   
 public:
   explicit MangleContext(ASTContext &Context,
-                         Diagnostic &Diags)
+                         DiagnosticsEngine &Diags)
     : Context(Context), Diags(Diags) { }
 
   virtual ~MangleContext() { }
 
   ASTContext &getASTContext() const { return Context; }
 
-  Diagnostic &getDiags() const { return Diags; }
+  DiagnosticsEngine &getDiags() const { return Diags; }
 
   virtual void startNewFunction() { LocalBlockIds.clear(); }
   
@@ -135,15 +135,15 @@ public:
   // This is pretty lame.
   virtual void mangleItaniumGuardVariable(const VarDecl *D,
                                           raw_ostream &) {
-    assert(0 && "Target does not support mangling guard variables");
+    llvm_unreachable("Target does not support mangling guard variables");
   }
   /// @}
 };
 
 MangleContext *createItaniumMangleContext(ASTContext &Context,
-                                          Diagnostic &Diags);
+                                          DiagnosticsEngine &Diags);
 MangleContext *createMicrosoftMangleContext(ASTContext &Context,
-                                            Diagnostic &Diags);
+                                            DiagnosticsEngine &Diags);
 
 }
 

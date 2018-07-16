@@ -22,6 +22,10 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Value.h"
+#include "lldb/Expression/ClangExpression.h"
+#include "lldb/Expression/ClangFunction.h"
+#include "lldb/Expression/ClangUtilityFunction.h"
+
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
@@ -30,6 +34,8 @@
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/ThreadPlanRunToAddress.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -156,6 +162,10 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::VTableRegion(AppleOb
     SetUpRegion ();
 }
 
+AppleObjCTrampolineHandler::~AppleObjCTrampolineHandler()
+{
+}
+
 void
 AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::SetUpRegion()
 {
@@ -236,7 +246,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::SetUpRegion()
         lldb::addr_t start_offset = offset_ptr;
         uint32_t offset = desc_extractor.GetU32 (&offset_ptr);
         uint32_t flags  = desc_extractor.GetU32 (&offset_ptr);
-        lldb:addr_t code_addr = desc_ptr + start_offset + offset;
+        lldb::addr_t code_addr = desc_ptr + start_offset + offset;
         m_descriptors.push_back (VTableDescriptor(flags, code_addr));
         
         if (m_code_start_addr == 0 || code_addr < m_code_start_addr)
@@ -301,11 +311,12 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::Dump (Stream &s)
     }
 }
         
-AppleObjCTrampolineHandler::AppleObjCVTables::AppleObjCVTables (ProcessSP &process_sp, ModuleSP &objc_module_sp) :
-        m_process_sp(process_sp),
-        m_trampoline_header(LLDB_INVALID_ADDRESS),
-        m_trampolines_changed_bp_id(LLDB_INVALID_BREAK_ID),
-        m_objc_module_sp(objc_module_sp)
+AppleObjCTrampolineHandler::AppleObjCVTables::AppleObjCVTables (const ProcessSP &process_sp, 
+                                                                const ModuleSP &objc_module_sp) :
+    m_process_sp (process_sp),
+    m_trampoline_header (LLDB_INVALID_ADDRESS),
+    m_trampolines_changed_bp_id (LLDB_INVALID_BREAK_ID),
+    m_objc_module_sp (objc_module_sp)
 {
     
 }
@@ -364,7 +375,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::InitializeVTableSymbols ()
                 if (changed_addr != LLDB_INVALID_ADDRESS)
                 {
                     BreakpointSP trampolines_changed_bp_sp = target.CreateBreakpoint (changed_addr, true);
-                    if (trampolines_changed_bp_sp != NULL)
+                    if (trampolines_changed_bp_sp)
                     {
                         m_trampolines_changed_bp_id = trampolines_changed_bp_sp->GetID();
                         trampolines_changed_bp_sp->SetCallback (RefreshTrampolines, this, true);
@@ -389,7 +400,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::RefreshTrampolines (void *baton,
     {
         // The Update function is called with the address of an added region.  So we grab that address, and
         // feed it into ReadRegions.  Of course, our friend the ABI will get the values for us.
-        Process *process = context->exe_ctx.process;
+        Process *process = context->exe_ctx.GetProcessPtr();
         const ABI *abi = process->GetABI().get();
         
         ClangASTContext *clang_ast_context = process->GetTarget().GetScratchClangASTContext();
@@ -400,7 +411,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::RefreshTrampolines (void *baton,
         input_value.SetContext (Value::eContextTypeClangType, clang_void_ptr_type);
         argument_values.PushValue(input_value);
         
-        bool success = abi->GetArgumentValues (*(context->exe_ctx.thread), argument_values);
+        bool success = abi->GetArgumentValues (context->exe_ctx.GetThreadRef(), argument_values);
         if (!success)
             return false;
             
@@ -507,10 +518,10 @@ AppleObjCTrampolineHandler::g_dispatch_functions[] =
     {"objc_msgSendSuper2_stret",         true,  true,   true, DispatchFunction::eFixUpNone    },
     {"objc_msgSendSuper2_stret_fixup",   true,  true,   true, DispatchFunction::eFixUpToFix   },
     {"objc_msgSendSuper2_stret_fixedup", true,  true,   true, DispatchFunction::eFixUpFixed   },
-    {NULL}
 };
 
-AppleObjCTrampolineHandler::AppleObjCTrampolineHandler (ProcessSP process_sp, ModuleSP objc_module_sp) :
+AppleObjCTrampolineHandler::AppleObjCTrampolineHandler (const ProcessSP &process_sp, 
+                                                        const ModuleSP &objc_module_sp) :
     m_process_sp (process_sp),
     m_objc_module_sp (objc_module_sp),
     m_impl_fn_addr (LLDB_INVALID_ADDRESS),
@@ -548,7 +559,7 @@ AppleObjCTrampolineHandler::AppleObjCTrampolineHandler (ProcessSP process_sp, Mo
     // turn the g_dispatch_functions char * array into a template table, and populate the DispatchFunction map
     // from there.
 
-    for (int i = 0; g_dispatch_functions[i].name != NULL; i++)
+    for (int i = 0; i != llvm::array_lengthof(g_dispatch_functions); i++)
     {
         ConstString name_const_str(g_dispatch_functions[i].name);
         const Symbol *msgSend_symbol = m_objc_module_sp->FindFirstSymbolWithNameAndType (name_const_str, eSymbolTypeCode);
@@ -868,7 +879,8 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
                 {
                     ConstString our_utility_function_name("__lldb_objc_find_implementation_for_selector");
                     SymbolContextList sc_list;
-                    exe_ctx.target->GetImages().FindSymbolsWithNameAndType (our_utility_function_name, eSymbolTypeCode, sc_list);
+                    
+                    exe_ctx.GetTargetRef().GetImages().FindSymbolsWithNameAndType (our_utility_function_name, eSymbolTypeCode, sc_list);
                     if (sc_list.GetSize() == 1)
                     {
                         SymbolContext sc;
@@ -876,7 +888,7 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
                         if (sc.symbol != NULL)
                             impl_code_address = sc.symbol->GetValue();
                             
-                        //lldb::addr_t addr = impl_code_address.GetOpcodeLoadAddress (exe_ctx.target);
+                        //lldb::addr_t addr = impl_code_address.GetOpcodeLoadAddress (exe_ctx.GetTargetPtr());
                         //printf ("Getting address for our_utility_function: 0x%llx.\n", addr);
                     }
                     else

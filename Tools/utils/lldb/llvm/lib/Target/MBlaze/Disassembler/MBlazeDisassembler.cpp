@@ -13,16 +13,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "MBlaze.h"
-#include "MBlazeInstrInfo.h"
 #include "MBlazeDisassembler.h"
 
 #include "llvm/MC/EDInstInfo.h"
 #include "llvm/MC/MCDisassembler.h"
-#include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCInst.h"
-#include "llvm/Target/TargetRegistry.h"
+#include "llvm/MC/MCInstrDesc.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryObject.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 
 // #include "MBlazeGenDecoderTables.inc"
@@ -30,14 +29,14 @@
 #include "MBlazeGenEDInfo.inc"
 
 namespace llvm {
-extern MCInstrDesc MBlazeInsts[];
+extern const MCInstrDesc MBlazeInsts[];
 }
 
 using namespace llvm;
 
 const unsigned UNSUPPORTED = -1;
 
-static unsigned mblazeBinary2Opcode[] = {
+static const unsigned mblazeBinary2Opcode[] = {
   MBlaze::ADD,   MBlaze::RSUB,   MBlaze::ADDC,   MBlaze::RSUBC,   //00,01,02,03
   MBlaze::ADDK,  MBlaze::RSUBK,  MBlaze::ADDKC,  MBlaze::RSUBKC,  //04,05,06,07
   MBlaze::ADDI,  MBlaze::RSUBI,  MBlaze::ADDIC,  MBlaze::RSUBIC,  //08,09,0A,0B
@@ -124,6 +123,7 @@ static unsigned decodeSEXT(uint32_t insn) {
     case 0x41: return MBlaze::SRL;
     case 0x21: return MBlaze::SRC;
     case 0x01: return MBlaze::SRA;
+    case 0xE0: return MBlaze::CLZ;
     }
 }
 
@@ -177,6 +177,13 @@ static unsigned decodeBR(uint32_t insn) {
 }
 
 static unsigned decodeBRI(uint32_t insn) {
+    switch (insn&0x3FFFFFF) {
+    default:        break;
+    case 0x0020004: return MBlaze::IDMEMBAR;
+    case 0x0220004: return MBlaze::DMEMBAR;
+    case 0x0420004: return MBlaze::IMEMBAR;
+    }
+
     switch ((insn>>16)&0x1F) {
     default:   return UNSUPPORTED;
     case 0x00: return MBlaze::BRI;
@@ -493,11 +500,12 @@ EDInstInfo *MBlazeDisassembler::getEDInfo() const {
 // Public interface for the disassembler
 //
 
-bool MBlazeDisassembler::getInstruction(MCInst &instr,
+MCDisassembler::DecodeStatus MBlazeDisassembler::getInstruction(MCInst &instr,
                                         uint64_t &size,
                                         const MemoryObject &region,
                                         uint64_t address,
-                                        raw_ostream &vStream) const {
+                                        raw_ostream &vStream,
+                                        raw_ostream &cStream) const {
   // The machine instruction.
   uint32_t insn;
   uint64_t read;
@@ -508,7 +516,7 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
 
   // We want to read exactly 4 bytes of data.
   if (region.readBytes(address, 4, (uint8_t*)bytes, &read) == -1 || read < 4)
-    return false;
+    return Fail;
 
   // Encoded as a big-endian 32-bit word in the stream.
   insn = (bytes[0]<<24) | (bytes[1]<<16) | (bytes[2]<< 8) | (bytes[3]<<0);
@@ -517,7 +525,7 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
   // that it is a valid instruction.
   unsigned opcode = getOPCODE(insn);
   if (opcode == UNSUPPORTED)
-    return false;
+    return Fail;
 
   instr.setOpcode(opcode);
 
@@ -529,11 +537,14 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
   uint64_t tsFlags = MBlazeInsts[opcode].TSFlags;
   switch ((tsFlags & MBlazeII::FormMask)) {
   default: 
-    return false;
+    return Fail;
+
+  case MBlazeII::FC:
+    break;
 
   case MBlazeII::FRRRR:
     if (RD == UNSUPPORTED || RA == UNSUPPORTED || RB == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateReg(RB));
     instr.addOperand(MCOperand::CreateReg(RA));
@@ -541,32 +552,39 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
 
   case MBlazeII::FRRR:
     if (RD == UNSUPPORTED || RA == UNSUPPORTED || RB == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateReg(RA));
     instr.addOperand(MCOperand::CreateReg(RB));
     break;
 
+  case MBlazeII::FRR:
+    if (RD == UNSUPPORTED || RA == UNSUPPORTED)
+      return Fail;
+    instr.addOperand(MCOperand::CreateReg(RD));
+    instr.addOperand(MCOperand::CreateReg(RA));
+    break;
+
   case MBlazeII::FRI:
     switch (opcode) {
     default: 
-      return false;
+      return Fail;
     case MBlaze::MFS:
       if (RD == UNSUPPORTED)
-        return false;
+        return Fail;
       instr.addOperand(MCOperand::CreateReg(RD));
       instr.addOperand(MCOperand::CreateImm(insn&0x3FFF));
       break;
     case MBlaze::MTS:
       if (RA == UNSUPPORTED)
-        return false;
+        return Fail;
       instr.addOperand(MCOperand::CreateImm(insn&0x3FFF));
       instr.addOperand(MCOperand::CreateReg(RA));
       break;
     case MBlaze::MSRSET:
     case MBlaze::MSRCLR:
       if (RD == UNSUPPORTED)
-        return false;
+        return Fail;
       instr.addOperand(MCOperand::CreateReg(RD));
       instr.addOperand(MCOperand::CreateImm(insn&0x7FFF));
       break;
@@ -575,7 +593,7 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
 
   case MBlazeII::FRRI:
     if (RD == UNSUPPORTED || RA == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateReg(RA));
     switch (opcode) {
@@ -592,35 +610,35 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
 
   case MBlazeII::FCRR:
     if (RA == UNSUPPORTED || RB == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RA));
     instr.addOperand(MCOperand::CreateReg(RB));
     break;
 
   case MBlazeII::FCRI:
     if (RA == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RA));
     instr.addOperand(MCOperand::CreateImm(getIMM(insn)));
     break;
 
   case MBlazeII::FRCR:
     if (RD == UNSUPPORTED || RB == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateReg(RB));
     break;
 
   case MBlazeII::FRCI:
     if (RD == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateImm(getIMM(insn)));
     break;
 
   case MBlazeII::FCCR:
     if (RB == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RB));
     break;
 
@@ -630,7 +648,7 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
 
   case MBlazeII::FRRCI:
     if (RD == UNSUPPORTED || RA == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateReg(RA));
     instr.addOperand(MCOperand::CreateImm(getSHT(insn)));
@@ -638,35 +656,35 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
 
   case MBlazeII::FRRC:
     if (RD == UNSUPPORTED || RA == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateReg(RA));
     break;
 
   case MBlazeII::FRCX:
     if (RD == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateImm(getFSL(insn)));
     break;
 
   case MBlazeII::FRCS:
     if (RD == UNSUPPORTED || RS == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateReg(RS));
     break;
 
   case MBlazeII::FCRCS:
     if (RS == UNSUPPORTED || RA == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RS));
     instr.addOperand(MCOperand::CreateReg(RA));
     break;
 
   case MBlazeII::FCRCX:
     if (RA == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RA));
     instr.addOperand(MCOperand::CreateImm(getFSL(insn)));
     break;
@@ -677,13 +695,13 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
 
   case MBlazeII::FCR:
     if (RB == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RB));
     break;
 
   case MBlazeII::FRIR:
     if (RD == UNSUPPORTED || RA == UNSUPPORTED)
-      return false;
+      return Fail;
     instr.addOperand(MCOperand::CreateReg(RD));
     instr.addOperand(MCOperand::CreateImm(getIMM(insn)));
     instr.addOperand(MCOperand::CreateReg(RA));
@@ -693,11 +711,12 @@ bool MBlazeDisassembler::getInstruction(MCInst &instr,
   // We always consume 4 bytes of data on success
   size = 4;
 
-  return true;
+  return Success;
 }
 
-static MCDisassembler *createMBlazeDisassembler(const Target &T) {
-  return new MBlazeDisassembler;
+static MCDisassembler *createMBlazeDisassembler(const Target &T,
+                                                const MCSubtargetInfo &STI) {
+  return new MBlazeDisassembler(STI);
 }
 
 extern "C" void LLVMInitializeMBlazeDisassembler() {

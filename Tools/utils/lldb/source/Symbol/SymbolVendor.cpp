@@ -55,7 +55,11 @@ SymbolVendor::FindPlugin (Module* module)
     // file representation for the module.
     instance_ap.reset(new SymbolVendor(module));
     if (instance_ap.get())
-        instance_ap->AddSymbolFileRepresendation(module->GetObjectFile());
+    {
+        ObjectFile *objfile = module->GetObjectFile();
+        if (objfile)
+            instance_ap->AddSymbolFileRepresentation(objfile->GetSP());
+    }
     return instance_ap.release();
 }
 
@@ -82,11 +86,14 @@ SymbolVendor::~SymbolVendor()
 // Add a represantion given an object file.
 //----------------------------------------------------------------------
 void
-SymbolVendor::AddSymbolFileRepresendation(ObjectFile *obj_file)
+SymbolVendor::AddSymbolFileRepresentation(const ObjectFileSP &objfile_sp)
 {
     Mutex::Locker locker(m_mutex);
-    if (obj_file != NULL)
-        m_sym_file_ap.reset(SymbolFile::FindPlugin(obj_file));
+    if (objfile_sp)
+    {
+        m_objfile_sp = objfile_sp;
+        m_sym_file_ap.reset(SymbolFile::FindPlugin(objfile_sp.get()));
+    }
 }
 
 bool
@@ -209,11 +216,11 @@ SymbolVendor::ResolveSymbolContext (const FileSpec& file_spec, uint32_t line, bo
 }
 
 uint32_t
-SymbolVendor::FindGlobalVariables (const ConstString &name, bool append, uint32_t max_matches, VariableList& variables)
+SymbolVendor::FindGlobalVariables (const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, VariableList& variables)
 {
     Mutex::Locker locker(m_mutex);
     if (m_sym_file_ap.get())
-        return m_sym_file_ap->FindGlobalVariables(name, append, max_matches, variables);
+        return m_sym_file_ap->FindGlobalVariables(name, namespace_decl, append, max_matches, variables);
     return 0;
 }
 
@@ -227,11 +234,11 @@ SymbolVendor::FindGlobalVariables (const RegularExpression& regex, bool append, 
 }
 
 uint32_t
-SymbolVendor::FindFunctions(const ConstString &name, uint32_t name_type_mask, bool append, SymbolContextList& sc_list)
+SymbolVendor::FindFunctions(const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, SymbolContextList& sc_list)
 {
     Mutex::Locker locker(m_mutex);
     if (m_sym_file_ap.get())
-        return m_sym_file_ap->FindFunctions(name, name_type_mask, append, sc_list);
+        return m_sym_file_ap->FindFunctions(name, namespace_decl, name_type_mask, append, sc_list);
     return 0;
 }
 
@@ -246,23 +253,23 @@ SymbolVendor::FindFunctions(const RegularExpression& regex, bool append, SymbolC
 
 
 uint32_t
-SymbolVendor::FindTypes (const SymbolContext& sc, const ConstString &name, bool append, uint32_t max_matches, TypeList& types)
+SymbolVendor::FindTypes (const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, TypeList& types)
 {
     Mutex::Locker locker(m_mutex);
     if (m_sym_file_ap.get())
-        return m_sym_file_ap->FindTypes(sc, name, append, max_matches, types);
+        return m_sym_file_ap->FindTypes(sc, name, namespace_decl, append, max_matches, types);
     if (!append)
         types.Clear();
     return 0;
 }
 
 ClangNamespaceDecl
-SymbolVendor::FindNamespace(const SymbolContext& sc, const ConstString &name)
+SymbolVendor::FindNamespace(const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *parent_namespace_decl)
 {
     Mutex::Locker locker(m_mutex);
     ClangNamespaceDecl namespace_decl;
     if (m_sym_file_ap.get())
-        namespace_decl = m_sym_file_ap->FindNamespace (sc, name);
+        namespace_decl = m_sym_file_ap->FindNamespace (sc, name, parent_namespace_decl);
     return namespace_decl;
 }
 
@@ -272,7 +279,7 @@ SymbolVendor::Dump(Stream *s)
     Mutex::Locker locker(m_mutex);
     bool show_context = false;
 
-    s->Printf("%.*p: ", (int)sizeof(void*) * 2, this);
+    s->Printf("%p: ", this);
     s->Indent();
     s->PutCString("SymbolVendor");
     if (m_sym_file_ap.get())

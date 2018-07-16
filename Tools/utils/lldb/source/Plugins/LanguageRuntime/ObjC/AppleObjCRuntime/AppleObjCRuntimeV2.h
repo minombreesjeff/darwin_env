@@ -18,12 +18,8 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-private.h"
-#include "lldb/Target/LanguageRuntime.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
-#include "lldb/Core/ValueObject.h"
 #include "AppleObjCRuntime.h"
-#include "AppleObjCTrampolineHandler.h"
-#include "AppleThreadPlanStepThroughObjCTrampoline.h"
 
 namespace lldb_private {
 
@@ -81,7 +77,7 @@ public:
     GetByteOffsetForIvar (ClangASTType &parent_qual_type, const char *ivar_name);
     
     virtual bool
-    IsValidISA(ObjCISA isa)
+    IsValidISA (ObjCLanguageRuntime::ObjCISA isa)
     {
         return (isa != 0);
     }
@@ -89,28 +85,32 @@ public:
     // this is not a valid ISA in the sense that no valid
     // class pointer can live at address 1. we use it to refer to
     // tagged types, where the ISA must be dynamically determined
-    static const ObjCISA g_objc_Tagged_ISA = 1;
+    static const ObjCLanguageRuntime::ObjCISA g_objc_Tagged_ISA = 1;
     
-    virtual ObjCISA
+    virtual ObjCLanguageRuntime::ObjCISA
     GetISA(ValueObject& valobj);   
     
     virtual ConstString
-    GetActualTypeName(ObjCISA isa);
+    GetActualTypeName(ObjCLanguageRuntime::ObjCISA isa);
     
-    virtual ObjCISA
-    GetParentClass(ObjCISA isa);
+    virtual ObjCLanguageRuntime::ObjCISA
+    GetParentClass(ObjCLanguageRuntime::ObjCISA isa);
+    
+    virtual SymbolVendor *
+    GetSymbolVendor();
     
 protected:
     
 private:
     
-    typedef std::map<ObjCISA,ConstString> ISAToNameCache;
-    typedef std::map<ObjCISA,ObjCISA> ISAToParentCache;
+    typedef std::map<ObjCLanguageRuntime::ObjCISA, ConstString> ISAToNameCache;
+    typedef std::map<ObjCLanguageRuntime::ObjCISA, ObjCLanguageRuntime::ObjCISA> ISAToParentCache;
     
     typedef ISAToNameCache::iterator ISAToNameIterator;
     typedef ISAToParentCache::iterator ISAToParentIterator;
     
-    AppleObjCRuntimeV2(Process *process, ModuleSP &objc_module_sp);
+    AppleObjCRuntimeV2 (Process *process, 
+                        const lldb::ModuleSP &objc_module_sp);
     
     bool
     IsTaggedPointer(lldb::addr_t ptr);
@@ -126,10 +126,10 @@ private:
     ISAToNameCache                      m_isa_to_name_cache;
     ISAToParentCache                    m_isa_to_parent_cache;
     
+    std::auto_ptr<SymbolVendor>         m_symbol_vendor_ap;
+    
     static const char *g_find_class_name_function_name;
     static const char *g_find_class_name_function_body;
-    static const char *g_objc_class_symbol_prefix;
-    static const char *g_objc_class_data_section_name;
 };
     
 } // namespace lldb_private

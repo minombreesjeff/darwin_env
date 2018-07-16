@@ -88,11 +88,16 @@ public:
     ///     different from the DWARF version of the location list base
     ///     address which is compile unit relative. This base address
     ///     is the address of the object that owns the location list.
+    ///
+    /// @param[in] abi
+    ///     An optional ABI plug-in that can be used to resolve register
+    ///     names.
     //------------------------------------------------------------------
     void
     GetDescription (Stream *s, 
                     lldb::DescriptionLevel level, 
-                    lldb::addr_t location_list_base_addr) const;
+                    lldb::addr_t location_list_base_addr,
+                    ABI *abi) const;
 
     //------------------------------------------------------------------
     /// Return true if the location expression contains data
@@ -124,6 +129,34 @@ public:
 //
     bool
     LocationListContainsAddress (lldb::addr_t loclist_base_addr, lldb::addr_t addr) const;
+    
+    //------------------------------------------------------------------
+    /// If a location is not a location list, return true if the location
+    /// contains a DW_OP_addr () opcode in the stream that matches \a 
+    /// file_addr. If file_addr is LLDB_INVALID_ADDRESS, the this 
+    /// function will return true if the variable there is any DW_OP_addr
+    /// in a location that (yet still is NOT a location list). This helps
+    /// us detect if a variable is a global or static variable since
+    /// there is no other indication from DWARF debug info.
+    ///
+    /// @param[in] file_addr
+    ///     The file address to search for in the location. 
+    ///
+    /// @param[out] error
+    ///     If the location stream contains unknown DW_OP opcodes or the
+    ///     data is missing, \a error will be set to \b true.
+    ///
+    /// @return
+    ///     True if IsLocationList() is false and the \a file_addr was
+    ///     is contained in a DW_OP_addr location opcode or if \a file_addr
+    ///     was invalid and there are any DW_OP_addr opcodes, false 
+    ///     otherwise.
+    //------------------------------------------------------------------
+    bool
+    LocationContains_DW_OP_addr (lldb::addr_t file_addr, bool &error) const;
+
+    bool
+    Update_DW_OP_addr (lldb::addr_t file_addr);
     
     //------------------------------------------------------------------
     /// Make the expression parser read its location information from a
@@ -179,7 +212,7 @@ public:
     ///     The register kind.
     //------------------------------------------------------------------
     void
-    SetRegisterKind (int reg_kind);
+    SetRegisterKind (lldb::RegisterKind reg_kind);
 
     //------------------------------------------------------------------
     /// Wrapper for the static evaluate function that accepts an
@@ -315,7 +348,8 @@ public:
     DumpLocationForAddress (Stream *s, 
                             lldb::DescriptionLevel level,
                             lldb::addr_t loclist_base_load_addr,
-                            lldb::addr_t address);
+                            lldb::addr_t address,
+                            ABI *abi);
 
 protected:
     //------------------------------------------------------------------
@@ -332,12 +366,17 @@ protected:
     ///
     /// @param[in] level
     ///     The level of detail to use in pretty-printing.
+    ///
+    /// @param[in] abi
+    ///     An optional ABI plug-in that can be used to resolve register
+    ///     names.
     //------------------------------------------------------------------
     void
     DumpLocation(Stream *s, 
                  uint32_t offset, 
                  uint32_t length, 
-                 lldb::DescriptionLevel level) const;
+                 lldb::DescriptionLevel level,
+                 ABI *abi) const;
     
     bool
     GetLocation (lldb::addr_t base_addr, 
@@ -350,7 +389,7 @@ protected:
     //------------------------------------------------------------------
     
     DataExtractor m_data;                       ///< A data extractor capable of reading opcode bytes
-    int m_reg_kind;                             ///< One of the defines that starts with LLDB_REGKIND_
+    lldb::RegisterKind m_reg_kind;              ///< One of the defines that starts with LLDB_REGKIND_
     lldb::addr_t m_loclist_slide;               ///< A value used to slide the location list offsets so that 
                                                 ///< they are relative to the object that owns the location list
                                                 ///< (the function for frame base and variable location lists)

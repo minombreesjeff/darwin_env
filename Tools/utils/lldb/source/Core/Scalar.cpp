@@ -17,6 +17,8 @@
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Host/Endian.h"
 
+#include "Plugins/Process/Utility/InstructionUtils.h"
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -1829,9 +1831,9 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
         {
             uint64_t uval64 = Args::StringToUInt64(value_str, UINT64_MAX, 0, &success);
             if (!success)
-                error.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string value.\n", value_str);
+                error.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string value", value_str);
             else if (!UIntValueIsValidForSize (uval64, byte_size))
-                error.SetErrorStringWithFormat ("Value 0x%llx is too large to fit in a %u byte unsigned integer value.\n", uval64, byte_size);
+                error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte unsigned integer value", uval64, byte_size);
             else
             {
                 m_type = Scalar::GetValueTypeForUnsignedIntegerWithByteSize (byte_size);
@@ -1841,14 +1843,14 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
                 case e_ulong:       m_data.ulong = uval64;      break;
                 case e_ulonglong:   m_data.ulonglong = uval64;  break;
                 default:
-                    error.SetErrorStringWithFormat ("Unsupported unsigned integer byte size: %u.\n", byte_size);
+                    error.SetErrorStringWithFormat ("unsupported unsigned integer byte size: %u", byte_size);
                     break;
                 }
             }
         }
         else
         {
-            error.SetErrorStringWithFormat ("Unsupported unsigned integer byte size: %u.\n", byte_size);
+            error.SetErrorStringWithFormat ("unsupported unsigned integer byte size: %u", byte_size);
             return error;
         }
         break;
@@ -1858,9 +1860,9 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
         {
             uint64_t sval64 = Args::StringToSInt64(value_str, INT64_MAX, 0, &success);
             if (!success)
-                error.SetErrorStringWithFormat ("'%s' is not a valid signed integer string value.\n", value_str);
+                error.SetErrorStringWithFormat ("'%s' is not a valid signed integer string value", value_str);
             else if (!SIntValueIsValidForSize (sval64, byte_size))
-                error.SetErrorStringWithFormat ("Value 0x%llx is too large to fit in a %u byte signed integer value.\n", sval64, byte_size);
+                error.SetErrorStringWithFormat ("value 0x%llx is too large to fit in a %u byte signed integer value", sval64, byte_size);
             else
             {
                 m_type = Scalar::GetValueTypeForSignedIntegerWithByteSize (byte_size);
@@ -1870,14 +1872,14 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
                 case e_slong:       m_data.slong = sval64;      break;
                 case e_slonglong:   m_data.slonglong = sval64;  break;
                 default:
-                    error.SetErrorStringWithFormat ("Unsupported signed integer byte size: %u.\n", byte_size);
+                    error.SetErrorStringWithFormat ("unsupported signed integer byte size: %u", byte_size);
                     break;
                 }
             }
         }
         else
         {
-            error.SetErrorStringWithFormat ("Unsupported signed integer byte size: %u.\n", byte_size);
+            error.SetErrorStringWithFormat ("unsupported signed integer byte size: %u", byte_size);
             return error;
         }
         break;
@@ -1888,31 +1890,31 @@ Scalar::SetValueFromCString (const char *value_str, Encoding encoding, uint32_t 
             if (::sscanf (value_str, "%f", &m_data.flt) == 1)
                 m_type = e_float;
             else
-                error.SetErrorStringWithFormat ("'%s' is not a valid float string value.\n", value_str);
+                error.SetErrorStringWithFormat ("'%s' is not a valid float string value", value_str);
         }
         else if (byte_size == sizeof (double))
         {
             if (::sscanf (value_str, "%lf", &m_data.dbl) == 1)
                 m_type = e_double;
             else
-                error.SetErrorStringWithFormat ("'%s' is not a valid float string value.\n", value_str);
+                error.SetErrorStringWithFormat ("'%s' is not a valid float string value", value_str);
         }
         else if (byte_size == sizeof (long double))
         {
             if (::sscanf (value_str, "%Lf", &m_data.ldbl) == 1)
                 m_type = e_long_double;
             else
-                error.SetErrorStringWithFormat ("'%s' is not a valid float string value.\n", value_str);
+                error.SetErrorStringWithFormat ("'%s' is not a valid float string value", value_str);
         }
         else
         {
-            error.SetErrorStringWithFormat ("Unsupported float byte size: %u.\n", byte_size);
+            error.SetErrorStringWithFormat ("unsupported float byte size: %u", byte_size);
             return error;
         }
         break;
 
     case eEncodingVector:
-        error.SetErrorString ("Vector encoding unsupported.");
+        error.SetErrorString ("vector encoding unsupported.");
         break;
     }
     if (error.Fail())
@@ -2016,6 +2018,85 @@ Scalar::GetAsMemoryData (void *dst,
 
     return bytes_copied;
 }
+
+bool
+Scalar::ExtractBitfield (uint32_t bit_size, 
+                         uint32_t bit_offset)
+{
+    if (bit_size == 0)
+        return true;
+
+    uint32_t msbit = bit_offset + bit_size - 1;
+    uint32_t lsbit = bit_offset;
+    switch (m_type)
+    {
+        default:
+        case Scalar::e_void:
+            break;
+            
+        case e_float:
+            if (sizeof(m_data.flt) == sizeof(int))
+                m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
+            else if (sizeof(m_data.flt) == sizeof(unsigned long))
+                m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
+            else if (sizeof(m_data.flt) == sizeof(unsigned long long))
+                m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
+            else
+                return false;
+            return true;
+            
+        case e_double:
+            if (sizeof(m_data.dbl) == sizeof(int))
+                m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
+            else if (sizeof(m_data.dbl) == sizeof(unsigned long))
+                m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
+            else if (sizeof(m_data.dbl) == sizeof(unsigned long long))
+                m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
+            else
+                return false;
+            return true;
+            
+        case e_long_double:
+            if (sizeof(m_data.ldbl) == sizeof(int))
+                m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
+            else if (sizeof(m_data.ldbl) == sizeof(unsigned long))
+                m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
+            else if (sizeof(m_data.ldbl) == sizeof(unsigned long long))
+                m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
+            else
+                return false;
+            return true;
+            
+        case Scalar::e_sint:
+            m_data.sint = SignedBits (m_data.sint, msbit, lsbit);
+            return true;
+
+        case Scalar::e_uint:
+            m_data.uint = UnsignedBits (m_data.uint, msbit, lsbit);
+            return true;
+            
+        case Scalar::e_slong:
+            m_data.slong = SignedBits (m_data.slong, msbit, lsbit);
+            return true;
+
+        case Scalar::e_ulong:
+            m_data.ulong = SignedBits (m_data.ulong, msbit, lsbit);
+            return true;
+            
+        case Scalar::e_slonglong:
+            m_data.slonglong = SignedBits (m_data.slonglong, msbit, lsbit);
+            return true;
+
+        case Scalar::e_ulonglong:
+            m_data.ulonglong = SignedBits (m_data.ulonglong, msbit, lsbit);
+            return true;
+    }
+    return false;
+}
+
+
+
+
 
 bool
 lldb_private::operator== (const Scalar& lhs, const Scalar& rhs)

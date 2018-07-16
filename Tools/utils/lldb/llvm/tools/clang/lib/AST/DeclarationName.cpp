@@ -193,8 +193,7 @@ DeclarationName::NameKind DeclarationName::getNameKind() const {
   }
 
   // Can't actually get here.
-  assert(0 && "This should be unreachable!");
-  return Identifier;
+  llvm_unreachable("This should be unreachable!");
 }
 
 bool DeclarationName::isDependentName() const {
@@ -225,7 +224,7 @@ void DeclarationName::printName(raw_ostream &OS) const {
   case CXXConstructorName: {
     QualType ClassType = getCXXNameType();
     if (const RecordType *ClassRec = ClassType->getAs<RecordType>())
-      OS << ClassRec->getDecl();
+      OS << *ClassRec->getDecl();
     else
       OS << ClassType.getAsString();
     return;
@@ -235,7 +234,7 @@ void DeclarationName::printName(raw_ostream &OS) const {
     OS << '~';
     QualType Type = getCXXNameType();
     if (const RecordType *Rec = Type->getAs<RecordType>())
-      OS << Rec->getDecl();
+      OS << *Rec->getDecl();
     else
       OS << Type.getAsString();
     return;
@@ -266,7 +265,7 @@ void DeclarationName::printName(raw_ostream &OS) const {
     OS << "operator ";
     QualType Type = getCXXNameType();
     if (const RecordType *Rec = Type->getAs<RecordType>())
-      OS << Rec->getDecl();
+      OS << *Rec->getDecl();
     else
       OS << Type.getAsString();
     return;
@@ -276,7 +275,7 @@ void DeclarationName::printName(raw_ostream &OS) const {
     return;
   }
 
-  assert(false && "Unexpected declaration name kind");
+  llvm_unreachable("Unexpected declaration name kind");
 }
 
 QualType DeclarationName::getCXXNameType() const {
@@ -338,9 +337,8 @@ void *DeclarationName::getFETokenInfoAsVoid() const {
     return getCXXLiteralIdentifier()->getFETokenInfo<void>();
 
   default:
-    assert(false && "Declaration name has no FETokenInfo");
+    llvm_unreachable("Declaration name has no FETokenInfo");
   }
-  return 0;
 }
 
 void DeclarationName::setFETokenInfo(void *T) {
@@ -364,7 +362,7 @@ void DeclarationName::setFETokenInfo(void *T) {
     break;
 
   default:
-    assert(false && "Declaration name has no FETokenInfo");
+    llvm_unreachable("Declaration name has no FETokenInfo");
   }
 }
 
@@ -588,7 +586,7 @@ void DeclarationNameInfo::printName(raw_ostream &OS) const {
       Name.printName(OS);
     return;
   }
-  assert(false && "Unexpected declaration name kind");
+  llvm_unreachable("Unexpected declaration name kind");
 }
 
 SourceLocation DeclarationNameInfo::getEndLoc() const {
@@ -621,6 +619,5 @@ SourceLocation DeclarationNameInfo::getEndLoc() const {
   case DeclarationName::CXXUsingDirective:
     return NameLoc;
   }
-  assert(false && "Unexpected declaration name kind");
-  return SourceLocation();
+  llvm_unreachable("Unexpected declaration name kind");
 }

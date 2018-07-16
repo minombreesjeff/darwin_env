@@ -122,6 +122,9 @@ public:
     static void
     Destroy (lldb::SBDebugger &debugger);
 
+    static void
+    MemoryPressureDetected();
+
     SBDebugger();
 
     SBDebugger(const lldb::SBDebugger &rhs);
@@ -136,6 +139,9 @@ public:
 
     void
     SetAsync (bool b);
+    
+    bool 
+    GetAsync ();
 
     void
     SkipLLDBInitFiles (bool b);
@@ -174,6 +180,13 @@ public:
                         FILE *err);
 
     lldb::SBTarget
+    CreateTarget (const char *filename,
+                  const char *target_triple,
+                  const char *platform_name,
+                  bool add_dependent_modules,
+                  lldb::SBError& sb_error);
+
+    lldb::SBTarget
     CreateTargetWithFileAndTargetTriple (const char *filename,
                                          const char *target_triple);
 
@@ -206,7 +219,10 @@ public:
     lldb::SBTarget
     GetSelectedTarget ();
 
-    lldb::SBSourceManager &
+    void
+    SetSelectedTarget (lldb::SBTarget &target);
+
+    lldb::SBSourceManager
     GetSourceManager ();
 
     // REMOVE: just for a quick fix, need to expose platforms through

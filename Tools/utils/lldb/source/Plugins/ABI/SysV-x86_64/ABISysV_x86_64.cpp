@@ -17,6 +17,9 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegisterValue.h"
 #include "lldb/Core/Value.h"
+#include "lldb/Core/ValueObjectConstResult.h"
+#include "lldb/Core/ValueObjectRegister.h"
+#include "lldb/Core/ValueObjectMemory.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/UnwindPlan.h"
 #include "lldb/Target/Target.h"
@@ -34,6 +37,248 @@ static const char *pluginName = "ABISysV_x86_64";
 static const char *pluginDesc = "System V ABI for x86_64 targets";
 static const char *pluginShort = "abi.sysv-x86_64";
 
+
+enum gcc_dwarf_regnums
+{
+    gcc_dwarf_rax = 0,
+    gcc_dwarf_rdx,
+    gcc_dwarf_rcx,
+    gcc_dwarf_rbx,
+    gcc_dwarf_rsi,
+    gcc_dwarf_rdi,
+    gcc_dwarf_rbp,
+    gcc_dwarf_rsp,
+    gcc_dwarf_r8,
+    gcc_dwarf_r9,
+    gcc_dwarf_r10,
+    gcc_dwarf_r11,
+    gcc_dwarf_r12,
+    gcc_dwarf_r13,
+    gcc_dwarf_r14,
+    gcc_dwarf_r15,
+    gcc_dwarf_rip,
+    gcc_dwarf_xmm0,
+    gcc_dwarf_xmm1,
+    gcc_dwarf_xmm2,
+    gcc_dwarf_xmm3,
+    gcc_dwarf_xmm4,
+    gcc_dwarf_xmm5,
+    gcc_dwarf_xmm6,
+    gcc_dwarf_xmm7,
+    gcc_dwarf_xmm8,
+    gcc_dwarf_xmm9,
+    gcc_dwarf_xmm10,
+    gcc_dwarf_xmm11,
+    gcc_dwarf_xmm12,
+    gcc_dwarf_xmm13,
+    gcc_dwarf_xmm14,
+    gcc_dwarf_xmm15,
+    gcc_dwarf_stmm0,
+    gcc_dwarf_stmm1,
+    gcc_dwarf_stmm2,
+    gcc_dwarf_stmm3,
+    gcc_dwarf_stmm4,
+    gcc_dwarf_stmm5,
+    gcc_dwarf_stmm6,
+    gcc_dwarf_stmm7,
+    gcc_dwarf_ymm0 = gcc_dwarf_xmm0,
+    gcc_dwarf_ymm1 = gcc_dwarf_xmm1,
+    gcc_dwarf_ymm2 = gcc_dwarf_xmm2,
+    gcc_dwarf_ymm3 = gcc_dwarf_xmm3,
+    gcc_dwarf_ymm4 = gcc_dwarf_xmm4,
+    gcc_dwarf_ymm5 = gcc_dwarf_xmm5,
+    gcc_dwarf_ymm6 = gcc_dwarf_xmm6,
+    gcc_dwarf_ymm7 = gcc_dwarf_xmm7,
+    gcc_dwarf_ymm8 = gcc_dwarf_xmm8,
+    gcc_dwarf_ymm9 = gcc_dwarf_xmm9,
+    gcc_dwarf_ymm10 = gcc_dwarf_xmm10,
+    gcc_dwarf_ymm11 = gcc_dwarf_xmm11,
+    gcc_dwarf_ymm12 = gcc_dwarf_xmm12,
+    gcc_dwarf_ymm13 = gcc_dwarf_xmm13,
+    gcc_dwarf_ymm14 = gcc_dwarf_xmm14,
+    gcc_dwarf_ymm15 = gcc_dwarf_xmm15
+};
+
+enum gdb_regnums
+{
+    gdb_rax     =   0,
+    gdb_rbx     =   1,
+    gdb_rcx     =   2,
+    gdb_rdx     =   3,
+    gdb_rsi     =   4,
+    gdb_rdi     =   5,
+    gdb_rbp     =   6,
+    gdb_rsp     =   7,
+    gdb_r8      =   8,
+    gdb_r9      =   9,
+    gdb_r10     =  10,
+    gdb_r11     =  11,
+    gdb_r12     =  12,
+    gdb_r13     =  13,
+    gdb_r14     =  14,
+    gdb_r15     =  15,
+    gdb_rip     =  16,
+    gdb_rflags  =  17,
+    gdb_cs      =  18,
+    gdb_ss      =  19,
+    gdb_ds      =  20,
+    gdb_es      =  21,
+    gdb_fs      =  22,
+    gdb_gs      =  23,
+    gdb_stmm0   =  24,
+    gdb_stmm1   =  25,
+    gdb_stmm2   =  26,
+    gdb_stmm3   =  27,
+    gdb_stmm4   =  28,
+    gdb_stmm5   =  29,
+    gdb_stmm6   =  30,
+    gdb_stmm7   =  31,
+    gdb_fctrl   =  32,  gdb_fcw = gdb_fctrl,
+    gdb_fstat   =  33,  gdb_fsw = gdb_fstat,
+    gdb_ftag    =  34,  gdb_ftw = gdb_ftag,
+    gdb_fiseg   =  35,  gdb_fpu_cs  = gdb_fiseg,
+    gdb_fioff   =  36,  gdb_ip  = gdb_fioff,
+    gdb_foseg   =  37,  gdb_fpu_ds  = gdb_foseg,
+    gdb_fooff   =  38,  gdb_dp  = gdb_fooff,
+    gdb_fop     =  39,
+    gdb_xmm0    =  40,
+    gdb_xmm1    =  41,
+    gdb_xmm2    =  42,
+    gdb_xmm3    =  43,
+    gdb_xmm4    =  44,
+    gdb_xmm5    =  45,
+    gdb_xmm6    =  46,
+    gdb_xmm7    =  47,
+    gdb_xmm8    =  48,
+    gdb_xmm9    =  49,
+    gdb_xmm10   =  50,
+    gdb_xmm11   =  51,
+    gdb_xmm12   =  52,
+    gdb_xmm13   =  53,
+    gdb_xmm14   =  54,
+    gdb_xmm15   =  55,
+    gdb_mxcsr   =  56,
+    gdb_ymm0    =  gdb_xmm0,
+    gdb_ymm1    =  gdb_xmm1,
+    gdb_ymm2    =  gdb_xmm2,
+    gdb_ymm3    =  gdb_xmm3,
+    gdb_ymm4    =  gdb_xmm4,
+    gdb_ymm5    =  gdb_xmm5,
+    gdb_ymm6    =  gdb_xmm6,
+    gdb_ymm7    =  gdb_xmm7,
+    gdb_ymm8    =  gdb_xmm8,
+    gdb_ymm9    =  gdb_xmm9,
+    gdb_ymm10   =  gdb_xmm10,
+    gdb_ymm11   =  gdb_xmm11,
+    gdb_ymm12   =  gdb_xmm12,
+    gdb_ymm13   =  gdb_xmm13,
+    gdb_ymm14   =  gdb_xmm14,
+    gdb_ymm15   =  gdb_xmm15
+};
+
+
+static RegisterInfo g_register_infos[] = 
+{
+  //  NAME      ALT      SZ OFF ENCODING         FORMAT              COMPILER                DWARF                 GENERIC                     GDB                   LLDB NATIVE
+  //  ========  =======  == === =============    =================== ======================= ===================== =========================== ===================== ======================
+    { "rax"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rax       , gcc_dwarf_rax       , LLDB_INVALID_REGNUM       , gdb_rax            , LLDB_INVALID_REGNUM }},
+    { "rbx"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rbx       , gcc_dwarf_rbx       , LLDB_INVALID_REGNUM       , gdb_rbx            , LLDB_INVALID_REGNUM }},
+    { "rcx"   , "arg4",  8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rcx       , gcc_dwarf_rcx       , LLDB_REGNUM_GENERIC_ARG4  , gdb_rcx            , LLDB_INVALID_REGNUM }},
+    { "rdx"   , "arg3",  8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rdx       , gcc_dwarf_rdx       , LLDB_REGNUM_GENERIC_ARG3  , gdb_rdx            , LLDB_INVALID_REGNUM }},
+    { "rsi"   , "arg2",  8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rsi       , gcc_dwarf_rsi       , LLDB_REGNUM_GENERIC_ARG2  , gdb_rsi            , LLDB_INVALID_REGNUM }},
+    { "rdi"   , "arg1",  8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rdi       , gcc_dwarf_rdi       , LLDB_REGNUM_GENERIC_ARG1  , gdb_rdi            , LLDB_INVALID_REGNUM }},
+    { "rbp"   , "fp",    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rbp       , gcc_dwarf_rbp       , LLDB_REGNUM_GENERIC_FP    , gdb_rbp            , LLDB_INVALID_REGNUM }},
+    { "rsp"   , "sp",    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rsp       , gcc_dwarf_rsp       , LLDB_REGNUM_GENERIC_SP    , gdb_rsp            , LLDB_INVALID_REGNUM }},
+    { "r8"    , "arg5",  8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r8        , gcc_dwarf_r8        , LLDB_REGNUM_GENERIC_ARG5  , gdb_r8             , LLDB_INVALID_REGNUM }},
+    { "r9"    , "arg6",  8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r9        , gcc_dwarf_r9        , LLDB_REGNUM_GENERIC_ARG6  , gdb_r9             , LLDB_INVALID_REGNUM }},
+    { "r10"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r10       , gcc_dwarf_r10       , LLDB_INVALID_REGNUM       , gdb_r10            , LLDB_INVALID_REGNUM }},
+    { "r11"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r11       , gcc_dwarf_r11       , LLDB_INVALID_REGNUM       , gdb_r11            , LLDB_INVALID_REGNUM }},
+    { "r12"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r12       , gcc_dwarf_r12       , LLDB_INVALID_REGNUM       , gdb_r12            , LLDB_INVALID_REGNUM }},
+    { "r13"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r13       , gcc_dwarf_r13       , LLDB_INVALID_REGNUM       , gdb_r13            , LLDB_INVALID_REGNUM }},
+    { "r14"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r14       , gcc_dwarf_r14       , LLDB_INVALID_REGNUM       , gdb_r14            , LLDB_INVALID_REGNUM }},
+    { "r15"   , NULL,    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_r15       , gcc_dwarf_r15       , LLDB_INVALID_REGNUM       , gdb_r15            , LLDB_INVALID_REGNUM }},
+    { "rip"   , "pc",    8,  0, eEncodingUint  , eFormatHex          , { gcc_dwarf_rip       , gcc_dwarf_rip       , LLDB_REGNUM_GENERIC_PC    , gdb_rip            , LLDB_INVALID_REGNUM }},
+    { "rflags", NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_REGNUM_GENERIC_FLAGS , gdb_rflags         , LLDB_INVALID_REGNUM }},
+    { "cs"    , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_cs             , LLDB_INVALID_REGNUM }},
+    { "ss"    , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_ss             , LLDB_INVALID_REGNUM }},
+    { "ds"    , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_ds             , LLDB_INVALID_REGNUM }},
+    { "es"    , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_es             , LLDB_INVALID_REGNUM }},
+    { "fs"    , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_fs             , LLDB_INVALID_REGNUM }},
+    { "gs"    , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_gs             , LLDB_INVALID_REGNUM }},
+    { "stmm0" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm0     , gcc_dwarf_stmm0     , LLDB_INVALID_REGNUM       , gdb_stmm0          , LLDB_INVALID_REGNUM }},
+    { "stmm1" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm1     , gcc_dwarf_stmm1     , LLDB_INVALID_REGNUM       , gdb_stmm1          , LLDB_INVALID_REGNUM }},
+    { "stmm2" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm2     , gcc_dwarf_stmm2     , LLDB_INVALID_REGNUM       , gdb_stmm2          , LLDB_INVALID_REGNUM }},
+    { "stmm3" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm3     , gcc_dwarf_stmm3     , LLDB_INVALID_REGNUM       , gdb_stmm3          , LLDB_INVALID_REGNUM }},
+    { "stmm4" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm4     , gcc_dwarf_stmm4     , LLDB_INVALID_REGNUM       , gdb_stmm4          , LLDB_INVALID_REGNUM }},
+    { "stmm5" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm5     , gcc_dwarf_stmm5     , LLDB_INVALID_REGNUM       , gdb_stmm5          , LLDB_INVALID_REGNUM }},
+    { "stmm6" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm6     , gcc_dwarf_stmm6     , LLDB_INVALID_REGNUM       , gdb_stmm6          , LLDB_INVALID_REGNUM }},
+    { "stmm7" , NULL,   10,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_stmm7     , gcc_dwarf_stmm7     , LLDB_INVALID_REGNUM       , gdb_stmm7          , LLDB_INVALID_REGNUM }},
+    { "fctrl" , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_fctrl          , LLDB_INVALID_REGNUM }},
+    { "fstat" , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_fstat          , LLDB_INVALID_REGNUM }},
+    { "ftag"  , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_ftag           , LLDB_INVALID_REGNUM }},
+    { "fiseg" , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_fiseg          , LLDB_INVALID_REGNUM }},
+    { "fioff" , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_fioff          , LLDB_INVALID_REGNUM }},
+    { "foseg" , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_foseg          , LLDB_INVALID_REGNUM }},
+    { "fooff" , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_fooff          , LLDB_INVALID_REGNUM }},
+    { "fop"   , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_fop            , LLDB_INVALID_REGNUM }},
+    { "xmm0"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm0      , gcc_dwarf_xmm0      , LLDB_INVALID_REGNUM       , gdb_xmm0           , LLDB_INVALID_REGNUM }},
+    { "xmm1"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm1      , gcc_dwarf_xmm1      , LLDB_INVALID_REGNUM       , gdb_xmm1           , LLDB_INVALID_REGNUM }},
+    { "xmm2"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm2      , gcc_dwarf_xmm2      , LLDB_INVALID_REGNUM       , gdb_xmm2           , LLDB_INVALID_REGNUM }},
+    { "xmm3"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm3      , gcc_dwarf_xmm3      , LLDB_INVALID_REGNUM       , gdb_xmm3           , LLDB_INVALID_REGNUM }},
+    { "xmm4"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm4      , gcc_dwarf_xmm4      , LLDB_INVALID_REGNUM       , gdb_xmm4           , LLDB_INVALID_REGNUM }},
+    { "xmm5"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm5      , gcc_dwarf_xmm5      , LLDB_INVALID_REGNUM       , gdb_xmm5           , LLDB_INVALID_REGNUM }},
+    { "xmm6"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm6      , gcc_dwarf_xmm6      , LLDB_INVALID_REGNUM       , gdb_xmm6           , LLDB_INVALID_REGNUM }},
+    { "xmm7"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm7      , gcc_dwarf_xmm7      , LLDB_INVALID_REGNUM       , gdb_xmm7           , LLDB_INVALID_REGNUM }},
+    { "xmm8"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm8      , gcc_dwarf_xmm8      , LLDB_INVALID_REGNUM       , gdb_xmm8           , LLDB_INVALID_REGNUM }},
+    { "xmm9"  , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm9      , gcc_dwarf_xmm9      , LLDB_INVALID_REGNUM       , gdb_xmm9           , LLDB_INVALID_REGNUM }},
+    { "xmm10" , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm10     , gcc_dwarf_xmm10     , LLDB_INVALID_REGNUM       , gdb_xmm10          , LLDB_INVALID_REGNUM }},
+    { "xmm11" , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm11     , gcc_dwarf_xmm11     , LLDB_INVALID_REGNUM       , gdb_xmm11          , LLDB_INVALID_REGNUM }},
+    { "xmm12" , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm12     , gcc_dwarf_xmm12     , LLDB_INVALID_REGNUM       , gdb_xmm12          , LLDB_INVALID_REGNUM }},
+    { "xmm13" , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm13     , gcc_dwarf_xmm13     , LLDB_INVALID_REGNUM       , gdb_xmm13          , LLDB_INVALID_REGNUM }},
+    { "xmm14" , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm14     , gcc_dwarf_xmm14     , LLDB_INVALID_REGNUM       , gdb_xmm14          , LLDB_INVALID_REGNUM }},
+    { "xmm15" , NULL,   16,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_xmm15     , gcc_dwarf_xmm15     , LLDB_INVALID_REGNUM       , gdb_xmm15          , LLDB_INVALID_REGNUM }},
+    { "mxcsr" , NULL,    4,  0, eEncodingUint  , eFormatHex          , { LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM , LLDB_INVALID_REGNUM       , gdb_mxcsr          , LLDB_INVALID_REGNUM }},
+    { "ymm0"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm0      , gcc_dwarf_ymm0      , LLDB_INVALID_REGNUM       , gdb_ymm0           , LLDB_INVALID_REGNUM }},
+    { "ymm1"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm1      , gcc_dwarf_ymm1      , LLDB_INVALID_REGNUM       , gdb_ymm1           , LLDB_INVALID_REGNUM }},
+    { "ymm2"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm2      , gcc_dwarf_ymm2      , LLDB_INVALID_REGNUM       , gdb_ymm2           , LLDB_INVALID_REGNUM }},
+    { "ymm3"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm3      , gcc_dwarf_ymm3      , LLDB_INVALID_REGNUM       , gdb_ymm3           , LLDB_INVALID_REGNUM }},
+    { "ymm4"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm4      , gcc_dwarf_ymm4      , LLDB_INVALID_REGNUM       , gdb_ymm4           , LLDB_INVALID_REGNUM }},
+    { "ymm5"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm5      , gcc_dwarf_ymm5      , LLDB_INVALID_REGNUM       , gdb_ymm5           , LLDB_INVALID_REGNUM }},
+    { "ymm6"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm6      , gcc_dwarf_ymm6      , LLDB_INVALID_REGNUM       , gdb_ymm6           , LLDB_INVALID_REGNUM }},
+    { "ymm7"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm7      , gcc_dwarf_ymm7      , LLDB_INVALID_REGNUM       , gdb_ymm7           , LLDB_INVALID_REGNUM }},
+    { "ymm8"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm8      , gcc_dwarf_ymm8      , LLDB_INVALID_REGNUM       , gdb_ymm8           , LLDB_INVALID_REGNUM }},
+    { "ymm9"  , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm9      , gcc_dwarf_ymm9      , LLDB_INVALID_REGNUM       , gdb_ymm9           , LLDB_INVALID_REGNUM }},
+    { "ymm10" , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm10     , gcc_dwarf_ymm10     , LLDB_INVALID_REGNUM       , gdb_ymm10          , LLDB_INVALID_REGNUM }},
+    { "ymm11" , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm11     , gcc_dwarf_ymm11     , LLDB_INVALID_REGNUM       , gdb_ymm11          , LLDB_INVALID_REGNUM }},
+    { "ymm12" , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm12     , gcc_dwarf_ymm12     , LLDB_INVALID_REGNUM       , gdb_ymm12          , LLDB_INVALID_REGNUM }},
+    { "ymm13" , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm13     , gcc_dwarf_ymm13     , LLDB_INVALID_REGNUM       , gdb_ymm13          , LLDB_INVALID_REGNUM }},
+    { "ymm14" , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm14     , gcc_dwarf_ymm14     , LLDB_INVALID_REGNUM       , gdb_ymm14          , LLDB_INVALID_REGNUM }},
+    { "ymm15" , NULL,   32,  0, eEncodingVector, eFormatVectorOfUInt8, { gcc_dwarf_ymm15     , gcc_dwarf_ymm15     , LLDB_INVALID_REGNUM       , gdb_ymm15          , LLDB_INVALID_REGNUM }}
+};
+
+static const uint32_t k_num_register_infos = sizeof(g_register_infos)/sizeof(RegisterInfo);
+static bool g_register_info_names_constified = false;
+
+const lldb_private::RegisterInfo *
+ABISysV_x86_64::GetRegisterInfoArray (uint32_t &count)
+{
+    // Make the C-string names and alt_names for the register infos into const 
+    // C-string values by having the ConstString unique the names in the global
+    // constant C-string pool.
+    if (!g_register_info_names_constified)
+    {
+        g_register_info_names_constified = true;
+        for (uint32_t i=0; i<k_num_register_infos; ++i)
+        {
+            if (g_register_infos[i].name)
+                g_register_infos[i].name = ConstString(g_register_infos[i].name).GetCString();
+            if (g_register_infos[i].alt_name)
+                g_register_infos[i].alt_name = ConstString(g_register_infos[i].alt_name).GetCString();
+        }
+    }
+    count = k_num_register_infos;
+    return g_register_infos;
+}
 
 
 size_t
@@ -305,83 +550,410 @@ ABISysV_x86_64::GetArgumentValues (Thread &thread,
     return true;
 }
 
-bool
-ABISysV_x86_64::GetReturnValue (Thread &thread,
-                                Value &value) const
+ValueObjectSP
+ABISysV_x86_64::GetReturnValueObjectSimple (Thread &thread,
+                                ClangASTType &ast_type) const
 {
-    switch (value.GetContextType())
+    ValueObjectSP return_valobj_sp;
+    Value value;
+    
+    clang_type_t value_type = ast_type.GetOpaqueQualType();
+    if (!value_type) 
+        return return_valobj_sp;
+    
+    clang::ASTContext *ast_context = ast_type.GetASTContext();
+    if (!ast_context)
+        return return_valobj_sp;
+
+    value.SetContext (Value::eContextTypeClangType, value_type);
+    
+    RegisterContext *reg_ctx = thread.GetRegisterContext().get();
+    if (!reg_ctx)
+        return return_valobj_sp;
+    
+    bool is_signed;
+    bool is_complex;
+    uint32_t count;
+
+    if (ClangASTContext::IsIntegerType (value_type, is_signed))
     {
-        default:
-            return false;
-        case Value::eContextTypeClangType:
+        // For now, assume that the types in the AST values come from the Target's 
+        // scratch AST.    
+        
+        
+        // Extract the register context so we can read arguments from registers
+        
+        size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, value_type);
+        unsigned rax_id = reg_ctx->GetRegisterInfoByName("rax", 0)->kinds[eRegisterKindLLDB];
+        
+        switch (bit_width)
         {
-            void *value_type = value.GetClangType();
-            bool is_signed;
-            
-            RegisterContext *reg_ctx = thread.GetRegisterContext().get();
-            
-            if (!reg_ctx)
-                return false;
-            
-            if (ClangASTContext::IsIntegerType (value_type, is_signed))
+        default:
+        case 128:
+            // Scalar can't hold 128-bit literals, so we don't handle this
+            return return_valobj_sp;
+        case 64:
+            if (is_signed)
+                value.GetScalar() = (int64_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0));
+            else
+                value.GetScalar() = (uint64_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0));
+            break;
+        case 32:
+            if (is_signed)
+                value.GetScalar() = (int32_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffffffff);
+            else
+                value.GetScalar() = (uint32_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffffffff);
+            break;
+        case 16:
+            if (is_signed)
+                value.GetScalar() = (int16_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffff);
+            else
+                value.GetScalar() = (uint16_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffff);
+            break;
+        case 8:
+            if (is_signed)
+                value.GetScalar() = (int8_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xff);
+            else
+                value.GetScalar() = (uint8_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xff);
+            break;
+        }
+    }
+    else if (ClangASTContext::IsFloatingPointType(value_type, count, is_complex))
+    {
+        // Don't handle complex yet.
+        if (is_complex)
+            return return_valobj_sp;
+        
+        size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, value_type);
+        if (bit_width <= 64)
+        {
+            const RegisterInfo *xmm0_info = reg_ctx->GetRegisterInfoByName("xmm0", 0);
+            RegisterValue xmm0_value;
+            if (reg_ctx->ReadRegister (xmm0_info, xmm0_value))
             {
-                // For now, assume that the types in the AST values come from the Target's 
-                // scratch AST.    
-                
-                clang::ASTContext *ast_context = thread.CalculateTarget()->GetScratchClangASTContext()->getASTContext();
-                
-                // Extract the register context so we can read arguments from registers
-                
-                size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, value_type);
-                unsigned rax_id = reg_ctx->GetRegisterInfoByName("rax", 0)->kinds[eRegisterKindLLDB];
-                
-                switch (bit_width)
+                DataExtractor data;
+                if (xmm0_value.GetData(data))
                 {
-                default:
-                case 128:
-                    // Scalar can't hold 128-bit literals, so we don't handle this
-                    return false;
-                case 64:
-                    if (is_signed)
-                        value.GetScalar() = (int64_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0));
-                    else
-                        value.GetScalar() = (uint64_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0));
-                    break;
-                case 32:
-                    if (is_signed)
-                        value.GetScalar() = (int32_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffffffff);
-                    else
-                        value.GetScalar() = (uint32_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffffffff);
-                    break;
-                case 16:
-                    if (is_signed)
-                        value.GetScalar() = (int16_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffff);
-                    else
-                        value.GetScalar() = (uint16_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xffff);
-                    break;
-                case 8:
-                    if (is_signed)
-                        value.GetScalar() = (int8_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xff);
-                    else
-                        value.GetScalar() = (uint8_t)(thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0) & 0xff);
-                    break;
+                    uint32_t offset = 0;
+                    switch (bit_width)
+                    {
+                        default:
+                            return return_valobj_sp;
+                        case 32:
+                            value.GetScalar() = (float) data.GetFloat(&offset);
+                            break;
+                        case 64:
+                            value.GetScalar() = (double) data.GetDouble(&offset);
+                            break;
+                    }
                 }
             }
-            else if (ClangASTContext::IsPointerType (value_type))
-            {
-                unsigned rax_id = reg_ctx->GetRegisterInfoByName("rax", 0)->kinds[eRegisterKindLLDB];
-                value.GetScalar() = (uint64_t)thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0);
-            }
-            else
-            {
-                // not handled yet
-                return false;
-            }
         }
-        break;
+        else if (bit_width == 128)
+        {
+            // FIXME: x86_64 returns long doubles in stmm0, which is in some 80 bit long double
+            // format, and so we'll have to write some code to convert that into 128 bit long doubles.
+//            const RegisterInfo *st0_info = reg_ctx->GetRegisterInfoByName("stmm0", 0);
+//            RegisterValue st0_value;
+//            if (reg_ctx->ReadRegister (st0_info, st0_value))
+//            {
+//                DataExtractor data;
+//                if (st0_value.GetData(data))
+//                {
+//                    uint32_t offset = 0;
+//                    value.GetScalar() = (long double) data.GetLongDouble (&offset);
+//                    return true;
+//                }
+//            }
+            
+            return return_valobj_sp;
+        }
+    }
+    else if (ClangASTContext::IsPointerType (value_type))
+    {
+        unsigned rax_id = reg_ctx->GetRegisterInfoByName("rax", 0)->kinds[eRegisterKindLLDB];
+        value.GetScalar() = (uint64_t)thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0);
+    }
+    else
+    {
+        return return_valobj_sp;
     }
     
-    return true;
+    // If we get here, we have a valid Value, so make our ValueObject out of it:
+    
+    return_valobj_sp = ValueObjectConstResult::Create(
+                                    thread.GetStackFrameAtIndex(0).get(),
+                                    ast_type.GetASTContext(),
+                                    value,
+                                    ConstString(""));
+    return return_valobj_sp;
+}
+
+ValueObjectSP
+ABISysV_x86_64::GetReturnValueObjectImpl (Thread &thread,
+                      ClangASTType &ast_type) const
+{
+
+    ValueObjectSP return_valobj_sp;
+    
+    return_valobj_sp = GetReturnValueObjectSimple(thread, ast_type);
+    if (return_valobj_sp)
+        return return_valobj_sp;
+    
+    clang_type_t ret_value_type = ast_type.GetOpaqueQualType();
+    if (!ret_value_type) 
+        return return_valobj_sp;
+    
+    clang::ASTContext *ast_context = ast_type.GetASTContext();
+    if (!ast_context)
+        return return_valobj_sp;
+        
+    RegisterContextSP reg_ctx_sp = thread.GetRegisterContext();
+    if (!reg_ctx_sp)
+        return return_valobj_sp;
+        
+    size_t bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, ret_value_type);
+    if (ClangASTContext::IsAggregateType(ret_value_type))
+    {
+        Target &target = thread.GetProcess().GetTarget();
+        bool is_memory = true;
+        if (bit_width <= 128)
+        {
+            ByteOrder target_byte_order = target.GetArchitecture().GetByteOrder();
+            DataBufferSP data_sp (new DataBufferHeap(16, 0));
+            DataExtractor return_ext (data_sp, 
+                                      target_byte_order, 
+                                      target.GetArchitecture().GetAddressByteSize());
+                                                           
+            const RegisterInfo *rax_info = reg_ctx_sp->GetRegisterInfoByName("rax", 0);
+            const RegisterInfo *rdx_info = reg_ctx_sp->GetRegisterInfoByName("rdx", 0);
+            const RegisterInfo *xmm0_info = reg_ctx_sp->GetRegisterInfoByName("xmm0", 0);
+            const RegisterInfo *xmm1_info = reg_ctx_sp->GetRegisterInfoByName("xmm1", 0);
+            
+            RegisterValue rax_value, rdx_value, xmm0_value, xmm1_value;
+            reg_ctx_sp->ReadRegister (rax_info, rax_value);
+            reg_ctx_sp->ReadRegister (rdx_info, rdx_value);
+            reg_ctx_sp->ReadRegister (xmm0_info, xmm0_value);
+            reg_ctx_sp->ReadRegister (xmm1_info, xmm1_value);
+
+            DataExtractor rax_data, rdx_data, xmm0_data, xmm1_data;
+            
+            rax_value.GetData(rax_data);
+            rdx_value.GetData(rdx_data);
+            xmm0_value.GetData(xmm0_data);
+            xmm1_value.GetData(xmm1_data);
+            
+            uint32_t fp_bytes = 0;       // Tracks how much of the xmm registers we've consumed so far
+            uint32_t integer_bytes = 0;  // Tracks how much of the rax/rds registers we've consumed so far
+            
+            uint32_t num_children = ClangASTContext::GetNumFields (ast_context, ret_value_type);
+            
+            // Since we are in the small struct regime, assume we are not in memory.
+            is_memory = false;
+            
+            for (uint32_t idx = 0; idx < num_children; idx++)
+            {
+                std::string name;
+                uint32_t field_bit_offset;
+                bool is_signed;
+                bool is_complex;
+                uint32_t count;
+                
+                clang_type_t field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context, ret_value_type, idx, name, &field_bit_offset);
+                size_t field_bit_width = ClangASTType::GetClangTypeBitWidth(ast_context, field_clang_type);
+
+                // If there are any unaligned fields, this is stored in memory.
+                if (field_bit_offset % field_bit_width != 0)
+                {
+                    is_memory = true;
+                    break;
+                }
+                
+                uint32_t field_byte_width = field_bit_width/8;
+                uint32_t field_byte_offset = field_bit_offset/8;
+                
+
+                DataExtractor *copy_from_extractor = NULL;
+                uint32_t       copy_from_offset    = 0;
+                
+                if (ClangASTContext::IsIntegerType (field_clang_type, is_signed) || ClangASTContext::IsPointerType (field_clang_type))
+                {
+                    if (integer_bytes < 8)
+                    {
+                        if (integer_bytes + field_byte_width <= 8)
+                        {
+                            // This is in RAX, copy from register to our result structure:
+                            copy_from_extractor = &rax_data;
+                            copy_from_offset = integer_bytes;
+                            integer_bytes += field_byte_width;
+                        }
+                        else
+                        {
+                            // The next field wouldn't fit in the remaining space, so we pushed it to rdx.
+                            copy_from_extractor = &rdx_data;
+                            copy_from_offset = 0;
+                            integer_bytes = 8 + field_byte_width;
+                        
+                        }
+                    }
+                    else if (integer_bytes + field_byte_width <= 16)
+                    {
+                        copy_from_extractor = &rdx_data;
+                        copy_from_offset = integer_bytes - 8;
+                        integer_bytes += field_byte_width;
+                    }
+                    else
+                    {
+                        // The last field didn't fit.  I can't see how that would happen w/o the overall size being 
+                        // greater than 16 bytes.  For now, return a NULL return value object.
+                        return return_valobj_sp;
+                    }
+                }
+                else if (ClangASTContext::IsFloatingPointType (field_clang_type, count, is_complex))
+                {
+                    // Structs with long doubles are always passed in memory.
+                    if (field_bit_width == 128)
+                    {
+                        is_memory = true;
+                        break;
+                    }
+                    else if (field_bit_width == 64)
+                    {
+                        // These have to be in a single xmm register.
+                        if (fp_bytes == 0)
+                            copy_from_extractor = &xmm0_data;
+                        else
+                            copy_from_extractor = &xmm1_data;
+
+                        copy_from_offset = 0;
+                        fp_bytes += field_byte_width;
+                    }
+                    else if (field_bit_width == 32)
+                    {
+                        // This one is kind of complicated.  If we are in an "eightbyte" with another float, we'll
+                        // be stuffed into an xmm register with it.  If we are in an "eightbyte" with one or more ints,
+                        // then we will be stuffed into the appropriate GPR with them.
+                        bool in_gpr;
+                        if (field_byte_offset % 8 == 0) 
+                        {
+                            // We are at the beginning of one of the eightbytes, so check the next element (if any)
+                            if (idx == num_children - 1)
+                                in_gpr = false;
+                            else
+                            {
+                                uint32_t next_field_bit_offset;
+                                clang_type_t next_field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context, 
+                                                                                                       ret_value_type, 
+                                                                                                       idx + 1, 
+                                                                                                       name, 
+                                                                                                       &next_field_bit_offset);
+                                if (ClangASTContext::IsIntegerType (next_field_clang_type, is_signed))
+                                    in_gpr = true;
+                                else
+                                {
+                                    copy_from_offset = 0;
+                                    in_gpr = false;
+                                }
+                            }
+                                
+                        }
+                        else if (field_byte_offset % 4 == 0)
+                        {
+                            // We are inside of an eightbyte, so see if the field before us is floating point:
+                            // This could happen if somebody put padding in the structure.
+                            if (idx == 0)
+                                in_gpr = false;
+                            else
+                            {
+                                uint32_t prev_field_bit_offset;
+                                clang_type_t prev_field_clang_type = ClangASTContext::GetFieldAtIndex (ast_context, 
+                                                                                                       ret_value_type, 
+                                                                                                       idx - 1, 
+                                                                                                       name, 
+                                                                                                       &prev_field_bit_offset);
+                                if (ClangASTContext::IsIntegerType (prev_field_clang_type, is_signed))
+                                    in_gpr = true;
+                                else
+                                {
+                                    copy_from_offset = 4;
+                                    in_gpr = false;
+                                }
+                            }
+                            
+                        }
+                        else
+                        {
+                            is_memory = true;
+                            continue;
+                        }
+                        
+                        // Okay, we've figured out whether we are in GPR or XMM, now figure out which one.
+                        if (in_gpr)
+                        {
+                            if (integer_bytes < 8)
+                            {
+                                // This is in RAX, copy from register to our result structure:
+                                copy_from_extractor = &rax_data;
+                                copy_from_offset = integer_bytes;
+                                integer_bytes += field_byte_width;
+                            }
+                            else
+                            {
+                                copy_from_extractor = &rdx_data;
+                                copy_from_offset = integer_bytes - 8;
+                                integer_bytes += field_byte_width;
+                            }
+                        }
+                        else
+                        {
+                            if (fp_bytes < 8)
+                                copy_from_extractor = &xmm0_data;
+                            else
+                                copy_from_extractor = &xmm1_data;
+
+                            fp_bytes += field_byte_width;
+                        }
+                    } 
+                }
+                
+                // These two tests are just sanity checks.  If I somehow get the
+                // type calculation wrong above it is better to just return nothing
+                // than to assert or crash.
+                if (!copy_from_extractor)
+                    return return_valobj_sp;
+                if (copy_from_offset + field_byte_width > copy_from_extractor->GetByteSize())
+                    return return_valobj_sp;
+                    
+                copy_from_extractor->CopyByteOrderedData (copy_from_offset, 
+                                                          field_byte_width, 
+                                                          data_sp->GetBytes() + field_byte_offset, 
+                                                          field_byte_width, 
+                                                          target_byte_order);
+            }
+            
+            if (!is_memory)
+            {
+                // The result is in our data buffer.  Let's make a variable object out of it:
+                return_valobj_sp = ValueObjectConstResult::Create (&thread, 
+                                                                   ast_context, 
+                                                                   ret_value_type, 
+                                                                   ConstString(""),
+                                                                   return_ext);
+            }
+        }
+        
+        if (is_memory)
+        {
+            unsigned rax_id = reg_ctx_sp->GetRegisterInfoByName("rax", 0)->kinds[eRegisterKindLLDB];
+            lldb::addr_t storage_addr = (uint64_t)thread.GetRegisterContext()->ReadRegisterAsUnsigned(rax_id, 0);
+            return_valobj_sp = ValueObjectMemory::Create (&thread,
+                                                          "",
+                                                          Address (storage_addr, NULL),
+                                                          ast_type); 
+        }
+    }
+        
+    return return_valobj_sp;
 }
 
 bool
@@ -419,7 +991,7 @@ ABISysV_x86_64::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
     row.SetCFAOffset (8);
     row.SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, -8, false);    
     unwind_plan.AppendRow (row);
-    unwind_plan.SetSourceName (pluginName);
+    unwind_plan.SetSourceName ("x86_64 at-func-entry default");
     return true;
 }
 
@@ -479,6 +1051,10 @@ ABISysV_x86_64::RegisterIsVolatile (const RegisterInfo *reg_info)
 {
     return !RegisterIsCalleeSaved (reg_info);
 }
+
+
+
+
 
 bool
 ABISysV_x86_64::RegisterIsCalleeSaved (const RegisterInfo *reg_info)

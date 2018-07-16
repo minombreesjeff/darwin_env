@@ -32,11 +32,14 @@ IdentifierInfo::IdentifierInfo() {
   ObjCOrBuiltinID = 0;
   HasMacro = false;
   IsExtension = false;
+  IsCXX11CompatKeyword = false;
   IsPoisoned = false;
   IsCPPOperatorKeyword = false;
   NeedsHandleIdentifier = false;
   IsFromAST = false;
+  ChangedAfterLoad = false;
   RevertedTokenID = false;
+  OutOfDate = false;
   FETokenInfo = 0;
   Entry = 0;
 }
@@ -102,10 +105,10 @@ namespace {
 /// identifiers because they are language keywords.  This causes the lexer to
 /// automatically map matching identifiers to specialized token codes.
 ///
-/// The C90/C99/CPP/CPP0x flags are set to 2 if the token should be
-/// enabled in the specified langauge, set to 1 if it is an extension
-/// in the specified language, and set to 0 if disabled in the
-/// specified language.
+/// The C90/C99/CPP/CPP0x flags are set to 3 if the token is a keyword in a
+/// future language standard, set to 2 if the token should be enabled in the
+/// specified langauge, set to 1 if it is an extension in the specified
+/// language, and set to 0 if disabled in the specified language.
 static void AddKeyword(StringRef Keyword,
                        tok::TokenKind TokenCode, unsigned Flags,
                        const LangOptions &LangOpts, IdentifierTable &Table) {
@@ -115,7 +118,7 @@ static void AddKeyword(StringRef Keyword,
   else if (LangOpts.CPlusPlus0x && (Flags & KEYCXX0X)) AddResult = 2;
   else if (LangOpts.C99 && (Flags & KEYC99)) AddResult = 2;
   else if (LangOpts.GNUKeywords && (Flags & KEYGNU)) AddResult = 1;
-  else if (LangOpts.Microsoft && (Flags & KEYMS)) AddResult = 1;
+  else if (LangOpts.MicrosoftExt && (Flags & KEYMS)) AddResult = 1;
   else if (LangOpts.Borland && (Flags & KEYBORLAND)) AddResult = 1;
   else if (LangOpts.Bool && (Flags & BOOLSUPPORT)) AddResult = 2;
   else if (LangOpts.AltiVec && (Flags & KEYALTIVEC)) AddResult = 2;
@@ -123,12 +126,15 @@ static void AddKeyword(StringRef Keyword,
   else if (!LangOpts.CPlusPlus && (Flags & KEYNOCXX)) AddResult = 2;
   else if (LangOpts.C1X && (Flags & KEYC1X)) AddResult = 2;
   else if (LangOpts.ObjCAutoRefCount && (Flags & KEYARC)) AddResult = 2;
-           
+  else if (LangOpts.CPlusPlus && (Flags & KEYCXX0X)) AddResult = 3;
+
   // Don't add this keyword if disabled in this language.
   if (AddResult == 0) return;
 
-  IdentifierInfo &Info = Table.get(Keyword, TokenCode);
+  IdentifierInfo &Info =
+      Table.get(Keyword, AddResult == 3 ? tok::identifier : TokenCode);
   Info.setIsExtensionToken(AddResult == 1);
+  Info.setIsCXX11CompatKeyword(AddResult == 3);
 }
 
 /// AddCXXOperatorKeyword - Register a C++ operator keyword alternative
@@ -217,6 +223,9 @@ tok::PPKeywordKind IdentifierInfo::getPPKeywordID() const {
   CASE(12, 'i', 'c', include_next);
 
   CASE(16, '_', 'i', __include_macros);
+  CASE(16, '_', 'e', __export_macro__);
+      
+  CASE(17, '_', 'p', __private_macro__);
 #undef CASE
 #undef HASH
   }
@@ -392,6 +401,7 @@ ObjCMethodFamily Selector::getMethodFamilyImpl(Selector sel) {
   if (sel.isUnarySelector()) {
     if (name == "autorelease") return OMF_autorelease;
     if (name == "dealloc") return OMF_dealloc;
+    if (name == "finalize") return OMF_finalize;
     if (name == "release") return OMF_release;
     if (name == "retain") return OMF_retain;
     if (name == "retainCount") return OMF_retainCount;
@@ -491,4 +501,3 @@ const char *clang::getOperatorSpelling(OverloadedOperatorKind Operator) {
 
   return 0;
 }
-

@@ -30,6 +30,15 @@
 using namespace lldb;
 using namespace lldb_private;
 
+Type *
+SymbolFileType::GetType ()
+{
+    if (!m_type_sp)
+        m_type_sp = m_symbol_file.ResolveTypeUID (GetID());
+    return m_type_sp.get();
+}
+
+
 Type::Type
 (
     lldb::user_id_t uid,
@@ -109,7 +118,7 @@ Type::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_name)
 
     // Call the get byte size accesor so we resolve our byte size
     if (GetByteSize())
-        s->Printf(", byte-size = %zu", m_byte_size);
+        s->Printf(", byte-size = %u", m_byte_size);
     bool show_fullpaths = (level == lldb::eDescriptionLevelVerbose);
     m_decl.Dump(s, show_fullpaths);
 
@@ -142,14 +151,14 @@ Type::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_name)
 void
 Type::Dump (Stream *s, bool show_context)
 {
-    s->Printf("%.*p: ", (int)sizeof(void*) * 2, this);
+    s->Printf("%p: ", this);
     s->Indent();
     *s << "Type" << (const UserID&)*this << ' ';
     if (m_name)
         *s << ", name = \"" << m_name << "\"";
 
     if (m_byte_size != 0)
-        s->Printf(", size = %zu", m_byte_size);
+        s->Printf(", size = %u", m_byte_size);
 
     if (show_context && m_context != NULL)
     {
@@ -228,7 +237,7 @@ Type::DumpValue
         {
             s->PutChar('(');
             if (verbose)
-                s->Printf("Type{0x%8.8x} ", GetID());
+                s->Printf("Type{0x%8.8llx} ", GetID());
             DumpTypeName (s);
             s->PutCString(") ");
         }
@@ -357,8 +366,11 @@ Type::DumpValueInMemory
     if (address != LLDB_INVALID_ADDRESS)
     {
         DataExtractor data;
-        if (exe_ctx->target)
-            data.SetByteOrder (exe_ctx->target->GetArchitecture().GetByteOrder());
+        Target *target = NULL;
+        if (exe_ctx)
+            target = exe_ctx->GetTargetPtr();
+        if (target)
+            data.SetByteOrder (target->GetArchitecture().GetByteOrder());
         if (ReadFromMemory (exe_ctx, address, address_type, data))
         {
             DumpValue(exe_ctx, s, data, 0, show_types, show_summary, verbose);
@@ -397,10 +409,14 @@ Type::ReadFromMemory (ExecutionContext *exe_ctx, lldb::addr_t addr, AddressType 
         }
         else
         {
-            if (exe_ctx && exe_ctx->process)
+            if (exe_ctx)
             {
-                Error error;
-                return exe_ctx->process->ReadMemory(addr, dst, byte_size, error) == byte_size;
+                Process *process = exe_ctx->GetProcessPtr();
+                if (process)
+                {
+                    Error error;
+                    return exe_ctx->GetProcessPtr()->ReadMemory(addr, dst, byte_size, error) == byte_size;
+                }
             }
         }
     }
@@ -657,6 +673,18 @@ Type::CreateClangRValueReferenceType (Type *type)
     return GetClangASTContext().CreateRValueReferenceType (type->GetClangForwardType());
 }
 
+bool
+Type::IsRealObjCClass()
+{
+    // For now we are just skipping ObjC classes that get made by hand from the runtime, because
+    // those don't have any information.  We could extend this to only return true for "full 
+    // definitions" if we can figure that out.
+    
+    if (ClangASTContext::IsObjCClassType(m_clang_type) && GetByteSize() != 0)
+        return true;
+    else
+        return false;
+}
 
 TypeAndOrName::TypeAndOrName () : m_type_sp(), m_type_name()
 {
@@ -770,3 +798,21 @@ TypeImpl::GetOpaqueQualType()
     
     return m_clang_ast_type.GetOpaqueQualType();
 }
+
+bool
+TypeImpl::GetDescription (lldb_private::Stream &strm, 
+                          lldb::DescriptionLevel description_level)
+{
+    if (m_clang_ast_type.IsValid())
+    {
+        ClangASTType::DumpTypeDescription (m_clang_ast_type.GetASTContext(), 
+                                           m_clang_ast_type.GetOpaqueQualType(), 
+                                           &strm);
+    }
+    else
+    {
+        strm.PutCString ("No value");
+    }
+    return true;
+}
+

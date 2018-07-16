@@ -72,7 +72,7 @@
 #define LLDB_INVALID_IVAR_OFFSET        UINT32_MAX
 #define LLDB_INVALID_IMAGE_TOKEN        UINT32_MAX
 #define LLDB_INVALID_REGNUM             UINT32_MAX
-#define LLDB_INVALID_UID                UINT32_MAX
+#define LLDB_INVALID_UID                UINT64_MAX
 #define LLDB_INVALID_PROCESS_ID         0
 #define LLDB_INVALID_THREAD_ID          0
 #define LLDB_INVALID_FRAME_ID           UINT32_MAX
@@ -101,6 +101,7 @@
 #define LLDB_OPT_SET_6                  (1 << 5)
 #define LLDB_OPT_SET_7                  (1 << 6)
 #define LLDB_OPT_SET_8                  (1 << 7)
+#define LLDB_OPT_SET_9                  (1 << 8)
 
 #if defined(__cplusplus)
 

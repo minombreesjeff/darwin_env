@@ -188,7 +188,7 @@ bool UnknownHostInfo::useDriverDriver() const {
 ToolChain *UnknownHostInfo::CreateToolChain(const ArgList &Args,
                                             const char *ArchName) const {
   assert(!ArchName &&
-         "Unexpected arch name on platform without driver driver support.");
+         "Unexpected arch name on platform without driver support.");
 
   // Automatically handle some instances of -m32/-m64 we know about.
   std::string Arch = getArchName();
@@ -574,6 +574,11 @@ ToolChain *LinuxHostInfo::CreateToolChain(const ArgList &Args,
   }
 
   ToolChain *&TC = ToolChains[ArchName];
+
+  if (!TC && !Arch.compare ("hexagon")) {
+    llvm::Triple TCTriple (getTriple());
+    TC = new toolchains::Hexagon_TC (*this, TCTriple);
+  }
 
   if (!TC) {
     llvm::Triple TCTriple(getTriple());

@@ -17,7 +17,9 @@
 #if defined (__arm__)
 
 #include "DNBArch.h"
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
 #include <ARMDisassembler/ARMDisassembler.h>
+#endif
 
 class MachThread;
 
@@ -36,7 +38,9 @@ public:
         m_last_decode_pc(INVALID_NUB_ADDRESS)
     {
         memset(&m_dbg_save, 0, sizeof(m_dbg_save));
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
         ThumbStaticsInit(&m_last_decode_thumb);
+#endif
         for (int i = 0; i < kMaxNumThumbITBreakpoints; i++)
             m_sw_single_step_itblock_break_id[i] = INVALID_NUB_BREAK_ID;
     }
@@ -63,6 +67,7 @@ public:
     virtual uint64_t        GetSP(uint64_t failValue);    // Get stack pointer
     virtual void            ThreadWillResume();
     virtual bool            ThreadDidStop();
+    virtual bool            NotifyException(MachException::Data& exc);
 
     static DNBArchProtocol *Create (MachThread *thread);
     static const uint8_t * const SoftwareBreakpointOpcode (nub_size_t byte_size);
@@ -75,6 +80,10 @@ public:
     virtual bool            DisableHardwareBreakpoint (uint32_t hw_break_index);
     virtual bool            DisableHardwareWatchpoint (uint32_t hw_break_index);
     virtual bool            StepNotComplete ();
+    virtual void            HardwareWatchpointStateChanged ();
+    virtual uint32_t        GetHardwareWatchpointHit(nub_addr_t &addr);
+
+    typedef arm_debug_state_t DBG;
 
 protected:
 
@@ -83,10 +92,12 @@ protected:
     kern_return_t           SetSingleStepSoftwareBreakpoints ();
 
     bool                    ConditionPassed(uint8_t condition, uint32_t cpsr);
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
     bool                    ComputeNextPC(nub_addr_t currentPC, arm_decoded_instruction_t decodedInstruction, bool currentPCIsThumb, nub_addr_t *targetPC);
-    void                    EvaluateNextInstructionForSoftwareBreakpointSetup(nub_addr_t currentPC, uint32_t cpsr, bool currentPCIsThumb, nub_addr_t *nextPC, bool *nextPCIsThumb);
-    void                    DecodeITBlockInstructions(nub_addr_t curr_pc);
     arm_error_t             DecodeInstructionUsingDisassembler(nub_addr_t curr_pc, uint32_t curr_cpsr, arm_decoded_instruction_t *decodedInstruction, thumb_static_data_t *thumbStaticData, nub_addr_t *next_pc);
+    void                    DecodeITBlockInstructions(nub_addr_t curr_pc);
+#endif
+    void                    EvaluateNextInstructionForSoftwareBreakpointSetup(nub_addr_t currentPC, uint32_t cpsr, bool currentPCIsThumb, nub_addr_t *nextPC, bool *nextPCIsThumb);
     static nub_bool_t       BreakpointHit (nub_process_t pid, nub_thread_t tid, nub_break_t breakID, void *baton);
 
     typedef enum RegisterSetTag
@@ -128,10 +139,14 @@ protected:
         EXC exc;
     };
 
+    // See also HardwareWatchpointStateChanged() which updates this class-wide variable.
+    static DBG Global_Debug_State;
+    static bool Valid_Global_Debug_State;
+
     struct State
     {
         Context                 context;
-        arm_debug_state_t       dbg;
+        DBG                     dbg;
         kern_return_t           gpr_errs[2];    // Read/Write errors
         kern_return_t           vfp_errs[2];    // Read/Write errors
         kern_return_t           exc_errs[2];    // Read/Write errors
@@ -220,10 +235,16 @@ protected:
     kern_return_t SetVFPState ();
     kern_return_t SetEXCState ();
     kern_return_t SetDBGState ();
+
+    // Helper functions for watchpoint implementaions.
+    static void ClearWatchpointOccurred();
+    static bool IsWatchpointHit(const DBG &debug_state, uint32_t hw_index);
+    static nub_addr_t GetWatchAddress(const DBG &debug_state, uint32_t hw_index);
+
 protected:
     MachThread *    m_thread;
     State           m_state;
-    arm_debug_state_t m_dbg_save;
+    DBG             m_dbg_save;
     nub_addr_t      m_hw_single_chained_step_addr;
     // Software single stepping support
     nub_addr_t      m_sw_single_step_next_pc;
@@ -231,8 +252,10 @@ protected:
     nub_break_t     m_sw_single_step_itblock_break_id[kMaxNumThumbITBreakpoints];
     nub_addr_t      m_sw_single_step_itblock_break_count;
     // Disassembler state
+#if defined (USE_ARM_DISASSEMBLER_FRAMEWORK)
     thumb_static_data_t m_last_decode_thumb;
     arm_decoded_instruction_t m_last_decode_arm;
+#endif
     nub_addr_t      m_last_decode_pc;
 
 };

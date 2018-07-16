@@ -50,6 +50,7 @@ void ArgList::eraseArg(OptSpecifier Id) {
   for (iterator it = begin(), ie = end(); it != ie; ) {
     if ((*it)->getOption().matches(Id)) {
       it = Args.erase(it);
+      ie = end();
     } else {
       ++it;
     }
@@ -135,7 +136,7 @@ StringRef ArgList::getLastArgValue(OptSpecifier Id,
 }
 
 int ArgList::getLastArgIntValue(OptSpecifier Id, int Default,
-                                clang::Diagnostic &Diags) const {
+                                clang::DiagnosticsEngine &Diags) const {
   int Res = Default;
 
   if (Arg *A = getLastArg(Id)) {

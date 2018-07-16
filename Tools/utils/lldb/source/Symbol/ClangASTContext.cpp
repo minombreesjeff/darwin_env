@@ -25,7 +25,7 @@
 // file. So we have to define NDEBUG when including clang headers to avoid any
 // mismatches. This is covered by rdar://problem/8691220
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(LLVM_NDEBUG_OFF)
 #define LLDB_DEFINED_NDEBUG_FOR_CLANG
 #define NDEBUG
 // Need to include assert.h so it is as clang would expect it to be (disabled)
@@ -36,6 +36,7 @@
 #include "clang/AST/ASTImporter.h"
 #include "clang/AST/CXXInheritance.h"
 #include "clang/AST/DeclObjC.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/Builtins.h"
@@ -58,6 +59,10 @@
 #include "lldb/Core/dwarf.h"
 #include "lldb/Core/Flags.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/RegularExpression.h"
+#include "lldb/Expression/ASTDumper.h"
+#include "lldb/Symbol/ClangExternalASTSourceCommon.h"
+#include "lldb/Symbol/VerifyDecl.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
@@ -359,7 +364,7 @@ ClangASTContext::ClangASTContext (const char *target_triple) :
     m_ast_ap(),
     m_language_options_ap(),
     m_source_manager_ap(),
-    m_diagnostic_ap(),
+    m_diagnostics_engine_ap(),
     m_target_options_ap(),
     m_target_info_ap(),
     m_identifier_table_ap(),
@@ -384,7 +389,7 @@ ClangASTContext::~ClangASTContext()
     m_identifier_table_ap.reset();
     m_target_info_ap.reset();
     m_target_options_ap.reset();
-    m_diagnostic_ap.reset();
+    m_diagnostics_engine_ap.reset();
     m_source_manager_ap.reset();
     m_language_options_ap.reset();
     m_ast_ap.reset();
@@ -397,7 +402,7 @@ ClangASTContext::Clear()
     m_ast_ap.reset();
     m_language_options_ap.reset();
     m_source_manager_ap.reset();
-    m_diagnostic_ap.reset();
+    m_diagnostics_engine_ap.reset();
     m_target_options_ap.reset();
     m_target_info_ap.reset();
     m_identifier_table_ap.reset();
@@ -468,7 +473,7 @@ ClangASTContext::getASTContext()
     {
         m_ast_ap.reset(new ASTContext (*getLanguageOptions(),
                                        *getSourceManager(),
-                                       *getTargetInfo(),
+                                       getTargetInfo(),
                                        *getIdentifierTable(),
                                        *getSelectorTable(),
                                        *getBuiltinContext(),
@@ -480,7 +485,7 @@ ClangASTContext::getASTContext()
             //m_ast_ap->getTranslationUnitDecl()->setHasExternalVisibleStorage();
         }
         
-        m_ast_ap->getDiagnostics().setClient(getDiagnosticClient(), false);
+        m_ast_ap->getDiagnostics().setClient(getDiagnosticConsumer(), false);
     }
     return m_ast_ap.get();
 }
@@ -489,7 +494,7 @@ Builtin::Context *
 ClangASTContext::getBuiltinContext()
 {
     if (m_builtins_ap.get() == NULL)
-        m_builtins_ap.reset (new Builtin::Context(*getTargetInfo()));
+        m_builtins_ap.reset (new Builtin::Context());
     return m_builtins_ap.get();
 }
 
@@ -536,30 +541,30 @@ clang::SourceManager *
 ClangASTContext::getSourceManager()
 {
     if (m_source_manager_ap.get() == NULL)
-        m_source_manager_ap.reset(new clang::SourceManager(*getDiagnostic(), *getFileManager()));
+        m_source_manager_ap.reset(new clang::SourceManager(*getDiagnosticsEngine(), *getFileManager()));
     return m_source_manager_ap.get();
 }
 
-Diagnostic *
-ClangASTContext::getDiagnostic()
+clang::DiagnosticsEngine *
+ClangASTContext::getDiagnosticsEngine()
 {
-    if (m_diagnostic_ap.get() == NULL)
+    if (m_diagnostics_engine_ap.get() == NULL)
     {
         llvm::IntrusiveRefCntPtr<DiagnosticIDs> diag_id_sp(new DiagnosticIDs());
-        m_diagnostic_ap.reset(new Diagnostic(diag_id_sp));
+        m_diagnostics_engine_ap.reset(new DiagnosticsEngine(diag_id_sp));
     }
-    return m_diagnostic_ap.get();
+    return m_diagnostics_engine_ap.get();
 }
 
-class NullDiagnosticClient : public DiagnosticClient
+class NullDiagnosticConsumer : public DiagnosticConsumer
 {
 public:
-    NullDiagnosticClient ()
+    NullDiagnosticConsumer ()
     {
         m_log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS);
     }
     
-    void HandleDiagnostic (Diagnostic::Level DiagLevel, const DiagnosticInfo &info)
+    void HandleDiagnostic (DiagnosticsEngine::Level DiagLevel, const Diagnostic &info)
     {
         if (m_log)
         {
@@ -569,17 +574,22 @@ public:
             m_log->Printf("Compiler diagnostic: %s\n", diag_str.data());
         }
     }
+    
+    DiagnosticConsumer *clone (DiagnosticsEngine &Diags) const
+    {
+        return new NullDiagnosticConsumer ();
+    }
 private:
     LogSP m_log;
 };
 
-DiagnosticClient *
-ClangASTContext::getDiagnosticClient()
+DiagnosticConsumer *
+ClangASTContext::getDiagnosticConsumer()
 {
-    if (m_diagnostic_client_ap.get() == NULL)
-        m_diagnostic_client_ap.reset(new NullDiagnosticClient);
+    if (m_diagnostic_consumer_ap.get() == NULL)
+        m_diagnostic_consumer_ap.reset(new NullDiagnosticConsumer);
     
-    return m_diagnostic_client_ap.get();
+    return m_diagnostic_consumer_ap.get();
 }
 
 TargetOptions *
@@ -600,7 +610,7 @@ ClangASTContext::getTargetInfo()
 {
     // target_triple should be something like "x86_64-apple-darwin10"
     if (m_target_info_ap.get() == NULL && !m_target_triple.empty())
-        m_target_info_ap.reset (TargetInfo::CreateTargetInfo(*getDiagnostic(), *getTargetOptions()));
+        m_target_info_ap.reset (TargetInfo::CreateTargetInfo(*getDiagnosticsEngine(), *getTargetOptions()));
     return m_target_info_ap.get();
 }
 
@@ -717,10 +727,13 @@ ClangASTContext::GetBuiltinTypeForDWARFEncodingAndBitSize (const char *type_name
 
         case DW_ATE_lo_user:
             // This has been seen to mean DW_AT_complex_integer
-            if (::strstr(type_name, "complex"))
+            if (type_name)
             {
-                clang_type_t complex_int_clang_type = GetBuiltinTypeForDWARFEncodingAndBitSize ("int", DW_ATE_signed, bit_size/2);
-                return ast->getComplexType (QualType::getFromOpaquePtr(complex_int_clang_type)).getAsOpaquePtr();
+                if (::strstr(type_name, "complex"))
+                {
+                    clang_type_t complex_int_clang_type = GetBuiltinTypeForDWARFEncodingAndBitSize ("int", DW_ATE_signed, bit_size/2);
+                    return ast->getComplexType (QualType::getFromOpaquePtr(complex_int_clang_type)).getAsOpaquePtr();
+                }
             }
             break;
             
@@ -875,17 +888,31 @@ ClangASTContext::GetBuiltinTypeForDWARFEncodingAndBitSize (const char *type_name
 
         case DW_ATE_imaginary_float:
             break;
+                
+        case DW_ATE_UTF:
+            if (type_name)
+            {
+                if (streq(type_name, "char16_t"))
+                {
+                    return ast->Char16Ty.getAsOpaquePtr();
+                }
+                else if (streq(type_name, "char32_t"))
+                {
+                    return ast->Char32Ty.getAsOpaquePtr();
+                }
+            }
+            break;
         }
     }
     // This assert should fire for anything that we don't catch above so we know
     // to fix any issues we run into.
     if (type_name)
     {
-        fprintf (stderr, "error: need to add support for DW_TAG_base_type '%s' encoded with DW_ATE = 0x%x, bit_size = %u\n", type_name, dw_ate, bit_size);
+        Host::SystemLog (Host::eSystemLogError, "error: need to add support for DW_TAG_base_type '%s' encoded with DW_ATE = 0x%x, bit_size = %u\n", type_name, dw_ate, bit_size);
     }
     else
     {
-        fprintf (stderr, "error: need to add support for DW_TAG_base_type encoded with DW_ATE = 0x%x, bit_size = %u\n", dw_ate, bit_size);
+        Host::SystemLog (Host::eSystemLogError, "error: need to add support for DW_TAG_base_type encoded with DW_ATE = 0x%x, bit_size = %u\n", dw_ate, bit_size);
     }
     return NULL;
 }
@@ -905,19 +932,19 @@ ClangASTContext::GetBuiltInType_bool()
 clang_type_t
 ClangASTContext::GetBuiltInType_objc_id()
 {
-    return getASTContext()->getPointerType(getASTContext()->ObjCBuiltinIdTy).getAsOpaquePtr();
+    return getASTContext()->getObjCIdType().getAsOpaquePtr();
 }
 
 clang_type_t
 ClangASTContext::GetBuiltInType_objc_Class()
 {
-    return getASTContext()->ObjCBuiltinClassTy.getAsOpaquePtr();
+    return getASTContext()->getObjCClassType().getAsOpaquePtr();
 }
 
 clang_type_t
 ClangASTContext::GetBuiltInType_objc_selector()
 {
-    return getASTContext()->getPointerType(getASTContext()->ObjCBuiltinSelTy).getAsOpaquePtr();
+    return getASTContext()->getObjCSelType().getAsOpaquePtr();
 }
 
 clang_type_t
@@ -952,6 +979,12 @@ ClangASTContext::GetVoidPtrType (ASTContext *ast, bool is_const)
         void_ptr_type.addConst();
     
     return void_ptr_type.getAsOpaquePtr();
+}
+
+clang::DeclContext *
+ClangASTContext::GetTranslationUnitDecl (clang::ASTContext *ast)
+{
+    return ast->getTranslationUnitDecl();
 }
 
 clang_type_t
@@ -1059,7 +1092,7 @@ ClangASTContext::GetTypeForDecl (ObjCInterfaceDecl *decl)
 #pragma mark Structure, Unions, Classes
 
 clang_type_t
-ClangASTContext::CreateRecordType (const char *name, int kind, DeclContext *decl_ctx, LanguageType language)
+ClangASTContext::CreateRecordType (DeclContext *decl_ctx, AccessType access_type, const char *name, int kind, LanguageType language)
 {
     ASTContext *ast = getASTContext();
     assert (ast != NULL);
@@ -1080,14 +1113,165 @@ ClangASTContext::CreateRecordType (const char *name, int kind, DeclContext *decl
     // the CXXRecordDecl class since we often don't know from debug information
     // if something is struct or a class, so we default to always use the more
     // complete definition just in case.
-    CXXRecordDecl *decl = CXXRecordDecl::Create(*ast,
-                                                (TagDecl::TagKind)kind,
-                                                decl_ctx,
-                                                SourceLocation(),
-                                                SourceLocation(),
-                                                name && name[0] ? &ast->Idents.get(name) : NULL);
+    CXXRecordDecl *decl = CXXRecordDecl::Create (*ast,
+                                                 (TagDecl::TagKind)kind,
+                                                 decl_ctx,
+                                                 SourceLocation(),
+                                                 SourceLocation(),
+                                                 name && name[0] ? &ast->Idents.get(name) : NULL);
+    
+    if (!name)
+        decl->setAnonymousStructOrUnion(true);
 
+    if (decl_ctx)
+    {
+        if (access_type != eAccessNone)
+            decl->setAccess (ConvertAccessTypeToAccessSpecifier (access_type));
+        decl_ctx->addDecl (decl);
+    }
     return ast->getTagDeclType(decl).getAsOpaquePtr();
+}
+
+ClassTemplateDecl *
+ClangASTContext::CreateClassTemplateDecl (DeclContext *decl_ctx,
+                                          lldb::AccessType access_type,
+                                          const char *class_name, 
+                                          int kind, 
+                                          const TemplateParameterInfos &template_param_infos)
+{
+    ASTContext *ast = getASTContext();
+    
+    ClassTemplateDecl *class_template_decl = NULL;
+    if (decl_ctx == NULL)
+        decl_ctx = ast->getTranslationUnitDecl();
+    
+    IdentifierInfo &identifier_info = ast->Idents.get(class_name);
+    DeclarationName decl_name (&identifier_info);
+
+    clang::DeclContext::lookup_result result = decl_ctx->lookup(decl_name);
+    for (clang::DeclContext::lookup_iterator pos = result.first, end = result.second; pos != end; ++pos) 
+    {
+        class_template_decl = dyn_cast<clang::ClassTemplateDecl>(*pos);
+        if (class_template_decl)
+            return class_template_decl;
+    }
+
+    llvm::SmallVector<NamedDecl *, 8> template_param_decls;
+    const bool parameter_pack = false;
+    const bool is_typename = false;
+    const unsigned depth = 0;
+    const size_t num_template_params = template_param_infos.GetSize();
+    for (size_t i=0; i<num_template_params; ++i)
+    {
+        const char *name = template_param_infos.names[i];
+        if (template_param_infos.args[i].getAsIntegral())
+        {
+            template_param_decls.push_back (NonTypeTemplateParmDecl::Create (*ast,
+                                                                             ast->getTranslationUnitDecl(), // Is this the right decl context?, SourceLocation StartLoc,
+                                                                             SourceLocation(), 
+                                                                             SourceLocation(), 
+                                                                             depth, 
+                                                                             i,
+                                                                             &ast->Idents.get(name), 
+                                                                             template_param_infos.args[i].getIntegralType(), 
+                                                                             parameter_pack, 
+                                                                             NULL));
+                                            
+        }
+        else
+        {
+            template_param_decls.push_back (TemplateTypeParmDecl::Create (*ast, 
+                                                                          ast->getTranslationUnitDecl(), // Is this the right decl context?
+                                                                          SourceLocation(),
+                                                                          SourceLocation(),
+                                                                          depth, 
+                                                                          i,
+                                                                          &ast->Idents.get(name), 
+                                                                          is_typename,
+                                                                          parameter_pack));
+        }
+    }
+    
+    TemplateParameterList *template_param_list =  TemplateParameterList::Create (*ast,
+                                                                                 SourceLocation(),
+                                                                                 SourceLocation(),
+                                                                                 &template_param_decls.front(),
+                                                                                 template_param_decls.size(),
+                                                                                 SourceLocation());
+
+
+    CXXRecordDecl *template_cxx_decl = CXXRecordDecl::Create (*ast,
+                                                              (TagDecl::TagKind)kind,
+                                                              decl_ctx,  // What decl context do we use here? TU? The actual decl context?
+                                                              SourceLocation(),
+                                                              SourceLocation(),
+                                                              &identifier_info);
+
+    for (size_t i=0, template_param_decl_count = template_param_decls.size();
+         i < template_param_decl_count;
+         ++i)
+    {
+        template_param_decls[i]->setDeclContext (template_cxx_decl);
+    }
+
+    // With templated classes, we say that a class is templated with
+    // specializations, but that the bare class has no functions.
+    template_cxx_decl->startDefinition();
+    template_cxx_decl->completeDefinition();
+    
+    class_template_decl = ClassTemplateDecl::Create (*ast,
+                                                     decl_ctx,  // What decl context do we use here? TU? The actual decl context?
+                                                     SourceLocation(),
+                                                     decl_name,
+                                                     template_param_list,
+                                                     template_cxx_decl,
+                                                     NULL);
+    
+    if (class_template_decl)
+    {
+        if (access_type != eAccessNone)
+            class_template_decl->setAccess (ConvertAccessTypeToAccessSpecifier (access_type));
+        decl_ctx->addDecl (class_template_decl);
+        
+#ifdef LLDB_CONFIGURATION_DEBUG
+        VerifyDecl(class_template_decl);
+#endif
+    }
+
+    return class_template_decl;
+}
+
+
+ClassTemplateSpecializationDecl *
+ClangASTContext::CreateClassTemplateSpecializationDecl (DeclContext *decl_ctx,
+                                                        ClassTemplateDecl *class_template_decl,
+                                                        int kind,
+                                                        const TemplateParameterInfos &template_param_infos)
+{
+    ASTContext *ast = getASTContext();
+    ClassTemplateSpecializationDecl *class_template_specialization_decl = ClassTemplateSpecializationDecl::Create (*ast, 
+                                                                                                                   (TagDecl::TagKind)kind,
+                                                                                                                   decl_ctx,
+                                                                                                                   SourceLocation(), 
+                                                                                                                   SourceLocation(),
+                                                                                                                   class_template_decl,
+                                                                                                                   &template_param_infos.args.front(),
+                                                                                                                   template_param_infos.args.size(),
+                                                                                                                   NULL);
+    
+    return class_template_specialization_decl;
+}
+
+lldb::clang_type_t
+ClangASTContext::CreateClassTemplateSpecializationType (ClassTemplateSpecializationDecl *class_template_specialization_decl)
+{
+    if (class_template_specialization_decl)
+    {
+        ASTContext *ast = getASTContext();
+        if (ast)
+            return ast->getTagDeclType(class_template_specialization_decl).getAsOpaquePtr();
+    }
+    return NULL;
 }
 
 bool
@@ -1373,20 +1557,25 @@ IsOperator (const char *name, OverloadedOperatorKind &op_kind)
 }
 
 static inline bool
-check_op_param (bool unary, bool binary, uint32_t num_params)
+check_op_param (uint32_t op_kind, bool unary, bool binary, uint32_t num_params)
 {
+    // Special-case call since it can take any number of operands
+    if(op_kind == OO_Call)
+        return true;
+    
     // The parameter count doens't include "this"
     if (num_params == 0)
         return unary;
     if (num_params == 1)
         return binary;
+    else 
     return false;
 }
 
 bool
 ClangASTContext::CheckOverloadedOperatorKindParameterCount (uint32_t op_kind, uint32_t num_params)
 {
-#define OVERLOADED_OPERATOR(Name,Spelling,Token,Unary,Binary,MemberOnly) case OO_##Name: return check_op_param (Unary, Binary, num_params);
+#define OVERLOADED_OPERATOR(Name,Spelling,Token,Unary,Binary,MemberOnly) case OO_##Name: return check_op_param (op_kind, Unary, Binary, num_params);
     switch (op_kind)
     {
 #include "clang/Basic/OperatorKinds.def"
@@ -1406,7 +1595,9 @@ ClangASTContext::AddMethodToCXXRecordType
     bool is_virtual,
     bool is_static,
     bool is_inline,
-    bool is_explicit
+    bool is_explicit,
+    bool is_attr_used,
+    bool is_artificial
 )
 {
     if (!record_opaque_type || !method_opaque_type || !name)
@@ -1431,8 +1622,6 @@ ClangASTContext::AddMethodToCXXRecordType
     
     DeclarationName decl_name (&identifier_table->get(name));
 
-    const bool is_implicitly_declared = false;
-    
     const clang::FunctionType *function_Type = dyn_cast<FunctionType>(method_qual_type.getTypePtr());
     
     if (function_Type == NULL)
@@ -1445,28 +1634,34 @@ ClangASTContext::AddMethodToCXXRecordType
     
     unsigned int num_params = method_function_prototype->getNumArgs();
     
+    CXXDestructorDecl *cxx_dtor_decl(NULL);
+    CXXConstructorDecl *cxx_ctor_decl(NULL);
+    
     if (name[0] == '~')
     {
-        cxx_method_decl = CXXDestructorDecl::Create (*ast,
-                                                     cxx_record_decl,
-                                                     SourceLocation(),
-                                                     DeclarationNameInfo (ast->DeclarationNames.getCXXDestructorName (ast->getCanonicalType (record_qual_type)), SourceLocation()),
-                                                     method_qual_type,
-                                                     NULL,
-                                                     is_inline,
-                                                     is_implicitly_declared);
+        cxx_dtor_decl = CXXDestructorDecl::Create (*ast,
+                                                   cxx_record_decl,
+                                                   SourceLocation(),
+                                                   DeclarationNameInfo (ast->DeclarationNames.getCXXDestructorName (ast->getCanonicalType (record_qual_type)), SourceLocation()),
+                                                   method_qual_type,
+                                                   NULL,
+                                                   is_inline,
+                                                   is_artificial);
+        cxx_method_decl = cxx_dtor_decl;
     }
     else if (decl_name == cxx_record_decl->getDeclName())
     {
-        cxx_method_decl = CXXConstructorDecl::Create (*ast,
-                                                      cxx_record_decl,
-                                                      SourceLocation(),
-                                                      DeclarationNameInfo (ast->DeclarationNames.getCXXConstructorName (ast->getCanonicalType (record_qual_type)), SourceLocation()),
-                                                      method_qual_type,
-                                                      NULL, // TypeSourceInfo *
-                                                      is_explicit, 
-                                                      is_inline,
-                                                      is_implicitly_declared);
+       cxx_ctor_decl = CXXConstructorDecl::Create (*ast,
+                                                   cxx_record_decl,
+                                                   SourceLocation(),
+                                                   DeclarationNameInfo (ast->DeclarationNames.getCXXConstructorName (ast->getCanonicalType (record_qual_type)), SourceLocation()),
+                                                   method_qual_type,
+                                                   NULL, // TypeSourceInfo *
+                                                   is_explicit, 
+                                                   is_inline,
+                                                   is_artificial,
+                                                   false /*is_constexpr*/);
+        cxx_method_decl = cxx_ctor_decl;
     }
     else
     {   
@@ -1492,6 +1687,7 @@ ClangASTContext::AddMethodToCXXRecordType
                                                          is_static,
                                                          SC_None,
                                                          is_inline,
+                                                         false /*is_constexpr*/,
                                                          SourceLocation());
             }
             else if (num_params == 0)
@@ -1505,6 +1701,7 @@ ClangASTContext::AddMethodToCXXRecordType
                                                              NULL, // TypeSourceInfo *
                                                              is_inline,
                                                              is_explicit,
+                                                             false /*is_constexpr*/,
                                                              SourceLocation());
             }
         }
@@ -1520,6 +1717,7 @@ ClangASTContext::AddMethodToCXXRecordType
                                                      is_static,
                                                      SC_None,
                                                      is_inline,
+                                                     false /*is_constexpr*/,
                                                      SourceLocation());
         }
     }
@@ -1528,6 +1726,9 @@ ClangASTContext::AddMethodToCXXRecordType
     
     cxx_method_decl->setAccess (access_specifier);
     cxx_method_decl->setVirtualAsWritten (is_virtual);
+    
+    if (is_attr_used)
+        cxx_method_decl->addAttr(::new (*ast) UsedAttr(SourceRange(), *ast));
     
     // Populate the method decl with parameter decls
     
@@ -1549,9 +1750,46 @@ ClangASTContext::AddMethodToCXXRecordType
                                                NULL));
     }
     
-    cxx_method_decl->setParams (params.data(), num_params);
+    cxx_method_decl->setParams (ArrayRef<ParmVarDecl*>(params));
     
     cxx_record_decl->addDecl (cxx_method_decl);
+    
+    // Sometimes the debug info will mention a constructor (default/copy/move), 
+    // destructor, or assignment operator (copy/move) but there won't be any
+    // version of this in the code. So we check if the function was artificially
+    // generated and if it is trivial and this lets the compiler/backend know
+    // that it can inline the IR for these when it needs to and we can avoid a
+    // "missing function" error when running expressions.
+    
+    if (is_artificial)
+    {
+        if (cxx_ctor_decl && 
+            ((cxx_ctor_decl->isDefaultConstructor() && cxx_record_decl->hasTrivialDefaultConstructor ()) ||
+             (cxx_ctor_decl->isCopyConstructor()    && cxx_record_decl->hasTrivialCopyConstructor    ()) ||
+             (cxx_ctor_decl->isMoveConstructor()    && cxx_record_decl->hasTrivialMoveConstructor    ()) ))
+        {
+            cxx_ctor_decl->setDefaulted();
+            cxx_ctor_decl->setTrivial(true);
+        }
+        else if (cxx_dtor_decl)
+        {
+            if (cxx_record_decl->hasTrivialDestructor())
+            {
+                cxx_dtor_decl->setDefaulted();
+                cxx_dtor_decl->setTrivial(true);
+            }
+        }
+        else if ((cxx_method_decl->isCopyAssignmentOperator() && cxx_record_decl->hasTrivialCopyAssignment()) ||
+                 (cxx_method_decl->isMoveAssignmentOperator() && cxx_record_decl->hasTrivialMoveAssignment()))
+        {
+            cxx_method_decl->setDefaulted();
+            cxx_method_decl->setTrivial(true);
+        }
+    }
+    
+#ifdef LLDB_CONFIGURATION_DEBUG
+    VerifyDecl(cxx_method_decl);
+#endif
 
 //    printf ("decl->isPolymorphic()             = %i\n", cxx_record_decl->isPolymorphic());
 //    printf ("decl->isAggregate()               = %i\n", cxx_record_decl->isAggregate());
@@ -1565,7 +1803,7 @@ ClangASTContext::AddMethodToCXXRecordType
     return cxx_method_decl;
 }
 
-bool
+clang::FieldDecl *
 ClangASTContext::AddFieldToRecordType 
 (
     ASTContext *ast,
@@ -1577,8 +1815,9 @@ ClangASTContext::AddFieldToRecordType
 )
 {
     if (record_clang_type == NULL || field_type == NULL)
-        return false;
+        return NULL;
 
+    FieldDecl *field = NULL;
     IdentifierTable *identifier_table = &ast->Idents;
 
     assert (ast != NULL);
@@ -1601,7 +1840,7 @@ ClangASTContext::AddFieldToRecordType
                 APInt bitfield_bit_size_apint(ast->getTypeSize(ast->IntTy), bitfield_bit_size);
                 bit_width = new (*ast)IntegerLiteral (*ast, bitfield_bit_size_apint, ast->IntTy, SourceLocation());
             }
-            FieldDecl *field = FieldDecl::Create (*ast,
+            field = FieldDecl::Create (*ast,
                                                   record_decl,
                                                   SourceLocation(),
                                                   SourceLocation(),
@@ -1617,6 +1856,10 @@ ClangASTContext::AddFieldToRecordType
             if (field)
             {
                 record_decl->addDecl(field);
+                
+#ifdef LLDB_CONFIGURATION_DEBUG
+                VerifyDecl(field);
+#endif
             }
         }
         else
@@ -1625,7 +1868,7 @@ ClangASTContext::AddFieldToRecordType
             if (objc_class_type)
             {
                 bool is_synthesized = false;
-                ClangASTContext::AddObjCClassIVar (ast,
+                field = ClangASTContext::AddObjCClassIVar (ast,
                                                    record_clang_type,
                                                    name,
                                                    field_type,
@@ -1635,7 +1878,7 @@ ClangASTContext::AddFieldToRecordType
             }
         }
     }
-    return false;
+    return field;
 }
 
 bool
@@ -1826,7 +2069,7 @@ ClangASTContext::SetObjCSuperClass (clang_type_t class_opaque_type, clang_type_t
 }
 
 
-bool
+FieldDecl *
 ClangASTContext::AddObjCClassIVar 
 (
     ASTContext *ast,
@@ -1839,8 +2082,10 @@ ClangASTContext::AddObjCClassIVar
 )
 {
     if (class_opaque_type == NULL || ivar_opaque_type == NULL)
-        return false;
+        return NULL;
 
+    ObjCIvarDecl *field = NULL;
+    
     IdentifierTable *identifier_table = &ast->Idents;
 
     assert (ast != NULL);
@@ -1866,20 +2111,216 @@ ClangASTContext::AddObjCClassIVar
                     bit_width = new (*ast)IntegerLiteral (*ast, bitfield_bit_size_apint, ast->IntTy, SourceLocation());
                 }
                 
-                ObjCIvarDecl *field = ObjCIvarDecl::Create (*ast,
-                                                            class_interface_decl,
-                                                            SourceLocation(),
-                                                            SourceLocation(),
-                                                            &identifier_table->get(name), // Identifier
-                                                            QualType::getFromOpaquePtr(ivar_opaque_type), // Field type
-                                                            NULL, // TypeSourceInfo *
-                                                            ConvertAccessTypeToObjCIvarAccessControl (access),
-                                                            bit_width,
-                                                            is_synthesized);
+                field = ObjCIvarDecl::Create (*ast,
+                                              class_interface_decl,
+                                              SourceLocation(),
+                                              SourceLocation(),
+                                              &identifier_table->get(name), // Identifier
+                                              QualType::getFromOpaquePtr(ivar_opaque_type), // Field type
+                                              NULL, // TypeSourceInfo *
+                                              ConvertAccessTypeToObjCIvarAccessControl (access),
+                                              bit_width,
+                                              is_synthesized);
                 
                 if (field)
                 {
                     class_interface_decl->addDecl(field);
+                    
+#ifdef LLDB_CONFIGURATION_DEBUG
+                    VerifyDecl(field);
+#endif
+                    
+                    return field;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+bool
+ClangASTContext::AddObjCClassProperty 
+(
+    ASTContext *ast,
+    clang_type_t class_opaque_type, 
+    const char *property_name,
+    clang_type_t property_opaque_type,  
+    ObjCIvarDecl *ivar_decl,
+    const char *property_setter_name,
+    const char *property_getter_name,
+    uint32_t property_attributes
+)
+{
+    if (class_opaque_type == NULL || property_name == NULL || property_name[0] == '\0')
+        return false;
+
+    IdentifierTable *identifier_table = &ast->Idents;
+
+    assert (ast != NULL);
+    assert (identifier_table != NULL);
+
+    QualType class_qual_type(QualType::getFromOpaquePtr(class_opaque_type));
+    const clang::Type *class_type = class_qual_type.getTypePtr();
+    if (class_type)
+    {
+        const ObjCObjectType *objc_class_type = dyn_cast<ObjCObjectType>(class_type);
+
+        if (objc_class_type)
+        {
+            ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
+            
+            clang_type_t property_opaque_type_to_access;
+            
+            if (property_opaque_type)
+                property_opaque_type_to_access = property_opaque_type;
+            else if (ivar_decl)
+                property_opaque_type_to_access = ivar_decl->getType().getAsOpaquePtr();
+                        
+            // FIXME: For now, we don't know how to add properties if we don't have their associated ivar.
+            if (class_interface_decl && property_opaque_type_to_access)
+            {
+                clang::TypeSourceInfo *prop_type_source;
+                if (ivar_decl)
+                    prop_type_source = ast->CreateTypeSourceInfo (ivar_decl->getType());
+                else
+                    prop_type_source = ast->CreateTypeSourceInfo (QualType::getFromOpaquePtr(property_opaque_type));
+                
+                ObjCPropertyDecl *property_decl = ObjCPropertyDecl::Create(*ast, 
+                                                                           class_interface_decl, 
+                                                                           SourceLocation(), // Source Location
+                                                                           &identifier_table->get(property_name),
+                                                                           SourceLocation(), //Source Location for AT
+                                                                           prop_type_source
+                                                                           );
+                if (property_decl)
+                {
+                    class_interface_decl->addDecl (property_decl);
+                    
+                    Selector setter_sel, getter_sel;
+                    
+                    if (property_setter_name != NULL)
+                    {
+                        std::string property_setter_no_colon(property_setter_name, strlen(property_setter_name) - 1);
+                        clang::IdentifierInfo *setter_ident = &identifier_table->get(property_setter_no_colon.c_str());
+                        setter_sel = ast->Selectors.getSelector(1, &setter_ident);
+                        property_decl->setSetterName(setter_sel);
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_setter);
+                    }
+                    else if (!(property_attributes & DW_APPLE_PROPERTY_readonly))
+                    {
+                        std::string setter_sel_string("set");
+                        setter_sel_string.push_back(::toupper(property_name[0]));
+                        setter_sel_string.append(&property_name[1]);
+                        clang::IdentifierInfo *setter_ident = &identifier_table->get(setter_sel_string.c_str());
+                        setter_sel = ast->Selectors.getSelector(1, &setter_ident);
+                    }
+                    
+                    if (property_getter_name != NULL)
+                    {
+                        clang::IdentifierInfo *getter_ident = &identifier_table->get(property_getter_name);
+                        getter_sel = ast->Selectors.getSelector(0, &getter_ident);
+                        property_decl->setGetterName(getter_sel);
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_getter);
+                    }
+                    else
+                    {
+                        clang::IdentifierInfo *getter_ident = &identifier_table->get(property_name);
+                        getter_sel = ast->Selectors.getSelector(0, &getter_ident);
+                    }
+                        
+                    if (ivar_decl)
+                        property_decl->setPropertyIvarDecl (ivar_decl);
+                        
+                    if (property_attributes & DW_APPLE_PROPERTY_readonly) 
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_readonly);
+                    if (property_attributes & DW_APPLE_PROPERTY_readwrite) 
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_readwrite);
+                    if (property_attributes & DW_APPLE_PROPERTY_assign) 
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_assign);
+                    if (property_attributes & DW_APPLE_PROPERTY_retain) 
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_retain);
+                    if (property_attributes & DW_APPLE_PROPERTY_copy) 
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_copy);
+                    if (property_attributes & DW_APPLE_PROPERTY_nonatomic) 
+                        property_decl->setPropertyAttributes (clang::ObjCPropertyDecl::OBJC_PR_nonatomic);
+                        
+                    if (!getter_sel.isNull() && !class_interface_decl->lookupInstanceMethod(getter_sel))
+                    {
+                        QualType result_type = QualType::getFromOpaquePtr(property_opaque_type_to_access);
+                        
+                        const bool isInstance = true;
+                        const bool isVariadic = false;
+                        const bool isSynthesized = false;
+                        const bool isImplicitlyDeclared = true;
+                        const bool isDefined = false;
+                        const ObjCMethodDecl::ImplementationControl impControl = ObjCMethodDecl::None;
+                        const bool HasRelatedResultType = false;
+                        
+                        ObjCMethodDecl *getter = ObjCMethodDecl::Create(*ast, 
+                                                                        SourceLocation(), 
+                                                                        SourceLocation(), 
+                                                                        getter_sel, 
+                                                                        result_type,
+                                                                        NULL, 
+                                                                        class_interface_decl,
+                                                                        isInstance,
+                                                                        isVariadic,
+                                                                        isSynthesized,
+                                                                        isImplicitlyDeclared,
+                                                                        isDefined,
+                                                                        impControl,
+                                                                        HasRelatedResultType);
+                                                
+                        getter->setMethodParams(*ast, ArrayRef<ParmVarDecl*>(), ArrayRef<SourceLocation>());
+                        
+                        class_interface_decl->addDecl(getter);
+                    }
+                    
+                    if (!setter_sel.isNull() && !class_interface_decl->lookupInstanceMethod(setter_sel))
+                    {
+                        QualType result_type = ast->VoidTy;
+                        
+                        const bool isInstance = true;
+                        const bool isVariadic = false;
+                        const bool isSynthesized = false;
+                        const bool isImplicitlyDeclared = true;
+                        const bool isDefined = false;
+                        const ObjCMethodDecl::ImplementationControl impControl = ObjCMethodDecl::None;
+                        const bool HasRelatedResultType = false;
+                        
+                        ObjCMethodDecl *setter = ObjCMethodDecl::Create(*ast, 
+                                                                        SourceLocation(), 
+                                                                        SourceLocation(), 
+                                                                        setter_sel, 
+                                                                        result_type,
+                                                                        NULL, 
+                                                                        class_interface_decl,
+                                                                        isInstance,
+                                                                        isVariadic,
+                                                                        isSynthesized,
+                                                                        isImplicitlyDeclared,
+                                                                        isDefined,
+                                                                        impControl,
+                                                                        HasRelatedResultType);
+                        
+                        llvm::SmallVector<ParmVarDecl *, 1> params;
+
+                        params.push_back (ParmVarDecl::Create (*ast,
+                                                               setter,
+                                                               SourceLocation(),
+                                                               SourceLocation(),
+                                                               NULL, // anonymous
+                                                               QualType::getFromOpaquePtr(property_opaque_type_to_access), 
+                                                               NULL,
+                                                               SC_Auto, 
+                                                               SC_Auto,
+                                                               NULL));
+                        
+                        setter->setMethodParams(*ast, ArrayRef<ParmVarDecl*>(params), ArrayRef<SourceLocation>());
+                        
+                        class_interface_decl->addDecl(setter);
+                    }
+
                     return true;
                 }
             }
@@ -1887,7 +2328,6 @@ ClangASTContext::AddObjCClassIVar
     }
     return false;
 }
-
 
 bool
 ClangASTContext::ObjCTypeHasIVars (clang_type_t class_opaque_type, bool check_superclass)
@@ -2020,9 +2460,10 @@ ClangASTContext::AddMethodToObjCObjectType
                                                                name[0] == '-',
                                                                is_variadic,
                                                                is_synthesized,
+                                                               true, // is_implicitly_declared
                                                                is_defined,
                                                                imp_control,
-                                                               num_args);
+                                                               false /*has_related_result_type*/);
 
 
     if (objc_method_decl == NULL)
@@ -2046,11 +2487,14 @@ ClangASTContext::AddMethodToObjCObjectType
                                                    NULL));
         }
         
-        objc_method_decl->setMethodParams(*ast, params.data(), params.size(), num_args);
+        objc_method_decl->setMethodParams(*ast, ArrayRef<ParmVarDecl*>(params), ArrayRef<SourceLocation>());
     }
     
     class_interface_decl->addDecl (objc_method_decl);
 
+#ifdef LLDB_CONFIGURATION_DEBUG
+    VerifyDecl(objc_method_decl);
+#endif
 
     return objc_method_decl;
 }
@@ -2397,6 +2841,401 @@ ClangASTContext::GetNumChildren (clang::ASTContext *ast, clang_type_t clang_type
     return num_children;
 }
 
+uint32_t
+ClangASTContext::GetNumDirectBaseClasses (clang::ASTContext *ast, clang_type_t clang_type)
+{
+    if (clang_type == NULL)
+        return 0;
+    
+    uint32_t count = 0;
+    QualType qual_type(QualType::getFromOpaquePtr(clang_type));
+    const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+    switch (type_class)
+    {
+        case clang::Type::Record:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const CXXRecordDecl *cxx_record_decl = qual_type->getAsCXXRecordDecl();
+                if (cxx_record_decl)
+                    count = cxx_record_decl->getNumBases();
+            }
+            break;
+            
+        case clang::Type::ObjCObject:
+        case clang::Type::ObjCInterface:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectType *objc_class_type = qual_type->getAsObjCQualifiedInterfaceType();
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
+                    
+                    if (class_interface_decl && class_interface_decl->getSuperClass())
+                        count = 1;
+                }
+            }
+            break;
+            
+            
+        case clang::Type::Typedef:
+            count = ClangASTContext::GetNumDirectBaseClasses (ast, cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+            break;
+            
+        case clang::Type::Elaborated:
+            count = ClangASTContext::GetNumDirectBaseClasses (ast, cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
+            break;
+            
+        default:
+            break;
+    }
+    return count;
+}
+
+uint32_t 
+ClangASTContext::GetNumVirtualBaseClasses (clang::ASTContext *ast, 
+                                           clang_type_t clang_type)
+{
+    if (clang_type == NULL)
+        return 0;
+    
+    uint32_t count = 0;
+    QualType qual_type(QualType::getFromOpaquePtr(clang_type));
+    const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+    switch (type_class)
+    {
+        case clang::Type::Record:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const CXXRecordDecl *cxx_record_decl = qual_type->getAsCXXRecordDecl();
+                if (cxx_record_decl)
+                    count = cxx_record_decl->getNumVBases();
+            }
+            break;
+            
+        case clang::Type::Typedef:
+            count = ClangASTContext::GetNumVirtualBaseClasses (ast, cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+            break;
+            
+        case clang::Type::Elaborated:
+            count = ClangASTContext::GetNumVirtualBaseClasses (ast, cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
+            break;
+            
+        default:
+            break;
+    }
+    return count;
+}
+
+uint32_t 
+ClangASTContext::GetNumFields (clang::ASTContext *ast, clang_type_t clang_type)
+{
+    if (clang_type == NULL)
+        return 0;
+    
+    uint32_t count = 0;
+    QualType qual_type(QualType::getFromOpaquePtr(clang_type));
+    const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+    switch (type_class)
+    {
+        case clang::Type::Record:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const RecordType *record_type = dyn_cast<RecordType>(qual_type.getTypePtr());
+                if (record_type)
+                {
+                    RecordDecl *record_decl = record_type->getDecl();
+                    if (record_decl)
+                    {
+                        uint32_t field_idx = 0;
+                        RecordDecl::field_iterator field, field_end;
+                        for (field = record_decl->field_begin(), field_end = record_decl->field_end(); field != field_end; ++field)
+                            ++field_idx;
+                        count = field_idx;
+                    }
+                }
+            }
+            break;
+            
+        case clang::Type::Typedef:
+            count = ClangASTContext::GetNumFields (ast, cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+            break;
+            
+        case clang::Type::Elaborated:
+            count = ClangASTContext::GetNumFields (ast, cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
+            break;
+            
+        case clang::Type::ObjCObject:
+        case clang::Type::ObjCInterface:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectType *objc_class_type = dyn_cast<ObjCObjectType>(qual_type.getTypePtr());
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
+                    
+                    if (class_interface_decl)
+                        count = class_interface_decl->ivar_size();
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+    return count;
+}
+
+clang_type_t
+ClangASTContext::GetDirectBaseClassAtIndex (clang::ASTContext *ast, 
+                                            clang_type_t clang_type,
+                                            uint32_t idx, 
+                                            uint32_t *bit_offset_ptr)
+{
+    if (clang_type == NULL)
+        return 0;
+    
+    QualType qual_type(QualType::getFromOpaquePtr(clang_type));
+    const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+    switch (type_class)
+    {
+        case clang::Type::Record:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const CXXRecordDecl *cxx_record_decl = qual_type->getAsCXXRecordDecl();
+                if (cxx_record_decl)
+                {
+                    uint32_t curr_idx = 0;
+                    CXXRecordDecl::base_class_const_iterator base_class, base_class_end;
+                    for (base_class = cxx_record_decl->bases_begin(), base_class_end = cxx_record_decl->bases_end();
+                         base_class != base_class_end;
+                         ++base_class, ++curr_idx)
+                    {
+                        if (curr_idx == idx)
+                        {
+                            if (bit_offset_ptr)
+                            {
+                                const ASTRecordLayout &record_layout = ast->getASTRecordLayout(cxx_record_decl);
+                                const CXXRecordDecl *base_class_decl = cast<CXXRecordDecl>(base_class->getType()->getAs<RecordType>()->getDecl());
+//                                if (base_class->isVirtual())
+//                                    *bit_offset_ptr = record_layout.getVBaseClassOffset(base_class_decl).getQuantity() * 8;
+//                                else
+                                    *bit_offset_ptr = record_layout.getBaseClassOffset(base_class_decl).getQuantity() * 8;
+                            }
+                            return base_class->getType().getAsOpaquePtr();
+                        }
+                    }
+                }
+            }
+            break;
+            
+        case clang::Type::ObjCObject:
+        case clang::Type::ObjCInterface:
+            if (idx == 0 && GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectType *objc_class_type = qual_type->getAsObjCQualifiedInterfaceType();
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
+                    
+                    if (class_interface_decl)
+                    {
+                        ObjCInterfaceDecl *superclass_interface_decl = class_interface_decl->getSuperClass();
+                        if (superclass_interface_decl)
+                        {
+                            if (bit_offset_ptr)
+                                *bit_offset_ptr = 0;
+                            return ast->getObjCInterfaceType(superclass_interface_decl).getAsOpaquePtr();
+                        }
+                    }
+                }
+            }
+            break;
+            
+            
+        case clang::Type::Typedef:
+            return ClangASTContext::GetDirectBaseClassAtIndex (ast, 
+                                                               cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(),
+                                                               idx,
+                                                               bit_offset_ptr);
+            
+        case clang::Type::Elaborated:
+            return  ClangASTContext::GetDirectBaseClassAtIndex (ast, 
+                                                                cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                                                idx,
+                                                                bit_offset_ptr);
+            
+        default:
+            break;
+    }
+    return NULL;
+}
+
+clang_type_t
+ClangASTContext::GetVirtualBaseClassAtIndex (clang::ASTContext *ast, 
+                                             clang_type_t clang_type,
+                                             uint32_t idx, 
+                                             uint32_t *bit_offset_ptr)
+{
+    if (clang_type == NULL)
+        return 0;
+    
+    QualType qual_type(QualType::getFromOpaquePtr(clang_type));
+    const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+    switch (type_class)
+    {
+        case clang::Type::Record:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const CXXRecordDecl *cxx_record_decl = qual_type->getAsCXXRecordDecl();
+                if (cxx_record_decl)
+                {
+                    uint32_t curr_idx = 0;
+                    CXXRecordDecl::base_class_const_iterator base_class, base_class_end;
+                    for (base_class = cxx_record_decl->vbases_begin(), base_class_end = cxx_record_decl->vbases_end();
+                         base_class != base_class_end;
+                         ++base_class, ++curr_idx)
+                    {
+                        if (curr_idx == idx)
+                        {
+                            if (bit_offset_ptr)
+                            {
+                                const ASTRecordLayout &record_layout = ast->getASTRecordLayout(cxx_record_decl);
+                                const CXXRecordDecl *base_class_decl = cast<CXXRecordDecl>(base_class->getType()->getAs<RecordType>()->getDecl());
+                                *bit_offset_ptr = record_layout.getVBaseClassOffset(base_class_decl).getQuantity() * 8;
+
+                            }
+                            return base_class->getType().getAsOpaquePtr();
+                        }
+                    }
+                }
+            }
+            break;
+            
+        case clang::Type::Typedef:
+            return ClangASTContext::GetVirtualBaseClassAtIndex (ast, 
+                                                                cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(),
+                                                                idx,
+                                                                bit_offset_ptr);
+            
+        case clang::Type::Elaborated:
+            return  ClangASTContext::GetVirtualBaseClassAtIndex (ast, 
+                                                                 cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                                                 idx,
+                                                                 bit_offset_ptr);
+            
+        default:
+            break;
+    }
+    return NULL;
+}
+
+clang_type_t
+ClangASTContext::GetFieldAtIndex (clang::ASTContext *ast, 
+                                  clang_type_t clang_type,
+                                  uint32_t idx, 
+                                  std::string& name,
+                                  uint32_t *bit_offset_ptr)
+{
+    if (clang_type == NULL)
+        return 0;
+    
+    QualType qual_type(QualType::getFromOpaquePtr(clang_type));
+    const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+    switch (type_class)
+    {
+        case clang::Type::Record:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const RecordType *record_type = cast<RecordType>(qual_type.getTypePtr());
+                const RecordDecl *record_decl = record_type->getDecl();
+                uint32_t field_idx = 0;
+                RecordDecl::field_iterator field, field_end;
+                for (field = record_decl->field_begin(), field_end = record_decl->field_end(); field != field_end; ++field, ++field_idx)
+                {
+                    if (idx == field_idx)
+                    {
+                        // Print the member type if requested
+                        // Print the member name and equal sign
+                        name.assign(field->getNameAsString());
+                        
+                        // Figure out the type byte size (field_type_info.first) and
+                        // alignment (field_type_info.second) from the AST context.
+                        if (bit_offset_ptr)
+                        {
+                            const ASTRecordLayout &record_layout = ast->getASTRecordLayout(record_decl);
+                            *bit_offset_ptr = record_layout.getFieldOffset (field_idx);
+                        }
+                        
+                        return field->getType().getAsOpaquePtr();
+                    }
+                }
+            }
+            break;
+            
+        case clang::Type::ObjCObject:
+        case clang::Type::ObjCInterface:
+            if (GetCompleteQualType (ast, qual_type))
+            {
+                const ObjCObjectType *objc_class_type = dyn_cast<ObjCObjectType>(qual_type.getTypePtr());
+                assert (objc_class_type);
+                if (objc_class_type)
+                {
+                    ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
+                    
+                    if (class_interface_decl)
+                    {
+                        if (idx < (class_interface_decl->ivar_size()))
+                        {
+                            ObjCInterfaceDecl::ivar_iterator ivar_pos, ivar_end = class_interface_decl->ivar_end();
+                            uint32_t ivar_idx = 0;
+
+                            for (ivar_pos = class_interface_decl->ivar_begin(); ivar_pos != ivar_end; ++ivar_pos, ++ivar_idx)
+                            {
+                                if (ivar_idx == idx)
+                                {
+                                    const ObjCIvarDecl* ivar_decl = *ivar_pos;
+                                    
+                                    QualType ivar_qual_type(ivar_decl->getType());
+                                    
+                                    name.assign(ivar_decl->getNameAsString());
+
+                                    if (bit_offset_ptr)
+                                    {
+                                        const ASTRecordLayout &interface_layout = ast->getASTObjCInterfaceLayout(class_interface_decl);
+                                        *bit_offset_ptr = interface_layout.getFieldOffset (ivar_idx);
+                                    }
+                                    
+                                    return ivar_qual_type.getAsOpaquePtr();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+            
+            
+        case clang::Type::Typedef:
+            return ClangASTContext::GetFieldAtIndex (ast, 
+                                                     cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(),
+                                                     idx,
+                                                     name,
+                                                     bit_offset_ptr);
+            
+        case clang::Type::Elaborated:
+            return  ClangASTContext::GetFieldAtIndex (ast, 
+                                                      cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                                      idx,
+                                                      name,
+                                                      bit_offset_ptr);
+            
+        default:
+            break;
+    }
+    return NULL;
+}
+
+
 // If a pointer to a pointee type (the clang_type arg) says that it has no 
 // children, then we either need to trust it, or override it and return a 
 // different result. For example, an "int *" has one child that is an integer, 
@@ -2447,6 +3286,9 @@ ClangASTContext::GetNumPointeeChildren (clang_type_t clang_type)
         case clang::BuiltinType::ObjCClass:
         case clang::BuiltinType::ObjCSel:
         case clang::BuiltinType::BoundMember:
+        case clang::BuiltinType::Half:          
+        case clang::BuiltinType::ARCUnbridgedCast:          
+        case clang::BuiltinType::PseudoObject:
             return 1;
         }
         break;
@@ -2616,7 +3458,6 @@ ClangASTContext::GetChildClangTypeAtIndex
                                 bit_offset = record_layout.getBaseClassOffset(base_class_decl).getQuantity() * 8;
 
                             // Base classes should be a multiple of 8 bits in size
-                            assert (bit_offset % 8 == 0);
                             child_byte_offset = bit_offset/8;
                             
                             child_name = ClangASTType::GetTypeNameForQualType(base_class->getType());
@@ -2719,7 +3560,7 @@ ClangASTContext::GetChildClangTypeAtIndex
                             {
                                 if (child_idx == idx)
                                 {
-                                    const ObjCIvarDecl* ivar_decl = *ivar_pos;
+                                    ObjCIvarDecl* ivar_decl = *ivar_pos;
                                     
                                     QualType ivar_qual_type(ivar_decl->getType());
 
@@ -2735,10 +3576,12 @@ ClangASTContext::GetChildClangTypeAtIndex
                                     // the changing size of base classes that are newer than this class.
                                     // So if we have a process around that we can ask about this object, do so.
                                     child_byte_offset = LLDB_INVALID_IVAR_OFFSET;
-                                    
-                                    if (exe_ctx && exe_ctx->process)
+                                    Process *process = NULL;
+                                    if (exe_ctx)
+                                        process = exe_ctx->GetProcessPtr();
+                                    if (process)
                                     {
-                                        ObjCLanguageRuntime *objc_runtime = exe_ctx->process->GetObjCLanguageRuntime();
+                                        ObjCLanguageRuntime *objc_runtime = process->GetObjCLanguageRuntime();
                                         if (objc_runtime != NULL)
                                         {
                                             ClangASTType parent_ast_type (ast, parent_qual_type.getAsOpaquePtr());
@@ -2746,12 +3589,26 @@ ClangASTContext::GetChildClangTypeAtIndex
                                         }
                                     }
                                     
+                                    // Setting this to UINT32_MAX to make sure we don't compute it twice...
+                                    bit_offset = UINT32_MAX;
+                                    
                                     if (child_byte_offset == LLDB_INVALID_IVAR_OFFSET)
                                     {
                                         bit_offset = interface_layout.getFieldOffset (child_idx - superclass_idx);
                                         child_byte_offset = bit_offset / 8;
                                     }
-
+                                    
+                                    // Note, the ObjC Ivar Byte offset is just that, it doesn't account for the bit offset
+                                    // of a bitfield within its containing object.  So regardless of where we get the byte
+                                    // offset from, we still need to get the bit offset for bitfields from the layout.
+                                    
+                                    if (ClangASTContext::FieldIsBitfield (ast, ivar_decl, child_bitfield_bit_size))
+                                    {
+                                        if (bit_offset == UINT32_MAX)
+                                            bit_offset = interface_layout.getFieldOffset (child_idx - superclass_idx);
+                                            
+                                        child_bitfield_bit_offset = bit_offset % 8;
+                                    }
                                     return ivar_qual_type.getAsOpaquePtr();
                                 }
                                 ++child_idx;
@@ -3715,6 +4572,7 @@ ClangASTContext::GetDeclContextForType (clang_type_t clang_type)
     case clang::Type::Auto:                     break;
     case clang::Type::InjectedClassName:        break;
     case clang::Type::DependentName:            break;
+    case clang::Type::Atomic:                   break;
     }
     // No DeclContext in this type...
     return NULL;
@@ -3723,59 +4581,131 @@ ClangASTContext::GetDeclContextForType (clang_type_t clang_type)
 #pragma mark Namespace Declarations
 
 NamespaceDecl *
-ClangASTContext::GetUniqueNamespaceDeclaration (const char *name, const Declaration &decl, DeclContext *decl_ctx)
+ClangASTContext::GetUniqueNamespaceDeclaration (const char *name, DeclContext *decl_ctx)
 {
-    // TODO: Do something intelligent with the Declaration object passed in
-    // like maybe filling in the SourceLocation with it...
+    NamespaceDecl *namespace_decl = NULL;
+    ASTContext *ast = getASTContext();
+    TranslationUnitDecl *translation_unit_decl = ast->getTranslationUnitDecl ();
+    if (decl_ctx == NULL)
+        decl_ctx = translation_unit_decl;
+    
     if (name)
     {
-        ASTContext *ast = getASTContext();
-        if (decl_ctx == NULL)
-            decl_ctx = ast->getTranslationUnitDecl();
-        return NamespaceDecl::Create(*ast, decl_ctx, SourceLocation(), SourceLocation(), &ast->Idents.get(name));
+        IdentifierInfo &identifier_info = ast->Idents.get(name);
+        DeclarationName decl_name (&identifier_info);
+        clang::DeclContext::lookup_result result = decl_ctx->lookup(decl_name);
+        for (clang::DeclContext::lookup_iterator pos = result.first, end = result.second; pos != end; ++pos) 
+        {
+            namespace_decl = dyn_cast<clang::NamespaceDecl>(*pos);
+            if (namespace_decl)
+                return namespace_decl;
+        }
+
+        namespace_decl = NamespaceDecl::Create(*ast, decl_ctx, SourceLocation(), SourceLocation(), &identifier_info);
+        
+        decl_ctx->addDecl (namespace_decl);        
     }
-    return NULL;
+    else
+    {
+        if (decl_ctx == translation_unit_decl)
+        {
+            namespace_decl = translation_unit_decl->getAnonymousNamespace();
+            if (namespace_decl)
+                return namespace_decl;
+            
+            namespace_decl = NamespaceDecl::Create(*ast, decl_ctx, SourceLocation(), SourceLocation(), NULL);
+            translation_unit_decl->setAnonymousNamespace (namespace_decl);
+            translation_unit_decl->addDecl (namespace_decl);
+            assert (namespace_decl == translation_unit_decl->getAnonymousNamespace());
+        }
+        else
+        {
+            NamespaceDecl *parent_namespace_decl = cast<NamespaceDecl>(decl_ctx);
+            if (parent_namespace_decl)
+            {
+                namespace_decl = parent_namespace_decl->getAnonymousNamespace();
+                if (namespace_decl)
+                    return namespace_decl;
+                namespace_decl = NamespaceDecl::Create(*ast, decl_ctx, SourceLocation(), SourceLocation(), NULL);
+                parent_namespace_decl->setAnonymousNamespace (namespace_decl);
+                parent_namespace_decl->addDecl (namespace_decl);
+                assert (namespace_decl == parent_namespace_decl->getAnonymousNamespace());
+            }
+            else
+            {
+                // BAD!!!
+            }
+        }
+        
+
+        if (namespace_decl)
+        {
+            // If we make it here, we are creating the anonymous namespace decl
+            // for the first time, so we need to do the using directive magic
+            // like SEMA does
+            UsingDirectiveDecl* using_directive_decl = UsingDirectiveDecl::Create (*ast, 
+                                                                                   decl_ctx, 
+                                                                                   SourceLocation(),
+                                                                                   SourceLocation(),
+                                                                                   NestedNameSpecifierLoc(),
+                                                                                   SourceLocation(),
+                                                                                   namespace_decl,
+                                                                                   decl_ctx);
+            using_directive_decl->setImplicit();
+            decl_ctx->addDecl(using_directive_decl);
+        }
+    }
+#ifdef LLDB_CONFIGURATION_DEBUG
+    VerifyDecl(namespace_decl);
+#endif
+    return namespace_decl;
 }
 
 
 #pragma mark Function Types
 
 FunctionDecl *
-ClangASTContext::CreateFunctionDeclaration (const char *name, clang_type_t function_clang_type, int storage, bool is_inline)
+ClangASTContext::CreateFunctionDeclaration (DeclContext *decl_ctx, const char *name, clang_type_t function_clang_type, int storage, bool is_inline)
 {
-    if (name)
-    {
-        ASTContext *ast = getASTContext();
-        assert (ast != NULL);
+    FunctionDecl *func_decl = NULL;
+    ASTContext *ast = getASTContext();
+    if (decl_ctx == NULL)
+        decl_ctx = ast->getTranslationUnitDecl();
 
-        if (name && name[0])
-        {
-            return FunctionDecl::Create(*ast,
-                                        ast->getTranslationUnitDecl(),
-                                        SourceLocation(),
-                                        SourceLocation(),
-                                        DeclarationName (&ast->Idents.get(name)),
-                                        QualType::getFromOpaquePtr(function_clang_type),
-                                        NULL,
-                                        (FunctionDecl::StorageClass)storage,
-                                        (FunctionDecl::StorageClass)storage,
-                                        is_inline);
-        }
-        else
-        {
-            return FunctionDecl::Create(*ast,
-                                        ast->getTranslationUnitDecl(),
-                                        SourceLocation(),
-                                        SourceLocation(),
-                                        DeclarationName (),
-                                        QualType::getFromOpaquePtr(function_clang_type),
-                                        NULL,
-                                        (FunctionDecl::StorageClass)storage,
-                                        (FunctionDecl::StorageClass)storage,
-                                        is_inline);
-        }
+    if (name && name[0])
+    {
+        func_decl = FunctionDecl::Create (*ast,
+                                          decl_ctx,
+                                          SourceLocation(),
+                                          SourceLocation(),
+                                          DeclarationName (&ast->Idents.get(name)),
+                                          QualType::getFromOpaquePtr(function_clang_type),
+                                          NULL,
+                                          (FunctionDecl::StorageClass)storage,
+                                          (FunctionDecl::StorageClass)storage,
+                                          is_inline);
     }
-    return NULL;
+    else
+    {
+        func_decl = FunctionDecl::Create (*ast,
+                                          decl_ctx,
+                                          SourceLocation(),
+                                          SourceLocation(),
+                                          DeclarationName (),
+                                          QualType::getFromOpaquePtr(function_clang_type),
+                                          NULL,
+                                          (FunctionDecl::StorageClass)storage,
+                                          (FunctionDecl::StorageClass)storage,
+                                          is_inline);
+    }
+    if (func_decl)
+        decl_ctx->addDecl (func_decl);
+    
+#ifdef LLDB_CONFIGURATION_DEBUG
+    VerifyDecl(func_decl);
+#endif
+    
+    return func_decl;
 }
 
 clang_type_t
@@ -3800,10 +4730,10 @@ ClangASTContext::CreateFunctionType (ASTContext *ast,
     proto_info.NumExceptions = 0;
     proto_info.Exceptions = NULL;
     
-    return ast->getFunctionType(QualType::getFromOpaquePtr(result_type),
-                                        qual_type_args.empty() ? NULL : &qual_type_args.front(),
-                                        qual_type_args.size(),
-                                        proto_info).getAsOpaquePtr();    // NoReturn);
+    return ast->getFunctionType (QualType::getFromOpaquePtr(result_type),
+                                 qual_type_args.empty() ? NULL : &qual_type_args.front(),
+                                 qual_type_args.size(),
+                                 proto_info).getAsOpaquePtr();    // NoReturn);
 }
 
 ParmVarDecl *
@@ -3827,7 +4757,7 @@ void
 ClangASTContext::SetFunctionParameters (FunctionDecl *function_decl, ParmVarDecl **params, unsigned num_params)
 {
     if (function_decl)
-        function_decl->setParams (params, num_params);
+        function_decl->setParams (ArrayRef<ParmVarDecl*>(params, num_params));
 }
 
 
@@ -3898,7 +4828,7 @@ ClangASTContext::CompleteTagDeclarationDefinition (clang_type_t clang_type)
         {
             ObjCInterfaceDecl *class_interface_decl = objc_class_type->getInterface();
             
-            class_interface_decl->setForwardDecl(false);
+            class_interface_decl->completedForwardDecl();
         }
         
         const EnumType *enum_type = dyn_cast<EnumType>(qual_type.getTypePtr());
@@ -4042,6 +4972,11 @@ ClangASTContext::AddEnumerationValueToEnumerationType
                 if (enumerator_decl)
                 {
                     enum_type->getDecl()->addDecl(enumerator_decl);
+                    
+#ifdef LLDB_CONFIGURATION_DEBUG
+                    VerifyDecl(enumerator_decl);
+#endif
+                    
                     return true;
                 }
             }
@@ -4205,6 +5140,9 @@ ClangASTContext::IsPossibleDynamicType (clang::ASTContext *ast, clang_type_t cla
                         case clang::BuiltinType::ObjCClass:
                         case clang::BuiltinType::ObjCSel:
                         case clang::BuiltinType::BoundMember:
+                        case clang::BuiltinType::Half:          
+                        case clang::BuiltinType::ARCUnbridgedCast:          
+                        case clang::BuiltinType::PseudoObject:
                             break;
                     }
                     break;
@@ -4338,6 +5276,9 @@ ClangASTContext::IsPossibleCPlusPlusDynamicType (clang::ASTContext *ast, clang_t
                     case clang::BuiltinType::ObjCClass:
                     case clang::BuiltinType::ObjCSel:
                     case clang::BuiltinType::BoundMember:
+                    case clang::BuiltinType::Half:          
+                    case clang::BuiltinType::ARCUnbridgedCast:          
+                    case clang::BuiltinType::PseudoObject:
                         break;
                 }
                 break;
@@ -4377,6 +5318,35 @@ ClangASTContext::IsPossibleCPlusPlusDynamicType (clang::ASTContext *ast, clang_t
     return false;
 }
 
+bool
+ClangASTContext::IsReferenceType (clang_type_t clang_type, clang_type_t *target_type)
+{
+    if (clang_type == NULL)
+        return false;
+    
+    QualType qual_type (QualType::getFromOpaquePtr(clang_type));
+    const clang::Type::TypeClass type_class = qual_type->getTypeClass();
+
+    switch (type_class)
+    {
+    case clang::Type::LValueReference:
+        if (target_type)
+            *target_type = cast<LValueReferenceType>(qual_type)->desugar().getAsOpaquePtr();
+        return true;
+    case clang::Type::RValueReference:
+        if (target_type)
+            *target_type = cast<LValueReferenceType>(qual_type)->desugar().getAsOpaquePtr();
+        return true;
+    case clang::Type::Typedef:
+        return ClangASTContext::IsReferenceType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr());
+    case clang::Type::Elaborated:
+        return ClangASTContext::IsReferenceType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr());
+    default:
+        break;
+    }
+    
+    return false;
+}
 
 bool
 ClangASTContext::IsPointerOrReferenceType (clang_type_t clang_type, clang_type_t*target_type)
@@ -4444,9 +5414,10 @@ ClangASTContext::IsIntegerType (clang_type_t clang_type, bool &is_signed)
     if (builtin_type)
     {
         if (builtin_type->isInteger())
+        {
             is_signed = builtin_type->isSignedInteger();
-        
-        return true;
+            return true;
+        }
     }
     
     return false;
@@ -4566,7 +5537,9 @@ ClangASTContext::IsPointerToScalarType (lldb::clang_type_t clang_type)
 bool
 ClangASTContext::IsArrayOfScalarType (lldb::clang_type_t clang_type)
 {
-    if (!IsArrayType(clang_type))
+    clang_type = GetAsArrayType(clang_type);
+    
+    if (clang_type == 0)
         return false;
     
     QualType qual_type (QualType::getFromOpaquePtr(clang_type));
@@ -4602,6 +5575,19 @@ ClangASTContext::IsCXXClassType (clang_type_t clang_type)
         QualType qual_type (QualType::getFromOpaquePtr(clang_type));
         if (qual_type->getAsCXXRecordDecl() != NULL)
             return true;
+    }
+    return false;
+}
+
+bool
+ClangASTContext::IsBeingDefined (lldb::clang_type_t clang_type)
+{
+    if (clang_type)
+    {
+        QualType qual_type (QualType::getFromOpaquePtr(clang_type));
+        const clang::TagType *tag_type = dyn_cast<clang::TagType>(qual_type);
+        if (tag_type)
+            return tag_type->isBeingDefined();
     }
     return false;
 }
@@ -4724,11 +5710,11 @@ ClangASTContext::GetArraySize (clang_type_t clang_type)
     return 0;
 }
 
-bool
-ClangASTContext::IsArrayType (clang_type_t clang_type, clang_type_t*member_type, uint64_t *size)
+clang_type_t
+ClangASTContext::GetAsArrayType (clang_type_t clang_type, clang_type_t*member_type, uint64_t *size)
 {
     if (!clang_type)
-        return false;
+        return 0;
     
     QualType qual_type (QualType::getFromOpaquePtr(clang_type));
     
@@ -4743,40 +5729,40 @@ ClangASTContext::IsArrayType (clang_type_t clang_type, clang_type_t*member_type,
             *member_type = cast<ConstantArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = cast<ConstantArrayType>(qual_type)->getSize().getLimitedValue(ULLONG_MAX);
-        return true;
+        return clang_type;
 
     case clang::Type::IncompleteArray:
         if (member_type)
             *member_type = cast<IncompleteArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = 0;
-        return true;
+        return clang_type;
 
     case clang::Type::VariableArray:
         if (member_type)
             *member_type = cast<VariableArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = 0;
-        return true;
+        return clang_type;
 
     case clang::Type::DependentSizedArray:
         if (member_type)
             *member_type = cast<DependentSizedArrayType>(qual_type)->getElementType().getAsOpaquePtr();
         if (size)
             *size = 0;
-        return true;
+        return clang_type;
     
     case clang::Type::Typedef:
-        return ClangASTContext::IsArrayType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(),
-                                             member_type, 
-                                             size);
+        return ClangASTContext::GetAsArrayType (cast<TypedefType>(qual_type)->getDecl()->getUnderlyingType().getAsOpaquePtr(),
+                                                member_type, 
+                                                size);
     
     case clang::Type::Elaborated:
-        return ClangASTContext::IsArrayType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
-                                             member_type,
-                                             size);
+        return ClangASTContext::GetAsArrayType (cast<ElaboratedType>(qual_type)->getNamedType().getAsOpaquePtr(),
+                                                member_type,
+                                                size);
     }
-    return false;
+    return 0;
 }
 
 
@@ -4801,6 +5787,8 @@ ClangASTContext::CreateTypedefType (const char *name, clang_type_t clang_type, D
                                                  name ? &identifier_table->get(name) : NULL, // Identifier
                                                  ast->CreateTypeSourceInfo(qual_type));
         
+        //decl_ctx->addDecl (decl);
+
         decl->setAccess(AS_public); // TODO respect proper access specifier
 
         // Get a uniqued QualType for the typedef decl type
@@ -4899,6 +5887,36 @@ ClangASTContext::GetTypeQualifiers(clang_type_t clang_type)
     return qual_type.getQualifiers().getCVRQualifiers();
 }
 
+uint64_t
+GetTypeFlags(clang::ASTContext *ast, lldb::clang_type_t clang_type)
+{
+    assert (clang_type);
+    
+    clang::ExternalASTSource *external_ast_source = ast->getExternalSource();
+    
+    if (!external_ast_source)
+        return 0;
+    
+    ClangExternalASTSourceCommon *common_ast_source = static_cast<ClangExternalASTSourceCommon*>(external_ast_source);
+    
+    return common_ast_source->GetMetadata((uintptr_t)clang_type);
+}
+
+void
+SetTypeFlags(clang::ASTContext *ast, lldb::clang_type_t clang_type, uint64_t flags)
+{
+    assert (clang_type);
+    
+    clang::ExternalASTSource *external_ast_source = ast->getExternalSource();
+    
+    if (!external_ast_source)
+        return;
+    
+    ClangExternalASTSourceCommon *common_ast_source = static_cast<ClangExternalASTSourceCommon*>(external_ast_source);
+    
+    return common_ast_source->SetMetadata((uintptr_t)clang_type, flags);
+}
+
 bool
 ClangASTContext::GetCompleteType (clang::ASTContext *ast, lldb::clang_type_t clang_type)
 {
@@ -4960,12 +5978,12 @@ ClangASTContext::GetCompleteDecl (clang::ASTContext *ast,
 clang::DeclContext *
 ClangASTContext::GetAsDeclContext (clang::CXXMethodDecl *cxx_method_decl)
 {
-    return clang::dyn_cast<clang::DeclContext>(cxx_method_decl);
+    return llvm::dyn_cast<clang::DeclContext>(cxx_method_decl);
 }
 
 clang::DeclContext *
 ClangASTContext::GetAsDeclContext (clang::ObjCMethodDecl *objc_method_decl)
 {
-    return clang::dyn_cast<clang::DeclContext>(objc_method_decl);
+    return llvm::dyn_cast<clang::DeclContext>(objc_method_decl);
 }
 

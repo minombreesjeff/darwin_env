@@ -31,7 +31,7 @@ class CompilerInstance;
 class CompilerInvocation;
 class Decl;
 class DependencyOutputOptions;
-class Diagnostic;
+class DiagnosticsEngine;
 class DiagnosticOptions;
 class FileManager;
 class HeaderSearch;
@@ -45,11 +45,6 @@ class SourceManager;
 class Stmt;
 class TargetInfo;
 class FrontendOptions;
-
-/// Normalize \arg File for use in a user defined #include directive (in the
-/// predefines buffer).
-std::string NormalizeDashIncludePath(StringRef File,
-                                     FileManager &FileMgr);
 
 /// Apply the header search options to get given HeaderSearch object.
 void ApplyHeaderSearchOptions(HeaderSearch &HS,
@@ -66,7 +61,8 @@ void InitializePreprocessor(Preprocessor &PP,
 
 /// ProcessWarningOptions - Initialize the diagnostic client and process the
 /// warning options specified on the command line.
-void ProcessWarningOptions(Diagnostic &Diags, const DiagnosticOptions &Opts);
+void ProcessWarningOptions(DiagnosticsEngine &Diags,
+                           const DiagnosticOptions &Opts);
 
 /// DoPrintPreprocessedInput - Implement -E mode.
 void DoPrintPreprocessedInput(Preprocessor &PP, raw_ostream* OS,
@@ -101,8 +97,8 @@ void CacheTokens(Preprocessor &PP, llvm::raw_fd_ostream* OS);
 /// argument vector.
 CompilerInvocation *
 createInvocationFromCommandLine(ArrayRef<const char *> Args,
-                                llvm::IntrusiveRefCntPtr<Diagnostic> Diags =
-                                    llvm::IntrusiveRefCntPtr<Diagnostic>());
+                            llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
+                                llvm::IntrusiveRefCntPtr<DiagnosticsEngine>());
 
 }  // end namespace clang
 

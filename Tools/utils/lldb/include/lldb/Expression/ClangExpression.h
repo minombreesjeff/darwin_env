@@ -41,6 +41,11 @@ class RecordingMemoryManager;
 class ClangExpression
 {
 public:
+    enum ResultType {
+        eResultTypeAny,
+        eResultTypeId
+    };
+    
     ClangExpression () :
         m_jit_process_sp(),
         m_jit_alloc (LLDB_INVALID_ADDRESS),
@@ -73,6 +78,16 @@ public:
     FunctionName () = 0;
     
     //------------------------------------------------------------------
+    /// Return the language that should be used when parsing.  To use
+    /// the default, return eLanguageTypeUnknown.
+    //------------------------------------------------------------------
+    virtual lldb::LanguageType
+    Language ()
+    {
+        return lldb::eLanguageTypeUnknown;
+    }
+    
+    //------------------------------------------------------------------
     /// Return the object that the parser should use when resolving external
     /// values.  May be NULL if everything should be self-contained.
     //------------------------------------------------------------------
@@ -98,11 +113,14 @@ public:
     ASTTransformer (clang::ASTConsumer *passthrough) = 0;
     
     //------------------------------------------------------------------
-    /// Return the stream that the parser should use to write DWARF
-    /// opcodes.
+    /// Return the desired result type of the function, or 
+    /// eResultTypeAny if indifferent.
     //------------------------------------------------------------------
-    virtual StreamString &
-    DwarfOpcodeStream () = 0;
+    virtual ResultType
+    DesiredResultType ()
+    {
+        return eResultTypeAny;
+    }
     
     //------------------------------------------------------------------
     /// Flags

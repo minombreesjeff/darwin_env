@@ -22,6 +22,11 @@ def fuzz_obj(obj):
     obj.FindModule(filespec)
     contextlist = lldb.SBSymbolContextList()
     obj.FindFunctions("the_func", 0xff, True, contextlist)
+    obj.FindFirstType("dont_care")
+    obj.FindTypes("dont_care")
+    obj.FindFirstType(None)
+    obj.GetInstructions(lldb.SBAddress(), bytearray())
+    obj.GetSourceManager()
     obj.FindGlobalVariables("my_global_var", 1)
     address = obj.ResolveLoadAddress(0xffff)
     obj.ResolveSymbolContextForAddress(address, 0)
@@ -37,6 +42,20 @@ def fuzz_obj(obj):
     obj.EnableAllBreakpoints()
     obj.DisableAllBreakpoints()
     obj.DeleteAllBreakpoints()
+    obj.GetNumWatchpoints()
+    obj.GetWatchpointAtIndex(0)
+    obj.DeleteWatchpoint(0)
+    obj.FindWatchpointByID(0)
+    obj.EnableAllWatchpoints()
+    obj.DisableAllWatchpoints()
+    obj.DeleteAllWatchpoints()
+    obj.WatchAddress(123, 8, True, True)
     obj.GetBroadcaster()
     obj.GetDescription(lldb.SBStream(), lldb.eDescriptionLevelBrief)
     obj.Clear()
+    for module in obj.module_iter():
+        print module
+    for bp in obj.breakpoint_iter():
+        print bp
+    for wp in obj.watchpoint_iter():
+        print wp

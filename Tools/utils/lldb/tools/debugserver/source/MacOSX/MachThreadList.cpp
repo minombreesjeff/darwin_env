@@ -465,14 +465,25 @@ MachThreadList::DisableHardwareBreakpoint (const DNBBreakpoint* bp) const
     return false;
 }
 
+// DNBWatchpointSet() -> MachProcess::CreateWatchpoint() -> MachProcess::EnableWatchpoint()
+// -> MachThreadList::EnableHardwareWatchpoint().
 uint32_t
 MachThreadList::EnableHardwareWatchpoint (const DNBBreakpoint* wp) const
 {
     if (wp != NULL)
     {
-        MachThreadSP thread_sp (GetThreadByID (wp->ThreadID()));
-        if (thread_sp)
-            return thread_sp->EnableHardwareWatchpoint(wp);
+        uint32_t hw_index;
+        PTHREAD_MUTEX_LOCKER (locker, m_threads_mutex);
+        const uint32_t num_threads = m_threads.size();
+        for (uint32_t idx = 0; idx < num_threads; ++idx)
+        {
+            if ((hw_index = m_threads[idx]->EnableHardwareWatchpoint(wp)) == INVALID_NUB_HW_INDEX)
+                return INVALID_NUB_HW_INDEX;
+        }
+        // Use an arbitrary thread to signal the completion of our transaction.
+        if (num_threads)
+            m_threads[0]->HardwareWatchpointStateChanged();
+        return hw_index;
     }
     return INVALID_NUB_HW_INDEX;
 }
@@ -482,9 +493,17 @@ MachThreadList::DisableHardwareWatchpoint (const DNBBreakpoint* wp) const
 {
     if (wp != NULL)
     {
-        MachThreadSP thread_sp (GetThreadByID (wp->ThreadID()));
-        if (thread_sp)
-            return thread_sp->DisableHardwareWatchpoint(wp);
+        PTHREAD_MUTEX_LOCKER (locker, m_threads_mutex);
+        const uint32_t num_threads = m_threads.size();
+        for (uint32_t idx = 0; idx < num_threads; ++idx)
+        {
+            if (!m_threads[idx]->DisableHardwareWatchpoint(wp))
+                return false;
+        }
+        // Use an arbitrary thread to signal the completion of our transaction.
+        if (num_threads)
+            m_threads[0]->HardwareWatchpointStateChanged();
+        return true;
     }
     return false;
 }

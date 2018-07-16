@@ -17,7 +17,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Windows.h"
-#include <wincrypt.h>
 #include <fcntl.h>
 #include <io.h>
 #include <sys/stat.h>
@@ -112,14 +111,6 @@ namespace {
     return success;
   }
 
-  // Forwarder for ScopedHandle.
-  BOOL WINAPI CryptReleaseContext(HCRYPTPROV Provider) {
-    return ::CryptReleaseContext(Provider, 0);
-  }
-
-  typedef ScopedHandle<HCRYPTPROV, uintptr_t(-1),
-                       BOOL (WINAPI*)(HCRYPTPROV), CryptReleaseContext>
-    ScopedCryptContext;
   bool is_separator(const wchar_t value) {
     switch (value) {
     case L'\\':
@@ -359,68 +350,22 @@ error_code exists(const Twine &path, bool &result) {
   return success;
 }
 
+bool equivalent(file_status A, file_status B) {
+  assert(status_known(A) && status_known(B));
+  return A.FileIndexHigh      == B.FileIndexHigh &&
+         A.FileIndexLow       == B.FileIndexLow &&
+         A.FileSizeHigh       == B.FileSizeHigh &&
+         A.FileSizeLow        == B.FileSizeLow &&
+         A.LastWriteTimeHigh  == B.LastWriteTimeHigh &&
+         A.LastWriteTimeLow   == B.LastWriteTimeLow &&
+         A.VolumeSerialNumber == B.VolumeSerialNumber;
+}
+
 error_code equivalent(const Twine &A, const Twine &B, bool &result) {
-  // Get arguments.
-  SmallString<128> a_storage;
-  SmallString<128> b_storage;
-  StringRef a = A.toStringRef(a_storage);
-  StringRef b = B.toStringRef(b_storage);
-
-  // Convert to utf-16.
-  SmallVector<wchar_t, 128> wide_a;
-  SmallVector<wchar_t, 128> wide_b;
-  if (error_code ec = UTF8ToUTF16(a, wide_a)) return ec;
-  if (error_code ec = UTF8ToUTF16(b, wide_b)) return ec;
-
-  AutoHandle HandleB(
-    ::CreateFileW(wide_b.begin(),
-                  0,
-                  FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-                  0,
-                  OPEN_EXISTING,
-                  FILE_FLAG_BACKUP_SEMANTICS,
-                  0));
-
-  AutoHandle HandleA(
-    ::CreateFileW(wide_a.begin(),
-                  0,
-                  FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-                  0,
-                  OPEN_EXISTING,
-                  FILE_FLAG_BACKUP_SEMANTICS,
-                  0));
-
-  // If both handles are invalid, it's an error.
-  if (HandleA == INVALID_HANDLE_VALUE &&
-      HandleB == INVALID_HANDLE_VALUE)
-    return windows_error(::GetLastError());
-
-  // If only one is invalid, it's false.
-  if (HandleA == INVALID_HANDLE_VALUE &&
-      HandleB == INVALID_HANDLE_VALUE) {
-    result = false;
-    return success;
-  }
-
-  // Get file information.
-  BY_HANDLE_FILE_INFORMATION InfoA, InfoB;
-  if (!::GetFileInformationByHandle(HandleA, &InfoA))
-    return windows_error(::GetLastError());
-  if (!::GetFileInformationByHandle(HandleB, &InfoB))
-    return windows_error(::GetLastError());
-
-  // See if it's all the same.
-  result =
-    InfoA.dwVolumeSerialNumber           == InfoB.dwVolumeSerialNumber &&
-    InfoA.nFileIndexHigh                 == InfoB.nFileIndexHigh &&
-    InfoA.nFileIndexLow                  == InfoB.nFileIndexLow &&
-    InfoA.nFileSizeHigh                  == InfoB.nFileSizeHigh &&
-    InfoA.nFileSizeLow                   == InfoB.nFileSizeLow &&
-    InfoA.ftLastWriteTime.dwLowDateTime  ==
-      InfoB.ftLastWriteTime.dwLowDateTime &&
-    InfoA.ftLastWriteTime.dwHighDateTime ==
-      InfoB.ftLastWriteTime.dwHighDateTime;
-
+  file_status fsA, fsB;
+  if (error_code ec = status(A, fsA)) return ec;
+  if (error_code ec = status(B, fsB)) return ec;
+  result = equivalent(fsA, fsB);
   return success;
 }
 
@@ -445,19 +390,40 @@ error_code file_size(const Twine &path, uint64_t &result) {
   return success;
 }
 
+static bool isReservedName(StringRef path) {
+  // This list of reserved names comes from MSDN, at:
+  // http://msdn.microsoft.com/en-us/library/aa365247%28v=vs.85%29.aspx
+  static const char *sReservedNames[] = { "nul", "con", "prn", "aux",
+                              "com1", "com2", "com3", "com4", "com5", "com6",
+                              "com7", "com8", "com9", "lpt1", "lpt2", "lpt3",
+                              "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9" };
+
+  // First, check to see if this is a device namespace, which always
+  // starts with \\.\, since device namespaces are not legal file paths.
+  if (path.startswith("\\\\.\\"))
+    return true;
+
+  // Then compare against the list of ancient reserved names
+  for (size_t i = 0; i < sizeof(sReservedNames) / sizeof(const char *); ++i) {
+    if (path.equals_lower(sReservedNames[i]))
+      return true;
+  }
+
+  // The path isn't what we consider reserved.
+  return false;
+}
+
 error_code status(const Twine &path, file_status &result) {
   SmallString<128> path_storage;
   SmallVector<wchar_t, 128> path_utf16;
 
   StringRef path8 = path.toStringRef(path_storage);
-  // FIXME: We should detect as many "special file name" as possible.
-  if (path8.compare_lower("nul") == 0) {
+  if (isReservedName(path8)) {
     result = file_status(file_type::character_file);
     return success;
   }
 
-  if (error_code ec = UTF8ToUTF16(path8,
-                                  path_utf16))
+  if (error_code ec = UTF8ToUTF16(path8, path_utf16))
     return ec;
 
   DWORD attr = ::GetFileAttributesW(path_utf16.begin());
@@ -466,7 +432,7 @@ error_code status(const Twine &path, file_status &result) {
 
   // Handle reparse points.
   if (attr & FILE_ATTRIBUTE_REPARSE_POINT) {
-    AutoHandle h(
+    ScopedFileHandle h(
       ::CreateFileW(path_utf16.begin(),
                     0, // Attributes only.
                     FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -474,14 +440,35 @@ error_code status(const Twine &path, file_status &result) {
                     OPEN_EXISTING,
                     FILE_FLAG_BACKUP_SEMANTICS,
                     0));
-    if (h == INVALID_HANDLE_VALUE)
+    if (!h)
       goto handle_status_error;
   }
 
   if (attr & FILE_ATTRIBUTE_DIRECTORY)
     result = file_status(file_type::directory_file);
-  else
+  else {
     result = file_status(file_type::regular_file);
+    ScopedFileHandle h(
+      ::CreateFileW(path_utf16.begin(),
+                    0, // Attributes only.
+                    FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    NULL,
+                    OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS,
+                    0));
+    if (!h)
+      goto handle_status_error;
+    BY_HANDLE_FILE_INFORMATION Info;
+    if (!::GetFileInformationByHandle(h, &Info))
+      goto handle_status_error;
+    result.FileIndexHigh      = Info.nFileIndexHigh;
+    result.FileIndexLow       = Info.nFileIndexLow;
+    result.FileSizeHigh       = Info.nFileSizeHigh;
+    result.FileSizeLow        = Info.nFileSizeLow;
+    result.LastWriteTimeHigh  = Info.ftLastWriteTime.dwHighDateTime;
+    result.LastWriteTimeLow   = Info.ftLastWriteTime.dwLowDateTime;
+    result.VolumeSerialNumber = Info.dwVolumeSerialNumber;
+  }
 
   return success;
 
@@ -513,7 +500,7 @@ error_code unique_file(const Twine &model, int &result_fd,
   if (makeAbsolute) {
     // Make model absolute by prepending a temp directory if it's not already.
     bool absolute = path::is_absolute(m);
-  
+
     if (!absolute) {
       SmallVector<wchar_t, 64> temp_dir;
       if (error_code ec = TempDir(temp_dir)) return ec;
@@ -669,7 +656,8 @@ error_code get_magic(const Twine &path, uint32_t len,
   return success;
 }
 
-error_code directory_iterator_construct(directory_iterator &it, StringRef path){
+error_code detail::directory_iterator_construct(detail::DirIterState &it,
+                                                StringRef path){
   SmallVector<wchar_t, 128> path_utf16;
 
   if (error_code ec = UTF8ToUTF16(path,
@@ -700,7 +688,7 @@ error_code directory_iterator_construct(directory_iterator &it, StringRef path){
       error_code ec = windows_error(::GetLastError());
       // Check for end.
       if (ec == windows_error::no_more_files)
-        return directory_iterator_destruct(it);
+        return detail::directory_iterator_destruct(it);
       return ec;
     } else
       FilenameLen = ::wcslen(FirstFind.cFileName);
@@ -720,7 +708,7 @@ error_code directory_iterator_construct(directory_iterator &it, StringRef path){
   return success;
 }
 
-error_code directory_iterator_destruct(directory_iterator& it) {
+error_code detail::directory_iterator_destruct(detail::DirIterState &it) {
   if (it.IterationHandle != 0)
     // Closes the handle if it's valid.
     ScopedFindHandle close(HANDLE(it.IterationHandle));
@@ -729,13 +717,13 @@ error_code directory_iterator_destruct(directory_iterator& it) {
   return success;
 }
 
-error_code directory_iterator_increment(directory_iterator& it) {
+error_code detail::directory_iterator_increment(detail::DirIterState &it) {
   WIN32_FIND_DATAW FindData;
   if (!::FindNextFileW(HANDLE(it.IterationHandle), &FindData)) {
     error_code ec = windows_error(::GetLastError());
     // Check for end.
     if (ec == windows_error::no_more_files)
-      return directory_iterator_destruct(it);
+      return detail::directory_iterator_destruct(it);
     return ec;
   }
 

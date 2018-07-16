@@ -29,7 +29,7 @@ CommandObjectHelp::CommandObjectHelp (CommandInterpreter &interpreter) :
     CommandObject (interpreter,
                    "help",
                    "Show a list of all debugger commands, or give details about specific commands.",
-                   "help [<cmd-name>]")
+                   "help [<cmd-name>]"), m_options (interpreter)
 {
     CommandArgumentEntry arg;
     CommandArgumentData command_arg;
@@ -49,6 +49,13 @@ CommandObjectHelp::~CommandObjectHelp()
 {
 }
 
+OptionDefinition
+CommandObjectHelp::CommandOptions::g_option_table[] =
+{
+    { LLDB_OPT_SET_ALL, false, "show-aliases", 'a', no_argument, NULL, 0, eArgTypeNone,         "Show aliases in the command list."},
+    { LLDB_OPT_SET_ALL, false, "hide-user-commands", 'u', no_argument, NULL, 0, eArgTypeNone,         "Hide user-defined commands from the list."},
+    { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
+};
 
 bool
 CommandObjectHelp::Execute (Args& command, CommandReturnObject &result)
@@ -57,12 +64,18 @@ CommandObjectHelp::Execute (Args& command, CommandReturnObject &result)
     CommandObject *cmd_obj;
     const int argc = command.GetArgumentCount ();
     
-    // 'help' doesn't take any options or arguments, other than command names.  If argc is 0, we show the user
-    // all commands and aliases.  Otherwise every argument must be the name of a command or a sub-command.
+    // 'help' doesn't take any arguments, other than command names.  If argc is 0, we show the user
+    // all commands (aliases and user commands if asked for).  Otherwise every argument must be the name of a command or a sub-command.
     if (argc == 0)
     {
+        uint32_t cmd_types = CommandInterpreter::eCommandTypesBuiltin;
+        if (m_options.m_show_aliases)
+            cmd_types |= CommandInterpreter::eCommandTypesAliases;
+        if (m_options.m_show_user_defined)
+            cmd_types |= CommandInterpreter::eCommandTypesUserDef;
+
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
-        m_interpreter.GetHelp (result);  // General help, for ALL commands.
+        m_interpreter.GetHelp (result, cmd_types);  // General help
     }
     else
     {
@@ -145,11 +158,13 @@ CommandObjectHelp::Execute (Args& command, CommandReturnObject &result)
                     if ((long_help != NULL)
                         && (strlen (long_help) > 0))
                         output_strm.Printf ("\n%s", long_help);
-                    // Mark this help command with a success status.
-                    if (sub_cmd_obj->WantsRawCommandString())
+                    // Emit the message about using ' -- ' between the end of the command options and the raw input
+                    // conditionally, i.e., only if the command object does not want completion.
+                    if (sub_cmd_obj->WantsRawCommandString() && !sub_cmd_obj->WantsCompletion())
                     {
                         m_interpreter.OutputFormattedHelpText (output_strm, "", "", "\nIMPORTANT NOTE:  Because this command takes 'raw' input, if you use any command options you must use ' -- ' between the end of the command options and the beginning of the raw input.", 1);
                     }
+                    // Mark this help command with a success status.
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else if (sub_cmd_obj->IsMultiwordObject())
@@ -169,7 +184,7 @@ CommandObjectHelp::Execute (Args& command, CommandReturnObject &result)
                     const char *long_help = sub_cmd_obj->GetHelpLong();
                     if ((long_help != NULL)
                         && (strlen (long_help) > 0))
-                        output_strm.Printf ("\n%s", long_help);
+                        output_strm.Printf ("%s", long_help);
                     else if (sub_cmd_obj->WantsRawCommandString())
                     {
                         std::string help_text (sub_cmd_obj->GetHelp());
@@ -250,14 +265,31 @@ CommandObjectHelp::HandleCompletion
     else
     {
         CommandObject *cmd_obj = m_interpreter.GetCommandObject (input.GetArgumentAtIndex(0));
-        input.Shift();
-        cursor_index--;
-        return cmd_obj->HandleCompletion (input, 
-                                          cursor_index, 
-                                          cursor_char_position, 
-                                          match_start_point, 
-                                          max_return_elements, 
-                                          word_complete, 
-                                          matches);
+        
+        // The command that they are getting help on might be ambiguous, in which case we should complete that,
+        // otherwise complete with the command the user is getting help on...
+        
+        if (cmd_obj)
+        {
+            input.Shift();
+            cursor_index--;
+            return cmd_obj->HandleCompletion (input, 
+                                              cursor_index, 
+                                              cursor_char_position, 
+                                              match_start_point, 
+                                              max_return_elements, 
+                                              word_complete, 
+                                              matches);
+        }
+        else
+        {
+            return m_interpreter.HandleCompletionMatches (input, 
+                                                        cursor_index, 
+                                                        cursor_char_position, 
+                                                        match_start_point, 
+                                                        max_return_elements, 
+                                                        word_complete, 
+                                                        matches);
+        }
     }
 }

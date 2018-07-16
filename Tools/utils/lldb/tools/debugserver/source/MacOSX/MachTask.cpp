@@ -31,6 +31,7 @@
 #include "DNBLog.h"
 #include "MachProcess.h"
 #include "DNBDataRef.h"
+#include "stack_logging.h"
 
 #if defined (__arm__)
 
@@ -171,7 +172,7 @@ MachTask::ReadMemory (nub_addr_t addr, nub_size_t size, void *buf)
     {
         n = m_vm_memory.Read(task, addr, buf, size);
 
-        DNBLogThreadedIf(LOG_MEMORY, "MachTask::ReadMemory ( addr = 0x%8.8llx, size = %zu, buf = %8.8p) => %u bytes read", (uint64_t)addr, size, buf, n);
+        DNBLogThreadedIf(LOG_MEMORY, "MachTask::ReadMemory ( addr = 0x%8.8llx, size = %zu, buf = %p) => %zu bytes read", (uint64_t)addr, size, buf, n);
         if (DNBLogCheckLogBit(LOG_MEMORY_DATA_LONG) || (DNBLogCheckLogBit(LOG_MEMORY_DATA_SHORT) && size <= 8))
         {
             DNBDataRef data((uint8_t*)buf, n, false);
@@ -193,7 +194,7 @@ MachTask::WriteMemory (nub_addr_t addr, nub_size_t size, const void *buf)
     if (task != TASK_NULL)
     {
         n = m_vm_memory.Write(task, addr, buf, size);
-        DNBLogThreadedIf(LOG_MEMORY, "MachTask::WriteMemory ( addr = 0x%8.8llx, size = %zu, buf = %8.8p) => %u bytes written", (uint64_t)addr, size, buf, n);
+        DNBLogThreadedIf(LOG_MEMORY, "MachTask::WriteMemory ( addr = 0x%8.8llx, size = %zu, buf = %p) => %zu bytes written", (uint64_t)addr, size, buf, n);
         if (DNBLogCheckLogBit(LOG_MEMORY_DATA_LONG) || (DNBLogCheckLogBit(LOG_MEMORY_DATA_SHORT) && size <= 8))
         {
             DNBDataRef data((uint8_t*)buf, n, false);
@@ -202,6 +203,27 @@ MachTask::WriteMemory (nub_addr_t addr, nub_size_t size, const void *buf)
     }
     return n;
 }
+
+//----------------------------------------------------------------------
+// MachTask::MemoryRegionInfo
+//----------------------------------------------------------------------
+int
+MachTask::GetMemoryRegionInfo (nub_addr_t addr, DNBRegionInfo *region_info)
+{
+    task_t task = TaskPort();
+    if (task == TASK_NULL)
+        return -1;
+
+    int ret = m_vm_memory.GetMemoryRegionInfo(task, addr, region_info);
+    DNBLogThreadedIf(LOG_MEMORY, "MachTask::MemoryRegionInfo ( addr = 0x%8.8llx ) => %i  (start = 0x%8.8llx, size = 0x%8.8llx, permissions = %u)",
+                     (uint64_t)addr, 
+                     ret,
+                     (uint64_t)region_info->addr,
+                     (uint64_t)region_info->size,
+                     region_info->permissions);
+    return ret;
+}
+
 
 //----------------------------------------------------------------------
 // MachTask::TaskPortForProcessID
@@ -283,8 +305,12 @@ MachTask::BasicInfo(task_t task, struct task_basic_info *info)
     {
         float user = (float)info->user_time.seconds + (float)info->user_time.microseconds / 1000000.0f;
         float system = (float)info->user_time.seconds + (float)info->user_time.microseconds / 1000000.0f;
-        DNBLogThreaded("task_basic_info = { suspend_count = %i, virtual_size = 0x%8.8x, resident_size = 0x%8.8x, user_time = %f, system_time = %f }",
-            info->suspend_count, info->virtual_size, info->resident_size, user, system);
+        DNBLogThreaded ("task_basic_info = { suspend_count = %i, virtual_size = 0x%8.8llx, resident_size = 0x%8.8llx, user_time = %f, system_time = %f }",
+                        info->suspend_count, 
+                        (uint64_t)info->virtual_size, 
+                        (uint64_t)info->resident_size, 
+                        user, 
+                        system);
     }
     return err.Error();
 }
@@ -677,3 +703,86 @@ MachTask::DeallocateMemory (nub_addr_t addr)
     return false;
 }
 
+static void foundStackLog(mach_stack_logging_record_t record, void *context) {
+    *((bool*)context) = true;
+}
+
+bool
+MachTask::HasMallocLoggingEnabled ()
+{
+    bool found = false;
+    
+    __mach_stack_logging_enumerate_records(m_task, 0x0, foundStackLog, &found);
+    return found;
+}
+
+struct history_enumerator_impl_data
+{
+    MachMallocEvent *buffer;
+    uint32_t        *position;
+    uint32_t         count;
+};
+
+static void history_enumerator_impl(mach_stack_logging_record_t record, void* enum_obj)
+{
+    history_enumerator_impl_data *data = (history_enumerator_impl_data*)enum_obj;
+    
+    if (*data->position >= data->count)
+        return;
+    
+    data->buffer[*data->position].m_base_address = record.address;
+    data->buffer[*data->position].m_size = record.argument;
+    data->buffer[*data->position].m_event_id = record.stack_identifier;
+    data->buffer[*data->position].m_event_type = record.type_flags == stack_logging_type_alloc ?   eMachMallocEventTypeAlloc :
+                                                 record.type_flags == stack_logging_type_dealloc ? eMachMallocEventTypeDealloc :
+                                                                                                   eMachMallocEventTypeOther;
+    *data->position+=1;
+}
+
+bool
+MachTask::EnumerateMallocRecords (MachMallocEvent *event_buffer,
+                                  uint32_t buffer_size,
+                                  uint32_t *count)
+{
+    return EnumerateMallocRecords(0,
+                                  event_buffer,
+                                  buffer_size,
+                                  count);
+}
+
+bool
+MachTask::EnumerateMallocRecords (mach_vm_address_t address,
+                                  MachMallocEvent *event_buffer,
+                                  uint32_t buffer_size,
+                                  uint32_t *count)
+{
+    if (!event_buffer || !count)
+        return false;
+    
+    if (buffer_size == 0)
+        return false;
+    
+    *count = 0;
+    history_enumerator_impl_data data = { event_buffer, count, buffer_size };
+    __mach_stack_logging_enumerate_records(m_task, address, history_enumerator_impl, &data);
+    return (*count > 0);
+}
+
+bool
+MachTask::EnumerateMallocFrames (MachMallocEventId event_id,
+                                 mach_vm_address_t *function_addresses_buffer,
+                                 uint32_t buffer_size,
+                                 uint32_t *count)
+{
+    if (!function_addresses_buffer || !count)
+        return false;
+    
+    if (buffer_size == 0)
+        return false;
+    
+    __mach_stack_logging_frames_for_uniqued_stack(m_task, event_id, &function_addresses_buffer[0], buffer_size, count);
+    *count -= 1;
+    if (function_addresses_buffer[*count-1] < vm_page_size)
+        *count -= 1;
+    return (*count > 0);
+}

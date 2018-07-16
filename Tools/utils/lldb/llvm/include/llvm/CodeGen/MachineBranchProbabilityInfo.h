@@ -34,9 +34,6 @@ class MachineBranchProbabilityInfo : public ImmutablePass {
   // weight to just "inherit" the non-zero weight of an adjacent successor.
   static const uint32_t DEFAULT_WEIGHT = 16;
 
-  // Get sum of the block successors' weights.
-  uint32_t getSumForBlock(MachineBasicBlock *MBB) const;
-
 public:
   static char ID;
 
@@ -53,15 +50,24 @@ public:
   // DEFAULT_WEIGHT.
   uint32_t getEdgeWeight(MachineBasicBlock *Src, MachineBasicBlock *Dst) const;
 
+  // Get sum of the block successors' weights, potentially scaling them to fit
+  // within 32-bits. If scaling is required, sets Scale based on the necessary
+  // adjustment. Any edge weights used with the sum should be divided by Scale.
+  uint32_t getSumForBlock(MachineBasicBlock *MBB, uint32_t &Scale) const;
+
   // A 'Hot' edge is an edge which probability is >= 80%.
   bool isEdgeHot(MachineBasicBlock *Src, MachineBasicBlock *Dst) const;
 
   // Return a hot successor for the block BB or null if there isn't one.
+  // NB: This routine's complexity is linear on the number of successors.
   MachineBasicBlock *getHotSucc(MachineBasicBlock *MBB) const;
 
   // Return a probability as a fraction between 0 (0% probability) and
   // 1 (100% probability), however the value is never equal to 0, and can be 1
   // only iff SRC block has only one successor.
+  // NB: This routine's complexity is linear on the number of successors of
+  // Src. Querying sequentially for each successor's probability is a quadratic
+  // query pattern.
   BranchProbability getEdgeProbability(MachineBasicBlock *Src,
                                        MachineBasicBlock *Dst) const;
 

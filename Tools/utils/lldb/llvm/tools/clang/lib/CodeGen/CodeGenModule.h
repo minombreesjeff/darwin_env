@@ -26,7 +26,6 @@
 #include "llvm/Module.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ValueHandle.h"
 
@@ -62,7 +61,7 @@ namespace clang {
   class VarDecl;
   class LangOptions;
   class CodeGenOptions;
-  class Diagnostic;
+  class DiagnosticsEngine;
   class AnnotateAttr;
   class CXXDestructorDecl;
   class MangleBuffer;
@@ -75,6 +74,8 @@ namespace CodeGen {
   class CGCXXABI;
   class CGDebugInfo;
   class CGObjCRuntime;
+  class CGOpenCLRuntime;
+  class CGCUDARuntime;
   class BlockFieldFlags;
   class FunctionArgList;
   
@@ -129,8 +130,12 @@ namespace CodeGen {
     /// The width of a pointer into the generic address space.
     unsigned char PointerWidthInBits;
 
-    /// The alignment of a pointer into the generic address space.
-    unsigned char PointerAlignInBytes;
+    /// The size and alignment of a pointer into the generic address
+    /// space.
+    union {
+      unsigned char PointerAlignInBytes;
+      unsigned char PointerSizeInBytes;
+    };
   };
 
 struct RREntrypoints {
@@ -212,7 +217,7 @@ class CodeGenModule : public CodeGenTypeCache {
   llvm::Module &TheModule;
   const llvm::TargetData &TheTargetData;
   mutable const TargetCodeGenInfo *TheTargetCodeGenInfo;
-  Diagnostic &Diags;
+  DiagnosticsEngine &Diags;
   CGCXXABI &ABI;
   CodeGenTypes Types;
   CodeGenTBAA *TBAA;
@@ -222,6 +227,8 @@ class CodeGenModule : public CodeGenTypeCache {
   friend class CodeGenVTables;
 
   CGObjCRuntime* ObjCRuntime;
+  CGOpenCLRuntime* OpenCLRuntime;
+  CGCUDARuntime* CUDARuntime;
   CGDebugInfo* DebugInfo;
   ARCEntrypoints *ARCData;
   RREntrypoints *RRData;
@@ -260,7 +267,11 @@ class CodeGenModule : public CodeGenTypeCache {
   llvm::DenseMap<GlobalDecl, StringRef> MangledDeclNames;
   llvm::BumpPtrAllocator MangledNamesAllocator;
   
+  /// Global annotations.
   std::vector<llvm::Constant*> Annotations;
+
+  /// Map used to get unique annotation strings.
+  llvm::StringMap<llvm::Constant*> AnnotationStrings;
 
   llvm::StringMap<llvm::Constant*> CFConstantStringMap;
   llvm::StringMap<llvm::GlobalVariable*> ConstantStringMap;
@@ -309,18 +320,19 @@ class CodeGenModule : public CodeGenTypeCache {
   /// Lazily create the Objective-C runtime
   void createObjCRuntime();
 
+  void createOpenCLRuntime();
+  void createCUDARuntime();
+
+  bool isTriviallyRecursiveViaAsm(const FunctionDecl *F);
+  bool shouldEmitFunction(const FunctionDecl *F);
   llvm::LLVMContext &VMContext;
 
   /// @name Cache for Blocks Runtime Globals
   /// @{
 
-  const VarDecl *NSConcreteGlobalBlockDecl;
-  const VarDecl *NSConcreteStackBlockDecl;
   llvm::Constant *NSConcreteGlobalBlock;
   llvm::Constant *NSConcreteStackBlock;
 
-  const FunctionDecl *BlockObjectAssignDecl;
-  const FunctionDecl *BlockObjectDisposeDecl;
   llvm::Constant *BlockObjectAssign;
   llvm::Constant *BlockObjectDispose;
 
@@ -334,7 +346,8 @@ class CodeGenModule : public CodeGenTypeCache {
   /// @}
 public:
   CodeGenModule(ASTContext &C, const CodeGenOptions &CodeGenOpts,
-                llvm::Module &M, const llvm::TargetData &TD, Diagnostic &Diags);
+                llvm::Module &M, const llvm::TargetData &TD,
+                DiagnosticsEngine &Diags);
 
   ~CodeGenModule();
 
@@ -351,6 +364,18 @@ public:
   /// hasObjCRuntime() - Return true iff an Objective-C runtime has
   /// been configured.
   bool hasObjCRuntime() { return !!ObjCRuntime; }
+
+  /// getOpenCLRuntime() - Return a reference to the configured OpenCL runtime.
+  CGOpenCLRuntime &getOpenCLRuntime() {
+    assert(OpenCLRuntime != 0);
+    return *OpenCLRuntime;
+  }
+
+  /// getCUDARuntime() - Return a reference to the configured CUDA runtime.
+  CGCUDARuntime &getCUDARuntime() {
+    assert(CUDARuntime != 0);
+    return *CUDARuntime;
+  }
 
   /// getCXXABI() - Return a reference to the configured C++ ABI.
   CGCXXABI &getCXXABI() { return ABI; }
@@ -381,9 +406,10 @@ public:
   llvm::Module &getModule() const { return TheModule; }
   CodeGenTypes &getTypes() { return Types; }
   CodeGenVTables &getVTables() { return VTables; }
-  Diagnostic &getDiags() const { return Diags; }
+  VTableContext &getVTableContext() { return VTables.getVTableContext(); }
+  DiagnosticsEngine &getDiags() const { return Diags; }
   const llvm::TargetData &getTargetData() const { return TheTargetData; }
-  const TargetInfo &getTarget() const { return Context.Target; }
+  const TargetInfo &getTarget() const { return Context.getTargetInfo(); }
   llvm::LLVMContext &getLLVMContext() { return VMContext; }
   const TargetCodeGenInfo &getTargetCodeGenInfo();
   bool isTargetDarwin() const;
@@ -538,6 +564,10 @@ public:
   /// -fconstant-string-class=class_name option.
   llvm::Constant *GetAddrOfConstantString(const StringLiteral *Literal);
 
+  /// GetConstantArrayFromStringLiteral - Return a constant array for the given
+  /// string.
+  llvm::Constant *GetConstantArrayFromStringLiteral(const StringLiteral *E);
+
   /// GetAddrOfConstantStringFromLiteral - Return a pointer to a constant array
   /// for the given string literal.
   llvm::Constant *GetAddrOfConstantStringFromLiteral(const StringLiteral *S);
@@ -569,6 +599,10 @@ public:
   llvm::Constant *GetAddrOfConstantCString(const std::string &str,
                                            const char *GlobalName=0,
                                            unsigned Alignment=1);
+
+  /// GetAddrOfConstantCompoundLiteral - Returns a pointer to a constant global
+  /// variable for the given file-scope compound literal expression.
+  llvm::Constant *GetAddrOfConstantCompoundLiteral(const CompoundLiteralExpr*E);
   
   /// \brief Retrieve the record type that describes the state of an
   /// Objective-C fast enumeration loop (for..in).
@@ -601,8 +635,6 @@ public:
   /// present in the object file; these are emitted to the llvm.used
   /// metadata global.
   void AddUsedGlobal(llvm::GlobalValue *GV);
-
-  void AddAnnotation(llvm::Constant *C) { Annotations.push_back(C); }
 
   /// AddCXXDtorEntry - Add a destructor and object to add to the C++ global
   /// destructor function.
@@ -647,8 +679,10 @@ public:
   /// but not always, an LLVM null constant.
   llvm::Constant *EmitNullConstant(QualType T);
 
-  llvm::Constant *EmitAnnotateAttr(llvm::GlobalValue *GV,
-                                   const AnnotateAttr *AA, unsigned LineNo);
+  /// EmitNullConstantForBase - Return a null constant appropriate for 
+  /// zero-initializing a base class with the given type.  This is usually,
+  /// but not always, an LLVM null constant.
+  llvm::Constant *EmitNullConstantForBase(const CXXRecordDecl *Record);
 
   /// Error - Emit a general error that something can't be done.
   void Error(SourceLocation loc, StringRef error);
@@ -688,9 +722,13 @@ public:
   /// as a return type.
   bool ReturnTypeUsesSRet(const CGFunctionInfo &FI);
 
-  /// ReturnTypeUsesSret - Return true iff the given type uses 'fpret' when used
-  /// as a return type.
+  /// ReturnTypeUsesFPRet - Return true iff the given type uses 'fpret' when
+  /// used as a return type.
   bool ReturnTypeUsesFPRet(QualType ResultType);
+
+  /// ReturnTypeUsesFP2Ret - Return true iff the given type uses 'fp2ret' when
+  /// used as a return type.
+  bool ReturnTypeUsesFP2Ret(QualType ResultType);
 
   /// ConstructAttributeList - Get the LLVM attributes and calling convention to
   /// use for a particular function type.
@@ -736,6 +774,33 @@ public:
                               llvm::GlobalVariable *GV);
   
   std::vector<const CXXRecordDecl*> DeferredVTables;
+
+  /// Emit all the global annotations.
+  void EmitGlobalAnnotations();
+
+  /// Emit an annotation string.
+  llvm::Constant *EmitAnnotationString(llvm::StringRef Str);
+
+  /// Emit the annotation's translation unit.
+  llvm::Constant *EmitAnnotationUnit(SourceLocation Loc);
+
+  /// Emit the annotation line number.
+  llvm::Constant *EmitAnnotationLineNo(SourceLocation L);
+
+  /// EmitAnnotateAttr - Generate the llvm::ConstantStruct which contains the
+  /// annotation information for a given GlobalValue. The annotation struct is
+  /// {i8 *, i8 *, i8 *, i32}. The first field is a constant expression, the
+  /// GlobalValue being annotated. The second field is the constant string
+  /// created from the AnnotateAttr's annotation. The third field is a constant
+  /// string containing the name of the translation unit. The fourth field is
+  /// the line number in the file of the annotated value declaration.
+  llvm::Constant *EmitAnnotateAttr(llvm::GlobalValue *GV,
+                                   const AnnotateAttr *AA,
+                                   SourceLocation L);
+
+  /// Add global annotations that are set on D, for the global GV. Those
+  /// annotations are emitted during finalization of the LLVM code.
+  void AddGlobalAnnotations(const ValueDecl *D, llvm::GlobalValue *GV);
 
 private:
   llvm::GlobalValue *GetGlobalValue(StringRef Ref);
@@ -821,8 +886,6 @@ private:
   /// the given list and name. This array will have appending linkage and is
   /// suitable for use as a LLVM constructor or destructor array.
   void EmitCtorList(const CtorList &Fns, const char *GlobalName);
-
-  void EmitAnnotations(void);
 
   /// EmitFundamentalRTTIDescriptor - Emit the RTTI descriptors for the
   /// given type.

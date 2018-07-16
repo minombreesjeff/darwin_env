@@ -234,7 +234,7 @@ PlatformRemoteiOS::GetDeviceSupportDirectory()
                 xcode_dir_path.append (xcode_select_prefix_dir);
             xcode_dir_path.append ("/usr/share/xcode-select/xcode_dir_path");
             temp_file_spec.SetFile(xcode_dir_path.c_str(), false);
-            size_t bytes_read = temp_file_spec.ReadFileContents(0, developer_dir_path, sizeof(developer_dir_path));
+            size_t bytes_read = temp_file_spec.ReadFileContents(0, developer_dir_path, sizeof(developer_dir_path), NULL);
             if (bytes_read > 0)
             {
                 developer_dir_path[bytes_read] = '\0';
@@ -485,106 +485,5 @@ PlatformRemoteiOS::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process
 bool
 PlatformRemoteiOS::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
 {
-    ArchSpec system_arch (GetSystemArchitecture());
-    const ArchSpec::Core system_core = system_arch.GetCore();
-    switch (system_core)
-    {
-    default:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
-        case 1: arch.SetTriple ("armv7f-apple-darwin", NULL); return true;
-        case 2: arch.SetTriple ("armv7k-apple-darwin", NULL); return true;
-        case 3: arch.SetTriple ("armv7s-apple-darwin", NULL); return true;
-        case 4: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
-        case 5: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
-        case 6: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 7: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-
-    case ArchSpec::eCore_arm_armv7f:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv7f-apple-darwin", NULL); return true;
-        case 1: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
-        case 2: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
-        case 3: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
-        case 4: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 5: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-
-    case ArchSpec::eCore_arm_armv7k:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv7k-apple-darwin", NULL); return true;
-        case 1: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
-        case 2: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
-        case 3: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
-        case 4: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 5: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-
-    case ArchSpec::eCore_arm_armv7s:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv7s-apple-darwin", NULL); return true;
-        case 1: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
-        case 2: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
-        case 3: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
-        case 4: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 5: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-
-    case ArchSpec::eCore_arm_armv7:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv7-apple-darwin", NULL);  return true;
-        case 1: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
-        case 2: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
-        case 3: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 4: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-
-    case ArchSpec::eCore_arm_armv6:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv6-apple-darwin", NULL);  return true;
-        case 1: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
-        case 2: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 3: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-
-    case ArchSpec::eCore_arm_armv5:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv5-apple-darwin", NULL);  return true;
-        case 1: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 2: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-
-    case ArchSpec::eCore_arm_armv4:
-        switch (idx)
-        {
-        case 0: arch.SetTriple ("armv4-apple-darwin", NULL);  return true;
-        case 1: arch.SetTriple ("arm-apple-darwin", NULL);    return true;
-        default: break;
-        }
-        break;
-    }
-    arch.Clear();
-    return false;
+    return ARMGetSupportedArchitectureAtIndex (idx, arch);
 }

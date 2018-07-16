@@ -97,6 +97,22 @@ Stmt *Stmt::IgnoreImplicit() {
   return s;
 }
 
+/// \brief Strip off all label-like statements.
+///
+/// This will strip off label statements, case statements, and default
+/// statements recursively.
+const Stmt *Stmt::stripLabelLikeStatements() const {
+  const Stmt *S = this;
+  while (true) {
+    if (const LabelStmt *LS = dyn_cast<LabelStmt>(S))
+      S = LS->getSubStmt();
+    else if (const SwitchCase *SC = dyn_cast<SwitchCase>(S))
+      S = SC->getSubStmt();
+    else
+      return S;
+  }
+}
+
 namespace {
   struct good {};
   struct bad {};
@@ -326,7 +342,7 @@ unsigned AsmStmt::AnalyzeAsmString(SmallVectorImpl<AsmStringPiece>&Pieces,
   // asm string.
   std::string CurStringPiece;
 
-  bool HasVariants = !C.Target.hasNoAsmVariants();
+  bool HasVariants = !C.getTargetInfo().hasNoAsmVariants();
   
   while (1) {
     // Done with the string?

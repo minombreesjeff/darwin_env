@@ -40,7 +40,30 @@ public:
     {
         return m_address;
     }
+    
+    const char *
+    GetMnemonic (ExecutionContextScope *exe_scope)
+    {
+        CalculateMnemonicOperandsAndCommentIfNeeded (exe_scope);
+        return m_opcode_name.c_str();
+    }
+    const char *
+    GetOperands (ExecutionContextScope *exe_scope)
+    {
+        CalculateMnemonicOperandsAndCommentIfNeeded (exe_scope);
+        return m_mnemocics.c_str();
+    }
+    
+    const char *
+    GetComment (ExecutionContextScope *exe_scope)
+    {
+        CalculateMnemonicOperandsAndCommentIfNeeded (exe_scope);
+        return m_comment.c_str();
+    }
 
+    virtual void
+    CalculateMnemonicOperandsAndComment (ExecutionContextScope *exe_scope) = 0;
+    
     AddressClass
     GetAddressClass ();
 
@@ -109,6 +132,20 @@ protected:
     // help us to disassemble appropriately.
     AddressClass m_address_class; 
     Opcode m_opcode; // The opcode for this instruction
+    std::string m_opcode_name;
+    std::string m_mnemocics;
+    std::string m_comment;
+    bool m_calculated_strings;
+
+    void
+    CalculateMnemonicOperandsAndCommentIfNeeded (ExecutionContextScope *exe_scope)
+    {
+        if (!m_calculated_strings)
+        {
+            m_calculated_strings = true;
+            CalculateMnemonicOperandsAndComment(exe_scope);
+        }
+    }
 };
 
 
@@ -133,6 +170,12 @@ public:
     void
     Append (lldb::InstructionSP &inst_sp);
 
+    void
+    Dump (Stream *s,
+          bool show_address,
+          bool show_bytes,
+          const ExecutionContext* exe_ctx);
+
 private:
     typedef std::vector<lldb::InstructionSP> collection;
     typedef collection::iterator iterator;
@@ -142,7 +185,7 @@ private:
 };
 
 class PseudoInstruction : 
-    public lldb_private::Instruction
+    public Instruction
 {
 public:
 
@@ -152,19 +195,27 @@ public:
      ~PseudoInstruction ();
      
     virtual void
-    Dump (lldb_private::Stream *s,
+    Dump (Stream *s,
           uint32_t max_opcode_byte_size,
           bool show_address,
           bool show_bytes,
-          const lldb_private::ExecutionContext* exe_ctx,
+          const ExecutionContext* exe_ctx,
           bool raw);
     
     virtual bool
     DoesBranch () const;
+
+    virtual void
+    CalculateMnemonicOperandsAndComment (ExecutionContextScope *exe_scope)
+    {
+        // TODO: fill this in and put opcode name into Instruction::m_opcode_name,
+        // mnemonic into Instruction::m_mnemonics, and any comment into 
+        // Instruction::m_comment
+    }
     
     virtual size_t
-    Decode (const lldb_private::Disassembler &disassembler,
-            const lldb_private::DataExtractor &data,
+    Decode (const Disassembler &disassembler,
+            const DataExtractor &data,
             uint32_t data_offset);
             
     void
@@ -201,6 +252,13 @@ public:
                       const char *plugin_name,
                       const ExecutionContext &exe_ctx,
                       const AddressRange &disasm_range);
+    
+    static lldb::DisassemblerSP 
+    DisassembleBytes (const ArchSpec &arch,
+                      const char *plugin_name,
+                      const Address &start,
+                      const void *bytes,
+                      size_t length);
 
     static bool
     Disassemble (Debugger &debugger,

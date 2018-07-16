@@ -37,12 +37,14 @@ CommandObjectDisassemble::CommandOptions::CommandOptions (CommandInterpreter &in
     num_lines_context(0),
     num_instructions (0),
     func_name(),
+    cur_function (false),
     start_addr(),
     end_addr (),
     at_pc (false),
     frame_line (false),
     plugin_name (),
-    arch() 
+    arch(),
+    some_location_specified (false) 
 {
     OptionParsingStarting();
 }
@@ -69,13 +71,13 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
     case 'C':
         num_lines_context = Args::StringToUInt32(option_arg, 0, 0, &success);
         if (!success)
-            error.SetErrorStringWithFormat ("Invalid num context lines string: \"%s\".\n", option_arg);
+            error.SetErrorStringWithFormat ("invalid num context lines string: \"%s\"", option_arg);
         break;
 
     case 'c':
         num_instructions = Args::StringToUInt32(option_arg, 0, 0, &success);
         if (!success)
-            error.SetErrorStringWithFormat ("Invalid num of instructions string: \"%s\".\n", option_arg);
+            error.SetErrorStringWithFormat ("invalid num of instructions string: \"%s\"", option_arg);
         break;
 
     case 'b':
@@ -88,7 +90,8 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
             start_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 16);
 
         if (start_addr == LLDB_INVALID_ADDRESS)
-            error.SetErrorStringWithFormat ("Invalid start address string '%s'.\n", option_arg);
+            error.SetErrorStringWithFormat ("invalid start address string '%s'", option_arg);
+        some_location_specified = true;
         break;
     case 'e':
         end_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 0);
@@ -96,15 +99,17 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
             end_addr = Args::StringToUInt64(option_arg, LLDB_INVALID_ADDRESS, 16);
 
         if (end_addr == LLDB_INVALID_ADDRESS)
-            error.SetErrorStringWithFormat ("Invalid end address string '%s'.\n", option_arg);
+            error.SetErrorStringWithFormat ("invalid end address string '%s'", option_arg);
         break;
-
+        some_location_specified = true;
     case 'n':
         func_name.assign (option_arg);
+        some_location_specified = true;
         break;
 
     case 'p':
         at_pc = true;
+        some_location_specified = true;
         break;
 
     case 'l':
@@ -112,6 +117,7 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
         // Disassemble the current source line kind of implies showing mixed
         // source code context. 
         show_mixed = true;
+        some_location_specified = true;
         break;
 
     case 'P':
@@ -123,8 +129,8 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
         break;
 
     case 'f':
-        // The default action is to disassemble the function for the current frame.
-        // There's no need to set any flag.
+        cur_function = true;
+        some_location_specified = true;
         break;
 
     case 'a':
@@ -132,7 +138,7 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
         break;
 
     default:
-        error.SetErrorStringWithFormat("Unrecognized short option '%c'.\n", short_option);
+        error.SetErrorStringWithFormat("unrecognized short option '%c'", short_option);
         break;
     }
 
@@ -147,6 +153,7 @@ CommandObjectDisassemble::CommandOptions::OptionParsingStarting ()
     num_lines_context = 0;
     num_instructions = 0;
     func_name.clear();
+    cur_function = false;
     at_pc = false;
     frame_line = false;
     start_addr = LLDB_INVALID_ADDRESS;
@@ -154,6 +161,16 @@ CommandObjectDisassemble::CommandOptions::OptionParsingStarting ()
     raw = false;
     plugin_name.clear();
     arch.Clear();
+    some_location_specified = false;
+}
+
+Error
+CommandObjectDisassemble::CommandOptions::OptionParsingFinished ()
+{
+    if (!some_location_specified)
+        at_pc = true;
+    return Error();
+    
 }
 
 const OptionDefinition*
@@ -178,10 +195,10 @@ CommandObjectDisassemble::CommandOptions::g_option_table[] =
   LLDB_OPT_SET_3 |
   LLDB_OPT_SET_4 |
   LLDB_OPT_SET_5    , false , "count",          'c', required_argument  , NULL, 0, eArgTypeNumLines,    "Number of instructions to display."},
-{ LLDB_OPT_SET_3    , true  , "name",           'n', required_argument  , NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,             "Disassemble entire contents of the given function name."},
-{ LLDB_OPT_SET_4    , true  , "frame",          'f', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble from the start of the current frame's function."},
-{ LLDB_OPT_SET_5    , true  , "pc",             'p', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble around the current pc."},
-{ LLDB_OPT_SET_6    , true  , "line",           'l', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble the current frame's current source line instructions if there debug line table information, else disasemble around the pc."},
+{ LLDB_OPT_SET_3    , false  , "name",           'n', required_argument  , NULL, CommandCompletions::eSymbolCompletion, eArgTypeFunctionName,             "Disassemble entire contents of the given function name."},
+{ LLDB_OPT_SET_4    , false  , "frame",          'f', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble from the start of the current frame's function."},
+{ LLDB_OPT_SET_5    , false  , "pc",             'p', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble around the current pc."},
+{ LLDB_OPT_SET_6    , false  , "line",           'l', no_argument        , NULL, 0, eArgTypeNone,        "Disassemble the current frame's current source line instructions if there debug line table information, else disasemble around the pc."},
 { 0                 , false , NULL,             0,   0                  , NULL, 0, eArgTypeNone,        NULL }
 };
 
@@ -297,9 +314,16 @@ CommandObjectDisassemble::Execute
     else
     {
         AddressRange range;
+        StackFrame *frame = exe_ctx.GetFramePtr();
         if (m_options.frame_line)
         {
-            LineEntry pc_line_entry (exe_ctx.frame->GetSymbolContext(eSymbolContextLineEntry).line_entry);
+            if (frame == NULL)
+            {
+                result.AppendError ("Cannot disassemble around the current line without a selected frame.\n");
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
+            LineEntry pc_line_entry (frame->GetSymbolContext(eSymbolContextLineEntry).line_entry);
             if (pc_line_entry.IsValid())
             {
                 range = pc_line_entry.range;
@@ -310,6 +334,18 @@ CommandObjectDisassemble::Execute
                 m_options.show_mixed = false;
             }
         }
+        else if (m_options.cur_function)
+        {
+            if (frame == NULL)
+            {
+                result.AppendError ("Cannot disassemble around the current function without a selected frame.\n");
+                result.SetStatus (eReturnStatusFailed);
+                return false;
+            }
+            Symbol *symbol = frame->GetSymbolContext(eSymbolContextSymbol).symbol;
+            if (symbol)
+                range = symbol->GetAddressRangeRef();
+        }
 
         // Did the "m_options.frame_line" find a valid range already? If so
         // skip the rest...
@@ -317,13 +353,13 @@ CommandObjectDisassemble::Execute
         {
             if (m_options.at_pc)
             {
-                if (exe_ctx.frame == NULL)
+                if (frame == NULL)
                 {
                     result.AppendError ("Cannot disassemble around the current PC without a selected frame.\n");
                     result.SetStatus (eReturnStatusFailed);
                     return false;
                 }
-                range.GetBaseAddress() = exe_ctx.frame->GetFrameCodeAddress();
+                range.GetBaseAddress() = frame->GetFrameCodeAddress();
                 if (m_options.num_instructions == 0)
                 {
                     // Disassembling at the PC always disassembles some number of instructions (not the whole function).
@@ -354,15 +390,15 @@ CommandObjectDisassemble::Execute
             if (!range.GetBaseAddress().IsValid())
             {
                 // The default action is to disassemble the current frame function.
-                if (exe_ctx.frame)
+                if (frame)
                 {
-                    SymbolContext sc(exe_ctx.frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
+                    SymbolContext sc(frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
                     if (sc.function)
                         range.GetBaseAddress() = sc.function->GetAddressRange().GetBaseAddress();
                     else if (sc.symbol && sc.symbol->GetAddressRangePtr())
                         range.GetBaseAddress() = sc.symbol->GetAddressRangePtr()->GetBaseAddress();
                     else
-                        range.GetBaseAddress() = exe_ctx.frame->GetFrameCodeAddress();
+                        range.GetBaseAddress() = frame->GetFrameCodeAddress();
                 }
                 
                 if (!range.GetBaseAddress().IsValid())
@@ -396,15 +432,15 @@ CommandObjectDisassemble::Execute
             if (!range.GetBaseAddress().IsValid())
             {
                 // The default action is to disassemble the current frame function.
-                if (exe_ctx.frame)
+                if (frame)
                 {
-                    SymbolContext sc(exe_ctx.frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
+                    SymbolContext sc(frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
                     if (sc.function)
                         range = sc.function->GetAddressRange();
                     else if (sc.symbol && sc.symbol->GetAddressRangePtr())
                         range = *sc.symbol->GetAddressRangePtr();
                     else
-                        range.GetBaseAddress() = exe_ctx.frame->GetFrameCodeAddress();
+                        range.GetBaseAddress() = frame->GetFrameCodeAddress();
                 }
                 else
                 {

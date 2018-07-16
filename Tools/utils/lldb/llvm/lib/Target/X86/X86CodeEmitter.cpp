@@ -589,6 +589,13 @@ void Emitter<CodeEmitter>::emitMemModRMByte(const MachineInstr &MI,
   }
 }
 
+static const MCInstrDesc *UpdateOp(MachineInstr &MI, const X86InstrInfo *II,
+                                   unsigned Opcode) {
+  const MCInstrDesc *Desc = &II->get(Opcode);
+  MI.setDesc(*Desc);
+  return Desc;
+}
+
 template<class CodeEmitter>
 void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
                                            const MCInstrDesc *Desc) {
@@ -596,15 +603,23 @@ void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
   
   // If this is a pseudo instruction, lower it.
   switch (Desc->getOpcode()) {
-  case X86::ADD16rr_DB:   Desc = &II->get(X86::OR16rr); MI.setDesc(*Desc);break;
-  case X86::ADD32rr_DB:   Desc = &II->get(X86::OR32rr); MI.setDesc(*Desc);break;
-  case X86::ADD64rr_DB:   Desc = &II->get(X86::OR64rr); MI.setDesc(*Desc);break;
-  case X86::ADD16ri_DB:   Desc = &II->get(X86::OR16ri); MI.setDesc(*Desc);break;
-  case X86::ADD32ri_DB:   Desc = &II->get(X86::OR32ri); MI.setDesc(*Desc);break;
-  case X86::ADD64ri32_DB:Desc = &II->get(X86::OR64ri32);MI.setDesc(*Desc);break;
-  case X86::ADD16ri8_DB:  Desc = &II->get(X86::OR16ri8);MI.setDesc(*Desc);break;
-  case X86::ADD32ri8_DB:  Desc = &II->get(X86::OR32ri8);MI.setDesc(*Desc);break;
-  case X86::ADD64ri8_DB:  Desc = &II->get(X86::OR64ri8);MI.setDesc(*Desc);break;
+  case X86::ADD16rr_DB:      Desc = UpdateOp(MI, II, X86::OR16rr); break;
+  case X86::ADD32rr_DB:      Desc = UpdateOp(MI, II, X86::OR32rr); break;
+  case X86::ADD64rr_DB:      Desc = UpdateOp(MI, II, X86::OR64rr); break;
+  case X86::ADD16ri_DB:      Desc = UpdateOp(MI, II, X86::OR16ri); break;
+  case X86::ADD32ri_DB:      Desc = UpdateOp(MI, II, X86::OR32ri); break;
+  case X86::ADD64ri32_DB:    Desc = UpdateOp(MI, II, X86::OR64ri32); break;
+  case X86::ADD16ri8_DB:     Desc = UpdateOp(MI, II, X86::OR16ri8); break;
+  case X86::ADD32ri8_DB:     Desc = UpdateOp(MI, II, X86::OR32ri8); break;
+  case X86::ADD64ri8_DB:     Desc = UpdateOp(MI, II, X86::OR64ri8); break;
+  case X86::ACQUIRE_MOV8rm:  Desc = UpdateOp(MI, II, X86::MOV8rm); break;
+  case X86::ACQUIRE_MOV16rm: Desc = UpdateOp(MI, II, X86::MOV16rm); break;
+  case X86::ACQUIRE_MOV32rm: Desc = UpdateOp(MI, II, X86::MOV32rm); break;
+  case X86::ACQUIRE_MOV64rm: Desc = UpdateOp(MI, II, X86::MOV64rm); break;
+  case X86::RELEASE_MOV8mr:  Desc = UpdateOp(MI, II, X86::MOV8mr); break;
+  case X86::RELEASE_MOV16mr: Desc = UpdateOp(MI, II, X86::MOV16mr); break;
+  case X86::RELEASE_MOV32mr: Desc = UpdateOp(MI, II, X86::MOV32mr); break;
+  case X86::RELEASE_MOV64mr: Desc = UpdateOp(MI, II, X86::MOV64mr); break;
   }
   
 
@@ -649,15 +664,14 @@ void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
   case X86II::A7:  // 0F A7
     Need0FPrefix = true;
     break;
-  case X86II::TF: // F2 0F 38
-    MCE.emitByte(0xF2);
-    Need0FPrefix = true;
-    break;
   case X86II::REP: break; // already handled.
+  case X86II::T8XS: // F3 0F 38
   case X86II::XS:   // F3 0F
     MCE.emitByte(0xF3);
     Need0FPrefix = true;
     break;
+  case X86II::T8XD: // F2 0F 38
+  case X86II::TAXD: // F2 0F 3A
   case X86II::XD:   // F2 0F
     MCE.emitByte(0xF2);
     Need0FPrefix = true;
@@ -683,10 +697,12 @@ void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
     MCE.emitByte(0x0F);
 
   switch (Desc->TSFlags & X86II::Op0Mask) {
-  case X86II::TF:    // F2 0F 38
+  case X86II::T8XD:  // F2 0F 38
+  case X86II::T8XS:  // F3 0F 38
   case X86II::T8:    // 0F 38
     MCE.emitByte(0x38);
     break;
+  case X86II::TAXD:  // F2 0F 38
   case X86II::TA:    // 0F 3A
     MCE.emitByte(0x3A);
     break;
@@ -988,7 +1004,7 @@ void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
     break;
   }
 
-  if (!Desc->isVariadic() && CurOp != NumOps) {
+  if (!MI.isVariadic() && CurOp != NumOps) {
 #ifndef NDEBUG
     dbgs() << "Cannot encode all operands of: " << MI << "\n";
 #endif

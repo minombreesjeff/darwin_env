@@ -11,6 +11,7 @@
 #define liblldb_Process_h_
 
 // C Includes
+#include <limits.h>
 #include <spawn.h>
 
 // C++ Includes
@@ -26,6 +27,7 @@
 #include "lldb/Core/Communication.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Event.h"
+#include "lldb/Core/RangeMap.h"
 #include "lldb/Core/StringList.h"
 #include "lldb/Core/ThreadSafeValue.h"
 #include "lldb/Core/PluginInterface.h"
@@ -34,12 +36,14 @@
 #include "lldb/Expression/ClangPersistentVariables.h"
 #include "lldb/Expression/IRDynamicChecks.h"
 #include "lldb/Host/FileSpec.h"
+#include "lldb/Host/Host.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/Memory.h"
 #include "lldb/Target/ThreadList.h"
 #include "lldb/Target/UnixSignals.h"
+#include "lldb/Utility/PseudoTerminal.h"
 
 namespace lldb_private {
 
@@ -78,111 +82,6 @@ public:
                               Error *err);
 
 
-    const Args &
-    GetRunArguments () const
-    {
-        return m_run_args;
-    }
-
-    void
-    SetRunArguments (const Args &args)
-    {
-        m_run_args = args;
-    }
-
-    void
-    GetHostEnvironmentIfNeeded ();
-
-    size_t
-    GetEnvironmentAsArgs (Args &env);
-
-    const char *
-    GetStandardInputPath () const
-    {
-        if (m_input_path.empty())
-            return NULL;
-        return m_input_path.c_str();
-    }
-
-    void
-    SetStandardInputPath (const char *path)
-    {
-        if (path && path[0])
-            m_input_path.assign (path);
-        else
-        {
-            // Make sure we deallocate memory in string...
-            std::string tmp;
-            tmp.swap (m_input_path);
-        }
-    }
-
-    const char *
-    GetStandardOutputPath () const
-    {
-        if (m_output_path.empty())
-            return NULL;
-        return m_output_path.c_str();
-    }
-
-    void
-    SetStandardOutputPath (const char *path)
-    {
-        if (path && path[0])
-            m_output_path.assign (path);
-        else
-        {
-            // Make sure we deallocate memory in string...
-            std::string tmp;
-            tmp.swap (m_output_path);
-        }
-    }
-
-    const char *
-    GetStandardErrorPath () const
-    {
-        if (m_error_path.empty())
-            return NULL;
-        return m_error_path.c_str();
-    }
-
-    void
-    SetStandardErrorPath (const char *path)
-    {
-        if (path && path[0])
-            m_error_path.assign (path);
-        else
-        {
-            // Make sure we deallocate memory in string...
-            std::string tmp;
-            tmp.swap (m_error_path);
-        }
-    }
-    
-    bool
-    GetDisableASLR () const
-    {
-        return m_disable_aslr;
-    }
-    
-    void
-    SetDisableASLR (bool b)
-    {
-        m_disable_aslr = b;
-    }
-    
-    bool
-    GetDisableSTDIO () const
-    {
-        return m_disable_stdio;
-    }
-    
-    void
-    SetDisableSTDIO (bool b)
-    {
-        m_disable_stdio = b;
-    }
-
 protected:
 
     void
@@ -191,43 +90,6 @@ protected:
 
     const ConstString
     CreateInstanceName ();
-
-    static const ConstString &
-    RunArgsVarName ();
-
-    static const ConstString &
-    EnvVarsVarName ();
-
-    static const ConstString &
-    InheritHostEnvVarName ();
-
-    static const ConstString &
-    InputPathVarName ();
-
-    static const ConstString &
-    OutputPathVarName ();
-
-    static const ConstString &
-    ErrorPathVarName ();
-
-    static const ConstString &
-    DisableASLRVarName();
-
-    static const ConstString &
-    DisableSTDIOVarName ();
-    
-private:
-
-    typedef std::map<std::string, std::string> dictionary;
-    Args m_run_args;
-    dictionary m_env_vars;
-    std::string m_input_path;
-    std::string m_output_path;
-    std::string m_error_path;
-    bool m_disable_aslr;
-    bool m_disable_stdio;
-    bool m_inherit_host_env;
-    bool m_got_host_env;
 };
 
 //----------------------------------------------------------------------
@@ -245,8 +107,8 @@ public:
         m_executable (),
         m_arguments (),
         m_environment (),
-        m_uid (LLDB_INVALID_UID),
-        m_gid (LLDB_INVALID_UID),
+        m_uid (UINT32_MAX),
+        m_gid (UINT32_MAX),
         m_arch(),
         m_pid (LLDB_INVALID_PROCESS_ID)
     {
@@ -258,8 +120,8 @@ public:
         m_executable (name, false),
         m_arguments (),
         m_environment(),
-        m_uid (LLDB_INVALID_UID),
-        m_gid (LLDB_INVALID_UID),
+        m_uid (UINT32_MAX),
+        m_gid (UINT32_MAX),
         m_arch (arch),
         m_pid (pid)
     {
@@ -271,8 +133,8 @@ public:
         m_executable.Clear();
         m_arguments.Clear();
         m_environment.Clear();
-        m_uid = LLDB_INVALID_UID;
-        m_gid = LLDB_INVALID_UID;
+        m_uid = UINT32_MAX;
+        m_gid = UINT32_MAX;
         m_arch.Clear();
         m_pid = LLDB_INVALID_PROCESS_ID;
     }
@@ -289,18 +151,34 @@ public:
         return m_executable.GetFilename().GetLength();
     }
     
-    void
-    SetName (const char *name)
-    {
-        m_executable.GetFilename().SetCString (name);
-    }
-    
     FileSpec &
     GetExecutableFile ()
     {
         return m_executable;
     }
-    
+
+    void
+    SetExecutableFile (const FileSpec &exe_file, bool add_exe_file_as_first_arg)
+    {
+        if (exe_file)
+        {
+            m_executable = exe_file;
+            if (add_exe_file_as_first_arg)
+            {
+                m_arguments.Clear();
+                char filename[PATH_MAX];
+                if (exe_file.GetPath(filename, sizeof(filename)))
+                    m_arguments.AppendArgument (filename);
+            }
+        }
+        else
+        {
+            m_executable.Clear();
+            if (add_exe_file_as_first_arg)
+                m_arguments.Clear();
+        }
+    }
+
     const FileSpec &
     GetExecutableFile () const
     {
@@ -389,10 +267,15 @@ public:
     }
     
     void
-    SetArgumentsFromArgs (const Args& args, 
-                          bool first_arg_is_executable,
-                          bool first_arg_is_executable_and_argument);
+    SetArguments (const Args& args, 
+                  bool first_arg_is_executable,
+                  bool first_arg_is_executable_and_argument);
 
+    void
+    SetArguments (char const **argv,
+                  bool first_arg_is_executable,
+                  bool first_arg_is_executable_and_argument);
+    
     Args &
     GetEnvironmentEntries ()
     {
@@ -519,7 +402,7 @@ protected:
     uint32_t m_egid;    
     lldb::pid_t m_parent_pid;
 };
-    
+
     
 //----------------------------------------------------------------------
 // ProcessLaunchInfo
@@ -534,6 +417,14 @@ public:
     class FileAction
     {
     public:
+        enum Action
+        {
+            eFileActionNone,
+            eFileActionClose,
+            eFileActionDuplicate,
+            eFileActionOpen
+        };
+        
 
         FileAction () :
             m_action (eFileActionNone),
@@ -567,15 +458,33 @@ public:
                                  Log *log, 
                                  Error& error);
 
-    protected:
-        enum Action
+        int
+        GetFD () const
         {
-            eFileActionNone,
-            eFileActionClose,
-            eFileActionDuplicate,
-            eFileActionOpen
-        };
+            return m_fd;
+        }
 
+        Action 
+        GetAction () const
+        {
+            return m_action;
+        }
+        
+        int 
+        GetActionArgument () const
+        {
+            return m_arg;
+        }
+        
+        const char *
+        GetPath () const
+        {
+            if (m_path.empty())
+                return NULL;
+            return m_path.c_str();
+        }
+
+    protected:
         Action m_action;    // The action for this file
         int m_fd;           // An existing file descriptor
         int m_arg;          // oflag for eFileActionOpen*, dup_fd for eFileActionDuplicate
@@ -584,11 +493,62 @@ public:
     
     ProcessLaunchInfo () :
         ProcessInfo(),
-        m_flags (),
-        m_stdin_info (),
-        m_stdout_info (),
-        m_stderr_info ()
+        m_working_dir (),
+        m_plugin_name (),
+        m_shell (),
+        m_flags (0),
+        m_file_actions (), 
+        m_pty (),
+        m_resume_count (0),
+        m_monitor_callback (NULL),
+        m_monitor_callback_baton (NULL),
+        m_monitor_signals (false)
     {
+    }
+
+    ProcessLaunchInfo (const char *stdin_path,
+                       const char *stdout_path,
+                       const char *stderr_path,
+                       const char *working_directory,
+                       uint32_t launch_flags) :
+        ProcessInfo(),
+        m_working_dir (),
+        m_plugin_name (),
+        m_shell (),
+        m_flags (launch_flags),
+        m_file_actions (), 
+        m_pty (),
+        m_resume_count (0),
+        m_monitor_callback (NULL),
+        m_monitor_callback_baton (NULL),
+        m_monitor_signals (false)
+    {
+        if (stderr_path)
+        {
+            ProcessLaunchInfo::FileAction file_action;
+            const bool read = true;
+            const bool write = true;
+            if (file_action.Open(STDERR_FILENO, stderr_path, read, write))
+                AppendFileAction (file_action);
+        }
+        if (stdout_path)
+        {
+            ProcessLaunchInfo::FileAction file_action;
+            const bool read = false;
+            const bool write = true;
+            if (file_action.Open(STDOUT_FILENO, stdout_path, read, write))
+                AppendFileAction (file_action);
+        }
+        if (stdin_path)
+        {
+            ProcessLaunchInfo::FileAction file_action;
+            const bool read = true;
+            const bool write = false;
+            if (file_action.Open(STDIN_FILENO, stdin_path, read, write))
+                AppendFileAction (file_action);
+        }
+        if (working_directory)
+            SetWorkingDirectory(working_directory);        
     }
 
     void
@@ -597,37 +557,57 @@ public:
         m_file_actions.push_back(info);
     }
 
-    void
+    bool
     AppendCloseFileAction (int fd)
     {
         FileAction file_action;
-        file_action.Close (fd);
-        AppendFileAction (file_action);
+        if (file_action.Close (fd))
+        {
+            AppendFileAction (file_action);
+            return true;
+        }
+        return false;
     }
 
-    void
+    bool
     AppendDuplciateFileAction (int fd, int dup_fd)
     {
         FileAction file_action;
-        file_action.Duplicate (fd, dup_fd);
-        AppendFileAction (file_action);
+        if (file_action.Duplicate (fd, dup_fd))
+        {
+            AppendFileAction (file_action);
+            return true;
+        }
+        return false;
     }
 
-    void
+    bool
     AppendOpenFileAction (int fd, const char *path, bool read, bool write)
     {
         FileAction file_action;
-        file_action.Open (fd, path, read, write);
-        AppendFileAction (file_action);
+        if (file_action.Open (fd, path, read, write))
+        {
+            AppendFileAction (file_action);
+            return true;
+        }
+        return false;
     }
 
-    void
+    bool
     AppendSuppressFileAction (int fd, bool read, bool write)
     {
         FileAction file_action;
-        file_action.Open (fd, "/dev/null", read, write);
-        AppendFileAction (file_action);
+        if (file_action.Open (fd, "/dev/null", read, write))
+        {
+            AppendFileAction (file_action);
+            return true;
+        }
+        return false;
     }
+    
+    void
+    FinalizeFileActions (Target *target, 
+                         bool default_to_use_pty);
 
     size_t
     GetNumFileActions () const
@@ -640,6 +620,17 @@ public:
     {
         if (idx < m_file_actions.size())
             return &m_file_actions[idx];
+        return NULL;
+    }
+
+    const FileAction *
+    GetFileActionForFD (int fd) const
+    {
+        for (uint32_t idx=0, count=m_file_actions.size(); idx < count; ++idx)
+        {
+            if (m_file_actions[idx].GetFD () == fd)
+                return &m_file_actions[idx];
+        }
         return NULL;
     }
 
@@ -696,27 +687,192 @@ public:
             m_plugin_name.clear();
     }
     
+    const char *
+    GetShell () const
+    {
+        if (m_shell.empty())
+            return NULL;
+        return m_shell.c_str();
+    }
+
+    void
+    SetShell (const char * path)
+    {
+        if (path && path[0])
+        {
+            m_shell.assign (path);
+            m_flags.Set (lldb::eLaunchFlagLaunchInShell);
+        }
+        else
+        {
+            m_shell.clear();
+            m_flags.Clear (lldb::eLaunchFlagLaunchInShell);
+        }
+    }
+
+    uint32_t
+    GetResumeCount () const
+    {
+        return m_resume_count;
+    }
+    
+    void
+    SetResumeCount (uint32_t c)
+    {
+        m_resume_count = c;
+    }
+
     void
     Clear ()
     {
         ProcessInfo::Clear();
         m_working_dir.clear();
         m_plugin_name.clear();
+        m_shell.clear();
         m_flags.Clear();
-        m_stdin_info.Clear();
-        m_stdout_info.Clear();
-        m_stderr_info.Clear();
         m_file_actions.clear();
+        m_resume_count = 0;
+    }
+
+    bool
+    ConvertArgumentsForLaunchingInShell (Error &error, bool localhost);
+    
+    void
+    SetMonitorProcessCallback (Host::MonitorChildProcessCallback callback, 
+                               void *baton, 
+                               bool monitor_signals)
+    {
+        m_monitor_callback = callback;
+        m_monitor_callback_baton = baton;
+        m_monitor_signals = monitor_signals;
+    }
+
+    bool
+    MonitorProcess () const
+    {
+        if (m_monitor_callback && ProcessIDIsValid())
+        {
+            Host::StartMonitoringChildProcess (m_monitor_callback,
+                                               m_monitor_callback_baton,
+                                               GetProcessID(), 
+                                               m_monitor_signals);
+            return true;
+        }
+        return false;
+    }
+    
+    lldb_utility::PseudoTerminal &
+    GetPTY ()
+    {
+        return m_pty;
     }
 
 protected:
     std::string m_working_dir;
     std::string m_plugin_name;
+    std::string m_shell;
     Flags m_flags;       // Bitwise OR of bits from lldb::LaunchFlags
-    FileAction m_stdin_info;      // File action for stdin
-    FileAction m_stdout_info;     // File action for stdout
-    FileAction m_stderr_info;     // File action for stderr
     std::vector<FileAction> m_file_actions; // File actions for any other files
+    lldb_utility::PseudoTerminal m_pty;
+    uint32_t m_resume_count; // How many times do we resume after launching
+    Host::MonitorChildProcessCallback m_monitor_callback;
+    void *m_monitor_callback_baton;
+    bool m_monitor_signals;
+};
+
+//----------------------------------------------------------------------
+// ProcessLaunchInfo
+//
+// Describes any information that is required to launch a process.
+//----------------------------------------------------------------------
+    
+class ProcessAttachInfo : public ProcessInstanceInfo
+{
+public:
+    ProcessAttachInfo() :
+        ProcessInstanceInfo(),
+        m_plugin_name (),
+        m_resume_count (0),
+        m_wait_for_launch (false)
+    {
+    }
+
+    ProcessAttachInfo (const ProcessLaunchInfo &launch_info) :
+        ProcessInstanceInfo(),
+        m_plugin_name (),
+        m_resume_count (0),
+        m_wait_for_launch (false)
+    {
+        ProcessInfo::operator= (launch_info);
+        SetProcessPluginName (launch_info.GetProcessPluginName());
+        SetResumeCount (launch_info.GetResumeCount());
+    }
+    
+    bool
+    GetWaitForLaunch () const
+    {
+        return m_wait_for_launch;
+    }
+    
+    void
+    SetWaitForLaunch (bool b)
+    {
+        m_wait_for_launch = b;
+    }
+
+    uint32_t
+    GetResumeCount () const
+    {
+        return m_resume_count;
+    }
+    
+    void
+    SetResumeCount (uint32_t c)
+    {
+        m_resume_count = c;
+    }
+    
+    const char *
+    GetProcessPluginName () const
+    {
+        if (m_plugin_name.empty())
+            return NULL;
+        return m_plugin_name.c_str();
+    }
+    
+    void
+    SetProcessPluginName (const char *plugin)
+    {
+        if (plugin && plugin[0])
+            m_plugin_name.assign (plugin);
+        else
+            m_plugin_name.clear();
+    }
+
+    void
+    Clear ()
+    {
+        ProcessInstanceInfo::Clear();
+        m_plugin_name.clear();
+        m_resume_count = 0;
+        m_wait_for_launch = false;
+    }
+
+    bool
+    ProcessInfoSpecified () const
+    {
+        if (GetExecutableFile())
+            return true;
+        if (GetProcessID() != LLDB_INVALID_PROCESS_ID)
+            return true;
+        if (GetParentProcessID() != LLDB_INVALID_PROCESS_ID)
+            return true;
+        return false;
+    }
+protected:
+    std::string m_plugin_name;
+    uint32_t m_resume_count; // How many times do we resume after launching
+    bool m_wait_for_launch;
 };
 
 class ProcessLaunchCommandOptions : public Options
@@ -775,12 +931,12 @@ public:
     }
 
     ProcessInstanceInfoMatch (const char *process_name, 
-                      lldb_private::NameMatchType process_name_match_type) :
+                              lldb_private::NameMatchType process_name_match_type) :
         m_match_info (),
         m_name_match_type (process_name_match_type),
         m_match_all_users (false)
     {
-        m_match_info.SetName (process_name);
+        m_match_info.GetExecutableFile().SetFile(process_name, false);
     }
 
     ProcessInstanceInfo &
@@ -921,8 +1077,11 @@ class ProcessModID
 friend bool operator== (const ProcessModID &lhs, const ProcessModID &rhs);   
 public:
     ProcessModID () : 
-        m_stop_id (0), 
-        m_memory_id (0) 
+        m_stop_id (0),
+        m_resume_id (0), 
+        m_memory_id (0),
+        m_last_user_expression_resume (0),
+        m_running_user_expression (false)
     {}
     
     ProcessModID (const ProcessModID &rhs) :
@@ -942,11 +1101,22 @@ public:
     
     ~ProcessModID () {}
     
-    void BumpStopID () { m_stop_id++; }
+    void BumpStopID () { 
+        m_stop_id++; 
+    }
+    
     void BumpMemoryID () { m_memory_id++; }
+    
+    void BumpResumeID () {
+        m_resume_id++;
+        if (m_running_user_expression > 0)
+            m_last_user_expression_resume = m_resume_id;
+    }
     
     uint32_t GetStopID() const { return m_stop_id; }
     uint32_t GetMemoryID () const { return m_memory_id; }
+    uint32_t GetResumeID () const { return m_resume_id; }
+    uint32_t GetLastUserExpressionResumeID () const { return m_last_user_expression_resume; }
     
     bool MemoryIDEqual (const ProcessModID &compare) const
     {
@@ -967,9 +1137,23 @@ public:
     {
         return m_stop_id != UINT32_MAX;
     }
+    
+    void
+    SetRunningUserExpression (bool on)
+    {
+        // REMOVEME printf ("Setting running user expression %s at resume id %d - value: %d.\n", on ? "on" : "off", m_resume_id, m_running_user_expression);
+        if (on)
+            m_running_user_expression++;
+        else
+            m_running_user_expression--;
+    }
+    
 private:
     uint32_t m_stop_id;
+    uint32_t m_resume_id;
     uint32_t m_memory_id;
+    uint32_t m_last_user_expression_resume;
+    uint32_t m_running_user_expression;
 };
 inline bool operator== (const ProcessModID &lhs, const ProcessModID &rhs)
 {
@@ -988,12 +1172,98 @@ inline bool operator!= (const ProcessModID &lhs, const ProcessModID &rhs)
     else
         return false;
 }
+    
+class MemoryRegionInfo
+{
+public:
+    typedef Range<lldb::addr_t, lldb::addr_t> RangeType;
+
+    enum OptionalBool {
+        eDontKnow  = -1,
+        eNo         = 0,
+        eYes        = 1
+    };
+
+    MemoryRegionInfo () :
+        m_range (),
+        m_read (eDontKnow),
+        m_write (eDontKnow),
+        m_execute (eDontKnow)
+    {
+    }
+
+    ~MemoryRegionInfo ()
+    {
+    }
+
+    RangeType &
+    GetRange()
+    {
+        return m_range;
+    }
+
+    void
+    Clear()
+    {
+        m_range.Clear();
+        m_read = m_write = m_execute = eDontKnow;
+    }
+
+    const RangeType &
+    GetRange() const
+    {
+        return m_range;
+    }
+
+    OptionalBool
+    GetReadable () const
+    {
+        return m_read;
+    }
+
+    OptionalBool
+    GetWritable () const
+    {
+        return m_write;
+    }
+
+    OptionalBool
+    GetExecutable () const
+    {
+        return m_execute;
+    }
+
+    void
+    SetReadable (OptionalBool val)
+    {
+        m_read = val;
+    }
+
+    void
+    SetWritable (OptionalBool val)
+    {
+        m_write = val;
+    }
+
+    void
+    SetExecutable (OptionalBool val)
+    {
+        m_execute = val;
+    }
+
+protected:
+    RangeType m_range;
+    OptionalBool m_read;
+    OptionalBool m_write;
+    OptionalBool m_execute;
+};
 
 //----------------------------------------------------------------------
 /// @class Process Process.h "lldb/Target/Process.h"
 /// @brief A plug-in interface definition class for debugging a process.
 //----------------------------------------------------------------------
 class Process :
+    public ReferenceCountedBaseVirtual<Process>,
     public UserID,
     public Broadcaster,
     public ExecutionContextScope,
@@ -1231,6 +1501,7 @@ public:
     static bool
     SetProcessExitStatus (void *callback_baton,   // The callback baton which should be set to NULL
                           lldb::pid_t pid,        // The process ID we want to monitor
+                          bool exited,
                           int signo,              // Zero for no signal
                           int status);            // Exit value of process if signal is zero
 
@@ -1315,20 +1586,15 @@ public:
     ///     the error object is success.
     //------------------------------------------------------------------
     virtual Error
-    Launch (char const *argv[],
-            char const *envp[],
-            uint32_t launch_flags,
-            const char *stdin_path,
-            const char *stdout_path,
-            const char *stderr_path,
-            const char *working_directory);
+    Launch (const ProcessLaunchInfo &launch_info);
 
     //------------------------------------------------------------------
-    /// Attach to an existing process using a process ID.
+    /// Attach to an existing process using the process attach info.
     ///
     /// This function is not meant to be overridden by Process
-    /// subclasses. It will first call Process::WillAttach (lldb::pid_t)
-    /// and if that returns \b true, Process::DoAttach (lldb::pid_t) will
+    /// subclasses. It will first call WillAttach (lldb::pid_t)
+    /// or WillAttach (const char *), and if that returns \b 
+    /// true, DoAttach (lldb::pid_t) or DoAttach (const char *) will
     /// be called to actually do the attach. If DoAttach returns \b
     /// true, then Process::DidAttach() will be called.
     ///
@@ -1340,81 +1606,22 @@ public:
     ///     LLDB_INVALID_PROCESS_ID if attaching fails.
     //------------------------------------------------------------------
     virtual Error
-    Attach (lldb::pid_t pid);
+    Attach (ProcessAttachInfo &attach_info);
 
-    //------------------------------------------------------------------
-    /// Attach to an existing process by process name.
-    ///
-    /// This function is not meant to be overridden by Process
-    /// subclasses. It will first call
-    /// Process::WillAttach (const char *) and if that returns \b
-    /// true, Process::DoAttach (const char *) will be called to
-    /// actually do the attach. If DoAttach returns \b true, then
-    /// Process::DidAttach() will be called.
-    ///
-    /// @param[in] process_name
-    ///     A process name to match against the current process list.
-    ///
-    /// @return
-    ///     Returns \a pid if attaching was successful, or
-    ///     LLDB_INVALID_PROCESS_ID if attaching fails.
-    //------------------------------------------------------------------
-    virtual Error
-    Attach (const char *process_name, bool wait_for_launch);
-    
     virtual Error
     ConnectRemote (const char *remote_url);
-    //------------------------------------------------------------------
-    /// List the processes matching the given partial name.
-    ///
-    /// FIXME: Is it too heavyweight to create an entire process object to do this?
-    /// The problem is for remote processes we're going to have to set up the same transport
-    /// to get this data as to actually attach.  So we need to factor out transport
-    /// and process before we can do this separately from the process.
-    ///
-    /// @param[in] name
-    ///     A partial name to match against the current process list.
-    ///
-    /// @param[out] matches
-    ///     The list of process names matching \a name.
-    ///
-    /// @param[in] pids
-    ///     A vector filled with the pids that correspond to the names in \a matches.
-    ///
-    /// @return
-    ///     Returns the number of matching processes.
-    //------------------------------------------------------------------
 
-//    virtual uint32_t
-//    ListProcessesMatchingName (const char *name, StringList &matches, std::vector<lldb::pid_t> &pids);
-    
-    //------------------------------------------------------------------
-    /// Find the architecture of a process by pid.
-    ///
-    /// FIXME: See comment for ListProcessesMatchingName.
-    ///
-    /// @param[in] pid
-    ///     A pid to inspect.
-    ///
-    /// @return
-    ///     Returns the architecture of the process or an invalid architecture if the process can't be found.
-    //------------------------------------------------------------------
-//    virtual ArchSpec
-//    GetArchSpecForExistingProcess (lldb::pid_t pid);
-    
-    //------------------------------------------------------------------
-    /// Find the architecture of a process by name.
-    ///
-    /// FIXME: See comment for ListProcessesMatchingName.
-    ///
-    /// @param[in] process_name
-    ///     The process name to inspect.
-    ///
-    /// @return
-    ///     Returns the architecture of the process or an invalid architecture if the process can't be found.
-    //------------------------------------------------------------------
-//    virtual ArchSpec
-//    GetArchSpecForExistingProcess (const char *process_name);
+    bool
+    GetShouldDetach () const
+    {
+        return m_should_detach;
+    }
+
+    void
+    SetShouldDetach (bool b)
+    {
+        m_should_detach = b;
+    }
 
     //------------------------------------------------------------------
     /// Get the image information address for the current process.
@@ -1732,14 +1939,8 @@ public:
     ///     launching fails.
     //------------------------------------------------------------------
     virtual Error
-    DoLaunch (Module* module,
-              char const *argv[],
-              char const *envp[],
-              uint32_t launch_flags,
-              const char *stdin_path,
-              const char *stdout_path,
-              const char *stderr_path,
-              const char *working_directory) = 0;
+    DoLaunch (Module *exe_module,
+              const ProcessLaunchInfo &launch_info) = 0;
     
     //------------------------------------------------------------------
     /// Called after launching a process.
@@ -2044,10 +2245,28 @@ public:
         return m_mod_id;
     }
     
+    const ProcessModID &
+    GetModIDRef () const
+    {
+        return m_mod_id;
+    }
+    
     uint32_t
     GetStopID () const
     {
         return m_mod_id.GetStopID();
+    }
+    
+    uint32_t
+    GetResumeID () const
+    {
+        return m_mod_id.GetResumeID();
+    }
+    
+    uint32_t
+    GetLastUserExpressionResumeID () const
+    {
+        return m_mod_id.GetLastUserExpressionResumeID();
     }
     
     //------------------------------------------------------------------
@@ -2154,7 +2373,8 @@ public:
     size_t
     ReadCStringFromMemory (lldb::addr_t vm_addr, 
                            char *cstr, 
-                           size_t cstr_max_len);
+                           size_t cstr_max_len,
+                           Error &error);
 
     size_t
     ReadMemoryFromInferior (lldb::addr_t vm_addr, 
@@ -2345,6 +2565,82 @@ public:
     lldb::addr_t
     AllocateMemory (size_t size, uint32_t permissions, Error &error);
 
+    virtual Error
+    GetMemoryRegionInfo (lldb::addr_t load_addr, 
+                        MemoryRegionInfo &range_info)
+    {
+        Error error;
+        error.SetErrorString ("Process::GetMemoryRegionInfo() not supported");
+        return error;
+    }
+
+    //------------------------------------------------------------------
+    /// Attempt to get the attributes for a region of memory in the process.
+    ///
+    /// It may be possible for the remote debug server to inspect attributes
+    /// for a region of memory in the process, such as whether there is a
+    /// valid page of memory at a given address or whether that page is 
+    /// readable/writable/executable by the process.
+    ///
+    /// @param[in] load_addr
+    ///     The address of interest in the process.
+    ///
+    /// @param[out] permissions
+    ///     If this call returns successfully, this bitmask will have
+    ///     its Permissions bits set to indicate whether the region is
+    ///     readable/writable/executable.  If this call fails, the
+    ///     bitmask values are undefined.
+    ///
+    /// @return
+    ///     Returns true if it was able to determine the attributes of the
+    ///     memory region.  False if not.
+    //------------------------------------------------------------------
+
+    virtual bool
+    GetLoadAddressPermissions (lldb::addr_t load_addr, uint32_t &permissions)
+    {
+        MemoryRegionInfo range_info;
+        permissions = 0;
+        Error error (GetMemoryRegionInfo (load_addr, range_info));
+        if (!error.Success())
+            return false;
+        if (range_info.GetReadable() == MemoryRegionInfo::eDontKnow 
+            || range_info.GetWritable() == MemoryRegionInfo::eDontKnow 
+            || range_info.GetExecutable() == MemoryRegionInfo::eDontKnow)
+        {
+            return false;
+        }
+
+        if (range_info.GetReadable() == MemoryRegionInfo::eYes)
+            permissions |= lldb::ePermissionsReadable;
+
+        if (range_info.GetWritable() == MemoryRegionInfo::eYes)
+            permissions |= lldb::ePermissionsWritable;
+
+        if (range_info.GetExecutable() == MemoryRegionInfo::eYes)
+            permissions |= lldb::ePermissionsExecutable;
+
+        return true;
+    }
+
+    //------------------------------------------------------------------
+    /// Determines whether executing JIT-compiled code in this process 
+    /// is possible.
+    ///
+    /// @return
+    ///     True if execution of JIT code is possible; false otherwise.
+    //------------------------------------------------------------------    
+    bool CanJIT ();
+    
+    //------------------------------------------------------------------
+    /// Sets whether executing JIT-compiled code in this process 
+    /// is possible.
+    ///
+    /// @param[in] can_jit
+    ///     True if execution of JIT code is possible; false otherwise.
+    //------------------------------------------------------------------
+    void SetCanJIT (bool can_jit);
+    
     //------------------------------------------------------------------
     /// Actually deallocate memory in the process.
     ///
@@ -2401,12 +2697,7 @@ public:
     ///     be made to retrieve more STDOUT data.
     //------------------------------------------------------------------
     virtual size_t
-    GetSTDOUT (char *buf, size_t buf_size, Error &error)
-    {
-        error.SetErrorString("stdout unsupported");
-        return 0;
-    }
-
+    GetSTDOUT (char *buf, size_t buf_size, Error &error);
 
     //------------------------------------------------------------------
     /// Get any available STDERR.
@@ -2430,11 +2721,7 @@ public:
     ///     be made to retrieve more STDERR data.
     //------------------------------------------------------------------
     virtual size_t
-    GetSTDERR (char *buf, size_t buf_size, Error &error)
-    {
-        error.SetErrorString("stderr unsupported");
-        return 0;
-    }
+    GetSTDERR (char *buf, size_t buf_size, Error &error);
 
     virtual size_t
     PutSTDIN (const char *buf, size_t buf_size, Error &error) 
@@ -2506,16 +2793,19 @@ public:
     // Process Watchpoints (optional)
     //----------------------------------------------------------------------
     virtual Error
-    EnableWatchpoint (WatchpointLocation *bp_loc);
+    EnableWatchpoint (Watchpoint *wp);
 
     virtual Error
-    DisableWatchpoint (WatchpointLocation *bp_loc);
+    DisableWatchpoint (Watchpoint *wp);
 
     //------------------------------------------------------------------
     // Thread Queries
     //------------------------------------------------------------------
     virtual uint32_t
-    UpdateThreadListIfNeeded () = 0;
+    UpdateThreadList (ThreadList &old_thread_list, ThreadList &new_thread_list) = 0;
+
+    void
+    UpdateThreadListIfNeeded ();
 
     ThreadList &
     GetThreadList ()
@@ -2523,11 +2813,6 @@ public:
         return m_thread_list;
     }
 
-    const ThreadList &
-    GetThreadList () const
-    {
-        return m_thread_list;
-    }
 
     uint32_t
     GetNextThreadIndexID ();
@@ -2620,6 +2905,13 @@ public:
         return m_dyld_ap.get();
     }
 
+    OperatingSystem *
+    GetOperatingSystem ()
+    {
+        return m_os_ap.get();
+    }
+    
+
     virtual LanguageRuntime *
     GetLanguageRuntime (lldb::LanguageType language);
 
@@ -2672,6 +2964,9 @@ public:
         return true;
     }
     
+    void
+    SetRunningUserExpression (bool on);
+    
     //------------------------------------------------------------------
     // lldb::ExecutionContextScope pure virtual functions
     //------------------------------------------------------------------
@@ -2705,6 +3000,9 @@ public:
     lldb::ProcessSP
     GetSP ();
     
+    void
+    SetSTDIOFileDescriptor (int file_descriptor);
+
 protected:
     //------------------------------------------------------------------
     // NextEventAction provides a way to register an action on the next
@@ -2726,8 +3024,13 @@ protected:
         
         NextEventAction (Process *process) : 
             m_process(process)
-        {}
-        virtual ~NextEventAction() {}
+        {
+        }
+
+        virtual
+        ~NextEventAction() 
+        {
+        }
         
         virtual EventActionResult PerformAction (lldb::EventSP &event_sp) = 0;
         virtual void HandleBeingUnshipped () {};
@@ -2749,15 +3052,22 @@ protected:
     class AttachCompletionHandler : public NextEventAction
     {
     public:
-        AttachCompletionHandler (Process *process) :
-            NextEventAction(process)
-        {}
-        virtual ~AttachCompletionHandler() {}
+        AttachCompletionHandler (Process *process, uint32_t exec_count) :
+            NextEventAction (process),
+            m_exec_count (exec_count)
+        {
+        }
+
+        virtual 
+        ~AttachCompletionHandler() 
+        {
+        }
         
         virtual EventActionResult PerformAction (lldb::EventSP &event_sp);
         virtual EventActionResult HandleBeingInterrupted ();
         virtual const char *GetExitString();
     private:
+        uint32_t m_exec_count;
         std::string m_exit_string;
     };
 
@@ -2796,18 +3106,27 @@ protected:
                                                         ///< to insert in the target.
     std::auto_ptr<DynamicLoader> m_dyld_ap;
     std::auto_ptr<DynamicCheckerFunctions>  m_dynamic_checkers_ap; ///< The functions used by the expression parser to validate data that expressions use.
+    std::auto_ptr<OperatingSystem>     m_os_ap;
     UnixSignals                 m_unix_signals;         /// This is the current signal set for this process.
     lldb::ABISP                 m_abi_sp;
     lldb::InputReaderSP         m_process_input_reader;
     lldb_private::Communication m_stdio_communication;
     lldb_private::Mutex         m_stdio_communication_mutex;
     std::string                 m_stdout_data;
+    std::string                 m_stderr_data;
     MemoryCache                 m_memory_cache;
     AllocatedMemoryCache        m_allocated_memory_cache;
+    bool                        m_should_detach;   /// Should we detach if the process object goes away with an explicit call to Kill or Detach?
 
     typedef std::map<lldb::LanguageType, lldb::LanguageRuntimeSP> LanguageRuntimeCollection; 
     LanguageRuntimeCollection m_language_runtimes;
     std::auto_ptr<NextEventAction> m_next_event_action_ap;
+
+    enum {
+        eCanJITDontKnow= 0,
+        eCanJITYes,
+        eCanJITNo
+    } m_can_jit;
 
     size_t
     RemoveBreakpointOpcodesFromBuffer (lldb::addr_t addr, size_t size, uint8_t *buf) const;
@@ -2865,6 +3184,9 @@ protected:
     void
     AppendSTDOUT (const char *s, size_t len);
     
+    void
+    AppendSTDERR (const char *s, size_t len);
+    
     static void
     STDIOReadThreadBytesReceived (void *baton, const void *src, size_t src_len);
     
@@ -2876,9 +3198,6 @@ protected:
     
     void
     ResetProcessInputReader ();
-    
-    void
-    SetUpProcessInputReader (int file_descriptor);
     
     static size_t
     ProcessInputReaderCallback (void *baton,

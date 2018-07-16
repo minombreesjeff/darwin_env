@@ -13,6 +13,7 @@
 
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
+#include "CGCUDARuntime.h"
 #include "CGCXXABI.h"
 #include "CGDebugInfo.h"
 #include "CGException.h"
@@ -30,10 +31,10 @@ using namespace CodeGen;
 
 CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
   : CodeGenTypeCache(cgm), CGM(cgm),
-    Target(CGM.getContext().Target), Builder(cgm.getModule().getContext()),
+    Target(CGM.getContext().getTargetInfo()), Builder(cgm.getModule().getContext()),
     AutoreleaseResult(false), BlockInfo(0), BlockPointer(0),
-    NormalCleanupDest(0), EHCleanupDest(0), NextCleanupDestIndex(1),
-    ExceptionSlot(0), EHSelectorSlot(0),
+    NormalCleanupDest(0), NextCleanupDestIndex(1), FirstBlockInfo(0), 
+    EHResumeBlock(0), ExceptionSlot(0), EHSelectorSlot(0),
     DebugInfo(0), DisableDebugInfo(false), DidCallStackSave(false),
     IndirectBranch(0), SwitchInsn(0), CaseRangeBlock(0), UnreachableBlock(0),
     CXXThisDecl(0), CXXThisValue(0), CXXVTTDecl(0), CXXVTTValue(0),
@@ -42,6 +43,14 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm)
 
   CatchUndefined = getContext().getLangOptions().CatchUndefined;
   CGM.getCXXABI().getMangleContext().startNewFunction();
+}
+
+CodeGenFunction::~CodeGenFunction() {
+  // If there are any unclaimed block infos, go ahead and destroy them
+  // now.  This can happen if IR-gen gets clever and skips evaluating
+  // something.
+  if (FirstBlockInfo)
+    destroyBlockInfos(FirstBlockInfo);
 }
 
 
@@ -86,6 +95,10 @@ bool CodeGenFunction::hasAggregateLLVMType(QualType type) {
   case Type::ObjCObject:
   case Type::ObjCInterface:
     return true;
+
+  // In IRGen, atomic types are just the underlying type
+  case Type::Atomic:
+    return hasAggregateLLVMType(type->getAs<AtomicType>()->getValueType());
   }
   llvm_unreachable("unknown type kind!");
 }
@@ -116,7 +129,8 @@ void CodeGenFunction::EmitReturnBlock() {
       dyn_cast<llvm::BranchInst>(*ReturnBlock.getBlock()->use_begin());
     if (BI && BI->isUnconditional() &&
         BI->getSuccessor(0) == ReturnBlock.getBlock()) {
-      // Reset insertion point and delete the branch.
+      // Reset insertion point, including debug location, and delete the branch.
+      Builder.SetCurrentDebugLocation(BI->getDebugLoc());
       Builder.SetInsertPoint(BI->getParent());
       BI->eraseFromParent();
       delete ReturnBlock.getBlock();
@@ -189,7 +203,7 @@ void CodeGenFunction::FinishFunction(SourceLocation EndLoc) {
     }
   }
 
-  EmitIfUsed(*this, RethrowBlock.getBlock());
+  EmitIfUsed(*this, EHResumeBlock);
   EmitIfUsed(*this, TerminateLandingPad);
   EmitIfUsed(*this, TerminateHandler);
   EmitIfUsed(*this, UnreachableBlock);
@@ -292,11 +306,18 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
 
   // Emit subprogram debug descriptor.
   if (CGDebugInfo *DI = getDebugInfo()) {
-    // FIXME: what is going on here and why does it ignore all these
-    // interesting type properties?
+    unsigned NumArgs = 0;
+    QualType *ArgsArray = new QualType[Args.size()];
+    for (FunctionArgList::const_iterator i = Args.begin(), e = Args.end();
+	 i != e; ++i) {
+      ArgsArray[NumArgs++] = (*i)->getType();
+    }
+
     QualType FnType =
-      getContext().getFunctionType(RetTy, 0, 0,
+      getContext().getFunctionType(RetTy, ArgsArray, NumArgs,
                                    FunctionProtoType::ExtProtoInfo());
+
+    delete[] ArgsArray;
 
     DI->setLocation(StartLoc);
     DI->EmitFunctionStart(GD, FnType, CurFn, Builder);
@@ -345,6 +366,9 @@ void CodeGenFunction::StartFunction(GlobalDecl GD, QualType RetTy,
     if (Ty->isVariablyModifiedType())
       EmitVariablyModifiedType(Ty);
   }
+  // Emit a location at the end of the prologue.
+  if (CGDebugInfo *DI = getDebugInfo())
+    DI->EmitLocation(Builder, StartLoc);
 }
 
 void CodeGenFunction::EmitFunctionBody(FunctionArgList &Args) {
@@ -364,9 +388,12 @@ static void TryMarkNoThrow(llvm::Function *F) {
   for (llvm::Function::iterator FI = F->begin(), FE = F->end(); FI != FE; ++FI)
     for (llvm::BasicBlock::iterator
            BI = FI->begin(), BE = FI->end(); BI != BE; ++BI)
-      if (llvm::CallInst *Call = dyn_cast<llvm::CallInst>(&*BI))
+      if (llvm::CallInst *Call = dyn_cast<llvm::CallInst>(&*BI)) {
         if (!Call->doesNotThrow())
           return;
+      } else if (isa<llvm::ResumeInst>(&*BI)) {
+        return;
+      }
   F->setDoesNotThrow(true);
 }
 
@@ -400,6 +427,10 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
     EmitDestructorBody(Args);
   else if (isa<CXXConstructorDecl>(FD))
     EmitConstructorBody(Args);
+  else if (getContext().getLangOptions().CUDA &&
+           !CGM.getCodeGenOpts().CUDAIsDevice &&
+           FD->hasAttr<CUDAGlobalAttr>())
+    CGM.getCUDARuntime().EmitDeviceStubBody(*this, Args);
   else
     EmitFunctionBody(Args);
 
@@ -490,7 +521,7 @@ ConstantFoldsToSimpleInteger(const Expr *Cond, llvm::APInt &ResultInt) {
   // FIXME: Rename and handle conversion of other evaluatable things
   // to bool.
   Expr::EvalResult Result;
-  if (!Cond->Evaluate(Result, getContext()) || !Result.Val.isInt() ||
+  if (!Cond->EvaluateAsRValue(Result, getContext()) || !Result.Val.isInt() ||
       Result.HasSideEffects)
     return false;  // Not foldable, not integer or not fully evaluatable.
   
@@ -692,7 +723,7 @@ CodeGenFunction::EmitNullInitialization(llvm::Value *DestPtr, QualType Ty) {
     cast<llvm::PointerType>(DestPtr->getType())->getAddressSpace();
   llvm::Type *BP = Builder.getInt8PtrTy(DestAS);
   if (DestPtr->getType() != BP)
-    DestPtr = Builder.CreateBitCast(DestPtr, BP, "tmp");
+    DestPtr = Builder.CreateBitCast(DestPtr, BP);
 
   // Get size and alignment info for this aggregate.
   std::pair<CharUnits, CharUnits> TypeInfo = 
@@ -974,6 +1005,10 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
     case Type::FunctionNoProto:
       type = cast<FunctionType>(ty)->getResultType();
       break;
+
+    case Type::Atomic:
+      type = cast<AtomicType>(ty)->getValueType();
+      break;
     }
   } while (type->isVariablyModifiedType());
 }
@@ -1016,4 +1051,51 @@ void CodeGenFunction::unprotectFromPeepholes(PeepholeProtection protection) {
 
   // In theory, we could try to duplicate the peepholes now, but whatever.
   protection.Inst->eraseFromParent();
+}
+
+llvm::Value *CodeGenFunction::EmitAnnotationCall(llvm::Value *AnnotationFn,
+                                                 llvm::Value *AnnotatedVal,
+                                                 llvm::StringRef AnnotationStr,
+                                                 SourceLocation Location) {
+  llvm::Value *Args[4] = {
+    AnnotatedVal,
+    Builder.CreateBitCast(CGM.EmitAnnotationString(AnnotationStr), Int8PtrTy),
+    Builder.CreateBitCast(CGM.EmitAnnotationUnit(Location), Int8PtrTy),
+    CGM.EmitAnnotationLineNo(Location)
+  };
+  return Builder.CreateCall(AnnotationFn, Args);
+}
+
+void CodeGenFunction::EmitVarAnnotations(const VarDecl *D, llvm::Value *V) {
+  assert(D->hasAttr<AnnotateAttr>() && "no annotate attribute");
+  // FIXME We create a new bitcast for every annotation because that's what
+  // llvm-gcc was doing.
+  for (specific_attr_iterator<AnnotateAttr>
+       ai = D->specific_attr_begin<AnnotateAttr>(),
+       ae = D->specific_attr_end<AnnotateAttr>(); ai != ae; ++ai)
+    EmitAnnotationCall(CGM.getIntrinsic(llvm::Intrinsic::var_annotation),
+                       Builder.CreateBitCast(V, CGM.Int8PtrTy, V->getName()),
+                       (*ai)->getAnnotation(), D->getLocation());
+}
+
+llvm::Value *CodeGenFunction::EmitFieldAnnotations(const FieldDecl *D,
+                                                   llvm::Value *V) {
+  assert(D->hasAttr<AnnotateAttr>() && "no annotate attribute");
+  llvm::Type *VTy = V->getType();
+  llvm::Value *F = CGM.getIntrinsic(llvm::Intrinsic::ptr_annotation,
+                                    CGM.Int8PtrTy);
+
+  for (specific_attr_iterator<AnnotateAttr>
+       ai = D->specific_attr_begin<AnnotateAttr>(),
+       ae = D->specific_attr_end<AnnotateAttr>(); ai != ae; ++ai) {
+    // FIXME Always emit the cast inst so we can differentiate between
+    // annotation on the first field of a struct and annotation on the struct
+    // itself.
+    if (VTy != CGM.Int8PtrTy)
+      V = Builder.Insert(new llvm::BitCastInst(V, CGM.Int8PtrTy));
+    V = EmitAnnotationCall(F, V, (*ai)->getAnnotation(), D->getLocation());
+    V = Builder.CreateBitCast(V, VTy);
+  }
+
+  return V;
 }

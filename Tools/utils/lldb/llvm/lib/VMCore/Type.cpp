@@ -46,6 +46,14 @@ Type *Type::getScalarType() {
   return this;
 }
 
+/// getNumElements - If this is a vector type, return the number of elements,
+/// otherwise return zero.
+unsigned Type::getNumElements() {
+  if (VectorType *VTy = dyn_cast<VectorType>(this))
+    return VTy->getNumElements();
+  return 0;
+}
+
 /// isIntegerTy - Return true if this is an IntegerType of the specified width.
 bool Type::isIntegerTy(unsigned Bitwidth) const {
   return isIntegerTy() && cast<IntegerType>(this)->getBitWidth() == Bitwidth;
@@ -392,7 +400,7 @@ StructType *StructType::get(LLVMContext &Context, ArrayRef<Type*> ETypes,
   
   // Value not found.  Create a new type!
   ST = new (Context.pImpl->TypeAllocator) StructType(Context);
-  ST->setSubclassData(SCDB_IsAnonymous);  // Anonymous struct.
+  ST->setSubclassData(SCDB_IsLiteral);  // Literal struct.
   ST->setBody(ETypes, isPacked);
   return ST;
 }
@@ -410,13 +418,6 @@ void StructType::setBody(ArrayRef<Type*> Elements, bool isPacked) {
   
   ContainedTys = Elts;
   NumContainedTys = Elements.size();
-}
-
-StructType *StructType::createNamed(LLVMContext &Context, StringRef Name) {
-  StructType *ST = new (Context.pImpl->TypeAllocator) StructType(Context);
-  if (!Name.empty())
-    ST->setName(Name);
-  return ST;
 }
 
 void StructType::setName(StringRef Name) {
@@ -461,6 +462,13 @@ void StructType::setName(StringRef Name) {
 //===----------------------------------------------------------------------===//
 // StructType Helper functions.
 
+StructType *StructType::create(LLVMContext &Context, StringRef Name) {
+  StructType *ST = new (Context.pImpl->TypeAllocator) StructType(Context);
+  if (!Name.empty())
+    ST->setName(Name);
+  return ST;
+}
+
 StructType *StructType::get(LLVMContext &Context, bool isPacked) {
   return get(Context, llvm::ArrayRef<Type*>(), isPacked);
 }
@@ -478,21 +486,36 @@ StructType *StructType::get(Type *type, ...) {
   return llvm::StructType::get(Ctx, StructFields);
 }
 
-StructType *StructType::createNamed(LLVMContext &Context, StringRef Name,
-                                    ArrayRef<Type*> Elements, bool isPacked) {
-  StructType *ST = createNamed(Context, Name);
+StructType *StructType::create(LLVMContext &Context, ArrayRef<Type*> Elements,
+                               StringRef Name, bool isPacked) {
+  StructType *ST = create(Context, Name);
   ST->setBody(Elements, isPacked);
   return ST;
 }
 
-StructType *StructType::createNamed(StringRef Name, ArrayRef<Type*> Elements,
-                                    bool isPacked) {
-  assert(!Elements.empty() &&
-         "This method may not be invoked with an empty list");
-  return createNamed(Elements[0]->getContext(), Name, Elements, isPacked);
+StructType *StructType::create(LLVMContext &Context, ArrayRef<Type*> Elements) {
+  return create(Context, Elements, StringRef());
 }
 
-StructType *StructType::createNamed(StringRef Name, Type *type, ...) {
+StructType *StructType::create(LLVMContext &Context) {
+  return create(Context, StringRef());
+}
+
+
+StructType *StructType::create(ArrayRef<Type*> Elements, StringRef Name,
+                               bool isPacked) {
+  assert(!Elements.empty() &&
+         "This method may not be invoked with an empty list");
+  return create(Elements[0]->getContext(), Elements, Name, isPacked);
+}
+
+StructType *StructType::create(ArrayRef<Type*> Elements) {
+  assert(!Elements.empty() &&
+         "This method may not be invoked with an empty list");
+  return create(Elements[0]->getContext(), Elements, StringRef());
+}
+
+StructType *StructType::create(StringRef Name, Type *type, ...) {
   assert(type != 0 && "Cannot create a struct type with no elements with this");
   LLVMContext &Ctx = type->getContext();
   va_list ap;
@@ -502,11 +525,12 @@ StructType *StructType::createNamed(StringRef Name, Type *type, ...) {
     StructFields.push_back(type);
     type = va_arg(ap, llvm::Type*);
   }
-  return llvm::StructType::createNamed(Ctx, Name, StructFields);
+  return llvm::StructType::create(Ctx, StructFields, Name);
 }
 
+
 StringRef StructType::getName() const {
-  assert(!isAnonymous() && "Anonymous structs never have names");
+  assert(!isLiteral() && "Literal structs never have names");
   if (SymbolTableEntry == 0) return StringRef();
   
   return ((StringMapEntry<StructType*> *)SymbolTableEntry)->getKey();
@@ -648,6 +672,8 @@ VectorType *VectorType::get(Type *elementType, unsigned NumElements) {
 }
 
 bool VectorType::isValidElementType(Type *ElemTy) {
+  if (PointerType *PTy = dyn_cast<PointerType>(ElemTy))
+    ElemTy = PTy->getElementType();
   return ElemTy->isIntegerTy() || ElemTy->isFloatingPointTy();
 }
 

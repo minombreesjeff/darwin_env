@@ -572,7 +572,7 @@ def STWDP_lru6 : _FLRU6<(outs), (ins GRRegs:$val, MEMii:$addr),
                   [(store GRRegs:$val, ADDRdpii:$addr)]>;
 
 //let Uses = [CP] in ..
-let mayLoad = 1, isReMaterializable = 1 in
+let mayLoad = 1, isReMaterializable = 1, neverHasSideEffects = 1 in
 defm LDWCP : FRU6_LRU6_cp<"ldw">;
 
 let Uses = [SP] in {
@@ -739,7 +739,7 @@ def LDAP_lu10_ba : _FLU10<(outs),
 
 let isCall=1,
 // All calls clobber the link register and the non-callee-saved registers:
-Defs = [R0, R1, R2, R3, R11, LR] in {
+Defs = [R0, R1, R2, R3, R11, LR], Uses = [SP] in {
 def BL_u10 : _FU10<
                   (outs),
                   (ins calltarget:$target, variable_ops),
@@ -766,19 +766,23 @@ def NEG : _F2R<(outs GRRegs:$dst), (ins GRRegs:$b),
 let Constraints = "$src1 = $dst" in {
 def SEXT_rus : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, i32imm:$src2),
                       "sext $dst, $src2",
-                      [(set GRRegs:$dst, (int_xcore_sext GRRegs:$src1, immBitp:$src2))]>;
+                      [(set GRRegs:$dst, (int_xcore_sext GRRegs:$src1,
+                                                         immBitp:$src2))]>;
 
 def SEXT_2r : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, GRRegs:$src2),
                      "sext $dst, $src2",
-                     [(set GRRegs:$dst, (int_xcore_sext GRRegs:$src1, GRRegs:$src2))]>;
+                     [(set GRRegs:$dst, (int_xcore_sext GRRegs:$src1,
+                                                        GRRegs:$src2))]>;
 
 def ZEXT_rus : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, i32imm:$src2),
                       "zext $dst, $src2",
-                      [(set GRRegs:$dst, (int_xcore_zext GRRegs:$src1, immBitp:$src2))]>;
+                      [(set GRRegs:$dst, (int_xcore_zext GRRegs:$src1,
+                                                         immBitp:$src2))]>;
 
 def ZEXT_2r : _FRUS<(outs GRRegs:$dst), (ins GRRegs:$src1, GRRegs:$src2),
                      "zext $dst, $src2",
-                     [(set GRRegs:$dst, (int_xcore_zext GRRegs:$src1, GRRegs:$src2))]>;
+                     [(set GRRegs:$dst, (int_xcore_zext GRRegs:$src1,
+                                                        GRRegs:$src2))]>;
 
 def ANDNOT_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$src1, GRRegs:$src2),
                  "andnot $dst, $src2",
@@ -825,7 +829,8 @@ def OUT_2r : _F2R<(outs), (ins GRRegs:$r, GRRegs:$val),
 let Constraints = "$src = $dst" in
 def OUTSHR_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$r, GRRegs:$src),
                  "outshr res[$r], $src",
-                 [(set GRRegs:$dst, (int_xcore_outshr GRRegs:$r, GRRegs:$src))]>;
+                 [(set GRRegs:$dst, (int_xcore_outshr GRRegs:$r,
+                                                      GRRegs:$src))]>;
 
 def INCT_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$r),
                  "inct $dst, res[$r]",
@@ -842,7 +847,8 @@ def IN_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$r),
 let Constraints = "$src = $dst" in
 def INSHR_2r : _F2R<(outs GRRegs:$dst), (ins GRRegs:$r, GRRegs:$src),
                  "inshr $dst, res[$r]",
-                 [(set GRRegs:$dst, (int_xcore_inshr GRRegs:$r, GRRegs:$src))]>;
+                 [(set GRRegs:$dst, (int_xcore_inshr GRRegs:$r,
+                                                     GRRegs:$src))]>;
 
 def CHKCT_2r : _F2R<(outs), (ins GRRegs:$r, GRRegs:$val),
                  "chkct res[$r], $val",
@@ -981,7 +987,7 @@ def ECALLF_1r : _F1R<(outs), (ins GRRegs:$src),
 
 let isCall=1, 
 // All calls clobber the link register and the non-callee-saved registers:
-Defs = [R0, R1, R2, R3, R11, LR] in {
+Defs = [R0, R1, R2, R3, R11, LR], Uses = [SP] in {
 def BLA_1r : _F1R<(outs), (ins GRRegs:$addr, variable_ops),
                  "bla $addr",
                  [(XCoreBranchLink GRRegs:$addr)]>;
@@ -995,10 +1001,15 @@ def FREER_1r : _F1R<(outs), (ins GRRegs:$r),
                "freer res[$r]",
                [(int_xcore_freer GRRegs:$r)]>;
 
-let Uses=[R11] in
+let Uses=[R11] in {
 def SETV_1r : _F1R<(outs), (ins GRRegs:$r),
-               "setv res[$r], r11",
-               [(int_xcore_setv GRRegs:$r, R11)]>;
+                   "setv res[$r], r11",
+                   [(int_xcore_setv GRRegs:$r, R11)]>;
+
+def SETEV_1r : _F1R<(outs), (ins GRRegs:$r),
+                    "setev res[$r], r11",
+                    [(int_xcore_setev GRRegs:$r, R11)]>;
+}
 
 def EEU_1r : _F1R<(outs), (ins GRRegs:$r),
                "eeu res[$r]",
@@ -1006,15 +1017,24 @@ def EEU_1r : _F1R<(outs), (ins GRRegs:$r),
 
 // Zero operand short
 // TODO freet, ldspc, stspc, ldssr, stssr, ldsed, stsed,
-// stet, geted, getet, getkep, getksp, setkep, getid, kret, dcall, dret,
+// stet, getkep, getksp, setkep, getid, kret, dcall, dret,
 // dentsp, drestsp
 
 def CLRE_0R : _F0R<(outs), (ins), "clre", [(int_xcore_clre)]>;
 
-let Defs = [R11] in
+let Defs = [R11] in {
 def GETID_0R : _F0R<(outs), (ins),
-                 "get r11, id",
-                 [(set R11, (int_xcore_getid))]>;
+                    "get r11, id",
+                    [(set R11, (int_xcore_getid))]>;
+
+def GETED_0R : _F0R<(outs), (ins),
+                    "get r11, ed",
+                    [(set R11, (int_xcore_geted))]>;
+
+def GETET_0R : _F0R<(outs), (ins),
+                    "get r11, et",
+                    [(set R11, (int_xcore_getet))]>;
+}
 
 def SSYNC_0r : _F0R<(outs), (ins),
                     "ssync",

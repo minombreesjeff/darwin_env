@@ -18,6 +18,7 @@
 #include "lldb/API/SBStream.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Stream.h"
 #include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/Type.h"
@@ -31,7 +32,7 @@ SBType::SBType() :
 {
 }
 
-SBType::SBType (const lldb_private::ClangASTType &type) :
+SBType::SBType (const ClangASTType &type) :
     m_opaque_sp(new TypeImpl(ClangASTType(type.GetASTContext(),
                                           type.GetOpaqueQualType())))
 {
@@ -63,7 +64,7 @@ SBType::SBType (const SBType &rhs) :
 //{}
 //
 bool
-SBType::operator == (const lldb::SBType &rhs) const
+SBType::operator == (SBType &rhs)
 {
     if (IsValid() == false)
         return !rhs.IsValid();
@@ -73,7 +74,7 @@ SBType::operator == (const lldb::SBType &rhs) const
 }
 
 bool
-SBType::operator != (const lldb::SBType &rhs) const
+SBType::operator != (SBType &rhs)
 {    
     if (IsValid() == false)
         return rhs.IsValid();
@@ -82,11 +83,16 @@ SBType::operator != (const lldb::SBType &rhs) const
             (rhs.m_opaque_sp->GetOpaqueQualType() != m_opaque_sp->GetOpaqueQualType());
 }
 
-
-const lldb::SBType &
-SBType::operator = (const lldb::SBType &rhs)
+void
+SBType::reset(const lldb::TypeImplSP &type_impl_sp)
 {
-    if (*this != rhs)
+    m_opaque_sp = type_impl_sp;
+}
+
+SBType &
+SBType::operator = (const SBType &rhs)
+{
+    if (this != &rhs)
     {
         m_opaque_sp = rhs.m_opaque_sp;
     }
@@ -96,15 +102,15 @@ SBType::operator = (const lldb::SBType &rhs)
 SBType::~SBType ()
 {}
 
-lldb_private::TypeImpl &
+TypeImpl &
 SBType::ref ()
 {
     if (m_opaque_sp.get() == NULL)
-        m_opaque_sp.reset (new lldb_private::TypeImpl());
+        m_opaque_sp.reset (new TypeImpl());
         return *m_opaque_sp;
 }
 
-const lldb_private::TypeImpl &
+const TypeImpl &
 SBType::ref () const
 {
     // "const SBAddress &addr" should already have checked "addr.IsValid()" 
@@ -124,7 +130,7 @@ SBType::IsValid() const
 }
 
 size_t
-SBType::GetByteSize() const
+SBType::GetByteSize()
 {
     if (!IsValid())
         return 0;
@@ -134,7 +140,7 @@ SBType::GetByteSize() const
 }
 
 bool
-SBType::IsPointerType() const
+SBType::IsPointerType()
 {
     if (!IsValid())
         return false;
@@ -148,7 +154,7 @@ SBType::IsPointerType() const
 }
 
 bool
-SBType::IsReferenceType() const
+SBType::IsReferenceType()
 {
     if (!IsValid())
         return false;
@@ -162,7 +168,7 @@ SBType::IsReferenceType() const
 }
 
 SBType
-SBType::GetPointerType() const
+SBType::GetPointerType()
 {
     if (!IsValid())
         return SBType();
@@ -172,7 +178,7 @@ SBType::GetPointerType() const
 }
 
 SBType
-SBType::GetPointeeType() const
+SBType::GetPointeeType()
 {
     if (!IsValid())
         return SBType();
@@ -186,7 +192,7 @@ SBType::GetPointeeType() const
 }
 
 SBType
-SBType::GetReferenceType() const
+SBType::GetReferenceType()
 {
     if (!IsValid())
         return SBType();
@@ -196,7 +202,7 @@ SBType::GetReferenceType() const
 }
 
 SBType
-SBType::GetDereferencedType() const
+SBType::GetDereferencedType()
 {
     if (!IsValid())
         return SBType();
@@ -206,8 +212,19 @@ SBType::GetDereferencedType() const
     return SBType(ClangASTType(m_opaque_sp->GetASTContext(),qt.getNonReferenceType().getAsOpaquePtr()));
 }
 
+lldb::SBType
+SBType::GetUnqualifiedType()
+{
+    if (!IsValid())
+        return SBType();
+        
+    QualType qt (QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType()));
+    return SBType(ClangASTType(m_opaque_sp->GetASTContext(),qt.getUnqualifiedType().getAsOpaquePtr()));
+}
+
+
 SBType
-SBType::GetBasicType(lldb::BasicType type) const
+SBType::GetBasicType(lldb::BasicType type)
 {
     
     if (!IsValid())
@@ -302,6 +319,106 @@ SBType::GetBasicType(lldb::BasicType type) const
     return SBType(ClangASTType(m_opaque_sp->GetASTContext(), base_type_qual.getAsOpaquePtr()));
 }
 
+uint32_t
+SBType::GetNumberOfDirectBaseClasses ()
+{
+    if (IsValid())
+        return ClangASTContext::GetNumDirectBaseClasses(m_opaque_sp->GetASTContext(), m_opaque_sp->GetOpaqueQualType());
+    return 0;
+}
+
+uint32_t
+SBType::GetNumberOfVirtualBaseClasses ()
+{
+    if (IsValid())
+        return ClangASTContext::GetNumVirtualBaseClasses(m_opaque_sp->GetASTContext(), m_opaque_sp->GetOpaqueQualType());
+    return 0;
+}
+
+uint32_t
+SBType::GetNumberOfFields ()
+{
+    if (IsValid())
+        return ClangASTContext::GetNumFields(m_opaque_sp->GetASTContext(), m_opaque_sp->GetOpaqueQualType());
+    return 0;
+}
+
+bool
+SBType::GetDescription (SBStream &description, lldb::DescriptionLevel description_level)
+{
+    Stream &strm = description.ref();
+
+    if (m_opaque_sp)
+    {
+        m_opaque_sp->GetDescription (strm, description_level);
+    }
+    else
+        strm.PutCString ("No value");
+    
+    return true;
+}
+
+
+
+SBTypeMember
+SBType::GetDirectBaseClassAtIndex (uint32_t idx)
+{
+    SBTypeMember sb_type_member;
+    if (IsValid())
+    {
+        clang::ASTContext* ast = m_opaque_sp->GetASTContext();
+        uint32_t bit_offset = 0;
+        clang_type_t clang_type = ClangASTContext::GetDirectBaseClassAtIndex (ast, m_opaque_sp->GetOpaqueQualType(), idx, &bit_offset);
+        if (clang_type)
+        {
+            TypeImplSP type_impl_sp (new TypeImpl(ClangASTType (ast, clang_type)));
+            sb_type_member.reset (new TypeMemberImpl (type_impl_sp, bit_offset));
+        }
+    }
+    return sb_type_member;
+
+}
+
+SBTypeMember
+SBType::GetVirtualBaseClassAtIndex (uint32_t idx)
+{
+    SBTypeMember sb_type_member;
+    if (IsValid())
+    {
+        uint32_t bit_offset = 0;
+        clang::ASTContext* ast = m_opaque_sp->GetASTContext();
+        clang_type_t clang_type = ClangASTContext::GetVirtualBaseClassAtIndex (ast, m_opaque_sp->GetOpaqueQualType(), idx, &bit_offset);
+        if (clang_type)
+        {
+            TypeImplSP type_impl_sp (new TypeImpl(ClangASTType (ast, clang_type)));
+            sb_type_member.reset (new TypeMemberImpl (type_impl_sp, bit_offset));
+        }        
+    }
+    return sb_type_member;
+}
+
+SBTypeMember
+SBType::GetFieldAtIndex (uint32_t idx)
+{
+    SBTypeMember sb_type_member;
+    if (IsValid())
+    {
+        uint32_t bit_offset = 0;
+        clang::ASTContext* ast = m_opaque_sp->GetASTContext();
+        std::string name_sstr;
+        clang_type_t clang_type = ClangASTContext::GetFieldAtIndex (ast, m_opaque_sp->GetOpaqueQualType(), idx, name_sstr, &bit_offset);
+        if (clang_type)
+        {
+            ConstString name;
+            if (!name_sstr.empty())
+                name.SetCString(name_sstr.c_str());
+            TypeImplSP type_impl_sp (new TypeImpl(ClangASTType (ast, clang_type)));
+            sb_type_member.reset (new TypeMemberImpl (type_impl_sp, bit_offset, name));
+        }        
+    }
+    return sb_type_member;
+}
+
 const char*
 SBType::GetName()
 {
@@ -309,6 +426,15 @@ SBType::GetName()
         return "";
 
     return ClangASTType::GetConstTypeName(m_opaque_sp->GetOpaqueQualType()).GetCString();
+}
+
+lldb::TypeClass
+SBType::GetTypeClass ()
+{
+    if (IsValid())
+        return ClangASTType::GetTypeClass (m_opaque_sp->GetASTContext(),
+                                           m_opaque_sp->GetOpaqueQualType());
+    return lldb::eTypeClassInvalid;
 }
 
 SBTypeList::SBTypeList() :
@@ -319,12 +445,12 @@ SBTypeList::SBTypeList() :
 SBTypeList::SBTypeList(const SBTypeList& rhs) :
     m_opaque_ap(new TypeListImpl())
 {
-    for (uint32_t i = 0, rhs_size = rhs.GetSize(); i < rhs_size; i++)
-        Append(rhs.GetTypeAtIndex(i));
+    for (uint32_t i = 0, rhs_size = const_cast<SBTypeList&>(rhs).GetSize(); i < rhs_size; i++)
+        Append(const_cast<SBTypeList&>(rhs).GetTypeAtIndex(i));
 }
 
 bool
-SBTypeList::IsValid () const
+SBTypeList::IsValid ()
 {
     return (m_opaque_ap.get() != NULL);
 }
@@ -332,30 +458,32 @@ SBTypeList::IsValid () const
 SBTypeList&
 SBTypeList::operator = (const SBTypeList& rhs)
 {
-    if (this != &rhs && m_opaque_ap.get() != rhs.m_opaque_ap.get())
+    if (this != &rhs)
     {
-        m_opaque_ap.reset(new TypeListImpl());
-        for (uint32_t i = 0, rhs_size = rhs.GetSize(); i < rhs_size; i++)
-            Append(rhs.GetTypeAtIndex(i));
+        m_opaque_ap.reset (new TypeListImpl());
+        for (uint32_t i = 0, rhs_size = const_cast<SBTypeList&>(rhs).GetSize(); i < rhs_size; i++)
+            Append(const_cast<SBTypeList&>(rhs).GetTypeAtIndex(i));
     }
     return *this;
 }
 
 void
-SBTypeList::Append (const SBType& type)
+SBTypeList::Append (SBType type)
 {
     if (type.IsValid())
         m_opaque_ap->Append (type.m_opaque_sp);
 }
 
 SBType
-SBTypeList::GetTypeAtIndex(int index) const
+SBTypeList::GetTypeAtIndex(uint32_t index)
 {
-    return SBType(m_opaque_ap->GetTypeAtIndex(index));
+    if (m_opaque_ap.get())
+        return SBType(m_opaque_ap->GetTypeAtIndex(index));
+    return SBType();
 }
 
-int
-SBTypeList::GetSize() const
+uint32_t
+SBTypeList::GetSize()
 {
     return m_opaque_ap->GetSize();
 }
@@ -367,7 +495,7 @@ SBTypeList::~SBTypeList()
 bool
 SBType::IsPointerType (void *opaque_type)
 {
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     
     bool ret_value = ClangASTContext::IsPointerType (opaque_type);
     
@@ -376,3 +504,122 @@ SBType::IsPointerType (void *opaque_type)
     
     return ret_value;
 }
+
+
+SBTypeMember::SBTypeMember() :
+    m_opaque_ap()
+{
+}
+
+SBTypeMember::~SBTypeMember()
+{
+}
+
+SBTypeMember::SBTypeMember (const SBTypeMember& rhs) :
+    m_opaque_ap()
+{
+    if (this != &rhs)
+    {
+        if (rhs.IsValid())
+            m_opaque_ap.reset(new TypeMemberImpl(rhs.ref()));
+    }
+}
+
+lldb::SBTypeMember&
+SBTypeMember::operator = (const lldb::SBTypeMember& rhs)
+{
+    if (this != &rhs)
+    {
+        if (rhs.IsValid())
+            m_opaque_ap.reset(new TypeMemberImpl(rhs.ref()));
+    }
+    return *this;
+}
+
+bool
+SBTypeMember::IsValid() const
+{
+    return m_opaque_ap.get();
+}
+
+const char *
+SBTypeMember::GetName ()
+{
+    if (m_opaque_ap.get())
+        return m_opaque_ap->GetName().GetCString();
+    return NULL;
+}
+
+SBType
+SBTypeMember::GetType ()
+{
+    SBType sb_type;
+    if (m_opaque_ap.get())
+    {
+        sb_type.reset (m_opaque_ap->GetTypeImpl());
+    }
+    return sb_type;
+
+}
+
+uint64_t
+SBTypeMember::GetOffsetInBytes()
+{
+    if (m_opaque_ap.get())
+        return (m_opaque_ap->GetBitOffset() + 7) / 8u;
+    return 0;
+}
+
+uint64_t
+SBTypeMember::GetOffsetInBits()
+{
+    if (m_opaque_ap.get())
+        return m_opaque_ap->GetBitOffset();
+    return 0;
+}
+
+bool
+SBTypeMember::GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level)
+{
+    Stream &strm = description.ref();
+
+    if (m_opaque_ap.get())
+    {
+        const uint32_t byte_offset = (m_opaque_ap->GetBitOffset() + 7) / 8u;
+        const char *name = m_opaque_ap->GetName().GetCString();
+        strm.Printf ("+%u: (", byte_offset);
+        
+        TypeImplSP type_impl_sp (m_opaque_ap->GetTypeImpl());
+        if (type_impl_sp)
+            type_impl_sp->GetDescription(strm, description_level);
+        
+        strm.Printf (") %s", name);
+    }
+    else
+    {
+        strm.PutCString ("No value");
+    }
+    return true;   
+}
+
+
+void
+SBTypeMember::reset(TypeMemberImpl *type_member_impl)
+{
+    m_opaque_ap.reset(type_member_impl);
+}
+
+TypeMemberImpl &
+SBTypeMember::ref ()
+{
+    if (m_opaque_ap.get() == NULL)
+        m_opaque_ap.reset (new TypeMemberImpl());
+    return *m_opaque_ap.get();
+}
+
+const TypeMemberImpl &
+SBTypeMember::ref () const
+{
+    return *m_opaque_ap.get();
+}
+

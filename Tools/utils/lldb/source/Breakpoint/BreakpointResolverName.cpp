@@ -16,6 +16,7 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Symbol/ClangNamespaceDecl.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
@@ -30,55 +31,14 @@ BreakpointResolverName::BreakpointResolverName
     bool skip_prologue
 ) :
     BreakpointResolver (bkpt, BreakpointResolver::NameResolver),
-    m_func_name (),
-    m_basename_filter (),
+    m_func_name (func_name),
     m_func_name_type_mask (func_name_type_mask),
     m_class_name (),
     m_regex (),
     m_match_type (type),
     m_skip_prologue (skip_prologue)
 {
-    if (func_name_type_mask == eFunctionNameTypeAuto)
-    {
-        if ((::strchr (func_name, '(' ) != NULL) ||
-            (::strstr (func_name, "-[") == func_name) || 
-            (::strstr (func_name, "+[") == func_name))
-        {
-            // We have a name that contains an open parens, or starts with 
-            // "+[" or "-[", so this looks like a complete function prototype
-            m_func_name_type_mask = eFunctionNameTypeFull;
-        }
-        else
-        {
-            // We don't have a full function name, but we might have a partial
-            // function basename with namespaces or classes
-            if (::strstr (func_name, "::") != NULL)
-            {
-                // Keep the full name in "m_basename_filter"
-                m_basename_filter = func_name;
-                // Now set "m_func_name" to just the function basename
-                m_func_name.SetCString(m_basename_filter.c_str() + m_basename_filter.rfind("::") + 2);
-                // We have a name with a double colon which means we have a
-                // function name that is a C++ method or a function in a C++ 
-                // namespace
-                m_func_name_type_mask = eFunctionNameTypeBase | eFunctionNameTypeMethod;
-            }
-            else if (::strstr (func_name, ":") != NULL)
-            {
-                // Single colon => selector
-                m_func_name_type_mask = eFunctionNameTypeSelector;
-            }
-            else
-            {
-                // just a  basename by default
-                m_func_name_type_mask = eFunctionNameTypeBase;
-            }
-        }
-    }
 
-    if (!m_func_name)
-        m_func_name.SetCString(func_name);
-    
     if (m_match_type == Breakpoint::Regexp)
     {
         if (!m_regex.Compile (m_func_name.AsCString()))
@@ -104,7 +64,6 @@ BreakpointResolverName::BreakpointResolverName
     m_match_type (Breakpoint::Regexp),
     m_skip_prologue (skip_prologue)
 {
-
 }
 
 BreakpointResolverName::BreakpointResolverName
@@ -162,24 +121,34 @@ BreakpointResolverName::SearchCallback
     
     const bool include_symbols = false;
     const bool append = false;
+    bool filter_by_cu = (filter.GetFilterRequiredItems() & eSymbolContextCompUnit) != 0;
+
     switch (m_match_type)
     {
         case Breakpoint::Exact:
             if (context.module_sp)
             {
-                if (m_func_name_type_mask & (eFunctionNameTypeBase | eFunctionNameTypeFull))
-                    context.module_sp->FindSymbolsWithNameAndType (m_func_name, eSymbolTypeCode, sym_list);
-                context.module_sp->FindFunctions (m_func_name, 
-                                                  m_func_name_type_mask, 
-                                                  include_symbols, 
-                                                  append, 
-                                                  func_list);
+                uint32_t num_functions = context.module_sp->FindFunctions (m_func_name, 
+                                                                           NULL,
+                                                                           m_func_name_type_mask, 
+                                                                           include_symbols, 
+                                                                           append, 
+                                                                           func_list);
+                // If the search filter specifies a Compilation Unit, then we don't need to bother to look in plain
+                // symbols, since all the ones from a set compilation unit will have been found above already.
+                
+                if (num_functions == 0 && !filter_by_cu)
+                {
+                    if (m_func_name_type_mask & (eFunctionNameTypeBase | eFunctionNameTypeFull | eFunctionNameTypeAuto))
+                        context.module_sp->FindSymbolsWithNameAndType (m_func_name, eSymbolTypeCode, sym_list);
+                }
             }
             break;
         case Breakpoint::Regexp:
             if (context.module_sp)
             {
-                context.module_sp->FindSymbolsMatchingRegExAndType (m_regex, eSymbolTypeCode, sym_list);
+                if (!filter_by_cu)
+                    context.module_sp->FindSymbolsMatchingRegExAndType (m_regex, eSymbolTypeCode, sym_list);
                 context.module_sp->FindFunctions (m_regex, 
                                                   include_symbols, 
                                                   append, 
@@ -191,67 +160,25 @@ BreakpointResolverName::SearchCallback
                 log->Warning ("glob is not supported yet.");
             break;
     }
-    
-    if (!m_basename_filter.empty())
+
+    // If the filter specifies a Compilation Unit, remove the ones that don't pass at this point.
+    if (filter_by_cu)
     {
-        // Filter out any matches whose names don't contain the basename filter
-        const char *basename_filter = m_basename_filter.c_str();
-        if (func_list.GetSize())
+        uint32_t num_functions = func_list.GetSize();
+        
+        for (size_t idx = 0; idx < num_functions; idx++)
         {
-            bool remove = false;
-            for (i = 0; i < func_list.GetSize(); remove = false)
+            SymbolContext sc;
+            func_list.GetContextAtIndex(idx, sc);
+            if (!sc.comp_unit || !filter.CompUnitPasses(*sc.comp_unit))
             {
-                if (func_list.GetContextAtIndex(i, sc) == false)
-                    remove = true;
-                else if (sc.function == NULL)
-                    remove = true;
-                else
-                {
-                    const InlineFunctionInfo* inlined_info = NULL;
-                    
-                    if (sc.block)
-                        inlined_info = sc.block->GetInlinedFunctionInfo();
-
-                    if (inlined_info)
-                    {
-                        if (::strstr (inlined_info->GetName().AsCString(), basename_filter) == NULL)
-                            remove = true;
-                    }
-                    else if (::strstr (sc.function->GetName().AsCString(), basename_filter) == NULL)
-                        remove = true;
-                }
-
-                if (remove)
-                {
-                    func_list.RemoveContextAtIndex(i);
-                    continue;
-                }
-                i++;
-            }
-        }
-
-        if (sym_list.GetSize())
-        {
-            bool remove = false;
-            for (i = 0; i < sym_list.GetSize(); remove = false)
-            {
-                if (sym_list.GetContextAtIndex(i, sc) == false)
-                    remove = true;
-                else if (sc.symbol == NULL)
-                    remove = true;
-                else if (::strstr (sc.symbol->GetName().AsCString(), basename_filter) == NULL)
-                    remove = true;
-
-                if (remove)
-                {
-                    sym_list.RemoveContextAtIndex(i);
-                    continue;
-                }
-                i++;
+                func_list.RemoveContextAtIndex(idx);
+                num_functions--;
+                idx--;
             }
         }
     }
-    
+
     // Remove any duplicates between the funcion list and the symbol list
     if (func_list.GetSize())
     {
@@ -368,10 +295,8 @@ BreakpointResolverName::GetDescription (Stream *s)
 {
     if (m_match_type == Breakpoint::Regexp)
         s->Printf("regex = '%s'", m_regex.GetText());
-    else if (m_basename_filter.empty())
-        s->Printf("name = '%s'", m_func_name.AsCString());
     else
-        s->Printf("name = '%s'", m_basename_filter.c_str());
+        s->Printf("name = '%s'", m_func_name.AsCString());
 }
 
 void

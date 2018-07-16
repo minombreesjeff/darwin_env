@@ -75,7 +75,7 @@ public:
                     bool success;
                     int32_t input_count =  Args::StringToSInt32 (option_arg, -1, 0, &success);
                     if (!success)
-                        error.SetErrorStringWithFormat("Invalid integer value for option '%c'.\n", short_option);
+                        error.SetErrorStringWithFormat("invalid integer value for option '%c'", short_option);
                     if (input_count < -1)
                         m_count = UINT32_MAX;
                     else
@@ -87,11 +87,11 @@ public:
                     bool success;
                     m_start =  Args::StringToUInt32 (option_arg, 0, 0, &success);
                     if (!success)
-                        error.SetErrorStringWithFormat("Invalid integer value for option '%c'.\n", short_option);
+                        error.SetErrorStringWithFormat("invalid integer value for option '%c'", short_option);
                 }
                 break;
                 default:
-                    error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                     break;
 
             }
@@ -163,13 +163,14 @@ public:
         if (command.GetArgumentCount() == 0)
         {
             ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-            if (exe_ctx.thread)
+            Thread *thread = exe_ctx.GetThreadPtr();
+            if (thread)
             {
                 // Thread::GetStatus() returns the number of frames shown.
-                if (exe_ctx.thread->GetStatus (strm,
-                                               m_options.m_start,
-                                               m_options.m_count,
-                                               num_frames_with_source))
+                if (thread->GetStatus (strm,
+                                       m_options.m_start,
+                                       m_options.m_count,
+                                       num_frames_with_source))
                 {
                     result.SetStatus (eReturnStatusSuccessFinishResult);
                 }
@@ -182,7 +183,7 @@ public:
         }
         else if (command.GetArgumentCount() == 1 && ::strcmp (command.GetArgumentAtIndex(0), "all") == 0)
         {
-            Process *process = m_interpreter.GetExecutionContext().process;
+            Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
             uint32_t num_threads = process->GetThreadList().GetSize();
             for (uint32_t i = 0; i < num_threads; i++)
             {
@@ -205,7 +206,7 @@ public:
         else
         {
             uint32_t num_args = command.GetArgumentCount();
-            Process *process = m_interpreter.GetExecutionContext().process;
+            Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
             std::vector<ThreadSP> thread_sps;
 
             for (uint32_t i = 0; i < num_args; i++)
@@ -300,17 +301,14 @@ public:
                     bool success;
                     m_avoid_no_debug =  Args::StringToBoolean (option_arg, true, &success);
                     if (!success)
-                        error.SetErrorStringWithFormat("Invalid boolean value for option '%c'.\n", short_option);
+                        error.SetErrorStringWithFormat("invalid boolean value for option '%c'", short_option);
                 }
                 break;
             
             case 'm':
                 {
-                    bool found_one = false;
                     OptionEnumValueElement *enum_values = g_option_table[option_idx].enum_values; 
-                    m_run_mode = (lldb::RunMode) Args::StringToOptionEnum(option_arg, enum_values, eOnlyDuringStepping, &found_one);
-                    if (!found_one)
-                        error.SetErrorStringWithFormat("Invalid enumeration value for option '%c'.\n", short_option);
+                    m_run_mode = (lldb::RunMode) Args::StringToOptionEnum(option_arg, enum_values, eOnlyDuringStepping, error);
                 }
                 break;
             
@@ -322,7 +320,7 @@ public:
                 break;
 
             default:
-                error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
+                error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                 break;
 
             }
@@ -398,7 +396,7 @@ public:
         CommandReturnObject &result
     )
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         bool synchronous_execution = m_interpreter.GetSynchronous();
 
         if (process == NULL)
@@ -428,7 +426,7 @@ public:
                 uint32_t step_thread_idx = Args::StringToUInt32 (thread_idx_cstr, LLDB_INVALID_INDEX32);
                 if (step_thread_idx == LLDB_INVALID_INDEX32)
                 {
-                    result.AppendErrorWithFormat ("Invalid thread index '%s'.\n", thread_idx_cstr);
+                    result.AppendErrorWithFormat ("invalid thread index '%s'.\n", thread_idx_cstr);
                     result.SetStatus (eReturnStatusFailed);
                     return false;
                 }
@@ -436,7 +434,7 @@ public:
                 if (thread == NULL)
                 {
                     result.AppendErrorWithFormat ("Thread index %u is out of range (valid values are 0 - %u).\n", 
-                                                  step_thread_idx, 0, num_threads);
+                                                  step_thread_idx, num_threads);
                     result.SetStatus (eReturnStatusFailed);
                     return false;
                 }
@@ -548,7 +546,7 @@ public:
                 //  }
                 process->GetThreadList().SetSelectedThreadByID (thread->GetID());
                 result.SetDidChangeProcessState (true);
-                result.AppendMessageWithFormat ("Process %i %s\n", process->GetID(), StateAsCString (state));
+                result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
                 result.SetStatus (eReturnStatusSuccessFinishNoResult);
             }
         }
@@ -639,7 +637,7 @@ public:
             return false;
         }
 
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process exists. Cannot continue");
@@ -687,7 +685,7 @@ public:
                             thread->SetResumeState (eStateSuspended);
                         }
                     }
-                    result.AppendMessageWithFormat ("in process %i\n", process->GetID());
+                    result.AppendMessageWithFormat ("in process %llu\n", process->GetID());
                 }
             }
             else
@@ -705,7 +703,7 @@ public:
                     Thread *thread = process->GetThreadList().GetThreadAtIndex(idx).get();
                     if (thread == current_thread)
                     {
-                        result.AppendMessageWithFormat ("Resuming thread 0x%4.4x in process %i\n", thread->GetID(), process->GetID());
+                        result.AppendMessageWithFormat ("Resuming thread 0x%4.4llx in process %llu\n", thread->GetID(), process->GetID());
                         thread->SetResumeState (eStateRunning);
                     }
                     else
@@ -718,13 +716,13 @@ public:
             Error error (process->Resume());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %i resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     state = process->WaitForProcessToStop (NULL);
 
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %i %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -791,7 +789,7 @@ public:
                     m_thread_idx = Args::StringToUInt32 (option_arg, LLDB_INVALID_INDEX32);
                     if (m_thread_idx == LLDB_INVALID_INDEX32)
                     {
-                        error.SetErrorStringWithFormat ("Invalid thread index '%s'.\n", option_arg);
+                        error.SetErrorStringWithFormat ("invalid thread index '%s'", option_arg);
                     }
                 }
                 break;
@@ -800,27 +798,26 @@ public:
                     m_frame_idx = Args::StringToUInt32 (option_arg, LLDB_INVALID_FRAME_ID);
                     if (m_frame_idx == LLDB_INVALID_FRAME_ID)
                     {
-                        error.SetErrorStringWithFormat ("Invalid frame index '%s'.\n", option_arg);
+                        error.SetErrorStringWithFormat ("invalid frame index '%s'", option_arg);
                     }
                 }
                 break;
                 case 'm':
                 {
-                    bool found_one = false;
                     OptionEnumValueElement *enum_values = g_option_table[option_idx].enum_values; 
-                    lldb::RunMode run_mode = (lldb::RunMode) Args::StringToOptionEnum(option_arg, enum_values, eOnlyDuringStepping, &found_one);
+                    lldb::RunMode run_mode = (lldb::RunMode) Args::StringToOptionEnum(option_arg, enum_values, eOnlyDuringStepping, error);
 
-                    if (!found_one)
-                        error.SetErrorStringWithFormat("Invalid enumeration value for option '%c'.\n", short_option);
-                    else if (run_mode == eAllThreads)
-                        m_stop_others = false;
-                    else
-                        m_stop_others = true;
-        
+                    if (error.Success())
+                    {
+                        if (run_mode == eAllThreads)
+                            m_stop_others = false;
+                        else
+                            m_stop_others = true;
+                    }
                 }
                 break;
                 default:
-                    error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                     break;
 
             }
@@ -903,7 +900,7 @@ public:
             return false;
         }
 
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("need a valid process to step");
@@ -925,7 +922,7 @@ public:
             line_number = Args::StringToUInt32 (command.GetArgumentAtIndex(0), UINT32_MAX);
             if (line_number == UINT32_MAX)
             {
-                result.AppendErrorWithFormat ("Invalid line number: '%s'.\n", command.GetArgumentAtIndex(0));
+                result.AppendErrorWithFormat ("invalid line number: '%s'.\n", command.GetArgumentAtIndex(0));
                 result.SetStatus (eReturnStatusFailed);
                 return false;
             }
@@ -944,7 +941,6 @@ public:
                 const uint32_t num_threads = process->GetThreadList().GetSize();
                 result.AppendErrorWithFormat ("Thread index %u is out of range (valid values are 0 - %u).\n", 
                                               m_options.m_thread_idx, 
-                                              0, 
                                               num_threads);
                 result.SetStatus (eReturnStatusFailed);
                 return false;
@@ -999,7 +995,8 @@ public:
                 while (index_ptr <= end_ptr)
                 {
                     LineEntry line_entry;
-                    index_ptr = sc.comp_unit->FindLineEntry(index_ptr, line_number, sc.comp_unit, &line_entry);
+                    const bool exact = false;
+                    index_ptr = sc.comp_unit->FindLineEntry(index_ptr, line_number, sc.comp_unit, exact, &line_entry);
                     if (index_ptr == UINT32_MAX)
                         break;
 
@@ -1046,13 +1043,13 @@ public:
             Error error (process->Resume ());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %i resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     StateType state = process->WaitForProcessToStop (NULL);
 
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %i %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -1126,7 +1123,7 @@ public:
         CommandReturnObject &result
     )
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process");
@@ -1135,7 +1132,7 @@ public:
         }
         else if (command.GetArgumentCount() != 1)
         {
-            result.AppendErrorWithFormat("'%s' takes exactly one thread index argument:\nUsage: \n", m_cmd_name.c_str(), m_cmd_syntax.c_str());
+            result.AppendErrorWithFormat("'%s' takes exactly one thread index argument:\nUsage: %s\n", m_cmd_name.c_str(), m_cmd_syntax.c_str());
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
@@ -1145,7 +1142,7 @@ public:
         Thread *new_thread = process->GetThreadList().FindThreadByIndexID(index_id).get();
         if (new_thread == NULL)
         {
-            result.AppendErrorWithFormat ("Invalid thread #%s.\n", command.GetArgumentAtIndex(0));
+            result.AppendErrorWithFormat ("invalid thread #%s.\n", command.GetArgumentAtIndex(0));
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
@@ -1199,18 +1196,19 @@ public:
         Stream &strm = result.GetOutputStream();
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
         ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        if (exe_ctx.process)
+        Process *process = exe_ctx.GetProcessPtr();
+        if (process)
         {
             const bool only_threads_with_stop_reason = false;
             const uint32_t start_frame = 0;
             const uint32_t num_frames = 0;
             const uint32_t num_frames_with_source = 0;
-            exe_ctx.process->GetStatus(strm);
-            exe_ctx.process->GetThreadStatus (strm, 
-                                              only_threads_with_stop_reason, 
-                                              start_frame,
-                                              num_frames,
-                                              num_frames_with_source);            
+            process->GetStatus(strm);
+            process->GetThreadStatus (strm, 
+                                      only_threads_with_stop_reason, 
+                                      start_frame,
+                                      num_frames,
+                                      num_frames_with_source);            
         }
         else
         {
@@ -1248,7 +1246,7 @@ CommandObjectMultiwordThread::CommandObjectMultiwordThread (CommandInterpreter &
     LoadSubCommand ("step-out",   CommandObjectSP (new CommandObjectThreadStepWithTypeAndScope (
                                                     interpreter,
                                                     "thread step-out",
-                                                    "Finish executing the current function and return to its call site in specified thread (current thread, if none specified).",
+                                                    "Finish executing the function of the currently selected frame and return to its call site in specified thread (current thread, if none specified).",
                                                     NULL,
                                                     eFlagProcessMustBeLaunched | eFlagProcessMustBePaused,
                                                     eStepTypeOut,

@@ -24,6 +24,7 @@
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Interpreter/NamedOptionValue.h"
+#include "lldb/Symbol/ClangNamespaceDecl.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -81,15 +82,16 @@ ResolveAddress (const ExecutionContext &exe_ctx,
     {
         // If we weren't passed in a section offset address range,
         // try and resolve it to something
-        if (exe_ctx.target)
+        Target *target = exe_ctx.GetTargetPtr();
+        if (target)
         {
-            if (exe_ctx.target->GetSectionLoadList().IsEmpty())
+            if (target->GetSectionLoadList().IsEmpty())
             {
-                exe_ctx.target->GetImages().ResolveFileAddress (addr.GetOffset(), resolved_addr);
+                target->GetImages().ResolveFileAddress (addr.GetOffset(), resolved_addr);
             }
             else
             {
-                exe_ctx.target->GetSectionLoadList().ResolveLoadAddress (addr.GetOffset(), resolved_addr);
+                target->GetSectionLoadList().ResolveLoadAddress (addr.GetOffset(), resolved_addr);
             }
             // We weren't able to resolve the address, just treat it as a
             // raw address
@@ -165,7 +167,8 @@ Disassembler::Disassemble
         const bool include_symbols = true;
         if (module)
         {
-            module->FindFunctions (name, 
+            module->FindFunctions (name,
+                                   NULL,
                                    eFunctionNameTypeBase | 
                                    eFunctionNameTypeFull | 
                                    eFunctionNameTypeMethod | 
@@ -174,16 +177,16 @@ Disassembler::Disassemble
                                    true,
                                    sc_list);
         }
-        else if (exe_ctx.target)
+        else if (exe_ctx.GetTargetPtr())
         {
-            exe_ctx.target->GetImages().FindFunctions (name, 
-                                                       eFunctionNameTypeBase | 
-                                                       eFunctionNameTypeFull | 
-                                                       eFunctionNameTypeMethod | 
-                                                       eFunctionNameTypeSelector,
-                                                       include_symbols, 
-                                                       false,
-                                                       sc_list);
+            exe_ctx.GetTargetPtr()->GetImages().FindFunctions (name, 
+                                                               eFunctionNameTypeBase | 
+                                                               eFunctionNameTypeFull | 
+                                                               eFunctionNameTypeMethod | 
+                                                               eFunctionNameTypeSelector,
+                                                               include_symbols, 
+                                                               false,
+                                                               sc_list);
         }
     }
     
@@ -224,6 +227,37 @@ Disassembler::DisassembleRange
                 disasm_sp.reset();
         }
     }
+    return disasm_sp;
+}
+
+lldb::DisassemblerSP 
+Disassembler::DisassembleBytes 
+(
+    const ArchSpec &arch,
+    const char *plugin_name,
+    const Address &start,
+    const void *bytes,
+    size_t length
+)
+{
+    lldb::DisassemblerSP disasm_sp;
+    
+    if (bytes)
+    {
+        disasm_sp.reset(Disassembler::FindPlugin(arch, plugin_name));
+        
+        if (disasm_sp)
+        {
+            DataExtractor data(bytes, length, arch.GetByteOrder(), arch.GetAddressByteSize());
+            
+            (void)disasm_sp->DecodeInstructions (start,
+                                                 data,
+                                                 0,
+                                                 UINT32_MAX,
+                                                 false);
+        }
+    }
+    
     return disasm_sp;
 }
 
@@ -333,8 +367,10 @@ Disassembler::PrintInstructions
     AddressRange sc_range;
     const Address *pc_addr_ptr = NULL;
     ExecutionContextScope *exe_scope = exe_ctx.GetBestExecutionContextScope();
-    if (exe_ctx.frame)
-        pc_addr_ptr = &exe_ctx.frame->GetFrameCodeAddress();
+    StackFrame *frame = exe_ctx.GetFramePtr();
+
+    if (frame)
+        pc_addr_ptr = &frame->GetFrameCodeAddress();
     const uint32_t scope = eSymbolContextLineEntry | eSymbolContextFunction | eSymbolContextSymbol;
     const bool use_inline_block_range = false;
     for (size_t i=0; i<num_instructions_found; ++i)
@@ -364,13 +400,12 @@ Disassembler::PrintInstructions
                                 if (offset != 0)
                                     strm.EOL();
                                 
-                                sc.DumpStopContext(&strm, exe_ctx.process, addr, false, true, false);
+                                sc.DumpStopContext(&strm, exe_ctx.GetProcessPtr(), addr, false, true, false);
                                 strm.EOL();
                                 
                                 if (sc.comp_unit && sc.line_entry.IsValid())
                                 {
-                                    debugger.GetSourceManager().DisplaySourceLinesWithLineNumbers (debugger.GetTargetList().GetSelectedTarget().get(),
-                                                                                                   sc.line_entry.file,
+                                    debugger.GetSourceManager().DisplaySourceLinesWithLineNumbers (sc.line_entry.file,
                                                                                                    sc.line_entry.line,
                                                                                                    num_mixed_context_lines,
                                                                                                    num_mixed_context_lines,
@@ -380,7 +415,7 @@ Disassembler::PrintInstructions
                             }
                         }
                     }
-                    else if (!(prev_sc.function == sc.function || prev_sc.symbol == sc.symbol))
+                    else if ((sc.function || sc.symbol) && (sc.function != prev_sc.function || sc.symbol != prev_sc.symbol))
                     {
                         if (prev_sc.function || prev_sc.symbol)
                             strm.EOL();
@@ -437,9 +472,10 @@ Disassembler::Disassemble
 )
 {
     AddressRange range;
-    if (exe_ctx.frame)
+    StackFrame *frame = exe_ctx.GetFramePtr();
+    if (frame)
     {
-        SymbolContext sc(exe_ctx.frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
+        SymbolContext sc(frame->GetSymbolContext(eSymbolContextFunction | eSymbolContextSymbol));
         if (sc.function)
         {
             range = sc.function->GetAddressRange();
@@ -450,7 +486,7 @@ Disassembler::Disassemble
         }
         else
         {
-            range.GetBaseAddress() = exe_ctx.frame->GetFrameCodeAddress();
+            range.GetBaseAddress() = frame->GetFrameCodeAddress();
         }
 
         if (range.GetBaseAddress().IsValid() && range.GetByteSize() == 0)
@@ -513,7 +549,7 @@ Instruction::ReadArray (FILE *in_file, Stream *out_stream, OptionValue::Type dat
     {
         if (!fgets (buffer, 1023, in_file))
         {
-            out_stream->Printf ("Instruction::ReadArray:  Erroe reading file (fgets).\n");
+            out_stream->Printf ("Instruction::ReadArray:  Error reading file (fgets).\n");
             option_value_sp.reset ();
             return option_value_sp;
         }
@@ -829,6 +865,25 @@ InstructionList::GetInstructionAtIndex (uint32_t idx) const
 }
 
 void
+InstructionList::Dump (Stream *s,
+                       bool show_address,
+                       bool show_bytes,
+                       const ExecutionContext* exe_ctx)
+{
+    const uint32_t max_opcode_byte_size = GetMaxOpcocdeByteSize();
+    collection::const_iterator pos, begin, end;
+    for (begin = m_instructions.begin(), end = m_instructions.end(), pos = begin;
+         pos != end;
+         ++pos)
+    {
+        if (pos != begin)
+            s->EOL();
+        (*pos)->Dump(s, max_opcode_byte_size, show_address, show_bytes, exe_ctx, false);
+    }
+}
+
+
+void
 InstructionList::Clear()
 {
   m_instructions.clear();
@@ -849,32 +904,34 @@ Disassembler::ParseInstructions
     const AddressRange &range
 )
 {
-    Target *target = exe_ctx->target;
-    const addr_t byte_size = range.GetByteSize();
-    if (target == NULL || byte_size == 0 || !range.GetBaseAddress().IsValid())
-        return 0;
-
-    DataBufferHeap *heap_buffer = new DataBufferHeap (byte_size, '\0');
-    DataBufferSP data_sp(heap_buffer);
-
-    Error error;
-    const bool prefer_file_cache = true;
-    const size_t bytes_read = target->ReadMemory (range.GetBaseAddress(), 
-                                                  prefer_file_cache, 
-                                                  heap_buffer->GetBytes(), 
-                                                  heap_buffer->GetByteSize(), 
-                                                  error);
-    
-    if (bytes_read > 0)
+    if (exe_ctx)
     {
-        if (bytes_read != heap_buffer->GetByteSize())
-            heap_buffer->SetByteSize (bytes_read);
-        DataExtractor data (data_sp, 
-                            m_arch.GetByteOrder(),
-                            m_arch.GetAddressByteSize());
-        return DecodeInstructions (range.GetBaseAddress(), data, 0, UINT32_MAX, false);
-    }
+        Target *target = exe_ctx->GetTargetPtr();
+        const addr_t byte_size = range.GetByteSize();
+        if (target == NULL || byte_size == 0 || !range.GetBaseAddress().IsValid())
+            return 0;
 
+        DataBufferHeap *heap_buffer = new DataBufferHeap (byte_size, '\0');
+        DataBufferSP data_sp(heap_buffer);
+
+        Error error;
+        const bool prefer_file_cache = true;
+        const size_t bytes_read = target->ReadMemory (range.GetBaseAddress(), 
+                                                      prefer_file_cache, 
+                                                      heap_buffer->GetBytes(), 
+                                                      heap_buffer->GetByteSize(), 
+                                                      error);
+        
+        if (bytes_read > 0)
+        {
+            if (bytes_read != heap_buffer->GetByteSize())
+                heap_buffer->SetByteSize (bytes_read);
+            DataExtractor data (data_sp, 
+                                m_arch.GetByteOrder(),
+                                m_arch.GetAddressByteSize());
+            return DecodeInstructions (range.GetBaseAddress(), data, 0, UINT32_MAX, false);
+        }
+    }
     return 0;
 }
 
@@ -888,10 +945,10 @@ Disassembler::ParseInstructions
 {
     m_instruction_list.Clear();
 
-    if (num_instructions == 0 || !start.IsValid())
+    if (exe_ctx == NULL || num_instructions == 0 || !start.IsValid())
         return 0;
         
-    Target *target = exe_ctx->target;
+    Target *target = exe_ctx->GetTargetPtr();
     // Calculate the max buffer size we will need in order to disassemble
     const addr_t byte_size = num_instructions * m_arch.GetMaximumOpcodeByteSize();
     

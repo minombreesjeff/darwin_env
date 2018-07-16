@@ -51,6 +51,12 @@ public:
     virtual bool            ThreadDidStop();
     virtual bool            NotifyException(MachException::Data& exc);
 
+    virtual uint32_t        NumSupportedHardwareWatchpoints();
+    virtual uint32_t        EnableHardwareWatchpoint (nub_addr_t addr, nub_size_t size, bool read, bool write);
+    virtual bool            DisableHardwareWatchpoint (uint32_t hw_break_index);
+    virtual void            HardwareWatchpointStateChanged ();
+    virtual uint32_t        GetHardwareWatchpointHit(nub_addr_t &addr);
+
 protected:
     kern_return_t           EnableHardwareSingleStep (bool enable);
 
@@ -58,6 +64,7 @@ protected:
     typedef __i386_float_state_t FPU;
     typedef __i386_exception_state_t EXC;
     typedef __i386_avx_state_t AVX;
+    typedef __i386_debug_state_t DBG;
 
     static const DNBRegisterInfo g_gpr_registers[];
     static const DNBRegisterInfo g_fpu_registers_no_avx[];
@@ -79,15 +86,17 @@ protected:
         e_regSetGPR,
         e_regSetFPU,
         e_regSetEXC,
+        e_regSetDBG,
         kNumRegisterSets
     } RegisterSet;
 
     typedef enum RegisterSetWordSizeTag
     {
         e_regSetWordSizeGPR = sizeof(GPR) / sizeof(int),
-        e_regSetWordSizeFPR = sizeof(FPU) / sizeof(int),
+        e_regSetWordSizeFPU = sizeof(FPU) / sizeof(int),
         e_regSetWordSizeEXC = sizeof(EXC) / sizeof(int),
-        e_regSetWordSizeAVX = sizeof(AVX) / sizeof(int)
+        e_regSetWordSizeAVX = sizeof(AVX) / sizeof(int),
+        e_regSetWordSizeDBG = sizeof(DBG) / sizeof(int)
     } RegisterSetWordSize;
 
     enum
@@ -99,13 +108,18 @@ protected:
 
     struct Context
     {
-        __i386_thread_state_t       gpr;
+        GPR gpr;
         union {
-            __i386_float_state_t    no_avx;
-            __i386_avx_state_t      avx;
+            FPU no_avx;
+            AVX avx;
         } fpu;
-        __i386_exception_state_t    exc;
+        EXC exc;
+        DBG dbg;
     };
+
+    // See also HardwareWatchpointStateChanged() which updates this class-wide variable.
+    static DBG Global_Debug_State;
+    static bool Valid_Global_Debug_State;
 
     struct State
     {
@@ -113,6 +127,7 @@ protected:
         kern_return_t gpr_errs[2];    // Read/Write errors
         kern_return_t fpu_errs[2];    // Read/Write errors
         kern_return_t exc_errs[2];    // Read/Write errors
+        kern_return_t dbg_errs[2];    // Read/Write errors
         
         State()
         {
@@ -122,6 +137,7 @@ protected:
                 gpr_errs[i] = -1;
                 fpu_errs[i] = -1;
                 exc_errs[i] = -1;
+                dbg_errs[i] = -1;
             }
         }
         void InvalidateAllRegisterStates()
@@ -142,6 +158,7 @@ protected:
                 case e_regSetGPR:    return gpr_errs[err_idx];
                 case e_regSetFPU:    return fpu_errs[err_idx];
                 case e_regSetEXC:    return exc_errs[err_idx];
+                case e_regSetDBG:    return dbg_errs[err_idx];
                 default: break;
                 }
             }
@@ -156,7 +173,8 @@ protected:
                 case e_regSetALL:
                     gpr_errs[err_idx] =
                     fpu_errs[err_idx] =
-                    exc_errs[err_idx] = err;
+                    exc_errs[err_idx] = 
+                    dbg_errs[err_idx] = err;
                     return true;
 
                 case e_regSetGPR:
@@ -170,7 +188,11 @@ protected:
                 case e_regSetEXC:
                     exc_errs[err_idx] = err;
                     return true;
-
+                    
+                case e_regSetDBG:
+                    dbg_errs[err_idx] = err;
+                    return true;
+                    
                 default: break;
                 }
             }
@@ -185,10 +207,12 @@ protected:
     kern_return_t GetGPRState (bool force);
     kern_return_t GetFPUState (bool force);
     kern_return_t GetEXCState (bool force);
+    kern_return_t GetDBGState (bool force);
 
     kern_return_t SetGPRState ();
     kern_return_t SetFPUState ();
     kern_return_t SetEXCState ();
+    kern_return_t SetDBGState ();
 
     static DNBArchProtocol *
     Create (MachThread *thread);
@@ -199,23 +223,16 @@ protected:
     static const DNBRegisterSetInfo *
     GetRegisterSetInfo(nub_size_t *num_reg_sets);
     
-    static bool
-    CPUHasAVX()
-    {
-        if (s_has_avx == kAVXUnknown)
-            s_has_avx = (::HasAVX() ? kAVXPresent : kAVXNotPresent);
-        
-        return (s_has_avx == kAVXPresent);
-    }
+    // Helper functions for watchpoint manipulations.
+    static void SetWatchpoint(DBG &debug_state, uint32_t hw_index, nub_addr_t addr, nub_size_t size, bool read, bool write);
+    static void ClearWatchpoint(DBG &debug_state, uint32_t hw_index);
+    static bool IsWatchpointVacant(const DBG &debug_state, uint32_t hw_index);
+    static void ClearWatchpointHits(DBG &debug_state);
+    static bool IsWatchpointHit(const DBG &debug_state, uint32_t hw_index);
+    static nub_addr_t GetWatchAddress(const DBG &debug_state, uint32_t hw_index);
 
     MachThread *m_thread;
     State       m_state;
-            
-    static enum AVXPresence {
-        kAVXPresent,
-        kAVXNotPresent,
-        kAVXUnknown
-    } s_has_avx;
 };
 
 #endif    // #if defined (__i386__) || defined (__x86_64__)

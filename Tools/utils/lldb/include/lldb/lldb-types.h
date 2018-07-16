@@ -69,6 +69,12 @@ namespace lldb {
         {
             typedef lldb_private::LoggingSharingPtr<_Tp> Type;
         };
+    
+        template <typename _Tp>
+        struct IntrusiveSharedPtr 
+        {
+            typedef lldb_private::IntrusiveSharingPtr<_Tp> Type;
+        };
 
 } // namespace lldb
 
@@ -90,10 +96,11 @@ const lldb::thread_t lldb_invalid_host_thread_const = { NULL, 0 } ;
 namespace lldb 
 {
     typedef uint64_t    addr_t;
-    typedef uint32_t    user_id_t;
-    typedef int32_t     pid_t;
-    typedef uint32_t    tid_t;
+    typedef uint64_t    user_id_t;
+    typedef uint64_t    pid_t;
+    typedef uint64_t    tid_t;
     typedef int32_t     break_id_t;
+    typedef int32_t     watch_id_t;
     typedef void *      clang_type_t;
 }
 

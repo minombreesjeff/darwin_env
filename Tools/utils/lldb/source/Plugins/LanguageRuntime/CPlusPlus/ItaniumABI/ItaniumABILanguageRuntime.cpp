@@ -62,7 +62,7 @@ ItaniumABILanguageRuntime::GetDynamicTypeAndAddress (ValueObject &in_value,
         
         // First job, pull out the address at 0 offset from the object.
         AddressType address_type;
-        lldb::addr_t original_ptr = in_value.GetPointerValue(address_type, true);
+        lldb::addr_t original_ptr = in_value.GetPointerValue(&address_type);
         if (original_ptr == LLDB_INVALID_ADDRESS)
             return false;
             
@@ -262,6 +262,7 @@ ItaniumABILanguageRuntime::SetExceptionBreakpoints ()
     
     if (!m_cxx_exception_bp_sp)
         m_cxx_exception_bp_sp = m_process->GetTarget().CreateBreakpoint (NULL,
+                                                                         NULL,
                                                                          "__cxa_throw",
                                                                          eFunctionNameTypeBase, 
                                                                          true);
@@ -270,6 +271,7 @@ ItaniumABILanguageRuntime::SetExceptionBreakpoints ()
     
     if (!m_cxx_exception_alloc_bp_sp)
         m_cxx_exception_alloc_bp_sp = m_process->GetTarget().CreateBreakpoint (NULL,
+                                                                               NULL,
                                                                                "__cxa_allocate",
                                                                                eFunctionNameTypeBase,
                                                                                true);

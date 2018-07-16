@@ -18,19 +18,20 @@
 #include "lldb/lldb-public.h"
 #include "lldb/Breakpoint/BreakpointList.h"
 #include "lldb/Breakpoint/BreakpointLocationCollection.h"
+#include "lldb/Breakpoint/WatchpointList.h"
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Event.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/UserSettingsController.h"
+#include "lldb/Core/SourceManager.h"
 #include "lldb/Expression/ClangPersistentVariables.h"
+#include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/NamedOptionValue.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/ABI.h"
 #include "lldb/Target/ExecutionContextScope.h"
 #include "lldb/Target/PathMappingList.h"
 #include "lldb/Target/SectionLoadList.h"
-
-#include "lldb/API/SBTarget.h"
 
 namespace lldb_private {
 
@@ -91,7 +92,125 @@ public:
     {
         return m_max_children_display;
     }
+    uint32_t
+    GetMaximumSizeOfStringSummary()
+    {
+        return m_max_strlen_length;
+    }
     
+    bool
+    GetBreakpointsConsultPlatformAvoidList ()
+    {
+        return m_breakpoints_use_platform_avoid;
+    }
+    
+    
+    const Args &
+    GetRunArguments () const
+    {
+        return m_run_args;
+    }
+    
+    void
+    SetRunArguments (const Args &args)
+    {
+        m_run_args = args;
+    }
+    
+    void
+    GetHostEnvironmentIfNeeded ();
+    
+    size_t
+    GetEnvironmentAsArgs (Args &env);
+    
+    const char *
+    GetStandardInputPath () const
+    {
+        if (m_input_path.empty())
+            return NULL;
+        return m_input_path.c_str();
+    }
+    
+    void
+    SetStandardInputPath (const char *path)
+    {
+        if (path && path[0])
+            m_input_path.assign (path);
+        else
+        {
+            // Make sure we deallocate memory in string...
+            std::string tmp;
+            tmp.swap (m_input_path);
+        }
+    }
+    
+    const char *
+    GetStandardOutputPath () const
+    {
+        if (m_output_path.empty())
+            return NULL;
+        return m_output_path.c_str();
+    }
+    
+    void
+    SetStandardOutputPath (const char *path)
+    {
+        if (path && path[0])
+            m_output_path.assign (path);
+        else
+        {
+            // Make sure we deallocate memory in string...
+            std::string tmp;
+            tmp.swap (m_output_path);
+        }
+    }
+    
+    const char *
+    GetStandardErrorPath () const
+    {
+        if (m_error_path.empty())
+            return NULL;
+        return m_error_path.c_str();
+    }
+    
+    void
+    SetStandardErrorPath (const char *path)
+    {
+        if (path && path[0])
+            m_error_path.assign (path);
+        else
+        {
+            // Make sure we deallocate memory in string...
+            std::string tmp;
+            tmp.swap (m_error_path);
+        }
+    }
+    
+    bool
+    GetDisableASLR () const
+    {
+        return m_disable_aslr;
+    }
+    
+    void
+    SetDisableASLR (bool b)
+    {
+        m_disable_aslr = b;
+    }
+    
+    bool
+    GetDisableSTDIO () const
+    {
+        return m_disable_stdio;
+    }
+    
+    void
+    SetDisableSTDIO (bool b)
+    {
+        m_disable_stdio = b;
+    }
+
+
 protected:
 
     void
@@ -102,12 +221,24 @@ protected:
     CreateInstanceName ();
     
     OptionValueFileSpec m_expr_prefix_file;
-    lldb::DataBufferSP m_expr_prefix_contents_sp;
-    int                m_prefer_dynamic_value;
+    std::string m_expr_prefix_contents;
+    int m_prefer_dynamic_value;
     OptionValueBoolean m_skip_prologue;
     PathMappingList m_source_map;
     uint32_t m_max_children_display;
-    
+    uint32_t m_max_strlen_length;
+    OptionValueBoolean m_breakpoints_use_platform_avoid;
+    typedef std::map<std::string, std::string> dictionary;
+    Args m_run_args;
+    dictionary m_env_vars;
+    std::string m_input_path;
+    std::string m_output_path;
+    std::string m_error_path;
+    bool m_disable_aslr;
+    bool m_disable_stdio;
+    bool m_inherit_host_env;
+    bool m_got_host_env;
+
 
 };
 
@@ -115,6 +246,7 @@ protected:
 // Target
 //----------------------------------------------------------------------
 class Target :
+    public ReferenceCountedBaseVirtual<Target>,
     public Broadcaster,
     public ExecutionContextScope,
     public TargetInstanceSettings
@@ -170,6 +302,10 @@ private:
     Target (Debugger &debugger,
             const ArchSpec &target_arch,
             const lldb::PlatformSP &platform_sp);
+
+    // Helper function.
+    bool
+    ProcessIsValid ();
 
 public:
     ~Target();
@@ -231,10 +367,17 @@ public:
 
     // Use this to create a file and line breakpoint to a given module or all module it is NULL
     lldb::BreakpointSP
-    CreateBreakpoint (const FileSpec *containingModule,
+    CreateBreakpoint (const FileSpecList *containingModules,
                       const FileSpec &file,
                       uint32_t line_no,
                       bool check_inlines,
+                      bool internal = false);
+
+    // Use this to create breakpoint that matches regex against the source lines in files given in source_file_list:
+    lldb::BreakpointSP
+    CreateSourceRegexBreakpoint (const FileSpecList *containingModules,
+                      const FileSpecList *source_file_list,
+                      RegularExpression &source_regex,
                       bool internal = false);
 
     // Use this to create a breakpoint from a load address
@@ -247,11 +390,12 @@ public:
     CreateBreakpoint (Address &addr,
                       bool internal = false);
 
-    // Use this to create a function breakpoint by regexp in containingModule, or all modules if it is NULL
+    // Use this to create a function breakpoint by regexp in containingModule/containingSourceFiles, or all modules if it is NULL
     // When "skip_prologue is set to eLazyBoolCalculate, we use the current target 
     // setting, else we use the values passed in
     lldb::BreakpointSP
-    CreateBreakpoint (const FileSpec *containingModule,
+    CreateFuncRegexBreakpoint (const FileSpecList *containingModules,
+                      const FileSpecList *containingSourceFiles,
                       RegularExpression &func_regexp,
                       bool internal = false,
                       LazyBool skip_prologue = eLazyBoolCalculate);
@@ -260,7 +404,8 @@ public:
     // When "skip_prologue is set to eLazyBoolCalculate, we use the current target 
     // setting, else we use the values passed in
     lldb::BreakpointSP
-    CreateBreakpoint (const FileSpec *containingModule,
+    CreateBreakpoint (const FileSpecList *containingModules,
+                      const FileSpecList *containingSourceFiles,
                       const char *func_name,
                       uint32_t func_name_type_mask, 
                       bool internal = false,
@@ -271,6 +416,24 @@ public:
     CreateBreakpoint (lldb::SearchFilterSP &filter_sp,
                       lldb::BreakpointResolverSP &resolver_sp,
                       bool internal = false);
+
+    // Use this to create a watchpoint:
+    lldb::WatchpointSP
+    CreateWatchpoint (lldb::addr_t addr,
+                      size_t size,
+                      uint32_t type);
+
+    lldb::WatchpointSP
+    GetLastCreatedWatchpoint ()
+    {
+        return m_last_created_watchpoint;
+    }
+
+    WatchpointList &
+    GetWatchpointList()
+    {
+        return m_watchpoint_list;
+    }
 
     void
     RemoveAllBreakpoints (bool internal_also = false);
@@ -289,6 +452,33 @@ public:
 
     bool
     RemoveBreakpointByID (lldb::break_id_t break_id);
+
+    // The flag 'end_to_end', default to true, signifies that the operation is
+    // performed end to end, for both the debugger and the debuggee.
+
+    bool
+    RemoveAllWatchpoints (bool end_to_end = true);
+
+    bool
+    DisableAllWatchpoints (bool end_to_end = true);
+
+    bool
+    EnableAllWatchpoints (bool end_to_end = true);
+
+    bool
+    IgnoreAllWatchpoints (uint32_t ignore_count);
+
+    bool
+    DisableWatchpointByID (lldb::watch_id_t watch_id);
+
+    bool
+    EnableWatchpointByID (lldb::watch_id_t watch_id);
+
+    bool
+    RemoveWatchpointByID (lldb::watch_id_t watch_id);
+
+    bool
+    IgnoreWatchpointByID (lldb::watch_id_t watch_id, uint32_t ignore_count);
 
     void
     ModulesDidLoad (ModuleList &module_list);
@@ -417,6 +607,48 @@ public:
     {
         return m_images;
     }
+    
+    
+    //------------------------------------------------------------------
+    /// Return whether this FileSpec corresponds to a module that should be considered for general searches.
+    ///
+    /// This API will be consulted by the SearchFilterForNonModuleSpecificSearches
+    /// and any module that returns \b true will not be searched.  Note the
+    /// SearchFilterForNonModuleSpecificSearches is the search filter that
+    /// gets used in the CreateBreakpoint calls when no modules is provided.
+    ///
+    /// The target call at present just consults the Platform's call of the
+    /// same name.
+    /// 
+    /// @param[in] module_sp
+    ///     A shared pointer reference to the module that checked.
+    ///
+    /// @return \b true if the module should be excluded, \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    ModuleIsExcludedForNonModuleSpecificSearches (const FileSpec &module_spec);
+    
+    //------------------------------------------------------------------
+    /// Return whether this module should be considered for general searches.
+    ///
+    /// This API will be consulted by the SearchFilterForNonModuleSpecificSearches
+    /// and any module that returns \b true will not be searched.  Note the
+    /// SearchFilterForNonModuleSpecificSearches is the search filter that
+    /// gets used in the CreateBreakpoint calls when no modules is provided.
+    ///
+    /// The target call at present just consults the Platform's call of the
+    /// same name.
+    ///
+    /// FIXME: When we get time we should add a way for the user to set modules that they
+    /// don't want searched, in addition to or instead of the platform ones.
+    /// 
+    /// @param[in] module_sp
+    ///     A shared pointer reference to the module that checked.
+    ///
+    /// @return \b true if the module should be excluded, \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    ModuleIsExcludedForNonModuleSpecificSearches (const lldb::ModuleSP &module_sp);
 
     ArchSpec &
     GetArchitecture ()
@@ -478,7 +710,8 @@ public:
                 bool prefer_file_cache,
                 void *dst,
                 size_t dst_len,
-                Error &error);
+                Error &error,
+                lldb::addr_t *load_addr_ptr = NULL);
 
     size_t
     ReadScalarIntegerFromMemory (const Address& addr, 
@@ -566,7 +799,10 @@ public:
     GetImageSearchPathList ();
     
     ClangASTContext *
-    GetScratchClangASTContext();
+    GetScratchClangASTContext(bool create_on_demand=true);
+    
+    ClangASTImporter *
+    GetClangASTImporter();
     
     const char *
     GetExpressionPrefixContentsAsCString ();
@@ -579,6 +815,8 @@ public:
     ExecutionResults
     EvaluateExpression (const char *expression,
                         StackFrame *frame,
+                        lldb_private::ExecutionPolicy execution_policy,
+                        bool coerce_to_id,
                         bool unwind_on_error,
                         bool keep_in_memory,
                         lldb::DynamicValueType use_dynamic,
@@ -744,6 +982,12 @@ public:
     {
         return m_platform_sp;
     }
+    
+    SourceManager &
+    GetSourceManager ()
+    {
+        return m_source_manager;
+    }
 
     //------------------------------------------------------------------
     // Target::SettingsController
@@ -791,9 +1035,7 @@ public:
     };
     
 
-protected:
-    friend class lldb::SBTarget;
-    
+protected:    
     //------------------------------------------------------------------
     // Member variables.
     //------------------------------------------------------------------
@@ -806,6 +1048,8 @@ protected:
     BreakpointList  m_breakpoint_list;
     BreakpointList  m_internal_breakpoint_list;
     lldb::BreakpointSP m_last_created_breakpoint;
+    WatchpointList  m_watchpoint_list;
+    lldb::WatchpointSP m_last_created_watchpoint;
     // We want to tightly control the process destruction process so
     // we can correctly tear down everything that we need to, so the only
     // class that knows about the process lifespan is this target class.
@@ -813,8 +1057,11 @@ protected:
     lldb::SearchFilterSP  m_search_filter_sp;
     PathMappingList m_image_search_paths;
     std::auto_ptr<ClangASTContext> m_scratch_ast_context_ap;
+    std::auto_ptr<ClangASTSource> m_scratch_ast_source_ap;
+    std::auto_ptr<ClangASTImporter> m_ast_importer_ap;
     ClangPersistentVariables m_persistent_variables;      ///< These are the persistent variables associated with this process for the expression parser.
 
+    SourceManager m_source_manager;
 
     typedef std::map<lldb::user_id_t, StopHookSP> StopHookCollection;
     StopHookCollection      m_stop_hooks;
@@ -826,6 +1073,13 @@ protected:
     //------------------------------------------------------------------
     lldb::SearchFilterSP
     GetSearchFilterForModule (const FileSpec *containingModule);
+
+    lldb::SearchFilterSP
+    GetSearchFilterForModuleList (const FileSpecList *containingModuleList);
+    
+    lldb::SearchFilterSP
+    GetSearchFilterForModuleAndCUList (const FileSpecList *containingModules, const FileSpecList *containingSourceFiles);
+
 
     static void
     ImageSearchPathsChanged (const PathMappingList &path_list,

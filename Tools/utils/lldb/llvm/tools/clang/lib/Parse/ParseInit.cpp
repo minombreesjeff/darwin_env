@@ -90,7 +90,7 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
     assert(Tok.is(tok::colon) && "MayBeDesignationStart not working properly!");
     SourceLocation ColonLoc = ConsumeToken();
 
-    Diag(Tok, diag::ext_gnu_old_style_field_designator)
+    Diag(NameLoc, diag::ext_gnu_old_style_field_designator)
       << FixItHint::CreateReplacement(SourceRange(NameLoc, ColonLoc),
                                       NewSyntax.str());
 
@@ -139,7 +139,10 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
     //
     InMessageExpressionRAIIObject InMessage(*this, true);
     
-    SourceLocation StartLoc = ConsumeBracket();
+    BalancedDelimiterTracker T(*this, tok::l_square);
+    T.consumeOpen();
+    SourceLocation StartLoc = T.getOpenLocation();
+
     ExprResult Idx;
 
     // If Objective-C is enabled and this is a typename (class message
@@ -266,8 +269,9 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
                                                     StartLoc, EllipsisLoc));
     }
 
-    SourceLocation EndLoc = MatchRHSPunctuation(tok::r_square, StartLoc);
-    Desig.getDesignator(Desig.getNumDesignators() - 1).setRBracketLoc(EndLoc);
+    T.consumeClose();
+    Desig.getDesignator(Desig.getNumDesignators() - 1).setRBracketLoc(
+                                                        T.getCloseLocation());
   }
 
   // Okay, we're done with the designator sequence.  We know that there must be
@@ -316,7 +320,9 @@ ExprResult Parser::ParseInitializerWithPotentialDesignator() {
 ExprResult Parser::ParseBraceInitializer() {
   InMessageExpressionRAIIObject InMessage(*this, false);
   
-  SourceLocation LBraceLoc = ConsumeBrace();
+  BalancedDelimiterTracker T(*this, tok::l_brace);
+  T.consumeOpen();
+  SourceLocation LBraceLoc = T.getOpenLocation();
 
   /// InitExprs - This is the actual list of expressions contained in the
   /// initializer.
@@ -334,6 +340,17 @@ ExprResult Parser::ParseBraceInitializer() {
   bool InitExprsOk = true;
 
   while (1) {
+    // Handle Microsoft __if_exists/if_not_exists if necessary.
+    if (getLang().MicrosoftExt && (Tok.is(tok::kw___if_exists) ||
+        Tok.is(tok::kw___if_not_exists))) {
+      if (ParseMicrosoftIfExistsBraceInitializer(InitExprs, InitExprsOk)) {
+        if (Tok.isNot(tok::comma)) break;
+        ConsumeToken();
+      }
+      if (Tok.is(tok::r_brace)) break;
+      continue;
+    }
+
     // Parse: designation[opt] initializer
 
     // If we know that this cannot be a designation, just parse the nested
@@ -376,12 +393,76 @@ ExprResult Parser::ParseBraceInitializer() {
     // Handle trailing comma.
     if (Tok.is(tok::r_brace)) break;
   }
-  if (InitExprsOk && Tok.is(tok::r_brace))
-    return Actions.ActOnInitList(LBraceLoc, move_arg(InitExprs),
-                                 ConsumeBrace());
 
-  // Match the '}'.
-  MatchRHSPunctuation(tok::r_brace, LBraceLoc);
+  bool closed = !T.consumeClose();
+
+  if (InitExprsOk && closed)
+    return Actions.ActOnInitList(LBraceLoc, move_arg(InitExprs),
+                                 T.getCloseLocation());
+
   return ExprError(); // an error occurred.
 }
 
+
+// Return true if a comma (or closing brace) is necessary after the
+// __if_exists/if_not_exists statement.
+bool Parser::ParseMicrosoftIfExistsBraceInitializer(ExprVector &InitExprs,
+                                                    bool &InitExprsOk) {
+  bool trailingComma = false;
+  IfExistsCondition Result;
+  if (ParseMicrosoftIfExistsCondition(Result))
+    return false;
+  
+  BalancedDelimiterTracker Braces(*this, tok::l_brace);
+  if (Braces.consumeOpen()) {
+    Diag(Tok, diag::err_expected_lbrace);
+    return false;
+  }
+
+  switch (Result.Behavior) {
+  case IEB_Parse:
+    // Parse the declarations below.
+    break;
+        
+  case IEB_Dependent:
+    Diag(Result.KeywordLoc, diag::warn_microsoft_dependent_exists)
+      << Result.IsIfExists;
+    // Fall through to skip.
+      
+  case IEB_Skip:
+    Braces.skipToEnd();
+    return false;
+  }
+
+  while (Tok.isNot(tok::eof)) {
+    trailingComma = false;
+    // If we know that this cannot be a designation, just parse the nested
+    // initializer directly.
+    ExprResult SubElt;
+    if (MayBeDesignationStart(Tok.getKind(), PP))
+      SubElt = ParseInitializerWithPotentialDesignator();
+    else
+      SubElt = ParseInitializer();
+
+    if (Tok.is(tok::ellipsis))
+      SubElt = Actions.ActOnPackExpansion(SubElt.get(), ConsumeToken());
+    
+    // If we couldn't parse the subelement, bail out.
+    if (!SubElt.isInvalid())
+      InitExprs.push_back(SubElt.release());
+    else
+      InitExprsOk = false;
+
+    if (Tok.is(tok::comma)) {
+      ConsumeToken();
+      trailingComma = true;
+    }
+
+    if (Tok.is(tok::r_brace))
+      break;
+  }
+
+  Braces.consumeClose();
+
+  return !trailingComma;
+}

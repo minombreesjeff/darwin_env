@@ -44,6 +44,7 @@
 namespace lldb_private {
 
 class Module :
+    public ReferenceCountedBaseVirtual<Module>,
     public SymbolContextScope
 {
 public:
@@ -63,7 +64,7 @@ public:
     static Module *
     GetAllocatedModuleAtIndex (size_t idx);
 
-    static Mutex &
+    static Mutex *
     GetAllocationModuleCollectionMutex();
 
     //------------------------------------------------------------------
@@ -102,13 +103,6 @@ public:
     ~Module ();
 
     //------------------------------------------------------------------
-    /// If you have an instance of Module, get its corresponding shared
-    /// pointer if it has one in the shared module list.
-    //------------------------------------------------------------------
-    lldb::ModuleSP
-    GetSP () const;
-
-    //------------------------------------------------------------------
     /// @copydoc SymbolContextScope::CalculateSymbolContext(SymbolContext*)
     ///
     /// @see SymbolContextScope
@@ -120,7 +114,8 @@ public:
     CalculateSymbolContextModule ();
 
     void
-    GetDescription (Stream *s);
+    GetDescription (Stream *s,
+                    lldb::DescriptionLevel level = lldb::eDescriptionLevelFull);
 
     //------------------------------------------------------------------
     /// Dump a description of this object to a Stream.
@@ -166,7 +161,7 @@ public:
                                     lldb::SymbolType symbol_type = lldb::eSymbolTypeAny);
 
     size_t
-    FindSymbolsWithNameAndType (const ConstString &name, 
+    FindSymbolsWithNameAndType (const ConstString &name,
                                 lldb::SymbolType symbol_type, 
                                 SymbolContextList &sc_list);
 
@@ -205,8 +200,16 @@ public:
     //------------------------------------------------------------------
     /// Find functions by name.
     ///
+    /// If the function is an inlined function, it will have a block,
+    /// representing the inlined function, and the function will be the
+    /// containing function.  If it is not inlined, then the block will 
+    /// be NULL.
+    ///
     /// @param[in] name
     ///     The name of the compile unit we are looking for.
+    ///
+    /// @param[in] namespace_decl
+    ///     If valid, a namespace to search in.
     ///
     /// @param[in] name_type_mask
     ///     A bit mask of bits that indicate what kind of names should
@@ -226,7 +229,8 @@ public:
     ///     The number of matches added to \a sc_list.
     //------------------------------------------------------------------
     uint32_t
-    FindFunctions (const ConstString &name, 
+    FindFunctions (const ConstString &name,
+                   const ClangNamespaceDecl *namespace_decl,
                    uint32_t name_type_mask, 
                    bool symbols_ok, 
                    bool append, 
@@ -234,6 +238,11 @@ public:
 
     //------------------------------------------------------------------
     /// Find functions by name.
+    ///
+    /// If the function is an inlined function, it will have a block,
+    /// representing the inlined function, and the function will be the
+    /// containing function.  If it is not inlined, then the block will 
+    /// be NULL.
     ///
     /// @param[in] regex
     ///     A regular expression to use when matching the name.
@@ -262,6 +271,9 @@ public:
     ///     The name of the global or static variable we are looking
     ///     for.
     ///
+    /// @param[in] namespace_decl
+    ///     If valid, a namespace to search in.
+    ///
     /// @param[in] append
     ///     If \b true, any matches will be appended to \a
     ///     variable_list, else matches replace the contents of
@@ -279,7 +291,8 @@ public:
     ///     The number of matches added to \a variable_list.
     //------------------------------------------------------------------
     uint32_t
-    FindGlobalVariables (const ConstString &name, 
+    FindGlobalVariables (const ConstString &name,
+                         const ClangNamespaceDecl *namespace_decl,
                          bool append, 
                          uint32_t max_matches, 
                          VariableList& variable_list);
@@ -322,6 +335,9 @@ public:
     /// @param[in] name
     ///     The name of the type we are looking for.
     ///
+    /// @param[in] namespace_decl
+    ///     If valid, a namespace to search in.
+    ///
     /// @param[in] append
     ///     If \b true, any matches will be appended to \a
     ///     variable_list, else matches replace the contents of
@@ -346,8 +362,9 @@ public:
     ///     The number of matches added to \a type_list.
     //------------------------------------------------------------------
     uint32_t
-    FindTypes (const SymbolContext& sc, 
-               const ConstString &name, 
+    FindTypes (const SymbolContext& sc,
+               const ConstString &name,
+               const ClangNamespaceDecl *namespace_decl,
                bool append, 
                uint32_t max_matches, 
                TypeList& types);
@@ -648,6 +665,30 @@ public:
     ClangASTContext &
     GetClangASTContext ();
 
+    // Special error functions that can do printf style formatting that will prepend the message with
+    // something appropriate for this module (like the architecture, path and object name (if any)). 
+    // This centralizes code so that everyone doesn't need to format their error and log messages on
+    // their own and keeps the output a bit more consistent.
+    void                    
+    LogMessage (Log *log, const char *format, ...) __attribute__ ((format (printf, 3, 4)));
+
+    void
+    ReportWarning (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+
+    void
+    ReportError (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+
+    // Only report an error once when the module is first detected to be modified
+    // so we don't spam the console with many messages.
+    void
+    ReportErrorIfModifyDetected (const char *format, ...) __attribute__ ((format (printf, 2, 3)));
+
+    bool
+    GetModified (bool use_cached_only);
+    
+    bool
+    SetModified (bool b);
+
 protected:
     //------------------------------------------------------------------
     // Member Variables
@@ -660,14 +701,15 @@ protected:
     FileSpec                    m_platform_file;///< The path to the module on the platform on which it is being debugged
     ConstString                 m_object_name;  ///< The name an object within this module that is selected, or empty of the module is represented by \a m_file.
     uint64_t                    m_object_offset;
-    std::auto_ptr<ObjectFile>   m_objfile_ap;   ///< A pointer to the object file parser for this module.
+    lldb::ObjectFileSP          m_objfile_sp;   ///< A shared pointer to the object file parser for this module as it may or may not be shared with the SymbolFile
     std::auto_ptr<SymbolVendor> m_symfile_ap;   ///< A pointer to the symbol vendor for this module.
     ClangASTContext             m_ast;          ///< The AST context for this module.
     bool                        m_did_load_objfile:1,
                                 m_did_load_symbol_vendor:1,
                                 m_did_parse_uuid:1,
                                 m_did_init_ast:1,
-                                m_is_dynamic_loader_module:1;
+                                m_is_dynamic_loader_module:1,
+                                m_was_modified:1;   /// See if the module was modified after it was initially opened.
     
     //------------------------------------------------------------------
     /// Resolve a file or load virtual address.
@@ -722,7 +764,8 @@ private:
 
     uint32_t
     FindTypes_Impl (const SymbolContext& sc, 
-                    const ConstString &name, 
+                    const ConstString &name,
+                    const ClangNamespaceDecl *namespace_decl,
                     bool append, 
                     uint32_t max_matches, 
                     TypeList& types);

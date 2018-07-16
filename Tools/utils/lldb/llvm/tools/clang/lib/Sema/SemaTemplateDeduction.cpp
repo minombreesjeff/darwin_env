@@ -977,6 +977,10 @@ DeduceTemplateArguments(Sema &S,
   //     cv-list T
   if (const TemplateTypeParmType *TemplateTypeParm
         = Param->getAs<TemplateTypeParmType>()) {
+    // Just skip any attempts to deduce from a placeholder type.
+    if (Arg->isPlaceholderType())
+      return Sema::TDK_Success;
+    
     unsigned Index = TemplateTypeParm->getIndex();
     bool RecanonicalizeArg = false;
 
@@ -1112,7 +1116,17 @@ DeduceTemplateArguments(Sema &S,
                                        Info, Deduced, TDF);
 
       return Sema::TDK_NonDeducedMismatch;
-      
+
+    //     _Atomic T   [extension]
+    case Type::Atomic:
+      if (const AtomicType *AtomicArg = Arg->getAs<AtomicType>())
+        return DeduceTemplateArguments(S, TemplateParams,
+                                       cast<AtomicType>(Param)->getValueType(),
+                                       AtomicArg->getValueType(),
+                                       Info, Deduced, TDF);
+
+      return Sema::TDK_NonDeducedMismatch;
+
     //     T *
     case Type::Pointer: {
       QualType PointeeType;
@@ -1535,8 +1549,7 @@ DeduceTemplateArguments(Sema &S,
 
   switch (Param.getKind()) {
   case TemplateArgument::Null:
-    assert(false && "Null template argument in parameter list");
-    break;
+    llvm_unreachable("Null template argument in parameter list");
 
   case TemplateArgument::Type:
     if (Arg.getKind() == TemplateArgument::Type)
@@ -1826,8 +1839,7 @@ static bool isSameTemplateArg(ASTContext &Context,
 
   switch (X.getKind()) {
     case TemplateArgument::Null:
-      assert(false && "Comparing NULL template argument");
-      break;
+      llvm_unreachable("Comparing NULL template argument");
 
     case TemplateArgument::Type:
       return Context.getCanonicalType(X.getAsType()) ==
@@ -2577,7 +2589,7 @@ Sema::FinishTemplateArgumentDeduction(FunctionTemplateDecl *FunctionTemplate,
   Specialization = cast_or_null<FunctionDecl>(
                       SubstDecl(FunctionTemplate->getTemplatedDecl(), Owner,
                          MultiLevelTemplateArgumentList(*DeducedArgumentList)));
-  if (!Specialization)
+  if (!Specialization || Specialization->isInvalidDecl())
     return TDK_SubstitutionFailure;
 
   assert(Specialization->getPrimaryTemplate()->getCanonicalDecl() ==
@@ -2588,6 +2600,14 @@ Sema::FinishTemplateArgumentDeduction(FunctionTemplateDecl *FunctionTemplate,
   if (Specialization->getTemplateSpecializationArgs() == DeducedArgumentList &&
       !Trap.hasErrorOccurred())
     Info.take();
+
+  // There may have been an error that did not prevent us from constructing a
+  // declaration. Mark the declaration invalid and return with a substitution
+  // failure.
+  if (Trap.hasErrorOccurred()) {
+    Specialization->setInvalidDecl(true);
+    return TDK_SubstitutionFailure;
+  }
 
   if (OriginalCallArgs) {
     // C++ [temp.deduct.call]p4:
@@ -2607,14 +2627,6 @@ Sema::FinishTemplateArgumentDeduction(FunctionTemplateDecl *FunctionTemplate,
     }
   }
   
-  // There may have been an error that did not prevent us from constructing a
-  // declaration. Mark the declaration invalid and return with a substitution
-  // failure.
-  if (Trap.hasErrorOccurred()) {
-    Specialization->setInvalidDecl(true);
-    return TDK_SubstitutionFailure;
-  }
-
   // If we suppressed any diagnostics while performing template argument
   // deduction, and if we haven't already instantiated this declaration,
   // keep track of these diagnostics. They'll be emitted if this specialization
@@ -2957,16 +2969,19 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
                                                     TDF))
         continue;
 
+      // If we have nothing to deduce, we're done.
+      if (!hasDeducibleTemplateParameters(*this, FunctionTemplate, ParamType))
+        continue;
+
       // Keep track of the argument type and corresponding parameter index,
       // so we can check for compatibility between the deduced A and A.
-      if (hasDeducibleTemplateParameters(*this, FunctionTemplate, ParamType))
-        OriginalCallArgs.push_back(OriginalCallArg(OrigParamType, ArgIdx-1, 
-                                                   ArgType));
+      OriginalCallArgs.push_back(OriginalCallArg(OrigParamType, ArgIdx-1, 
+                                                 ArgType));
 
       if (TemplateDeductionResult Result
-          = ::DeduceTemplateArguments(*this, TemplateParams,
-                                      ParamType, ArgType, Info, Deduced,
-                                      TDF))
+            = ::DeduceTemplateArguments(*this, TemplateParams,
+                                        ParamType, ArgType, Info, Deduced,
+                                        TDF))
         return Result;
 
       continue;
@@ -3237,7 +3252,7 @@ Sema::DeduceTemplateArguments(FunctionTemplateDecl *FunctionTemplate,
   // both P and A are pointers or member pointers. In this case, we
   // just ignore cv-qualifiers completely).
   if ((P->isPointerType() && A->isPointerType()) ||
-      (P->isMemberPointerType() && P->isMemberPointerType()))
+      (P->isMemberPointerType() && A->isMemberPointerType()))
     TDF |= TDF_IgnoreQualifiers;
   if (TemplateDeductionResult Result
         = ::DeduceTemplateArguments(*this, TemplateParams,
@@ -3327,8 +3342,14 @@ namespace {
 ///
 /// \returns true if deduction succeeded, false if it failed.
 bool
-Sema::DeduceAutoType(TypeSourceInfo *Type, Expr *Init,
+Sema::DeduceAutoType(TypeSourceInfo *Type, Expr *&Init,
                      TypeSourceInfo *&Result) {
+  if (Init->getType()->isNonOverloadPlaceholderType()) {
+    ExprResult result = CheckPlaceholderExpr(Init);
+    if (result.isInvalid()) return false;
+    Init = result.take();
+  }
+
   if (Init->isTypeDependent()) {
     Result = Type;
     return true;
@@ -3762,7 +3783,8 @@ Sema::getMostSpecialized(UnresolvedSetIterator SpecBegin,
                          const PartialDiagnostic &NoneDiag,
                          const PartialDiagnostic &AmbigDiag,
                          const PartialDiagnostic &CandidateDiag,
-                         bool Complain) {
+                         bool Complain,
+                         QualType TargetType) {
   if (SpecBegin == SpecEnd) {
     if (Complain)
       Diag(Loc, NoneDiag);
@@ -3816,11 +3838,16 @@ Sema::getMostSpecialized(UnresolvedSetIterator SpecBegin,
 
   if (Complain)
   // FIXME: Can we order the candidates in some sane way?
-    for (UnresolvedSetIterator I = SpecBegin; I != SpecEnd; ++I)
-      Diag((*I)->getLocation(), CandidateDiag)
-        << getTemplateArgumentBindingsText(
+    for (UnresolvedSetIterator I = SpecBegin; I != SpecEnd; ++I) {
+      PartialDiagnostic PD = CandidateDiag;
+      PD << getTemplateArgumentBindingsText(
           cast<FunctionDecl>(*I)->getPrimaryTemplate()->getTemplateParameters(),
                     *cast<FunctionDecl>(*I)->getTemplateSpecializationArgs());
+      if (!TargetType.isNull())
+        HandleFunctionTypeMismatch(PD, cast<FunctionDecl>(*I)->getType(),
+                                   TargetType);
+      Diag((*I)->getLocation(), PD);
+    }
 
   return SpecEnd;
 }
@@ -4121,6 +4148,13 @@ MarkUsedTemplateParameters(Sema &SemaRef, QualType T,
     if (!OnlyDeduced)
       MarkUsedTemplateParameters(SemaRef,
                                  cast<ComplexType>(T)->getElementType(),
+                                 OnlyDeduced, Depth, Used);
+    break;
+
+  case Type::Atomic:
+    if (!OnlyDeduced)
+      MarkUsedTemplateParameters(SemaRef,
+                                 cast<AtomicType>(T)->getValueType(),
                                  OnlyDeduced, Depth, Used);
     break;
 

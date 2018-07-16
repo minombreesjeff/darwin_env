@@ -18,6 +18,10 @@ def err_drv_unknown_stdin_type : Error<
 def err_drv_unknown_language : Error<"language not recognized: '%0'">;
 def err_drv_invalid_arch_name : Error<
   "invalid arch name '%0'">;
+def err_drv_invalid_rtlib_name : Error<
+  "invalid runtime library name in argument '%0'">;
+def err_drv_unsupported_rtlib_for_platform : Error<
+  "unsupported runtime library '%0' for platform '%1'">;
 def err_drv_invalid_stdlib_name : Error<
   "invalid library name in argument '%0'">;
 def err_drv_invalid_opt_with_multiple_archs : Error<
@@ -62,9 +66,12 @@ def err_drv_clang_unsupported_opt_cxx_darwin_i386 : Error<
 def err_drv_command_failed : Error<
   "%0 command failed with exit code %1 (use -v to see invocation)">;
 def err_drv_command_signalled : Error<
-  "%0 command failed due to signal %1 (use -v to see invocation)">;
+  "%0 command failed due to signal (use -v to see invocation)">;
 def err_drv_invalid_mfloat_abi : Error<
   "invalid float ABI '%0'">;
+def err_drv_invalid_libcxx_deployment : Error<
+  "invalid deployment target for -stdlib=libc++ (requires %0 or later)">;
+
 def err_drv_I_dash_not_supported : Error<
   "'%0' not supported, please use -iquote instead">;
 def err_drv_unknown_argument : Error<"unknown argument: '%0'">;
@@ -98,7 +105,8 @@ def warn_drv_input_file_unused : Warning<
 def warn_drv_preprocessed_input_file_unused : Warning<
   "%0: previously preprocessed input unused when '%1' is present">;
 def warn_drv_unused_argument : Warning<
-  "argument unused during compilation: '%0'">;
+  "argument unused during compilation: '%0'">,
+  InGroup<DiagGroup<"unused-command-line-argument">>;
 def warn_drv_pipe_ignored_with_save_temps : Warning<
   "-pipe ignored because -save-temps specified">;
 def warn_drv_not_using_clang_cpp : Warning<

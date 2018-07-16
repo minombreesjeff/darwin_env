@@ -20,6 +20,8 @@
 #include "MachThread.h"
 #include "MachProcess.h"
 
+extern "C" bool CPUHasAVX(); // Defined over in DNBArchImplX86_64.cpp
+
 #if defined (LLDB_DEBUGSERVER_RELEASE) || defined (LLDB_DEBUGSERVER_DEBUG)
 enum debugState {
     debugStateUnknown,
@@ -252,8 +254,6 @@ enum
     gdb_ymm7       = gdb_xmm7
 };
 
-enum DNBArchImplI386::AVXPresence DNBArchImplI386::s_has_avx = DNBArchImplI386::kAVXUnknown;
-
 uint64_t
 DNBArchImplI386::GetPC(uint64_t failValue)
 {
@@ -463,12 +463,18 @@ DNBArchImplI386::GetFPUState(bool force)
             if (CPUHasAVX() || FORCE_AVX_REGS)
             {
                 mach_msg_type_number_t count = e_regSetWordSizeAVX;
-                m_state.SetError(e_regSetFPU, Read, ::thread_get_state(m_thread->ThreadID(), __i386_AVX_STATE, (thread_state_t)&m_state.context.fpu.avx, &count));
+                m_state.SetError (e_regSetFPU, Read, ::thread_get_state(m_thread->ThreadID(), __i386_AVX_STATE, (thread_state_t)&m_state.context.fpu.avx, &count));
+                DNBLogThreadedIf (LOG_THREAD, "::thread_get_state (0x%4.4x, %u, &avx, %u (%u passed in)) => 0x%8.8x",
+                                  m_thread->ThreadID(), __i386_AVX_STATE, count, e_regSetWordSizeAVX,
+                                  m_state.GetError(e_regSetFPU, Read));
             }
             else
             {    
-                mach_msg_type_number_t count = e_regSetWordSizeFPR;
+                mach_msg_type_number_t count = e_regSetWordSizeFPU;
                 m_state.SetError(e_regSetFPU, Read, ::thread_get_state(m_thread->ThreadID(), __i386_FLOAT_STATE, (thread_state_t)&m_state.context.fpu.no_avx, &count));
+                DNBLogThreadedIf (LOG_THREAD, "::thread_get_state (0x%4.4x, %u, &fpu, %u (%u passed in) => 0x%8.8x",
+                                  m_thread->ThreadID(), __i386_FLOAT_STATE, count, e_regSetWordSizeFPU,
+                                  m_state.GetError(e_regSetFPU, Read));
             }
         }
     }
@@ -506,7 +512,7 @@ DNBArchImplI386::SetFPUState()
         if (CPUHasAVX() || FORCE_AVX_REGS)
             m_state.SetError(e_regSetFPU, Write, ::thread_set_state(m_thread->ThreadID(), __i386_AVX_STATE, (thread_state_t)&m_state.context.fpu.avx, e_regSetWordSizeAVX));
         else
-            m_state.SetError(e_regSetFPU, Write, ::thread_set_state(m_thread->ThreadID(), __i386_FLOAT_STATE, (thread_state_t)&m_state.context.fpu.no_avx, e_regSetWordSizeFPR));
+            m_state.SetError(e_regSetFPU, Write, ::thread_set_state(m_thread->ThreadID(), __i386_FLOAT_STATE, (thread_state_t)&m_state.context.fpu.no_avx, e_regSetWordSizeFPU));
         return m_state.GetError(e_regSetFPU, Write);
     }
 }
@@ -518,6 +524,24 @@ DNBArchImplI386::SetEXCState()
     return m_state.GetError(e_regSetEXC, Write);
 }
 
+kern_return_t
+DNBArchImplI386::GetDBGState(bool force)
+{
+    if (force || m_state.GetError(e_regSetDBG, Read))
+    {
+        mach_msg_type_number_t count = e_regSetWordSizeDBG;
+        m_state.SetError(e_regSetDBG, Read, ::thread_get_state(m_thread->ThreadID(), __i386_DEBUG_STATE, (thread_state_t)&m_state.context.dbg, &count));
+    }
+    return m_state.GetError(e_regSetDBG, Read);
+}
+
+kern_return_t
+DNBArchImplI386::SetDBGState()
+{
+    m_state.SetError(e_regSetDBG, Write, ::thread_set_state(m_thread->ThreadID(), __i386_DEBUG_STATE, (thread_state_t)&m_state.context.dbg, e_regSetWordSizeDBG));
+    return m_state.GetError(e_regSetDBG, Write);
+}
+
 void
 DNBArchImplI386::ThreadWillResume()
 {
@@ -526,6 +550,26 @@ DNBArchImplI386::ThreadWillResume()
     {
         // This is the primary thread, let the arch do anything it needs
         EnableHardwareSingleStep(true);
+    }
+
+    // Reset the debug status register, if necessary, before we resume.
+    kern_return_t kret = GetDBGState(false);
+    DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchImplI386::ThreadWillResume() GetDBGState() => 0x%8.8x.", kret);
+    if (kret != KERN_SUCCESS)
+        return;
+
+    DBG &debug_state = m_state.context.dbg;
+    bool need_reset = false;
+    uint32_t i, num = NumSupportedHardwareWatchpoints();
+    for (i = 0; i < num; ++i)
+        if (IsWatchpointHit(debug_state, i))
+            need_reset = true;
+
+    if (need_reset)
+    {
+        ClearWatchpointHits(debug_state);
+        kret = SetDBGState();
+        DNBLogThreadedIf(LOG_WATCHPOINTS,"DNBArchImplI386::ThreadWillResume() SetDBGState() => 0x%8.8x.", kret);
     }
 }
 
@@ -574,6 +618,8 @@ DNBArchImplI386::NotifyException(MachException::Data& exc)
     case EXC_BREAKPOINT:
         if (exc.exc_data.size() >= 2 && exc.exc_data[0] == 2)
         {
+            // exc_code = EXC_I386_BPT
+            //
             nub_addr_t pc = GetPC(INVALID_NUB_ADDRESS);
             if (pc != INVALID_NUB_ADDRESS && pc > 0)
             {
@@ -596,6 +642,23 @@ DNBArchImplI386::NotifyException(MachException::Data& exc)
                 return true;
             }
         }
+        else if (exc.exc_data.size() >= 2 && exc.exc_data[0] == 1)
+        {
+            // exc_code = EXC_I386_SGL
+            //
+            // Check whether this corresponds to a watchpoint hit event.
+            // If yes, set the exc_sub_code to the data break address.
+            nub_addr_t addr = 0;
+            uint32_t hw_index = GetHardwareWatchpointHit(addr);
+            if (hw_index != INVALID_NUB_HW_INDEX)
+            {
+                exc.exc_data[1] = addr;
+                // Piggyback the hw_index in the exc.data.
+                exc.exc_data.push_back(hw_index);
+            }
+
+            return true;
+        }
         break;
     case EXC_SYSCALL:
         break;
@@ -607,6 +670,267 @@ DNBArchImplI386::NotifyException(MachException::Data& exc)
     return false;
 }
 
+uint32_t
+DNBArchImplI386::NumSupportedHardwareWatchpoints()
+{
+    // Available debug address registers: dr0, dr1, dr2, dr3.
+    return 4;
+}
+
+static uint32_t
+size_and_rw_bits(nub_size_t size, bool read, bool write)
+{
+    uint32_t rw;
+    if (read) {
+        rw = 0x3; // READ or READ/WRITE
+    } else if (write) {
+        rw = 0x1; // WRITE
+    } else {
+        assert(0 && "read and write cannot both be false");
+    }
+
+    switch (size) {
+    case 1:
+        return rw;
+    case 2:
+        return (0x1 << 2) | rw;
+    case 4:
+        return (0x3 << 2) | rw;
+    case 8:
+        return (0x2 << 2) | rw;
+    default:
+        assert(0 && "invalid size, must be one of 1, 2, 4, or 8");
+    }    
+}
+void
+DNBArchImplI386::SetWatchpoint(DBG &debug_state, uint32_t hw_index, nub_addr_t addr, nub_size_t size, bool read, bool write)
+{
+    // Set both dr7 (debug control register) and dri (debug address register).
+    
+    // dr7{7-0} encodes the local/gloabl enable bits:
+    //  global enable --. .-- local enable
+    //                  | |
+    //                  v v
+    //      dr0 -> bits{1-0}
+    //      dr1 -> bits{3-2}
+    //      dr2 -> bits{5-4}
+    //      dr3 -> bits{7-6}
+    //
+    // dr7{31-16} encodes the rw/len bits:
+    //  b_x+3, b_x+2, b_x+1, b_x
+    //      where bits{x+1, x} => rw
+    //            0b00: execute, 0b01: write, 0b11: read-or-write, 0b10: io read-or-write (unused)
+    //      and bits{x+3, x+2} => len
+    //            0b00: 1-byte, 0b01: 2-byte, 0b11: 4-byte, 0b10: 8-byte
+    //
+    //      dr0 -> bits{19-16}
+    //      dr1 -> bits{23-20}
+    //      dr2 -> bits{27-24}
+    //      dr3 -> bits{31-28}
+    debug_state.__dr7 |= (1 << (2*hw_index) |
+                          size_and_rw_bits(size, read, write) << (16+4*hw_index));
+    uint32_t addr_32 = addr & 0xffffffff;
+    switch (hw_index) {
+    case 0:
+        debug_state.__dr0 = addr_32; break;
+    case 1:
+        debug_state.__dr1 = addr_32; break;
+    case 2:
+        debug_state.__dr2 = addr_32; break;
+    case 3:
+        debug_state.__dr3 = addr_32; break;
+    default:
+        assert(0 && "invalid hardware register index, must be one of 0, 1, 2, or 3");
+    }
+    return;
+}
+
+void
+DNBArchImplI386::ClearWatchpoint(DBG &debug_state, uint32_t hw_index)
+{
+    debug_state.__dr7 &= ~(3 << (2*hw_index));
+    switch (hw_index) {
+    case 0:
+        debug_state.__dr0 = 0; break;
+    case 1:
+        debug_state.__dr1 = 0; break;
+    case 2:
+        debug_state.__dr2 = 0; break;
+    case 3:
+        debug_state.__dr3 = 0; break;
+    default:
+        assert(0 && "invalid hardware register index, must be one of 0, 1, 2, or 3");
+    }
+    return;
+}
+
+bool
+DNBArchImplI386::IsWatchpointVacant(const DBG &debug_state, uint32_t hw_index)
+{
+    // Check dr7 (debug control register) for local/global enable bits:
+    //  global enable --. .-- local enable
+    //                  | |
+    //                  v v
+    //      dr0 -> bits{1-0}
+    //      dr1 -> bits{3-2}
+    //      dr2 -> bits{5-4}
+    //      dr3 -> bits{7-6}
+    return (debug_state.__dr7 & (3 << (2*hw_index))) == 0;
+}
+
+// Resets local copy of debug status register to wait for the next debug excpetion.
+void
+DNBArchImplI386::ClearWatchpointHits(DBG &debug_state)
+{
+    // See also IsWatchpointHit().
+    debug_state.__dr6 = 0;
+    return;
+}
+
+bool
+DNBArchImplI386::IsWatchpointHit(const DBG &debug_state, uint32_t hw_index)
+{
+    // Check dr6 (debug status register) whether a watchpoint hits:
+    //          is watchpoint hit?
+    //                  |
+    //                  v
+    //      dr0 -> bits{0}
+    //      dr1 -> bits{1}
+    //      dr2 -> bits{2}
+    //      dr3 -> bits{3}
+    return (debug_state.__dr6 & (1 << hw_index));
+}
+
+nub_addr_t
+DNBArchImplI386::GetWatchAddress(const DBG &debug_state, uint32_t hw_index)
+{
+    switch (hw_index) {
+    case 0:
+        return debug_state.__dr0;
+    case 1:
+        return debug_state.__dr1;
+    case 2:
+        return debug_state.__dr2;
+    case 3:
+        return debug_state.__dr3;
+    default:
+        assert(0 && "invalid hardware register index, must be one of 0, 1, 2, or 3");
+    }
+}
+
+uint32_t
+DNBArchImplI386::EnableHardwareWatchpoint (nub_addr_t addr, nub_size_t size, bool read, bool write)
+{
+    DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchImplI386::EnableHardwareWatchpoint(addr = 0x%llx, size = %zu, read = %u, write = %u)", (uint64_t)addr, size, read, write);
+
+    const uint32_t num_hw_watchpoints = NumSupportedHardwareWatchpoints();
+
+    // Can only watch 1, 2, 4, or 8 bytes.
+    if (!(size == 1 || size == 2 || size == 4 || size == 8))
+        return INVALID_NUB_HW_INDEX;
+
+    // We must watch for either read or write
+    if (read == false && write == false)
+        return INVALID_NUB_HW_INDEX;
+
+    // Read the debug state
+    kern_return_t kret = GetDBGState(false);
+
+    if (kret == KERN_SUCCESS)
+    {
+        // Check to make sure we have the needed hardware support
+        uint32_t i = 0;
+
+        DBG &debug_state = m_state.context.dbg;
+        for (i = 0; i < num_hw_watchpoints; ++i)
+        {
+            if (IsWatchpointVacant(debug_state, i))
+                break;
+        }
+
+        // See if we found an available hw breakpoint slot above
+        if (i < num_hw_watchpoints)
+        {
+            // Modify our local copy of the debug state, first.
+            SetWatchpoint(debug_state, i, addr, size, read, write);
+            // Now set the watch point in the inferior.
+            kret = SetDBGState();
+            DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchImplI386::EnableHardwareWatchpoint() SetDBGState() => 0x%8.8x.", kret);
+
+            if (kret == KERN_SUCCESS)
+                return i;
+        }
+        else
+        {
+            DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchImplI386::EnableHardwareWatchpoint(): All hardware resources (%u) are in use.", num_hw_watchpoints);
+        }
+    }
+    return INVALID_NUB_HW_INDEX;
+}
+
+bool
+DNBArchImplI386::DisableHardwareWatchpoint (uint32_t hw_index)
+{
+    kern_return_t kret = GetDBGState(false);
+
+    const uint32_t num_hw_points = NumSupportedHardwareWatchpoints();
+    if (kret == KERN_SUCCESS)
+    {
+        DBG &debug_state = m_state.context.dbg;
+        if (hw_index < num_hw_points && !IsWatchpointVacant(debug_state, hw_index))
+        {
+            // Modify our local copy of the debug state, first.
+            ClearWatchpoint(debug_state, hw_index);
+            // Now disable the watch point in the inferior.
+            kret = SetDBGState();
+            DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchImplI386::DisableHardwareWatchpoint( %u )",
+                             hw_index);
+
+            if (kret == KERN_SUCCESS)
+                return true;
+        }
+    }
+    return false;
+}
+
+DNBArchImplI386::DBG DNBArchImplI386::Global_Debug_State = {0,0,0,0,0,0,0,0};
+bool DNBArchImplI386::Valid_Global_Debug_State = false;
+
+// Use this callback from MachThread, which in turn was called from MachThreadList, to update
+// the global view of the hardware watchpoint state, so that when new thread comes along, they
+// get to inherit the existing hardware watchpoint state.
+void
+DNBArchImplI386::HardwareWatchpointStateChanged ()
+{
+    Global_Debug_State = m_state.context.dbg;
+    Valid_Global_Debug_State = true;
+}
+
+// Iterate through the debug status register; return the index of the first hit.
+uint32_t
+DNBArchImplI386::GetHardwareWatchpointHit(nub_addr_t &addr)
+{
+    // Read the debug state
+    kern_return_t kret = GetDBGState(false);
+    DNBLogThreadedIf(LOG_WATCHPOINTS, "DNBArchImplI386::GetHardwareWatchpointHit() GetDBGState() => 0x%8.8x.", kret);
+    if (kret == KERN_SUCCESS)
+    {
+        DBG &debug_state = m_state.context.dbg;
+        uint32_t i, num = NumSupportedHardwareWatchpoints();
+        for (i = 0; i < num; ++i)
+        {
+            if (IsWatchpointHit(debug_state, i))
+            {
+                addr = GetWatchAddress(debug_state, i);
+                DNBLogThreadedIf(LOG_WATCHPOINTS,
+                                 "DNBArchImplI386::GetHardwareWatchpointHit() found => %u (addr = 0x%llx).",
+                                 i, (uint64_t)addr);
+                return i;
+            }
+        }
+    }
+    return INVALID_NUB_HW_INDEX;
+}
 
 // Set the single step bit in the processor status register.
 kern_return_t
@@ -797,7 +1121,17 @@ const size_t DNBArchImplI386::k_num_register_sets = sizeof(g_reg_sets_no_avx)/si
 DNBArchProtocol *
 DNBArchImplI386::Create (MachThread *thread)
 {
-    return new DNBArchImplI386 (thread);
+    DNBArchImplI386 *obj = new DNBArchImplI386 (thread);
+
+    // When new thread comes along, it tries to inherit from the global debug state, if it is valid.
+    if (Valid_Global_Debug_State)
+    {
+        obj->m_state.context.dbg = Global_Debug_State;
+        kern_return_t kret = obj->SetDBGState();
+        DNBLogThreadedIf(LOG_WATCHPOINTS,
+                         "DNBArchImplX86_64::Create() Inherit and SetDBGState() => 0x%8.8x.", kret);
+    }
+    return obj;
 }
 
 const uint8_t * const
@@ -1143,9 +1477,27 @@ DNBArchImplI386::GetRegisterContext (void *buf, nub_size_t buf_len)
             size = buf_len;
 
         bool force = false;
-        if (GetGPRState(force) | GetFPUState(force) | GetEXCState(force))
-            return 0;
-        ::memcpy (buf, &m_state.context, size);
+        kern_return_t kret;
+        if ((kret = GetGPRState(force)) != KERN_SUCCESS)
+        {
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::GetRegisterContext (buf = %p, len = %zu) error: GPR regs failed to read: %u ", buf, buf_len, kret);
+            size = 0;
+        }
+        else if ((kret = GetFPUState(force)) != KERN_SUCCESS)
+        {
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::GetRegisterContext (buf = %p, len = %zu) error: %s regs failed to read: %u", buf, buf_len, CPUHasAVX() ? "AVX" : "FPU", kret);
+            size = 0;
+        }
+        else if ((kret = GetEXCState(force)) != KERN_SUCCESS)
+        {
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::GetRegisterContext (buf = %p, len = %zu) error: EXC regs failed to read: %u", buf, buf_len, kret);
+            size = 0;
+        }
+        else
+        {
+            // Success
+            ::memcpy (buf, &m_state.context, size);
+        }
     }
     DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::GetRegisterContext (buf = %p, len = %zu) => %zu", buf, buf_len, size);
     // Return the size of the register context even if NULL was passed in
@@ -1165,9 +1517,13 @@ DNBArchImplI386::SetRegisterContext (const void *buf, nub_size_t buf_len)
             size = buf_len;
 
         ::memcpy (&m_state.context, buf, size);
-        SetGPRState();
-        SetFPUState();
-        SetEXCState();
+        kern_return_t kret;
+        if ((kret = SetGPRState()) != KERN_SUCCESS)
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::SetRegisterContext (buf = %p, len = %zu) error: GPR regs failed to write: %u", buf, buf_len, kret);
+        if ((kret = SetFPUState()) != KERN_SUCCESS)
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::SetRegisterContext (buf = %p, len = %zu) error: %s regs failed to write: %u", buf, buf_len, CPUHasAVX() ? "AVX" : "FPU", kret);
+        if ((kret = SetEXCState()) != KERN_SUCCESS)
+            DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::SetRegisterContext (buf = %p, len = %zu) error: EXP regs failed to write: %u", buf, buf_len, kret);
     }
     DNBLogThreadedIf (LOG_THREAD, "DNBArchImplI386::SetRegisterContext (buf = %p, len = %zu) => %zu", buf, buf_len, size);
     return size;

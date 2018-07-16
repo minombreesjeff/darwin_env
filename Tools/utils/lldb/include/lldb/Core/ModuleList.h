@@ -73,10 +73,10 @@ public:
     ///     A shared pointer to a module to add to this collection.
     //------------------------------------------------------------------
     void
-    Append (lldb::ModuleSP &module_sp);
+    Append (const lldb::ModuleSP &module_sp);
 
     bool
-    AppendIfNeeded (lldb::ModuleSP &module_sp);
+    AppendIfNeeded (const lldb::ModuleSP &module_sp);
 
     //------------------------------------------------------------------
     /// Clear the object's state.
@@ -88,6 +88,16 @@ public:
     void
     Clear ();
 
+    //------------------------------------------------------------------
+    /// Clear the object's state.
+    ///
+    /// Clears the list of modules and releases a reference to each
+    /// module object and if the reference count goes to zero, the
+    /// module will be deleted. Also relese all memory that might be
+    /// held by any collection classes (like std::vector)
+    //------------------------------------------------------------------
+    void
+    Destroy();
     //------------------------------------------------------------------
     /// Dump the description of each module contained in this list.
     ///
@@ -166,26 +176,7 @@ public:
                       SymbolContextList &sc_list);
     
     //------------------------------------------------------------------
-    /// Find functions by name.
-    ///
-    /// Finds all functions that match \a name in all of the modules and
-    /// returns the results in \a sc_list.
-    ///
-    /// @param[in] name
-    ///     The name of the function we are looking for.
-    ///
-    /// @param[in] name_type_mask
-    ///     A bit mask of bits that indicate what kind of names should
-    ///     be used when doing the lookup. Bits include fully qualified
-    ///     names, base names, C++ methods, or ObjC selectors. 
-    ///     See FunctionNameType for more details.
-    ///
-    /// @param[out] sc_list
-    ///     A symbol context list that gets filled in with all of the
-    ///     matches.
-    ///
-    /// @return
-    ///     The number of matches added to \a sc_list.
+    /// @see Module::FindFunctions ()
     //------------------------------------------------------------------
     uint32_t
     FindFunctions (const ConstString &name,
@@ -315,8 +306,15 @@ public:
     size_t
     FindSymbolsWithNameAndType (const ConstString &name,
                                 lldb::SymbolType symbol_type,
-                                SymbolContextList &sc_list);
+                                SymbolContextList &sc_list,
+                                bool append = false);
 
+    size_t
+    FindSymbolsMatchingRegExAndType (const RegularExpression &regex, 
+                                     lldb::SymbolType symbol_type, 
+                                     SymbolContextList &sc_list,
+                                     bool append = false);
+                                     
     //------------------------------------------------------------------
     /// Find types by name.
     ///
@@ -358,7 +356,7 @@ public:
                TypeList& types);
     
     bool
-    Remove (lldb::ModuleSP &module_sp);
+    Remove (const lldb::ModuleSP &module_sp);
 
     size_t
     Remove (ModuleList &module_list);
@@ -407,8 +405,8 @@ public:
     size_t
     GetSize () const;
 
-    static const lldb::ModuleSP
-    GetModuleSP (const Module *module_ptr);
+    static bool
+    ModuleIsInCache (const Module *module_ptr);
 
     static Error
     GetSharedModule (const FileSpec& file_spec,
@@ -446,13 +444,6 @@ protected:
     collection m_modules; ///< The collection of modules.
     mutable Mutex m_modules_mutex;
 
-private:
-    uint32_t
-    FindTypes_Impl (const SymbolContext& sc, 
-                    const ConstString &name, 
-                    bool append, 
-                    uint32_t max_matches, 
-                    TypeList& types);
 };
 
 } // namespace lldb_private

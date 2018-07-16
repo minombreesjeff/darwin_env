@@ -38,6 +38,7 @@ USEDLIBS = lldbAPI.a \
 	lldbPluginLanguageRuntimeObjCAppleObjCRuntime.a \
 	lldbPluginObjectContainerBSDArchive.a \
 	lldbPluginObjectFileELF.a \
+	lldbPluginObjectFilePECOFF.a \
 	lldbPluginPlatformGDBServer.a \
 	lldbPluginProcessGDBRemote.a \
 	lldbPluginSymbolFileDWARF.a \
@@ -60,33 +61,39 @@ USEDLIBS = lldbAPI.a \
 	clangParse.a \
 	clangSema.a \
 	clangSerialization.a \
-	EnhancedDisassembly.a
+	LLVMMCDisassembler.a
 
 include $(LLDB_LEVEL)/../../Makefile.config
 
 LINK_COMPONENTS := $(TARGETS_TO_BUILD) asmparser bitreader bitwriter codegen \
-                   instrumentation ipo selectiondag jit mc mcjit
+                   instrumentation ipo selectiondag jit mc mcjit linker
 
 ifeq ($(HOST_OS),Darwin)
   USEDLIBS += lldbHostMacOSX.a \
               lldbPluginDynamicLoaderMacOSX.a \
+              lldbPluginDynamicLoaderDarwinKernel.a \
               lldbPluginObjectContainerUniversalMachO.a \
               lldbPluginObjectFileMachO.a \
+              lldbPluginOperatingSystemDarwinKernel.a \
               lldbPluginSymbolVendorMacOSX.a \
               lldbPluginPlatformMacOSX.a \
-			  lldbPluginProcessDarwin
+              lldbPluginProcessDarwin.a
 endif
 
 ifeq ($(HOST_OS),Linux)
-  USEDLIBS += lldbPluginProcessLinux.a \
-              lldbPluginDynamicLoaderLinux.a \
+  USEDLIBS += lldbPluginProcessPOSIX.a \
+              lldbPluginProcessLinux.a \
+              lldbPluginDynamicLoaderPOSIX.a \
               lldbPluginPlatformLinux.a \
               lldbHostLinux.a
 endif
 
 ifeq ($(HOST_OS),FreeBSD)
   USEDLIBS += lldbHostFreeBSD.a \
-			  lldbPluginPlatformFreeBSD.a
+              lldbPluginDynamicLoaderPOSIX.a \
+              lldbPluginProcessPOSIX.a \
+              lldbPluginProcessFreeBSD.a \
+              lldbPluginPlatformFreeBSD.a
 endif
 
 include $(LEVEL)/Makefile.common
@@ -100,7 +107,6 @@ ifeq ($(HOST_OS),Darwin)
                            -Wl,-compatibility_version -Wl,1
     endif
     # extra options to override libtool defaults 
-    LLVMLibsOptions += -avoid-version
 	LLVMLibsOptions += -F/System/Library/Frameworks -F/System/Library/PrivateFrameworks
 	LLVMLibsOptions += -framework Foundation -framework CoreFoundation
 	LLVMLibsOptions += -framework CoreServices -framework Carbon
@@ -109,7 +115,7 @@ ifeq ($(HOST_OS),Darwin)
     # Mac OS X 10.4 and earlier tools do not allow a second -install_name on command line
     DARWIN_VERS := $(shell echo $(TARGET_TRIPLE) | sed 's/.*darwin\([0-9]*\).*/\1/')
     ifneq ($(DARWIN_VERS),8)
-       LLVMLibsOptions  += -no-undefined -Wl,-install_name \
+       LLVMLibsOptions  += -Wl,-install_name \
                            -Wl,"@executable_path/../lib/lib$(LIBRARYNAME)$(SHLIBEXT)"
     endif
 endif
@@ -128,8 +134,8 @@ ifeq ($(HOST_OS),FreeBSD)
     # Include everything from the .a's into the shared library.
     ProjLibsOptions := -Wl,--whole-archive $(ProjLibsOptions) \
                        -Wl,--no-whole-archive
-    # Don't allow unresolved symbols.
-    LLVMLibsOptions += -Wl,--no-undefined
+    # Allow unresolved symbols.
+    LLVMLibsOptions += -Wl,--allow-shlib-undefined
     # Link in python
     LD.Flags += $(PYTHON_BUILD_FLAGS) -lrt -L/usr/local/lib -lexecinfo
 endif

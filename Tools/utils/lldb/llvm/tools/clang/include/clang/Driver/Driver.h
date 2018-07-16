@@ -13,6 +13,7 @@
 #include "clang/Basic/Diagnostic.h"
 
 #include "clang/Driver/Phases.h"
+#include "clang/Driver/Types.h"
 #include "clang/Driver/Util.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -46,7 +47,7 @@ namespace driver {
 class Driver {
   OptTable *Opts;
 
-  Diagnostic &Diags;
+  DiagnosticsEngine &Diags;
 
 public:
   // Diag - Forwarding function for diagnostics.
@@ -109,6 +110,9 @@ public:
 
   /// The file to log CC_LOG_DIAGNOSTICS output to, if enabled.
   const char *CCLogDiagnosticsFilename;
+
+  /// A list of inputs and their types for the given arguments.
+  typedef SmallVector<std::pair<types::ID, const Arg*>, 16> InputList;
 
   /// Whether the driver should follow g++ like behavior.
   unsigned CCCIsCXX : 1;
@@ -185,8 +189,8 @@ public:
   Driver(StringRef _ClangExecutable,
          StringRef _DefaultHostTriple,
          StringRef _DefaultImageName,
-         bool IsProduction, bool CXXIsProduction,
-         Diagnostic &_Diags);
+         bool IsProduction,
+         DiagnosticsEngine &_Diags);
   ~Driver();
 
   /// @name Accessors
@@ -198,7 +202,7 @@ public:
 
   const OptTable &getOpts() const { return *Opts; }
 
-  const Diagnostic &getDiags() const { return Diags; }
+  const DiagnosticsEngine &getDiags() const { return Diags; }
 
   bool getCheckInputsExist() const { return CheckInputsExist; }
 
@@ -242,6 +246,16 @@ public:
   /// ArgList.
   InputArgList *ParseArgStrings(ArrayRef<const char *> Args);
 
+  /// BuildInputs - Construct the list of inputs and their types from 
+  /// the given arguments.
+  ///
+  /// \param TC - The default host tool chain.
+  /// \param Args - The input arguments.
+  /// \param Inputs - The list to store the resulting compilation 
+  /// inputs onto.
+  void BuildInputs(const ToolChain &TC, const DerivedArgList &Args,
+                   InputList &Inputs) const;
+
   /// BuildActions - Construct the list of actions to perform for the
   /// given arguments, which are only done for a single architecture.
   ///
@@ -249,7 +263,7 @@ public:
   /// \param Args - The input arguments.
   /// \param Actions - The list to store the resulting actions onto.
   void BuildActions(const ToolChain &TC, const DerivedArgList &Args,
-                    ActionList &Actions) const;
+                    const InputList &Inputs, ActionList &Actions) const;
 
   /// BuildUniversalActions - Construct the list of actions to perform
   /// for the given arguments, which may require a universal build.
@@ -258,6 +272,7 @@ public:
   /// \param Args - The input arguments.
   /// \param Actions - The list to store the resulting actions onto.
   void BuildUniversalActions(const ToolChain &TC, const DerivedArgList &Args,
+                             const InputList &BAInputs,
                              ActionList &Actions) const;
 
   /// BuildJobs - Bind actions to concrete tools and translate
@@ -358,11 +373,11 @@ public:
                                  const char *BaseInput,
                                  bool AtTopLevel) const;
 
-  /// GetTemporaryPath - Return the pathname of a temporary file to
-  /// use as part of compilation; the file will have the given suffix.
+  /// GetTemporaryPath - Return the pathname of a temporary file to use 
+  /// as part of compilation; the file will have the given prefix and suffix.
   ///
   /// GCC goes to extra lengths here to be a bit more robust.
-  std::string GetTemporaryPath(const char *Suffix) const;
+  std::string GetTemporaryPath(StringRef Prefix, const char *Suffix) const;
 
   /// GetHostInfo - Construct a new host info object for the given
   /// host triple.

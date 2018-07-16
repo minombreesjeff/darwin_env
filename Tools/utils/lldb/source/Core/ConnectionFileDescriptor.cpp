@@ -31,7 +31,7 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/Timer.h"
-
+#include "lldb/Host/Host.h"
 using namespace lldb;
 using namespace lldb_private;
 
@@ -73,7 +73,8 @@ ConnectionFileDescriptor::ConnectionFileDescriptor () :
     m_fd_recv_type (eFDTypeFile),
     m_udp_send_sockaddr (),
     m_should_close_fd (false), 
-    m_socket_timeout_usec(0)
+    m_socket_timeout_usec(0),
+    m_mutex (Mutex::eMutexTypeRecursive)
 {
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
     if (log)
@@ -88,7 +89,8 @@ ConnectionFileDescriptor::ConnectionFileDescriptor (int fd, bool owns_fd) :
     m_fd_recv_type (eFDTypeFile),
     m_udp_send_sockaddr (),
     m_should_close_fd (owns_fd),
-    m_socket_timeout_usec(0)
+    m_socket_timeout_usec(0),
+    m_mutex (Mutex::eMutexTypeRecursive)
 {
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION |  LIBLLDB_LOG_OBJECT));
     if (log)
@@ -113,6 +115,7 @@ ConnectionFileDescriptor::IsConnected () const
 ConnectionStatus
 ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
 {
+    Mutex::Locker locker (m_mutex);
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Connect (url = '%s')", this, s);
@@ -174,7 +177,16 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
                     bool is_socket = GetSocketOption (m_fd_send, SOL_SOCKET, SO_REUSEADDR, resuse) == 0;
                     if (is_socket)
                         m_fd_send_type = m_fd_recv_type = eFDTypeSocket;
-                    m_should_close_fd = true;
+                    // Don't take ownership of a file descriptor that gets passed
+                    // to us since someone else opened the file descriptor and
+                    // handed it to us. 
+                    // TODO: Since are using a URL to open connection we should 
+                    // eventually parse options using the web standard where we
+                    // have "fd://123?opt1=value;opt2=value" and we can have an
+                    // option be "owns=1" or "owns=0" or something like this to
+                    // allow us to specify this. For now, we assume we must 
+                    // assume we don't own it.
+                    m_should_close_fd = false;
                     return eConnectionStatusSuccess;
                 }
             }
@@ -188,7 +200,10 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
         {
             // file:///PATH
             const char *path = s + strlen("file://");
-            m_fd_send = m_fd_recv = ::open (path, O_RDWR);
+            do
+            {
+                m_fd_send = m_fd_recv = ::open (path, O_RDWR);
+            } while (m_fd_send == -1 && errno == EINTR);
             if (m_fd_send == -1)
             {
                 if (error_ptr)
@@ -220,6 +235,7 @@ ConnectionFileDescriptor::Connect (const char *s, Error *error_ptr)
 ConnectionStatus
 ConnectionFileDescriptor::Disconnect (Error *error_ptr)
 {
+    Mutex::Locker locker (m_mutex);
     LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
     if (log)
         log->Printf ("%p ConnectionFileDescriptor::Disconnect ()", this);
@@ -229,22 +245,25 @@ ConnectionFileDescriptor::Disconnect (Error *error_ptr)
         return eConnectionStatusSuccess;
     }
     ConnectionStatus status = eConnectionStatusSuccess;
-    if (m_fd_send == m_fd_recv)
+    if (m_fd_send >= 0 || m_fd_recv >= 0)
     {
-        // Both file descriptors are the same, only close one
-        status = Close (m_fd_send, error_ptr);
-        m_fd_recv = -1;
-    }
-    else
-    {
-        // File descriptors are the different, close both if needed
-        if (m_fd_send >= 0)
-            status = Close (m_fd_send, error_ptr);
-        if (m_fd_recv >= 0)
+        if (m_fd_send == m_fd_recv)
         {
-            ConnectionStatus recv_status = Close (m_fd_recv, error_ptr);
-            if (status == eConnectionStatusSuccess)
-                status = recv_status;
+            // Both file descriptors are the same, only close one
+            m_fd_recv = -1;
+            status = Close (m_fd_send, error_ptr);
+        }
+        else
+        {
+            // File descriptors are the different, close both if needed
+            if (m_fd_send >= 0)
+                status = Close (m_fd_send, error_ptr);
+            if (m_fd_recv >= 0)
+            {
+                ConnectionStatus recv_status = Close (m_fd_recv, error_ptr);
+                if (status == eConnectionStatusSuccess)
+                    status = recv_status;
+            }
         }
     }
     return status;
@@ -269,14 +288,22 @@ ConnectionFileDescriptor::Read (void *dst,
     case eFDTypeFile:       // Other FD requireing read/write
         status = BytesAvailable (timeout_usec, error_ptr);
         if (status == eConnectionStatusSuccess)
-            bytes_read = ::read (m_fd_recv, dst, dst_len);
+        {
+            do
+            {
+                bytes_read = ::read (m_fd_recv, dst, dst_len);
+            } while (bytes_read < 0 && errno == EINTR);
+        }
         break;
 
     case eFDTypeSocket:     // Socket requiring send/recv
         if (SetSocketReceiveTimeout (timeout_usec))
         {
             status = eConnectionStatusSuccess;
-            bytes_read = ::recv (m_fd_recv, dst, dst_len, 0);
+            do
+            {
+                bytes_read = ::recv (m_fd_recv, dst, dst_len, 0);
+            } while (bytes_read < 0 && errno == EINTR);
         }
         break;
 
@@ -286,7 +313,10 @@ ConnectionFileDescriptor::Read (void *dst,
             status = eConnectionStatusSuccess;
             SocketAddress from (m_udp_send_sockaddr);
             socklen_t from_len = m_udp_send_sockaddr.GetLength();
-            bytes_read = ::recvfrom (m_fd_recv, dst, dst_len, 0, (struct sockaddr *)&from, &from_len);
+            do
+            {
+                bytes_read = ::recvfrom (m_fd_recv, dst, dst_len, 0, (struct sockaddr *)&from, &from_len);
+            } while (bytes_read < 0 && errno == EINTR);
         }
         break;
     }
@@ -363,7 +393,7 @@ ConnectionFileDescriptor::Read (void *dst,
             return 0;
         }
 
-        Disconnect (NULL);
+        //Disconnect (NULL);
         return 0;
     }
     return bytes_read;
@@ -392,21 +422,30 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
     switch (m_fd_send_type)
     {
         case eFDTypeFile:       // Other FD requireing read/write
-            bytes_sent = ::write (m_fd_send, src, src_len);
+            do
+            {
+                bytes_sent = ::write (m_fd_send, src, src_len);
+            } while (bytes_sent < 0 && errno == EINTR);
             break;
             
         case eFDTypeSocket:     // Socket requiring send/recv
-            bytes_sent = ::send (m_fd_send, src, src_len, 0);
+            do
+            {
+                bytes_sent = ::send (m_fd_send, src, src_len, 0);
+            } while (bytes_sent < 0 && errno == EINTR);
             break;
             
         case eFDTypeSocketUDP:  // Unconnected UDP socket requiring sendto/recvfrom
             assert (m_udp_send_sockaddr.GetFamily() != 0);
-            bytes_sent = ::sendto (m_fd_send, 
-                                   src, 
-                                   src_len, 
-                                   0, 
-                                   m_udp_send_sockaddr, 
-                                   m_udp_send_sockaddr.GetLength());
+            do
+            {
+                bytes_sent = ::sendto (m_fd_send, 
+                                       src, 
+                                       src_len, 
+                                       0, 
+                                       m_udp_send_sockaddr, 
+                                       m_udp_send_sockaddr.GetLength());
+            } while (bytes_sent < 0 && errno == EINTR);
             break;
     }
 
@@ -473,7 +512,7 @@ ConnectionFileDescriptor::Write (const void *src, size_t src_len, ConnectionStat
             break;  // Break to close....
         }
 
-        Disconnect (NULL);
+        //Disconnect (NULL);
         return 0;
     }
 
@@ -564,29 +603,60 @@ ConnectionFileDescriptor::BytesAvailable (uint32_t timeout_usec, Error *error_pt
     return eConnectionStatusLostConnection;
 }
 
+//class ScopedPThreadCancelDisabler
+//{
+//public:
+//    ScopedPThreadCancelDisabler()
+//    {
+//        // Disable the ability for this thread to be cancelled
+//        int err = ::pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, &m_old_state);
+//        if (err != 0)
+//            m_old_state = -1;
+//        
+//    }
+//    
+//    ~ScopedPThreadCancelDisabler()
+//    {
+//        // Restore the ability for this thread to be cancelled to what it
+//        // previously was.
+//        if (m_old_state != -1)
+//            ::pthread_setcancelstate (m_old_state, 0);
+//    }
+//private:
+//    int m_old_state;    // Save the old cancelability state.
+//};
+//
 ConnectionStatus
 ConnectionFileDescriptor::Close (int& fd, Error *error_ptr)
 {
+    //ScopedPThreadCancelDisabler pthread_cancel_disabler;
     if (error_ptr)
         error_ptr->Clear();
     bool success = true;
+    // Avoid taking a lock if we can
     if (fd >= 0)
     {
-        LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
-        if (log)
-            log->Printf ("%p ConnectionFileDescriptor::Close (fd = %i)", this,fd);
-
-        success = ::close (fd) == 0;
-        if (!success && error_ptr)
+        Mutex::Locker locker (m_mutex);
+        // Check the FD after the lock is taken to ensure only one thread
+        // can get into the close scope below
+        if (fd >= 0)
         {
-            // Only set the error if we have been asked to since something else
-            // might have caused us to try and shut down the connection and may
-            // have already set the error.
-            error_ptr->SetErrorToErrno();
+            LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_CONNECTION));
+            if (log)
+                log->Printf ("%p ConnectionFileDescriptor::Close (fd = %i)", this,fd);
+
+            success = ::close (fd) == 0;
+            // A reference to a FD was passed in, set it to an invalid value
+            fd = -1;
+            if (!success && error_ptr)
+            {
+                // Only set the error if we have been asked to since something else
+                // might have caused us to try and shut down the connection and may
+                // have already set the error.
+                error_ptr->SetErrorToErrno();
+            }
         }
-        fd = -1;
     }
-    m_fd_send_type = m_fd_recv_type = eFDTypeFile;
     if (success)
         return eConnectionStatusSuccess;
     else
@@ -951,8 +1021,23 @@ ConnectionFileDescriptor::SetSocketReceiveTimeout (uint32_t timeout_usec)
             //printf ("ConnectionFileDescriptor::SetSocketReceiveTimeout (timeout_usec = %u)\n", timeout_usec);
 
             struct timeval timeout;
-            timeout.tv_sec = timeout_usec / TimeValue::MicroSecPerSec;
-            timeout.tv_usec = timeout_usec % TimeValue::MicroSecPerSec;
+            if (timeout_usec == UINT32_MAX)
+            {
+                timeout.tv_sec = 0;
+                timeout.tv_usec = 0;
+            }
+            else if (timeout_usec == 0)
+            {
+                // Sending in zero does an infinite timeout, so set this as low
+                // as we can go to get an effective zero timeout...
+                timeout.tv_sec = 0;
+                timeout.tv_usec = 1;
+            }
+            else
+            {
+                timeout.tv_sec = timeout_usec / TimeValue::MicroSecPerSec;
+                timeout.tv_usec = timeout_usec % TimeValue::MicroSecPerSec;
+            }
             if (::setsockopt (m_fd_recv, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0)
             {
                 m_socket_timeout_usec = timeout_usec;

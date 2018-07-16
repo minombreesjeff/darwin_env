@@ -23,17 +23,20 @@ namespace lldb_private {
 class Symtab
 {
 public:
-        typedef enum Debug {
-            eDebugNo,   // Not a debug symbol
-            eDebugYes,  // A debug symbol 
-            eDebugAny
-        } Debug;
+    typedef std::vector<uint32_t> IndexCollection;
+    typedef UniqueCStringMap<uint32_t> NameToIndexMap;
 
-        typedef enum Visibility {
-            eVisibilityAny,
-            eVisibilityExtern,
-            eVisibilityPrivate
-        } Visibility;
+    typedef enum Debug {
+        eDebugNo,   // Not a debug symbol
+        eDebugYes,  // A debug symbol 
+        eDebugAny
+    } Debug;
+
+    typedef enum Visibility {
+        eVisibilityAny,
+        eVisibilityExtern,
+        eVisibilityPrivate
+    } Visibility;
         
                         Symtab(ObjectFile *objfile);
                         ~Symtab();
@@ -77,6 +80,22 @@ public:
             void        SortSymbolIndexesByValue (std::vector<uint32_t>& indexes, bool remove_duplicates) const;
 
     static  void        DumpSymbolHeader (Stream *s);
+
+    
+            void        Finalize ()
+                        {
+                            // Shrink to fit the symbols so we don't waste memory
+                            if (m_symbols.capacity() > m_symbols.size())
+                            {
+                                collection new_symbols (m_symbols.begin(), m_symbols.end());
+                                m_symbols.swap (new_symbols);
+                            }
+                        }
+    
+            void        AppendSymbolNamesToMap (const IndexCollection &indexes, 
+                                                bool add_demangled,
+                                                bool add_mangled,
+                                                NameToIndexMap &name_to_index_map) const;
 
 protected:
     typedef std::vector<Symbol>         collection;

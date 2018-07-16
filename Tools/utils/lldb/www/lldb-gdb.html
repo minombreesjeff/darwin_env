@@ -3,34 +3,35 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
 <link href="style.css" rel="stylesheet" type="text/css" />
-<title>LLDB Goals</title>
+<title>LLDB to GDB Command Map</title>
 </head>
 
 <body>
     <div class="www_title">
       The <strong>LLDB</strong> Debugger
     </div>
-    
+
 <div id="container">
-	<div id="content">
+    <div id="content">
          <!--#include virtual="sidebar.incl"-->
-		<div id="middle">
-			<div class="post">
-				<h1 class ="postheader">LLDB to GDB Command Map</h1>
-    			<div class="post">
+        <div id="middle">
+            <div class="post">
 
-              	    <p>Below is a table of LLDB commands with the GDB counterparts.
-              	        The built in GDB compatability aliases in GDB are also
-              	        listed.</p>
+                <h1 class ="postheader">LLDB to GDB Command Map</h1>
+                <div class="post">
+
+                    <p>Below is a table of LLDB commands with the GDB counterparts.
+                        The built in GDB compatability aliases in GDB are also
+                        listed.</p>
                 </div>
-            	<div class="postfooter"></div>
+                <div class="postfooter"></div>
 
-				<h1 class ="postheader">Execution Commands</h1>
-    			<div class="post">
+                <h1 class ="postheader">Execution Commands</h1>
+                <div class="post">
 
                     <p>
 
-              	    <table class="stats" width="620" cellspacing="0">
+                    <table class="stats" width="620" cellspacing="0">
                     <tr>
                         <td class="hed" width="50%">LLDB</td>
                         <td class="hed" width="50%">GDB</td>
@@ -48,11 +49,10 @@
                         </td>
                     </tr>
 
-                    
+
                     <tr><td class="header" colspan="2">Launch a process with arguments <code>&lt;args&gt;</code>.</td></tr>
                         <td class="content">
                             <b>(lldb)</b> process launch -- &lt;args&gt;<br>
-                            <b>(lldb)</b> run -- &lt;args&gt;<br>
                             <b>(lldb)</b> r &lt;args&gt;
                         </td>
                         <td class="content">
@@ -63,7 +63,7 @@
 
                     <tr><td class="header" colspan="2">Launch a process for with arguments <b><code>a.out 1 2 3</code></b> without having to supply the args every time.</td></tr>
                         <td class="content">
-                            <b>%</b> lldb a.out 1 2 3<br>
+                            <b>%</b> lldb -- a.out 1 2 3<br>
                             <b>(lldb)</b> run<br>
                             ...<br>
                             <b>(lldb)</b> run<br>
@@ -81,7 +81,7 @@
                     <tr><td class="header" colspan="2">Launch a process with arguments in new terminal window (Mac OS X only).</td></tr>
                         <td class="content">
                             <b>(lldb)</b> process launch --tty -- &lt;args&gt;<br>
-                            <b>(lldb)</b> process launch -t -- &lt;args&gt;<br>
+                            <b>(lldb)</b> pro la -t -- &lt;args&gt;<br>
                         </td>
                         <td class="content">
                         </td>
@@ -90,7 +90,7 @@
                     <tr><td class="header" colspan="2">Launch a process with arguments in existing terminal <cope>/dev/ttys006</code> (Mac OS X only).</td></tr>
                         <td class="content">
                             <b>(lldb)</b> process launch --tty=/dev/ttys006 -- &lt;args&gt;<br>
-                            <b>(lldb)</b> process launch -t/dev/ttys006 -- &lt;args&gt;<br>
+                            <b>(lldb)</b> pro la -t/dev/ttys006 -- &lt;args&gt;<br>
                         </td>
                         <td class="content">
                         </td>
@@ -111,7 +111,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> process attach --name a.out<br>
-                            <b>(lldb)</b> process attach -n a.out
+                            <b>(lldb)</b> pro at -n a.out
                         </td>
                         <td class="content">
                             <b>(gdb)</b> attach a.out
@@ -122,7 +122,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> process attach --name a.out --waitfor<br>
-                            <b>(lldb)</b> process attach -n a.out -w
+                            <b>(lldb)</b> pro at -n a.out -w
                         </td>
                         <td class="content">
                             <b>(gdb)</b> attach -waitfor a.out
@@ -172,6 +172,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> thread step-inst-over<br>
+                            <b>(lldb)</b> ni
                         </td>
                         <td class="content">
                             <b>(gdb)</b> nexti<br>
@@ -190,17 +191,29 @@
                         </td>
                     </tr>
 
+                    <tr><td class="header" colspan="2">Backtrace and disassemble every time you stop.</td></tr>
+                    <tr>
+                        <td class="content" colspan="2">
+                            <b>(lldb)</b> target stop-hook add<br>
+                            Enter your stop hook command(s).  Type 'DONE' to end.<br>
+                            &gt; bt<br>
+                            &gt; disassemble --pc<br>
+                            &gt; DONE<br>
+                            Stop hook #1 added.<br>
+                        </td>
+                    </tr>
+
                     </table>
                     <p>
                 </div>
-        		<div class="postfooter"></div>
+                <div class="postfooter"></div>
 
-				<h1 class ="postheader">Breakpoint Commands</h1>
-    			<div class="post">
+                <h1 class ="postheader">Breakpoint Commands</h1>
+                <div class="post">
 
                     <p>
 
-              	    <table class="stats" width="620" cellspacing="0">
+                    <table class="stats" width="620" cellspacing="0">
                     <tr>
                         <td class="hed" width="50%">LLDB</td>
                         <td class="hed" width="50%">GDB</td>
@@ -210,11 +223,11 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> breakpoint set --name main<br>
-                            <b>(lldb)</b> breakpoint set -n main<br>
+                            <b>(lldb)</b> br s -n main<br>
                             <b>(lldb)</b> b main
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> break main
+                            <b>(gdb)</b> break main
                         </td>
                     </tr>
 
@@ -222,11 +235,11 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> breakpoint set --file test.c --line 12<br>
-                            <b>(lldb)</b> breakpoint set -f test.c -l 12<br>
+                            <b>(lldb)</b> br s -f test.c -l 12<br>
                             <b>(lldb)</b> b test.c:12
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> break test.c:12
+                            <b>(gdb)</b> break test.c:12
                         </td>
                     </tr>
 
@@ -234,10 +247,10 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> breakpoint set --method main<br>
-                            <b>(lldb)</b> breakpoint set -M main<br>
+                            <b>(lldb)</b> br s -M main<br>
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> break main<br>
+                            <b>(gdb)</b> break main<br>
                             <i>(Hope that there are no C funtions named <b>main</b>)</i>.
                         </td>
                     </tr>
@@ -246,28 +259,50 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> breakpoint set --selector count<br>
-                            <b>(lldb)</b> breakpoint set -S count<br>
+                            <b>(lldb)</b> br s -S count<br>
                         </td>
                         <td class="content">
-                            <b>(lldb)</b> break count<br>
+                            <b>(gdb)</b> break count<br>
                             <i>(Hope that there are no C or C++ funtions named <b>count</b>)</i>.
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">List all breakpoints.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> breakpoint list<br>
+                            <b>(lldb)</b> br l<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> info break<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Delete a breakpoint.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> breakpoint delete 1<br>
+                            <b>(lldb)</b> br del 1<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> delete 1<br>
                         </td>
                     </tr>
 
                     </table>
                     <p>
                 </div>
-        		<div class="postfooter"></div>
 
-				<h1 class ="postheader">Examining Thread State</h1>
-    			<div class="post">
+            <div class="postfooter"></div>
+
+            <h1 class ="postheader">Examining Variables</h1>
+                <div class="post">
                     <p>
-              	    <table class="stats" width="620" cellspacing="0">
+                    <table class="stats" width="620" cellspacing="0">
                     <tr>
                         <td class="hed" width="50%">LLDB</td>
                         <td class="hed" width="50%">GDB</td>
                     </tr>
-
 
                     <tr><td class="header" colspan="2">Show the arguments and local variables for the current frame.</td></tr>
                     <tr>
@@ -280,6 +315,106 @@
                             <b>(gdb)</b> info locals<br>
                         </td>
                     </tr>
+
+                    <tr><td class="header" colspan="2">Show the local variables for the current frame.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> frame variable --no-args<br>
+                            <b>(lldb)</b> fr v -a<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> info locals<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the contents of local variable "bar".</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> frame variable bar <br>
+                            <b>(lldb)</b> fr v bar <br>
+                            <b>(lldb)</b> p bar <br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> p bar<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the contents of local variable "bar" formatted as hex.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> frame variable --format x bar <br>
+                            <b>(lldb)</b> fr v -f x bar <br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> p/x bar<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the contents of global variable "baz".</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> target variable baz <br>
+                            <b>(lldb)</b> ta v baz <br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> p baz<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the global/static variables defined in the current source file.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> target variable <br>
+                            <b>(lldb)</b> ta v <br>
+                        </td>
+                        <td class="content">
+                            n/a<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Display a the variable "argc" and "argv" every time you stop.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> target stop-hook add --one-liner "frame variable argc argv"<br>
+                            <b>(lldb)</b> ta st a -o "fr v argc argv"<br>
+                            <b>(lldb)</b> display argc<br>
+                            <b>(lldb)</b> display argv<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> display argc<br>
+                            <b>(gdb)</b> display argv<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Display a the variable "argc" and "argv" only when you stop in the function named <b>main</b>.</td></tr>
+                    <tr>
+                        <td class="content" colspan="2">
+                            <b>(lldb)</b> target stop-hook add --name main --one-liner "frame variable argc argv"<br>
+                            <b>(lldb)</b> ta st a -n main -o "fr v argc argv"<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Display the variable "*this" only when you stop in c class named <b>MyClass</b>.</td></tr>
+                    <tr>
+                        <td class="content" colspan="2">
+                            <b>(lldb)</b> target stop-hook add --classname MyClass --one-liner "frame variable *this"<br>
+                            <b>(lldb)</b> ta st a -c MyClass -o "fr v *this"<br>
+                        </td>
+                    </tr>
+
+                    </table>
+                    <p>
+                </div>
+
+            <h1 class ="postheader">Examining Thread State</h1>
+                <div class="post">
+                    <p>
+                    <table class="stats" width="620" cellspacing="0">
+                    <tr>
+                        <td class="hed" width="50%">LLDB</td>
+                        <td class="hed" width="50%">GDB</td>
+                    </tr>
+
 
                     <tr><td class="header" colspan="2">Show the stack backtrace for the current thread.</td></tr>
                     <tr>
@@ -303,23 +438,104 @@
                         </td>
                     </tr>
 
-                    <tr><td class="header" colspan="2">Show all thread registers.</td></tr>
+                    <tr><td class="header" colspan="2">Select a different stack frame by index for the current thread.</td></tr>
                     <tr>
                         <td class="content">
-                            <b>(lldb)</b> register read
+                            <b>(lldb)</b> frame select 12<br>
                         </td>
                         <td class="content">
-                            <b>(gdb)</b> info all-registers
+                            <b>(gdb)</b> frame 12
                         </td>
                     </tr>
 
-                    <tr><td class="header" colspan="2">Show the values for the thread registers name "rax", "rsp" and "rbp".</td></tr>
+                    <tr><td class="header" colspan="2">Select the stack frame that called the current stack frame.</td></tr>
                     <tr>
                         <td class="content">
-                            <b>(lldb)</b> register read rax rsp rbp
+                            <b>(lldb)</b> up<br>
+                            <b>(lldb)</b> frame select --relative=1<br>
                         </td>
                         <td class="content">
-                            <b>(gdb)</b> info all-registers rax rsp rbp
+                            <b>(gdb)</b> up
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Select the stack frame that is called by the current stack frame.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> down<br>
+                            <b>(lldb)</b> frame select --relative=-1<br>
+                            <b>(lldb)</b> fr s -r-1<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> down
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Select a different stack frame using a relative offset.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> frame select --relative 2<br>
+                            <b>(lldb)</b> fr s -r2<br>
+                            <br>
+                            <b>(lldb)</b> frame select --relative -3<br>
+                            <b>(lldb)</b> fr s -r-3<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> up 2<br>
+                            <b>(gdb)</b> down 3<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the general purpose registers for the current thread.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> register read<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> info registers<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the general purpose registers for the current thread formatted as <b>signed decimal</b>. LLDB tries to use
+                         the same format characters as <b>printf(3)</b> when possible.  Type "help format" to see the full list of format specifiers.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> register read --format i<br>
+                            <b>(lldb)</b> re r -f i<br>
+                        </td>
+                        <td class="content">
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show all registers in all register sets for the current thread.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> register read --all<br>
+                            <b>(lldb)</b> re r -a<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> info all-registers<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the values for the registers named "rax", "rsp" and "rbp" in the current thread.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> register read rax rsp rbp<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> info all-registers rax rsp rbp<br>
+                        </td>
+                    </tr>
+
+                    <tr><td class="header" colspan="2">Show the values for the register named "rax" in the current thread formatted as <b>binary</b>.</td></tr>
+                    <tr>
+                        <td class="content">
+                            <b>(lldb)</b> register read --format binary rax<br>
+                            <b>(lldb)</b> re r -f b rax<br>
+                        </td>
+                        <td class="content">
+                            <b>(gdb)</b> p/t $rax<br>
                         </td>
                     </tr>
 
@@ -327,11 +543,11 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> memory read --size 4 --format x --count 4 0xbffff3c0<br>
-                            <b>(lldb)</b> memory read -s4 -fx -c4 0xbffff3c0<br>
-                            <b>(lldb)</b> x -s4 -fx -c4 0xbffff3c0
+                            <b>(lldb)</b> me r -s4 -fx -c4 0xbffff3c0<br>
+                            <b>(lldb)</b> x -s4 -fx -c4 0xbffff3c0<br>
                         </td>
                         <td class="content">
-                            <b>(gdb)</b> x/4xw 0xbffff3c0
+                            <b>(gdb)</b> x/4xw 0xbffff3c0<br>
                         </td>
                     </tr>
 
@@ -339,7 +555,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> memory read --outfile /tmp/mem.txt --count 512 0xbffff3c0<br>
-                            <b>(lldb)</b> memory read -o/tmp/mem.txt -c512 0xbffff3c0<br>
+                            <b>(lldb)</b> me r -o/tmp/mem.txt -c512 0xbffff3c0<br>
                         </td>
                         <td class="content">
                           <b>(gdb)</b> set logging on<br>
@@ -353,7 +569,7 @@
                     <tr>
                         <td class="content"colspan=2>
                             <b>(lldb)</b> memory read --outfile /tmp/mem.bin --binary  0x1000 0x1200<br>
-                            <b>(lldb)</b> memory read -o /tmp/mem.bin -b 0x1000 0x1200<br>
+                            <b>(lldb)</b> me r -o /tmp/mem.bin -b 0x1000 0x1200<br>
                         </td>
                     </tr>
 
@@ -361,7 +577,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> disassemble --frame<br>
-                            <b>(lldb)</b> disassemble -f
+                            <b>(lldb)</b> di -f
                         </td>
                         <td class="content">
                             <b>(gdb)</b> disassemble
@@ -372,7 +588,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> disassemble --name main<br>
-                            <b>(lldb)</b> disassemble -n main
+                            <b>(lldb)</b> di -n main
                         </td>
                         <td class="content">
                             <b>(gdb)</b> disassemble main
@@ -383,7 +599,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> disassemble --start-address  0x1eb8 --end-address 0x1ec3<br>
-                            <b>(lldb)</b> disassemble -s 0x1eb8 -e 0x1ec3<br>
+                            <b>(lldb)</b> di -s 0x1eb8 -e 0x1ec3<br>
                         </td>
                         <td class="content">
                             <b>(gdb)</b> disassemble 0x1eb8 0x1ec3
@@ -394,7 +610,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> disassemble --start-address  0x1eb8 --count 20<br>
-                            <b>(lldb)</b> disassemble -s 0x1eb8 -c 20<br>
+                            <b>(lldb)</b> di -s 0x1eb8 -c 20<br>
                         </td>
                         <td class="content">
                             <b>(gdb)</b> x/20i 0x1eb8
@@ -405,7 +621,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> disassemble --frame --mixed<br>
-                            <b>(lldb)</b> disassemble -f -m
+                            <b>(lldb)</b> di -f -m
                         </td>
                         <td class="content">
                             n/a
@@ -416,7 +632,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> disassemble --frame --bytes<br>
-                            <b>(lldb)</b> disassemble -f -b
+                            <b>(lldb)</b> di -f -b
                         </td>
                         <td class="content">
                             n/a
@@ -427,7 +643,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> disassemble --line<br>
-                            <b>(lldb)</b> disassemble -l
+                            <b>(lldb)</b> di -l
                         </td>
                         <td class="content">
                             n/a
@@ -437,14 +653,14 @@
                     </table>
                     <p>
                 </div>
-        		<div class="postfooter"></div>
+                <div class="postfooter"></div>
 
-				<h1 class ="postheader">Executable and Shared Library Query Commands</h1>
-    			<div class="post">
+                <h1 class ="postheader">Executable and Shared Library Query Commands</h1>
+                <div class="post">
 
                     <p>
 
-              	    <table class="stats" width="620" cellspacing="0">
+                    <table class="stats" width="620" cellspacing="0">
                     <tr>
                         <td class="hed" width="50%">LLDB</td>
                         <td class="hed" width="50%">GDB</td>
@@ -465,7 +681,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> image lookup --address 0x1ec4<br>
-                            <b>(lldb)</b> image lookup -a 0x1ec4<br>
+                            <b>(lldb)</b> im loo -a 0x1ec4<br>
                         </td>
                         <td class="content">
                             <b>(gdb)</b> info symbol 0x1ec4<br>
@@ -476,7 +692,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> image lookup --address 0x1ec4 a.out<br>
-                            <b>(lldb)</b> image lookup -a 0x1ec4 a.out<br>
+                            <b>(lldb)</b> im loo -a 0x1ec4 a.out<br>
                         </td>
                         <td class="content">
                         </td>
@@ -486,7 +702,7 @@
                     <tr>
                         <td class="content">
                             <b>(lldb)</b> image lookup --type Point<br>
-                            <b>(lldb)</b> image lookup -t Point<br>
+                            <b>(lldb)</b> im loo -t Point<br>
                         </td>
                         <td class="content">
                             <b>(lldb)</b> ptype Point<br>
@@ -533,14 +749,14 @@
                     </table>
                     <p>
                 </div>
-        		<div class="postfooter"></div>
+                <div class="postfooter"></div>
 
                 <p>
 
-    			
+
             </div>
-      	</div>
-	</div>
+        </div>
+    </div>
 </div>
 </body>
 </html>

@@ -21,6 +21,9 @@
 #include "clang/Lex/LexDiagnostic.h"
 #include "clang/Parse/ParseDiagnostic.h"
 #include "clang/Sema/SemaDiagnostic.h"
+#include "clang/Serialization/SerializationDiagnostic.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <map>
 using namespace clang;
@@ -45,6 +48,8 @@ struct StaticDiagInfoRec {
   unsigned Class : 3;
   unsigned SFINAE : 1;
   unsigned AccessControl : 1;
+  unsigned WarnNoWerror : 1;
+  unsigned WarnShowInSystemHeader : 1;
   unsigned Category : 5;
 
   uint8_t  NameLen;
@@ -114,8 +119,10 @@ public:
 
 static const StaticDiagInfoRec StaticDiagInfo[] = {
 #define DIAG(ENUM,CLASS,DEFAULT_MAPPING,DESC,GROUP,               \
-             SFINAE,ACCESS,CATEGORY,BRIEF,FULL)                   \
-  { diag::ENUM, DEFAULT_MAPPING, CLASS, SFINAE, ACCESS, CATEGORY, \
+             SFINAE,ACCESS,NOWERROR,SHOWINSYSHEADER,              \
+             CATEGORY,BRIEF,FULL)                                 \
+  { diag::ENUM, DEFAULT_MAPPING, CLASS, SFINAE, ACCESS,           \
+    NOWERROR, SHOWINSYSHEADER, CATEGORY,                          \
     STR_SIZE(#ENUM, uint8_t), STR_SIZE(GROUP, uint8_t),           \
     STR_SIZE(DESC, uint16_t), STR_SIZE(BRIEF, uint16_t),          \
     STR_SIZE(FULL, uint16_t),                                     \
@@ -123,13 +130,14 @@ static const StaticDiagInfoRec StaticDiagInfo[] = {
 #include "clang/Basic/DiagnosticCommonKinds.inc"
 #include "clang/Basic/DiagnosticDriverKinds.inc"
 #include "clang/Basic/DiagnosticFrontendKinds.inc"
+#include "clang/Basic/DiagnosticSerializationKinds.inc"
 #include "clang/Basic/DiagnosticLexKinds.inc"
 #include "clang/Basic/DiagnosticParseKinds.inc"
 #include "clang/Basic/DiagnosticASTKinds.inc"
 #include "clang/Basic/DiagnosticSemaKinds.inc"
 #include "clang/Basic/DiagnosticAnalysisKinds.inc"
 #undef DIAG
-  { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+  { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 };
 
 static const unsigned StaticDiagInfoSize =
@@ -166,7 +174,8 @@ static const StaticDiagInfoRec *GetDiagInfo(unsigned DiagID) {
 #endif
 
   // Search the diagnostic table with a binary search.
-  StaticDiagInfoRec Find = { DiagID, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0 };
+  StaticDiagInfoRec Find = { static_cast<unsigned short>(DiagID),
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   const StaticDiagInfoRec *Found =
     std::lower_bound(StaticDiagInfo, StaticDiagInfo + StaticDiagInfoSize, Find);
@@ -177,10 +186,27 @@ static const StaticDiagInfoRec *GetDiagInfo(unsigned DiagID) {
   return Found;
 }
 
-static unsigned GetDefaultDiagMapping(unsigned DiagID) {
-  if (const StaticDiagInfoRec *Info = GetDiagInfo(DiagID))
-    return Info->Mapping;
-  return diag::MAP_FATAL;
+static DiagnosticMappingInfo GetDefaultDiagMappingInfo(unsigned DiagID) {
+  DiagnosticMappingInfo Info = DiagnosticMappingInfo::Make(
+    diag::MAP_FATAL, /*IsUser=*/false, /*IsPragma=*/false);
+
+  if (const StaticDiagInfoRec *StaticInfo = GetDiagInfo(DiagID)) {
+    Info.setMapping((diag::Mapping) StaticInfo->Mapping);
+
+    if (StaticInfo->WarnNoWerror) {
+      assert(Info.getMapping() == diag::MAP_WARNING &&
+             "Unexpected mapping with no-Werror bit!");
+      Info.setNoWarningAsError(true);
+    }
+
+    if (StaticInfo->WarnShowInSystemHeader) {
+      assert(Info.getMapping() == diag::MAP_WARNING &&
+             "Unexpected mapping with show-in-system-header bit!");
+      Info.setShowInSystemHeader(true);
+    }
+  }
+
+  return Info;
 }
 
 /// getWarningOptionForDiag - Return the lowest-level warning option that
@@ -210,6 +236,22 @@ namespace {
       return StringRef(NameStr, NameLen);
     }
   };
+}
+
+// Unfortunately, the split between DiagnosticIDs and Diagnostic is not
+// particularly clean, but for now we just implement this method here so we can
+// access GetDefaultDiagMapping.
+DiagnosticMappingInfo &DiagnosticsEngine::DiagState::getOrAddMappingInfo(
+  diag::kind Diag)
+{
+  std::pair<iterator, bool> Result = DiagMap.insert(
+    std::make_pair(Diag, DiagnosticMappingInfo()));
+
+  // Initialize the entry if we added it.
+  if (Result.second)
+    Result.first->second = GetDefaultDiagMappingInfo(Diag);
+
+  return Result.first->second;
 }
 
 static const StaticDiagCategoryRec CategoryNameTable[] = {
@@ -269,7 +311,10 @@ unsigned DiagnosticIDs::getIdFromName(StringRef Name) {
   
   if (Name.empty()) { return diag::DIAG_UPPER_LIMIT; }
   
-  StaticDiagNameIndexRec Find = { Name.data(), 0, Name.size() };
+  assert(Name.size() == static_cast<uint8_t>(Name.size()) &&
+         "Name is too long");
+  StaticDiagNameIndexRec Find = { Name.data(), 0,
+                                  static_cast<uint8_t>(Name.size()) };
   
   const StaticDiagNameIndexRec *Found =
     std::lower_bound( StaticDiagNameIndex, StaticDiagNameIndexEnd, Find);
@@ -429,8 +474,16 @@ bool DiagnosticIDs::isBuiltinExtensionDiag(unsigned DiagID,
       getBuiltinDiagClass(DiagID) != CLASS_EXTENSION)
     return false;
   
-  EnabledByDefault = GetDefaultDiagMapping(DiagID) != diag::MAP_IGNORE;
+  EnabledByDefault =
+    GetDefaultDiagMappingInfo(DiagID).getMapping() != diag::MAP_IGNORE;
   return true;
+}
+
+bool DiagnosticIDs::isDefaultMappingAsError(unsigned DiagID) {
+  if (DiagID >= diag::DIAG_UPPER_LIMIT)
+    return false;
+
+  return GetDefaultDiagMappingInfo(DiagID).getMapping() == diag::MAP_ERROR;
 }
 
 /// getDescription - Given a diagnostic ID, return a description of the
@@ -441,20 +494,19 @@ StringRef DiagnosticIDs::getDescription(unsigned DiagID) const {
   return CustomDiagInfo->getDescription(DiagID);
 }
 
-/// getDiagnosticLevel - Based on the way the client configured the Diagnostic
-/// object, classify the specified diagnostic ID into a Level, consumable by
-/// the DiagnosticClient.
+/// getDiagnosticLevel - Based on the way the client configured the
+/// DiagnosticsEngine object, classify the specified diagnostic ID into a Level,
+/// by consumable the DiagnosticClient.
 DiagnosticIDs::Level
 DiagnosticIDs::getDiagnosticLevel(unsigned DiagID, SourceLocation Loc,
-                                  const Diagnostic &Diag,
-                                  diag::Mapping *mapping) const {
+                                  const DiagnosticsEngine &Diag) const {
   // Handle custom diagnostics, which cannot be mapped.
   if (DiagID >= diag::DIAG_UPPER_LIMIT)
     return CustomDiagInfo->getLevel(DiagID);
 
   unsigned DiagClass = getBuiltinDiagClass(DiagID);
   assert(DiagClass != CLASS_NOTE && "Cannot get diagnostic level of a note!");
-  return getDiagnosticLevel(DiagID, DiagClass, Loc, Diag, mapping);
+  return getDiagnosticLevel(DiagID, DiagClass, Loc, Diag);
 }
 
 /// \brief Based on the way the client configured the Diagnostic
@@ -466,106 +518,97 @@ DiagnosticIDs::getDiagnosticLevel(unsigned DiagID, SourceLocation Loc,
 DiagnosticIDs::Level
 DiagnosticIDs::getDiagnosticLevel(unsigned DiagID, unsigned DiagClass,
                                   SourceLocation Loc,
-                                  const Diagnostic &Diag,
-                                  diag::Mapping *mapping) const {
+                                  const DiagnosticsEngine &Diag) const {
   // Specific non-error diagnostics may be mapped to various levels from ignored
   // to error.  Errors can only be mapped to fatal.
   DiagnosticIDs::Level Result = DiagnosticIDs::Fatal;
 
-  Diagnostic::DiagStatePointsTy::iterator
+  DiagnosticsEngine::DiagStatePointsTy::iterator
     Pos = Diag.GetDiagStatePointForLoc(Loc);
-  Diagnostic::DiagState *State = Pos->State;
+  DiagnosticsEngine::DiagState *State = Pos->State;
 
-  // Get the mapping information, if unset, compute it lazily.
-  unsigned MappingInfo = Diag.getDiagnosticMappingInfo((diag::kind)DiagID,
-                                                       State);
-  if (MappingInfo == 0) {
-    MappingInfo = GetDefaultDiagMapping(DiagID);
-    Diag.setDiagnosticMappingInternal(DiagID, MappingInfo, State, false, false);
-  }
-  
-  if (mapping)
-    *mapping = (diag::Mapping) (MappingInfo & 7);
+  // Get the mapping information, or compute it lazily.
+  DiagnosticMappingInfo &MappingInfo = State->getOrAddMappingInfo(
+    (diag::kind)DiagID);
 
-  bool ShouldEmitInSystemHeader = false;
-
-  switch (MappingInfo & 7) {
-  default: assert(0 && "Unknown mapping!");
+  switch (MappingInfo.getMapping()) {
+  default: llvm_unreachable("Unknown mapping!");
   case diag::MAP_IGNORE:
-    // Ignore this, unless this is an extension diagnostic and we're mapping
-    // them onto warnings or errors.
-    if (!isBuiltinExtensionDiag(DiagID) ||  // Not an extension
-        Diag.ExtBehavior == Diagnostic::Ext_Ignore || // Ext ignored
-        (MappingInfo & 8) != 0)             // User explicitly mapped it.
-      return DiagnosticIDs::Ignored;
+    Result = DiagnosticIDs::Ignored;
+    break;
+  case diag::MAP_WARNING:
     Result = DiagnosticIDs::Warning;
-    if (Diag.ExtBehavior == Diagnostic::Ext_Error) Result = DiagnosticIDs::Error;
-    if (Result == DiagnosticIDs::Error && Diag.ErrorsAsFatal)
-      Result = DiagnosticIDs::Fatal;
     break;
   case diag::MAP_ERROR:
     Result = DiagnosticIDs::Error;
-    if (Diag.ErrorsAsFatal)
-      Result = DiagnosticIDs::Fatal;
     break;
   case diag::MAP_FATAL:
     Result = DiagnosticIDs::Fatal;
     break;
-  case diag::MAP_WARNING_SHOW_IN_SYSTEM_HEADER:
-    ShouldEmitInSystemHeader = true;
-    // continue as MAP_WARNING.
-  case diag::MAP_WARNING:
-    // If warnings are globally mapped to ignore or error, do it.
-    if (Diag.IgnoreAllWarnings)
-      return DiagnosticIDs::Ignored;
-
-    Result = DiagnosticIDs::Warning;
-
-    // If this is an extension diagnostic and we're in -pedantic-error mode, and
-    // if the user didn't explicitly map it, upgrade to an error.
-    if (Diag.ExtBehavior == Diagnostic::Ext_Error &&
-        (MappingInfo & 8) == 0 &&
-        isBuiltinExtensionDiag(DiagID))
-      Result = DiagnosticIDs::Error;
-
-    if (Diag.WarningsAsErrors)
-      Result = DiagnosticIDs::Error;
-    if (Result == DiagnosticIDs::Error && Diag.ErrorsAsFatal)
-      Result = DiagnosticIDs::Fatal;
-    break;
-
-  case diag::MAP_WARNING_NO_WERROR:
-    // Diagnostics specified with -Wno-error=foo should be set to warnings, but
-    // not be adjusted by -Werror or -pedantic-errors.
-    Result = DiagnosticIDs::Warning;
-
-    // If warnings are globally mapped to ignore or error, do it.
-    if (Diag.IgnoreAllWarnings)
-      return DiagnosticIDs::Ignored;
-
-    break;
-
-  case diag::MAP_ERROR_NO_WFATAL:
-    // Diagnostics specified as -Wno-fatal-error=foo should be errors, but
-    // unaffected by -Wfatal-errors.
-    Result = DiagnosticIDs::Error;
-    break;
   }
 
-  // Okay, we're about to return this as a "diagnostic to emit" one last check:
-  // if this is any sort of extension warning, and if we're in an __extension__
-  // block, silence it.
-  if (Diag.AllExtensionsSilenced && isBuiltinExtensionDiag(DiagID))
+  // Upgrade ignored diagnostics if -Weverything is enabled.
+  if (Diag.EnableAllWarnings && Result == DiagnosticIDs::Ignored &&
+      !MappingInfo.isUser())
+    Result = DiagnosticIDs::Warning;
+
+  // Ignore -pedantic diagnostics inside __extension__ blocks.
+  // (The diagnostics controlled by -pedantic are the extension diagnostics
+  // that are not enabled by default.)
+  bool EnabledByDefault = false;
+  bool IsExtensionDiag = isBuiltinExtensionDiag(DiagID, EnabledByDefault);
+  if (Diag.AllExtensionsSilenced && IsExtensionDiag && !EnabledByDefault)
     return DiagnosticIDs::Ignored;
 
-  // If we are in a system header, we ignore it.
-  // We also want to ignore extensions and warnings in -Werror and
+  // For extension diagnostics that haven't been explicitly mapped, check if we
+  // should upgrade the diagnostic.
+  if (IsExtensionDiag && !MappingInfo.isUser()) {
+    switch (Diag.ExtBehavior) {
+    case DiagnosticsEngine::Ext_Ignore:
+      break; 
+    case DiagnosticsEngine::Ext_Warn:
+      // Upgrade ignored diagnostics to warnings.
+      if (Result == DiagnosticIDs::Ignored)
+        Result = DiagnosticIDs::Warning;
+      break;
+    case DiagnosticsEngine::Ext_Error:
+      // Upgrade ignored or warning diagnostics to errors.
+      if (Result == DiagnosticIDs::Ignored || Result == DiagnosticIDs::Warning)
+        Result = DiagnosticIDs::Error;
+      break;
+    }
+  }
+
+  // At this point, ignored errors can no longer be upgraded.
+  if (Result == DiagnosticIDs::Ignored)
+    return Result;
+
+  // Honor -w, which is lower in priority than pedantic-errors, but higher than
+  // -Werror.
+  if (Result == DiagnosticIDs::Warning && Diag.IgnoreAllWarnings)
+    return DiagnosticIDs::Ignored;
+
+  // If -Werror is enabled, map warnings to errors unless explicitly disabled.
+  if (Result == DiagnosticIDs::Warning) {
+    if (Diag.WarningsAsErrors && !MappingInfo.hasNoWarningAsError())
+      Result = DiagnosticIDs::Error;
+  }
+
+  // If -Wfatal-errors is enabled, map errors to fatal unless explicity
+  // disabled.
+  if (Result == DiagnosticIDs::Error) {
+    if (Diag.ErrorsAsFatal && !MappingInfo.hasNoErrorAsFatal())
+      Result = DiagnosticIDs::Fatal;
+  }
+
+  // If we are in a system header, we ignore it. We look at the diagnostic class
+  // because we also want to ignore extensions and warnings in -Werror and
   // -pedantic-errors modes, which *map* warnings/extensions to errors.
   if (Result >= DiagnosticIDs::Warning &&
       DiagClass != CLASS_ERROR &&
       // Custom diagnostics always are emitted in system headers.
       DiagID < diag::DIAG_UPPER_LIMIT &&
-      !ShouldEmitInSystemHeader &&
+      !MappingInfo.hasShowInSystemHeader() &&
       Diag.SuppressSystemWarnings &&
       Loc.isValid() &&
       Diag.getSourceManager().isInSystemHeader(
@@ -575,21 +618,19 @@ DiagnosticIDs::getDiagnosticLevel(unsigned DiagID, unsigned DiagClass,
   return Result;
 }
 
-namespace {
-  struct WarningOption {
-    // Be safe with the size of 'NameLen' because we don't statically check if
-    // the size will fit in the field; the struct size won't decrease with a
-    // shorter type anyway.
-    size_t NameLen;
-    const char *NameStr;
-    const short *Members;
-    const short *SubGroups;
+struct clang::WarningOption {
+  // Be safe with the size of 'NameLen' because we don't statically check if
+  // the size will fit in the field; the struct size won't decrease with a
+  // shorter type anyway.
+  size_t NameLen;
+  const char *NameStr;
+  const short *Members;
+  const short *SubGroups;
 
-    StringRef getName() const {
-      return StringRef(NameStr, NameLen);
-    }
-  };
-}
+  StringRef getName() const {
+    return StringRef(NameStr, NameLen);
+  }
+};
 
 #define GET_DIAG_ARRAYS
 #include "clang/Basic/DiagnosticGroups.inc"
@@ -609,54 +650,66 @@ static bool WarningOptionCompare(const WarningOption &LHS,
   return LHS.getName() < RHS.getName();
 }
 
-static void MapGroupMembers(const WarningOption *Group, diag::Mapping Mapping,
-                            SourceLocation Loc, Diagnostic &Diag) {
-  // Option exists, poke all the members of its diagnostic set.
+void DiagnosticIDs::getDiagnosticsInGroup(
+  const WarningOption *Group,
+  llvm::SmallVectorImpl<diag::kind> &Diags) const
+{
+  // Add the members of the option diagnostic set.
   if (const short *Member = Group->Members) {
     for (; *Member != -1; ++Member)
-      Diag.setDiagnosticMapping(*Member, Mapping, Loc);
+      Diags.push_back(*Member);
   }
 
-  // Enable/disable all subgroups along with this one.
+  // Add the members of the subgroups.
   if (const short *SubGroups = Group->SubGroups) {
     for (; *SubGroups != (short)-1; ++SubGroups)
-      MapGroupMembers(&OptionTable[(short)*SubGroups], Mapping, Loc, Diag);
+      getDiagnosticsInGroup(&OptionTable[(short)*SubGroups], Diags);
   }
 }
 
-/// setDiagnosticGroupMapping - Change an entire diagnostic group (e.g.
-/// "unknown-pragmas" to have the specified mapping.  This returns true and
-/// ignores the request if "Group" was unknown, false otherwise.
-bool DiagnosticIDs::setDiagnosticGroupMapping(StringRef Group,
-                                              diag::Mapping Map,
-                                              SourceLocation Loc,
-                                              Diagnostic &Diag) const {
-  assert((Loc.isValid() ||
-          Diag.DiagStatePoints.empty() ||
-          Diag.DiagStatePoints.back().Loc.isInvalid()) &&
-         "Loc should be invalid only when the mapping comes from command-line");
-  assert((Loc.isInvalid() || Diag.DiagStatePoints.empty() ||
-          Diag.DiagStatePoints.back().Loc.isInvalid() ||
-          !Diag.SourceMgr->isBeforeInTranslationUnit(Loc,
-                                            Diag.DiagStatePoints.back().Loc)) &&
-         "Source location of new mapping is before the previous one!");
-
+bool DiagnosticIDs::getDiagnosticsInGroup(
+  StringRef Group,
+  llvm::SmallVectorImpl<diag::kind> &Diags) const
+{
   WarningOption Key = { Group.size(), Group.data(), 0, 0 };
   const WarningOption *Found =
   std::lower_bound(OptionTable, OptionTable + OptionTableSize, Key,
                    WarningOptionCompare);
   if (Found == OptionTable + OptionTableSize ||
       Found->getName() != Group)
-    return true;  // Option not found.
+    return true; // Option not found.
 
-  MapGroupMembers(Found, Map, Loc, Diag);
+  getDiagnosticsInGroup(Found, Diags);
   return false;
+}
+
+StringRef DiagnosticIDs::getNearestWarningOption(StringRef Group) {
+  StringRef Best;
+  unsigned BestDistance = Group.size() + 1; // Sanity threshold.
+  for (const WarningOption *i = OptionTable, *e = OptionTable + OptionTableSize;
+       i != e; ++i) {
+    // Don't suggest ignored warning flags.
+    if (!i->Members && !i->SubGroups)
+      continue;
+
+    unsigned Distance = i->getName().edit_distance(Group, true, BestDistance);
+    if (Distance == BestDistance) {
+      // Two matches with the same distance, don't prefer one over the other.
+      Best = "";
+    } else if (Distance < BestDistance) {
+      // This is a better match.
+      Best = i->getName();
+      BestDistance = Distance;
+    }
+  }
+
+  return Best;
 }
 
 /// ProcessDiag - This is the method used to report a diagnostic that is
 /// finally fully formed.
-bool DiagnosticIDs::ProcessDiag(Diagnostic &Diag) const {
-  DiagnosticInfo Info(&Diag);
+bool DiagnosticIDs::ProcessDiag(DiagnosticsEngine &Diag) const {
+  Diagnostic Info(&Diag);
 
   if (Diag.SuppressAllDiagnostics)
     return false;
@@ -729,11 +782,13 @@ bool DiagnosticIDs::ProcessDiag(Diagnostic &Diag) const {
       ++Diag.NumErrors;
     }
 
-    // If we've emitted a lot of errors, emit a fatal error after it to stop a
-    // flood of bogus errors.
-    if (Diag.ErrorLimit && Diag.NumErrors >= Diag.ErrorLimit &&
-        DiagLevel == DiagnosticIDs::Error)
+    // If we've emitted a lot of errors, emit a fatal error instead of it to 
+    // stop a flood of bogus errors.
+    if (Diag.ErrorLimit && Diag.NumErrors > Diag.ErrorLimit &&
+        DiagLevel == DiagnosticIDs::Error) {
       Diag.SetDelayedDiagnostic(diag::fatal_too_many_errors);
+      return false;
+    }
   }
 
   // If we have any Fix-Its, make sure that all of the Fix-Its point into
@@ -750,7 +805,7 @@ bool DiagnosticIDs::ProcessDiag(Diagnostic &Diag) const {
   }
   
   // Finally, report it.
-  Diag.Client->HandleDiagnostic((Diagnostic::Level)DiagLevel, Info);
+  Diag.Client->HandleDiagnostic((DiagnosticsEngine::Level)DiagLevel, Info);
   if (Diag.Client->IncludeInDiagnosticCounts()) {
     if (DiagLevel == DiagnosticIDs::Warning)
       ++Diag.NumWarnings;
@@ -776,9 +831,14 @@ bool DiagnosticIDs::isUnrecoverable(unsigned DiagID) const {
     return false;
 
   // Currently we consider all ARC errors as recoverable.
-  if (getCategoryNumberForDiag(DiagID) ==
-        diag::DiagCat_Automatic_Reference_Counting_Issue)
+  if (isARCDiagnostic(DiagID))
     return false;
 
   return true;
 }
+
+bool DiagnosticIDs::isARCDiagnostic(unsigned DiagID) {
+  unsigned cat = getCategoryNumberForDiag(DiagID);
+  return DiagnosticIDs::getCategoryNameFromID(cat).startswith("ARC ");
+}
+

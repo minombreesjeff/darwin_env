@@ -7,16 +7,20 @@ import unittest2
 import lldb
 from lldbtest import *
 
-class DataFormatterTestCase(TestBase):
+class PythonSynthDataFormatterTestCase(TestBase):
 
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-python-synth")
 
+    #rdar://problem/10334911
+    @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     def test_with_dsym_and_run_command(self):
         """Test data formatter commands."""
         self.buildDsym()
         self.data_formatter_commands()
 
+    #rdar://problem/10334911
+    @unittest2.expectedFailure
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()
@@ -85,16 +89,16 @@ class DataFormatterTestCase(TestBase):
                     substrs = ['16777216'])
         
         # put synthetic children in summary in several combinations
-        self.runCmd("type summary add -f \"fake_a=${svar.fake_a}\" foo")
+        self.runCmd("type summary add --summary-string \"fake_a=${svar.fake_a}\" foo")
         self.expect('frame variable f00_1',
                     substrs = ['fake_a=16777216'])
-        self.runCmd("type summary add -f \"fake_a=${var.fake_a}\" foo")
+        self.runCmd("type summary add --summary-string \"fake_a=${var.fake_a}\" foo")
         self.expect('frame variable f00_1',
                     substrs = ['fake_a=16777216'])
-        self.runCmd("type summary add -f \"fake_a=${var[1]}\" foo")
+        self.runCmd("type summary add --summary-string \"fake_a=${var[1]}\" foo")
         self.expect('frame variable f00_1',
                     substrs = ['fake_a=16777216'])
-        self.runCmd("type summary add -f \"fake_a=${svar[1]}\" foo")
+        self.runCmd("type summary add --summary-string \"fake_a=${svar[1]}\" foo")
         self.expect('frame variable f00_1',
             substrs = ['fake_a=16777216'])
         
@@ -222,9 +226,9 @@ class DataFormatterTestCase(TestBase):
         
         
         # std::vector
-        self.runCmd("script from StdVectorSynthProvider import *")
-        self.runCmd("type synth add -l StdVectorSynthProvider std::int_vect int_vect")
-        self.runCmd("type synth add -l StdVectorSynthProvider std::string_vect string_vect")
+        #self.runCmd("script from StdVectorSynthProvider import *")
+        #self.runCmd("type synth add -l StdVectorSynthProvider std::int_vect int_vect")
+        #self.runCmd("type synth add -l StdVectorSynthProvider std::string_vect string_vect")
 
         self.runCmd("n")
 
@@ -250,13 +254,22 @@ class DataFormatterTestCase(TestBase):
                                '[2] = 123',
                                '[3] = 1234',
                                '}'])
+
+        self.expect("p numbers",
+                    substrs = ['$', '= {',
+                               '[0] = 1',
+                               '[1] = 12',
+                               '[2] = 123',
+                               '[3] = 1234',
+                               '}'])
+
         
         # check access to synthetic children
-        self.runCmd("type summary add -f \"item 0 is ${var[0]}\" std::int_vect int_vect")
+        self.runCmd("type summary add --summary-string \"item 0 is ${var[0]}\" std::int_vect int_vect")
         self.expect('frame variable numbers',
                     substrs = ['item 0 is 1']);
         
-        self.runCmd("type summary add -f \"item 0 is ${svar[0]}\" std::int_vect int_vect")
+        self.runCmd("type summary add --summary-string \"item 0 is ${svar[0]}\" std::int_vect int_vect")
         #import time
         #time.sleep(19)
         self.expect('frame variable numbers',
@@ -278,7 +291,18 @@ class DataFormatterTestCase(TestBase):
                                '[5] = 123456',
                                '[6] = 1234567',
                                '}'])
-        
+            
+        self.expect("p numbers",
+                    substrs = ['$', ' = {',
+                               '[0] = 1',
+                               '[1] = 12',
+                               '[2] = 123',
+                               '[3] = 1234',
+                               '[4] = 12345',
+                               '[5] = 123456',
+                               '[6] = 1234567',
+                               '}'])
+
         # check access-by-index
         self.expect("frame variable numbers[0]",
                     substrs = ['1']);
@@ -320,9 +344,20 @@ class DataFormatterTestCase(TestBase):
                        'is',
                        'smart'])
 
+        self.expect("p strings",
+                    substrs = ['goofy',
+                               'is',
+                               'smart'])
+
         # test summaries based on synthetic children
-        self.runCmd("type summary add std::string_vect string_vect -f \"vector has ${svar%#} items\" -e")
+        self.runCmd("type summary add std::string_vect string_vect --summary-string \"vector has ${svar%#} items\" -e")
         self.expect("frame variable strings",
+                    substrs = ['vector has 3 items',
+                               'goofy',
+                               'is',
+                               'smart'])
+
+        self.expect("p strings",
                     substrs = ['vector has 3 items',
                                'goofy',
                                'is',
@@ -351,21 +386,29 @@ class DataFormatterTestCase(TestBase):
             substrs = ['vector has 0 items'])
 
         # now test std::list
-        self.runCmd("script from StdListSynthProvider import *")
+        #self.runCmd("script from StdListSynthProvider import *")
 
         self.runCmd("n")
 
         self.runCmd("frame variable numbers_list -T")
-        self.runCmd("type synth add std::int_list std::string_list int_list string_list -l StdListSynthProvider")
-        self.runCmd("type summary add std::int_list std::string_list int_list string_list -f \"list has ${svar%#} items\" -e")
+        #self.runCmd("type synth add std::int_list std::string_list int_list string_list -l StdListSynthProvider")
+        self.runCmd("type summary add std::int_list std::string_list int_list string_list --summary-string \"list has ${svar%#} items\" -e")
         self.runCmd("type format add -f hex int")
+
+        self.expect("frame variable numbers_list --raw", matching=False,
+                    substrs = ['list has 0 items',
+                               '{}'])
 
         self.expect("frame variable numbers_list",
                     substrs = ['list has 0 items',
                                '{}'])
 
+        self.expect("p numbers_list",
+                    substrs = ['list has 0 items',
+                               '{}'])
+
         self.runCmd("n")
-            
+
         self.expect("frame variable numbers_list",
                     substrs = ['list has 1 items',
                                '[0] = ',
@@ -397,7 +440,19 @@ class DataFormatterTestCase(TestBase):
                                '0x0abcdef0',
                                '[5] =',
                                '0x0cab0cab'])
-        
+
+        self.expect("p numbers_list",
+                    substrs = ['list has 6 items',
+                               '[0] = ',
+                               '0x12345678',
+                               '0x11223344',
+                               '0xbeeffeed',
+                               '0x00abba00',
+                               '[4] =',
+                               '0x0abcdef0',
+                               '[5] =',
+                               '0x0cab0cab'])
+
         # check access-by-index
         self.expect("frame variable numbers_list[0]",
                     substrs = ['0x12345678']);
@@ -413,7 +468,6 @@ class DataFormatterTestCase(TestBase):
         self.expect("frame variable numbers_list",
                     substrs = ['list has 0 items',
                                '{}'])
-
 
         self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
             
@@ -435,16 +489,13 @@ class DataFormatterTestCase(TestBase):
         self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
 
         self.expect("frame variable text_list",
-            substrs = ['list has 4 items',
-                        '[0]', 'goofy',
-                       '[1]', 'is',
-                       '[2]', 'smart',
-                       '[3]', '!!!'])
+                    substrs = ['list has 4 items',
+                               '[0]', 'goofy',
+                               '[1]', 'is',
+                               '[2]', 'smart',
+                               '[3]', '!!!'])
 
-        # let's prettify string display
-        self.runCmd("type summary add -f \"${var._M_dataplus._M_p}\" std::string std::basic_string<char> \"std::basic_string<char,std::char_traits<char>,std::allocator<char> >\"")
-
-        self.expect("frame variable text_list",
+        self.expect("p text_list",
                     substrs = ['list has 4 items',
                                '[0] = \"goofy\"',
                                '[1] = \"is\"',
@@ -467,13 +518,13 @@ class DataFormatterTestCase(TestBase):
         self.runCmd("n")
         self.runCmd("frame variable ii -T")
         
-        self.runCmd("script from StdMapSynthProvider import *")
-        self.runCmd("type summary add -x \"std::map<\" -f \"map has ${svar%#} items\" -e") 
+        #self.runCmd("script from StdMapSynthProvider import *")
+        self.runCmd("type summary add -x \"std::map<\" --summary-string \"map has ${svar%#} items\" -e") 
         
         #import time
         #time.sleep(30)
         
-        self.runCmd("type synth add -x \"std::map<\" -l StdMapSynthProvider")
+        #self.runCmd("type synth add -x \"std::map<\" -l StdMapSynthProvider")
 
 
         self.expect('frame variable ii',
@@ -505,7 +556,7 @@ class DataFormatterTestCase(TestBase):
         self.runCmd("n");self.runCmd("n");
         self.runCmd("n");self.runCmd("n");self.runCmd("n");
 
-        self.expect('frame variable ii',
+        self.expect("frame variable ii",
                     substrs = ['map has 9 items',
                                '[5] = {',
                                'first = 5',
@@ -514,6 +565,15 @@ class DataFormatterTestCase(TestBase):
                                'first = 7',
                                'second = 1'])
         
+        self.expect("p ii",
+                    substrs = ['map has 9 items',
+                               '[5] = {',
+                               'first = 5',
+                               'second = 0',
+                               '[7] = {',
+                               'first = 7',
+                               'second = 1'])
+
         # check access-by-index
         self.expect("frame variable ii[0]",
                     substrs = ['first = 0',
@@ -535,7 +595,7 @@ class DataFormatterTestCase(TestBase):
         self.runCmd("n")
         self.runCmd("frame variable si -T")
 
-        #self.runCmd("type summary add std::strint_map strint_map -f \"map has ${svar%#} items\" -e")
+        #self.runCmd("type summary add std::strint_map strint_map --summary-string \"map has ${svar%#} items\" -e")
         #self.runCmd("type synth add std::strint_map strint_map -l StdMapSynthProvider")
         
         self.expect('frame variable si',
@@ -552,7 +612,7 @@ class DataFormatterTestCase(TestBase):
 
         self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
 
-        self.expect('frame variable si',
+        self.expect("frame variable si",
                     substrs = ['map has 5 items',
                                '[0] = ',
                                'first = \"zero\"',
@@ -569,7 +629,25 @@ class DataFormatterTestCase(TestBase):
                                 '[4] = ',
                                 'first = \"four\"',
                                 'second = 4'])
-        
+
+        self.expect("p si",
+                    substrs = ['map has 5 items',
+                               '[0] = ',
+                               'first = \"zero\"',
+                               'second = 0',
+                               '[1] = ',
+                               'first = \"one\"',
+                               'second = 1',
+                               '[2] = ',
+                               'first = \"two\"',
+                               'second = 2',
+                               '[3] = ',
+                               'first = \"three\"',
+                               'second = 3',
+                               '[4] = ',
+                               'first = \"four\"',
+                               'second = 4'])
+
         # check access-by-index
         self.expect("frame variable si[0]",
                     substrs = ['first = ', 'four',
@@ -588,7 +666,7 @@ class DataFormatterTestCase(TestBase):
         self.runCmd("n")
         self.runCmd("frame variable is -T")
         
-        #self.runCmd("type summary add std::intstr_map intstr_map -f \"map has ${svar%#} items\" -e")
+        #self.runCmd("type summary add std::intstr_map intstr_map --summary-string \"map has ${svar%#} items\" -e")
         #self.runCmd("type synth add std::intstr_map intstr_map -l StdMapSynthProvider")
 
         self.expect('frame variable is',
@@ -597,7 +675,7 @@ class DataFormatterTestCase(TestBase):
 
         self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
 
-        self.expect('frame variable is',
+        self.expect("frame variable is",
                     substrs = ['map has 4 items',
                                '[0] = ',
                                'second = \"goofy\"',
@@ -612,6 +690,21 @@ class DataFormatterTestCase(TestBase):
                                'second = \"!!!\"',
                                'first = 3'])
         
+        self.expect("p is",
+                    substrs = ['map has 4 items',
+                               '[0] = ',
+                               'second = \"goofy\"',
+                               'first = 0',
+                               '[1] = ',
+                               'second = \"is\"',
+                               'first = 1',
+                               '[2] = ',
+                               'second = \"smart\"',
+                               'first = 2',
+                               '[3] = ',
+                               'second = \"!!!\"',
+                               'first = 3'])
+
         # check access-by-index
         self.expect("frame variable is[0]",
                     substrs = ['first = ', '0',
@@ -630,7 +723,7 @@ class DataFormatterTestCase(TestBase):
         self.runCmd("n")
         self.runCmd("frame variable ss -T")
         
-        #self.runCmd("type summary add std::strstr_map strstr_map -f \"map has ${svar%#} items\" -e")
+        #self.runCmd("type summary add std::strstr_map strstr_map --summary-string \"map has ${svar%#} items\" -e")
         #self.runCmd("type synth add std::strstr_map strstr_map -l StdMapSynthProvider")
 
         self.expect('frame variable ss',
@@ -639,7 +732,7 @@ class DataFormatterTestCase(TestBase):
 
         self.runCmd("n");self.runCmd("n");self.runCmd("n");self.runCmd("n");
 
-        self.expect('frame variable ss',
+        self.expect("frame variable ss",
                     substrs = ['map has 4 items',
                                '[0] = ',
                                'second = \"hello\"',
@@ -654,6 +747,21 @@ class DataFormatterTestCase(TestBase):
                                'second = \"..is always a Mac!\"',
                                'first = \"a Mac..\"'])
         
+        self.expect("p ss",
+                    substrs = ['map has 4 items',
+                               '[0] = ',
+                               'second = \"hello\"',
+                               'first = \"ciao\"',
+                               '[1] = ',
+                               'second = \"house\"',
+                               'first = \"casa\"',
+                               '[2] = ',
+                               'second = \"cat\"',
+                               'first = \"gatto\"',
+                               '[3] = ',
+                               'second = \"..is always a Mac!\"',
+                               'first = \"a Mac..\"'])
+
         # check access-by-index
         self.expect("frame variable ss[3]",
                     substrs = ['gatto', 'cat']);

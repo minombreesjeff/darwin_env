@@ -35,87 +35,6 @@ class CommandObjectProcessLaunch : public CommandObject
 {
 public:
 
-    class CommandOptions : public Options
-    {
-    public:
-
-        CommandOptions (CommandInterpreter &interpreter) :
-            Options(interpreter)
-        {
-            // Keep default values of all options in one place: OptionParsingStarting ()
-            OptionParsingStarting ();
-        }
-
-        ~CommandOptions ()
-        {
-        }
-
-        Error
-        SetOptionValue (uint32_t option_idx, const char *option_arg)
-        {
-            Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
-
-            switch (short_option)
-            {
-                case 's':   stop_at_entry = true;               break;
-                case 'e':   stderr_path.assign (option_arg);    break;
-                case 'i':   stdin_path.assign (option_arg);     break;
-                case 'o':   stdout_path.assign (option_arg);    break;
-                case 'p':   plugin_name.assign (option_arg);    break;
-                case 'n':   no_stdio = true;                    break;
-                case 'w':   working_dir.assign (option_arg);    break;
-                case 't':   
-                    if (option_arg && option_arg[0])
-                        tty_name.assign (option_arg);
-                    in_new_tty = true; 
-                    break;
-                default:
-                    error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
-                    break;
-
-            }
-            return error;
-        }
-
-        void
-        OptionParsingStarting ()
-        {
-            stop_at_entry = false;
-            in_new_tty = false;
-            tty_name.clear();
-            stdin_path.clear();
-            stdout_path.clear();
-            stderr_path.clear();
-            plugin_name.clear();
-            working_dir.clear();
-            no_stdio = false;
-        }
-
-        const OptionDefinition*
-        GetDefinitions ()
-        {
-            return g_option_table;
-        }
-
-        // Options table: Required for subclasses of Options.
-
-        static OptionDefinition g_option_table[];
-
-        // Instance variables to hold the values for command options.
-
-        bool stop_at_entry;
-        bool in_new_tty;
-        bool no_stdio;
-        std::string tty_name;
-        std::string stderr_path;
-        std::string stdin_path;
-        std::string stdout_path;
-        std::string plugin_name;
-        std::string working_dir;
-
-    };
-
     CommandObjectProcessLaunch (CommandInterpreter &interpreter) :
         CommandObject (interpreter,
                        "process launch",
@@ -151,7 +70,9 @@ public:
     bool
     Execute (Args& launch_args, CommandReturnObject &result)
     {
-        Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
+        Debugger &debugger = m_interpreter.GetDebugger();
+        Target *target = debugger.GetSelectedTarget().get();
+        Error error;
 
         if (target == NULL)
         {
@@ -159,7 +80,6 @@ public:
             result.SetStatus (eReturnStatusFailed);
             return false;
         }
-
         // If our listener is NULL, users aren't allows to launch
         char filename[PATH_MAX];
         const Module *exe_module = target->GetExecutableModulePointer();
@@ -171,10 +91,13 @@ public:
             return false;
         }
         
-        exe_module->GetFileSpec().GetPath(filename, sizeof(filename));
+        exe_module->GetFileSpec().GetPath (filename, sizeof(filename));
 
+        const bool add_exe_file_as_first_arg = true;
+        m_options.launch_info.SetExecutableFile(exe_module->GetPlatformFileSpec(), add_exe_file_as_first_arg);
+        
         StateType state = eStateInvalid;
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process)
         {
             state = process->GetState();
@@ -194,138 +117,97 @@ public:
                 }
                 else
                 {
-                    Error error (process->Destroy());
-                    if (error.Success())
+                    Error destroy_error (process->Destroy());
+                    if (destroy_error.Success())
                     {
                         result.SetStatus (eReturnStatusSuccessFinishResult);
                     }
                     else
                     {
-                        result.AppendErrorWithFormat ("Failed to kill process: %s\n", error.AsCString());
+                        result.AppendErrorWithFormat ("Failed to kill process: %s\n", destroy_error.AsCString());
                         result.SetStatus (eReturnStatusFailed);
                     }
                 }
             }
         }
         
-        if (state != eStateConnected)
-        {
-            const char *plugin_name;
-            if (!m_options.plugin_name.empty())
-                plugin_name = m_options.plugin_name.c_str();
-            else
-                plugin_name = NULL;
-
-            process = target->CreateProcess (m_interpreter.GetDebugger().GetListener(), plugin_name).get();
-            if (process == NULL)
-            {
-                result.AppendErrorWithFormat ("Failed to find a process plugin for executable.\n");
-                result.SetStatus (eReturnStatusFailed);
-                return false;
-            }
-        }
-
-
-        // If no launch args were given on the command line, then use any that
-        // might have been set using the "run-args" set variable.
         if (launch_args.GetArgumentCount() == 0)
         {
-            if (process->GetRunArguments().GetArgumentCount() > 0)
-                launch_args = process->GetRunArguments();
-        }
-        
-        if (m_options.in_new_tty)
-        {
-            if (state == eStateConnected)
-            {
-                result.AppendWarning("launch in tty option is ignored when launching through a remote connection");
-                m_options.in_new_tty = false;
-            }
-            else
-            {
-                char exec_file_path[PATH_MAX];
-                if (exe_module->GetFileSpec().GetPath(exec_file_path, sizeof(exec_file_path)))
-                {
-                    launch_args.InsertArgumentAtIndex(0, exec_file_path);
-                }
-                else
-                {
-                    result.AppendError("invalid executable");
-                    result.SetStatus (eReturnStatusFailed);
-                    return false;
-                }
-            }
-        }
-
-        Args environment;
-        
-        process->GetEnvironmentAsArgs (environment);
-        
-        uint32_t launch_flags = eLaunchFlagNone;
-        
-        if (process->GetDisableASLR())
-            launch_flags |= eLaunchFlagDisableASLR;
-
-        if (m_options.in_new_tty)
-            launch_flags |= eLaunchFlagLaunchInTTY; 
-
-        if (m_options.no_stdio)
-            launch_flags |= eLaunchFlagDisableSTDIO;
-        else if (!m_options.in_new_tty
-                 && m_options.stdin_path.empty()
-                 && m_options.stdout_path.empty()
-                 && m_options.stderr_path.empty())
-        {
-            // Only use the settings value if the user hasn't specified any options that would override it.
-            if (process->GetDisableSTDIO())
-                launch_flags |= eLaunchFlagDisableSTDIO;
-        }
-        
-        const char **inferior_argv = launch_args.GetArgumentCount() ? launch_args.GetConstArgumentVector() : NULL;
-        const char **inferior_envp = environment.GetArgumentCount() ? environment.GetConstArgumentVector() : NULL;
-
-        Error error;
-        const char *working_dir = NULL;
-        if (!m_options.working_dir.empty())
-            working_dir = m_options.working_dir.c_str();
-
-        const char * stdin_path = NULL;
-        const char * stdout_path = NULL;
-        const char * stderr_path = NULL;
-
-        // Were any standard input/output/error paths given on the command line?
-        if (m_options.stdin_path.empty() &&
-            m_options.stdout_path.empty() &&
-            m_options.stderr_path.empty())
-        {
-            // No standard file handles were given on the command line, check
-            // with the process object in case they were give using "set settings"
-            stdin_path = process->GetStandardInputPath();
-            stdout_path = process->GetStandardOutputPath(); 
-            stderr_path = process->GetStandardErrorPath(); 
+            const Args &process_args = target->GetRunArguments();
+            if (process_args.GetArgumentCount() > 0)
+                m_options.launch_info.GetArguments().AppendArguments (process_args);
         }
         else
         {
-            stdin_path = m_options.stdin_path.empty()  ? NULL : m_options.stdin_path.c_str();
-            stdout_path = m_options.stdout_path.empty() ? NULL : m_options.stdout_path.c_str();
-            stderr_path = m_options.stderr_path.empty() ? NULL : m_options.stderr_path.c_str();
-        }
+            // Save the arguments for subsequent runs in the current target.
+            target->SetRunArguments (launch_args);
 
-        error = process->Launch (inferior_argv,
-                                 inferior_envp,
-                                 launch_flags,
-                                 stdin_path,
-                                 stdout_path,
-                                 stderr_path,
-                                 working_dir);
-                     
+            m_options.launch_info.GetArguments().AppendArguments (launch_args);
+        }
+        
+        if (target->GetDisableASLR())
+            m_options.launch_info.GetFlags().Set (eLaunchFlagDisableASLR);
+    
+        if (target->GetDisableSTDIO())
+            m_options.launch_info.GetFlags().Set (eLaunchFlagDisableSTDIO);
+
+        m_options.launch_info.GetFlags().Set (eLaunchFlagDebug);
+
+        Args environment;
+        target->GetEnvironmentAsArgs (environment);
+        if (environment.GetArgumentCount() > 0)
+            m_options.launch_info.GetEnvironmentEntries ().AppendArguments (environment);
+
+        // Finalize the file actions, and if none were given, default to opening
+        // up a pseudo terminal
+        const bool default_to_use_pty = true;
+        m_options.launch_info.FinalizeFileActions (target, default_to_use_pty);
+
+        if (state == eStateConnected)
+        {
+            if (m_options.launch_info.GetFlags().Test (eLaunchFlagLaunchInTTY))
+            {
+                result.AppendWarning("can't launch in tty when launching through a remote connection");
+                m_options.launch_info.GetFlags().Clear (eLaunchFlagLaunchInTTY);
+            }
+        }
+        else
+        {
+            if (!m_options.launch_info.GetArchitecture().IsValid())
+                m_options.launch_info.GetArchitecture() = target->GetArchitecture();
+
+            PlatformSP platform_sp (target->GetPlatform());
+            
+            if (platform_sp && platform_sp->CanDebugProcess ())
+            {
+                process = target->GetPlatform()->DebugProcess (m_options.launch_info, 
+                                                               debugger,
+                                                               target,
+                                                               debugger.GetListener(),
+                                                               error).get();
+            }
+            else
+            {
+                const char *plugin_name = m_options.launch_info.GetProcessPluginName();
+                process = target->CreateProcess (debugger.GetListener(), plugin_name).get();
+                if (process)
+                    error = process->Launch (m_options.launch_info);
+            }
+
+            if (process == NULL)
+            {
+                result.SetError (error, "failed to launch or debug process");
+                return false;
+            }
+        }
+             
         if (error.Success())
         {
             const char *archname = exe_module->GetArchitecture().GetArchitectureName();
 
-            result.AppendMessageWithFormat ("Process %i launched: '%s' (%s)\n", process->GetID(), filename, archname);
+            result.AppendMessageWithFormat ("Process %llu launched: '%s' (%s)\n", process->GetID(), filename, archname);
             result.SetDidChangeProcessState (true);
-            if (m_options.stop_at_entry == false)
+            if (m_options.launch_info.GetFlags().Test(eLaunchFlagStopAtEntry) == false)
             {
                 result.SetStatus (eReturnStatusSuccessContinuingNoResult);
                 StateType state = process->WaitForProcessToStop (NULL);
@@ -339,9 +221,10 @@ public:
                         if (synchronous_execution)
                         {
                             state = process->WaitForProcessToStop (NULL);
-                            if (!StateIsStoppedState(state))
+                            const bool must_be_alive = true;
+                            if (!StateIsStoppedState(state, must_be_alive))
                             {
-                                result.AppendErrorWithFormat ("Process isn't stopped: %s", StateAsCString(state));
+                                result.AppendErrorWithFormat ("process isn't stopped: %s", StateAsCString(state));
                             }                    
                             result.SetDidChangeProcessState (true);
                             result.SetStatus (eReturnStatusSuccessFinishResult);
@@ -353,13 +236,13 @@ public:
                     }
                     else
                     {
-                        result.AppendErrorWithFormat ("Process resume at entry point failed: %s", error.AsCString());
+                        result.AppendErrorWithFormat ("process resume at entry point failed: %s", error.AsCString());
                         result.SetStatus (eReturnStatusFailed);
                     }                    
                 }
                 else
                 {
-                    result.AppendErrorWithFormat ("Initial process state wasn't stopped: %s", StateAsCString(state));
+                    result.AppendErrorWithFormat ("initial process state wasn't stopped: %s", StateAsCString(state));
                     result.SetStatus (eReturnStatusFailed);
                 }                    
             }
@@ -380,32 +263,31 @@ public:
     }
 
 protected:
-
-    CommandOptions m_options;
+    ProcessLaunchCommandOptions m_options;
 };
 
 
-#define SET1 LLDB_OPT_SET_1
-#define SET2 LLDB_OPT_SET_2
-#define SET3 LLDB_OPT_SET_3
-
-OptionDefinition
-CommandObjectProcessLaunch::CommandOptions::g_option_table[] =
-{
-{ SET1 | SET2 | SET3, false, "stop-at-entry", 's', no_argument,       NULL, 0, eArgTypeNone,    "Stop at the entry point of the program when launching a process."},
-{ SET1              , false, "stdin",         'i', required_argument, NULL, 0, eArgTypePath,    "Redirect stdin for the process to <path>."},
-{ SET1              , false, "stdout",        'o', required_argument, NULL, 0, eArgTypePath,    "Redirect stdout for the process to <path>."},
-{ SET1              , false, "stderr",        'e', required_argument, NULL, 0, eArgTypePath,    "Redirect stderr for the process to <path>."},
-{ SET1 | SET2 | SET3, false, "plugin",        'p', required_argument, NULL, 0, eArgTypePlugin,  "Name of the process plugin you want to use."},
-{        SET2       , false, "tty",           't', optional_argument, NULL, 0, eArgTypePath,    "Start the process in a terminal. If <path> is specified, look for a terminal whose name contains <path>, else start the process in a new terminal."},
-{               SET3, false, "no-stdio",      'n', no_argument,       NULL, 0, eArgTypeNone,    "Do not set up for terminal I/O to go to running process."},
-{ SET1 | SET2 | SET3, false, "working-dir",   'w', required_argument, NULL, 0, eArgTypePath,    "Set the current working directory to <path> when running the inferior."},
-{ 0,                  false, NULL,             0,  0,                 NULL, 0, eArgTypeNone,    NULL }
-};
-
-#undef SET1
-#undef SET2
-#undef SET3
+//#define SET1 LLDB_OPT_SET_1
+//#define SET2 LLDB_OPT_SET_2
+//#define SET3 LLDB_OPT_SET_3
+//
+//OptionDefinition
+//CommandObjectProcessLaunch::CommandOptions::g_option_table[] =
+//{
+//{ SET1 | SET2 | SET3, false, "stop-at-entry", 's', no_argument,       NULL, 0, eArgTypeNone,    "Stop at the entry point of the program when launching a process."},
+//{ SET1              , false, "stdin",         'i', required_argument, NULL, 0, eArgTypePath,    "Redirect stdin for the process to <path>."},
+//{ SET1              , false, "stdout",        'o', required_argument, NULL, 0, eArgTypePath,    "Redirect stdout for the process to <path>."},
+//{ SET1              , false, "stderr",        'e', required_argument, NULL, 0, eArgTypePath,    "Redirect stderr for the process to <path>."},
+//{ SET1 | SET2 | SET3, false, "plugin",        'p', required_argument, NULL, 0, eArgTypePlugin,  "Name of the process plugin you want to use."},
+//{        SET2       , false, "tty",           't', optional_argument, NULL, 0, eArgTypePath,    "Start the process in a terminal. If <path> is specified, look for a terminal whose name contains <path>, else start the process in a new terminal."},
+//{               SET3, false, "no-stdio",      'n', no_argument,       NULL, 0, eArgTypeNone,    "Do not set up for terminal I/O to go to running process."},
+//{ SET1 | SET2 | SET3, false, "working-dir",   'w', required_argument, NULL, 0, eArgTypePath,    "Set the current working directory to <path> when running the inferior."},
+//{ 0,                  false, NULL,             0,  0,                 NULL, 0, eArgTypeNone,    NULL }
+//};
+//
+//#undef SET1
+//#undef SET2
+//#undef SET3
 
 //-------------------------------------------------------------------------
 // CommandObjectProcessAttach
@@ -439,27 +321,33 @@ public:
             switch (short_option)
             {
                 case 'p':   
-                    pid = Args::StringToUInt32 (option_arg, LLDB_INVALID_PROCESS_ID, 0, &success);
-                    if (!success || pid == LLDB_INVALID_PROCESS_ID)
                     {
-                        error.SetErrorStringWithFormat("Invalid process ID '%s'.\n", option_arg);
+                        lldb::pid_t pid = Args::StringToUInt32 (option_arg, LLDB_INVALID_PROCESS_ID, 0, &success);
+                        if (!success || pid == LLDB_INVALID_PROCESS_ID)
+                        {
+                            error.SetErrorStringWithFormat("invalid process ID '%s'", option_arg);
+                        }
+                        else
+                        {
+                            attach_info.SetProcessID (pid);
+                        }
                     }
                     break;
 
                 case 'P':
-                    plugin_name = option_arg;
+                    attach_info.SetProcessPluginName (option_arg);
                     break;
 
                 case 'n': 
-                    name.assign(option_arg);
+                    attach_info.GetExecutableFile().SetFile(option_arg, false);
                     break;
 
                 case 'w':   
-                    waitfor = true; 
+                    attach_info.SetWaitForLaunch(true);
                     break;
 
                 default:
-                    error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                     break;
             }
             return error;
@@ -468,9 +356,7 @@ public:
         void
         OptionParsingStarting ()
         {
-            pid = LLDB_INVALID_PROCESS_ID;
-            name.clear();
-            waitfor = false;
+            attach_info.Clear();
         }
 
         const OptionDefinition*
@@ -513,7 +399,7 @@ public:
                     ProcessInstanceInfoMatch match_info;
                     if (partial_name)
                     {
-                        match_info.GetProcessInfo().SetName(partial_name);
+                        match_info.GetProcessInfo().GetExecutableFile().SetFile(partial_name, false);
                         match_info.SetNameMatchType(eNameMatchStartsWith);
                     }
                     platform_sp->FindProcesses (match_info, process_infos);
@@ -538,10 +424,7 @@ public:
 
         // Instance variables to hold the values for command options.
 
-        lldb::pid_t pid;
-        std::string plugin_name;
-        std::string name;
-        bool waitfor;
+        ProcessAttachInfo attach_info;
     };
 
     CommandObjectProcessAttach (CommandInterpreter &interpreter) :
@@ -562,16 +445,18 @@ public:
              CommandReturnObject &result)
     {
         Target *target = m_interpreter.GetDebugger().GetSelectedTarget().get();
-        bool synchronous_execution = m_interpreter.GetSynchronous ();
+        // N.B. The attach should be synchronous.  It doesn't help much to get the prompt back between initiating the attach
+        // and the target actually stopping.  So even if the interpreter is set to be asynchronous, we wait for the stop
+        // ourselves here.
         
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         StateType state = eStateInvalid;
         if (process)
         {
             state = process->GetState();
             if (process->IsAlive() && state != eStateConnected)
             {
-                result.AppendErrorWithFormat ("Process %u is currently being debugged, kill the process before attaching.\n", 
+                result.AppendErrorWithFormat ("Process %llu is currently being debugged, kill the process before attaching.\n", 
                                               process->GetID());
                 result.SetStatus (eReturnStatusFailed);
                 return false;
@@ -583,13 +468,13 @@ public:
             // If there isn't a current target create one.
             TargetSP new_target_sp;
             FileSpec emptyFileSpec;
-            ArchSpec emptyArchSpec;
             Error error;
             
             error = m_interpreter.GetDebugger().GetTargetList().CreateTarget (m_interpreter.GetDebugger(), 
                                                                               emptyFileSpec,
-                                                                              emptyArchSpec, 
+                                                                              NULL, 
                                                                               false,
+                                                                              NULL, // No platform options
                                                                               new_target_sp);
             target = new_target_sp.get();
             if (target == NULL || error.Fail())
@@ -608,62 +493,44 @@ public:
 
         if (command.GetArgumentCount())
         {
-            result.AppendErrorWithFormat("Invalid arguments for '%s'.\nUsage: \n", m_cmd_name.c_str(), m_cmd_syntax.c_str());
+            result.AppendErrorWithFormat("Invalid arguments for '%s'.\nUsage: %s\n", m_cmd_name.c_str(), m_cmd_syntax.c_str());
             result.SetStatus (eReturnStatusFailed);
         }
         else
         {
             if (state != eStateConnected)
             {
-                const char *plugin_name = NULL;
-                
-                if (!m_options.plugin_name.empty())
-                    plugin_name = m_options.plugin_name.c_str();
-
+                const char *plugin_name = m_options.attach_info.GetProcessPluginName();
                 process = target->CreateProcess (m_interpreter.GetDebugger().GetListener(), plugin_name).get();
             }
 
             if (process)
             {
                 Error error;
-                int attach_pid = m_options.pid;
-                
-                const char *wait_name = NULL;
-
-                if (m_options.name.empty())
+                // If no process info was specified, then use the target executable 
+                // name as the process to attach to by default
+                if (!m_options.attach_info.ProcessInfoSpecified ())
                 {
                     if (old_exec_module_sp)
-                    {
-                        wait_name = old_exec_module_sp->GetFileSpec().GetFilename().AsCString();
-                    }
-                }
-                else
-                {
-                    wait_name = m_options.name.c_str();
-                }
-                
-                // If we are waiting for a process with this name to show up, do that first.
-                if (m_options.waitfor)
-                {
-                        
-                    if (wait_name == NULL)
-                    {
-                        result.AppendError("Invalid arguments: must have a file loaded or supply a process name with the waitfor option.\n");
-                        result.SetStatus (eReturnStatusFailed);
-                        return false;
-                    }
+                        m_options.attach_info.GetExecutableFile().GetFilename() = old_exec_module_sp->GetPlatformFileSpec().GetFilename();
 
-                    result.AppendMessageWithFormat("Waiting to attach to a process named \"%s\".\n", wait_name);
-                    error = process->Attach (wait_name, m_options.waitfor);
+                    if (!m_options.attach_info.ProcessInfoSpecified ())
+                    {
+                        error.SetErrorString ("no process specified, create a target with a file, or specify the --pid or --name command option");
+                    }
+                }
+
+                if (error.Success())
+                {
+                    error = process->Attach (m_options.attach_info);
+                    
                     if (error.Success())
                     {
                         result.SetStatus (eReturnStatusSuccessContinuingNoResult);
                     }
                     else
                     {
-                        result.AppendErrorWithFormat ("Waiting for a process to launch named '%s': %s\n", 
-                                                         wait_name,
-                                                         error.AsCString());
+                        result.AppendErrorWithFormat ("attach failed: %s\n", error.AsCString());
                         result.SetStatus (eReturnStatusFailed);
                         return false;                
                     }
@@ -671,89 +538,11 @@ public:
                     // Otherwise just return.  
                     // FIXME: in the async case it will now be possible to get to the command
                     // interpreter with a state eStateAttaching.  Make sure we handle that correctly.
-                    if (synchronous_execution)
-                    {
-                        StateType state = process->WaitForProcessToStop (NULL);
-
-                        result.SetDidChangeProcessState (true);
-                        result.AppendMessageWithFormat ("Process %i %s\n", process->GetID(), StateAsCString (state));
-                        result.SetStatus (eReturnStatusSuccessFinishNoResult);
-                    }
-                    else
-                    {
-                        result.SetDidChangeProcessState (true);
-                        result.SetStatus (eReturnStatusSuccessFinishNoResult);
-                    }
-                }
-                else
-                {
-                    // If the process was specified by name look it up, so we can warn if there are multiple
-                    // processes with this pid.
+                    StateType state = process->WaitForProcessToStop (NULL);
                     
-                    if (attach_pid == LLDB_INVALID_PROCESS_ID && wait_name != NULL)
-                    {
-                        ProcessInstanceInfoList process_infos;
-                        PlatformSP platform_sp (m_interpreter.GetPlatform (true));
-                        if (platform_sp)
-                        {
-                            ProcessInstanceInfoMatch match_info (wait_name, eNameMatchEquals);
-                            platform_sp->FindProcesses (match_info, process_infos);
-                        }
-                        if (process_infos.GetSize() > 1)
-                        {
-                            result.AppendErrorWithFormat("More than one process named %s\n", wait_name);
-                            result.SetStatus (eReturnStatusFailed);
-                            return false;
-                        }
-                        else if (process_infos.GetSize() == 0)
-                        {
-                            result.AppendErrorWithFormat("Could not find a process named %s\n", wait_name);
-                            result.SetStatus (eReturnStatusFailed);
-                            return false;
-                        }
-                        else 
-                        {
-                            attach_pid = process_infos.GetProcessIDAtIndex (0);
-                        }
-                    }
-
-                    if (attach_pid != LLDB_INVALID_PROCESS_ID)
-                    {
-                        error = process->Attach (attach_pid);
-                        if (error.Success())
-                        {
-                            result.SetStatus (eReturnStatusSuccessContinuingNoResult);
-                        }
-                        else
-                        {
-                            result.AppendErrorWithFormat ("Attaching to process %i failed: %s.\n", 
-                                                         attach_pid, 
-                                                         error.AsCString());
-                            result.SetStatus (eReturnStatusFailed);
-                        }
-                        // See comment for synchronous_execution above.
-                        if (synchronous_execution)
-                        {
-                            StateType state = process->WaitForProcessToStop (NULL);
-
-                            result.SetDidChangeProcessState (true);
-                            result.AppendMessageWithFormat ("Process %i %s\n", process->GetID(), StateAsCString (state));
-                            result.SetStatus (eReturnStatusSuccessFinishNoResult);
-                        }
-                        else
-                        {
-                            result.SetDidChangeProcessState (true);
-                            result.SetStatus (eReturnStatusSuccessFinishNoResult);
-                        }
-                    }
-                    else
-                    {
-                        result.AppendErrorWithFormat ("No PID specified for attach\n", 
-                                                         attach_pid, 
-                                                         error.AsCString());
-                        result.SetStatus (eReturnStatusFailed);
-                    
-                    }
+                    result.SetDidChangeProcessState (true);
+                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
             }
         }
@@ -845,7 +634,7 @@ public:
     Execute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         bool synchronous_execution = m_interpreter.GetSynchronous ();
 
         if (process == NULL)
@@ -876,13 +665,13 @@ public:
             Error error(process->Resume());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %i resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     state = process->WaitForProcessToStop (NULL);
 
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %i %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -932,7 +721,7 @@ public:
     Execute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("must have a valid process in order to detach");
@@ -940,7 +729,7 @@ public:
             return false;
         }
 
-        result.AppendMessageWithFormat ("Detaching from process %i\n", process->GetID());
+        result.AppendMessageWithFormat ("Detaching from process %llu\n", process->GetID());
         Error error (process->Detach());
         if (error.Success())
         {
@@ -993,7 +782,7 @@ public:
                 break;
 
             default:
-                error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
+                error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                 break;
             }
             return error;
@@ -1042,12 +831,12 @@ public:
         
         TargetSP target_sp (m_interpreter.GetDebugger().GetSelectedTarget());
         Error error;        
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process)
         {
             if (process->IsAlive())
             {
-                result.AppendErrorWithFormat ("Process %u is currently being debugged, kill the process before connecting.\n", 
+                result.AppendErrorWithFormat ("Process %llu is currently being debugged, kill the process before connecting.\n", 
                                               process->GetID());
                 result.SetStatus (eReturnStatusFailed);
                 return false;
@@ -1058,12 +847,12 @@ public:
         {
             // If there isn't a current target create one.
             FileSpec emptyFileSpec;
-            ArchSpec emptyArchSpec;
             
             error = m_interpreter.GetDebugger().GetTargetList().CreateTarget (m_interpreter.GetDebugger(), 
                                                                               emptyFileSpec,
-                                                                              emptyArchSpec, 
+                                                                              NULL, 
                                                                               false,
+                                                                              NULL, // No platform options
                                                                               target_sp);
             if (!target_sp || error.Fail())
             {
@@ -1096,15 +885,14 @@ public:
             }
             else
             {
-                result.AppendErrorWithFormat ("Unable to find process plug-in for remote URL '%s'.\nPlease specify a process plug-in name with the --plugin option, or specify an object file using the \"file\" command: \n", 
-                                              m_cmd_name.c_str(),
-                                              m_cmd_syntax.c_str());
+                result.AppendErrorWithFormat ("Unable to find process plug-in for remote URL '%s'.\nPlease specify a process plug-in name with the --plugin option, or specify an object file using the \"file\" command.\n", 
+                                              m_cmd_name.c_str());
                 result.SetStatus (eReturnStatusFailed);
             }
         }
         else
         {
-            result.AppendErrorWithFormat ("'%s' takes exactly one argument:\nUsage: \n", 
+            result.AppendErrorWithFormat ("'%s' takes exactly one argument:\nUsage: %s\n", 
                                           m_cmd_name.c_str(),
                                           m_cmd_syntax.c_str());
             result.SetStatus (eReturnStatusFailed);
@@ -1157,7 +945,7 @@ public:
     Execute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("must have a valid process in order to load a shared library");
@@ -1216,7 +1004,7 @@ public:
     Execute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("must have a valid process in order to load a shared library");
@@ -1293,7 +1081,7 @@ public:
     Execute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process to signal");
@@ -1332,7 +1120,7 @@ public:
         }
         else
         {
-            result.AppendErrorWithFormat("'%s' takes exactly one signal number argument:\nUsage: \n", m_cmd_name.c_str(),
+            result.AppendErrorWithFormat("'%s' takes exactly one signal number argument:\nUsage: %s\n", m_cmd_name.c_str(),
                                         m_cmd_syntax.c_str());
             result.SetStatus (eReturnStatusFailed);
         }
@@ -1368,7 +1156,7 @@ public:
     Execute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process to halt");
@@ -1395,7 +1183,7 @@ public:
         }
         else
         {
-            result.AppendErrorWithFormat("'%s' takes no arguments:\nUsage: \n",
+            result.AppendErrorWithFormat("'%s' takes no arguments:\nUsage: %s\n",
                                         m_cmd_name.c_str(),
                                         m_cmd_syntax.c_str());
             result.SetStatus (eReturnStatusFailed);
@@ -1430,7 +1218,7 @@ public:
     Execute (Args& command,
              CommandReturnObject &result)
     {
-        Process *process = m_interpreter.GetExecutionContext().process;
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process == NULL)
         {
             result.AppendError ("no process to kill");
@@ -1453,7 +1241,7 @@ public:
         }
         else
         {
-            result.AppendErrorWithFormat("'%s' takes no arguments:\nUsage: \n",
+            result.AppendErrorWithFormat("'%s' takes no arguments:\nUsage: %s\n",
                                         m_cmd_name.c_str(),
                                         m_cmd_syntax.c_str());
             result.SetStatus (eReturnStatusFailed);
@@ -1494,18 +1282,19 @@ public:
         Stream &strm = result.GetOutputStream();
         result.SetStatus (eReturnStatusSuccessFinishNoResult);
         ExecutionContext exe_ctx(m_interpreter.GetExecutionContext());
-        if (exe_ctx.process)
+        Process *process = exe_ctx.GetProcessPtr();
+        if (process)
         {
             const bool only_threads_with_stop_reason = true;
             const uint32_t start_frame = 0;
             const uint32_t num_frames = 1;
             const uint32_t num_frames_with_source = 1;
-            exe_ctx.process->GetStatus(strm);
-            exe_ctx.process->GetThreadStatus (strm, 
-                                              only_threads_with_stop_reason, 
-                                              start_frame,
-                                              num_frames,
-                                              num_frames_with_source);
+            process->GetStatus(strm);
+            process->GetThreadStatus (strm, 
+                                      only_threads_with_stop_reason, 
+                                      start_frame,
+                                      num_frames,
+                                      num_frames_with_source);
             
         }
         else
@@ -1558,7 +1347,7 @@ public:
                     pass = option_arg;
                     break;
                 default:
-                    error.SetErrorStringWithFormat("Invalid short option character '%c'.\n", short_option);
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
                     break;
             }
             return error;

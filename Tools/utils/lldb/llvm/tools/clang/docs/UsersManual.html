@@ -39,6 +39,7 @@ td {
    <li><a href="#diagnostics_categories">Diagnostic Categories</a></li>
    <li><a href="#diagnostics_commandline">Controlling Diagnostics via Command Line Flags</a></li>
    <li><a href="#diagnostics_pragmas">Controlling Diagnostics via Pragmas</a></li>
+   <li><a href="#diagnostics_enable_everything">Enabling All Warnings</a></li>
    <li><a href="#analyzer_diagnositics">Controlling Static Analyzer Diagnostics</a></li>
    </ul>
   </li>
@@ -53,6 +54,11 @@ td {
   <li><a href="#c_unimpl_gcc">GCC extensions not implemented yet</a></li>
   <li><a href="#c_unsupp_gcc">Intentionally unsupported GCC extensions</a></li>
   <li><a href="#c_ms">Microsoft extensions</a></li>
+  </ul>
+</li>
+<li><a href="#cxx">C++ Language Features</a>
+  <ul>
+  <li><a href="#cxx_implimits">Controlling implementation limits</a></li>
   </ul>
 </li>
 <li><a href="#target_features">Target-Specific Features and Limitations</a>
@@ -105,7 +111,7 @@ corresponding language specific section:</p>
     (C89+AMD1), ISO C99 (+TC1, TC2, TC3). </li>
 <li><a href="#objc">Objective-C Language</a>: ObjC 1, ObjC 2, ObjC 2.1, plus
     variants depending on base language.</li>
-<li><a href="#cxx">C++ Language Features</a></li>
+<li><a href="#cxx">C++ Language</a></li>
 <li><a href="#objcxx">Objective C++ Language</a></li>
 </ul>
 
@@ -479,7 +485,7 @@ constructor.  For example:
   };
   void foo(const NonCopyable&);
   void bar() {
-    foo(NonCopyable());  // Disallowed in C++98; allowed in C++0x.
+    foo(NonCopyable());  // Disallowed in C++98; allowed in C++11.
   }
 </pre>
 <pre>
@@ -489,7 +495,7 @@ constructor.  For example:
   };
   void foo(const NonCopyable2&);
   void bar() {
-    foo(NonCopyable2());  // Disallowed in C++98; allowed in C++0x.
+    foo(NonCopyable2());  // Disallowed in C++98; allowed in C++11.
   }
 </pre>
 
@@ -625,6 +631,16 @@ pragmas. It should be noted that while Clang supports the GCC pragma, Clang and
 GCC do not support the exact same set of warnings, so even when using GCC
 compatible #pragmas there is no guarantee that they will have identical behaviour
 on both compilers. </p>
+
+<h4 id="diagnostics_enable_everything">Enabling All Warnings</h4>
+
+<p>In addition to the traditional <tt>-W</tt> flags, one can enable <b>all</b>
+   warnings by passing <tt>-Weverything</tt>. 
+   This works as expected with <tt>-Werror</tt>,
+   and also includes the warnings from <tt>-pedantic</tt>.</p>
+   
+<p>Note that when combined with <tt>-w</tt> (which disables all warnings), that
+  flag wins.</p>
 
 <h4 id="analyzer_diagnositics">Controlling Static Analyzer Diagnostics</h4>
 
@@ -940,10 +956,6 @@ a structure).</li>
 clang doesn't accept some constructs gcc might accept in contexts where a
 constant expression is required, like "x-x" where x is a variable.</li>
 
-<li>clang does not support multiple alternative constraints in inline asm; this
-is an extremely obscure feature which would be complicated to implement
-correctly.</li>
-
 <li>clang does not support __builtin_apply and friends; this extension is
 extremely obscure and difficult to implement reliably.</li>
 
@@ -975,6 +987,25 @@ controlling record layout. GCC also contains support for this feature,
 however where MSVC and GCC are incompatible clang follows the MSVC
 definition.</li>
 </ul>
+
+<!-- ======================================================================= -->
+<h2 id="cxx">C++ Language Features</h2>
+<!-- ======================================================================= -->
+
+<p>clang fully implements all of standard C++98 except for exported templates
+(which were removed in C++11), and
+<a href="http://clang.llvm.org/cxx_status.html">many C++11 features</a> are also
+implemented.</p>
+
+<!-- = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = -->
+<h3 id="cxx_implimits">Controlling implementation limits</h3>
+<!-- = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = -->
+
+<p><b>-fconstexpr-depth=N</b>: Sets the limit for recursive constexpr function
+invocations to N. The default is 512.</p>
+
+<p><b>-ftemplate-depth=N</b>: Sets the limit for recursively nested template
+instantiations to N. The default is 1024.</p>
 
 <!-- ======================================================================= -->
 <h2 id="target_features">Target-Specific Features and Limitations</h2>
@@ -1055,22 +1086,32 @@ Clang assumes directories as below;</p>
 <li><tt>C:/mingw/lib/gcc/mingw32/4.[3-5].0/include/c++</tt></li>
 </ul>
 
-<p>On MSYS, a few tests might fail. It is due to <a href="http://llvm.org/bugs/show_bug.cgi?id=8520">Bug 8520</a> and is fixed in <a href="http://lists.cs.uiuc.edu/pipermail/llvm-commits/Week-of-Mon-20110314/118106.html">LLVM's r127724</a>.</p>
+<p>On MSYS, a few tests might fail.</p>
 
 <h5>MinGW-w64</h5>
 
-<p>For x32(i686-w64-mingw32), it is not supported yet.</p>
-
-<p>For x64(x86_64-w64-mingw32), <a href="http://lists.cs.uiuc.edu/pipermail/llvm-commits/Week-of-Mon-20110321/118499.html">an essential patch(LLVM's r128206)</a> would be needed. It is incompatible to <a href="http://tdm-gcc.tdragon.net/development">TDM-GCC</a> due to the definition of symbol &quot;<code>___chkstk</code>&quot;. Clang assumes as below;<p>
+<p>For 32-bit (i686-w64-mingw32), and 64-bit (x86_64-w64-mingw32), Clang assumes as below;<p>
 
 <ul>
-<li><tt>C:/mingw/x86_64-w64-mingw32/include</tt></li>
-<li><tt>C:/mingw/x86_64-w64-mingw32/include/c++/4.5.[23]</tt></li>
-<li>GCC driver &quot;gcc.exe&quot; to build x86_64-w64-mingw32 binary.</li>
+<li><tt>GCC versions 4.5.0 to 4.5.3, 4.6.0 to 4.6.2, or 4.7.0 (for the C++ header search path)</tt></li>
+<li><tt>some_directory/bin/gcc.exe</tt></li>
+<li><tt>some_directory/bin/clang.exe</tt></li>
+<li><tt>some_directory/bin/clang++.exe</tt></li>
+<li><tt>some_directory/bin/../include/c++/GCC_version</tt></li>
+<li><tt>some_directory/bin/../include/c++/GCC_version/x86_64-w64-mingw32</tt></li>
+<li><tt>some_directory/bin/../include/c++/GCC_version/i686-w64-mingw32</tt></li>
+<li><tt>some_directory/bin/../include/c++/GCC_version/backward</tt></li>
+<li><tt>some_directory/bin/../x86_64-w64-mingw32/include</tt></li>
+<li><tt>some_directory/bin/../i686-w64-mingw32/include</tt></li>
+<li><tt>some_directory/bin/../include</tt></li>
 </ul>
 
-<p><a href="http://llvm.org/bugs/show_bug.cgi?id=8833">Some tests might fail</a>
-on x64.</p>
+<p>This directory layout is standard for any toolchain you will find on the official <a href="mingw-w64.sourceforge.net">MinGW-w64 website</a>.
+
+<p>Clang expects the GCC executable &quot;gcc.exe&quot; compiled for i686-w64-mingw32 (or x86_64-w64-mingw32) to be present on PATH.</p>
+
+<p><a href="http://llvm.org/bugs/show_bug.cgi?id=9072">Some tests might fail</a>
+on x86_64-w64-mingw32.</p>
 
 </div>
 </body>

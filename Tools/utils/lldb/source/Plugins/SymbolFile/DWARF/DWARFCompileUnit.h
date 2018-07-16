@@ -7,17 +7,26 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_DWARFCompileUnit_h_
+#ifndef SymbolFileDWARF_DWARFCompileUnit_h_
 #define SymbolFileDWARF_DWARFCompileUnit_h_
 
-#include "SymbolFileDWARF.h"
 #include "DWARFDebugInfoEntry.h"
+#include "SymbolFileDWARF.h"
 
 class NameToDIE;
 
 class DWARFCompileUnit
 {
 public:
+    enum Producer 
+    {
+        eProducerInvalid = 0,
+        eProducerClang,
+        eProducerGCC,
+        eProcucerLLVMGCC,
+        eProcucerOther
+    };
+
     DWARFCompileUnit(SymbolFileDWARF* dwarf2Data);
 
     bool        Extract(const lldb_private::DataExtractor &debug_info, uint32_t* offset_ptr);
@@ -45,15 +54,15 @@ public:
     uint8_t     GetAddressByteSize() const { return m_addr_size; }
     dw_addr_t   GetBaseAddress() const { return m_base_addr; }
     void        ClearDIEs(bool keep_compile_unit_die);
+    void        BuildAddressRangeTable (SymbolFileDWARF* dwarf2Data,
+                                        DWARFDebugAranges* debug_aranges,
+                                        bool clear_dies_if_already_not_parsed);
 
     void
     SetBaseAddress(dw_addr_t base_addr)
     {
         m_base_addr = base_addr;
     }
-
-    void
-    SetDIERelations();
 
     const DWARFDebugInfoEntry*
     GetCompileUnitDIEOnly()
@@ -74,13 +83,11 @@ public:
     }
 
     void
-    AddDIE(DWARFDebugInfoEntry& die)
+    AddDIE (DWARFDebugInfoEntry& die)
     {
         // The average bytes per DIE entry has been seen to be
-        // around 14-20 so lets pre-reserve the needed memory for
-        // our DIE entries accordingly. Search forward for "Compute
-        // average bytes per DIE" to see #if'ed out code that does
-        // that determination.
+        // around 14-20 so lets pre-reserve half of that since
+        // we are now stripping the NULL tags. 
 
         // Only reserve the memory if we are adding children of
         // the main compile unit DIE. The compile unit DIE is always
@@ -88,8 +95,14 @@ public:
         // the first compile unit child DIE and should reserve
         // the memory.
         if (m_die_array.empty())
-            m_die_array.reserve(GetDebugInfoSize() / 14);
+            m_die_array.reserve(GetDebugInfoSize() / 24);
         m_die_array.push_back(die);
+    }
+
+    bool
+    HasDIEsParsed () const
+    {
+        return m_die_array.size() > 1;
     }
 
     DWARFDebugInfoEntry*
@@ -125,6 +138,11 @@ public:
         m_user_data = d;
     }
 
+    bool
+    Supports_DW_AT_APPLE_objc_complete_type ();
+
+    bool
+    DW_AT_decl_file_attributes_are_invalid();
 
 //    void
 //    AddGlobalDIEByIndex (uint32_t die_idx);
@@ -141,24 +159,33 @@ public:
            NameToDIE& objc_class_selectors,
            NameToDIE& globals,
            NameToDIE& types,
-           NameToDIE& namespaces,
-           const DWARFDebugRanges* debug_ranges,
-           DWARFDebugAranges *aranges);
+           NameToDIE& namespaces);
 
+    const DWARFDebugAranges &
+    GetFunctionAranges ();
+
+    SymbolFileDWARF*
+    GetSymbolFileDWARF () const
+    {
+        return m_dwarf2Data;
+    }
+    
+    Producer
+    GetProducer ();
+    
 
 protected:
     SymbolFileDWARF*    m_dwarf2Data;
+    const DWARFAbbreviationDeclarationSet *m_abbrevs;
+    void *              m_user_data;
+    DWARFDebugInfoEntry::collection m_die_array;    // The compile unit debug information entry item
+    std::auto_ptr<DWARFDebugAranges> m_func_aranges_ap;   // A table similar to the .debug_aranges table, but this one points to the exact DW_TAG_subprogram DIEs
+    dw_addr_t           m_base_addr;
     dw_offset_t         m_offset;
     uint32_t            m_length;
     uint16_t            m_version;
-    const DWARFAbbreviationDeclarationSet*
-                        m_abbrevs;
     uint8_t             m_addr_size;
-    dw_addr_t           m_base_addr;
-    DWARFDebugInfoEntry::collection
-                        m_die_array;    // The compile unit debug information entry item
-    std::auto_ptr<DWARFDebugAranges>    m_aranges_ap;   // A table similar to the .debug_aranges table, but this one points to the exact DW_TAG_subprogram DIEs
-    void *              m_user_data;
+    Producer            m_producer;
 private:
     DISALLOW_COPY_AND_ASSIGN (DWARFCompileUnit);
 };

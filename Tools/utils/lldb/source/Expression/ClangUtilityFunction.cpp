@@ -77,7 +77,7 @@ ClangUtilityFunction::Install (Stream &error_stream,
     // Set up the target and compiler
     //
     
-    Target *target = exe_ctx.target;
+    Target *target = exe_ctx.GetTargetPtr();
     
     if (!target)
     {
@@ -85,7 +85,7 @@ ClangUtilityFunction::Install (Stream &error_stream,
         return false;
     }
     
-    Process *process = exe_ctx.process;
+    Process *process = exe_ctx.GetProcessPtr();
     
     if (!process)
     {
@@ -99,9 +99,9 @@ ClangUtilityFunction::Install (Stream &error_stream,
     
     bool keep_result_in_memory = false;
     
-    m_expr_decl_map.reset(new ClangExpressionDeclMap(keep_result_in_memory));
+    m_expr_decl_map.reset(new ClangExpressionDeclMap(keep_result_in_memory, exe_ctx));
     
-    m_data_allocator.reset(new ProcessDataAllocator(*exe_ctx.process));
+    m_data_allocator.reset(new ProcessDataAllocator(*process));
     
     if (!m_expr_decl_map->WillParse(exe_ctx))
     {
@@ -128,8 +128,16 @@ ClangUtilityFunction::Install (Stream &error_stream,
     
     lldb::ClangExpressionVariableSP const_result;
     
-        
-    Error jit_error = parser.MakeJIT (m_jit_alloc, m_jit_start_addr, m_jit_end_addr, exe_ctx, m_data_allocator.get(), const_result);
+    bool evaluated_statically = false; // should stay that way
+    
+    Error jit_error = parser.PrepareForExecution (m_jit_alloc, 
+                                                  m_jit_start_addr, 
+                                                  m_jit_end_addr, 
+                                                  exe_ctx,
+                                                  m_data_allocator.get(),
+                                                  evaluated_statically,
+                                                  const_result,
+                                                  eExecutionPolicyAlways);
     
     if (log)
     {
@@ -139,8 +147,8 @@ ClangUtilityFunction::Install (Stream &error_stream,
         log->Printf("Data buffer contents:\n%s", dump_string.GetString().c_str());
     }
     
-    if (exe_ctx.process && m_jit_start_addr != LLDB_INVALID_ADDRESS)
-        m_jit_process_sp = exe_ctx.process->GetSP();
+    if (m_jit_start_addr != LLDB_INVALID_ADDRESS)
+        m_jit_process_sp = process->GetSP();
     
 #if 0
 	// jingham: look here
@@ -165,7 +173,7 @@ ClangUtilityFunction::Install (Stream &error_stream,
         if (error_cstr && error_cstr[0])
             error_stream.Printf ("error: %s\n", error_cstr);
         else
-            error_stream.Printf ("error: expression can't be interpreted or run\n", num_errors);
+            error_stream.Printf ("error: expression can't be interpreted or run\n");
         return false;
     }
 }

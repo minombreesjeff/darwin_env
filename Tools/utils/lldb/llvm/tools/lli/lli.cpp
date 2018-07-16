@@ -33,7 +33,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Target/TargetSelect.h"
+#include "llvm/Support/TargetSelect.h"
 #include <cerrno>
 
 #ifdef __CYGWIN__
@@ -178,7 +178,7 @@ int main(int argc, char **argv, char * const *envp) {
   SMDiagnostic Err;
   Module *Mod = ParseIRFile(InputFile, Err, Context);
   if (!Mod) {
-    Err.Print(argv[0], errs());
+    Err.print(argv[0], errs());
     return 1;
   }
 

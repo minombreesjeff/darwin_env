@@ -16,6 +16,8 @@
 
 #include "clang/Serialization/ASTBitCodes.h"
 #include "clang/Serialization/ContinuousRangeMap.h"
+#include "clang/Serialization/Module.h"
+#include "clang/Serialization/ModuleManager.h"
 #include "clang/Sema/ExternalSemaSource.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/DeclObjC.h"
@@ -32,9 +34,9 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/OwningPtr.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/Bitcode/BitstreamReader.h"
 #include "llvm/Support/DataTypes.h"
 #include <deque>
@@ -73,7 +75,6 @@ class ASTWriter;
 class ASTReader;
 class ASTDeclReader;
 class ASTStmtReader;
-class ASTIdentifierLookupTrait;
 class TypeLocReader;
 struct HeaderFileInfo;
 class VersionTuple;
@@ -162,346 +163,15 @@ private:
 };
 
 namespace serialization {
-    
-/// \brief Specifies the kind of module that has been loaded.
-enum ModuleKind {
-  MK_Module,   ///< File is a module proper.
-  MK_PCH,      ///< File is a PCH file treated as such.
-  MK_Preamble, ///< File is a PCH file treated as the preamble.
-  MK_MainFile  ///< File is a PCH file treated as the actual main file.
-};
 
-/// \brief Information about a module that has been loaded by the ASTReader.
-///
-/// Each instance of the Module class corresponds to a single AST file, which 
-/// may be a precompiled header, precompiled preamble, or an AST file of some 
-/// sort loaded as the main file, all of which are specific formulations of
-/// the general notion of a "module". A module may depend on another module.
-class Module {
-public:  
-  Module(ModuleKind Kind);
-  ~Module();
-  
-  // === General information ===
-  
-  /// \brief The type of this module.
-  ModuleKind Kind;
-  
-  /// \brief The file name of the module file.
-  std::string FileName;
-  
-  /// \brief The memory buffer that stores the data associated with
-  /// this AST file.
-  llvm::OwningPtr<llvm::MemoryBuffer> Buffer;
-  
-  /// \brief The size of this file, in bits.
-  uint64_t SizeInBits;
-  
-  /// \brief The global bit offset (or base) of this module
-  uint64_t GlobalBitOffset;
-  
-  /// \brief The bitstream reader from which we'll read the AST file.
-  llvm::BitstreamReader StreamFile;
-  
-  /// \brief The main bitstream cursor for the main block.
-  llvm::BitstreamCursor Stream;
-  
-  /// \brief The source location where this module was first imported.
-  SourceLocation ImportLoc;
-  
-  /// \brief The first source location in this module.
-  SourceLocation FirstLoc;
-  
-  // === Source Locations ===
-  
-  /// \brief Cursor used to read source location entries.
-  llvm::BitstreamCursor SLocEntryCursor;
-  
-  /// \brief The number of source location entries in this AST file.
-  unsigned LocalNumSLocEntries;
-  
-  /// \brief The base ID in the source manager's view of this module.
-  int SLocEntryBaseID;
-  
-  /// \brief The base offset in the source manager's view of this module.
-  unsigned SLocEntryBaseOffset;
-  
-  /// \brief Offsets for all of the source location entries in the
-  /// AST file.
-  const uint32_t *SLocEntryOffsets;
-  
-  /// \brief The number of source location file entries in this AST file.
-  unsigned LocalNumSLocFileEntries;
-  
-  /// \brief Offsets for all of the source location file entries in the
-  /// AST file.
-  const uint32_t *SLocFileOffsets;
-  
-  /// \brief Remapping table for source locations in this module.
-  ContinuousRangeMap<uint32_t, int, 2> SLocRemap;
-  
-  // === Identifiers ===
-  
-  /// \brief The number of identifiers in this AST file.
-  unsigned LocalNumIdentifiers;
-  
-  /// \brief Offsets into the identifier table data.
-  ///
-  /// This array is indexed by the identifier ID (-1), and provides
-  /// the offset into IdentifierTableData where the string data is
-  /// stored.
-  const uint32_t *IdentifierOffsets;
-  
-  /// \brief Base identifier ID for identifiers local to this module.
-  serialization::IdentID BaseIdentifierID;
+class ReadMethodPoolVisitor;
 
-  /// \brief Remapping table for identifier IDs in this module.
-  ContinuousRangeMap<uint32_t, int, 2> IdentifierRemap;
-
-  /// \brief Actual data for the on-disk hash table of identifiers.
-  ///
-  /// This pointer points into a memory buffer, where the on-disk hash
-  /// table for identifiers actually lives.
-  const char *IdentifierTableData;
-  
-  /// \brief A pointer to an on-disk hash table of opaque type
-  /// IdentifierHashTable.
-  void *IdentifierLookupTable;
-  
-  // === Macros ===
-  
-  /// \brief The cursor to the start of the preprocessor block, which stores
-  /// all of the macro definitions.
-  llvm::BitstreamCursor MacroCursor;
-  
-  /// \brief The offset of the start of the set of defined macros.
-  uint64_t MacroStartOffset;
-  
-  // === Detailed PreprocessingRecord ===
-  
-  /// \brief The cursor to the start of the (optional) detailed preprocessing 
-  /// record block.
-  llvm::BitstreamCursor PreprocessorDetailCursor;
-  
-  /// \brief The offset of the start of the preprocessor detail cursor.
-  uint64_t PreprocessorDetailStartOffset;
-  
-  /// \brief Base preprocessed entity ID for preprocessed entities local to 
-  /// this module.
-  serialization::PreprocessedEntityID BasePreprocessedEntityID;
-  
-  /// \brief Remapping table for preprocessed entity IDs in this module.
-  ContinuousRangeMap<uint32_t, int, 2> PreprocessedEntityRemap;
-
-  /// \brief The number of macro definitions in this file.
-  unsigned LocalNumMacroDefinitions;
-  
-  /// \brief Offsets of all of the macro definitions in the preprocessing
-  /// record in the AST file.
-  const uint32_t *MacroDefinitionOffsets;
-  
-  /// \brief Base macro definition ID for macro definitions local to this 
-  /// module.
-  serialization::MacroID BaseMacroDefinitionID;
-
-  /// \brief Remapping table for macro definition IDs in this module.
-  ContinuousRangeMap<uint32_t, int, 2> MacroDefinitionRemap;
-
-  // === Header search information ===
-  
-  /// \brief The number of local HeaderFileInfo structures.
-  unsigned LocalNumHeaderFileInfos;
-  
-  /// \brief Actual data for the on-disk hash table of header file 
-  /// information.
-  ///
-  /// This pointer points into a memory buffer, where the on-disk hash
-  /// table for header file information actually lives.
-  const char *HeaderFileInfoTableData;
-    
-  /// \brief The on-disk hash table that contains information about each of
-  /// the header files.
-  void *HeaderFileInfoTable;
-  
-  /// \brief Actual data for the list of framework names used in the header
-  /// search information.
-  const char *HeaderFileFrameworkStrings;
-
-  // === Selectors ===
-  
-  /// \brief The number of selectors new to this file.
-  ///
-  /// This is the number of entries in SelectorOffsets.
-  unsigned LocalNumSelectors;
-  
-  /// \brief Offsets into the selector lookup table's data array
-  /// where each selector resides.
-  const uint32_t *SelectorOffsets;
-  
-  /// \brief Base selector ID for selectors local to this module.
-  serialization::SelectorID BaseSelectorID;
-
-  /// \brief Remapping table for selector IDs in this module.
-  ContinuousRangeMap<uint32_t, int, 2> SelectorRemap;
-
-  /// \brief A pointer to the character data that comprises the selector table
-  ///
-  /// The SelectorOffsets table refers into this memory.
-  const unsigned char *SelectorLookupTableData;
-  
-  /// \brief A pointer to an on-disk hash table of opaque type
-  /// ASTSelectorLookupTable.
-  ///
-  /// This hash table provides the IDs of all selectors, and the associated
-  /// instance and factory methods.
-  void *SelectorLookupTable;
-  
-  // === Declarations ===
-  
-  /// DeclsCursor - This is a cursor to the start of the DECLS_BLOCK block. It
-  /// has read all the abbreviations at the start of the block and is ready to
-  /// jump around with these in context.
-  llvm::BitstreamCursor DeclsCursor;
-  
-  /// \brief The number of declarations in this AST file.
-  unsigned LocalNumDecls;
-  
-  /// \brief Offset of each declaration within the bitstream, indexed
-  /// by the declaration ID (-1).
-  const uint32_t *DeclOffsets;
-  
-  /// \brief Base declaration ID for declarations local to this module.
-  serialization::DeclID BaseDeclID;
-
-  /// \brief Remapping table for declaration IDs in this module.
-  ContinuousRangeMap<uint32_t, int, 2> DeclRemap;
-
-  /// \brief The number of C++ base specifier sets in this AST file.
-  unsigned LocalNumCXXBaseSpecifiers;
-  
-  /// \brief Offset of each C++ base specifier set within the bitstream,
-  /// indexed by the C++ base specifier set ID (-1).
-  const uint32_t *CXXBaseSpecifiersOffsets;
-
-  // === Types ===
-  
-  /// \brief The number of types in this AST file.
-  unsigned LocalNumTypes;
-  
-  /// \brief Offset of each type within the bitstream, indexed by the
-  /// type ID, or the representation of a Type*.
-  const uint32_t *TypeOffsets;
-  
-  /// \brief Base type ID for types local to this module as represented in 
-  /// the global type ID space.
-  serialization::TypeID BaseTypeIndex;
-  
-  /// \brief Remapping table for type IDs in this module.
-  ContinuousRangeMap<uint32_t, int, 2> TypeRemap;
-
-  // === Miscellaneous ===
-  
-  /// \brief Diagnostic IDs and their mappings that the user changed.
-  SmallVector<uint64_t, 8> PragmaDiagMappings;
-  
-  /// \brief The AST stat cache installed for this file, if any.
-  ///
-  /// The dynamic type of this stat cache is always ASTStatCache
-  void *StatCache;
-  
-  /// \brief The number of preallocated preprocessing entities in the
-  /// preprocessing record.
-  unsigned NumPreallocatedPreprocessingEntities;
-  
-  /// \brief List of modules which depend on this module
-  llvm::SetVector<Module *> ImportedBy;
-  
-  /// \brief List of modules which this module depends on
-  llvm::SetVector<Module *> Imports;
-  
-  /// \brief Dump debugging output for this module.
-  void dump();
-};
-
-/// \brief The manager for modules loaded by the ASTReader.
-class ModuleManager {
-  /// \brief The chain of AST files. The first entry is the one named by the
-  /// user, the last one is the one that doesn't depend on anything further.
-  SmallVector<Module*, 2> Chain;
-
-  /// \brief All loaded modules, indexed by name.
-  llvm::DenseMap<const FileEntry *, Module *> Modules;
-
-  /// \brief FileManager that handles translating between filenames and
-  /// FileEntry *.
-  FileManager FileMgr;
-  
-  /// \brief A lookup of in-memory (virtual file) buffers
-  llvm::DenseMap<const FileEntry *, llvm::MemoryBuffer *> InMemoryBuffers;
-
-public:
-  typedef SmallVector<Module*, 2>::iterator ModuleIterator;
-  typedef SmallVector<Module*, 2>::const_iterator ModuleConstIterator;
-  typedef SmallVector<Module*, 2>::reverse_iterator ModuleReverseIterator;
-  typedef std::pair<uint32_t, StringRef> ModuleOffset;
-
-  ModuleManager(const FileSystemOptions &FSO);
-  ~ModuleManager();
-
-  /// \brief Forward iterator to traverse all loaded modules.  This is reverse
-  /// source-order.
-  ModuleIterator begin() { return Chain.begin(); }
-  /// \brief Forward iterator end-point to traverse all loaded modules
-  ModuleIterator end() { return Chain.end(); }
-
-  /// \brief Const forward iterator to traverse all loaded modules.  This is 
-  /// in reverse source-order.
-  ModuleConstIterator begin() const { return Chain.begin(); }
-  /// \brief Const forward iterator end-point to traverse all loaded modules
-  ModuleConstIterator end() const { return Chain.end(); }
-
-  /// \brief Reverse iterator to traverse all loaded modules.  This is in 
-  /// source order.
-  ModuleReverseIterator rbegin() { return Chain.rbegin(); }
-  /// \brief Reverse iterator end-point to traverse all loaded modules.
-  ModuleReverseIterator rend() { return Chain.rend(); }
-
-  /// \brief Returns the primary module associated with the manager, that is,
-  /// the first module loaded
-  Module &getPrimaryModule() { return *Chain[0]; }
-
-  /// \brief Returns the primary module associated with the manager, that is,
-  /// the first module loaded.
-  Module &getPrimaryModule() const { return *Chain[0]; }
-
-  /// \brief Returns the latest module associated with the manager, that is,
-  /// the last module loaded
-  Module &getLastModule() { return *Chain.back(); }
-
-  /// \brief Returns the module associated with the given index
-  Module &operator[](unsigned Index) const { return *Chain[Index]; }
-
-  /// \brief Returns the module associated with the given name
-  Module *lookup(StringRef Name);
-  
-  /// \brief Returns the in-memory (virtual file) buffer with the given name
-  llvm::MemoryBuffer *lookupBuffer(StringRef Name);
-
-  /// \brief Number of modules loaded
-  unsigned size() const { return Chain.size(); }
-
-  /// \brief Creates a new module and adds it to the list of known modules
-  Module &addModule(StringRef FileName, ModuleKind Type);
-  
-  /// \brief Add an in-memory buffer the list of known buffers
-  void addInMemoryBuffer(StringRef FileName, llvm::MemoryBuffer *Buffer);
-
-  /// \brief Exports the list of loaded modules with their corresponding names
-  void exportLookup(SmallVector<ModuleOffset, 16> &Target);
-};
+namespace reader {
+  class ASTIdentifierLookupTrait;
+}
 
 } // end namespace serialization
-  
+
 /// \brief Reads an AST files chain containing the contents of a translation
 /// unit.
 ///
@@ -521,7 +191,7 @@ class ASTReader
     public ExternalSemaSource,
     public IdentifierInfoLookup,
     public ExternalIdentifierLookup,
-    public ExternalSLocEntrySource 
+    public ExternalSLocEntrySource
 {
 public:
   enum ASTReadResult { Success, Failure, IgnorePCH };
@@ -530,15 +200,16 @@ public:
   friend class ASTDeclReader;
   friend class ASTStmtReader;
   friend class ASTIdentifierIterator;
-  friend class ASTIdentifierLookupTrait;
+  friend class serialization::reader::ASTIdentifierLookupTrait;
   friend class TypeLocReader;
   friend class ASTWriter;
   friend class ASTUnit; // ASTUnit needs to remap source locations.
-  
-  typedef serialization::Module Module;
+  friend class serialization::ReadMethodPoolVisitor;
+
+  typedef serialization::ModuleFile ModuleFile;
   typedef serialization::ModuleKind ModuleKind;
   typedef serialization::ModuleManager ModuleManager;
-  
+
   typedef ModuleManager::ModuleIterator ModuleIterator;
   typedef ModuleManager::ModuleConstIterator ModuleConstIterator;
   typedef ModuleManager::ModuleReverseIterator ModuleReverseIterator;
@@ -552,18 +223,18 @@ private:
 
   SourceManager &SourceMgr;
   FileManager &FileMgr;
-  Diagnostic &Diags;
+  DiagnosticsEngine &Diags;
 
   /// \brief The semantic analysis object that will be processing the
   /// AST files and the translation unit that uses it.
   Sema *SemaObj;
 
   /// \brief The preprocessor that will be loading the source file.
-  Preprocessor *PP;
+  Preprocessor &PP;
 
   /// \brief The AST context into which we'll read the AST files.
-  ASTContext *Context;
-      
+  ASTContext &Context;
+
   /// \brief The AST consumer.
   ASTConsumer *Consumer;
 
@@ -572,13 +243,16 @@ private:
 
   /// \brief A map of global bit offsets to the module that stores entities
   /// at those bit offsets.
-  ContinuousRangeMap<uint64_t, Module*, 4> GlobalBitOffsetsMap;
-
-  /// \brief SLocEntries that we're going to preload.
-  SmallVector<int, 64> PreloadSLocEntries;
+  ContinuousRangeMap<uint64_t, ModuleFile*, 4> GlobalBitOffsetsMap;
 
   /// \brief A map of negated SLocEntryIDs to the modules containing them.
-  ContinuousRangeMap<unsigned, Module*, 64> GlobalSLocEntryMap;
+  ContinuousRangeMap<unsigned, ModuleFile*, 64> GlobalSLocEntryMap;
+
+  typedef ContinuousRangeMap<unsigned, ModuleFile*, 64> GlobalSLocOffsetMapType;
+
+  /// \brief A map of reversed (SourceManager::MaxLoadedOffset - SLocOffset)
+  /// SourceLocation offsets to the modules containing them.
+  GlobalSLocOffsetMapType GlobalSLocOffsetMap;
 
   /// \brief Types that have already been loaded from the chain.
   ///
@@ -586,7 +260,7 @@ private:
   /// ID = (I + 1) << FastQual::Width has already been loaded
   std::vector<QualType> TypesLoaded;
 
-  typedef ContinuousRangeMap<serialization::TypeID, Module *, 4>
+  typedef ContinuousRangeMap<serialization::TypeID, ModuleFile *, 4>
     GlobalTypeMapType;
 
   /// \brief Mapping from global type IDs to the module in which the
@@ -600,53 +274,56 @@ private:
   /// = I + 1 has already been loaded.
   std::vector<Decl *> DeclsLoaded;
 
-  typedef ContinuousRangeMap<serialization::DeclID, Module *, 4> 
+  typedef ContinuousRangeMap<serialization::DeclID, ModuleFile *, 4>
     GlobalDeclMapType;
-  
+
   /// \brief Mapping from global declaration IDs to the module in which the
   /// declaration resides.
   GlobalDeclMapType GlobalDeclMap;
-  
-  typedef std::pair<Module *, uint64_t> FileOffset;
+
+  typedef std::pair<ModuleFile *, uint64_t> FileOffset;
   typedef SmallVector<FileOffset, 2> FileOffsetsTy;
   typedef llvm::DenseMap<serialization::DeclID, FileOffsetsTy>
       DeclUpdateOffsetsMap;
-  
+
   /// \brief Declarations that have modifications residing in a later file
   /// in the chain.
   DeclUpdateOffsetsMap DeclUpdateOffsets;
 
-  typedef llvm::DenseMap<serialization::DeclID,
-                         std::pair<Module *, uint64_t> >
+  struct ReplacedDeclInfo {
+    ModuleFile *Mod;
+    uint64_t Offset;
+    unsigned RawLoc;
+
+    ReplacedDeclInfo() : Mod(0), Offset(0), RawLoc(0) {}
+    ReplacedDeclInfo(ModuleFile *Mod, uint64_t Offset, unsigned RawLoc)
+      : Mod(Mod), Offset(Offset), RawLoc(RawLoc) {}
+  };
+
+  typedef llvm::DenseMap<serialization::DeclID, ReplacedDeclInfo>
       DeclReplacementMap;
   /// \brief Declarations that have been replaced in a later file in the chain.
   DeclReplacementMap ReplacedDecls;
 
-  /// \brief Information about the contents of a DeclContext.
-  struct DeclContextInfo {
-    Module *F;
-    void *NameLookupTableData; // a ASTDeclContextNameLookupTable.
-    const serialization::KindDeclIDPair *LexicalDecls;
-    unsigned NumLexicalDecls;
+  struct FileDeclsInfo {
+    ModuleFile *Mod;
+    ArrayRef<serialization::LocalDeclID> Decls;
+
+    FileDeclsInfo() : Mod(0) {}
+    FileDeclsInfo(ModuleFile *Mod, ArrayRef<serialization::LocalDeclID> Decls)
+      : Mod(Mod), Decls(Decls) {}
   };
-  // In a full chain, there could be multiple updates to every decl context,
-  // so this is a vector. However, typically a chain is only two elements long,
-  // with only one file containing updates, so there will be only one update
-  // per decl context.
-  typedef SmallVector<DeclContextInfo, 1> DeclContextInfos;
-  typedef llvm::DenseMap<const DeclContext *, DeclContextInfos>
-      DeclContextOffsetsMap;
+
+  /// \brief Map from a FileID to the file-level declarations that it contains.
+  llvm::DenseMap<FileID, FileDeclsInfo> FileDeclIDs;
+
   // Updates for visible decls can occur for other contexts than just the
   // TU, and when we read those update records, the actual context will not
   // be available yet (unless it's the TU), so have this pending map using the
   // ID as a key. It will be realized when the context is actually loaded.
-  typedef SmallVector<std::pair<void *, Module*>, 1> DeclContextVisibleUpdates;
+  typedef SmallVector<std::pair<void *, ModuleFile*>, 1> DeclContextVisibleUpdates;
   typedef llvm::DenseMap<serialization::DeclID, DeclContextVisibleUpdates>
       DeclContextVisibleUpdatesPending;
-
-  /// \brief Offsets of the lexical and visible declarations for each
-  /// DeclContext.
-  DeclContextOffsetsMap DeclContextOffsets;
 
   /// \brief Updates to the visible declarations of declaration contexts that
   /// haven't been loaded yet.
@@ -666,10 +343,15 @@ private:
   /// most recent declarations in another AST file.
   FirstLatestDeclIDMap FirstLatestDeclIDs;
 
+  /// \brief Set of ObjC interfaces that have categories chained to them in
+  /// other modules.
+  llvm::DenseSet<serialization::GlobalDeclID> ObjCChainedCategoriesInterfaces;
+
   /// \brief Read the records that describe the contents of declcontexts.
-  bool ReadDeclContextStorage(llvm::BitstreamCursor &Cursor,
+  bool ReadDeclContextStorage(ModuleFile &M,
+                              llvm::BitstreamCursor &Cursor,
                               const std::pair<uint64_t, uint64_t> &Offsets,
-                              DeclContextInfo &Info);
+                              serialization::DeclContextInfo &Info);
 
   /// \brief A vector containing identifiers that have already been
   /// loaded.
@@ -679,14 +361,62 @@ private:
   /// been loaded.
   std::vector<IdentifierInfo *> IdentifiersLoaded;
 
-  typedef ContinuousRangeMap<serialization::IdentID, Module *, 4> 
+  typedef ContinuousRangeMap<serialization::IdentID, ModuleFile *, 4>
     GlobalIdentifierMapType;
-  
+
   /// \brief Mapping from global identifer IDs to the module in which the
   /// identifier resides along with the offset that should be added to the
   /// global identifier ID to produce a local ID.
   GlobalIdentifierMapType GlobalIdentifierMap;
 
+  /// \brief A vector containing submodules that have already been loaded.
+  ///
+  /// This vector is indexed by the Submodule ID (-1). NULL submodule entries
+  /// indicate that the particular submodule ID has not yet been loaded.
+  SmallVector<Module *, 2> SubmodulesLoaded;
+  
+  typedef ContinuousRangeMap<serialization::SubmoduleID, ModuleFile *, 4>
+    GlobalSubmoduleMapType;
+  
+  /// \brief Mapping from global submodule IDs to the module file in which the
+  /// submodule resides along with the offset that should be added to the
+  /// global submodule ID to produce a local ID.
+  GlobalSubmoduleMapType GlobalSubmoduleMap;
+
+  /// \brief A set of hidden declarations.
+  typedef llvm::SmallVector<llvm::PointerUnion<Decl *, IdentifierInfo *>, 2>
+    HiddenNames;
+  
+  typedef llvm::DenseMap<Module *, HiddenNames> HiddenNamesMapType;
+
+  /// \brief A mapping from each of the hidden submodules to the deserialized
+  /// declarations in that submodule that could be made visible.
+  HiddenNamesMapType HiddenNamesMap;
+  
+  
+  /// \brief A module import or export that hasn't yet been resolved.
+  struct UnresolvedModuleImportExport {
+    /// \brief The file in which this module resides.
+    ModuleFile *File;
+    
+    /// \brief The module that is importing or exporting.
+    Module *Mod;
+    
+    /// \brief The local ID of the module that is being exported.
+    unsigned ID;
+    
+    /// \brief Whether this is an import (vs. an export).
+    unsigned IsImport : 1;
+    
+    /// \brief Whether this is a wildcard export.
+    unsigned IsWildcard : 1;
+  };
+  
+  /// \brief The set of module imports and exports that still need to be 
+  /// resolved.
+  llvm::SmallVector<UnresolvedModuleImportExport, 2> 
+    UnresolvedModuleImportExports;
+  
   /// \brief A vector containing selectors that have already been loaded.
   ///
   /// This vector is indexed by the Selector ID (-1). NULL selector
@@ -694,38 +424,27 @@ private:
   /// been loaded.
   SmallVector<Selector, 16> SelectorsLoaded;
 
-  typedef ContinuousRangeMap<serialization::SelectorID, Module *, 4> 
+  typedef ContinuousRangeMap<serialization::SelectorID, ModuleFile *, 4>
     GlobalSelectorMapType;
-  
+
   /// \brief Mapping from global selector IDs to the module in which the
   /// selector resides along with the offset that should be added to the
   /// global selector ID to produce a local ID.
   GlobalSelectorMapType GlobalSelectorMap;
-
-  /// \brief The macro definitions we have already loaded.
-  SmallVector<MacroDefinition *, 16> MacroDefinitionsLoaded;
-
-  typedef ContinuousRangeMap<serialization::MacroID, Module *, 4> 
-    GlobalMacroDefinitionMapType;
-  
-  /// \brief Mapping from global macro definition IDs to the module in which the
-  /// selector resides along with the offset that should be added to the
-  /// global selector ID to produce a local ID.
-  GlobalMacroDefinitionMapType GlobalMacroDefinitionMap;
 
   /// \brief Mapping from identifiers that represent macros whose definitions
   /// have not yet been deserialized to the global offset where the macro
   /// record resides.
   llvm::DenseMap<IdentifierInfo *, uint64_t> UnreadMacroRecordOffsets;
 
-  typedef ContinuousRangeMap<unsigned, Module *, 4> 
+  typedef ContinuousRangeMap<unsigned, ModuleFile *, 4>
     GlobalPreprocessedEntityMapType;
-  
+
   /// \brief Mapping from global preprocessing entity IDs to the module in
   /// which the preprocessed entity resides along with the offset that should be
   /// added to the global preprocessing entitiy ID to produce a local ID.
   GlobalPreprocessedEntityMapType GlobalPreprocessedEntityMap;
-  
+
   /// \name CodeGen-relevant special data
   /// \brief Fields containing data that is relevant to CodeGen.
   //@{
@@ -762,7 +481,7 @@ private:
 
   //@}
 
-  /// \name Diagnostic-relevant special data
+  /// \name DiagnosticsEngine-relevant special data
   /// \brief Fields containing data that is used for generating diagnostics
   //@{
 
@@ -773,7 +492,7 @@ private:
   /// \brief A list of all the delegating constructors we've seen, to diagnose
   /// cycles.
   SmallVector<uint64_t, 4> DelegatingCtorDecls;
-  
+
   /// \brief Method selectors used in a @selector expression. Used for
   /// implementation of -Wselector.
   SmallVector<uint64_t, 64> ReferencedSelectorsData;
@@ -830,6 +549,9 @@ private:
   /// \brief A list of the namespaces we've seen.
   SmallVector<uint64_t, 4> KnownNamespaces;
 
+  /// \brief A list of modules that were imported by precompiled headers or
+  /// any other non-module AST file.
+  SmallVector<serialization::SubmoduleID, 2> ImportedModules;
   //@}
 
   /// \brief The original file name that was used to build the primary AST file,
@@ -843,7 +565,7 @@ private:
   /// \brief The file ID for the original file that was used to build the
   /// primary AST file.
   FileID OriginalFileID;
-  
+
   /// \brief The directory that the PCH was originally created in. Used to
   /// allow resolving headers even after headers+PCH was moved to a new path.
   std::string OriginalDir;
@@ -861,7 +583,7 @@ private:
   /// \brief Whether to disable the normal validation performed on precompiled
   /// headers when they are loaded.
   bool DisableValidation;
-      
+
   /// \brief Whether to disable the use of stat caches in AST files.
   bool DisableStatCache;
 
@@ -870,9 +592,6 @@ private:
   /// Statements usually don't have IDs, but switch cases need them, so that the
   /// switch statement can refer to them.
   std::map<unsigned, SwitchCase *> SwitchCaseStmts;
-
-  /// \brief Mapping from opaque value IDs to OpaqueValueExprs.
-  std::map<unsigned, OpaqueValueExpr*> OpaqueValueExprs;
 
   /// \brief The number of stat() calls that hit/missed the stat
   /// cache.
@@ -917,7 +636,7 @@ private:
 
   /// Number of visible decl contexts read/total.
   unsigned NumVisibleDeclContextsRead, TotalVisibleDeclContexts;
-  
+
   /// Total size of modules, in bits, currently loaded
   uint64_t TotalModulesSizeInBits;
 
@@ -953,6 +672,11 @@ private:
   /// deeply nested calls when there are many redeclarations.
   std::deque<std::pair<Decl *, serialization::DeclID> > PendingPreviousDecls;
 
+  /// \brief We delay loading the chain of objc categories after recursive
+  /// loading of declarations is finished.
+  std::vector<std::pair<ObjCInterfaceDecl *, serialization::DeclID> >
+    PendingChainedObjCCategories;
+
   /// \brief Ready to load the previous declaration of the given Decl.
   void loadAndAttachPreviousDecl(Decl *D, serialization::DeclID ID);
 
@@ -964,7 +688,7 @@ private:
     Read_Decl, Read_Type, Read_Stmt
   };
 
-  /// \brief What kind of records we are reading. 
+  /// \brief What kind of records we are reading.
   ReadingKind ReadingKind;
 
   /// \brief RAII object to change the reading kind.
@@ -999,7 +723,7 @@ private:
   std::string SuggestedPredefines;
 
   /// \brief Reads a statement from the specified cursor.
-  Stmt *ReadStmtFromStream(Module &F);
+  Stmt *ReadStmtFromStream(ModuleFile &F);
 
   /// \brief Get a FileEntry out of stored-in-PCH filename, making sure we take
   /// into account all the necessary relocations.
@@ -1007,20 +731,22 @@ private:
 
   void MaybeAddSystemRootToFilename(std::string &Filename);
 
-  ASTReadResult ReadASTCore(StringRef FileName, ModuleKind Type);
-  ASTReadResult ReadASTBlock(Module &F);
+  ASTReadResult ReadASTCore(StringRef FileName, ModuleKind Type,
+                            ModuleFile *ImportedBy);
+  ASTReadResult ReadASTBlock(ModuleFile &F);
   bool CheckPredefinesBuffers();
-  bool ParseLineTable(Module &F, SmallVectorImpl<uint64_t> &Record);
-  ASTReadResult ReadSourceManagerBlock(Module &F);
+  bool ParseLineTable(ModuleFile &F, SmallVectorImpl<uint64_t> &Record);
+  ASTReadResult ReadSourceManagerBlock(ModuleFile &F);
   ASTReadResult ReadSLocEntryRecord(int ID);
   llvm::BitstreamCursor &SLocCursorForID(int ID);
-  SourceLocation getImportLocation(Module *F);
+  SourceLocation getImportLocation(ModuleFile *F);
+  ASTReadResult ReadSubmoduleBlock(ModuleFile &F);
   bool ParseLanguageOptions(const SmallVectorImpl<uint64_t> &Record);
-
+  
   struct RecordLocation {
-    RecordLocation(Module *M, uint64_t O)
+    RecordLocation(ModuleFile *M, uint64_t O)
       : F(M), Offset(O) {}
-    Module *F;
+    ModuleFile *F;
     uint64_t Offset;
   };
 
@@ -1028,12 +754,39 @@ private:
   RecordLocation TypeCursorForIndex(unsigned Index);
   void LoadedDecl(unsigned Index, Decl *D);
   Decl *ReadDeclRecord(serialization::DeclID ID);
-  RecordLocation DeclCursorForID(serialization::DeclID ID);
-  
+  RecordLocation DeclCursorForID(serialization::DeclID ID,
+                                 unsigned &RawLocation);
+  void loadDeclUpdateRecords(serialization::DeclID ID, Decl *D);
+  void loadObjCChainedCategories(serialization::GlobalDeclID ID,
+                                 ObjCInterfaceDecl *D);
+
   RecordLocation getLocalBitOffset(uint64_t GlobalOffset);
-  uint64_t getGlobalBitOffset(Module &M, uint32_t LocalOffset);
-  
+  uint64_t getGlobalBitOffset(ModuleFile &M, uint32_t LocalOffset);
+
+  /// \brief Returns the first preprocessed entity ID that ends after \arg BLoc.
+  serialization::PreprocessedEntityID
+    findBeginPreprocessedEntity(SourceLocation BLoc) const;
+
+  /// \brief Returns the first preprocessed entity ID that begins after \arg
+  /// ELoc.
+  serialization::PreprocessedEntityID
+    findEndPreprocessedEntity(SourceLocation ELoc) const;
+
+  /// \brief \arg SLocMapI points at a chunk of a module that contains no
+  /// preprocessed entities or the entities it contains are not the ones we are
+  /// looking for. Find the next module that contains entities and return the ID
+  /// of the first entry.
+  serialization::PreprocessedEntityID
+    findNextPreprocessedEntity(
+                        GlobalSLocOffsetMapType::const_iterator SLocMapI) const;
+
+  /// \brief Returns (ModuleFile, Local index) pair for \arg GlobalIndex of a
+  /// preprocessed entity.
+  std::pair<ModuleFile *, unsigned>
+    getModulePreprocessedEntity(unsigned GlobalIndex);
+
   void PassInterestingDeclsToConsumer();
+  void PassInterestingDeclToConsumer(Decl *D);
 
   /// \brief Produce an error diagnostic and return true.
   ///
@@ -1070,47 +823,33 @@ public:
   /// help when an AST file is being used in cases where the
   /// underlying files in the file system may have changed, but
   /// parsing should still continue.
-  ASTReader(Preprocessor &PP, ASTContext *Context, StringRef isysroot = "",
+  ASTReader(Preprocessor &PP, ASTContext &Context, StringRef isysroot = "",
             bool DisableValidation = false, bool DisableStatCache = false);
 
-  /// \brief Load the AST file without using any pre-initialized Preprocessor.
-  ///
-  /// The necessary information to initialize a Preprocessor later can be
-  /// obtained by setting a ASTReaderListener.
-  ///
-  /// \param SourceMgr the source manager into which the AST file will be loaded
-  ///
-  /// \param FileMgr the file manager into which the AST file will be loaded.
-  ///
-  /// \param Diags the diagnostics system to use for reporting errors and
-  /// warnings relevant to loading the AST file.
-  ///
-  /// \param isysroot If non-NULL, the system include path specified by the
-  /// user. This is only used with relocatable PCH files. If non-NULL,
-  /// a relocatable PCH file will use the default path "/".
-  ///
-  /// \param DisableValidation If true, the AST reader will suppress most
-  /// of its regular consistency checking, allowing the use of precompiled
-  /// headers that cannot be determined to be compatible.
-  ///
-  /// \param DisableStatCache If true, the AST reader will ignore the
-  /// stat cache in the AST files. This performance pessimization can
-  /// help when an AST file is being used in cases where the
-  /// underlying files in the file system may have changed, but
-  /// parsing should still continue.
-  ASTReader(SourceManager &SourceMgr, FileManager &FileMgr,
-            Diagnostic &Diags, StringRef isysroot = "",
-            bool DisableValidation = false, bool DisableStatCache = false);
   ~ASTReader();
 
-  /// \brief Load the precompiled header designated by the given file
-  /// name.
+  SourceManager &getSourceManager() const { return SourceMgr; }
+
+  /// \brief Load the AST file designated by the given file name.
   ASTReadResult ReadAST(const std::string &FileName, ModuleKind Type);
 
   /// \brief Checks that no file that is stored in PCH is out-of-sync with
   /// the actual file in the file system.
-  ASTReadResult validateFileEntries();
+  ASTReadResult validateFileEntries(ModuleFile &M);
 
+  /// \brief Make the entities in the given module and any of its (non-explicit)
+  /// submodules visible to name lookup.
+  ///
+  /// \param Mod The module whose names should be made visible.
+  ///
+  /// \param Visibility The level of visibility to give the names in the module.
+  /// Visibility can only be increased over time.
+  void makeModuleVisible(Module *Mod, 
+                         Module::NameVisibilityKind NameVisibility);
+  
+  /// \brief Make the names within this set of hidden names visible.
+  void makeNamesVisible(const HiddenNames &Names);
+  
   /// \brief Set the AST callbacks listener.
   void setListener(ASTReaderListener *listener) {
     Listener.reset(listener);
@@ -1119,21 +858,26 @@ public:
   /// \brief Set the AST deserialization listener.
   void setDeserializationListener(ASTDeserializationListener *Listener);
 
-  /// \brief Set the Preprocessor to use.
-  void setPreprocessor(Preprocessor &pp);
-
-  /// \brief Sets and initializes the given Context.
-  void InitializeContext(ASTContext &Context);
+  /// \brief Initializes the ASTContext
+  void InitializeContext();
 
   /// \brief Add in-memory (virtual file) buffer.
   void addInMemoryBuffer(StringRef &FileName, llvm::MemoryBuffer *Buffer) {
     ModuleMgr.addInMemoryBuffer(FileName, Buffer);
   }
 
-  /// \brief Retrieve the name of the named (primary) AST file
-  const std::string &getFileName() const {
-    return ModuleMgr.getPrimaryModule().FileName;
-  }
+  /// \brief Finalizes the AST reader's state before writing an AST file to
+  /// disk.
+  ///
+  /// This operation may undo temporary state in the AST that should not be
+  /// emitted.
+  void finalizeForWriting();
+
+  /// \brief Retrieve the module manager.
+  ModuleManager &getModuleManager() { return ModuleMgr; }
+
+  /// \brief Retrieve the preprocessor.
+  Preprocessor &getPreprocessor() const { return PP; }
 
   /// \brief Retrieve the name of the original source file name
   const std::string &getOriginalSourceFile() { return OriginalFileName; }
@@ -1142,23 +886,33 @@ public:
   /// the AST file, without actually loading the AST file.
   static std::string getOriginalSourceFile(const std::string &ASTFileName,
                                            FileManager &FileMgr,
-                                           Diagnostic &Diags);
+                                           DiagnosticsEngine &Diags);
 
   /// \brief Returns the suggested contents of the predefines buffer,
   /// which contains a (typically-empty) subset of the predefines
   /// build prior to including the precompiled header.
   const std::string &getSuggestedPredefines() { return SuggestedPredefines; }
-      
-  /// \brief Read preprocessed entities into the preprocessing record.
-  virtual void ReadPreprocessedEntities();
 
-  /// \brief Read the preprocessed entity at the given offset.
-  virtual PreprocessedEntity *ReadPreprocessedEntityAtOffset(uint64_t Offset);
+  /// \brief Read a preallocated preprocessed entity from the external source.
+  ///
+  /// \returns null if an error occurred that prevented the preprocessed
+  /// entity from being loaded.
+  virtual PreprocessedEntity *ReadPreprocessedEntity(unsigned Index);
+
+  /// \brief Returns a pair of [Begin, End) indices of preallocated
+  /// preprocessed entities that \arg Range encompasses.
+  virtual std::pair<unsigned, unsigned>
+      findPreprocessedEntitiesInRange(SourceRange Range);
+
+  /// \brief Optionally returns true or false if the preallocated preprocessed
+  /// entity with index \arg Index came from file \arg FID.
+  virtual llvm::Optional<bool> isPreprocessedEntityInFileID(unsigned Index,
+                                                            FileID FID);
 
   /// \brief Read the header file information for the given file entry.
   virtual HeaderFileInfo GetHeaderFileInfo(const FileEntry *FE);
 
-  void ReadPragmaDiagnosticMappings(Diagnostic &Diag);
+  void ReadPragmaDiagnosticMappings(DiagnosticsEngine &Diag);
 
   /// \brief Returns the number of source locations found in the chain.
   unsigned getTotalNumSLocs() const {
@@ -1180,6 +934,11 @@ public:
     return static_cast<unsigned>(DeclsLoaded.size());
   }
 
+  /// \brief Returns the number of submodules known.
+  unsigned getTotalNumSubmodules() const {
+    return static_cast<unsigned>(SubmodulesLoaded.size());
+  }
+  
   /// \brief Returns the number of selectors found in the chain.
   unsigned getTotalNumSelectors() const {
     return static_cast<unsigned>(SelectorsLoaded.size());
@@ -1191,70 +950,69 @@ public:
     unsigned Result = 0;
     for (ModuleConstIterator I = ModuleMgr.begin(),
         E = ModuleMgr.end(); I != E; ++I) {
-      Result += (*I)->NumPreallocatedPreprocessingEntities;
+      Result += (*I)->NumPreprocessedEntities;
     }
-    
+
     return Result;
   }
-  
-  /// \brief Returns the number of macro definitions found in the chain.
-  unsigned getTotalNumMacroDefinitions() const {
-    return static_cast<unsigned>(MacroDefinitionsLoaded.size());
-  }
-      
+
   /// \brief Returns the number of C++ base specifiers found in the chain.
   unsigned getTotalNumCXXBaseSpecifiers() const {
     return NumCXXBaseSpecifiersLoaded;
   }
-      
+
   /// \brief Reads a TemplateArgumentLocInfo appropriate for the
   /// given TemplateArgument kind.
   TemplateArgumentLocInfo
-  GetTemplateArgumentLocInfo(Module &F, TemplateArgument::ArgKind Kind,
+  GetTemplateArgumentLocInfo(ModuleFile &F, TemplateArgument::ArgKind Kind,
                              const RecordData &Record, unsigned &Idx);
 
   /// \brief Reads a TemplateArgumentLoc.
   TemplateArgumentLoc
-  ReadTemplateArgumentLoc(Module &F,
+  ReadTemplateArgumentLoc(ModuleFile &F,
                           const RecordData &Record, unsigned &Idx);
 
   /// \brief Reads a declarator info from the given record.
-  TypeSourceInfo *GetTypeSourceInfo(Module &F,
+  TypeSourceInfo *GetTypeSourceInfo(ModuleFile &F,
                                     const RecordData &Record, unsigned &Idx);
-
-  /// \brief Resolve and return the translation unit declaration.
-  TranslationUnitDecl *GetTranslationUnitDecl();
 
   /// \brief Resolve a type ID into a type, potentially building a new
   /// type.
   QualType GetType(serialization::TypeID ID);
 
   /// \brief Resolve a local type ID within a given AST file into a type.
-  QualType getLocalType(Module &F, unsigned LocalID);
-  
+  QualType getLocalType(ModuleFile &F, unsigned LocalID);
+
   /// \brief Map a local type ID within a given AST file into a global type ID.
-  serialization::TypeID getGlobalTypeID(Module &F, unsigned LocalID) const;
-  
-  /// \brief Read a type from the current position in the given record, which 
+  serialization::TypeID getGlobalTypeID(ModuleFile &F, unsigned LocalID) const;
+
+  /// \brief Read a type from the current position in the given record, which
   /// was read from the given AST file.
-  QualType readType(Module &F, const RecordData &Record, unsigned &Idx) {
+  QualType readType(ModuleFile &F, const RecordData &Record, unsigned &Idx) {
     if (Idx >= Record.size())
       return QualType();
-    
+
     return getLocalType(F, Record[Idx++]);
   }
-  
-  /// \brief Map from a local declaration ID within a given module to a 
+
+  /// \brief Map from a local declaration ID within a given module to a
   /// global declaration ID.
-  serialization::DeclID getGlobalDeclID(Module &F, unsigned LocalID) const;
-  
+  serialization::DeclID getGlobalDeclID(ModuleFile &F, unsigned LocalID) const;
+
+  /// \brief Returns true if global DeclID \arg ID originated from module
+  /// \arg M.
+  bool isDeclIDFromModule(serialization::GlobalDeclID ID, ModuleFile &M) const;
+
+  /// \brief Returns the source location for the decl \arg ID.
+  SourceLocation getSourceLocationForDeclID(serialization::GlobalDeclID ID);
+
   /// \brief Resolve a declaration ID into a declaration, potentially
   /// building a new declaration.
   Decl *GetDecl(serialization::DeclID ID);
   virtual Decl *GetExternalDecl(uint32_t ID);
 
   /// \brief Reads a declaration with the given local ID in the given module.
-  Decl *GetLocalDecl(Module &F, uint32_t LocalID) {
+  Decl *GetLocalDecl(ModuleFile &F, uint32_t LocalID) {
     return GetDecl(getGlobalDeclID(F, LocalID));
   }
 
@@ -1262,40 +1020,40 @@ public:
   ///
   /// \returns The requested declaration, casted to the given return type.
   template<typename T>
-  T *GetLocalDeclAs(Module &F, uint32_t LocalID) {
+  T *GetLocalDeclAs(ModuleFile &F, uint32_t LocalID) {
     return cast_or_null<T>(GetLocalDecl(F, LocalID));
   }
 
-  /// \brief Reads a declaration ID from the given position in a record in the 
+  /// \brief Reads a declaration ID from the given position in a record in the
   /// given module.
   ///
   /// \returns The declaration ID read from the record, adjusted to a global ID.
-  serialization::DeclID ReadDeclID(Module &F, const RecordData &Record,
+  serialization::DeclID ReadDeclID(ModuleFile &F, const RecordData &Record,
                                    unsigned &Idx);
-  
+
   /// \brief Reads a declaration from the given position in a record in the
   /// given module.
-  Decl *ReadDecl(Module &F, const RecordData &R, unsigned &I) {
+  Decl *ReadDecl(ModuleFile &F, const RecordData &R, unsigned &I) {
     return GetDecl(ReadDeclID(F, R, I));
   }
-  
+
   /// \brief Reads a declaration from the given position in a record in the
   /// given module.
   ///
   /// \returns The declaration read from this location, casted to the given
   /// result type.
   template<typename T>
-  T *ReadDeclAs(Module &F, const RecordData &R, unsigned &I) {
+  T *ReadDeclAs(ModuleFile &F, const RecordData &R, unsigned &I) {
     return cast_or_null<T>(GetDecl(ReadDeclID(F, R, I)));
   }
 
   /// \brief Read a CXXBaseSpecifiers ID form the given record and
   /// return its global bit offset.
-  uint64_t readCXXBaseSpecifiers(Module &M, const RecordData &Record, 
+  uint64_t readCXXBaseSpecifiers(ModuleFile &M, const RecordData &Record,
                                  unsigned &Idx);
-      
+
   virtual CXXBaseSpecifier *GetExternalCXXBaseSpecifiers(uint64_t Offset);
-      
+
   /// \brief Resolve the offset of a statement into a statement.
   ///
   /// This operation will read a new statement from the external
@@ -1315,8 +1073,6 @@ public:
   FindExternalVisibleDeclsByName(const DeclContext *DC,
                                  DeclarationName Name);
 
-  virtual void MaterializeVisibleDecls(const DeclContext *DC);
-
   /// \brief Read all of the declarations lexically stored in a
   /// declaration context.
   ///
@@ -1333,6 +1089,12 @@ public:
   virtual ExternalLoadResult FindExternalLexicalDecls(const DeclContext *DC,
                                         bool (*isKindWeWant)(Decl::Kind),
                                         SmallVectorImpl<Decl*> &Decls);
+
+  /// \brief Get the decls that are contained in a file in the Offset/Length
+  /// range. \arg Length can be 0 to indicate a point at \arg Offset instead of
+  /// a range.
+  virtual void FindFileRegionDecls(FileID File, unsigned Offset,unsigned Length,
+                                   SmallVectorImpl<Decl *> &Decls);
 
   /// \brief Notify ASTReader that we started deserialization of
   /// a decl or type so until FinishedDeserializing is called there may be
@@ -1355,7 +1117,7 @@ public:
 
   /// \brief Dump information about the AST reader to standard error.
   void dump();
-  
+
   /// Return the amount of memory used by memory buffers, breaking down
   /// by heap-backed versus mmap'ed memory.
   virtual void getMemoryBufferSizes(MemoryBufferSizes &sizes) const;
@@ -1411,7 +1173,7 @@ public:
 
   virtual void ReadLocallyScopedExternalDecls(
                  SmallVectorImpl<NamedDecl *> &Decls);
-  
+
   virtual void ReadReferencedSelectors(
                  SmallVectorImpl<std::pair<Selector, SourceLocation> > &Sels);
 
@@ -1421,7 +1183,7 @@ public:
   virtual void ReadUsedVTables(SmallVectorImpl<ExternalVTableUse> &VTables);
 
   virtual void ReadPendingInstantiations(
-                 SmallVectorImpl<std::pair<ValueDecl *, 
+                 SmallVectorImpl<std::pair<ValueDecl *,
                                            SourceLocation> > &Pending);
 
   /// \brief Load a selector from disk, registering its ID if it exists.
@@ -1440,7 +1202,7 @@ public:
 
   IdentifierInfo *DecodeIdentifierInfo(serialization::IdentifierID ID);
 
-  IdentifierInfo *GetIdentifierInfo(Module &M, const RecordData &Record, 
+  IdentifierInfo *GetIdentifierInfo(ModuleFile &M, const RecordData &Record,
                                     unsigned &Idx) {
     return DecodeIdentifierInfo(getGlobalIdentifierID(M, Record[Idx++]));
   }
@@ -1449,105 +1211,110 @@ public:
     return DecodeIdentifierInfo(ID);
   }
 
-  IdentifierInfo *getLocalIdentifier(Module &M, unsigned LocalID);
-  
-  serialization::IdentifierID getGlobalIdentifierID(Module &M, 
+  IdentifierInfo *getLocalIdentifier(ModuleFile &M, unsigned LocalID);
+
+  serialization::IdentifierID getGlobalIdentifierID(ModuleFile &M,
                                                     unsigned LocalID);
-                                 
+
   /// \brief Read the source location entry with index ID.
   virtual bool ReadSLocEntry(int ID);
 
+  /// \brief Retrieve the global submodule ID given a module and its local ID
+  /// number.
+  serialization::SubmoduleID 
+  getGlobalSubmoduleID(ModuleFile &M, unsigned LocalID);
+  
+  /// \brief Retrieve the submodule that corresponds to a global submodule ID.
+  ///
+  Module *getSubmodule(serialization::SubmoduleID GlobalID);
+  
   /// \brief Retrieve a selector from the given module with its local ID
   /// number.
-  Selector getLocalSelector(Module &M, unsigned LocalID);
+  Selector getLocalSelector(ModuleFile &M, unsigned LocalID);
 
   Selector DecodeSelector(serialization::SelectorID Idx);
 
   virtual Selector GetExternalSelector(serialization::SelectorID ID);
   uint32_t GetNumExternalSelectors();
 
-  Selector ReadSelector(Module &M, const RecordData &Record, unsigned &Idx) {
+  Selector ReadSelector(ModuleFile &M, const RecordData &Record, unsigned &Idx) {
     return getLocalSelector(M, Record[Idx++]);
   }
-  
+
   /// \brief Retrieve the global selector ID that corresponds to this
   /// the local selector ID in a given module.
-  serialization::SelectorID getGlobalSelectorID(Module &F, 
+  serialization::SelectorID getGlobalSelectorID(ModuleFile &F,
                                                 unsigned LocalID) const;
 
   /// \brief Read a declaration name.
-  DeclarationName ReadDeclarationName(Module &F, 
+  DeclarationName ReadDeclarationName(ModuleFile &F,
                                       const RecordData &Record, unsigned &Idx);
-  void ReadDeclarationNameLoc(Module &F,
+  void ReadDeclarationNameLoc(ModuleFile &F,
                               DeclarationNameLoc &DNLoc, DeclarationName Name,
                               const RecordData &Record, unsigned &Idx);
-  void ReadDeclarationNameInfo(Module &F, DeclarationNameInfo &NameInfo,
+  void ReadDeclarationNameInfo(ModuleFile &F, DeclarationNameInfo &NameInfo,
                                const RecordData &Record, unsigned &Idx);
 
-  void ReadQualifierInfo(Module &F, QualifierInfo &Info,
+  void ReadQualifierInfo(ModuleFile &F, QualifierInfo &Info,
                          const RecordData &Record, unsigned &Idx);
 
-  NestedNameSpecifier *ReadNestedNameSpecifier(Module &F,
+  NestedNameSpecifier *ReadNestedNameSpecifier(ModuleFile &F,
                                                const RecordData &Record,
                                                unsigned &Idx);
 
-  NestedNameSpecifierLoc ReadNestedNameSpecifierLoc(Module &F, 
+  NestedNameSpecifierLoc ReadNestedNameSpecifierLoc(ModuleFile &F,
                                                     const RecordData &Record,
                                                     unsigned &Idx);
 
   /// \brief Read a template name.
-  TemplateName ReadTemplateName(Module &F, const RecordData &Record, 
+  TemplateName ReadTemplateName(ModuleFile &F, const RecordData &Record,
                                 unsigned &Idx);
 
   /// \brief Read a template argument.
-  TemplateArgument ReadTemplateArgument(Module &F,
+  TemplateArgument ReadTemplateArgument(ModuleFile &F,
                                         const RecordData &Record,unsigned &Idx);
-  
+
   /// \brief Read a template parameter list.
-  TemplateParameterList *ReadTemplateParameterList(Module &F,
+  TemplateParameterList *ReadTemplateParameterList(ModuleFile &F,
                                                    const RecordData &Record,
                                                    unsigned &Idx);
-  
+
   /// \brief Read a template argument array.
   void
   ReadTemplateArgumentList(SmallVector<TemplateArgument, 8> &TemplArgs,
-                           Module &F, const RecordData &Record,
+                           ModuleFile &F, const RecordData &Record,
                            unsigned &Idx);
 
   /// \brief Read a UnresolvedSet structure.
-  void ReadUnresolvedSet(Module &F, UnresolvedSetImpl &Set,
+  void ReadUnresolvedSet(ModuleFile &F, UnresolvedSetImpl &Set,
                          const RecordData &Record, unsigned &Idx);
 
   /// \brief Read a C++ base specifier.
-  CXXBaseSpecifier ReadCXXBaseSpecifier(Module &F,
+  CXXBaseSpecifier ReadCXXBaseSpecifier(ModuleFile &F,
                                         const RecordData &Record,unsigned &Idx);
 
   /// \brief Read a CXXCtorInitializer array.
   std::pair<CXXCtorInitializer **, unsigned>
-  ReadCXXCtorInitializers(Module &F, const RecordData &Record,
+  ReadCXXCtorInitializers(ModuleFile &F, const RecordData &Record,
                           unsigned &Idx);
 
   /// \brief Read a source location from raw form.
-  SourceLocation ReadSourceLocation(Module &Module, unsigned Raw) {
-    unsigned Flag = Raw & (1U << 31);
-    unsigned Offset = Raw & ~(1U << 31);
-    assert(Module.SLocRemap.find(Offset) != Module.SLocRemap.end() &&
+  SourceLocation ReadSourceLocation(ModuleFile &ModuleFile, unsigned Raw) const {
+    SourceLocation Loc = SourceLocation::getFromRawEncoding(Raw);
+    assert(ModuleFile.SLocRemap.find(Loc.getOffset()) != ModuleFile.SLocRemap.end() &&
            "Cannot find offset to remap.");
-    int Remap = Module.SLocRemap.find(Offset)->second;
-    Offset += Remap;
-    assert((Offset & (1U << 31)) == 0 &&
-           "Bad offset in reading source location");
-    return SourceLocation::getFromRawEncoding(Offset | Flag);
+    int Remap = ModuleFile.SLocRemap.find(Loc.getOffset())->second;
+    return Loc.getLocWithOffset(Remap);
   }
 
   /// \brief Read a source location.
-  SourceLocation ReadSourceLocation(Module &Module,
+  SourceLocation ReadSourceLocation(ModuleFile &ModuleFile,
                                     const RecordData &Record, unsigned& Idx) {
-    return ReadSourceLocation(Module, Record[Idx++]);
+    return ReadSourceLocation(ModuleFile, Record[Idx++]);
   }
 
   /// \brief Read a source range.
-  SourceRange ReadSourceRange(Module &F,
+  SourceRange ReadSourceRange(ModuleFile &F,
                               const RecordData &Record, unsigned& Idx);
 
   /// \brief Read an integral value
@@ -1565,18 +1332,18 @@ public:
   /// \brief Read a version tuple.
   VersionTuple ReadVersionTuple(const RecordData &Record, unsigned &Idx);
 
-  CXXTemporary *ReadCXXTemporary(Module &F, const RecordData &Record, 
+  CXXTemporary *ReadCXXTemporary(ModuleFile &F, const RecordData &Record,
                                  unsigned &Idx);
-      
+
   /// \brief Reads attributes from the current stream position.
-  void ReadAttributes(Module &F, AttrVec &Attrs,
+  void ReadAttributes(ModuleFile &F, AttrVec &Attrs,
                       const RecordData &Record, unsigned &Idx);
 
   /// \brief Reads a statement.
-  Stmt *ReadStmt(Module &F);
+  Stmt *ReadStmt(ModuleFile &F);
 
   /// \brief Reads an expression.
-  Expr *ReadExpr(Module &F);
+  Expr *ReadExpr(ModuleFile &F);
 
   /// \brief Reads a sub-statement operand during statement reading.
   Stmt *ReadSubStmt() {
@@ -1592,49 +1359,43 @@ public:
   Expr *ReadSubExpr();
 
   /// \brief Reads the macro record located at the given offset.
-  void ReadMacroRecord(Module &F, uint64_t Offset);
+  void ReadMacroRecord(ModuleFile &F, uint64_t Offset);
 
-  /// \brief Reads the preprocessed entity located at the current stream
-  /// position.
-  PreprocessedEntity *LoadPreprocessedEntity(Module &F);
-      
   /// \brief Determine the global preprocessed entity ID that corresponds to
   /// the given local ID within the given module.
-  serialization::PreprocessedEntityID 
-  getGlobalPreprocessedEntityID(Module &M, unsigned LocalID);
-  
+  serialization::PreprocessedEntityID
+  getGlobalPreprocessedEntityID(ModuleFile &M, unsigned LocalID) const;
+
   /// \brief Note that the identifier is a macro whose record will be loaded
   /// from the given AST file at the given (file-local) offset.
-  void SetIdentifierIsMacro(IdentifierInfo *II, Module &F,
-                            uint64_t Offset);
-      
+  ///
+  /// \param II The name of the macro.
+  ///
+  /// \param F The module file from which the macro definition was deserialized.
+  ///
+  /// \param Offset The offset into the module file at which the macro 
+  /// definition is located.
+  ///
+  /// \param Visible Whether the macro should be made visible.
+  void setIdentifierIsMacro(IdentifierInfo *II, ModuleFile &F,
+                            uint64_t Offset, bool Visible);
+
   /// \brief Read the set of macros defined by this external macro source.
   virtual void ReadDefinedMacros();
 
   /// \brief Read the macro definition for this identifier.
   virtual void LoadMacroDefinition(IdentifierInfo *II);
 
+  /// \brief Update an out-of-date identifier.
+  virtual void updateOutOfDateIdentifier(IdentifierInfo &II);
+
   /// \brief Read the macro definition corresponding to this iterator
   /// into the unread macro record offsets table.
   void LoadMacroDefinition(
                      llvm::DenseMap<IdentifierInfo *, uint64_t>::iterator Pos);
-      
-  /// \brief Retrieve the macro definition with the given ID.
-  MacroDefinition *getMacroDefinition(serialization::MacroID ID);
 
-  /// \brief Retrieve the global macro definition ID that corresponds to the
-  /// local macro definition ID within a given module.
-  serialization::MacroID getGlobalMacroDefinitionID(Module &M, 
-                                                    unsigned LocalID);
-
-  /// \brief Deserialize a macro definition that is local to the given
-  /// module.
-  MacroDefinition *getLocalMacroDefinition(Module &M, unsigned LocalID) {
-    return getMacroDefinition(getGlobalMacroDefinitionID(M, LocalID));
-  }
-  
   /// \brief Retrieve the AST context that this AST reader supplements.
-  ASTContext *getContext() { return Context; }
+  ASTContext &getContext() { return Context; }
 
   // \brief Contains declarations that were loaded before we have
   // access to a Sema object.

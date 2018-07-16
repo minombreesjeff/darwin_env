@@ -15,6 +15,7 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Core/Address.h"
+#include "lldb/Core/Mangled.h"
 #include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/LineEntry.h"
 
@@ -97,6 +98,7 @@ public:
                    LineEntry *line_entry = NULL,
                    Symbol *symbol = NULL);
 
+    ~SymbolContext ();
     //------------------------------------------------------------------
     /// Copy constructor
     ///
@@ -218,52 +220,47 @@ public:
     uint32_t
     GetResolvedMask () const;
 
-
     //------------------------------------------------------------------
-    /// Find a function matching the given name, working out from this
-    /// symbol context.
+    /// Find a name of the innermost function for the symbol context.
+    ///
+    /// For instance, if the symbol context contains an inlined block,
+    /// it will return the inlined function name.
+    ///
+    /// @param[in] prefer_mangled
+    ///    if \btrue, then the mangled name will be returned if there
+    ///    is one.  Otherwise the unmangled name will be returned if it
+    ///    is available.
     ///
     /// @return
-    ///     The number of symbol contexts found.
+    ///     The name of the function represented by this symbol context.
     //------------------------------------------------------------------
-    size_t
-    FindFunctionsByName (const ConstString &name, 
-                         bool include_symbols, 
-                         bool append, 
-                         SymbolContextList &sc_list) const;
-
-
-    ClangNamespaceDecl
-    FindNamespace (const ConstString &name) const;
+    ConstString
+    GetFunctionName (Mangled::NamePreference preference = Mangled::ePreferDemangled);
 
     //------------------------------------------------------------------
-    /// Find a variable matching the given name, working out from this
-    /// symbol context.
+    /// Find the block containing the inlined block that contains this block.
+    /// 
+    /// For instance, if the symbol context contains an inlined block,
+    /// it will return the inlined function name.
+    ///
+    /// @param[in] curr_frame_pc
+    ///    The address within the block of this object.
+    ///
+    /// @param[out] next_frame_sc
+    ///     A new symbol context that does what the title says it does.
+    ///
+    /// @param[out] next_frame_addr
+    ///     This is what you should report as the PC in \a next_frame_sc.
     ///
     /// @return
-    ///     A shared pointer to the variable found.
+    ///     \b true if this SymbolContext specifies a block contained in an 
+    ///     inlined block.  If this returns \b true, \a next_frame_sc and 
+    ///     \a next_frame_addr will be filled in correctly.
     //------------------------------------------------------------------
-    //lldb::VariableSP
-    //FindVariableByName (const char *name) const;
-
-    //------------------------------------------------------------------
-    /// Find a type matching the given name, working out from this
-    /// symbol context.
-    ///
-    /// @return
-    ///     A shared pointer to the variable found.
-    //------------------------------------------------------------------
-    lldb::TypeSP
-    FindTypeByName (const ConstString &name) const;
-    
-//    static SymbolContext
-//    CreateSymbolContextFromDescription (lldb::TargetSP &target,
-//                                        const char *module,
-//                                        const char *comp_unit,
-//                                        const char *function,
-//                                        const char *block_spec
-//                                        const char *line_number,
-//                                        const char *symbol);
+    bool
+    GetParentOfInlinedScope (const Address &curr_frame_pc, 
+                             SymbolContext &next_frame_sc, 
+                             Address &inlined_frame_addr) const;
 
     //------------------------------------------------------------------
     // Member variables
@@ -294,13 +291,9 @@ public:
     } SpecificationType;
     
     // This one produces a specifier that matches everything...
-    SymbolContextSpecifier (lldb::TargetSP target_sp) :
-        m_start_line(0),
-        m_end_line(0)
-    {
-        m_target_sp = target_sp;
-        m_type = eNothingSpecified;
-    }   
+    SymbolContextSpecifier (const lldb::TargetSP& target_sp);
+    
+    ~SymbolContextSpecifier();
     
     bool
     AddSpecification (const char *spec_string, SpecificationType type);
@@ -436,6 +429,9 @@ protected:
 
 bool operator== (const SymbolContext& lhs, const SymbolContext& rhs);
 bool operator!= (const SymbolContext& lhs, const SymbolContext& rhs);
+
+bool operator== (const SymbolContextList& lhs, const SymbolContextList& rhs);
+bool operator!= (const SymbolContextList& lhs, const SymbolContextList& rhs);
 
 } // namespace lldb_private
 

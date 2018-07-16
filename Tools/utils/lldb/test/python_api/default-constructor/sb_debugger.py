@@ -8,6 +8,7 @@ import lldb
 def fuzz_obj(obj):
     obj.SetAsync(True)
     obj.SetAsync(False)
+    obj.GetAsync()
     obj.SkipLLDBInitFiles(True)
     obj.SetInputFileHandle(None, True)
     obj.SetOutputFileHandle(None, True)
@@ -29,6 +30,7 @@ def fuzz_obj(obj):
     obj.GetNumTargets()
     obj.GetSelectedTarget()
     obj.GetSourceManager()
+    obj.SetSelectedTarget(lldb.SBTarget())
     obj.SetCurrentPlatformSDKRoot("tmp/sdk-root")
     obj.DispatchInput(None, None, 0)
     obj.DispatchInputInterrupt()
@@ -50,3 +52,5 @@ def fuzz_obj(obj):
     obj.SetCloseInputOnEOF(True)
     obj.SetCloseInputOnEOF(False)
     obj.Clear()
+    for target in obj:
+        print target

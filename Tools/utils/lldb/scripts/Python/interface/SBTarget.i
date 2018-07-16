@@ -12,7 +12,7 @@ namespace lldb {
 %feature("docstring",
 "Represents the target program running under the debugger.
 
-SBTarget supports module and breakpoint iterations. For example,
+SBTarget supports module, breakpoint, and watchpoint iterations. For example,
 
     for m in target.module_iter():
         print m
@@ -34,7 +34,18 @@ and,
 produces:
 
 SBBreakpoint: id = 1, file ='main.cpp', line = 66, locations = 1
-SBBreakpoint: id = 2, file ='main.cpp', line = 85, locations = 1"
+SBBreakpoint: id = 2, file ='main.cpp', line = 85, locations = 1
+
+and,
+
+    for wp_loc in target.watchpoint_iter():
+        print wp_loc
+
+produces:
+
+Watchpoint 1: addr = 0x1034ca048 size = 4 state = enabled type = rw
+    declare @ '/Volumes/data/lldb/svn/trunk/test/python_api/watchpoint/main.c:12'
+    hw_index = 0  hit_count = 2     ignore_count = 0"
 ) SBTarget;
 class SBTarget
 {
@@ -277,17 +288,42 @@ public:
     lldb::SBFileSpec
     GetExecutable ();
 
+    bool
+    AddModule (lldb::SBModule &module);
+
+    lldb::SBModule
+    AddModule (const char *path,
+               const char *triple,
+               const char *uuid);
+
     uint32_t
     GetNumModules () const;
 
     lldb::SBModule
     GetModuleAtIndex (uint32_t idx);
 
+    bool
+    RemoveModule (lldb::SBModule module);
+
     lldb::SBDebugger
     GetDebugger() const;
 
     lldb::SBModule
     FindModule (const lldb::SBFileSpec &file_spec);
+
+    lldb::SBError
+    SetSectionLoadAddress (lldb::SBSection section,
+                           lldb::addr_t section_base_addr);
+
+    lldb::SBError
+    ClearSectionLoadAddress (lldb::SBSection section);
+
+    lldb::SBError
+    SetModuleLoadAddress (lldb::SBModule module,
+                          int64_t sections_offset);
+
+    lldb::SBError
+    ClearModuleLoadAddress (lldb::SBModule module);
 
     %feature("docstring", "
     //------------------------------------------------------------------
@@ -326,6 +362,9 @@ public:
     
     lldb::SBTypeList
     FindTypes (const char* type);
+
+    lldb::SBSourceManager
+    GetSourceManager ();
 
     %feature("docstring", "
     //------------------------------------------------------------------
@@ -366,7 +405,16 @@ public:
     BreakpointCreateByName (const char *symbol_name, const char *module_name = NULL);
 
     lldb::SBBreakpoint
+    BreakpointCreateByName (const char *symbol_name,
+                            uint32_t func_name_type,           // Logical OR one or more FunctionNameType enum bits
+                            const SBFileSpecList &module_list, 
+                            const SBFileSpecList &comp_unit_list);
+
+    lldb::SBBreakpoint
     BreakpointCreateByRegex (const char *symbol_name_regex, const char *module_name = NULL);
+
+    lldb::SBBreakpoint
+    BreakpointCreateBySourceRegex (const char *source_regex, const lldb::SBFileSpec &source_file, const char *module_name = NULL);
 
     lldb::SBBreakpoint
     BreakpointCreateByAddress (addr_t address);
@@ -392,11 +440,42 @@ public:
     bool
     DeleteAllBreakpoints ();
 
+    uint32_t
+    GetNumWatchpoints () const;
+    
+    lldb::SBWatchpoint
+    GetWatchpointAtIndex (uint32_t idx) const;
+    
+    bool
+    DeleteWatchpoint (lldb::watch_id_t watch_id);
+    
+    lldb::SBWatchpoint
+    FindWatchpointByID (lldb::watch_id_t watch_id);
+    
+    bool
+    EnableAllWatchpoints ();
+    
+    bool
+    DisableAllWatchpoints ();
+    
+    bool
+    DeleteAllWatchpoints ();
+
+    lldb::SBWatchpoint
+    WatchAddress (lldb::addr_t addr, 
+                  size_t size, 
+                  bool read, 
+                  bool write);
+             
+
     lldb::SBBroadcaster
     GetBroadcaster () const;
-
+    
+    lldb::SBInstructionList
+    GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
+    
     bool
-    GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level) const;
+    GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
 };
 
 } // namespace lldb

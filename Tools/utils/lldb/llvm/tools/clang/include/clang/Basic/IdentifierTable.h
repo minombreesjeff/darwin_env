@@ -49,8 +49,6 @@ namespace clang {
 /// variable or function name).  The preprocessor keeps this information in a
 /// set, and all tok::identifier tokens have a pointer to one of these.
 class IdentifierInfo {
-  // Note: DON'T make TokenID a 'tok::TokenKind'; MSVC will treat it as a
-  //       signed char and TokenKinds > 255 won't be handled correctly.
   unsigned TokenID            : 9; // Front-end token ID or tok::identifier.
   // Objective-C keyword ('protocol' in '@protocol') or builtin (__builtin_inf).
   // First NUM_OBJC_KEYWORDS values are for Objective-C, the remaining values
@@ -58,14 +56,21 @@ class IdentifierInfo {
   unsigned ObjCOrBuiltinID    :11;
   bool HasMacro               : 1; // True if there is a #define for this.
   bool IsExtension            : 1; // True if identifier is a lang extension.
+  bool IsCXX11CompatKeyword   : 1; // True if identifier is a keyword in C++11.
   bool IsPoisoned             : 1; // True if identifier is poisoned.
   bool IsCPPOperatorKeyword   : 1; // True if ident is a C++ operator keyword.
   bool NeedsHandleIdentifier  : 1; // See "RecomputeNeedsHandleIdentifier".
-  bool IsFromAST              : 1; // True if identfier first appeared in an AST
-                                   // file and wasn't modified since.
+  bool IsFromAST              : 1; // True if identifier was loaded (at least 
+                                   // partially) from an AST file.
+  bool ChangedAfterLoad       : 1; // True if identifier has changed from the
+                                   // definition loaded from an AST file.
   bool RevertedTokenID        : 1; // True if RevertTokenIDToIdentifier was
                                    // called.
-  // 5 bits left in 32-bit word.
+  bool OutOfDate              : 1; // True if there may be additional
+                                   // information about this identifier
+                                   // stored externally.
+  // 2 bits left in 32-bit word.
+  
   void *FETokenInfo;               // Managed by the language front-end.
   llvm::StringMapEntry<IdentifierInfo*> *Entry;
 
@@ -131,7 +136,6 @@ public:
       NeedsHandleIdentifier = 1;
     else
       RecomputeNeedsHandleIdentifier();
-    IsFromAST = false;
   }
 
   /// getTokenID - If this is a source-language token (e.g. 'for'), this API
@@ -199,6 +203,19 @@ public:
       RecomputeNeedsHandleIdentifier();
   }
 
+  /// is/setIsCXX11CompatKeyword - Initialize information about whether or not
+  /// this language token is a keyword in C++11. This controls compatibility
+  /// warnings, and is only true when not parsing C++11. Once a compatibility
+  /// problem has been diagnosed with this keyword, the flag will be cleared.
+  bool isCXX11CompatKeyword() const { return IsCXX11CompatKeyword; }
+  void setIsCXX11CompatKeyword(bool Val) {
+    IsCXX11CompatKeyword = Val;
+    if (Val)
+      NeedsHandleIdentifier = 1;
+    else
+      RecomputeNeedsHandleIdentifier();
+  }
+
   /// setIsPoisoned - Mark this identifier as poisoned.  After poisoning, the
   /// Preprocessor will emit an error every time this token is used.
   void setIsPoisoned(bool Value = true) {
@@ -207,7 +224,6 @@ public:
       NeedsHandleIdentifier = 1;
     else
       RecomputeNeedsHandleIdentifier();
-    IsFromAST = false;
   }
 
   /// isPoisoned - Return true if this token has been poisoned.
@@ -239,8 +255,34 @@ public:
   /// from an AST file.
   bool isFromAST() const { return IsFromAST; }
 
-  void setIsFromAST(bool FromAST = true) { IsFromAST = FromAST; }
+  void setIsFromAST() { IsFromAST = true; }
 
+  /// \brief Determine whether this identifier has changed since it was loaded
+  /// from an AST file.
+  bool hasChangedSinceDeserialization() const {
+    return ChangedAfterLoad;
+  }
+  
+  /// \brief Note that this identifier has changed since it was loaded from
+  /// an AST file.
+  void setChangedSinceDeserialization() {
+    ChangedAfterLoad = true;
+  }
+
+  /// \brief Determine whether the information for this identifier is out of
+  /// date with respect to the external source.
+  bool isOutOfDate() const { return OutOfDate; }
+  
+  /// \brief Set whether the information for this identifier is out of
+  /// date with respect to the external source.
+  void setOutOfDate(bool OOD) {
+    OutOfDate = OOD;
+    if (OOD)
+      NeedsHandleIdentifier = true;
+    else
+      RecomputeNeedsHandleIdentifier();
+  }
+  
 private:
   /// RecomputeNeedsHandleIdentifier - The Preprocessor::HandleIdentifier does
   /// several special (but rare) things to identifiers of various sorts.  For
@@ -252,7 +294,8 @@ private:
   void RecomputeNeedsHandleIdentifier() {
     NeedsHandleIdentifier =
       (isPoisoned() | hasMacroDefinition() | isCPlusPlusOperatorKeyword() |
-       isExtensionToken());
+       isExtensionToken() | isCXX11CompatKeyword() || isOutOfDate() ||
+       (getTokenID() == tok::kw___import_module__));
   }
 };
 
@@ -487,6 +530,7 @@ enum ObjCMethodFamily {
   // selector with the given name.
   OMF_autorelease,
   OMF_dealloc,
+  OMF_finalize,
   OMF_release,
   OMF_retain,
   OMF_retainCount,
@@ -509,7 +553,7 @@ enum { InvalidObjCMethodFamily = (1 << ObjCMethodFamilyBitWidth) - 1 };
 /// selectors that take no arguments and selectors that take 1 argument, which
 /// accounts for 78% of all selectors in Cocoa.h.
 class Selector {
-  friend class DiagnosticInfo;
+  friend class Diagnostic;
 
   enum IdentifierInfoFlag {
     // MultiKeywordSelector = 0.
@@ -557,11 +601,6 @@ public:
   bool operator!=(Selector RHS) const {
     return InfoPtr != RHS.InfoPtr;
   }
-
-  bool operator < (Selector RHS) const {
-    return InfoPtr < RHS.InfoPtr;
-  }
-
   void *getAsOpaquePtr() const {
     return reinterpret_cast<void*>(InfoPtr);
   }

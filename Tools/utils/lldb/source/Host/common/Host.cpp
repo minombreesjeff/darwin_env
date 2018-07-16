@@ -10,6 +10,7 @@
 #include "lldb/Host/Host.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/ConstString.h"
+#include "lldb/Core/Debugger.h"
 #include "lldb/Core/Error.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamString.h"
@@ -18,6 +19,7 @@
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Mutex.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Target/TargetList.h"
 
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MachO.h"
@@ -54,6 +56,8 @@
 using namespace lldb;
 using namespace lldb_private;
 
+
+#if !defined (__APPLE__)
 struct MonitorInfo
 {
     lldb::pid_t pid;                            // The process ID to monitor
@@ -75,25 +79,20 @@ Host::StartMonitoringChildProcess
 )
 {
     lldb::thread_t thread = LLDB_INVALID_HOST_THREAD;
-    if (callback)
-    {
-        std::auto_ptr<MonitorInfo> info_ap(new MonitorInfo);
-            
-        info_ap->pid = pid;
-        info_ap->callback = callback;
-        info_ap->callback_baton = callback_baton;
-        info_ap->monitor_signals = monitor_signals;
+    MonitorInfo * info_ptr = new MonitorInfo();
         
-        char thread_name[256];
-        ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%i)>", pid);
-        thread = ThreadCreate (thread_name,
-                               MonitorChildProcessThreadFunction,
-                               info_ap.get(),
-                               NULL);
-                               
-        if (IS_VALID_LLDB_HOST_THREAD(thread))
-            info_ap.release();
-    }
+    info_ptr->pid = pid;
+    info_ptr->callback = callback;
+    info_ptr->callback_baton = callback_baton;
+    info_ptr->monitor_signals = monitor_signals;
+    
+    char thread_name[256];
+    ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%i)>", pid);
+    thread = ThreadCreate (thread_name,
+                           MonitorChildProcessThreadFunction,
+                           info_ptr,
+                           NULL);
+                           
     return thread;
 }
 
@@ -144,16 +143,15 @@ MonitorChildProcessThreadFunction (void *arg)
 
     int status = -1;
     const int options = 0;
-    struct rusage *rusage = NULL;
     while (1)
     {
         log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
         if (log)
-            log->Printf("%s ::wait4 (pid = %i, &status, options = %i, rusage = %p)...", function, pid, options, rusage);
+            log->Printf("%s ::wait_pid (pid = %i, &status, options = %i)...", function, pid, options);
 
         // Wait for all child processes
         ::pthread_testcancel ();
-        const lldb::pid_t wait_pid = ::wait4 (pid, &status, options, rusage);
+        const lldb::pid_t wait_pid = ::waitpid (pid, &status, options);
         ::pthread_testcancel ();
 
         if (wait_pid == -1)
@@ -198,11 +196,10 @@ MonitorChildProcessThreadFunction (void *arg)
 
                 log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
                 if (log)
-                    log->Printf ("%s ::wait4 (pid = %i, &status, options = %i, rusage = %p) => pid = %i, status = 0x%8.8x (%s), signal = %i, exit_state = %i",
+                    log->Printf ("%s ::waitpid (pid = %i, &status, options = %i) => pid = %i, status = 0x%8.8x (%s), signal = %i, exit_state = %i",
                                  function,
                                  wait_pid,
                                  options,
-                                 rusage,
                                  pid,
                                  status,
                                  status_cstr,
@@ -211,7 +208,9 @@ MonitorChildProcessThreadFunction (void *arg)
 
                 if (exited || (signal != 0 && monitor_signals))
                 {
-                    bool callback_return = callback (callback_baton, pid, signal, exit_status);
+                    bool callback_return = false;
+                    if (callback)
+                        callback_return = callback (callback_baton, pid, exited, signal, exit_status);
                     
                     // If our process exited, then this thread should exit
                     if (exited)
@@ -230,6 +229,24 @@ MonitorChildProcessThreadFunction (void *arg)
         log->Printf ("%s (arg = %p) thread exiting...", __FUNCTION__, arg);
 
     return NULL;
+}
+
+
+void
+Host::SystemLog (SystemLogType type, const char *format, va_list args)
+{
+    vfprintf (stderr, format, args);
+}
+
+#endif // #if !defined (__APPLE__)
+
+void
+Host::SystemLog (SystemLogType type, const char *format, ...)
+{
+    va_list args;
+    va_start (args, format);
+    SystemLog (type, format, args);
+    va_end (args);
 }
 
 size_t
@@ -308,7 +325,7 @@ Host::GetArchitecture (SystemDefaultArchitecture arch_kind)
 
     if (g_supports_32 == false && g_supports_64 == false)
     {
-        llvm::Triple triple(llvm::sys::getHostTriple());
+        llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
 
         g_host_arch_32.Clear();
         g_host_arch_64.Clear();
@@ -320,11 +337,9 @@ Host::GetArchitecture (SystemDefaultArchitecture arch_kind)
             g_supports_32 = true;
             break;
 
-        case llvm::Triple::alpha:
         case llvm::Triple::x86_64:
         case llvm::Triple::sparcv9:
         case llvm::Triple::ppc64:
-        case llvm::Triple::systemz:
         case llvm::Triple::cellspu:
             g_host_arch_64.SetTriple(triple);
             g_supports_64 = true;
@@ -438,11 +453,12 @@ Host::GetSignalAsCString (int signo)
     case SIGILL:    return "SIGILL";    // 4    illegal instruction (not reset when caught)
     case SIGTRAP:   return "SIGTRAP";   // 5    trace trap (not reset when caught)
     case SIGABRT:   return "SIGABRT";   // 6    abort()
-#if  defined(_POSIX_C_SOURCE)
+#if  (defined(_POSIX_C_SOURCE) && !defined(_DARWIN_C_SOURCE))
     case SIGPOLL:   return "SIGPOLL";   // 7    pollable event ([XSR] generated, not supported)
-#else    // !_POSIX_C_SOURCE
+#endif
+#if  !defined(_POSIX_C_SOURCE)
     case SIGEMT:    return "SIGEMT";    // 7    EMT instruction
-#endif    // !_POSIX_C_SOURCE
+#endif
     case SIGFPE:    return "SIGFPE";    // 8    floating point exception
     case SIGKILL:   return "SIGKILL";   // 9    kill (cannot be caught or ignored)
     case SIGBUS:    return "SIGBUS";    // 10    bus error
@@ -910,7 +926,9 @@ Host::GetLLDBPath (PathType path_type, FileSpec &file_spec)
                     if (framework_pos)
                     {
                         framework_pos += strlen("LLDB.framework");
+#if !defined (__arm__)
                         ::strncpy (framework_pos, "/Resources", PATH_MAX - (framework_pos - raw_path));
+#endif
                     }
 #endif
                     FileSpec::Resolve (raw_path, resolved_path, sizeof(resolved_path));
@@ -1164,6 +1182,24 @@ Host::GetProcessInfo (lldb::pid_t pid, ProcessInstanceInfo &process_info)
     return false;
 }
 #endif
+
+lldb::TargetSP
+Host::GetDummyTarget (lldb_private::Debugger &debugger)
+{
+    static TargetSP dummy_target;
+    
+    if (!dummy_target)
+    {
+        Error err = debugger.GetTargetList().CreateTarget(debugger, 
+                                                          FileSpec(), 
+                                                          Host::GetTargetTriple().AsCString(), 
+                                                          false, 
+                                                          NULL, 
+                                                          dummy_target);
+    }
+    
+    return dummy_target;
+}
 
 #if !defined (__APPLE__)
 bool

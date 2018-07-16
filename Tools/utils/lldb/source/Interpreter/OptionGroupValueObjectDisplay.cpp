@@ -15,6 +15,7 @@
 // Project includes
 #include "lldb/Target/Target.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Utility/Utils.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -45,12 +46,10 @@ g_option_table[] =
     { 0, false, NULL, 0, 0, NULL, NULL, eArgTypeNone, NULL }
 };
 
-const uint32_t k_num_file_options = sizeof(g_option_table)/sizeof(OptionDefinition);
-
 uint32_t
 OptionGroupValueObjectDisplay::GetNumDefinitions ()
 {
-    return k_num_file_options;
+    return arraysize(g_option_table);
 }
 
 const OptionDefinition *
@@ -73,12 +72,9 @@ OptionGroupValueObjectDisplay::SetOptionValue (CommandInterpreter &interpreter,
     {
         case 'd':
             {
-                bool success;
                 int32_t result;
-                result = Args::StringToOptionEnum (option_arg, TargetInstanceSettings::g_dynamic_value_types, 2, &success);
-                if (!success)
-                    error.SetErrorStringWithFormat("Invalid dynamic value setting: \"%s\".\n", option_arg);
-                else
+                result = Args::StringToOptionEnum (option_arg, TargetInstanceSettings::g_dynamic_value_types, 2, error);
+                if (error.Success())
                     use_dynamic = (lldb::DynamicValueType) result;
             }
             break;
@@ -92,13 +88,13 @@ OptionGroupValueObjectDisplay::SetOptionValue (CommandInterpreter &interpreter,
         case 'D':
             max_depth = Args::StringToUInt32 (option_arg, UINT32_MAX, 0, &success);
             if (!success)
-                error.SetErrorStringWithFormat("Invalid max depth '%s'.\n", option_arg);
+                error.SetErrorStringWithFormat("invalid max depth '%s'", option_arg);
             break;
             
         case 'P':
             ptr_depth = Args::StringToUInt32 (option_arg, 0, 0, &success);
             if (!success)
-                error.SetErrorStringWithFormat("Invalid pointer depth '%s'.\n", option_arg);
+                error.SetErrorStringWithFormat("invalid pointer depth '%s'", option_arg);
             break;
             
         case 'Y':
@@ -106,7 +102,7 @@ OptionGroupValueObjectDisplay::SetOptionValue (CommandInterpreter &interpreter,
             {
                 no_summary_depth = Args::StringToUInt32 (option_arg, 0, 0, &success);
                 if (!success)
-                    error.SetErrorStringWithFormat("Invalid pointer depth '%s'.\n", option_arg);
+                    error.SetErrorStringWithFormat("invalid pointer depth '%s'", option_arg);
             }
             else
                 no_summary_depth = 1;
@@ -115,10 +111,10 @@ OptionGroupValueObjectDisplay::SetOptionValue (CommandInterpreter &interpreter,
         case 'S':
             use_synth = Args::StringToBoolean(option_arg, true, &success);
             if (!success)
-                error.SetErrorStringWithFormat("Invalid synthetic-type '%s'.\n", option_arg);
+                error.SetErrorStringWithFormat("invalid synthetic-type '%s'", option_arg);
             break;
         default:
-            error.SetErrorStringWithFormat ("Unrecognized option '%c'.\n", short_option);
+            error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
             break;
     }
 
@@ -128,6 +124,7 @@ OptionGroupValueObjectDisplay::SetOptionValue (CommandInterpreter &interpreter,
 void
 OptionGroupValueObjectDisplay::OptionParsingStarting (CommandInterpreter &interpreter)
 {
+    // If these defaults change, be sure to modify AnyOptionWasSet().
     show_types        = false;
     no_summary_depth  = 0;
     show_location     = false;
@@ -139,7 +136,7 @@ OptionGroupValueObjectDisplay::OptionParsingStarting (CommandInterpreter &interp
     be_raw            = false;
     ignore_cap        = false;
     
-    Target *target = interpreter.GetExecutionContext().target;
+    Target *target = interpreter.GetExecutionContext().GetTargetPtr();
     if (target != NULL)
         use_dynamic = target->GetPreferDynamicValue();
     else

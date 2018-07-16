@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "InstCombine.h"
-#include "llvm/IntrinsicInst.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -266,6 +265,8 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
       // Get the current byte offset into the thing. Use the original
       // operand in case we're looking through a bitcast.
       SmallVector<Value*, 8> Ops(GEP->idx_begin(), GEP->idx_end());
+      if (!GEP->getPointerOperandType()->isPointerTy())
+        return 0;
       Offset = TD->getIndexedOffset(GEP->getPointerOperandType(), Ops);
 
       Op1 = GEP->getPointerOperand()->stripPointerCasts();
@@ -655,15 +656,13 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
           
           if (ExtractedElts[Idx] == 0) {
             ExtractedElts[Idx] = 
-              Builder->CreateExtractElement(Idx < 16 ? Op0 : Op1, 
-                  ConstantInt::get(Type::getInt32Ty(II->getContext()),
-                                   Idx&15, false), "tmp");
+              Builder->CreateExtractElement(Idx < 16 ? Op0 : Op1,
+                                            Builder->getInt32(Idx&15));
           }
         
           // Insert this value into the result vector.
           Result = Builder->CreateInsertElement(Result, ExtractedElts[Idx],
-                         ConstantInt::get(Type::getInt32Ty(II->getContext()),
-                                          i, false), "tmp");
+                                                Builder->getInt32(i));
         }
         return CastInst::Create(Instruction::BitCast, Result, CI.getType());
       }
@@ -763,7 +762,7 @@ static bool isSafeToEliminateVarargsCast(const CallSite CS,
   // The size of ByVal arguments is derived from the type, so we
   // can't change to a type with a different size.  If the size were
   // passed explicitly we could avoid this check.
-  if (!CS.paramHasAttr(ix, Attribute::ByVal))
+  if (!CS.isByValArgument(ix))
     return true;
 
   Type* SrcTy = 
@@ -819,6 +818,83 @@ Instruction *InstCombiner::tryOptimizeCall(CallInst *CI, const TargetData *TD) {
   InstCombineFortifiedLibCalls Simplifier(this);
   Simplifier.fold(CI, TD);
   return Simplifier.NewInstruction;
+}
+
+static IntrinsicInst *FindInitTrampolineFromAlloca(Value *TrampMem) {
+  // Strip off at most one level of pointer casts, looking for an alloca.  This
+  // is good enough in practice and simpler than handling any number of casts.
+  Value *Underlying = TrampMem->stripPointerCasts();
+  if (Underlying != TrampMem &&
+      (!Underlying->hasOneUse() || *Underlying->use_begin() != TrampMem))
+    return 0;
+  if (!isa<AllocaInst>(Underlying))
+    return 0;
+
+  IntrinsicInst *InitTrampoline = 0;
+  for (Value::use_iterator I = TrampMem->use_begin(), E = TrampMem->use_end();
+       I != E; I++) {
+    IntrinsicInst *II = dyn_cast<IntrinsicInst>(*I);
+    if (!II)
+      return 0;
+    if (II->getIntrinsicID() == Intrinsic::init_trampoline) {
+      if (InitTrampoline)
+        // More than one init_trampoline writes to this value.  Give up.
+        return 0;
+      InitTrampoline = II;
+      continue;
+    }
+    if (II->getIntrinsicID() == Intrinsic::adjust_trampoline)
+      // Allow any number of calls to adjust.trampoline.
+      continue;
+    return 0;
+  }
+
+  // No call to init.trampoline found.
+  if (!InitTrampoline)
+    return 0;
+
+  // Check that the alloca is being used in the expected way.
+  if (InitTrampoline->getOperand(0) != TrampMem)
+    return 0;
+
+  return InitTrampoline;
+}
+
+static IntrinsicInst *FindInitTrampolineFromBB(IntrinsicInst *AdjustTramp,
+                                               Value *TrampMem) {
+  // Visit all the previous instructions in the basic block, and try to find a
+  // init.trampoline which has a direct path to the adjust.trampoline.
+  for (BasicBlock::iterator I = AdjustTramp,
+       E = AdjustTramp->getParent()->begin(); I != E; ) {
+    Instruction *Inst = --I;
+    if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I))
+      if (II->getIntrinsicID() == Intrinsic::init_trampoline &&
+          II->getOperand(0) == TrampMem)
+        return II;
+    if (Inst->mayWriteToMemory())
+      return 0;
+  }
+  return 0;
+}
+
+// Given a call to llvm.adjust.trampoline, find and return the corresponding
+// call to llvm.init.trampoline if the call to the trampoline can be optimized
+// to a direct call to a function.  Otherwise return NULL.
+//
+static IntrinsicInst *FindInitTrampoline(Value *Callee) {
+  Callee = Callee->stripPointerCasts();
+  IntrinsicInst *AdjustTramp = dyn_cast<IntrinsicInst>(Callee);
+  if (!AdjustTramp ||
+      AdjustTramp->getIntrinsicID() != Intrinsic::adjust_trampoline)
+    return 0;
+
+  Value *TrampMem = AdjustTramp->getOperand(0);
+
+  if (IntrinsicInst *IT = FindInitTrampolineFromAlloca(TrampMem))
+    return IT;
+  if (IntrinsicInst *IT = FindInitTrampolineFromBB(AdjustTramp, TrampMem))
+    return IT;
+  return 0;
 }
 
 // visitCallSite - Improvements for call and invoke instructions.
@@ -880,15 +956,13 @@ Instruction *InstCombiner::visitCallSite(CallSite CS) {
     return EraseInstFromFunction(*CS.getInstruction());
   }
 
-  if (BitCastInst *BC = dyn_cast<BitCastInst>(Callee))
-    if (IntrinsicInst *In = dyn_cast<IntrinsicInst>(BC->getOperand(0)))
-      if (In->getIntrinsicID() == Intrinsic::init_trampoline)
-        return transformCallThroughTrampoline(CS);
+  if (IntrinsicInst *II = FindInitTrampoline(Callee))
+    return transformCallThroughTrampoline(CS, II);
 
   PointerType *PTy = cast<PointerType>(Callee->getType());
   FunctionType *FTy = cast<FunctionType>(PTy->getElementType());
   if (FTy->isVarArg()) {
-    int ix = FTy->getNumParams() + (isa<InvokeInst>(Callee) ? 3 : 1);
+    int ix = FTy->getNumParams();
     // See if we can optimize any arguments passed through the varargs area of
     // the call.
     for (CallSite::arg_iterator I = CS.arg_begin()+FTy->getNumParams(),
@@ -1069,7 +1143,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
     } else {
       Instruction::CastOps opcode = CastInst::getCastOpcode(*AI,
           false, ParamTy, false);
-      Args.push_back(Builder->CreateCast(opcode, *AI, ParamTy, "tmp"));
+      Args.push_back(Builder->CreateCast(opcode, *AI, ParamTy));
     }
 
     // Add any parameter attributes.
@@ -1095,7 +1169,7 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
           // Must promote to pass through va_arg area!
           Instruction::CastOps opcode =
             CastInst::getCastOpcode(*AI, false, PTy, false);
-          Args.push_back(Builder->CreateCast(opcode, *AI, PTy, "tmp"));
+          Args.push_back(Builder->CreateCast(opcode, *AI, PTy));
         } else {
           Args.push_back(*AI);
         }
@@ -1139,13 +1213,13 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
     if (!NV->getType()->isVoidTy()) {
       Instruction::CastOps opcode =
         CastInst::getCastOpcode(NC, false, OldRetTy, false);
-      NV = NC = CastInst::Create(opcode, NC, OldRetTy, "tmp");
+      NV = NC = CastInst::Create(opcode, NC, OldRetTy);
       NC->setDebugLoc(Caller->getDebugLoc());
 
       // If this is an invoke instruction, we should insert it after the first
       // non-phi, instruction in the normal successor block.
       if (InvokeInst *II = dyn_cast<InvokeInst>(Caller)) {
-        BasicBlock::iterator I = II->getNormalDest()->getFirstNonPHI();
+        BasicBlock::iterator I = II->getNormalDest()->getFirstInsertionPt();
         InsertNewInstBefore(NC, *I);
       } else {
         // Otherwise, it's a call, just insert cast right after the call.
@@ -1164,10 +1238,13 @@ bool InstCombiner::transformConstExprCastCall(CallSite CS) {
   return true;
 }
 
-// transformCallThroughTrampoline - Turn a call to a function created by the
-// init_trampoline intrinsic into a direct call to the underlying function.
+// transformCallThroughTrampoline - Turn a call to a function created by
+// init_trampoline / adjust_trampoline intrinsic pair into a direct call to the
+// underlying function.
 //
-Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
+Instruction *
+InstCombiner::transformCallThroughTrampoline(CallSite CS,
+                                             IntrinsicInst *Tramp) {
   Value *Callee = CS.getCalledValue();
   PointerType *PTy = cast<PointerType>(Callee->getType());
   FunctionType *FTy = cast<FunctionType>(PTy->getElementType());
@@ -1178,8 +1255,8 @@ Instruction *InstCombiner::transformCallThroughTrampoline(CallSite CS) {
   if (Attrs.hasAttrSomewhere(Attribute::Nest))
     return 0;
 
-  IntrinsicInst *Tramp =
-    cast<IntrinsicInst>(cast<BitCastInst>(Callee)->getOperand(0));
+  assert(Tramp &&
+         "transformCallThroughTrampoline called with incorrect CallSite.");
 
   Function *NestF =cast<Function>(Tramp->getArgOperand(1)->stripPointerCasts());
   PointerType *NestFPTy = cast<PointerType>(NestF->getType());

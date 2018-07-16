@@ -17,8 +17,8 @@
 #include "SparcSubtarget.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -133,7 +133,7 @@ bool SparcInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       break;
 
     //Terminator is not a branch
-    if (!I->getDesc().isBranch())
+    if (!I->isBranch())
       return true;
 
     //Handle Unconditional branches
@@ -195,7 +195,7 @@ bool SparcInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
           .addMBB(UnCondBrIter->getOperand(0).getMBB()).addImm(BranchCode);
         BuildMI(MBB, UnCondBrIter, MBB.findDebugLoc(I), get(SP::BA))
           .addMBB(TargetBB);
-        MBB.addSuccessor(TargetBB);
+
         OldInst->eraseFromParent();
         UnCondBrIter->eraseFromParent();
 

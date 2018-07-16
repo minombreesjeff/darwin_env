@@ -11,6 +11,7 @@
 #define liblldb_SymbolFileSymtab_h_
 
 #include "lldb/Symbol/SymbolFile.h"
+#include "lldb/Symbol/Symtab.h"
 #include <vector>
 
 class SymbolFileSymtab : public lldb_private::SymbolFile
@@ -42,7 +43,7 @@ public:
     virtual
     ~SymbolFileSymtab();
 
-    virtual uint32_t        GetAbilities ();
+    virtual uint32_t        CalculateAbilities ();
 
     //------------------------------------------------------------------
     // Compile Unit function calls
@@ -84,26 +85,27 @@ public:
     ResolveSymbolContext (const lldb_private::FileSpec& file_spec, uint32_t line, bool check_inlines, uint32_t resolve_scope, lldb_private::SymbolContextList& sc_list);
 
     virtual uint32_t
-    FindGlobalVariables(const lldb_private::ConstString &name, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
+    FindGlobalVariables(const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
 
     virtual uint32_t
     FindGlobalVariables(const lldb_private::RegularExpression& regex, bool append, uint32_t max_matches, lldb_private::VariableList& variables);
 
     virtual uint32_t
-    FindFunctions(const lldb_private::ConstString &name, uint32_t name_type_mask, bool append, lldb_private::SymbolContextList& sc_list);
+    FindFunctions(const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, lldb_private::SymbolContextList& sc_list);
 
     virtual uint32_t
     FindFunctions(const lldb_private::RegularExpression& regex, bool append, lldb_private::SymbolContextList& sc_list);
 
     virtual uint32_t
-    FindTypes (const lldb_private::SymbolContext& sc, const lldb_private::ConstString &name, bool append, uint32_t max_matches, lldb_private::TypeList& types);
+    FindTypes (const lldb_private::SymbolContext& sc,const lldb_private::ConstString &name, const lldb_private::ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, lldb_private::TypeList& types);
 
 //  virtual uint32_t
 //  FindTypes(const lldb_private::SymbolContext& sc, const lldb_private::RegularExpression& regex, bool append, uint32_t max_matches, lldb_private::TypeList& types);
 
     virtual lldb_private::ClangNamespaceDecl
     FindNamespace (const lldb_private::SymbolContext& sc, 
-                   const lldb_private::ConstString &name);
+                   const lldb_private::ConstString &name, 
+                   const lldb_private::ClangNamespaceDecl *parent_namespace_decl);
 
     //------------------------------------------------------------------
     // PluginInterface protocol
@@ -118,12 +120,18 @@ public:
     GetPluginVersion();
 
 protected:
-    std::vector<uint32_t>   m_source_indexes;
-    std::vector<uint32_t>   m_func_indexes;
-    std::vector<uint32_t>   m_code_indexes;
-    std::vector<uint32_t>   m_data_indexes;
-    std::vector<uint32_t>   m_addr_indexes; // Anything that needs to go into an search by address
+    typedef std::map<lldb_private::ConstString, lldb::TypeSP> TypeMap;
 
+    lldb_private::Symtab::IndexCollection m_source_indexes;
+    lldb_private::Symtab::IndexCollection m_func_indexes;
+    lldb_private::Symtab::IndexCollection m_code_indexes;
+    lldb_private::Symtab::IndexCollection m_data_indexes;
+    lldb_private::Symtab::NameToIndexMap m_objc_class_name_to_index;
+    TypeMap m_objc_class_types;
+
+    lldb_private::ClangASTContext &
+    GetClangASTContext ();
+    
 private:
     DISALLOW_COPY_AND_ASSIGN (SymbolFileSymtab);
 };

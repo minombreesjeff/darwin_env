@@ -7,7 +7,7 @@ import unittest2
 import lldb
 from lldbtest import *
 
-class DataFormatterTestCase(TestBase):
+class SynthDataFormatterTestCase(TestBase):
 
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-synth")
 
@@ -61,7 +61,7 @@ class DataFormatterTestCase(TestBase):
                        'z = 8'])
 
         # Check we can still access the missing child by summary
-        self.runCmd("type summary add BagOfInts -f \"y=${var.y}\"")
+        self.runCmd("type summary add BagOfInts --summary-string \"y=${var.y}\"")
         self.expect('frame variable int_bag',
             substrs = ['y=7'])
             
@@ -83,14 +83,14 @@ class DataFormatterTestCase(TestBase):
                                'z = 8'])
         
         # Summary+Synth must work together
-        self.runCmd("type summary add BagOfInts -f \"y=${var.y}\" -e")
+        self.runCmd("type summary add BagOfInts --summary-string \"y=${var.y}\" -e")
         self.expect('frame variable int_bag',
                     substrs = ['y=7',
                                'x = 6',
                                'z = 8'])
         
         # Same output, but using Python
-        self.runCmd("type summary add BagOfInts -s \"return 'y='+valobj.GetChildMemberWithName('y').GetValue()\" -e")
+        self.runCmd("type summary add BagOfInts --python-script \"return 'y=%s' % valobj.GetChildMemberWithName('y').GetValue()\" -e")
         self.expect('frame variable int_bag',
                     substrs = ['y=7',
                                'x = 6',

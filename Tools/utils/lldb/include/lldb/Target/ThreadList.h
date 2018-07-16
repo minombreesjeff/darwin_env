@@ -45,6 +45,8 @@ public:
     void
     AddThread (lldb::ThreadSP &thread_sp);
 
+    // Return the selected thread if there is one.  Otherwise, return the thread
+    // selected at index 0.
     lldb::ThreadSP
     GetSelectedThread ();
 
@@ -57,6 +59,9 @@ public:
     void
     Clear();
 
+    void
+    Destroy();
+
     // Note that "idx" is not the same as the "thread_index". It is a zero
     // based index to accessing the current threads, whereas "thread_index"
     // is a unique index assigned
@@ -67,7 +72,7 @@ public:
     FindThreadByID (lldb::tid_t tid, bool can_update = true);
 
     lldb::ThreadSP
-    FindThreadByIndexID (lldb::tid_t index_id, bool can_update = true);
+    FindThreadByIndexID (uint32_t index_id, bool can_update = true);
 
     lldb::ThreadSP
     GetThreadSPForThreadPtr (Thread *thread_ptr);
@@ -104,6 +109,9 @@ public:
     {
         return m_threads_mutex;
     }
+    
+    void
+    Update (ThreadList &rhs);
     
 protected:
 

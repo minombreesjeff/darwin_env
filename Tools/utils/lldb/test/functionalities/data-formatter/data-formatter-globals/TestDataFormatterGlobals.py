@@ -7,7 +7,7 @@ import unittest2
 import lldb
 from lldbtest import *
 
-class DataFormatterTestCase(TestBase):
+class GlobalsDataFormatterTestCase(TestBase):
 
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-globals")
 
@@ -46,7 +46,7 @@ class DataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.runCmd("type summary add -f \"JustATest\" Point")
+        self.runCmd("type summary add --summary-string \"JustATest\" Point")
 
         # Simply check we can get at global variables
         self.expect("target variable g_point",
@@ -57,7 +57,7 @@ class DataFormatterTestCase(TestBase):
 
         # Print some information about the variables
         # (we ignore the actual values)
-        self.runCmd("type summary add -f \"(x=${var.x},y=${var.y})\" Point")
+        self.runCmd("type summary add --summary-string \"(x=${var.x},y=${var.y})\" Point")
 
         self.expect("target variable g_point",
                     substrs = ['x=',
@@ -67,7 +67,7 @@ class DataFormatterTestCase(TestBase):
                     substrs = ['(Point *) g_point_pointer ='])
 
         # Test Python code on resulting SBValue
-        self.runCmd("type summary add -s \"return 'x=' + str(valobj.GetChildMemberWithName('x').GetValue());\" Point")
+        self.runCmd("type summary add --python-script \"return 'x=' + str(valobj.GetChildMemberWithName('x').GetValue());\" Point")
 
         self.expect("target variable g_point",
                     substrs = ['x='])

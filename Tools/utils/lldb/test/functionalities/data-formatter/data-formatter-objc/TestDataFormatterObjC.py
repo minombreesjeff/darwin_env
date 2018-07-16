@@ -7,16 +7,18 @@ import unittest2
 import lldb
 from lldbtest import *
 
-class DataFormatterTestCase(TestBase):
+class ObjCDataFormatterTestCase(TestBase):
 
     mydir = os.path.join("functionalities", "data-formatter", "data-formatter-objc")
 
+    # rdar://problem/10153585 lldb ToT regression of test suite with r139772 check-in
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     def test_with_dsym_and_run_command(self):
         """Test data formatter commands."""
         self.buildDsym()
         self.data_formatter_commands()
 
+    # rdar://problem/10153585 lldb ToT regression of test suite with r139772 check-in
     def test_with_dwarf_and_run_command(self):
         """Test data formatter commands."""
         self.buildDwarf()
@@ -54,7 +56,7 @@ class DataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.runCmd("type summary add -f \"${var%@}\" MyClass")
+        self.runCmd("type summary add --summary-string \"${var%@}\" MyClass")
 
         self.expect("frame variable object2",
             substrs = ['MyOtherClass']);
@@ -69,7 +71,7 @@ class DataFormatterTestCase(TestBase):
         self.expect("type summary list", matching=False,
             substrs = ['MyClass'])
 
-        self.runCmd("type summary add -f \"a test\" MyClass")
+        self.runCmd("type summary add --summary-string \"a test\" MyClass")
         
         self.expect("frame variable object2",
                     substrs = ['a test']);
@@ -83,7 +85,7 @@ class DataFormatterTestCase(TestBase):
         self.expect("frame variable *object",
                     substrs = ['a test']);
 
-        self.runCmd("type summary add -f \"a test\" MyClass -C no")
+        self.runCmd("type summary add --summary-string \"a test\" MyClass -C no")
         
         self.expect("frame variable *object2",
                     substrs = ['*object2 = {',
@@ -178,7 +180,7 @@ class DataFormatterTestCase(TestBase):
                                'inline = ',
                                'explicit = ',
                                'content = ',
-                               '__NSCFString'])
+                               'NSCFString'])
         
         self.expect('frame variable processName -P 1 -Y',
                     substrs = ['mutable =',
@@ -223,7 +225,7 @@ class DataFormatterTestCase(TestBase):
         self.expect('frame variable str10',
                     substrs = ['This is a Unicode string \\xcf\\x83 number 4 right here'])
         self.expect('frame variable str11',
-                    substrs = ['__NSCFString'])
+                    substrs = ['NSCFString'])
         self.expect('frame variable processName',
                     substrs = ['a.out'])        
         self.expect('frame variable str12',
@@ -231,10 +233,10 @@ class DataFormatterTestCase(TestBase):
         self.expect('frame variable dyn_test', matching=False,
                     substrs = ['Process Name:  a.out Process Id:'])
         self.expect('frame variable dyn_test -d run-target -T',
-                    substrs = ['(id, dynamic type:',
+                    substrs = ['(__NSCFString *, dynamic type:',
                                'Process Name:  a.out Process Id:'])
         self.expect('frame variable dyn_test -d run-target',
-                    substrs = ['(id)',
+                    substrs = ['(__NSCFString *)',
                                'Process Name:  a.out Process Id:'])
 
             

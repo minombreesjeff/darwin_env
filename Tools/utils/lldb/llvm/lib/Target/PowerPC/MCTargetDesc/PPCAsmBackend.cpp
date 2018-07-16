@@ -18,7 +18,7 @@
 #include "llvm/Object/MachOFormat.h"
 #include "llvm/Support/ELF.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
 static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
@@ -93,6 +93,16 @@ public:
     // FIXME.
     return false;
   }
+
+  bool fixupNeedsRelaxation(const MCFixup &Fixup,
+                            uint64_t Value,
+                            const MCInstFragment *DF,
+                            const MCAsmLayout &Layout) const {
+    // FIXME.
+    assert(0 && "RelaxInstruction() unimplemented");
+    return false;
+  }
+
   
   void RelaxInstruction(const MCInst &Inst, MCInst &Res) const {
     // FIXME.

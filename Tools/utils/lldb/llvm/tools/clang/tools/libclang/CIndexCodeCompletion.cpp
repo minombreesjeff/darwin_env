@@ -16,6 +16,7 @@
 #include "CXTranslationUnit.h"
 #include "CXString.h"
 #include "CXCursor.h"
+#include "CXString.h"
 #include "CIndexDiagnostic.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/Decl.h"
@@ -202,6 +203,20 @@ clang_getCompletionAvailability(CXCompletionString completion_string) {
               : CXAvailability_Available;
 }
 
+unsigned clang_getCompletionNumAnnotations(CXCompletionString completion_string)
+{
+  CodeCompletionString *CCStr = (CodeCompletionString *)completion_string;
+  return CCStr ? CCStr->getAnnotationCount() : 0;
+}
+
+CXString clang_getCompletionAnnotation(CXCompletionString completion_string,
+                                       unsigned annotation_number) {
+  CodeCompletionString *CCStr = (CodeCompletionString *)completion_string;
+  return CCStr ? createCXString(CCStr->getAnnotation(annotation_number))
+               : createCXString((const char *) 0);
+}
+
+
 /// \brief The CXCodeCompleteResults structure we allocate internally;
 /// the client only sees the initial CXCodeCompleteResults structure.
 struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
@@ -212,7 +227,7 @@ struct AllocatedCXCodeCompleteResults : public CXCodeCompleteResults {
   SmallVector<StoredDiagnostic, 8> Diagnostics;
 
   /// \brief Diag object
-  llvm::IntrusiveRefCntPtr<Diagnostic> Diag;
+  llvm::IntrusiveRefCntPtr<DiagnosticsEngine> Diag;
   
   /// \brief Language options used to adjust source locations.
   LangOptions LangOpts;
@@ -269,11 +284,16 @@ static llvm::sys::cas_flag CodeCompletionResultObjects;
 AllocatedCXCodeCompleteResults::AllocatedCXCodeCompleteResults(
                                       const FileSystemOptions& FileSystemOpts)
   : CXCodeCompleteResults(),
-    Diag(new Diagnostic(
+    Diag(new DiagnosticsEngine(
                    llvm::IntrusiveRefCntPtr<DiagnosticIDs>(new DiagnosticIDs))),
     FileSystemOpts(FileSystemOpts),
     FileMgr(new FileManager(FileSystemOpts)),
-    SourceMgr(new SourceManager(*Diag, *FileMgr)) { 
+    SourceMgr(new SourceManager(*Diag, *FileMgr)),
+    Contexts(CXCompletionContext_Unknown),
+    ContainerKind(CXCursor_InvalidCode),
+    ContainerUSR(createCXString("")),
+    ContainerIsIncomplete(1)
+{ 
   if (getenv("LIBCLANG_OBJTRACKING")) {
     llvm::sys::AtomicIncrement(&CodeCompletionResultObjects);
     fprintf(stderr, "+++ %d completion results\n", CodeCompletionResultObjects);
@@ -541,8 +561,20 @@ namespace {
         CXCursorKind cursorKind = clang_getCursorKind(cursor);
         CXString cursorUSR = clang_getCursorUSR(cursor);
         
+        // Normally, clients of CXString shouldn't care whether or not
+        // a CXString is managed by a pool or by explicitly malloc'ed memory.
+        // However, there are cases when AllocatedResults outlives the
+        // CXTranslationUnit.  This is a workaround that failure mode.
+        if (cxstring::isManagedByPool(cursorUSR)) {
+          CXString heapStr =
+            cxstring::createCXString(clang_getCString(cursorUSR), true);
+          clang_disposeString(cursorUSR);
+          cursorUSR = heapStr;
+        }
+        
         AllocatedResults.ContainerKind = cursorKind;
         AllocatedResults.ContainerUSR = cursorUSR;
+        
         const Type *type = baseType.getTypePtrOrNull();
         if (type != NULL) {
           AllocatedResults.ContainerIsIncomplete = type->isIncompleteType();

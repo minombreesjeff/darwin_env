@@ -92,7 +92,7 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
         // candidate. I.e., it would trigger the creation of a stack protector.
         bool MayNeedSP =
           (AI->isArrayAllocation() ||
-           (TySize > 8 && isa<ArrayType>(Ty) &&
+           (TySize >= 8 && isa<ArrayType>(Ty) &&
             cast<ArrayType>(Ty)->getElementType()->isIntegerTy(8)));
         StaticAllocaMap[AI] =
           MF->getFrameInfo()->CreateStackObject(TySize, Align, false, MayNeedSP);
@@ -351,20 +351,18 @@ void FunctionLoweringInfo::ComputePHILiveOutRegInfo(const PHINode *PN) {
   }
 }
 
-/// setByValArgumentFrameIndex - Record frame index for the byval
+/// setArgumentFrameIndex - Record frame index for the byval
 /// argument. This overrides previous frame index entry for this argument,
 /// if any.
-void FunctionLoweringInfo::setByValArgumentFrameIndex(const Argument *A,
+void FunctionLoweringInfo::setArgumentFrameIndex(const Argument *A,
                                                       int FI) {
-  assert (A->hasByValAttr() && "Argument does not have byval attribute!");
   ByValArgFrameIndexMap[A] = FI;
 }
 
-/// getByValArgumentFrameIndex - Get frame index for the byval argument.
+/// getArgumentFrameIndex - Get frame index for the byval argument.
 /// If the argument does not have any assigned frame index then 0 is
 /// returned.
-int FunctionLoweringInfo::getByValArgumentFrameIndex(const Argument *A) {
-  assert (A->hasByValAttr() && "Argument does not have byval attribute!");
+int FunctionLoweringInfo::getArgumentFrameIndex(const Argument *A) {
   DenseMap<const Argument *, int>::iterator I =
     ByValArgFrameIndexMap.find(A);
   if (I != ByValArgFrameIndexMap.end())
@@ -452,5 +450,36 @@ void llvm::CopyCatchInfo(const BasicBlock *SuccBB, const BasicBlock *LPad,
       SuccBB = Br->getSuccessor(0);
     else
       break;
+  }
+}
+
+/// AddLandingPadInfo - Extract the exception handling information from the
+/// landingpad instruction and add them to the specified machine module info.
+void llvm::AddLandingPadInfo(const LandingPadInst &I, MachineModuleInfo &MMI,
+                             MachineBasicBlock *MBB) {
+  MMI.addPersonality(MBB,
+                     cast<Function>(I.getPersonalityFn()->stripPointerCasts()));
+
+  if (I.isCleanup())
+    MMI.addCleanup(MBB);
+
+  // FIXME: New EH - Add the clauses in reverse order. This isn't 100% correct,
+  //        but we need to do it this way because of how the DWARF EH emitter
+  //        processes the clauses.
+  for (unsigned i = I.getNumClauses(); i != 0; --i) {
+    Value *Val = I.getClause(i - 1);
+    if (I.isCatch(i - 1)) {
+      MMI.addCatchTypeInfo(MBB,
+                           dyn_cast<GlobalVariable>(Val->stripPointerCasts()));
+    } else {
+      // Add filters in a list.
+      Constant *CVal = cast<Constant>(Val);
+      SmallVector<const GlobalVariable*, 4> FilterList;
+      for (User::op_iterator
+             II = CVal->op_begin(), IE = CVal->op_end(); II != IE; ++II)
+        FilterList.push_back(cast<GlobalVariable>((*II)->stripPointerCasts()));
+
+      MMI.addFilterTypeInfo(MBB, FilterList);
+    }
   }
 }

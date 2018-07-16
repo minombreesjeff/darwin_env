@@ -10,21 +10,25 @@ add_clang_library(clangStaticAnalyzerCore
   BlockCounter.cpp
   BugReporter.cpp
   BugReporterVisitors.cpp
-  CFRefCount.cpp
-  CXXExprEngine.cpp
+  Checker.cpp
   CheckerContext.cpp
   CheckerHelpers.cpp
   CheckerManager.cpp
+  CheckerRegistry.cpp
   CoreEngine.cpp
   Environment.cpp
   ExplodedGraph.cpp
   ExprEngine.cpp
-  GRState.cpp
+  ExprEngineC.cpp
+  ExprEngineCXX.cpp
+  ExprEngineCallAndReturn.cpp
+  ExprEngineObjC.cpp
   HTMLDiagnostics.cpp
   MemRegion.cpp
   ObjCMessage.cpp
   PathDiagnostic.cpp
   PlistDiagnostics.cpp
+  ProgramState.cpp
   RangeConstraintManager.cpp
   RegionStore.cpp
   SValBuilder.cpp

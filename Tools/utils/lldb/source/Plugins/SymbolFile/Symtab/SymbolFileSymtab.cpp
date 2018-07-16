@@ -62,8 +62,7 @@ SymbolFileSymtab::SymbolFileSymtab(ObjectFile* obj_file) :
     m_source_indexes(),
     m_func_indexes(),
     m_code_indexes(),
-    m_data_indexes(),
-    m_addr_indexes()
+    m_objc_class_name_to_index ()
 {
 }
 
@@ -71,9 +70,16 @@ SymbolFileSymtab::~SymbolFileSymtab()
 {
 }
 
+ClangASTContext &       
+SymbolFileSymtab::GetClangASTContext ()
+{    
+    ClangASTContext &ast = m_obj_file->GetModule()->GetClangASTContext();
+    
+    return ast;
+}
 
 uint32_t
-SymbolFileSymtab::GetAbilities ()
+SymbolFileSymtab::CalculateAbilities ()
 {
     uint32_t abilities = 0;
     if (m_obj_file)
@@ -81,37 +87,43 @@ SymbolFileSymtab::GetAbilities ()
         const Symtab *symtab = m_obj_file->GetSymtab();
         if (symtab)
         {
-
             //----------------------------------------------------------------------
             // The snippet of code below will get the indexes the module symbol
             // table entries that are code, data, or function related (debug info),
             // sort them by value (address) and dump the sorted symbols.
             //----------------------------------------------------------------------
-            symtab->AppendSymbolIndexesWithType(eSymbolTypeSourceFile, m_source_indexes);
-            if (!m_source_indexes.empty())
+            if (symtab->AppendSymbolIndexesWithType(eSymbolTypeSourceFile, m_source_indexes))
             {
                 abilities |= CompileUnits;
             }
-            symtab->AppendSymbolIndexesWithType(eSymbolTypeCode, Symtab::eDebugYes, Symtab::eVisibilityAny, m_func_indexes);
-            if (!m_func_indexes.empty())
+
+            if (symtab->AppendSymbolIndexesWithType(eSymbolTypeCode, Symtab::eDebugYes, Symtab::eVisibilityAny, m_func_indexes))
             {
                 symtab->SortSymbolIndexesByValue(m_func_indexes, true);
                 abilities |= Functions;
             }
 
-            symtab->AppendSymbolIndexesWithType(eSymbolTypeCode, Symtab::eDebugNo, Symtab::eVisibilityAny, m_code_indexes);
-            if (!m_code_indexes.empty())
+            if (symtab->AppendSymbolIndexesWithType(eSymbolTypeCode, Symtab::eDebugNo, Symtab::eVisibilityAny, m_code_indexes))
             {
                 symtab->SortSymbolIndexesByValue(m_code_indexes, true);
                 abilities |= Labels;
             }
 
-            symtab->AppendSymbolIndexesWithType(eSymbolTypeData, m_data_indexes);
-
-            if (!m_data_indexes.empty())
+            if (symtab->AppendSymbolIndexesWithType(eSymbolTypeData, m_data_indexes))
             {
                 symtab->SortSymbolIndexesByValue(m_data_indexes, true);
                 abilities |= GlobalVariables;
+            }
+            
+            lldb_private::Symtab::IndexCollection objc_class_indexes;
+            if (symtab->AppendSymbolIndexesWithType (eSymbolTypeObjCClass, objc_class_indexes))
+            {
+                abilities |= RuntimeTypes;
+                symtab->AppendSymbolNamesToMap (objc_class_indexes,
+                                                true,
+                                                true,
+                                                m_objc_class_name_to_index);
+                m_objc_class_name_to_index.Sort();
             }
         }
     }
@@ -124,7 +136,7 @@ SymbolFileSymtab::GetNumCompileUnits()
     // If we don't have any source file symbols we will just have one compile unit for
     // the entire object file
     if (m_source_indexes.empty())
-        return 1;
+        return 0;
 
     // If we have any source file symbols we will logically orgnize the object symbols
     // using these.
@@ -138,14 +150,14 @@ SymbolFileSymtab::ParseCompileUnitAtIndex(uint32_t idx)
 
     // If we don't have any source file symbols we will just have one compile unit for
     // the entire object file
-    if (m_source_indexes.empty())
-    {
-        const FileSpec &obj_file_spec = m_obj_file->GetFileSpec();
-        if (obj_file_spec)
-            cu_sp.reset(new CompileUnit(m_obj_file->GetModule(), NULL, obj_file_spec, 0, eLanguageTypeUnknown));
-
-    }
-    else if (idx < m_source_indexes.size())
+//    if (m_source_indexes.empty())
+//    {
+//        const FileSpec &obj_file_spec = m_obj_file->GetFileSpec();
+//        if (obj_file_spec)
+//            cu_sp.reset(new CompileUnit(m_obj_file->GetModule(), NULL, obj_file_spec, 0, eLanguageTypeUnknown));
+//
+//    }
+    /* else */ if (idx < m_source_indexes.size())
     {
         const Symbol *cu_symbol = m_obj_file->GetSymtab()->SymbolAtIndex(m_source_indexes[idx]);
         if (cu_symbol)
@@ -280,7 +292,7 @@ SymbolFileSymtab::ResolveClangOpaqueTypeDefinition (lldb::clang_type_t clang_Typ
 }
 
 ClangNamespaceDecl 
-SymbolFileSymtab::FindNamespace (const SymbolContext& sc, const ConstString &name)
+SymbolFileSymtab::FindNamespace (const SymbolContext& sc, const ConstString &name, const ClangNamespaceDecl *namespace_decl)
 {
     return ClangNamespaceDecl();
 }
@@ -308,7 +320,7 @@ SymbolFileSymtab::ResolveSymbolContext (const FileSpec& file_spec, uint32_t line
 }
 
 uint32_t
-SymbolFileSymtab::FindGlobalVariables(const ConstString &name, bool append, uint32_t max_matches, VariableList& variables)
+SymbolFileSymtab::FindGlobalVariables(const ConstString &name, const ClangNamespaceDecl *namespace_decl, bool append, uint32_t max_matches, VariableList& variables)
 {
     return 0;
 }
@@ -320,7 +332,7 @@ SymbolFileSymtab::FindGlobalVariables(const RegularExpression& regex, bool appen
 }
 
 uint32_t
-SymbolFileSymtab::FindFunctions(const ConstString &name, uint32_t name_type_mask, bool append, SymbolContextList& sc_list)
+SymbolFileSymtab::FindFunctions(const ConstString &name, const ClangNamespaceDecl *namespace_decl, uint32_t name_type_mask, bool append, SymbolContextList& sc_list)
 {
     Timer scoped_timer (__PRETTY_FUNCTION__,
                         "SymbolFileSymtab::FindFunctions (name = '%s')",
@@ -347,11 +359,75 @@ SymbolFileSymtab::FindFunctions(const RegularExpression& regex, bool append, Sym
     return 0;
 }
 
+static int CountMethodArgs(const char *method_signature)
+{
+    int num_args = 0;
+    
+    for (const char *colon_pos = strchr(method_signature, ':');
+         colon_pos != NULL;
+         colon_pos = strchr(colon_pos + 1, ':'))
+    {
+        num_args++;
+    }
+    
+    return num_args;
+}
+
 uint32_t
-SymbolFileSymtab::FindTypes (const lldb_private::SymbolContext& sc, const lldb_private::ConstString &name, bool append, uint32_t max_matches, lldb_private::TypeList& types)
+SymbolFileSymtab::FindTypes (const lldb_private::SymbolContext& sc, 
+                             const lldb_private::ConstString &name, 
+                             const ClangNamespaceDecl *namespace_decl, 
+                             bool append, 
+                             uint32_t max_matches, 
+                             lldb_private::TypeList& types)
 {
     if (!append)
         types.Clear();
+        
+    if (!m_objc_class_name_to_index.IsEmpty())
+    {
+        TypeMap::iterator iter = m_objc_class_types.find(name);
+        
+        if (iter != m_objc_class_types.end())
+        {
+            types.Insert(iter->second);
+            return 1;
+        }
+        
+        const Symtab::NameToIndexMap::Entry *match = m_objc_class_name_to_index.FindFirstValueForName(name.GetCString());
+        
+        if (match == NULL)
+            return 0;
+                    
+        const bool isForwardDecl = false;
+        const bool isInternal = true;
+        
+        ClangASTContext &ast = GetClangASTContext();
+        
+        lldb::clang_type_t objc_object_type = ast.CreateObjCClass (name.AsCString(), 
+                                                                   ast.GetTranslationUnitDecl(), 
+                                                                   isForwardDecl, 
+                                                                   isInternal);
+        
+        Declaration decl;
+        
+        lldb::TypeSP type(new Type (iter->second,
+                                    this,
+                                    name,
+                                    0,      // byte_size - don't change this from 0, we currently use that to identify these "synthetic" ObjC class types.
+                                    NULL,   // SymbolContextScope*
+                                    0,      // encoding_uid
+                                    Type::eEncodingInvalid,
+                                    decl,
+                                    objc_object_type,
+                                    Type::eResolveStateFull));
+        
+        m_objc_class_types[name] = type;
+        
+        types.Insert(type);
+        
+        return 1;
+    }
 
     return 0;
 }
