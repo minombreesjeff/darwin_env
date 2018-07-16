@@ -95,7 +95,7 @@ if [ $FLATTEN != 1 ]; then
         echo copying "sample.mp3" into "$INSTALLROOT/usr/local/movies"
         cp sample.mp3 $INSTALLROOT/usr/local/movies/
 
-    if [-d SpamPro.tproj ]; then
+    if [ -d SpamPro.tproj ]; then
 	echo copying "StreamingLoadTool" to "$INSTALLROOT/usr/local/bin/StreamingLoadTool"
 	cp SpamPro.tproj/StreamingLoadTool $INSTALLROOT/usr/local/bin/
 	

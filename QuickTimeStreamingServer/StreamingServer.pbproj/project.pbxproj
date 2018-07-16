@@ -21,6 +21,7 @@
 				00A79F8C01359A6200DD2B4F,
 				00A79F8E01359A6200DD2B4F,
 				00A79F9001359ACA00DD2B4F,
+				FF7342C803D798D102DD2894,
 				00A79F9301359B1500DD2B4F,
 				00A79F9401359B1500DD2B4F,
 				00F581F902A4166700DD2B4C,
@@ -126,6 +127,175 @@
 			isa = PBXBuildFile;
 			settings = {
 			};
+		};
+		005DCF5F0415519F00DD2B4C = {
+			isa = PBXFileReference;
+			path = SSLeay.c;
+			refType = 4;
+		};
+		005DCF61041551BD00DD2B4C = {
+			isa = PBXExecutableFileReference;
+			name = libperl.dylib;
+			path = /System/Library/Perl/darwin/CORE/libperl.dylib;
+			refType = 0;
+		};
+		005DCF63041551DF00DD2B4C = {
+			isa = PBXFileReference;
+			name = libcrypto.dylib;
+			path = /usr/lib/libcrypto.dylib;
+			refType = 0;
+		};
+		005DCF65041551F600DD2B4C = {
+			isa = PBXFileReference;
+			name = libssl.dylib;
+			path = /usr/lib/libssl.dylib;
+			refType = 0;
+		};
+		005DCF690415842400DD2B4C = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXHeadersBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		005DCF6A0415842400DD2B4C = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXResourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		005DCF6B0415842400DD2B4C = {
+			buildActionMask = 2147483647;
+			files = (
+				005DCF70041585E500DD2B4C,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		005DCF6C0415842400DD2B4C = {
+			buildActionMask = 2147483647;
+			files = (
+				005DCF71041585EA00DD2B4C,
+				005DCF72041585EB00DD2B4C,
+				005DCF73041585EC00DD2B4C,
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		005DCF6D0415842400DD2B4C = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXRezBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		005DCF6E0415842400DD2B4C = {
+			buildPhases = (
+				005DCF690415842400DD2B4C,
+				005DCF6A0415842400DD2B4C,
+				005DCF6B0415842400DD2B4C,
+				005DCF6C0415842400DD2B4C,
+				005DCF6D0415842400DD2B4C,
+				005DCF770415888600DD2B4C,
+			);
+			buildSettings = {
+				HEADER_SEARCH_PATHS = "\"$(SYSTEM_LIBRARY_DIR)/Perl/darwin/CORE\"";
+				LIBRARY_SEARCH_PATHS = "\"$(SYSTEM_LIBRARY_DIR)/Perl/darwin/CORE\"";
+				OTHER_CFLAGS = "-g -pipe -pipe -fno-common -no-cpp-precomp -flat_namespace -DHAS_TELLDIR_PROTOTYPE -fno-strict-aliasing";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = SSLeay.bundle;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
+				WRAPPER_EXTENSION = bundle;
+			};
+			dependencies = (
+			);
+			isa = PBXBundleTarget;
+			name = SSLeay.bundle;
+			productName = SSLeay.bundle;
+			productReference = 005DCF6F0415842400DD2B4C;
+			productSettingsXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string></string>
+	<key>CFBundleGetInfoString</key>
+	<string></string>
+	<key>CFBundleIconFile</key>
+	<string></string>
+	<key>CFBundleIdentifier</key>
+	<string></string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string></string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string></string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>0.0.1d1</string>
+</dict>
+</plist>
+";
+			shouldUseHeadermap = 0;
+		};
+		005DCF6F0415842400DD2B4C = {
+			isa = PBXBundleReference;
+			path = SSLeay.bundle.bundle;
+			refType = 3;
+		};
+		005DCF70041585E500DD2B4C = {
+			fileRef = 005DCF5F0415519F00DD2B4C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		005DCF71041585EA00DD2B4C = {
+			fileRef = 005DCF61041551BD00DD2B4C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		005DCF72041585EB00DD2B4C = {
+			fileRef = 005DCF63041551DF00DD2B4C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		005DCF73041585EC00DD2B4C = {
+			fileRef = 005DCF65041551F600DD2B4C;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		005DCF74041587DC00DD2B4C = {
+			isa = PBXTargetDependency;
+			target = 005DCF6E0415842400DD2B4C;
+		};
+		005DCF75041587E900DD2B4C = {
+			isa = PBXTargetDependency;
+			target = 005DCF6E0415842400DD2B4C;
+		};
+		005DCF770415888600DD2B4C = {
+			buildActionMask = 8;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/sh;
+			shellScript = "cp ${TARGET_BUILD_DIR}/SSLeay.bundle.bundle/Contents/MacOS/SSLeay.bundle ${DSTROOT}/Library/QuickTimeStreaming/AdminHtml/SSLeay.bundle";
 		};
 		0066F5CE016E6AD000DD2B4C = {
 			isa = PBXFileReference;
@@ -579,6 +749,7 @@
 		00A7A0B30135DF8700DD2B4F = {
 			children = (
 				00A7A0CC0135DF8700DD2B4F,
+				005DCF5F0415519F00DD2B4C,
 			);
 			isa = PBXGroup;
 			name = NetSSLeay;
@@ -2412,6 +2583,7 @@
 				68C396B800C567B77F000001,
 				E959118F0355F56309DD2838,
 				E963C5BE031E9A1509DD2838,
+				F5C69A500373366701A80103,
 				68C3972C00C567B77F000001,
 				E923D3BA03537F5509DD2838,
 				F533DA97011744B701DD292F,
@@ -2463,6 +2635,7 @@
 				000DA9E40135948600DD2B4F,
 				E9BFE69B031EC86B09DD2838,
 				E9A6B8FA031EC31A09DD2838,
+				005DCF6E0415842400DD2B4C,
 			);
 		};
 		68C3920600C567B67F000001 = {
@@ -5666,6 +5839,9 @@
 			children = (
 				68C3965D00C567B77F000001,
 				68C3965E00C567B77F000001,
+				005DCF61041551BD00DD2B4C,
+				005DCF63041551DF00DD2B4C,
+				005DCF65041551F600DD2B4C,
 			);
 			isa = PBXGroup;
 			name = "External Frameworks and Libraries";
@@ -5734,6 +5910,7 @@
 				E9A6B8FB031EC31A09DD2838,
 				E9BFE72C031EC86B09DD2838,
 				E923D44103537F5509DD2838,
+				005DCF6F0415842400DD2B4C,
 			);
 			isa = PBXGroup;
 			name = Products;
@@ -5981,7 +6158,8 @@
 				68C3972B00C567B77F000001,
 				F533DA96011744B701DD292F,
 				00A79FF90135B35C00DD2B4F,
-				F5EB17A6036F268601E210B6,
+				005DCF74041587DC00DD2B4C,
+				F5ADAC65036F0AD701ABAAE2,
 				007870EC00F4E38300DD2B4C,
 			);
 			isa = PBXAggregateTarget;
@@ -14863,6 +15041,7 @@
 				E9A6B8F8031EC31A09DD2838,
 				E9A6B8F9031EC31A09DD2838,
 				E9A6B908031EC3AE09DD2838,
+				FF7342C903D79A3A02DD2894,
 			);
 			buildSettings = {
 				INSTALL_PATH = /usr/bin;
@@ -15745,6 +15924,10 @@
 			settings = {
 			};
 		};
+		F5ADAC65036F0AD701ABAAE2 = {
+			isa = PBXTargetDependency;
+			target = E9A6B8FA031EC31A09DD2838;
+		};
 		F5C3E6EB017CFE24010001C8 = {
 			isa = PBXFileReference;
 			name = icon_doc.gif;
@@ -15757,6 +15940,125 @@
 			settings = {
 			};
 		};
+		F5C69A500373366701A80103 = {
+			buildPhases = (
+			);
+			buildSettings = {
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = DSSAll;
+				SECTORDER_FLAGS = "";
+				WARNING_CFLAGS = "-Wmost -Wno-four-char-constants -Wno-unknown-pragmas";
+			};
+			dependencies = (
+				F5C69A530373372701A80103,
+				F5C69A540373373201A80103,
+				F5C69A550373373E01A80103,
+				F5C69A560373374701A80103,
+				F5C69A570373375901A80103,
+				F5C69A580373375E01A80103,
+				F5C69A590373376701A80103,
+				F5C69A5A0373377901A80103,
+				F5C69A5B0373379101A80103,
+				F5C69A5C037337A101A80103,
+				F5C69A5D037337B801A80103,
+				F5C69A5E037337C001A80103,
+				F5C69A5F037337D701A80103,
+				F5C69A60037337E201A80103,
+				F5C69A61037337FE01A80103,
+				F5C69A620373380801A80103,
+				F5C69A630373381F01A80103,
+				F5C69A640373382201A80103,
+				F5C69A650373383901A80103,
+				005DCF75041587E900DD2B4C,
+				F5C69A660373384701A80103,
+			);
+			isa = PBXAggregateTarget;
+			name = DSSAll;
+			productName = DSSAll;
+			shouldUseHeadermap = 0;
+		};
+		F5C69A530373372701A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C396BA00C567B77F000001;
+		};
+		F5C69A540373373201A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C3978800C567B77F000001;
+		};
+		F5C69A550373373E01A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C397B700C567B77F000001;
+		};
+		F5C69A560373374701A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C397C000C567B77F000001;
+		};
+		F5C69A570373375901A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C3987300C567B77F000001;
+		};
+		F5C69A580373375E01A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C3987F00C567B77F000001;
+		};
+		F5C69A590373376701A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C398DE00C567B77F000001;
+		};
+		F5C69A5A0373377901A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C399C100C567B77F000001;
+		};
+		F5C69A5B0373379101A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C399C900C567B77F000001;
+		};
+		F5C69A5C037337A101A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C399D800C567B77F000001;
+		};
+		F5C69A5D037337B801A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C399EA00C567B77F000001;
+		};
+		F5C69A5E037337C001A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C399F500C567B77F000001;
+		};
+		F5C69A5F037337D701A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C39A0000C567B77F000001;
+		};
+		F5C69A60037337E201A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C39A0900C567B77F000001;
+		};
+		F5C69A61037337FE01A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C39A3600C567B77F000001;
+		};
+		F5C69A620373380801A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C39A4700C567B77F000001;
+		};
+		F5C69A630373381F01A80103 = {
+			isa = PBXTargetDependency;
+			target = 68C3972C00C567B77F000001;
+		};
+		F5C69A640373382201A80103 = {
+			isa = PBXTargetDependency;
+			target = F533DA97011744B701DD292F;
+		};
+		F5C69A650373383901A80103 = {
+			isa = PBXTargetDependency;
+			target = 000DA9E40135948600DD2B4F;
+		};
+		F5C69A660373384701A80103 = {
+			isa = PBXTargetDependency;
+			target = E9A6B8FA031EC31A09DD2838;
+		};
 		F5C7F02601B6CE3401DD2F6B = {
 			isa = PBXFileReference;
 			name = nav_logo.gif;
@@ -15768,10 +16070,6 @@
 			isa = PBXBuildFile;
 			settings = {
 			};
-		};
-		F5EB17A6036F268601E210B6 = {
-			isa = PBXTargetDependency;
-			target = E9A6B8FA031EC31A09DD2838;
 		};
 		F5EB63B1011F467801DD292F = {
 			fileRef = 68C3969C00C567B77F000001;
@@ -15824,6 +16122,42 @@
 			isa = PBXBuildFile;
 			settings = {
 			};
+		};
+//F50
+//F51
+//F52
+//F53
+//F54
+//FF0
+//FF1
+//FF2
+//FF3
+//FF4
+		FF7342C803D798D102DD2894 = {
+			buildActionMask = 8;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/sh;
+			shellScript = "chown root:wheel ${DSTROOT}/usr/sbin/streamingadminserver.pl";
+		};
+		FF7342C903D79A3A02DD2894 = {
+			buildActionMask = 8;
+			files = (
+			);
+			generatedFileNames = (
+			);
+			isa = PBXShellScriptBuildPhase;
+			neededFileNames = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+			shellPath = /bin/sh;
+			shellScript = "chown root:wheel ${DSTROOT}/usr/share/man/man1/broadcasterctl.1";
 		};
 	};
 	rootObject = 68C3920500C567B67F000001;

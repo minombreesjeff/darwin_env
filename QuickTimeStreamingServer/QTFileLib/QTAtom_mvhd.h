@@ -21,7 +21,7 @@
  * @APPLE_LICENSE_HEADER_END@
  *
  */
-// $Id: QTAtom_mvhd.h,v 1.5.18.1 2002/11/27 10:14:03 murata Exp $
+// $Id: QTAtom_mvhd.h,v 1.5.18.1.2.1 2003/01/16 08:17:45 murata Exp $
 //
 // QTAtom_mvhd:
 //   The 'mvhd' QTAtom class.
@@ -55,8 +55,16 @@ public:
 	//
 	// Accessors.
 	inline	Float64		GetTimeScale(void) { return (Float64)fTimeScale; }
-	inline	Float64		GetDurationInSeconds(void) { if (fTimeScale != 0){ return fDuration / (Float64)fTimeScale; } else {return (Float64) 0.0;} }
+#if __Win32__
 
+	// Win compiler can't convert UInt64 to Float64. It does support SInt64 to Float64 though.
+
+	inline  Float64     GetDurationInSeconds(void) { if (fTimeScale != 0){return (Float64)((SInt64)fDuration) / (Float64) 						((SInt64)fTimeScale); } else {return (Float64) 0.0;} }
+
+#else
+
+	inline  Float64     GetDurationInSeconds(void) { if (fTimeScale != 0){ return fDuration / (Float64)fTimeScale; } else {return 					(Float64) 0.0;} }
+#endif
 
 	//
 	// Debugging functions.

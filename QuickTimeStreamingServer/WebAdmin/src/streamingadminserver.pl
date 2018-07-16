@@ -37,6 +37,9 @@ use Socket;
 use POSIX;
 use Sys::Hostname;
 #eval "use Net::SSLeay";
+
+# add /Library/QuickTimeStreaming/AdminHtml to INC so that it can find SSLeay.bundle
+push(@INC, "/Library/QuickTimeStreaming/AdminHtml");
 if ($^O eq "darwin")
 {
      eval "require '/Library/QuickTimeStreaming/AdminHtml/SSLeay.pl'";

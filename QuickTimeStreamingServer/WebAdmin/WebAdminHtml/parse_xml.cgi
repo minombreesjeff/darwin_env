@@ -775,8 +775,8 @@ sub ChangePassword {
 	}
 	close(FILEHDL);            
 	my $quotedOldUsername = quotemeta($oldUsername);
-	$groupsFileText =~ s/ $quotedOldUsername/ $newUsername/;
-	
+	$groupsFileText =~ s/([ \t:]+)$quotedOldUsername([\r\n\s]+)/$1$newUsername$2/;
+
 	$status = &adminprotolib::SetPassword($data, $messageHash, $authheader, $qtssip, $qtssport, $usersFileAttributePath, $query->{'new_password1'}, $qtssPasswdName, $newUsername);
 	sleep(2);
 
@@ -998,8 +998,8 @@ sub AssistSetPassword {
 		close(FILEHDL);
 		
 		my $quotedOldUsername = quotemeta($oldUsername);
-		$groupsFileText =~ s/ $quotedOldUsername/ $newUsername/;
-		
+		$groupsFileText =~ s/([ \t:]+)$quotedOldUsername([\r\n\s]+)/$1$newUsername$2/;
+
 		$status = &adminprotolib::SetPassword($data, $messageHash, $authheader, $qtssip, $qtssport, $usersFileAttributePath, $query->{'new_password1'}, $qtssPasswdName, $newUsername);
 		
 		if ($status != 200) {

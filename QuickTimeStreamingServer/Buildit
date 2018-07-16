@@ -162,7 +162,12 @@ echo Building for $PLAT with $CPLUS
 if [ "${PLAT}" = "Darwin.Power Macintosh" ]; then
 
 	## just need to call "pbxbuild" for Mac OS X
-	pbxbuild $*
+	if [$1 = ""]; then
+		echo "Darwin build for OS X"
+		pbxbuild -target DSSAll
+	else
+		pbxbuild $*
+	fi
 	
 else
 	export CPLUS

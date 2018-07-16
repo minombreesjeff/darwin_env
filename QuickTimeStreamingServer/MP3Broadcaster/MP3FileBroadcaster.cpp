@@ -78,7 +78,6 @@ int MP3FileBroadcaster::PlaySong(char *fileName, char *currentFile, bool preflig
 		while ((temp > fileName) && (*(temp-1) != kPathDelimiterChar))
 			temp--;
 			
-	
         ::strncpy(mTitle, temp,sizeof(mTitle) -1);
         mTitle[sizeof(mTitle) -1] = 0;	
     }
