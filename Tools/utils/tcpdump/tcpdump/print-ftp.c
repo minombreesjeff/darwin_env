@@ -1,5 +1,4 @@
-/* @(#) $Header: /tcpdump/master/tcpdump/bgp.h,v 1.3 2004-06-16 08:45:15 hannes Exp $ (LBL) */
-/* 
+/*
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that: (1) source code
  * distributions retain the above copyright notice and this paragraph
@@ -10,8 +9,27 @@
  * WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT
  * LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
  * FOR A PARTICULAR PURPOSE.
- *
- * Original code by Hannes Gredler (hannes@juniper.net)
  */
 
-extern char *bgp_vpn_rd_print (const u_char *);
+#ifndef lint
+static const char rcsid[] _U_ =
+    "@(#) $Header$";
+#endif
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include <tcpdump-stdinc.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "netdissect.h"
+#include "extract.h"
+
+void
+ftp_print(netdissect_options *ndo, const u_char *pptr, u_int len)
+{
+	txtproto_print(ndo, pptr, len, "ftp", NULL, 0);
+}
