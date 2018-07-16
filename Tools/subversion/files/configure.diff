@@ -1,6 +1,6 @@
 --- configure.orig	2008-06-19 11:19:52.000000000 -0700
 +++ configure	2008-06-19 11:20:36.000000000 -0700
-@@ -12008,8 +12008,8 @@
+@@ -12047,8 +12047,8 @@
    esac
    if test "$_lt_dar_can_shared" = "yes"; then
      output_verbose_link_cmd=func_echo_all
