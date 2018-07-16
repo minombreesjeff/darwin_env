@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class BreakpointCommandTestCase(TestBase):
 
@@ -37,6 +38,9 @@ class BreakpointCommandTestCase(TestBase):
         TestBase.setUp(self)
         # Find the line number to break inside main().
         self.line = line_number('main.c', '// Set break point at this line.')
+        # disable "There is a running process, kill it and restart?" prompt
+        self.runCmd("settings set auto-confirm true")
+        self.addTearDownHook(lambda: self.runCmd("settings clear auto-confirm"))
 
     def breakpoint_command_sequence(self):
         """Test a sequence of breakpoint command add, list, and delete."""
@@ -45,21 +49,12 @@ class BreakpointCommandTestCase(TestBase):
 
         # Add three breakpoints on the same line.  The first time we don't specify the file,
         # since the default file is the one containing main:
-        self.expect("breakpoint set -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.c', line = %d, locations = 1" %
-                        self.line)
-        self.expect("breakpoint set -f main.c -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 2: file ='main.c', line = %d, locations = 1" %
-                        self.line)
-        self.expect("breakpoint set -f main.c -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 3: file ='main.c', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, None, self.line, num_expected_locations=1, loc_exact=True)
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
 
         # Now add callbacks for the breakpoints just created.
-        self.runCmd("breakpoint command add -s command -o 'frame variable -T -s' 1")
+        self.runCmd("breakpoint command add -s command -o 'frame variable --show-types --scope' 1")
         self.runCmd("breakpoint command add -s python -o 'here = open(\"output.txt\", \"w\"); print >> here, \"lldb\"; here.close()' 2")
         self.runCmd("breakpoint command add --python-function bktptcmd.function 3")
 
@@ -78,7 +73,7 @@ class BreakpointCommandTestCase(TestBase):
 
         self.expect("breakpoint command list 1", "Breakpoint 1 command ok",
             substrs = ["Breakpoint commands:",
-                          "frame variable -T -s"])
+                          "frame variable --show-types --scope"])
         self.expect("breakpoint command list 2", "Breakpoint 2 command ok",
             substrs = ["Breakpoint commands:",
                           "here = open",
@@ -86,28 +81,24 @@ class BreakpointCommandTestCase(TestBase):
                           "here.close()"])
         self.expect("breakpoint command list 3", "Breakpoint 3 command ok",
             substrs = ["Breakpoint commands:",
-                          "bktptcmd.function(frame, bp_loc, dict)"])
+                          "bktptcmd.function(frame, bp_loc, internal_dict)"])
 
         self.runCmd("command script import --allow-reload ./bktptcmd.py")
 
         # Next lets try some other breakpoint kinds.  First break with a regular expression
         # and then specify only one file.  The first time we should get two locations,
         # the second time only one:
-        self.expect ("break set -r ._MyFunction",
-                     patterns = ["Breakpoint created: [0-9]+: regex = '\._MyFunction', locations = 2"])
+
+        lldbutil.run_break_set_by_regexp (self, r"._MyFunction", num_expected_locations=2)
+        
+        lldbutil.run_break_set_by_regexp (self, r"._MyFunction", extra_options="-f a.c", num_expected_locations=1)
       
-        self.expect ("break set -r ._MyFunction -f a.c",
-                     patterns = ["Breakpoint created: [0-9]+: regex = '\._MyFunction', locations = 1"])
-      
-        self.expect ("break set -r ._MyFunction -f a.c -f b.c",
-                     patterns = ["Breakpoint created: [0-9]+: regex = '\._MyFunction', locations = 2"])
+        lldbutil.run_break_set_by_regexp (self, r"._MyFunction", extra_options="-f a.c -f b.c", num_expected_locations=2)
 
         # Now try a source regex breakpoint:
-        self.expect ("break set -p \"is about to return [12]0\" -f a.c -f b.c",
-                     patterns = ["Breakpoint created: [0-9]+: source regex = \"is about to return \[12\]0\", locations = 2"])
+        lldbutil.run_break_set_by_source_regexp (self, r"is about to return [12]0", extra_options="-f a.c -f b.c", num_expected_locations=2)
       
-        self.expect ("break set -p \"is about to return [12]0\" -f a.c",
-                     patterns = ["Breakpoint created: [0-9]+: source regex = \"is about to return \[12\]0\", locations = 1"])
+        lldbutil.run_break_set_by_source_regexp (self, r"is about to return [12]0", extra_options="-f a.c", num_expected_locations=1)
       
         # Run the program.  Remove 'output.txt' if it exists.
         self.RemoveTempFile("output.txt")
@@ -181,10 +172,7 @@ class BreakpointCommandTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Add a breakpoint.
-        self.expect("breakpoint set -f main.c -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.c', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
 
         # Now add callbacks for the breakpoints just created.
         self.runCmd("breakpoint command add -s python -o 'here = open(\"output-2.txt\", \"w\"); print >> here, frame; print >> here, bp_loc; here.close()' 1")

@@ -447,7 +447,7 @@ Offset PTHWriter::EmitCachedSpellings() {
 
 void PTHWriter::GeneratePTH(const std::string &MainFile) {
   // Generate the prologue.
-  Out << "cfe-pth";
+  Out << "cfe-pth" << '\0';
   Emit32(PTHManager::Version);
 
   // Leave 4 words for the prologue.
@@ -467,7 +467,7 @@ void PTHWriter::GeneratePTH(const std::string &MainFile) {
   // Iterate over all the files in SourceManager.  Create a lexer
   // for each file and cache the tokens.
   SourceManager &SM = PP.getSourceManager();
-  const LangOptions &LOpts = PP.getLangOptions();
+  const LangOptions &LOpts = PP.getLangOpts();
 
   for (SourceManager::fileinfo_iterator I = SM.fileinfo_begin(),
        E = SM.fileinfo_end(); I != E; ++I) {

@@ -49,73 +49,33 @@
 namespace lldb_private {
 
 //----------------------------------------------------------------------
-// ProcessInstanceSettings
+// ProcessProperties
 //----------------------------------------------------------------------
-class ProcessInstanceSettings : public InstanceSettings
+class ProcessProperties : public Properties
 {
 public:
-
-    ProcessInstanceSettings (const lldb::UserSettingsControllerSP &owner_sp, bool live_instance = true, const char *name = NULL);
-  
-    ProcessInstanceSettings (const ProcessInstanceSettings &rhs);
+    ProcessProperties(bool is_global);
 
     virtual
-    ~ProcessInstanceSettings ();
-  
-    ProcessInstanceSettings&
-    operator= (const ProcessInstanceSettings &rhs);
-  
-
-    void
-    UpdateInstanceSettingsVariable (const ConstString &var_name,
-                                    const char *index_value,
-                                    const char *value,
-                                    const ConstString &instance_name,
-                                    const SettingEntry &entry,
-                                    VarSetOperationType op,
-                                    Error &err,
-                                    bool pending);
-
+    ~ProcessProperties();
+    
     bool
-    GetInstanceSettingsValue (const SettingEntry &entry,
-                              const ConstString &var_name,
-                              StringList &value,
-                              Error *err);
+    GetDisableMemoryCache() const;
 
-    bool GetDisableMemoryCache() const
-    {
-        return m_disable_memory_cache;
-    }
-    
-    const Args &
-    GetExtraStartupCommands () const
-    {
-        return m_extra_startup_commands;
-    }
-    
-    void
-    SetExtraStartupCommands (const Args &args)
-    {
-        m_extra_startup_commands = args;
-    }
-    
-protected:
-    const ConstString &
-    GetDisableMemoryCacheVarName () const;
-    
-    const ConstString &
-    GetExtraStartupCommandVarName () const;
+    Args
+    GetExtraStartupCommands () const;
 
     void
-    CopyInstanceSettings (const lldb::InstanceSettingsSP &new_settings,
-                          bool pending);
-
-    const ConstString
-    CreateInstanceName ();
+    SetExtraStartupCommands (const Args &args);
     
-    bool        m_disable_memory_cache;
-    Args        m_extra_startup_commands;
+    FileSpec
+    GetPythonOSPluginPath () const;
+
+    void
+    SetPythonOSPluginPath (const FileSpec &file);
 };
+
+typedef STD_SHARED_PTR(ProcessProperties) ProcessPropertiesSP;
 
 //----------------------------------------------------------------------
 // ProcessInfo
@@ -288,15 +248,28 @@ public:
         return m_arguments;
     }
     
+    const char *
+    GetArg0 () const
+    {
+        if (m_arg0.empty())
+            return NULL;
+        return m_arg0.c_str();
+    }
+    
     void
-    SetArguments (const Args& args, 
-                  bool first_arg_is_executable,
-                  bool first_arg_is_executable_and_argument);
+    SetArg0 (const char *arg)
+    {
+        if (arg && arg[0])
+            m_arg0.clear();
+        else
+            m_arg0 = arg;
+    }
+    
+    void
+    SetArguments (const Args& args, bool first_arg_is_executable);
 
     void
-    SetArguments (char const **argv,
-                  bool first_arg_is_executable,
-                  bool first_arg_is_executable_and_argument);
+    SetArguments (char const **argv, bool first_arg_is_executable);
     
     Args &
     GetEnvironmentEntries ()
@@ -312,7 +285,11 @@ public:
     
 protected:
     FileSpec m_executable;
-    Args m_arguments;
+    std::string m_arg0; // argv[0] if supported. If empty, then use m_executable.
+                        // Not all process plug-ins support specifying an argv[0]
+                        // that differs from the resolved platform executable
+                        // (which is in m_executable)
+    Args m_arguments;   // All program arguments except argv[0]
     Args m_environment;
     uint32_t m_uid;
     uint32_t m_gid;    
@@ -1344,11 +1321,11 @@ protected:
 //----------------------------------------------------------------------
 class Process :
     public STD_ENABLE_SHARED_FROM_THIS(Process),
+    public ProcessProperties,
     public UserID,
     public Broadcaster,
     public ExecutionContextScope,
-    public PluginInterface,
-    public ProcessInstanceSettings
+    public PluginInterface
 {
 friend class ThreadList;
 friend class ClangFunction; // For WaitForStateChangeEventsPrivate
@@ -1367,7 +1344,8 @@ public:
         eBroadcastBitStateChanged   = (1 << 0),
         eBroadcastBitInterrupt      = (1 << 1),
         eBroadcastBitSTDOUT         = (1 << 2),
-        eBroadcastBitSTDERR         = (1 << 3)
+        eBroadcastBitSTDERR         = (1 << 3),
+        eBroadcastBitProfileData    = (1 << 4)
     };
 
     enum
@@ -1507,31 +1485,6 @@ public:
 
     };
 
-    class SettingsController : public UserSettingsController
-    {
-    public:
-        
-        SettingsController ();
-
-        virtual
-        ~SettingsController ();
-
-        static SettingEntry global_settings_table[];
-        static SettingEntry instance_settings_table[];
-
-    protected:
-
-        lldb::InstanceSettingsSP
-        CreateInstanceSettings (const char *instance_name);
-
-    private:
-
-        // Class-wide settings.
-
-        DISALLOW_COPY_AND_ASSIGN (SettingsController);
-    };
-
-
 #endif
 
     static void
@@ -1539,14 +1492,10 @@ public:
 
     static void
     SettingsTerminate ();
-
-    static lldb::UserSettingsControllerSP &
-    GetSettingsController ();
-
-    void
-    UpdateInstanceName ();
-
     
+    static const ProcessPropertiesSP &
+    GetGlobalProperties();
+
     //------------------------------------------------------------------
     /// Construct with a shared pointer to a target, and the Process listener.
     //------------------------------------------------------------------
@@ -1638,6 +1587,40 @@ public:
     //------------------------------------------------------------------
     virtual void
     Finalize();
+    
+    
+    //------------------------------------------------------------------
+    /// Return whether this object is valid (i.e. has not been finalized.)
+    ///
+    /// @return
+    ///     Returns \b true if this Process has not been finalized
+    ///     and \b false otherwise.
+    //------------------------------------------------------------------
+    bool
+    IsValid() const
+    {
+        return !m_finalize_called;
+    }
+
+    //------------------------------------------------------------------
+    /// Return a multi-word command object that can be used to expose
+    /// plug-in specific commands.
+    ///
+    /// This object will be used to resolve plug-in commands and can be
+    /// triggered by a call to:
+    ///
+    ///     (lldb) process commmand <args>
+    ///
+    /// @return
+    ///     A CommandObject which can be one of the concrete subclasses
+    ///     of CommandObject like CommandObjectRaw, CommandObjectParsed,
+    ///     or CommandObjectMultiword.
+    //------------------------------------------------------------------
+    virtual CommandObject *
+    GetPluginCommandObject()
+    {
+        return NULL;
+    }
 
     //------------------------------------------------------------------
     /// Launch a new process.
@@ -1734,8 +1717,22 @@ public:
     virtual Error
     Attach (ProcessAttachInfo &attach_info);
 
+    //------------------------------------------------------------------
+    /// Attach to a remote system via a URL
+    ///
+    /// @param[in] strm
+    ///     A stream where output intended for the user
+    ///     (if the driver has a way to display that) generated during
+    ///     the connection.  This may be NULL if no output is needed.A
+    ///
+    /// @param[in] remote_url
+    ///     The URL format that we are connecting to.
+    ///
+    /// @return
+    ///     Returns an error object.
+    //------------------------------------------------------------------
     virtual Error
-    ConnectRemote (const char *remote_url);
+    ConnectRemote (Stream *strm, const char *remote_url);
 
     bool
     GetShouldDetach () const
@@ -1957,8 +1954,22 @@ public:
         return Error(); 
     }
 
+    //------------------------------------------------------------------
+    /// Attach to a remote system via a URL
+    ///
+    /// @param[in] strm
+    ///     A stream where output intended for the user 
+    ///     (if the driver has a way to display that) generated during
+    ///     the connection.  This may be NULL if no output is needed.A
+    ///
+    /// @param[in] remote_url
+    ///     The URL format that we are connecting to.
+    ///
+    /// @return
+    ///     Returns an error object.
+    //------------------------------------------------------------------
     virtual Error
-    DoConnectRemote (const char *remote_url)
+    DoConnectRemote (Stream *strm, const char *remote_url)
     {
         Error error;
         error.SetErrorString ("remote connections are not supported");
@@ -2042,6 +2053,27 @@ public:
     virtual void
     DidAttach () {}
 
+
+    //------------------------------------------------------------------
+    /// Called after a process re-execs itself.
+    ///
+    /// Allow Process plug-ins to execute some code after a process has
+    /// exec'ed itself. Subclasses typically should override DoDidExec()
+    /// as the lldb_private::Process class needs to remove its dynamic
+    /// loader, runtime, ABI and other plug-ins, as well as unload all
+    /// shared libraries.
+    //------------------------------------------------------------------
+    virtual void
+    DidExec ();
+
+    //------------------------------------------------------------------
+    /// Subclasses of Process should implement this function if they
+    /// need to do anything after a process exec's itself.
+    //------------------------------------------------------------------
+    virtual void
+    DoDidExec ()
+    {
+    }
 
     //------------------------------------------------------------------
     /// Called before launching to a process.
@@ -2376,9 +2408,9 @@ public:
     RunThreadPlan (ExecutionContext &exe_ctx,    
                     lldb::ThreadPlanSP &thread_plan_sp,
                     bool stop_others,
-                    bool try_all_threads,
+                    bool run_others,
                     bool discard_on_error,
-                    uint32_t single_thread_timeout_usec,
+                    uint32_t timeout_usec,
                     Stream &errors);
 
     static const char *
@@ -2580,7 +2612,7 @@ public:
     /// Read a NULL terminated C string from memory
     ///
     /// This function will read a cache page at a time until the NULL
-    /// C stirng terminator is found. It will stop reading if the NULL
+    /// C string terminator is found. It will stop reading if the NULL
     /// termination byte isn't found before reading \a cstr_max_len
     /// bytes, and the results are always guaranteed to be NULL 
     /// terminated (at most cstr_max_len - 1 bytes will be read).
@@ -2932,7 +2964,7 @@ public:
 
     Error
     DeallocateMemory (lldb::addr_t ptr);
-
+    
     //------------------------------------------------------------------
     /// Get any available STDOUT.
     ///
@@ -2988,6 +3020,24 @@ public:
         return 0;
     }
 
+    //------------------------------------------------------------------
+    /// Get any available profile data.
+    ///
+    /// @param[out] buf
+    ///     A buffer that will receive any profile data bytes that are
+    ///     currently available.
+    ///
+    /// @param[out] buf_size
+    ///     The size in bytes for the buffer \a buf.
+    ///
+    /// @return
+    ///     The number of bytes written into \a buf. If this value is
+    ///     equal to \a buf_size, another call to this function should
+    ///     be made to retrieve more profile data.
+    //------------------------------------------------------------------
+    virtual size_t
+    GetAsyncProfileData (char *buf, size_t buf_size, Error &error);
+    
     //----------------------------------------------------------------------
     // Process Breakpoints
     //----------------------------------------------------------------------
@@ -3094,7 +3144,7 @@ public:
     GetNextEvent (lldb::EventSP &event_sp);
 
     lldb::StateType
-    WaitForProcessToStop (const TimeValue *timeout);
+    WaitForProcessToStop (const TimeValue *timeout, lldb::EventSP *event_sp_ptr = NULL);
 
     lldb::StateType
     WaitForStateChangedEvents (const TimeValue *timeout, lldb::EventSP &event_sp);
@@ -3108,8 +3158,7 @@ public:
     {
     public:
         ProcessEventHijacker (Process &process, Listener *listener) :
-            m_process (process),
-            m_listener (listener)
+            m_process (process)
         {
             m_process.HijackProcessEvents (listener);
         }
@@ -3120,7 +3169,6 @@ public:
          
     private:
         Process &m_process;
-        Listener *m_listener;
     };
     friend class ProcessEventHijacker;
     //------------------------------------------------------------------
@@ -3429,18 +3477,21 @@ protected:
     UnixSignals                 m_unix_signals;         /// This is the current signal set for this process.
     lldb::ABISP                 m_abi_sp;
     lldb::InputReaderSP         m_process_input_reader;
-    Communication 				m_stdio_communication;
-    Mutex        				m_stdio_communication_mutex;
+    Communication               m_stdio_communication;
+    Mutex                       m_stdio_communication_mutex;
     std::string                 m_stdout_data;
     std::string                 m_stderr_data;
+    Mutex                       m_profile_data_comm_mutex;
+    std::vector<std::string>    m_profile_data;
     MemoryCache                 m_memory_cache;
     AllocatedMemoryCache        m_allocated_memory_cache;
     bool                        m_should_detach;   /// Should we detach if the process object goes away with an explicit call to Kill or Detach?
-    LanguageRuntimeCollection 	m_language_runtimes;
+    LanguageRuntimeCollection   m_language_runtimes;
     std::auto_ptr<NextEventAction> m_next_event_action_ap;
     std::vector<PreResumeCallbackAndBaton> m_pre_resume_actions;
     ReadWriteLock               m_run_lock;
     Predicate<bool>             m_currently_handling_event;
+    bool                        m_finalize_called;
 
     enum {
         eCanJITDontKnow= 0,
@@ -3506,6 +3557,9 @@ protected:
     
     void
     AppendSTDERR (const char *s, size_t len);
+    
+    void
+    BroadcastAsyncProfileData(const char *s, size_t len);
     
     static void
     STDIOReadThreadBytesReceived (void *baton, const void *src, size_t src_len);

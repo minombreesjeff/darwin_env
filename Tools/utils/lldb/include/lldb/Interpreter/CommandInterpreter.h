@@ -26,7 +26,9 @@
 
 namespace lldb_private {
 
-class CommandInterpreter : public Broadcaster
+class CommandInterpreter :
+    public Broadcaster,
+    public Properties
 {
 public:
     typedef std::map<std::string, OptionArgVectorSP> OptionArgMap;
@@ -285,10 +287,10 @@ public:
     // and have it printed in a reasonable way on screen. If so, use OutputFormattedHelpText 
     void
     OutputHelpText (Stream &stream,
-                             const char *command_word,
-                             const char *separator,
-                             const char *help_text,
-                             uint32_t max_word_len);
+                    const char *command_word,
+                    const char *separator,
+                    const char *help_text,
+                    uint32_t max_word_len);
 
     Debugger &
     GetDebugger ()
@@ -363,7 +365,7 @@ public:
     GetOptionArgumentPosition (const char *in_string);
 
     ScriptInterpreter *
-    GetScriptInterpreter ();
+    GetScriptInterpreter (bool can_create = true);
 
     void
     SkipLLDBInitFiles (bool skip_lldbinit_files)
@@ -389,20 +391,6 @@ public:
     const char *
     FindHistoryString (const char *input_str) const;
 
-
-#ifndef SWIG
-    void
-    AddLogChannel (const char *name, 
-                   const Log::Callbacks &log_callbacks);
-
-    bool
-    GetLogChannelCallbacks (const char *channel, 
-                            Log::Callbacks &log_callbacks);
-
-    bool
-    RemoveLogChannel (const char *name);
-#endif
-
     size_t
     FindLongestCommandWord (CommandObject::CommandMap &dict);
 
@@ -410,13 +398,6 @@ public:
     FindCommandsForApropos (const char *word, 
                             StringList &commands_found, 
                             StringList &commands_help);
-
-    void
-    AproposAllSubCommands (CommandObject *cmd_obj, 
-                           const char *prefix, 
-                           const char *search_word, 
-                           StringList &commands_found, 
-                           StringList &commands_help);
                            
     bool
     GetBatchCommandMode () { return m_batch_command_mode; }
@@ -448,6 +429,12 @@ public:
     {
         return "*** Some of your variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to %s or raise the limit by changing the target.max-children-count setting.\n";
     }
+    
+    //------------------------------------------------------------------
+    // Properties
+    //------------------------------------------------------------------
+    bool
+    GetExpandRegexAliases () const;
     
 protected:
     friend class Debugger;

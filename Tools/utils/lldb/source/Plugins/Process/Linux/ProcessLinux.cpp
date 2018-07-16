@@ -99,19 +99,18 @@ ProcessLinux::UpdateThreadList(ThreadList &old_thread_list, ThreadList &new_thre
 {
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("ProcessLinux::%s() (pid = %i)", __FUNCTION__, GetID());
+        log->Printf ("ProcessLinux::%s() (pid = %" PRIu64 ")", __FUNCTION__, GetID());
 
     // Update the process thread list with this new thread.
     // FIXME: We should be using tid, not pid.
     assert(m_monitor);
     ThreadSP thread_sp (old_thread_list.FindThreadByID (GetID(), false));
     if (!thread_sp) {
-        ProcessSP me = this->shared_from_this();
-        thread_sp.reset(new POSIXThread(me, GetID()));
+        thread_sp.reset(new POSIXThread(*this, GetID()));
     }
 
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("ProcessLinux::%s() updated pid = %i", __FUNCTION__, GetID());
+        log->Printf ("ProcessLinux::%s() updated pid = %" PRIu64, __FUNCTION__, GetID());
     new_thread_list.AddThread(thread_sp);
 
     return new_thread_list.GetSize(false) > 0;

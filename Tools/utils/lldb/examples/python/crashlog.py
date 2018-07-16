@@ -26,7 +26,6 @@
 #   PYTHONPATH=/path/to/LLDB.framework/Resources/Python ./crashlog.py ~/Library/Logs/DiagnosticReports/a.crash
 #----------------------------------------------------------------------
 
-import lldb
 import commands
 import cmd
 import datetime
@@ -42,6 +41,38 @@ import string
 import sys
 import time
 import uuid
+
+try: 
+    # Just try for LLDB in case PYTHONPATH is already correctly setup
+    import lldb
+except ImportError:
+    lldb_python_dirs = list()
+    # lldb is not in the PYTHONPATH, try some defaults for the current platform
+    platform_system = platform.system()
+    if platform_system == 'Darwin':
+        # On Darwin, try the currently selected Xcode directory
+        xcode_dir = commands.getoutput("xcode-select --print-path")
+        if xcode_dir:
+            lldb_python_dirs.append(os.path.realpath(xcode_dir + '/../SharedFrameworks/LLDB.framework/Resources/Python'))
+            lldb_python_dirs.append(xcode_dir + '/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
+        lldb_python_dirs.append('/System/Library/PrivateFrameworks/LLDB.framework/Resources/Python')
+    success = False
+    for lldb_python_dir in lldb_python_dirs:
+        if os.path.exists(lldb_python_dir):
+            if not (sys.path.__contains__(lldb_python_dir)):
+                sys.path.append(lldb_python_dir)
+                try: 
+                    import lldb
+                except ImportError:
+                    pass
+                else:
+                    print 'imported lldb from: "%s"' % (lldb_python_dir)
+                    success = True
+                    break
+    if not success:
+        print "error: couldn't locate the 'lldb' module, please set PYTHONPATH correctly"
+        sys.exit(1)
+
 from lldb.utils import symbolication
 
 PARSE_MODE_NORMAL = 0
@@ -54,7 +85,7 @@ class CrashLog(symbolication.Symbolicator):
     """Class that does parses darwin crash logs"""
     thread_state_regex = re.compile('^Thread ([0-9]+) crashed with')
     thread_regex = re.compile('^Thread ([0-9]+)([^:]*):(.*)')
-    frame_regex = re.compile('^([0-9]+) +([^ ]+) *\t(0x[0-9a-fA-F]+) +(.*)')
+    frame_regex = re.compile('^([0-9]+) +([^ ]+) *\t?(0x[0-9a-fA-F]+) +(.*)')
     image_regex_uuid = re.compile('(0x[0-9a-fA-F]+)[- ]+(0x[0-9a-fA-F]+) +[+]?([^ ]+) +([^<]+)<([-0-9a-fA-F]+)> (.*)');
     image_regex_no_uuid = re.compile('(0x[0-9a-fA-F]+)[- ]+(0x[0-9a-fA-F]+) +[+]?([^ ]+) +([^/]+)/(.*)');
     empty_line_regex = re.compile('^$')
@@ -219,7 +250,7 @@ class CrashLog(symbolication.Symbolicator):
                 # print 'PARSE_MODE_NORMAL'
             elif parse_mode == PARSE_MODE_NORMAL:
                 if line.startswith ('Process:'):
-                    (self.process_name, pid_with_brackets) = line[8:].strip().split()
+                    (self.process_name, pid_with_brackets) = line[8:].strip().split(' [')
                     self.process_id = pid_with_brackets.strip('[]')
                 elif line.startswith ('Path:'):
                     self.process_path = line[5:].strip()
@@ -316,7 +347,8 @@ class CrashLog(symbolication.Symbolicator):
 
             elif parse_mode == PARSE_MODE_THREGS:
                 stripped_line = line.strip()
-                reg_values = re.split('  +', stripped_line);
+                # "r12: 0x00007fff6b5939c8  r13: 0x0000000007000006  r14: 0x0000000000002a03  r15: 0x0000000000000c00"
+                reg_values = re.findall ('([a-zA-Z0-9]+: 0[Xx][0-9a-fA-F]+) *', stripped_line);
                 for reg_value in reg_values:
                     #print 'reg_value = "%s"' % reg_value
                     (reg, value) = reg_value.split(': ')
@@ -586,6 +618,14 @@ def SymbolicateCrashLog(crash_log, options):
         print 'error: no images in crash log'
         return
 
+    if options.dump_image_list:
+        print "Binary Images:"
+        for image in crash_log.images:
+            if options.verbose:
+                print image.debug_dump()
+            else:
+                print image
+
     target = crash_log.create_target ()
     if not target:
         return
@@ -677,11 +717,6 @@ def SymbolicateCrashLog(crash_log, options):
                 print frame
         print                
 
-    if options.dump_image_list:
-        print "Binary Images:"
-        for image in crash_log.images:
-            print image
-
 def CreateSymbolicateCrashLogOptions(command_name, description, add_interactive_options):
     usage = "usage: %prog [options] <FILE> [FILE ...]"
     option_parser = optparse.OptionParser(description=description, prog='crashlog',usage=usage)
@@ -736,7 +771,6 @@ be disassembled and lookups can be performed using the addresses found in the cr
                 SymbolicateCrashLog (crash_log, options)
 if __name__ == '__main__':
     # Create a new debugger instance
-    print 'main'
     lldb.debugger = lldb.SBDebugger.Create()
     SymbolicateCrashLogs (sys.argv[1:])
 elif getattr(lldb, 'debugger', None):

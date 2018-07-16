@@ -4,6 +4,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class ForwardDeclarationTestCase(TestBase):
 
@@ -32,8 +33,7 @@ class ForwardDeclarationTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break inside the foo function which takes a bar_ptr argument.
-        self.expect("breakpoint set -n foo", BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: name = 'foo', locations = 1")
+        lldbutil.run_break_set_by_symbol (self, "foo", num_expected_locations=1, sym_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -48,7 +48,7 @@ class ForwardDeclarationTestCase(TestBase):
 
         # This should display correctly.
         # Note that the member fields of a = 1 and b = 2 is by design.
-        self.expect("frame variable -T *bar_ptr", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types *bar_ptr", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['(bar) *bar_ptr = ',
                        '(int) a = 1',
                        '(int) b = 2'])

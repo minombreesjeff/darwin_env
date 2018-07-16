@@ -159,12 +159,12 @@ public:
         
         bool IsValid ()
         {
-            return m_allocation != NULL;
+            return (bool) m_allocation;
         }
         
         bool IsInvalid ()
         {
-            return m_allocation == NULL;
+            return !m_allocation;
         }
     };
     
@@ -389,7 +389,7 @@ public:
 
         lldb_private::Value base = GetAccessTarget(region.m_base);
         
-        ss.Printf("%llx [%s - %s %llx]",
+        ss.Printf("%" PRIx64 " [%s - %s %llx]",
                   region.m_base,
                   lldb_private::Value::GetValueTypeAsCString(base.GetValueType()),
                   lldb_private::Value::GetContextTypeAsCString(base.GetContextType()),
@@ -558,6 +558,7 @@ public:
                 default:
                     return false;
                 case Instruction::IntToPtr:
+                case Instruction::PtrToInt:
                 case Instruction::BitCast:
                     return ResolveConstantValue(value, constant_expr->getOperand(0));
                 case Instruction::GetElementPtr:
@@ -676,7 +677,11 @@ public:
                     if (bare_register)
                         indirect_variable = false;
                     
-                    Memory::Region data_region = m_memory.Malloc(value->getType());
+                    lldb_private::RegisterInfo *reg_info = resolved_value.GetRegisterInfo();
+                    Memory::Region data_region = (reg_info->encoding == lldb::eEncodingVector) ?
+                        m_memory.Malloc(reg_info->byte_size, m_target_data.getPrefTypeAlignment(value->getType())) :
+                        m_memory.Malloc(value->getType());
+
                     data_region.m_allocation->m_origin = resolved_value;
                     Memory::Region ref_region = m_memory.Malloc(value->getType());
                     Memory::Region pointer_region;
@@ -987,6 +992,7 @@ IRInterpreter::supportsFunction (Function &llvm_function,
                 }
                 break;
             case Instruction::IntToPtr:
+            case Instruction::PtrToInt:
             case Instruction::Load:
             case Instruction::Mul:
             case Instruction::Ret:
@@ -1499,6 +1505,42 @@ IRInterpreter::runOnFunction (lldb::ClangExpressionVariableSP &result,
                     log->Printf("Interpreted an IntToPtr");
                     log->Printf("  Src : %s", frame.SummarizeValue(src_operand).c_str());
                     log->Printf("  =   : %s", frame.SummarizeValue(inst).c_str()); 
+                }
+            }
+            break;
+        case Instruction::PtrToInt:
+            {
+                const PtrToIntInst *ptr_to_int_inst = dyn_cast<PtrToIntInst>(inst);
+                
+                if (!ptr_to_int_inst)
+                {
+                    if (log)
+                        log->Printf("getOpcode() returns PtrToInt, but instruction is not an PtrToIntInst");
+                    err.SetErrorToGenericError();
+                    err.SetErrorString(interpreter_internal_error);
+                    return false;
+                }
+                
+                Value *src_operand = ptr_to_int_inst->getOperand(0);
+                
+                lldb_private::Scalar I;
+                
+                if (!frame.EvaluateValue(I, src_operand, llvm_module))
+                {
+                    if (log)
+                        log->Printf("Couldn't evaluate %s", PrintValue(src_operand).c_str());
+                    err.SetErrorToGenericError();
+                    err.SetErrorString(bad_value_error);
+                    return false;
+                }
+                
+                frame.AssignValue(inst, I, llvm_module);
+                
+                if (log)
+                {
+                    log->Printf("Interpreted a PtrToInt");
+                    log->Printf("  Src : %s", frame.SummarizeValue(src_operand).c_str());
+                    log->Printf("  =   : %s", frame.SummarizeValue(inst).c_str());
                 }
             }
             break;

@@ -12,9 +12,11 @@
 
 #include "ObjectFileMachO.h"
 
+#include "lldb/lldb-private-log.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/DataBuffer.h"
 #include "lldb/Core/FileSpecList.h"
+#include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RangeMap.h"
@@ -257,7 +259,7 @@ class RegisterContextDarwin_arm_Mach : public RegisterContextDarwin_arm
 {
 public:
     RegisterContextDarwin_arm_Mach (lldb_private::Thread &thread, const DataExtractor &data) :
-    RegisterContextDarwin_arm (thread, 0)
+        RegisterContextDarwin_arm (thread, 0)
     {
         SetRegisterDataFrom_LC_THREAD (data);
     }
@@ -314,6 +316,12 @@ protected:
     {
         return 0;
     }
+
+    virtual int
+    DoReadDBG (lldb::tid_t tid, int flavor, DBG &dbg)
+    {
+        return -1;
+    }
     
     virtual int
     DoWriteGPR (lldb::tid_t tid, int flavor, const GPR &gpr)
@@ -331,6 +339,12 @@ protected:
     DoWriteEXC (lldb::tid_t tid, int flavor, const EXC &exc)
     {
         return 0;
+    }
+    
+    virtual int
+    DoWriteDBG (lldb::tid_t tid, int flavor, const DBG &dbg)
+    {
+        return -1;
     }
 };
 
@@ -548,6 +562,11 @@ ObjectFileMachO::ParseHeader ()
 
             ArchSpec mach_arch(eArchTypeMachO, m_header.cputype, m_header.cpusubtype);
             
+            // Check if the module has a required architecture
+            const ArchSpec &module_arch = module_sp->GetArchitecture();
+            if (module_arch.IsValid() && !module_arch.IsExactMatch(mach_arch))
+                return false;
+
             if (SetModulesArchitecture (mach_arch))
             {
                 const size_t header_and_lc_size = m_header.sizeofcmds + MachHeaderSizeFromMagic(m_header.magic);
@@ -1133,7 +1152,7 @@ public:
             {
                 SectionSP section_sp (m_section_list->FindSectionByID (n_sect));
                 m_section_infos[n_sect].section_sp = section_sp;
-                if (section_sp != NULL)
+                if (section_sp)
                 {
                     m_section_infos[n_sect].vm_range.SetBaseAddress (section_sp->GetFileAddress());
                     m_section_infos[n_sect].vm_range.SetByteSize (section_sp->GetByteSize());
@@ -1479,36 +1498,36 @@ ObjectFileMachO::ParseSymtab (bool minimize)
             FileSpec dsc_filespec(dsc_path, false);
 
             // We need definitions of two structures in the on-disk DSC, copy them here manually
-struct lldb_copy_dyld_cache_header
-{
-	char		magic[16];
-	uint32_t	mappingOffset;
-	uint32_t	mappingCount;
-	uint32_t	imagesOffset;
-	uint32_t	imagesCount;
-	uint64_t	dyldBaseAddress;
-	uint64_t	codeSignatureOffset;
-	uint64_t	codeSignatureSize;
-	uint64_t	slideInfoOffset;
-	uint64_t	slideInfoSize;
-	uint64_t	localSymbolsOffset;
-	uint64_t	localSymbolsSize;
-};
-struct lldb_copy_dyld_cache_local_symbols_info
-{
-        uint32_t        nlistOffset;
-        uint32_t        nlistCount;
-        uint32_t        stringsOffset;
-        uint32_t        stringsSize;
-        uint32_t        entriesOffset;
-        uint32_t        entriesCount;
-};
-struct lldb_copy_dyld_cache_local_symbols_entry
-{
-        uint32_t        dylibOffset;
-        uint32_t        nlistStartIndex;
-        uint32_t        nlistCount;
-};
+            struct lldb_copy_dyld_cache_header
+            {
+                char		magic[16];
+                uint32_t	mappingOffset;
+                uint32_t	mappingCount;
+                uint32_t	imagesOffset;
+                uint32_t	imagesCount;
+                uint64_t	dyldBaseAddress;
+                uint64_t	codeSignatureOffset;
+                uint64_t	codeSignatureSize;
+                uint64_t	slideInfoOffset;
+                uint64_t	slideInfoSize;
+                uint64_t	localSymbolsOffset;
+                uint64_t	localSymbolsSize;
+            };
+            struct lldb_copy_dyld_cache_local_symbols_info
+            {
+                    uint32_t        nlistOffset;
+                    uint32_t        nlistCount;
+                    uint32_t        stringsOffset;
+                    uint32_t        stringsSize;
+                    uint32_t        entriesOffset;
+                    uint32_t        entriesCount;
+            };
+            struct lldb_copy_dyld_cache_local_symbols_entry
+            {
+                    uint32_t        dylibOffset;
+                    uint32_t        nlistStartIndex;
+                    uint32_t        nlistCount;
+            };
 
             /* The dyld_cache_header has a pointer to the dyld_cache_local_symbols_info structure (localSymbolsOffset).
                The dyld_cache_local_symbols_info structure gives us three things:
@@ -1622,6 +1641,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                             uint32_t symbol_byte_size = 0;
                                             bool add_nlist = true;
                                             bool is_debug = ((nlist.n_type & NlistMaskStab) != 0);
+                                            bool demangled_is_synthesized = false;
 
                                             assert (sym_idx < num_syms);
 
@@ -1820,6 +1840,24 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                                 if (so_path && so_path[0])
                                                                 {
                                                                     std::string full_so_path (so_path);
+                                                                    const size_t double_slash_pos = full_so_path.find("//");
+                                                                    if (double_slash_pos != std::string::npos)
+                                                                    {
+                                                                        // The linker has been generating bad N_SO entries with doubled up paths
+                                                                        // in the format "%s%s" where the first stirng in the DW_AT_comp_dir,
+                                                                        // and the second is the directory for the source file so you end up with
+                                                                        // a path that looks like "/tmp/src//tmp/src/"
+                                                                        FileSpec so_dir(so_path, false);
+                                                                        if (!so_dir.Exists())
+                                                                        {
+                                                                            so_dir.SetFile(&full_so_path[double_slash_pos + 1], false);
+                                                                            if (so_dir.Exists())
+                                                                            {
+                                                                                // Trim off the incorrect path
+                                                                                full_so_path.erase(0, double_slash_pos + 1);
+                                                                            }
+                                                                        }
+                                                                    }
                                                                     if (*full_so_path.rbegin() != '/')
                                                                         full_so_path += '/';
                                                                     full_so_path += symbol_name;
@@ -1828,8 +1866,12 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                                     m_nlist_idx_to_sym_idx[nlist_idx] = sym_idx - 1;
                                                                 }
                                                             }
+                                                            else
+                                                            {
+                                                                // This could be a relative path to a N_SO
+                                                                N_SO_index = sym_idx;
+                                                            }
                                                         }
-
                                                         break;
 
                                                     case StabObjectFileName:
@@ -1994,68 +2036,67 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                         break;
 
                                                     case NListTypeSection:          // N_SECT
-                                                    {
-                                                        symbol_section = section_info.GetSection (nlist.n_sect, nlist.n_value);
+                                                        {
+                                                            symbol_section = section_info.GetSection (nlist.n_sect, nlist.n_value);
 
-                                                        if (symbol_section == NULL)
-                                                        {
-                                                            // TODO: warn about this?
-                                                            add_nlist = false;
-                                                            break;
-                                                        }
-
-                                                        if (TEXT_eh_frame_sectID == nlist.n_sect)
-                                                        {
-                                                            type = eSymbolTypeException;
-                                                        }
-                                                        else
-                                                        {
-                                                            uint32_t section_type = symbol_section->Get() & SectionFlagMaskSectionType;
-                                                            
-                                                            switch (section_type)
+                                                            if (symbol_section == NULL)
                                                             {
-                                                                case SectionTypeRegular:                     break; // regular section
-                                                                                                                    //case SectionTypeZeroFill:                 type = eSymbolTypeData;    break; // zero fill on demand section
-                                                                case SectionTypeCStringLiterals:            type = eSymbolTypeData;    break; // section with only literal C strings
-                                                                case SectionType4ByteLiterals:              type = eSymbolTypeData;    break; // section with only 4 byte literals
-                                                                case SectionType8ByteLiterals:              type = eSymbolTypeData;    break; // section with only 8 byte literals
-                                                                case SectionTypeLiteralPointers:            type = eSymbolTypeTrampoline; break; // section with only pointers to literals
-                                                                case SectionTypeNonLazySymbolPointers:      type = eSymbolTypeTrampoline; break; // section with only non-lazy symbol pointers
-                                                                case SectionTypeLazySymbolPointers:         type = eSymbolTypeTrampoline; break; // section with only lazy symbol pointers
-                                                                case SectionTypeSymbolStubs:                type = eSymbolTypeTrampoline; break; // section with only symbol stubs, byte size of stub in the reserved2 field
-                                                                case SectionTypeModuleInitFunctionPointers: type = eSymbolTypeCode;    break; // section with only function pointers for initialization
-                                                                case SectionTypeModuleTermFunctionPointers: type = eSymbolTypeCode;    break; // section with only function pointers for termination
-                                                                                                                                              //case SectionTypeCoalesced:                type = eSymbolType;    break; // section contains symbols that are to be coalesced
-                                                                                                                                              //case SectionTypeZeroFillLarge:            type = eSymbolTypeData;    break; // zero fill on demand section (that can be larger than 4 gigabytes)
-                                                                case SectionTypeInterposing:                type = eSymbolTypeTrampoline;  break; // section with only pairs of function pointers for interposing
-                                                                case SectionType16ByteLiterals:             type = eSymbolTypeData;    break; // section with only 16 byte literals
-                                                                case SectionTypeDTraceObjectFormat:         type = eSymbolTypeInstrumentation; break;
-                                                                case SectionTypeLazyDylibSymbolPointers:    type = eSymbolTypeTrampoline; break;
-                                                                default: break;
+                                                                // TODO: warn about this?
+                                                                add_nlist = false;
+                                                                break;
                                                             }
-                                                            
-                                                            if (type == eSymbolTypeInvalid)
+
+                                                            if (TEXT_eh_frame_sectID == nlist.n_sect)
                                                             {
-                                                                const char *symbol_sect_name = symbol_section->GetName().AsCString();
-                                                                if (symbol_section->IsDescendant (text_section_sp.get()))
+                                                                type = eSymbolTypeException;
+                                                            }
+                                                            else
+                                                            {
+                                                                uint32_t section_type = symbol_section->Get() & SectionFlagMaskSectionType;
+                                                                
+                                                                switch (section_type)
                                                                 {
-                                                                    if (symbol_section->IsClear(SectionAttrUserPureInstructions | 
-                                                                                                SectionAttrUserSelfModifyingCode | 
-                                                                                                SectionAttrSytemSomeInstructions))
-                                                                        type = eSymbolTypeData;
-                                                                    else
-                                                                        type = eSymbolTypeCode;
+                                                                    case SectionTypeRegular:                     break; // regular section
+                                                                                                                        //case SectionTypeZeroFill:                 type = eSymbolTypeData;    break; // zero fill on demand section
+                                                                    case SectionTypeCStringLiterals:            type = eSymbolTypeData;    break; // section with only literal C strings
+                                                                    case SectionType4ByteLiterals:              type = eSymbolTypeData;    break; // section with only 4 byte literals
+                                                                    case SectionType8ByteLiterals:              type = eSymbolTypeData;    break; // section with only 8 byte literals
+                                                                    case SectionTypeLiteralPointers:            type = eSymbolTypeTrampoline; break; // section with only pointers to literals
+                                                                    case SectionTypeNonLazySymbolPointers:      type = eSymbolTypeTrampoline; break; // section with only non-lazy symbol pointers
+                                                                    case SectionTypeLazySymbolPointers:         type = eSymbolTypeTrampoline; break; // section with only lazy symbol pointers
+                                                                    case SectionTypeSymbolStubs:                type = eSymbolTypeTrampoline; break; // section with only symbol stubs, byte size of stub in the reserved2 field
+                                                                    case SectionTypeModuleInitFunctionPointers: type = eSymbolTypeCode;    break; // section with only function pointers for initialization
+                                                                    case SectionTypeModuleTermFunctionPointers: type = eSymbolTypeCode;    break; // section with only function pointers for termination
+                                                                                                                                                  //case SectionTypeCoalesced:                type = eSymbolType;    break; // section contains symbols that are to be coalesced
+                                                                                                                                                  //case SectionTypeZeroFillLarge:            type = eSymbolTypeData;    break; // zero fill on demand section (that can be larger than 4 gigabytes)
+                                                                    case SectionTypeInterposing:                type = eSymbolTypeTrampoline;  break; // section with only pairs of function pointers for interposing
+                                                                    case SectionType16ByteLiterals:             type = eSymbolTypeData;    break; // section with only 16 byte literals
+                                                                    case SectionTypeDTraceObjectFormat:         type = eSymbolTypeInstrumentation; break;
+                                                                    case SectionTypeLazyDylibSymbolPointers:    type = eSymbolTypeTrampoline; break;
+                                                                    default: break;
                                                                 }
-                                                                else
-                                                                    if (symbol_section->IsDescendant(data_section_sp.get()))
+                                                                
+                                                                if (type == eSymbolTypeInvalid)
+                                                                {
+                                                                    const char *symbol_sect_name = symbol_section->GetName().AsCString();
+                                                                    if (symbol_section->IsDescendant (text_section_sp.get()))
+                                                                    {
+                                                                        if (symbol_section->IsClear(SectionAttrUserPureInstructions |
+                                                                                                    SectionAttrUserSelfModifyingCode |
+                                                                                                    SectionAttrSytemSomeInstructions))
+                                                                            type = eSymbolTypeData;
+                                                                        else
+                                                                            type = eSymbolTypeCode;
+                                                                    }
+                                                                    else if (symbol_section->IsDescendant(data_section_sp.get()))
                                                                     {
                                                                         if (symbol_sect_name && ::strstr (symbol_sect_name, "__objc") == symbol_sect_name)
                                                                         {
                                                                             type = eSymbolTypeRuntime;
                                                                             
-                                                                            if (symbol_name && 
-                                                                                symbol_name[0] == '_' && 
-                                                                                symbol_name[1] == 'O' && 
+                                                                            if (symbol_name &&
+                                                                                symbol_name[0] == '_' &&
+                                                                                symbol_name[1] == 'O' &&
                                                                                 symbol_name[2] == 'B')
                                                                             {
                                                                                 llvm::StringRef symbol_name_ref(symbol_name);
@@ -2067,55 +2108,56 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                                                     symbol_name_non_abi_mangled = symbol_name + 1;
                                                                                     symbol_name = symbol_name + g_objc_v2_prefix_class.size();
                                                                                     type = eSymbolTypeObjCClass;
+                                                                                    demangled_is_synthesized = true;
                                                                                 }
                                                                                 else if (symbol_name_ref.startswith(g_objc_v2_prefix_metaclass))
                                                                                 {
                                                                                     symbol_name_non_abi_mangled = symbol_name + 1;
                                                                                     symbol_name = symbol_name + g_objc_v2_prefix_metaclass.size();
                                                                                     type = eSymbolTypeObjCMetaClass;
+                                                                                    demangled_is_synthesized = true;
                                                                                 }
                                                                                 else if (symbol_name_ref.startswith(g_objc_v2_prefix_ivar))
                                                                                 {
                                                                                     symbol_name_non_abi_mangled = symbol_name + 1;
                                                                                     symbol_name = symbol_name + g_objc_v2_prefix_ivar.size();
                                                                                     type = eSymbolTypeObjCIVar;
+                                                                                    demangled_is_synthesized = true;
                                                                                 }
                                                                             }
                                                                         }
-                                                                        else
-                                                                            if (symbol_sect_name && ::strstr (symbol_sect_name, "__gcc_except_tab") == symbol_sect_name)
-                                                                            {
-                                                                                type = eSymbolTypeException;
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                type = eSymbolTypeData;
-                                                                            }
-                                                                    }
-                                                                    else
-                                                                        if (symbol_sect_name && ::strstr (symbol_sect_name, "__IMPORT") == symbol_sect_name)
+                                                                        else if (symbol_sect_name && ::strstr (symbol_sect_name, "__gcc_except_tab") == symbol_sect_name)
                                                                         {
-                                                                            type = eSymbolTypeTrampoline;
+                                                                            type = eSymbolTypeException;
                                                                         }
                                                                         else
-                                                                            if (symbol_section->IsDescendant(objc_section_sp.get()))
+                                                                        {
+                                                                            type = eSymbolTypeData;
+                                                                        }
+                                                                    }
+                                                                    else if (symbol_sect_name && ::strstr (symbol_sect_name, "__IMPORT") == symbol_sect_name)
+                                                                    {
+                                                                        type = eSymbolTypeTrampoline;
+                                                                    }
+                                                                    else if (symbol_section->IsDescendant(objc_section_sp.get()))
+                                                                    {
+                                                                        type = eSymbolTypeRuntime;
+                                                                        if (symbol_name && symbol_name[0] == '.')
+                                                                        {
+                                                                            llvm::StringRef symbol_name_ref(symbol_name);
+                                                                            static const llvm::StringRef g_objc_v1_prefix_class (".objc_class_name_");
+                                                                            if (symbol_name_ref.startswith(g_objc_v1_prefix_class))
                                                                             {
-                                                                                type = eSymbolTypeRuntime;
-                                                                                if (symbol_name && symbol_name[0] == '.')
-                                                                                {
-                                                                                    llvm::StringRef symbol_name_ref(symbol_name);
-                                                                                    static const llvm::StringRef g_objc_v1_prefix_class (".objc_class_name_");
-                                                                                    if (symbol_name_ref.startswith(g_objc_v1_prefix_class))
-                                                                                    {
-                                                                                        symbol_name_non_abi_mangled = symbol_name;
-                                                                                        symbol_name = symbol_name + g_objc_v1_prefix_class.size();
-                                                                                        type = eSymbolTypeObjCClass;
-                                                                                    }
-                                                                                }
+                                                                                symbol_name_non_abi_mangled = symbol_name;
+                                                                                symbol_name = symbol_name + g_objc_v1_prefix_class.size();
+                                                                                type = eSymbolTypeObjCClass;
+                                                                                demangled_is_synthesized = true;
                                                                             }
+                                                                        }
+                                                                    }
+                                                                }
                                                             }
                                                         }
-                                                    }
                                                         break;
                                                 }                            
                                             }
@@ -2251,6 +2293,8 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                 if (symbol_byte_size > 0)
                                                     sym[sym_idx].SetByteSize(symbol_byte_size);
 
+                                                if (demangled_is_synthesized)
+                                                    sym[sym_idx].SetDemangledNameIsSynthesized(true);
                                                 ++sym_idx;
                                             }
                                             else
@@ -2341,6 +2385,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
             uint32_t symbol_byte_size = 0;
             bool add_nlist = true;
             bool is_debug = ((nlist.n_type & NlistMaskStab) != 0);
+            bool demangled_is_synthesized = false;
 
             assert (sym_idx < num_syms);
 
@@ -2539,6 +2584,24 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                             if (so_path && so_path[0])
                             {
                                 std::string full_so_path (so_path);
+                                const size_t double_slash_pos = full_so_path.find("//");
+                                if (double_slash_pos != std::string::npos)
+                                {
+                                    // The linker has been generating bad N_SO entries with doubled up paths
+                                    // in the format "%s%s" where the first stirng in the DW_AT_comp_dir,
+                                    // and the second is the directory for the source file so you end up with
+                                    // a path that looks like "/tmp/src//tmp/src/"
+                                    FileSpec so_dir(so_path, false);
+                                    if (!so_dir.Exists())
+                                    {
+                                        so_dir.SetFile(&full_so_path[double_slash_pos + 1], false);
+                                        if (so_dir.Exists())
+                                        {
+                                            // Trim off the incorrect path
+                                            full_so_path.erase(0, double_slash_pos + 1);
+                                        }
+                                    }
+                                }
                                 if (*full_so_path.rbegin() != '/')
                                     full_so_path += '/';
                                 full_so_path += symbol_name;
@@ -2546,6 +2609,11 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                 add_nlist = false;
                                 m_nlist_idx_to_sym_idx[nlist_idx] = sym_idx - 1;
                             }
+                        }
+                        else
+                        {
+                            // This could be a relative path to a N_SO
+                            N_SO_index = sym_idx;
                         }
                     }
                     
@@ -2716,7 +2784,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                     {
                         symbol_section = section_info.GetSection (nlist.n_sect, nlist.n_value);
 
-                        if (symbol_section == NULL)
+                        if (!symbol_section)
                         {
                             // TODO: warn about this?
                             add_nlist = false;
@@ -2786,18 +2854,21 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                                 symbol_name_non_abi_mangled = symbol_name + 1;
                                                 symbol_name = symbol_name + g_objc_v2_prefix_class.size();
                                                 type = eSymbolTypeObjCClass;
+                                                demangled_is_synthesized = true;
                                             }
                                             else if (symbol_name_ref.startswith(g_objc_v2_prefix_metaclass))
                                             {
                                                 symbol_name_non_abi_mangled = symbol_name + 1;
                                                 symbol_name = symbol_name + g_objc_v2_prefix_metaclass.size();
                                                 type = eSymbolTypeObjCMetaClass;
+                                                demangled_is_synthesized = true;
                                             }
                                             else if (symbol_name_ref.startswith(g_objc_v2_prefix_ivar))
                                             {
                                                 symbol_name_non_abi_mangled = symbol_name + 1;
                                                 symbol_name = symbol_name + g_objc_v2_prefix_ivar.size();
                                                 type = eSymbolTypeObjCIVar;
+                                                demangled_is_synthesized = true;
                                             }
                                         }
                                     }
@@ -2829,6 +2900,7 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                             symbol_name_non_abi_mangled = symbol_name;
                                             symbol_name = symbol_name + g_objc_v1_prefix_class.size();
                                             type = eSymbolTypeObjCClass;
+                                            demangled_is_synthesized = true;
                                         }
                                     }
                                 }
@@ -2964,6 +3036,9 @@ struct lldb_copy_dyld_cache_local_symbols_entry
 
                 if (symbol_byte_size > 0)
                     sym[sym_idx].SetByteSize(symbol_byte_size);
+
+                if (demangled_is_synthesized)
+                    sym[sym_idx].SetDemangledNameIsSynthesized(true);
 
                 ++sym_idx;
             }
@@ -3139,7 +3214,6 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                     stub_symbol = symtab->FindSymbolByID (stub_sym_id);
                                 }
 
-                                assert (stub_symbol);
                                 if (stub_symbol)
                                 {
                                     Address so_addr(symbol_stub_addr, section_list);
@@ -3172,6 +3246,11 @@ struct lldb_copy_dyld_cache_local_symbols_entry
                                         sym[sym_idx].SetByteSize (symbol_stub_byte_size);
                                         ++sym_idx;
                                     }
+                                }
+                                else
+                                {
+                                    if (log)
+                                        log->Warning ("symbol stub referencing symbol table symbol %u that isn't in our minimal symbol table, fix this!!!", stub_sym_id);
                                 }
                             }
                         }
@@ -3519,24 +3598,27 @@ ObjectFileMachO::GetThreadContextAtIndex (uint32_t idx, lldb_private::Thread &th
             GetNumThreadContexts ();
 
         const FileRangeArray::Entry *thread_context_file_range = m_thread_context_offsets.GetEntryAtIndex (idx);
-        
-        DataExtractor data (m_data, 
-                            thread_context_file_range->GetRangeBase(), 
-                            thread_context_file_range->GetByteSize());
-
-        switch (m_header.cputype)
+        if (thread_context_file_range)
         {
-            case llvm::MachO::CPUTypeARM:
-                reg_ctx_sp.reset (new RegisterContextDarwin_arm_Mach (thread, data));
-                break;
-                
-            case llvm::MachO::CPUTypeI386:
-                reg_ctx_sp.reset (new RegisterContextDarwin_i386_Mach (thread, data));
-                break;
-                
-            case llvm::MachO::CPUTypeX86_64:
-                reg_ctx_sp.reset (new RegisterContextDarwin_x86_64_Mach (thread, data));
-                break;
+        
+            DataExtractor data (m_data, 
+                                thread_context_file_range->GetRangeBase(), 
+                                thread_context_file_range->GetByteSize());
+
+            switch (m_header.cputype)
+            {
+                case llvm::MachO::CPUTypeARM:
+                    reg_ctx_sp.reset (new RegisterContextDarwin_arm_Mach (thread, data));
+                    break;
+                    
+                case llvm::MachO::CPUTypeI386:
+                    reg_ctx_sp.reset (new RegisterContextDarwin_i386_Mach (thread, data));
+                    break;
+                    
+                case llvm::MachO::CPUTypeX86_64:
+                    reg_ctx_sp.reset (new RegisterContextDarwin_x86_64_Mach (thread, data));
+                    break;
+            }
         }
     }
     return reg_ctx_sp;

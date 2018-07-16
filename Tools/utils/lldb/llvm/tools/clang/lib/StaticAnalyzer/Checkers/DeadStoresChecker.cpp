@@ -22,13 +22,47 @@
 #include "clang/Basic/Diagnostic.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ParentMap.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace clang;
 using namespace ento;
 
-namespace {
+namespace {  
+  
+/// A simple visitor to record what VarDecls occur in EH-handling code.
+class EHCodeVisitor : public RecursiveASTVisitor<EHCodeVisitor> {
+public:
+  bool inEH;
+  llvm::DenseSet<const VarDecl *> &S;
+  
+  bool TraverseObjCAtFinallyStmt(ObjCAtFinallyStmt *S) {
+    SaveAndRestore<bool> inFinally(inEH, true);
+    return ::RecursiveASTVisitor<EHCodeVisitor>::TraverseObjCAtFinallyStmt(S);
+  }
+  
+  bool TraverseObjCAtCatchStmt(ObjCAtCatchStmt *S) {
+    SaveAndRestore<bool> inCatch(inEH, true);
+    return ::RecursiveASTVisitor<EHCodeVisitor>::TraverseObjCAtCatchStmt(S);
+  }
+  
+  bool TraverseCXXCatchStmt(CXXCatchStmt *S) {
+    SaveAndRestore<bool> inCatch(inEH, true);
+    return TraverseStmt(S->getHandlerBlock());
+  }
+  
+  bool VisitDeclRefExpr(DeclRefExpr *DR) {
+    if (inEH)
+      if (const VarDecl *D = dyn_cast<VarDecl>(DR->getDecl()))
+        S.insert(D);
+    return true;
+  }
+  
+  EHCodeVisitor(llvm::DenseSet<const VarDecl *> &S) :
+  inEH(false), S(S) {}
+};
 
 // FIXME: Eventually migrate into its own file, and have it managed by
 // AnalysisManager.
@@ -68,6 +102,21 @@ void ReachableCode::computeReachableBlocks() {
   }
 }
 
+static const Expr *LookThroughTransitiveAssignments(const Expr *Ex) {
+  while (Ex) {
+    const BinaryOperator *BO =
+      dyn_cast<BinaryOperator>(Ex->IgnoreParenCasts());
+    if (!BO)
+      break;
+    if (BO->getOpcode() == BO_Assign) {
+      Ex = BO->getRHS();
+      continue;
+    }
+    break;
+  }
+  return Ex;
+}
+
 namespace {
 class DeadStoreObs : public LiveVariables::Observer {
   const CFG &cfg;
@@ -78,6 +127,7 @@ class DeadStoreObs : public LiveVariables::Observer {
   llvm::SmallPtrSet<const VarDecl*, 20> Escaped;
   OwningPtr<ReachableCode> reachableCode;
   const CFGBlock *currentBlock;
+  llvm::OwningPtr<llvm::DenseSet<const VarDecl *> > InEH;
 
   enum DeadStoreKind { Standard, Enclosing, DeadIncrement, DeadInit };
 
@@ -90,6 +140,23 @@ public:
 
   virtual ~DeadStoreObs() {}
 
+  bool isLive(const LiveVariables::LivenessValues &Live, const VarDecl *D) {
+    if (Live.isLive(D))
+      return true;
+    // Lazily construct the set that records which VarDecls are in
+    // EH code.
+    if (!InEH.get()) {
+      InEH.reset(new llvm::DenseSet<const VarDecl *>());
+      EHCodeVisitor V(*InEH.get());
+      V.TraverseStmt(AC->getBody());
+    }
+    // Treat all VarDecls that occur in EH code as being "always live"
+    // when considering to suppress dead stores.  Frequently stores
+    // are followed by reads in EH code, but we don't have the ability
+    // to analyze that yet.
+    return InEH->count(D);
+  }
+  
   void Report(const VarDecl *V, DeadStoreKind dsk,
               PathDiagnosticLocation L, SourceRange R) {
     if (Escaped.count(V))
@@ -130,7 +197,7 @@ public:
         return;
     }
 
-    BR.EmitBasicReport(BugType, "Dead store", os.str(), L, R);
+    BR.EmitBasicReport(AC->getDecl(), BugType, "Dead store", os.str(), L, R);
   }
 
   void CheckVarDecl(const VarDecl *VD, const Expr *Ex, const Expr *Val,
@@ -144,7 +211,7 @@ public:
     if (VD->getType()->getAs<ReferenceType>())
       return;
 
-    if (!Live.isLive(VD) && 
+    if (!isLive(Live, VD) &&
         !(VD->getAttr<UnusedAttr>() || VD->getAttr<BlocksAttr>())) {
 
       PathDiagnosticLocation ExLoc =
@@ -200,17 +267,18 @@ public:
         if (VarDecl *VD = dyn_cast<VarDecl>(DR->getDecl())) {
           // Special case: check for assigning null to a pointer.
           //  This is a common form of defensive programming.
+          const Expr *RHS = LookThroughTransitiveAssignments(B->getRHS());
+          
           QualType T = VD->getType();
           if (T->isPointerType() || T->isObjCObjectPointerType()) {
-            if (B->getRHS()->isNullPointerConstant(Ctx,
-                                              Expr::NPC_ValueDependentIsNull))
+            if (RHS->isNullPointerConstant(Ctx, Expr::NPC_ValueDependentIsNull))
               return;
           }
 
-          Expr *RHS = B->getRHS()->IgnoreParenCasts();
+          RHS = RHS->IgnoreParenCasts();
           // Special case: self-assignments.  These are often used to shut up
           //  "unused variable" compiler warnings.
-          if (DeclRefExpr *RhsDR = dyn_cast<DeclRefExpr>(RHS))
+          if (const DeclRefExpr *RhsDR = dyn_cast<DeclRefExpr>(RHS))
             if (VD == dyn_cast<VarDecl>(RhsDR->getDecl()))
               return;
 
@@ -252,9 +320,14 @@ public:
           if (V->getType()->getAs<ReferenceType>())
             return;
             
-          if (Expr *E = V->getInit()) {
-            while (ExprWithCleanups *exprClean = dyn_cast<ExprWithCleanups>(E))
+          if (const Expr *E = V->getInit()) {
+            while (const ExprWithCleanups *exprClean =
+                    dyn_cast<ExprWithCleanups>(E))
               E = exprClean->getSubExpr();
+            
+            // Look through transitive assignments, e.g.:
+            // int x = y = 0;
+            E = LookThroughTransitiveAssignments(E);
             
             // Don't warn on C++ objects (yet) until we can show that their
             // constructors/destructors don't have side effects.
@@ -264,7 +337,7 @@ public:
             // A dead initialization is a variable that is dead after it
             // is initialized.  We don't flag warnings for those variables
             // marked 'unused'.
-            if (!Live.isLive(V) && V->getAttr<UnusedAttr>() == 0) {
+            if (!isLive(Live, V) && V->getAttr<UnusedAttr>() == 0) {
               // Special case: check for initializations with constants.
               //
               //  e.g. : int x = 0;
@@ -275,8 +348,9 @@ public:
               if (E->isEvaluatable(Ctx))
                 return;
 
-              if (DeclRefExpr *DRE=dyn_cast<DeclRefExpr>(E->IgnoreParenCasts()))
-                if (VarDecl *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
+              if (const DeclRefExpr *DRE =
+                  dyn_cast<DeclRefExpr>(E->IgnoreParenCasts()))
+                if (const VarDecl *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
                   // Special case: check for initialization from constant
                   //  variables.
                   //

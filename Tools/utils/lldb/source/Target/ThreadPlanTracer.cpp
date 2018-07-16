@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Target/ThreadPlan.h"
 
 // C Includes
@@ -19,6 +21,7 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Symbol/TypeList.h"
@@ -71,9 +74,12 @@ ThreadPlanTracer::Log()
     bool show_fullpaths = false;
     
     Stream *stream = GetLogStream();
-    m_thread.GetStackFrameAtIndex(0)->Dump (stream, show_frame_index, show_fullpaths);
-    stream->Printf("\n");
-    stream->Flush();
+    if (stream)
+    {
+        m_thread.GetStackFrameAtIndex(0)->Dump (stream, show_frame_index, show_fullpaths);
+        stream->Printf("\n");
+        stream->Flush();
+    }
     
 }
 

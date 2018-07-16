@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBTypeSummary.h"
 
 #include "lldb/API/SBStream.h"
@@ -99,6 +101,9 @@ SBTypeSummary::IsSummaryString()
     if (!IsValid())
         return false;
     
+    if (m_opaque_sp->GetType() == lldb_private::TypeSummaryImpl::eTypeCallback)
+        return false;
+    
     return !m_opaque_sp->IsScripted();
 }
 
@@ -106,6 +111,8 @@ const char*
 SBTypeSummary::GetData ()
 {
     if (!IsValid())
+        return NULL;
+    if (m_opaque_sp->GetType() == lldb_private::TypeSummaryImpl::eTypeCallback)
         return NULL;
     if (m_opaque_sp->IsScripted())
     {
@@ -144,7 +151,7 @@ SBTypeSummary::SetSummaryString (const char* data)
 {
     if (!IsValid())
         return;
-    if (m_opaque_sp->IsScripted())
+    if (m_opaque_sp->IsScripted() || (m_opaque_sp->GetType() == lldb_private::TypeSummaryImpl::eTypeCallback))
         ChangeSummaryType(false);
     ((StringSummaryFormat*)m_opaque_sp.get())->SetSummaryString(data);
 }
@@ -205,6 +212,16 @@ SBTypeSummary::IsEqualTo (lldb::SBTypeSummary &rhs)
 {
     if (IsValid() == false)
         return !rhs.IsValid();
+
+    if (m_opaque_sp->GetType() != rhs.m_opaque_sp->GetType())
+        return false;
+    
+    if (m_opaque_sp->GetType() == lldb_private::TypeSummaryImpl::eTypeCallback)
+    {
+        lldb_private::CXXFunctionSummaryFormat *self_cxx = (lldb_private::CXXFunctionSummaryFormat*)m_opaque_sp.get();
+        lldb_private::CXXFunctionSummaryFormat *other_cxx = (lldb_private::CXXFunctionSummaryFormat*)rhs.m_opaque_sp.get();
+        return (self_cxx->m_impl == other_cxx->m_impl);
+    }
     
     if (m_opaque_sp->IsScripted() != rhs.m_opaque_sp->IsScripted())
         return false;
@@ -218,7 +235,7 @@ SBTypeSummary::IsEqualTo (lldb::SBTypeSummary &rhs)
     if (IsFunctionName() != rhs.IsFunctionName())
         return false;
     
-    if ( strcmp(GetData(), rhs.GetData()) )
+    if ( GetData() == NULL || rhs.GetData() == NULL || strcmp(GetData(), rhs.GetData()) )
         return false;
     
     return GetOptions() == rhs.GetOptions();
@@ -255,12 +272,20 @@ SBTypeSummary::CopyOnWrite_Impl()
 {
     if (!IsValid())
         return false;
+    
     if (m_opaque_sp.unique())
         return true;
     
     TypeSummaryImplSP new_sp;
     
-    if (m_opaque_sp->IsScripted())
+    if (m_opaque_sp->GetType() == lldb_private::TypeSummaryImpl::eTypeCallback)
+    {
+        CXXFunctionSummaryFormat* current_summary_ptr = (CXXFunctionSummaryFormat*)m_opaque_sp.get();
+        new_sp = TypeSummaryImplSP(new CXXFunctionSummaryFormat(GetOptions(),
+                                                                current_summary_ptr->m_impl,
+                                                                current_summary_ptr->m_description.c_str()));
+    }
+    else if (m_opaque_sp->IsScripted())
     {
         ScriptSummaryFormat* current_summary_ptr = (ScriptSummaryFormat*)m_opaque_sp.get();
         new_sp = TypeSummaryImplSP(new ScriptSummaryFormat(GetOptions(),
@@ -284,15 +309,23 @@ SBTypeSummary::ChangeSummaryType (bool want_script)
     if (!IsValid())
         return false;
     
-    if (want_script == m_opaque_sp->IsScripted())
-        return CopyOnWrite_Impl();
-    
     TypeSummaryImplSP new_sp;
     
-    if (want_script)
-        new_sp = TypeSummaryImplSP(new ScriptSummaryFormat(GetOptions(), "", ""));
-    else
-        new_sp = TypeSummaryImplSP(new StringSummaryFormat(GetOptions(), ""));
+    if (want_script == m_opaque_sp->IsScripted())
+    {
+        if (m_opaque_sp->GetType() == lldb_private::TypeSummaryImpl::eTypeCallback && !want_script)
+            new_sp = TypeSummaryImplSP(new StringSummaryFormat(GetOptions(), ""));
+        else
+            return CopyOnWrite_Impl();
+    }
+    
+    if (!new_sp)
+    {
+        if (want_script)
+            new_sp = TypeSummaryImplSP(new ScriptSummaryFormat(GetOptions(), "", ""));
+        else
+            new_sp = TypeSummaryImplSP(new StringSummaryFormat(GetOptions(), ""));
+    }
     
     SetSP(new_sp);
     

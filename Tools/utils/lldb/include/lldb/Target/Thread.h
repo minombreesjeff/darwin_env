@@ -12,6 +12,8 @@
 
 #include "lldb/lldb-private.h"
 #include "lldb/Host/Mutex.h"
+#include "lldb/Core/Broadcaster.h"
+#include "lldb/Core/Event.h"
 #include "lldb/Core/UserID.h"
 #include "lldb/Core/UserSettingsController.h"
 #include "lldb/Target/ExecutionContextScope.h"
@@ -21,102 +23,115 @@
 
 namespace lldb_private {
 
-class ThreadInstanceSettings : public InstanceSettings
+class ThreadProperties : public Properties
 {
 public:
-
-    ThreadInstanceSettings (const lldb::UserSettingsControllerSP &owner_sp, bool live_instance = true, const char *name = NULL);
-  
-    ThreadInstanceSettings (const ThreadInstanceSettings &rhs);
-
+    ThreadProperties(bool is_global);
+    
     virtual
-    ~ThreadInstanceSettings ();
-  
-    ThreadInstanceSettings&
-    operator= (const ThreadInstanceSettings &rhs);
-  
-
-    void
-    UpdateInstanceSettingsVariable (const ConstString &var_name,
-                                    const char *index_value,
-                                    const char *value,
-                                    const ConstString &instance_name,
-                                    const SettingEntry &entry,
-                                    VarSetOperationType op,
-                                    Error &err,
-                                    bool pending);
-
-    bool
-    GetInstanceSettingsValue (const SettingEntry &entry,
-                              const ConstString &var_name,
-                              StringList &value,
-                              Error *err);
-
-    RegularExpression *
-    GetSymbolsToAvoidRegexp()
-    {
-        return m_avoid_regexp_ap.get();
-    }
-
-    static const ConstString &
-    StepAvoidRegexpVarName ();
+    ~ThreadProperties();
+    
+    //------------------------------------------------------------------
+    /// The regular expression returned determines symbols that this
+    /// thread won't stop in during "step-in" operations.
+    ///
+    /// @return
+    ///    A pointer to a regular expression to compare against symbols,
+    ///    or NULL if all symbols are allowed.
+    ///
+    //------------------------------------------------------------------
+    const RegularExpression *
+    GetSymbolsToAvoidRegexp();
     
     bool
-    GetTraceEnabledState()
-    {
-        return m_trace_enabled;
-    }
-    static const ConstString &
-    GetTraceThreadVarName ();
-
-protected:
-
-    void
-    CopyInstanceSettings (const lldb::InstanceSettingsSP &new_settings,
-                          bool pending);
-
-    const ConstString
-    CreateInstanceName ();
-
-private:
-
-    std::auto_ptr<RegularExpression> m_avoid_regexp_ap;
-    bool m_trace_enabled;
+    GetTraceEnabledState() const;
 };
+
+typedef STD_SHARED_PTR(ThreadProperties) ThreadPropertiesSP;
 
 class Thread :
     public STD_ENABLE_SHARED_FROM_THIS(Thread),
+    public ThreadProperties,
     public UserID,
     public ExecutionContextScope,
-    public ThreadInstanceSettings
+    public Broadcaster
 {
+friend class ThreadEventData;
+
 public:
-
-    class SettingsController : public UserSettingsController
+    //------------------------------------------------------------------
+    /// Broadcaster event bits definitions.
+    //------------------------------------------------------------------
+    enum
     {
-    public:
-        
-        SettingsController ();
-
-        virtual
-        ~SettingsController ();
-        
-        static SettingEntry global_settings_table[];
-        static SettingEntry instance_settings_table[];
-
-    protected:
-
-        lldb::InstanceSettingsSP
-        CreateInstanceSettings (const char *instance_name);
-
-    private:
-
-        // Class-wide settings.
-
-        DISALLOW_COPY_AND_ASSIGN (SettingsController);
+        eBroadcastBitStackChanged           = (1 << 0),
+        eBroadcastBitThreadSuspended        = (1 << 1),
+        eBroadcastBitThreadResumed          = (1 << 2),
+        eBroadcastBitSelectedFrameChanged  = (1 << 3)
     };
 
-    // TODO: You shouldn't just checkpoint the register state alone, so this should get 
+    static ConstString &GetStaticBroadcasterClass ();
+    
+    virtual ConstString &GetBroadcasterClass() const
+    {
+        return GetStaticBroadcasterClass();
+    }
+    
+    class ThreadEventData :
+        public EventData
+    {
+    public:
+        ThreadEventData (const lldb::ThreadSP thread_sp);
+        
+        ThreadEventData (const lldb::ThreadSP thread_sp, const StackID &stack_id);
+        
+        ThreadEventData();
+        
+        virtual ~ThreadEventData();
+        
+        static const ConstString &
+        GetFlavorString ();
+
+        virtual const ConstString &
+        GetFlavor () const
+        {
+            return ThreadEventData::GetFlavorString ();
+        }
+        
+        virtual void
+        Dump (Stream *s) const;
+    
+        static const ThreadEventData *
+        GetEventDataFromEvent (const Event *event_ptr);
+        
+        static lldb::ThreadSP
+        GetThreadFromEvent (const Event *event_ptr);
+        
+        static StackID
+        GetStackIDFromEvent (const Event *event_ptr);
+        
+        static lldb::StackFrameSP
+        GetStackFrameFromEvent (const Event *event_ptr);
+        
+        lldb::ThreadSP
+        GetThread () const
+        {
+            return m_thread_sp;
+        }
+        
+        StackID
+        GetStackID () const
+        {
+            return m_stack_id;
+        }
+    
+    private:
+        lldb::ThreadSP m_thread_sp;
+        StackID        m_stack_id;
+    DISALLOW_COPY_AND_ASSIGN (ThreadEventData);
+    };
+    
+    // TODO: You shouldn't just checkpoint the register state alone, so this should get
     // moved to protected.  To do that ThreadStateCheckpoint needs to be returned as a token...
     class RegisterCheckpoint
     {
@@ -189,10 +204,9 @@ public:
         uint32_t           orig_stop_id;  // Dunno if I need this yet but it is an interesting bit of data.
         lldb::StopInfoSP   stop_info_sp;  // You have to restore the stop info or you might continue with the wrong signals.
         RegisterCheckpoint register_backup;  // You need to restore the registers, of course...
+        uint32_t           current_inlined_depth;
+        lldb::addr_t       current_inlined_pc;
     };
-
-    void
-    UpdateInstanceName ();
 
     static void
     SettingsInitialize ();
@@ -200,10 +214,10 @@ public:
     static void
     SettingsTerminate ();
 
-    static lldb::UserSettingsControllerSP &
-    GetSettingsController ();
+    static const ThreadPropertiesSP &
+    GetGlobalProperties();
 
-    Thread (const lldb::ProcessSP &process_sp, lldb::tid_t tid);
+    Thread (Process &process, lldb::tid_t tid);
     virtual ~Thread();
 
     lldb::ProcessSP
@@ -288,6 +302,9 @@ public:
     lldb::StopInfoSP
     GetStopInfo ();
 
+    lldb::StopReason
+    GetStopReason();
+
     // This sets the stop reason to a "blank" stop reason, so you can call functions on the thread
     // without having the called function run with whatever stop reason you stopped with.
     void
@@ -335,6 +352,24 @@ public:
     virtual lldb::StackFrameSP
     GetFrameWithConcreteFrameIndex (uint32_t unwind_idx);
     
+    bool
+    DecrementCurrentInlinedDepth()
+    {
+        return GetStackFrameList()->DecrementCurrentInlinedDepth();
+    }
+    
+    uint32_t
+    GetCurrentInlinedDepth()
+    {
+        return GetStackFrameList()->GetCurrentInlinedDepth();
+    }
+    
+    Error
+    ReturnFromFrameWithIndex (uint32_t frame_idx, lldb::ValueObjectSP return_value_sp, bool broadcast = false);
+    
+    Error
+    ReturnFromFrame (lldb::StackFrameSP frame_sp, lldb::ValueObjectSP return_value_sp, bool broadcast = false);
+    
     virtual lldb::StackFrameSP
     GetFrameWithStackID (const StackID &stack_id)
     {
@@ -355,16 +390,10 @@ public:
     }
 
     uint32_t
-    SetSelectedFrame (lldb_private::StackFrame *frame)
-    {
-        return GetStackFrameList()->SetSelectedFrame(frame);
-    }
+    SetSelectedFrame (lldb_private::StackFrame *frame, bool broadcast = false);
 
     bool
-    SetSelectedFrameByIndex (uint32_t frame_idx)
-    {
-        return GetStackFrameList()->SetSelectedFrameByIndex(frame_idx);
-    }
+    SetSelectedFrameByIndex (uint32_t frame_idx, bool broadcast = false);
 
     void
     SetDefaultFileAndLineToSelectedFrame()
@@ -598,6 +627,9 @@ private:
     bool
     PlanIsBasePlan (ThreadPlan *plan_ptr);
     
+    void
+    BroadcastSelectedFrameChange(StackID &new_frame_id);
+    
 public:
 
     //------------------------------------------------------------------
@@ -700,6 +732,9 @@ public:
     CheckpointThreadState (ThreadStateCheckpoint &saved_state);
     
     virtual bool
+    RestoreRegisterStateFromCheckpoint (ThreadStateCheckpoint &saved_state);
+    
+    virtual bool
     RestoreThreadStateFromCheckpoint (ThreadStateCheckpoint &saved_state);
     
     void
@@ -708,21 +743,6 @@ public:
     void
     SetTracer (lldb::ThreadPlanTracerSP &tracer_sp);
     
-    //------------------------------------------------------------------
-    /// The regular expression returned determines symbols that this
-    /// thread won't stop in during "step-in" operations.
-    ///
-    /// @return
-    ///    A pointer to a regular expression to compare against symbols,
-    ///    or NULL if all symbols are allowed.
-    ///
-    //------------------------------------------------------------------
-    RegularExpression *
-    GetSymbolsToAvoidRegexp()
-    {
-        return ThreadInstanceSettings::GetSymbolsToAvoidRegexp();
-    }
-
     // Get the thread index ID. The index ID that is guaranteed to not be
     // re-used by a process. They start at 1 and increase with each new thread.
     // This allows easy command line access by a unique ID that is easier to
@@ -771,7 +791,7 @@ public:
     bool
     IsValid () const
     {
-        return m_destroy_called;
+        return !m_destroy_called;
     }
 
     // When you implement this method, make sure you don't overwrite the m_actual_stop_info if it claims to be
@@ -780,11 +800,33 @@ public:
     virtual lldb::StopInfoSP
     GetPrivateStopReason () = 0;
 
+    //----------------------------------------------------------------------
+    // Gets the temporary resume state for a thread.
+    //
+    // This value gets set in each thread by complex debugger logic in
+    // Thread::WillResume() and an appropriate thread resume state will get
+    // set in each thread every time the process is resumed prior to calling
+    // Process::DoResume(). The lldb_private::Process subclass should adhere
+    // to the thread resume state request which will be one of:
+    //
+    //  eStateRunning   - thread will resume when process is resumed
+    //  eStateStepping  - thread should step 1 instruction and stop when process
+    //                    is resumed
+    //  eStateSuspended - thread should not execute any instructions when
+    //                    process is resumed
+    //----------------------------------------------------------------------
+    lldb::StateType
+    GetTemporaryResumeState() const
+    {
+        return m_temporary_resume_state;
+    }
+
 protected:
 
     friend class ThreadPlan;
     friend class ThreadList;
     friend class StackFrameList;
+    friend class StackFrame;
     
     // This is necessary to make sure thread assets get destroyed while the thread is still in good shape
     // to call virtual thread methods.  This must be called by classes that derive from Thread in their destructor.
@@ -811,24 +853,20 @@ protected:
 
     virtual bool
     RestoreSaveFrameZero (const RegisterCheckpoint &checkpoint);
+    
+    // register_data_sp must be a DataSP passed to ReadAllRegisterValues.
+    bool
+    ResetFrameZeroRegisters (lldb::DataBufferSP register_data_sp);
 
     virtual lldb_private::Unwind *
     GetUnwinder ();
 
+    // Check to see whether the thread is still at the last breakpoint hit that stopped it.
+    virtual bool
+    IsStillAtLastBreakpointHit();
+
     lldb::StackFrameListSP
     GetStackFrameList ();
-    
-    lldb::StateType GetTemporaryResumeState()
-    {
-        return m_temporary_resume_state;
-    }
-    
-    lldb::StateType SetTemporaryResumeState(lldb::StateType resume_state)
-    {
-        lldb::StateType old_temp_resume_state = m_temporary_resume_state;
-        m_temporary_resume_state = resume_state;
-        return old_temp_resume_state;
-    }
     
     struct ThreadState
     {

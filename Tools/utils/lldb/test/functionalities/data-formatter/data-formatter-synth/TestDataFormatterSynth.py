@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class SynthDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class SynthDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -73,7 +71,7 @@ class SynthDataFormatterTestCase(TestBase):
                                'z = 8'])
         
         # if we skip synth and summary show y
-        self.expect("frame variable int_bag -S false -Y1",
+        self.expect("frame variable int_bag --synthetic-type false --no-summary-depth=1",
                     substrs = ['x = 6',
                                'y = 7',
                                'z = 8'])
@@ -99,7 +97,7 @@ class SynthDataFormatterTestCase(TestBase):
                                'z = 8'])
 
         # If I skip summaries, still give me the artificial children
-        self.expect("frame variable int_bag -Y1",
+        self.expect("frame variable int_bag --no-summary-depth=1",
                     substrs = ['x = 6',
                                'z = 8'])
 
@@ -137,14 +135,14 @@ class SynthDataFormatterTestCase(TestBase):
 
         # ...even bitfields
         self.runCmd("type filter add BagOfBags --child x.y --child \"y->z[1-2]\"")
-        self.expect('frame variable bag_bag -T',
+        self.expect('frame variable bag_bag --show-types',
                     substrs = ['x.y = 70',
                                '(int:2) y->z[1-2] = 2'])
 
         # ...even if we format the bitfields
         self.runCmd("type filter add BagOfBags --child x.y --child \"y->y[0-0]\"")
         self.runCmd("type format add \"int:1\" -f bool")
-        self.expect('frame variable bag_bag -T',
+        self.expect('frame variable bag_bag --show-types',
                     substrs = ['x.y = 70',
                                '(int:1) y->y[0-0] = true'])
         
@@ -169,7 +167,7 @@ class SynthDataFormatterTestCase(TestBase):
                                'array[2] = 3'])
         
         # skip synthetic children
-        self.expect('frame variable plenty_of_stuff -S no',
+        self.expect('frame variable plenty_of_stuff --synthetic-type no',
                     substrs = ['some_values = 0x0',
                                'array = 0x',
                                'array_size = 5'])
@@ -182,19 +180,19 @@ class SynthDataFormatterTestCase(TestBase):
                        '*(plenty_of_stuff.array) = 3'])
         
         # check that we do not lose location information for our children
-        self.expect('frame variable plenty_of_stuff -L',
+        self.expect('frame variable plenty_of_stuff --location',
                     substrs = ['0x',
                                ':   bitfield = 17'])
 
         # check we work across pointer boundaries
-        self.expect('frame variable plenty_of_stuff.some_values -P1',
+        self.expect('frame variable plenty_of_stuff.some_values --ptr-depth=1',
                     substrs = ['(BagOfInts *) plenty_of_stuff.some_values',
                                'x = 5',
                                'z = 7'])
 
         # but not if we don't want to
         self.runCmd("type filter add BagOfInts --child x --child z -p")
-        self.expect('frame variable plenty_of_stuff.some_values -P1',
+        self.expect('frame variable plenty_of_stuff.some_values --ptr-depth=1',
                     substrs = ['(BagOfInts *) plenty_of_stuff.some_values',
                                'x = 5',
                                'y = 6',

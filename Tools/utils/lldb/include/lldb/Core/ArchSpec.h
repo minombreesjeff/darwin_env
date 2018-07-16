@@ -82,6 +82,8 @@ public:
         eCore_x86_32_i486sx,
         
         eCore_x86_64_x86_64,
+        eCore_uknownMach32,
+        eCore_uknownMach64,
         kNumCores,
 
         kCore_invalid,
@@ -177,9 +179,6 @@ public:
     //------------------------------------------------------------------
     void
     Clear ();
-
-    bool
-    operator ==(Core core) const;
 
     //------------------------------------------------------------------
     /// Returns the size in bytes of an address of the current
@@ -368,7 +367,30 @@ public:
     lldb::ByteOrder
     GetDefaultEndian () const;
 
+    //------------------------------------------------------------------
+    /// Compare an ArchSpec to another ArchSpec, requiring an exact cpu 
+    /// type match between them.  
+    /// e.g. armv7s is not an exact match with armv7 - this would return false
+    ///
+    /// @return true if the two ArchSpecs match.
+    //------------------------------------------------------------------
+    bool
+    IsExactMatch (const ArchSpec& rhs) const;
+
+    //------------------------------------------------------------------
+    /// Compare an ArchSpec to another ArchSpec, requiring a compatible
+    /// cpu type match between them.  
+    /// e.g. armv7s is compatible with armv7 - this method would return true
+    ///
+    /// @return true if the two ArchSpecs are compatible
+    //------------------------------------------------------------------
+    bool
+    IsCompatibleMatch (const ArchSpec& rhs) const;
+
 protected:
+    bool
+    Compare (const ArchSpec& rhs, bool exact_match) const;
+
     llvm::Triple m_triple;
     Core m_core;
     lldb::ByteOrder m_byte_order;
@@ -388,6 +410,8 @@ protected:
 ///
 /// @param[in] lhs The Left Hand Side ArchSpec object to compare.
 /// @param[in] rhs The Left Hand Side ArchSpec object to compare.
+///
+/// Uses the IsExactMatch() method for comparing the cpu types.
 ///
 /// @return true if \a lhs is equal to \a rhs
 //------------------------------------------------------------------

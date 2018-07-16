@@ -66,9 +66,12 @@ char *
 UUID::GetAsCString (char *dst, size_t dst_len) const
 {
     const uint8_t *u = (const uint8_t *)GetBytes();
-    snprintf(dst, dst_len, "%2.2X%2.2X%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X%2.2X%2.2X%2.2X%2.2X",
-             u[0],u[1],u[2],u[3],u[4],u[5],u[6],u[7],u[8],u[9],u[10],u[11],u[12],u[13],u[14],u[15]);
-    return dst;
+    if (dst_len > snprintf (dst,
+                            dst_len,
+                            "%2.2X%2.2X%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X-%2.2X%2.2X%2.2X%2.2X%2.2X%2.2X",
+                            u[0],u[1],u[2],u[3],u[4],u[5],u[6],u[7],u[8],u[9],u[10],u[11],u[12],u[13],u[14],u[15]))
+        return dst;
+    return NULL;
 }
 
 void
@@ -125,47 +128,58 @@ xdigit_to_int (char ch)
 }
 
 size_t
-UUID::SetfromCString (const char *cstr)
+UUID::DecodeUUIDBytesFromCString (const char *p, ValueType &uuid_bytes, const char **end)
+{
+    size_t uuid_byte_idx = 0;
+    if (p)
+    {
+        while (*p)
+        {
+            if (isxdigit(p[0]) && isxdigit(p[1]))
+            {
+                int hi_nibble = xdigit_to_int(p[0]);
+                int lo_nibble = xdigit_to_int(p[1]);
+                // Translate the two hex nibble characters into a byte
+                uuid_bytes[uuid_byte_idx] = (hi_nibble << 4) + lo_nibble;
+                
+                // Skip both hex digits
+                p += 2;
+                
+                // Increment the byte that we are decoding within the UUID value
+                // and break out if we are done
+                if (++uuid_byte_idx == 16)
+                    break;
+            }
+            else if (*p == '-')
+            {
+                // Skip dashes
+                p++;
+            }
+            else
+            {
+                // UUID values can only consist of hex characters and '-' chars
+                break;
+            }
+        }
+    }
+    if (end)
+        *end = p;
+    return uuid_byte_idx;
+}
+size_t
+UUID::SetFromCString (const char *cstr)
 {
     if (cstr == NULL)
         return 0;
 
-    uint32_t uuid_byte_idx = 0;
     const char *p = cstr;
 
     // Skip leading whitespace characters
     while (isspace(*p))
         ++p;
+    
+    const uint32_t uuid_byte_idx = UUID::DecodeUUIDBytesFromCString (p, m_uuid, &p);
 
-    // Try and decode a UUID
-    while (*p != '\0')
-    {
-        if (isxdigit(*p) && isxdigit(p[1]))
-        {
-            int hi_nibble = xdigit_to_int(p[0]);
-            int lo_nibble = xdigit_to_int(p[1]);
-            // Translate the two hex nibble characters into a byte
-            m_uuid[uuid_byte_idx] = (hi_nibble << 4) + lo_nibble;
-
-            // Skip both hex digits
-            p += 2;
-
-            // Increment the byte that we are decoding within the UUID value
-            // and break out if we are done
-            if (++uuid_byte_idx == 16)
-                break;
-        }
-        else if (*p == '-')
-        {
-            // Skip dashes
-            p++;
-        }
-        else
-        {
-            // UUID values can only consist of hex characters and '-' chars
-            return 0;
-        }
-    }
     // If we successfully decoded a UUID, return the amount of characters that
     // were consumed
     if (uuid_byte_idx == 16)

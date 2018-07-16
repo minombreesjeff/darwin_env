@@ -6,9 +6,10 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class AbbreviationsTestCase(TestBase):
-    
+
     mydir = os.path.join("functionalities", "abbreviation")
 
     def test_nonrunning_command_abbreviations (self):
@@ -34,7 +35,13 @@ class AbbreviationsTestCase(TestBase):
         self.expect("h",
                     startstr = "The following is a list of built-in, permanent debugger commands:")
 
+        # Execute cleanup function during test tear down
+        def cleanup():
+            self.runCmd("command alias t thread select")
+        self.addTearDownHook(cleanup)
+
         # Several matching commands: list them and error out.
+        self.runCmd("command unalias t")
         self.expect("t",
                     COMMAND_FAILED_AS_EXPECTED, error = True,
                     substrs = ["Ambiguous command 't'. Possible matches:",
@@ -47,7 +54,7 @@ class AbbreviationsTestCase(TestBase):
                     startstr = 'prompt (string) = "[with-three-trailing-spaces]   "')
 
 
-        self.runCmd("settings set -r prompt")
+        self.runCmd("settings clear prompt")
         self.expect("settings show prompt",
                     startstr = 'prompt (string) = "(lldb) "')
 
@@ -59,7 +66,7 @@ class AbbreviationsTestCase(TestBase):
         self.expect("se sh prompt",
                     startstr = 'prompt (string) = "Sycamore> "')
 
-        self.runCmd("se se -r prompt")
+        self.runCmd("se cl prompt")
         self.expect("set sh prompt",
                     startstr = 'prompt (string) = "(lldb) "')
 
@@ -86,15 +93,15 @@ class AbbreviationsTestCase(TestBase):
         self.expect("fil " + exe,
                     patterns = [ "Current executable set to .*a.out.*" ])
 
-        self.expect("_regexp-b product",
-                    substrs = [ "breakpoint set --name 'product'",
-                                "Breakpoint created: 1: name = 'product', locations = 1" ])
+        # By default, the setting interpreter.expand-regex-aliases is false.
+        self.expect("_regexp-br product", matching=False,
+                    substrs = [ "breakpoint set --name" ])
 
-        self.expect("br s -n sum",
-                    startstr = "Breakpoint created: 2: name = 'sum', locations = 1")
+        match_object = lldbutil.run_break_set_command (self, "br s -n sum")
+        lldbutil.check_breakpoint_result (self, match_object, symbol_name='sum', symbol_match_exact=False, num_locations=1)
 
-        self.expect("br s -f main.cpp -l 32",
-                    startstr = "Breakpoint created: 3: file ='main.cpp', line = 32, locations = 1")
+        match_object = lldbutil.run_break_set_command (self, "br s -f main.cpp -l 32")
+        lldbutil.check_breakpoint_result (self, match_object, file_name='main.cpp', line_number=32, num_locations=1)
 
         self.runCmd("br co a -s python 1 -o 'print frame'")
         self.expect("br co l 1",
@@ -133,8 +140,8 @@ class AbbreviationsTestCase(TestBase):
                     patterns = [ "Process .* stopped",
                                  "thread #1:",
                                  "a.out",
-                                 "sum\(int, int\)",
-                                 "at main.cpp\:25", 
+                                 "sum\(a=1238, b=78392\)",
+                                 "at main.cpp\:25",
                                  "stop reason = breakpoint 2.1" ])
 
         # ARCH, if not specified, defaults to x86_64.
@@ -145,7 +152,7 @@ class AbbreviationsTestCase(TestBase):
                                    ' mov',
                                    ' addl ',
                                    'ret'],
-                        patterns = ['(leave|popq|popl)'])                               
+                        patterns = ['(leave|popq|popl)'])
 
         self.expect("i d l main.cpp",
                     patterns = ["Line table for .*main.cpp in `a.out"])

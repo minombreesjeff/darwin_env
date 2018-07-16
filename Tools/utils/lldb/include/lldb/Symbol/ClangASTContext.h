@@ -144,23 +144,27 @@ public:
     GetCompleteDecl (clang::ASTContext *ast,
                      clang::Decl *decl);
 
+    void SetMetadataAsUserID (uintptr_t object,
+                              lldb::user_id_t user_id);
+
     void SetMetadata (uintptr_t object,
-                      uint64_t metadata)
+                      ClangASTMetadata &meta_data)
     {
-        SetMetadata(getASTContext(), object, metadata);
+        SetMetadata(getASTContext(), object, meta_data);
     }
     
     static void
     SetMetadata (clang::ASTContext *ast,
                  uintptr_t object,
-                 uint64_t metadata);
+                 ClangASTMetadata &meta_data);
     
-    uint64_t GetMetadata (uintptr_t object)
+    ClangASTMetadata *
+    GetMetadata (uintptr_t object)
     {
         return GetMetadata(getASTContext(), object);
     }
     
-    static uint64_t
+    static ClangASTMetadata *
     GetMetadata (clang::ASTContext *ast,
                  uintptr_t object);
     
@@ -274,6 +278,9 @@ public:
     lldb::clang_type_t
     GetTypeForDecl (clang::ObjCInterfaceDecl *objc_decl);
 
+    static lldb::BasicType
+    GetLLDBBasicTypeEnumeration (lldb::clang_type_t clang_type);
+
     //------------------------------------------------------------------
     // CVR modifiers
     //------------------------------------------------------------------
@@ -297,7 +304,7 @@ public:
                       const char *name,
                       int kind,
                       lldb::LanguageType language,
-                      uint64_t metadata = 0);
+                      ClangASTMetadata *metadata = NULL);
 
     static clang::FieldDecl *
     AddFieldToRecordType (clang::ASTContext *ast,
@@ -456,7 +463,7 @@ public:
                      clang::DeclContext *decl_ctx, 
                      bool isForwardDecl, 
                      bool isInternal,
-                     uint64_t metadata = 0);
+                     ClangASTMetadata *metadata = NULL);
     
     static clang::FieldDecl *
     AddObjCClassIVar (clang::ASTContext *ast,
@@ -495,7 +502,7 @@ public:
         const char *property_setter_name,
         const char *property_getter_name,
         uint32_t property_attributes,
-        uint64_t metadata = 0
+        ClangASTMetadata *metadata = NULL
     );
 
     bool
@@ -508,7 +515,7 @@ public:
         const char *property_setter_name,
         const char *property_getter_name,
         uint32_t property_attributes,
-        uint64_t metadata = 0
+        ClangASTMetadata *metadata = NULL
     )
     {
         return ClangASTContext::AddObjCClassProperty (getASTContext(),
@@ -778,9 +785,8 @@ public:
     //------------------------------------------------------------------
 
     lldb::clang_type_t
-    CreateArrayType (lldb::clang_type_t  element_type,
-                     size_t element_count,
-                     uint32_t bit_stride);
+    CreateArrayType (lldb::clang_type_t element_type,
+                     size_t element_count);
 
     //------------------------------------------------------------------
     // Tag Declarations
@@ -868,9 +874,9 @@ public:
     static bool
     IsPossibleDynamicType (clang::ASTContext *ast, 
                            lldb::clang_type_t clang_type, 
-                           lldb::clang_type_t *dynamic_pointee_type = NULL,
-                           bool cplusplus = true,
-                           bool objc = true);
+                           lldb::clang_type_t *dynamic_pointee_type, // Can pass NULL
+                           bool check_cplusplus,
+                           bool check_objc);
 
     static bool
     IsCStringType (lldb::clang_type_t clang_type, uint32_t &length);
@@ -880,15 +886,17 @@ public:
     
     static lldb::clang_type_t
     GetAsArrayType (lldb::clang_type_t clang_type, 
-                    lldb::clang_type_t *member_type = NULL, 
-                    uint64_t *size = NULL);
+                    lldb::clang_type_t *member_type,
+                    uint64_t *size,
+                    bool *is_incomplete);
     
     static bool
     IsArrayType (lldb::clang_type_t clang_type,
-                 lldb::clang_type_t *member_type = NULL,
-                 uint64_t *size = NULL)
+                 lldb::clang_type_t *member_type,
+                 uint64_t *size,
+                 bool *is_incomplete)
     {
-        return GetAsArrayType(clang_type, member_type, size) != 0;
+        return GetAsArrayType(clang_type, member_type, size, is_incomplete) != 0;
     }
 
     //------------------------------------------------------------------

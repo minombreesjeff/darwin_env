@@ -30,7 +30,7 @@ typedef llvm::PointerIntPair<llvm::Value*,1,bool> TryEmitResult;
 static TryEmitResult
 tryEmitARCRetainScalarExpr(CodeGenFunction &CGF, const Expr *e);
 static RValue AdjustRelatedResultType(CodeGenFunction &CGF,
-                                      const Expr *E,
+                                      QualType ET,
                                       const ObjCMethodDecl *Method,
                                       RValue Result);
 
@@ -166,11 +166,12 @@ llvm::Value *CodeGenFunction::EmitObjCCollectionLiteral(const Expr *E,
   llvm::Value *Receiver = Runtime.GetClass(Builder, Class);
 
   // Generate the message send.
-  RValue result = Runtime.GenerateMessageSend(*this, ReturnValueSlot(), 
-                                              MethodWithObjects->getResultType(),
-                                              Sel,
-                                              Receiver, Args, Class,
-                                              MethodWithObjects);
+  RValue result
+    = Runtime.GenerateMessageSend(*this, ReturnValueSlot(), 
+                                  MethodWithObjects->getResultType(),
+                                  Sel,
+                                  Receiver, Args, Class,
+                                  MethodWithObjects);
   return Builder.CreateBitCast(result.getScalarVal(), 
                                ConvertType(E->getType()));
 }
@@ -201,20 +202,20 @@ llvm::Value *CodeGenFunction::EmitObjCProtocolExpr(const ObjCProtocolExpr *E) {
 /// \brief Adjust the type of the result of an Objective-C message send 
 /// expression when the method has a related result type.
 static RValue AdjustRelatedResultType(CodeGenFunction &CGF,
-                                      const Expr *E,
+                                      QualType ExpT,
                                       const ObjCMethodDecl *Method,
                                       RValue Result) {
   if (!Method)
     return Result;
 
   if (!Method->hasRelatedResultType() ||
-      CGF.getContext().hasSameType(E->getType(), Method->getResultType()) ||
+      CGF.getContext().hasSameType(ExpT, Method->getResultType()) ||
       !Result.isScalar())
     return Result;
   
   // We have applied a related result type. Cast the rvalue appropriately.
   return RValue::get(CGF.Builder.CreateBitCast(Result.getScalarVal(),
-                                               CGF.ConvertType(E->getType())));
+                                               CGF.ConvertType(ExpT)));
 }
 
 /// Decide whether to extend the lifetime of the receiver of a
@@ -280,7 +281,7 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
   // though.
   bool retainSelf =
     (!isDelegateInit &&
-     CGM.getLangOptions().ObjCAutoRefCount &&
+     CGM.getLangOpts().ObjCAutoRefCount &&
      method &&
      method->hasAttr<NSConsumesSelfAttr>());
 
@@ -334,7 +335,7 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
   // In ARC, we sometimes want to "extend the lifetime"
   // (i.e. retain+autorelease) of receivers of returns-inner-pointer
   // messages.
-  if (getLangOptions().ObjCAutoRefCount && method &&
+  if (getLangOpts().ObjCAutoRefCount && method &&
       method->hasAttr<ObjCReturnsInnerPointerAttr>() &&
       shouldExtendReceiverForInnerPointerMessage(E))
     Receiver = EmitARCRetainAutorelease(ReceiverType, Receiver);
@@ -353,7 +354,7 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
   // be an undefined read and write of an object in unordered
   // expressions.
   if (isDelegateInit) {
-    assert(getLangOptions().ObjCAutoRefCount &&
+    assert(getLangOpts().ObjCAutoRefCount &&
            "delegate init calls should only be marked in ARC");
 
     // Do an unsafe store of null into self.
@@ -400,7 +401,7 @@ RValue CodeGenFunction::EmitObjCMessageExpr(const ObjCMessageExpr *E,
     Builder.CreateStore(newSelf, selfAddr);
   }
 
-  return AdjustRelatedResultType(*this, E, method, result);
+  return AdjustRelatedResultType(*this, E->getType(), method, result);
 }
 
 namespace {
@@ -439,8 +440,8 @@ void CodeGenFunction::StartObjCMethod(const ObjCMethodDecl *OMD,
                                       SourceLocation StartLoc) {
   FunctionArgList args;
   // Check if we should generate debug info for this method.
-  if (CGM.getModuleDebugInfo() && !OMD->hasAttr<NoDebugAttr>())
-    DebugInfo = CGM.getModuleDebugInfo();
+  if (!OMD->hasAttr<NoDebugAttr>())
+    maybeInitializeDebugInfo();
 
   llvm::Function *Fn = CGM.getObjCRuntime().GenerateMethod(OMD, CD);
 
@@ -451,7 +452,7 @@ void CodeGenFunction::StartObjCMethod(const ObjCMethodDecl *OMD,
   args.push_back(OMD->getCmdDecl());
 
   for (ObjCMethodDecl::param_const_iterator PI = OMD->param_begin(),
-       E = OMD->param_end(); PI != E; ++PI)
+         E = OMD->param_end(); PI != E; ++PI)
     args.push_back(*PI);
 
   CurGD = OMD;
@@ -459,7 +460,7 @@ void CodeGenFunction::StartObjCMethod(const ObjCMethodDecl *OMD,
   StartFunction(OMD, OMD->getResultType(), Fn, FI, args, StartLoc);
 
   // In ARC, certain methods get an extra cleanup.
-  if (CGM.getLangOptions().ObjCAutoRefCount &&
+  if (CGM.getLangOpts().ObjCAutoRefCount &&
       OMD->isInstanceMethod() &&
       OMD->getSelector().isUnarySelector()) {
     const IdentifierInfo *ident = 
@@ -506,9 +507,9 @@ static void emitStructGetterCall(CodeGenFunction &CGF, ObjCIvarDecl *ivar,
   args.add(RValue::get(CGF.Builder.getInt1(hasStrong)), Context.BoolTy);
 
   llvm::Value *fn = CGF.CGM.getObjCRuntime().GetGetStructFunction();
-  CGF.EmitCall(CGF.getTypes().arrangeFunctionCall(Context.VoidTy, args,
-                                                  FunctionType::ExtInfo(),
-                                                  RequiredArgs::All),
+  CGF.EmitCall(CGF.getTypes().arrangeFreeFunctionCall(Context.VoidTy, args,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All),
                fn, ReturnValueSlot(), args);
 }
 
@@ -579,7 +580,7 @@ namespace {
   };
 }
 
-/// Pick an implementation strategy for the the given property synthesis.
+/// Pick an implementation strategy for the given property synthesis.
 PropertyImplStrategy::PropertyImplStrategy(CodeGenModule &CGM,
                                      const ObjCPropertyImplDecl *propImpl) {
   const ObjCPropertyDecl *prop = propImpl->getPropertyDecl();
@@ -605,14 +606,23 @@ PropertyImplStrategy::PropertyImplStrategy(CodeGenModule &CGM,
   // Handle retain.
   if (setterKind == ObjCPropertyDecl::Retain) {
     // In GC-only, there's nothing special that needs to be done.
-    if (CGM.getLangOptions().getGC() == LangOptions::GCOnly) {
+    if (CGM.getLangOpts().getGC() == LangOptions::GCOnly) {
       // fallthrough
 
     // In ARC, if the property is non-atomic, use expression emission,
     // which translates to objc_storeStrong.  This isn't required, but
     // it's slightly nicer.
-    } else if (CGM.getLangOptions().ObjCAutoRefCount && !IsAtomic) {
-      Kind = Expression;
+    } else if (CGM.getLangOpts().ObjCAutoRefCount && !IsAtomic) {
+      // Using standard expression emission for the setter is only
+      // acceptable if the ivar is __strong, which won't be true if
+      // the property is annotated with __attribute__((NSObject)).
+      // TODO: falling all the way back to objc_setProperty here is
+      // just laziness, though;  we could still use objc_storeStrong
+      // if we hacked it right.
+      if (ivarType.getObjCLifetime() == Qualifiers::OCL_Strong)
+        Kind = Expression;
+      else
+        Kind = SetPropertyAndExpressionGet;
       return;
 
     // Otherwise, we need to at least use setProperty.  However, if
@@ -646,14 +656,14 @@ PropertyImplStrategy::PropertyImplStrategy(CodeGenModule &CGM,
   // expressions.  This actually works out to being atomic anyway,
   // except for ARC __strong, but that should trigger the above code.
   if (ivarType.hasNonTrivialObjCLifetime() ||
-      (CGM.getLangOptions().getGC() &&
+      (CGM.getLangOpts().getGC() &&
        CGM.getContext().getObjCGCAttrKind(ivarType))) {
     Kind = Expression;
     return;
   }
 
   // Compute whether the ivar has strong members.
-  if (CGM.getLangOptions().getGC())
+  if (CGM.getLangOpts().getGC())
     if (const RecordType *recordType = ivarType->getAs<RecordType>())
       HasStrong = recordType->getDecl()->hasObjectMember();
 
@@ -697,8 +707,9 @@ PropertyImplStrategy::PropertyImplStrategy(CodeGenModule &CGM,
   Kind = Native;
 }
 
-/// GenerateObjCGetter - Generate an Objective-C property getter
-/// function. The given Decl must be an ObjCImplementationDecl. @synthesize
+/// \brief Generate an Objective-C property getter function.
+///
+/// The given Decl must be an ObjCImplementationDecl. \@synthesize
 /// is illegal within a category.
 void CodeGenFunction::GenerateObjCGetter(ObjCImplementationDecl *IMP,
                                          const ObjCPropertyImplDecl *PID) {
@@ -707,9 +718,9 @@ void CodeGenFunction::GenerateObjCGetter(ObjCImplementationDecl *IMP,
   const ObjCPropertyDecl *PD = PID->getPropertyDecl();
   ObjCMethodDecl *OMD = PD->getGetterMethodDecl();
   assert(OMD && "Invalid call to generate getter (empty method)");
-  StartObjCMethod(OMD, IMP->getClassInterface(), PID->getLocStart());
+  StartObjCMethod(OMD, IMP->getClassInterface(), OMD->getLocStart());
 
-  generateObjCGetterBody(IMP, PID, AtomicHelperFn);
+  generateObjCGetterBody(IMP, PID, OMD, AtomicHelperFn);
 
   FinishFunction();
 }
@@ -762,15 +773,17 @@ static void emitCPPObjectAtomicGetterCall(CodeGenFunction &CGF,
   
   llvm::Value *copyCppAtomicObjectFn = 
   CGF.CGM.getObjCRuntime().GetCppAtomicObjectFunction();
-  CGF.EmitCall(CGF.getTypes().arrangeFunctionCall(CGF.getContext().VoidTy, args,
-                                                  FunctionType::ExtInfo(),
-                                                  RequiredArgs::All),
+  CGF.EmitCall(CGF.getTypes().arrangeFreeFunctionCall(CGF.getContext().VoidTy,
+                                                      args,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All),
                copyCppAtomicObjectFn, ReturnValueSlot(), args);
 }
 
 void
 CodeGenFunction::generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
                                         const ObjCPropertyImplDecl *propImpl,
+                                        const ObjCMethodDecl *GetterMethodDecl,
                                         llvm::Constant *AtomicHelperFn) {
   // If there's a non-trivial 'get' expression, we just have to emit that.
   if (!hasTrivialGetExpr(propImpl)) {
@@ -797,6 +810,10 @@ CodeGenFunction::generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
   PropertyImplStrategy strategy(CGM, propImpl);
   switch (strategy.getKind()) {
   case PropertyImplStrategy::Native: {
+    // We don't need to do anything for a zero-size struct.
+    if (strategy.getIvarSize().isZero())
+      return;
+
     LValue LV = EmitLValueForIvar(TypeOfSelfObject(), LoadObjCSelf(), ivar, 0);
 
     // Currently, all atomic accesses have to be through integer
@@ -849,16 +866,16 @@ CodeGenFunction::generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
 
     // FIXME: We shouldn't need to get the function info here, the
     // runtime already should have computed it to build the function.
-    RValue RV = EmitCall(getTypes().arrangeFunctionCall(propType, args,
-                                                        FunctionType::ExtInfo(),
-                                                        RequiredArgs::All),
+    RValue RV = EmitCall(getTypes().arrangeFreeFunctionCall(propType, args,
+                                                       FunctionType::ExtInfo(),
+                                                            RequiredArgs::All),
                          getPropertyFn, ReturnValueSlot(), args);
 
     // We need to fix the type here. Ivars with copy & retain are
     // always objects so we don't need to worry about complex or
     // aggregates.
     RV = RValue::get(Builder.CreateBitCast(RV.getScalarVal(),
-                                           getTypes().ConvertType(propType)));
+           getTypes().ConvertType(getterMethod->getResultType())));
 
     EmitReturnOfRValue(RV, propType);
 
@@ -904,6 +921,8 @@ CodeGenFunction::generateObjCGetterBody(const ObjCImplementationDecl *classImpl,
         }
 
         value = Builder.CreateBitCast(value, ConvertType(propType));
+        value = Builder.CreateBitCast(value, 
+                  ConvertType(GetterMethodDecl->getResultType()));
       }
       
       EmitReturnOfRValue(RValue::get(value), propType);
@@ -932,7 +951,7 @@ static void emitStructSetterCall(CodeGenFunction &CGF, ObjCMethodDecl *OMD,
 
   // The second argument is the address of the parameter variable.
   ParmVarDecl *argVar = *OMD->param_begin();
-  DeclRefExpr argRef(argVar, argVar->getType().getNonReferenceType(), 
+  DeclRefExpr argRef(argVar, false, argVar->getType().getNonReferenceType(), 
                      VK_LValue, SourceLocation());
   llvm::Value *argAddr = CGF.EmitLValue(&argRef).getAddress();
   argAddr = CGF.Builder.CreateBitCast(argAddr, CGF.Int8PtrTy);
@@ -951,9 +970,10 @@ static void emitStructSetterCall(CodeGenFunction &CGF, ObjCMethodDecl *OMD,
   args.add(RValue::get(CGF.Builder.getFalse()), CGF.getContext().BoolTy);
 
   llvm::Value *copyStructFn = CGF.CGM.getObjCRuntime().GetSetStructFunction();
-  CGF.EmitCall(CGF.getTypes().arrangeFunctionCall(CGF.getContext().VoidTy, args,
-                                                  FunctionType::ExtInfo(),
-                                                  RequiredArgs::All),
+  CGF.EmitCall(CGF.getTypes().arrangeFreeFunctionCall(CGF.getContext().VoidTy,
+                                                      args,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All),
                copyStructFn, ReturnValueSlot(), args);
 }
 
@@ -977,7 +997,7 @@ static void emitCPPObjectAtomicSetterCall(CodeGenFunction &CGF,
   
   // The second argument is the address of the parameter variable.
   ParmVarDecl *argVar = *OMD->param_begin();
-  DeclRefExpr argRef(argVar, argVar->getType().getNonReferenceType(), 
+  DeclRefExpr argRef(argVar, false, argVar->getType().getNonReferenceType(), 
                      VK_LValue, SourceLocation());
   llvm::Value *argAddr = CGF.EmitLValue(&argRef).getAddress();
   argAddr = CGF.Builder.CreateBitCast(argAddr, CGF.Int8PtrTy);
@@ -988,9 +1008,10 @@ static void emitCPPObjectAtomicSetterCall(CodeGenFunction &CGF,
   
   llvm::Value *copyCppAtomicObjectFn = 
     CGF.CGM.getObjCRuntime().GetCppAtomicObjectFunction();
-  CGF.EmitCall(CGF.getTypes().arrangeFunctionCall(CGF.getContext().VoidTy, args,
-                                                  FunctionType::ExtInfo(),
-                                                  RequiredArgs::All),
+  CGF.EmitCall(CGF.getTypes().arrangeFreeFunctionCall(CGF.getContext().VoidTy,
+                                                      args,
+                                                      FunctionType::ExtInfo(),
+                                                      RequiredArgs::All),
                copyCppAtomicObjectFn, ReturnValueSlot(), args);
   
 
@@ -1021,24 +1042,10 @@ static bool hasTrivialSetExpr(const ObjCPropertyImplDecl *PID) {
   return false;
 }
 
-bool UseOptimizedSetter(CodeGenModule &CGM) {
-  if (CGM.getLangOptions().getGC() != LangOptions::NonGC)
+static bool UseOptimizedSetter(CodeGenModule &CGM) {
+  if (CGM.getLangOpts().getGC() != LangOptions::NonGC)
     return false;
-  const TargetInfo &Target = CGM.getContext().getTargetInfo();
-  StringRef TargetPlatform = Target.getPlatformName();
-  if (TargetPlatform.empty())
-    return false;
-  VersionTuple TargetMinVersion = Target.getPlatformMinVersion();
-  
-  if (TargetPlatform.compare("macosx") ||
-      TargetMinVersion.getMajor() <= 9)
-    return false;
-  
-  unsigned minor = 0;
-  if (llvm::Optional<unsigned> Minor = TargetMinVersion.getMinor())
-    minor = *Minor;
-  
-  return (minor >= 8);
+  return CGM.getLangOpts().ObjCRuntime.hasOptimizedSetter();
 }
 
 void
@@ -1065,6 +1072,10 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
   PropertyImplStrategy strategy(CGM, propImpl);
   switch (strategy.getKind()) {
   case PropertyImplStrategy::Native: {
+    // We don't need to do anything for a zero-size struct.
+    if (strategy.getIvarSize().isZero())
+      return;
+
     llvm::Value *argAddr = LocalDeclMap[*setterMethod->param_begin()];
 
     LValue ivarLValue =
@@ -1098,10 +1109,11 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
     llvm::Value *setOptimizedPropertyFn = 0;
     llvm::Value *setPropertyFn = 0;
     if (UseOptimizedSetter(CGM)) {
-      // 10.8 code and GC is off
+      // 10.8 and iOS 6.0 code and GC is off
       setOptimizedPropertyFn = 
-        CGM.getObjCRuntime().GetOptimizedPropertySetFunction(strategy.isAtomic(),
-                                                             strategy.isCopy());
+        CGM.getObjCRuntime()
+           .GetOptimizedPropertySetFunction(strategy.isAtomic(),
+                                            strategy.isCopy());
       if (!setOptimizedPropertyFn) {
         CGM.ErrorUnsupported(propImpl, "Obj-C optimized setter - NYI");
         return;
@@ -1132,9 +1144,9 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
     if (setOptimizedPropertyFn) {
       args.add(RValue::get(arg), getContext().getObjCIdType());
       args.add(RValue::get(ivarOffset), getContext().getPointerDiffType());
-      EmitCall(getTypes().arrangeFunctionCall(getContext().VoidTy, args,
-                                              FunctionType::ExtInfo(),
-                                              RequiredArgs::All),
+      EmitCall(getTypes().arrangeFreeFunctionCall(getContext().VoidTy, args,
+                                                  FunctionType::ExtInfo(),
+                                                  RequiredArgs::All),
                setOptimizedPropertyFn, ReturnValueSlot(), args);
     } else {
       args.add(RValue::get(ivarOffset), getContext().getPointerDiffType());
@@ -1145,9 +1157,9 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
                getContext().BoolTy);
       // FIXME: We shouldn't need to get the function info here, the runtime
       // already should have computed it to build the function.
-      EmitCall(getTypes().arrangeFunctionCall(getContext().VoidTy, args,
-                                              FunctionType::ExtInfo(),
-                                              RequiredArgs::All),
+      EmitCall(getTypes().arrangeFreeFunctionCall(getContext().VoidTy, args,
+                                                  FunctionType::ExtInfo(),
+                                                  RequiredArgs::All),
                setPropertyFn, ReturnValueSlot(), args);
     }
     
@@ -1164,7 +1176,8 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
 
   // Otherwise, fake up some ASTs and emit a normal assignment.
   ValueDecl *selfDecl = setterMethod->getSelfDecl();
-  DeclRefExpr self(selfDecl, selfDecl->getType(), VK_LValue, SourceLocation());
+  DeclRefExpr self(selfDecl, false, selfDecl->getType(),
+                   VK_LValue, SourceLocation());
   ImplicitCastExpr selfLoad(ImplicitCastExpr::OnStack,
                             selfDecl->getType(), CK_LValueToRValue, &self,
                             VK_RValue);
@@ -1173,7 +1186,7 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
 
   ParmVarDecl *argDecl = *setterMethod->param_begin();
   QualType argType = argDecl->getType().getNonReferenceType();
-  DeclRefExpr arg(argDecl, argType, VK_LValue, SourceLocation());
+  DeclRefExpr arg(argDecl, false, argType, VK_LValue, SourceLocation());
   ImplicitCastExpr argLoad(ImplicitCastExpr::OnStack,
                            argType.getUnqualifiedType(), CK_LValueToRValue,
                            &arg, VK_RValue);
@@ -1208,12 +1221,13 @@ CodeGenFunction::generateObjCSetterBody(const ObjCImplementationDecl *classImpl,
 
   BinaryOperator assign(&ivarRef, finalArg, BO_Assign,
                         ivarRef.getType(), VK_RValue, OK_Ordinary,
-                        SourceLocation());
+                        SourceLocation(), false);
   EmitStmt(&assign);
 }
 
-/// GenerateObjCSetter - Generate an Objective-C property setter
-/// function. The given Decl must be an ObjCImplementationDecl. @synthesize
+/// \brief Generate an Objective-C property setter function.
+///
+/// The given Decl must be an ObjCImplementationDecl. \@synthesize
 /// is illegal within a category.
 void CodeGenFunction::GenerateObjCSetter(ObjCImplementationDecl *IMP,
                                          const ObjCPropertyImplDecl *PID) {
@@ -1222,7 +1236,7 @@ void CodeGenFunction::GenerateObjCSetter(ObjCImplementationDecl *IMP,
   const ObjCPropertyDecl *PD = PID->getPropertyDecl();
   ObjCMethodDecl *OMD = PD->getSetterMethodDecl();
   assert(OMD && "Invalid call to generate setter (empty method)");
-  StartObjCMethod(OMD, IMP->getClassInterface(), PID->getLocStart());
+  StartObjCMethod(OMD, IMP->getClassInterface(), OMD->getLocStart());
 
   generateObjCSetterBody(IMP, PID, AtomicHelperFn);
 
@@ -1343,7 +1357,7 @@ bool CodeGenFunction::IndirectObjCSetterArg(const CGFunctionInfo &FI) {
 }
 
 bool CodeGenFunction::IvarTypeWithAggrGCObjects(QualType Ty) {
-  if (CGM.getLangOptions().getGC() == LangOptions::NonGC)
+  if (CGM.getLangOpts().getGC() == LangOptions::NonGC)
     return false;
   if (const RecordType *FDTTy = Ty.getTypePtr()->getAs<RecordType>())
     return FDTTy->getDecl()->hasObjectMember();
@@ -1408,7 +1422,7 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
 
   // Emit the collection pointer.  In ARC, we do a retain.
   llvm::Value *Collection;
-  if (getLangOptions().ObjCAutoRefCount) {
+  if (getLangOpts().ObjCAutoRefCount) {
     Collection = EmitARCRetainScalarExpr(S.getCollection());
 
     // Enter a cleanup to do the release.
@@ -1508,9 +1522,9 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
   Args2.add(RValue::get(V), getContext().getObjCIdType());
   // FIXME: We shouldn't need to get the function info here, the runtime already
   // should have computed it to build the function.
-  EmitCall(CGM.getTypes().arrangeFunctionCall(getContext().VoidTy, Args2,
-                                              FunctionType::ExtInfo(),
-                                              RequiredArgs::All),
+  EmitCall(CGM.getTypes().arrangeFreeFunctionCall(getContext().VoidTy, Args2,
+                                                  FunctionType::ExtInfo(),
+                                                  RequiredArgs::All),
            EnumerationMutationFn, ReturnValueSlot(), Args2);
 
   // Otherwise, or if the mutation function returns, just continue.
@@ -1526,7 +1540,7 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
     EmitAutoVarInit(variable);
 
     const VarDecl* D = cast<VarDecl>(SD->getSingleDecl());
-    DeclRefExpr tempDRE(const_cast<VarDecl*>(D), D->getType(),
+    DeclRefExpr tempDRE(const_cast<VarDecl*>(D), false, D->getType(),
                         VK_LValue, SourceLocation());
     elementLValue = EmitLValue(&tempDRE);
     elementType = D->getType();
@@ -1633,7 +1647,7 @@ void CodeGenFunction::EmitObjCForCollectionStmt(const ObjCForCollectionStmt &S){
     DI->EmitLexicalBlockEnd(Builder, S.getSourceRange().getEnd());
 
   // Leave the cleanup we entered in ARC.
-  if (getLangOptions().ObjCAutoRefCount)
+  if (getLangOpts().ObjCAutoRefCount)
     PopCleanupBlock();
 
   EmitBlock(LoopEnd.getBlock());
@@ -1691,11 +1705,16 @@ static llvm::Constant *createARCRuntimeFunction(CodeGenModule &CGM,
                                                 StringRef fnName) {
   llvm::Constant *fn = CGM.CreateRuntimeFunction(type, fnName);
 
-  // In -fobjc-no-arc-runtime, emit weak references to the runtime
-  // support library.
-  if (!CGM.getCodeGenOpts().ObjCRuntimeHasARC)
-    if (llvm::Function *f = dyn_cast<llvm::Function>(fn))
+  // If the target runtime doesn't naturally support ARC, emit weak
+  // references to the runtime support library.  We don't really
+  // permit this to fail, but we need a particular relocation style.
+  if (llvm::Function *f = dyn_cast<llvm::Function>(fn)) {
+    if (!CGM.getLangOpts().ObjCRuntime.hasNativeARC())
       f->setLinkage(llvm::Function::ExternalWeakLinkage);
+    // set nonlazybind attribute for these APIs for performance.
+    if (fnName == "objc_retain" || fnName  == "objc_release")
+      f->addFnAttr(llvm::Attribute::NonLazyBind);
+  }
 
   return fn;
 }
@@ -1814,8 +1833,8 @@ static void emitARCCopyOperation(CodeGenFunction &CGF,
 }
 
 /// Produce the code to do a retain.  Based on the type, calls one of:
-///   call i8* @objc_retain(i8* %value)
-///   call i8* @objc_retainBlock(i8* %value)
+///   call i8* \@objc_retain(i8* %value)
+///   call i8* \@objc_retainBlock(i8* %value)
 llvm::Value *CodeGenFunction::EmitARCRetain(QualType type, llvm::Value *value) {
   if (type->isBlockPointerType())
     return EmitARCRetainBlock(value, /*mandatory*/ false);
@@ -1824,7 +1843,7 @@ llvm::Value *CodeGenFunction::EmitARCRetain(QualType type, llvm::Value *value) {
 }
 
 /// Retain the given object, with normal retain semantics.
-///   call i8* @objc_retain(i8* %value)
+///   call i8* \@objc_retain(i8* %value)
 llvm::Value *CodeGenFunction::EmitARCRetainNonBlock(llvm::Value *value) {
   return emitARCValueOperation(*this, value,
                                CGM.getARCEntrypoints().objc_retain,
@@ -1832,7 +1851,7 @@ llvm::Value *CodeGenFunction::EmitARCRetainNonBlock(llvm::Value *value) {
 }
 
 /// Retain the given block, with _Block_copy semantics.
-///   call i8* @objc_retainBlock(i8* %value)
+///   call i8* \@objc_retainBlock(i8* %value)
 ///
 /// \param mandatory - If false, emit the call with metadata
 /// indicating that it's okay for the optimizer to eliminate this call
@@ -1862,7 +1881,7 @@ llvm::Value *CodeGenFunction::EmitARCRetainBlock(llvm::Value *value,
 }
 
 /// Retain the given object which is the result of a function call.
-///   call i8* @objc_retainAutoreleasedReturnValue(i8* %value)
+///   call i8* \@objc_retainAutoreleasedReturnValue(i8* %value)
 ///
 /// Yes, this function name is one character away from a different
 /// call with completely different semantics.
@@ -1912,7 +1931,7 @@ CodeGenFunction::EmitARCRetainAutoreleasedReturnValue(llvm::Value *value) {
 }
 
 /// Release the given object.
-///   call void @objc_release(i8* %value)
+///   call void \@objc_release(i8* %value)
 void CodeGenFunction::EmitARCRelease(llvm::Value *value, bool precise) {
   if (isa<llvm::ConstantPointerNull>(value)) return;
 
@@ -1938,8 +1957,30 @@ void CodeGenFunction::EmitARCRelease(llvm::Value *value, bool precise) {
   }
 }
 
+/// Destroy a __strong variable.
+///
+/// At -O0, emit a call to store 'null' into the address;
+/// instrumenting tools prefer this because the address is exposed,
+/// but it's relatively cumbersome to optimize.
+///
+/// At -O1 and above, just load and call objc_release.
+///
+///   call void \@objc_storeStrong(i8** %addr, i8* null)
+void CodeGenFunction::EmitARCDestroyStrong(llvm::Value *addr, bool precise) {
+  if (CGM.getCodeGenOpts().OptimizationLevel == 0) {
+    llvm::PointerType *addrTy = cast<llvm::PointerType>(addr->getType());
+    llvm::Value *null = llvm::ConstantPointerNull::get(
+                          cast<llvm::PointerType>(addrTy->getElementType()));
+    EmitARCStoreStrongCall(addr, null, /*ignored*/ true);
+    return;
+  }
+
+  llvm::Value *value = Builder.CreateLoad(addr);
+  EmitARCRelease(value, precise);
+}
+
 /// Store into a strong object.  Always calls this:
-///   call void @objc_storeStrong(i8** %addr, i8* %value)
+///   call void \@objc_storeStrong(i8** %addr, i8* %value)
 llvm::Value *CodeGenFunction::EmitARCStoreStrongCall(llvm::Value *addr,
                                                      llvm::Value *value,
                                                      bool ignored) {
@@ -1964,7 +2005,7 @@ llvm::Value *CodeGenFunction::EmitARCStoreStrongCall(llvm::Value *addr,
 }
 
 /// Store into a strong object.  Sometimes calls this:
-///   call void @objc_storeStrong(i8** %addr, i8* %value)
+///   call void \@objc_storeStrong(i8** %addr, i8* %value)
 /// Other times, breaks it down into components.
 llvm::Value *CodeGenFunction::EmitARCStoreStrong(LValue dst,
                                                  llvm::Value *newValue,
@@ -2000,7 +2041,7 @@ llvm::Value *CodeGenFunction::EmitARCStoreStrong(LValue dst,
 }
 
 /// Autorelease the given object.
-///   call i8* @objc_autorelease(i8* %value)
+///   call i8* \@objc_autorelease(i8* %value)
 llvm::Value *CodeGenFunction::EmitARCAutorelease(llvm::Value *value) {
   return emitARCValueOperation(*this, value,
                                CGM.getARCEntrypoints().objc_autorelease,
@@ -2008,7 +2049,7 @@ llvm::Value *CodeGenFunction::EmitARCAutorelease(llvm::Value *value) {
 }
 
 /// Autorelease the given object.
-///   call i8* @objc_autoreleaseReturnValue(i8* %value)
+///   call i8* \@objc_autoreleaseReturnValue(i8* %value)
 llvm::Value *
 CodeGenFunction::EmitARCAutoreleaseReturnValue(llvm::Value *value) {
   return emitARCValueOperation(*this, value,
@@ -2017,7 +2058,7 @@ CodeGenFunction::EmitARCAutoreleaseReturnValue(llvm::Value *value) {
 }
 
 /// Do a fused retain/autorelease of the given object.
-///   call i8* @objc_retainAutoreleaseReturnValue(i8* %value)
+///   call i8* \@objc_retainAutoreleaseReturnValue(i8* %value)
 llvm::Value *
 CodeGenFunction::EmitARCRetainAutoreleaseReturnValue(llvm::Value *value) {
   return emitARCValueOperation(*this, value,
@@ -2026,10 +2067,10 @@ CodeGenFunction::EmitARCRetainAutoreleaseReturnValue(llvm::Value *value) {
 }
 
 /// Do a fused retain/autorelease of the given object.
-///   call i8* @objc_retainAutorelease(i8* %value)
+///   call i8* \@objc_retainAutorelease(i8* %value)
 /// or
-///   %retain = call i8* @objc_retainBlock(i8* %value)
-///   call i8* @objc_autorelease(i8* %retain)
+///   %retain = call i8* \@objc_retainBlock(i8* %value)
+///   call i8* \@objc_autorelease(i8* %retain)
 llvm::Value *CodeGenFunction::EmitARCRetainAutorelease(QualType type,
                                                        llvm::Value *value) {
   if (!type->isBlockPointerType())
@@ -2045,7 +2086,7 @@ llvm::Value *CodeGenFunction::EmitARCRetainAutorelease(QualType type,
 }
 
 /// Do a fused retain/autorelease of the given object.
-///   call i8* @objc_retainAutorelease(i8* %value)
+///   call i8* \@objc_retainAutorelease(i8* %value)
 llvm::Value *
 CodeGenFunction::EmitARCRetainAutoreleaseNonBlock(llvm::Value *value) {
   return emitARCValueOperation(*this, value,
@@ -2053,7 +2094,7 @@ CodeGenFunction::EmitARCRetainAutoreleaseNonBlock(llvm::Value *value) {
                                "objc_retainAutorelease");
 }
 
-/// i8* @objc_loadWeak(i8** %addr)
+/// i8* \@objc_loadWeak(i8** %addr)
 /// Essentially objc_autorelease(objc_loadWeakRetained(addr)).
 llvm::Value *CodeGenFunction::EmitARCLoadWeak(llvm::Value *addr) {
   return emitARCLoadOperation(*this, addr,
@@ -2061,14 +2102,14 @@ llvm::Value *CodeGenFunction::EmitARCLoadWeak(llvm::Value *addr) {
                               "objc_loadWeak");
 }
 
-/// i8* @objc_loadWeakRetained(i8** %addr)
+/// i8* \@objc_loadWeakRetained(i8** %addr)
 llvm::Value *CodeGenFunction::EmitARCLoadWeakRetained(llvm::Value *addr) {
   return emitARCLoadOperation(*this, addr,
                               CGM.getARCEntrypoints().objc_loadWeakRetained,
                               "objc_loadWeakRetained");
 }
 
-/// i8* @objc_storeWeak(i8** %addr, i8* %value)
+/// i8* \@objc_storeWeak(i8** %addr, i8* %value)
 /// Returns %value.
 llvm::Value *CodeGenFunction::EmitARCStoreWeak(llvm::Value *addr,
                                                llvm::Value *value,
@@ -2078,7 +2119,7 @@ llvm::Value *CodeGenFunction::EmitARCStoreWeak(llvm::Value *addr,
                                "objc_storeWeak", ignored);
 }
 
-/// i8* @objc_initWeak(i8** %addr, i8* %value)
+/// i8* \@objc_initWeak(i8** %addr, i8* %value)
 /// Returns %value.  %addr is known to not have a current weak entry.
 /// Essentially equivalent to:
 ///   *addr = nil; objc_storeWeak(addr, value);
@@ -2098,7 +2139,7 @@ void CodeGenFunction::EmitARCInitWeak(llvm::Value *addr, llvm::Value *value) {
                         "objc_initWeak", /*ignored*/ true);
 }
 
-/// void @objc_destroyWeak(i8** %addr)
+/// void \@objc_destroyWeak(i8** %addr)
 /// Essentially objc_storeWeak(addr, nil).
 void CodeGenFunction::EmitARCDestroyWeak(llvm::Value *addr) {
   llvm::Constant *&fn = CGM.getARCEntrypoints().objc_destroyWeak;
@@ -2116,7 +2157,7 @@ void CodeGenFunction::EmitARCDestroyWeak(llvm::Value *addr) {
   call->setDoesNotThrow();
 }
 
-/// void @objc_moveWeak(i8** %dest, i8** %src)
+/// void \@objc_moveWeak(i8** %dest, i8** %src)
 /// Disregards the current value in %dest.  Leaves %src pointing to nothing.
 /// Essentially (objc_copyWeak(dest, src), objc_destroyWeak(src)).
 void CodeGenFunction::EmitARCMoveWeak(llvm::Value *dst, llvm::Value *src) {
@@ -2125,7 +2166,7 @@ void CodeGenFunction::EmitARCMoveWeak(llvm::Value *dst, llvm::Value *src) {
                        "objc_moveWeak");
 }
 
-/// void @objc_copyWeak(i8** %dest, i8** %src)
+/// void \@objc_copyWeak(i8** %dest, i8** %src)
 /// Disregards the current value in %dest.  Essentially
 ///   objc_release(objc_initWeak(dest, objc_readWeakRetained(src)))
 void CodeGenFunction::EmitARCCopyWeak(llvm::Value *dst, llvm::Value *src) {
@@ -2135,7 +2176,7 @@ void CodeGenFunction::EmitARCCopyWeak(llvm::Value *dst, llvm::Value *src) {
 }
 
 /// Produce the code to do a objc_autoreleasepool_push.
-///   call i8* @objc_autoreleasePoolPush(void)
+///   call i8* \@objc_autoreleasePoolPush(void)
 llvm::Value *CodeGenFunction::EmitObjCAutoreleasePoolPush() {
   llvm::Constant *&fn = CGM.getRREntrypoints().objc_autoreleasePoolPush;
   if (!fn) {
@@ -2151,7 +2192,7 @@ llvm::Value *CodeGenFunction::EmitObjCAutoreleasePoolPush() {
 }
 
 /// Produce the code to do a primitive release.
-///   call void @objc_autoreleasePoolPop(i8* %ptr)
+///   call void \@objc_autoreleasePoolPop(i8* %ptr)
 void CodeGenFunction::EmitObjCAutoreleasePoolPop(llvm::Value *value) {
   assert(value->getType() == Int8PtrTy);
 
@@ -2211,15 +2252,13 @@ void CodeGenFunction::EmitObjCMRRAutoreleasePoolPop(llvm::Value *Arg) {
 void CodeGenFunction::destroyARCStrongPrecise(CodeGenFunction &CGF,
                                               llvm::Value *addr,
                                               QualType type) {
-  llvm::Value *ptr = CGF.Builder.CreateLoad(addr, "strongdestroy");
-  CGF.EmitARCRelease(ptr, /*precise*/ true);
+  CGF.EmitARCDestroyStrong(addr, /*precise*/ true);
 }
 
 void CodeGenFunction::destroyARCStrongImprecise(CodeGenFunction &CGF,
                                                 llvm::Value *addr,
                                                 QualType type) {
-  llvm::Value *ptr = CGF.Builder.CreateLoad(addr, "strongdestroy");
-  CGF.EmitARCRelease(ptr, /*precise*/ false);  
+  CGF.EmitARCDestroyStrong(addr, /*precise*/ false);
 }
 
 void CodeGenFunction::destroyARCWeak(CodeGenFunction &CGF,
@@ -2250,7 +2289,7 @@ namespace {
 }
 
 void CodeGenFunction::EmitObjCAutoreleasePoolCleanup(llvm::Value *Ptr) {
-  if (CGM.getLangOptions().ObjCAutoRefCount)
+  if (CGM.getLangOpts().ObjCAutoRefCount)
     EHStack.pushCleanup<CallObjCAutoreleasePoolObject>(NormalCleanup, Ptr);
   else
     EHStack.pushCleanup<CallObjCMRRAutoreleasePoolObject>(NormalCleanup, Ptr);
@@ -2301,7 +2340,7 @@ static TryEmitResult tryEmitARCRetainLoadOfScalar(CodeGenFunction &CGF,
   // As a very special optimization, in ARC++, if the l-value is the
   // result of a non-volatile assignment, do a simple retain of the
   // result of the call to objc_storeWeak instead of reloading.
-  if (CGF.getLangOptions().CPlusPlus &&
+  if (CGF.getLangOpts().CPlusPlus &&
       !type.isVolatileQualified() &&
       type.getObjCLifetime() == Qualifiers::OCL_Weak &&
       isa<BinaryOperator>(e) &&
@@ -2646,7 +2685,7 @@ llvm::Value *CodeGenFunction::EmitARCExtendBlockObject(const Expr *e) {
 
 llvm::Value *CodeGenFunction::EmitObjCThrowOperand(const Expr *expr) {
   // In ARC, retain and autorelease the expression.
-  if (getLangOptions().ObjCAutoRefCount) {
+  if (getLangOpts().ObjCAutoRefCount) {
     // Do so before running any cleanups for the full-expression.
     // tryEmitARCRetainScalarExpr does make an effort to do things
     // inside cleanups, but there are crazy cases like
@@ -2713,7 +2752,7 @@ CodeGenFunction::EmitARCStoreAutoreleasing(const BinaryOperator *e) {
 }
 
 void CodeGenFunction::EmitObjCAutoreleasePoolStmt(
-                                             const ObjCAutoreleasePoolStmt &ARPS) {
+                                          const ObjCAutoreleasePoolStmt &ARPS) {
   const Stmt *subStmt = ARPS.getSubStmt();
   const CompoundStmt &S = cast<CompoundStmt>(*subStmt);
 
@@ -2723,7 +2762,7 @@ void CodeGenFunction::EmitObjCAutoreleasePoolStmt(
 
   // Keep track of the current cleanup stack depth.
   RunCleanupsScope Scope(*this);
-  if (CGM.getCodeGenOpts().ObjCRuntimeHasARC) {
+  if (CGM.getLangOpts().ObjCRuntime.hasNativeARC()) {
     llvm::Value *token = EmitObjCAutoreleasePoolPush();
     EHStack.pushCleanup<CallObjCAutoreleasePoolObject>(NormalCleanup, token);
   } else {
@@ -2755,6 +2794,11 @@ void CodeGenFunction::EmitExtendGCLifetime(llvm::Value *object) {
   Builder.CreateCall(extender, object)->setDoesNotThrow();
 }
 
+static bool hasAtomicCopyHelperAPI(const ObjCRuntime &runtime) {
+  // For now, only NeXT has these APIs.
+  return runtime.isNeXTFamily();
+}
+
 /// GenerateObjCAtomicSetterCopyHelperFunction - Given a c++ object type with
 /// non-trivial copy assignment function, produce following helper function.
 /// static void copyHelper(Ty *dest, const Ty *source) { *dest = *source; }
@@ -2763,7 +2807,8 @@ llvm::Constant *
 CodeGenFunction::GenerateObjCAtomicSetterCopyHelperFunction(
                                         const ObjCPropertyImplDecl *PID) {
   // FIXME. This api is for NeXt runtime only for now.
-  if (!getLangOptions().CPlusPlus || !getLangOptions().NeXTRuntime)
+  if (!getLangOpts().CPlusPlus ||
+      !hasAtomicCopyHelperAPI(getLangOpts().ObjCRuntime))
     return 0;
   QualType Ty = PID->getPropertyIvarDecl()->getType();
   if (!Ty->isRecordType())
@@ -2788,7 +2833,7 @@ CodeGenFunction::GenerateObjCAtomicSetterCopyHelperFunction(
                                           SC_Static,
                                           SC_None,
                                           false,
-                                          true);
+                                          false);
   
   QualType DestTy = C.getPointerType(Ty);
   QualType SrcTy = Ty;
@@ -2810,36 +2855,31 @@ CodeGenFunction::GenerateObjCAtomicSetterCopyHelperFunction(
   
   llvm::Function *Fn =
     llvm::Function::Create(LTy, llvm::GlobalValue::InternalLinkage,
-                           "__assign_helper_atomic_property_", &CGM.getModule());
+                           "__assign_helper_atomic_property_",
+                           &CGM.getModule());
   
-  if (CGM.getModuleDebugInfo())
-    DebugInfo = CGM.getModuleDebugInfo();
-  
+  // Initialize debug info if needed.
+  maybeInitializeDebugInfo();
   
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
   
-  DeclRefExpr *DstExpr = 
-    new (C) DeclRefExpr(&dstDecl, DestTy,
-                              VK_RValue, SourceLocation());
+  DeclRefExpr DstExpr(&dstDecl, false, DestTy,
+                      VK_RValue, SourceLocation());
+  UnaryOperator DST(&DstExpr, UO_Deref, DestTy->getPointeeType(),
+                    VK_LValue, OK_Ordinary, SourceLocation());
   
-  Expr* DST = new (C) UnaryOperator(DstExpr, UO_Deref, DestTy->getPointeeType(),
-                                    VK_LValue, OK_Ordinary, SourceLocation());
+  DeclRefExpr SrcExpr(&srcDecl, false, SrcTy,
+                      VK_RValue, SourceLocation());
+  UnaryOperator SRC(&SrcExpr, UO_Deref, SrcTy->getPointeeType(),
+                    VK_LValue, OK_Ordinary, SourceLocation());
   
-  DeclRefExpr *SrcExpr = 
-    new (C) DeclRefExpr(&srcDecl, SrcTy,
-                        VK_RValue, SourceLocation());
-  
-  Expr* SRC = new (C) UnaryOperator(SrcExpr, UO_Deref, SrcTy->getPointeeType(),
-                                    VK_LValue, OK_Ordinary, SourceLocation());
-  
-  Expr *Args[2] = { DST, SRC };
+  Expr *Args[2] = { &DST, &SRC };
   CallExpr *CalleeExp = cast<CallExpr>(PID->getSetterCXXAssignment());
-  CXXOperatorCallExpr *TheCall =
-    new (C) CXXOperatorCallExpr(C, OO_Equal, CalleeExp->getCallee(),
-                                Args, 2, DestTy->getPointeeType(), 
-                                VK_LValue, SourceLocation());
-
-  EmitStmt(TheCall);
+  CXXOperatorCallExpr TheCall(C, OO_Equal, CalleeExp->getCallee(),
+                              Args, DestTy->getPointeeType(),
+                              VK_LValue, SourceLocation(), false);
+  
+  EmitStmt(&TheCall);
 
   FinishFunction();
   HelperFn = llvm::ConstantExpr::getBitCast(Fn, VoidPtrTy);
@@ -2851,7 +2891,8 @@ llvm::Constant *
 CodeGenFunction::GenerateObjCAtomicGetterCopyHelperFunction(
                                             const ObjCPropertyImplDecl *PID) {
   // FIXME. This api is for NeXt runtime only for now.
-  if (!getLangOptions().CPlusPlus || !getLangOptions().NeXTRuntime)
+  if (!getLangOpts().CPlusPlus ||
+      !hasAtomicCopyHelperAPI(getLangOpts().ObjCRuntime))
     return 0;
   const ObjCPropertyDecl *PD = PID->getPropertyDecl();
   QualType Ty = PD->getType();
@@ -2878,7 +2919,7 @@ CodeGenFunction::GenerateObjCAtomicGetterCopyHelperFunction(
                                           SC_Static,
                                           SC_None,
                                           false,
-                                          true);
+                                          false);
   
   QualType DestTy = C.getPointerType(Ty);
   QualType SrcTy = Ty;
@@ -2902,24 +2943,22 @@ CodeGenFunction::GenerateObjCAtomicGetterCopyHelperFunction(
   llvm::Function::Create(LTy, llvm::GlobalValue::InternalLinkage,
                          "__copy_helper_atomic_property_", &CGM.getModule());
   
-  if (CGM.getModuleDebugInfo())
-    DebugInfo = CGM.getModuleDebugInfo();
-  
+  // Initialize debug info if needed.
+  maybeInitializeDebugInfo();
   
   StartFunction(FD, C.VoidTy, Fn, FI, args, SourceLocation());
   
-  DeclRefExpr *SrcExpr = 
-  new (C) DeclRefExpr(&srcDecl, SrcTy,
+  DeclRefExpr SrcExpr(&srcDecl, false, SrcTy,
                       VK_RValue, SourceLocation());
   
-  Expr* SRC = new (C) UnaryOperator(SrcExpr, UO_Deref, SrcTy->getPointeeType(),
-                                    VK_LValue, OK_Ordinary, SourceLocation());
+  UnaryOperator SRC(&SrcExpr, UO_Deref, SrcTy->getPointeeType(),
+                    VK_LValue, OK_Ordinary, SourceLocation());
   
   CXXConstructExpr *CXXConstExpr = 
     cast<CXXConstructExpr>(PID->getGetterCXXConstructor());
   
   SmallVector<Expr*, 4> ConstructorArgs;
-  ConstructorArgs.push_back(SRC);
+  ConstructorArgs.push_back(&SRC);
   CXXConstructExpr::arg_iterator A = CXXConstExpr->arg_begin();
   ++A;
   
@@ -2931,18 +2970,19 @@ CodeGenFunction::GenerateObjCAtomicGetterCopyHelperFunction(
     CXXConstructExpr::Create(C, Ty, SourceLocation(),
                              CXXConstExpr->getConstructor(),
                              CXXConstExpr->isElidable(),
-                             &ConstructorArgs[0], ConstructorArgs.size(),
+                             ConstructorArgs,
                              CXXConstExpr->hadMultipleCandidates(),
                              CXXConstExpr->isListInitialization(),
                              CXXConstExpr->requiresZeroInitialization(),
-                             CXXConstExpr->getConstructionKind(), SourceRange());
+                             CXXConstExpr->getConstructionKind(),
+                             SourceRange());
   
-  DeclRefExpr *DstExpr = 
-    new (C) DeclRefExpr(&dstDecl, DestTy,
-                        VK_RValue, SourceLocation());
+  DeclRefExpr DstExpr(&dstDecl, false, DestTy,
+                      VK_RValue, SourceLocation());
   
-  RValue DV = EmitAnyExpr(DstExpr);
-  CharUnits Alignment = getContext().getTypeAlignInChars(TheCXXConstructExpr->getType());
+  RValue DV = EmitAnyExpr(&DstExpr);
+  CharUnits Alignment
+    = getContext().getTypeAlignInChars(TheCXXConstructExpr->getType());
   EmitAggExpr(TheCXXConstructExpr, 
               AggValueSlot::forAddr(DV.getScalarVal(), Alignment, Qualifiers(),
                                     AggValueSlot::IsDestructed,

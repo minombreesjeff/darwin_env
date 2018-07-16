@@ -7,20 +7,27 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectProcess.h"
 
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Breakpoint/Breakpoint.h"
+#include "lldb/Breakpoint/BreakpointLocation.h"
+#include "lldb/Breakpoint/BreakpointSite.h"
+#include "lldb/Core/State.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Host/Host.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/Options.h"
-#include "lldb/Core/State.h"
-#include "lldb/Host/Host.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Target/Platform.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Target/StopInfo.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 
@@ -61,6 +68,30 @@ public:
     {
     }
 
+    int
+    HandleArgumentCompletion (Args &input,
+                              int &cursor_index,
+                              int &cursor_char_position,
+                              OptionElementVector &opt_element_vector,
+                              int match_start_point,
+                              int max_return_elements,
+                              bool &word_complete,
+                              StringList &matches)
+    {
+        std::string completion_str (input.GetArgumentAtIndex(cursor_index));
+        completion_str.erase (cursor_char_position);
+        
+        CommandCompletions::InvokeCommonCompletionCallbacks (m_interpreter, 
+                                                             CommandCompletions::eDiskFileCompletion,
+                                                             completion_str.c_str(),
+                                                             match_start_point,
+                                                             max_return_elements,
+                                                             NULL,
+                                                             word_complete,
+                                                             matches);
+        return matches.GetSize();
+    }
+
     Options *
     GetOptions ()
     {
@@ -98,11 +129,6 @@ protected:
             return false;
         }
         
-        exe_module->GetFileSpec().GetPath (filename, sizeof(filename));
-
-        const bool add_exe_file_as_first_arg = true;
-        m_options.launch_info.SetExecutableFile(exe_module->GetPlatformFileSpec(), add_exe_file_as_first_arg);
-        
         StateType state = eStateInvalid;
         Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
         if (process)
@@ -138,18 +164,32 @@ protected:
             }
         }
         
-        if (launch_args.GetArgumentCount() == 0)
+        const char *target_settings_argv0 = target->GetArg0();
+        
+        exe_module->GetFileSpec().GetPath (filename, sizeof(filename));
+        
+        if (target_settings_argv0)
         {
-            const Args &process_args = target->GetRunArguments();
-            if (process_args.GetArgumentCount() > 0)
-                m_options.launch_info.GetArguments().AppendArguments (process_args);
+            m_options.launch_info.GetArguments().AppendArgument (target_settings_argv0);
+            m_options.launch_info.SetExecutableFile(exe_module->GetPlatformFileSpec(), false);
         }
         else
         {
+            m_options.launch_info.SetExecutableFile(exe_module->GetPlatformFileSpec(), true);
+        }
+
+        if (launch_args.GetArgumentCount() == 0)
+        {
+            Args target_setting_args;
+            if (target->GetRunArguments(target_setting_args))
+                m_options.launch_info.GetArguments().AppendArguments (target_setting_args);
+        }
+        else
+        {
+            m_options.launch_info.GetArguments().AppendArguments (launch_args);
+
             // Save the arguments for subsequent runs in the current target.
             target->SetRunArguments (launch_args);
-
-            m_options.launch_info.GetArguments().AppendArguments (launch_args);
         }
         
         if (target->GetDisableASLR())
@@ -212,7 +252,7 @@ protected:
         {
             const char *archname = exe_module->GetArchitecture().GetArchitectureName();
 
-            result.AppendMessageWithFormat ("Process %llu launched: '%s' (%s)\n", process->GetID(), filename, archname);
+            result.AppendMessageWithFormat ("Process %" PRIu64 " launched: '%s' (%s)\n", process->GetID(), filename, archname);
             result.SetDidChangeProcessState (true);
             if (m_options.launch_info.GetFlags().Test(eLaunchFlagStopAtEntry) == false)
             {
@@ -276,13 +316,13 @@ protected:
 //CommandObjectProcessLaunch::CommandOptions::g_option_table[] =
 //{
 //{ SET1 | SET2 | SET3, false, "stop-at-entry", 's', no_argument,       NULL, 0, eArgTypeNone,    "Stop at the entry point of the program when launching a process."},
-//{ SET1              , false, "stdin",         'i', required_argument, NULL, 0, eArgTypePath,    "Redirect stdin for the process to <path>."},
-//{ SET1              , false, "stdout",        'o', required_argument, NULL, 0, eArgTypePath,    "Redirect stdout for the process to <path>."},
-//{ SET1              , false, "stderr",        'e', required_argument, NULL, 0, eArgTypePath,    "Redirect stderr for the process to <path>."},
+//{ SET1              , false, "stdin",         'i', required_argument, NULL, 0, eArgTypeDirectoryName,    "Redirect stdin for the process to <path>."},
+//{ SET1              , false, "stdout",        'o', required_argument, NULL, 0, eArgTypeDirectoryName,    "Redirect stdout for the process to <path>."},
+//{ SET1              , false, "stderr",        'e', required_argument, NULL, 0, eArgTypeDirectoryName,    "Redirect stderr for the process to <path>."},
 //{ SET1 | SET2 | SET3, false, "plugin",        'p', required_argument, NULL, 0, eArgTypePlugin,  "Name of the process plugin you want to use."},
-//{        SET2       , false, "tty",           't', optional_argument, NULL, 0, eArgTypePath,    "Start the process in a terminal. If <path> is specified, look for a terminal whose name contains <path>, else start the process in a new terminal."},
+//{        SET2       , false, "tty",           't', optional_argument, NULL, 0, eArgTypeDirectoryName,    "Start the process in a terminal. If <path> is specified, look for a terminal whose name contains <path>, else start the process in a new terminal."},
 //{               SET3, false, "no-stdio",      'n', no_argument,       NULL, 0, eArgTypeNone,    "Do not set up for terminal I/O to go to running process."},
-//{ SET1 | SET2 | SET3, false, "working-dir",   'w', required_argument, NULL, 0, eArgTypePath,    "Set the current working directory to <path> when running the inferior."},
+//{ SET1 | SET2 | SET3, false, "working-dir",   'w', required_argument, NULL, 0, eArgTypeDirectoryName,    "Set the current working directory to <path> when running the inferior."},
 //{ 0,                  false, NULL,             0,  0,                 NULL, 0, eArgTypeNone,    NULL }
 //};
 //
@@ -317,7 +357,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success = false;
             switch (short_option)
             {
@@ -472,7 +512,7 @@ protected:
             state = process->GetState();
             if (process->IsAlive() && state != eStateConnected)
             {
-                result.AppendErrorWithFormat ("Process %llu is currently being debugged, kill the process before attaching.\n", 
+                result.AppendErrorWithFormat ("Process %" PRIu64 " is currently being debugged, kill the process before attaching.\n",
                                               process->GetID());
                 result.SetStatus (eReturnStatusFailed);
                 return false;
@@ -483,11 +523,10 @@ protected:
         {
             // If there isn't a current target create one.
             TargetSP new_target_sp;
-            FileSpec emptyFileSpec;
             Error error;
             
             error = m_interpreter.GetDebugger().GetTargetList().CreateTarget (m_interpreter.GetDebugger(), 
-                                                                              emptyFileSpec,
+                                                                              NULL,
                                                                               NULL, 
                                                                               false,
                                                                               NULL, // No platform options
@@ -560,7 +599,7 @@ protected:
 
                     if (state == eStateStopped)
                     {
-                        result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                        result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                         result.SetStatus (eReturnStatusSuccessFinishNoResult);
                     }
                     else
@@ -601,12 +640,13 @@ protected:
             
             if (!old_arch_spec.IsValid())
             {
-                result.AppendMessageWithFormat ("Architecture set to: %s.\n", target->GetArchitecture().GetArchitectureName());
+                result.AppendMessageWithFormat ("Architecture set to: %s.\n", target->GetArchitecture().GetTriple().getTriple().c_str());
             }
             else if (old_arch_spec != target->GetArchitecture())
             {
                 result.AppendWarningWithFormat("Architecture changed from %s to %s.\n", 
-                                                old_arch_spec.GetArchitectureName(), target->GetArchitecture().GetArchitectureName());
+                                               old_arch_spec.GetTriple().getTriple().c_str(),
+                                               target->GetArchitecture().GetTriple().getTriple().c_str());
             }
 
             // This supports the use-case scenario of immediately continuing the process once attached.
@@ -646,7 +686,8 @@ public:
                              "process continue",
                              "Continue execution of all threads in the current process.",
                              "process continue",
-                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused)
+                             eFlagProcessMustBeLaunched | eFlagProcessMustBePaused),
+        m_options(interpreter)
     {
     }
 
@@ -656,6 +697,62 @@ public:
     }
 
 protected:
+
+    class CommandOptions : public Options
+    {
+    public:
+
+        CommandOptions (CommandInterpreter &interpreter) :
+            Options(interpreter)
+        {
+            // Keep default values of all options in one place: OptionParsingStarting ()
+            OptionParsingStarting ();
+        }
+
+        ~CommandOptions ()
+        {
+        }
+
+        Error
+        SetOptionValue (uint32_t option_idx, const char *option_arg)
+        {
+            Error error;
+            const int short_option = m_getopt_table[option_idx].val;
+            bool success = false;
+            switch (short_option)
+            {
+                case 'i':
+                    m_ignore = Args::StringToUInt32 (option_arg, 0, 0, &success);
+                    if (!success)
+                        error.SetErrorStringWithFormat ("invalid value for ignore option: \"%s\", should be a number.", option_arg);
+                    break;
+
+                default:
+                    error.SetErrorStringWithFormat("invalid short option character '%c'", short_option);
+                    break;
+            }
+            return error;
+        }
+
+        void
+        OptionParsingStarting ()
+        {
+            m_ignore = 0;
+        }
+
+        const OptionDefinition*
+        GetDefinitions ()
+        {
+            return g_option_table;
+        }
+
+        // Options table: Required for subclasses of Options.
+
+        static OptionDefinition g_option_table[];
+
+        uint32_t m_ignore;
+    };
+    
     bool
     DoExecute (Args& command,
              CommandReturnObject &result)
@@ -680,24 +777,53 @@ protected:
                 return false;
             }
 
-            const uint32_t num_threads = process->GetThreadList().GetSize();
-
-            // Set the actions that the threads should each take when resuming
-            for (uint32_t idx=0; idx<num_threads; ++idx)
+            if (m_options.m_ignore > 0)
             {
-                process->GetThreadList().GetThreadAtIndex(idx)->SetResumeState (eStateRunning);
+                ThreadSP sel_thread_sp(process->GetThreadList().GetSelectedThread());
+                if (sel_thread_sp)
+                {
+                    StopInfoSP stop_info_sp = sel_thread_sp->GetStopInfo();
+                    if (stop_info_sp && stop_info_sp->GetStopReason() == eStopReasonBreakpoint)
+                    {
+                        uint64_t bp_site_id = stop_info_sp->GetValue();
+                        BreakpointSiteSP bp_site_sp(process->GetBreakpointSiteList().FindByID(bp_site_id));
+                        if (bp_site_sp)
+                        {
+                            uint32_t num_owners = bp_site_sp->GetNumberOfOwners();
+                            for (uint32_t i = 0; i < num_owners; i++)
+                            {
+                                Breakpoint &bp_ref = bp_site_sp->GetOwnerAtIndex(i)->GetBreakpoint();
+                                if (!bp_ref.IsInternal())
+                                {
+                                    bp_ref.SetIgnoreCount(m_options.m_ignore);
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            
+            {  // Scope for thread list mutex:
+                Mutex::Locker locker (process->GetThreadList().GetMutex());
+                const uint32_t num_threads = process->GetThreadList().GetSize();
 
+                // Set the actions that the threads should each take when resuming
+                for (uint32_t idx=0; idx<num_threads; ++idx)
+                {
+                    process->GetThreadList().GetThreadAtIndex(idx)->SetResumeState (eStateRunning);
+                }
+            }
+            
             Error error(process->Resume());
             if (error.Success())
             {
-                result.AppendMessageWithFormat ("Process %llu resuming\n", process->GetID());
+                result.AppendMessageWithFormat ("Process %" PRIu64 " resuming\n", process->GetID());
                 if (synchronous_execution)
                 {
                     state = process->WaitForProcessToStop (NULL);
 
                     result.SetDidChangeProcessState (true);
-                    result.AppendMessageWithFormat ("Process %llu %s\n", process->GetID(), StateAsCString (state));
+                    result.AppendMessageWithFormat ("Process %" PRIu64 " %s\n", process->GetID(), StateAsCString (state));
                     result.SetStatus (eReturnStatusSuccessFinishNoResult);
                 }
                 else
@@ -719,6 +845,23 @@ protected:
         }
         return result.Succeeded();
     }
+
+    Options *
+    GetOptions ()
+    {
+        return &m_options;
+    }
+    
+    CommandOptions m_options;
+
+};
+
+OptionDefinition
+CommandObjectProcessContinue::CommandOptions::g_option_table[] =
+{
+{ LLDB_OPT_SET_ALL, false, "ignore-count",'i', required_argument,         NULL, 0, eArgTypeUnsignedInteger,
+                           "Ignore <N> crossings of the breakpoint (if it exists) for the currently selected thread."},
+{ 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -756,7 +899,7 @@ protected:
             return false;
         }
 
-        result.AppendMessageWithFormat ("Detaching from process %llu\n", process->GetID());
+        result.AppendMessageWithFormat ("Detaching from process %" PRIu64 "\n", process->GetID());
         Error error (process->Detach());
         if (error.Success())
         {
@@ -800,7 +943,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -870,7 +1013,7 @@ protected:
         {
             if (process->IsAlive())
             {
-                result.AppendErrorWithFormat ("Process %llu is currently being debugged, kill the process before connecting.\n", 
+                result.AppendErrorWithFormat ("Process %" PRIu64 " is currently being debugged, kill the process before connecting.\n",
                                               process->GetID());
                 result.SetStatus (eReturnStatusFailed);
                 return false;
@@ -880,10 +1023,9 @@ protected:
         if (!target_sp)
         {
             // If there isn't a current target create one.
-            FileSpec emptyFileSpec;
             
             error = m_interpreter.GetDebugger().GetTargetList().CreateTarget (m_interpreter.GetDebugger(), 
-                                                                              emptyFileSpec,
+                                                                              NULL,
                                                                               NULL, 
                                                                               false,
                                                                               NULL, // No platform options
@@ -908,7 +1050,7 @@ protected:
             
             if (process)
             {
-                error = process->ConnectRemote (remote_url);
+                error = process->ConnectRemote (&process->GetTarget().GetDebugger().GetOutputStream(), remote_url);
 
                 if (error.Fail())
                 {
@@ -938,13 +1080,45 @@ protected:
     CommandOptions m_options;
 };
 
-
 OptionDefinition
 CommandObjectProcessConnect::CommandOptions::g_option_table[] =
 {
     { LLDB_OPT_SET_ALL, false, "plugin", 'p', required_argument, NULL, 0, eArgTypePlugin, "Name of the process plugin you want to use."},
     { 0,                false, NULL,      0 , 0,                 NULL, 0, eArgTypeNone,   NULL }
 };
+
+//-------------------------------------------------------------------------
+// CommandObjectProcessPlugin
+//-------------------------------------------------------------------------
+#pragma mark CommandObjectProcessPlugin
+
+class CommandObjectProcessPlugin : public CommandObjectProxy
+{
+public:
+    
+    CommandObjectProcessPlugin (CommandInterpreter &interpreter) :
+        CommandObjectProxy (interpreter,
+                            "process plugin",
+                            "Send a custom command to the current process plug-in.",
+                            "process plugin <args>",
+                            0)
+    {
+    }
+    
+    ~CommandObjectProcessPlugin ()
+    {
+    }
+
+    virtual CommandObject *
+    GetProxyCommandObject()
+    {
+        Process *process = m_interpreter.GetExecutionContext().GetProcessPtr();
+        if (process)
+            return process->GetPluginCommandObject();
+        return NULL;
+    }
+};
+
 
 //-------------------------------------------------------------------------
 // CommandObjectProcessLoad
@@ -1361,7 +1535,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -1661,6 +1835,7 @@ CommandObjectMultiwordProcess::CommandObjectMultiwordProcess (CommandInterpreter
     LoadSubCommand ("status",      CommandObjectSP (new CommandObjectProcessStatus    (interpreter)));
     LoadSubCommand ("interrupt",   CommandObjectSP (new CommandObjectProcessInterrupt (interpreter)));
     LoadSubCommand ("kill",        CommandObjectSP (new CommandObjectProcessKill      (interpreter)));
+    LoadSubCommand ("plugin",      CommandObjectSP (new CommandObjectProcessPlugin    (interpreter)));
 }
 
 CommandObjectMultiwordProcess::~CommandObjectMultiwordProcess ()

@@ -12,6 +12,13 @@ class IntegerTypesExprTestCase(AbstractBase.GenericTester):
 
     mydir = "types"
 
+    def setUp(self):
+        # Call super's setUp().
+        AbstractBase.GenericTester.setUp(self)
+        # disable "There is a running process, kill it and restart?" prompt
+        self.runCmd("settings set auto-confirm true")
+        self.addTearDownHook(lambda: self.runCmd("settings clear auto-confirm"))
+
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_char_type_with_dsym(self):

@@ -7,6 +7,7 @@ import re
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class UnsignedTypesTestCase(TestBase):
 
@@ -37,10 +38,7 @@ class UnsignedTypesTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break on line 19 in main() aftre the variables are assigned values.
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -53,7 +51,7 @@ class UnsignedTypesTestCase(TestBase):
             substrs = [' resolved, hit count = 1'])
 
         # Test that unsigned types display correctly.
-        self.expect("frame variable -T -a", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types --no-args", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = "(unsigned char) the_unsigned_char = 'c'",
             patterns = ["\((short unsigned int|unsigned short)\) the_unsigned_short = 99"],
             substrs = ["(unsigned int) the_unsigned_int = 99",

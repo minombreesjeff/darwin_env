@@ -1039,14 +1039,24 @@ GetMacOSXProcessCPUType (ProcessInstanceInfo &process_info)
         mib_len++;
     
         cpu_type_t cpu, sub = 0;
-        size_t cpu_len = sizeof(cpu);
-        if (::sysctl (mib, mib_len, &cpu, &cpu_len, 0, 0) == 0)
+        size_t len = sizeof(cpu);
+        if (::sysctl (mib, mib_len, &cpu, &len, 0, 0) == 0)
         {
             switch (cpu)
             {
                 case llvm::MachO::CPUTypeI386:      sub = llvm::MachO::CPUSubType_I386_ALL;     break;
                 case llvm::MachO::CPUTypeX86_64:    sub = llvm::MachO::CPUSubType_X86_64_ALL;   break;
-                default: break;
+                case llvm::MachO::CPUTypeARM:
+                    {
+                        uint32_t cpusubtype = 0;
+                        len = sizeof(cpusubtype);
+                        if (::sysctlbyname("hw.cpusubtype", &cpusubtype, &len, NULL, 0) == 0)
+                            sub = cpusubtype;
+                    }
+                    break;
+
+                default:
+                    break;
             }
             process_info.GetArchitecture ().SetArchitecture (eArchTypeMachO, cpu, sub);
             return true;
@@ -1521,7 +1531,7 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
         size_t ocount = 0;
         error.SetError( ::posix_spawnattr_setbinpref_np (&attr, 1, &cpu, &ocount), eErrorTypePOSIX);
         if (error.Fail() || log)
-            error.PutToLog(log.get(), "::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %zu )", cpu, ocount);
+            error.PutToLog(log.get(), "::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %llu )", cpu, (uint64_t)ocount);
         
         if (error.Fail() || ocount != 1)
             return error;
@@ -1541,7 +1551,6 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
         tmp_argv[1] = NULL;
         argv = (char * const*)tmp_argv;
     }
-
 
     const char *working_dir = launch_info.GetWorkingDirectory();
     if (working_dir)
@@ -1595,13 +1604,21 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
-            error.PutToLog(log.get(), "::posix_spawnp ( pid => %i, path = '%s', file_actions = %p, attr = %p, argv = %p, envp = %p )", 
+        {
+            error.PutToLog(log.get(), "::posix_spawnp ( pid => %i, path = '%s', file_actions = %p, attr = %p, argv = %p, envp = %p )",
                            pid, 
                            exe_path, 
                            &file_actions, 
                            &attr, 
                            argv, 
                            envp);
+            if (log)
+            {
+                for (int ii=0; argv[ii]; ++ii)
+                    log->Printf("argv[%i] = '%s'", ii, argv[ii]);
+            }
+        }
+
     }
     else
     {
@@ -1614,12 +1631,19 @@ LaunchProcessPosixSpawn (const char *exe_path, ProcessLaunchInfo &launch_info, :
                         eErrorTypePOSIX);
 
         if (error.Fail() || log)
-            error.PutToLog(log.get(), "::posix_spawnp ( pid => %i, path = '%s', file_actions = NULL, attr = %p, argv = %p, envp = %p )", 
+        {
+            error.PutToLog(log.get(), "::posix_spawnp ( pid => %i, path = '%s', file_actions = NULL, attr = %p, argv = %p, envp = %p )",
                            pid, 
                            exe_path, 
                            &attr, 
                            argv, 
                            envp);
+            if (log)
+            {
+                for (int ii=0; argv[ii]; ++ii)
+                    log->Printf("argv[%i] = '%s'", ii, argv[ii]);
+            }
+        }
     }
     
     if (working_dir)

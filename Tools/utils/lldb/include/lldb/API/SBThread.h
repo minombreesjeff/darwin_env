@@ -21,6 +21,17 @@ class SBFrame;
 class SBThread
 {
 public:
+    enum
+    {
+        eBroadcastBitStackChanged           = (1 << 0),
+        eBroadcastBitThreadSuspended        = (1 << 1),
+        eBroadcastBitThreadResumed          = (1 << 2),
+        eBroadcastBitSelectedFrameChanged  = (1 << 3)
+    };
+
+    static const char *
+    GetBroadcasterClassName ();
+    
     SBThread ();
 
     SBThread (const lldb::SBThread &thread);
@@ -56,6 +67,7 @@ public:
     /// eStopReasonWatchpoint    1     watchpoint id
     /// eStopReasonSignal        1     unix signal number
     /// eStopReasonException     N     exception data
+    /// eStopReasonExec          0
     /// eStopReasonPlanComplete  0
     //--------------------------------------------------------------------------
     uint64_t
@@ -101,6 +113,9 @@ public:
 
     void
     RunToAddress (lldb::addr_t addr);
+    
+    SBError
+    ReturnFromFrame (SBFrame &frame, SBValue &return_value);
 
     //--------------------------------------------------------------------------
     /// LLDB currently supports process centric debugging which means when any
@@ -143,6 +158,15 @@ public:
 
     lldb::SBFrame
     SetSelectedFrame (uint32_t frame_idx);
+    
+    static bool
+    EventIsThreadEvent (const SBEvent &event);
+    
+    static SBFrame
+    GetStackFrameFromEvent (const SBEvent &event);
+    
+    static SBThread
+    GetThreadFromEvent (const SBEvent &event);
 
     lldb::SBProcess
     GetProcess ();
@@ -158,6 +182,9 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description) const;
+    
+    bool
+    GetStatus (lldb::SBStream &status) const;
 
 protected:
     friend class SBBreakpoint;

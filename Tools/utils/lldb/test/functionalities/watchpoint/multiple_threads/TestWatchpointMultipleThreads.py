@@ -7,6 +7,7 @@ import unittest2
 import re
 import lldb
 from lldbtest import *
+import lldbutil
 
 class WatchpointForMultipleThreadsTestCase(TestBase):
 
@@ -20,6 +21,7 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_multiple_threads()
 
+    @expectedFailureLinux # bugzilla 14416
     @dwarf_test
     def test_watchpoint_multiple_threads_with_dwarf(self):
         """Test that lldb watchpoint works for multiple threads."""
@@ -35,6 +37,7 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.hello_multiple_threads_wp_set_and_then_delete()
 
+    @expectedFailureLinux # bugzilla 14416
     @dwarf_test
     def test_watchpoint_multiple_threads_wp_set_and_then_delete_with_dwarf(self):
         """Test that lldb watchpoint works for multiple threads, and after the watchpoint is deleted, the watchpoint event should no longer fires."""
@@ -60,14 +63,10 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Add a breakpoint to set a watchpoint when stopped on the breakpoint.
-        self.expect("breakpoint set -l %d" % self.first_stop, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='%s', line = %d, locations = 1" %
-                       (self.source, self.first_stop))
+        lldbutil.run_break_set_by_file_and_line (self, None, self.first_stop, num_expected_locations=1)
 
         # Set this breakpoint to allow newly created thread to inherit the global watchpoint state.
-        self.expect("breakpoint set -l %d" % self.thread_function, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 2: file ='%s', line = %d, locations = 1" %
-                       (self.source, self.thread_function))
+        lldbutil.run_break_set_by_file_and_line (self, None, self.thread_function, num_expected_locations=1)
 
         # Run the program.
         self.runCmd("run", RUN_SUCCEEDED)
@@ -119,14 +118,10 @@ class WatchpointForMultipleThreadsTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Add a breakpoint to set a watchpoint when stopped on the breakpoint.
-        self.expect("breakpoint set -l %d" % self.first_stop, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='%s', line = %d, locations = 1" %
-                       (self.source, self.first_stop))
+        lldbutil.run_break_set_by_file_and_line (self, None, self.first_stop, num_expected_locations=1)
 
         # Set this breakpoint to allow newly created thread to inherit the global watchpoint state.
-        self.expect("breakpoint set -l %d" % self.thread_function, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 2: file ='%s', line = %d, locations = 1" %
-                       (self.source, self.thread_function))
+        lldbutil.run_break_set_by_file_and_line (self, None, self.thread_function, num_expected_locations=1)
 
         # Run the program.
         self.runCmd("run", RUN_SUCCEEDED)

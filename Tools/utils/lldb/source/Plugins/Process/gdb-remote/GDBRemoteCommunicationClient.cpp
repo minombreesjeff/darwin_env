@@ -647,6 +647,16 @@ GDBRemoteCommunicationClient::SendContinuePacketAndWaitForResponse
                     }
                     break;
 
+                case 'A':
+                    // Async miscellaneous reply. Right now, only profile data is coming through this channel.
+                    {
+                        const std::string& profile_data = response.GetStringRef();
+                        const char *data_cstr = profile_data.c_str();
+                        data_cstr++; // Move beyond 'A'
+                        process->BroadcastAsyncProfileData (data_cstr, profile_data.size()-1);
+                    }
+                    break;
+
                 case 'E':
                     // ERROR
                     state = eStateInvalid;
@@ -1188,7 +1198,7 @@ GDBRemoteCommunicationClient::SendAttach
     if (pid != LLDB_INVALID_PROCESS_ID)
     {
         char packet[64];
-        const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%llx", pid);
+        const int packet_len = ::snprintf (packet, sizeof(packet), "vAttach;%" PRIx64, pid);
         assert (packet_len < sizeof(packet));
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
         {
@@ -1215,7 +1225,8 @@ GDBRemoteCommunicationClient::AllocateMemory (size_t size, uint32_t permissions)
     {
         m_supports_alloc_dealloc_memory = eLazyBoolYes;
         char packet[64];
-        const int packet_len = ::snprintf (packet, sizeof(packet), "_M%zx,%s%s%s", size,
+        const int packet_len = ::snprintf (packet, sizeof(packet), "_M%" PRIx64 ",%s%s%s",
+                                           (uint64_t)size,
                                            permissions & lldb::ePermissionsReadable ? "r" : "",
                                            permissions & lldb::ePermissionsWritable ? "w" : "",
                                            permissions & lldb::ePermissionsExecutable ? "x" : "");
@@ -1241,7 +1252,7 @@ GDBRemoteCommunicationClient::DeallocateMemory (addr_t addr)
     {
         m_supports_alloc_dealloc_memory = eLazyBoolYes;
         char packet[64];
-        const int packet_len = ::snprintf(packet, sizeof(packet), "_m%llx", (uint64_t)addr);
+        const int packet_len = ::snprintf(packet, sizeof(packet), "_m%" PRIx64, (uint64_t)addr);
         assert (packet_len < sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
@@ -1274,7 +1285,7 @@ GDBRemoteCommunicationClient::GetMemoryRegionInfo (lldb::addr_t addr,
     {
         m_supports_memory_region_info = eLazyBoolYes;
         char packet[64];
-        const int packet_len = ::snprintf(packet, sizeof(packet), "qMemoryRegionInfo:%llx", (uint64_t)addr);
+        const int packet_len = ::snprintf(packet, sizeof(packet), "qMemoryRegionInfo:%" PRIx64, (uint64_t)addr);
         assert (packet_len < sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
@@ -1607,7 +1618,7 @@ GDBRemoteCommunicationClient::GetProcessInfo (lldb::pid_t pid, ProcessInstanceIn
     if (m_supports_qProcessInfoPID)
     {
         char packet[32];
-        const int packet_len = ::snprintf (packet, sizeof (packet), "qProcessInfoPID:%llu", pid);
+        const int packet_len = ::snprintf (packet, sizeof (packet), "qProcessInfoPID:%" PRIu64, pid);
         assert (packet_len < sizeof(packet));
         StringExtractorGDBRemote response;
         if (SendPacketAndWaitForResponse (packet, packet_len, response, false))
@@ -1677,9 +1688,9 @@ GDBRemoteCommunicationClient::FindProcesses (const ProcessInstanceInfoMatch &mat
             }
             
             if (match_info.GetProcessInfo().ProcessIDIsValid())
-                packet.Printf("pid:%llu;",match_info.GetProcessInfo().GetProcessID());
+                packet.Printf("pid:%" PRIu64 ";",match_info.GetProcessInfo().GetProcessID());
             if (match_info.GetProcessInfo().ParentProcessIDIsValid())
-                packet.Printf("parent_pid:%llu;",match_info.GetProcessInfo().GetParentProcessID());
+                packet.Printf("parent_pid:%" PRIu64 ";",match_info.GetProcessInfo().GetParentProcessID());
             if (match_info.GetProcessInfo().UserIDIsValid())
                 packet.Printf("uid:%u;",match_info.GetProcessInfo().GetUserID());
             if (match_info.GetProcessInfo().GroupIDIsValid())
@@ -1802,7 +1813,7 @@ GDBRemoteCommunicationClient::TestPacketSpeed (const uint32_t num_packets)
                 end_time = TimeValue::Now();
                 total_time_nsec = end_time.GetAsNanoSecondsSinceJan1_1970() - start_time.GetAsNanoSecondsSinceJan1_1970();
                 packets_per_second = (((float)num_packets)/(float)total_time_nsec) * (float)TimeValue::NanoSecPerSec;
-                printf ("%u qSpeedTest(send=%-5u, recv=%-5u) in %llu.%9.9llu sec for %f packets/sec.\n", 
+                printf ("%u qSpeedTest(send=%-5u, recv=%-5u) in %" PRIu64 ".%9.9" PRIu64 " sec for %f packets/sec.\n",
                         num_packets, 
                         send_size,
                         recv_size,
@@ -1826,7 +1837,7 @@ GDBRemoteCommunicationClient::TestPacketSpeed (const uint32_t num_packets)
         end_time = TimeValue::Now();
         total_time_nsec = end_time.GetAsNanoSecondsSinceJan1_1970() - start_time.GetAsNanoSecondsSinceJan1_1970();
         packets_per_second = (((float)num_packets)/(float)total_time_nsec) * (float)TimeValue::NanoSecPerSec;
-        printf ("%u 'qC' packets packets in 0x%llu%9.9llu sec for %f packets/sec.\n", 
+        printf ("%u 'qC' packets packets in 0x%" PRIu64 "%9.9" PRIu64 " sec for %f packets/sec.\n",
                 num_packets, 
                 total_time_nsec / TimeValue::NanoSecPerSec, 
                 total_time_nsec % TimeValue::NanoSecPerSec, 
@@ -1941,12 +1952,12 @@ GDBRemoteCommunicationClient::GetStopReply (StringExtractorGDBRemote &response)
 }
 
 bool
-GDBRemoteCommunicationClient::GetThreadStopInfo (uint32_t tid, StringExtractorGDBRemote &response)
+GDBRemoteCommunicationClient::GetThreadStopInfo (lldb::tid_t tid, StringExtractorGDBRemote &response)
 {
     if (m_supports_qThreadStopInfo)
     {
         char packet[256];
-        int packet_len = ::snprintf(packet, sizeof(packet), "qThreadStopInfo%x", tid);
+        int packet_len = ::snprintf(packet, sizeof(packet), "qThreadStopInfo%" PRIx64, tid);
         assert (packet_len < sizeof(packet));
         if (SendPacketAndWaitForResponse(packet, packet_len, response, false))
         {
@@ -1982,7 +1993,7 @@ GDBRemoteCommunicationClient::SendGDBStoppointTypePacket (GDBStoppointType type,
     char packet[64];
     const int packet_len = ::snprintf (packet, 
                                        sizeof(packet), 
-                                       "%c%i,%llx,%x", 
+                                       "%c%i,%" PRIx64 ",%x",
                                        insert ? 'Z' : 'z', 
                                        type, 
                                        addr, 

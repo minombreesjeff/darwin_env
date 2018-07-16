@@ -90,6 +90,9 @@ public:
     bool
     IsReferenceType();
     
+    bool
+    IsFunctionType ();
+    
     lldb::SBType
     GetPointerType();
     
@@ -105,6 +108,12 @@ public:
     lldb::SBType
     GetUnqualifiedType();
 
+    // Get the "lldb::BasicType" enumeration for a type. If a type is not a basic
+    // type eBasicTypeInvalid will be returned
+    lldb::BasicType
+    GetBasicType();
+
+    // The call below confusing and should really be renamed to "CreateBasicType"
     lldb::SBType
     GetBasicType(lldb::BasicType type);
     
@@ -134,6 +143,12 @@ public:
 
     lldb::TemplateArgumentKind
     GetTemplateArgumentKind (uint32_t idx);
+
+    lldb::SBType
+    GetFunctionReturnType ();
+
+    lldb::SBTypeList
+    GetFunctionArgumentTypes ();
 
     const char*
     GetName();

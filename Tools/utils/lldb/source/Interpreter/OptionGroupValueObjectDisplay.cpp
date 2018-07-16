@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/OptionGroupValueObjectDisplay.h"
 
 // C Includes
@@ -31,8 +33,7 @@ OptionGroupValueObjectDisplay::~OptionGroupValueObjectDisplay ()
 static OptionDefinition
 g_option_table[] =
 {
-    { LLDB_OPT_SET_1, false, "dynamic-type",     'd', required_argument, TargetInstanceSettings::g_dynamic_value_types, 
-                                                                              0, eArgTypeNone,      "Show the object as its full dynamic type, not its static type, if available."},
+    { LLDB_OPT_SET_1, false, "dynamic-type",     'd', required_argument, g_dynamic_value_types, 0, eArgTypeNone,      "Show the object as its full dynamic type, not its static type, if available."},
     { LLDB_OPT_SET_1, false, "synthetic-type",   'S', required_argument, NULL, 0, eArgTypeBoolean,   "Show the object obeying its synthetic provider, if available."},
     { LLDB_OPT_SET_1, false, "depth",            'D', required_argument, NULL, 0, eArgTypeCount,     "Set the max recurse depth when dumping aggregate types (default is infinity)."},
     { LLDB_OPT_SET_1, false, "flat",             'F', no_argument,       NULL, 0, eArgTypeNone,      "Display results in a flat format that uses expression paths for each variable or member."},
@@ -40,10 +41,10 @@ g_option_table[] =
     { LLDB_OPT_SET_1, false, "objc",             'O', no_argument,       NULL, 0, eArgTypeNone,      "Print as an Objective-C object."},
     { LLDB_OPT_SET_1, false, "ptr-depth",        'P', required_argument, NULL, 0, eArgTypeCount,     "The number of pointers to be traversed when dumping values (default is zero)."},
     { LLDB_OPT_SET_1, false, "show-types",       'T', no_argument,       NULL, 0, eArgTypeNone,      "Show variable types when dumping values."},
-    { LLDB_OPT_SET_1, false, "no-summary-depth", 'Y', optional_argument, NULL, 0, eArgTypeCount,     "Set a depth for omitting summary information (default is 1)."},
+    { LLDB_OPT_SET_1, false, "no-summary-depth", 'Y', optional_argument, NULL, 0, eArgTypeCount,     "Set the depth at which omitting summary information stops (default is 1)."},
     { LLDB_OPT_SET_1, false, "raw-output",       'R', no_argument,       NULL, 0, eArgTypeNone,      "Don't use formatting options."},
     { LLDB_OPT_SET_1, false, "show-all-children",'A', no_argument,       NULL, 0, eArgTypeNone,      "Ignore the upper bound on the number of children to show."},
-    { 0, false, NULL, 0, 0, NULL, NULL, eArgTypeNone, NULL }
+    { 0, false, NULL, 0, 0, NULL, 0, eArgTypeNone, NULL }
 };
 
 uint32_t
@@ -65,7 +66,7 @@ OptionGroupValueObjectDisplay::SetOptionValue (CommandInterpreter &interpreter,
                                                const char *option_arg)
 {
     Error error;
-    char short_option = (char) g_option_table[option_idx].short_option;
+    const int short_option = g_option_table[option_idx].short_option;
     bool success = false;
 
     switch (short_option)
@@ -73,7 +74,7 @@ OptionGroupValueObjectDisplay::SetOptionValue (CommandInterpreter &interpreter,
         case 'd':
             {
                 int32_t result;
-                result = Args::StringToOptionEnum (option_arg, TargetInstanceSettings::g_dynamic_value_types, 2, error);
+                result = Args::StringToOptionEnum (option_arg, g_dynamic_value_types, 2, error);
                 if (error.Success())
                     use_dynamic = (lldb::DynamicValueType) result;
             }

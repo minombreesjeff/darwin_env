@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/ScriptInterpreter.h"
 
 #include <string>
@@ -43,6 +45,17 @@ void
 ScriptInterpreter::CollectDataForBreakpointCommandCallback 
 (
     BreakpointOptions *bp_options,
+    CommandReturnObject &result
+)
+{
+    result.SetStatus (eReturnStatusFailed);
+    result.AppendError ("ScriptInterpreter::GetScriptCommands(StringList &) is not implemented.");
+}
+
+void 
+ScriptInterpreter::CollectDataForWatchpointCommandCallback 
+(
+    WatchpointOptions *bp_options,
     CommandReturnObject &result
 )
 {

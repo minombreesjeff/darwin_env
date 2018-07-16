@@ -457,16 +457,6 @@ APInt APInt::XorSlowCase(const APInt& RHS) const {
   return APInt(val, getBitWidth()).clearUnusedBits();
 }
 
-bool APInt::operator !() const {
-  if (isSingleWord())
-    return !VAL;
-
-  for (unsigned i = 0; i < getNumWords(); ++i)
-    if (pVal[i])
-      return false;
-  return true;
-}
-
 APInt APInt::operator*(const APInt& RHS) const {
   assert(BitWidth == RHS.BitWidth && "Bit widths must be the same");
   if (isSingleWord())
@@ -492,12 +482,6 @@ APInt APInt::operator-(const APInt& RHS) const {
   APInt Result(BitWidth, 0);
   sub(Result.pVal, this->pVal, RHS.pVal, getNumWords());
   return Result.clearUnusedBits();
-}
-
-bool APInt::operator[](unsigned bitPosition) const {
-  assert(bitPosition < getBitWidth() && "Bit position out of bounds!");
-  return (maskBit(bitPosition) &
-          (isSingleWord() ?  VAL : pVal[whichWord(bitPosition)])) != 0;
 }
 
 bool APInt::EqualSlowCase(const APInt& RHS) const {
@@ -722,20 +706,9 @@ unsigned APInt::countLeadingZerosSlowCase() const {
   return Count;
 }
 
-static unsigned countLeadingOnes_64(uint64_t V, unsigned skip) {
-  unsigned Count = 0;
-  if (skip)
-    V <<= skip;
-  while (V && (V & (1ULL << 63))) {
-    Count++;
-    V <<= 1;
-  }
-  return Count;
-}
-
 unsigned APInt::countLeadingOnes() const {
   if (isSingleWord())
-    return countLeadingOnes_64(VAL, APINT_BITS_PER_WORD - BitWidth);
+    return CountLeadingOnes_64(VAL << (APINT_BITS_PER_WORD - BitWidth));
 
   unsigned highWordBits = BitWidth % APINT_BITS_PER_WORD;
   unsigned shift;
@@ -746,13 +719,13 @@ unsigned APInt::countLeadingOnes() const {
     shift = APINT_BITS_PER_WORD - highWordBits;
   }
   int i = getNumWords() - 1;
-  unsigned Count = countLeadingOnes_64(pVal[i], shift);
+  unsigned Count = CountLeadingOnes_64(pVal[i] << shift);
   if (Count == highWordBits) {
     for (i--; i >= 0; --i) {
       if (pVal[i] == -1ULL)
         Count += APINT_BITS_PER_WORD;
       else {
-        Count += countLeadingOnes_64(pVal[i], 0);
+        Count += CountLeadingOnes_64(pVal[i]);
         break;
       }
     }
@@ -1162,7 +1135,7 @@ APInt APInt::lshr(unsigned shiftAmt) const {
   // If all the bits were shifted out, the result is 0. This avoids issues
   // with shifting by the size of the integer type, which produces undefined
   // results. We define these "undefined results" to always be 0.
-  if (shiftAmt == BitWidth)
+  if (shiftAmt >= BitWidth)
     return APInt(BitWidth, 0);
 
   // If none of the bits are shifted out, the result is *this. This avoids
@@ -1473,7 +1446,7 @@ APInt::mu APInt::magicu(unsigned LeadingZeros) const {
   APInt signedMin = APInt::getSignedMinValue(d.getBitWidth());
   APInt signedMax = APInt::getSignedMaxValue(d.getBitWidth());
 
-  nc = allOnes - (-d).urem(d);
+  nc = allOnes - (allOnes - d).urem(d);
   p = d.getBitWidth() - 1;  // initialize p
   q1 = signedMin.udiv(nc);  // initialize q1 = 2p/nc
   r1 = signedMin - q1*nc;   // initialize r1 = rem(2p,nc)

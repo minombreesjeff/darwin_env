@@ -25,10 +25,11 @@ class ExprFormattersTestCase(TestBase):
         self.buildDsym()
         self.do_my_test()
 
+    @expectedFailureLinux # bugzilla 14437
     @dwarf_test
     def test_with_dwarf(self):
         """Test expr + formatters for good interoperability."""
-        self.buildDsym()
+        self.buildDwarf()
         self.do_my_test()
 
     def do_my_test(self):
@@ -45,18 +46,15 @@ class ExprFormattersTestCase(TestBase):
         """Test expr + formatters for good interoperability."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
         self.runCmd("script import formatters")
         self.runCmd("script import foosynth")
         
-        self.runCmd("frame variable foo1 -T")
-        self.runCmd("frame variable foo1.b -T")
-        self.runCmd("frame variable foo1.b.b_ref -T")
+        self.runCmd("frame variable foo1 --show-types")
+        self.runCmd("frame variable foo1.b --show-types")
+        self.runCmd("frame variable foo1.b.b_ref --show-types")
 
         self.expect("expression *(new foo(47))",
             substrs = ['(int) a = 47', '(bar) b = {', '(int) i = 94', '(baz) b = {', '(int) k = 99'])

@@ -12,6 +12,8 @@
 
 // C Includes
 // C++ Includes
+#include <set>
+
 // Other libraries and framework includes
 // Project includes
 #include "lldb/lldb-private.h"
@@ -74,20 +76,20 @@ public:
     //----------------------------------------------------------------------
     static int
     DiskFiles (CommandInterpreter &interpreter,
-                 const char *partial_file_name,
-                 int match_start_point,
-                 int max_return_elements,
-                 SearchFilter *searcher,
-                 bool &word_complete,
-                 StringList &matches);
+               const char *partial_file_name,
+               int match_start_point,
+               int max_return_elements,
+               SearchFilter *searcher,
+               bool &word_complete,
+               StringList &matches);
     static int
     DiskDirectories (CommandInterpreter &interpreter,
-                 const char *partial_file_name,
-                 int match_start_point,
-                 int max_return_elements,
-                 SearchFilter *searcher,
-                 bool &word_complete,
-                 StringList &matches);
+                     const char *partial_file_name,
+                     int match_start_point,
+                     int max_return_elements,
+                     SearchFilter *searcher,
+                     bool &word_complete,
+                     StringList &matches);
     
     static int
     SourceFiles (CommandInterpreter &interpreter,

@@ -135,7 +135,7 @@ static ScopePair GetDiagForGotoScopeDecl(ASTContext &Context, const Decl *D) {
       return ScopePair(diag::note_protected_by_cleanup,
                        diag::note_exits_cleanup);
 
-    if (Context.getLangOptions().ObjCAutoRefCount && VD->hasLocalStorage()) {
+    if (Context.getLangOpts().ObjCAutoRefCount && VD->hasLocalStorage()) {
       switch (VD->getType().getObjCLifetime()) {
       case Qualifiers::OCL_None:
       case Qualifiers::OCL_ExplicitNone:
@@ -149,7 +149,7 @@ static ScopePair GetDiagForGotoScopeDecl(ASTContext &Context, const Decl *D) {
       }
     }
 
-    if (Context.getLangOptions().CPlusPlus && VD->hasLocalStorage()) {
+    if (Context.getLangOpts().CPlusPlus && VD->hasLocalStorage()) {
       // C++11 [stmt.dcl]p3:
       //   A program that jumps from a point where a variable with automatic
       //   storage duration is not in scope to a point where it is in scope
@@ -453,14 +453,19 @@ void JumpScopeChecker::BuildScopeInformation(Stmt *S, unsigned &origParentScope)
       BuildScopeInformation(AS->getSubStmt(), (newParentScope = Scopes.size()-1));
       continue;
     }
-    
-    if (const BlockExpr *BE = dyn_cast<BlockExpr>(SubStmt)) {
-        const BlockDecl *BDecl = BE->getBlockDecl();
+
+    // Disallow jumps past full-expressions that use blocks with
+    // non-trivial cleanups of their captures.  This is theoretically
+    // implementable but a lot of work which we haven't felt up to doing.
+    if (ExprWithCleanups *EWC = dyn_cast<ExprWithCleanups>(SubStmt)) {
+      for (unsigned i = 0, e = EWC->getNumObjects(); i != e; ++i) {
+        const BlockDecl *BDecl = EWC->getObject(i);
         for (BlockDecl::capture_const_iterator ci = BDecl->capture_begin(),
              ce = BDecl->capture_end(); ci != ce; ++ci) {
           VarDecl *variable = ci->getVariable();
           BuildScopeInformation(variable, BDecl, ParentScope);
         }
+      }
     }
     
     // Recursively walk the AST.
@@ -654,7 +659,7 @@ static bool IsMicrosoftJumpWarning(unsigned JumpDiag, unsigned InDiagNote) {
 /// Return true if a particular note should be downgraded to a compatibility
 /// warning in C++11 mode.
 static bool IsCXX98CompatWarning(Sema &S, unsigned InDiagNote) {
-  return S.getLangOptions().CPlusPlus0x &&
+  return S.getLangOpts().CPlusPlus0x &&
          InDiagNote == diag::note_protected_by_variable_non_pod;
 }
 
@@ -737,7 +742,7 @@ void JumpScopeChecker::CheckJump(Stmt *From, Stmt *To, SourceLocation DiagLoc,
   SmallVector<unsigned, 10> ToScopesError;
   SmallVector<unsigned, 10> ToScopesWarning;
   for (unsigned I = ToScope; I != CommonScope; I = Scopes[I].ParentScope) {
-    if (S.getLangOptions().MicrosoftMode && JumpDiagWarning != 0 &&
+    if (S.getLangOpts().MicrosoftMode && JumpDiagWarning != 0 &&
         IsMicrosoftJumpWarning(JumpDiagError, Scopes[I].InDiag))
       ToScopesWarning.push_back(I);
     else if (IsCXX98CompatWarning(S, Scopes[I].InDiag))

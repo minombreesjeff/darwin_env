@@ -15,7 +15,7 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Interpreter/Options.h"
-#include "lldb/Interpreter/NamedOptionValue.h"
+#include "lldb/Interpreter/OptionValueUInt64.h"
 
 namespace lldb_private {
     //-------------------------------------------------------------------------
@@ -29,7 +29,7 @@ namespace lldb_private {
         OptionGroupUInt64 (uint32_t usage_mask,
                            bool required,
                            const char *long_option, 
-                           char short_option,
+                           int short_option,
                            uint32_t completion_type,
                            lldb::CommandArgumentType argument_type,
                            const char *usage_text,

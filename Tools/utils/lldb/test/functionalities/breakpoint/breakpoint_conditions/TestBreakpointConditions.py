@@ -34,18 +34,21 @@ class BreakpointConditionsTestCase(TestBase):
         self.buildDsym()
         self.breakpoint_conditions_python()
 
+    @expectedFailureLinux # bugzilla 14426
     @dwarf_test
     def test_breakpoint_condition_with_dwarf_and_run_command(self):
         """Exercise breakpoint condition with 'breakpoint modify -c <expr> id'."""
         self.buildDwarf()
         self.breakpoint_conditions()
 
+    @expectedFailureLinux # bugzilla 14426
     @dwarf_test
     def test_breakpoint_condition_inline_with_dwarf_and_run_command(self):
         """Exercise breakpoint condition inline with 'breakpoint set'."""
         self.buildDwarf()
         self.breakpoint_conditions(inline=True)
 
+    @expectedFailureLinux # bugzilla 14426
     @python_api_test
     @dwarf_test
     def test_breakpoint_condition_with_dwarf_and_python_api(self):
@@ -67,12 +70,10 @@ class BreakpointConditionsTestCase(TestBase):
 
         if inline:
             # Create a breakpoint by function name 'c' and set the condition.
-            self.expect("breakpoint set -n c -c 'val == 3'", BREAKPOINT_CREATED,
-                startstr = "Breakpoint created: 1: name = 'c', locations = 1")
+            lldbutil.run_break_set_by_symbol (self, "c", extra_options="-c 'val == 3'", num_expected_locations=1, sym_exact=True)
         else:
             # Create a breakpoint by function name 'c'.
-            self.expect("breakpoint set -n c", BREAKPOINT_CREATED,
-                startstr = "Breakpoint created: 1: name = 'c', locations = 1")
+            lldbutil.run_break_set_by_symbol (self, "c", num_expected_locations=1, sym_exact=True)
 
             # And set a condition on the breakpoint to stop on when 'val == 3'.
             self.runCmd("breakpoint modify -c 'val == 3' 1")
@@ -84,8 +85,8 @@ class BreakpointConditionsTestCase(TestBase):
         self.expect("process status", PROCESS_STOPPED,
             patterns = ['Process .* stopped'])
 
-        # 'frame variable -T val' should return 3 due to breakpoint condition.
-        self.expect("frame variable -T val", VARIABLES_DISPLAYED_CORRECTLY,
+        # 'frame variable --show-types val' should return 3 due to breakpoint condition.
+        self.expect("frame variable --show-types val", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) val = 3')
 
         # Also check the hit count, which should be 3, by design.
@@ -115,8 +116,8 @@ class BreakpointConditionsTestCase(TestBase):
         self.expect("process status", PROCESS_STOPPED,
             patterns = ['Process .* stopped'])
 
-        # 'frame variable -T val' should return 1 since it is the first breakpoint hit.
-        self.expect("frame variable -T val", VARIABLES_DISPLAYED_CORRECTLY,
+        # 'frame variable --show-types val' should return 1 since it is the first breakpoint hit.
+        self.expect("frame variable --show-types val", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) val = 1')
 
 

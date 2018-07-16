@@ -5,6 +5,7 @@ import unittest2
 import lldb
 import lldbutil
 from lldbtest import *
+import lldbutil
 
 class ClassTypesTestCase(TestBase):
 
@@ -70,10 +71,7 @@ class ClassTypesTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break on the ctor function of class C.
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -94,7 +92,7 @@ class ClassTypesTestCase(TestBase):
             substrs = [' resolved, hit count = 1'])
 
         # We should be stopped on the ctor function of class C.
-        self.expect("frame variable -T this", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types this", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['C *',
                        ' this = '])
 
@@ -169,8 +167,7 @@ class ClassTypesTestCase(TestBase):
         #    startstr = "Breakpoint created: 1: name = 'C'")
 
         # Make the test case more robust by using line number to break, instead.
-        self.expect("breakpoint set -l %d" % self.line, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created")
+        lldbutil.run_break_set_by_file_and_line (self, None, self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -191,10 +188,10 @@ class ClassTypesTestCase(TestBase):
         self.expect("frame variable this",VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['C *'])
 
-        # Verify that frame variable -T this->m_c_int behaves correctly.
+        # Verify that frame variable --show-types this->m_c_int behaves correctly.
         self.runCmd("register read pc")
         self.runCmd("expr m_c_int")
-        self.expect("frame variable -T this->m_c_int", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types this->m_c_int", VARIABLES_DISPLAYED_CORRECTLY,
             startstr = '(int) this->m_c_int = 66')
 
         # Verify that 'expression this' gets the data type correct.

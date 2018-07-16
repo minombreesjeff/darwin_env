@@ -26,17 +26,42 @@ SRC_ROOT=$1
 TARGET_DIR=$2
 CONFIG_BUILD_DIR=$3
 PREFIX=$4
-debug_flag=$5
+
+shift 4
 
 #
 # Check to see if we are in debug-mode or not.
 #
 
-if [ -n "$debug_flag" -a "$debug_flag" == "-debug" ]
+if [ -n "$1" -a "$1" = "-debug" ]
 then
+    debug_flag="$1"
     Debug=1
+    shift
 else
+    debug_flag=""
     Debug=0
+fi
+
+#
+# Check to see if we were called from the Makefile system. If we were, check
+# if the caller wants swig to generate a dependency file.
+#
+
+if [ -n "$1" -a "$1" = "-m" ]
+then
+    makefile_flag="$1"
+    shift
+    if [ -n "$1" -a "$1" = "-M" ]
+    then
+        dependency_flag="$1"
+        shift
+    else
+        dependency_flag=""
+    fi
+else
+    makefile_flag=""
+    dependency_flag=""
 fi
 
 #
@@ -49,7 +74,7 @@ then
     exit 1
 fi
 
-if [ $Debug == 1 ]
+if [ $Debug -eq 1 ]
 then
     echo "Found lldb.swig file"
 fi
@@ -58,8 +83,8 @@ fi
 # Next look for swig
 #
 
-SWIG=
-if [ -f /usr/bin/swig ]
+SWIG=`which swig`
+if [ ! -x "$SWIG" -a -f /usr/bin/swig ]
 then
     SWIG=/usr/bin/swig
 else
@@ -69,7 +94,7 @@ else
     fi
 fi
 
-if [ ${SWIG}a == a ]
+if [ ${SWIG}a = a ]
 then
     echo Error: could not find the swig binary
     exit 1
@@ -87,7 +112,7 @@ cwd=${SRC_ROOT}/scripts
 
 for curlang in $languages
 do
-    if [ $Debug == 1 ]
+    if [ $Debug -eq 1 ]
     then
         echo "Current language is $curlang"
     fi
@@ -98,7 +123,7 @@ do
         continue
     else
 
-        if [ $Debug == 1 ]
+        if [ $Debug -eq 1 ]
         then
             echo "Found $curlang sub-directory"
         fi
@@ -113,13 +138,13 @@ do
             continue
         else
 
-            if [ $Debug == 1 ]
+            if [ $Debug -eq 1 ]
             then
                 echo "Found $curlang build script."
                 echo "Executing $curlang build script..."
             fi
 
-            ./build-swig-${curlang}.sh  $SRC_ROOT $TARGET_DIR $CONFIG_BUILD_DIR "${PREFIX}" "${debug_flag}" "${SWIG}"
+            ./build-swig-${curlang}.sh  "$SRC_ROOT" "$TARGET_DIR" "$CONFIG_BUILD_DIR" "${PREFIX}" "${debug_flag}" "${SWIG}" "${makefile_flag}" "${dependency_flag}" || exit $?
         fi
     fi
 done

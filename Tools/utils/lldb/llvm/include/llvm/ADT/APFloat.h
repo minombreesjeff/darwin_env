@@ -274,6 +274,7 @@ namespace llvm {
     /* C fmod, or llvm frem. */
     opStatus mod(const APFloat &, roundingMode);
     opStatus fusedMultiplyAdd(const APFloat &, const APFloat &, roundingMode);
+    opStatus roundToIntegral(roundingMode);
 
     /* Sign operations.  */
     void changeSign();
@@ -320,6 +321,7 @@ namespace llvm {
     const fltSemantics &getSemantics() const { return *semantics; }
     bool isZero() const { return category == fcZero; }
     bool isNonZero() const { return category != fcZero; }
+    bool isNormal() const { return category == fcNormal; }
     bool isNaN() const { return category == fcNaN; }
     bool isInfinity() const { return category == fcInfinity; }
     bool isNegative() const { return sign; }

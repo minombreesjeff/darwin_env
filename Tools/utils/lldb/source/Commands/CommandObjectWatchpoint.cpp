@@ -7,7 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectWatchpoint.h"
+#include "CommandObjectWatchpointCommand.h"
 
 // C Includes
 // C++ Includes
@@ -212,7 +215,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -641,7 +644,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -742,7 +745,7 @@ private:
 OptionDefinition
 CommandObjectWatchpointIgnore::CommandOptions::g_option_table[] =
 {
-    { LLDB_OPT_SET_ALL, true, "ignore-count", 'i', required_argument, NULL, NULL, eArgTypeCount, "Set the number of times this watchpoint is skipped before stopping." },
+    { LLDB_OPT_SET_ALL, true, "ignore-count", 'i', required_argument, NULL, 0, eArgTypeCount, "Set the number of times this watchpoint is skipped before stopping." },
     { 0,                false, NULL,            0 , 0,                 NULL, 0,    eArgTypeNone, NULL }
 };
 
@@ -798,7 +801,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -905,7 +908,7 @@ private:
 OptionDefinition
 CommandObjectWatchpointModify::CommandOptions::g_option_table[] =
 {
-{ LLDB_OPT_SET_ALL, false, "condition",    'c', required_argument, NULL, NULL, eArgTypeExpression, "The watchpoint stops only if this condition expression evaluates to true."},
+{ LLDB_OPT_SET_ALL, false, "condition",    'c', required_argument, NULL, 0, eArgTypeExpression, "The watchpoint stops only if this condition expression evaluates to true."},
 { 0,                false, NULL,            0 , 0,                 NULL, 0,    eArgTypeNone, NULL }
 };
 
@@ -969,6 +972,21 @@ public:
     }
 
 protected:
+    static uint32_t GetVariableCallback (void *baton,
+                                         const char *name,
+                                         VariableList &variable_list)
+    {
+        Target *target = static_cast<Target *>(baton);
+        if (target)
+        {
+            return target->GetImages().FindGlobalVariables (ConstString(name),
+                                                            true,
+                                                            UINT32_MAX,
+                                                            variable_list);
+        }
+        return 0;
+    }
+    
     virtual bool
     DoExecute (Args& command,
              CommandReturnObject &result)
@@ -1022,6 +1040,26 @@ protected:
                                                               expr_path_options,
                                                               var_sp,
                                                               error);
+        
+        if (!valobj_sp) {
+            // Not in the frame; let's check the globals.
+            
+            VariableList variable_list;
+            ValueObjectList valobj_list;
+            
+            Error error (Variable::GetValuesForVariableExpressionPath (command.GetArgumentAtIndex(0),
+                                                                       exe_ctx.GetBestExecutionContextScope(),
+                                                                       GetVariableCallback,
+                                                                       target,
+                                                                       variable_list,
+                                                                       valobj_list));
+            
+            if (valobj_list.GetSize())
+                valobj_sp = valobj_list.GetValueObjectAtIndex(0);
+        }
+        
+        ClangASTType type;
+        
         if (valobj_sp) {
             AddressType addr_type;
             addr = valobj_sp->GetAddressOf(false, &addr_type);
@@ -1031,6 +1069,7 @@ protected:
                 size = m_option_watchpoint.watch_size == 0 ? valobj_sp->GetByteSize()
                                                            : m_option_watchpoint.watch_size;
             }
+            type.SetClangType(valobj_sp->GetClangAST(), valobj_sp->GetClangType());
         } else {
             const char *error_cstr = error.AsCString(NULL);
             if (error_cstr)
@@ -1044,22 +1083,23 @@ protected:
         // Now it's time to create the watchpoint.
         uint32_t watch_type = m_option_watchpoint.watch_type;
         error.Clear();
-        Watchpoint *wp = target->CreateWatchpoint(addr, size, watch_type, error).get();
+        Watchpoint *wp = target->CreateWatchpoint(addr, size, &type, watch_type, error).get();
         if (wp) {
+            wp->SetWatchSpec(command.GetArgumentAtIndex(0));
+            wp->SetWatchVariable(true);
             if (var_sp && var_sp->GetDeclaration().GetFile()) {
                 StreamString ss;
                 // True to show fullpath for declaration file.
                 var_sp->GetDeclaration().DumpStopContext(&ss, true);
                 wp->SetDeclInfo(ss.GetString());
             }
-            StreamString ss;
             output_stream.Printf("Watchpoint created: ");
             wp->GetDescription(&output_stream, lldb::eDescriptionLevelFull);
             output_stream.EOL();
             result.SetStatus(eReturnStatusSuccessFinishResult);
         } else {
-            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%llx, size=%lu).\n",
-                                         addr, size);
+            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%" PRIx64 ", size=%lu, variable expression='%s').\n",
+                                         addr, size, command.GetArgumentAtIndex(0));
             if (error.AsCString(NULL))
                 result.AppendError(error.AsCString());
             result.SetStatus(eReturnStatusFailed);
@@ -1196,18 +1236,17 @@ protected:
         }
 
         // Use expression evaluation to arrive at the address to watch.
-        const bool coerce_to_id = true;
-        const bool unwind_on_error = true;
-        const bool keep_in_memory = false;
+        EvaluateExpressionOptions options;
+        options.SetCoerceToId(false)
+        .SetUnwindOnError(true)
+        .SetKeepInMemory(false)
+        .SetRunOthers(true)
+        .SetTimeoutUsec(0);
+        
         ExecutionResults expr_result = target->EvaluateExpression (expr_str.c_str(), 
                                                                    frame, 
-                                                                   eExecutionPolicyOnlyWhenNeeded,
-                                                                   coerce_to_id,
-                                                                   unwind_on_error, 
-                                                                   keep_in_memory, 
-                                                                   eNoDynamicValues, 
                                                                    valobj_sp,
-                                                                   0 /* no timeout */);
+                                                                   options);
         if (expr_result != eExecutionCompleted) {
             result.GetErrorStream().Printf("error: expression evaluation of address to watch failed\n");
             result.GetErrorStream().Printf("expression evaluated: %s\n", expr_str.c_str());
@@ -1228,8 +1267,15 @@ protected:
 
         // Now it's time to create the watchpoint.
         uint32_t watch_type = m_option_watchpoint.watch_type;
+        
+        // Fetch the type from the value object, the type of the watched object is the pointee type
+        /// of the expression, so convert to that if we  found a valid type.
+        ClangASTType type(valobj_sp->GetClangAST(), valobj_sp->GetClangType());
+        if (type.IsValid())
+            type.SetClangType(type.GetASTContext(), type.GetPointeeType());
+        
         Error error;
-        Watchpoint *wp = target->CreateWatchpoint(addr, size, watch_type, error).get();
+        Watchpoint *wp = target->CreateWatchpoint(addr, size, &type, watch_type, error).get();
         if (wp) {
             if (var_sp && var_sp->GetDeclaration().GetFile()) {
                 StreamString ss;
@@ -1237,13 +1283,12 @@ protected:
                 var_sp->GetDeclaration().DumpStopContext(&ss, true);
                 wp->SetDeclInfo(ss.GetString());
             }
-            StreamString ss;
             output_stream.Printf("Watchpoint created: ");
             wp->GetDescription(&output_stream, lldb::eDescriptionLevelFull);
             output_stream.EOL();
             result.SetStatus(eReturnStatusSuccessFinishResult);
         } else {
-            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%llx, size=%lu).\n",
+            result.AppendErrorWithFormat("Watchpoint creation failed (addr=0x%" PRIx64 ", size=%lu).\n",
                                          addr, size);
             if (error.AsCString(NULL))
                 result.AppendError(error.AsCString());
@@ -1300,6 +1345,7 @@ CommandObjectMultiwordWatchpoint::CommandObjectMultiwordWatchpoint(CommandInterp
     CommandObjectSP disable_command_object (new CommandObjectWatchpointDisable (interpreter));
     CommandObjectSP delete_command_object (new CommandObjectWatchpointDelete (interpreter));
     CommandObjectSP ignore_command_object (new CommandObjectWatchpointIgnore (interpreter));
+    CommandObjectSP command_command_object (new CommandObjectWatchpointCommand (interpreter));
     CommandObjectSP modify_command_object (new CommandObjectWatchpointModify (interpreter));
     CommandObjectSP set_command_object (new CommandObjectWatchpointSet (interpreter));
 
@@ -1308,6 +1354,7 @@ CommandObjectMultiwordWatchpoint::CommandObjectMultiwordWatchpoint(CommandInterp
     disable_command_object->SetCommandName("watchpoint disable");
     delete_command_object->SetCommandName("watchpoint delete");
     ignore_command_object->SetCommandName("watchpoint ignore");
+    command_command_object->SetCommandName ("watchpoint command");
     modify_command_object->SetCommandName("watchpoint modify");
     set_command_object->SetCommandName("watchpoint set");
 
@@ -1316,6 +1363,7 @@ CommandObjectMultiwordWatchpoint::CommandObjectMultiwordWatchpoint(CommandInterp
     LoadSubCommand ("disable",    disable_command_object);
     LoadSubCommand ("delete",     delete_command_object);
     LoadSubCommand ("ignore",     ignore_command_object);
+    LoadSubCommand ("command",    command_command_object);
     LoadSubCommand ("modify",     modify_command_object);
     LoadSubCommand ("set",        set_command_object);
 }

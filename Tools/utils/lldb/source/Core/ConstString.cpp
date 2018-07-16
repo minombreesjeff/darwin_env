@@ -100,6 +100,18 @@ public:
     }
 
     const char *
+    GetConstCStringWithStringRef (const llvm::StringRef &string_ref)
+    {
+        if (string_ref.data())
+        {
+            Mutex::Locker locker (m_mutex);
+            StringPoolEntryType& entry = m_string_map.GetOrCreateValue (string_ref, (StringPoolValueType)NULL);
+            return entry.getKeyData();
+        }
+        return NULL;
+    }
+
+    const char *
     GetConstCStringAndSetMangledCounterPart (const char *demangled_cstr, const char *mangled_ccstr)
     {
         if (demangled_cstr)
@@ -205,6 +217,11 @@ ConstString::ConstString (const char *cstr, size_t cstr_len) :
 {
 }
 
+ConstString::ConstString (const llvm::StringRef &s) :
+    m_string (StringPool().GetConstCStringWithLength (s.data(), s.size()))
+{
+}
+
 bool
 ConstString::operator < (const ConstString& rhs) const
 {
@@ -262,9 +279,12 @@ ConstString::Compare (const ConstString& lhs, const ConstString& rhs)
 void
 ConstString::Dump(Stream *s, const char *fail_value) const
 {
-    const char *cstr = AsCString (fail_value);
-    if (cstr)
-        s->PutCString (cstr);
+    if (s)
+    {
+        const char *cstr = AsCString (fail_value);
+        if (cstr)
+            s->PutCString (cstr);
+    }
 }
 
 void
@@ -274,13 +294,19 @@ ConstString::DumpDebug(Stream *s) const
     size_t cstr_len = GetLength();
     // Only print the parens if we have a non-NULL string
     const char *parens = cstr ? "\"" : "";
-    s->Printf("%*p: ConstString, string = %s%s%s, length = %zu", (int)sizeof(void*) * 2, this, parens, cstr, parens, cstr_len);
+    s->Printf("%*p: ConstString, string = %s%s%s, length = %" PRIu64, (int)sizeof(void*) * 2, this, parens, cstr, parens, (uint64_t)cstr_len);
 }
 
 void
 ConstString::SetCString (const char *cstr)
 {
     m_string = StringPool().GetConstCString (cstr);
+}
+
+void
+ConstString::SetString (const llvm::StringRef &s)
+{
+    m_string = StringPool().GetConstCStringWithLength (s.data(), s.size());
 }
 
 void

@@ -134,7 +134,7 @@ public:
     /// Writes a siginfo_t structure corresponding to the given thread ID to the
     /// memory region pointed to by @p siginfo.
     bool
-    GetSignalInfo(lldb::tid_t tid, void *siginfo);
+    GetSignalInfo(lldb::tid_t tid, void *siginfo, int &ptrace_err);
 
     /// Writes the raw event message code (vis-a-vis PTRACE_GETEVENTMSG)
     /// corresponding to the given thread IDto the memory pointed to by @p
@@ -158,7 +158,7 @@ public:
     bool
     BringProcessIntoLimbo();
 
-    bool
+    lldb_private::Error
     Detach();
 
 
@@ -213,9 +213,6 @@ private:
     void
     StartLaunchOpThread(LaunchArgs *args, lldb_private::Error &error);
 
-    void
-    StopLaunchOpThread();
-
     static void *
     LaunchOpThread(void *arg);
 
@@ -237,9 +234,6 @@ private:
 
     void
     StartAttachOpThread(AttachArgs *args, lldb_private::Error &error);
-
-    void
-    StopAttachOpThread();
 
     static void *
     AttachOpThread(void *args);
@@ -286,6 +280,10 @@ private:
 
     void 
     StopMonitor();
+
+    /// Stops the operation thread used to attach/launch a process.
+    void
+    StopOpThread();
 
     void
     CloseFD(int &fd);

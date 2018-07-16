@@ -30,6 +30,11 @@
 #include "lldb/Expression/ClangUserExpression.h"
 #include "lldb/Expression/ExpressionSourceCode.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Symbol/Block.h"
+#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/Type.h"
+#include "lldb/Symbol/ClangExternalASTSourceCommon.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
@@ -53,7 +58,7 @@ ClangUserExpression::ClangUserExpression (const char *expr,
     m_language (language),
     m_transformed_text (),
     m_desired_type (desired_type),
-    m_enforce_valid_object (false),
+    m_enforce_valid_object (true),
     m_cplusplus (false),
     m_objectivec (false),
     m_static_method(false),
@@ -101,31 +106,56 @@ ClangUserExpression::ASTTransformer (clang::ASTConsumer *passthrough)
 void
 ClangUserExpression::ScanContext(ExecutionContext &exe_ctx, Error &err)
 {
+    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
+
+    if (log)
+        log->Printf("ClangUserExpression::ScanContext()");
+    
     m_target = exe_ctx.GetTargetPtr();
     
     if (!(m_allow_cxx || m_allow_objc))
+    {
+        if (log)
+            log->Printf("  [CUE::SC] Settings inhibit C++ and Objective-C");
         return;
+    }
     
     StackFrame *frame = exe_ctx.GetFramePtr();
     if (frame == NULL)
+    {
+        if (log)
+            log->Printf("  [CUE::SC] Null stack frame");
         return;
+    }
     
     SymbolContext sym_ctx = frame->GetSymbolContext(lldb::eSymbolContextFunction | lldb::eSymbolContextBlock);
     
     if (!sym_ctx.function)
+    {
+        if (log)
+            log->Printf("  [CUE::SC] Null function");
         return;
+    }
     
     // Find the block that defines the function represented by "sym_ctx"
     Block *function_block = sym_ctx.GetFunctionBlock();
     
     if (!function_block)
+    {
+        if (log)
+            log->Printf("  [CUE::SC] Null function block");
         return;
+    }
 
     clang::DeclContext *decl_context = function_block->GetClangDeclContext();
 
     if (!decl_context)
+    {
+        if (log)
+            log->Printf("  [CUE::SC] Null decl context");
         return;
-            
+    }
+    
     if (clang::CXXMethodDecl *method_decl = llvm::dyn_cast<clang::CXXMethodDecl>(decl_context))
     {
         if (m_allow_cxx && method_decl->isInstance())
@@ -189,6 +219,29 @@ ClangUserExpression::ScanContext(ExecutionContext &exe_ctx, Error &err)
             
             if (!method_decl->isInstanceMethod())
                 m_static_method = true;
+        }
+    }
+    else if (clang::FunctionDecl *function_decl = llvm::dyn_cast<clang::FunctionDecl>(decl_context))
+    {
+        // We might also have a function that said in the debug information that it captured an
+        // object pointer.  The best way to deal with getting to the ivars at present it by pretending
+        // that this is a method of a class in whatever runtime the debug info says the object pointer
+        // belongs to.  Do that here.
+        
+        ClangASTMetadata *metadata = ClangASTContext::GetMetadata (&decl_context->getParentASTContext(), (uintptr_t) function_decl);
+        if (metadata && metadata->HasObjectPtr())
+        {
+            lldb::LanguageType language = metadata->GetObjectPtrLanguage();
+            if (language == lldb::eLanguageTypeC_plus_plus)
+            {
+                m_cplusplus = true;
+                m_needs_object_ptr = true;
+            }
+            else if (language == lldb::eLanguageTypeObjC)
+            {
+                m_objectivec = true;
+                m_needs_object_ptr = true;
+            }
         }
     }
 }
@@ -350,7 +403,7 @@ ClangUserExpression::Parse (Stream &error_stream,
     if (jit_error.Success())
     {
         if (process && m_jit_alloc != LLDB_INVALID_ADDRESS)
-            m_jit_process_sp = process->shared_from_this();        
+            m_jit_process_wp = lldb::ProcessWP(process->shared_from_this());
         return true;
     }
     else
@@ -435,19 +488,19 @@ ClangUserExpression::PrepareToExecuteJITExpression (Stream &error_stream,
 #if 0
 		// jingham: look here
         StreamFile logfile ("/tmp/exprs.txt", "a");
-        logfile.Printf("0x%16.16llx: thread = 0x%4.4x, expr = '%s'\n", m_jit_start_addr, exe_ctx.thread ? exe_ctx.thread->GetID() : -1, m_expr_text.c_str());
+        logfile.Printf("0x%16.16" PRIx64 ": thread = 0x%4.4x, expr = '%s'\n", m_jit_start_addr, exe_ctx.thread ? exe_ctx.thread->GetID() : -1, m_expr_text.c_str());
 #endif
         
         if (log)
         {
             log->Printf("-- [ClangUserExpression::PrepareToExecuteJITExpression] Materializing for execution --");
             
-            log->Printf("  Function address  : 0x%llx", (uint64_t)m_jit_start_addr);
+            log->Printf("  Function address  : 0x%" PRIx64, (uint64_t)m_jit_start_addr);
             
             if (m_needs_object_ptr)
-                log->Printf("  Object pointer    : 0x%llx", (uint64_t)object_ptr);
+                log->Printf("  Object pointer    : 0x%" PRIx64, (uint64_t)object_ptr);
             
-            log->Printf("  Structure address : 0x%llx", (uint64_t)struct_address);
+            log->Printf("  Structure address : 0x%" PRIx64, (uint64_t)struct_address);
                     
             StreamString args;
             
@@ -543,7 +596,8 @@ ClangUserExpression::Execute (Stream &error_stream,
                               bool discard_on_error,
                               ClangUserExpression::ClangUserExpressionSP &shared_ptr_to_me,
                               lldb::ClangExpressionVariableSP &result,
-                              uint32_t single_thread_timeout_usec)
+                              bool run_others,
+                              uint32_t timeout_usec)
 {
     // The expression log is quite verbose, and if you're just tracking the execution of the
     // expression, it's quite convenient to have these logs come out with the STEP log as well.
@@ -551,13 +605,16 @@ ClangUserExpression::Execute (Stream &error_stream,
 
     if (m_jit_start_addr != LLDB_INVALID_ADDRESS)
     {
-        lldb::addr_t struct_address;
+        lldb::addr_t struct_address = LLDB_INVALID_ADDRESS;
                 
         lldb::addr_t object_ptr = 0;
         lldb::addr_t cmd_ptr = 0;
         
         if (!PrepareToExecuteJITExpression (error_stream, exe_ctx, struct_address, object_ptr, cmd_ptr))
+        {
+            error_stream.Printf("Errored out in %s, couldn't PrepareToExecuteJITExpression", __FUNCTION__);
             return eExecutionSetupError;
+        }
         
         const bool stop_others = true;
         const bool try_all_threads = true;
@@ -572,7 +629,7 @@ ClangUserExpression::Execute (Stream &error_stream,
                                                                           ((m_needs_object_ptr && m_objectivec) ? &cmd_ptr : NULL),
                                                                           shared_ptr_to_me));
         
-        if (call_plan_sp == NULL || !call_plan_sp->ValidatePlan (NULL))
+        if (!call_plan_sp || !call_plan_sp->ValidatePlan (NULL))
             return eExecutionSetupError;
         
         lldb::addr_t function_stack_pointer = static_cast<ThreadPlanCallFunction *>(call_plan_sp.get())->GetFunctionStackPointer();
@@ -590,7 +647,7 @@ ClangUserExpression::Execute (Stream &error_stream,
                                                                                    stop_others, 
                                                                                    try_all_threads, 
                                                                                    discard_on_error,
-                                                                                   single_thread_timeout_usec, 
+                                                                                   timeout_usec, 
                                                                                    error_stream);
         
         if (exe_ctx.GetProcessPtr())
@@ -630,7 +687,10 @@ ClangUserExpression::Execute (Stream &error_stream,
         if  (FinalizeJITExecution (error_stream, exe_ctx, result, function_stack_pointer))
             return eExecutionCompleted;
         else
+        {
+            error_stream.Printf("Errored out in %s: Couldn't FinalizeJITExpression", __FUNCTION__);
             return eExecutionSetupError;
+        }
     }
     else
     {
@@ -648,10 +708,21 @@ ClangUserExpression::Evaluate (ExecutionContext &exe_ctx,
                                const char *expr_cstr,
                                const char *expr_prefix,
                                lldb::ValueObjectSP &result_valobj_sp,
-                               uint32_t single_thread_timeout_usec)
+                               bool run_others,
+                               uint32_t timeout_usec)
 {
     Error error;
-    return EvaluateWithError (exe_ctx, execution_policy, language, desired_type, discard_on_error, expr_cstr, expr_prefix, result_valobj_sp, error, single_thread_timeout_usec);
+    return EvaluateWithError (exe_ctx,
+                              execution_policy,
+                              language,
+                              desired_type,
+                              discard_on_error,
+                              expr_cstr,
+                              expr_prefix,
+                              result_valobj_sp,
+                              error,
+                              run_others,
+                              timeout_usec);
 }
 
 ExecutionResults
@@ -664,7 +735,8 @@ ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx,
                                         const char *expr_prefix,
                                         lldb::ValueObjectSP &result_valobj_sp,
                                         Error &error,
-                                        uint32_t single_thread_timeout_usec)
+                                        bool run_others,
+                                        uint32_t timeout_usec)
 {
     lldb::LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_EXPRESSIONS | LIBLLDB_LOG_STEP));
 
@@ -740,7 +812,8 @@ ClangUserExpression::EvaluateWithError (ExecutionContext &exe_ctx,
                                                              discard_on_error,
                                                              user_expression_sp, 
                                                              expr_result,
-                                                             single_thread_timeout_usec);
+                                                             run_others,
+                                                             timeout_usec);
             
             if (execution_results != eExecutionCompleted)
             {

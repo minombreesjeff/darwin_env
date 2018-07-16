@@ -18,6 +18,7 @@
 #include "clang/AST/Expr.h"
 #include "clang/Analysis/AnalysisContext.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/ExplodedGraph.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/FunctionSummary.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/WorkList.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/BlockCounter.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -42,6 +43,7 @@ class NodeBuilder;
 class CoreEngine {
   friend struct NodeBuilderContext;
   friend class NodeBuilder;
+  friend class ExprEngine;
   friend class CommonNodeBuilder;
   friend class IndirectGotoNodeBuilder;
   friend class SwitchNodeBuilder;
@@ -63,7 +65,7 @@ private:
   /// WList - A set of queued nodes that need to be processed by the
   ///  worklist algorithm.  It is up to the implementation of WList to decide
   ///  the order that nodes are processed.
-  WorkList* WList;
+  OwningPtr<WorkList> WList;
 
   /// BCounterFactory - A factory object for created BlockCounter objects.
   ///   These are used to record for key nodes in the ExplodedGraph the
@@ -78,6 +80,10 @@ private:
   /// usually because it could not reason about something.
   BlocksAborted blocksAborted;
 
+  /// The information about functions shared by the whole translation unit.
+  /// (This data is owned by AnalysisConsumer.)
+  FunctionSummariesTy *FunctionSummaries;
+
   void generateNode(const ProgramPoint &Loc,
                     ProgramStateRef State,
                     ExplodedNode *Pred);
@@ -91,32 +97,19 @@ private:
                     ExplodedNode *Pred);
 
 private:
-  CoreEngine(const CoreEngine&); // Do not implement.
-  CoreEngine& operator=(const CoreEngine&);
+  CoreEngine(const CoreEngine &) LLVM_DELETED_FUNCTION;
+  void operator=(const CoreEngine &) LLVM_DELETED_FUNCTION;
 
-  void enqueueStmtNode(ExplodedNode *N,
-                       const CFGBlock *Block, unsigned Idx);
-
-  ExplodedNode *generateCallExitNode(ExplodedNode *N);
+  ExplodedNode *generateCallExitBeginNode(ExplodedNode *N);
 
 public:
-  /// Construct a CoreEngine object to analyze the provided CFG using
-  ///  a DFS exploration of the exploded graph.
-  CoreEngine(SubEngine& subengine)
+  /// Construct a CoreEngine object to analyze the provided CFG.
+  CoreEngine(SubEngine& subengine,
+             FunctionSummariesTy *FS)
     : SubEng(subengine), G(new ExplodedGraph()),
-      WList(WorkList::makeBFS()),
-      BCounterFactory(G->getAllocator()) {}
-
-  /// Construct a CoreEngine object to analyze the provided CFG and to
-  ///  use the provided worklist object to execute the worklist algorithm.
-  ///  The CoreEngine object assumes ownership of 'wlist'.
-  CoreEngine(WorkList* wlist, SubEngine& subengine)
-    : SubEng(subengine), G(new ExplodedGraph()), WList(wlist),
-      BCounterFactory(G->getAllocator()) {}
-
-  ~CoreEngine() {
-    delete WList;
-  }
+      WList(WorkList::makeDFS()),
+      BCounterFactory(G->getAllocator()),
+      FunctionSummaries(FS){}
 
   /// getGraph - Returns the exploded graph.
   ExplodedGraph& getGraph() { return *G.get(); }
@@ -129,10 +122,16 @@ public:
   ///  steps.  Returns true if there is still simulation state on the worklist.
   bool ExecuteWorkList(const LocationContext *L, unsigned Steps,
                        ProgramStateRef InitState);
-  void ExecuteWorkListWithInitialState(const LocationContext *L,
+  /// Returns true if there is still simulation state on the worklist.
+  bool ExecuteWorkListWithInitialState(const LocationContext *L,
                                        unsigned Steps,
                                        ProgramStateRef InitState, 
                                        ExplodedNodeSet &Dst);
+
+  /// Dispatch the work list item based on the given location information.
+  /// Use Pred parameter as the predecessor state.
+  void dispatchWorkItem(ExplodedNode* Pred, ProgramPoint Loc,
+                        const WorkListUnit& WU);
 
   // Functions for external checking of whether we have unfinished work
   bool wasBlockAborted() const { return !blocksAborted.empty(); }
@@ -147,7 +146,7 @@ public:
     blocksAborted.push_back(std::make_pair(block, node));
   }
   
-  WorkList *getWorkList() const { return WList; }
+  WorkList *getWorkList() const { return WList.get(); }
 
   BlocksExhausted::const_iterator blocks_exhausted_begin() const {
     return blocksExhausted.begin();
@@ -172,14 +171,17 @@ public:
   /// \brief enqueue the nodes corresponding to the end of function onto the
   /// end of path / work list.
   void enqueueEndOfFunction(ExplodedNodeSet &Set);
+
+  /// \brief Enqueue a single node created as a result of statement processing.
+  void enqueueStmtNode(ExplodedNode *N, const CFGBlock *Block, unsigned Idx);
 };
 
 // TODO: Turn into a calss.
 struct NodeBuilderContext {
-  CoreEngine &Eng;
+  const CoreEngine &Eng;
   const CFGBlock *Block;
   ExplodedNode *Pred;
-  NodeBuilderContext(CoreEngine &E, const CFGBlock *B, ExplodedNode *N)
+  NodeBuilderContext(const CoreEngine &E, const CFGBlock *B, ExplodedNode *N)
     : Eng(E), Block(B), Pred(N) { assert(B); assert(!N->isSink()); }
 
   ExplodedNode *getPred() const { return Pred; }
@@ -189,7 +191,7 @@ struct NodeBuilderContext {
 
   /// \brief Returns the number of times the current basic block has been
   /// visited on the exploded graph path.
-  unsigned getCurrentBlockCount() const {
+  unsigned blockCount() const {
     return Eng.WList->getBlockCounter().getNumVisited(
                     Pred->getLocationContext()->getCurrentStackFrame(),
                     Block->getBlockID());
@@ -258,14 +260,21 @@ public:
   virtual ~NodeBuilder() {}
 
   /// \brief Generates a node in the ExplodedGraph.
-  ///
-  /// When a node is marked as sink, the exploration from the node is stopped -
-  /// the node becomes the last node on the path.
   ExplodedNode *generateNode(const ProgramPoint &PP,
                              ProgramStateRef State,
-                             ExplodedNode *Pred,
-                             bool MarkAsSink = false) {
-    return generateNodeImpl(PP, State, Pred, MarkAsSink);
+                             ExplodedNode *Pred) {
+    return generateNodeImpl(PP, State, Pred, false);
+  }
+
+  /// \brief Generates a sink in the ExplodedGraph.
+  ///
+  /// When a node is marked as sink, the exploration from the node is stopped -
+  /// the node becomes the last node on the path and certain kinds of bugs are
+  /// suppressed.
+  ExplodedNode *generateSink(const ProgramPoint &PP,
+                             ProgramStateRef State,
+                             ExplodedNode *Pred) {
+    return generateNodeImpl(PP, State, Pred, true);
   }
 
   const ExplodedNodeSet &getResults() {
@@ -310,13 +319,18 @@ public:
   NodeBuilderWithSinks(ExplodedNode *Pred, ExplodedNodeSet &DstSet,
                        const NodeBuilderContext &Ctx, ProgramPoint &L)
     : NodeBuilder(Pred, DstSet, Ctx), Location(L) {}
+
   ExplodedNode *generateNode(ProgramStateRef State,
                              ExplodedNode *Pred,
-                             const ProgramPointTag *Tag = 0,
-                             bool MarkAsSink = false) {
-    ProgramPoint LocalLoc = (Tag ? Location.withTag(Tag): Location);
+                             const ProgramPointTag *Tag = 0) {
+    const ProgramPoint &LocalLoc = (Tag ? Location.withTag(Tag) : Location);
+    return NodeBuilder::generateNode(LocalLoc, State, Pred);
+  }
 
-    ExplodedNode *N = generateNodeImpl(LocalLoc, State, Pred, MarkAsSink);
+  ExplodedNode *generateSink(ProgramStateRef State, ExplodedNode *Pred,
+                             const ProgramPointTag *Tag = 0) {
+    const ProgramPoint &LocalLoc = (Tag ? Location.withTag(Tag) : Location);
+    ExplodedNode *N = NodeBuilder::generateSink(LocalLoc, State, Pred);
     if (N && N->isSink())
       sinksGenerated.push_back(N);
     return N;
@@ -329,7 +343,7 @@ public:
 
 /// \class StmtNodeBuilder
 /// \brief This builder class is useful for generating nodes that resulted from
-/// visiting a statement. The main difference from it's parent NodeBuilder is
+/// visiting a statement. The main difference from its parent NodeBuilder is
 /// that it creates a statement specific ProgramPoint.
 class StmtNodeBuilder: public NodeBuilder {
   NodeBuilder *EnclosingBldr;
@@ -356,22 +370,27 @@ public:
 
   virtual ~StmtNodeBuilder();
 
+  using NodeBuilder::generateNode;
+  using NodeBuilder::generateSink;
+
   ExplodedNode *generateNode(const Stmt *S,
                              ExplodedNode *Pred,
                              ProgramStateRef St,
-                             bool MarkAsSink = false,
                              const ProgramPointTag *tag = 0,
                              ProgramPoint::Kind K = ProgramPoint::PostStmtKind){
     const ProgramPoint &L = ProgramPoint::getProgramPoint(S, K,
                                   Pred->getLocationContext(), tag);
-    return generateNodeImpl(L, St, Pred, MarkAsSink);
+    return NodeBuilder::generateNode(L, St, Pred);
   }
 
-  ExplodedNode *generateNode(const ProgramPoint &PP,
+  ExplodedNode *generateSink(const Stmt *S,
                              ExplodedNode *Pred,
-                             ProgramStateRef State,
-                             bool MarkAsSink = false) {
-    return generateNodeImpl(PP, State, Pred, MarkAsSink);
+                             ProgramStateRef St,
+                             const ProgramPointTag *tag = 0,
+                             ProgramPoint::Kind K = ProgramPoint::PostStmtKind){
+    const ProgramPoint &L = ProgramPoint::getProgramPoint(S, K,
+                                  Pred->getLocationContext(), tag);
+    return NodeBuilder::generateSink(L, St, Pred);
   }
 };
 

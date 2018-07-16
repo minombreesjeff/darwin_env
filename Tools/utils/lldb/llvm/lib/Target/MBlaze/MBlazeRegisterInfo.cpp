@@ -14,9 +14,9 @@
 
 #define DEBUG_TYPE "mblaze-frame-info"
 
+#include "MBlazeRegisterInfo.h"
 #include "MBlaze.h"
 #include "MBlazeSubtarget.h"
-#include "MBlazeRegisterInfo.h"
 #include "MBlazeMachineFunction.h"
 #include "llvm/Constants.h"
 #include "llvm/Type.h"
@@ -140,7 +140,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
 
   unsigned oi = i == 2 ? 1 : 2;
 
-  DEBUG(dbgs() << "\nFunction : " << MF.getFunction()->getName() << "\n";
+  DEBUG(dbgs() << "\nFunction : " << MF.getName() << "\n";
         dbgs() << "<--------->\n" << MI);
 
   int FrameIndex = MI.getOperand(i).getIndex();

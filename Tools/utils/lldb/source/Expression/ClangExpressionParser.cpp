@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Expression/ClangExpressionParser.h"
 
 #include "lldb/Core/ArchSpec.h"
@@ -43,15 +45,16 @@
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Parse/ParseAST.h"
-#include "clang/Rewrite/FrontendActions.h"
+#include "clang/Rewrite/Frontend/FrontendActions.h"
 #include "clang/Sema/SemaConsumer.h"
 #include "clang/StaticAnalyzer/Frontend/FrontendActions.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/TargetSelect.h"
 
-#if !defined(__APPLE__)
+#if defined(__FreeBSD__)
 #define USE_STANDARD_JIT
 #endif
 
@@ -199,86 +202,20 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
             llvm::DisablePrettyStackTrace = true;
         }
     } InitializeLLVM;
-        
+    
     // 1. Create a new compiler instance.
     m_compiler.reset(new CompilerInstance());    
     
-    // 2. Set options.
-    
-    lldb::LanguageType language = expr.Language();
-    
-    switch (language)
-    {
-    case lldb::eLanguageTypeC:
-        break;
-    case lldb::eLanguageTypeObjC:
-        m_compiler->getLangOpts().ObjC1 = true;
-        m_compiler->getLangOpts().ObjC2 = true;
-        break;
-    case lldb::eLanguageTypeC_plus_plus:
-        m_compiler->getLangOpts().CPlusPlus = true;
-        m_compiler->getLangOpts().CPlusPlus0x = true;
-        break;
-    case lldb::eLanguageTypeObjC_plus_plus:
-    default:
-        m_compiler->getLangOpts().ObjC1 = true;
-        m_compiler->getLangOpts().ObjC2 = true;
-        m_compiler->getLangOpts().CPlusPlus = true;
-        m_compiler->getLangOpts().CPlusPlus0x = true;
-        break;
-    }
-    
-    m_compiler->getLangOpts().DebuggerSupport = true; // Features specifically for debugger clients
-    if (expr.DesiredResultType() == ClangExpression::eResultTypeId)
-        m_compiler->getLangOpts().DebuggerCastResultToId = true;
-    
-    // Spell checking is a nice feature, but it ends up completing a
-    // lot of types that we didn't strictly speaking need to complete.
-    // As a result, we spend a long time parsing and importing debug
-    // information.
-    m_compiler->getLangOpts().SpellChecking = false; 
-    
-    lldb::ProcessSP process_sp;
-    if (exe_scope)
-        process_sp = exe_scope->CalculateProcess();
+    // 2. Install the target.
 
-    if (process_sp && m_compiler->getLangOpts().ObjC1)
-    {
-        if (process_sp->GetObjCLanguageRuntime())
-        {
-            if (process_sp->GetObjCLanguageRuntime()->GetRuntimeVersion() == eAppleObjC_V2)
-            {
-                m_compiler->getLangOpts().ObjCNonFragileABI = true;     // NOT i386
-                m_compiler->getLangOpts().ObjCNonFragileABI2 = true;    // NOT i386
-            }
-            
-            if (process_sp->GetObjCLanguageRuntime()->HasNewLiteralsAndIndexing())
-            {
-                m_compiler->getLangOpts().DebuggerObjCLiteral = true;
-            }
-        }
-    }
-
-    m_compiler->getLangOpts().ThreadsafeStatics = false;
-    m_compiler->getLangOpts().AccessControl = false; // Debuggers get universal access
-    m_compiler->getLangOpts().DollarIdents = true; // $ indicates a persistent variable name
-    
-    // Set CodeGen options
-    m_compiler->getCodeGenOpts().EmitDeclMetadata = true;
-    m_compiler->getCodeGenOpts().InstrumentFunctions = false;
-    
-    // Disable some warnings.
-    m_compiler->getDiagnosticOpts().Warnings.push_back("no-unused-value");
-    
-    // Set the target triple.
     lldb::TargetSP target_sp;
     if (exe_scope)
         target_sp = exe_scope->CalculateTarget();
-
+    
     // TODO: figure out what to really do when we don't have a valid target.
     // Sometimes this will be ok to just use the host target triple (when we
     // evaluate say "2+3", but other expressions like breakpoint conditions
-    // and other things that _are_ target specific really shouldn't just be 
+    // and other things that _are_ target specific really shouldn't just be
     // using the host triple. This needs to be fixed in a better way.
     if (target_sp && target_sp->GetArchitecture().IsValid())
     {
@@ -305,8 +242,7 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
     
     if (m_compiler->getTargetOpts().Triple.find("ios") != std::string::npos)
         m_compiler->getTargetOpts().ABI = "apcs-gnu";
-        
-    // 3. Set up various important bits of infrastructure.
+    
     m_compiler->createDiagnostics(0, 0);
     
     // Create the target instance.
@@ -314,6 +250,72 @@ ClangExpressionParser::ClangExpressionParser (ExecutionContextScope *exe_scope,
                                                        m_compiler->getTargetOpts()));
     
     assert (m_compiler->hasTarget());
+    
+    // 3. Set options.
+    
+    lldb::LanguageType language = expr.Language();
+    
+    switch (language)
+    {
+    case lldb::eLanguageTypeC:
+        break;
+    case lldb::eLanguageTypeObjC:
+        m_compiler->getLangOpts().ObjC1 = true;
+        m_compiler->getLangOpts().ObjC2 = true;
+        break;
+    case lldb::eLanguageTypeC_plus_plus:
+        m_compiler->getLangOpts().CPlusPlus = true;
+        m_compiler->getLangOpts().CPlusPlus0x = true;
+        break;
+    case lldb::eLanguageTypeObjC_plus_plus:
+    default:
+        m_compiler->getLangOpts().ObjC1 = true;
+        m_compiler->getLangOpts().ObjC2 = true;
+        m_compiler->getLangOpts().CPlusPlus = true;
+        m_compiler->getLangOpts().CPlusPlus0x = true;
+        break;
+    }
+    
+    m_compiler->getLangOpts().Bool = true;
+    m_compiler->getLangOpts().WChar = true;
+    m_compiler->getLangOpts().DebuggerSupport = true; // Features specifically for debugger clients
+    if (expr.DesiredResultType() == ClangExpression::eResultTypeId)
+        m_compiler->getLangOpts().DebuggerCastResultToId = true;
+    
+    // Spell checking is a nice feature, but it ends up completing a
+    // lot of types that we didn't strictly speaking need to complete.
+    // As a result, we spend a long time parsing and importing debug
+    // information.
+    m_compiler->getLangOpts().SpellChecking = false; 
+    
+    lldb::ProcessSP process_sp;
+    if (exe_scope)
+        process_sp = exe_scope->CalculateProcess();
+
+    if (process_sp && m_compiler->getLangOpts().ObjC1)
+    {
+        if (process_sp->GetObjCLanguageRuntime())
+        {
+            if (process_sp->GetObjCLanguageRuntime()->GetRuntimeVersion() == eAppleObjC_V2)
+                m_compiler->getLangOpts().ObjCRuntime.set(ObjCRuntime::MacOSX, VersionTuple(10, 7));
+            else
+                m_compiler->getLangOpts().ObjCRuntime.set(ObjCRuntime::FragileMacOSX, VersionTuple(10, 7));
+            
+            if (process_sp->GetObjCLanguageRuntime()->HasNewLiteralsAndIndexing())
+                m_compiler->getLangOpts().DebuggerObjCLiteral = true;
+        }
+    }
+
+    m_compiler->getLangOpts().ThreadsafeStatics = false;
+    m_compiler->getLangOpts().AccessControl = false; // Debuggers get universal access
+    m_compiler->getLangOpts().DollarIdents = true; // $ indicates a persistent variable name
+    
+    // Set CodeGen options
+    m_compiler->getCodeGenOpts().EmitDeclMetadata = true;
+    m_compiler->getCodeGenOpts().InstrumentFunctions = false;
+    
+    // Disable some warnings.
+    m_compiler->getDiagnosticOpts().Warnings.push_back("no-unused-value");
     
     // Inform the target of the language options
     //
@@ -463,13 +465,13 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
 	func_end = LLDB_INVALID_ADDRESS;
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
 
-    std::auto_ptr<llvm::ExecutionEngine> execution_engine;
+    std::auto_ptr<llvm::ExecutionEngine> execution_engine_ap;
     
     Error err;
     
-    llvm::Module *module = m_code_generator->ReleaseModule();
+    std::auto_ptr<llvm::Module> module_ap (m_code_generator->ReleaseModule());
 
-    if (!module)
+    if (!module_ap.get())
     {
         err.SetErrorToGenericError();
         err.SetErrorString("IR doesn't contain a module");
@@ -480,7 +482,7 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
     
     std::string function_name;
     
-    if (!FindFunctionInModule(function_name, module, m_expr.FunctionName()))
+    if (!FindFunctionInModule(function_name, module_ap.get(), m_expr.FunctionName()))
     {
         err.SetErrorToGenericError();
         err.SetErrorStringWithFormat("Couldn't find %s() in the module", m_expr.FunctionName());
@@ -509,7 +511,7 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
                                   error_stream,
                                   function_name.c_str());
         
-        ir_for_target.runOnModule(*module);
+        bool ir_can_run = ir_for_target.runOnModule(*module_ap);
         
         Error &interpreter_error(ir_for_target.getInterpreterError());
         
@@ -532,6 +534,13 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
             else
                 err.SetErrorStringWithFormat("Interpreting the expression locally failed: %s", interpreter_error.AsCString());
 
+            return err;
+        }
+        else if (!ir_can_run)
+        {
+            err.SetErrorToGenericError();
+            err.SetErrorString("The expression could not be prepared to run in the target");
+            
             return err;
         }
         
@@ -563,7 +572,7 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
             
             IRDynamicChecks ir_dynamic_checks(*process->GetDynamicCheckers(), function_name.c_str());
         
-            if (!ir_dynamic_checks.runOnModule(*module))
+            if (!ir_dynamic_checks.runOnModule(*module_ap))
             {
                 err.SetErrorToGenericError();
                 err.SetErrorString("Couldn't add dynamic checks to the expression");
@@ -583,14 +592,15 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
         std::string s;
         raw_string_ostream oss(s);
         
-        module->print(oss, NULL);
+        module_ap->print(oss, NULL);
         
         oss.flush();
         
         log->Printf ("Module being sent to JIT: \n%s", s.c_str());
     }
-    
-    EngineBuilder builder(module);
+    llvm::Triple triple(module_ap->getTargetTriple());
+    llvm::Function *function = module_ap->getFunction (function_name.c_str());
+    EngineBuilder builder(module_ap.release());
     builder.setEngineKind(EngineKind::JIT)
         .setErrorStr(&error_string)
         .setRelocationModel(llvm::Reloc::PIC_)
@@ -599,22 +609,31 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
         .setAllocateGVsWithCode(true)
         .setCodeModel(CodeModel::Small)
         .setUseMCJIT(true);
-    execution_engine.reset(builder.create());
+    
+    StringRef mArch;
+    StringRef mCPU;
+    SmallVector<std::string, 0> mAttrs;
+    
+    TargetMachine *target_machine = builder.selectTarget(triple,
+                                                         mArch,
+                                                         mCPU,
+                                                         mAttrs);
+    
+    execution_engine_ap.reset(builder.create(target_machine));
         
-    if (!execution_engine.get())
+    if (!execution_engine_ap.get())
     {
         err.SetErrorToGenericError();
         err.SetErrorStringWithFormat("Couldn't JIT the function: %s", error_string.c_str());
         return err;
     }
     
-    execution_engine->DisableLazyCompilation();
+    execution_engine_ap->DisableLazyCompilation();
     
-    llvm::Function *function = module->getFunction (function_name.c_str());
     
     // We don't actually need the function pointer here, this just forces it to get resolved.
     
-    void *fun_ptr = execution_engine->getPointerToFunction(function);
+    void *fun_ptr = execution_engine_ap->getPointerToFunction(function);
         
     // Errors usually cause failures in the JIT, but if we're lucky we get here.
     
@@ -644,7 +663,7 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
     }
         
     jit_memory_manager->CommitAllocations(*process);
-    jit_memory_manager->ReportAllocations(*execution_engine);
+    jit_memory_manager->ReportAllocations(*execution_engine_ap);
     jit_memory_manager->WriteData(*process);
     
     std::vector<JittedFunction>::iterator pos, end = m_jitted_functions.end();
@@ -678,8 +697,6 @@ ClangExpressionParser::PrepareForExecution (lldb::addr_t &func_allocation_addr,
             log->Printf("Function disassembly:\n%s", disassembly_stream.GetData());
         }
     }
-    
-    execution_engine.reset();
     
     err.Clear();
     return err;
@@ -718,7 +735,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     }
     
     if (log)
-        log->Printf("Found function, has local address 0x%llx and remote address 0x%llx", (uint64_t)func_local_addr, (uint64_t)func_remote_addr);
+        log->Printf("Found function, has local address 0x%" PRIx64 " and remote address 0x%" PRIx64, (uint64_t)func_local_addr, (uint64_t)func_remote_addr);
     
     std::pair <lldb::addr_t, lldb::addr_t> func_range;
     
@@ -732,13 +749,14 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     }
     
     if (log)
-        log->Printf("Function's code range is [0x%llx+0x%llx]", func_range.first, func_range.second);
+        log->Printf("Function's code range is [0x%" PRIx64 "+0x%" PRIx64 "]", func_range.first, func_range.second);
     
     Target *target = exe_ctx.GetTargetPtr();
     if (!target)
     {
         ret.SetErrorToGenericError();
         ret.SetErrorString("Couldn't find the target");
+        return ret;
     }
     
     lldb::DataBufferSP buffer_sp(new DataBufferHeap(func_range.second, 0));
@@ -758,7 +776,7 @@ ClangExpressionParser::DisassembleFunction (Stream &stream, ExecutionContext &ex
     
     lldb::DisassemblerSP disassembler = Disassembler::FindPlugin(arch, NULL);
     
-    if (disassembler == NULL)
+    if (!disassembler)
     {
         ret.SetErrorToGenericError();
         ret.SetErrorStringWithFormat("Unable to find disassembler plug-in for %s architecture.", arch.GetArchitectureName());

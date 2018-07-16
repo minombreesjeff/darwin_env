@@ -33,15 +33,21 @@ class CheckerContext {
   NodeBuilder &NB;
 
 public:
+  /// If we are post visiting a call, this flag will be set if the
+  /// call was inlined.  In all other cases it will be false.
+  const bool wasInlined;
+  
   CheckerContext(NodeBuilder &builder,
                  ExprEngine &eng,
                  ExplodedNode *pred,
-                 const ProgramPoint &loc)
+                 const ProgramPoint &loc,
+                 bool wasInlined = false)
     : Eng(eng),
       Pred(pred),
       Changed(false),
       Location(loc),
-      NB(builder) {
+      NB(builder),
+      wasInlined(wasInlined) {
     assert(Pred->getState() &&
            "We should not call the checkers on an empty state.");
   }
@@ -58,6 +64,10 @@ public:
     return Eng.getStoreManager();
   }
 
+  const AnalyzerOptions::ConfigTable &getConfig() const {
+    return Eng.getAnalysisManager().options.Config;
+  }
+  
   /// \brief Returns the previous node in the exploded graph, which includes
   /// the state of the program before the checker ran. Note, checkers should
   /// not retain the node in their state since the nodes might get invalidated.
@@ -70,20 +80,29 @@ public:
 
   /// \brief Returns the number of times the current block has been visited
   /// along the analyzed path.
-  unsigned getCurrentBlockCount() const {
-    return NB.getContext().getCurrentBlockCount();
+  unsigned blockCount() const {
+    return NB.getContext().blockCount();
   }
 
   ASTContext &getASTContext() {
     return Eng.getContext();
   }
 
-  const LangOptions &getLangOptions() const {
-    return Eng.getContext().getLangOptions();
+  const LangOptions &getLangOpts() const {
+    return Eng.getContext().getLangOpts();
   }
 
   const LocationContext *getLocationContext() const {
     return Pred->getLocationContext();
+  }
+
+  const StackFrameContext *getStackFrame() const {
+    return Pred->getStackFrame();
+  }
+
+  /// Returns true if the predecessor is within an inlined function/method.
+  bool isWithinInlined() {
+    return (getStackFrame()->getParent() != 0);
   }
 
   BugReporter &getBugReporter() {
@@ -114,23 +133,35 @@ public:
     return Pred->getLocationContext()->getAnalysisDeclContext();
   }
 
+  /// \brief If the given node corresponds to a PostStore program point, retrieve
+  /// the location region as it was uttered in the code.
+  ///
+  /// This utility can be useful for generating extensive diagnostics, for
+  /// example, for finding variables that the given symbol was assigned to.
+  static const MemRegion *getLocationRegionIfPostStore(const ExplodedNode *N) {
+    ProgramPoint L = N->getLocation();
+    if (const PostStore *PSL = dyn_cast<PostStore>(&L))
+      return reinterpret_cast<const MemRegion*>(PSL->getLocationValue());
+    return 0;
+  }
+
+  /// \brief Get the value of arbitrary expressions at this point in the path.
+  SVal getSVal(const Stmt *S) const {
+    return getState()->getSVal(S, getLocationContext());
+  }
+
   /// \brief Generates a new transition in the program state graph
   /// (ExplodedGraph). Uses the default CheckerContext predecessor node.
   ///
-  /// @param State The state of the generated node.
+  /// @param State The state of the generated node. If not specified, the state
+  ///        will not be changed, but the new node will have the checker's tag.
   /// @param Tag The tag is used to uniquely identify the creation site. If no
   ///        tag is specified, a default tag, unique to the given checker,
   ///        will be used. Tags are used to prevent states generated at
   ///        different sites from caching out.
-  ExplodedNode *addTransition(ProgramStateRef State,
+  ExplodedNode *addTransition(ProgramStateRef State = 0,
                               const ProgramPointTag *Tag = 0) {
-    return addTransitionImpl(State, false, 0, Tag);
-  }
-
-  /// \brief Generates a default transition (containing checker tag but no
-  /// checker state changes).
-  ExplodedNode *addTransition() {
-    return addTransition(getState());
+    return addTransitionImpl(State ? State : getState(), false, 0, Tag);
   }
 
   /// \brief Generates a new transition with the given predecessor.
@@ -140,19 +171,18 @@ public:
   /// @param Pred The transition will be generated from the specified Pred node
   ///             to the newly generated node.
   /// @param Tag The tag to uniquely identify the creation site.
-  /// @param IsSink Mark the new node as sink, which will stop exploration of
-  ///               the given path.
   ExplodedNode *addTransition(ProgramStateRef State,
-                             ExplodedNode *Pred,
-                             const ProgramPointTag *Tag = 0,
-                             bool IsSink = false) {
-    return addTransitionImpl(State, IsSink, Pred, Tag);
+                              ExplodedNode *Pred,
+                              const ProgramPointTag *Tag = 0) {
+    return addTransitionImpl(State, false, Pred, Tag);
   }
 
-  /// \brief Generate a sink node. Generating sink stops exploration of the
+  /// \brief Generate a sink node. Generating a sink stops exploration of the
   /// given path.
-  ExplodedNode *generateSink(ProgramStateRef state = 0) {
-    return addTransitionImpl(state ? state : getState(), true);
+  ExplodedNode *generateSink(ProgramStateRef State = 0,
+                             ExplodedNode *Pred = 0,
+                             const ProgramPointTag *Tag = 0) {
+    return addTransitionImpl(State ? State : getState(), true, Pred, Tag);
   }
 
   /// \brief Emit the diagnostics report.
@@ -199,9 +229,15 @@ private:
       return Pred;
 
     Changed = true;
-    ExplodedNode *node = NB.generateNode(Tag ? Location.withTag(Tag) : Location,
-                                        State,
-                                        P ? P : Pred, MarkAsSink);
+    const ProgramPoint &LocalLoc = (Tag ? Location.withTag(Tag) : Location);
+    if (!P)
+      P = Pred;
+
+    ExplodedNode *node;
+    if (MarkAsSink)
+      node = NB.generateSink(LocalLoc, State, P);
+    else
+      node = NB.generateNode(LocalLoc, State, P);
     return node;
   }
 };

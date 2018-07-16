@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "PlatformLinux.h"
 
 // C Includes
@@ -20,6 +22,7 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ModuleList.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Host/FileSpec.h"
@@ -45,10 +48,14 @@ PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
                 create = true;
                 break;
                 
+#if defined(__linux__)
+            // Only accept "unknown" for the vendor if the host is linux and
+            // it "unknown" wasn't specified (it was just returned becasue it
+            // was NOT specified_
             case llvm::Triple::UnknownArch:
                 create = !arch->TripleVendorWasSpecified();
                 break;
-                
+#endif
             default:
                 break;
         }
@@ -60,10 +67,14 @@ PlatformLinux::CreateInstance (bool force, const ArchSpec *arch)
                 case llvm::Triple::Linux:
                     break;
                     
+#if defined(__linux__)
+                // Only accept "unknown" for the OS if the host is linux and
+                // it "unknown" wasn't specified (it was just returned becasue it
+                // was NOT specified)
                 case llvm::Triple::UnknownOS:
                     create = !arch->TripleOSWasSpecified();
                     break;
-                    
+#endif
                 default:
                     create = false;
                     break;
@@ -191,7 +202,8 @@ PlatformLinux::ResolveExecutable (const FileSpec &exe_file,
                                                  NULL,
                                                  NULL);
         
-            if (exe_module_sp->GetObjectFile() == NULL)
+            // TODO find out why exe_module_sp might be NULL            
+            if (!exe_module_sp || exe_module_sp->GetObjectFile() == NULL)
             {
                 exe_module_sp.reset();
                 error.SetErrorStringWithFormat ("'%s%s%s' doesn't contain the architecture %s",
@@ -302,6 +314,17 @@ PlatformLinux::GetSupportedArchitectureAtIndex (uint32_t idx, ArchSpec &arch)
         arch = Host::GetArchitecture (Host::eSystemDefaultArchitecture);
         return arch.IsValid();
     }
+    else if (idx == 1)
+    {
+        // If the default host architecture is 64-bit, look for a 32-bit variant
+        ArchSpec hostArch
+                      = Host::GetArchitecture(Host::eSystemDefaultArchitecture);
+        if (hostArch.IsValid() && hostArch.GetTriple().isArch64Bit())
+        {
+            arch = Host::GetArchitecture (Host::eSystemDefaultArchitecture32);
+            return arch.IsValid();
+        }
+    }
     return false;
 }
 
@@ -387,11 +410,10 @@ PlatformLinux::Attach(ProcessAttachInfo &attach_info,
         if (target == NULL)
         {
             TargetSP new_target_sp;
-            FileSpec emptyFileSpec;
             ArchSpec emptyArchSpec;
 
             error = debugger.GetTargetList().CreateTarget (debugger,
-                                                           emptyFileSpec,
+                                                           NULL,
                                                            emptyArchSpec,
                                                            false,
                                                            m_remote_platform_sp,

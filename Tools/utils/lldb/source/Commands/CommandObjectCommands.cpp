@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectCommands.h"
 
 // C Includes
@@ -72,7 +74,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success;
             
             switch (short_option)
@@ -234,7 +236,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success;
             
             switch (short_option)
@@ -330,7 +332,7 @@ CommandObjectCommandsSource::CommandOptions::g_option_table[] =
 
 static const char *g_python_command_instructions =   "Enter your Python command(s). Type 'DONE' to end.\n"
                                                      "You must define a Python function with this signature:\n"
-                                                     "def my_command_impl(debugger, args, result, dict):";
+                                                     "def my_command_impl(debugger, args, result, internal_dict):";
 
 
 class CommandObjectCommandsAlias : public CommandObjectRaw
@@ -599,8 +601,7 @@ protected:
                      {
                          const std::string sub_command = args.GetArgumentAtIndex(0);
                          assert (sub_command.length() != 0);
-                         subcommand_obj_sp =
-                                           (((CommandObjectMultiword *) cmd_obj)->GetSubcommandSP (sub_command.c_str()));
+                         subcommand_obj_sp = cmd_obj->GetSubcommandSP (sub_command.c_str());
                          if (subcommand_obj_sp.get())
                          {
                              sub_cmd_obj = subcommand_obj_sp.get();
@@ -792,10 +793,12 @@ public:
 "\n"
 "EXAMPLES\n"
 "\n"
-"The following example with define a regular expression command named 'f' that\n"
+"The following example will define a regular expression command named 'f' that\n"
 "will call 'finish' if there are no arguments, or 'frame select <frame-idx>' if\n"
 "a number follows 'f':\n"
-"(lldb) command regex f s/^$/finish/ 's/([0-9]+)/frame select %1/'\n"
+"\n"
+"    (lldb) command regex f s/^$/finish/ 's/([0-9]+)/frame select %1/'\n"
+"\n"
                     );
     }
     
@@ -1081,7 +1084,7 @@ private:
          SetOptionValue (uint32_t option_idx, const char *option_arg)
          {
              Error error;
-             char short_option = (char) m_getopt_table[option_idx].val;
+             const int short_option = m_getopt_table[option_idx].val;
              
              switch (short_option)
              {
@@ -1160,6 +1163,7 @@ class CommandObjectPythonFunction : public CommandObjectRaw
 private:
     std::string m_function_name;
     ScriptedCommandSynchronicity m_synchro;
+    bool m_fetched_help_long;
     
 public:
     
@@ -1172,15 +1176,9 @@ public:
                           (std::string("Run Python function ") + funct).c_str(),
                           NULL),
         m_function_name(funct),
-        m_synchro(synch)
+        m_synchro(synch),
+        m_fetched_help_long(false)
     {
-        ScriptInterpreter* scripter = m_interpreter.GetScriptInterpreter();
-        if (scripter)
-        {
-            std::string docstring = scripter->GetDocumentationForItem(funct.c_str());
-            if (!docstring.empty())
-                SetHelpLong(docstring);
-        }
     }
     
     virtual
@@ -1189,7 +1187,7 @@ public:
     }
     
     virtual bool
-    IsRemovable ()
+    IsRemovable () const
     {
         return true;
     }
@@ -1204,6 +1202,23 @@ public:
     GetSynchronicity ()
     {
         return m_synchro;
+    }
+    
+    virtual const char *
+    GetHelpLong ()
+    {
+        if (!m_fetched_help_long)
+        {
+            ScriptInterpreter* scripter = m_interpreter.GetScriptInterpreter();
+            if (scripter)
+            {
+                std::string docstring;
+                m_fetched_help_long = scripter->GetDocumentationForItem(m_function_name.c_str(),docstring);
+                if (!docstring.empty())
+                    SetHelpLong(docstring);
+            }
+        }
+        return CommandObjectRaw::GetHelpLong();
     }
     
 protected:
@@ -1322,7 +1337,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -1381,8 +1396,10 @@ protected:
         std::string path = command.GetArgumentAtIndex(0);
         Error error;
         
+        const bool init_session = true;
         if (m_interpreter.GetScriptInterpreter()->LoadScriptingModule(path.c_str(),
                                                                       m_options.m_allow_reload,
+                                                                      init_session,
                                                                       error))
         {
             result.SetStatus (eReturnStatusSuccessFinishNoResult);
@@ -1463,7 +1480,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {

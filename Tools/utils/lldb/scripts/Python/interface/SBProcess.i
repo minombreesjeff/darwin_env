@@ -43,7 +43,8 @@ public:
         eBroadcastBitStateChanged   = (1 << 0),
         eBroadcastBitInterrupt      = (1 << 1),
         eBroadcastBitSTDOUT         = (1 << 2),
-        eBroadcastBitSTDERR         = (1 << 3)
+        eBroadcastBitSTDERR         = (1 << 3),
+        eBroadcastBitProfileData    = (1 << 4)
     };
 
     SBProcess ();
@@ -55,6 +56,12 @@ public:
     static const char *
     GetBroadcasterClassName ();
 
+    const char *
+    GetPluginName ();
+    
+    const char *
+    GetShortPluginName ();
+    
     void
     Clear ();
 
@@ -90,6 +97,9 @@ public:
     size_t
     GetSTDERR (char *dst, size_t dst_len) const;
 
+    size_t
+    GetAsyncProfileData(char *dst, size_t dst_len) const;
+    
     void
     ReportEventState (const lldb::SBEvent &event, FILE *out) const;
 
@@ -158,7 +168,7 @@ public:
     SetSelectedThread (const lldb::SBThread &thread);
 
     bool
-    SetSelectedThreadByID (uint32_t tid);
+    SetSelectedThreadByID (lldb::tid_t tid);
 
     bool
     SetSelectedThreadByIndexID (uint32_t index_id);
@@ -364,8 +374,9 @@ public:
         def get_process_thread_list(self):
             '''An accessor function that returns a list() that contains all threads in a lldb.SBProcess object.'''
             threads = []
-            for idx in range(self.GetNumThreads()):
-                threads.append(self.threads_access(idx))
+            accessor = self.get_threads_access_object()
+            for idx in range(len(accessor)):
+                threads.append(accessor[idx])
             return threads
         
         __swig_getmethods__["threads"] = get_process_thread_list

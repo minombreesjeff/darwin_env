@@ -34,6 +34,14 @@ public:
                        const lldb_private::FileSpecList *module_search_paths_ptr);
 
     virtual lldb_private::Error
+    ResolveSymbolFile (lldb_private::Target &target,
+                       const lldb_private::ModuleSpec &sym_spec,
+                       lldb_private::FileSpec &sym_file);
+
+    lldb_private::FileSpec
+    LocateExecutableScriptingResource (const lldb_private::ModuleSpec &module_spec);
+    
+    virtual lldb_private::Error
     GetSharedModule (const lldb_private::ModuleSpec &module_spec,
                      lldb::ModuleSP &module_sp,
                      const lldb_private::FileSpecList *module_search_paths_ptr,
@@ -98,7 +106,10 @@ public:
 
     virtual bool
     ModuleIsExcludedForNonModuleSpecificSearches (lldb_private::Target &target, const lldb::ModuleSP &module_sp);
-                
+    
+    virtual size_t
+    GetEnvironment (lldb_private::StringList &environment);
+
     bool
     ARMGetSupportedArchitectureAtIndex (uint32_t idx, lldb_private::ArchSpec &arch);
     

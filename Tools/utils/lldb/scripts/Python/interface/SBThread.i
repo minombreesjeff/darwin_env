@@ -46,6 +46,15 @@ public:
     SBThread (const lldb::SBThread &thread);
 
    ~SBThread();
+    
+    static bool
+    EventIsThreadEvent (const SBEvent &event);
+    
+    static SBFrame
+    GetStackFrameFromEvent (const SBEvent &event);
+    
+    static SBThread
+    GetThreadFromEvent (const SBEvent &event);
 
     bool
     IsValid() const;
@@ -79,6 +88,7 @@ public:
     /// eStopReasonWatchpoint    1     watchpoint id
     /// eStopReasonSignal        1     unix signal number
     /// eStopReasonException     N     exception data
+    /// eStopReasonExec          0
     /// eStopReasonPlanComplete  0
     //--------------------------------------------------------------------------
     ") GetStopReasonDataAtIndex;
@@ -130,6 +140,9 @@ public:
     void
     RunToAddress (lldb::addr_t addr);
 
+    SBError
+    ReturnFromFrame (SBFrame &frame, SBValue &return_value);
+
     %feature("docstring", "
     //--------------------------------------------------------------------------
     /// LLDB currently supports process centric debugging which means when any
@@ -179,6 +192,9 @@ public:
 
     bool
     GetDescription (lldb::SBStream &description) const;
+    
+    bool
+    GetStatus (lldb::SBStream &status) const;
     
     %pythoncode %{
         class frames_access(object):

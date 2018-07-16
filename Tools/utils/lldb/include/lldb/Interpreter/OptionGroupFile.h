@@ -15,7 +15,8 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Interpreter/Options.h"
-#include "lldb/Interpreter/NamedOptionValue.h"
+#include "lldb/Interpreter/OptionValueFileSpec.h"
+#include "lldb/Interpreter/OptionValueFileSpecList.h"
 
 namespace lldb_private {
 
@@ -30,7 +31,7 @@ public:
     OptionGroupFile (uint32_t usage_mask,
                      bool required,
                      const char *long_option, 
-                     char short_option,
+                     int short_option,
                      uint32_t completion_type,
                      lldb::CommandArgumentType argument_type,
                      const char *usage_text);
@@ -88,7 +89,7 @@ public:
     OptionGroupFileList (uint32_t usage_mask,
                          bool required,
                          const char *long_option, 
-                         char short_option,
+                         int short_option,
                          uint32_t completion_type,
                          lldb::CommandArgumentType argument_type,
                          const char *usage_text);

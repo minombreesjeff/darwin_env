@@ -11,11 +11,13 @@
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Constants.h"
+#include "llvm/Target/TargetData.h"
 #include "llvm/InstrTypes.h"
 #include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/Module.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/PassManager.h"
+#include "llvm/Transforms/IPO.h"
 #include "llvm/ValueSymbolTable.h"
 
 #include "clang/AST/ASTContext.h"
@@ -76,11 +78,14 @@ static std::string
 PrintValue(const Value *value, bool truncate = false)
 {
     std::string s;
-    raw_string_ostream rso(s);
-    value->print(rso);
-    rso.flush();
-    if (truncate)
-        s.resize(s.length() - 1);
+    if (value)
+    {
+        raw_string_ostream rso(s);
+        value->print(rso);
+        rso.flush();
+        if (truncate)
+            s.resize(s.length() - 1);
+    }
     return s;
 }
 
@@ -236,7 +241,7 @@ IRForTarget::GetFunctionAddress (llvm::Function *fun,
                 // Check for an alternate mangling for "std::basic_string<char>"
                 // that is part of the itanium C++ name mangling scheme
                 const char *name_cstr = name.GetCString();
-                if (strncmp(name_cstr, "_ZNKSbIcE", strlen("_ZNKSbIcE")) == 0)
+                if (name_cstr && strncmp(name_cstr, "_ZNKSbIcE", strlen("_ZNKSbIcE")) == 0)
                 {
                     std::string alternate_mangling("_ZNKSs");
                     alternate_mangling.append (name_cstr + strlen("_ZNKSbIcE"));
@@ -289,7 +294,7 @@ IRForTarget::GetFunctionAddress (llvm::Function *fun,
     }
     
     if (log)
-        log->Printf("Found \"%s\" at 0x%llx", name.GetCString(), fun_addr);
+        log->Printf("Found \"%s\" at 0x%" PRIx64, name.GetCString(), fun_addr);
     
     return true;
 }
@@ -490,6 +495,9 @@ IRForTarget::MaybeSetCastResult (lldb_private::TypeFromParser type)
         }
     }
     
+    if (!original_load)
+        return;
+    
     Value *loaded_value = original_load->getPointerOperand();
     GlobalVariable *loaded_global = dyn_cast<GlobalVariable>(loaded_value);
     
@@ -540,7 +548,7 @@ IRForTarget::CreateResultVariable (llvm::Function &llvm_function)
         const char *value_name = result_name_str.c_str();
         
         if (strstr(value_name, "$__lldb_expr_result_ptr") &&
-            !strstr(value_name, "GV"))
+            strncmp(value_name, "_ZGV", 4))
         {
             result_name = value_name;
             m_result_is_pointer = true;
@@ -548,7 +556,7 @@ IRForTarget::CreateResultVariable (llvm::Function &llvm_function)
         }
         
         if (strstr(value_name, "$__lldb_expr_result") &&
-            !strstr(value_name, "GV")) 
+            strncmp(value_name, "_ZGV", 4))
         {
             result_name = value_name;
             m_result_is_pointer = false;
@@ -838,7 +846,8 @@ IRForTarget::RewriteObjCConstString (llvm::GlobalVariable *ns_str,
     
     Type *i8_ptr_ty = Type::getInt8PtrTy(m_module->getContext());
     IntegerType *intptr_ty = Type::getIntNTy(m_module->getContext(),
-                                                   (m_module->getPointerSize() == Module::Pointer64) ? 64 : 32);
+                                                   (m_module->getPointerSize()
+                                                    == Module::Pointer64) ? 64 : 32);
     Type *i32_ty = Type::getInt32Ty(m_module->getContext());
     Type *i8_ty = Type::getInt8Ty(m_module->getContext());
     
@@ -860,7 +869,7 @@ IRForTarget::RewriteObjCConstString (llvm::GlobalVariable *ns_str,
         }
             
         if (log)
-            log->Printf("Found CFStringCreateWithBytes at 0x%llx", CFStringCreateWithBytes_addr);
+            log->Printf("Found CFStringCreateWithBytes at 0x%" PRIx64, CFStringCreateWithBytes_addr);
         
         // Build the function type:
         //
@@ -1253,7 +1262,7 @@ IRForTarget::RewriteObjCSelector (Instruction* selector_load)
             return false;
         
         if (log)
-            log->Printf("Found sel_registerName at 0x%llx", sel_registerName_addr);
+            log->Printf("Found sel_registerName at 0x%" PRIx64, sel_registerName_addr);
         
         // Build the function type: struct objc_selector *sel_registerName(uint8_t*)
         
@@ -1669,7 +1678,7 @@ IRForTarget::MaybeHandleVariable (Value *llvm_value_ptr)
         off_t value_alignment = (ast_context->getTypeAlign(qual_type) + 7) / 8;
         
         if (log)
-            log->Printf("Type of \"%s\" is [clang \"%s\", llvm \"%s\"] [size %lu, align %lld]", 
+            log->Printf("Type of \"%s\" is [clang \"%s\", llvm \"%s\"] [size %lu, align %" PRId64 "]",
                         name.c_str(), 
                         qual_type.getAsString().c_str(), 
                         PrintType(value_type).c_str(), 
@@ -1719,10 +1728,9 @@ IRForTarget::HandleSymbol (Value *symbol)
     }
 
     if (log)
-        log->Printf("Found \"%s\" at 0x%llx", name.GetCString(), symbol_addr);
+        log->Printf("Found \"%s\" at 0x%" PRIx64, name.GetCString(), symbol_addr);
     
     Type *symbol_type = symbol->getType();
-    
     IntegerType *intptr_ty = Type::getIntNTy(m_module->getContext(),
                                              (m_module->getPointerSize() == Module::Pointer64) ? 64 : 32);
     
@@ -1805,7 +1813,8 @@ IRForTarget::HandleObjCClass(Value *classlist_reference)
         return false;
     
     IntegerType *intptr_ty = Type::getIntNTy(m_module->getContext(),
-                                             (m_module->getPointerSize() == Module::Pointer64) ? 64 : 32);
+                                             (m_module->getPointerSize()
+                                              == Module::Pointer64) ? 64 : 32);
     
     Constant *class_addr = ConstantInt::get(intptr_ty, (uint64_t)class_ptr);
     Constant *class_bitcast = ConstantExpr::getIntToPtr(class_addr, load_instruction->getType());
@@ -2520,7 +2529,7 @@ IRForTarget::ReplaceVariables (Function &llvm_function)
         }
             
         if (log)
-            log->Printf("  \"%s\" (\"%s\") placed at %lld",
+            log->Printf("  \"%s\" (\"%s\") placed at %" PRId64,
                         name.GetCString(),
                         decl->getNameAsString().c_str(),
                         offset);
@@ -2564,7 +2573,7 @@ IRForTarget::ReplaceVariables (Function &llvm_function)
     }
     
     if (log)
-        log->Printf("Total structure [align %lld, size %lu]", alignment, size);
+        log->Printf("Total structure [align %" PRId64 ", size %lu]", alignment, size);
     
     return true;
 }
@@ -2630,6 +2639,56 @@ IRForTarget::CompleteDataAllocation ()
 }
 
 bool
+IRForTarget::StripAllGVs (Module &llvm_module)
+{
+    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));    
+    std::vector<GlobalVariable *> global_vars;
+    std::set<GlobalVariable *>erased_vars;
+    
+    bool erased = true;
+    
+    while (erased)
+    {
+        erased = false;
+        
+        for (Module::global_iterator gi = llvm_module.global_begin(), ge = llvm_module.global_end();
+             gi != ge;
+             ++gi)
+        {
+            GlobalVariable *global_var = dyn_cast<GlobalVariable>(gi);
+        
+            global_var->removeDeadConstantUsers();
+            
+            if (global_var->use_empty())
+            {
+                if (log)
+                    log->Printf("Did remove %s",
+                                PrintValue(global_var).c_str());
+                global_var->eraseFromParent();
+                erased = true;
+                break;
+            }
+        }
+    }
+    
+    for (Module::global_iterator gi = llvm_module.global_begin(), ge = llvm_module.global_end();
+         gi != ge;
+         ++gi)
+    {
+        GlobalVariable *global_var = dyn_cast<GlobalVariable>(gi);
+
+        GlobalValue::use_iterator ui = global_var->use_begin();
+        
+        if (log)
+            log->Printf("Couldn't remove %s because of %s",
+                        PrintValue(global_var).c_str(),
+                        PrintValue(*ui).c_str());
+    }
+    
+    return true;
+}
+
+bool
 IRForTarget::runOnModule (Module &llvm_module)
 {
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
@@ -2674,12 +2733,12 @@ IRForTarget::runOnModule (Module &llvm_module)
     
     m_reloc_placeholder = new llvm::GlobalVariable((*m_module), 
                                                    intptr_ty,
-                                                   false /* isConstant */,
+                                                   false /* IsConstant */,
                                                    GlobalVariable::InternalLinkage,
                                                    Constant::getNullValue(intptr_ty),
                                                    "reloc_placeholder",
                                                    NULL /* InsertBefore */,
-                                                   false /* ThreadLocal */,
+                                                   GlobalVariable::NotThreadLocal /* ThreadLocal */,
                                                    0 /* AddressSpace */);
         
     Function::iterator bbi;
@@ -2874,6 +2933,12 @@ IRForTarget::runOnModule (Module &llvm_module)
             log->Printf("CompleteDataAllocation() failed");
         
         return false;
+    }
+    
+    if (!StripAllGVs(llvm_module))
+    {
+        if (log)
+            log->Printf("StripAllGVs() failed");
     }
     
     if (log && log->GetVerbose())

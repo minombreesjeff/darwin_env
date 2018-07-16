@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/CommandObject.h"
 
 #include <string>
@@ -377,23 +379,19 @@ CommandObject::HandleCompletion
 bool
 CommandObject::HelpTextContainsWord (const char *search_word)
 {
-    const char *short_help;
-    const char *long_help;
-    const char *syntax_help;
     std::string options_usage_help;
-
 
     bool found_word = false;
 
-    short_help = GetHelp();
-    long_help = GetHelpLong();
-    syntax_help = GetSyntax();
+    const char *short_help = GetHelp();
+    const char *long_help = GetHelpLong();
+    const char *syntax_help = GetSyntax();
     
-    if (strcasestr (short_help, search_word))
+    if (short_help && strcasestr (short_help, search_word))
         found_word = true;
-    else if (strcasestr (long_help, search_word))
+    else if (long_help && strcasestr (long_help, search_word))
         found_word = true;
-    else if (strcasestr (syntax_help, search_word))
+    else if (syntax_help && strcasestr (syntax_help, search_word))
         found_word = true;
 
     if (!found_word
@@ -630,6 +628,23 @@ CommandObject::LookupArgumentName (const char *arg_name)
 }
 
 static const char *
+RegisterNameHelpTextCallback ()
+{
+    return "Register names can be specified using the architecture specific names.  "
+    "They can also be specified using generic names.  Not all generic entities have "
+    "registers backing them on all architectures.  When they don't the generic name "
+    "will return an error.\n"
+    "The generic names defined in lldb are:\n"
+    "\n"
+    "pc       - program counter register\n"
+    "ra       - return address register\n"
+    "fp       - frame pointer register\n"
+    "sp       - stack pointer register\n"
+    "flags    - the flags register\n"
+    "arg{1-6} - integer argument passing registers.\n";
+}
+
+static const char *
 BreakpointIDHelpTextCallback ()
 {
     return "Breakpoint ID's consist major and minor numbers;  the major number "
@@ -715,6 +730,33 @@ FormatHelpTextCallback ()
             sstr.Printf("'%c' or ", format_char);
         
         sstr.Printf ("\"%s\"", FormatManager::GetFormatAsCString(f));
+    }
+    
+    sstr.Flush();
+    
+    std::string data = sstr.GetString();
+    
+    help_text_ptr = new char[data.length()+1];
+    
+    data.copy(help_text_ptr, data.length());
+    
+    return help_text_ptr;
+}
+
+static const char *
+LanguageTypeHelpTextCallback ()
+{
+    static char* help_text_ptr = NULL;
+    
+    if (help_text_ptr)
+        return help_text_ptr;
+    
+    StreamString sstr;
+    sstr << "One of the following languages:\n";
+    
+    for (unsigned int l = eLanguageTypeUnknown; l < eNumLanguageTypes; ++l)
+    {
+        sstr << "  " << LanguageRuntime::GetNameForLanguageType(static_cast<LanguageType>(l)) << "\n";
     }
     
     sstr.Flush();
@@ -910,6 +952,7 @@ CommandObject::g_arguments_data[] =
     { eArgTypeClassName, "class-name", CommandCompletions::eNoCompletion, { NULL, false }, "Then name of a class from the debug information in the program." },
     { eArgTypeCommandName, "cmd-name", CommandCompletions::eNoCompletion, { NULL, false }, "A debugger command (may be multiple words), without any options or arguments." },
     { eArgTypeCount, "count", CommandCompletions::eNoCompletion, { NULL, false }, "An unsigned integer." },
+    { eArgTypeDirectoryName, "directory", CommandCompletions::eDiskDirectoryCompletion, { NULL, false }, "A directory name." },
     { eArgTypeEndAddress, "end-address", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeExpression, "expr", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeExpressionPath, "expr-path", CommandCompletions::eNoCompletion, { ExprPathHelpTextCallback, true }, NULL },
@@ -919,9 +962,10 @@ CommandObject::g_arguments_data[] =
     { eArgTypeFrameIndex, "frame-index", CommandCompletions::eNoCompletion, { NULL, false }, "Index into a thread's list of frames." },
     { eArgTypeFullName, "fullname", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeFunctionName, "function-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a function." },
+    { eArgTypeFunctionOrSymbol, "function-or-symbol", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a function or symbol." },
     { eArgTypeGDBFormat, "gdb-format", CommandCompletions::eNoCompletion, { GDBFormatHelpTextCallback, true }, NULL },
     { eArgTypeIndex, "index", CommandCompletions::eNoCompletion, { NULL, false }, "An index into a list." },
-    { eArgTypeLanguage, "language", CommandCompletions::eNoCompletion, { NULL, false }, "A source language name." },
+    { eArgTypeLanguage, "language", CommandCompletions::eNoCompletion, { LanguageTypeHelpTextCallback, true }, NULL },
     { eArgTypeLineNum, "linenum", CommandCompletions::eNoCompletion, { NULL, false }, "Line number in a source file." },
     { eArgTypeLogCategory, "log-category", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a category within a log channel, e.g. all (try \"log list\" to see a list of all channels and their categories." },
     { eArgTypeLogChannel, "log-channel", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a log channel, e.g. process.gdb-remote (try \"log list\" to see a list of all channels and their categories)." },
@@ -933,7 +977,6 @@ CommandObject::g_arguments_data[] =
     { eArgTypeOffset, "offset", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeOldPathPrefix, "old-path-prefix", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeOneLiner, "one-line-command", CommandCompletions::eNoCompletion, { NULL, false }, "A command that is entered as a single line of text." },
-    { eArgTypePath, "path", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypePid, "pid", CommandCompletions::eNoCompletion, { NULL, false }, "The process ID number." },
     { eArgTypePlugin, "plugin", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },
     { eArgTypeProcessName, "process-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of the process." },
@@ -941,7 +984,7 @@ CommandObject::g_arguments_data[] =
     { eArgTypePythonFunction, "python-function", CommandCompletions::eNoCompletion, { NULL, false }, "The name of a Python function." },
     { eArgTypePythonScript, "python-script", CommandCompletions::eNoCompletion, { NULL, false }, "Source code written in Python." },
     { eArgTypeQueueName, "queue-name", CommandCompletions::eNoCompletion, { NULL, false }, "The name of the thread queue." },
-    { eArgTypeRegisterName, "register-name", CommandCompletions::eNoCompletion, { NULL, false }, "A register name." },
+    { eArgTypeRegisterName, "register-name", CommandCompletions::eNoCompletion, { RegisterNameHelpTextCallback, true }, NULL },
     { eArgTypeRegularExpression, "regular-expression", CommandCompletions::eNoCompletion, { NULL, false }, "A regular expression." },
     { eArgTypeRunArgs, "run-args", CommandCompletions::eNoCompletion, { NULL, false }, "Arguments to be passed to the target program when it starts executing." },
     { eArgTypeRunMode, "run-mode", CommandCompletions::eNoCompletion, { NULL, false }, "Help text goes here." },

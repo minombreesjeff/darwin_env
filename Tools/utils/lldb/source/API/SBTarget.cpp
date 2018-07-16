@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBTarget.h"
 
 #include "lldb/lldb-public.h"
@@ -31,14 +33,18 @@
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Disassembler.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/SearchFilter.h"
+#include "lldb/Core/Section.h"
 #include "lldb/Core/STLUtils.h"
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/ValueObjectVariable.h"
 #include "lldb/Host/FileSpec.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Interpreter/Args.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/LanguageRuntime.h"
@@ -706,7 +712,7 @@ SBTarget::Launch
     log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API);
     if (log)
     {
-        log->Printf ("SBTarget(%p)::Launch (...) => SBProceess(%p)", 
+        log->Printf ("SBTarget(%p)::Launch (...) => SBProcess(%p)", 
                      target_sp.get(), process_sp.get());
     }
 
@@ -806,7 +812,7 @@ SBTarget::Launch (SBLaunchInfo &sb_launch_info, SBError& error)
     log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API);
     if (log)
     {
-        log->Printf ("SBTarget(%p)::Launch (...) => SBProceess(%p)", 
+        log->Printf ("SBTarget(%p)::Launch (...) => SBProcess(%p)", 
                      target_sp.get(), process_sp.get());
     }
     
@@ -816,9 +822,17 @@ SBTarget::Launch (SBLaunchInfo &sb_launch_info, SBError& error)
 lldb::SBProcess
 SBTarget::Attach (SBAttachInfo &sb_attach_info, SBError& error)
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    
     SBProcess sb_process;
     ProcessSP process_sp;
     TargetSP target_sp(GetSP());
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::Attach (sb_attach_info, error)...", target_sp.get());
+    }
+    
     if (target_sp)
     {
         Mutex::Locker api_locker (target_sp->GetAPIMutex());
@@ -835,6 +849,11 @@ SBTarget::Attach (SBAttachInfo &sb_attach_info, SBError& error)
                     error.SetErrorString ("process attach is in progress");
                 else
                     error.SetErrorString ("a process is already being debugged");
+                if (log)
+                {
+                    log->Printf ("SBTarget(%p)::Attach (...) => error %s",
+                                 target_sp.get(), error.GetCString());
+                }
                 return sb_process;
             }            
         }
@@ -849,10 +868,24 @@ SBTarget::Attach (SBAttachInfo &sb_attach_info, SBError& error)
             if (attach_pid != LLDB_INVALID_PROCESS_ID)
             {
                 PlatformSP platform_sp = target_sp->GetPlatform();
-                ProcessInstanceInfo instance_info;
-                if (platform_sp->GetProcessInfo(attach_pid, instance_info))
+                // See if we can pre-verify if a process exists or not
+                if (platform_sp && platform_sp->IsConnected())
                 {
-                    attach_info.SetUserID(instance_info.GetEffectiveUserID());
+                    ProcessInstanceInfo instance_info;
+                    if (platform_sp->GetProcessInfo(attach_pid, instance_info))
+                    {
+                        attach_info.SetUserID(instance_info.GetEffectiveUserID());
+                    }
+                    else
+                    {
+                        error.ref().SetErrorStringWithFormat("no process found with process ID %" PRIu64, attach_pid);
+                        if (log)
+                        {
+                            log->Printf ("SBTarget(%p)::Attach (...) => error %s",
+                                         target_sp.get(), error.GetCString());
+                        }
+                        return sb_process;
+                    }
                 }
             }
             error.SetError (process_sp->Attach (attach_info));
@@ -874,6 +907,13 @@ SBTarget::Attach (SBAttachInfo &sb_attach_info, SBError& error)
     {
         error.SetErrorString ("SBTarget is invalid");
     }
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::Attach (...) => SBProcess(%p)",
+                     target_sp.get(), process_sp.get());
+    }
+    
     return sb_process;
 }
 
@@ -898,9 +938,17 @@ SBTarget::AttachToProcessWithID
     SBError& error  // An error explaining what went wrong if attach fails
 )
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
     SBProcess sb_process;
     ProcessSP process_sp;
     TargetSP target_sp(GetSP());
+
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::AttachToProcessWithID (listener, pid=%" PRId64 ", error)...", target_sp.get(), pid);
+    }
+    
     if (target_sp)
     {
         Mutex::Locker api_locker (target_sp->GetAPIMutex());
@@ -953,10 +1001,13 @@ SBTarget::AttachToProcessWithID
                 attach_info.SetUserID(instance_info.GetEffectiveUserID());
             }
             error.SetError (process_sp->Attach (attach_info));            
-            // If we are doing synchronous mode, then wait for the
-            // process to stop!
-            if (target_sp->GetDebugger().GetAsyncExecution () == false)
+            if (error.Success())
+            {
+                // If we are doing synchronous mode, then wait for the
+                // process to stop!
+                if (target_sp->GetDebugger().GetAsyncExecution () == false)
                 process_sp->WaitForProcessToStop (NULL);
+            }
         }
         else
         {
@@ -967,8 +1018,13 @@ SBTarget::AttachToProcessWithID
     {
         error.SetErrorString ("SBTarget is invalid");
     }
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::AttachToProcessWithID (...) => SBProcess(%p)",
+                     target_sp.get(), process_sp.get());
+    }
     return sb_process;
-
 }
 
 lldb::SBProcess
@@ -980,9 +1036,17 @@ SBTarget::AttachToProcessWithName
     SBError& error      // An error explaining what went wrong if attach fails
 )
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    
     SBProcess sb_process;
     ProcessSP process_sp;
     TargetSP target_sp(GetSP());
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::AttachToProcessWithName (listener, name=%s, wait_for=%s, error)...", target_sp.get(), name, wait_for ? "true" : "false");
+    }
+    
     if (name && target_sp)
     {
         Mutex::Locker api_locker (target_sp->GetAPIMutex());
@@ -1043,8 +1107,13 @@ SBTarget::AttachToProcessWithName
     {
         error.SetErrorString ("SBTarget is invalid");
     }
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::AttachToPorcessWithName (...) => SBProcess(%p)",
+                     target_sp.get(), process_sp.get());
+    }
     return sb_process;
-
 }
 
 lldb::SBProcess
@@ -1056,9 +1125,17 @@ SBTarget::ConnectRemote
     SBError& error
 )
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+
     SBProcess sb_process;
     ProcessSP process_sp;
     TargetSP target_sp(GetSP());
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::ConnectRemote (listener, url=%s, plugin_name=%s, error)...", target_sp.get(), url, plugin_name);
+    }
+    
     if (target_sp)
     {
         Mutex::Locker api_locker (target_sp->GetAPIMutex());
@@ -1071,7 +1148,7 @@ SBTarget::ConnectRemote
         if (process_sp)
         {
             sb_process.SetSP (process_sp);
-            error.SetError (process_sp->ConnectRemote (url));
+            error.SetError (process_sp->ConnectRemote (NULL, url));
         }
         else
         {
@@ -1081,6 +1158,12 @@ SBTarget::ConnectRemote
     else
     {
         error.SetErrorString ("SBTarget is invalid");
+    }
+    
+    if (log)
+    {
+        log->Printf ("SBTarget(%p)::ConnectRemote (...) => SBProcess(%p)",
+                     target_sp.get(), process_sp.get());
     }
     return sb_process;
 }
@@ -1182,9 +1265,9 @@ SBTarget::BreakpointCreateByLocation (const SBFileSpec &sb_file_spec, uint32_t l
     {
         Mutex::Locker api_locker (target_sp->GetAPIMutex());
         
-        const bool check_inlines = true;
-        const bool internal = false;
+        const LazyBool check_inlines = eLazyBoolCalculate;
         const LazyBool skip_prologue = eLazyBoolCalculate;
+        const bool internal = false;
         *sb_bp = target_sp->CreateBreakpoint (NULL, *sb_file_spec, line, check_inlines, skip_prologue, internal);
     }
 
@@ -1406,7 +1489,7 @@ SBTarget::BreakpointCreateByAddress (addr_t address)
     
     if (log)
     {
-        log->Printf ("SBTarget(%p)::BreakpointCreateByAddress (address=%llu) => SBBreakpoint(%p)", target_sp.get(), (uint64_t) address, sb_bp.get());
+        log->Printf ("SBTarget(%p)::BreakpointCreateByAddress (address=%" PRIu64 ") => SBBreakpoint(%p)", target_sp.get(), (uint64_t) address, sb_bp.get());
     }
 
     return sb_bp;
@@ -1702,14 +1785,16 @@ SBTarget::WatchAddress (lldb::addr_t addr, size_t size, bool read, bool write, S
             watch_type |= LLDB_WATCH_TYPE_WRITE;
         // Target::CreateWatchpoint() is thread safe.
         Error cw_error;
-        watchpoint_sp = target_sp->CreateWatchpoint(addr, size, watch_type, cw_error);
+        // This API doesn't take in a type, so we can't figure out what it is.
+        ClangASTType *type = NULL;
+        watchpoint_sp = target_sp->CreateWatchpoint(addr, size, type, watch_type, cw_error);
         error.SetError(cw_error);
         sb_watchpoint.SetSP (watchpoint_sp);
     }
     
     if (log)
     {
-        log->Printf ("SBTarget(%p)::WatchAddress (addr=0x%llx, 0x%u) => SBWatchpoint(%p)", 
+        log->Printf ("SBTarget(%p)::WatchAddress (addr=0x%" PRIx64 ", 0x%u) => SBWatchpoint(%p)",
                      target_sp.get(), addr, (uint32_t) size, watchpoint_sp.get());
     }
     
@@ -1785,7 +1870,7 @@ SBTarget::AddModule (const char *path,
             module_spec.GetFileSpec().SetFile(path, false);
         
         if (uuid_cstr)
-            module_spec.GetUUID().SetfromCString(uuid_cstr);
+            module_spec.GetUUID().SetFromCString(uuid_cstr);
         
         if (triple)
             module_spec.GetArchitecture().SetTriple (triple, target_sp->GetPlatform ().get());
@@ -1979,52 +2064,87 @@ SBTarget::FindFunctions (const char *name, uint32_t name_type_mask)
 }
 
 lldb::SBType
-SBTarget::FindFirstType (const char* type)
+SBTarget::FindFirstType (const char* typename_cstr)
 {
     TargetSP target_sp(GetSP());
-    if (type && target_sp)
+    if (typename_cstr && typename_cstr[0] && target_sp)
     {
-        size_t count = target_sp->GetImages().GetSize();
+        ConstString const_typename(typename_cstr);
+        SymbolContext sc;
+        const bool exact_match = false;
+
+        const ModuleList &module_list = target_sp->GetImages();
+        size_t count = module_list.GetSize();
         for (size_t idx = 0; idx < count; idx++)
         {
-            SBType found_at_idx = GetModuleAtIndex(idx).FindFirstType(type);
-            
-            if (found_at_idx.IsValid())
-                return found_at_idx;
+            ModuleSP module_sp (module_list.GetModuleAtIndex(idx));
+            if (module_sp)
+            {
+                TypeSP type_sp (module_sp->FindFirstType(sc, const_typename, exact_match));
+                if (type_sp)
+                    return SBType(type_sp);
+            }
         }
+
+        // No matches, search for basic typename matches
+        ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
+        if (clang_ast)
+            return SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), const_typename));
     }
     return SBType();
 }
 
-lldb::SBTypeList
-SBTarget::FindTypes (const char* type)
+SBType
+SBTarget::GetBasicType(lldb::BasicType type)
 {
-    
-    SBTypeList retval;
-    
     TargetSP target_sp(GetSP());
-    if (type && target_sp)
+    if (target_sp)
+    {
+        ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
+        if (clang_ast)
+            return SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), type));
+    }
+    return SBType();
+}
+
+
+lldb::SBTypeList
+SBTarget::FindTypes (const char* typename_cstr)
+{
+    SBTypeList sb_type_list;
+    TargetSP target_sp(GetSP());
+    if (typename_cstr && typename_cstr[0] && target_sp)
     {
         ModuleList& images = target_sp->GetImages();
-        ConstString name_const(type);
+        ConstString const_typename(typename_cstr);
         bool exact_match = false;
         SymbolContext sc;
         TypeList type_list;
         
         uint32_t num_matches = images.FindTypes (sc,
-                                                 name_const,
+                                                 const_typename,
                                                  exact_match,
                                                  UINT32_MAX,
                                                  type_list);
         
-        for (size_t idx = 0; idx < num_matches; idx++)
+        if (num_matches > 0)
         {
-            TypeSP type_sp (type_list.GetTypeAtIndex(idx));
-            if (type_sp)
-                retval.Append(SBType(type_sp));
+            for (size_t idx = 0; idx < num_matches; idx++)
+            {
+                TypeSP type_sp (type_list.GetTypeAtIndex(idx));
+                if (type_sp)
+                    sb_type_list.Append(SBType(type_sp));
+            }
+        }
+        else
+        {
+            // No matches, search for basic typename matches
+            ClangASTContext *clang_ast = target_sp->GetScratchClangASTContext();
+            if (clang_ast)
+                sb_type_list.Append (SBType (ClangASTType::GetBasicType (clang_ast->getASTContext(), const_typename)));
         }
     }
-    return retval;
+    return sb_type_list;
 }
 
 SBValueList
@@ -2269,6 +2389,27 @@ SBTarget::ClearModuleLoadAddress (lldb::SBModule module)
         sb_error.SetErrorStringWithFormat ("invalid target");
     }
     return sb_error;
+}
+
+
+lldb::SBSymbolContextList
+SBTarget::FindSymbols (const char *name, lldb::SymbolType symbol_type)
+{
+    SBSymbolContextList sb_sc_list;
+    if (name && name[0])
+    {
+        TargetSP target_sp(GetSP());
+        if (target_sp)
+        {
+            bool append = true;
+            target_sp->GetImages().FindSymbolsWithNameAndType (ConstString(name),
+                                                               symbol_type,
+                                                               *sb_sc_list,
+                                                               append);
+        }
+    }
+    return sb_sc_list;
+    
 }
 
 

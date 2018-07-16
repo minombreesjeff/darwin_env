@@ -146,6 +146,27 @@ public:
     }
 
     //------------------------------------------------------------------
+    // Find the value for the unique string in the map.
+    //
+    // Return the value for \a unique_cstr if one is found, return
+    // \a fail_value otherwise. This method works well for simple type
+    // T values and only if there is a sensible failure value that can
+    // be returned and that won't match any existing values.
+    //------------------------------------------------------------------
+    T
+    Find (const char *unique_cstr, T fail_value) const
+    {
+        Entry search_entry (unique_cstr);
+        const_iterator end = m_map.end();
+        const_iterator pos = std::lower_bound (m_map.begin(), end, search_entry);
+        if (pos != end)
+        {
+            if (pos->cstring == unique_cstr)
+                return pos->value;
+        }
+        return fail_value;
+    }
+    //------------------------------------------------------------------
     // Get a pointer to the first entry that matches "name". NULL will
     // be returned if there is no entry that matches "name".
     //
@@ -292,6 +313,33 @@ public:
         }
     }
 
+    size_t
+    Erase (const char *unique_cstr)
+    {
+        size_t num_removed = 0;
+        Entry search_entry (unique_cstr);
+        iterator end = m_map.end();
+        iterator begin = m_map.begin();
+        iterator lower_pos = std::lower_bound (begin, end, search_entry);
+        if (lower_pos != end)
+        {
+            if (lower_pos->cstring == unique_cstr)
+            {
+                iterator upper_pos = std::upper_bound (lower_pos, end, search_entry);
+                if (lower_pos == upper_pos)
+                {
+                    m_map.erase (lower_pos);
+                    num_removed = 1;
+                }
+                else
+                {
+                    num_removed = std::distance (lower_pos, upper_pos);
+                    m_map.erase (lower_pos, upper_pos);
+                }
+            }
+        }
+        return num_removed;
+    }
 protected:
     typedef std::vector<Entry> collection;
     typedef typename collection::iterator iterator;

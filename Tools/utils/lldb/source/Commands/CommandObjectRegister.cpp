@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectRegister.h"
 
 // C Includes
@@ -20,9 +22,10 @@
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
-#include "lldb/Interpreter/NamedOptionValue.h"
 #include "lldb/Interpreter/Options.h"
 #include "lldb/Interpreter/OptionGroupFormat.h"
+#include "lldb/Interpreter/OptionValueArray.h"
+#include "lldb/Interpreter/OptionValueUInt64.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -288,7 +291,7 @@ protected:
                         const char *option_value)
         {
             Error error;
-            const char short_option = (char) g_option_table[option_idx].short_option;
+            const int short_option = g_option_table[option_idx].short_option;
             switch (short_option)
             {
                 case 's':

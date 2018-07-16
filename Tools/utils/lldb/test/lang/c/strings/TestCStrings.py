@@ -1,8 +1,9 @@
 """
 Tests that C strings work as expected in expressions
 """
-
+import lldb
 from lldbtest import *
+import lldbutil
 
 class CStringsTestCase(TestBase):
     
@@ -15,6 +16,7 @@ class CStringsTestCase(TestBase):
         self.buildDsym()
         self.static_method_commands()
 
+    @expectedFailureLinux # bugzilla 14437
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Tests that C strings work as expected in expressions"""
@@ -25,9 +27,7 @@ class CStringsTestCase(TestBase):
         TestBase.setUp(self)
     
     def set_breakpoint(self, line):
-        self.expect("breakpoint set -f main.c -l %d" % line,
-                    BREAKPOINT_CREATED,
-                    startstr = "Breakpoint created")
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", line, num_expected_locations=1, loc_exact=True)
     
     def static_method_commands(self):
         """Tests that C strings work as expected in expressions"""

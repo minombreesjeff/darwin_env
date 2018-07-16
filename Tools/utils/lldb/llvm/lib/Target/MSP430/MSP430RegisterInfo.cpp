@@ -13,9 +13,9 @@
 
 #define DEBUG_TYPE "msp430-reg-info"
 
+#include "MSP430RegisterInfo.h"
 #include "MSP430.h"
 #include "MSP430MachineFunctionInfo.h"
-#include "MSP430RegisterInfo.h"
 #include "MSP430TargetMachine.h"
 #include "llvm/Function.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -96,7 +96,8 @@ BitVector MSP430RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
 }
 
 const TargetRegisterClass *
-MSP430RegisterInfo::getPointerRegClass(unsigned Kind) const {
+MSP430RegisterInfo::getPointerRegClass(const MachineFunction &MF, unsigned Kind)
+                                                                         const {
   return &MSP430::GR16RegClass;
 }
 

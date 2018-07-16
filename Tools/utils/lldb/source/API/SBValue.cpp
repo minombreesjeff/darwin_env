@@ -7,8 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBValue.h"
 
+#include "lldb/API/SBDeclaration.h"
 #include "lldb/API/SBStream.h"
 #include "lldb/API/SBTypeFilter.h"
 #include "lldb/API/SBTypeFormat.h"
@@ -21,12 +24,14 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Scalar.h"
+#include "lldb/Core/Section.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Symbol/Block.h"
+#include "lldb/Symbol/Declaration.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/Variable.h"
@@ -37,14 +42,107 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 
+#include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBExpressionOptions.h"
+#include "lldb/API/SBFrame.h"
 #include "lldb/API/SBProcess.h"
 #include "lldb/API/SBTarget.h"
 #include "lldb/API/SBThread.h"
-#include "lldb/API/SBFrame.h"
-#include "lldb/API/SBDebugger.h"
 
 using namespace lldb;
 using namespace lldb_private;
+
+namespace {
+    class ValueImpl
+    {
+    public:
+        ValueImpl ()
+        {
+        }
+        
+        ValueImpl (lldb::ValueObjectSP opaque_sp,
+                   lldb::DynamicValueType use_dynamic,
+                   bool use_synthetic) :
+            m_opaque_sp(opaque_sp),
+            m_use_dynamic(use_dynamic),
+            m_use_synthetic(use_synthetic)
+        {
+        }
+        
+        ValueImpl (const ValueImpl& rhs) :
+            m_opaque_sp(rhs.m_opaque_sp),
+            m_use_dynamic(rhs.m_use_dynamic),
+            m_use_synthetic(rhs.m_use_synthetic)
+        {
+        }
+        
+        ValueImpl &
+        operator = (const ValueImpl &rhs)
+        {
+            if (this != &rhs)
+            {
+                m_opaque_sp = rhs.m_opaque_sp;
+                m_use_dynamic = rhs.m_use_dynamic;
+                m_use_synthetic = rhs.m_use_synthetic;
+            }
+            return *this;
+        }
+        
+        bool
+        IsValid ()
+        {
+            return m_opaque_sp.get() != NULL;
+        }
+        
+        lldb::ValueObjectSP
+        GetRootSP ()
+        {
+            return m_opaque_sp;
+        }
+        
+        lldb::ValueObjectSP
+        GetSP ()
+        {
+            if (!m_opaque_sp)
+                return m_opaque_sp;
+            lldb::ValueObjectSP value_sp = m_opaque_sp;
+            if (value_sp->GetDynamicValue(m_use_dynamic))
+                value_sp = value_sp->GetDynamicValue(m_use_dynamic);
+            if (value_sp->GetSyntheticValue(m_use_synthetic))
+                value_sp = value_sp->GetSyntheticValue(m_use_synthetic);
+            return value_sp;
+        }
+        
+        void
+        SetUseDynamic (lldb::DynamicValueType use_dynamic)
+        {
+            m_use_dynamic = use_dynamic;
+        }
+        
+        void
+        SetUseSynthetic (bool use_synthetic)
+        {
+            m_use_synthetic = use_synthetic;
+        }
+        
+        lldb::DynamicValueType
+        GetUseDynamic ()
+        {
+            return m_use_dynamic;
+        }
+        
+        bool
+        GetUseSynthetic ()
+        {
+            return m_use_synthetic;
+        }
+        
+    private:
+        lldb::ValueObjectSP m_opaque_sp;
+        lldb::DynamicValueType m_use_dynamic;
+        bool m_use_synthetic;
+    };
+}
 
 SBValue::SBValue () :
     m_opaque_sp ()
@@ -53,12 +151,12 @@ SBValue::SBValue () :
 
 SBValue::SBValue (const lldb::ValueObjectSP &value_sp)
 {
-    SetSP(value_sp); // whenever setting the SP call SetSP() since it knows how to deal with synthetic values properly
+    SetSP(value_sp);
 }
 
 SBValue::SBValue(const SBValue &rhs)
 {
-    SetSP(rhs.m_opaque_sp); // whenever setting the SP call SetSP() since it knows how to deal with synthetic values properly
+    SetSP(rhs.m_opaque_sp);
 }
 
 SBValue &
@@ -66,7 +164,7 @@ SBValue::operator = (const SBValue &rhs)
 {
     if (this != &rhs)
     {
-        SetSP(rhs.m_opaque_sp); // whenever setting the SP call SetSP() since it knows how to deal with synthetic values properly
+        SetSP(rhs.m_opaque_sp);
     }
     return *this;
 }
@@ -81,7 +179,7 @@ SBValue::IsValid ()
     // If this function ever changes to anything that does more than just
     // check if the opaque shared pointer is non NULL, then we need to update
     // all "if (m_opaque_sp)" code in this file.
-    return m_opaque_sp.get() != NULL;
+    return m_opaque_sp.get() != NULL && m_opaque_sp->GetRootSP().get() != NULL;
 }
 
 void
@@ -137,11 +235,32 @@ SBValue::GetName()
 const char *
 SBValue::GetTypeName ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     const char *name = NULL;
     lldb::ValueObjectSP value_sp(GetSP());
     if (value_sp)
-        name = value_sp->GetQualifiedTypeName().GetCString();
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    {
+        // For a dynamic type we might have to run code to determine the type we are going to report,
+        // and we might not have updated the type before we get asked this.  So make sure to get the API lock.
+        
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
+        {
+            if (log)
+                log->Printf ("SBValue(%p)::GetTypeName() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                name = value_sp->GetQualifiedTypeName().GetCString();
+            }
+        }
+    }
+    
     if (log)
     {
         if (name)
@@ -156,15 +275,35 @@ SBValue::GetTypeName ()
 size_t
 SBValue::GetByteSize ()
 {
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     size_t result = 0;
 
     lldb::ValueObjectSP value_sp(GetSP());
     if (value_sp)
-        result = value_sp->GetByteSize();
+    {
+        // For a dynamic type we might have to run code to determine the type we are going to report,
+        // and we might not have updated the type before we get asked this.  So make sure to get the API lock.
+        
+        ProcessSP process_sp(value_sp->GetProcessSP());
+        Process::StopLocker stop_locker;
+        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
+        {
+            if (log)
+                log->Printf ("SBValue(%p)::GetTypeName() => error: process is running", value_sp.get());
+        }
+        else
+        {
+            TargetSP target_sp(value_sp->GetTargetSP());
+            if (target_sp)
+            {
+                Mutex::Locker api_locker (target_sp->GetAPIMutex());
+                result = value_sp->GetByteSize();
+            }
+        }
+    }
 
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetByteSize () => %zu", value_sp.get(), result);
+        log->Printf ("SBValue(%p)::GetByteSize () => %" PRIu64, value_sp.get(), (uint64_t)result);
 
     return result;
 }
@@ -638,7 +777,7 @@ SBValue::CreateChildAtOffset (const char *name, uint32_t offset, SBType type)
                 TypeImplSP type_sp (type.GetSP());
                 if (type.IsValid())
                 {
-                    sb_value = SBValue(value_sp->GetSyntheticChildAtOffset(offset, type_sp->GetClangASTType(), true));
+                    sb_value.SetSP(value_sp->GetSyntheticChildAtOffset(offset, type_sp->GetClangASTType(), true),GetPreferDynamicValue(),GetPreferSyntheticValue());
                     new_value_sp = sb_value.GetSP();
                     if (new_value_sp)
                         new_value_sp->SetName(ConstString(name));
@@ -650,9 +789,12 @@ SBValue::CreateChildAtOffset (const char *name, uint32_t offset, SBType type)
     if (log)
     {
         if (new_value_sp)
-            log->Printf ("SBValue(%p)::CreateChildAtOffset => \"%s\"", value_sp.get(), new_value_sp->GetName().AsCString());
+            log->Printf ("SBValue(%p)::CreateChildAtOffset => \"%s\"",
+                         value_sp.get(),
+                         new_value_sp->GetName().AsCString());
         else
-            log->Printf ("SBValue(%p)::CreateChildAtOffset => NULL", value_sp.get());
+            log->Printf ("SBValue(%p)::CreateChildAtOffset => NULL",
+                         value_sp.get());
     }
     return sb_value;
 }
@@ -664,12 +806,20 @@ SBValue::Cast (SBType type)
     lldb::ValueObjectSP value_sp(GetSP());
     TypeImplSP type_sp (type.GetSP());
     if (value_sp && type_sp)
-        sb_value.SetSP(value_sp->Cast(type_sp->GetClangASTType()));
+        sb_value.SetSP(value_sp->Cast(type_sp->GetClangASTType()),GetPreferDynamicValue(),GetPreferSyntheticValue());
     return sb_value;
 }
 
 lldb::SBValue
 SBValue::CreateValueFromExpression (const char *name, const char* expression)
+{
+    SBExpressionOptions options;
+    options.ref().SetKeepInMemory(true);
+    return CreateValueFromExpression (name, expression, options);
+}
+
+lldb::SBValue
+SBValue::CreateValueFromExpression (const char *name, const char *expression, SBExpressionOptions &options)
 {
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     lldb::SBValue sb_value;
@@ -690,14 +840,11 @@ SBValue::CreateValueFromExpression (const char *name, const char* expression)
             Target* target = exe_ctx.GetTargetPtr();
             if (target)
             {
+                options.ref().SetKeepInMemory(true);
                 target->EvaluateExpression (expression,
                                             exe_ctx.GetFramePtr(),
-                                            eExecutionPolicyOnlyWhenNeeded,
-                                            false, // coerce to id
-                                            true, // unwind on error
-                                            true, // keep in memory
-                                            eNoDynamicValues,
-                                            new_value_sp);
+                                            new_value_sp,
+                                            options.ref());
                 if (new_value_sp)
                 {
                     new_value_sp->SetName(ConstString(name));
@@ -851,20 +998,12 @@ SBValue::GetChildAtIndex (uint32_t idx, lldb::DynamicValueType use_dynamic, bool
                     }
                 }
                     
-                if (child_sp)
-                {
-                    if (use_dynamic != lldb::eNoDynamicValues)
-                    {
-                        lldb::ValueObjectSP dynamic_sp(child_sp->GetDynamicValue (use_dynamic));
-                        if (dynamic_sp)
-                            child_sp = dynamic_sp;
-                    }
-                }
             }
         }
     }
     
-    SBValue sb_value (child_sp);
+    SBValue sb_value;
+    sb_value.SetSP (child_sp, use_dynamic, GetPreferSyntheticValue());
     if (log)
         log->Printf ("SBValue(%p)::GetChildAtIndex (%u) => SBValue(%p)", value_sp.get(), idx, value_sp.get());
 
@@ -940,20 +1079,12 @@ SBValue::GetChildMemberWithName (const char *name, lldb::DynamicValueType use_dy
             {
                 Mutex::Locker api_locker (target_sp->GetAPIMutex());
                 child_sp = value_sp->GetChildMemberWithName (str_name, true);
-                if (use_dynamic_value != lldb::eNoDynamicValues)
-                {
-                    if (child_sp)
-                    {
-                        lldb::ValueObjectSP dynamic_sp = child_sp->GetDynamicValue (use_dynamic_value);
-                        if (dynamic_sp)
-                            child_sp = dynamic_sp;
-                    }
-                }
             }
         }
     }
     
-    SBValue sb_value (child_sp);
+    SBValue sb_value;
+    sb_value.SetSP(child_sp, use_dynamic_value, GetPreferSyntheticValue());
 
     if (log)
         log->Printf ("SBValue(%p)::GetChildMemberWithName (name=\"%s\") => SBValue(%p)", value_sp.get(), name, value_sp.get());
@@ -964,70 +1095,67 @@ SBValue::GetChildMemberWithName (const char *name, lldb::DynamicValueType use_dy
 lldb::SBValue
 SBValue::GetDynamicValue (lldb::DynamicValueType use_dynamic)
 {
-    lldb::ValueObjectSP value_sp(GetSP());
-    if (value_sp)
+    SBValue value_sb;
+    if (IsValid())
     {
-        ProcessSP process_sp(value_sp->GetProcessSP());
-        Process::StopLocker stop_locker;
-        if (process_sp && !stop_locker.TryLock(&process_sp->GetRunLock()))
-        {
-            LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
-            if (log)
-                log->Printf ("SBValue(%p)::GetDynamicValue() => error: process is running", value_sp.get());
-        }
-        else
-        {
-            TargetSP target_sp(value_sp->GetTargetSP());
-            if (target_sp)
-            {
-                Mutex::Locker api_locker (target_sp->GetAPIMutex());
-                return SBValue (value_sp->GetDynamicValue(use_dynamic));
-            }
-        }
+        ValueImplSP proxy_sp(new ValueImpl(m_opaque_sp->GetRootSP(),use_dynamic,m_opaque_sp->GetUseSynthetic()));
+        value_sb.SetSP(proxy_sp);
     }
-    
-    return SBValue();
+    return value_sb;
 }
 
 lldb::SBValue
 SBValue::GetStaticValue ()
 {
-    lldb::ValueObjectSP value_sp(GetSP());
-    if (value_sp)
+    SBValue value_sb;
+    if (IsValid())
     {
-        TargetSP target_sp(value_sp->GetTargetSP());
-        if (target_sp)
-        {
-            Mutex::Locker api_locker (target_sp->GetAPIMutex());
-            return SBValue(value_sp->GetStaticValue());
-        }
+        ValueImplSP proxy_sp(new ValueImpl(m_opaque_sp->GetRootSP(),eNoDynamicValues,m_opaque_sp->GetUseSynthetic()));
+        value_sb.SetSP(proxy_sp);
     }
-    
-    return SBValue();
+    return value_sb;
 }
 
 lldb::SBValue
 SBValue::GetNonSyntheticValue ()
 {
-    SBValue sb_value;
-    lldb::ValueObjectSP value_sp(GetSP());
-    if (value_sp)
+    SBValue value_sb;
+    if (IsValid())
     {
-        if (value_sp->IsSynthetic())
-        {
-            TargetSP target_sp(value_sp->GetTargetSP());
-            if (target_sp)
-            {
-                Mutex::Locker api_locker (target_sp->GetAPIMutex());
-                // deliberately breaking the rules here to optimize the case where we DO NOT want
-                // the synthetic value to be returned to the user - if we did not do this, we would have to tell
-                // the target to suppress the synthetic value, and then return the flag to its original value
-                if (value_sp->GetNonSyntheticValue())
-                    sb_value.m_opaque_sp = value_sp->GetNonSyntheticValue();
-            }
-        }
+        ValueImplSP proxy_sp(new ValueImpl(m_opaque_sp->GetRootSP(),m_opaque_sp->GetUseDynamic(),false));
+        value_sb.SetSP(proxy_sp);
     }
-    return sb_value;
+    return value_sb;
+}
+
+lldb::DynamicValueType
+SBValue::GetPreferDynamicValue ()
+{
+    if (!IsValid())
+        return eNoDynamicValues;
+    return m_opaque_sp->GetUseDynamic();
+}
+
+void
+SBValue::SetPreferDynamicValue (lldb::DynamicValueType use_dynamic)
+{
+    if (IsValid())
+        return m_opaque_sp->SetUseDynamic (use_dynamic);
+}
+
+bool
+SBValue::GetPreferSyntheticValue ()
+{
+    if (!IsValid())
+        return false;
+    return m_opaque_sp->GetUseSynthetic();
+}
+
+void
+SBValue::SetPreferSyntheticValue (bool use_synthetic)
+{
+    if (IsValid())
+        return m_opaque_sp->SetUseSynthetic (use_synthetic);
 }
 
 bool
@@ -1041,6 +1169,22 @@ SBValue::IsDynamic()
         {
             Mutex::Locker api_locker (target_sp->GetAPIMutex());
             return value_sp->IsDynamic();
+        }
+    }
+    return false;
+}
+
+bool
+SBValue::IsSynthetic ()
+{
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+    {
+        TargetSP target_sp(value_sp->GetTargetSP());
+        if (target_sp)
+        {
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
+            return value_sp->IsSynthetic();
         }
     }
     return false;
@@ -1073,7 +1217,8 @@ SBValue::GetValueForExpressionPath(const char* expr_path)
         }
     }
     
-    SBValue sb_value (child_sp);
+    SBValue sb_value;
+    sb_value.SetSP(child_sp,GetPreferDynamicValue(),GetPreferSyntheticValue());
     
     if (log)
         log->Printf ("SBValue(%p)::GetValueForExpressionPath (expr_path=\"%s\") => SBValue(%p)", value_sp.get(), expr_path, value_sp.get());
@@ -1105,7 +1250,7 @@ SBValue::GetValueAsSigned(SBError& error, int64_t fail_value)
                 Mutex::Locker api_locker (target_sp->GetAPIMutex());
                 Scalar scalar;
                 if (value_sp->ResolveValue (scalar))
-                    return scalar.GetRawBits64(fail_value);
+                    return scalar.SLongLong(fail_value);
                 else
                     error.SetErrorString("could not get value");
             }
@@ -1141,7 +1286,7 @@ SBValue::GetValueAsUnsigned(SBError& error, uint64_t fail_value)
                 Mutex::Locker api_locker (target_sp->GetAPIMutex());
                 Scalar scalar;
                 if (value_sp->ResolveValue (scalar))
-                    return scalar.GetRawBits64(fail_value);
+                    return scalar.ULongLong(fail_value);
                 else
                     error.SetErrorString("could not get value");
             }
@@ -1175,7 +1320,7 @@ SBValue::GetValueAsSigned(int64_t fail_value)
                 Mutex::Locker api_locker (target_sp->GetAPIMutex());
                 Scalar scalar;
                 if (value_sp->ResolveValue (scalar))
-                    return scalar.GetRawBits64(fail_value);
+                    return scalar.SLongLong(fail_value);
             }
         }
     }
@@ -1204,11 +1349,25 @@ SBValue::GetValueAsUnsigned(uint64_t fail_value)
                 Mutex::Locker api_locker (target_sp->GetAPIMutex());
                 Scalar scalar;
                 if (value_sp->ResolveValue (scalar))
-                    return scalar.GetRawBits64(fail_value);
+                    return scalar.ULongLong(fail_value);
             }
         }
     }
     return fail_value;
+}
+
+bool
+SBValue::MightHaveChildren ()
+{
+    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
+    bool has_children = false;
+    lldb::ValueObjectSP value_sp(GetSP());
+    if (value_sp)
+        has_children = value_sp->MightHaveChildren();
+
+    if (log)
+        log->Printf ("SBValue(%p)::HasChildren() => %i", value_sp.get(), has_children);
+    return has_children;
 }
 
 uint32_t
@@ -1404,17 +1563,77 @@ SBValue::GetFrame()
 lldb::ValueObjectSP
 SBValue::GetSP () const
 {
-    return m_opaque_sp;
+    if (!m_opaque_sp || !m_opaque_sp->IsValid())
+        return ValueObjectSP();
+    return m_opaque_sp->GetSP();
+}
+
+void
+SBValue::SetSP (ValueImplSP impl_sp)
+{
+    m_opaque_sp = impl_sp;
 }
 
 void
 SBValue::SetSP (const lldb::ValueObjectSP &sp)
 {
-    m_opaque_sp = sp;
-    if (IsValid() && m_opaque_sp->HasSyntheticValue())
-        m_opaque_sp = m_opaque_sp->GetSyntheticValue();
+    if (sp)
+    {
+        lldb::TargetSP target_sp(sp->GetTargetSP());
+        if (target_sp)
+        {
+            lldb::DynamicValueType use_dynamic = target_sp->GetPreferDynamicValue();
+            bool use_synthetic = target_sp->TargetProperties::GetEnableSyntheticValue();
+            m_opaque_sp = ValueImplSP(new ValueImpl(sp, use_dynamic, use_synthetic));
+        }
+        else
+            m_opaque_sp = ValueImplSP(new ValueImpl(sp,eNoDynamicValues,true));
+    }
+    else
+        m_opaque_sp = ValueImplSP(new ValueImpl(sp,eNoDynamicValues,false));
 }
 
+void
+SBValue::SetSP (const lldb::ValueObjectSP &sp, lldb::DynamicValueType use_dynamic)
+{
+    if (sp)
+    {
+        lldb::TargetSP target_sp(sp->GetTargetSP());
+        if (target_sp)
+        {
+            bool use_synthetic = target_sp->TargetProperties::GetEnableSyntheticValue();
+            SetSP (sp, use_dynamic, use_synthetic);
+        }
+        else
+            SetSP (sp, use_dynamic, true);
+    }
+    else
+        SetSP (sp, use_dynamic, false);
+}
+
+void
+SBValue::SetSP (const lldb::ValueObjectSP &sp, bool use_synthetic)
+{
+    if (sp)
+    {
+        lldb::TargetSP target_sp(sp->GetTargetSP());
+        if (target_sp)
+        {
+            lldb::DynamicValueType use_dynamic = target_sp->GetPreferDynamicValue();
+            SetSP (sp, use_dynamic, use_synthetic);
+        }
+        else
+            SetSP (sp, eNoDynamicValues, use_synthetic);
+    }
+    else
+        SetSP (sp, eNoDynamicValues, use_synthetic);
+}
+
+void
+SBValue::SetSP (const lldb::ValueObjectSP &sp, lldb::DynamicValueType use_dynamic, bool use_synthetic)
+{
+    m_opaque_sp = ValueImplSP(new ValueImpl(sp,use_dynamic,use_synthetic));
+}
 
 bool
 SBValue::GetExpressionPath (SBStream &description)
@@ -1496,7 +1715,7 @@ SBValue::AddressOf()
         {
             Mutex::Locker api_locker (target_sp->GetAPIMutex());
             Error error;
-            sb_value = value_sp->AddressOf (error);
+            sb_value.SetSP(value_sp->AddressOf (error),GetPreferDynamicValue(), GetPreferSyntheticValue());
         }
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
@@ -1538,7 +1757,7 @@ SBValue::GetLoadAddress()
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetLoadAddress () => (%llu)", value_sp.get(), value);
+        log->Printf ("SBValue(%p)::GetLoadAddress () => (%" PRIu64 ")", value_sp.get(), value);
     
     return value;
 }
@@ -1575,7 +1794,9 @@ SBValue::GetAddress()
     }
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
     if (log)
-        log->Printf ("SBValue(%p)::GetAddress () => (%s,%llu)", value_sp.get(), (addr.GetSection() ? addr.GetSection()->GetName().GetCString() : "NULL"), addr.GetOffset());
+        log->Printf ("SBValue(%p)::GetAddress () => (%s,%" PRIu64 ")", value_sp.get(),
+                     (addr.GetSection() ? addr.GetSection()->GetName().GetCString() : "NULL"),
+                     addr.GetOffset());
     return SBAddress(new Address(addr));
 }
 
@@ -1654,6 +1875,20 @@ SBValue::GetData ()
     return sb_data;
 }
 
+lldb::SBDeclaration
+SBValue::GetDeclaration ()
+{
+    lldb::ValueObjectSP value_sp(GetSP());
+    SBDeclaration decl_sb;
+    if (value_sp)
+    {
+        Declaration decl;
+        if (value_sp->GetDeclaration(decl))
+            decl_sb.SetDeclaration(decl);
+    }
+    return decl_sb;
+}
+
 lldb::SBWatchpoint
 SBValue::Watch (bool resolve_location, bool read, bool write, SBError &error)
 {
@@ -1697,7 +1932,8 @@ SBValue::Watch (bool resolve_location, bool read, bool write, SBError &error)
             watch_type |= LLDB_WATCH_TYPE_WRITE;
         
         Error rc;
-        WatchpointSP watchpoint_sp = target_sp->CreateWatchpoint(addr, byte_size, watch_type, rc);
+        ClangASTType type (value_sp->GetClangAST(), value_sp->GetClangType());
+        WatchpointSP watchpoint_sp = target_sp->CreateWatchpoint(addr, byte_size, &type, watch_type, rc);
         error.SetError(rc);
                 
         if (watchpoint_sp) 
@@ -1736,4 +1972,3 @@ SBValue::WatchPointee (bool resolve_location, bool read, bool write, SBError &er
         sb_watchpoint = Dereference().Watch (resolve_location, read, write, error);
     return sb_watchpoint;
 }
-

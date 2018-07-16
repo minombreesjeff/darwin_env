@@ -51,16 +51,20 @@ const FunctionDecl *SVal::getAsFunctionDecl() const {
   if (const loc::MemRegionVal* X = dyn_cast<loc::MemRegionVal>(this)) {
     const MemRegion* R = X->getRegion();
     if (const FunctionTextRegion *CTR = R->getAs<FunctionTextRegion>())
-      return CTR->getDecl();
+      if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(CTR->getDecl()))
+        return FD;
   }
 
   return 0;
 }
 
-// If this SVal is a location (subclasses Loc) and wraps a symbol, return 
-// that SymbolRef.  Otherwise return 0.
-// FIXME: should we consider SymbolRef wrapped in CodeTextRegion?
+/// \brief If this SVal is a location (subclasses Loc) and wraps a symbol,
+/// return that SymbolRef.  Otherwise return 0.
+///
+/// Implicit casts (ex: void* -> char*) can turn Symbolic region into Element
+/// region. If that is the case, gets the underlining region.
 SymbolRef SVal::getAsLocSymbol() const {
+  // FIXME: should we consider SymbolRef wrapped in CodeTextRegion?
   if (const nonloc::LocAsInteger *X = dyn_cast<nonloc::LocAsInteger>(this))
     return X->getLoc().getAsLocSymbol();
 
@@ -92,16 +96,13 @@ SymbolRef SVal::getLocSymbolInBase() const {
 }
 
 // TODO: The next 3 functions have to be simplified.
-/// getAsSymbol - If this Sval wraps a symbol return that SymbolRef.
+
+/// \brief If this SVal wraps a symbol return that SymbolRef.
 ///  Otherwise return 0.
-// FIXME: should we consider SymbolRef wrapped in CodeTextRegion?
 SymbolRef SVal::getAsSymbol() const {
+  // FIXME: should we consider SymbolRef wrapped in CodeTextRegion?
   if (const nonloc::SymbolVal *X = dyn_cast<nonloc::SymbolVal>(this))
     return X->getSymbol();
-
-  if (const nonloc::SymbolVal *X = dyn_cast<nonloc::SymbolVal>(this))
-    if (SymbolRef Y = X->getSymbol())
-      return Y;
 
   return getAsLocSymbol();
 }
@@ -133,9 +134,9 @@ const MemRegion *SVal::getAsRegion() const {
   return 0;
 }
 
-const MemRegion *loc::MemRegionVal::stripCasts() const {
+const MemRegion *loc::MemRegionVal::stripCasts(bool StripBaseCasts) const {
   const MemRegion *R = getRegion();
-  return R ?  R->StripCasts() : NULL;
+  return R ?  R->StripCasts(StripBaseCasts) : NULL;
 }
 
 const void *nonloc::LazyCompoundVal::getStore() const {
@@ -309,22 +310,6 @@ void Loc::dumpToStream(raw_ostream &os) const {
     case loc::MemRegionKind:
       os << '&' << cast<loc::MemRegionVal>(this)->getRegion()->getString();
       break;
-    case loc::ObjCPropRefKind: {
-      const ObjCPropertyRefExpr *E = cast<loc::ObjCPropRef>(this)->getPropRefExpr();
-      os << "objc-prop{";
-      if (E->isSuperReceiver())
-        os << "super.";
-      else if (E->getBase())
-        os << "<base>.";
-
-      if (E->isImplicitProperty())
-        os << E->getImplicitPropertyGetter()->getSelector().getAsString();
-      else
-        os << E->getExplicitProperty()->getName();
-
-      os << "}";
-      break;
-    }
     default:
       llvm_unreachable("Pretty-printing not implemented for this Loc.");
   }

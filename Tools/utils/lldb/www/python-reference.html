@@ -213,9 +213,9 @@ frame #0: 0x0000000100000bb6 a.out main + 54 at main.c:16
                     scripts to breakpoints provides a way to create complex breakpoint
                     conditions and also allows for smart logging and data gathering.</p>
                 <p>When your process hits a breakpoint to which you have attached some python code, the code is executed as the
-                   body of a function which takes two arguments:</p>
+                   body of a function which takes three arguments:</p>
                     <p>
-<code><pre><tt>def breakpoint_function_wrapper(<b>frame</b>, <b>bp_loc</b>):
+<code><pre><tt>def breakpoint_function_wrapper(<b>frame</b>, <b>bp_loc</b>, <b>dict</b>):
   <font color=green># Your code goes here</font>
 </tt></pre></code>
                     <p><table class="stats" width="620" cellspacing="0">
@@ -249,6 +249,17 @@ frame #0: 0x0000000100000bb6 a.out main + 54 at main.c:16
                             The breakpoint location that just got hit. Breakpoints are represented by <b>lldb.SBBreakpoint</b>
                             objects. These breakpoint objects can have one or more locations. These locations
                             are represented by <b>lldb.SBBreakpointLocation</b> objects.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="content">
+                            <b>dict</b>
+                        </td>
+                        <td class="content">
+                            <b>dict</b>
+                        </td>
+                        <td class="content">
+                            The python session dictionary as a standard python dictionary object.
                         </td>
                     </tr>
                     </table>
@@ -300,12 +311,12 @@ Enter your Python command(s). Type 'DONE' to end.
                     debugging requirements. </p>
                 <p>To write a python function that implements a new LDB command define the function to take four arguments as follows:</p>
                         
-        <code><pre><tt>def command_function(<b>debugger</b>, <b>command</b>, <b>result</b>, <b>dict</b>):
+        <code><pre><tt>def command_function(<b>debugger</b>, <b>command</b>, <b>result</b>, <b>internal_dict</b>):
           <font color=green># Your code goes here</font>
         </tt></pre></code>
 
 		Optionally, you can also provide a Python docstring, and LLDB will use it when providing help for your command, as in:
-        <code><pre><tt>def command_function(<b>debugger</b>, <b>command</b>, <b>result</b>, <b>dict</b>):
+        <code><pre><tt>def command_function(<b>debugger</b>, <b>command</b>, <b>result</b>, <b>internal_dict</b>):
           <font color=green>"""This command takes a lot of options and does many fancy things"""</font>    
           <font color=green># Your code goes here</font>
         </tt></pre></code>
@@ -357,7 +368,7 @@ Enter your Python command(s). Type 'DONE' to end.
         </tr>
         <tr>
             <td class="content">
-                <b>dict</b>
+                <b>internal_dict</b>
             </td>
             <td class="content">
                 <b>python dict object</b>
@@ -373,11 +384,11 @@ Enter your Python command(s). Type 'DONE' to end.
           don't have to change your PYTHONPATH for temporary scripts.  It also has another convenience
           that if your new script module has a function of the form:</p>
 
-<code><pre><tt>def __lldb_init_module(<b>debugger</b>, <b>dict</b>):
+<code><pre><tt>def __lldb_init_module(<b>debugger</b>, <b>internal_dict</b>):
     <font color=green># Command Initialization code goes here</font>
 </tt></pre></code>
 
-        <p>where <b>debugger</b> and <b>dict</b> are as above, that function will get run when the module is loaded
+        <p>where <b>debugger</b> and <b>internal_dict</b> are as above, that function will get run when the module is loaded
            allowing you to add whatever commands you want into the current debugger. Note that
            this function will only be run when using the LLDB comand <b>command script import</b>,
            it will not get run if anyone imports your module from another module. 
@@ -410,11 +421,11 @@ import commands
 import optparse
 import shlex
 
-def ls(debugger, command, result, dict):
+def ls(debugger, command, result, internal_dict):
     result.PutCString(commands.getoutput('/bin/ls %s' % command))
 
 <font color=green># And the initialization code to add your commands </font>
-def __lldb_init_module(debugger, dict):
+def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand('command script add -f ls.ls ls')
     print 'The "ls" python command has been installed and is ready for use.'
 </tt></pre></code>
@@ -430,6 +441,39 @@ total 365848
         <p>A template has been created in the source repository that can help you to create
             lldb command quickly:</p>
         <a href="http://llvm.org/svn/llvm-project/lldb/trunk/examples/python/cmdtemplate.py">cmdtemplate.py</a>
+		<p>
+		A commonly required facility is being able to create a command that does some token substitution, and then runs a different debugger command
+		(usually, it po'es the result of an expression evaluated on its argument). For instance, given the following program:
+		<code><pre><tt>
+#import &lt;Foundation/Foundation.h&gt;
+NSString*
+ModifyString(NSString* src)
+{
+	return [src stringByAppendingString:@"foobar"];
+}
+
+int main()
+{
+	NSString* aString = @"Hello world";
+	NSString* anotherString = @"Let's be friends";
+	return 1;
+}
+		</tt></pre></code>
+		you may want a pofoo X command, that equates po [ModifyString(X) capitalizedString].
+		The following debugger interaction shows how to achieve that goal:
+		<code><pre><tt>
+(lldb) <b>script</b>
+Python Interactive Interpreter. To exit, type 'quit()', 'exit()' or Ctrl-D.
+>>> <b>def pofoo_funct(debugger, command, result, internal_dict):</b>
+...	<b>cmd = "po [ModifyString(" + command + ") capitalizedString]"</b>
+...	<b>lldb.debugger.HandleCommand(cmd)</b>
+... 
+>>> ^D
+(lldb) <b>command script add pofoo -f pofoo_funct</b>
+(lldb) <b>pofoo aString</b>
+$1 = 0x000000010010aa00 Hello Worldfoobar
+(lldb) <b>pofoo anotherString</b>
+$2 = 0x000000010010aba0 Let's Be Friendsfoobar</tt></pre></code>
         </div>
 		<div class="post">
 			<h1 class ="postheader">Using the lldb.py module in python</h1>

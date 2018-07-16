@@ -175,24 +175,37 @@ ThreadList::FindThreadByIndexID (uint32_t index_id, bool can_update)
 bool
 ThreadList::ShouldStop (Event *event_ptr)
 {
-    Mutex::Locker locker(m_threads_mutex);
-
+    bool should_stop = false;    
     // Running events should never stop, obviously...
 
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
-    bool should_stop = false;    
-    m_process->UpdateThreadListIfNeeded();
+    // The ShouldStop method of the threads can do a whole lot of work,
+    // running breakpoint commands & conditions, etc.  So we don't want
+    // to keep the ThreadList locked the whole time we are doing this.
+    // FIXME: It is possible that running code could cause new threads
+    // to be created.  If that happens we will miss asking them whether
+    // then should stop.  This is not a big deal, since we haven't had
+    // a chance to hang any interesting operations on those threads yet.
+    
+    collection threads_copy;
+    {
+        // Scope for locker
+        Mutex::Locker locker(m_threads_mutex);
 
-    collection::iterator pos, end = m_threads.end();
+        m_process->UpdateThreadListIfNeeded();
+        threads_copy = m_threads;
+    }
+
+    collection::iterator pos, end = threads_copy.end();
 
     if (log)
     {
         log->PutCString("");
-        log->Printf ("ThreadList::%s: %zu threads", __FUNCTION__, m_threads.size());
+        log->Printf ("ThreadList::%s: %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
     }
 
-    for (pos = m_threads.begin(); pos != end; ++pos)
+    for (pos = threads_copy.begin(); pos != end; ++pos)
     {
         ThreadSP thread_sp(*pos);
         
@@ -206,7 +219,7 @@ ThreadList::ShouldStop (Event *event_ptr)
 
     if (should_stop)
     {
-        for (pos = m_threads.begin(); pos != end; ++pos)
+        for (pos = threads_copy.begin(); pos != end; ++pos)
         {
             ThreadSP thread_sp(*pos);
             thread_sp->WillStop ();
@@ -228,7 +241,7 @@ ThreadList::ShouldReportStop (Event *event_ptr)
     LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
 
     if (log)
-        log->Printf ("ThreadList::%s %zu threads", __FUNCTION__, m_threads.size());
+        log->Printf ("ThreadList::%s %" PRIu64 " threads", __FUNCTION__, (uint64_t)m_threads.size());
 
     // Run through the threads and ask whether we should report this event.
     // For stopping, a YES vote wins over everything.  A NO vote wins over NO opinion.
@@ -253,7 +266,7 @@ ThreadList::ShouldReportStop (Event *event_ptr)
             else
             {
                 if (log)
-                    log->Printf ("ThreadList::%s thread 0x%4.4llx: voted %s, but lost out because result was %s", 
+                    log->Printf ("ThreadList::%s thread 0x%4.4" PRIx64 ": voted %s, but lost out because result was %s",
                                  __FUNCTION__,
                                  thread_sp->GetID (), 
                                  GetVoteAsCString (vote),
@@ -296,7 +309,7 @@ ThreadList::ShouldReportRun (Event *event_ptr)
                     break;
                 case eVoteNo:
                     if (log)
-                        log->Printf ("ThreadList::ShouldReportRun() thread %d (0x%4.4llx) says don't report.", 
+                        log->Printf ("ThreadList::ShouldReportRun() thread %d (0x%4.4" PRIx64 ") says don't report.",
                                      (*pos)->GetIndexID(), 
                                      (*pos)->GetID());
                     result = eVoteNo;
@@ -362,7 +375,6 @@ ThreadList::WillResume ()
     // Run through the threads and perform their momentary actions.
     // But we only do this for threads that are running, user suspended
     // threads stay where they are.
-    bool success = true;
 
     Mutex::Locker locker(m_threads_mutex);
     m_process->UpdateThreadListIfNeeded();
@@ -449,6 +461,8 @@ ThreadList::WillResume ()
 
     }
 
+    bool need_to_resume = true;
+    
     if (immediate_thread_sp)
     {
         for (pos = m_threads.begin(); pos != end; ++pos)
@@ -471,7 +485,8 @@ ThreadList::WillResume ()
                 run_state = thread_sp->GetCurrentPlan()->RunState();
             else
                 run_state = eStateSuspended;
-            thread_sp->WillResume(run_state);
+            if (!thread_sp->WillResume(run_state))
+                need_to_resume = false;
         }
     }
     else
@@ -497,13 +512,16 @@ ThreadList::WillResume ()
         {
             ThreadSP thread_sp(*pos);
             if (thread_sp == thread_to_run)
-                thread_sp->WillResume(thread_sp->GetCurrentPlan()->RunState());
+            {
+                if (!thread_sp->WillResume(thread_sp->GetCurrentPlan()->RunState()))
+                    need_to_resume = false;
+            }
             else
                 thread_sp->WillResume (eStateSuspended);
         }
     }
 
-    return success;
+    return need_to_resume;
 }
 
 void

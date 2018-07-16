@@ -105,7 +105,6 @@ public:
   /// BuildTypeInfo - Build the RTTI type info struct for the given type.
   ///
   /// \param Force - true to force the creation of this RTTI value
-  /// \param ForEH - true if this is for exception handling
   llvm::Constant *BuildTypeInfo(QualType Ty, bool Force = false);
 };
 }
@@ -249,7 +248,7 @@ static bool ShouldUseExternalRTTIDescriptor(CodeGenModule &CGM, QualType Ty) {
   ASTContext &Context = CGM.getContext();
 
   // If RTTI is disabled, don't consider key functions.
-  if (!Context.getLangOptions().RTTI) return false;
+  if (!Context.getLangOpts().RTTI) return false;
 
   if (const RecordType *RecordTy = dyn_cast<RecordType>(Ty)) {
     const CXXRecordDecl *RD = cast<CXXRecordDecl>(RecordTy->getDecl());
@@ -326,7 +325,7 @@ getTypeInfoLinkage(CodeGenModule &CGM, QualType Ty) {
     return llvm::GlobalValue::InternalLinkage;
 
   case ExternalLinkage:
-    if (!CGM.getLangOptions().RTTI) {
+    if (!CGM.getLangOpts().RTTI) {
       // RTTI is not enabled, which means that this type info struct is going
       // to be used for exception handling. Give it linkonce_odr linkage.
       return llvm::GlobalValue::LinkOnceODRLinkage;
@@ -779,28 +778,24 @@ static unsigned ComputeVMIClassTypeInfoFlags(const CXXBaseSpecifier *Base,
     cast<CXXRecordDecl>(Base->getType()->getAs<RecordType>()->getDecl());
   
   if (Base->isVirtual()) {
-    if (Bases.VirtualBases.count(BaseDecl)) {
+    // Mark the virtual base as seen.
+    if (!Bases.VirtualBases.insert(BaseDecl)) {
       // If this virtual base has been seen before, then the class is diamond
       // shaped.
       Flags |= RTTIBuilder::VMI_DiamondShaped;
     } else {
       if (Bases.NonVirtualBases.count(BaseDecl))
         Flags |= RTTIBuilder::VMI_NonDiamondRepeat;
-
-      // Mark the virtual base as seen.
-      Bases.VirtualBases.insert(BaseDecl);
     }
   } else {
-    if (Bases.NonVirtualBases.count(BaseDecl)) {
+    // Mark the non-virtual base as seen.
+    if (!Bases.NonVirtualBases.insert(BaseDecl)) {
       // If this non-virtual base has been seen before, then the class has non-
       // diamond shaped repeated inheritance.
       Flags |= RTTIBuilder::VMI_NonDiamondRepeat;
     } else {
       if (Bases.VirtualBases.count(BaseDecl))
         Flags |= RTTIBuilder::VMI_NonDiamondRepeat;
-        
-      // Mark the non-virtual base as seen.
-      Bases.NonVirtualBases.insert(BaseDecl);
     }
   }
 
@@ -891,7 +886,7 @@ void RTTIBuilder::BuildVMIClassTypeInfo(const CXXRecordDecl *RD) {
       Offset = Layout.getBaseClassOffset(BaseDecl);
     };
     
-    OffsetFlags = Offset.getQuantity() << 8;
+    OffsetFlags = uint64_t(Offset.getQuantity()) << 8;
     
     // The low-order byte of __offset_flags contains flags, as given by the 
     // masks from the enumeration __offset_flags_masks.
@@ -982,10 +977,11 @@ llvm::Constant *CodeGenModule::GetAddrOfRTTIDescriptor(QualType Ty,
   // Return a bogus pointer if RTTI is disabled, unless it's for EH.
   // FIXME: should we even be calling this method if RTTI is disabled
   // and it's not for EH?
-  if (!ForEH && !getContext().getLangOptions().RTTI)
+  if (!ForEH && !getContext().getLangOpts().RTTI)
     return llvm::Constant::getNullValue(Int8PtrTy);
   
-  if (ForEH && Ty->isObjCObjectPointerType() && !Features.NeXTRuntime)
+  if (ForEH && Ty->isObjCObjectPointerType() &&
+      LangOpts.ObjCRuntime.isGNUFamily())
     return ObjCRuntime->GetEHType(Ty);
 
   return RTTIBuilder(*this).BuildTypeInfo(Ty);

@@ -201,8 +201,7 @@ Value::GetValueByteSize (clang::ASTContext *ast_context, Error *error_ptr)
         if (GetRegisterInfo())
             byte_size = GetRegisterInfo()->byte_size;
         else if (error_ptr)
-                error_ptr->SetErrorString ("Can't determine byte size with NULL RegisterInfo *.");
-
+            error_ptr->SetErrorString ("Can't determine byte size with NULL RegisterInfo *.");
         break;
 
     case eContextTypeLLDBType:             // Type *
@@ -456,14 +455,14 @@ Value::GetValueAsData (ExecutionContext *exe_ctx,
                         if (module)
                         {
                             if (variable)
-                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%llx for variable '%s' in %s%s%s", 
+                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%" PRIx64 " for variable '%s' in %s%s%s",
                                                                 address, 
                                                                 variable->GetName().AsCString(""),
                                                                 module->GetFileSpec().GetDirectory().GetCString(),
                                                                 module->GetFileSpec().GetDirectory() ? "/" : "",
                                                                 module->GetFileSpec().GetFilename().GetCString());
                             else
-                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%llx in %s%s%s", 
+                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%" PRIx64 " in %s%s%s",
                                                                 address, 
                                                                 module->GetFileSpec().GetDirectory().GetCString(),
                                                                 module->GetFileSpec().GetDirectory() ? "/" : "",
@@ -472,11 +471,11 @@ Value::GetValueAsData (ExecutionContext *exe_ctx,
                         else
                         {
                             if (variable)
-                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%llx for variable '%s'", 
+                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%" PRIx64 " for variable '%s'",
                                                                 address, 
                                                                 variable->GetName().AsCString(""));
                             else
-                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%llx", address);
+                                error.SetErrorStringWithFormat ("unable to resolve the module for file address 0x%" PRIx64, address);
                         }
                     }
                 }
@@ -555,7 +554,7 @@ Value::GetValueAsData (ExecutionContext *exe_ctx,
                 const bool prefer_file_cache = false;
                 if (exe_ctx->GetTargetRef().ReadMemory(file_so_addr, prefer_file_cache, dst, byte_size, error) != byte_size)
                 {
-                    error.SetErrorStringWithFormat("read memory from 0x%llx failed", (uint64_t)address);
+                    error.SetErrorStringWithFormat("read memory from 0x%" PRIx64 " failed", (uint64_t)address);
                 }
             }
             else
@@ -570,14 +569,14 @@ Value::GetValueAsData (ExecutionContext *exe_ctx,
                 {
                     const size_t bytes_read = process->ReadMemory(address, dst, byte_size, error);
                     if (bytes_read != byte_size)
-                        error.SetErrorStringWithFormat("read memory from 0x%llx failed (%u of %u bytes read)", 
+                        error.SetErrorStringWithFormat("read memory from 0x%" PRIx64 " failed (%u of %u bytes read)",
                                                        (uint64_t)address, 
                                                        (uint32_t)bytes_read, 
                                                        (uint32_t)byte_size);
                 }
                 else
                 {
-                    error.SetErrorStringWithFormat("read memory from 0x%llx failed (invalid process)", (uint64_t)address);                    
+                    error.SetErrorStringWithFormat("read memory from 0x%" PRIx64 " failed (invalid process)", (uint64_t)address);
                 }
             }
         }
@@ -662,6 +661,7 @@ Value::GetValueTypeAsCString (ValueType value_type)
     switch (value_type)
     {
     case eValueTypeScalar:      return "scalar";
+    case eValueTypeVector:      return "vector";
     case eValueTypeFileAddress: return "file address";
     case eValueTypeLoadAddress: return "load address";
     case eValueTypeHostAddress: return "host address";

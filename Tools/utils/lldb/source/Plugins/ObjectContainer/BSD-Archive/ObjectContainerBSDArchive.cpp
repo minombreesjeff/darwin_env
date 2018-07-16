@@ -15,7 +15,6 @@
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
-#include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Mutex.h"
 #include "lldb/Symbol/ObjectFile.h"
@@ -274,10 +273,10 @@ ObjectContainerBSDArchive::CreateInstance
     if (file && data_sp && ObjectContainerBSDArchive::MagicBytesMatch(data))
     {
         Timer scoped_timer (__PRETTY_FUNCTION__,
-                            "ObjectContainerBSDArchive::CreateInstance (module = %s/%s, file = %p, file_offset = 0x%z8.8x, file_size = 0x%z8.8x)",
+                            "ObjectContainerBSDArchive::CreateInstance (module = %s/%s, file = %p, file_offset = 0x%8.8" PRIx64 ", file_size = 0x%8.8" PRIx64 ")",
                             module_sp->GetFileSpec().GetDirectory().AsCString(),
                             module_sp->GetFileSpec().GetFilename().AsCString(),
-                            file, offset, length);
+                            file, (uint64_t) offset, (uint64_t) length);
 
         Archive::shared_ptr archive_sp (Archive::FindCachedArchive (*file, module_sp->GetArchitecture(), module_sp->GetModificationTime()));
 
@@ -396,7 +395,7 @@ ObjectContainerBSDArchive::GetObjectFile (const FileSpec *file)
             if (object)
                 return ObjectFile::FindPlugin (module_sp, 
                                                file, 
-                                               object->ar_file_offset, 
+                                               m_offset + object->ar_file_offset,
                                                object->ar_file_size, 
                                                m_data.GetSharedDataBuffer());
         }

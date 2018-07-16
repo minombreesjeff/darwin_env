@@ -49,6 +49,8 @@
 		260E7331114BFFE600D1DFB3 /* DNBThreadResumeActions.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DNBThreadResumeActions.cpp; sourceTree = "<group>"; };
 		260E7332114BFFE600D1DFB3 /* DNBThreadResumeActions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DNBThreadResumeActions.h; sourceTree = "<group>"; };
 		260FC7320E5B290400043FC9 /* debugnub-exports */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = "debugnub-exports"; sourceTree = SOURCE_ROOT; };
+		26203D1C1641EFB200A662F7 /* com.apple.debugserver.applist.internal.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = com.apple.debugserver.applist.internal.plist; sourceTree = "<group>"; };
+		26203D1D1641EFB200A662F7 /* com.apple.debugserver.internal.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = com.apple.debugserver.internal.plist; sourceTree = "<group>"; };
 		26242C390DDBD33C0054A4CC /* debugserver-entitlements.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "debugserver-entitlements.plist"; sourceTree = "<group>"; };
 		264D5D571293835600ED4C01 /* DNBArch.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DNBArch.cpp; sourceTree = "<group>"; };
 		26593A060D4931CC001C9FE3 /* ChangeLog */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = ChangeLog; sourceTree = "<group>"; };
@@ -65,6 +67,7 @@
 		2695DE2E0D3EE55B007E4CA2 /* CFData.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CFData.cpp; sourceTree = "<group>"; };
 		269DE5C50CB5B723008989F0 /* ProfileObjectiveC.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ProfileObjectiveC.h; sourceTree = "<group>"; };
 		269DE5C60CB5B723008989F0 /* ProfileObjectiveC.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ProfileObjectiveC.cpp; sourceTree = "<group>"; };
+		269E8DF8164B2ED200AD65F6 /* com.apple.debugserver.posix.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = com.apple.debugserver.posix.plist; sourceTree = "<group>"; };
 		26A02918114AB9240029C479 /* debugserver.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = debugserver.cpp; sourceTree = "<group>"; };
 		26A4BAED0D498B7D00A9BEAB /* com.apple.debugserver.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = com.apple.debugserver.plist; sourceTree = "<group>"; };
 		26A68F7D0D104EC800665A9E /* RNBContext.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RNBContext.h; sourceTree = "<group>"; };
@@ -182,6 +185,9 @@
 		26A028FE114AB6A60029C479 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				269E8DF8164B2ED200AD65F6 /* com.apple.debugserver.posix.plist */,
+				26203D1C1641EFB200A662F7 /* com.apple.debugserver.applist.internal.plist */,
+				26203D1D1641EFB200A662F7 /* com.apple.debugserver.internal.plist */,
 				260FC7320E5B290400043FC9 /* debugnub-exports */,
 				26242C390DDBD33C0054A4CC /* debugserver-entitlements.plist */,
 				26A4BAED0D498B7D00A9BEAB /* com.apple.debugserver.plist */,
@@ -480,7 +486,7 @@
 					i386,
 				);
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 194;
+				CURRENT_PROJECT_VERSION = 199;
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
@@ -501,7 +507,7 @@
 					armv7s,
 				);
 				"ARCHS[sdk=macosx*]" = "$(ARCHS_STANDARD_64_BIT)";
-				CURRENT_PROJECT_VERSION = 194;
+				CURRENT_PROJECT_VERSION = 199;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
@@ -527,7 +533,7 @@
 					x86_64,
 					i386,
 				);
-				CURRENT_PROJECT_VERSION = 194;
+				CURRENT_PROJECT_VERSION = 199;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
@@ -544,9 +550,11 @@
 		262419A21198A93E00067686 /* BuildAndIntegration */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 194;
+				CURRENT_PROJECT_VERSION = 199;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
@@ -554,6 +562,7 @@
 					"$(SDKROOT)/Developer/Library/PrivateFrameworks",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*][arch=*]" = "$(SDKROOT)/System/Library/PrivateFrameworks";
+				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_PREPROCESSOR_DEFINITIONS = LLDB_DEBUGSERVER_BUILDANDINTEGRATION;
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				HEADER_SEARCH_PATHS = /System/Library/Frameworks/System.framework/PrivateHeaders;
@@ -595,17 +604,20 @@
 		26CE0596115C31C30022F371 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = lldb_codesign;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 194;
+				CURRENT_PROJECT_VERSION = 199;
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
 					"$(SDKROOT)/System/Library/PrivateFrameworks",
 					"$(SDKROOT)/Developer/Library/PrivateFrameworks",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*][arch=*]" = "$(SDKROOT)/System/Library/PrivateFrameworks";
+				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = LLDB_DEBUGSERVER_DEBUG;
@@ -647,11 +659,13 @@
 		26CE0597115C31C30022F371 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
 				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = lldb_codesign;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 194;
+				CURRENT_PROJECT_VERSION = 199;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
 				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
@@ -659,6 +673,7 @@
 					"$(SDKROOT)/Developer/Library/PrivateFrameworks",
 				);
 				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*][arch=*]" = "$(SDKROOT)/System/Library/PrivateFrameworks";
+				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_PREPROCESSOR_DEFINITIONS = LLDB_DEBUGSERVER_RELEASE;
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				HEADER_SEARCH_PATHS = /System/Library/Frameworks/System.framework/PrivateHeaders;
@@ -696,6 +711,86 @@
 			};
 			name = Release;
 		};
+		4968B7A916657FAE00741ABB /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"ARCHS[sdk=iphoneos*]" = (
+					armv7,
+					armv7s,
+				);
+				"ARCHS[sdk=macosx*]" = (
+					x86_64,
+					i386,
+				);
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 199;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = "";
+				STRIP_INSTALLED_PRODUCT = NO;
+				VALID_ARCHS = "armv4t armv5 armv6 armv7 armv7s i386 ppc ppc64 ppc7400 ppc970 x86_64";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_BUILDER = "$(USER)";
+			};
+			name = DebugClang;
+		};
+		4968B7AA16657FAE00741ABB /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = "source/debugserver-entitlements.plist";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = lldb_codesign;
+				COPY_PHASE_STRIP = YES;
+				CURRENT_PROJECT_VERSION = 199;
+				FRAMEWORK_SEARCH_PATHS = $SDKROOT/System/Library/PrivateFrameworks;
+				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*][arch=*]" = (
+					"$(SDKROOT)/System/Library/PrivateFrameworks",
+					"$(SDKROOT)/Developer/Library/PrivateFrameworks",
+				);
+				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*][arch=*]" = "$(SDKROOT)/System/Library/PrivateFrameworks";
+				GCC_C_LANGUAGE_STANDARD = c99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = LLDB_DEBUGSERVER_DEBUG;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				INSTALL_PATH = /usr/bin;
+				LLDB_DEBUGSERVER = 1;
+				OTHER_CFLAGS = "-Wparentheses";
+				"OTHER_CFLAGS[sdk=iphoneos*][arch=*]" = (
+					"-Wparentheses",
+					"-DWITH_LOCKDOWN",
+					"-DWITH_SPRINGBOARD",
+					"-DUSE_ARM_DISASSEMBLER_FRAMEWORK",
+					"-DOS_OBJECT_USE_OBJC=0",
+				);
+				"OTHER_CPLUSPLUSFLAGS[sdk=iphoneos*][arch=*]" = "$(OTHER_CFLAGS)";
+				OTHER_LDFLAGS = (
+					"-sectcreate",
+					__TEXT,
+					__info_plist,
+					"$(PROJECT_DIR)/resources/lldb-debugserver-Info.plist",
+				);
+				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
+					"-framework",
+					SpringBoardServices,
+					"-framework",
+					ARMDisassembler,
+					"-llockdown",
+				);
+				OTHER_MIGFLAGS = "-I$(DERIVED_FILE_DIR)";
+				PRODUCT_NAME = debugserver;
+				"PROVISIONING_PROFILE[sdk=iphoneos*]" = "";
+				"PROVISIONING_PROFILE[sdk=macosx*]" = "";
+				SKIP_INSTALL = YES;
+				USER_HEADER_SEARCH_PATHS = "./source ../../source $(DERIVED_SOURCES_DIR)";
+				ZERO_LINK = NO;
+			};
+			name = DebugClang;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -703,6 +798,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1DEB914F08733D8E0010E9CD /* Debug */,
+				4968B7A916657FAE00741ABB /* DebugClang */,
 				1DEB915008733D8E0010E9CD /* Release */,
 				262419A11198A93E00067686 /* BuildAndIntegration */,
 			);
@@ -713,6 +809,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26CE0596115C31C30022F371 /* Debug */,
+				4968B7AA16657FAE00741ABB /* DebugClang */,
 				26CE0597115C31C30022F371 /* Release */,
 				262419A21198A93E00067686 /* BuildAndIntegration */,
 			);

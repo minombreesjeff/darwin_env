@@ -14,6 +14,9 @@
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBType.h"
 
+namespace {
+    class ValueImpl;
+}
 
 namespace lldb {
 
@@ -95,8 +98,23 @@ public:
     lldb::SBValue
     GetNonSyntheticValue ();
     
+    lldb::DynamicValueType
+    GetPreferDynamicValue ();
+    
+    void
+    SetPreferDynamicValue (lldb::DynamicValueType use_dynamic);
+    
     bool
-    IsDynamic();
+    GetPreferSyntheticValue ();
+    
+    void
+    SetPreferSyntheticValue (bool use_synthetic);
+    
+    bool
+    IsDynamic ();
+    
+    bool
+    IsSynthetic ();
 
     const char *
     GetLocation ();
@@ -135,6 +153,9 @@ public:
     
     lldb::SBValue
     CreateValueFromExpression (const char *name, const char* expression);
+    
+    lldb::SBValue
+    CreateValueFromExpression (const char *name, const char* expression, SBExpressionOptions &options);
     
     lldb::SBValue
     CreateValueFromAddress (const char* name, 
@@ -269,6 +290,28 @@ public:
     lldb::SBData
     GetData ();
     
+    lldb::SBDeclaration
+    GetDeclaration ();
+    
+    //------------------------------------------------------------------
+    /// Find out if a SBValue might have children.
+    ///
+    /// This call is much more efficient than GetNumChildren() as it
+    /// doesn't need to complete the underlying type. This is designed
+    /// to be used in a UI environment in order to detect if the
+    /// disclosure triangle should be displayed or not.
+    ///
+    /// This function returns true for class, union, structure,
+    /// pointers, references, arrays and more. Again, it does so without
+    /// doing any expensive type completion.
+    ///
+    /// @return
+    ///     Returns \b true if the SBValue might have children, or \b
+    ///     false otherwise.
+    //------------------------------------------------------------------
+    bool
+    MightHaveChildren ();
+
     uint32_t
     GetNumChildren ();
 
@@ -370,32 +413,34 @@ public:
     lldb::SBWatchpoint
     WatchPointee (bool resolve_location, bool read, bool write, SBError &error);
 
-    // this must be defined in the .h file because synthetic children as implemented in the core
-    // currently rely on being able to extract the SharedPointer out of an SBValue. if the implementation
-    // is deferred to the .cpp file instead of being inlined here, the platform will fail to link
-    // correctly. however, this is temporary till a better general solution is found. FIXME
-    lldb::ValueObjectSP&
-    get_sp()
-    {
-        return m_opaque_sp;
-    }
-
-protected:
-    friend class SBValueList;
-    friend class SBFrame;
-
     lldb::ValueObjectSP
     GetSP () const;
-    
-    // anyone who needs to set the value of the SP on this SBValue should rely on SetSP() exclusively
-    // since this function contains logic to "do the right thing" with regard to providing to the user
-    // a synthetic value when possible - in the future the same should automatically occur with
-    // dynamic values
+
+protected:
+    friend class SBBlock;
+    friend class SBFrame;
+    friend class SBThread;
+    friend class SBValueList;
+
+    // these calls do the right thing WRT adjusting their settings according to the target's preferences
     void
     SetSP (const lldb::ValueObjectSP &sp);
+
+    void
+    SetSP (const lldb::ValueObjectSP &sp, bool use_synthetic);
+    
+    void
+    SetSP (const lldb::ValueObjectSP &sp, lldb::DynamicValueType use_dynamic);
+
+    void
+    SetSP (const lldb::ValueObjectSP &sp, lldb::DynamicValueType use_dynamic, bool use_synthetic);
     
 private:
-    lldb::ValueObjectSP m_opaque_sp;
+    typedef STD_SHARED_PTR(ValueImpl) ValueImplSP;
+    ValueImplSP m_opaque_sp;
+    
+    void
+    SetSP (ValueImplSP impl_sp);
 };
 
 } // namespace lldb

@@ -425,7 +425,7 @@ static EVT getPhysicalRegisterVT(SDNode *N, unsigned Reg,
   const MCInstrDesc &MCID = TII->get(N->getMachineOpcode());
   assert(MCID.ImplicitDefs && "Physical reg def must be in implicit def list!");
   unsigned NumRes = MCID.getNumDefs();
-  for (const unsigned *ImpDef = MCID.getImplicitDefs(); *ImpDef; ++ImpDef) {
+  for (const uint16_t *ImpDef = MCID.getImplicitDefs(); *ImpDef; ++ImpDef) {
     if (Reg == *ImpDef)
       break;
     ++NumRes;
@@ -441,19 +441,14 @@ static bool CheckForLiveRegDef(SUnit *SU, unsigned Reg,
                                SmallVector<unsigned, 4> &LRegs,
                                const TargetRegisterInfo *TRI) {
   bool Added = false;
-  if (LiveRegDefs[Reg] && LiveRegDefs[Reg] != SU) {
-    if (RegAdded.insert(Reg)) {
-      LRegs.push_back(Reg);
-      Added = true;
-    }
-  }
-  for (const uint16_t *Alias = TRI->getAliasSet(Reg); *Alias; ++Alias)
-    if (LiveRegDefs[*Alias] && LiveRegDefs[*Alias] != SU) {
-      if (RegAdded.insert(*Alias)) {
-        LRegs.push_back(*Alias);
+  for (MCRegAliasIterator AI(Reg, TRI, true); AI.isValid(); ++AI) {
+    if (LiveRegDefs[*AI] && LiveRegDefs[*AI] != SU) {
+      if (RegAdded.insert(*AI)) {
+        LRegs.push_back(*AI);
         Added = true;
       }
     }
+  }
   return Added;
 }
 
@@ -508,7 +503,7 @@ bool ScheduleDAGFast::DelayForLiveRegsBottomUp(SUnit *SU,
     const MCInstrDesc &MCID = TII->get(Node->getMachineOpcode());
     if (!MCID.ImplicitDefs)
       continue;
-    for (const unsigned *Reg = MCID.ImplicitDefs; *Reg; ++Reg) {
+    for (const uint16_t *Reg = MCID.getImplicitDefs(); *Reg; ++Reg) {
       CheckForLiveRegDef(SU, *Reg, LiveRegDefs, RegAdded, LRegs, TRI);
     }
   }

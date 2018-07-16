@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectSource.h"
 
 // C Includes
@@ -16,10 +18,13 @@
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/FileLineResolver.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Host/FileSpec.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Function.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/TargetList.h"
 #include "lldb/Interpreter/CommandCompletions.h"
@@ -51,7 +56,7 @@ class CommandObjectSourceInfo : public CommandObjectParsed
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            const char short_option = g_option_table[option_idx].short_option;
+            const int short_option = g_option_table[option_idx].short_option;
             switch (short_option)
             {
             case 'l':
@@ -159,7 +164,7 @@ class CommandObjectSourceList : public CommandObjectParsed
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            const char short_option = g_option_table[option_idx].short_option;
+            const int short_option = g_option_table[option_idx].short_option;
             switch (short_option)
             {
             case 'l':

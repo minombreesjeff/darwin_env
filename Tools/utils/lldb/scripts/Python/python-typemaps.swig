@@ -113,6 +113,22 @@
    }
 }
 
+// For SBDebugger::DispatchInput
+%typemap(in) (const void *data, size_t data_len) {
+   if (PyString_Check($input)) {
+      $1 = static_cast<void *>(PyString_AsString($input));
+      $2 = PyString_Size($input);
+   }
+   else if(PyByteArray_Check($input)) {
+      $1 = static_cast<void *>(PyByteArray_AsString($input));
+      $2 = PyByteArray_Size($input);
+   }
+   else {
+      PyErr_SetString(PyExc_ValueError, "Expecting a string or byte array");
+      return NULL;
+   }
+}
+
 // typemap for an incoming buffer
 // See also SBProcess::ReadMemory.
 %typemap(in) (void *buf, size_t size) {
@@ -162,6 +178,7 @@
     }
   } else if ($input == Py_None) {
     $1 =  NULL;
+    $2 = 0;
   } else {
     PyErr_SetString(PyExc_TypeError,"not a list");
     return NULL;
@@ -192,6 +209,7 @@
     }
   } else if ($input == Py_None) {
     $1 =  NULL;
+    $2 = 0;
   } else {
     PyErr_SetString(PyExc_TypeError,"not a list");
     return NULL;
@@ -222,6 +240,7 @@
     }
   } else if ($input == Py_None) {
     $1 =  NULL;
+    $2 = 0;
   } else {
     PyErr_SetString(PyExc_TypeError,"not a list");
     return NULL;
@@ -252,6 +271,7 @@
     }
   } else if ($input == Py_None) {
     $1 =  NULL;
+    $2 = 0;
   } else {
     PyErr_SetString(PyExc_TypeError,"not a list");
     return NULL;
@@ -282,6 +302,7 @@
     }
   } else if ($input == Py_None) {
     $1 =  NULL;
+    $2 = 0;
   } else {
     PyErr_SetString(PyExc_TypeError,"not a list");
     return NULL;
@@ -332,4 +353,92 @@
 
 %typemap(freearg) (uint32_t *versions) {
     free($1);
+}
+
+// For lldb::SBInputReader::Callback
+%typemap(in) (lldb::SBInputReader::Callback callback, void *callback_baton) {
+  if (!($input == Py_None || PyCallable_Check(reinterpret_cast<PyObject*>($input)))) {
+    PyErr_SetString(PyExc_TypeError, "Need a callable object or None!");
+    return NULL;
+  }
+
+  // FIXME (filcab): We can't currently check if our callback is already
+  // LLDBSwigPythonCallPythonLogOutputCallback (to DECREF the previous
+  // baton) nor can we just remove all traces of a callback, if we want to
+  // revert to a file logging mechanism.
+
+  // Don't lose the callback reference
+  Py_INCREF($input);
+  $1 = LLDBSwigPythonCallSBInputReaderCallback;
+  $2 = $input;
+}
+
+%typemap(typecheck) (lldb::SBInputReader::Callback callback, void *baton) {
+  $1 = $input == Py_None;
+  $1 = $1 || PyCallable_Check(reinterpret_cast<PyObject*>($input));
+}
+
+// For Log::LogOutputCallback
+%typemap(in) (lldb::LogOutputCallback log_callback, void *baton) {
+  if (!($input == Py_None || PyCallable_Check(reinterpret_cast<PyObject*>($input)))) {
+    PyErr_SetString(PyExc_TypeError, "Need a callable object or None!");
+    return NULL;
+  }
+
+  // FIXME (filcab): We can't currently check if our callback is already
+  // LLDBSwigPythonCallPythonLogOutputCallback (to DECREF the previous
+  // baton) nor can we just remove all traces of a callback, if we want to
+  // revert to a file logging mechanism.
+
+  // Don't lose the callback reference
+  Py_INCREF($input);
+  $1 = LLDBSwigPythonCallPythonLogOutputCallback;
+  $2 = $input;
+}
+
+%typemap(typecheck) (lldb::LogOutputCallback log_callback, void *baton) {
+  $1 = $input == Py_None;
+  $1 = $1 || PyCallable_Check(reinterpret_cast<PyObject*>($input));
+}
+
+%typemap(in) FILE * {
+   if ($input == Py_None)
+      $1 = NULL;
+   else if (!PyFile_Check($input)) {
+      int fd = PyObject_AsFileDescriptor($input);
+      PyObject *py_mode = PyObject_GetAttrString($input, "mode");
+      if (!py_mode) {
+         PyErr_SetString(PyExc_TypeError,"not a file-like object");
+         return NULL;
+      }
+      const char *mode = PyString_AsString(py_mode);
+      if (-1 != fd && mode) {
+         FILE *f;
+         if ((f = fdopen(fd, mode)))
+            $1 = f;
+         else
+            PyErr_SetString(PyExc_TypeError, strerror(errno));
+      } else {
+         PyErr_SetString(PyExc_TypeError,"not a file-like object");
+         return NULL;
+      }
+   }
+   else
+      $1 = PyFile_AsFile($input);
+}
+
+%typemap(out) FILE * {
+   char mode[4] = {0};
+#ifdef __MACOSX__
+   int i = 0;
+   short flags = $1->_flags;
+
+   if (flags & __SRD)
+      mode[i++] = 'r';
+   else if (flags & __SWR)
+      mode[i++] = 'w';
+   else // if (flags & __SRW)
+      mode[i++] = 'a';
+#endif
+   $result = PyFile_FromFile($1, const_cast<char*>(""), mode, fclose);
 }

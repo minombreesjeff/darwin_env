@@ -14,8 +14,7 @@
 // Project includes
 #include "lldb/Breakpoint/BreakpointLocationList.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
-#include "lldb/Core/ModuleList.h"
-#include "lldb/Target/Target.h"
+#include "lldb/Core/Section.h"
 
 using namespace lldb;
 using namespace lldb_private;
@@ -129,7 +128,7 @@ BreakpointLocationList::Dump (Stream *s) const
     s->Printf("%p: ", this);
     //s->Indent();
     Mutex::Locker locker (m_mutex);
-    s->Printf("BreakpointLocationList with %zu BreakpointLocations:\n", m_locations.size());
+    s->Printf("BreakpointLocationList with %" PRIu64 " BreakpointLocations:\n", (uint64_t)m_locations.size());
     s->IndentMore();
     collection::const_iterator pos, end = m_locations.end();
     for (pos = m_locations.begin(); pos != end; ++pos)

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/OptionGroupPlatform.h"
 
 // C Includes
@@ -84,7 +86,7 @@ g_option_table[] =
     { LLDB_OPT_SET_ALL, false, "platform", 'p', required_argument, NULL, 0, eArgTypePlatform, "Specify name of the platform to use for this target, creating the platform if necessary."},
     { LLDB_OPT_SET_ALL, false, "version" , 'v', required_argument, NULL, 0, eArgTypeNone, "Specify the initial SDK version to use prior to connecting." },
     { LLDB_OPT_SET_ALL, false, "build"   , 'b', required_argument, NULL, 0, eArgTypeNone, "Specify the initial SDK build number." },
-    { LLDB_OPT_SET_ALL, false, "sysroot" , 's', required_argument, NULL, 0, eArgTypeFilename, "Specify the SDK root directory that contains a root of all remote system files." }
+    { LLDB_OPT_SET_ALL, false, "sysroot" , 'S', required_argument, NULL, 0, eArgTypeFilename, "Specify the SDK root directory that contains a root of all remote system files." }
 };
 
 const OptionDefinition*
@@ -113,7 +115,7 @@ OptionGroupPlatform::SetOptionValue (CommandInterpreter &interpreter,
     if (!m_include_platform_option)
         ++option_idx;
     
-    char short_option = (char) g_option_table[option_idx].short_option;
+    const int short_option = g_option_table[option_idx].short_option;
     
     switch (short_option)
     {

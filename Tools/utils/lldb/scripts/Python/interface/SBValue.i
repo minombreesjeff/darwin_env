@@ -129,9 +129,24 @@ public:
     
     lldb::SBValue
     GetNonSyntheticValue ();
+
+    lldb::DynamicValueType
+    GetPreferDynamicValue ();
+    
+    void
+    SetPreferDynamicValue (lldb::DynamicValueType use_dynamic);
+    
+    bool
+    GetPreferSyntheticValue ();
+    
+    void
+    SetPreferSyntheticValue (bool use_synthetic);
     
     bool
     IsDynamic();
+    
+    bool
+    IsSynthetic ();
 
     const char *
     GetLocation ();
@@ -222,6 +237,9 @@ public:
 
     lldb::SBValue
     CreateValueFromExpression (const char *name, const char* expression);
+    
+    lldb::SBValue
+    CreateValueFromExpression (const char *name, const char* expression, SBExpressionOptions &options);
 
     lldb::SBValue
     CreateValueFromAddress(const char* name, lldb::addr_t address, lldb::SBType type);
@@ -280,6 +298,12 @@ public:
     ) GetValueForExpressionPath;
     lldb::SBValue
     GetValueForExpressionPath(const char* expr_path);
+
+    lldb::SBDeclaration
+    GetDeclaration ();
+    
+    bool
+    MightHaveChildren ();
 
     uint32_t
     GetNumChildren ();

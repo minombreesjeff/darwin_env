@@ -328,6 +328,11 @@ public:
     ///     The target to find the symbol in.  If not provided,
     ///     then the current parsing context's Target.
     ///
+    /// @param[in] process
+    ///     The process to use.  For Objective-C symbols, the process's
+    ///     Objective-C language runtime may be queried if the process
+    ///     is non-NULL.
+    ///
     /// @param[in] name
     ///     The name of the symbol.  
     ///
@@ -336,6 +341,7 @@ public:
     //------------------------------------------------------------------
     lldb::addr_t 
     GetSymbolAddress (Target &target,
+                      Process *process,
                       const ConstString &name,
                       lldb::SymbolType symbol_type);
     
@@ -834,7 +840,7 @@ private:
     /// @return
     ///     The LLDB Symbol found, or NULL if none was found.
     //---------------------------------------------------------
-    Symbol *
+    const Symbol *
     FindGlobalDataSymbol (Target &target,
                           const ConstString &name);
     
@@ -952,7 +958,7 @@ private:
     //------------------------------------------------------------------
     void
     AddOneGenericVariable (NameSearchContext &context,
-                           Symbol &symbol,
+                           const Symbol &symbol,
                            unsigned int current_id);
     
     //------------------------------------------------------------------

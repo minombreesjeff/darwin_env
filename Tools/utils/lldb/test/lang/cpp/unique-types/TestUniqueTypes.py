@@ -36,10 +36,7 @@ class UniqueTypesTestCase(TestBase):
         exe = os.path.join(os.getcwd(), "a.out")
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -61,8 +58,8 @@ class UniqueTypesTestCase(TestBase):
                     if clang_version < 3:
                         self.skipTest("rdar://problem/9173060 lldb hangs while running unique-types for clang version < 3")
 
-        # Do a "frame variable -T longs" and verify "long" is in each line of output.
-        self.runCmd("frame variable -T longs")
+        # Do a "frame variable --show-types longs" and verify "long" is in each line of output.
+        self.runCmd("frame variable --show-types longs")
         output = self.res.GetOutput()
         for x in [line.strip() for line in output.split(os.linesep)]:
             # Skip empty line or closing brace.
@@ -71,8 +68,8 @@ class UniqueTypesTestCase(TestBase):
             self.expect(x, "Expect type 'long'", exe=False,
                 substrs = ['long'])
 
-        # Do a "frame variable -T shorts" and verify "short" is in each line of output.
-        self.runCmd("frame variable -T shorts")
+        # Do a "frame variable --show-types shorts" and verify "short" is in each line of output.
+        self.runCmd("frame variable --show-types shorts")
         output = self.res.GetOutput()
         for x in [line.strip() for line in output.split(os.linesep)]:
             # Skip empty line or closing brace.

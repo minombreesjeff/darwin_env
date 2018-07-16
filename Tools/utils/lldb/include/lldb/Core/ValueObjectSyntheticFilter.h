@@ -39,6 +39,9 @@ public:
     virtual ConstString
     GetTypeName();
 
+    virtual bool
+    MightHaveChildren();
+
     virtual uint32_t
     CalculateNumChildren();
 
@@ -74,12 +77,9 @@ public:
     virtual bool
     IsDynamic ()
     {
-        if (m_parent)
-            return m_parent->IsDynamic();
-        else
-            return false;
+        return false;
     }
-    
+
     virtual ValueObject *
     GetParent()
     {
@@ -101,6 +101,14 @@ public:
     virtual lldb::ValueObjectSP
     GetNonSyntheticValue ();
     
+    virtual bool
+    ResolveValue (Scalar &scalar)
+    {
+        if (m_parent)
+            return m_parent->ResolveValue(scalar);
+        return false;
+    }
+    
 protected:
     virtual bool
     UpdateValue ();
@@ -110,6 +118,9 @@ protected:
     
     virtual lldb::clang_type_t
     GetClangTypeImpl ();
+    
+    virtual void
+    CreateSynthFilter ();
 
     // we need to hold on to the SyntheticChildren because someone might delete the type binding while we are alive
     lldb::SyntheticChildrenSP m_synth_sp;
@@ -124,10 +135,17 @@ protected:
     ByIndexMap      m_children_byindex;
     NameToIndexMap  m_name_toindex;
     uint32_t        m_synthetic_children_count; // FIXME use the ValueObject's ChildrenManager instead of a special purpose solution
+    
+    ConstString     m_parent_type_name;
 
+    LazyBool        m_might_have_children;
+    
 private:
     friend class ValueObject;
     ValueObjectSynthetic (ValueObject &parent, lldb::SyntheticChildrenSP filter);
+    
+    void
+    CopyParentData ();
     
     //------------------------------------------------------------------
     // For ValueObject only

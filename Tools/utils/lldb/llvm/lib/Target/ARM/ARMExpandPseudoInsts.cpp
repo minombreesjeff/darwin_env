@@ -19,7 +19,6 @@
 #include "ARMBaseInstrInfo.h"
 #include "ARMBaseRegisterInfo.h"
 #include "ARMMachineFunctionInfo.h"
-#include "ARMRegisterInfo.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -99,14 +98,14 @@ namespace {
   // Entries for NEON load/store information table.  The table is sorted by
   // PseudoOpc for fast binary-search lookups.
   struct NEONLdStTableEntry {
-    unsigned PseudoOpc;
-    unsigned RealOpc;
+    uint16_t PseudoOpc;
+    uint16_t RealOpc;
     bool IsLoad;
     bool isUpdating;
     bool hasWritebackOperand;
-    NEONRegSpacing RegSpacing;
-    unsigned char NumRegs; // D registers loaded or stored
-    unsigned char RegElts; // elements per D register; used for lane ops
+    uint8_t RegSpacing; // One of type NEONRegSpacing
+    uint8_t NumRegs; // D registers loaded or stored
+    uint8_t RegElts; // elements per D register; used for lane ops
     // FIXME: Temporary flag to denote whether the real instruction takes
     // a single register (like the encoding) or all of the registers in
     // the list (like the asm syntax and the isel DAG). When all definitions
@@ -325,7 +324,7 @@ static const NEONLdStTableEntry NEONLdStTable[] = {
 /// LookupNEONLdSt - Search the NEONLdStTable for information about a NEON
 /// load or store pseudo instruction.
 static const NEONLdStTableEntry *LookupNEONLdSt(unsigned Opcode) {
-  unsigned NumEntries = array_lengthof(NEONLdStTable);
+  const unsigned NumEntries = array_lengthof(NEONLdStTable);
 
 #ifndef NDEBUG
   // Make sure the table is sorted.
@@ -378,7 +377,7 @@ void ARMExpandPseudo::ExpandVLD(MachineBasicBlock::iterator &MBBI) {
 
   const NEONLdStTableEntry *TableEntry = LookupNEONLdSt(MI.getOpcode());
   assert(TableEntry && TableEntry->IsLoad && "NEONLdStTable lookup failed");
-  NEONRegSpacing RegSpc = TableEntry->RegSpacing;
+  NEONRegSpacing RegSpc = (NEONRegSpacing)TableEntry->RegSpacing;
   unsigned NumRegs = TableEntry->NumRegs;
 
   MachineInstrBuilder MIB = BuildMI(MBB, MBBI, MI.getDebugLoc(),
@@ -443,7 +442,7 @@ void ARMExpandPseudo::ExpandVST(MachineBasicBlock::iterator &MBBI) {
 
   const NEONLdStTableEntry *TableEntry = LookupNEONLdSt(MI.getOpcode());
   assert(TableEntry && !TableEntry->IsLoad && "NEONLdStTable lookup failed");
-  NEONRegSpacing RegSpc = TableEntry->RegSpacing;
+  NEONRegSpacing RegSpc = (NEONRegSpacing)TableEntry->RegSpacing;
   unsigned NumRegs = TableEntry->NumRegs;
 
   MachineInstrBuilder MIB = BuildMI(MBB, MBBI, MI.getDebugLoc(),
@@ -460,22 +459,23 @@ void ARMExpandPseudo::ExpandVST(MachineBasicBlock::iterator &MBBI) {
     MIB.addOperand(MI.getOperand(OpIdx++));
 
   bool SrcIsKill = MI.getOperand(OpIdx).isKill();
+  bool SrcIsUndef = MI.getOperand(OpIdx).isUndef();
   unsigned SrcReg = MI.getOperand(OpIdx++).getReg();
   unsigned D0, D1, D2, D3;
   GetDSubRegs(SrcReg, RegSpc, TRI, D0, D1, D2, D3);
-  MIB.addReg(D0);
+  MIB.addReg(D0, getUndefRegState(SrcIsUndef));
   if (NumRegs > 1 && TableEntry->copyAllListRegs)
-    MIB.addReg(D1);
+    MIB.addReg(D1, getUndefRegState(SrcIsUndef));
   if (NumRegs > 2 && TableEntry->copyAllListRegs)
-    MIB.addReg(D2);
+    MIB.addReg(D2, getUndefRegState(SrcIsUndef));
   if (NumRegs > 3 && TableEntry->copyAllListRegs)
-    MIB.addReg(D3);
+    MIB.addReg(D3, getUndefRegState(SrcIsUndef));
 
   // Copy the predicate operands.
   MIB.addOperand(MI.getOperand(OpIdx++));
   MIB.addOperand(MI.getOperand(OpIdx++));
 
-  if (SrcIsKill) // Add an implicit kill for the super-reg.
+  if (SrcIsKill && !SrcIsUndef) // Add an implicit kill for the super-reg.
     MIB->addRegisterKilled(SrcReg, TRI, true);
   TransferImpOps(MI, MIB, MIB);
 
@@ -493,7 +493,7 @@ void ARMExpandPseudo::ExpandLaneOp(MachineBasicBlock::iterator &MBBI) {
 
   const NEONLdStTableEntry *TableEntry = LookupNEONLdSt(MI.getOpcode());
   assert(TableEntry && "NEONLdStTable lookup failed");
-  NEONRegSpacing RegSpc = TableEntry->RegSpacing;
+  NEONRegSpacing RegSpc = (NEONRegSpacing)TableEntry->RegSpacing;
   unsigned NumRegs = TableEntry->NumRegs;
   unsigned RegElts = TableEntry->RegElts;
 
@@ -613,7 +613,7 @@ void ARMExpandPseudo::ExpandMOV32BitImm(MachineBasicBlock &MBB,
   MachineInstr &MI = *MBBI;
   unsigned Opcode = MI.getOpcode();
   unsigned PredReg = 0;
-  ARMCC::CondCodes Pred = llvm::getInstrPredicate(&MI, PredReg);
+  ARMCC::CondCodes Pred = getInstrPredicate(&MI, PredReg);
   unsigned DstReg = MI.getOperand(0).getReg();
   bool DstIsDead = MI.getOperand(0).isDead();
   bool isCC = Opcode == ARM::MOVCCi32imm || Opcode == ARM::t2MOVCCi32imm;
@@ -794,15 +794,15 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
                "base pointer without frame pointer?");
 
         if (AFI->isThumb2Function()) {
-          llvm::emitT2RegPlusImmediate(MBB, MBBI, MI.getDebugLoc(), ARM::R6,
-                                       FramePtr, -NumBytes, ARMCC::AL, 0, *TII);
+          emitT2RegPlusImmediate(MBB, MBBI, MI.getDebugLoc(), ARM::R6,
+                                 FramePtr, -NumBytes, ARMCC::AL, 0, *TII);
         } else if (AFI->isThumbFunction()) {
-          llvm::emitThumbRegPlusImmediate(MBB, MBBI, MI.getDebugLoc(), ARM::R6,
-                                          FramePtr, -NumBytes, *TII, RI);
+          emitThumbRegPlusImmediate(MBB, MBBI, MI.getDebugLoc(), ARM::R6,
+                                    FramePtr, -NumBytes, *TII, RI);
         } else {
-          llvm::emitARMRegPlusImmediate(MBB, MBBI, MI.getDebugLoc(), ARM::R6,
-                                        FramePtr, -NumBytes, ARMCC::AL, 0,
-                                        *TII);
+          emitARMRegPlusImmediate(MBB, MBBI, MI.getDebugLoc(), ARM::R6,
+                                  FramePtr, -NumBytes, ARMCC::AL, 0,
+                                  *TII);
         }
         // If there's dynamic realignment, adjust for it.
         if (RI.needsStackRealignment(MF)) {
@@ -926,7 +926,7 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
       if (isARM) {
         AddDefaultPred(MIB3);
         if (Opcode == ARM::MOV_ga_pcrel_ldr)
-          MIB2->setMemRefs(MI.memoperands_begin(), MI.memoperands_end());
+          MIB3->setMemRefs(MI.memoperands_begin(), MI.memoperands_end());
       }
       TransferImpOps(MI, MIB1, MIB3);
       MI.eraseFromParent();
@@ -1009,7 +1009,7 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
         BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(NewOpc));
       unsigned OpIdx = 0;
       unsigned SrcReg = MI.getOperand(1).getReg();
-      unsigned Lane = getARMRegisterNumbering(SrcReg) & 1;
+      unsigned Lane = TRI->getEncodingValue(SrcReg) & 1;
       unsigned DReg = TRI->getMatchingSuperReg(SrcReg,
                             Lane & 1 ? ARM::ssub_1 : ARM::ssub_0,
                             &ARM::DPR_VFP2RegClass);
@@ -1207,6 +1207,57 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
     case ARM::VST4LNq32Pseudo_UPD:
       ExpandLaneOp(MBBI);
       return true;
+
+    case ARM::VSETLNi8Q:
+    case ARM::VSETLNi16Q: {
+      // Expand VSETLNs acting on a Q register to equivalent VSETLNs acting
+      // on the respective D register.
+
+      unsigned QReg  = MI.getOperand(1).getReg();
+      unsigned QLane = MI.getOperand(3).getImm();
+
+      unsigned NewOpcode, DLane, DSubReg;
+      switch (Opcode) {
+      default: llvm_unreachable("Invalid opcode!");
+      case ARM::VSETLNi8Q:
+        // 4 possible 8-bit lanes per DPR:
+        NewOpcode = ARM::VSETLNi8;
+        DLane = QLane % 8;
+        DSubReg  = (QLane / 8) ? ARM::dsub_1 : ARM::dsub_0;
+        break;
+      case ARM::VSETLNi16Q:
+        // 4 possible 16-bit lanes per DPR.
+        NewOpcode = ARM::VSETLNi16;
+        DLane = QLane % 4;
+        DSubReg  = (QLane / 4) ? ARM::dsub_1 : ARM::dsub_0;
+        break;
+      }
+
+      MachineInstrBuilder MIB =
+        BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(NewOpcode));
+
+      unsigned DReg = TRI->getSubReg(QReg, DSubReg);
+
+      MIB.addReg(DReg, RegState::Define); // Output DPR
+      MIB.addReg(DReg);                   // Input DPR
+      MIB.addOperand(MI.getOperand(2));   // Input GPR
+      MIB.addImm(DLane);                  // Lane
+
+      // Add the predicate operands.
+      MIB.addOperand(MI.getOperand(4));
+      MIB.addOperand(MI.getOperand(5));
+
+      if (MI.getOperand(1).isKill()) // Add an implicit kill for the Q register.
+        MIB->addRegisterKilled(QReg, TRI, true);
+      // And an implicit def of the output register (which should always be the
+      // same as the input register).
+      MIB->addRegisterDefined(QReg, TRI);
+
+      TransferImpOps(MI, MIB, MIB);
+
+      MI.eraseFromParent();
+      return true;
+    }
 
     case ARM::VTBL3Pseudo: ExpandVTBL(MBBI, ARM::VTBL3, false); return true;
     case ARM::VTBL4Pseudo: ExpandVTBL(MBBI, ARM::VTBL4, false); return true;

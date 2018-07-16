@@ -65,6 +65,9 @@ public:
     void
     HandleBreakpointEvent (const lldb::SBEvent &event);
 
+    void
+    HandleThreadEvent (const lldb::SBEvent &event);
+
     lldb::SBError
     ParseArgs (int argc, const char *argv[], FILE *out_fh, bool &do_exit);
 
@@ -103,6 +106,7 @@ public:
 
         std::vector<std::string> m_args;
         lldb::ScriptLanguage m_script_lang;
+        std::string m_core_file;
         std::string m_crash_log;
         std::vector<std::string> m_source_command_files;
         bool m_debug_mode;

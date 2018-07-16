@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class LibcxxListDataFormatterTestCase(TestBase):
 
@@ -35,14 +36,8 @@ class LibcxxListDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line2,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 2: file ='main.cpp', line = %d" %
-                        self.line2)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line2, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -63,7 +58,7 @@ class LibcxxListDataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.runCmd("frame variable numbers_list -T")
+        self.runCmd("frame variable numbers_list --show-types")
         self.runCmd("type summary add std::int_list std::string_list int_list string_list --summary-string \"list has ${svar%#} items\" -e")
         self.runCmd("type format add -f hex int")
 
@@ -146,6 +141,9 @@ class LibcxxListDataFormatterTestCase(TestBase):
                                '[2] = ', '3',
                                '[3] = ', '4'])            
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("numbers_list").MightHaveChildren(), "numbers_list.MightHaveChildren() says False for non empty!")
+
         self.runCmd("type format delete int")
 
         self.runCmd("c")
@@ -155,6 +153,9 @@ class LibcxxListDataFormatterTestCase(TestBase):
                                '[0]', 'goofy',
                                '[1]', 'is',
                                '[2]', 'smart'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("text_list").MightHaveChildren(), "text_list.MightHaveChildren() says False for non empty!")
 
         self.expect("p text_list",
                     substrs = ['list has 3 items',

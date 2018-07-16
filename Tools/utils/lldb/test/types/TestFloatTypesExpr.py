@@ -15,6 +15,13 @@ class FloatTypesExprTestCase(AbstractBase.GenericTester):
     # rdar://problem/8493023
     # test/types failures for Test*TypesExpr.py: element offset computed wrong and sign error?
 
+    def setUp(self):
+        # Call super's setUp().
+        AbstractBase.GenericTester.setUp(self)
+        # disable "There is a running process, kill it and restart?" prompt
+        self.runCmd("settings set auto-confirm true")
+        self.addTearDownHook(lambda: self.runCmd("settings clear auto-confirm"))
+
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_float_type_with_dsym(self):

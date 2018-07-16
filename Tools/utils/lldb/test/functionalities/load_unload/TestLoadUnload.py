@@ -7,6 +7,7 @@ import re
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class LoadUnloadTestCase(TestBase):
 
@@ -21,6 +22,7 @@ class LoadUnloadTestCase(TestBase):
         self.line_d_function = line_number('d.c',
                                            '// Find this line number within d_dunction().')
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_modules_search_paths(self):
         """Test target modules list after loading a different copy of the library libd.dylib, and verifies that it works with 'target modules search-paths add'."""
 
@@ -29,7 +31,6 @@ class LoadUnloadTestCase(TestBase):
 
         if sys.platform.startswith("darwin"):
             dylibName = 'libd.dylib'
-            dylibPath = 'DYLD_LIBRARY_PATH'
 
         # The directory with the dynamic library we did not link to.
         new_dir = os.path.join(os.getcwd(), "hidden")
@@ -60,13 +61,13 @@ class LoadUnloadTestCase(TestBase):
         # Obliterate traces of libd from the old location.
         os.remove(old_dylib)
         # Inform dyld of the new path, too.
-        env_cmd_string = "settings set target.env-vars " + dylibPath + "=" + new_dir
+        env_cmd_string = "settings set target.env-vars " + self.dylibPath + "=" + new_dir
         if self.TraceOn():
             print "Set environment to: ", env_cmd_string
         self.runCmd(env_cmd_string)
         self.runCmd("settings show target.env-vars")
 
-        remove_dyld_path_cmd = "settings remove target.env-vars " + dylibPath
+        remove_dyld_path_cmd = "settings remove target.env-vars " + self.dylibPath
         self.addTearDownHook(lambda: self.runCmd(remove_dyld_path_cmd))
 
         self.runCmd("run")
@@ -74,7 +75,7 @@ class LoadUnloadTestCase(TestBase):
         self.expect("target modules list", "LLDB successfully locates the relocated dynamic library",
             substrs = [new_dylib])
 
-        
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_dyld_library_path(self):
         """Test DYLD_LIBRARY_PATH after moving libd.dylib, which defines d_function, somewhere else."""
 
@@ -87,7 +88,6 @@ class LoadUnloadTestCase(TestBase):
         if sys.platform.startswith("darwin"):
             dylibName = 'libd.dylib'
             dsymName = 'libd.dylib.dSYM'
-            dylibPath = 'DYLD_LIBRARY_PATH'
 
         # The directory to relocate the dynamic library and its debugging info.
         special_dir = "hidden"
@@ -103,19 +103,17 @@ class LoadUnloadTestCase(TestBase):
         # Try running with the DYLD_LIBRARY_PATH environment variable set, make sure
         # we pick up the hidden dylib.
 
-        env_cmd_string = "settings set target.env-vars " + dylibPath + "=" + new_dir
+        env_cmd_string = "settings set target.env-vars " + self.dylibPath + "=" + new_dir
         if self.TraceOn():
             print "Set environment to: ", env_cmd_string
         self.runCmd(env_cmd_string)
         self.runCmd("settings show target.env-vars")
 
-        remove_dyld_path_cmd = "settings remove target.env-vars " + dylibPath
+        remove_dyld_path_cmd = "settings remove target.env-vars " + self.dylibPath
         self.addTearDownHook(lambda: self.runCmd(remove_dyld_path_cmd))
 
-        self.expect("breakpoint set -f d.c -l %d" % self.line_d_function,
-                    BREAKPOINT_CREATED,
-                    startstr = "Breakpoint created: 1: file ='d.c', line = %d" %
-                        self.line_d_function)
+        lldbutil.run_break_set_by_file_and_line (self, "d.c", self.line_d_function, num_expected_locations=1, loc_exact=True)
+
         # For now we don't track DYLD_LIBRARY_PATH, so the old library will be in
         # the modules list.
         self.expect("target modules list",
@@ -131,6 +129,7 @@ class LoadUnloadTestCase(TestBase):
         self.expect("target modules list",
             substrs = [special_dir, os.path.basename(new_dylib)])
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_lldb_process_load_and_unload_commands(self):
         """Test that lldb process load/unload command work correctly."""
 
@@ -143,10 +142,7 @@ class LoadUnloadTestCase(TestBase):
         # Break at main.c before the call to dlopen().
         # Use lldb's process load command to load the dylib, instead.
 
-        self.expect("breakpoint set -f main.c -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.c', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -180,6 +176,7 @@ class LoadUnloadTestCase(TestBase):
 
         self.runCmd("process continue")
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_load_unload(self):
         """Test breakpoint by name works correctly with dlopen'ing."""
 
@@ -190,8 +187,7 @@ class LoadUnloadTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break by function name a_function (not yet loaded).
-        self.expect("breakpoint set -n a_function", BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: name = 'a_function', locations = 0 (pending)")
+        lldbutil.run_break_set_by_symbol (self, "a_function", num_expected_locations=0)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -220,6 +216,7 @@ class LoadUnloadTestCase(TestBase):
         self.expect("breakpoint list -f", BREAKPOINT_HIT_ONCE,
             substrs = [' resolved, hit count = 2'])
 
+    @skipOnLinux # bugzilla 14424 - missing linux Makefiles/testcase support
     def test_step_over_load (self):
         """Test stepping over code that loads a shared library works correctly."""
 
@@ -230,9 +227,7 @@ class LoadUnloadTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break by function name a_function (not yet loaded).
-        self.expect("breakpoint set -f main.c -l %d"%(self.line), BREAKPOINT_CREATED,
-            substrs = ['Breakpoint created:',
-                      "file ='main.c', line = %d, locations = 1"%(self.line)])
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 

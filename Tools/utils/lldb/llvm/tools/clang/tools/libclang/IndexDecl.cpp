@@ -110,7 +110,7 @@ public:
     return true;
   }
 
-  bool VisitTypedefDecl(TypedefNameDecl *D) {
+  bool VisitTypedefNameDecl(TypedefNameDecl *D) {
     IndexCtx.handleTypedefName(D);
     IndexCtx.indexTypeSourceInfo(D->getTypeSourceInfo(), D);
     return true;
@@ -154,7 +154,20 @@ public:
     IndexCtx.handleObjCImplementation(D);
 
     IndexCtx.indexTUDeclsInObjCContainer();
-    IndexCtx.indexDeclContext(D);
+
+    // Index the ivars first to make sure the synthesized ivars are indexed
+    // before indexing the methods that can reference them.
+    for (ObjCImplementationDecl::ivar_iterator
+           IvarI = D->ivar_begin(),
+           IvarE = D->ivar_end(); IvarI != IvarE; ++IvarI) {
+      IndexCtx.indexDecl(*IvarI);
+    }
+    for (DeclContext::decl_iterator
+           I = D->decls_begin(), E = D->decls_end(); I != E; ++I) {
+      if (!isa<ObjCIvarDecl>(*I))
+        IndexCtx.indexDecl(*I);
+    }
+
     return true;
   }
 
@@ -181,7 +194,7 @@ public:
   bool VisitObjCMethodDecl(ObjCMethodDecl *D) {
     // Methods associated with a property, even user-declared ones, are
     // handled when we handle the property.
-    if (D->isSynthesized())
+    if (D->isPropertyAccessor())
       return true;
 
     handleObjCMethod(D);
@@ -215,12 +228,12 @@ public:
     }
 
     if (ObjCMethodDecl *MD = PD->getGetterMethodDecl()) {
-      if (MD->isSynthesized())
+      if (MD->isPropertyAccessor())
         IndexCtx.handleSynthesizedObjCMethod(MD, D->getLocation(),
                                              D->getLexicalDeclContext());
     }
     if (ObjCMethodDecl *MD = PD->getSetterMethodDecl()) {
-      if (MD->isSynthesized())
+      if (MD->isPropertyAccessor())
         IndexCtx.handleSynthesizedObjCMethod(MD, D->getLocation(),
                                              D->getLexicalDeclContext());
     }
@@ -292,6 +305,11 @@ public:
     IndexCtx.indexTypeSourceInfo(D->getTemplatedDecl()->getTypeSourceInfo(), D);
     return true;
   }
+
+  bool VisitImportDecl(ImportDecl *D) {
+    IndexCtx.importedModule(D);
+    return true;
+  }
 };
 
 } // anonymous namespace
@@ -312,7 +330,7 @@ void IndexingContext::indexDeclContext(const DeclContext *DC) {
   }
 }
 
-void IndexingContext::indexTopLevelDecl(Decl *D) {
+void IndexingContext::indexTopLevelDecl(const Decl *D) {
   if (isNotFromSourceFile(D->getLocation()))
     return;
 
@@ -328,7 +346,9 @@ void IndexingContext::indexDeclGroupRef(DeclGroupRef DG) {
 }
 
 void IndexingContext::indexTUDeclsInObjCContainer() {
-  for (unsigned i = 0, e = TUDeclsInObjCContainer.size(); i != e; ++i)
-    indexDeclGroupRef(TUDeclsInObjCContainer[i]);
-  TUDeclsInObjCContainer.clear();
+  while (!TUDeclsInObjCContainer.empty()) {
+    DeclGroupRef DG = TUDeclsInObjCContainer.front();
+    TUDeclsInObjCContainer.pop_front();
+    indexDeclGroupRef(DG);
+  }
 }

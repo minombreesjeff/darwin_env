@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 #include <pthread.h>
 #include <stdio.h>
@@ -100,12 +102,12 @@ Log::PrintfWithFlagsVarArg (uint32_t flags, const char *format, va_list args)
         if (m_options.Test (LLDB_LOG_OPTION_PREPEND_TIMESTAMP))
         {
             struct timeval tv = TimeValue::Now().GetAsTimeVal();
-            header.Printf ("%9ld.%6.6d ", tv.tv_sec, tv.tv_usec);
+            header.Printf ("%9ld.%6.6" PRIi32 " ", tv.tv_sec, tv.tv_usec);
         }
 
         // Add the process and thread if requested
         if (m_options.Test (LLDB_LOG_OPTION_PREPEND_PROC_AND_THREAD))
-            header.Printf ("[%4.4x/%4.4llx]: ", getpid(), Host::GetCurrentThreadID());
+            header.Printf ("[%4.4x/%4.4" PRIx64 "]: ", getpid(), Host::GetCurrentThreadID());
 
         // Add the process and thread if requested
         if (m_options.Test (LLDB_LOG_OPTION_PREPEND_THREAD_NAME))
@@ -118,6 +120,9 @@ Log::PrintfWithFlagsVarArg (uint32_t flags, const char *format, va_list args)
 
         header.PrintfVarArg (format, args);
         m_stream_sp->Printf("%s\n", header.GetData());
+        
+        if (m_options.Test (LLDB_LOG_OPTION_BACKTRACE))
+            Host::Backtrace (*m_stream_sp, 1024);
         m_stream_sp->Flush();
     }
 }

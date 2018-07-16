@@ -219,6 +219,51 @@ SBType::GetDereferencedType()
     return SBType(ClangASTType(m_opaque_sp->GetASTContext(),qt.getNonReferenceType().getAsOpaquePtr()));
 }
 
+bool 
+SBType::IsFunctionType ()
+{
+    if (IsValid())
+    {
+        QualType qual_type(QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType()));
+        const FunctionProtoType* func = dyn_cast<FunctionProtoType>(qual_type.getTypePtr());
+        return func != NULL;
+    }
+    return false;
+}
+
+lldb::SBType
+SBType::GetFunctionReturnType ()
+{
+    if (IsValid())
+    {
+        QualType qual_type(QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType()));
+        const FunctionProtoType* func = dyn_cast<FunctionProtoType>(qual_type.getTypePtr());
+        
+        if (func)
+            return SBType(ClangASTType(m_opaque_sp->GetASTContext(),
+                                       func->getResultType().getAsOpaquePtr()));
+    }
+    return lldb::SBType();
+}
+
+lldb::SBTypeList
+SBType::GetFunctionArgumentTypes ()
+{
+    SBTypeList sb_type_list;
+    if (IsValid())
+    {
+        QualType qual_type(QualType::getFromOpaquePtr(m_opaque_sp->GetOpaqueQualType()));
+        const FunctionProtoType* func = dyn_cast<FunctionProtoType>(qual_type.getTypePtr());
+        if (func)
+        {
+            const uint32_t num_args = func->getNumArgs();
+            for (uint32_t i=0; i<num_args; ++i)
+                sb_type_list.Append (SBType(ClangASTType(m_opaque_sp->GetASTContext(), func->getArgType(i).getAsOpaquePtr())));
+        }
+    }
+    return sb_type_list;
+}
+
 lldb::SBType
 SBType::GetUnqualifiedType()
 {
@@ -229,101 +274,20 @@ SBType::GetUnqualifiedType()
     return SBType(ClangASTType(m_opaque_sp->GetASTContext(),qt.getUnqualifiedType().getAsOpaquePtr()));
 }
 
+lldb::BasicType
+SBType::GetBasicType()
+{
+    if (IsValid())
+        return ClangASTContext::GetLLDBBasicTypeEnumeration (m_opaque_sp->GetOpaqueQualType());
+    return eBasicTypeInvalid;
+}
 
 SBType
 SBType::GetBasicType(lldb::BasicType type)
 {
-    
-    if (!IsValid())
-        return SBType();
-    
-    clang::CanQualType base_type_qual;
-    
-    switch (type)
-    {
-        case eBasicTypeChar:
-            base_type_qual = m_opaque_sp->GetASTContext()->CharTy;
-            break;
-        case eBasicTypeSignedChar:
-            base_type_qual = m_opaque_sp->GetASTContext()->SignedCharTy;
-            break;
-        case eBasicTypeShort:
-            base_type_qual = m_opaque_sp->GetASTContext()->ShortTy;
-            break;
-        case eBasicTypeUnsignedShort:
-            base_type_qual = m_opaque_sp->GetASTContext()->UnsignedShortTy;
-            break;
-        case eBasicTypeInt:
-            base_type_qual = m_opaque_sp->GetASTContext()->IntTy;
-            break;
-        case eBasicTypeUnsignedInt:
-            base_type_qual = m_opaque_sp->GetASTContext()->UnsignedIntTy;
-            break;
-        case eBasicTypeLong:
-            base_type_qual = m_opaque_sp->GetASTContext()->LongTy;
-            break;
-        case eBasicTypeUnsignedLong:
-            base_type_qual = m_opaque_sp->GetASTContext()->UnsignedLongTy;
-            break;
-        case eBasicTypeBool:
-            base_type_qual = m_opaque_sp->GetASTContext()->BoolTy;
-            break;
-        case eBasicTypeFloat:
-            base_type_qual = m_opaque_sp->GetASTContext()->FloatTy;
-            break;
-        case eBasicTypeDouble:
-            base_type_qual = m_opaque_sp->GetASTContext()->DoubleTy;
-            break;
-        case eBasicTypeObjCID:
-            base_type_qual = m_opaque_sp->GetASTContext()->ObjCBuiltinIdTy;
-            break;
-        case eBasicTypeVoid:
-            base_type_qual = m_opaque_sp->GetASTContext()->VoidTy;
-            break;
-        case eBasicTypeWChar:
-            base_type_qual = m_opaque_sp->GetASTContext()->WCharTy;
-            break;
-        case eBasicTypeChar16:
-            base_type_qual = m_opaque_sp->GetASTContext()->Char16Ty;
-            break;
-        case eBasicTypeChar32:
-            base_type_qual = m_opaque_sp->GetASTContext()->Char32Ty;
-            break;
-        case eBasicTypeLongLong:
-            base_type_qual = m_opaque_sp->GetASTContext()->LongLongTy;
-            break;
-        case eBasicTypeUnsignedLongLong:
-            base_type_qual = m_opaque_sp->GetASTContext()->UnsignedLongLongTy;
-            break;
-        case eBasicTypeInt128:
-            base_type_qual = m_opaque_sp->GetASTContext()->Int128Ty;
-            break;
-        case eBasicTypeUnsignedInt128:
-            base_type_qual = m_opaque_sp->GetASTContext()->UnsignedInt128Ty;
-            break;
-        case eBasicTypeLongDouble:
-            base_type_qual = m_opaque_sp->GetASTContext()->LongDoubleTy;
-            break;
-        case eBasicTypeFloatComplex:
-            base_type_qual = m_opaque_sp->GetASTContext()->FloatComplexTy;
-            break;
-        case eBasicTypeDoubleComplex:
-            base_type_qual = m_opaque_sp->GetASTContext()->DoubleComplexTy;
-            break;
-        case eBasicTypeLongDoubleComplex:
-            base_type_qual = m_opaque_sp->GetASTContext()->LongDoubleComplexTy;
-            break;
-        case eBasicTypeObjCClass:
-            base_type_qual = m_opaque_sp->GetASTContext()->ObjCBuiltinClassTy;
-            break;
-        case eBasicTypeObjCSel:
-            base_type_qual = m_opaque_sp->GetASTContext()->ObjCBuiltinSelTy;
-            break;
-        default:
-            return SBType();
-    }
-    
-    return SBType(ClangASTType(m_opaque_sp->GetASTContext(), base_type_qual.getAsOpaquePtr()));
+    if (IsValid())
+        return SBType (ClangASTType::GetBasicType (m_opaque_sp->GetASTContext(), type));
+    return SBType();
 }
 
 uint32_t

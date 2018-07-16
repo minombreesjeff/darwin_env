@@ -19,7 +19,9 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Address.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/Stream.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/LanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -66,7 +68,7 @@ ThreadPlanCallFunction::ConstructorSetup (Thread &thread,
     if (!error.Success())
     {
         if (log)
-            log->Printf ("ThreadPlanCallFunction(%p): Trying to put the stack in unreadable memory at: 0x%llx.", this, m_function_sp);
+            log->Printf ("ThreadPlanCallFunction(%p): Trying to put the stack in unreadable memory at: 0x%" PRIx64 ".", this, m_function_sp);
         return false;
     }
     
@@ -110,9 +112,6 @@ ThreadPlanCallFunction::ConstructorSetup (Thread &thread,
             log->Printf ("ThreadPlanCallFunction(%p): Setting up ThreadPlanCallFunction, failed to checkpoint thread state.", this);
         return false;
     }
-    // Now set the thread state to "no reason" so we don't run with whatever signal was outstanding...
-    thread.SetStopInfoToNothing();
-    
     function_load_addr = m_function_addr.GetLoadAddress (target_sp.get());
     
     return true;
@@ -130,7 +129,7 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     m_valid (false),
     m_stop_other_threads (stop_other_threads),
     m_function_addr (function),
-    m_function_sp (NULL),
+    m_function_sp (0),
     m_return_type (return_type),
     m_takedown_done (false),
     m_stop_address (LLDB_INVALID_ADDRESS),
@@ -194,10 +193,11 @@ ThreadPlanCallFunction::ThreadPlanCallFunction (Thread &thread,
     m_valid (false),
     m_stop_other_threads (stop_other_threads),
     m_function_addr (function),
-    m_function_sp(NULL),
+    m_function_sp (0),
     m_return_type (return_type),
     m_takedown_done (false),
-    m_stop_address (LLDB_INVALID_ADDRESS)
+    m_stop_address (LLDB_INVALID_ADDRESS),
+    m_discard_on_error (discard_on_error)
 {
     lldb::addr_t start_load_addr;
     ABI *abi;
@@ -283,11 +283,11 @@ ThreadPlanCallFunction::DoTakedown (bool success)
             }
         }
         if (log)
-            log->Printf ("ThreadPlanCallFunction(%p): DoTakedown called for thread 0x%4.4llx, m_valid: %d complete: %d.\n", this, m_thread.GetID(), m_valid, IsPlanComplete());
+            log->Printf ("ThreadPlanCallFunction(%p): DoTakedown called for thread 0x%4.4" PRIx64 ", m_valid: %d complete: %d.\n", this, m_thread.GetID(), m_valid, IsPlanComplete());
         m_takedown_done = true;
         m_stop_address = m_thread.GetStackFrameAtIndex(0)->GetRegisterContext()->GetPC();
         m_real_stop_info_sp = GetPrivateStopReason();
-        m_thread.RestoreThreadStateFromCheckpoint(m_stored_thread_state);
+        m_thread.RestoreRegisterStateFromCheckpoint(m_stored_thread_state);
         SetPlanComplete(success);
         ClearBreakpoints();
         if (log && log->GetVerbose())
@@ -297,7 +297,7 @@ ThreadPlanCallFunction::DoTakedown (bool success)
     else
     {
         if (log)
-            log->Printf ("ThreadPlanCallFunction(%p): DoTakedown called as no-op for thread 0x%4.4llx, m_valid: %d complete: %d.\n", this, m_thread.GetID(), m_valid, IsPlanComplete());
+            log->Printf ("ThreadPlanCallFunction(%p): DoTakedown called as no-op for thread 0x%4.4" PRIx64 ", m_valid: %d complete: %d.\n", this, m_thread.GetID(), m_valid, IsPlanComplete());
     }
 }
 
@@ -317,7 +317,7 @@ ThreadPlanCallFunction::GetDescription (Stream *s, DescriptionLevel level)
     else
     {
         TargetSP target_sp (m_thread.CalculateTarget());
-        s->Printf("Thread plan to call 0x%llx", m_function_addr.GetLoadAddress(target_sp.get()));
+        s->Printf("Thread plan to call 0x%" PRIx64, m_function_addr.GetLoadAddress(target_sp.get()));
     }
 }
 
@@ -398,7 +398,7 @@ ThreadPlanCallFunction::PlanExplainsStop ()
         // If we want to discard the plan, then we say we explain the stop
         // but if we are going to be discarded, let whoever is above us
         // explain the stop.
-        if (m_subplan_sp != NULL)
+        if (m_subplan_sp)
         {
             if (m_discard_on_error)
             {
@@ -457,6 +457,11 @@ void
 ThreadPlanCallFunction::DidPush ()
 {
 //#define SINGLE_STEP_EXPRESSIONS
+    
+    // Now set the thread state to "no reason" so we don't run with whatever signal was outstanding...
+    // Wait till the plan is pushed so we aren't changing the stop info till we're about to run.
+    
+    GetThread().SetStopInfoToNothing();
     
 #ifndef SINGLE_STEP_EXPRESSIONS
     m_subplan_sp.reset(new ThreadPlanRunToAddress(m_thread, m_start_addr, m_stop_other_threads));
@@ -531,3 +536,10 @@ ThreadPlanCallFunction::BreakpointsExplainStop()
     
     return false;
 }
+
+bool
+ThreadPlanCallFunction::RestoreThreadState()
+{
+    return GetThread().RestoreThreadStateFromCheckpoint(m_stored_thread_state);
+}
+

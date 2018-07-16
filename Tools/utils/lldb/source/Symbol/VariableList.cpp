@@ -52,9 +52,12 @@ VariableList::AddVariableIfUnique (const lldb::VariableSP &var_sp)
 void
 VariableList::AddVariables(VariableList *variable_list)
 {
-    std::copy(  variable_list->m_variables.begin(), // source begin
-                variable_list->m_variables.end(),   // source end
-                back_inserter(m_variables));        // destination
+    if (variable_list)
+    {
+        std::copy(variable_list->m_variables.begin(), // source begin
+                  variable_list->m_variables.end(),   // source end
+                  back_inserter(m_variables));        // destination
+    }
 }
 
 void
@@ -64,7 +67,7 @@ VariableList::Clear()
 }
 
 VariableSP
-VariableList::GetVariableAtIndex(uint32_t idx)
+VariableList::GetVariableAtIndex(uint32_t idx) const
 {
     VariableSP var_sp;
     if (idx < m_variables.size())
@@ -175,41 +178,3 @@ VariableList::Dump(Stream *s, bool show_context) const
         (*pos)->Dump(s, show_context);
     }
 }
-
-lldb::VariableSP
-VariableList::FindArtificialObjectVariable (lldb::LanguageType language) const
-{
-    lldb::VariableSP object_variable_sp;
-    ConstString object_variable_name;
-    switch (language)
-    {
-        case eLanguageTypeC_plus_plus:
-            object_variable_name.SetCString("this");
-            break;
-
-        case eLanguageTypeObjC:
-        case eLanguageTypeObjC_plus_plus:
-            object_variable_name.SetCString("self");
-            break;
-
-        default:
-            break;
-    }
-    if (object_variable_name)
-    {
-        const_iterator pos, end = m_variables.end();
-        for (pos = m_variables.begin(); pos != end; ++pos)
-        {
-            Variable *variable = pos->get();
-            if (variable->IsArtificial() &&
-                variable->GetScope() == eValueTypeVariableArgument &&
-                variable->GetName() == object_variable_name)
-            {
-                object_variable_sp = *pos;
-                break;
-            }
-        }
-    }
-    return object_variable_sp;
-}
-

@@ -1,20 +1,20 @@
 set(LLVM_LINK_COMPONENTS support)
 
-set(LLVM_USED_LIBS clangBasic clangLex clangAST clangFrontend clangRewrite)
-
 add_clang_library(clangStaticAnalyzerCore
-  AggExprVisitor.cpp
+  APSIntType.cpp
   AnalysisManager.cpp
-  BasicConstraintManager.cpp
+  AnalyzerOptions.cpp
   BasicValueFactory.cpp
   BlockCounter.cpp
   BugReporter.cpp
   BugReporterVisitors.cpp
+  CallEvent.cpp
   Checker.cpp
   CheckerContext.cpp
   CheckerHelpers.cpp
   CheckerManager.cpp
   CheckerRegistry.cpp
+  ConstraintManager.cpp
   CoreEngine.cpp
   Environment.cpp
   ExplodedGraph.cpp
@@ -23,9 +23,9 @@ add_clang_library(clangStaticAnalyzerCore
   ExprEngineCXX.cpp
   ExprEngineCallAndReturn.cpp
   ExprEngineObjC.cpp
+  FunctionSummary.cpp
   HTMLDiagnostics.cpp
   MemRegion.cpp
-  ObjCMessage.cpp
   PathDiagnostic.cpp
   PlistDiagnostics.cpp
   ProgramState.cpp
@@ -41,5 +41,19 @@ add_clang_library(clangStaticAnalyzerCore
   TextPathDiagnostics.cpp
   )
 
-add_dependencies(clangStaticAnalyzerCore ClangAttrClasses ClangAttrList ClangDeclNodes
-                 ClangStmtNodes)
+add_dependencies(clangStaticAnalyzerCore
+  ClangAttrClasses
+  ClangAttrList
+  ClangCommentNodes
+  ClangDeclNodes
+  ClangDiagnosticCommon
+  ClangStmtNodes
+  )
+
+target_link_libraries(clangStaticAnalyzerCore
+  clangBasic
+  clangLex
+  clangAST
+  clangFrontend
+  clangRewriteCore
+  )

@@ -75,7 +75,10 @@ class Utilities:
 		logger = lldb.formatters.Logger.Logger()
 		# assume the only thing that has a Foundation.framework is a Mac
 		# assume anything < Lion does not even exist
-		mod = target.module['Foundation']
+		try:
+			mod = target.module['Foundation']
+		except:
+			mod = None
 		if mod is None or mod.IsValid() == 0:
 			return None
 		ver = mod.GetVersion()
@@ -101,9 +104,8 @@ class Utilities:
 			return class_data,wrapper
 		if class_data.is_kvo():
 			class_data = class_data.get_superclass()
-		if class_data.is_valid() == 0:
-			statistics.metric_hit('invalid_isa',valobj)
-			wrapper = InvalidISA_Description()
+		if class_data.class_name() == '_NSZombie_OriginalClass':
+			wrapper = ThisIsZombie_Description()
 			return class_data,wrapper
 		return class_data,None
 
@@ -786,3 +788,6 @@ class InvalidISA_Description(SpecialSituation_Description):
 	def message(self):
 		return '<not an Objective-C object>'
 
+class ThisIsZombie_Description(SpecialSituation_Description):
+	def message(self):
+		return '<freed object>'

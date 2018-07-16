@@ -28,6 +28,8 @@
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
 
+#include "llvm/ADT/StringRef.h"
+
 using namespace lldb;
 using namespace lldb_private;
 
@@ -78,7 +80,7 @@ Type::Type () :
     m_symbol_file (NULL),
     m_context (NULL),
     m_encoding_type (NULL),
-    m_encoding_uid (0),
+    m_encoding_uid (LLDB_INVALID_UID),
     m_encoding_uid_type (eEncodingInvalid),
     m_byte_size (0),
     m_decl (),
@@ -148,7 +150,7 @@ Type::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_name)
     }
     else if (m_encoding_uid != LLDB_INVALID_UID)
     {
-        s->Printf(", type_uid = 0x%8.8x", m_encoding_uid);
+        s->Printf(", type_uid = 0x%8.8" PRIx64, m_encoding_uid);
         switch (m_encoding_uid_type)
         {
         case eEncodingInvalid: break;
@@ -255,7 +257,7 @@ Type::DumpValue
         {
             s->PutChar('(');
             if (verbose)
-                s->Printf("Type{0x%8.8llx} ", GetID());
+                s->Printf("Type{0x%8.8" PRIx64 "} ", GetID());
             DumpTypeName (s);
             s->PutCString(") ");
         }
@@ -728,14 +730,43 @@ Type::GetQualifiedName ()
 
 
 bool
-Type::GetTypeScopeAndBasename (const char* name_cstr,
+Type::GetTypeScopeAndBasename (const char* &name_cstr,
                                std::string &scope,
-                               std::string &basename)
+                               std::string &basename,
+                               TypeClass &type_class)
 {
     // Protect against null c string.
     
+    type_class = eTypeClassAny;
+
     if (name_cstr && name_cstr[0])
     {
+        llvm::StringRef name_strref(name_cstr);
+        if (name_strref.startswith("struct "))
+        {
+            name_cstr += 7;
+            type_class = eTypeClassStruct;
+        }
+        else if (name_strref.startswith("class "))
+        {
+            name_cstr += 6;
+            type_class = eTypeClassClass;
+        }
+        else if (name_strref.startswith("union "))
+        {
+            name_cstr += 6;
+            type_class = eTypeClassUnion;
+        }
+        else if (name_strref.startswith("enum "))
+        {
+            name_cstr += 5;
+            type_class = eTypeClassEnumeration;
+        }
+        else if (name_strref.startswith("typedef "))
+        {
+            name_cstr += 8;
+            type_class = eTypeClassTypedef;
+        }
         const char *basename_cstr = name_cstr;
         const char* namespace_separator = ::strstr (basename_cstr, "::");
         if (namespace_separator)
@@ -807,15 +838,15 @@ TypeAndOrName::GetName () const
 }
 
 void
-TypeAndOrName::SetName (ConstString &type_name_const_str)
+TypeAndOrName::SetName (const ConstString &type_name)
 {
-    m_type_name = type_name_const_str;
+    m_type_name = type_name;
 }
 
 void
-TypeAndOrName::SetName (const char *type_name_str)
+TypeAndOrName::SetName (const char *type_name_cstr)
 {
-    m_type_name.SetCString (type_name_str);
+    m_type_name.SetCString (type_name_cstr);
 }
 
 void

@@ -1,8 +1,9 @@
 """
 Tests that ObjC member variables are available where they should be.
 """
-
+import lldb
 from lldbtest import *
+import lldbutil
 
 class ObjCSelfTestCase(TestBase):
     
@@ -15,6 +16,7 @@ class ObjCSelfTestCase(TestBase):
         self.buildDsym()
         self.self_commands()
 
+    @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dwarf_test
     def test_with_dwarf_and_run_command(self):
         """Test that the appropriate member variables are available when stopped in Objective-C class and instance methods"""
@@ -25,9 +27,7 @@ class ObjCSelfTestCase(TestBase):
         TestBase.setUp(self)
     
     def set_breakpoint(self, line):
-        self.expect("breakpoint set -f main.m -l %d" % line,
-                    BREAKPOINT_CREATED,
-                    startstr = "Breakpoint created")
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", line, num_expected_locations=1, loc_exact=True)
     
     def self_commands(self):
         """Test that the appropriate member variables are available when stopped in Objective-C class and instance methods"""

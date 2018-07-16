@@ -20,8 +20,14 @@ Type:
 for available options.
 """
 
-import os, signal, sys, time
+import argparse
+import os
+import platform
+import signal
 import subprocess
+import sys
+import textwrap
+import time
 import unittest2
 
 def is_exe(fpath):
@@ -60,6 +66,17 @@ class _WritelnDecorator(object):
 # Global variables:
 #
 
+# Dictionary of categories
+# When you define a new category for your testcases, be sure to add it here, or the test suite
+# will gladly complain as soon as you try to use it. This allows us to centralize which categories
+# exist, and to provide a description for each one
+validCategories = {
+'dataformatters':'Tests related to the type command and the data formatters subsystem',
+'expression':'Tests related to the expression parser',
+'objc':'Tests related to the Objective-C programming language support',
+'pyapi':'Tests related to the Python API'
+}
+
 # The test suite.
 suite = unittest2.TestSuite()
 
@@ -78,7 +95,7 @@ just_do_benchmarks_test = False
 # Use @dsym_test or @dwarf_test decorators, defined in lldbtest.py, to mark a test
 # as a dsym or dwarf test.  Use '-N dsym' or '-N dwarf' to exclude dsym or dwarf
 # tests from running.
-dont_do_dsym_test = False
+dont_do_dsym_test = "linux" in sys.platform
 dont_do_dwarf_test = False
 
 # The blacklist is optional (-b blacklistFile) and allows a central place to skip
@@ -87,6 +104,19 @@ blacklist = None
 
 # The dictionary as a result of sourcing blacklistFile.
 blacklistConfig = {}
+
+# The list of categories we said we care about
+categoriesList = None
+# set to true if we are going to use categories for cherry-picking test cases
+useCategories = False
+# use this to track per-category failures
+failuresPerCategory = {}
+
+# The path to LLDB.framework is optional.
+lldbFrameworkPath = None
+
+# The path to lldb is optional
+lldbExecutablePath = None
 
 # The config file is optional.
 configFile = None
@@ -101,11 +131,11 @@ pre_flight = None
 post_flight = None
 
 # The 'archs' and 'compilers' can be specified via either command line or configFile,
-# with the command line overriding the configFile.  When specified, they should be
-# of the list type.  For example, "-A x86_64^i386" => archs=['x86_64', 'i386'] and
-# "-C gcc^clang" => compilers=['gcc', 'clang'].
-archs = ['x86_64', 'i386']
-compilers = ['clang']
+# with the command line overriding the configFile.  The corresponding options can be
+# specified more than once. For example, "-A x86_64 -A i386" => archs=['x86_64', 'i386'] 
+# and "-C gcc -C clang" => compilers=['gcc', 'clang'].
+archs = None        # Must be initialized after option parsing
+compilers = None    # Must be initialized after option parsing
 
 # The arch might dictate some specific CFLAGS to be passed to the toolchain to build
 # the inferior programs.  The global variable cflags_extras provides a hook to do
@@ -192,89 +222,8 @@ testdirs = [ sys.path[0] ]
 separator = '-' * 70
 
 
-def usage():
-    print """
-Usage: dotest.py [option] [args]
-where options:
--h   : print this help message and exit.  Add '-v' for more detailed help.
--A   : specify the architecture(s) to launch for the inferior process
-       -A i386 => launch inferior with i386 architecture
-       -A x86_64^i386 => launch inferior with x86_64 and i386 architectures
--C   : specify the compiler(s) used to build the inferior executable
-       -C clang => build debuggee using clang compiler
-       -C /my/full/path/to/clang => specify a full path to the clang binary
-       -C clang^gcc => build debuggee using clang and gcc compilers
--D   : dump the Python sys.path variable
--E   : specify the extra flags to be passed to the toolchain when building the
-       inferior programs to be debugged
-       suggestions: do not lump the -A arch1^arch2 together such that the -E
-       option applies to only one of the architectures
--N   : don't do test cases marked with the @dsym decorator by passing 'dsym' as the option arg, or
-       don't do test cases marked with the @dwarf decorator by passing 'dwarf' as the option arg
--a   : don't do lldb Python API tests
-       use @python_api_test to decorate a test case as lldb Python API test
-+a   : just do lldb Python API tests
-       do not specify both '-a' and '+a' at the same time
-+b   : just do benchmark tests
-       use @benchmark_test to decorate a test case as such
--b   : read a blacklist file specified after this option
--c   : read a config file specified after this option
-       the architectures and compilers (note the plurals) specified via '-A' and '-C'
-       will override those specified via a config file
-       (see also lldb-trunk/example/test/usage-config)
--d   : delay startup for 10 seconds (in order for the debugger to attach)
--e   : specify the full path of an executable used for benchmark purpose;
-       see also '-x', which provides the breakpoint sepcification
--F   : failfast, stop the test suite on the first error/failure
--f   : specify a filter, which consists of the test class name, a dot, followed by
-       the test method, to only admit such test into the test suite
-       e.g., -f 'ClassTypesTestCase.test_with_dwarf_and_python_api'
--g   : if specified, the filterspec by -f is not exclusive, i.e., if a test module
-       does not match the filterspec (testclass.testmethod), the whole module is
-       still admitted to the test suite
--i   : ignore (don't bailout) if 'lldb.py' module cannot be located in the build
-       tree relative to this script; use PYTHONPATH to locate the module
--k   : specify a runhook, which is an lldb command to be executed by the debugger;
-       '-k' option can occur multiple times, the commands are executed one after the
-       other to bring the debugger to a desired state, so that, for example, further
-       benchmarking can be done
--l   : don't skip long running test
--n   : don't print the headers like build dir, lldb version, and svn info at all
--p   : specify a regexp filename pattern for inclusion in the test suite
--R   : specify a dir to relocate the tests and their intermediate files to;
-       BE WARNED THAT the directory, if exists, will be deleted before running this test driver;
-       no cleanup of intermediate test files is performed in this case
--r   : similar to '-R',
-       except that the directory must not exist before running this test driver
--S   : skip the build and cleanup while running the test
-       use this option with care as you would need to build the inferior(s) by hand
-       and build the executable(s) with the correct name(s)
-       this can be used with '-# n' to stress test certain test cases for n number of
-       times
--s   : specify the name of the dir created to store the session files of tests
-       with errored or failed status; if not specified, the test driver uses the
-       timestamp as the session dir name
--t   : turn on tracing of lldb command and other detailed test executions
--u   : specify an environment variable to unset before running the test cases
-       e.g., -u DYLD_INSERT_LIBRARIES -u MallocScribble'
--v   : do verbose mode of unittest framework (print out each test case invocation)
--X   : exclude a directory from consideration for test discovery
-       -X types => if 'types' appear in the pathname components of a potential testfile
-                   it will be ignored
--x   : specify the breakpoint specification for the benchmark executable;
-       see also '-e', which provides the full path of the executable
--y   : specify the iteration count used to collect our benchmarks; an example is
-       the number of times to do 'thread step-over' to measure stepping speed
-       see also '-e' and '-x' options
--w   : insert some wait time (currently 0.5 sec) between consecutive test cases
--#   : Repeat the test suite for a specified number of times
-
-and:
-args : specify a list of directory names to search for test modules named after
-       Test*.py (test discovery)
-       if empty, search from the current working directory, instead
-"""
-
+def usage(parser):
+    parser.print_help()
     if verbose > 0:
         print """
 Examples:
@@ -371,6 +320,11 @@ def parseOptionsAndInitTestdirs():
     global dont_do_dwarf_test
     global blacklist
     global blacklistConfig
+    global categoriesList
+    global validCategories
+    global useCategories
+    global lldbFrameworkPath
+    global lldbExecutablePath
     global configFile
     global archs
     global compilers
@@ -398,232 +352,263 @@ def parseOptionsAndInitTestdirs():
 
     do_help = False
 
-    # Process possible trace and/or verbose flag, among other things.
-    index = 1
-    while index < len(sys.argv):
-        if sys.argv[index].startswith('-') or sys.argv[index].startswith('+'):
-            # We should continue processing...
-            pass
-        else:
-            # End of option processing.
-            break
+    parser = argparse.ArgumentParser(description='description', prefix_chars='+-', add_help=False)
+    group = None
 
-        if sys.argv[index].find('-h') != -1:
-            index += 1
-            do_help = True
-        elif sys.argv[index].startswith('-A'):
-            # Increment by 1 to fetch the ARCH spec.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            archs = sys.argv[index].split('^')
-            index += 1
-        elif sys.argv[index].startswith('-C'):
-            # Increment by 1 to fetch the CC spec.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            compilers = sys.argv[index].split('^')
-            index += 1
-        elif sys.argv[index].startswith('-D'):
-            dumpSysPath = True
-            index += 1
-        elif sys.argv[index].startswith('-E'):
-            # Increment by 1 to fetch the CFLAGS_EXTRAS spec.
-            index += 1
-            if index >= len(sys.argv):
-                usage()
-            cflags_extras = sys.argv[index]
-            os.environ["CFLAGS_EXTRAS"] = cflags_extras
-            index += 1
-        elif sys.argv[index].startswith('-N'):
-            # Increment by 1 to fetch 'dsym' or 'dwarf'.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            dont_do = sys.argv[index]
-            if dont_do.lower() == 'dsym':
-                dont_do_dsym_test = True
-            elif dont_do.lower() == 'dwarf':
-                dont_do_dwarf_test = True
-            else:
-                print "!!!"
-                print "Warning: -N only accepts either 'dsym' or 'dwarf' as the option arg; you passed in '%s'?" % dont_do
-                print "!!!"
-            index += 1
-        elif sys.argv[index].startswith('-a'):
-            dont_do_python_api_test = True
-            index += 1
-        elif sys.argv[index].startswith('+a'):
-            just_do_python_api_test = True
-            index += 1
-        elif sys.argv[index].startswith('+b'):
-            just_do_benchmarks_test = True
-            index += 1
-        elif sys.argv[index].startswith('-b'):
-            # Increment by 1 to fetch the blacklist file name option argument.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            blacklistFile = sys.argv[index]
-            if not os.path.isfile(blacklistFile):
-                print "Blacklist file:", blacklistFile, "does not exist!"
-                usage()
-            index += 1
-            # Now read the blacklist contents and assign it to blacklist.
-            execfile(blacklistFile, globals(), blacklistConfig)
-            blacklist = blacklistConfig.get('blacklist')
-        elif sys.argv[index].startswith('-c'):
-            # Increment by 1 to fetch the config file name option argument.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            configFile = sys.argv[index]
-            if not os.path.isfile(configFile):
-                print "Config file:", configFile, "does not exist!"
-                usage()
-            index += 1
-        elif sys.argv[index].startswith('-d'):
-            delay = True
-            index += 1
-        elif sys.argv[index].startswith('-e'):
-            # Increment by 1 to fetch the full path of the benchmark executable.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            bmExecutable = sys.argv[index]
-            if not is_exe(bmExecutable):
-                usage()
-            index += 1
-        elif sys.argv[index].startswith('-F'):
-            failfast = True
-            index += 1
-        elif sys.argv[index].startswith('-f'):
-            # Increment by 1 to fetch the filter spec.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            filters.append(sys.argv[index])
-            index += 1
-        elif sys.argv[index].startswith('-g'):
-            fs4all = False
-            index += 1
-        elif sys.argv[index].startswith('-i'):
-            ignore = True
-            index += 1
-        elif sys.argv[index].startswith('-k'):
-            # Increment by 1 to fetch the runhook lldb command.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            runHooks.append(sys.argv[index])
-            index += 1
-        elif sys.argv[index].startswith('-l'):
-            skip_long_running_test = False
-            index += 1
-        elif sys.argv[index].startswith('-n'):
-            noHeaders = True
-            index += 1
-        elif sys.argv[index].startswith('-p'):
-            # Increment by 1 to fetch the reg exp pattern argument.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            regexp = sys.argv[index]
-            index += 1
-        elif sys.argv[index].startswith('-R'):
-            # Increment by 1 to fetch the relocated directory argument.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            rdir = os.path.abspath(sys.argv[index])
-            if os.path.exists(rdir):
-                import shutil
-                print "Removing tree:", rdir
-                shutil.rmtree(rdir)
-            index += 1
-        elif sys.argv[index].startswith('-r'):
-            # Increment by 1 to fetch the relocated directory argument.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            rdir = os.path.abspath(sys.argv[index])
-            if os.path.exists(rdir):
-                print "Relocated directory:", rdir, "must not exist!"
-                usage()
-            index += 1
-        elif sys.argv[index].startswith('-S'):
-            skip_build_and_cleanup = True
-            index += 1
-        elif sys.argv[index].startswith('-s'):
-            # Increment by 1 to fetch the session dir name.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            sdir_name = sys.argv[index]
-            index += 1
-        elif sys.argv[index].startswith('-t'):
-            os.environ["LLDB_COMMAND_TRACE"] = "YES"
-            index += 1
-        elif sys.argv[index].startswith('-u'):
-            # Increment by 1 to fetch the environment variable to unset.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            unsets.append(sys.argv[index])
-            index += 1
-        elif sys.argv[index].startswith('-v'):
-            verbose = 2
-            index += 1
-        elif sys.argv[index].startswith('-w'):
-            os.environ["LLDB_WAIT_BETWEEN_TEST_CASES"] = 'YES'
-            index += 1
-        elif sys.argv[index].startswith('-X'):
-            # Increment by 1 to fetch an excluded directory.
-            index += 1
-            if index >= len(sys.argv):
-                usage()
-            excluded.add(sys.argv[index])
-            index += 1
-        elif sys.argv[index].startswith('-x'):
-            # Increment by 1 to fetch the breakpoint specification of the benchmark executable.
-            index += 1
-            if index >= len(sys.argv):
-                usage()
-            bmBreakpointSpec = sys.argv[index]
-            index += 1
-        elif sys.argv[index].startswith('-y'):
-            # Increment by 1 to fetch the the benchmark iteration count.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            bmIterationCount = int(sys.argv[index])
-            index += 1
-        elif sys.argv[index].startswith('-#'):
-            # Increment by 1 to fetch the repeat count argument.
-            index += 1
-            if index >= len(sys.argv) or sys.argv[index].startswith('-'):
-                usage()
-            count = int(sys.argv[index])
-            index += 1
+    # Helper function for boolean options (group will point to the current group when executing X)
+    X = lambda optstr, helpstr, **kwargs: group.add_argument(optstr, help=helpstr, action='store_true', **kwargs)
+
+    group = parser.add_argument_group('Help')
+    group.add_argument('-h', '--help', dest='h', action='store_true', help="Print this help message and exit.  Add '-v' for more detailed help.")
+
+    # C and Python toolchain options
+    group = parser.add_argument_group('Toolchain options')
+    group.add_argument('-A', '--arch', metavar='arch', action='append', dest='archs', help=textwrap.dedent('''Specify the architecture(s) to test. This option can be specified more than once'''))
+    group.add_argument('-C', '--compiler', metavar='compiler', dest='compilers', action='append', help=textwrap.dedent('''Specify the compiler(s) used to build the inferior executables. The compiler path can be an executable basename or a full path to a compiler executable. This option can be specified multiple times.'''))
+    # FIXME? This won't work for different extra flags according to each arch.
+    group.add_argument('-E', metavar='extra-flags', help=textwrap.dedent('''Specify the extra flags to be passed to the toolchain when building the inferior programs to be debugged
+                                                           suggestions: do not lump the "-A arch1 -A arch2" together such that the -E option applies to only one of the architectures'''))
+    X('-D', 'Dump the Python sys.path variable')
+
+    # Test filtering options
+    group = parser.add_argument_group('Test filtering options')
+    group.add_argument('-N', choices=['dwarf', 'dsym'], help="Don't do test cases marked with the @dsym decorator by passing 'dsym' as the option arg, or don't do test cases marked with the @dwarf decorator by passing 'dwarf' as the option arg")
+    X('-a', "Don't do lldb Python API tests")
+    X('+a', "Just do lldb Python API tests. Do not specify along with '+a'", dest='plus_a')
+    X('+b', 'Just do benchmark tests', dest='plus_b')
+    group.add_argument('-b', metavar='blacklist', help='Read a blacklist file specified after this option')
+    group.add_argument('-f', metavar='filterspec', help='Specify a filter, which consists of the test class name, a dot, followed by the test method, to only admit such test into the test suite')  # FIXME: Example?
+    X('-g', 'If specified, the filterspec by -f is not exclusive, i.e., if a test module does not match the filterspec (testclass.testmethod), the whole module is still admitted to the test suite')
+    X('-l', "Don't skip long running tests")
+    group.add_argument('-p', metavar='pattern', help='Specify a regexp filename pattern for inclusion in the test suite')
+    group.add_argument('-X', metavar='directory', help="Exclude a directory from consideration for test discovery. -X types => if 'types' appear in the pathname components of a potential testfile, it will be ignored")
+    group.add_argument('-G', '--category', metavar='category', action='append', dest='categoriesList', help=textwrap.dedent('''Specify categories of test cases of interest. Can be specified more than once.'''))
+
+    # Configuration options
+    group = parser.add_argument_group('Configuration options')
+    group.add_argument('-c', metavar='config-file', help='Read a config file specified after this option')  # FIXME: additional doc.
+    group.add_argument('--framework', metavar='framework-path', help='The path to LLDB.framework')
+    group.add_argument('--executable', metavar='executable-path', help='The path to the lldb executable')
+    group.add_argument('-e', metavar='benchmark-exe', help='Specify the full path of an executable used for benchmark purposes (see also: -x)')
+    group.add_argument('-k', metavar='command', action='append', help="Specify a runhook, which is an lldb command to be executed by the debugger; The option can occur multiple times. The commands are executed one after the other to bring the debugger to a desired state, so that, for example, further benchmarking can be done")
+    group.add_argument('-R', metavar='dir', help='Specify a directory to relocate the tests and their intermediate files to. BE WARNED THAT the directory, if exists, will be deleted before running this test driver. No cleanup of intermediate test files is performed in this case')
+    group.add_argument('-r', metavar='dir', help="Similar to '-R', except that the directory must not exist before running this test driver")
+    group.add_argument('-s', metavar='name', help='Specify the name of the dir created to store the session files of tests with errored or failed status. If not specified, the test driver uses the timestamp as the session dir name')
+    group.add_argument('-x', metavar='breakpoint-spec', help='Specify the breakpoint specification for the benchmark executable')
+    group.add_argument('-y', type=int, metavar='count', help="Specify the iteration count used to collect our benchmarks. An example is the number of times to do 'thread step-over' to measure stepping speed.")
+    group.add_argument('-#', type=int, metavar='sharp', dest='sharp', help='Repeat the test suite for a specified number of times')
+
+    # Test-suite behaviour
+    group = parser.add_argument_group('Runtime behaviour options')
+    X('-d', 'Delay startup for 10 seconds (in order for the debugger to attach)')
+    X('-F', 'Fail fast. Stop the test suite on the first error/failure')
+    X('-i', "Ignore (don't bailout) if 'lldb.py' module cannot be located in the build tree relative to this script; use PYTHONPATH to locate the module")
+    X('-n', "Don't print the headers like build dir, lldb version, and svn info at all")
+    X('-S', "Skip the build and cleanup while running the test. Use this option with care as you would need to build the inferior(s) by hand and build the executable(s) with the correct name(s). This can be used with '-# n' to stress test certain test cases for n number of times")
+    X('-t', 'Turn on tracing of lldb command and other detailed test executions')
+    group.add_argument('-u', metavar='variable', action='append', help='Specify an environment variable to unset before running the test cases. e.g., -u DYLD_INSERT_LIBRARIES -u MallocScribble')
+    X('-v', 'Do verbose mode of unittest framework (print out each test case invocation)')
+    X('-w', 'Insert some wait time (currently 0.5 sec) between consecutive test cases')
+
+    # Remove the reference to our helper function
+    del X
+
+    group = parser.add_argument_group('Test directories')
+    group.add_argument('args', metavar='test-dir', nargs='*', help='Specify a list of directory names to search for test modules named after Test*.py (test discovery). If empty, search from the current working directory instead.')
+    args = parser.parse_args()
+
+    platform_system = platform.system()
+    platform_machine = platform.machine()
+    
+    # only print the args if being verbose
+    if args.v:
+        print args
+
+    if args.h:
+        do_help = True
+
+    if args.archs:
+        archs = args.archs
+    else:
+        if platform_system == 'Darwin' and platform_machine == 'x86_64':
+            archs = ['x86_64', 'i386']
         else:
-            print "Unknown option: ", sys.argv[index]
-            usage()
+            archs = [platform_machine]
+
+    if args.categoriesList:
+        for category in args.categoriesList:
+            if not(category in validCategories):
+                print "fatal error: category '" + category + "' is not a valid category"
+                print "if you have added a new category, please edit dotest.py, adding your new category to validCategories"
+                print "else, please specify one or more of the following: " + str(validCategories.keys())
+                sys.exit(1)
+        categoriesList = set(args.categoriesList)
+        useCategories = True
+    else:
+        categoriesList = []
+
+    if args.compilers:
+        compilers = args.compilers
+    else:
+        compilers = ['clang']
+
+    if args.D:
+        dumpSysPath = True
+
+    if args.E:
+        cflags_extras = args.E
+        os.environ['CFLAGS_EXTRAS'] = cflags_extras
+
+    # argparse makes sure we have correct options
+    if args.N == 'dwarf':
+        dont_do_dwarf_test = True
+    elif args.N == 'dsym':
+        dont_do_dsym_test = True
+
+    if args.a:
+        dont_do_python_api_test = True
+
+    if args.plus_a:
+        if dont_do_python_api_test:
+            print "Warning: -a and +a can't both be specified! Using only -a"
+        else:
+            just_do_python_api_test = True
+
+    if args.plus_b:
+        just_do_benchmarks_test = True
+
+    if args.b:
+        if args.b.startswith('-'):
+            usage(parser)
+        blacklistFile = args.b
+        if not os.path.isfile(blacklistFile):
+            print 'Blacklist file:', blacklistFile, 'does not exist!'
+            usage(parser)
+        # Now read the blacklist contents and assign it to blacklist.
+        execfile(blacklistFile, globals(), blacklistConfig)
+        blacklist = blacklistConfig.get('blacklist')
+
+    if args.c:
+        if args.c.startswith('-'):
+            usage(parser)
+        configFile = args.c
+        if not os.path.isfile(configFile):
+            print 'Config file:', configFile, 'does not exist!'
+            usage(parser)
+
+    if args.d:
+        delay = True
+
+    if args.e:
+        if args.e.startswith('-'):
+            usage(parser)
+        bmExecutable = args.e
+        if not is_exe(bmExecutable):
+            usage(parser)
+
+    if args.F:
+        failfast = True
+
+    if args.f:
+        if args.f.startswith('-'):
+            usage(parser)
+        filters.append(args.f)
+
+    if args.g:
+        fs4all = False
+
+    if args.i:
+        ignore = True
+
+    if args.k:
+        runHooks.extend(args.k)
+
+    if args.l:
+        skip_long_running_test = False
+
+    if args.framework:
+        lldbFrameworkPath = args.framework
+
+    if args.executable:
+        lldbExecutablePath = args.executable
+
+    if args.n:
+        noHeaders = True
+
+    if args.p:
+        if args.p.startswith('-'):
+            usage(parser)
+        regexp = args.p
+
+    if args.R:
+        if args.R.startswith('-'):
+            usage(parser)
+        rdir = os.path.abspath(args.R)
+        if os.path.exists(rdir):
+            import shutil
+            print 'Removing tree:', rdir
+            shutil.rmtree(rdir)
+
+    if args.r:
+        if args.r.startswith('-'):
+            usage(parser)
+        rdir = os.path.abspath(args.r)
+        if os.path.exists(rdir):
+            print 'Relocated directory:', rdir, 'must not exist!'
+            usage(parser)
+
+    if args.S:
+        skip_build_and_cleanup = True
+
+    if args.s:
+        if args.s.startswith('-'):
+            usage(parser)
+        sdir_name = args.s
+
+    if args.t:
+        os.environ['LLDB_COMMAND_TRACE'] = 'YES'
+
+    if args.u:
+        unsets.extend(args.u)
+
+    if args.v:
+        verbose = 2
+
+    if args.w:
+        os.environ['LLDB_WAIT_BETWEEN_TEST_CASES'] = 'YES'
+
+    if args.X:
+        if args.X.startswith('-'):
+            usage(parser)
+        excluded.add(args.X)
+
+    if args.x:
+        if args.x.startswith('-'):
+            usage(parser)
+        bmBreakpointSpec = args.x
+
+    # argparse makes sure we have a number
+    if args.y:
+        bmIterationCount = args.y
+
+    # argparse makes sure we have a number
+    if args.sharp:
+        count = args.sharp
 
     if do_help == True:
-        usage()
+        usage(parser)
 
     # Do not specify both '-a' and '+a' at the same time.
     if dont_do_python_api_test and just_do_python_api_test:
-        usage()
+        usage(parser)
 
     # The simple progress bar is turned on only if verbose == 0 and LLDB_COMMAND_TRACE is not 'YES'
-    if ("LLDB_COMMAND_TRACE" not in os.environ or os.environ["LLDB_COMMAND_TRACE"]!="YES") and verbose==0:
+    if ("LLDB_COMMAND_TRACE" not in os.environ or os.environ["LLDB_COMMAND_TRACE"] != "YES") and verbose == 0:
         progress_bar = True
 
     # Gather all the dirs passed on the command line.
-    if len(sys.argv) > index:
-        testdirs = map(os.path.abspath, sys.argv[index:])
+    if len(args.args) > 0:
+        testdirs = map(os.path.abspath, args.args)
 
     # If '-r dir' is specified, the tests should be run under the relocated
     # directory.  Let's copy the testdirs over.
@@ -636,8 +621,8 @@ def parseOptionsAndInitTestdirs():
             # For example, /Volumes/data/lldb/svn/ToT/test/functionalities/watchpoint/hello_watchpoint
             # shall be split into ['/Volumes/data/lldb/svn/ToT/', 'functionalities/watchpoint/hello_watchpoint'].
             # Utilize the relative path to the 'test' directory to make our destination dir path.
-            if ("test"+os.sep) in srcdir:
-                to_split_on = "test"+os.sep
+            if ("test" + os.sep) in srcdir:
+                to_split_on = "test" + os.sep
             else:
                 to_split_on = "test"
             dstdir = os.path.join(rdir, srcdir.split(to_split_on)[1])
@@ -661,8 +646,9 @@ def parseOptionsAndInitTestdirs():
         #
         # where the make directory contains the Makefile.rules file.
         if len(testdirs) != 1 or os.path.basename(orig_testdirs[0]) != 'test':
+            scriptdir = os.path.dirname(__file__)
             # Don't copy the .svn stuffs.
-            copytree('make', os.path.join(rdir, 'make'),
+            copytree(os.path.join(scriptdir, 'make'), os.path.join(rdir, 'make'),
                      ignore=ignore_patterns('.svn'))
 
     #print "testdirs:", testdirs
@@ -677,7 +663,7 @@ def parseOptionsAndInitTestdirs():
     # which will reassign the two file objects to sys.stderr and sys.stdout,
     # respectively.
     #
-    # See also lldb-trunk/example/test/usage-config.
+    # See also lldb-trunk/examples/test/usage-config.
     global config, pre_flight, post_flight
     if configFile:
         # Pass config (a dictionary) as the locals namespace for side-effect.
@@ -708,6 +694,8 @@ def setupSysPath():
     global dumpSysPath
     global noHeaders
     global svn_info
+    global lldbFrameworkPath
+    global lldbExecutablePath
 
     # Get the directory containing the current script.
     if ("DOTEST_PROFILE" in os.environ or "DOTEST_PDB" in os.environ) and "DOTEST_SCRIPT_DIR" in os.environ:
@@ -741,7 +729,7 @@ def setupSysPath():
     sys.path.append(scriptPath)
     sys.path.append(pluginPath)
     sys.path.append(pexpectPath)
-    
+
     # This is our base name component.
     base = os.path.abspath(os.path.join(scriptPath, os.pardir))
 
@@ -749,6 +737,7 @@ def setupSysPath():
     xcode3_build_dir = ['build']
     xcode4_build_dir = ['build', 'lldb', 'Build', 'Products']
     dbg = ['Debug']
+    dbc = ['DebugClang']
     rel = ['Release']
     bai = ['BuildAndIntegration']
     python_resource_dir = ['LLDB.framework', 'Resources', 'Python']
@@ -756,38 +745,59 @@ def setupSysPath():
     # Some of the tests can invoke the 'lldb' command directly.
     # We'll try to locate the appropriate executable right here.
 
-    # First, you can define an environment variable LLDB_EXEC specifying the
-    # full pathname of the lldb executable.
-    if "LLDB_EXEC" in os.environ and is_exe(os.environ["LLDB_EXEC"]):
-        lldbExec = os.environ["LLDB_EXEC"]
+    lldbExec = None
+    if lldbExecutablePath:
+        if is_exe(lldbExecutablePath):
+            lldbExec = lldbExecutablePath
+            lldbHere = lldbExec
+        else:
+            print lldbExecutablePath + " is not an executable"
+            sys.exit(-1)
     else:
-        lldbExec = None
+        # First, you can define an environment variable LLDB_EXEC specifying the
+        # full pathname of the lldb executable.
+        if "LLDB_EXEC" in os.environ and is_exe(os.environ["LLDB_EXEC"]):
+            lldbExec = os.environ["LLDB_EXEC"]
+        else:
+            lldbExec = None
+    
+        executable = ['lldb']
+        dbgExec  = os.path.join(base, *(xcode3_build_dir + dbg + executable))
+        dbgExec2 = os.path.join(base, *(xcode4_build_dir + dbg + executable))
+        dbcExec  = os.path.join(base, *(xcode3_build_dir + dbc + executable))
+        dbcExec2 = os.path.join(base, *(xcode4_build_dir + dbc + executable))
+        relExec  = os.path.join(base, *(xcode3_build_dir + rel + executable))
+        relExec2 = os.path.join(base, *(xcode4_build_dir + rel + executable))
+        baiExec  = os.path.join(base, *(xcode3_build_dir + bai + executable))
+        baiExec2 = os.path.join(base, *(xcode4_build_dir + bai + executable))
+    
+        # The 'lldb' executable built here in the source tree.
+        lldbHere = None
+        if is_exe(dbgExec):
+            lldbHere = dbgExec
+        elif is_exe(dbgExec2):
+            lldbHere = dbgExec2
+        elif is_exe(dbcExec):
+            lldbHere = dbcExec
+        elif is_exe(dbcExec2):
+            lldbHere = dbcExec2
+        elif is_exe(relExec):
+            lldbHere = relExec
+        elif is_exe(relExec2):
+            lldbHere = relExec2
+        elif is_exe(baiExec):
+            lldbHere = baiExec
+        elif is_exe(baiExec2):
+            lldbHere = baiExec2
+        elif lldbExec:
+            lldbHere = lldbExec
 
-    executable = ['lldb']
-    dbgExec  = os.path.join(base, *(xcode3_build_dir + dbg + executable))
-    dbgExec2 = os.path.join(base, *(xcode4_build_dir + dbg + executable))
-    relExec  = os.path.join(base, *(xcode3_build_dir + rel + executable))
-    relExec2 = os.path.join(base, *(xcode4_build_dir + rel + executable))
-    baiExec  = os.path.join(base, *(xcode3_build_dir + bai + executable))
-    baiExec2 = os.path.join(base, *(xcode4_build_dir + bai + executable))
-
-    # The 'lldb' executable built here in the source tree.
-    lldbHere = None
-    if is_exe(dbgExec):
-        lldbHere = dbgExec
-    elif is_exe(dbgExec2):
-        lldbHere = dbgExec2
-    elif is_exe(relExec):
-        lldbHere = relExec
-    elif is_exe(relExec2):
-        lldbHere = relExec2
-    elif is_exe(baiExec):
-        lldbHere = baiExec
-    elif is_exe(baiExec2):
-        lldbHere = baiExec2
-    elif lldbExec:
-        lldbHere = lldbExec
-
+        # One last chance to locate the 'lldb' executable.
+        if not lldbExec:
+            lldbExec = which('lldb')
+            if lldbHere and not lldbExec:
+                lldbExec = lldbHere
+    
     if lldbHere:
         os.environ["LLDB_HERE"] = lldbHere
         os.environ["LLDB_BUILD_DIR"] = os.path.split(lldbHere)[0]
@@ -795,19 +805,12 @@ def setupSysPath():
             print "LLDB build dir:", os.environ["LLDB_BUILD_DIR"]
             os.system('%s -v' % lldbHere)
 
-    # One last chance to locate the 'lldb' executable.
-    if not lldbExec:
-        lldbExec = which('lldb')
-        if lldbHere and not lldbExec:
-            lldbExec = lldbHere
-
-
     if not lldbExec:
         print "The 'lldb' executable cannot be located.  Some of the tests may not be run as a result."
     else:
         os.environ["LLDB_EXEC"] = lldbExec
         #print "The 'lldb' from PATH env variable", lldbExec
-    
+
     if os.path.isdir(os.path.join(base, '.svn')):
         pipe = subprocess.Popen(["svn", "info", base], stdout = subprocess.PIPE)
         svn_info = pipe.stdout.read()
@@ -819,35 +822,52 @@ def setupSysPath():
 
     global ignore
 
-    # The '-i' option is used to skip looking for lldb.py in the build tree.
-    if ignore:
-        return
-        
-    dbgPath  = os.path.join(base, *(xcode3_build_dir + dbg + python_resource_dir))
-    dbgPath2 = os.path.join(base, *(xcode4_build_dir + dbg + python_resource_dir))
-    relPath  = os.path.join(base, *(xcode3_build_dir + rel + python_resource_dir))
-    relPath2 = os.path.join(base, *(xcode4_build_dir + rel + python_resource_dir))
-    baiPath  = os.path.join(base, *(xcode3_build_dir + bai + python_resource_dir))
-    baiPath2 = os.path.join(base, *(xcode4_build_dir + bai + python_resource_dir))
-
     lldbPath = None
-    if os.path.isfile(os.path.join(dbgPath, 'lldb/__init__.py')):
-        lldbPath = dbgPath
-    elif os.path.isfile(os.path.join(dbgPath2, 'lldb/__init__.py')):
-        lldbPath = dbgPath2
-    elif os.path.isfile(os.path.join(relPath, 'lldb/__init__.py')):
-        lldbPath = relPath
-    elif os.path.isfile(os.path.join(relPath2, 'lldb/__init__.py')):
-        lldbPath = relPath2
-    elif os.path.isfile(os.path.join(baiPath, 'lldb/__init__.py')):
-        lldbPath = baiPath
-    elif os.path.isfile(os.path.join(baiPath2, 'lldb/__init__.py')):
-        lldbPath = baiPath2
+    if lldbFrameworkPath:
+        candidatePath = os.path.join(lldbFrameworkPath, 'Resources', 'Python')
+        if os.path.isfile(os.path.join(candidatePath, 'lldb/__init__.py')):
+            lldbPath = candidatePath
+        if not lldbPath:
+            print 'Resources/Python/lldb/__init__.py was not found in ' + lldbFrameworkPath
+            sys.exit(-1)
+    else:
+        # The '-i' option is used to skip looking for lldb.py in the build tree.
+        if ignore:
+            return
+    
+        dbgPath  = os.path.join(base, *(xcode3_build_dir + dbg + python_resource_dir))
+        dbgPath2 = os.path.join(base, *(xcode4_build_dir + dbg + python_resource_dir))
+        dbcPath  = os.path.join(base, *(xcode3_build_dir + dbc + python_resource_dir))
+        dbcPath2 = os.path.join(base, *(xcode4_build_dir + dbc + python_resource_dir))
+        relPath  = os.path.join(base, *(xcode3_build_dir + rel + python_resource_dir))
+        relPath2 = os.path.join(base, *(xcode4_build_dir + rel + python_resource_dir))
+        baiPath  = os.path.join(base, *(xcode3_build_dir + bai + python_resource_dir))
+        baiPath2 = os.path.join(base, *(xcode4_build_dir + bai + python_resource_dir))
+    
+        if os.path.isfile(os.path.join(dbgPath, 'lldb/__init__.py')):
+            lldbPath = dbgPath
+        elif os.path.isfile(os.path.join(dbgPath2, 'lldb/__init__.py')):
+            lldbPath = dbgPath2
+        elif os.path.isfile(os.path.join(dbcPath, 'lldb/__init__.py')):
+            lldbPath = dbcPath
+        elif os.path.isfile(os.path.join(dbcPath2, 'lldb/__init__.py')):
+            lldbPath = dbcPath2
+        elif os.path.isfile(os.path.join(relPath, 'lldb/__init__.py')):
+            lldbPath = relPath
+        elif os.path.isfile(os.path.join(relPath2, 'lldb/__init__.py')):
+            lldbPath = relPath2
+        elif os.path.isfile(os.path.join(baiPath, 'lldb/__init__.py')):
+            lldbPath = baiPath
+        elif os.path.isfile(os.path.join(baiPath2, 'lldb/__init__.py')):
+            lldbPath = baiPath2
+    
+        if not lldbPath:
+            print 'This script requires lldb.py to be in either ' + dbgPath + ',',
+            print relPath + ', or ' + baiPath
+            sys.exit(-1)
 
-    if not lldbPath:
-        print 'This script requires lldb.py to be in either ' + dbgPath + ',',
-        print relPath + ', or ' + baiPath
-        sys.exit(-1)
+    # If tests need to find LLDB_FRAMEWORK, now they can do it
+    os.environ["LLDB_FRAMEWORK"] = os.path.dirname(os.path.dirname(lldbPath))
 
     # This is to locate the lldb.py module.  Insert it right after sys.path[0].
     sys.path[1:1] = [lldbPath]
@@ -938,7 +958,7 @@ def visit(prefix, dir, names):
             # and no '-g' option is specified
             if filters and fs4all and not filtered:
                 continue
-                
+
             # Add either the filtered test case(s) (which is done before) or the entire test class.
             if not filterspec or not filtered:
                 # A simple case of just the module name.  Also the failover case
@@ -1096,11 +1116,11 @@ unittest2.signals.installHandler()
 # later on.
 #
 # See also TestBase.dumpSessionInfo() in lldbtest.py.
+import datetime
+# The windows platforms don't like ':' in the pathname.
+timestamp_started = datetime.datetime.now().strftime("%Y-%m-%d-%H_%M_%S")
 if not sdir_name:
-    import datetime
-    # The windows platforms don't like ':' in the pathname.
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H_%M_%S")
-    sdir_name = timestamp
+    sdir_name = timestamp_started
 os.environ["LLDB_SESSION_DIRNAME"] = os.path.join(os.getcwd(), sdir_name)
 
 if not noHeaders:
@@ -1110,8 +1130,9 @@ if not noHeaders:
 
 if not os.path.isdir(sdir_name):
     os.mkdir(sdir_name)
-fname = os.path.join(sdir_name, "svn-info")
+fname = os.path.join(sdir_name, "TestStarted")
 with open(fname, "w") as f:
+    print >> f, "Test started at: %s\n" % timestamp_started
     print >> f, svn_info
     print >> f, "Command invoked: %s\n" % getMyCommandLine()
 
@@ -1212,7 +1233,7 @@ for ia in range(len(archs) if iterArchs else 1):
                     new_stdout.close()
                 new_stdout = open("%s.%s" % (old_stdout.name, configPostfix), "w")
                 sys.stdout = new_stdout
- 
+
             # If we specified a relocated directory to run the test suite, do
             # the extra housekeeping to copy the testdirs to a configStringified
             # directory and to update sys.path before invoking the test runner.
@@ -1228,7 +1249,7 @@ for ia in range(len(archs) if iterArchs else 1):
                     rmtree(newrdir)
                 copytree(rdir, newrdir, ignore=ignore_patterns('*.pyc', '*.o', '*.d'))
 
-               # Update the LLDB_TEST environment variable to reflect new top
+                # Update the LLDB_TEST environment variable to reflect new top
                 # level test directory.
                 #
                 # See also lldbtest.TestBase.setUpClass(cls).
@@ -1294,7 +1315,34 @@ for ia in range(len(archs) if iterArchs else 1):
                 else:
                     return str(test)
 
+            def getCategoriesForTest(self,test):
+                if hasattr(test,"getCategories"):
+                    test_categories = test.getCategories()
+                elif inspect.ismethod(test) and test.__self__ != None and hasattr(test.__self__,"getCategories"):
+                    test_categories = test.__self__.getCategories()
+                else:
+                    test_categories = []
+                if test_categories == None:
+                    test_categories = []
+                return test_categories
+
+            def shouldSkipBecauseOfCategories(self,test):
+                global useCategories
+                import inspect
+                if useCategories:
+                    global categoriesList
+                    test_categories = self.getCategoriesForTest(test)
+                    if len(test_categories) == 0 or len(categoriesList & set(test_categories)) == 0:
+                        return True
+                return False
+
+            def hardMarkAsSkipped(self,test):
+                getattr(test, test._testMethodName).__func__.__unittest_skip__ = True
+                getattr(test, test._testMethodName).__func__.__unittest_skip_why__ = "test case does not fall in any category of interest for this run"
+
             def startTest(self, test):
+                if self.shouldSkipBecauseOfCategories(test):
+                    self.hardMarkAsSkipped(test)
                 self.counter += 1
                 if self.showAll:
                     self.stream.write(self.fmt % self.counter)
@@ -1310,11 +1358,19 @@ for ia in range(len(archs) if iterArchs else 1):
 
             def addFailure(self, test, err):
                 global sdir_has_content
+                global failuresPerCategory
                 sdir_has_content = True
                 super(LLDBTestResult, self).addFailure(test, err)
                 method = getattr(test, "markFailure", None)
                 if method:
                     method()
+                if useCategories:
+                    test_categories = self.getCategoriesForTest(test)
+                    for category in test_categories:
+                        if category in failuresPerCategory:
+                            failuresPerCategory[category] = failuresPerCategory[category] + 1
+                        else:
+                            failuresPerCategory[category] = 1
 
             def addExpectedFailure(self, test, err):
                 global sdir_has_content
@@ -1356,11 +1412,20 @@ for ia in range(len(archs) if iterArchs else 1):
                                                   verbosity=(1 if progress_bar else verbose),
                                                   failfast=failfast,
                                                   resultclass=LLDBTestResult).run(suite)
-        
+
 
 if sdir_has_content:
     sys.stderr.write("Session logs for test failures/errors/unexpected successes"
                      " can be found in directory '%s'\n" % sdir_name)
+
+if useCategories and len(failuresPerCategory) > 0:
+    sys.stderr.write("Failures per category:\n")
+    for category in failuresPerCategory:
+        sys.stderr.write("%s - %d\n" % (category,failuresPerCategory[category]))
+
+fname = os.path.join(sdir_name, "TestFinished")
+with open(fname, "w") as f:
+    print >> f, "Test finished at: %s\n" % datetime.datetime.now().strftime("%Y-%m-%d-%H_%M_%S")
 
 # Terminate the test suite if ${LLDB_TESTSUITE_FORCE_FINISH} is defined.
 # This should not be necessary now.

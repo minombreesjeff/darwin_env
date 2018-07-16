@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/CommandObjectRegexCommand.h"
 
 // C Includes
@@ -76,14 +78,18 @@ CommandObjectRegexCommand::DoExecute
                     }
                 }
                 // Interpret the new command and return this as the result!
-                result.GetOutputStream().Printf("%s\n", new_command.c_str());
+                if (m_interpreter.GetExpandRegexAliases())
+                    result.GetOutputStream().Printf("%s\n", new_command.c_str());
                 return m_interpreter.HandleCommand(new_command.c_str(), eLazyBoolCalculate, result);
             }
         }
         result.SetStatus(eReturnStatusFailed);
-        result.AppendErrorWithFormat ("Command contents '%s' failed to match any regular expression in the '%s' regex command.\n",
-                                      command,
-                                      m_cmd_name.c_str());
+        if (GetSyntax() != NULL)
+            result.AppendError (GetSyntax());
+        else
+            result.AppendErrorWithFormat ("Command contents '%s' failed to match any regular expression in the '%s' regex command.\n",
+                                          command,
+                                          m_cmd_name.c_str());
         return false;
     }
     result.AppendError("empty command passed to regular expression command");

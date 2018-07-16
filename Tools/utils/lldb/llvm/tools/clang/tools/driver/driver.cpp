@@ -12,11 +12,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/Driver/ArgList.h"
+#include "clang/Driver/Options.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/Option.h"
+#include "clang/Driver/OptTable.h"
+#include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/DiagnosticOptions.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
+#include "clang/Frontend/Utils.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
@@ -370,11 +375,27 @@ int main(int argc_, const char **argv_) {
 
   llvm::sys::Path Path = GetExecutablePath(argv[0], CanonicalPrefixes);
 
+  DiagnosticOptions DiagOpts;
+  {
+    // Note that ParseDiagnosticArgs() uses the cc1 option table.
+    OwningPtr<OptTable> CC1Opts(createDriverOptTable());
+    unsigned MissingArgIndex, MissingArgCount;
+    OwningPtr<InputArgList> Args(CC1Opts->ParseArgs(argv.begin()+1, argv.end(),
+                                            MissingArgIndex, MissingArgCount));
+    // We ignore MissingArgCount and the return value of ParseDiagnosticArgs.
+    // Any errors that would be diagnosed here will also be diagnosed later,
+    // when the DiagnosticsEngine actually exists.
+    (void) ParseDiagnosticArgs(DiagOpts, *Args);
+  }
+  // Now we can create the DiagnosticsEngine with a properly-filled-out
+  // DiagnosticOptions instance.
   TextDiagnosticPrinter *DiagClient
-    = new TextDiagnosticPrinter(llvm::errs(), DiagnosticOptions());
+    = new TextDiagnosticPrinter(llvm::errs(), DiagOpts);
   DiagClient->setPrefix(llvm::sys::path::stem(Path.str()));
   IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
+
   DiagnosticsEngine Diags(DiagID, DiagClient);
+  ProcessWarningOptions(Diags, DiagOpts);
 
 #ifdef CLANG_IS_PRODUCTION
   const bool IsProduction = true;
@@ -454,6 +475,10 @@ int main(int argc_, const char **argv_) {
   if (C.get())
     Res = TheDriver.ExecuteCompilation(*C, FailingCommand);
 
+  // Force a crash to test the diagnostics.
+  if(::getenv("FORCE_CLANG_DIAGNOSTICS_CRASH"))
+     Res = -1;
+
   // If result status is < 0, then the driver command signalled an error.
   // In this case, generate additional diagnostic information if possible.
   if (Res < 0)
@@ -464,6 +489,14 @@ int main(int argc_, const char **argv_) {
   llvm::TimerGroup::printAll(llvm::errs());
   
   llvm::llvm_shutdown();
+
+#ifdef _WIN32
+  // Exit status should not be negative on Win32, unless abnormal termination.
+  // Once abnormal termiation was caught, negative status should not be
+  // propagated.
+  if (Res < 0)
+    Res = 1;
+#endif
 
   return Res;
 }

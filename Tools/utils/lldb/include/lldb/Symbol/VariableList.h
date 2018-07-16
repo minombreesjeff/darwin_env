@@ -42,18 +42,13 @@ public:
     Dump(Stream *s, bool show_context) const;
 
     lldb::VariableSP
-    GetVariableAtIndex(uint32_t idx);
+    GetVariableAtIndex(uint32_t idx) const;
 
     lldb::VariableSP
     RemoveVariableAtIndex (uint32_t idx);
     
     lldb::VariableSP
     FindVariable (const ConstString& name);
-
-    // Find the argument variable that represents the language specific
-    // object pointer ("this" in C++, or "self" in Objective C).
-    lldb::VariableSP
-    FindArtificialObjectVariable (lldb::LanguageType language) const;
 
     uint32_t
     FindVariableIndex (const lldb::VariableSP &var_sp);

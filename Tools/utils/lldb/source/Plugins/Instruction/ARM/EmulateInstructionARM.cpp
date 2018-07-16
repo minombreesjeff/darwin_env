@@ -16,6 +16,8 @@
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/Stream.h"
+#include "lldb/Interpreter/OptionValueArray.h"
+#include "lldb/Interpreter/OptionValueDictionary.h"
 #include "lldb/Symbol/UnwindPlan.h"
 
 #include "Plugins/Process/Utility/ARMDefines.h"
@@ -12779,7 +12781,7 @@ EmulateInstructionARM::GetThumbOpcodeForInstruction (const uint32_t opcode, uint
         { 0xfea00f00, 0xec000a00, ARMvAll,       eEncodingT2, VFPv2v3,      eSize32, &EmulateInstructionARM::EmulateVSTM, "vstm{mode}<c> <Rn>{!}, <list>"},
         { 0xff300f00, 0xed000b00, ARMvAll,       eEncodingT1, VFPv2_ABOVE,  eSize32, &EmulateInstructionARM::EmulateVSTR, "vstr<c> <Dd>, [<Rn>{,#+/-<imm>}]"},
         { 0xff300f00, 0xed000a00, ARMvAll,       eEncodingT2, VFPv2v3,      eSize32, &EmulateInstructionARM::EmulateVSTR, "vstr<c> <Sd>, [<Rn>{,#+/-<imm>}]"},
-        { 0xffb00000, 0xfa000000, ARMvAll,       eEncodingT1, AdvancedSIMD, eSize32, &EmulateInstructionARM::EmulateVST1Multiple, "vst1<c>.<size> <list>, [<Rn>{@<align>}], <Rm>"},
+        { 0xffb00000, 0xf9000000, ARMvAll,       eEncodingT1, AdvancedSIMD, eSize32, &EmulateInstructionARM::EmulateVST1Multiple, "vst1<c>.<size> <list>, [<Rn>{@<align>}], <Rm>"},
         { 0xffb00300, 0xf9800000, ARMvAll,       eEncodingT1, AdvancedSIMD, eSize32, &EmulateInstructionARM::EmulateVST1Single, "vst1<c>.<size> <list>, [<Rn>{@<align>}], <Rm>"}, 
                   
         //----------------------------------------------------------------------
@@ -13611,9 +13613,7 @@ EmulateInstructionARM::CreateFunctionEntryUnwind (UnwindPlan &unwind_plan)
     // All other registers are the same.
     
     unwind_plan.SetSourceName ("EmulateInstructionARM");
+    unwind_plan.SetSourcedFromCompiler (eLazyBoolNo);
+    unwind_plan.SetUnwindPlanValidAtAllInstructions (eLazyBoolYes);
     return true;
 }
-
-
-
-                                           

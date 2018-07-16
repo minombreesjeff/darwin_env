@@ -233,7 +233,8 @@ private:
 ///             eBroadcastBitStateChanged   = (1 << 0),
 ///             eBroadcastBitInterrupt      = (1 << 1),
 ///             eBroadcastBitSTDOUT         = (1 << 2),
-///             eBroadcastBitSTDERR         = (1 << 3)
+///             eBroadcastBitSTDERR         = (1 << 3),
+///             eBroadcastBitProfileData    = (1 << 4)
 ///         };
 ///     \endcode
 //----------------------------------------------------------------------
@@ -430,6 +431,10 @@ public:
     void
     RestoreBroadcaster ();
     
+    // This needs to be filled in if you are going to register the broadcaster with the broadcaster
+    // manager and do broadcaster class matching.
+    // FIXME: Probably should make a ManagedBroadcaster subclass with all the bits needed to work
+    // with the BroadcasterManager, so that it is clearer how to add one.
     virtual ConstString &GetBroadcasterClass() const;
     
     BroadcasterManager *GetManager();

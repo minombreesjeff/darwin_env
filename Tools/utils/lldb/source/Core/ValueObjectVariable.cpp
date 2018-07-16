@@ -18,6 +18,7 @@
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/Value.h"
 
+#include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/SymbolContextScope.h"
@@ -175,6 +176,7 @@ ValueObjectVariable::UpdateValue ()
                     break;
                 case Value::eValueTypeLoadAddress:
                 case Value::eValueTypeScalar:
+                case Value::eValueTypeVector:
                     SetAddressTypeOfChildren(eAddressTypeLoad);
                     break;
             }

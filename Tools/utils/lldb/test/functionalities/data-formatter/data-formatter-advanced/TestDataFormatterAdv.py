@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class AdvDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class AdvDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -119,9 +117,7 @@ class AdvDataFormatterTestCase(TestBase):
             substrs = ['low bits are',
                        'tgt is 6'])
 
-        self.runCmd("type summary add --summary-string \"${*var[0-1]}\" -x \"int \[[0-9]\]\"")
-
-        self.expect("frame variable int_array",
+        self.expect("frame variable int_array --summary-string \"${*var[0-1]}\"",
             substrs = ['3'])
 
         self.runCmd("type summary clear")
@@ -162,20 +158,24 @@ class AdvDataFormatterTestCase(TestBase):
 
         self.runCmd("type summary clear")
 
-        self.runCmd("type summary add --summary-string \"${var[0][0-2]%hex}\" -x \"int \[[0-9]\]\"")
-
-        self.expect("frame variable int_array",
+        self.expect("frame variable int_array --summary-string \"${var[0][0-2]%hex}\"",
             substrs = ['0x',
                        '7'])
 
         self.runCmd("type summary clear")
 
         self.runCmd("type summary add --summary-string \"${*var[].x[0-3]%hex} is a bitfield on a set of integers\" -x \"SimpleWithPointers \[[0-9]\]\"")
-        self.runCmd("type summary add --summary-string \"${*var.sp.x[0-2]} are low bits of integer ${*var.sp.x}. If I pretend it is an array I get ${var.sp.x[0-5]}\" Couple")
 
-        self.expect("frame variable couple",
+        self.expect("frame variable couple --summary-string \"${*var.sp.x[0-2]} are low bits of integer ${*var.sp.x}. If I pretend it is an array I get ${var.sp.x[0-5]}\"",
             substrs = ['1 are low bits of integer 9.',
                        'If I pretend it is an array I get [9,'])
+
+        # if the summary has an error, we still display the value
+        self.expect("frame variable couple --summary-string \"${*var.sp.foo[0-2]\"",
+            substrs = ['(Couple) couple =  {','sp = {','z =','"X"'])
+
+
+        self.runCmd("type summary add --summary-string \"${*var.sp.x[0-2]} are low bits of integer ${*var.sp.x}. If I pretend it is an array I get ${var.sp.x[0-5]}\" Couple")
 
         self.expect("frame variable sparray",
             substrs = ['[0x0000000f,0x0000000c,0x00000009]'])
@@ -284,7 +284,7 @@ class AdvDataFormatterTestCase(TestBase):
                                'i_2',
                                'k_2',
                                'o_2'])
-        self.expect('frame variable a_long_guy -A', matching=False,
+        self.expect('frame variable a_long_guy --show-all-children', matching=False,
                     substrs = ['...'])
 
 

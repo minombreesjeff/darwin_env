@@ -17,11 +17,17 @@ class ThreadMemory :
 {
 public:
 
-    ThreadMemory (const lldb::ProcessSP &process_sp, 
+    ThreadMemory (lldb_private::Process &process,
                   lldb::tid_t tid,
                   const lldb::ValueObjectSP &thread_info_valobj_sp);
 
-    virtual 
+    ThreadMemory (lldb_private::Process &process,
+                  lldb::tid_t tid,
+                  const char *name,
+                  const char *queue,
+                  lldb::addr_t register_data_addr);
+
+    virtual
     ~ThreadMemory();
 
     //------------------------------------------------------------------
@@ -39,6 +45,18 @@ public:
     virtual lldb::StopInfoSP
     GetPrivateStopReason ();
 
+    virtual const char *
+    GetName ()
+    {
+        return m_name.c_str();
+    }
+    
+    virtual const char *
+    GetQueueName ()
+    {
+        return m_queue.c_str();
+    }
+
     virtual bool
     WillResume (lldb::StateType resume_state);
 
@@ -53,7 +71,9 @@ protected:
     // For ThreadMemory and subclasses
     //------------------------------------------------------------------
     lldb::ValueObjectSP m_thread_info_valobj_sp;
-    
+    std::string m_name;
+    std::string m_queue;
+    lldb::addr_t m_register_data_addr;
 private:
     //------------------------------------------------------------------
     // For ThreadMemory only

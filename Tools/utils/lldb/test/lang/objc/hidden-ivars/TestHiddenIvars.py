@@ -4,6 +4,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class HiddenIvarsTestCase(TestBase):
 
@@ -25,6 +26,7 @@ class HiddenIvarsTestCase(TestBase):
         self.buildDwarf()
         self.expr()
 
+    @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dsym_test
     def test_frame_variable_with_dsym(self):
@@ -33,6 +35,7 @@ class HiddenIvarsTestCase(TestBase):
         self.buildDsym()
         self.frame_var()
 
+    @unittest2.expectedFailure
     @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
     @dwarf_test
     def test_frame_variable_with_dwarf(self):
@@ -52,8 +55,7 @@ class HiddenIvarsTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break inside the foo function which takes a bar_ptr argument.
-        self.expect("breakpoint set -f main.m -l %d" % self.line, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created")
+        lldbutil.run_break_set_by_file_and_line (self, "main.m", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -70,21 +72,45 @@ class HiddenIvarsTestCase(TestBase):
         self.common_setup()
 
         # This should display correctly.
+        self.expect("expression (j->_definer->foo)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["= 4"])
+
         self.expect("expression (j->_definer->bar)", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["= 5"])
             
         self.expect("expression *(j->_definer)", VARIABLES_DISPLAYED_CORRECTLY,
-            substrs = ["foo = 0", "bar = 5"])
+            substrs = ["foo = 4", "bar = 5"])
+
+        self.expect("expression (k->foo)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["= 2"])
+
+        self.expect("expression (k->bar)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["= 3"])
+
+        self.expect("expression *(k)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["foo = 2", "bar = 3"])
 
     def frame_var(self):
         self.common_setup()
 
         # This should display correctly.
+        self.expect("frame variable j->_definer->foo", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["= 4"])
+
         self.expect("frame variable j->_definer->bar", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ["= 5"])
             
         self.expect("frame variable *j->_definer", VARIABLES_DISPLAYED_CORRECTLY,
-            substrs = ["foo = 0", "bar = 5"])
+            substrs = ["foo = 4", "bar = 5"])
+
+        self.expect("frame variable k->foo", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["= 2"])
+
+        self.expect("frame variable k->bar", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["= 3"])
+
+        self.expect("frame variable *k", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ["foo = 2", "bar = 3"])
                        
 if __name__ == '__main__':
     import atexit

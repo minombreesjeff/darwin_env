@@ -819,7 +819,7 @@
                         <td class="content">
                             <b>(lldb)</b> type summary add -P Rectangle<br/>
                             Enter your Python command(s). Type 'DONE' to end.<br/>
-def function (valobj,dict):<br/>
+def function (valobj,internal_dict):<br/>
      &nbsp;&nbsp;&nbsp;&nbsp;height_val = valobj.GetChildMemberWithName('height')<br/>
      &nbsp;&nbsp;&nbsp;&nbsp;width_val = valobj.GetChildMemberWithName('width')<br/>
      &nbsp;&nbsp;&nbsp;&nbsp;height = height_val.GetValueAsUnsigned(0)<br/>
@@ -841,9 +841,9 @@ def function (valobj,dict):<br/>
             the LLDB <a href="docs.html">doxygen documentation</a> when it becomes available.</p>
             
             <p>As a brief introduction, your script is encapsulated into a function that is
-            passed two parameters: <code>valobj</code> and <code>dict</code>.</p>
+            passed two parameters: <code>valobj</code> and <code>internal_dict</code>.</p>
             
-            <p><code>dict</code> is an internal support parameter used by LLDB and you should
+            <p><code>internal_dict</code> is an internal support parameter used by LLDB and you should
             not touch it.<br/><code>valobj</code> is the object encapsulating the actual
             variable being displayed, and its type is <a href="http://llvm.org/svn/llvm-project/lldb/trunk/include/lldb/API/SBValue.h">SBValue</a>.
  			Out of the many possible operations on an SBValue, the basic one is retrieve the children objects
@@ -1029,7 +1029,7 @@ def function (valobj,dict):<br/>
 			  must be implemented by the Python class):</p>
 		<code>
 			<font color=blue>class</font> SyntheticChildrenProvider:<br/>
-			&nbsp;&nbsp;&nbsp;&nbsp;<font color=blue>def</font> __init__(self, valobj, dict):<br/>
+			&nbsp;&nbsp;&nbsp;&nbsp;<font color=blue>def</font> __init__(self, valobj, internal_dict):<br/>
 			&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>this call should initialize the Python object using valobj as the variable to provide synthetic children for</i> <br/>
 			&nbsp;&nbsp;&nbsp;&nbsp;<font color=blue>def</font> num_children(self): <br/>
 			&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>this call should return the number of children that you want your object to have</i> <br/>
@@ -1039,8 +1039,12 @@ def function (valobj,dict):<br/>
 			&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>this call should return a new LLDB SBValue object representing the child at the index given as argument</i> <br/>
 			&nbsp;&nbsp;&nbsp;&nbsp;<font color=blue>def</font> update(self): <br/>
 			&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>this call should be used to update the internal state of this Python object whenever the state of the variables in LLDB changes.</i><sup>[1]</sup><br/>
+			&nbsp;&nbsp;&nbsp;&nbsp;<font color=blue>def</font> has_children(self): <br/>
+			&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<i>this call should return True if this object might have children, and False if this object can be guaranteed not to have children.</i><sup>[2]</sup><br/>
 		</code>
 <sup>[1]</sup> This method is optional. Also, it may optionally choose to return a value (starting with LLDB SVN rev153061/LLDB-134). If it returns a value, and that value is <font color=blue><code>True</code></font>, LLDB will be allowed to cache the children and the children count it previously obtained, and will not return to the provider class to ask. If nothing, <font color=blue><code>None</code></font>, or anything other than <font color=blue><code>True</code></font> is returned, LLDB will discard the cached information and ask. Regardless, whenever necessary LLDB will call <code>update</code>.
+<br/>
+<sup>[2]</sup> This method is optional, and LLDB will honor it starting with SVN rev166495. While implementing it in terms of <code>num_children</code> is acceptable, implementors are encouraged to look for optimized coding alternatives whenever reasonable. For an example, see the <code>std::list</code> providers shipping with LLDB.
 		<p>For examples of how synthetic children are created, you are encouraged to look at <a href="http://llvm.org/svn/llvm-project/lldb/trunk/examples/synthetic/">examples/synthetic</a> in the LLDB trunk.
 			You may especially want to begin looking at <a href="http://llvm.org/svn/llvm-project/lldb/trunk/examples/synthetic/bitfield">this example</a> to get
 			a feel for this feature, as it is a very easy and well commented example.</p>

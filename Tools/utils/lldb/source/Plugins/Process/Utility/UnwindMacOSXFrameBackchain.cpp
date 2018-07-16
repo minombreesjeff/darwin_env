@@ -12,6 +12,9 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/ArchSpec.h"
+#include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/Symbol.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Target.h"
@@ -173,7 +176,7 @@ UnwindMacOSXFrameBackchain::GetStackFrameData_i386 (const ExecutionContext &exe_
 //    printf("      ------------------ ------------------ \n");
 //    for (i=0; i<m_cursors.size(); ++i)
 //    {
-//        printf("[%3u] 0x%16.16llx 0x%16.16llx\n", i, m_cursors[i].pc, m_cursors[i].fp);
+//        printf("[%3u] 0x%16.16" PRIx64 " 0x%16.16" PRIx64 "\n", i, m_cursors[i].pc, m_cursors[i].fp);
 //    }
     return m_cursors.size();
 }

@@ -133,21 +133,21 @@ ThreadPlanStepUntil::GetDescription (Stream *s, lldb::DescriptionLevel level)
     else
     {
         if (m_until_points.size() == 1)
-            s->Printf ("Stepping from address 0x%llx until we reach 0x%llx using breakpoint %d",
+            s->Printf ("Stepping from address 0x%" PRIx64 " until we reach 0x%" PRIx64 " using breakpoint %d",
                        (uint64_t)m_step_from_insn,
                        (uint64_t) (*m_until_points.begin()).first,
                        (*m_until_points.begin()).second);
         else
         {
             until_collection::iterator pos, end = m_until_points.end();
-            s->Printf ("Stepping from address 0x%llx until we reach one of:",
+            s->Printf ("Stepping from address 0x%" PRIx64 " until we reach one of:",
                        (uint64_t)m_step_from_insn);
             for (pos = m_until_points.begin(); pos != end; pos++)
             {
-                s->Printf ("\n\t0x%llx (bp: %d)", (uint64_t) (*pos).first, (*pos).second);
+                s->Printf ("\n\t0x%" PRIx64 " (bp: %d)", (uint64_t) (*pos).first, (*pos).second);
             }
         }
-        s->Printf(" stepped out address is 0x%llx.", (uint64_t) m_return_addr);
+        s->Printf(" stepped out address is 0x%" PRIx64 ".", (uint64_t) m_return_addr);
     }
 }
 
@@ -291,6 +291,7 @@ ThreadPlanStepUntil::AnalyzeStop()
             case eStopReasonWatchpoint:
             case eStopReasonSignal:
             case eStopReasonException:
+            case eStopReasonExec:
                 m_explains_stop = false;
                 break;
             default:
@@ -317,7 +318,7 @@ ThreadPlanStepUntil::ShouldStop (Event *event_ptr)
     // we will stop.
 
     StopInfoSP stop_info_sp = GetPrivateStopReason();
-    if (stop_info_sp == NULL || stop_info_sp->GetStopReason() == eStopReasonNone)
+    if (!stop_info_sp || stop_info_sp->GetStopReason() == eStopReasonNone)
         return false;
 
     AnalyzeStop();

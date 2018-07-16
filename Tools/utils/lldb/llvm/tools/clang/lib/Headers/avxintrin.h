@@ -274,7 +274,7 @@ _mm256_permutevar_ps(__m256 a, __m256i c)
   __m128 __A = (A); \
   (__m128)__builtin_shufflevector((__v4sf)__A, (__v4sf) _mm_setzero_ps(), \
                                    (C) & 0x3, ((C) & 0xc) >> 2, \
-                                   ((C) & 0x30) >> 4, ((C) & 0xc0) >> 8); })
+                                   ((C) & 0x30) >> 4, ((C) & 0xc0) >> 6); })
 
 #define _mm256_permute_ps(A, C) __extension__ ({ \
   __m256 __A = (A); \
@@ -289,37 +289,17 @@ _mm256_permutevar_ps(__m256 a, __m256i c)
 #define _mm256_permute2f128_pd(V1, V2, M) __extension__ ({ \
   __m256d __V1 = (V1); \
   __m256d __V2 = (V2); \
-  (__m256d)__builtin_shufflevector((__v4df)__V1, (__v4df)__V2, \
-                                   ((M) & 0x3) * 2, \
-                                   ((M) & 0x3) * 2 + 1, \
-                                   (((M) & 0x30) >> 4) * 2, \
-                                   (((M) & 0x30) >> 4) * 2 + 1); })
+  (__m256d)__builtin_ia32_vperm2f128_pd256((__v4df)__V1, (__v4df)__V2, (M)); })
 
 #define _mm256_permute2f128_ps(V1, V2, M) __extension__ ({ \
   __m256 __V1 = (V1); \
   __m256 __V2 = (V2); \
-  (__m256)__builtin_shufflevector((__v8sf)__V1, (__v8sf)__V2, \
-                                  ((M) & 0x3) * 4, \
-                                  ((M) & 0x3) * 4 + 1, \
-                                  ((M) & 0x3) * 4 + 2, \
-                                  ((M) & 0x3) * 4 + 3, \
-                                  (((M) & 0x30) >> 4) * 4, \
-                                  (((M) & 0x30) >> 4) * 4 + 1, \
-                                  (((M) & 0x30) >> 4) * 4 + 2, \
-                                  (((M) & 0x30) >> 4) * 4 + 3); })
+  (__m256)__builtin_ia32_vperm2f128_ps256((__v8sf)__V1, (__v8sf)__V2, (M)); })
 
 #define _mm256_permute2f128_si256(V1, V2, M) __extension__ ({ \
   __m256i __V1 = (V1); \
   __m256i __V2 = (V2); \
-  (__m256i)__builtin_shufflevector((__v8si)__V1, (__v8si)__V2, \
-                                   ((M) & 0x3) * 4, \
-                                   ((M) & 0x3) * 4 + 1, \
-                                   ((M) & 0x3) * 4 + 2, \
-                                   ((M) & 0x3) * 4 + 3, \
-                                   (((M) & 0x30) >> 4) * 4, \
-                                   (((M) & 0x30) >> 4) * 4 + 1, \
-                                   (((M) & 0x30) >> 4) * 4 + 2, \
-                                   (((M) & 0x30) >> 4) * 4 + 3); })
+  (__m256i)__builtin_ia32_vperm2f128_si256((__v8si)__V1, (__v8si)__V2, (M)); })
 
 /* Vector Blend */
 #define _mm256_blend_pd(V1, V2, M) __extension__ ({ \
@@ -1165,4 +1145,71 @@ _mm256_castsi128_si256(__m128i in)
 {
   __m128i zero = _mm_setzero_si128();
   return __builtin_shufflevector(in, zero, 0, 1, 2, 2);
+}
+
+/* SIMD load ops (unaligned) */
+static __inline __m256 __attribute__((__always_inline__, __nodebug__))
+_mm256_loadu2_m128(float const *addr_hi, float const *addr_lo)
+{
+  struct __loadu_ps {
+    __m128 v;
+  } __attribute__((__packed__, __may_alias__));
+
+  __m256 v256 = _mm256_castps128_ps256(((struct __loadu_ps*)addr_lo)->v);
+  return _mm256_insertf128_ps(v256, ((struct __loadu_ps*)addr_hi)->v, 1);
+}
+
+static __inline __m256d __attribute__((__always_inline__, __nodebug__))
+_mm256_loadu2_m128d(double const *addr_hi, double const *addr_lo)
+{
+  struct __loadu_pd {
+    __m128d v;
+  } __attribute__((__packed__, __may_alias__));
+  
+  __m256d v256 = _mm256_castpd128_pd256(((struct __loadu_pd*)addr_lo)->v);
+  return _mm256_insertf128_pd(v256, ((struct __loadu_pd*)addr_hi)->v, 1);
+}
+
+static __inline __m256i __attribute__((__always_inline__, __nodebug__))
+_mm256_loadu2_m128i(__m128i const *addr_hi, __m128i const *addr_lo)
+{
+  struct __loadu_si128 {
+    __m128i v;
+  } __attribute__((packed, may_alias));
+  __m256i v256 = _mm256_castsi128_si256(((struct __loadu_si128*)addr_lo)->v);
+  return _mm256_insertf128_si256(v256, ((struct __loadu_si128*)addr_hi)->v, 1);
+}
+
+/* SIMD store ops (unaligned) */
+static __inline void __attribute__((__always_inline__, __nodebug__))
+_mm256_storeu2_m128(float *addr_hi, float *addr_lo, __m256 a)
+{
+  __m128 v128;
+
+  v128 = _mm256_castps256_ps128(a);
+  __builtin_ia32_storeups(addr_lo, v128);
+  v128 = _mm256_extractf128_ps(a, 1);
+  __builtin_ia32_storeups(addr_hi, v128);
+}
+
+static __inline void __attribute__((__always_inline__, __nodebug__))
+_mm256_storeu2_m128d(double *addr_hi, double *addr_lo, __m256d a)
+{
+  __m128d v128;
+
+  v128 = _mm256_castpd256_pd128(a);
+  __builtin_ia32_storeupd(addr_lo, v128);
+  v128 = _mm256_extractf128_pd(a, 1);
+  __builtin_ia32_storeupd(addr_hi, v128);
+}
+
+static __inline void __attribute__((__always_inline__, __nodebug__))
+_mm256_storeu2_m128i(__m128i *addr_hi, __m128i *addr_lo, __m256i a)
+{
+  __m128i v128;
+
+  v128 = _mm256_castsi256_si128(a);
+  __builtin_ia32_storedqu((char *)addr_lo, (__v16qi)v128);
+  v128 = _mm256_extractf128_si256(a, 1);
+  __builtin_ia32_storedqu((char *)addr_hi, (__v16qi)v128);
 }

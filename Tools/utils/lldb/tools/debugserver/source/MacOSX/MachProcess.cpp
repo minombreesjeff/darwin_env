@@ -83,6 +83,11 @@ MachProcess::MachProcess() :
     m_stdio_mutex       (PTHREAD_MUTEX_RECURSIVE),
     m_stdout_data       (),
     m_thread_actions    (),
+    m_profile_enabled   (false),
+    m_profile_interval_usec (0),
+    m_profile_thread    (0),
+    m_profile_data_mutex(PTHREAD_MUTEX_RECURSIVE),
+    m_profile_data      (),
     m_thread_list        (),
     m_exception_messages (),
     m_exception_messages_mutex (PTHREAD_MUTEX_RECURSIVE),
@@ -286,6 +291,11 @@ MachProcess::Clear()
         PTHREAD_MUTEX_LOCKER(locker, m_exception_messages_mutex);
         m_exception_messages.clear();
     }
+    if (m_profile_thread)
+    {
+        pthread_join(m_profile_thread, NULL);
+        m_profile_thread = NULL;
+    }
 }
 
 
@@ -295,6 +305,26 @@ MachProcess::StartSTDIOThread()
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s ( )", __FUNCTION__);
     // Create the thread that watches for the child STDIO
     return ::pthread_create (&m_stdio_thread, NULL, MachProcess::STDIOThread, this) == 0;
+}
+
+void
+MachProcess::SetAsyncEnableProfiling(bool enable, uint64_t interval_usec)
+{
+    m_profile_enabled = enable;
+    m_profile_interval_usec = interval_usec;
+    
+    if (m_profile_enabled && (m_profile_thread == 0))
+    {
+        StartProfileThread();
+    }
+}
+
+bool
+MachProcess::StartProfileThread()
+{
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s ( )", __FUNCTION__);
+    // Create the thread that profiles the inferior and reports back if enabled
+    return ::pthread_create (&m_profile_thread, NULL, MachProcess::ProfileThread, this) == 0;
 }
 
 
@@ -659,7 +689,7 @@ MachProcess::PrivateResume ()
 nub_break_t
 MachProcess::CreateBreakpoint(nub_addr_t addr, nub_size_t length, bool hardware, thread_t tid)
 {
-    DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %zu, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, length, hardware, tid);
+    DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %llu, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, (uint64_t)length, hardware, tid);
     if (hardware && tid == INVALID_NUB_THREAD)
         tid = GetCurrentThread();
 
@@ -667,7 +697,7 @@ MachProcess::CreateBreakpoint(nub_addr_t addr, nub_size_t length, bool hardware,
     nub_break_t breakID = m_breakpoints.Add(bp);
     if (EnableBreakpoint(breakID))
     {
-        DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %zu, tid = 0x%4.4x ) => %u", (uint64_t)addr, length, tid, breakID);
+        DNBLogThreadedIf(LOG_BREAKPOINTS, "MachProcess::CreateBreakpoint ( addr = 0x%8.8llx, length = %llu, tid = 0x%4.4x ) => %u", (uint64_t)addr, (uint64_t)length, tid, breakID);
         return breakID;
     }
     else
@@ -681,7 +711,7 @@ MachProcess::CreateBreakpoint(nub_addr_t addr, nub_size_t length, bool hardware,
 nub_watch_t
 MachProcess::CreateWatchpoint(nub_addr_t addr, nub_size_t length, uint32_t watch_flags, bool hardware, thread_t tid)
 {
-    DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %zu, flags = 0x%8.8x, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, length, watch_flags, hardware, tid);
+    DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %llu, flags = 0x%8.8x, hardware = %i, tid = 0x%4.4x )", (uint64_t)addr, (uint64_t)length, watch_flags, hardware, tid);
     if (hardware && tid == INVALID_NUB_THREAD)
         tid = GetCurrentThread();
 
@@ -691,12 +721,12 @@ MachProcess::CreateWatchpoint(nub_addr_t addr, nub_size_t length, uint32_t watch
     nub_watch_t watchID = m_watchpoints.Add(watch);
     if (EnableWatchpoint(watchID))
     {
-        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %zu, tid = 0x%x) => %u", (uint64_t)addr, length, tid, watchID);
+        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %llu, tid = 0x%x) => %u", (uint64_t)addr, (uint64_t)length, tid, watchID);
         return watchID;
     }
     else
     {
-        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %zu, tid = 0x%x) => FAILED (%u)", (uint64_t)addr, length, tid, watchID);
+        DNBLogThreadedIf(LOG_WATCHPOINTS, "MachProcess::CreateWatchpoint ( addr = 0x%8.8llx, length = %llu, tid = 0x%x) => FAILED (%u)", (uint64_t)addr, (uint64_t)length, tid, watchID);
         m_watchpoints.Remove(watchID);
     }
     // We failed to enable the watchpoint
@@ -1072,7 +1102,7 @@ MachProcess::ExceptionMessageBundleComplete()
 {
     // We have a complete bundle of exceptions for our child process.
     PTHREAD_MUTEX_LOCKER (locker, m_exception_messages_mutex);
-    DNBLogThreadedIf(LOG_EXCEPTIONS, "%s: %zu exception messages.", __PRETTY_FUNCTION__, m_exception_messages.size());
+    DNBLogThreadedIf(LOG_EXCEPTIONS, "%s: %llu exception messages.", __PRETTY_FUNCTION__, (uint64_t)m_exception_messages.size());
     if (!m_exception_messages.empty())
     {
         // Let all threads recover from stopping and do any clean up based
@@ -1115,7 +1145,7 @@ MachProcess::ExceptionMessageBundleComplete()
     }
     else
     {
-        DNBLogThreadedIf(LOG_EXCEPTIONS, "%s empty exception messages bundle (%zu exceptions).", __PRETTY_FUNCTION__, m_exception_messages.size());
+        DNBLogThreadedIf(LOG_EXCEPTIONS, "%s empty exception messages bundle (%llu exceptions).", __PRETTY_FUNCTION__, (uint64_t)m_exception_messages.size());
     }
 }
 
@@ -1141,7 +1171,7 @@ MachProcess::SharedLibrariesUpdated ( )
 void
 MachProcess::AppendSTDOUT (char* s, size_t len)
 {
-    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (<%zu> %s) ...", __FUNCTION__, len, s);
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (<%llu> %s) ...", __FUNCTION__, (uint64_t)len, s);
     PTHREAD_MUTEX_LOCKER (locker, m_stdio_mutex);
     m_stdout_data.append(s, len);
     m_events.SetEvents(eEventStdioAvailable);
@@ -1153,7 +1183,7 @@ MachProcess::AppendSTDOUT (char* s, size_t len)
 size_t
 MachProcess::GetAvailableSTDOUT (char *buf, size_t buf_size)
 {
-    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (&%p[%zu]) ...", __FUNCTION__, buf, buf_size);
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (&%p[%llu]) ...", __FUNCTION__, buf, (uint64_t)buf_size);
     PTHREAD_MUTEX_LOCKER (locker, m_stdio_mutex);
     size_t bytes_available = m_stdout_data.size();
     if (bytes_available > 0)
@@ -1310,6 +1340,77 @@ MachProcess::STDIOThread(void *arg)
     DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (%p): thread exiting...", __FUNCTION__, arg);
     return NULL;
 }
+
+
+void
+MachProcess::SignalAsyncProfileData (const char *info)
+{
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (%s) ...", __FUNCTION__, info);
+    PTHREAD_MUTEX_LOCKER (locker, m_profile_data_mutex);
+    m_profile_data.push_back(info);
+    m_events.SetEvents(eEventProfileDataAvailable);
+    
+    // Wait for the event bit to reset if a reset ACK is requested
+    m_events.WaitForResetAck(eEventProfileDataAvailable);
+}
+
+
+size_t
+MachProcess::GetAsyncProfileData (char *buf, size_t buf_size)
+{
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s (&%p[%llu]) ...", __FUNCTION__, buf, (uint64_t)buf_size);
+    PTHREAD_MUTEX_LOCKER (locker, m_profile_data_mutex);
+    if (m_profile_data.empty())
+        return 0;
+    
+    size_t bytes_available = m_profile_data.front().size();
+    if (bytes_available > 0)
+    {
+        if (bytes_available > buf_size)
+        {
+            memcpy(buf, m_profile_data.front().data(), buf_size);
+            m_profile_data.front().erase(0, buf_size);
+            bytes_available = buf_size;
+        }
+        else
+        {
+            memcpy(buf, m_profile_data.front().data(), bytes_available);
+            m_profile_data.erase(m_profile_data.begin());
+        }
+    }
+    return bytes_available;
+}
+
+
+void *
+MachProcess::ProfileThread(void *arg)
+{
+    MachProcess *proc = (MachProcess*) arg;
+    DNBLogThreadedIf(LOG_PROCESS, "MachProcess::%s ( arg = %p ) thread starting...", __FUNCTION__, arg);
+
+    while (proc->IsProfilingEnabled())
+    {
+        nub_state_t state = proc->GetState();
+        if (state == eStateRunning)
+        {
+            std::string data = proc->Task().GetProfileData();
+            if (!data.empty())
+            {
+                proc->SignalAsyncProfileData(data.c_str());
+            }
+        }
+        else if ((state == eStateUnloaded) || (state == eStateDetached) || (state == eStateUnloaded))
+        {
+            // Done. Get out of this thread.
+            break;
+        }
+        
+        // A simple way to set up the profile interval. We can also use select() or dispatch timer source if necessary.
+        usleep(proc->ProfileInterval());
+    }
+    return NULL;
+}
+
 
 pid_t
 MachProcess::AttachForDebug (pid_t pid, char *err_str, size_t err_len)
@@ -1533,11 +1634,13 @@ MachProcess::LaunchForDebug
     case eLaunchFlavorSpringBoard:
         {
             const char *app_ext = strstr(path, ".app");
-            if (app_ext != NULL)
+            if (app_ext && (app_ext[4] == '\0' || app_ext[4] == '/'))
             {
                 std::string app_bundle_path(path, app_ext + strlen(".app"));
                 if (SBLaunchForDebug (app_bundle_path.c_str(), argv, envp, no_stdio, launch_err) != 0)
                     return m_pid; // A successful SBLaunchForDebug() returns and assigns a non-zero m_pid.
+                else
+                    break; // We tried a springboard launch, but didn't succeed lets get out
             }
         }
         // In case the executable name has a ".app" fragment which confuses our debugserver,
@@ -1690,7 +1793,7 @@ MachProcess::PosixSpawnChildForPTraceDebugging
         size_t ocount = 0;
         err.SetError( ::posix_spawnattr_setbinpref_np (&attr, 1, &cpu_type, &ocount), DNBError::POSIX);
         if (err.Fail() || DNBLogCheckLogBit(LOG_PROCESS))
-            err.LogThreaded("::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %zu )", cpu_type, ocount);
+            err.LogThreaded("::posix_spawnattr_setbinpref_np ( &attr, 1, cpu_type = 0x%8.8x, count => %llu )", cpu_type, (uint64_t)ocount);
 
         if (err.Fail() != 0 || ocount != 1)
             return INVALID_NUB_PROCESS;
@@ -1717,7 +1820,7 @@ MachProcess::PosixSpawnChildForPTraceDebugging
             }
         }
 
-		// if no_stdio or std paths not supplied, then route to "/dev/null".
+        // if no_stdio or std paths not supplied, then route to "/dev/null".
         if (no_stdio || stdin_path == NULL || stdin_path[0] == '\0')
             stdin_path = "/dev/null";
         if (no_stdio || stdout_path == NULL || stdout_path[0] == '\0')

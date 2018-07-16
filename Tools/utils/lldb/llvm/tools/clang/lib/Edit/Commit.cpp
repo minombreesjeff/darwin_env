@@ -36,7 +36,7 @@ CharSourceRange Commit::Edit::getInsertFromRange(SourceManager &SM) const {
 }
 
 Commit::Commit(EditedSource &Editor)
-  : SourceMgr(Editor.getSourceManager()), LangOpts(Editor.getLangOptions()),
+  : SourceMgr(Editor.getSourceManager()), LangOpts(Editor.getLangOpts()),
     PPRec(Editor.getPreprocessingRecord()),
     Editor(&Editor), IsCommitable(true) { }
 
@@ -332,6 +332,7 @@ bool Commit::canReplaceText(SourceLocation loc, StringRef text,
   if (invalidTemp)
     return false;
 
+  Len = text.size();
   return file.substr(Offs.getOffset()).startswith(text);
 }
 

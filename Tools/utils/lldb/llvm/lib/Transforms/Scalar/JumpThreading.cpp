@@ -670,6 +670,8 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
   } else if (SwitchInst *SI = dyn_cast<SwitchInst>(Terminator)) {
     Condition = SI->getCondition();
   } else if (IndirectBrInst *IB = dyn_cast<IndirectBrInst>(Terminator)) {
+    // Can't thread indirect branch with no successors.
+    if (IB->getNumSuccessors() == 0) return false;
     Condition = IB->getAddress()->stripPointerCasts();
     Preference = WantBlockAddress;
   } else {
@@ -857,6 +859,9 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
   if (BBIt != LoadBB->begin())
     return false;
 
+  // If all of the loads and stores that feed the value have the same TBAA tag,
+  // then we can propagate it onto any newly inserted loads.
+  MDNode *TBAATag = LI->getMetadata(LLVMContext::MD_tbaa);
 
   SmallPtrSet<BasicBlock*, 8> PredsScanned;
   typedef SmallVector<std::pair<BasicBlock*, Value*>, 8> AvailablePredsTy;
@@ -875,11 +880,16 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
 
     // Scan the predecessor to see if the value is available in the pred.
     BBIt = PredBB->end();
-    Value *PredAvailable = FindAvailableLoadedValue(LoadedPtr, PredBB, BBIt, 6);
+    MDNode *ThisTBAATag = 0;
+    Value *PredAvailable = FindAvailableLoadedValue(LoadedPtr, PredBB, BBIt, 6,
+                                                    0, &ThisTBAATag);
     if (!PredAvailable) {
       OneUnavailablePred = PredBB;
       continue;
     }
+
+    // If tbaa tags disagree or are not present, forget about them.
+    if (TBAATag != ThisTBAATag) TBAATag = 0;
 
     // If so, this load is partially redundant.  Remember this info so that we
     // can create a PHI node.
@@ -939,6 +949,9 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
                                  LI->getAlignment(),
                                  UnavailablePred->getTerminator());
     NewVal->setDebugLoc(LI->getDebugLoc());
+    if (TBAATag)
+      NewVal->setMetadata(LLVMContext::MD_tbaa, TBAATag);
+
     AvailablePreds.push_back(std::make_pair(UnavailablePred, NewVal));
   }
 
@@ -1087,8 +1100,7 @@ bool JumpThreading::ProcessThreadableEdges(Value *Cond, BasicBlock *BB,
     else if (BranchInst *BI = dyn_cast<BranchInst>(BB->getTerminator()))
       DestBB = BI->getSuccessor(cast<ConstantInt>(Val)->isZero());
     else if (SwitchInst *SI = dyn_cast<SwitchInst>(BB->getTerminator())) {
-      unsigned ValCase = SI->findCaseValue(cast<ConstantInt>(Val));
-      DestBB = SI->getSuccessor(SI->resolveSuccessorIndex(ValCase));
+      DestBB = SI->findCaseValue(cast<ConstantInt>(Val)).getCaseSuccessor();
     } else {
       assert(isa<IndirectBrInst>(BB->getTerminator())
               && "Unexpected terminator");
@@ -1443,7 +1455,7 @@ bool JumpThreading::ThreadEdge(BasicBlock *BB,
   // At this point, the IR is fully up to date and consistent.  Do a quick scan
   // over the new instructions and zap any that are constants or dead.  This
   // frequently happens because of phi translation.
-  SimplifyInstructionsInBlock(NewBB, TD);
+  SimplifyInstructionsInBlock(NewBB, TD, TLI);
 
   // Threaded an edge!
   ++NumThreads;

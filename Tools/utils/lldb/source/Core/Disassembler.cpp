@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Core/Disassembler.h"
 
 // C Includes
@@ -23,8 +25,13 @@
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/Timer.h"
-#include "lldb/Interpreter/NamedOptionValue.h"
+#include "lldb/Interpreter/OptionValue.h"
+#include "lldb/Interpreter/OptionValueArray.h"
+#include "lldb/Interpreter/OptionValueDictionary.h"
+#include "lldb/Interpreter/OptionValueString.h"
+#include "lldb/Interpreter/OptionValueUInt64.h"
 #include "lldb/Symbol/ClangNamespaceDecl.h"
+#include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/ExecutionContext.h"
 #include "lldb/Target/Process.h"

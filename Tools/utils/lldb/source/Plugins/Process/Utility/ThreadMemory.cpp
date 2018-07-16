@@ -17,12 +17,32 @@
 using namespace lldb;
 using namespace lldb_private;
 
-ThreadMemory::ThreadMemory (const ProcessSP &process_sp, 
-                              tid_t tid, 
-                              const ValueObjectSP &thread_info_valobj_sp) :
-    Thread (process_sp, tid),
-    m_thread_info_valobj_sp (thread_info_valobj_sp)
+ThreadMemory::ThreadMemory (Process &process,
+                            tid_t tid,
+                            const ValueObjectSP &thread_info_valobj_sp) :
+    Thread (process, tid),
+    m_thread_info_valobj_sp (thread_info_valobj_sp),
+    m_name(),
+    m_queue()
 {
+}
+
+
+ThreadMemory::ThreadMemory (Process &process,
+                            lldb::tid_t tid,
+                            const char *name,
+                            const char *queue,
+                            lldb::addr_t register_data_addr) :
+    Thread (process, tid),
+    m_thread_info_valobj_sp (),
+    m_name(),
+    m_queue(),
+    m_register_data_addr (register_data_addr)
+{
+    if (name)
+        m_name = name;
+    if (queue)
+        m_queue = queue;
 }
 
 
@@ -52,7 +72,7 @@ ThreadMemory::GetRegisterContext ()
         {
             OperatingSystem *os = process_sp->GetOperatingSystem ();
             if (os)
-                m_reg_context_sp = os->CreateRegisterContextForThread (this);
+                m_reg_context_sp = os->CreateRegisterContextForThread (this, m_register_data_addr);
         }
     }
     return m_reg_context_sp;
@@ -89,6 +109,9 @@ ThreadMemory::GetPrivateStopReason ()
         if (m_thread_stop_reason_stop_id != process_stop_id ||
             (m_actual_stop_info_sp && !m_actual_stop_info_sp->IsValid()))
         {
+            if (IsStillAtLastBreakpointHit())
+                return m_actual_stop_info_sp;
+
             // If GetGDBProcess().SetThreadStopInfo() doesn't find a stop reason
             // for this thread, then m_actual_stop_info_sp will not ever contain
             // a valid stop reason and the "m_actual_stop_info_sp->IsValid() == false"

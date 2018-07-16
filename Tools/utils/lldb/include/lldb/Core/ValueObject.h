@@ -231,6 +231,7 @@ public:
         lldb::Format m_format;
         lldb::TypeSummaryImplSP m_summary_sp;
         std::string m_root_valobj_name;
+        bool m_hide_root_type;
         
         DumpValueObjectOptions() :
             m_max_ptr_depth(0),
@@ -246,7 +247,8 @@ public:
             m_ignore_cap(false), 
             m_format (lldb::eFormatDefault),
             m_summary_sp(),
-            m_root_valobj_name()
+            m_root_valobj_name(),
+            m_hide_root_type(false)  // <rdar://problem/11505459> provide a special compact display for "po",
         {}
         
         static const DumpValueObjectOptions
@@ -271,7 +273,8 @@ public:
             m_ignore_cap(rhs.m_ignore_cap),
             m_format(rhs.m_format),
             m_summary_sp(rhs.m_summary_sp),
-            m_root_valobj_name(rhs.m_root_valobj_name)
+            m_root_valobj_name(rhs.m_root_valobj_name),
+            m_hide_root_type(rhs.m_hide_root_type)
         {}
         
         DumpValueObjectOptions&
@@ -400,6 +403,13 @@ public:
                 m_root_valobj_name.assign(name);
             else
                 m_root_valobj_name.clear();
+            return *this;
+        }
+                
+        DumpValueObjectOptions&
+        SetHideRootType (bool hide_root_type = false)
+        {
+            m_hide_root_type = hide_root_type;
             return *this;
         }
 
@@ -900,6 +910,23 @@ public:
                      ValueObject *valobj,
                      const DumpValueObjectOptions& options);
 
+    static lldb::ValueObjectSP
+    CreateValueObjectFromExpression (const char* name,
+                                     const char* expression,
+                                     const ExecutionContext& exe_ctx);
+    
+    static lldb::ValueObjectSP
+    CreateValueObjectFromAddress (const char* name,
+                                  uint64_t address,
+                                  const ExecutionContext& exe_ctx,
+                                  ClangASTType type);
+    
+    static lldb::ValueObjectSP
+    CreateValueObjectFromData (const char* name,
+                               DataExtractor& data,
+                               const ExecutionContext& exe_ctx,
+                               ClangASTType type);
+    
     static void
     LogValueObject (Log *log,
                     ValueObject *valobj);
@@ -1038,6 +1065,31 @@ public:
         return m_address_type_of_ptr_or_ref_children;
     }
     
+    void
+    SetHasCompleteType()
+    {
+        m_did_calculate_complete_objc_class_type = true;
+    }
+    
+    //------------------------------------------------------------------
+    /// Find out if a SBValue might have children.
+    ///
+    /// This call is much more efficient than CalculateNumChildren() as
+    /// it doesn't need to complete the underlying type. This is designed
+    /// to be used in a UI environment in order to detect if the
+    /// disclosure triangle should be displayed or not.
+    ///
+    /// This function returns true for class, union, structure,
+    /// pointers, references, arrays and more. Again, it does so without
+    /// doing any expensive type completion.
+    ///
+    /// @return
+    ///     Returns \b true if the SBValue might have children, or \b
+    ///     false otherwise.
+    //------------------------------------------------------------------
+    virtual bool
+    MightHaveChildren();
+
 protected:
     typedef ClusterManager<ValueObject> ValueObjectManager;
     
@@ -1053,7 +1105,7 @@ protected:
         bool
         HasChildAtIndex (uint32_t idx)
         {
-            Mutex::Locker(m_mutex);
+            Mutex::Locker locker(m_mutex);
             ChildrenIterator iter = m_children.find(idx);
             ChildrenIterator end = m_children.end();
             return (iter != end);
@@ -1062,7 +1114,7 @@ protected:
         ValueObject*
         GetChildAtIndex (uint32_t idx)
         {
-            Mutex::Locker(m_mutex);
+            Mutex::Locker locker(m_mutex);
             ChildrenIterator iter = m_children.find(idx);
             ChildrenIterator end = m_children.end();
             if (iter == end)
@@ -1075,7 +1127,7 @@ protected:
         SetChildAtIndex (uint32_t idx, ValueObject* valobj)
         {
             ChildrenPair pair(idx,valobj); // we do not need to be mutex-protected to make a pair
-            Mutex::Locker(m_mutex);
+            Mutex::Locker locker(m_mutex);
             m_children.insert(pair);
         }
         
@@ -1095,7 +1147,7 @@ protected:
         Clear()
         {
             m_children_count = 0;
-            Mutex::Locker(m_mutex);
+            Mutex::Locker locker(m_mutex);
             m_children.clear();
         }
         
@@ -1231,6 +1283,9 @@ protected:
     
     DataExtractor &
     GetDataExtractor ();
+    
+    void
+    ClearDynamicTypeInformation ();
     
     //------------------------------------------------------------------
     // Sublasses must implement the functions below.

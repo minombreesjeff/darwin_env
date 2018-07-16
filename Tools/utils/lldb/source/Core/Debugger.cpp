@@ -7,6 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
+#include "lldb/API/SBDebugger.h"
+
 #include "lldb/Core/Debugger.h"
 
 #include <map>
@@ -19,6 +23,8 @@
 #include "lldb/Core/DataVisualization.h"
 #include "lldb/Core/FormatManager.h"
 #include "lldb/Core/InputReader.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/PluginManager.h"
 #include "lldb/Core/RegisterValue.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/StreamAsynchronousIO.h"
@@ -27,8 +33,15 @@
 #include "lldb/Core/Timer.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectVariable.h"
+#include "lldb/Host/DynamicLibrary.h"
 #include "lldb/Host/Terminal.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Interpreter/OptionValueSInt64.h"
+#include "lldb/Interpreter/OptionValueString.h"
+#include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Function.h"
+#include "lldb/Symbol/Symbol.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/TargetList.h"
 #include "lldb/Target/Process.h"
@@ -64,116 +77,226 @@ GetDebuggerList()
     return g_list;
 }
 
-
-static const ConstString &
-PromptVarName ()
-{
-    static ConstString g_const_string ("prompt");
-    return g_const_string;
-}
-
-static const ConstString &
-GetFrameFormatName ()
-{
-    static ConstString g_const_string ("frame-format");
-    return g_const_string;
-}
-
-static const ConstString &
-GetThreadFormatName ()
-{
-    static ConstString g_const_string ("thread-format");
-    return g_const_string;
-}
-
-static const ConstString &
-ScriptLangVarName ()
-{
-    static ConstString g_const_string ("script-lang");
-    return g_const_string;
-}
-
-static const ConstString &
-TermWidthVarName ()
-{
-    static ConstString g_const_string ("term-width");
-    return g_const_string;
-}
-
-static const ConstString &
-UseExternalEditorVarName ()
-{
-    static ConstString g_const_string ("use-external-editor");
-    return g_const_string;
-}
-
-static const ConstString &
-AutoConfirmName ()
-{
-    static ConstString g_const_string ("auto-confirm");
-    return g_const_string;
-}
-
-static const ConstString &
-StopSourceContextBeforeName ()
-{
-    static ConstString g_const_string ("stop-line-count-before");
-    return g_const_string;
-}
-
-static const ConstString &
-StopSourceContextAfterName ()
-{
-    static ConstString g_const_string ("stop-line-count-after");
-    return g_const_string;
-}
-
-static const ConstString &
-StopDisassemblyCountName ()
-{
-    static ConstString g_const_string ("stop-disassembly-count");
-    return g_const_string;
-}
-
-static const ConstString &
-StopDisassemblyDisplayName ()
-{
-    static ConstString g_const_string ("stop-disassembly-display");
-    return g_const_string;
-}
-
 OptionEnumValueElement
-DebuggerInstanceSettings::g_show_disassembly_enum_values[] =
+g_show_disassembly_enum_values[] =
 {
-    { eStopDisassemblyTypeNever,    "never",     "Never show disassembly when displaying a stop context."},
-    { eStopDisassemblyTypeNoSource, "no-source", "Show disassembly when there is no source information, or the source file is missing when displaying a stop context."},
-    { eStopDisassemblyTypeAlways,   "always",    "Always show disassembly when displaying a stop context."},
+    { Debugger::eStopDisassemblyTypeNever,    "never",     "Never show disassembly when displaying a stop context."},
+    { Debugger::eStopDisassemblyTypeNoSource, "no-source", "Show disassembly when there is no source information, or the source file is missing when displaying a stop context."},
+    { Debugger::eStopDisassemblyTypeAlways,   "always",    "Always show disassembly when displaying a stop context."},
     { 0, NULL, NULL }
 };
 
+OptionEnumValueElement
+g_language_enumerators[] =
+{
+    { eScriptLanguageNone,      "none",     "Disable scripting languages."},
+    { eScriptLanguagePython,    "python",   "Select python as the default scripting language."},
+    { eScriptLanguageDefault,   "default",  "Select the lldb default as the default scripting language."},
+    { 0, NULL, NULL }
+};
 
+#define MODULE_WITH_FUNC "{ ${module.file.basename}{`${function.name-with-args}${function.pc-offset}}}"
+#define FILE_AND_LINE "{ at ${line.file.basename}:${line.number}}"
+
+#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id}"\
+    "{, ${frame.pc}}"\
+    MODULE_WITH_FUNC\
+    FILE_AND_LINE\
+    "{, stop reason = ${thread.stop-reason}}"\
+    "{\\nReturn value: ${thread.return-value}}"\
+    "\\n"
+
+#define DEFAULT_FRAME_FORMAT "frame #${frame.index}: ${frame.pc}"\
+    MODULE_WITH_FUNC\
+    FILE_AND_LINE\
+    "\\n"
+
+
+
+static PropertyDefinition
+g_properties[] =
+{
+{   "auto-confirm",             OptionValue::eTypeBoolean, true, false, NULL, NULL, "If true all confirmation prompts will receive their default reply." },
+{   "frame-format",             OptionValue::eTypeString , true, 0    , DEFAULT_FRAME_FORMAT, NULL, "The default frame format string to use when displaying stack frame information for threads." },
+{   "notify-void",              OptionValue::eTypeBoolean, true, false, NULL, NULL, "Notify the user explicitly if an expression returns void (default: false)." },
+{   "prompt",                   OptionValue::eTypeString , true, OptionValueString::eOptionEncodeCharacterEscapeSequences, "(lldb) ", NULL, "The debugger command line prompt displayed for the user." },
+{   "script-lang",              OptionValue::eTypeEnum   , true, eScriptLanguagePython, NULL, g_language_enumerators, "The script language to be used for evaluating user-written scripts." },
+{   "stop-disassembly-count",   OptionValue::eTypeSInt64 , true, 4    , NULL, NULL, "The number of disassembly lines to show when displaying a stopped context." },
+{   "stop-disassembly-display", OptionValue::eTypeEnum   , true, Debugger::eStopDisassemblyTypeNoSource, NULL, g_show_disassembly_enum_values, "Control when to display disassembly when displaying a stopped context." },
+{   "stop-line-count-after",    OptionValue::eTypeSInt64 , true, 3    , NULL, NULL, "The number of sources lines to display that come after the current source line when displaying a stopped context." },
+{   "stop-line-count-before",   OptionValue::eTypeSInt64 , true, 3    , NULL, NULL, "The number of sources lines to display that come before the current source line when displaying a stopped context." },
+{   "term-width",               OptionValue::eTypeSInt64 , true, 80   , NULL, NULL, "The maximum number of columns to use for displaying text." },
+{   "thread-format",            OptionValue::eTypeString , true, 0    , DEFAULT_THREAD_FORMAT, NULL, "The default thread format string to use when displaying thread information." },
+{   "use-external-editor",      OptionValue::eTypeBoolean, true, false, NULL, NULL, "Whether to use an external editor or not." },
+
+    {   NULL,                       OptionValue::eTypeInvalid, true, 0    , NULL, NULL, NULL }
+};
+
+enum
+{
+    ePropertyAutoConfirm = 0,
+    ePropertyFrameFormat,
+    ePropertyNotiftVoid,
+    ePropertyPrompt,
+    ePropertyScriptLanguage,
+    ePropertyStopDisassemblyCount,
+    ePropertyStopDisassemblyDisplay,
+    ePropertyStopLineCountAfter,
+    ePropertyStopLineCountBefore,
+    ePropertyTerminalWidth,
+    ePropertyThreadFormat,
+    ePropertyUseExternalEditor
+};
+
+//
+//const char *
+//Debugger::GetFrameFormat() const
+//{
+//    return m_properties_sp->GetFrameFormat();
+//}
+//const char *
+//Debugger::GetThreadFormat() const
+//{
+//    return m_properties_sp->GetThreadFormat();
+//}
+//
+
+
+Error
+Debugger::SetPropertyValue (const ExecutionContext *exe_ctx,
+                            VarSetOperationType op,
+                            const char *property_path,
+                            const char *value)
+{
+    Error error (Properties::SetPropertyValue (exe_ctx, op, property_path, value));
+    if (error.Success())
+    {
+        if (strcmp(property_path, g_properties[ePropertyPrompt].name) == 0)
+        {
+            const char *new_prompt = GetPrompt();
+            EventSP prompt_change_event_sp (new Event(CommandInterpreter::eBroadcastBitResetPrompt, new EventDataBytes (new_prompt)));
+            GetCommandInterpreter().BroadcastEvent (prompt_change_event_sp);
+        }
+    }
+    return error;
+}
+
+bool
+Debugger::GetAutoConfirm () const
+{
+    const uint32_t idx = ePropertyAutoConfirm;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+const char *
+Debugger::GetFrameFormat() const
+{
+    const uint32_t idx = ePropertyFrameFormat;
+    return m_collection_sp->GetPropertyAtIndexAsString (NULL, idx, g_properties[idx].default_cstr_value);
+}
+
+bool
+Debugger::GetNotifyVoid () const
+{
+    const uint32_t idx = ePropertyNotiftVoid;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+const char *
+Debugger::GetPrompt() const
+{
+    const uint32_t idx = ePropertyPrompt;
+    return m_collection_sp->GetPropertyAtIndexAsString (NULL, idx, g_properties[idx].default_cstr_value);
+}
+
+void
+Debugger::SetPrompt(const char *p)
+{
+    const uint32_t idx = ePropertyPrompt;
+    m_collection_sp->SetPropertyAtIndexAsString (NULL, idx, p);
+    const char *new_prompt = GetPrompt();
+    EventSP prompt_change_event_sp (new Event(CommandInterpreter::eBroadcastBitResetPrompt, new EventDataBytes (new_prompt)));;
+    GetCommandInterpreter().BroadcastEvent (prompt_change_event_sp);
+}
+
+const char *
+Debugger::GetThreadFormat() const
+{
+    const uint32_t idx = ePropertyThreadFormat;
+    return m_collection_sp->GetPropertyAtIndexAsString (NULL, idx, g_properties[idx].default_cstr_value);
+}
+
+lldb::ScriptLanguage
+Debugger::GetScriptLanguage() const
+{
+    const uint32_t idx = ePropertyScriptLanguage;
+    return (lldb::ScriptLanguage)m_collection_sp->GetPropertyAtIndexAsEnumeration (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+bool
+Debugger::SetScriptLanguage (lldb::ScriptLanguage script_lang)
+{
+    const uint32_t idx = ePropertyScriptLanguage;
+    return m_collection_sp->SetPropertyAtIndexAsEnumeration (NULL, idx, script_lang);
+}
+
+uint32_t
+Debugger::GetTerminalWidth () const
+{
+    const uint32_t idx = ePropertyTerminalWidth;
+    return m_collection_sp->GetPropertyAtIndexAsSInt64 (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+bool
+Debugger::SetTerminalWidth (uint32_t term_width)
+{
+    const uint32_t idx = ePropertyTerminalWidth;
+    return m_collection_sp->SetPropertyAtIndexAsSInt64 (NULL, idx, term_width);
+}
+
+bool
+Debugger::GetUseExternalEditor () const
+{
+    const uint32_t idx = ePropertyUseExternalEditor;
+    return m_collection_sp->GetPropertyAtIndexAsBoolean (NULL, idx, g_properties[idx].default_uint_value != 0);
+}
+
+bool
+Debugger::SetUseExternalEditor (bool b)
+{
+    const uint32_t idx = ePropertyUseExternalEditor;
+    return m_collection_sp->SetPropertyAtIndexAsBoolean (NULL, idx, b);
+}
+
+uint32_t
+Debugger::GetStopSourceLineCount (bool before) const
+{
+    const uint32_t idx = before ? ePropertyStopLineCountBefore : ePropertyStopLineCountAfter;
+    return m_collection_sp->GetPropertyAtIndexAsSInt64 (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+Debugger::StopDisassemblyType
+Debugger::GetStopDisassemblyDisplay () const
+{
+    const uint32_t idx = ePropertyStopDisassemblyDisplay;
+    return (Debugger::StopDisassemblyType)m_collection_sp->GetPropertyAtIndexAsEnumeration (NULL, idx, g_properties[idx].default_uint_value);
+}
+
+uint32_t
+Debugger::GetDisassemblyLineCount () const
+{
+    const uint32_t idx = ePropertyStopDisassemblyCount;
+    return m_collection_sp->GetPropertyAtIndexAsSInt64 (NULL, idx, g_properties[idx].default_uint_value);
+}
 
 #pragma mark Debugger
 
-UserSettingsControllerSP &
-Debugger::GetSettingsController ()
-{
-    static UserSettingsControllerSP g_settings_controller_sp;
-    if (!g_settings_controller_sp)
-    {
-        g_settings_controller_sp.reset (new Debugger::SettingsController);
-    
-        // The first shared pointer to Debugger::SettingsController in
-        // g_settings_controller_sp must be fully created above so that 
-        // the DebuggerInstanceSettings can use a weak_ptr to refer back 
-        // to the master setttings controller
-        InstanceSettingsSP default_instance_settings_sp (new DebuggerInstanceSettings (g_settings_controller_sp, 
-                                                                                       false, 
-                                                                                       InstanceSettings::GetDefaultName().AsCString()));
-        g_settings_controller_sp->SetDefaultInstanceSettings (default_instance_settings_sp);
-    }
-    return g_settings_controller_sp;
-}
+//const DebuggerPropertiesSP &
+//Debugger::GetSettings() const
+//{
+//    return m_properties_sp;
+//}
+//
 
 int
 Debugger::TestDebuggerRefCount ()
@@ -209,33 +332,118 @@ Debugger::Terminate ()
 void
 Debugger::SettingsInitialize ()
 {
-    static bool g_initialized = false;
-    
-    if (!g_initialized)
-    {
-        g_initialized = true;
-        UserSettingsController::InitializeSettingsController (GetSettingsController(),
-                                                              SettingsController::global_settings_table,
-                                                              SettingsController::instance_settings_table);
-        // Now call SettingsInitialize for each settings 'child' of Debugger
-        Target::SettingsInitialize ();
-    }
+    Target::SettingsInitialize ();
 }
 
 void
 Debugger::SettingsTerminate ()
 {
-
-    // Must call SettingsTerminate() for each settings 'child' of Debugger, before terminating the Debugger's 
-    // Settings.
-
     Target::SettingsTerminate ();
+}
 
-    // Now terminate the Debugger Settings.
+bool
+Debugger::LoadPlugin (const FileSpec& spec)
+{
+    lldb::DynamicLibrarySP dynlib_sp(new lldb_private::DynamicLibrary(spec));
+    lldb::DebuggerSP debugger_sp(shared_from_this());
+    lldb::SBDebugger debugger_sb(debugger_sp);
+    // TODO: mangle this differently for your system - on OSX, the first underscore needs to be removed and the second one stays
+    LLDBCommandPluginInit init_func = dynlib_sp->GetSymbol<LLDBCommandPluginInit>("_ZN4lldb16PluginInitializeENS_10SBDebuggerE");
+    if (!init_func)
+        return false;
+    if (init_func(debugger_sb))
+    {
+        m_loaded_plugins.push_back(dynlib_sp);
+        return true;
+    }
+    return false;
+}
 
-    UserSettingsControllerSP &usc = GetSettingsController();
-    UserSettingsController::FinalizeSettingsController (usc);
-    usc.reset();
+static FileSpec::EnumerateDirectoryResult
+LoadPluginCallback
+(
+ void *baton,
+ FileSpec::FileType file_type,
+ const FileSpec &file_spec
+ )
+{
+    Error error;
+    
+    static ConstString g_dylibext("dylib");
+    
+    if (!baton)
+        return FileSpec::eEnumerateDirectoryResultQuit;
+    
+    Debugger *debugger = (Debugger*)baton;
+    
+    // If we have a regular file, a symbolic link or unknown file type, try
+    // and process the file. We must handle unknown as sometimes the directory
+    // enumeration might be enumerating a file system that doesn't have correct
+    // file type information.
+    if (file_type == FileSpec::eFileTypeRegular         ||
+        file_type == FileSpec::eFileTypeSymbolicLink    ||
+        file_type == FileSpec::eFileTypeUnknown          )
+    {
+        FileSpec plugin_file_spec (file_spec);
+        plugin_file_spec.ResolvePath ();
+        
+        if (plugin_file_spec.GetFileNameExtension() != g_dylibext)
+            return FileSpec::eEnumerateDirectoryResultNext;
+
+        debugger->LoadPlugin (plugin_file_spec);
+        
+        return FileSpec::eEnumerateDirectoryResultNext;
+    }
+    
+    else if (file_type == FileSpec::eFileTypeUnknown     ||
+        file_type == FileSpec::eFileTypeDirectory   ||
+        file_type == FileSpec::eFileTypeSymbolicLink )
+    {
+        // Try and recurse into anything that a directory or symbolic link.
+        // We must also do this for unknown as sometimes the directory enumeration
+        // might be enurating a file system that doesn't have correct file type
+        // information.
+        return FileSpec::eEnumerateDirectoryResultEnter;
+    }
+    
+    return FileSpec::eEnumerateDirectoryResultNext;
+}
+
+void
+Debugger::InstanceInitialize ()
+{
+    FileSpec dir_spec;
+    const bool find_directories = true;
+    const bool find_files = true;
+    const bool find_other = true;
+    char dir_path[PATH_MAX];
+    if (Host::GetLLDBPath (ePathTypeLLDBSystemPlugins, dir_spec))
+    {
+        if (dir_spec.Exists() && dir_spec.GetPath(dir_path, sizeof(dir_path)))
+        {
+            FileSpec::EnumerateDirectory (dir_path,
+                                          find_directories,
+                                          find_files,
+                                          find_other,
+                                          LoadPluginCallback,
+                                          this);
+        }
+    }
+    
+    if (Host::GetLLDBPath (ePathTypeLLDBUserPlugins, dir_spec))
+    {
+        if (dir_spec.Exists() && dir_spec.GetPath(dir_path, sizeof(dir_path)))
+        {
+            FileSpec::EnumerateDirectory (dir_path,
+                                          find_directories,
+                                          find_files,
+                                          find_other,
+                                          LoadPluginCallback,
+                                          this);
+        }
+    }
+    
+    PluginManager::DebuggerInitialize (*this);
 }
 
 DebuggerSP
@@ -247,6 +455,7 @@ Debugger::CreateInstance (lldb::LogOutputCallback log_callback, void *baton)
         Mutex::Locker locker (GetDebuggerListMutex ());
         GetDebuggerList().push_back(debugger_sp);
     }
+    debugger_sp->InstanceInitialize ();
     return debugger_sp;
 }
 
@@ -278,7 +487,6 @@ DebuggerSP
 Debugger::FindDebuggerWithInstanceName (const ConstString &instance_name)
 {
     DebuggerSP debugger_sp;
-   
     if (g_shared_debugger_refcount > 0)
     {
         Mutex::Locker locker (GetDebuggerListMutex ());
@@ -335,14 +543,14 @@ Debugger::FindTargetWithProcess (Process *process)
     return target_sp;
 }
 
-
 Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     UserID (g_unique_id++),
-    DebuggerInstanceSettings (GetSettingsController()),
+    Properties(OptionValuePropertiesSP(new OptionValueProperties())), 
     m_input_comm("debugger.input"),
     m_input_file (),
     m_output_file (),
     m_error_file (),
+    m_terminal_state (),
     m_target_list (*this),
     m_platform_list (),
     m_listener ("lldb.Debugger"),
@@ -350,8 +558,12 @@ Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     m_source_file_cache(),
     m_command_interpreter_ap (new CommandInterpreter (*this, eScriptLanguageDefault, false)),
     m_input_reader_stack (),
-    m_input_reader_data ()
+    m_input_reader_data (),
+    m_instance_name()
 {
+    char instance_cstr[256];
+    snprintf(instance_cstr, sizeof(instance_cstr), "debugger_%d", (int)GetID());
+    m_instance_name.SetCString(instance_cstr);
     if (log_callback)
         m_log_callback_stream_sp.reset (new StreamCallback (log_callback, baton));
     m_command_interpreter_ap->Initialize ();
@@ -359,6 +571,22 @@ Debugger::Debugger (lldb::LogOutputCallback log_callback, void *baton) :
     PlatformSP default_platform_sp (Platform::GetDefaultPlatform());
     assert (default_platform_sp.get());
     m_platform_list.Append (default_platform_sp, true);
+    
+    m_collection_sp->Initialize (g_properties);
+    m_collection_sp->AppendProperty (ConstString("target"),
+                                     ConstString("Settings specify to debugging targets."),
+                                     true,
+                                     Target::GetGlobalProperties()->GetValueProperties());
+    if (m_command_interpreter_ap.get())
+    {
+        m_collection_sp->AppendProperty (ConstString("interpreter"),
+                                         ConstString("Settings specify to the debugger's command interpreter."),
+                                         true,
+                                         m_command_interpreter_ap->GetValueProperties());
+    }
+    OptionValueSInt64 *term_width = m_collection_sp->GetPropertyAtIndexAsOptionValueSInt64 (NULL, ePropertyTerminalWidth);
+    term_width->SetMinimumValue(10);
+    term_width->SetMaximumValue(1024);
 }
 
 Debugger::~Debugger ()
@@ -390,6 +618,7 @@ Debugger::Clear()
     
     // Close the input file _before_ we close the input read communications class
     // as it does NOT own the input file, our m_input_file does.
+    m_terminal_state.Clear();
     GetInputFile().Close ();
     // Now that we have closed m_input_file, we can now tell our input communication
     // class to close down. Its read thread should quickly exit after we close
@@ -437,7 +666,10 @@ Debugger::SetInputFileHandle (FILE *fh, bool tranfer_ownership)
     // want to objects trying to own and close a file descriptor.
     m_input_comm.SetConnection (new ConnectionFileDescriptor (in_file.GetDescriptor(), false));
     m_input_comm.SetReadThreadBytesReceivedCallback (Debugger::DispatchInputCallback, this);
-
+    
+    // Save away the terminal state if that is relevant, so that we can restore it in RestoreInputState.
+    SaveInputTerminalState ();
+    
     Error error;
     if (m_input_comm.StartReadThread (&error) == false)
     {
@@ -456,7 +688,12 @@ Debugger::SetOutputFileHandle (FILE *fh, bool tranfer_ownership)
     if (out_file.IsValid() == false)
         out_file.SetStream (stdout, false);
     
-    GetCommandInterpreter().GetScriptInterpreter()->ResetOutputFileHandle (fh);
+    // do not create the ScriptInterpreter just for setting the output file handle
+    // as the constructor will know how to do the right thing on its own
+    const bool can_create = false;
+    ScriptInterpreter* script_interpreter = GetCommandInterpreter().GetScriptInterpreter(can_create);
+    if (script_interpreter)
+        script_interpreter->ResetOutputFileHandle (fh);
 }
 
 void
@@ -466,6 +703,20 @@ Debugger::SetErrorFileHandle (FILE *fh, bool tranfer_ownership)
     err_file.SetStream (fh, tranfer_ownership);
     if (err_file.IsValid() == false)
         err_file.SetStream (stderr, false);
+}
+
+void
+Debugger::SaveInputTerminalState ()
+{
+    File &in_file = GetInputFile();
+    if (in_file.GetDescriptor() != File::kInvalidDescriptor)
+        m_terminal_state.Save(in_file.GetDescriptor(), true);
+}
+
+void
+Debugger::RestoreInputTerminalState ()
+{
+    m_terminal_state.Restore();
 }
 
 ExecutionContext
@@ -874,7 +1125,7 @@ ScanFormatDescriptor (const char* var_name_begin,
     if (!*percent_position || *percent_position > var_name_end)
     {
         if (log)
-            log->Printf("no format descriptor in string, skipping");
+            log->Printf("[ScanFormatDescriptor] no format descriptor in string, skipping");
         *var_name_final = var_name_end;
     }
     else
@@ -883,13 +1134,13 @@ ScanFormatDescriptor (const char* var_name_begin,
         char* format_name = new char[var_name_end-*var_name_final]; format_name[var_name_end-*var_name_final-1] = '\0';
         memcpy(format_name, *var_name_final+1, var_name_end-*var_name_final-1);
         if (log)
-            log->Printf("parsing %s as a format descriptor", format_name);
+            log->Printf("ScanFormatDescriptor] parsing %s as a format descriptor", format_name);
         if ( !FormatManager::GetFormatFromCString(format_name,
                                                   true,
                                                   *custom_format) )
         {
             if (log)
-                log->Printf("%s is an unknown format", format_name);
+                log->Printf("ScanFormatDescriptor] %s is an unknown format", format_name);
             // if this is an @ sign, print ObjC description
             if (*format_name == '@')
                 *val_obj_display = ValueObject::eValueObjectRepresentationStyleLanguageSpecific;
@@ -907,19 +1158,19 @@ ScanFormatDescriptor (const char* var_name_begin,
             else if (*format_name == 'T')
                 *val_obj_display = ValueObject::eValueObjectRepresentationStyleType;
             else if (log)
-                log->Printf("%s is an error, leaving the previous value alone", format_name);
+                log->Printf("ScanFormatDescriptor] %s is an error, leaving the previous value alone", format_name);
         }
         // a good custom format tells us to print the value using it
         else
         {
             if (log)
-                log->Printf("will display value for this VO");
+                log->Printf("ScanFormatDescriptor] will display value for this VO");
             *val_obj_display = ValueObject::eValueObjectRepresentationStyleValue;
         }
         delete format_name;
     }
     if (log)
-        log->Printf("final format description outcome: custom_format = %d, val_obj_display = %d",
+        log->Printf("ScanFormatDescriptor] final format description outcome: custom_format = %d, val_obj_display = %d",
                     *custom_format,
                     *val_obj_display);
     return true;
@@ -948,7 +1199,7 @@ ScanBracketedRange (const char* var_name_begin,
         if (*close_bracket_position - *open_bracket_position == 1)
         {
             if (log)
-                log->Printf("[] detected.. going from 0 to end of data");
+                log->Printf("[ScanBracketedRange] '[]' detected.. going from 0 to end of data");
             *index_lower = 0;
         }
         else if (*separator_position == NULL || *separator_position > var_name_end)
@@ -957,7 +1208,7 @@ ScanBracketedRange (const char* var_name_begin,
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = *index_lower;
             if (log)
-                log->Printf("[%lld] detected, high index is same", *index_lower);
+                log->Printf("[ScanBracketedRange] [%" PRId64 "] detected, high index is same", *index_lower);
         }
         else if (*close_bracket_position && *close_bracket_position < var_name_end)
         {
@@ -965,25 +1216,25 @@ ScanBracketedRange (const char* var_name_begin,
             *index_lower = ::strtoul (*open_bracket_position+1, &end, 0);
             *index_higher = ::strtoul (*separator_position+1, &end, 0);
             if (log)
-                log->Printf("[%lld-%lld] detected", *index_lower, *index_higher);
+                log->Printf("[ScanBracketedRange] [%" PRId64 "-%" PRId64 "] detected", *index_lower, *index_higher);
         }
         else
         {
             if (log)
-                log->Printf("expression is erroneous, cannot extract indices out of it");
+                log->Printf("[ScanBracketedRange] expression is erroneous, cannot extract indices out of it");
             return false;
         }
         if (*index_lower > *index_higher && *index_higher > 0)
         {
             if (log)
-                log->Printf("swapping indices");
+                log->Printf("[ScanBracketedRange] swapping indices");
             int temp = *index_lower;
             *index_lower = *index_higher;
             *index_higher = temp;
         }
     }
     else if (log)
-            log->Printf("no bracketed range, skipping entirely");
+            log->Printf("[ScanBracketedRange] no bracketed range, skipping entirely");
     return true;
 }
 
@@ -998,7 +1249,7 @@ ExpandIndexedExpression (ValueObject* valobj,
     std::auto_ptr<char> ptr_deref_buffer(new char[10]);
     ::sprintf(ptr_deref_buffer.get(), ptr_deref_format, index);
     if (log)
-        log->Printf("name to deref: %s",ptr_deref_buffer.get());
+        log->Printf("[ExpandIndexedExpression] name to deref: %s",ptr_deref_buffer.get());
     const char* first_unparsed;
     ValueObject::GetValueForExpressionPathOptions options;
     ValueObject::ExpressionPathEndResultType final_value_type;
@@ -1013,14 +1264,14 @@ ExpandIndexedExpression (ValueObject* valobj,
     if (!item)
     {
         if (log)
-            log->Printf("ERROR: unparsed portion = %s, why stopping = %d,"
+            log->Printf("[ExpandIndexedExpression] ERROR: unparsed portion = %s, why stopping = %d,"
                " final_value_type %d",
                first_unparsed, reason_to_stop, final_value_type);
     }
     else
     {
         if (log)
-            log->Printf("ALL RIGHT: unparsed portion = %s, why stopping = %d,"
+            log->Printf("[ExpandIndexedExpression] ALL RIGHT: unparsed portion = %s, why stopping = %d,"
                " final_value_type %d",
                first_unparsed, reason_to_stop, final_value_type);
     }
@@ -1133,7 +1384,7 @@ Debugger::FormatPrompt
                                     break;
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 // check for *var and *svar
                                 if (*var_name_begin == '*')
@@ -1143,7 +1394,7 @@ Debugger::FormatPrompt
                                 }
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 if (*var_name_begin == 's')
                                 {
@@ -1155,14 +1406,14 @@ Debugger::FormatPrompt
                                 }
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                 
                                 // should be a 'v' by now
                                 if (*var_name_begin != 'v')
                                     break;
                                 
                                 if (log)
-                                    log->Printf("initial string: %s",var_name_begin);
+                                    log->Printf("[Debugger::FormatPrompt] initial string: %s",var_name_begin);
                                                                 
                                 ValueObject::ExpressionPathAftermath what_next = (do_deref_pointer ?
                                                                                   ValueObject::eExpressionPathAftermathDereference : ValueObject::eExpressionPathAftermathNothing);
@@ -1236,7 +1487,7 @@ Debugger::FormatPrompt
                                     memcpy(expr_path.get(), var_name_begin+3,var_name_final-var_name_begin-3);
                                                                         
                                     if (log)
-                                        log->Printf("symbol to expand: %s",expr_path.get());
+                                        log->Printf("[Debugger::FormatPrompt] symbol to expand: %s",expr_path.get());
                                     
                                     target = valobj->GetValueForExpressionPath(expr_path.get(),
                                                                              &first_unparsed,
@@ -1248,7 +1499,7 @@ Debugger::FormatPrompt
                                     if (!target)
                                     {
                                         if (log)
-                                            log->Printf("ERROR: unparsed portion = %s, why stopping = %d,"
+                                            log->Printf("[Debugger::FormatPrompt] ERROR: unparsed portion = %s, why stopping = %d,"
                                                " final_value_type %d",
                                                first_unparsed, reason_to_stop, final_value_type);
                                         break;
@@ -1256,7 +1507,7 @@ Debugger::FormatPrompt
                                     else
                                     {
                                         if (log)
-                                            log->Printf("ALL RIGHT: unparsed portion = %s, why stopping = %d,"
+                                            log->Printf("[Debugger::FormatPrompt] ALL RIGHT: unparsed portion = %s, why stopping = %d,"
                                                " final_value_type %d",
                                                first_unparsed, reason_to_stop, final_value_type);
                                     }
@@ -1279,7 +1530,7 @@ Debugger::FormatPrompt
                                     if (error.Fail())
                                     {
                                         if (log)
-                                            log->Printf("ERROR: %s\n", error.AsCString("unknown")); \
+                                            log->Printf("[Debugger::FormatPrompt] ERROR: %s\n", error.AsCString("unknown")); \
                                         break;
                                     }
                                     do_deref_pointer = false;
@@ -1300,7 +1551,7 @@ Debugger::FormatPrompt
                                 }
                                 
                                 // TODO use flags for these
-                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType());
+                                bool is_array = ClangASTContext::IsArrayType(target->GetClangType(), NULL, NULL, NULL);
                                 bool is_pointer = ClangASTContext::IsPointerType(target->GetClangType());
                                 bool is_aggregate = ClangASTContext::IsAggregateType(target->GetClangType());
                                 
@@ -1308,7 +1559,7 @@ Debugger::FormatPrompt
                                 {
                                     StreamString str_temp;
                                     if (log)
-                                        log->Printf("I am into array || pointer && !range");
+                                        log->Printf("[Debugger::FormatPrompt] I am into array || pointer && !range");
                                     
                                     if (target->HasSpecialPrintableRepresentation(val_obj_display,
                                                                                   custom_format))
@@ -1318,7 +1569,7 @@ Debugger::FormatPrompt
                                                                                           val_obj_display,
                                                                                           custom_format);
                                         if (log)
-                                            log->Printf("special cases did%s match", var_success ? "" : "n't");
+                                            log->Printf("[Debugger::FormatPrompt] special cases did%s match", var_success ? "" : "n't");
                                         
                                         // should not happen
                                         if (!var_success)
@@ -1370,17 +1621,17 @@ Debugger::FormatPrompt
                                 if (!is_array_range)
                                 {
                                     if (log)
-                                        log->Printf("dumping ordinary printable output");
+                                        log->Printf("[Debugger::FormatPrompt] dumping ordinary printable output");
                                     var_success = target->DumpPrintableRepresentation(s,val_obj_display, custom_format);
                                 }
                                 else
                                 {   
                                     if (log)
-                                        log->Printf("checking if I can handle as array");
+                                        log->Printf("[Debugger::FormatPrompt] checking if I can handle as array");
                                     if (!is_array && !is_pointer)
                                         break;
                                     if (log)
-                                        log->Printf("handle as array");
+                                        log->Printf("[Debugger::FormatPrompt] handle as array");
                                     const char* special_directions = NULL;
                                     StreamString special_directions_writer;
                                     if (close_bracket_position && (var_name_end-close_bracket_position > 1))
@@ -1412,12 +1663,12 @@ Debugger::FormatPrompt
                                         if (!item)
                                         {
                                             if (log)
-                                                log->Printf("ERROR in getting child item at index %lld", index_lower);
+                                                log->Printf("[Debugger::FormatPrompt] ERROR in getting child item at index %" PRId64, index_lower);
                                         }
                                         else
                                         {
                                             if (log)
-                                                log->Printf("special_directions for child item: %s",special_directions);
+                                                log->Printf("[Debugger::FormatPrompt] special_directions for child item: %s",special_directions);
                                         }
 
                                         if (!special_directions)
@@ -1668,7 +1919,7 @@ Debugger::FormatPrompt
                                         var_name_begin += ::strlen ("process.");
                                         if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                         {
-                                            s.Printf("%llu", process->GetID());
+                                            s.Printf("%" PRIu64, process->GetID());
                                             var_success = true;
                                         }
                                         else if ((::strncmp (var_name_begin, "name}", strlen("name}")) == 0) ||
@@ -1706,7 +1957,7 @@ Debugger::FormatPrompt
                                         var_name_begin += ::strlen ("thread.");
                                         if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                         {
-                                            s.Printf("0x%4.4llx", thread->GetID());
+                                            s.Printf("0x%4.4" PRIx64, thread->GetID());
                                             var_success = true;
                                         }
                                         else if (::strncmp (var_name_begin, "index}", strlen("index}")) == 0)
@@ -1731,7 +1982,7 @@ Debugger::FormatPrompt
                                         else if (::strncmp (var_name_begin, "stop-reason}", strlen("stop-reason}")) == 0)
                                         {
                                             StopInfoSP stop_info_sp = thread->GetStopInfo ();
-                                            if (stop_info_sp)
+                                            if (stop_info_sp && stop_info_sp->IsValid())
                                             {
                                                 cstr = stop_info_sp->GetDescription();
                                                 if (cstr && cstr[0])
@@ -1744,7 +1995,7 @@ Debugger::FormatPrompt
                                         else if (::strncmp (var_name_begin, "return-value}", strlen("return-value}")) == 0)
                                         {
                                             StopInfoSP stop_info_sp = thread->GetStopInfo ();
-                                            if (stop_info_sp)
+                                            if (stop_info_sp && stop_info_sp->IsValid())
                                             {
                                                 ValueObjectSP return_valobj_sp = StopInfo::GetReturnValueObject (stop_info_sp);
                                                 if (return_valobj_sp)
@@ -1760,6 +2011,29 @@ Debugger::FormatPrompt
                             }
                             else if (::strncmp (var_name_begin, "target.", strlen("target.")) == 0)
                             {
+                                // TODO: hookup properties
+//                                if (!target_properties_sp)
+//                                {
+//                                    Target *target = Target::GetTargetFromContexts (exe_ctx, sc);
+//                                    if (target)
+//                                        target_properties_sp = target->GetProperties();
+//                                }
+//
+//                                if (target_properties_sp)
+//                                {
+//                                    var_name_begin += ::strlen ("target.");
+//                                    const char *end_property = strchr(var_name_begin, '}');
+//                                    if (end_property)
+//                                    {
+//                                        ConstString property_name(var_name_begin, end_property - var_name_begin);
+//                                        std::string property_value (target_properties_sp->GetPropertyValue(property_name));
+//                                        if (!property_value.empty())
+//                                        {
+//                                            s.PutCString (property_value.c_str());
+//                                            var_success = true;
+//                                        }
+//                                    }
+//                                }                                        
                                 Target *target = Target::GetTargetFromContexts (exe_ctx, sc);
                                 if (target)
                                 {
@@ -1773,7 +2047,7 @@ Debugger::FormatPrompt
                                             var_success = true;
                                         }
                                     }
-                                }                                        
+                                }
                             }
                             break;
                             
@@ -1891,7 +2165,7 @@ Debugger::FormatPrompt
                                     if (::strncmp (var_name_begin, "id}", strlen("id}")) == 0)
                                     {
                                         if (sc->function)
-                                            s.Printf("function{0x%8.8llx}", sc->function->GetID());
+                                            s.Printf("function{0x%8.8" PRIx64 "}", sc->function->GetID());
                                         else
                                             s.Printf("symbol[%u]", sc->symbol->GetID());
 
@@ -2177,9 +2451,9 @@ Debugger::FormatPrompt
                                             addr_t func_file_addr = func_addr.GetFileAddress();
                                             addr_t addr_file_addr = format_addr.GetFileAddress();
                                             if (addr_file_addr > func_file_addr)
-                                                s.Printf(" + %llu", addr_file_addr - func_file_addr);
+                                                s.Printf(" + %" PRIu64, addr_file_addr - func_file_addr);
                                             else if (addr_file_addr < func_file_addr)
-                                                s.Printf(" - %llu", func_file_addr - addr_file_addr);
+                                                s.Printf(" - %" PRIu64, func_file_addr - addr_file_addr);
                                             var_success = true;
                                         }
                                         else
@@ -2190,9 +2464,9 @@ Debugger::FormatPrompt
                                                 addr_t func_load_addr = func_addr.GetLoadAddress (target);
                                                 addr_t addr_load_addr = format_addr.GetLoadAddress (target);
                                                 if (addr_load_addr > func_load_addr)
-                                                    s.Printf(" + %llu", addr_load_addr - func_load_addr);
+                                                    s.Printf(" + %" PRIu64, addr_load_addr - func_load_addr);
                                                 else if (addr_load_addr < func_load_addr)
-                                                    s.Printf(" - %llu", func_load_addr - addr_load_addr);
+                                                    s.Printf(" - %" PRIu64, func_load_addr - addr_load_addr);
                                                 var_success = true;
                                             }
                                         }
@@ -2212,7 +2486,7 @@ Debugger::FormatPrompt
                                         int addr_width = target->GetArchitecture().GetAddressByteSize() * 2;
                                         if (addr_width == 0)
                                             addr_width = 16;
-                                        s.Printf("0x%*.*llx", addr_width, addr_width, vaddr);
+                                        s.Printf("0x%*.*" PRIx64, addr_width, addr_width, vaddr);
                                         var_success = true;
                                     }
                                 }
@@ -2327,7 +2601,7 @@ Debugger::EnableLog (const char *channel, const char **categories, const char *l
     Log::Callbacks log_callbacks;
 
     StreamSP log_stream_sp;
-    if (m_log_callback_stream_sp != NULL)
+    if (m_log_callback_stream_sp)
     {
         log_stream_sp = m_log_callback_stream_sp;
         // For now when using the callback mode you always get thread & timestamp.
@@ -2382,453 +2656,3 @@ Debugger::EnableLog (const char *channel, const char **categories, const char *l
     return false;
 }
 
-#pragma mark Debugger::SettingsController
-
-//--------------------------------------------------
-// class Debugger::SettingsController
-//--------------------------------------------------
-
-Debugger::SettingsController::SettingsController () :
-    UserSettingsController ("", UserSettingsControllerSP())
-{
-}
-
-Debugger::SettingsController::~SettingsController ()
-{
-}
-
-
-InstanceSettingsSP
-Debugger::SettingsController::CreateInstanceSettings (const char *instance_name)
-{
-    InstanceSettingsSP new_settings_sp (new DebuggerInstanceSettings (GetSettingsController(),
-                                                                      false, 
-                                                                      instance_name));
-    return new_settings_sp;
-}
-
-#pragma mark DebuggerInstanceSettings
-//--------------------------------------------------
-//  class DebuggerInstanceSettings
-//--------------------------------------------------
-
-DebuggerInstanceSettings::DebuggerInstanceSettings 
-(
-    const UserSettingsControllerSP &m_owner_sp, 
-    bool live_instance,
-    const char *name
-) :
-    InstanceSettings (m_owner_sp, name ? name : InstanceSettings::InvalidName().AsCString(), live_instance),
-    m_term_width (80),
-    m_stop_source_before_count (3),
-    m_stop_source_after_count (3),
-    m_stop_disassembly_count (4),
-    m_stop_disassembly_display (eStopDisassemblyTypeNoSource),
-    m_prompt (),
-    m_frame_format (),
-    m_thread_format (),    
-    m_script_lang (),
-    m_use_external_editor (false),
-    m_auto_confirm_on (false)
-{
-    // CopyInstanceSettings is a pure virtual function in InstanceSettings; it therefore cannot be called
-    // until the vtables for DebuggerInstanceSettings are properly set up, i.e. AFTER all the initializers.
-    // For this reason it has to be called here, rather than in the initializer or in the parent constructor.
-    // The same is true of CreateInstanceName().
-
-    if (GetInstanceName() == InstanceSettings::InvalidName())
-    {
-        ChangeInstanceName (std::string (CreateInstanceName().AsCString()));
-        m_owner_sp->RegisterInstanceSettings (this);
-    }
-
-    if (live_instance)
-    {
-        const InstanceSettingsSP &pending_settings = m_owner_sp->FindPendingSettings (m_instance_name);
-        CopyInstanceSettings (pending_settings, false);
-    }
-}
-
-DebuggerInstanceSettings::DebuggerInstanceSettings (const DebuggerInstanceSettings &rhs) :
-    InstanceSettings (Debugger::GetSettingsController(), CreateInstanceName ().AsCString()),
-    m_prompt (rhs.m_prompt),
-    m_frame_format (rhs.m_frame_format),
-    m_thread_format (rhs.m_thread_format),
-    m_script_lang (rhs.m_script_lang),
-    m_use_external_editor (rhs.m_use_external_editor),
-    m_auto_confirm_on(rhs.m_auto_confirm_on)
-{
-    UserSettingsControllerSP owner_sp (m_owner_wp.lock());
-    if (owner_sp)
-    {
-        CopyInstanceSettings (owner_sp->FindPendingSettings (m_instance_name), false);
-        owner_sp->RemovePendingSettings (m_instance_name);
-    }
-}
-
-DebuggerInstanceSettings::~DebuggerInstanceSettings ()
-{
-}
-
-DebuggerInstanceSettings&
-DebuggerInstanceSettings::operator= (const DebuggerInstanceSettings &rhs)
-{
-    if (this != &rhs)
-    {
-        m_term_width = rhs.m_term_width;
-        m_prompt = rhs.m_prompt;
-        m_frame_format = rhs.m_frame_format;
-        m_thread_format = rhs.m_thread_format;
-        m_script_lang = rhs.m_script_lang;
-        m_use_external_editor = rhs.m_use_external_editor;
-        m_auto_confirm_on = rhs.m_auto_confirm_on;
-    }
-
-    return *this;
-}
-
-bool
-DebuggerInstanceSettings::ValidTermWidthValue (const char *value, Error err)
-{
-    bool valid = false;
-
-    // Verify we have a value string.
-    if (value == NULL || value[0] == '\0')
-    {
-        err.SetErrorString ("missing value, can't set terminal width without a value");
-    }
-    else
-    {
-        char *end = NULL;
-        const uint32_t width = ::strtoul (value, &end, 0);
-        
-        if (end && end[0] == '\0')
-        {
-            return ValidTermWidthValue (width, err);
-        }
-        else
-            err.SetErrorStringWithFormat ("'%s' is not a valid unsigned integer string", value);
-    }
-
-    return valid;
-}
-
-bool
-DebuggerInstanceSettings::ValidTermWidthValue (uint32_t value, Error err)
-{
-    if (value >= 10 && value <= 1024)
-        return true;
-    else
-    {
-        err.SetErrorString ("invalid term-width value; value must be between 10 and 1024");
-        return false;
-    }
-}
-
-void
-DebuggerInstanceSettings::UpdateInstanceSettingsVariable (const ConstString &var_name,
-                                                          const char *index_value,
-                                                          const char *value,
-                                                          const ConstString &instance_name,
-                                                          const SettingEntry &entry,
-                                                          VarSetOperationType op,
-                                                          Error &err,
-                                                          bool pending)
-{
-
-    if (var_name == TermWidthVarName())
-    {
-        if (ValidTermWidthValue (value, err))
-        {
-            m_term_width = ::strtoul (value, NULL, 0);
-        }
-    }
-    else if (var_name == PromptVarName())
-    {
-        UserSettingsController::UpdateStringVariable (op, m_prompt, value, err);
-        if (!pending)
-        {
-            // 'instance_name' is actually (probably) in the form '[<instance_name>]';  if so, we need to
-            // strip off the brackets before passing it to BroadcastPromptChange.
-
-            std::string tmp_instance_name (instance_name.AsCString());
-            if ((tmp_instance_name[0] == '[') 
-                && (tmp_instance_name[instance_name.GetLength() - 1] == ']'))
-                tmp_instance_name = tmp_instance_name.substr (1, instance_name.GetLength() - 2);
-            ConstString new_name (tmp_instance_name.c_str());
-
-            BroadcastPromptChange (new_name, m_prompt.c_str());
-        }
-    }
-    else if (var_name == GetFrameFormatName())
-    {
-        UserSettingsController::UpdateStringVariable (op, m_frame_format, value, err);
-    }
-    else if (var_name == GetThreadFormatName())
-    {
-        UserSettingsController::UpdateStringVariable (op, m_thread_format, value, err);
-    }
-    else if (var_name == ScriptLangVarName())
-    {
-        bool success;
-        m_script_lang = Args::StringToScriptLanguage (value, eScriptLanguageDefault,
-                                                      &success);
-    }
-    else if (var_name == UseExternalEditorVarName ())
-    {
-        UserSettingsController::UpdateBooleanVariable (op, m_use_external_editor, value, false, err);
-    }
-    else if (var_name == AutoConfirmName ())
-    {
-        UserSettingsController::UpdateBooleanVariable (op, m_auto_confirm_on, value, false, err);
-    }
-    else if (var_name == StopSourceContextBeforeName ())
-    {
-        uint32_t new_value = Args::StringToUInt32(value, UINT32_MAX, 10, NULL);
-        if (new_value != UINT32_MAX)
-            m_stop_source_before_count = new_value;
-        else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextBeforeName ().GetCString());
-    }
-    else if (var_name == StopSourceContextAfterName ())
-    {
-        uint32_t new_value = Args::StringToUInt32(value, UINT32_MAX, 10, NULL);
-        if (new_value != UINT32_MAX)
-            m_stop_source_after_count = new_value;
-        else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopSourceContextAfterName ().GetCString());
-    }
-    else if (var_name == StopDisassemblyCountName ())
-    {
-        uint32_t new_value = Args::StringToUInt32(value, UINT32_MAX, 10, NULL);
-        if (new_value != UINT32_MAX)
-            m_stop_disassembly_count = new_value;
-        else
-            err.SetErrorStringWithFormat("invalid unsigned string value '%s' for the '%s' setting", value, StopDisassemblyCountName ().GetCString());
-    }
-    else if (var_name == StopDisassemblyDisplayName ())
-    {
-        int new_value;
-        UserSettingsController::UpdateEnumVariable (g_show_disassembly_enum_values, &new_value, value, err);
-        if (err.Success())
-            m_stop_disassembly_display = (StopDisassemblyType)new_value;
-    }
-}
-
-bool
-DebuggerInstanceSettings::GetInstanceSettingsValue (const SettingEntry &entry,
-                                                    const ConstString &var_name,
-                                                    StringList &value,
-                                                    Error *err)
-{
-    if (var_name == PromptVarName())
-    {
-        value.AppendString (m_prompt.c_str(), m_prompt.size());
-        
-    }
-    else if (var_name == ScriptLangVarName())
-    {
-        value.AppendString (ScriptInterpreter::LanguageToString (m_script_lang).c_str());
-    }
-    else if (var_name == TermWidthVarName())
-    {
-        StreamString width_str;
-        width_str.Printf ("%u", m_term_width);
-        value.AppendString (width_str.GetData());
-    }
-    else if (var_name == GetFrameFormatName ())
-    {
-        value.AppendString(m_frame_format.c_str(), m_frame_format.size());
-    }
-    else if (var_name == GetThreadFormatName ())
-    {
-        value.AppendString(m_thread_format.c_str(), m_thread_format.size());
-    }
-    else if (var_name == UseExternalEditorVarName())
-    {
-        if (m_use_external_editor)
-            value.AppendString ("true");
-        else
-            value.AppendString ("false");
-    }
-    else if (var_name == AutoConfirmName())
-    {
-        if (m_auto_confirm_on)
-            value.AppendString ("true");
-        else
-            value.AppendString ("false");
-    }
-    else if (var_name == StopSourceContextAfterName ())
-    {
-        StreamString strm;
-        strm.Printf ("%u", m_stop_source_after_count);
-        value.AppendString (strm.GetData());
-    }
-    else if (var_name == StopSourceContextBeforeName ())
-    {
-        StreamString strm;
-        strm.Printf ("%u", m_stop_source_before_count);
-        value.AppendString (strm.GetData());
-    }
-    else if (var_name == StopDisassemblyCountName ())
-    {
-        StreamString strm;
-        strm.Printf ("%u", m_stop_disassembly_count);
-        value.AppendString (strm.GetData());
-    }
-    else if (var_name == StopDisassemblyDisplayName ())
-    {
-        if (m_stop_disassembly_display >= eStopDisassemblyTypeNever && m_stop_disassembly_display <= eStopDisassemblyTypeAlways)
-            value.AppendString (g_show_disassembly_enum_values[m_stop_disassembly_display].string_value);
-        else
-            value.AppendString ("<invalid>");
-    }
-    else
-    {
-        if (err)
-            err->SetErrorStringWithFormat ("unrecognized variable name '%s'", var_name.AsCString());
-        return false;
-    }
-    return true;
-}
-
-void
-DebuggerInstanceSettings::CopyInstanceSettings (const InstanceSettingsSP &new_settings,
-                                                bool pending)
-{
-    if (new_settings.get() == NULL)
-        return;
-
-    DebuggerInstanceSettings *new_debugger_settings = (DebuggerInstanceSettings *) new_settings.get();
-
-    m_prompt = new_debugger_settings->m_prompt;
-    if (!pending)
-    {
-        // 'instance_name' is actually (probably) in the form '[<instance_name>]';  if so, we need to
-        // strip off the brackets before passing it to BroadcastPromptChange.
-
-        std::string tmp_instance_name (m_instance_name.AsCString());
-        if ((tmp_instance_name[0] == '[')
-            && (tmp_instance_name[m_instance_name.GetLength() - 1] == ']'))
-            tmp_instance_name = tmp_instance_name.substr (1, m_instance_name.GetLength() - 2);
-        ConstString new_name (tmp_instance_name.c_str());
-
-        BroadcastPromptChange (new_name, m_prompt.c_str());
-    }
-    m_frame_format = new_debugger_settings->m_frame_format;
-    m_thread_format = new_debugger_settings->m_thread_format;
-    m_term_width = new_debugger_settings->m_term_width;
-    m_script_lang = new_debugger_settings->m_script_lang;
-    m_use_external_editor = new_debugger_settings->m_use_external_editor;
-    m_auto_confirm_on = new_debugger_settings->m_auto_confirm_on;
-}
-
-
-bool
-DebuggerInstanceSettings::BroadcastPromptChange (const ConstString &instance_name, const char *new_prompt)
-{
-    std::string tmp_prompt;
-    
-    if (new_prompt != NULL)
-    {
-        tmp_prompt = new_prompt ;
-        int len = tmp_prompt.size();
-        if (len > 1
-            && (tmp_prompt[0] == '\'' || tmp_prompt[0] == '"')
-            && (tmp_prompt[len-1] == tmp_prompt[0]))
-        {
-            tmp_prompt = tmp_prompt.substr(1,len-2);
-        }
-        len = tmp_prompt.size();
-        if (tmp_prompt[len-1] != ' ')
-            tmp_prompt.append(" ");
-    }
-    EventSP new_event_sp;
-    new_event_sp.reset (new Event(CommandInterpreter::eBroadcastBitResetPrompt, 
-                                  new EventDataBytes (tmp_prompt.c_str())));
-
-    if (instance_name.GetLength() != 0)
-    {
-        // Set prompt for a particular instance.
-        Debugger *dbg = Debugger::FindDebuggerWithInstanceName (instance_name).get();
-        if (dbg != NULL)
-        {
-            dbg->GetCommandInterpreter().BroadcastEvent (new_event_sp);
-        }
-    }
-
-    return true;
-}
-
-const ConstString
-DebuggerInstanceSettings::CreateInstanceName ()
-{
-    static int instance_count = 1;
-    StreamString sstr;
-
-    sstr.Printf ("debugger_%d", instance_count);
-    ++instance_count;
-
-    const ConstString ret_val (sstr.GetData());
-
-    return ret_val;
-}
-
-
-//--------------------------------------------------
-// SettingsController Variable Tables
-//--------------------------------------------------
-
-
-SettingEntry
-Debugger::SettingsController::global_settings_table[] =
-{
-  //{ "var-name",    var-type,      "default", enum-table, init'd, hidden, "help-text"},
-  // The Debugger level global table should always be empty; all Debugger settable variables should be instance
-  // variables.
-    {  NULL, eSetVarTypeNone, NULL, NULL, 0, 0, NULL }
-};
-
-#define MODULE_WITH_FUNC "{ ${module.file.basename}{`${function.name}${function.pc-offset}}}"
-#define FILE_AND_LINE "{ at ${line.file.basename}:${line.number}}"
-
-#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id}"\
-    "{, ${frame.pc}}"\
-    MODULE_WITH_FUNC\
-    FILE_AND_LINE\
-    "{, stop reason = ${thread.stop-reason}}"\
-    "{\\nReturn value: ${thread.return-value}}"\
-    "\\n"
-
-//#define DEFAULT_THREAD_FORMAT "thread #${thread.index}: tid = ${thread.id}"\
-//    "{, ${frame.pc}}"\
-//    MODULE_WITH_FUNC\
-//    FILE_AND_LINE\
-//    "{, stop reason = ${thread.stop-reason}}"\
-//    "{, name = ${thread.name}}"\
-//    "{, queue = ${thread.queue}}"\
-//    "\\n"
-
-#define DEFAULT_FRAME_FORMAT "frame #${frame.index}: ${frame.pc}"\
-    MODULE_WITH_FUNC\
-    FILE_AND_LINE\
-    "\\n"
-
-SettingEntry
-Debugger::SettingsController::instance_settings_table[] =
-{
-//  NAME                    Setting variable type   Default                 Enum  Init'd Hidden Help
-//  ======================= ======================= ======================  ====  ====== ====== ======================
-{   "frame-format",         eSetVarTypeString,      DEFAULT_FRAME_FORMAT,   NULL, false, false, "The default frame format string to use when displaying thread information." },
-{   "prompt",               eSetVarTypeString,      "(lldb) ",              NULL, false, false, "The debugger command line prompt displayed for the user." },
-{   "script-lang",          eSetVarTypeString,      "python",               NULL, false, false, "The script language to be used for evaluating user-written scripts." },
-{   "term-width",           eSetVarTypeInt,         "80"    ,               NULL, false, false, "The maximum number of columns to use for displaying text." },
-{   "thread-format",        eSetVarTypeString,      DEFAULT_THREAD_FORMAT,  NULL, false, false, "The default thread format string to use when displaying thread information." },
-{   "use-external-editor",  eSetVarTypeBoolean,     "false",                NULL, false, false, "Whether to use an external editor or not." },
-{   "auto-confirm",         eSetVarTypeBoolean,     "false",                NULL, false, false, "If true all confirmation prompts will receive their default reply." },
-{   "stop-line-count-before",eSetVarTypeInt,        "3",                    NULL, false, false, "The number of sources lines to display that come before the current source line when displaying a stopped context." },
-{   "stop-line-count-after", eSetVarTypeInt,        "3",                    NULL, false, false, "The number of sources lines to display that come after the current source line when displaying a stopped context." },
-{   "stop-disassembly-count",  eSetVarTypeInt,      "0",                    NULL, false, false, "The number of disassembly lines to show when displaying a stopped context." },
-{   "stop-disassembly-display", eSetVarTypeEnum,    "no-source",           g_show_disassembly_enum_values, false, false, "Control when to display disassembly when displaying a stopped context." },
-{   NULL,                   eSetVarTypeNone,        NULL,                   NULL, false, false, NULL }
-};

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectPlatform.h"
 
 // C Includes
@@ -15,6 +17,7 @@
 // Project includes
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/Debugger.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
@@ -415,9 +418,7 @@ protected:
                     // We don't have any file yet, so the first argument is our
                     // executable, and the rest are program arguments
                     const bool first_arg_is_executable = true;
-                    m_options.launch_info.SetArguments (args, 
-                                                        first_arg_is_executable, 
-                                                        first_arg_is_executable);
+                    m_options.launch_info.SetArguments (args, first_arg_is_executable);
                 }
             }
             
@@ -426,11 +427,7 @@ protected:
                 Debugger &debugger = m_interpreter.GetDebugger();
 
                 if (argc == 0)
-                {
-                    const Args &target_settings_args = target->GetRunArguments();
-                    if (target_settings_args.GetArgumentCount())
-                        m_options.launch_info.GetArguments() = target_settings_args;
-                }
+                    target->GetRunArguments(m_options.launch_info.GetArguments());
 
                 ProcessSP process_sp (platform_sp->DebugProcess (m_options.launch_info, 
                                                                  debugger,
@@ -524,7 +521,7 @@ protected:
                         }
                         else
                         {
-                            result.AppendErrorWithFormat ("no process found with pid = %llu\n", pid);
+                            result.AppendErrorWithFormat ("no process found with pid = %" PRIu64 "\n", pid);
                             result.SetStatus (eReturnStatusFailed);
                         }
                     }
@@ -611,7 +608,7 @@ protected:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success = false;
 
             switch (short_option)
@@ -801,12 +798,12 @@ protected:
                             ProcessInstanceInfo proc_info;
                             if (platform_sp->GetProcessInfo (pid, proc_info))
                             {
-                                ostrm.Printf ("Process information for process %llu:\n", pid);
+                                ostrm.Printf ("Process information for process %" PRIu64 ":\n", pid);
                                 proc_info.Dump (ostrm, platform_sp.get());
                             }
                             else
                             {
-                                ostrm.Printf ("error: no process information is available for process %llu\n", pid);
+                                ostrm.Printf ("error: no process information is available for process %" PRIu64 "\n", pid);
                             }
                             ostrm.EOL();
                         }

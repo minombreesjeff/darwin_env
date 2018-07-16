@@ -59,16 +59,16 @@ typedef enum ArchitectureType
 ///
 //----------------------------------------------------------------------
 
-typedef enum SettableVariableType
-{
-    eSetVarTypeInt,
-    eSetVarTypeBoolean,
-    eSetVarTypeString,
-    eSetVarTypeArray,
-    eSetVarTypeDictionary,
-    eSetVarTypeEnum,
-    eSetVarTypeNone
-} SettableVariableType;
+//typedef enum SettableVariableType
+//{
+//    eSetVarTypeInt,
+//    eSetVarTypeBoolean,
+//    eSetVarTypeString,
+//    eSetVarTypeArray,
+//    eSetVarTypeDictionary,
+//    eSetVarTypeEnum,
+//    eSetVarTypeNone
+//} SettableVariableType;
 
 typedef enum VarSetOperationType
 {
@@ -213,7 +213,8 @@ typedef enum FormatterChoiceCriterion
     eFormatterChoiceCriterionRegularExpressionSummary =      0x00000004,
     eFormatterChoiceCriterionRegularExpressionFilter =       0x00000004,
     eFormatterChoiceCriterionDynamicObjCDiscovery =          0x00000008,
-    eFormatterChoiceCriterionStrippedBitField =              0x00000010
+    eFormatterChoiceCriterionStrippedBitField =              0x00000010,
+    eFormatterChoiceCriterionWentToStaticValue =             0x00000020
 } FormatterChoiceCriterion;
 
 //----------------------------------------------------------------------

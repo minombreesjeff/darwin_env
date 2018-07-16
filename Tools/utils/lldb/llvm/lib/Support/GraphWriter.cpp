@@ -54,11 +54,9 @@ std::string llvm::DOT::EscapeString(const std::string &Label) {
 }
 
 // Execute the graph viewer. Return true if successful.
-static bool ExecGraphViewer(const sys::Path &ExecPath,
-                            std::vector<const char*> &args,
-                            const sys::Path &Filename,
-                            bool wait,
-                            std::string &ErrMsg) {
+static bool LLVM_ATTRIBUTE_UNUSED
+ExecGraphViewer(const sys::Path &ExecPath, std::vector<const char*> &args,
+                const sys::Path &Filename, bool wait, std::string &ErrMsg) {
   if (wait) {
     if (sys::Program::ExecuteAndWait(ExecPath, &args[0],0,0,0,0,&ErrMsg)) {
       errs() << "Error: " << ErrMsg << "\n";
@@ -101,7 +99,6 @@ void llvm::DisplayGraph(const sys::Path &Filename, bool wait,
   case GraphProgram::NEATO: args.push_back("-f"); args.push_back("neato");break;
   case GraphProgram::TWOPI: args.push_back("-f"); args.push_back("twopi");break;
   case GraphProgram::CIRCO: args.push_back("-f"); args.push_back("circo");break;
-  default: errs() << "Unknown graph layout name; using default.\n";
   }
 
   args.push_back(0);

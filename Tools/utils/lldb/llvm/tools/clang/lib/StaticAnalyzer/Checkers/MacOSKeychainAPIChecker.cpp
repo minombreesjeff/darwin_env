@@ -121,11 +121,18 @@ private:
                                    SValBuilder &Builder) const {
     return definitelyReturnedError(RetSym, State, Builder, true);
   }
+                                                 
+  /// Mark an AllocationPair interesting for diagnostic reporting.
+  void markInteresting(BugReport *R, const AllocationPair &AP) const {
+    R->markInteresting(AP.first);
+    R->markInteresting(AP.second->Region);
+  }
 
   /// The bug visitor which allows us to print extra diagnostics along the
   /// BugReport path. For example, showing the allocation site of the leaked
   /// region.
-  class SecKeychainBugVisitor : public BugReporterVisitor {
+  class SecKeychainBugVisitor
+    : public BugReporterVisitorImpl<SecKeychainBugVisitor> {
   protected:
     // The allocated region symbol tracked by the main analysis.
     SymbolRef Sym;
@@ -202,18 +209,9 @@ unsigned MacOSKeychainAPIChecker::getTrackedFunctionIndex(StringRef Name,
   return InvalidIdx;
 }
 
-static SymbolRef getSymbolForRegion(CheckerContext &C,
-                                   const MemRegion *R) {
-  // Implicit casts (ex: void* -> char*) can turn Symbolic region into element
-  // region, if that is the case, get the underlining region.
-  R = R->StripCasts();
-  if (!isa<SymbolicRegion>(R)) {
-      return 0;
-  }
-  return cast<SymbolicRegion>(R)->getSymbol();
-}
-
 static bool isBadDeallocationArgument(const MemRegion *Arg) {
+  if (!Arg)
+    return false;
   if (isa<AllocaRegion>(Arg) ||
       isa<BlockDataRegion>(Arg) ||
       isa<TypedRegion>(Arg)) {
@@ -221,6 +219,7 @@ static bool isBadDeallocationArgument(const MemRegion *Arg) {
   }
   return false;
 }
+
 /// Given the address expression, retrieve the value it's pointing to. Assume
 /// that value is itself an address, and return the corresponding symbol.
 static SymbolRef getAsPointeeSymbol(const Expr *Expr,
@@ -230,9 +229,9 @@ static SymbolRef getAsPointeeSymbol(const Expr *Expr,
 
   if (const loc::MemRegionVal *X = dyn_cast<loc::MemRegionVal>(&ArgV)) {
     StoreManager& SM = C.getStoreManager();
-    const MemRegion *V = SM.getBinding(State->getStore(), *X).getAsRegion();
-    if (V)
-      return getSymbolForRegion(C, V);
+    SymbolRef sym = SM.getBinding(State->getStore(), *X).getAsLocSymbol();
+    if (sym)
+      return sym;
   }
   return 0;
 }
@@ -282,6 +281,7 @@ void MacOSKeychainAPIChecker::
   BugReport *Report = new BugReport(*BT, os.str(), N);
   Report->addVisitor(new SecKeychainBugVisitor(AP.first));
   Report->addRange(ArgExpr->getSourceRange());
+  markInteresting(Report, AP);
   C.EmitReport(Report);
 }
 
@@ -290,7 +290,11 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
   unsigned idx = InvalidIdx;
   ProgramStateRef State = C.getState();
 
-  StringRef funName = C.getCalleeName(CE);
+  const FunctionDecl *FD = C.getCalleeDecl(CE);
+  if (!FD || FD->getKind() != Decl::Function)
+    return;
+  
+  StringRef funName = C.getCalleeName(FD);
   if (funName.empty())
     return;
 
@@ -318,6 +322,7 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
           BugReport *Report = new BugReport(*BT, os.str(), N);
           Report->addVisitor(new SecKeychainBugVisitor(V));
           Report->addRange(ArgExpr->getSourceRange());
+          Report->markInteresting(AS->Region);
           C.EmitReport(Report);
         }
       }
@@ -337,16 +342,16 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
   if (ArgSVal.isUndef())
     return;
 
-  const MemRegion *Arg = ArgSVal.getAsRegion();
-  if (!Arg)
-    return;
+  SymbolRef ArgSM = ArgSVal.getAsLocSymbol();
 
-  SymbolRef ArgSM = getSymbolForRegion(C, Arg);
-  bool RegionArgIsBad = ArgSM ? false : isBadDeallocationArgument(Arg);
   // If the argument is coming from the heap, globals, or unknown, do not
   // report it.
-  if (!ArgSM && !RegionArgIsBad)
-    return;
+  bool RegionArgIsBad = false;
+  if (!ArgSM) {
+    if (!isBadDeallocationArgument(ArgSVal.getAsRegion()))
+      return;
+    RegionArgIsBad = true;
+  }
 
   // Is the argument to the call being tracked?
   const AllocationState *AS = State->get<AllocatedData>(ArgSM);
@@ -369,6 +374,8 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
     BugReport *Report = new BugReport(*BT,
         "Trying to free data which has not been allocated.", N);
     Report->addRange(ArgExpr->getSourceRange());
+    if (AS)
+      Report->markInteresting(AS->Region);
     C.EmitReport(Report);
     return;
   }
@@ -432,6 +439,7 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
         "Only call free if a valid (non-NULL) buffer was returned.", N);
     Report->addVisitor(new SecKeychainBugVisitor(ArgSM));
     Report->addRange(ArgExpr->getSourceRange());
+    Report->markInteresting(AS->Region);
     C.EmitReport(Report);
     return;
   }
@@ -442,7 +450,11 @@ void MacOSKeychainAPIChecker::checkPreStmt(const CallExpr *CE,
 void MacOSKeychainAPIChecker::checkPostStmt(const CallExpr *CE,
                                             CheckerContext &C) const {
   ProgramStateRef State = C.getState();
-  StringRef funName = C.getCalleeName(CE);
+  const FunctionDecl *FD = C.getCalleeDecl(CE);
+  if (!FD || FD->getKind() != Decl::Function)
+    return;
+
+  StringRef funName = C.getCalleeName(FD);
 
   // If a value has been allocated, add it to the set for tracking.
   unsigned idx = getTrackedFunctionIndex(funName, true);
@@ -488,16 +500,16 @@ void MacOSKeychainAPIChecker::checkPreStmt(const ReturnStmt *S,
     return;
 
   // If inside inlined call, skip it.
-  if (C.getLocationContext()->getParent() != 0)
+  const LocationContext *LC = C.getLocationContext();
+  if (LC->getParent() != 0)
     return;
 
   // Check  if the value is escaping through the return.
   ProgramStateRef state = C.getState();
-  const MemRegion *V =
-    state->getSVal(retExpr, C.getLocationContext()).getAsRegion();
-  if (!V)
+  SymbolRef sym = state->getSVal(retExpr, LC).getAsLocSymbol();
+  if (!sym)
     return;
-  state = state->remove<AllocatedData>(getSymbolForRegion(C, V));
+  state = state->remove<AllocatedData>(sym);
 
   // Proceed from the new state.
   C.addTransition(state);
@@ -524,9 +536,11 @@ MacOSKeychainAPIChecker::getAllocationSite(const ExplodedNode *N,
   }
 
   ProgramPoint P = AllocNode->getLocation();
-  if (!isa<StmtPoint>(P))
-    return 0;
-  return cast<clang::PostStmt>(P).getStmt();
+  if (CallExitEnd *Exit = dyn_cast<CallExitEnd>(&P))
+    return Exit->getCalleeContext()->getCallSite();
+  if (clang::PostStmt *PS = dyn_cast<clang::PostStmt>(&P))
+    return PS->getStmt();
+  return 0;
 }
 
 BugReport *MacOSKeychainAPIChecker::
@@ -550,6 +564,7 @@ BugReport *MacOSKeychainAPIChecker::
 
   BugReport *Report = new BugReport(*BT, os.str(), N, LocUsedForUniqueing);
   Report->addVisitor(new SecKeychainBugVisitor(AP.first));
+  markInteresting(Report, AP);
   return Report;
 }
 
@@ -570,7 +585,9 @@ void MacOSKeychainAPIChecker::checkDeadSymbols(SymbolReaper &SR,
     State = State->remove<AllocatedData>(I->first);
     // If the allocated symbol is null or if the allocation call might have
     // returned an error, do not report.
-    if (State->getSymVal(I->first) ||
+    ConstraintManager &CMgr = State->getConstraintManager();
+    ConditionTruthVal AllocFailed = CMgr.isNull(State, I.getKey());
+    if (AllocFailed.isConstrainedTrue() ||
         definitelyReturnedError(I->second.Region, State, C.getSValBuilder()))
       continue;
     Errors.push_back(std::make_pair(I->first, &I->second));
@@ -615,7 +632,9 @@ void MacOSKeychainAPIChecker::checkEndPath(CheckerContext &C) const {
     state = state->remove<AllocatedData>(I->first);
     // If the allocated symbol is null or if error code was returned at
     // allocation, do not report.
-    if (state->getSymVal(I.getKey()) ||
+    ConstraintManager &CMgr = state->getConstraintManager();
+    ConditionTruthVal AllocFailed = CMgr.isNull(state, I.getKey());
+    if (AllocFailed.isConstrainedTrue() ||
         definitelyReturnedError(I->second.Region, state,
                                 C.getSValBuilder())) {
       continue;

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Interpreter/ScriptInterpreterNone.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StringList.h"
@@ -26,7 +28,7 @@ ScriptInterpreterNone::~ScriptInterpreterNone ()
 }
 
 bool
-ScriptInterpreterNone::ExecuteOneLine (const char *command, CommandReturnObject *, bool enable_io)
+ScriptInterpreterNone::ExecuteOneLine (const char *command, CommandReturnObject *, const ExecuteScriptOptions&)
 {
     m_interpreter.GetDebugger().GetErrorStream().PutCString ("error: there is no embedded script interpreter in this mode.\n");
     return false;

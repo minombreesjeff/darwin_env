@@ -719,6 +719,9 @@ public:
     lldb::SBTypeList
     FindTypes (const char* type);
     
+    lldb::SBType
+    GetBasicType(lldb::BasicType type);
+    
     SBSourceManager
     GetSourceManager();
     
@@ -730,6 +733,10 @@ public:
     
     lldb::SBInstructionList
     GetInstructions (lldb::addr_t base_addr, const void *buf, size_t size);
+
+    lldb::SBSymbolContextList
+    FindSymbols (const char *name,
+                 lldb::SymbolType type = eSymbolTypeAny);
 
     bool
     operator == (const lldb::SBTarget &rhs) const;

@@ -22,6 +22,7 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Core/SearchFilter.h"
+#include "lldb/Core/Section.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Symbol/SymbolContext.h"
@@ -186,6 +187,18 @@ uint32_t
 Breakpoint::GetHitCount () const
 {
     return m_locations.GetHitCount();
+}
+
+bool
+Breakpoint::IsOneShot () const
+{
+    return m_options.IsOneShot();
+}
+
+void
+Breakpoint::SetOneShot (bool one_shot)
+{
+    m_options.SetOneShot (one_shot);
 }
 
 void
@@ -510,23 +523,31 @@ Breakpoint::GetNumLocations() const
 void
 Breakpoint::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_locations)
 {
-    assert (s != NULL);
-    s->Printf("%i: ", GetID());
-    GetResolverDescription (s);
-    GetFilterDescription (s);
-
     const size_t num_locations = GetNumLocations ();
     const size_t num_resolved_locations = GetNumResolvedLocations ();
 
+    assert (s != NULL);
+    
+
+    
+    // They just made the breakpoint, they don't need to be told HOW they made it...
+    // Also, we'll print the breakpoint number differently depending on whether there is 1 or more locations.
+    if (level != eDescriptionLevelInitial)
+    {
+        s->Printf("%i: ", GetID());
+        GetResolverDescription (s);
+        GetFilterDescription (s);
+    }
+    
     switch (level)
     {
     case lldb::eDescriptionLevelBrief:
     case lldb::eDescriptionLevelFull:
         if (num_locations > 0)
         {
-            s->Printf(", locations = %zu", num_locations);
+            s->Printf(", locations = %" PRIu64, (uint64_t)num_locations);
             if (num_resolved_locations > 0)
-                s->Printf(", resolved = %zu", num_resolved_locations);
+                s->Printf(", resolved = %" PRIu64, (uint64_t)num_resolved_locations);
         }
         else
         {
@@ -544,7 +565,32 @@ Breakpoint::GetDescription (Stream *s, lldb::DescriptionLevel level, bool show_l
             s->EOL();
         }
         break;
-
+        
+    case lldb::eDescriptionLevelInitial:
+        s->Printf ("Breakpoint %i: ", GetID());
+        if (num_locations == 0)
+        {
+            s->Printf ("no locations (pending).");
+        }
+        else if (num_locations == 1)
+        {
+            // If there is one location only, we'll just print that location information.  But don't do this if
+            // show locations is true, then that will be handled below.
+            if (show_locations == false)
+            {
+                GetLocationAtIndex(0)->GetDescription(s, level);
+            }
+            else
+            {
+                s->Printf ("%zd locations.", num_locations);
+            }
+        }
+        else
+        {
+            s->Printf ("%zd locations.", num_locations);
+        }
+        s->EOL();
+        break;
     case lldb::eDescriptionLevelVerbose:
         // Verbose mode does a debug dump of the breakpoint
         Dump (s);

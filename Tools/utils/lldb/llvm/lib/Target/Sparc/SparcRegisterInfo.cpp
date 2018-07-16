@@ -11,15 +11,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Sparc.h"
 #include "SparcRegisterInfo.h"
+#include "Sparc.h"
 #include "SparcSubtarget.h"
+#include "llvm/Type.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Type.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 
@@ -108,9 +108,6 @@ SparcRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     MI.getOperand(i+1).ChangeToImmediate(Offset & ((1 << 10)-1));
   }
 }
-
-void SparcRegisterInfo::
-processFunctionBeforeFrameFinalized(MachineFunction &MF) const {}
 
 unsigned SparcRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   return SP::I6;

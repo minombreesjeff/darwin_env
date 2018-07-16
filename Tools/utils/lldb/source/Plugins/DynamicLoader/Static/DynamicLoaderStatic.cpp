@@ -9,6 +9,8 @@
 
 #include "lldb/Core/Module.h"
 #include "lldb/Core/PluginManager.h"
+#include "lldb/Core/Section.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Target.h"
 
 #include "DynamicLoaderStatic.h"
@@ -93,7 +95,7 @@ DynamicLoaderStatic::DidLaunch ()
 void
 DynamicLoaderStatic::LoadAllImagesAtFileAddresses ()
 {
-    ModuleList &module_list = m_process->GetTarget().GetImages();
+    const ModuleList &module_list = m_process->GetTarget().GetImages();
     
     ModuleList loaded_module_list;
 
@@ -141,8 +143,7 @@ DynamicLoaderStatic::LoadAllImagesAtFileAddresses ()
         }
     }
 
-    if (loaded_module_list.GetSize())
-        m_process->GetTarget().ModulesDidLoad (loaded_module_list);
+    m_process->GetTarget().ModulesDidLoad (loaded_module_list);
 }
 
 ThreadPlanSP

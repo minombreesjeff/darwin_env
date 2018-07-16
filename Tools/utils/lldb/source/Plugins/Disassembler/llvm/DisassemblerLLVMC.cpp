@@ -14,6 +14,7 @@
 
 #include "lldb/Core/Address.h"
 #include "lldb/Core/DataExtractor.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/Stream.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -270,7 +271,7 @@ public:
                             const uint64_t uval64 = data.GetU64(&offset);
                             m_opcode.SetOpcode64(uval64);
                             m_opcode_name.assign (".quad");
-                            mnemonic_strm.Printf("0x%16.16llx", uval64);
+                            mnemonic_strm.Printf("0x%16.16" PRIx64, uval64);
                         }
                         break;
                     default:
@@ -431,11 +432,13 @@ bool InstructionLLVMC::s_regex_compiled = false;
 Disassembler *
 DisassemblerLLVMC::CreateInstance (const ArchSpec &arch)
 {
-    std::auto_ptr<DisassemblerLLVMC> disasm_ap (new DisassemblerLLVMC(arch));
+    if (arch.GetTriple().getArch() != llvm::Triple::UnknownArch)
+    {
+        std::auto_ptr<DisassemblerLLVMC> disasm_ap (new DisassemblerLLVMC(arch));
     
-    if (disasm_ap.get() && disasm_ap->IsValid())
-        return disasm_ap.release();
-    
+        if (disasm_ap.get() && disasm_ap->IsValid())
+            return disasm_ap.release();
+    }
     return NULL;
 }
 
@@ -446,26 +449,7 @@ DisassemblerLLVMC::DisassemblerLLVMC (const ArchSpec &arch) :
     m_disasm_context (NULL),
     m_alternate_disasm_context (NULL)
 {
-    // See if this is an ARM core, and if yes, turn on armv7 to enable disassembly
-    // of new instructions.
-    
-    ArchSpec override_arch = arch;
-    
-    const char *triple_to_use = NULL;
-    
-    if (arch == ArchSpec::kCore_arm_any)
-    {
-        if (arch.GetMachine() == llvm::Triple::thumb)
-            triple_to_use = "thumbv7s-apple-ios";
-        else
-            triple_to_use = "armv7s-apple-ios";
-    }
-    else
-    {
-        triple_to_use = arch.GetTriple().getTriple().c_str();
-    }
-        
-    m_disasm_context = ::LLVMCreateDisasm(triple_to_use,
+    m_disasm_context = ::LLVMCreateDisasm(arch.GetTriple().getTriple().c_str(), 
                                           (void*)this, 
                                           /*TagType=*/1,
                                           NULL,
@@ -474,7 +458,7 @@ DisassemblerLLVMC::DisassemblerLLVMC (const ArchSpec &arch) :
     if (arch.GetTriple().getArch() == llvm::Triple::arm)
     {
         ArchSpec thumb_arch(arch);
-        thumb_arch.GetTriple().setArchName(llvm::StringRef("thumbv7s"));
+        thumb_arch.GetTriple().setArchName(llvm::StringRef("thumbv7"));
         std::string thumb_triple(thumb_arch.GetTriple().getTriple());
 
         m_alternate_disasm_context = ::LLVMCreateDisasm(thumb_triple.c_str(),
@@ -660,7 +644,7 @@ const char *DisassemblerLLVMC::SymbolLookup (uint64_t value,
                     m_inst->AppendComment(ss.GetString());
                 }
             }
-            //printf ("DisassemblerLLVMC::SymbolLookup (value=0x%16.16llx, type=%llu, pc=0x%16.16llx, name=\"%s\") m_exe_ctx=%p, m_inst=%p\n", value, *type_ptr, pc, remove_this_prior_to_checkin.c_str(), m_exe_ctx, m_inst);
+            //printf ("DisassemblerLLVMC::SymbolLookup (value=0x%16.16" PRIx64 ", type=%" PRIu64 ", pc=0x%16.16" PRIx64 ", name=\"%s\") m_exe_ctx=%p, m_inst=%p\n", value, *type_ptr, pc, remove_this_prior_to_checkin.c_str(), m_exe_ctx, m_inst);
         }
     }
 

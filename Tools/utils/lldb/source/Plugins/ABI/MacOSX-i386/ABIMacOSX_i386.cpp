@@ -687,6 +687,86 @@ ABIMacOSX_i386::GetArgumentValues (Thread &thread,
     return true;
 }
 
+Error
+ABIMacOSX_i386::SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueObjectSP &new_value_sp)
+{
+    Error error;
+    if (!new_value_sp)
+    {
+        error.SetErrorString("Empty value object for return value.");
+        return error;
+    }
+    
+    clang_type_t value_type = new_value_sp->GetClangType();
+    if (!value_type)
+    {
+        error.SetErrorString ("Null clang type for return value.");
+        return error;
+    }
+    
+    clang::ASTContext *ast_context = new_value_sp->GetClangAST();
+    if (!ast_context)
+    {
+        error.SetErrorString ("Null clang AST for return value.");
+        return error;
+    }
+    Thread *thread = frame_sp->GetThread().get();
+    
+    bool is_signed;
+    uint32_t count;
+    bool is_complex;
+    
+    RegisterContext *reg_ctx = thread->GetRegisterContext().get();
+
+    bool set_it_simple = false;
+    if (ClangASTContext::IsIntegerType (value_type, is_signed) || ClangASTContext::IsPointerType(value_type))
+    {
+        DataExtractor data;
+        size_t num_bytes = new_value_sp->GetData(data);
+        uint32_t offset = 0;
+        if (num_bytes <= 8)
+        {
+            const RegisterInfo *eax_info = reg_ctx->GetRegisterInfoByName("eax", 0);
+            if (num_bytes <= 4)
+            {
+                uint32_t raw_value = data.GetMaxU32(&offset, num_bytes);
+        
+                if (reg_ctx->WriteRegisterFromUnsigned (eax_info, raw_value))
+                    set_it_simple = true;
+            }
+            else
+            {
+                uint32_t raw_value = data.GetMaxU32(&offset, 4);
+        
+                if (reg_ctx->WriteRegisterFromUnsigned (eax_info, raw_value))
+                {
+                    const RegisterInfo *edx_info = reg_ctx->GetRegisterInfoByName("edx", 0);
+                    uint32_t raw_value = data.GetMaxU32(&offset, num_bytes - offset);
+                
+                    if (reg_ctx->WriteRegisterFromUnsigned (edx_info, raw_value))
+                        set_it_simple = true;
+                }
+            }
+        }
+        else
+        {
+            error.SetErrorString("We don't support returning longer than 64 bit integer values at present.");
+        }
+    }
+    else if (ClangASTContext::IsFloatingPointType (value_type, count, is_complex))
+    {
+        if (is_complex)
+            error.SetErrorString ("We don't support returning complex values at present");
+        else
+            error.SetErrorString ("We don't support returning float values at present");
+    }
+    
+    if (!set_it_simple)
+        error.SetErrorString ("We only support setting simple integer return types at present.");
+    
+    return error;
+}
+
 ValueObjectSP
 ABIMacOSX_i386::GetReturnValueObjectImpl (Thread &thread,
                                 ClangASTType &ast_type) const
@@ -814,6 +894,7 @@ ABIMacOSX_i386::CreateFunctionEntryUnwindPlan (UnwindPlan &unwind_plan)
     row->SetRegisterLocationToAtCFAPlusOffset(pc_reg_num, -4, false);
     unwind_plan.AppendRow (row);
     unwind_plan.SetSourceName ("i386 at-func-entry default");
+    unwind_plan.SetSourcedFromCompiler (eLazyBoolNo);
     return true;
 }
 
@@ -839,21 +920,25 @@ ABIMacOSX_i386::CreateDefaultUnwindPlan (UnwindPlan &unwind_plan)
 
     unwind_plan.AppendRow (row);
     unwind_plan.SetSourceName ("i386 default unwind plan");
+    unwind_plan.SetSourcedFromCompiler (eLazyBoolNo);
+    unwind_plan.SetUnwindPlanValidAtAllInstructions (eLazyBoolNo);
     return true;
 }
 
 bool
 ABIMacOSX_i386::RegisterIsVolatile (const RegisterInfo *reg_info)
 {
-    return RegisterIsCalleeSaved (reg_info);
+    return !RegisterIsCalleeSaved (reg_info);
 }
+
+// v. http://developer.apple.com/library/mac/#documentation/developertools/Conceptual/LowLevelABI/130-IA-32_Function_Calling_Conventions/IA32.html#//apple_ref/doc/uid/TP40002492-SW4
 
 bool
 ABIMacOSX_i386::RegisterIsCalleeSaved (const RegisterInfo *reg_info)
 {
     if (reg_info)
     {
-        // Volatile registers include: ebx, ebp, esi, edi, esp, eip
+        // Saved registers are ebx, ebp, esi, edi, esp, eip
         const char *name = reg_info->name;
         if (name[0] == 'e')
         {
@@ -861,22 +946,28 @@ ABIMacOSX_i386::RegisterIsCalleeSaved (const RegisterInfo *reg_info)
             {
             case 'b': 
                 if (name[2] == 'x' || name[2] == 'p')
-                    return name[0] == '\0';
+                    return name[3] == '\0';
                 break;
             case 'd':
                 if (name[2] == 'i')
-                    return name[0] == '\0';
+                    return name[3] == '\0';
                 break;
             case 'i': 
                 if (name[2] == 'p')
-                    return name[0] == '\0';
+                    return name[3] == '\0';
                 break;
             case 's':
                 if (name[2] == 'i' || name[2] == 'p')
-                    return name[0] == '\0';
+                    return name[3] == '\0';
                 break;
             }
         }
+        if (name[0] == 's' && name[1] == 'p' && name[2] == '\0')   // sp
+            return true;
+        if (name[0] == 'f' && name[1] == 'p' && name[2] == '\0')   // fp
+            return true;
+        if (name[0] == 'p' && name[1] == 'c' && name[2] == '\0')   // pc
+            return true;
     }
     return false;
 }

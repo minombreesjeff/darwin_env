@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "AppleObjCTrampolineHandler.h"
 
 // C Includes
@@ -18,15 +20,15 @@
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/ConstString.h"
 #include "lldb/Core/Debugger.h"
-#include "lldb/Host/FileSpec.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Expression/ClangExpression.h"
 #include "lldb/Expression/ClangFunction.h"
 #include "lldb/Expression/ClangUtilityFunction.h"
-
+#include "lldb/Host/FileSpec.h"
 #include "lldb/Symbol/ClangASTContext.h"
+#include "lldb/Symbol/Symbol.h"
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
@@ -301,13 +303,13 @@ AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::AddressInRegion (lld
 void
 AppleObjCTrampolineHandler::AppleObjCVTables::VTableRegion::Dump (Stream &s)
 {
-    s.Printf ("Header addr: 0x%llx Code start: 0x%llx Code End: 0x%llx Next: 0x%llx\n", 
+    s.Printf ("Header addr: 0x%" PRIx64 " Code start: 0x%" PRIx64 " Code End: 0x%" PRIx64 " Next: 0x%" PRIx64 "\n",
               m_header_addr, m_code_start_addr, m_code_end_addr, m_next_region);
     size_t num_elements = m_descriptors.size();
     for (size_t i = 0; i < num_elements; i++)
     {
         s.Indent();
-        s.Printf ("Code start: 0x%llx Flags: %d\n", m_descriptors[i].code_start, m_descriptors[i].flags);
+        s.Printf ("Code start: 0x%" PRIx64 " Flags: %d\n", m_descriptors[i].code_start, m_descriptors[i].flags);
     }
 }
         
@@ -334,7 +336,7 @@ AppleObjCTrampolineHandler::AppleObjCVTables::InitializeVTableSymbols ()
         return true;
     Target &target = m_process_sp->GetTarget();
     
-    ModuleList &target_modules = target.GetImages();
+    const ModuleList &target_modules = target.GetImages();
     Mutex::Locker modules_locker(target_modules.GetMutex());
     size_t num_modules = target_modules.GetSize();
     if (!m_objc_module_sp)
@@ -616,7 +618,7 @@ AppleObjCTrampolineHandler::SetupDispatchFunction (Thread &thread, ValueList &di
                     impl_code_address = sc.symbol->GetAddress();
                     
                 //lldb::addr_t addr = impl_code_address.GetOpcodeLoadAddress (exe_ctx.GetTargetPtr());
-                //printf ("Getting address for our_utility_function: 0x%llx.\n", addr);
+                //printf ("Getting address for our_utility_function: 0x%" PRIx64 ".\n", addr);
             }
             else
             {
@@ -882,7 +884,7 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
         {
             if (log)
             {
-                log->Printf("Resolving call for class - 0x%llx and selector - 0x%llx",
+                log->Printf("Resolving call for class - 0x%" PRIx64 " and selector - 0x%" PRIx64,
                             isa_addr, sel_addr);
             }
             ObjCLanguageRuntime *objc_runtime = m_process_sp->GetObjCLanguageRuntime ();
@@ -896,7 +898,7 @@ AppleObjCTrampolineHandler::GetStepThroughDispatchPlan (Thread &thread, bool sto
             // Yup, it was in the cache, so we can run to that address directly.
             
             if (log)
-                log->Printf ("Found implementation address in cache: 0x%llx", impl_addr);
+                log->Printf ("Found implementation address in cache: 0x%" PRIx64, impl_addr);
                  
             ret_plan_sp.reset (new ThreadPlanRunToAddress (thread, impl_addr, stop_others));
         }

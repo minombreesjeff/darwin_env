@@ -11,6 +11,7 @@
 			isa = PBXAggregateTarget;
 			buildConfigurationList = 26CEF3AD14FD58BF007286B2 /* Build configuration list for PBXAggregateTarget "desktop_no_xpc" */;
 			buildPhases = (
+				AF90106415AB7D2900FF120D /* CopyFiles */,
 			);
 			dependencies = (
 				26CEF3B014FD591F007286B2 /* PBXTargetDependency */,
@@ -23,6 +24,7 @@
 			isa = PBXAggregateTarget;
 			buildConfigurationList = 26CEF3B214FD592B007286B2 /* Build configuration list for PBXAggregateTarget "desktop" */;
 			buildPhases = (
+				AF90106415AB7D2900FF120D /* CopyFiles */,
 			);
 			dependencies = (
 				26CEF3BB14FD595B007286B2 /* PBXTargetDependency */,
@@ -49,6 +51,34 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		260A248E15D06C50009981B0 /* OptionValues.h in Headers */ = {isa = PBXBuildFile; fileRef = 260A248D15D06C4F009981B0 /* OptionValues.h */; };
+		260CC62E15D04377002BF2E0 /* OptionValueArgs.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62115D04377002BF2E0 /* OptionValueArgs.h */; };
+		260CC62F15D04377002BF2E0 /* OptionValueArray.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62215D04377002BF2E0 /* OptionValueArray.h */; };
+		260CC63015D04377002BF2E0 /* OptionValueBoolean.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62315D04377002BF2E0 /* OptionValueBoolean.h */; };
+		260CC63115D04377002BF2E0 /* OptionValueProperties.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62415D04377002BF2E0 /* OptionValueProperties.h */; };
+		260CC63215D04377002BF2E0 /* OptionValueDictionary.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62515D04377002BF2E0 /* OptionValueDictionary.h */; };
+		260CC63315D04377002BF2E0 /* OptionValueEnumeration.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62615D04377002BF2E0 /* OptionValueEnumeration.h */; };
+		260CC63415D04377002BF2E0 /* OptionValueFileSpec.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62715D04377002BF2E0 /* OptionValueFileSpec.h */; };
+		260CC63515D04377002BF2E0 /* OptionValueFileSpecList.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62815D04377002BF2E0 /* OptionValueFileSpecList.h */; };
+		260CC63615D04377002BF2E0 /* OptionValueFormat.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62915D04377002BF2E0 /* OptionValueFormat.h */; };
+		260CC63715D04377002BF2E0 /* OptionValueSInt64.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62A15D04377002BF2E0 /* OptionValueSInt64.h */; };
+		260CC63815D04377002BF2E0 /* OptionValueString.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62B15D04377002BF2E0 /* OptionValueString.h */; };
+		260CC63915D04377002BF2E0 /* OptionValueUInt64.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62C15D04377002BF2E0 /* OptionValueUInt64.h */; };
+		260CC63A15D04377002BF2E0 /* OptionValueUUID.h in Headers */ = {isa = PBXBuildFile; fileRef = 260CC62D15D04377002BF2E0 /* OptionValueUUID.h */; };
+		260CC64815D0440D002BF2E0 /* OptionValueArgs.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC63B15D0440D002BF2E0 /* OptionValueArgs.cpp */; };
+		260CC64915D0440D002BF2E0 /* OptionValueArray.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC63C15D0440D002BF2E0 /* OptionValueArray.cpp */; };
+		260CC64A15D0440D002BF2E0 /* OptionValueBoolean.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC63D15D0440D002BF2E0 /* OptionValueBoolean.cpp */; };
+		260CC64B15D0440D002BF2E0 /* OptionValueProperties.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC63E15D0440D002BF2E0 /* OptionValueProperties.cpp */; };
+		260CC64C15D0440D002BF2E0 /* OptionValueDictionary.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC63F15D0440D002BF2E0 /* OptionValueDictionary.cpp */; };
+		260CC64D15D0440D002BF2E0 /* OptionValueEnumeration.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64015D0440D002BF2E0 /* OptionValueEnumeration.cpp */; };
+		260CC64E15D0440D002BF2E0 /* OptionValueFileSpec.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64115D0440D002BF2E0 /* OptionValueFileSpec.cpp */; };
+		260CC64F15D0440D002BF2E0 /* OptionValueFileSpecLIst.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64215D0440D002BF2E0 /* OptionValueFileSpecLIst.cpp */; };
+		260CC65015D0440D002BF2E0 /* OptionValueFormat.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64315D0440D002BF2E0 /* OptionValueFormat.cpp */; };
+		260CC65115D0440D002BF2E0 /* OptionValueSInt64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64415D0440D002BF2E0 /* OptionValueSInt64.cpp */; };
+		260CC65215D0440D002BF2E0 /* OptionValueString.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64515D0440D002BF2E0 /* OptionValueString.cpp */; };
+		260CC65315D0440D002BF2E0 /* OptionValueUInt64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64615D0440D002BF2E0 /* OptionValueUInt64.cpp */; };
+		260CC65415D0440D002BF2E0 /* OptionValueUUID.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260CC64715D0440D002BF2E0 /* OptionValueUUID.cpp */; };
+		260D9B2715EC369500960137 /* ModuleSpec.h in Headers */ = {isa = PBXBuildFile; fileRef = 260D9B2615EC369500960137 /* ModuleSpec.h */; };
 		260E07C6136FA69E00CF21D3 /* OptionGroupUUID.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260E07C5136FA69E00CF21D3 /* OptionGroupUUID.cpp */; };
 		260E07C8136FAB9200CF21D3 /* OptionGroupFile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 260E07C7136FAB9200CF21D3 /* OptionGroupFile.cpp */; };
 		261744781168585B005ADD65 /* SBType.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 261744771168585B005ADD65 /* SBType.cpp */; };
@@ -58,12 +88,17 @@
 		2628A4D513D4977900F5487A /* ThreadKDP.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2628A4D313D4977900F5487A /* ThreadKDP.cpp */; };
 		262CFC7711A4510000946C6C /* debugserver in Resources */ = {isa = PBXBuildFile; fileRef = 26CE05A0115C31E50022F371 /* debugserver */; };
 		262D24E613FB8710002D1960 /* RegisterContextMemory.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 262D24E413FB8710002D1960 /* RegisterContextMemory.cpp */; };
+		262ED0051631FA2800879631 /* OptionGroupString.h in Headers */ = {isa = PBXBuildFile; fileRef = 262ED0041631FA2800879631 /* OptionGroupString.h */; };
+		262ED0081631FA3A00879631 /* OptionGroupString.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 262ED0071631FA3A00879631 /* OptionGroupString.cpp */; };
 		26368A3C126B697600E8659F /* darwin-debug.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26368A3B126B697600E8659F /* darwin-debug.cpp */; };
 		26368AF7126B960500E8659F /* darwin-debug in Resources */ = {isa = PBXBuildFile; fileRef = 26579F68126A25920007C5CB /* darwin-debug */; };
 		263E949F13661AEA00E7D1CE /* UnwindAssembly-x86.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 263E949D13661AE400E7D1CE /* UnwindAssembly-x86.cpp */; };
+		2640E19F15DC78FD00F23B50 /* Property.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2640E19E15DC78FD00F23B50 /* Property.cpp */; };
 		2642FBAE13D003B400ED6808 /* CommunicationKDP.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2642FBA813D003B400ED6808 /* CommunicationKDP.cpp */; };
 		2642FBB013D003B400ED6808 /* ProcessKDP.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2642FBAA13D003B400ED6808 /* ProcessKDP.cpp */; };
 		2642FBB213D003B400ED6808 /* ProcessKDPLog.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2642FBAC13D003B400ED6808 /* ProcessKDPLog.cpp */; };
+		26491E3B15E1DB8600CBFFC2 /* OptionValueRegex.h in Headers */ = {isa = PBXBuildFile; fileRef = 26491E3A15E1DB8600CBFFC2 /* OptionValueRegex.h */; };
+		26491E3E15E1DB9F00CBFFC2 /* OptionValueRegex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26491E3D15E1DB9F00CBFFC2 /* OptionValueRegex.cpp */; };
 		264A97BF133918BC0017F0BE /* PlatformRemoteGDBServer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 264A97BD133918BC0017F0BE /* PlatformRemoteGDBServer.cpp */; };
 		264D8D5013661BD7003A368F /* UnwindAssembly.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 264D8D4F13661BD7003A368F /* UnwindAssembly.cpp */; };
 		265205A813D3E3F700132FE2 /* RegisterContextKDP_arm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 265205A213D3E3F700132FE2 /* RegisterContextKDP_arm.cpp */; };
@@ -118,6 +153,9 @@
 		26744EF31338317700EF765A /* GDBRemoteCommunicationServer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26744EEF1338317700EF765A /* GDBRemoteCommunicationServer.cpp */; };
 		267C012B136880DF006E963E /* OptionGroupValueObjectDisplay.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 267C012A136880DF006E963E /* OptionGroupValueObjectDisplay.cpp */; };
 		267C01371368C49C006E963E /* OptionGroupOutputFile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26BCFC531368B3E4006DC050 /* OptionGroupOutputFile.cpp */; };
+		268648C416531BF800F04704 /* com.apple.debugserver.posix.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 268648C116531BF800F04704 /* com.apple.debugserver.posix.plist */; };
+		268648C516531BF800F04704 /* com.apple.debugserver.applist.internal.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 268648C216531BF800F04704 /* com.apple.debugserver.applist.internal.plist */; };
+		268648C616531BF800F04704 /* com.apple.debugserver.internal.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 268648C316531BF800F04704 /* com.apple.debugserver.internal.plist */; };
 		2686536C1370ACB200D186A3 /* OptionGroupBoolean.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2686536B1370ACB200D186A3 /* OptionGroupBoolean.cpp */; };
 		268653701370AE7200D186A3 /* OptionGroupUInt64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2686536F1370AE7200D186A3 /* OptionGroupUInt64.cpp */; };
 		2689000113353DB600698AC0 /* BreakpointResolverAddress.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26D0DD5310FE555900271C65 /* BreakpointResolverAddress.cpp */; };
@@ -378,13 +416,18 @@
 		26957D9813D381C900670048 /* RegisterContextDarwin_arm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26957D9213D381C900670048 /* RegisterContextDarwin_arm.cpp */; };
 		26957D9A13D381C900670048 /* RegisterContextDarwin_i386.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26957D9413D381C900670048 /* RegisterContextDarwin_i386.cpp */; };
 		26957D9C13D381C900670048 /* RegisterContextDarwin_x86_64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26957D9613D381C900670048 /* RegisterContextDarwin_x86_64.cpp */; };
+		2697A39315E404B1003E682C /* OptionValueArch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2697A39215E404B1003E682C /* OptionValueArch.cpp */; };
+		2697A39515E404BA003E682C /* OptionValueArch.h in Headers */ = {isa = PBXBuildFile; fileRef = 2697A39415E404BA003E682C /* OptionValueArch.h */; };
 		2697A54D133A6305004E4240 /* PlatformDarwin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2697A54B133A6305004E4240 /* PlatformDarwin.cpp */; };
+		2698699B15E6CBD0002415FF /* OperatingSystemPython.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2698699815E6CBD0002415FF /* OperatingSystemPython.cpp */; };
+		2698699D15E6CBD0002415FF /* OperatingSystemPython.h in Headers */ = {isa = PBXBuildFile; fileRef = 2698699915E6CBD0002415FF /* OperatingSystemPython.h */; };
 		26A527C114E24F5F00F3A14A /* ProcessMachCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26A527BD14E24F5F00F3A14A /* ProcessMachCore.cpp */; };
 		26A527C214E24F5F00F3A14A /* ProcessMachCore.h in Headers */ = {isa = PBXBuildFile; fileRef = 26A527BE14E24F5F00F3A14A /* ProcessMachCore.h */; };
 		26A527C314E24F5F00F3A14A /* ThreadMachCore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26A527BF14E24F5F00F3A14A /* ThreadMachCore.cpp */; };
 		26A527C414E24F5F00F3A14A /* ThreadMachCore.h in Headers */ = {isa = PBXBuildFile; fileRef = 26A527C014E24F5F00F3A14A /* ThreadMachCore.h */; };
 		26A69C5F137A17A500262477 /* RegisterValue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26C6886E137880C400407EDF /* RegisterValue.cpp */; };
-		26A7A035135E6E4200FB369E /* NamedOptionValue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26A7A034135E6E4200FB369E /* NamedOptionValue.cpp */; };
+		26A7A035135E6E4200FB369E /* OptionValue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26A7A034135E6E4200FB369E /* OptionValue.cpp */; };
+		26ACEC2815E077AE00E94760 /* Property.h in Headers */ = {isa = PBXBuildFile; fileRef = 26ACEC2715E077AE00E94760 /* Property.h */; };
 		26B1EFAE154638AF00E2DAC7 /* DWARFDeclContext.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26B1EFAC154638AF00E2DAC7 /* DWARFDeclContext.cpp */; };
 		26B1EFAF154638AF00E2DAC7 /* DWARFDeclContext.h in Headers */ = {isa = PBXBuildFile; fileRef = 26B1EFAD154638AF00E2DAC7 /* DWARFDeclContext.h */; };
 		26B1FCB813381071002886E2 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 26F5C39010F3FA26009D5894 /* CoreFoundation.framework */; };
@@ -405,6 +448,8 @@
 		26D5E15F135BAEA2006EA0A7 /* OptionGroupArchitecture.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26D5E15E135BAEA2006EA0A7 /* OptionGroupArchitecture.cpp */; };
 		26D5E163135BB054006EA0A7 /* OptionGroupPlatform.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26D5E162135BB054006EA0A7 /* OptionGroupPlatform.cpp */; };
 		26D7E45D13D5E30A007FD12B /* SocketAddress.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26D7E45C13D5E30A007FD12B /* SocketAddress.cpp */; };
+		26DAED6015D327A200E15819 /* OptionValuePathMappings.h in Headers */ = {isa = PBXBuildFile; fileRef = 26DAED5F15D327A200E15819 /* OptionValuePathMappings.h */; };
+		26DAED6315D327C200E15819 /* OptionValuePathMappings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26DAED6215D327C200E15819 /* OptionValuePathMappings.cpp */; };
 		26DB3E161379E7AD0080DC73 /* ABIMacOSX_arm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26DB3E071379E7AD0080DC73 /* ABIMacOSX_arm.cpp */; };
 		26DB3E1C1379E7AD0080DC73 /* ABIMacOSX_i386.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26DB3E0F1379E7AD0080DC73 /* ABIMacOSX_i386.cpp */; };
 		26DB3E1F1379E7AD0080DC73 /* ABISysV_x86_64.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26DB3E131379E7AD0080DC73 /* ABISysV_x86_64.cpp */; };
@@ -442,6 +487,7 @@
 		26FFC19C14FC072100087D58 /* DYLDRendezvous.h in Headers */ = {isa = PBXBuildFile; fileRef = 26FFC19614FC072100087D58 /* DYLDRendezvous.h */; };
 		26FFC19D14FC072100087D58 /* DynamicLoaderPOSIXDYLD.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26FFC19714FC072100087D58 /* DynamicLoaderPOSIXDYLD.cpp */; };
 		26FFC19E14FC072100087D58 /* DynamicLoaderPOSIXDYLD.h in Headers */ = {isa = PBXBuildFile; fileRef = 26FFC19814FC072100087D58 /* DynamicLoaderPOSIXDYLD.h */; };
+		490A966B1628C3BF00F0002E /* SBDeclaration.h in Headers */ = {isa = PBXBuildFile; fileRef = 9452573816262CEF00325455 /* SBDeclaration.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		494260DA14579144003C1C78 /* VerifyDecl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 494260D914579144003C1C78 /* VerifyDecl.cpp */; };
 		4966DCC4148978A10028481B /* ClangExternalASTSourceCommon.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4966DCC3148978A10028481B /* ClangExternalASTSourceCommon.cpp */; };
 		49A1CAC51430E8DE00306AC9 /* ExpressionSourceCode.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 49A1CAC31430E8BD00306AC9 /* ExpressionSourceCode.cpp */; };
@@ -449,7 +495,7 @@
 		49A71FE8141FFACF00D59478 /* DataEncoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 268ED0A4140FF54200DE830F /* DataEncoder.cpp */; };
 		49C8507C1384A786007DB519 /* ProcessDataAllocator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 49C850781384A0CA007DB519 /* ProcessDataAllocator.cpp */; };
 		49D8FB3913B5598F00411094 /* ClangASTImporter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 49D8FB3513B558DE00411094 /* ClangASTImporter.cpp */; };
-		49DA65031485C92A005FF180 /* AppleObjCSymbolVendor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 49DA65021485C92A005FF180 /* AppleObjCSymbolVendor.cpp */; };
+		49DA65031485C92A005FF180 /* AppleObjCTypeVendor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 49DA65021485C92A005FF180 /* AppleObjCTypeVendor.cpp */; };
 		4C6649A014EEE7F100B0316F /* StreamCallback.h in Headers */ = {isa = PBXBuildFile; fileRef = 4C66499F14EEE7F100B0316F /* StreamCallback.h */; };
 		4C6649A314EEE81000B0316F /* StreamCallback.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4C6649A214EEE81000B0316F /* StreamCallback.cpp */; };
 		4C701C1E15ABB70C00B50001 /* libxml2.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 26D55234159A7DB100708D8D /* libxml2.dylib */; };
@@ -462,10 +508,13 @@
 		4CCA645613B40B82003BDF98 /* AppleObjCTrampolineHandler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4CCA644813B40B82003BDF98 /* AppleObjCTrampolineHandler.cpp */; };
 		4CCA645813B40B82003BDF98 /* AppleThreadPlanStepThroughObjCTrampoline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4CCA644A13B40B82003BDF98 /* AppleThreadPlanStepThroughObjCTrampoline.cpp */; };
 		4CD0BD0F134BFADF00CB44D4 /* ValueObjectDynamicValue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4CD0BD0E134BFADF00CB44D4 /* ValueObjectDynamicValue.cpp */; };
+		4CE4F673162C971A00F75CB3 /* SBExpressionOptions.h in Headers */ = {isa = PBXBuildFile; fileRef = 4CE4F672162C971A00F75CB3 /* SBExpressionOptions.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		4CE4F675162C973F00F75CB3 /* SBExpressionOptions.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4CE4F674162C973F00F75CB3 /* SBExpressionOptions.cpp */; };
 		4CF3D80C15AF4DC800845BF3 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EDB919B414F6F10D008FF64B /* Security.framework */; };
 		4CF52AF51428291E0051E832 /* SBFileSpecList.h in Headers */ = {isa = PBXBuildFile; fileRef = 4CF52AF41428291E0051E832 /* SBFileSpecList.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		4CF52AF8142829390051E832 /* SBFileSpecList.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4CF52AF7142829390051E832 /* SBFileSpecList.cpp */; };
 		94031A9E13CF486700DCFF3C /* InputReaderEZ.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94031A9D13CF486600DCFF3C /* InputReaderEZ.cpp */; };
+		94094C6B163B6F840083A547 /* ValueObjectCast.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94094C69163B6CD90083A547 /* ValueObjectCast.cpp */; };
 		9415F61813B2C0EF00A52B36 /* FormatManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9415F61713B2C0EF00A52B36 /* FormatManager.cpp */; };
 		941BCC7F14E48C4000BB969C /* SBTypeFilter.h in Headers */ = {isa = PBXBuildFile; fileRef = 9461568614E355F2003A195C /* SBTypeFilter.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		941BCC8014E48C4000BB969C /* SBTypeFormat.h in Headers */ = {isa = PBXBuildFile; fileRef = 9461568714E355F2003A195C /* SBTypeFormat.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -473,6 +522,8 @@
 		941BCC8214E48C4000BB969C /* SBTypeSynthetic.h in Headers */ = {isa = PBXBuildFile; fileRef = 9461568914E355F2003A195C /* SBTypeSynthetic.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		9443B122140C18C40013457C /* SBData.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9443B121140C18C10013457C /* SBData.cpp */; };
 		9443B123140C26AB0013457C /* SBData.h in Headers */ = {isa = PBXBuildFile; fileRef = 9443B120140C18A90013457C /* SBData.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		9452573A16262D0200325455 /* SBDeclaration.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9452573916262D0200325455 /* SBDeclaration.cpp */; };
+		9456F2241616671900656F91 /* DynamicLibrary.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9456F2211616644B00656F91 /* DynamicLibrary.cpp */; };
 		94611EB213CCA4A4003A22AF /* RefCounter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94611EB113CCA4A4003A22AF /* RefCounter.cpp */; };
 		9461569A14E358A6003A195C /* SBTypeFilter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9461568A14E35621003A195C /* SBTypeFilter.cpp */; };
 		9461569B14E358A6003A195C /* SBTypeFormat.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9461568B14E35621003A195C /* SBTypeFormat.cpp */; };
@@ -485,8 +536,12 @@
 		9475C18914E5EA08001BFC6D /* SBTypeCategory.h in Headers */ = {isa = PBXBuildFile; fileRef = 9475C18514E5E9C5001BFC6D /* SBTypeCategory.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		9475C18E14E5F834001BFC6D /* SBTypeNameSpecifier.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9475C18D14E5F834001BFC6D /* SBTypeNameSpecifier.cpp */; };
 		9475C18F14E5F858001BFC6D /* SBTypeNameSpecifier.h in Headers */ = {isa = PBXBuildFile; fileRef = 9475C18C14E5F826001BFC6D /* SBTypeNameSpecifier.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		947A1D641616476B0017C8D1 /* CommandObjectPlugin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 947A1D621616476A0017C8D1 /* CommandObjectPlugin.cpp */; };
+		947A1D651616476B0017C8D1 /* CommandObjectPlugin.h in Headers */ = {isa = PBXBuildFile; fileRef = 947A1D631616476A0017C8D1 /* CommandObjectPlugin.h */; };
 		949ADF031406F648004833E1 /* ValueObjectConstResultImpl.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 949ADF021406F648004833E1 /* ValueObjectConstResultImpl.cpp */; };
 		94B6E76213D88365005F417F /* ValueObjectSyntheticFilter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94B6E76113D88362005F417F /* ValueObjectSyntheticFilter.cpp */; };
+		94CDEB9D15F0258500DD2A7A /* CXXFormatterFunctions.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94CDEB9C15F0258400DD2A7A /* CXXFormatterFunctions.cpp */; };
+		94EA1D5C15E6C9B400D4171A /* PythonDataObjects.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94EA1D5B15E6C9B400D4171A /* PythonDataObjects.cpp */; };
 		94FA3DE01405D50400833217 /* ValueObjectConstResultChild.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 94FA3DDF1405D50300833217 /* ValueObjectConstResultChild.cpp */; };
 		9A19A6AF1163BBB200E0D453 /* SBValue.h in Headers */ = {isa = PBXBuildFile; fileRef = 9A19A6A51163BB7E00E0D453 /* SBValue.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		9A19A6B01163BBB300E0D453 /* SBValue.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9A19A6AD1163BB9800E0D453 /* SBValue.cpp */; };
@@ -520,6 +575,8 @@
 		B299580B14F2FA1400050A04 /* DisassemblerLLVMC.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B299580A14F2FA1400050A04 /* DisassemblerLLVMC.cpp */; };
 		B2A58722143119810092BFBA /* SBWatchpoint.h in Headers */ = {isa = PBXBuildFile; fileRef = B2A58721143119810092BFBA /* SBWatchpoint.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		B2A58724143119D50092BFBA /* SBWatchpoint.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A58723143119D50092BFBA /* SBWatchpoint.cpp */; };
+		B2B7CCEB15D1BD6700EEFB57 /* CommandObjectWatchpointCommand.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2B7CCEA15D1BD6600EEFB57 /* CommandObjectWatchpointCommand.cpp */; };
+		B2B7CCF015D1C20F00EEFB57 /* WatchpointOptions.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2B7CCEF15D1C20F00EEFB57 /* WatchpointOptions.cpp */; };
 		ED88244E15114A9200BC98B9 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EDB919B414F6F10D008FF64B /* Security.framework */; };
 		ED88245015114CA200BC98B9 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = ED88244F15114CA200BC98B9 /* main.mm */; };
 		ED88245115114CA200BC98B9 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = ED88244F15114CA200BC98B9 /* main.mm */; };
@@ -646,6 +703,9 @@
 			dstPath = /Developer/Library/Lockdown/ServiceAgents/;
 			dstSubfolderSpec = 0;
 			files = (
+				268648C416531BF800F04704 /* com.apple.debugserver.posix.plist in CopyFiles */,
+				268648C516531BF800F04704 /* com.apple.debugserver.applist.internal.plist in CopyFiles */,
+				268648C616531BF800F04704 /* com.apple.debugserver.internal.plist in CopyFiles */,
 				AFF87C87150FF669000E1742 /* com.apple.debugserver.plist in CopyFiles */,
 				AFF87C89150FF672000E1742 /* com.apple.debugserver-secure.plist in CopyFiles */,
 				AFF87C8F150FF688000E1742 /* com.apple.debugserver.applist.plist in CopyFiles */,
@@ -659,6 +719,7 @@
 		260223E8115F06E500A601A2 /* SBCommunication.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBCommunication.cpp; path = source/API/SBCommunication.cpp; sourceTree = "<group>"; };
 		26022531115F27FA00A601A2 /* SBFileSpec.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SBFileSpec.h; path = include/lldb/API/SBFileSpec.h; sourceTree = "<group>"; };
 		26022532115F281400A601A2 /* SBFileSpec.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBFileSpec.cpp; path = source/API/SBFileSpec.cpp; sourceTree = "<group>"; };
+		260A248D15D06C4F009981B0 /* OptionValues.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValues.h; path = include/lldb/Interpreter/OptionValues.h; sourceTree = "<group>"; };
 		260C6EA013011578005E16B0 /* File.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = File.h; path = include/lldb/Host/File.h; sourceTree = "<group>"; };
 		260C6EA213011581005E16B0 /* File.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = File.cpp; sourceTree = "<group>"; };
 		260C847110F50EFC00BB2B04 /* ThreadPlanBase.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ThreadPlanBase.cpp; path = source/Target/ThreadPlanBase.cpp; sourceTree = "<group>"; };
@@ -729,6 +790,33 @@
 		260C89DF10F57C5600BB2B04 /* SymbolFileSymtab.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SymbolFileSymtab.h; sourceTree = "<group>"; };
 		260C89E210F57C5600BB2B04 /* SymbolVendorMacOSX.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SymbolVendorMacOSX.cpp; sourceTree = "<group>"; };
 		260C89E310F57C5600BB2B04 /* SymbolVendorMacOSX.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SymbolVendorMacOSX.h; sourceTree = "<group>"; };
+		260CC62115D04377002BF2E0 /* OptionValueArgs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueArgs.h; path = include/lldb/Interpreter/OptionValueArgs.h; sourceTree = "<group>"; };
+		260CC62215D04377002BF2E0 /* OptionValueArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueArray.h; path = include/lldb/Interpreter/OptionValueArray.h; sourceTree = "<group>"; };
+		260CC62315D04377002BF2E0 /* OptionValueBoolean.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueBoolean.h; path = include/lldb/Interpreter/OptionValueBoolean.h; sourceTree = "<group>"; };
+		260CC62415D04377002BF2E0 /* OptionValueProperties.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueProperties.h; path = include/lldb/Interpreter/OptionValueProperties.h; sourceTree = "<group>"; };
+		260CC62515D04377002BF2E0 /* OptionValueDictionary.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueDictionary.h; path = include/lldb/Interpreter/OptionValueDictionary.h; sourceTree = "<group>"; };
+		260CC62615D04377002BF2E0 /* OptionValueEnumeration.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueEnumeration.h; path = include/lldb/Interpreter/OptionValueEnumeration.h; sourceTree = "<group>"; };
+		260CC62715D04377002BF2E0 /* OptionValueFileSpec.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueFileSpec.h; path = include/lldb/Interpreter/OptionValueFileSpec.h; sourceTree = "<group>"; };
+		260CC62815D04377002BF2E0 /* OptionValueFileSpecList.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueFileSpecList.h; path = include/lldb/Interpreter/OptionValueFileSpecList.h; sourceTree = "<group>"; };
+		260CC62915D04377002BF2E0 /* OptionValueFormat.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueFormat.h; path = include/lldb/Interpreter/OptionValueFormat.h; sourceTree = "<group>"; };
+		260CC62A15D04377002BF2E0 /* OptionValueSInt64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueSInt64.h; path = include/lldb/Interpreter/OptionValueSInt64.h; sourceTree = "<group>"; };
+		260CC62B15D04377002BF2E0 /* OptionValueString.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueString.h; path = include/lldb/Interpreter/OptionValueString.h; sourceTree = "<group>"; };
+		260CC62C15D04377002BF2E0 /* OptionValueUInt64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueUInt64.h; path = include/lldb/Interpreter/OptionValueUInt64.h; sourceTree = "<group>"; };
+		260CC62D15D04377002BF2E0 /* OptionValueUUID.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueUUID.h; path = include/lldb/Interpreter/OptionValueUUID.h; sourceTree = "<group>"; };
+		260CC63B15D0440D002BF2E0 /* OptionValueArgs.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueArgs.cpp; path = source/Interpreter/OptionValueArgs.cpp; sourceTree = "<group>"; };
+		260CC63C15D0440D002BF2E0 /* OptionValueArray.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueArray.cpp; path = source/Interpreter/OptionValueArray.cpp; sourceTree = "<group>"; };
+		260CC63D15D0440D002BF2E0 /* OptionValueBoolean.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueBoolean.cpp; path = source/Interpreter/OptionValueBoolean.cpp; sourceTree = "<group>"; };
+		260CC63E15D0440D002BF2E0 /* OptionValueProperties.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueProperties.cpp; path = source/Interpreter/OptionValueProperties.cpp; sourceTree = "<group>"; };
+		260CC63F15D0440D002BF2E0 /* OptionValueDictionary.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueDictionary.cpp; path = source/Interpreter/OptionValueDictionary.cpp; sourceTree = "<group>"; };
+		260CC64015D0440D002BF2E0 /* OptionValueEnumeration.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueEnumeration.cpp; path = source/Interpreter/OptionValueEnumeration.cpp; sourceTree = "<group>"; };
+		260CC64115D0440D002BF2E0 /* OptionValueFileSpec.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueFileSpec.cpp; path = source/Interpreter/OptionValueFileSpec.cpp; sourceTree = "<group>"; };
+		260CC64215D0440D002BF2E0 /* OptionValueFileSpecLIst.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueFileSpecLIst.cpp; path = source/Interpreter/OptionValueFileSpecLIst.cpp; sourceTree = "<group>"; };
+		260CC64315D0440D002BF2E0 /* OptionValueFormat.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueFormat.cpp; path = source/Interpreter/OptionValueFormat.cpp; sourceTree = "<group>"; };
+		260CC64415D0440D002BF2E0 /* OptionValueSInt64.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueSInt64.cpp; path = source/Interpreter/OptionValueSInt64.cpp; sourceTree = "<group>"; };
+		260CC64515D0440D002BF2E0 /* OptionValueString.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueString.cpp; path = source/Interpreter/OptionValueString.cpp; sourceTree = "<group>"; };
+		260CC64615D0440D002BF2E0 /* OptionValueUInt64.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueUInt64.cpp; path = source/Interpreter/OptionValueUInt64.cpp; sourceTree = "<group>"; };
+		260CC64715D0440D002BF2E0 /* OptionValueUUID.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueUUID.cpp; path = source/Interpreter/OptionValueUUID.cpp; sourceTree = "<group>"; };
+		260D9B2615EC369500960137 /* ModuleSpec.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ModuleSpec.h; path = include/lldb/Core/ModuleSpec.h; sourceTree = "<group>"; };
 		260E07C3136FA68900CF21D3 /* OptionGroupUUID.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptionGroupUUID.h; path = include/lldb/Interpreter/OptionGroupUUID.h; sourceTree = "<group>"; };
 		260E07C5136FA69E00CF21D3 /* OptionGroupUUID.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionGroupUUID.cpp; path = source/Interpreter/OptionGroupUUID.cpp; sourceTree = "<group>"; };
 		260E07C7136FAB9200CF21D3 /* OptionGroupFile.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionGroupFile.cpp; path = source/Interpreter/OptionGroupFile.cpp; sourceTree = "<group>"; };
@@ -806,12 +894,15 @@
 		2628A4D413D4977900F5487A /* ThreadKDP.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThreadKDP.h; sourceTree = "<group>"; };
 		262D24E413FB8710002D1960 /* RegisterContextMemory.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RegisterContextMemory.cpp; path = Utility/RegisterContextMemory.cpp; sourceTree = "<group>"; };
 		262D24E513FB8710002D1960 /* RegisterContextMemory.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RegisterContextMemory.h; path = Utility/RegisterContextMemory.h; sourceTree = "<group>"; };
+		262ED0041631FA2800879631 /* OptionGroupString.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionGroupString.h; path = include/lldb/Interpreter/OptionGroupString.h; sourceTree = "<group>"; };
+		262ED0071631FA3A00879631 /* OptionGroupString.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionGroupString.cpp; path = source/Interpreter/OptionGroupString.cpp; sourceTree = "<group>"; };
 		263664921140A4930075843B /* Debugger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; name = Debugger.cpp; path = source/Core/Debugger.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
 		263664941140A4C10075843B /* Debugger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; lineEnding = 0; name = Debugger.h; path = include/lldb/Core/Debugger.h; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
 		26368A3B126B697600E8659F /* darwin-debug.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = "darwin-debug.cpp"; path = "tools/darwin-debug/darwin-debug.cpp"; sourceTree = "<group>"; };
 		263E949D13661AE400E7D1CE /* UnwindAssembly-x86.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = "UnwindAssembly-x86.cpp"; sourceTree = "<group>"; };
 		263E949E13661AE400E7D1CE /* UnwindAssembly-x86.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UnwindAssembly-x86.h"; sourceTree = "<group>"; };
 		263FEDA5112CC1DA00E4C208 /* ThreadSafeSTLMap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ThreadSafeSTLMap.h; path = include/lldb/Core/ThreadSafeSTLMap.h; sourceTree = "<group>"; };
+		2640E19E15DC78FD00F23B50 /* Property.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Property.cpp; path = source/Interpreter/Property.cpp; sourceTree = "<group>"; };
 		26424E3C125986CB0016D82C /* ValueObjectConstResult.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectConstResult.cpp; path = source/Core/ValueObjectConstResult.cpp; sourceTree = "<group>"; };
 		26424E3E125986D30016D82C /* ValueObjectConstResult.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ValueObjectConstResult.h; path = include/lldb/Core/ValueObjectConstResult.h; sourceTree = "<group>"; };
 		2642FBA813D003B400ED6808 /* CommunicationKDP.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CommunicationKDP.cpp; sourceTree = "<group>"; };
@@ -823,6 +914,8 @@
 		264334381110F63100CDB6C6 /* ValueObjectRegister.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectRegister.cpp; path = source/Core/ValueObjectRegister.cpp; sourceTree = "<group>"; };
 		2643343A1110F63C00CDB6C6 /* ValueObjectRegister.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ValueObjectRegister.h; path = include/lldb/Core/ValueObjectRegister.h; sourceTree = "<group>"; };
 		264723A511FA076E00DE380C /* CleanUp.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CleanUp.h; path = include/lldb/Utility/CleanUp.h; sourceTree = "<group>"; };
+		26491E3A15E1DB8600CBFFC2 /* OptionValueRegex.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueRegex.h; path = include/lldb/Interpreter/OptionValueRegex.h; sourceTree = "<group>"; };
+		26491E3D15E1DB9F00CBFFC2 /* OptionValueRegex.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueRegex.cpp; path = source/Interpreter/OptionValueRegex.cpp; sourceTree = "<group>"; };
 		264A43BB1320B3B4005B4096 /* Platform.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Platform.h; path = include/lldb/Target/Platform.h; sourceTree = "<group>"; };
 		264A43BD1320BCEB005B4096 /* Platform.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Platform.cpp; path = source/Target/Platform.cpp; sourceTree = "<group>"; };
 		264A97BD133918BC0017F0BE /* PlatformRemoteGDBServer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PlatformRemoteGDBServer.cpp; path = "gdb-server/PlatformRemoteGDBServer.cpp"; sourceTree = "<group>"; };
@@ -884,6 +977,9 @@
 		2682F16B115EDA0D00CCFF99 /* PseudoTerminal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = PseudoTerminal.h; path = include/lldb/Utility/PseudoTerminal.h; sourceTree = "<group>"; };
 		2682F284115EF3A700CCFF99 /* SBError.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBError.cpp; path = source/API/SBError.cpp; sourceTree = "<group>"; };
 		2682F286115EF3BD00CCFF99 /* SBError.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SBError.h; path = include/lldb/API/SBError.h; sourceTree = "<group>"; };
+		268648C116531BF800F04704 /* com.apple.debugserver.posix.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = com.apple.debugserver.posix.plist; path = tools/debugserver/source/com.apple.debugserver.posix.plist; sourceTree = "<group>"; };
+		268648C216531BF800F04704 /* com.apple.debugserver.applist.internal.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = com.apple.debugserver.applist.internal.plist; path = tools/debugserver/source/com.apple.debugserver.applist.internal.plist; sourceTree = "<group>"; };
+		268648C316531BF800F04704 /* com.apple.debugserver.internal.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = com.apple.debugserver.internal.plist; path = tools/debugserver/source/com.apple.debugserver.internal.plist; sourceTree = "<group>"; };
 		2686536B1370ACB200D186A3 /* OptionGroupBoolean.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionGroupBoolean.cpp; path = source/Interpreter/OptionGroupBoolean.cpp; sourceTree = "<group>"; };
 		2686536D1370ACC600D186A3 /* OptionGroupBoolean.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptionGroupBoolean.h; path = include/lldb/Interpreter/OptionGroupBoolean.h; sourceTree = "<group>"; };
 		2686536E1370AE5A00D186A3 /* OptionGroupUInt64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptionGroupUInt64.h; path = include/lldb/Interpreter/OptionGroupUInt64.h; sourceTree = "<group>"; };
@@ -920,8 +1016,12 @@
 		26957D9513D381C900670048 /* RegisterContextDarwin_i386.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RegisterContextDarwin_i386.h; path = Utility/RegisterContextDarwin_i386.h; sourceTree = "<group>"; };
 		26957D9613D381C900670048 /* RegisterContextDarwin_x86_64.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RegisterContextDarwin_x86_64.cpp; path = Utility/RegisterContextDarwin_x86_64.cpp; sourceTree = "<group>"; };
 		26957D9713D381C900670048 /* RegisterContextDarwin_x86_64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = RegisterContextDarwin_x86_64.h; path = Utility/RegisterContextDarwin_x86_64.h; sourceTree = "<group>"; };
+		2697A39215E404B1003E682C /* OptionValueArch.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValueArch.cpp; path = source/Interpreter/OptionValueArch.cpp; sourceTree = "<group>"; };
+		2697A39415E404BA003E682C /* OptionValueArch.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValueArch.h; path = include/lldb/Interpreter/OptionValueArch.h; sourceTree = "<group>"; };
 		2697A54B133A6305004E4240 /* PlatformDarwin.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = PlatformDarwin.cpp; sourceTree = "<group>"; };
 		2697A54C133A6305004E4240 /* PlatformDarwin.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlatformDarwin.h; sourceTree = "<group>"; };
+		2698699815E6CBD0002415FF /* OperatingSystemPython.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = OperatingSystemPython.cpp; sourceTree = "<group>"; };
+		2698699915E6CBD0002415FF /* OperatingSystemPython.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OperatingSystemPython.h; sourceTree = "<group>"; };
 		269FF07D12494F7D00225026 /* FuncUnwinders.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = FuncUnwinders.h; path = include/lldb/Symbol/FuncUnwinders.h; sourceTree = "<group>"; };
 		269FF07F12494F8E00225026 /* UnwindPlan.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = UnwindPlan.h; path = include/lldb/Symbol/UnwindPlan.h; sourceTree = "<group>"; };
 		269FF08112494FC200225026 /* UnwindTable.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = UnwindTable.h; path = include/lldb/Symbol/UnwindTable.h; sourceTree = "<group>"; };
@@ -935,8 +1035,9 @@
 		26A527BE14E24F5F00F3A14A /* ProcessMachCore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ProcessMachCore.h; sourceTree = "<group>"; };
 		26A527BF14E24F5F00F3A14A /* ThreadMachCore.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ThreadMachCore.cpp; sourceTree = "<group>"; };
 		26A527C014E24F5F00F3A14A /* ThreadMachCore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ThreadMachCore.h; sourceTree = "<group>"; };
-		26A7A034135E6E4200FB369E /* NamedOptionValue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = NamedOptionValue.cpp; path = source/Interpreter/NamedOptionValue.cpp; sourceTree = "<group>"; };
-		26A7A036135E6E5300FB369E /* NamedOptionValue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = NamedOptionValue.h; path = include/lldb/Interpreter/NamedOptionValue.h; sourceTree = "<group>"; };
+		26A7A034135E6E4200FB369E /* OptionValue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValue.cpp; path = source/Interpreter/OptionValue.cpp; sourceTree = "<group>"; };
+		26A7A036135E6E5300FB369E /* OptionValue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptionValue.h; path = include/lldb/Interpreter/OptionValue.h; sourceTree = "<group>"; };
+		26ACEC2715E077AE00E94760 /* Property.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Property.h; path = include/lldb/Interpreter/Property.h; sourceTree = "<group>"; };
 		26B167A41123BF5500DC7B4F /* ThreadSafeValue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ThreadSafeValue.h; path = include/lldb/Core/ThreadSafeValue.h; sourceTree = "<group>"; };
 		26B1EFAC154638AF00E2DAC7 /* DWARFDeclContext.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DWARFDeclContext.cpp; sourceTree = "<group>"; };
 		26B1EFAD154638AF00E2DAC7 /* DWARFDeclContext.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DWARFDeclContext.h; sourceTree = "<group>"; };
@@ -1230,6 +1331,8 @@
 		26D7E45C13D5E30A007FD12B /* SocketAddress.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SocketAddress.cpp; path = source/Host/common/SocketAddress.cpp; sourceTree = "<group>"; };
 		26D9FDC612F784E60003F2EE /* EmulateInstruction.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = EmulateInstruction.h; path = include/lldb/Core/EmulateInstruction.h; sourceTree = "<group>"; };
 		26D9FDC812F784FD0003F2EE /* EmulateInstruction.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = EmulateInstruction.cpp; path = source/Core/EmulateInstruction.cpp; sourceTree = "<group>"; };
+		26DAED5F15D327A200E15819 /* OptionValuePathMappings.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OptionValuePathMappings.h; path = include/lldb/Interpreter/OptionValuePathMappings.h; sourceTree = "<group>"; };
+		26DAED6215D327C200E15819 /* OptionValuePathMappings.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OptionValuePathMappings.cpp; path = source/Interpreter/OptionValuePathMappings.cpp; sourceTree = "<group>"; };
 		26DAFD9711529BC7005A394E /* ExecutionContextScope.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ExecutionContextScope.h; path = include/lldb/Target/ExecutionContextScope.h; sourceTree = "<group>"; };
 		26DB3E071379E7AD0080DC73 /* ABIMacOSX_arm.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ABIMacOSX_arm.cpp; sourceTree = "<group>"; };
 		26DB3E081379E7AD0080DC73 /* ABIMacOSX_arm.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ABIMacOSX_arm.h; sourceTree = "<group>"; };
@@ -1326,6 +1429,7 @@
 		49A1CAC31430E8BD00306AC9 /* ExpressionSourceCode.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ExpressionSourceCode.cpp; path = source/Expression/ExpressionSourceCode.cpp; sourceTree = "<group>"; };
 		49A8A39F11D568A300AD3B68 /* ASTResultSynthesizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ASTResultSynthesizer.cpp; path = source/Expression/ASTResultSynthesizer.cpp; sourceTree = "<group>"; };
 		49A8A3A311D568BF00AD3B68 /* ASTResultSynthesizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ASTResultSynthesizer.h; path = include/lldb/Expression/ASTResultSynthesizer.h; sourceTree = "<group>"; };
+		49B01A2D15F67B1700666829 /* TypeVendor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = TypeVendor.h; path = include/lldb/Symbol/TypeVendor.h; sourceTree = "<group>"; };
 		49BB309511F79450001A4197 /* TaggedASTType.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TaggedASTType.h; path = include/lldb/Symbol/TaggedASTType.h; sourceTree = "<group>"; };
 		49C850761384A02F007DB519 /* ProcessDataAllocator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ProcessDataAllocator.h; path = include/lldb/Expression/ProcessDataAllocator.h; sourceTree = "<group>"; };
 		49C850781384A0CA007DB519 /* ProcessDataAllocator.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ProcessDataAllocator.cpp; path = source/Expression/ProcessDataAllocator.cpp; sourceTree = "<group>"; };
@@ -1337,8 +1441,8 @@
 		49D7072811B5AD11001AD875 /* ClangASTSource.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ClangASTSource.cpp; path = source/Expression/ClangASTSource.cpp; sourceTree = "<group>"; };
 		49D8FB3513B558DE00411094 /* ClangASTImporter.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ClangASTImporter.cpp; path = source/Symbol/ClangASTImporter.cpp; sourceTree = "<group>"; };
 		49D8FB3713B5594900411094 /* ClangASTImporter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ClangASTImporter.h; path = include/lldb/Symbol/ClangASTImporter.h; sourceTree = "<group>"; };
-		49DA65021485C92A005FF180 /* AppleObjCSymbolVendor.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = AppleObjCSymbolVendor.cpp; sourceTree = "<group>"; };
-		49DA65041485C942005FF180 /* AppleObjCSymbolVendor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppleObjCSymbolVendor.h; sourceTree = "<group>"; };
+		49DA65021485C92A005FF180 /* AppleObjCTypeVendor.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = AppleObjCTypeVendor.cpp; sourceTree = "<group>"; };
+		49DA65041485C942005FF180 /* AppleObjCTypeVendor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppleObjCTypeVendor.h; sourceTree = "<group>"; };
 		49E45FA911F660DC008F7B28 /* ClangASTType.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ClangASTType.h; path = include/lldb/Symbol/ClangASTType.h; sourceTree = "<group>"; };
 		49E45FAD11F660FE008F7B28 /* ClangASTType.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ClangASTType.cpp; path = source/Symbol/ClangASTType.cpp; sourceTree = "<group>"; };
 		49EC3E98118F90AC00B1265E /* ThreadPlanCallFunction.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ThreadPlanCallFunction.cpp; path = source/Target/ThreadPlanCallFunction.cpp; sourceTree = "<group>"; };
@@ -1400,6 +1504,9 @@
 		4CCA644B13B40B82003BDF98 /* AppleThreadPlanStepThroughObjCTrampoline.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppleThreadPlanStepThroughObjCTrampoline.h; sourceTree = "<group>"; };
 		4CD0BD0C134BFAB600CB44D4 /* ValueObjectDynamicValue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ValueObjectDynamicValue.h; path = include/lldb/Core/ValueObjectDynamicValue.h; sourceTree = "<group>"; };
 		4CD0BD0E134BFADF00CB44D4 /* ValueObjectDynamicValue.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectDynamicValue.cpp; path = source/Core/ValueObjectDynamicValue.cpp; sourceTree = "<group>"; };
+		4CE4F672162C971A00F75CB3 /* SBExpressionOptions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SBExpressionOptions.h; path = include/lldb/API/SBExpressionOptions.h; sourceTree = "<group>"; };
+		4CE4F674162C973F00F75CB3 /* SBExpressionOptions.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBExpressionOptions.cpp; path = source/API/SBExpressionOptions.cpp; sourceTree = "<group>"; };
+		4CE4F676162CE1E100F75CB3 /* SBExpressionOptions.i */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c.preprocessed; path = SBExpressionOptions.i; sourceTree = "<group>"; };
 		4CEDAED311754F5E00E875A6 /* ThreadPlanStepUntil.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ThreadPlanStepUntil.h; path = include/lldb/Target/ThreadPlanStepUntil.h; sourceTree = "<group>"; };
 		4CF52AF41428291E0051E832 /* SBFileSpecList.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SBFileSpecList.h; path = include/lldb/API/SBFileSpecList.h; sourceTree = "<group>"; };
 		4CF52AF7142829390051E832 /* SBFileSpecList.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBFileSpecList.cpp; path = source/API/SBFileSpecList.cpp; sourceTree = "<group>"; };
@@ -1413,10 +1520,17 @@
 		94031A9B13CF484600DCFF3C /* InputReaderEZ.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = InputReaderEZ.h; path = include/lldb/Core/InputReaderEZ.h; sourceTree = "<group>"; };
 		94031A9D13CF486600DCFF3C /* InputReaderEZ.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = InputReaderEZ.cpp; path = source/Core/InputReaderEZ.cpp; sourceTree = "<group>"; };
 		94031A9F13CF5B3D00DCFF3C /* PriorityPointerPair.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PriorityPointerPair.h; path = include/lldb/Utility/PriorityPointerPair.h; sourceTree = "<group>"; };
+		94094C68163B6CCC0083A547 /* ValueObjectCast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ValueObjectCast.h; path = include/lldb/Core/ValueObjectCast.h; sourceTree = "<group>"; };
+		94094C69163B6CD90083A547 /* ValueObjectCast.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectCast.cpp; path = source/Core/ValueObjectCast.cpp; sourceTree = "<group>"; };
 		9415F61613B2C0DC00A52B36 /* FormatManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; lineEnding = 0; name = FormatManager.h; path = include/lldb/Core/FormatManager.h; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
 		9415F61713B2C0EF00A52B36 /* FormatManager.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; name = FormatManager.cpp; path = source/Core/FormatManager.cpp; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.cpp; };
 		9443B120140C18A90013457C /* SBData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SBData.h; path = include/lldb/API/SBData.h; sourceTree = "<group>"; };
 		9443B121140C18C10013457C /* SBData.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBData.cpp; path = source/API/SBData.cpp; sourceTree = "<group>"; };
+		9452573616262CD000325455 /* SBDeclaration.i */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c.preprocessed; path = SBDeclaration.i; sourceTree = "<group>"; };
+		9452573816262CEF00325455 /* SBDeclaration.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SBDeclaration.h; path = include/lldb/API/SBDeclaration.h; sourceTree = "<group>"; };
+		9452573916262D0200325455 /* SBDeclaration.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBDeclaration.cpp; path = source/API/SBDeclaration.cpp; sourceTree = "<group>"; };
+		9456F2211616644B00656F91 /* DynamicLibrary.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DynamicLibrary.cpp; sourceTree = "<group>"; };
+		9456F2231616645A00656F91 /* DynamicLibrary.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DynamicLibrary.h; path = include/lldb/Host/DynamicLibrary.h; sourceTree = "<group>"; };
 		94611EAF13CCA363003A22AF /* RefCounter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = RefCounter.h; path = include/lldb/Utility/RefCounter.h; sourceTree = "<group>"; };
 		94611EB113CCA4A4003A22AF /* RefCounter.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = RefCounter.cpp; path = source/Utility/RefCounter.cpp; sourceTree = "<group>"; };
 		9461568614E355F2003A195C /* SBTypeFilter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SBTypeFilter.h; path = include/lldb/API/SBTypeFilter.h; sourceTree = "<group>"; };
@@ -1443,6 +1557,8 @@
 		9475C18B14E5F818001BFC6D /* SBTypeNameSpecifier.i */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c.preprocessed; path = SBTypeNameSpecifier.i; sourceTree = "<group>"; };
 		9475C18C14E5F826001BFC6D /* SBTypeNameSpecifier.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SBTypeNameSpecifier.h; path = include/lldb/API/SBTypeNameSpecifier.h; sourceTree = "<group>"; };
 		9475C18D14E5F834001BFC6D /* SBTypeNameSpecifier.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBTypeNameSpecifier.cpp; path = source/API/SBTypeNameSpecifier.cpp; sourceTree = "<group>"; };
+		947A1D621616476A0017C8D1 /* CommandObjectPlugin.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = CommandObjectPlugin.cpp; path = source/Commands/CommandObjectPlugin.cpp; sourceTree = "<group>"; };
+		947A1D631616476A0017C8D1 /* CommandObjectPlugin.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CommandObjectPlugin.h; path = source/Commands/CommandObjectPlugin.h; sourceTree = "<group>"; };
 		949ADF001406F62E004833E1 /* ValueObjectConstResultImpl.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ValueObjectConstResultImpl.h; path = include/lldb/Core/ValueObjectConstResultImpl.h; sourceTree = "<group>"; };
 		949ADF021406F648004833E1 /* ValueObjectConstResultImpl.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectConstResultImpl.cpp; path = source/Core/ValueObjectConstResultImpl.cpp; sourceTree = "<group>"; };
 		94A8287514031D05006C37A8 /* FormatNavigator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = FormatNavigator.h; path = include/lldb/Core/FormatNavigator.h; sourceTree = "<group>"; };
@@ -1450,8 +1566,12 @@
 		94A9112D13D5DF210046D8A6 /* FormatClasses.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = FormatClasses.cpp; path = source/Core/FormatClasses.cpp; sourceTree = "<group>"; };
 		94B6E76013D8833C005F417F /* ValueObjectSyntheticFilter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ValueObjectSyntheticFilter.h; path = include/lldb/Core/ValueObjectSyntheticFilter.h; sourceTree = "<group>"; };
 		94B6E76113D88362005F417F /* ValueObjectSyntheticFilter.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectSyntheticFilter.cpp; path = source/Core/ValueObjectSyntheticFilter.cpp; sourceTree = "<group>"; };
+		94CDEB9A15F0226900DD2A7A /* CXXFormatterFunctions.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CXXFormatterFunctions.h; path = include/lldb/Core/CXXFormatterFunctions.h; sourceTree = "<group>"; };
+		94CDEB9C15F0258400DD2A7A /* CXXFormatterFunctions.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = CXXFormatterFunctions.cpp; path = source/Core/CXXFormatterFunctions.cpp; sourceTree = "<group>"; };
 		94E367CC140C4EC4001C7A5A /* modify-python-lldb.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = "modify-python-lldb.py"; sourceTree = "<group>"; };
 		94E367CE140C4EEA001C7A5A /* python-typemaps.swig */ = {isa = PBXFileReference; lastKnownFileType = text; path = "python-typemaps.swig"; sourceTree = "<group>"; };
+		94EA1D5A15E6C99B00D4171A /* PythonDataObjects.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PythonDataObjects.h; path = include/lldb/Interpreter/PythonDataObjects.h; sourceTree = "<group>"; };
+		94EA1D5B15E6C9B400D4171A /* PythonDataObjects.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = PythonDataObjects.cpp; path = source/Interpreter/PythonDataObjects.cpp; sourceTree = "<group>"; };
 		94EBAC8313D9EE26009BA64E /* PythonPointer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PythonPointer.h; path = include/lldb/Utility/PythonPointer.h; sourceTree = "<group>"; };
 		94FA3DDD1405D4E500833217 /* ValueObjectConstResultChild.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ValueObjectConstResultChild.h; path = include/lldb/Core/ValueObjectConstResultChild.h; sourceTree = "<group>"; };
 		94FA3DDF1405D50300833217 /* ValueObjectConstResultChild.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ValueObjectConstResultChild.cpp; path = source/Core/ValueObjectConstResultChild.cpp; sourceTree = "<group>"; };
@@ -1557,6 +1677,10 @@
 		B2A58721143119810092BFBA /* SBWatchpoint.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SBWatchpoint.h; path = include/lldb/API/SBWatchpoint.h; sourceTree = "<group>"; };
 		B2A58723143119D50092BFBA /* SBWatchpoint.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SBWatchpoint.cpp; path = source/API/SBWatchpoint.cpp; sourceTree = "<group>"; };
 		B2A5872514313B480092BFBA /* SBWatchpoint.i */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; path = SBWatchpoint.i; sourceTree = "<group>"; };
+		B2B7CCEA15D1BD6600EEFB57 /* CommandObjectWatchpointCommand.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = CommandObjectWatchpointCommand.cpp; path = source/Commands/CommandObjectWatchpointCommand.cpp; sourceTree = "<group>"; };
+		B2B7CCEC15D1BD9600EEFB57 /* CommandObjectWatchpointCommand.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CommandObjectWatchpointCommand.h; path = source/Commands/CommandObjectWatchpointCommand.h; sourceTree = "<group>"; };
+		B2B7CCED15D1BFB700EEFB57 /* WatchpointOptions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = WatchpointOptions.h; path = include/lldb/Breakpoint/WatchpointOptions.h; sourceTree = "<group>"; };
+		B2B7CCEF15D1C20F00EEFB57 /* WatchpointOptions.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = WatchpointOptions.cpp; path = source/Breakpoint/WatchpointOptions.cpp; sourceTree = "<group>"; };
 		B2D3033612EFA5C500F84EB3 /* InstructionUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = InstructionUtils.h; path = Utility/InstructionUtils.h; sourceTree = "<group>"; };
 		ED88244F15114CA200BC98B9 /* main.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		ED88245215114CFC00BC98B9 /* LauncherRootXPCService.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LauncherRootXPCService.mm; sourceTree = "<group>"; };
@@ -1915,11 +2039,13 @@
 				2611FEF7142D83060017FEA3 /* SBCompileUnit.i */,
 				2611FEF8142D83060017FEA3 /* SBData.i */,
 				2611FEF9142D83060017FEA3 /* SBDebugger.i */,
+				9452573616262CD000325455 /* SBDeclaration.i */,
 				2611FEFA142D83060017FEA3 /* SBError.i */,
 				2611FEFB142D83060017FEA3 /* SBEvent.i */,
 				2611FEFC142D83060017FEA3 /* SBFileSpec.i */,
 				2611FEFD142D83060017FEA3 /* SBFileSpecList.i */,
 				2611FEFE142D83060017FEA3 /* SBFrame.i */,
+				4CE4F676162CE1E100F75CB3 /* SBExpressionOptions.i */,
 				2611FEFF142D83060017FEA3 /* SBFunction.i */,
 				2611FF00142D83060017FEA3 /* SBHostOS.i */,
 				2611FF01142D83060017FEA3 /* SBInputReader.i */,
@@ -2004,10 +2130,14 @@
 				9443B121140C18C10013457C /* SBData.cpp */,
 				9A9830FB1125FC5800A56CB0 /* SBDebugger.h */,
 				9A9830FA1125FC5800A56CB0 /* SBDebugger.cpp */,
+				9452573816262CEF00325455 /* SBDeclaration.h */,
+				9452573916262D0200325455 /* SBDeclaration.cpp */,
 				2682F286115EF3BD00CCFF99 /* SBError.h */,
 				2682F284115EF3A700CCFF99 /* SBError.cpp */,
 				9A9830FE1125FC5800A56CB0 /* SBEvent.h */,
 				9A9830FD1125FC5800A56CB0 /* SBEvent.cpp */,
+				4CE4F672162C971A00F75CB3 /* SBExpressionOptions.h */,
+				4CE4F674162C973F00F75CB3 /* SBExpressionOptions.cpp */,
 				26022531115F27FA00A601A2 /* SBFileSpec.h */,
 				26022532115F281400A601A2 /* SBFileSpec.cpp */,
 				4CF52AF41428291E0051E832 /* SBFileSpecList.h */,
@@ -2068,8 +2198,8 @@
 				9A19A6AD1163BB9800E0D453 /* SBValue.cpp */,
 				9A357582116CFDEE00E8ED2F /* SBValueList.h */,
 				9A35758D116CFE0F00E8ED2F /* SBValueList.cpp */,
-				B2A58723143119D50092BFBA /* SBWatchpoint.cpp */,
 				B2A58721143119810092BFBA /* SBWatchpoint.h */,
+				B2A58723143119D50092BFBA /* SBWatchpoint.cpp */,
 			);
 			name = API;
 			sourceTree = "<group>";
@@ -2108,6 +2238,9 @@
 			isa = PBXGroup;
 			children = (
 				AF90106315AB7C5700FF120D /* lldb.1 */,
+				268648C116531BF800F04704 /* com.apple.debugserver.posix.plist */,
+				268648C216531BF800F04704 /* com.apple.debugserver.applist.internal.plist */,
+				268648C316531BF800F04704 /* com.apple.debugserver.internal.plist */,
 				AFF87C8E150FF688000E1742 /* com.apple.debugserver.applist.plist */,
 				AFF87C8C150FF680000E1742 /* com.apple.debugserver.applist.plist */,
 				AFF87C8A150FF677000E1742 /* com.apple.debugserver.applist.plist */,
@@ -2184,6 +2317,7 @@
 			isa = PBXGroup;
 			children = (
 				26274F9F14030EEF006BA130 /* Darwin-Kernel */,
+				2698699715E6CBD0002415FF /* Python */,
 			);
 			path = OperatingSystem;
 			sourceTree = "<group>";
@@ -2257,6 +2391,15 @@
 				2694E9A214FC0BBD0076DE67 /* PlatformLinux.h */,
 			);
 			path = Linux;
+			sourceTree = "<group>";
+		};
+		2698699715E6CBD0002415FF /* Python */ = {
+			isa = PBXGroup;
+			children = (
+				2698699815E6CBD0002415FF /* OperatingSystemPython.cpp */,
+				2698699915E6CBD0002415FF /* OperatingSystemPython.h */,
+			);
+			path = Python;
 			sourceTree = "<group>";
 		};
 		26A3B4AB1181454800381BC2 /* BSD-Archive */ = {
@@ -2354,6 +2497,8 @@
 				266603C91345B5A8004DA8B6 /* ConnectionSharedMemory.cpp */,
 				26BC7D7C10F1B77400F91463 /* ConstString.h */,
 				26BC7E9410F1B85900F91463 /* ConstString.cpp */,
+				94CDEB9A15F0226900DD2A7A /* CXXFormatterFunctions.h */,
+				94CDEB9C15F0258400DD2A7A /* CXXFormatterFunctions.cpp */,
 				26BC7D5910F1B77400F91463 /* DataBuffer.h */,
 				26BC7D5B10F1B77400F91463 /* DataBufferHeap.h */,
 				26BC7E7210F1B85900F91463 /* DataBufferHeap.cpp */,
@@ -2412,6 +2557,7 @@
 				26BC7E8210F1B85900F91463 /* ModuleChild.cpp */,
 				26BC7D6C10F1B77400F91463 /* ModuleList.h */,
 				26BC7E8310F1B85900F91463 /* ModuleList.cpp */,
+				260D9B2615EC369500960137 /* ModuleSpec.h */,
 				26651A15133BF9CC005B64B7 /* Opcode.h */,
 				26651A17133BF9DF005B64B7 /* Opcode.cpp */,
 				266DFE9813FD658300D0C574 /* OperatingSystem.h */,
@@ -2464,6 +2610,8 @@
 				26BC7E9910F1B85900F91463 /* Value.cpp */,
 				26BC7D8210F1B77400F91463 /* ValueObject.h */,
 				26BC7E9A10F1B85900F91463 /* ValueObject.cpp */,
+				94094C68163B6CCC0083A547 /* ValueObjectCast.h */,
+				94094C69163B6CD90083A547 /* ValueObjectCast.cpp */,
 				26BC7D8310F1B77400F91463 /* ValueObjectChild.h */,
 				26BC7E9B10F1B85900F91463 /* ValueObjectChild.cpp */,
 				26424E3E125986D30016D82C /* ValueObjectConstResult.h */,
@@ -2542,6 +2690,7 @@
 				9467E65113C3D97600B3B6F3 /* TypeHierarchyNavigator.cpp */,
 				26BC7C6610F1B6E900F91463 /* TypeList.h */,
 				26BC7F2110F1B8EC00F91463 /* TypeList.cpp */,
+				49B01A2D15F67B1700666829 /* TypeVendor.h */,
 				269FF07F12494F8E00225026 /* UnwindPlan.h */,
 				961FABB91235DE1600F93A47 /* UnwindPlan.cpp */,
 				269FF08112494FC200225026 /* UnwindTable.h */,
@@ -2596,9 +2745,11 @@
 				26BC7CFB10F1B71400F91463 /* StoppointLocation.h */,
 				26BC7E1710F1B83100F91463 /* StoppointLocation.cpp */,
 				26BC7CFC10F1B71400F91463 /* Watchpoint.h */,
-				B27318431416AC43006039C8 /* WatchpointList.h */,
 				26BC7E1810F1B83100F91463 /* Watchpoint.cpp */,
+				B27318431416AC43006039C8 /* WatchpointList.h */,
 				B27318411416AC12006039C8 /* WatchpointList.cpp */,
+				B2B7CCED15D1BFB700EEFB57 /* WatchpointOptions.h */,
+				B2B7CCEF15D1C20F00EEFB57 /* WatchpointOptions.cpp */,
 			);
 			name = Breakpoint;
 			sourceTree = "<group>";
@@ -2630,6 +2781,8 @@
 				26BC7E3610F1B84700F91463 /* CommandObjectMemory.cpp */,
 				26879CE51333F5750012C1F8 /* CommandObjectPlatform.h */,
 				26879CE71333F58B0012C1F8 /* CommandObjectPlatform.cpp */,
+				947A1D631616476A0017C8D1 /* CommandObjectPlugin.h */,
+				947A1D621616476A0017C8D1 /* CommandObjectPlugin.cpp */,
 				26BC7D1F10F1B76300F91463 /* CommandObjectProcess.h */,
 				26BC7E3810F1B84700F91463 /* CommandObjectProcess.cpp */,
 				26BC7D2010F1B76300F91463 /* CommandObjectQuit.h */,
@@ -2654,6 +2807,8 @@
 				B296983412C2FB2B002D92C3 /* CommandObjectVersion.cpp */,
 				B207C4941429609C00F36E4E /* CommandObjectWatchpoint.h */,
 				B207C4921429607D00F36E4E /* CommandObjectWatchpoint.cpp */,
+				B2B7CCEC15D1BD9600EEFB57 /* CommandObjectWatchpointCommand.h */,
+				B2B7CCEA15D1BD6600EEFB57 /* CommandObjectWatchpointCommand.cpp */,
 			);
 			name = Commands;
 			sourceTree = "<group>";
@@ -2709,6 +2864,7 @@
 				26BC7EE510F1B88100F91463 /* MacOSX */,
 				26BC7DD210F1B7D500F91463 /* Condition.h */,
 				266F5CBB12FC846200DFCE33 /* Config.h */,
+				9456F2231616645A00656F91 /* DynamicLibrary.h */,
 				26BC7DD310F1B7D500F91463 /* Endian.h */,
 				260C6EA013011578005E16B0 /* File.h */,
 				26FA4315130103F400E71120 /* FileSpec.h */,
@@ -2746,8 +2902,41 @@
 				26BC7DE410F1B7F900F91463 /* CommandReturnObject.h */,
 				26BC7F0A10F1B8DD00F91463 /* CommandReturnObject.cpp */,
 				94005E0513F45A1B001EF42D /* embedded_interpreter.py */,
-				26A7A036135E6E5300FB369E /* NamedOptionValue.h */,
-				26A7A034135E6E4200FB369E /* NamedOptionValue.cpp */,
+				26A7A036135E6E5300FB369E /* OptionValue.h */,
+				26A7A034135E6E4200FB369E /* OptionValue.cpp */,
+				260A248D15D06C4F009981B0 /* OptionValues.h */,
+				2697A39415E404BA003E682C /* OptionValueArch.h */,
+				2697A39215E404B1003E682C /* OptionValueArch.cpp */,
+				260CC62115D04377002BF2E0 /* OptionValueArgs.h */,
+				260CC63B15D0440D002BF2E0 /* OptionValueArgs.cpp */,
+				260CC62215D04377002BF2E0 /* OptionValueArray.h */,
+				260CC63C15D0440D002BF2E0 /* OptionValueArray.cpp */,
+				260CC62315D04377002BF2E0 /* OptionValueBoolean.h */,
+				260CC63D15D0440D002BF2E0 /* OptionValueBoolean.cpp */,
+				260CC62515D04377002BF2E0 /* OptionValueDictionary.h */,
+				260CC63F15D0440D002BF2E0 /* OptionValueDictionary.cpp */,
+				260CC62615D04377002BF2E0 /* OptionValueEnumeration.h */,
+				260CC64015D0440D002BF2E0 /* OptionValueEnumeration.cpp */,
+				260CC62715D04377002BF2E0 /* OptionValueFileSpec.h */,
+				260CC64115D0440D002BF2E0 /* OptionValueFileSpec.cpp */,
+				260CC62815D04377002BF2E0 /* OptionValueFileSpecList.h */,
+				260CC64215D0440D002BF2E0 /* OptionValueFileSpecLIst.cpp */,
+				260CC62915D04377002BF2E0 /* OptionValueFormat.h */,
+				260CC64315D0440D002BF2E0 /* OptionValueFormat.cpp */,
+				26DAED5F15D327A200E15819 /* OptionValuePathMappings.h */,
+				26DAED6215D327C200E15819 /* OptionValuePathMappings.cpp */,
+				260CC62415D04377002BF2E0 /* OptionValueProperties.h */,
+				260CC63E15D0440D002BF2E0 /* OptionValueProperties.cpp */,
+				26491E3A15E1DB8600CBFFC2 /* OptionValueRegex.h */,
+				26491E3D15E1DB9F00CBFFC2 /* OptionValueRegex.cpp */,
+				260CC62A15D04377002BF2E0 /* OptionValueSInt64.h */,
+				260CC64415D0440D002BF2E0 /* OptionValueSInt64.cpp */,
+				260CC62B15D04377002BF2E0 /* OptionValueString.h */,
+				260CC64515D0440D002BF2E0 /* OptionValueString.cpp */,
+				260CC62C15D04377002BF2E0 /* OptionValueUInt64.h */,
+				260CC64615D0440D002BF2E0 /* OptionValueUInt64.cpp */,
+				260CC62D15D04377002BF2E0 /* OptionValueUUID.h */,
+				260CC64715D0440D002BF2E0 /* OptionValueUUID.cpp */,
 				26BC7D6D10F1B77400F91463 /* Options.h */,
 				26BC7E8610F1B85900F91463 /* Options.cpp */,
 				26D5E160135BAEB0006EA0A7 /* OptionGroupArchitecture.h */,
@@ -2762,6 +2951,8 @@
 				26BCFC531368B3E4006DC050 /* OptionGroupOutputFile.cpp */,
 				26D5E161135BB040006EA0A7 /* OptionGroupPlatform.h */,
 				26D5E162135BB054006EA0A7 /* OptionGroupPlatform.cpp */,
+				262ED0041631FA2800879631 /* OptionGroupString.h */,
+				262ED0071631FA3A00879631 /* OptionGroupString.cpp */,
 				2686536E1370AE5A00D186A3 /* OptionGroupUInt64.h */,
 				2686536F1370AE7200D186A3 /* OptionGroupUInt64.cpp */,
 				260E07C3136FA68900CF21D3 /* OptionGroupUUID.h */,
@@ -2769,9 +2960,13 @@
 				267C0128136880C7006E963E /* OptionGroupValueObjectDisplay.h */,
 				267C012A136880DF006E963E /* OptionGroupValueObjectDisplay.cpp */,
 				26ED3D6F13C5638A0017D45E /* OptionGroupVariable.h */,
-				B2462248141AD39B00F3D409 /* OptionGroupWatchpoint.h */,
 				26ED3D6C13C563810017D45E /* OptionGroupVariable.cpp */,
+				B2462248141AD39B00F3D409 /* OptionGroupWatchpoint.h */,
 				B2462246141AD37D00F3D409 /* OptionGroupWatchpoint.cpp */,
+				26ACEC2715E077AE00E94760 /* Property.h */,
+				2640E19E15DC78FD00F23B50 /* Property.cpp */,
+				94EA1D5A15E6C99B00D4171A /* PythonDataObjects.h */,
+				94EA1D5B15E6C9B400D4171A /* PythonDataObjects.cpp */,
 				26BC7DE510F1B7F900F91463 /* ScriptInterpreter.h */,
 				9A82010B10FFB49800182560 /* ScriptInterpreter.cpp */,
 				9A2771FB1135A35C00E6ADB6 /* ScriptInterpreterNone.h */,
@@ -3089,10 +3284,10 @@
 				4CCA644513B40B82003BDF98 /* AppleObjCRuntimeV1.h */,
 				4CCA644613B40B82003BDF98 /* AppleObjCRuntimeV2.cpp */,
 				4CCA644713B40B82003BDF98 /* AppleObjCRuntimeV2.h */,
-				49DA65041485C942005FF180 /* AppleObjCSymbolVendor.h */,
-				49DA65021485C92A005FF180 /* AppleObjCSymbolVendor.cpp */,
 				4CCA644813B40B82003BDF98 /* AppleObjCTrampolineHandler.cpp */,
 				4CCA644913B40B82003BDF98 /* AppleObjCTrampolineHandler.h */,
+				49DA65041485C942005FF180 /* AppleObjCTypeVendor.h */,
+				49DA65021485C92A005FF180 /* AppleObjCTypeVendor.cpp */,
 				4CCA644A13B40B82003BDF98 /* AppleThreadPlanStepThroughObjCTrampoline.cpp */,
 				4CCA644B13B40B82003BDF98 /* AppleThreadPlanStepThroughObjCTrampoline.h */,
 			);
@@ -3124,6 +3319,7 @@
 		69A01E1A1236C5D400C660B5 /* common */ = {
 			isa = PBXGroup;
 			children = (
+				9456F2211616644B00656F91 /* DynamicLibrary.cpp */,
 				260C6EA213011581005E16B0 /* File.cpp */,
 				26FA43171301048600E71120 /* FileSpec.cpp */,
 				69A01E1B1236C5D400C660B5 /* Condition.cpp */,
@@ -3175,10 +3371,12 @@
 				26DE205511618FB800A093E2 /* SBCompileUnit.h in Headers */,
 				9443B123140C26AB0013457C /* SBData.h in Headers */,
 				26680220115FD13D008E1FE4 /* SBDebugger.h in Headers */,
+				490A966B1628C3BF00F0002E /* SBDeclaration.h in Headers */,
 				26680221115FD13D008E1FE4 /* SBDefines.h in Headers */,
 				26680222115FD13D008E1FE4 /* SBError.h in Headers */,
 				26680223115FD13D008E1FE4 /* SBEvent.h in Headers */,
 				26680224115FD13D008E1FE4 /* SBFileSpec.h in Headers */,
+				4CF52AF51428291E0051E832 /* SBFileSpecList.h in Headers */,
 				26680225115FD13D008E1FE4 /* SBFrame.h in Headers */,
 				26DE205311618FAC00A093E2 /* SBFunction.h in Headers */,
 				9A3576A8116E9AB700E8ED2F /* SBHostOS.h in Headers */,
@@ -3189,6 +3387,7 @@
 				26680227115FD13D008E1FE4 /* SBListener.h in Headers */,
 				26DE204F11618E9800A093E2 /* SBModule.h in Headers */,
 				2668022A115FD13D008E1FE4 /* SBProcess.h in Headers */,
+				26B8283D142D01E9002DBC64 /* SBSection.h in Headers */,
 				2668022B115FD13D008E1FE4 /* SBSourceManager.h in Headers */,
 				26C72C94124322890068DC16 /* SBStream.h in Headers */,
 				9A357671116E7B5200E8ED2F /* SBStringList.h in Headers */,
@@ -3206,11 +3405,10 @@
 				941BCC8214E48C4000BB969C /* SBTypeSynthetic.h in Headers */,
 				9A19A6AF1163BBB200E0D453 /* SBValue.h in Headers */,
 				9A357583116CFDEE00E8ED2F /* SBValueList.h in Headers */,
+				B2A58722143119810092BFBA /* SBWatchpoint.h in Headers */,
 				26D265A2136B40EE002EEE45 /* SharingPtr.h in Headers */,
 				26D265BC136B4269002EEE45 /* lldb-public.h in Headers */,
-				4CF52AF51428291E0051E832 /* SBFileSpecList.h in Headers */,
-				26B8283D142D01E9002DBC64 /* SBSection.h in Headers */,
-				B2A58722143119810092BFBA /* SBWatchpoint.h in Headers */,
+				4CE4F673162C971A00F75CB3 /* SBExpressionOptions.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3229,6 +3427,28 @@
 				2694E9A514FC0BBD0076DE67 /* PlatformLinux.h in Headers */,
 				2663E379152BD1890091EC22 /* ReadWriteLock.h in Headers */,
 				26B1EFAF154638AF00E2DAC7 /* DWARFDeclContext.h in Headers */,
+				260CC62E15D04377002BF2E0 /* OptionValueArgs.h in Headers */,
+				260CC62F15D04377002BF2E0 /* OptionValueArray.h in Headers */,
+				260CC63015D04377002BF2E0 /* OptionValueBoolean.h in Headers */,
+				260CC63115D04377002BF2E0 /* OptionValueProperties.h in Headers */,
+				260CC63215D04377002BF2E0 /* OptionValueDictionary.h in Headers */,
+				260CC63315D04377002BF2E0 /* OptionValueEnumeration.h in Headers */,
+				260CC63415D04377002BF2E0 /* OptionValueFileSpec.h in Headers */,
+				260CC63515D04377002BF2E0 /* OptionValueFileSpecList.h in Headers */,
+				260CC63615D04377002BF2E0 /* OptionValueFormat.h in Headers */,
+				260CC63715D04377002BF2E0 /* OptionValueSInt64.h in Headers */,
+				260CC63815D04377002BF2E0 /* OptionValueString.h in Headers */,
+				260CC63915D04377002BF2E0 /* OptionValueUInt64.h in Headers */,
+				260CC63A15D04377002BF2E0 /* OptionValueUUID.h in Headers */,
+				260A248E15D06C50009981B0 /* OptionValues.h in Headers */,
+				26DAED6015D327A200E15819 /* OptionValuePathMappings.h in Headers */,
+				26ACEC2815E077AE00E94760 /* Property.h in Headers */,
+				26491E3B15E1DB8600CBFFC2 /* OptionValueRegex.h in Headers */,
+				2697A39515E404BA003E682C /* OptionValueArch.h in Headers */,
+				2698699D15E6CBD0002415FF /* OperatingSystemPython.h in Headers */,
+				260D9B2715EC369500960137 /* ModuleSpec.h in Headers */,
+				947A1D651616476B0017C8D1 /* CommandObjectPlugin.h in Headers */,
+				262ED0051631FA2800879631 /* OptionGroupString.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3279,7 +3499,6 @@
 				26680205115FD0ED008E1FE4 /* Frameworks */,
 				261B5A7511C3FA6F00AABD0A /* Fixup Framework Headers */,
 				9A19ACE2116563A700E0D453 /* Finish swig wrapper classes (lldb) */,
-				AF90106415AB7D2900FF120D /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -3582,6 +3801,8 @@
 				2660AAB914622483003A9694 /* LLDBWrapPython.cpp in Sources */,
 				9475C18814E5E9FA001BFC6D /* SBTypeCategory.cpp in Sources */,
 				9475C18E14E5F834001BFC6D /* SBTypeNameSpecifier.cpp in Sources */,
+				9452573A16262D0200325455 /* SBDeclaration.cpp in Sources */,
+				4CE4F675162C973F00F75CB3 /* SBExpressionOptions.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3589,6 +3810,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9456F2241616671900656F91 /* DynamicLibrary.cpp in Sources */,
 				49C8507C1384A786007DB519 /* ProcessDataAllocator.cpp in Sources */,
 				2689FFDA13353D9D00698AC0 /* lldb.cpp in Sources */,
 				2689FFDB13353DA300698AC0 /* lldb-log.cpp in Sources */,
@@ -3848,7 +4070,7 @@
 				26D5E15F135BAEA2006EA0A7 /* OptionGroupArchitecture.cpp in Sources */,
 				26D5E163135BB054006EA0A7 /* OptionGroupPlatform.cpp in Sources */,
 				26BD407F135D2AE000237D80 /* FileLineResolver.cpp in Sources */,
-				26A7A035135E6E4200FB369E /* NamedOptionValue.cpp in Sources */,
+				26A7A035135E6E4200FB369E /* OptionValue.cpp in Sources */,
 				9A22A161135E30370024DDC3 /* EmulateInstructionARM.cpp in Sources */,
 				9A22A163135E30370024DDC3 /* EmulationStateARM.cpp in Sources */,
 				9A4F35101368A51A00823F52 /* StreamAsynchronousIO.cpp in Sources */,
@@ -3914,7 +4136,7 @@
 				B207C4931429607D00F36E4E /* CommandObjectWatchpoint.cpp in Sources */,
 				49A1CAC51430E8DE00306AC9 /* ExpressionSourceCode.cpp in Sources */,
 				494260DA14579144003C1C78 /* VerifyDecl.cpp in Sources */,
-				49DA65031485C92A005FF180 /* AppleObjCSymbolVendor.cpp in Sources */,
+				49DA65031485C92A005FF180 /* AppleObjCTypeVendor.cpp in Sources */,
 				4966DCC4148978A10028481B /* ClangExternalASTSourceCommon.cpp in Sources */,
 				26A527C114E24F5F00F3A14A /* ProcessMachCore.cpp in Sources */,
 				26A527C314E24F5F00F3A14A /* ThreadMachCore.cpp in Sources */,
@@ -3928,6 +4150,31 @@
 				2694E9A414FC0BBD0076DE67 /* PlatformLinux.cpp in Sources */,
 				26B1EFAE154638AF00E2DAC7 /* DWARFDeclContext.cpp in Sources */,
 				B21EB71515CC99F100E60059 /* cxa_demangle.cpp in Sources */,
+				260CC64815D0440D002BF2E0 /* OptionValueArgs.cpp in Sources */,
+				260CC64915D0440D002BF2E0 /* OptionValueArray.cpp in Sources */,
+				260CC64A15D0440D002BF2E0 /* OptionValueBoolean.cpp in Sources */,
+				260CC64B15D0440D002BF2E0 /* OptionValueProperties.cpp in Sources */,
+				260CC64C15D0440D002BF2E0 /* OptionValueDictionary.cpp in Sources */,
+				260CC64D15D0440D002BF2E0 /* OptionValueEnumeration.cpp in Sources */,
+				260CC64E15D0440D002BF2E0 /* OptionValueFileSpec.cpp in Sources */,
+				260CC64F15D0440D002BF2E0 /* OptionValueFileSpecLIst.cpp in Sources */,
+				260CC65015D0440D002BF2E0 /* OptionValueFormat.cpp in Sources */,
+				260CC65115D0440D002BF2E0 /* OptionValueSInt64.cpp in Sources */,
+				260CC65215D0440D002BF2E0 /* OptionValueString.cpp in Sources */,
+				260CC65315D0440D002BF2E0 /* OptionValueUInt64.cpp in Sources */,
+				260CC65415D0440D002BF2E0 /* OptionValueUUID.cpp in Sources */,
+				26DAED6315D327C200E15819 /* OptionValuePathMappings.cpp in Sources */,
+				B2B7CCEB15D1BD6700EEFB57 /* CommandObjectWatchpointCommand.cpp in Sources */,
+				B2B7CCF015D1C20F00EEFB57 /* WatchpointOptions.cpp in Sources */,
+				2640E19F15DC78FD00F23B50 /* Property.cpp in Sources */,
+				26491E3E15E1DB9F00CBFFC2 /* OptionValueRegex.cpp in Sources */,
+				2697A39315E404B1003E682C /* OptionValueArch.cpp in Sources */,
+				94EA1D5C15E6C9B400D4171A /* PythonDataObjects.cpp in Sources */,
+				2698699B15E6CBD0002415FF /* OperatingSystemPython.cpp in Sources */,
+				94CDEB9D15F0258500DD2A7A /* CXXFormatterFunctions.cpp in Sources */,
+				947A1D641616476B0017C8D1 /* CommandObjectPlugin.cpp in Sources */,
+				262ED0081631FA3A00879631 /* OptionGroupString.cpp in Sources */,
+				94094C6B163B6F840083A547 /* ValueObjectCast.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -4048,9 +4295,11 @@
 					x86_64,
 					i386,
 				);
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					__STDC_CONSTANT_MACROS,
@@ -4083,14 +4332,15 @@
 				LLDB_TOOLS_INSTALL_DIR = /usr/bin;
 				LLVM_BUILD_DIR = "$(SRCROOT)/llvm-build/$(LLVM_CONFIGURATION)";
 				LLVM_BUILD_DIR_ARCH = "$(CURRENT_ARCH)/";
-				LLVM_CONFIGURATION = "Debug+Asserts";
+				LLVM_CONFIGURATION = "Release+Asserts";
 				LLVM_SOURCE_DIR = "$(SRCROOT)/llvm";
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-flimit-debug-info",
 					"-Wparentheses",
 				);
-				SDKROOT = "";
+				SDKROOT = "macosx";
 				STRIP_INSTALLED_PRODUCT = NO;
 				STRIP_STYLE = debugging;
 				VALID_ARCHS = "armv4t armv5 armv6 armv7 armv7s i386 ppc ppc64 ppc7400 ppc970 x86_64";
@@ -4105,9 +4355,11 @@
 				ARCHS = "$(NATIVE_ARCH)";
 				"ARCHS[sdk=iphoneos*]" = armv7;
 				"ARCHS[sdk=macosx*]" = "$(ARCHS_STANDARD_64_BIT)";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					__STDC_CONSTANT_MACROS,
 					__STDC_LIMIT_MACROS,
@@ -4141,12 +4393,13 @@
 				LLVM_BUILD_DIR_ARCH = "$(CURRENT_ARCH)/";
 				LLVM_CONFIGURATION = Release;
 				LLVM_SOURCE_DIR = "$(SRCROOT)/llvm";
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-flimit-debug-info",
 					"-Wparentheses",
 				);
-				SDKROOT = "";
+				SDKROOT = "macosx";
 				STRIP_INSTALLED_PRODUCT = NO;
 				STRIP_STYLE = debugging;
 				VALID_ARCHS = "armv4t armv5 armv6 armv7 armv7s i386 ppc ppc64 ppc7400 ppc970 x86_64";
@@ -4200,9 +4453,9 @@
 				CLANG_LINK_OBJC_RUNTIME = NO;
 				CLANG_OBJC_RUNTIME = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 167.2;
+				DYLIB_CURRENT_VERSION = 179.1;
 				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4236,13 +4489,11 @@
 					Foundation,
 					"-v",
 					"-t",
-					"-Wl,-v",
 				);
 				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
 					"-lllvmclang",
 					"-v",
 					"-t",
-					"-Wl,-v",
 					"-framework",
 					Foundation,
 				);
@@ -4259,10 +4510,10 @@
 				CLANG_LINK_OBJC_RUNTIME = NO;
 				CLANG_OBJC_RUNTIME = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				DEAD_CODE_STRIPPING = YES;
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 167.2;
+				DYLIB_CURRENT_VERSION = 179.1;
 				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4297,13 +4548,11 @@
 					AppKit,
 					"-v",
 					"-t",
-					"-Wl,-v",
 				);
 				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
 					"-lllvmclang",
 					"-v",
 					"-t",
-					"-Wl,-v",
 					"-framework",
 					Foundation,
 				);
@@ -4319,7 +4568,7 @@
 				ARCHS = "$(ARCHS_STANDARD_64_BIT)";
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				DEBUGGING_SYMBOLS = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
@@ -4331,7 +4580,6 @@
 				);
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -4346,10 +4594,9 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -4364,10 +4611,9 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				OTHER_CFLAGS = "";
 				OTHER_LDFLAGS = "";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -4379,8 +4625,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
-				DYLIB_CURRENT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
+				DYLIB_CURRENT_VERSION = 179.1;
 				EXECUTABLE_EXTENSION = a;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4391,7 +4637,6 @@
 				HEADER_SEARCH_PATHS = /usr/include/libxml2;
 				LD_DYLIB_INSTALL_NAME = "$(DEVELOPER_DIR)/Library/PrivateFrameworks/LLDB.framework/Resources/lldb-core.a";
 				MACH_O_TYPE = staticlib;
-				MACOSX_DEPLOYMENT_TARGET = 10.6;
 				OTHER_CPLUSPLUSFLAGS = (
 					"-fno-rtti",
 					"-Wglobal-constructors",
@@ -4410,8 +4655,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
-				DYLIB_CURRENT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
+				DYLIB_CURRENT_VERSION = 179.1;
 				EXECUTABLE_EXTENSION = a;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4422,7 +4667,6 @@
 				HEADER_SEARCH_PATHS = /usr/include/libxml2;
 				LD_DYLIB_INSTALL_NAME = "$(DEVELOPER_DIR)/Library/PrivateFrameworks/LLDB.framework/Resources/lldb-core.a";
 				MACH_O_TYPE = staticlib;
-				MACOSX_DEPLOYMENT_TARGET = 10.6;
 				OTHER_CPLUSPLUSFLAGS = (
 					"-fno-rtti",
 					"-Wglobal-constructors",
@@ -4441,8 +4685,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
-				DYLIB_CURRENT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
+				DYLIB_CURRENT_VERSION = 179.1;
 				EXECUTABLE_EXTENSION = a;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4453,7 +4697,6 @@
 				HEADER_SEARCH_PATHS = /usr/include/libxml2;
 				LD_DYLIB_INSTALL_NAME = "$(DEVELOPER_DIR)/Library/PrivateFrameworks/LLDB.framework/Resources/lldb-core.a";
 				MACH_O_TYPE = staticlib;
-				MACOSX_DEPLOYMENT_TARGET = 10.6;
 				OTHER_CPLUSPLUSFLAGS = (
 					"-fno-rtti",
 					"-Wglobal-constructors",
@@ -4478,9 +4721,11 @@
 					x86_64,
 					i386,
 				);
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_C_LANGUAGE_STANDARD = c99;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					__STDC_CONSTANT_MACROS,
 					__STDC_LIMIT_MACROS,
@@ -4516,6 +4761,7 @@
 				LLVM_BUILD_DIR_ARCH = "$(CURRENT_ARCH)/";
 				LLVM_CONFIGURATION = Release;
 				LLVM_SOURCE_DIR = "$(SRCROOT)/llvm";
+				MACOSX_DEPLOYMENT_TARGET = "";
 				OTHER_CFLAGS = (
 					"-flimit-debug-info",
 					"-Wparentheses",
@@ -4532,7 +4778,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
@@ -4557,6 +4803,7 @@
 					"$(PROJECT_DIR)/tools/driver/lldb-Info.plist",
 					"-Wl,-rpath,@loader_path/../../../SharedFrameworks",
 					"-Wl,-rpath,@loader_path/../../System/Library/PrivateFrameworks",
+					"-Wl,-rpath,@loader_path/../../Library/PrivateFrameworks",
 				);
 				PRODUCT_NAME = lldb;
 				STRIP_INSTALLED_PRODUCT = YES;
@@ -4573,10 +4820,10 @@
 				CLANG_OBJC_RUNTIME = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				COPY_PHASE_STRIP = YES;
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				DEAD_CODE_STRIPPING = YES;
 				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 167.2;
+				DYLIB_CURRENT_VERSION = 179.1;
 				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -4656,6 +4903,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -4664,6 +4912,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
@@ -4892,7 +5141,7 @@
 		26F5C26C10F3D9A5009D5894 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
@@ -4922,7 +5171,7 @@
 		26F5C26D10F3D9A5009D5894 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 167.2;
+				CURRENT_PROJECT_VERSION = 179.1;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
@@ -4945,6 +5194,385 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
+		};
+		49BB8F341611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(NATIVE_ARCH)";
+				"ARCHS[sdk=iphoneos*]" = armv7;
+				"ARCHS[sdk=macosx*]" = (
+					x86_64,
+					i386,
+				);
+				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				GCC_C_LANGUAGE_STANDARD = c99;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					__STDC_CONSTANT_MACROS,
+					__STDC_LIMIT_MACROS,
+					LLDB_CONFIGURATION_DEBUG,
+				);
+				"GCC_PREPROCESSOR_DEFINITIONS[sdk=iphoneos*][arch=*]" = (
+					__STDC_CONSTANT_MACROS,
+					__STDC_LIMIT_MACROS,
+					LLDB_CONFIGURATION_DEBUG,
+					LLDB_DISABLE_PYTHON,
+					NO_XPC_SERVICES,
+				);
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
+				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_EFFECTIVE_CPLUSPLUS_VIOLATIONS = NO;
+				GCC_WARN_HIDDEN_VIRTUAL_FUNCTIONS = YES;
+				GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
+				GCC_WARN_MISSING_PARENTHESES = YES;
+				GCC_WARN_NON_VIRTUAL_DESTRUCTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_LABEL = YES;
+				GCC_WARN_UNUSED_VALUE = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LLDB_DISABLE_PYTHON = 0;
+				"LLDB_DISABLE_PYTHON[sdk=iphoneos*]" = 1;
+				LLDB_FRAMEWORK_INSTALL_DIR = /Applications/Xcode.app/Contents/SharedFrameworks;
+				LLDB_TOOLS_INSTALL_DIR = /usr/bin;
+				LLVM_BUILD_DIR = "$(SRCROOT)/llvm-build/$(LLVM_CONFIGURATION)";
+				LLVM_BUILD_DIR_ARCH = "$(CURRENT_ARCH)/";
+				LLVM_CONFIGURATION = "Debug+Asserts";
+				LLVM_SOURCE_DIR = "$(SRCROOT)/llvm";
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CFLAGS = (
+					"-flimit-debug-info",
+					"-Wparentheses",
+				);
+				SDKROOT = "macosx";
+				STRIP_INSTALLED_PRODUCT = NO;
+				STRIP_STYLE = debugging;
+				VALID_ARCHS = "armv4t armv5 armv6 armv7 armv7s i386 ppc ppc64 ppc7400 ppc970 x86_64";
+				WARNING_CFLAGS = "-Wreorder";
+			};
+			name = DebugClang;
+		};
+		49BB8F351611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.7;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = DebugClang;
+		};
+		49BB8F361611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = DebugClang;
+		};
+		49BB8F371611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = DebugClang;
+		};
+		49BB8F381611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 179.1;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
+				);
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = "";
+				INFOPLIST_FILE = "lldb-Info.plist";
+				INSTALL_PATH = "$(LLDB_TOOLS_INSTALL_DIR)";
+				LIBRARY_SEARCH_PATHS = "$(inherited)";
+				LLVM_BUILD_DIR_ARCH = "$(OBJROOT)/llvm";
+				OTHER_LDFLAGS = (
+					"-sectcreate",
+					__TEXT,
+					__info_plist,
+					"$(PROJECT_DIR)/tools/driver/lldb-Info.plist",
+					"-Wl,-rpath,@loader_path/",
+				);
+				PRODUCT_NAME = lldb;
+				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/include $(SRCROOT)/source $(LLVM_SOURCE_DIR)/include $(LLVM_SOURCE_DIR)/tools/clang/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/tools/clang/include";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = DebugClang;
+		};
+		49BB8F391611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_LINK_OBJC_RUNTIME = NO;
+				CLANG_OBJC_RUNTIME = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 179.1;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 179.1;
+				EXPORTED_SYMBOLS_FILE = "resources/lldb-framework-exports";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
+				);
+				FRAMEWORK_VERSION = A;
+				GCC_ENABLE_OBJC_GC = supported;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				HEADER_SEARCH_PATHS = "";
+				INFOPLIST_FILE = "resources/LLDB-Info.plist";
+				INSTALL_PATH = "$(LLDB_FRAMEWORK_INSTALL_DIR)";
+				LD_DYLIB_INSTALL_NAME = "@rpath/LLDB.framework/LLDB";
+				LIBRARY_SEARCH_PATHS = (
+					"$(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)",
+					"$(inherited)",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"-fno-rtti",
+					"-Wglobal-constructors",
+					"$(OTHER_CFLAGS)",
+				);
+				OTHER_LDFLAGS = (
+					"-framework",
+					Carbon,
+					"-framework",
+					DebugSymbols,
+					"-lpython",
+					"-lllvmclang",
+					"-framework",
+					Foundation,
+					"-v",
+					"-t",
+				);
+				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
+					"-lllvmclang",
+					"-v",
+					"-t",
+					"-framework",
+					Foundation,
+				);
+				PRODUCT_NAME = LLDB;
+				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/include $(SRCROOT)/source $(LLVM_SOURCE_DIR)/include $(LLVM_SOURCE_DIR)/tools/clang/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/tools/clang/include";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = DebugClang;
+		};
+		49BB8F3A1611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = /System/Library/PrivateFrameworks;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				INSTALL_PATH = "$(LLDB_TOOLS_INSTALL_DIR)";
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_NAME = "darwin-debug";
+				SKIP_INSTALL = YES;
+			};
+			name = DebugClang;
+		};
+		49BB8F3B1611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 179.1;
+				DYLIB_CURRENT_VERSION = 179.1;
+				EXECUTABLE_EXTENSION = a;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
+				);
+				GCC_ENABLE_OBJC_GC = supported;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = /usr/include/libxml2;
+				LD_DYLIB_INSTALL_NAME = "$(DEVELOPER_DIR)/Library/PrivateFrameworks/LLDB.framework/Resources/lldb-core.a";
+				MACH_O_TYPE = staticlib;
+				OTHER_CPLUSPLUSFLAGS = (
+					"-fno-rtti",
+					"-Wglobal-constructors",
+					"$(OTHER_CFLAGS)",
+				);
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "lib$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STANDARD_C_PLUS_PLUS_LIBRARY_TYPE = static;
+				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/include $(SRCROOT)/source $(LLVM_SOURCE_DIR)/include $(LLVM_SOURCE_DIR)/tools/clang/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/tools/clang/include";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = DebugClang;
+		};
+		49BB8F3C1611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = lldb_codesign;
+				DEAD_CODE_STRIPPING = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks\"",
+				);
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_CPP_RTTI = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INFOPLIST_PREPROCESSOR_DEFINITIONS = (
+					"-lobjc",
+					"-lpython",
+					"-framework",
+					DebugSymbols,
+					"-framework",
+					Carbon,
+					"-framework",
+					Foundation,
+					"-framework",
+					AppKit,
+					"-v",
+					"-t",
+					"-Wl,-v",
+				);
+				INSTALL_PATH = "$(LLDB_TOOLS_INSTALL_DIR)";
+				LIBRARY_SEARCH_PATHS = (
+					"$(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)",
+					"$(inherited)",
+				);
+				OTHER_LDFLAGS = (
+					"-lllvmclang",
+					"-lpython",
+					"-framework",
+					DebugSymbols,
+					"-framework",
+					Carbon,
+					"-framework",
+					Foundation,
+					"-framework",
+					AppKit,
+					"-v",
+					"-t",
+					"-Wl,-v",
+				);
+				"OTHER_LDFLAGS[sdk=iphoneos*][arch=*]" = (
+					"-lllvmclang",
+					"-framework",
+					Foundation,
+					"-framework",
+					UIKit,
+				);
+				PRODUCT_NAME = "lldb-platform";
+				"PROVISIONING_PROFILE[sdk=iphoneos*]" = "";
+				"PROVISIONING_PROFILE[sdk=macosx*]" = "";
+				SKIP_INSTALL = YES;
+				USER_HEADER_SEARCH_PATHS = "$(SRCROOT)/include $(SRCROOT)/source $(LLVM_SOURCE_DIR)/include $(LLVM_SOURCE_DIR)/tools/clang/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/include $(LLVM_BUILD_DIR)/$(LLVM_BUILD_DIR_ARCH)/tools/clang/include";
+			};
+			name = DebugClang;
+		};
+		49BB8F3D1611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_LINK_OBJC_RUNTIME = NO;
+				CLANG_OBJC_RUNTIME = NO;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEPLOYMENT_LOCATION = YES;
+				DSTROOT = "$(SYMROOT)";
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				INFOPLIST_FILE = "source/Host/macosx/launcherXPCService/LauncherXPCService-Info.plist";
+				INFOPLIST_PREPROCESS = YES;
+				INFOPLIST_PREPROCESSOR_DEFINITIONS = (
+					"NO0=0",
+					"YES0=1",
+					"RC_XBS=${RC_XBS}0",
+					"RC_BUILDIT=${RC_BUILDIT}0",
+				);
+				INSTALL_PATH = "/$(CONFIGURATION)/LLDB.framework/XPCServices";
+				IS_APPLE_CODE_SIGNED = "(anchor apple or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9]) or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9.1]))";
+				MACH_O_TYPE = mh_execute;
+				PRODUCT_NAME = "com.apple.lldb.$(TARGET_NAME)";
+				PROVISIONING_PROFILE = "";
+				WRAPPER_EXTENSION = xpc;
+			};
+			name = DebugClang;
+		};
+		49BB8F3E1611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_LINK_OBJC_RUNTIME = NO;
+				CLANG_OBJC_RUNTIME = NO;
+				CODE_SIGN_ENTITLEMENTS = source/Host/macosx/launcherXPCService/LauncherXPCService.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEPLOYMENT_LOCATION = YES;
+				DSTROOT = "$(SYMROOT)";
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				INFOPLIST_FILE = "source/Host/macosx/launcherXPCService/LauncherRootXPCService-Info.plist";
+				INFOPLIST_PREPROCESS = YES;
+				INFOPLIST_PREPROCESSOR_DEFINITIONS = (
+					"NO0=0",
+					"YES0=1",
+					"RC_XBS=${RC_XBS}0",
+					"RC_BUILDIT=${RC_BUILDIT}0",
+				);
+				INSTALL_PATH = "/$(CONFIGURATION)/LLDB.framework/XPCServices";
+				IS_APPLE_CODE_SIGNED = "(anchor apple or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9]) or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9.1]))";
+				MACH_O_TYPE = mh_execute;
+				PRODUCT_NAME = "com.apple.lldb.$(TARGET_NAME)";
+				PROVISIONING_PROFILE = "";
+				WRAPPER_EXTENSION = xpc;
+			};
+			name = DebugClang;
+		};
+		49BB8F3F1611172B00BDD462 /* DebugClang */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_64_BIT)";
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 179.1;
+				DEBUGGING_SYMBOLS = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+			};
+			name = DebugClang;
 		};
 		EDC6D4A714E5C19B001B75F8 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -5142,6 +5770,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1DEB91F008733DB70010E9CD /* Debug */,
+				49BB8F341611172B00BDD462 /* DebugClang */,
 				1DEB91F108733DB70010E9CD /* Release */,
 				268A89B211963ECA00D953EB /* BuildAndIntegration */,
 			);
@@ -5152,6 +5781,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26579F6A126A25920007C5CB /* Debug */,
+				49BB8F3A1611172B00BDD462 /* DebugClang */,
 				26579F6B126A25920007C5CB /* Release */,
 				26579F6C126A25920007C5CB /* BuildAndIntegration */,
 			);
@@ -5162,6 +5792,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26680209115FD0ED008E1FE4 /* Debug */,
+				49BB8F391611172B00BDD462 /* DebugClang */,
 				2668020A115FD0ED008E1FE4 /* Release */,
 				268A89B511963ECA00D953EB /* BuildAndIntegration */,
 			);
@@ -5172,6 +5803,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2687EAC71508110B00DD8C2E /* Debug */,
+				49BB8F3F1611172B00BDD462 /* DebugClang */,
 				2687EAC81508110B00DD8C2E /* Release */,
 				2687EAC91508110B00DD8C2E /* BuildAndIntegration */,
 			);
@@ -5182,6 +5814,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2689FFD513353D7A00698AC0 /* Debug */,
+				49BB8F3B1611172B00BDD462 /* DebugClang */,
 				2689FFD613353D7A00698AC0 /* Release */,
 				2689FFD713353D7A00698AC0 /* BuildAndIntegration */,
 			);
@@ -5192,6 +5825,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26CEF3AA14FD58BF007286B2 /* Debug */,
+				49BB8F361611172B00BDD462 /* DebugClang */,
 				26CEF3AB14FD58BF007286B2 /* Release */,
 				26CEF3AC14FD58BF007286B2 /* BuildAndIntegration */,
 			);
@@ -5202,6 +5836,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26CEF3B314FD592B007286B2 /* Debug */,
+				49BB8F351611172B00BDD462 /* DebugClang */,
 				26CEF3B414FD592B007286B2 /* Release */,
 				26CEF3B514FD592B007286B2 /* BuildAndIntegration */,
 			);
@@ -5212,6 +5847,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26CEF3BE14FD596A007286B2 /* Debug */,
+				49BB8F371611172B00BDD462 /* DebugClang */,
 				26CEF3BF14FD596A007286B2 /* Release */,
 				26CEF3C014FD596A007286B2 /* BuildAndIntegration */,
 			);
@@ -5222,6 +5858,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26DC6A121337FE6A00FF7998 /* Debug */,
+				49BB8F3C1611172B00BDD462 /* DebugClang */,
 				26DC6A131337FE6A00FF7998 /* Release */,
 				26DC6A141337FE6A00FF7998 /* BuildAndIntegration */,
 			);
@@ -5232,6 +5869,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				26F5C26C10F3D9A5009D5894 /* Debug */,
+				49BB8F381611172B00BDD462 /* DebugClang */,
 				26F5C26D10F3D9A5009D5894 /* Release */,
 				268A89B311963ECA00D953EB /* BuildAndIntegration */,
 			);
@@ -5242,6 +5880,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EDC6D4A714E5C19B001B75F8 /* Debug */,
+				49BB8F3D1611172B00BDD462 /* DebugClang */,
 				EDC6D4A814E5C19B001B75F8 /* Release */,
 				EDC6D4A914E5C19B001B75F8 /* BuildAndIntegration */,
 			);
@@ -5252,6 +5891,7 @@
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EDE274E914EDCE1F005B0F75 /* Debug */,
+				49BB8F3E1611172B00BDD462 /* DebugClang */,
 				EDE274EA14EDCE1F005B0F75 /* Release */,
 				EDE274EB14EDCE1F005B0F75 /* BuildAndIntegration */,
 			);

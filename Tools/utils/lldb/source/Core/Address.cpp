@@ -10,7 +10,9 @@
 #include "lldb/Core/Address.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Section.h"
+#include "lldb/Symbol/Block.h"
 #include "lldb/Symbol/ObjectFile.h"
+#include "lldb/Symbol/Type.h"
 #include "lldb/Symbol/Variable.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
@@ -382,7 +384,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
         if (section_sp)
         {
             section_sp->DumpName(s);
-            s->Printf (" + %llu", m_offset);
+            s->Printf (" + %" PRIu64, m_offset);
         }
         else
         {
@@ -463,7 +465,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                                         s->PutCString(symbol_name);
                                         addr_t delta = file_Addr - symbol->GetAddress().GetFileAddress();
                                         if (delta)
-                                            s->Printf(" + %llu", delta);
+                                            s->Printf(" + %" PRIu64, delta);
                                         showed_info = true;
                                     }
                                 }
@@ -701,7 +703,7 @@ Address::Dump (Stream *s, ExecutionContextScope *exe_scope, DumpStyle style, Dum
                         if (var && var->LocationIsValidForAddress (*this))
                         {
                             s->Indent();
-                            s->Printf ("   Variable: id = {0x%8.8llx}, name = \"%s\", type= \"%s\", location =",
+                            s->Printf ("   Variable: id = {0x%8.8" PRIx64 "}, name = \"%s\", type= \"%s\", location =",
                                        var->GetID(),
                                        var->GetName().GetCString(),
                                        var->GetType()->GetName().GetCString());

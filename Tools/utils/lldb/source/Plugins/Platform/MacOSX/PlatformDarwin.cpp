@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "PlatformDarwin.h"
 
 // C Includes
@@ -16,7 +18,12 @@
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Error.h"
+#include "lldb/Core/Module.h"
+#include "lldb/Core/ModuleSpec.h"
+#include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/Symbols.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Target/Target.h"
 
 using namespace lldb;
@@ -43,6 +50,68 @@ PlatformDarwin::~PlatformDarwin()
 {
 }
 
+FileSpec
+PlatformDarwin::LocateExecutableScriptingResource (const ModuleSpec &module_spec)
+{
+    const FileSpec *exec_fspec = module_spec.GetFileSpecPtr();
+    // APIs such as NSLinkModule() allow us to attach a library without a filename
+    // make sure we do not crash under those circumstances
+    if (!exec_fspec)
+        return FileSpec();
+
+    // if the arch and uuid are ever used for anything other than display purposes
+    // make sure they are not NULL before proceeding
+    const ArchSpec *arch = module_spec.GetArchitecturePtr();
+    const UUID *uuid = module_spec.GetUUIDPtr();
+    
+    const char* module_directory = exec_fspec->GetDirectory().GetCString();
+    const char* module_basename = exec_fspec->GetFileNameStrippingExtension().GetCString();
+    
+    if (!module_directory || !module_basename)
+        return FileSpec();
+    
+    Timer scoped_timer (__PRETTY_FUNCTION__,
+                        "LocateExecutableScriptingResource (file = %s, arch = %s, uuid = %p)",
+                        exec_fspec ? exec_fspec->GetFilename().AsCString ("<NULL>") : "<NULL>",
+                        arch ? arch->GetArchitectureName() : "<NULL>",
+                        uuid);
+    
+    
+    FileSpec symbol_fspec (Symbols::LocateExecutableSymbolFile(module_spec));
+    
+    FileSpec script_fspec;
+    
+    StreamString path_string;
+    
+    if (symbol_fspec && symbol_fspec.Exists())
+    {
+        // for OSX we are going to be in .dSYM/Contents/Resources/DWARF/<basename>
+        // let us go to .dSYM/Contents/Resources/Python/<basename>.py and see if the file exists
+        path_string.Printf("%s/../Python/%s.py",symbol_fspec.GetDirectory().AsCString(""),module_basename);
+        script_fspec.SetFile(path_string.GetData(), true);
+        if (!script_fspec.Exists())
+            script_fspec.Clear();
+    }
+    
+    // no symbols or symbols did not have a scripting resource
+    if (!symbol_fspec || !script_fspec)
+    {
+        path_string.Clear();
+        path_string.Printf("%s.framework",module_basename);
+        if (module_directory && strstr(module_directory, path_string.GetData()))
+        {
+            // we are going to be in foo.framework/Versions/X/foo
+            path_string.Clear();
+            // let's go to foo.framework/Versions/X/Resources/Python/foo.py
+            path_string.Printf("%s/Resources/Python/%s.py",module_directory,module_basename);
+            script_fspec.SetFile(path_string.GetData(), true);
+            if (!script_fspec.Exists())
+                script_fspec.Clear();
+        }
+    }
+    
+    return script_fspec;
+}
 
 Error
 PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
@@ -165,6 +234,33 @@ PlatformDarwin::ResolveExecutable (const FileSpec &exe_file,
     }
 
     return error;
+}
+
+Error
+PlatformDarwin::ResolveSymbolFile (Target &target,
+                                   const ModuleSpec &sym_spec,
+                                   FileSpec &sym_file)
+{
+    Error error;
+    sym_file = sym_spec.GetSymbolFileSpec();
+    if (sym_file.Exists())
+    {
+        if (sym_file.GetFileType() == FileSpec::eFileTypeDirectory)
+        {
+            sym_file = Symbols::FindSymbolFileInBundle (sym_file,
+                                                        sym_spec.GetUUIDPtr(),
+                                                        sym_spec.GetArchitecturePtr());
+        }
+    }
+    else
+    {
+        if (sym_spec.GetUUID().IsValid())
+        {
+            
+        }
+    }
+    return error;
+    
 }
 
 
@@ -502,10 +598,9 @@ PlatformDarwin::Attach (ProcessAttachInfo &attach_info,
         if (target == NULL)
         {
             TargetSP new_target_sp;
-            FileSpec emptyFileSpec;
             
             error = debugger.GetTargetList().CreateTarget (debugger,
-                                                           emptyFileSpec,
+                                                           NULL,
                                                            NULL, 
                                                            false,
                                                            NULL,
@@ -864,3 +959,14 @@ PlatformDarwin::SetThreadCreationBreakpoint (Target &target)
     return bp_sp;
 }
 
+size_t
+PlatformDarwin::GetEnvironment (StringList &env)
+{
+    if (IsRemote())
+    {
+        if (m_remote_platform_sp)
+            return m_remote_platform_sp->GetEnvironment(env);
+        return 0;
+    }
+    return Host::GetEnvironment(env);
+}

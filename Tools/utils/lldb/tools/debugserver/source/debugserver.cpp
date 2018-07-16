@@ -447,18 +447,18 @@ HandleProcessStateChange (RNBRemote *remote, bool initialize)
 
                     if (ctx.GetProcessStopCount() == 1)
                     {
-                        DNBLogThreadedIf (LOG_RNB_MINIMAL, "%s (&remote, initialize=%i)  pid_state = %s pid_stop_count %zu (old %zu)) Notify??? no, first stop...", __FUNCTION__, (int)initialize, DNBStateAsString (pid_state), ctx.GetProcessStopCount(), prev_pid_stop_count);
+                        DNBLogThreadedIf (LOG_RNB_MINIMAL, "%s (&remote, initialize=%i)  pid_state = %s pid_stop_count %llu (old %llu)) Notify??? no, first stop...", __FUNCTION__, (int)initialize, DNBStateAsString (pid_state), (uint64_t)ctx.GetProcessStopCount(), (uint64_t)prev_pid_stop_count);
                     }
                     else
                     {
 
-                        DNBLogThreadedIf (LOG_RNB_MINIMAL, "%s (&remote, initialize=%i)  pid_state = %s pid_stop_count %zu (old %zu)) Notify??? YES!!!", __FUNCTION__, (int)initialize, DNBStateAsString (pid_state), ctx.GetProcessStopCount(), prev_pid_stop_count);
+                        DNBLogThreadedIf (LOG_RNB_MINIMAL, "%s (&remote, initialize=%i)  pid_state = %s pid_stop_count %llu (old %llu)) Notify??? YES!!!", __FUNCTION__, (int)initialize, DNBStateAsString (pid_state), (uint64_t)ctx.GetProcessStopCount(), (uint64_t)prev_pid_stop_count);
                         remote->NotifyThatProcessStopped ();
                     }
                 }
                 else
                 {
-                    DNBLogThreadedIf (LOG_RNB_MINIMAL, "%s (&remote, initialize=%i)  pid_state = %s pid_stop_count %zu (old %zu)) Notify??? skipping...", __FUNCTION__, (int)initialize, DNBStateAsString (pid_state), ctx.GetProcessStopCount(), prev_pid_stop_count);
+                    DNBLogThreadedIf (LOG_RNB_MINIMAL, "%s (&remote, initialize=%i)  pid_state = %s pid_stop_count %llu (old %llu)) Notify??? skipping...", __FUNCTION__, (int)initialize, DNBStateAsString (pid_state), (uint64_t)ctx.GetProcessStopCount(), (uint64_t)prev_pid_stop_count);
                 }
             }
             return eRNBRunLoopModeInferiorExecuting;
@@ -498,8 +498,9 @@ RNBRunLoopInferiorExecuting (RNBRemote *remote)
 
         if (!ctx.ProcessStateRunning())
         {
-            // Clear the stdio bits if we are not running so we don't send any async packets
+            // Clear some bits if we are not running so we don't send any async packets
             event_mask &= ~RNBContext::event_proc_stdio_available;
+            event_mask &= ~RNBContext::event_proc_profile_data;
         }
 
         // We want to make sure we consume all process state changes and have
@@ -517,6 +518,11 @@ RNBRunLoopInferiorExecuting (RNBRemote *remote)
                 (set_events & RNBContext::event_proc_stdio_available))
             {
                 remote->FlushSTDIO();
+            }
+
+            if (set_events & RNBContext::event_proc_profile_data)
+            {
+                remote->SendAsyncProfileData();
             }
 
             if (set_events & RNBContext::event_read_packet_available)
@@ -787,6 +793,8 @@ static struct option g_long_options[] =
 int
 main (int argc, char *argv[])
 {
+    const char *argv_sub_zero = argv[0]; // save a copy of argv[0] for error reporting post-launch
+
     g_isatty = ::isatty (STDIN_FILENO);
 
     //  ::printf ("uid=%u euid=%u gid=%u egid=%u\n",
@@ -1426,7 +1434,7 @@ main (int argc, char *argv[])
                     else
                     {
                         const char *error_str = remote->Context().LaunchStatus().AsString();
-                        RNBLogSTDERR ("error: failed to launch process %s: %s\n", argv[0], error_str ? error_str : "unknown error.");
+                        RNBLogSTDERR ("error: failed to launch process %s: %s\n", argv_sub_zero, error_str ? error_str : "unknown error.");
                     }
                 }
                 break;

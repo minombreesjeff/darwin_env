@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 @unittest2.skipUnless(sys.platform.startswith("darwin"), "requires Darwin")
 class Rdar10967107TestCase(TestBase):
@@ -42,21 +43,18 @@ class Rdar10967107TestCase(TestBase):
         exe = os.path.join(os.getcwd(), exe_name)
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f %s -l %d" % (self.main_source, self.line),
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='%s', line = %d, locations = 1" %
-                        (self.main_source, self.line))
+        lldbutil.run_break_set_by_file_and_line (self, self.main_source, self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
         # check that we correctly see the const char*, even with dynamic types on
         self.expect("frame variable my_string", substrs = ['const char *'])
-        self.expect("frame variable my_string -d run-target", substrs = ['const char *'])
+        self.expect("frame variable my_string --dynamic-type run-target", substrs = ['const char *'])
         # check that expr also gets it right
         self.expect("expr my_string", substrs = ['const char *'])
         self.expect("expr -d true -- my_string", substrs = ['const char *'])
         # but check that we get the real Foolie as such
         self.expect("frame variable my_foolie", substrs = ['FoolMeOnce *'])
-        self.expect("frame variable my_foolie -d run-target", substrs = ['FoolMeOnce *'])
+        self.expect("frame variable my_foolie --dynamic-type run-target", substrs = ['FoolMeOnce *'])
         # check that expr also gets it right
         self.expect("expr my_foolie", substrs = ['FoolMeOnce *'])
         self.expect("expr -d true -- my_foolie", substrs = ['FoolMeOnce *'])
@@ -64,13 +62,13 @@ class Rdar10967107TestCase(TestBase):
         self.runCmd("next")
         # check that we correctly see the const char*, even with dynamic types on
         self.expect("frame variable my_string", substrs = ['const char *'])
-        self.expect("frame variable my_string -d run-target", substrs = ['const char *'])
+        self.expect("frame variable my_string --dynamic-type run-target", substrs = ['const char *'])
         # check that expr also gets it right
         self.expect("expr my_string", substrs = ['const char *'])
         self.expect("expr -d true -- my_string", substrs = ['const char *'])
         # but check that we get the real Foolie as such
         self.expect("frame variable my_foolie", substrs = ['FoolMeOnce *'])
-        self.expect("frame variable my_foolie -d run-target", substrs = ['FoolMeOnce *'])
+        self.expect("frame variable my_foolie --dynamic-type run-target", substrs = ['FoolMeOnce *'])
         # check that expr also gets it right
         self.expect("expr my_foolie", substrs = ['FoolMeOnce *'])
         self.expect("expr -d true -- my_foolie", substrs = ['FoolMeOnce *'])

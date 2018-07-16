@@ -15,10 +15,13 @@
 #include "lldb/API/SBSymbolContextList.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Log.h"
+#include "lldb/Core/Section.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/ValueObjectVariable.h"
+#include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolVendor.h"
+#include "lldb/Symbol/Symtab.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/Target.h"
 
@@ -325,6 +328,68 @@ SBModule::GetSymbolAtIndex (size_t idx)
     return sb_symbol;
 }
 
+lldb::SBSymbol
+SBModule::FindSymbol (const char *name,
+                      lldb::SymbolType symbol_type)
+{
+    SBSymbol sb_symbol;
+    if (name && name[0])
+    {
+        ModuleSP module_sp (GetSP ());
+        if (module_sp)
+        {
+            ObjectFile *obj_file = module_sp->GetObjectFile();
+            if (obj_file)
+            {
+                Symtab *symtab = obj_file->GetSymtab();
+                if (symtab)
+                    sb_symbol.SetSymbol(symtab->FindFirstSymbolWithNameAndType(ConstString(name), symbol_type, Symtab::eDebugAny, Symtab::eVisibilityAny));
+            }
+        }
+    }
+    return sb_symbol;
+}
+
+
+lldb::SBSymbolContextList
+SBModule::FindSymbols (const char *name, lldb::SymbolType symbol_type)
+{
+    SBSymbolContextList sb_sc_list;
+    if (name && name[0])
+    {
+        ModuleSP module_sp (GetSP ());
+        if (module_sp)
+        {
+            ObjectFile *obj_file = module_sp->GetObjectFile();
+            if (obj_file)
+            {
+                Symtab *symtab = obj_file->GetSymtab();
+                if (symtab)
+                {
+                    std::vector<uint32_t> matching_symbol_indexes;
+                    const size_t num_matches = symtab->FindAllSymbolsWithNameAndType(ConstString(name), symbol_type, matching_symbol_indexes);
+                    if (num_matches)
+                    {
+                        SymbolContext sc;
+                        sc.module_sp = module_sp;
+                        SymbolContextList &sc_list = *sb_sc_list;
+                        for (size_t i=0; i<num_matches; ++i)
+                        {
+                            sc.symbol = symtab->SymbolAtIndex (matching_symbol_indexes[i]);
+                            if (sc.symbol)
+                                sc_list.Append(sc);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return sb_sc_list;
+    
+}
+
+
+
 size_t
 SBModule::GetNumSections ()
 {
@@ -423,27 +488,29 @@ SBModule::FindFirstType (const char *name_cstr)
     if (name_cstr && module_sp)
     {
         SymbolContext sc;
-        TypeList type_list;
-        uint32_t num_matches = 0;
         const bool exact_match = false;
         ConstString name(name_cstr);
 
-        num_matches = module_sp->FindTypes (sc,
-                                            name,
-                                            exact_match,
-                                            1,
-                                            type_list);
+        sb_type = SBType (module_sp->FindFirstType(sc, name, exact_match));
         
-        if (num_matches)
-            sb_type = lldb::SBType(type_list.GetTypeAtIndex(0));
+        if (!sb_type.IsValid())
+            sb_type = SBType (ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
     }
     return sb_type;
+}
+
+lldb::SBType
+SBModule::GetBasicType(lldb::BasicType type)
+{
+    ModuleSP module_sp (GetSP ());
+    if (module_sp)
+        return SBType (ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), type));
+    return SBType();
 }
 
 lldb::SBTypeList
 SBModule::FindTypes (const char *type)
 {
-    
     SBTypeList retval;
     
     ModuleSP module_sp (GetSP ());
@@ -452,20 +519,27 @@ SBModule::FindTypes (const char *type)
         SymbolContext sc;
         TypeList type_list;
         const bool exact_match = false;
-        uint32_t num_matches = 0;
         ConstString name(type);
+        const uint32_t num_matches = module_sp->FindTypes (sc,
+                                                           name,
+                                                           exact_match,
+                                                           UINT32_MAX,
+                                                           type_list);
         
-        num_matches = module_sp->FindTypes (sc,
-                                            name,
-                                            exact_match,
-                                            UINT32_MAX,
-                                            type_list);
-            
-        for (size_t idx = 0; idx < num_matches; idx++)
+        if (num_matches > 0)
         {
-            TypeSP type_sp (type_list.GetTypeAtIndex(idx));
-            if (type_sp)
-                retval.Append(SBType(type_sp));
+            for (size_t idx = 0; idx < num_matches; idx++)
+            {
+                TypeSP type_sp (type_list.GetTypeAtIndex(idx));
+                if (type_sp)
+                    retval.Append(SBType(type_sp));
+            }
+        }
+        else
+        {
+            SBType sb_type(ClangASTType::GetBasicType (module_sp->GetClangASTContext().getASTContext(), name));
+            if (sb_type.IsValid())
+                retval.Append(sb_type);
         }
     }
 
@@ -539,17 +613,15 @@ SBModule::GetVersion (uint32_t *versions, uint32_t num_versions)
 {
     ModuleSP module_sp (GetSP ());
     if (module_sp)
+        return module_sp->GetVersion(versions, num_versions);
+    else
     {
-        ObjectFile *obj_file = module_sp->GetObjectFile();
-        if (obj_file)
-            return obj_file->GetVersion (versions, num_versions);
+        if (versions && num_versions)
+        {
+            for (uint32_t i=0; i<num_versions; ++i)
+                versions[i] = UINT32_MAX;
+        }
+        return 0;
     }
-    
-    if (versions && num_versions)
-    {
-        for (uint32_t i=0; i<num_versions; ++i)
-            versions[i] = UINT32_MAX;
-    }
-    return 0;
 }
 

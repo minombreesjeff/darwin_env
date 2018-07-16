@@ -59,8 +59,8 @@ namespace {
                                                *M, *TD, Diags));
     }
 
-    virtual void MarkVarRequired(VarDecl *VD) {
-      Builder->MarkVarRequired(VD);
+    virtual void HandleCXXStaticMemberVarInstantiation(VarDecl *VD) {
+      Builder->HandleCXXStaticMemberVarInstantiation(VD);
     }
 
     virtual bool HandleTopLevelDecl(DeclGroupRef DG) {
@@ -79,7 +79,7 @@ namespace {
       
       // In C++, we may have member functions that need to be emitted at this 
       // point.
-      if (Ctx->getLangOptions().CPlusPlus && !D->isDependentContext()) {
+      if (Ctx->getLangOpts().CPlusPlus && !D->isDependentContext()) {
         for (DeclContext::decl_iterator M = D->decls_begin(), 
                                      MEnd = D->decls_end();
              M != MEnd; ++M)

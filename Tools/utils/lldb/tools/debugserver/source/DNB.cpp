@@ -23,6 +23,7 @@
 #include <sys/sysctl.h>
 #include <map>
 #include <vector>
+#include <libproc.h>
 
 #include "MacOSX/MachProcess.h"
 #include "MacOSX/MachTask.h"
@@ -31,14 +32,16 @@
 #include "DNBDataRef.h"
 #include "DNBThreadResumeActions.h"
 #include "DNBTimer.h"
+#include "CFBundle.h"
+
 
 typedef STD_SHARED_PTR(MachProcess) MachProcessSP;
 typedef std::map<nub_process_t, MachProcessSP> ProcessMap;
 typedef ProcessMap::iterator ProcessMapIter;
 typedef ProcessMap::const_iterator ProcessMapConstIter;
 
-static size_t          GetAllInfos                  (std::vector<struct kinfo_proc>& proc_infos);
-static size_t          GetAllInfosMatchingName      (const char *process_name, std::vector<struct kinfo_proc>& matching_proc_infos);
+size_t GetAllInfos (std::vector<struct kinfo_proc>& proc_infos);
+static size_t GetAllInfosMatchingName (const char *process_name, std::vector<struct kinfo_proc>& matching_proc_infos);
 
 //----------------------------------------------------------------------
 // A Thread safe singleton to get a process map pointer.
@@ -185,7 +188,7 @@ DNBProcessLaunch (const char *path,
                   char *err_str,
                   size_t err_len)
 {
-    DNBLogThreadedIf(LOG_PROCESS, "%s ( path='%s', argv = %p, envp = %p, working_dir=%s, stdin=%s, stdout=%s, stderr=%s, no-stdio=%i, launch_flavor = %u, disable_aslr = %d, err = %p, err_len = %zu) called...", 
+    DNBLogThreadedIf(LOG_PROCESS, "%s ( path='%s', argv = %p, envp = %p, working_dir=%s, stdin=%s, stdout=%s, stderr=%s, no-stdio=%i, launch_flavor = %u, disable_aslr = %d, err = %p, err_len = %llu) called...",
                      __FUNCTION__, 
                      path, 
                      argv, 
@@ -198,7 +201,7 @@ DNBProcessLaunch (const char *path,
                      launch_flavor, 
                      disable_aslr, 
                      err_str, 
-                     err_len);
+                     (uint64_t)err_len);
     
     if (err_str && err_len > 0)
         err_str[0] = '\0';
@@ -291,7 +294,7 @@ DNBProcessAttachByName (const char *name, struct timespec *timeout, char *err_st
     }
     else if (num_matching_proc_infos > 1)
     {
-        DNBLogError ("error: %zu processes match '%s':\n", num_matching_proc_infos, name);
+        DNBLogError ("error: %llu processes match '%s':\n", (uint64_t)num_matching_proc_infos, name);
         size_t i;
         for (i=0; i<num_matching_proc_infos; ++i)
             DNBLogError ("%6u - %s\n", matching_proc_infos[i].kp_proc.p_pid, matching_proc_infos[i].kp_proc.p_comm);
@@ -388,10 +391,10 @@ DNBProcessAttach (nub_process_t attach_pid, struct timespec *timeout, char *err_
     return INVALID_NUB_PROCESS;
 }
 
-static size_t
+size_t
 GetAllInfos (std::vector<struct kinfo_proc>& proc_infos)
 {
-    size_t size;
+    size_t size = 0;
     int name[] = { CTL_KERN, KERN_PROC, KERN_PROC_ALL };
     u_int namelen = sizeof(name)/sizeof(int);
     int err;
@@ -427,7 +430,6 @@ GetAllInfos (std::vector<struct kinfo_proc>& proc_infos)
     return proc_infos.size();
 }
 
-
 static size_t
 GetAllInfosMatchingName(const char *full_process_name, std::vector<struct kinfo_proc>& matching_proc_infos)
 {
@@ -458,24 +460,27 @@ GetAllInfosMatchingName(const char *full_process_name, std::vector<struct kinfo_
 
                 // Check for process by name. We only check the first MAXCOMLEN
                 // chars as that is all that kp_proc.p_comm holds.
+                
                 if (::strncasecmp(process_name, proc_infos[i].kp_proc.p_comm, MAXCOMLEN) == 0)
                 {
                     if (process_name_len > MAXCOMLEN)
                     {
                         // We found a matching process name whose first MAXCOMLEN
                         // characters match, but there is more to the name than
-                        // this. We need to get the full process name. 
+                        // this. We need to get the full process name.  Use proc_pidpath, which will get
+                        // us the full path to the executed process.
 
-                        int proc_args_mib[3] = { CTL_KERN, KERN_PROCARGS2, proc_infos[i].kp_proc.p_pid };
+                        char proc_path_buf[PATH_MAX];
                         
-                        // Get PATH_MAX for argv[0] plus 4 bytes for the argc
-                        char arg_data[PATH_MAX+4];
-                        size_t arg_data_size = sizeof(arg_data);
-                         // Skip the 4 byte argc integer value to get to argv[0]
-                        const char *argv0 = arg_data + 4;
-                        if (::sysctl (proc_args_mib, 3, arg_data, &arg_data_size , NULL, 0) == 0)
+                        int return_val = proc_pidpath (proc_infos[i].kp_proc.p_pid, proc_path_buf, PATH_MAX);
+                        if (return_val > 0)
                         {
-                            const char *argv_basename = strrchr(argv0, '/');
+                            // Okay, now search backwards from that to see if there is a
+                            // slash in the name.  Note, even though we got all the args we don't care
+                            // because the list data is just a bunch of concatenated null terminated strings
+                            // so strrchr will start from the end of argv0.
+                            
+                            const char *argv_basename = strrchr(proc_path_buf, '/');
                             if (argv_basename)
                             {
                                 // Skip the '/'
@@ -484,7 +489,7 @@ GetAllInfosMatchingName(const char *full_process_name, std::vector<struct kinfo_
                             else
                             {
                                 // We didn't find a directory delimiter in the process argv[0], just use what was in there
-                                argv_basename = argv0;
+                                argv_basename = proc_path_buf;
                             }
 
                             if (argv_basename)
@@ -1212,6 +1217,28 @@ DNBProcessMemoryRegionInfo (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *r
     return -1;
 }
 
+std::string
+DNBProcessGetProfileData (nub_process_t pid)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->Task().GetProfileData();
+    
+    return std::string("");
+}
+
+nub_bool_t
+DNBProcessSetAsyncEnableProfiling (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+    {
+        procSP->SetAsyncEnableProfiling(enable, interval_usec);
+        return true;
+    }
+    
+    return false;    
+}
 
 //----------------------------------------------------------------------
 // Formatted output that uses memory and registers from process and
@@ -2067,6 +2094,15 @@ DNBProcessGetAvailableSTDERR (nub_process_t pid, char *buf, nub_size_t buf_size)
 }
 
 nub_size_t
+DNBProcessGetAvailableProfileData (nub_process_t pid, char *buf, nub_size_t buf_size)
+{
+    MachProcessSP procSP;
+    if (GetProcessSP (pid, procSP))
+        return procSP->GetAsyncProfileData (buf, buf_size);
+    return 0;
+}
+
+nub_size_t
 DNBProcessGetStopCount (nub_process_t pid)
 {
     MachProcessSP procSP;
@@ -2097,6 +2133,21 @@ DNBResolveExecutablePath (const char *path, char *resolved_path, size_t resolved
 
     if (result.empty())
         result = path;
+    
+    struct stat path_stat;
+    if (::stat(path, &path_stat) == 0)
+    {
+        if ((path_stat.st_mode & S_IFMT) == S_IFDIR)
+        {
+            CFBundle bundle (path);
+            CFReleaser<CFURLRef> url(bundle.CopyExecutableURL ());
+            if (url.get())
+            {
+                if (::CFURLGetFileSystemRepresentation (url.get(), true, (UInt8*)resolved_path, resolved_path_size))
+                    return true;
+            }
+        }
+    }
 
     if (realpath(path, max_path))
     {

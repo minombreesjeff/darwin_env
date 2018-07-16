@@ -18,6 +18,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/TemplateBase.h"
 #include "clang/Basic/Specifiers.h"
+#include "llvm/Support/Compiler.h"
 
 namespace clang {
   class ASTContext;
@@ -93,9 +94,11 @@ public:
   SourceLocation getEndLoc() const;
 
   /// \brief Get the full source range.
-  SourceRange getSourceRange() const {
+  SourceRange getSourceRange() const LLVM_READONLY {
     return SourceRange(getBeginLoc(), getEndLoc());
   }
+  SourceLocation getLocStart() const LLVM_READONLY { return getBeginLoc(); }
+  SourceLocation getLocEnd() const LLVM_READONLY { return getEndLoc(); }
 
   /// \brief Get the local source range.
   SourceRange getLocalSourceRange() const {
@@ -247,11 +250,11 @@ inline UnqualTypeLoc TypeLoc::getUnqualifiedLoc() const {
 /// to a particular Type subclass.  It is accepted for a single
 /// TypeLoc class to correspond to multiple Type classes.
 ///
-/// \param Base a class from which to derive
-/// \param Derived the class deriving from this one
-/// \param TypeClass the concrete Type subclass associated with this
+/// \tparam Base a class from which to derive
+/// \tparam Derived the class deriving from this one
+/// \tparam TypeClass the concrete Type subclass associated with this
 ///   location type
-/// \param LocalData the structure type of local location data for
+/// \tparam LocalData the structure type of local location data for
 ///   this type
 ///
 /// sizeof(LocalData) needs to be a multiple of sizeof(void*) or
@@ -569,8 +572,9 @@ public:
 
   /// \brief True if the tag was defined in this type specifier.
   bool isDefinition() const {
-    return getDecl()->isCompleteDefinition() &&
-         (getNameLoc().isInvalid() || getNameLoc() == getDecl()->getLocation());
+    TagDecl *D = getDecl();
+    return D->isCompleteDefinition() &&
+         (D->getIdentifier() == 0 || D->getLocation() == getNameLoc());
   }
 };
 
@@ -827,6 +831,7 @@ public:
 
 struct ObjCInterfaceLocInfo {
   SourceLocation NameLoc;
+  SourceLocation NameEndLoc;
 };
 
 /// \brief Wrapper for source info for ObjC interfaces.
@@ -846,13 +851,22 @@ public:
   void setNameLoc(SourceLocation Loc) {
     getLocalData()->NameLoc = Loc;
   }
-
+                                                    
   SourceRange getLocalSourceRange() const {
-    return SourceRange(getNameLoc());
+    return SourceRange(getNameLoc(), getNameEndLoc());
+  }
+  
+  SourceLocation getNameEndLoc() const {
+    return getLocalData()->NameEndLoc;
+  }
+
+  void setNameEndLoc(SourceLocation Loc) {
+    getLocalData()->NameEndLoc = Loc;
   }
 
   void initializeLocal(ASTContext &Context, SourceLocation Loc) {
     setNameLoc(Loc);
+    setNameEndLoc(Loc);
   }
 };
 
@@ -1048,7 +1062,6 @@ public:
 struct FunctionLocInfo {
   SourceLocation LocalRangeBegin;
   SourceLocation LocalRangeEnd;
-  bool TrailingReturn;
 };
 
 /// \brief Wrapper for source info for functions.
@@ -1069,13 +1082,6 @@ public:
   }
   void setLocalRangeEnd(SourceLocation L) {
     getLocalData()->LocalRangeEnd = L;
-  }
-
-  bool getTrailingReturn() const {
-    return getLocalData()->TrailingReturn;
-  }
-  void setTrailingReturn(bool Trailing) {
-    getLocalData()->TrailingReturn = Trailing;
   }
 
   ArrayRef<ParmVarDecl *> getParams() const {
@@ -1106,7 +1112,6 @@ public:
   void initializeLocal(ASTContext &Context, SourceLocation Loc) {
     setLocalRangeBegin(Loc);
     setLocalRangeEnd(Loc);
-    setTrailingReturn(false);
     for (unsigned i = 0, e = getNumArgs(); i != e; ++i)
       setArg(i, NULL);
   }

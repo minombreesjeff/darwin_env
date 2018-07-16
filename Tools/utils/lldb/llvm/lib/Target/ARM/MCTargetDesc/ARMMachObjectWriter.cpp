@@ -34,12 +34,18 @@ class ARMMachObjectWriter : public MCMachObjectTargetWriter {
                                     MCValue Target,
                                     unsigned Log2Size,
                                     uint64_t &FixedValue);
-  void RecordARMMovwMovtRelocation(MachObjectWriter *Writer,
-                                   const MCAssembler &Asm,
-                                   const MCAsmLayout &Layout,
-                                   const MCFragment *Fragment,
-                                   const MCFixup &Fixup, MCValue Target,
-                                   uint64_t &FixedValue);
+  void RecordARMScatteredHalfRelocation(MachObjectWriter *Writer,
+                                        const MCAssembler &Asm,
+                                        const MCAsmLayout &Layout,
+                                        const MCFragment *Fragment,
+                                        const MCFixup &Fixup, MCValue Target,
+                                        uint64_t &FixedValue);
+
+  bool requiresExternRelocation(MachObjectWriter *Writer,
+                                const MCAssembler &Asm,
+                                const MCFragment &Fragment,
+                                unsigned RelocType, const MCSymbolData *SD,
+                                uint64_t FixedValue);
 
 public:
   ARMMachObjectWriter(bool Is64Bit, uint32_t CPUType,
@@ -82,7 +88,8 @@ static bool getARMFixupKindMachOInfo(unsigned Kind, unsigned &RelocType,
   case ARM::fixup_arm_adr_pcrel_12:
   case ARM::fixup_arm_condbranch:
   case ARM::fixup_arm_uncondbranch:
-  case ARM::fixup_arm_bl:
+  case ARM::fixup_arm_uncondbl:
+  case ARM::fixup_arm_condbl:
   case ARM::fixup_arm_blx:
     RelocType = unsigned(macho::RIT_ARM_Branch24Bit);
     // Report as 'long', even though that is not quite accurate.
@@ -102,34 +109,47 @@ static bool getARMFixupKindMachOInfo(unsigned Kind, unsigned &RelocType,
     Log2Size = llvm::Log2_32(4);
     return true;
 
+  // For movw/movt r_type relocations they always have a pair following them and
+  // the r_length bits are used differently.  The encoding of the r_length is as
+  // follows:
+  //   low bit of r_length:
+  //      0 - :lower16: for movw instructions
+  //      1 - :upper16: for movt instructions
+  //   high bit of r_length:
+  //      0 - arm instructions
+  //      1 - thumb instructions
   case ARM::fixup_arm_movt_hi16:
   case ARM::fixup_arm_movt_hi16_pcrel:
+    RelocType = unsigned(macho::RIT_ARM_Half);
+    Log2Size = 1;
+    return true;
   case ARM::fixup_t2_movt_hi16:
   case ARM::fixup_t2_movt_hi16_pcrel:
-    RelocType = unsigned(macho::RIT_ARM_HalfDifference);
-    // Report as 'long', even though that is not quite accurate.
-    Log2Size = llvm::Log2_32(4);
+    RelocType = unsigned(macho::RIT_ARM_Half);
+    Log2Size = 3;
     return true;
 
   case ARM::fixup_arm_movw_lo16:
   case ARM::fixup_arm_movw_lo16_pcrel:
+    RelocType = unsigned(macho::RIT_ARM_Half);
+    Log2Size = 0;
+    return true;
   case ARM::fixup_t2_movw_lo16:
   case ARM::fixup_t2_movw_lo16_pcrel:
     RelocType = unsigned(macho::RIT_ARM_Half);
-    // Report as 'long', even though that is not quite accurate.
-    Log2Size = llvm::Log2_32(4);
+    Log2Size = 2;
     return true;
   }
 }
 
 void ARMMachObjectWriter::
-RecordARMMovwMovtRelocation(MachObjectWriter *Writer,
-                            const MCAssembler &Asm,
-                            const MCAsmLayout &Layout,
-                            const MCFragment *Fragment,
-                            const MCFixup &Fixup,
-                            MCValue Target,
-                            uint64_t &FixedValue) {
+RecordARMScatteredHalfRelocation(MachObjectWriter *Writer,
+                                 const MCAssembler &Asm,
+                                 const MCAsmLayout &Layout,
+                                 const MCFragment *Fragment,
+                                 const MCFixup &Fixup,
+                                 MCValue Target,
+                                 uint64_t &FixedValue) {
   uint32_t FixupOffset = Layout.getFragmentOffset(Fragment)+Fixup.getOffset();
   unsigned IsPCRel = Writer->isFixupKindPCRel(Asm, Fixup.getKind());
   unsigned Type = macho::RIT_ARM_Half;
@@ -176,7 +196,7 @@ RecordARMMovwMovtRelocation(MachObjectWriter *Writer,
   //      0 - arm instructions
   //      1 - thumb instructions
   // the other half of the relocated expression is in the following pair
-  // relocation entry in the the low 16 bits of r_address field.
+  // relocation entry in the low 16 bits of r_address field.
   unsigned ThumbBit = 0;
   unsigned MovtBit = 0;
   switch ((unsigned)Fixup.getKind()) {
@@ -291,6 +311,46 @@ void ARMMachObjectWriter::RecordARMScatteredRelocation(MachObjectWriter *Writer,
   Writer->addRelocation(Fragment->getParent(), MRE);
 }
 
+bool ARMMachObjectWriter::requiresExternRelocation(MachObjectWriter *Writer,
+                                                   const MCAssembler &Asm,
+                                                   const MCFragment &Fragment,
+                                                   unsigned RelocType,
+                                                   const MCSymbolData *SD,
+                                                   uint64_t FixedValue) {
+  // Most cases can be identified purely from the symbol.
+  if (Writer->doesSymbolRequireExternRelocation(SD))
+    return true;
+  int64_t Value = (int64_t)FixedValue;  // The displacement is signed.
+  int64_t Range;
+  switch (RelocType) {
+  default:
+    return false;
+  case macho::RIT_ARM_Branch24Bit:
+    // PC pre-adjustment of 8 for these instructions.
+    Value -= 8;
+    // ARM BL/BLX has a 25-bit offset.
+    Range = 0x1ffffff;
+    break;
+  case macho::RIT_ARM_ThumbBranch22Bit:
+    // PC pre-adjustment of 4 for these instructions.
+    Value -= 4;
+    // Thumb BL/BLX has a 24-bit offset.
+    Range = 0xffffff;
+  }
+  // BL/BLX also use external relocations when an internal relocation
+  // would result in the target being out of range. This gives the linker
+  // enough information to generate a branch island.
+  const MCSectionData &SymSD = Asm.getSectionData(
+    SD->getSymbol().getSection());
+  Value += Writer->getSectionAddress(&SymSD);
+  Value -= Writer->getSectionAddress(Fragment.getParent());
+  // If the resultant value would be out of range for an internal relocation,
+  // use an external instead.
+  if (Value > Range || Value < -(Range + 1))
+    return true;
+  return false;
+}
+
 void ARMMachObjectWriter::RecordRelocation(MachObjectWriter *Writer,
                                            const MCAssembler &Asm,
                                            const MCAsmLayout &Layout,
@@ -313,10 +373,9 @@ void ARMMachObjectWriter::RecordRelocation(MachObjectWriter *Writer,
   // scattered relocation entry.  Differences always require scattered
   // relocations.
   if (Target.getSymB()) {
-    if (RelocType == macho::RIT_ARM_Half ||
-        RelocType == macho::RIT_ARM_HalfDifference)
-      return RecordARMMovwMovtRelocation(Writer, Asm, Layout, Fragment, Fixup,
-                                         Target, FixedValue);
+    if (RelocType == macho::RIT_ARM_Half)
+      return RecordARMScatteredHalfRelocation(Writer, Asm, Layout, Fragment,
+                                              Fixup, Target, FixedValue);
     return RecordARMScatteredRelocation(Writer, Asm, Layout, Fragment, Fixup,
                                         Target, Log2Size, FixedValue);
   }
@@ -360,7 +419,8 @@ void ARMMachObjectWriter::RecordRelocation(MachObjectWriter *Writer,
     }
 
     // Check whether we need an external or internal relocation.
-    if (Writer->doesSymbolRequireExternRelocation(SD)) {
+    if (requiresExternRelocation(Writer, Asm, *Fragment, RelocType, SD,
+                                 FixedValue)) {
       IsExtern = 1;
       Index = SD->getIndex();
 
@@ -391,6 +451,37 @@ void ARMMachObjectWriter::RecordRelocation(MachObjectWriter *Writer,
                (Log2Size  << 25) |
                (IsExtern  << 27) |
                (Type      << 28));
+
+  // Even when it's not a scattered relocation, movw/movt always uses
+  // a PAIR relocation.
+  if (Type == macho::RIT_ARM_Half) {
+    // The other-half value only gets populated for the movt and movw
+    // relocation entries.
+    uint32_t Value = 0;
+    switch ((unsigned)Fixup.getKind()) {
+    default: break;
+    case ARM::fixup_arm_movw_lo16:
+    case ARM::fixup_arm_movw_lo16_pcrel:
+    case ARM::fixup_t2_movw_lo16:
+    case ARM::fixup_t2_movw_lo16_pcrel:
+      Value = (FixedValue >> 16) & 0xffff;
+      break;
+    case ARM::fixup_arm_movt_hi16:
+    case ARM::fixup_arm_movt_hi16_pcrel:
+    case ARM::fixup_t2_movt_hi16:
+    case ARM::fixup_t2_movt_hi16_pcrel:
+      Value = FixedValue & 0xffff;
+      break;
+    }
+    macho::RelocationEntry MREPair;
+    MREPair.Word0 = Value;
+    MREPair.Word1 = ((0xffffff) |
+                     (Log2Size << 25) |
+                     (macho::RIT_Pair << 28));
+
+    Writer->addRelocation(Fragment->getParent(), MREPair);
+  }
+
   Writer->addRelocation(Fragment->getParent(), MRE);
 }
 

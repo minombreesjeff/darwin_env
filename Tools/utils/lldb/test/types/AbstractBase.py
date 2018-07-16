@@ -6,10 +6,11 @@ import os, time
 import re
 import lldb
 from lldbtest import *
+import lldbutil
 
 def Msg(var, val, using_frame_variable):
     return "'%s %s' matches the output (from compiled code): %s" % (
-        'frame variable -T' if using_frame_variable else 'expression' ,var, val)
+        'frame variable --show-types' if using_frame_variable else 'expression' ,var, val)
 
 class GenericTester(TestBase):
 
@@ -107,35 +108,39 @@ class GenericTester(TestBase):
                 gl.append((var, val))
         #print "golden list:", gl
 
+        # This test uses a #include of a the "basic_type.cpp" so we need to enable
+        # always setting inlined breakpoints.
+        self.runCmd('settings set target.inline-breakpoint-strategy always')
+        # And add hooks to restore the settings during tearDown().
+        self.addTearDownHook(
+            lambda: self.runCmd("settings set target.inline-breakpoint-strategy headers"))
+
         # Bring the program to the point where we can issue a series of
-        # 'frame variable -T' command.
+        # 'frame variable --show-types' command.
         if blockCaptured:
             break_line = line_number ("basic_type.cpp", "// Break here to test block captured variables.")
         else:
             break_line = line_number ("basic_type.cpp", "// Here is the line we will break on to check variables.")
-        self.expect("breakpoint set -f basic_type.cpp -l %d" % break_line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='basic_type.cpp', line = %d, locations = 1" %
-                        break_line)
+        lldbutil.run_break_set_by_file_and_line (self, "basic_type.cpp", break_line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
         self.expect("process status", STOPPED_DUE_TO_BREAKPOINT,
             substrs = [" at basic_type.cpp:%d" % break_line,
                        "stop reason = breakpoint"])
 
-        #self.runCmd("frame variable -T")
+        #self.runCmd("frame variable --show-types")
 
         # Now iterate through the golden list, comparing against the output from
-        # 'frame variable -T var'.
+        # 'frame variable --show-types var'.
         for var, val in gl:
-            self.runCmd("frame variable -T %s" % var)
+            self.runCmd("frame variable --show-types %s" % var)
             output = self.res.GetOutput()
 
             # The input type is in a canonical form as a set of named atoms.
             # The display type string must conatin each and every element.
             #
             # Example:
-            #     runCmd: frame variable -T a_array_bounded[0]
+            #     runCmd: frame variable --show-types a_array_bounded[0]
             #     output: (char) a_array_bounded[0] = 'a'
             #
             try:
@@ -184,22 +189,27 @@ class GenericTester(TestBase):
                 gl.append((var, val))
         #print "golden list:", gl
 
+        # This test uses a #include of a the "basic_type.cpp" so we need to enable
+        # always setting inlined breakpoints.
+        self.runCmd('settings set target.inline-breakpoint-strategy always')
+        # And add hooks to restore the settings during tearDown().
+        self.addTearDownHook(
+            lambda: self.runCmd("settings set target.inline-breakpoint-strategy headers"))
+
         # Bring the program to the point where we can issue a series of
         # 'expr' command.
         if blockCaptured:
             break_line = line_number ("basic_type.cpp", "// Break here to test block captured variables.")
         else:
             break_line = line_number ("basic_type.cpp", "// Here is the line we will break on to check variables.")
-        self.expect("breakpoint set -f basic_type.cpp -l %d" % break_line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='basic_type.cpp', line = %d, locations = 1" %
-                        break_line)
+        lldbutil.run_break_set_by_file_and_line (self, "basic_type.cpp", break_line, num_expected_locations=1, loc_exact=True)
+
         self.runCmd("run", RUN_SUCCEEDED)
         self.expect("process status", STOPPED_DUE_TO_BREAKPOINT,
             substrs = [" at basic_type.cpp:%d" % break_line,
                        "stop reason = breakpoint"])
 
-        #self.runCmd("frame variable -T")
+        #self.runCmd("frame variable --show-types")
 
         # Now iterate through the golden list, comparing against the output from
         # 'expr var'.

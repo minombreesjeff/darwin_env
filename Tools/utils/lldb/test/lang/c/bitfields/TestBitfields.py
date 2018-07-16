@@ -4,6 +4,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class BitfieldsTestCase(TestBase):
 
@@ -49,10 +50,7 @@ class BitfieldsTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Break inside the main.
-        self.expect("breakpoint set -f main.c -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.c', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -66,7 +64,7 @@ class BitfieldsTestCase(TestBase):
             substrs = [' resolved, hit count = 1'])
 
         # This should display correctly.
-        self.expect("frame variable -T bits", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types bits", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['(uint32_t:1) b1 = 1',
                        '(uint32_t:2) b2 = 3',
                        '(uint32_t:3) b3 = 7',
@@ -78,7 +76,7 @@ class BitfieldsTestCase(TestBase):
 
         # And so should this.
         # rdar://problem/8348251
-        self.expect("frame variable -T", VARIABLES_DISPLAYED_CORRECTLY,
+        self.expect("frame variable --show-types", VARIABLES_DISPLAYED_CORRECTLY,
             substrs = ['(uint32_t:1) b1 = 1',
                        '(uint32_t:2) b2 = 3',
                        '(uint32_t:3) b3 = 7',
@@ -87,6 +85,39 @@ class BitfieldsTestCase(TestBase):
                        '(uint32_t:6) b6 = 63',
                        '(uint32_t:7) b7 = 127',
                        '(uint32_t:4) four = 15'])
+
+        self.expect("expr (bits.b1)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '1'])
+        self.expect("expr (bits.b2)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '3'])
+        self.expect("expr (bits.b3)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '7'])
+        self.expect("expr (bits.b4)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '15'])
+        self.expect("expr (bits.b5)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '31'])
+        self.expect("expr (bits.b6)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '63'])
+        self.expect("expr (bits.b7)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '127'])
+        self.expect("expr (bits.four)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '15'])
+
+        self.expect("frame variable --show-types more_bits", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['(uint32_t:3) a = 3',
+                       '(int:1)  = 0',
+                       '(uint8_t:1) b = \'\\0\'',
+                       '(uint8_t:1) c = \'\\x01\'',
+                       '(uint8_t:1) d = \'\\0\''])
+
+        self.expect("expr (more_bits.a)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint32_t', '3'])
+        self.expect("expr (more_bits.b)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint8_t', '\\0'])
+        self.expect("expr (more_bits.c)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint8_t', '\\x01'])
+        self.expect("expr (more_bits.d)", VARIABLES_DISPLAYED_CORRECTLY,
+            substrs = ['uint8_t', '\\0'])
 
     def bitfields_variable_python(self):
         """Use Python APIs to inspect a bitfields variable."""
@@ -115,15 +146,14 @@ class BitfieldsTestCase(TestBase):
         frame = thread.GetFrameAtIndex(0)
         bits = frame.FindVariable("bits")
         self.DebugSBValue(bits)
-        self.assertTrue(bits.GetTypeName() == "Bits" and
-                        bits.GetNumChildren() == 8 and
-                        bits.GetByteSize() == 32,
-                        "(Bits)bits with byte size of 32 and 8 children")
+        self.assertTrue(bits.GetTypeName() == 'Bits', "bits.GetTypeName() == 'Bits'");
+        self.assertTrue(bits.GetNumChildren() == 10, "bits.GetNumChildren() == 10");
+        self.assertTrue(bits.GetByteSize() == 32, "bits.GetByteSize() == 32");
 
         # Notice the pattern of int(b1.GetValue(), 0).  We pass a base of 0
         # so that the proper radix is determined based on the contents of the
         # string.
-        b1 = bits.GetChildAtIndex(0)
+        b1 = bits.GetChildMemberWithName("b1")
         self.DebugSBValue(b1)
         self.assertTrue(b1.GetName() == "b1" and
                         b1.GetTypeName() == "uint32_t:1" and
@@ -131,7 +161,7 @@ class BitfieldsTestCase(TestBase):
                         int(b1.GetValue(), 0) == 1,
                         'bits.b1 has type uint32_t:1, is in scope, and == 1')
 
-        b7 = bits.GetChildAtIndex(6)
+        b7 = bits.GetChildMemberWithName("b7")
         self.DebugSBValue(b7)
         self.assertTrue(b7.GetName() == "b7" and
                         b7.GetTypeName() == "uint32_t:7" and
@@ -139,7 +169,7 @@ class BitfieldsTestCase(TestBase):
                         int(b7.GetValue(), 0) == 127,
                         'bits.b7 has type uint32_t:7, is in scope, and == 127')
 
-        four = bits.GetChildAtIndex(7)
+        four = bits.GetChildMemberWithName("four")
         self.DebugSBValue(four)
         self.assertTrue(four.GetName() == "four" and
                         four.GetTypeName() == "uint32_t:4" and

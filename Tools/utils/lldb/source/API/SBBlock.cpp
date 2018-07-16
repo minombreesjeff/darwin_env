@@ -183,7 +183,7 @@ SBBlock::GetDescription (SBStream &description)
     if (m_opaque_ptr)
     {
         lldb::user_id_t id = m_opaque_ptr->GetID();
-        strm.Printf ("Block: {id: %llu} ", id);
+        strm.Printf ("Block: {id: %" PRIu64 "} ", id);
         if (IsInlined())
         {
             strm.Printf (" (inlined, '%s') ", GetInlinedName());
@@ -299,7 +299,12 @@ SBBlock::GetVariables (lldb::SBFrame& frame,
                         if (add_variable)
                         {
                             if (frame_sp)
-                                value_list.Append (frame_sp->GetValueObjectForFrameVariable (variable_sp, use_dynamic));
+                            {
+                                lldb::ValueObjectSP valobj_sp(frame_sp->GetValueObjectForFrameVariable (variable_sp,eNoDynamicValues));
+                                SBValue value_sb;
+                                value_sb.SetSP(valobj_sp, use_dynamic);
+                                value_list.Append (value_sb);
+                            }
                         }
                     }
                 }

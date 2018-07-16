@@ -16,16 +16,12 @@
 #define LLVM_CLANG_GR_ANALYSISMANAGER_H
 
 #include "clang/Analysis/AnalysisContext.h"
-#include "clang/Frontend/AnalyzerOptions.h"
+#include "clang/StaticAnalyzer/Core/AnalyzerOptions.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/PathDiagnostic.h"
+#include "clang/StaticAnalyzer/Core/PathDiagnosticConsumers.h"
 
 namespace clang {
-
-namespace idx { 
-  class Indexer;
-  class TranslationUnit; 
-}
 
 namespace ento {
   class CheckerManager;
@@ -36,9 +32,8 @@ class AnalysisManager : public BugReporterData {
 
   ASTContext &Ctx;
   DiagnosticsEngine &Diags;
-  const LangOptions &LangInfo;
-
-  OwningPtr<PathDiagnosticConsumer> PD;
+  const LangOptions &LangOpts;
+  PathDiagnosticConsumers PathConsumers;
 
   // Configurable components creators.
   StoreManagerCreator CreateStoreMgr;
@@ -46,68 +41,18 @@ class AnalysisManager : public BugReporterData {
 
   CheckerManager *CheckerMgr;
 
-  /// \brief Provide function definitions in other translation units. This is
-  /// NULL if we don't have multiple translation units. AnalysisManager does
-  /// not own the Indexer.
-  idx::Indexer *Idxer;
-
-  enum AnalysisScope { ScopeTU, ScopeDecl } AScope;
-
-  /// \brief The maximum number of exploded nodes the analyzer will generate.
-  unsigned MaxNodes;
-
-  /// \brief The maximum number of times the analyzer visits a block.
-  unsigned MaxVisit;
-
-  bool VisualizeEGDot;
-  bool VisualizeEGUbi;
-  AnalysisPurgeMode PurgeDead;
-
-  /// \brief The flag regulates if we should eagerly assume evaluations of
-  /// conditionals, thus, bifurcating the path.
-  ///
-  /// EagerlyAssume - A flag indicating how the engine should handle
-  ///   expressions such as: 'x = (y != 0)'.  When this flag is true then
-  ///   the subexpression 'y != 0' will be eagerly assumed to be true or false,
-  ///   thus evaluating it to the integers 0 or 1 respectively.  The upside
-  ///   is that this can increase analysis precision until we have a better way
-  ///   to lazily evaluate such logic.  The downside is that it eagerly
-  ///   bifurcates paths.
-  bool EagerlyAssume;
-  bool TrimGraph;
-  bool InlineCall;
-  bool EagerlyTrimEGraph;
-
 public:
-  // Settings for inlining tuning.
-
-  /// \brief The inlining stack depth limit.
-  unsigned InlineMaxStackDepth;
-  /// \brief The max number of basic blocks in a function being inlined.
-  unsigned InlineMaxFunctionSize;
-
-public:
-  AnalysisManager(ASTContext &ctx, DiagnosticsEngine &diags, 
-                  const LangOptions &lang, PathDiagnosticConsumer *pd,
+  AnalyzerOptions &options;
+  
+  AnalysisManager(ASTContext &ctx,DiagnosticsEngine &diags,
+                  const LangOptions &lang,
+                  const PathDiagnosticConsumers &Consumers,
                   StoreManagerCreator storemgr,
                   ConstraintManagerCreator constraintmgr, 
                   CheckerManager *checkerMgr,
-                  idx::Indexer *idxer,
-                  unsigned maxnodes, unsigned maxvisit,
-                  bool vizdot, bool vizubi, AnalysisPurgeMode purge,
-                  bool eager, bool trim,
-                  bool inlinecall, bool useUnoptimizedCFG,
-                  bool addImplicitDtors, bool addInitializers,
-                  bool eagerlyTrimEGraph,
-                  unsigned inlineMaxStack,
-                  unsigned inlineMaxFunctionSize);
+                  AnalyzerOptions &Options);
 
-  /// Construct a clone of the given AnalysisManager with the given ASTContext
-  /// and DiagnosticsEngine.
-  AnalysisManager(ASTContext &ctx, DiagnosticsEngine &diags,
-                  AnalysisManager &ParentAM);
-
-  ~AnalysisManager() { FlushDiagnostics(); }
+  ~AnalysisManager();
   
   void ClearContexts() {
     AnaCtxMgr.clear();
@@ -127,8 +72,6 @@ public:
 
   CheckerManager *getCheckerManager() const { return CheckerMgr; }
 
-  idx::Indexer *getIndexer() const { return Idxer; }
-
   virtual ASTContext &getASTContext() {
     return Ctx;
   }
@@ -141,44 +84,24 @@ public:
     return Diags;
   }
 
-  const LangOptions &getLangOptions() const {
-    return LangInfo;
+  const LangOptions &getLangOpts() const {
+    return LangOpts;
   }
 
-  virtual PathDiagnosticConsumer *getPathDiagnosticConsumer() {
-    return PD.get();
-  }
-  
-  void FlushDiagnostics() {
-    if (PD.get())
-      PD->FlushDiagnostics(0);
+  ArrayRef<PathDiagnosticConsumer*> getPathDiagnosticConsumers()  {
+    return PathConsumers;
   }
 
-  unsigned getMaxNodes() const { return MaxNodes; }
-
-  unsigned getMaxVisit() const { return MaxVisit; }
-
-  bool shouldVisualizeGraphviz() const { return VisualizeEGDot; }
-
-  bool shouldVisualizeUbigraph() const { return VisualizeEGUbi; }
+  void FlushDiagnostics();
 
   bool shouldVisualize() const {
-    return VisualizeEGDot || VisualizeEGUbi;
+    return options.visualizeExplodedGraphWithGraphViz ||
+           options.visualizeExplodedGraphWithUbiGraph;
   }
 
-  bool shouldEagerlyTrimExplodedGraph() const { return EagerlyTrimEGraph; }
-
-  bool shouldTrimGraph() const { return TrimGraph; }
-
-  AnalysisPurgeMode getPurgeMode() const { return PurgeDead; }
-
-  bool shouldEagerlyAssume() const { return EagerlyAssume; }
-
-  bool shouldInlineCall() const { return InlineCall; }
-
-  bool hasIndexer() const { return Idxer != 0; }
-
-  AnalysisDeclContext *getAnalysisDeclContextInAnotherTU(const Decl *D);
+  bool shouldInlineCall() const {
+    return options.IPAMode != None;
+  }
 
   CFG *getCFG(Decl const *D) {
     return AnaCtxMgr.getContext(D)->getCFG();
@@ -196,11 +119,6 @@ public:
   AnalysisDeclContext *getAnalysisDeclContext(const Decl *D) {
     return AnaCtxMgr.getContext(D);
   }
-
-  AnalysisDeclContext *getAnalysisDeclContext(const Decl *D, idx::TranslationUnit *TU) {
-    return AnaCtxMgr.getContext(D, TU);
-  }
-
 };
 
 } // enAnaCtxMgrspace

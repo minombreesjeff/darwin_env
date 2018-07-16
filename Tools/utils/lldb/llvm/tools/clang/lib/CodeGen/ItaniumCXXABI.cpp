@@ -20,13 +20,14 @@
 
 #include "CGCXXABI.h"
 #include "CGRecordLayout.h"
+#include "CGVTables.h"
 #include "CodeGenFunction.h"
 #include "CodeGenModule.h"
-#include <clang/AST/Mangle.h>
-#include <clang/AST/Type.h>
-#include <llvm/Intrinsics.h>
-#include <llvm/Target/TargetData.h>
-#include <llvm/Value.h>
+#include "clang/AST/Mangle.h"
+#include "clang/AST/Type.h"
+#include "llvm/Intrinsics.h"
+#include "llvm/Target/TargetData.h"
+#include "llvm/Value.h"
 
 using namespace clang;
 using namespace CodeGen;
@@ -47,10 +48,6 @@ protected:
     }
     return PtrDiffTy;
   }
-
-  bool NeedsArrayCookie(const CXXNewExpr *expr);
-  bool NeedsArrayCookie(const CXXDeleteExpr *expr,
-                        QualType elementType);
 
 public:
   ItaniumCXXABI(CodeGen::CodeGenModule &CGM, bool IsARM = false) :
@@ -95,6 +92,10 @@ public:
                                           llvm::Value *Addr,
                                           const MemberPointerType *MPT);
 
+  llvm::Value *adjustToCompleteObject(CodeGenFunction &CGF,
+                                      llvm::Value *ptr,
+                                      QualType type);
+
   void BuildConstructorSignature(const CXXConstructorDecl *Ctor,
                                  CXXCtorType T,
                                  CanQualType &ResTy,
@@ -111,19 +112,24 @@ public:
 
   void EmitInstanceFunctionProlog(CodeGenFunction &CGF);
 
-  CharUnits GetArrayCookieSize(const CXXNewExpr *expr);
+  StringRef GetPureVirtualCallName() { return "__cxa_pure_virtual"; }
+
+  CharUnits getArrayCookieSizeImpl(QualType elementType);
   llvm::Value *InitializeArrayCookie(CodeGenFunction &CGF,
                                      llvm::Value *NewPtr,
                                      llvm::Value *NumElements,
                                      const CXXNewExpr *expr,
                                      QualType ElementType);
-  void ReadArrayCookie(CodeGenFunction &CGF, llvm::Value *Ptr,
-                       const CXXDeleteExpr *expr,
-                       QualType ElementType, llvm::Value *&NumElements,
-                       llvm::Value *&AllocPtr, CharUnits &CookieSize);
+  llvm::Value *readArrayCookieImpl(CodeGenFunction &CGF,
+                                   llvm::Value *allocPtr,
+                                   CharUnits cookieSize);
 
   void EmitGuardedInit(CodeGenFunction &CGF, const VarDecl &D,
                        llvm::GlobalVariable *DeclPtr, bool PerformInit);
+  void registerGlobalDtor(CodeGenFunction &CGF, llvm::Constant *dtor,
+                          llvm::Constant *addr);
+
+  void EmitVTables(const CXXRecordDecl *Class);
 };
 
 class ARMCXXABI : public ItaniumCXXABI {
@@ -148,16 +154,14 @@ public:
 
   void EmitReturnFromThunk(CodeGenFunction &CGF, RValue RV, QualType ResTy);
 
-  CharUnits GetArrayCookieSize(const CXXNewExpr *expr);
+  CharUnits getArrayCookieSizeImpl(QualType elementType);
   llvm::Value *InitializeArrayCookie(CodeGenFunction &CGF,
                                      llvm::Value *NewPtr,
                                      llvm::Value *NumElements,
                                      const CXXNewExpr *expr,
                                      QualType ElementType);
-  void ReadArrayCookie(CodeGenFunction &CGF, llvm::Value *Ptr,
-                       const CXXDeleteExpr *expr,
-                       QualType ElementType, llvm::Value *&NumElements,
-                       llvm::Value *&AllocPtr, CharUnits &CookieSize);
+  llvm::Value *readArrayCookieImpl(CodeGenFunction &CGF, llvm::Value *allocPtr,
+                                   CharUnits cookieSize);
 
 private:
   /// \brief Returns true if the given instance method is one of the
@@ -677,6 +681,25 @@ bool ItaniumCXXABI::isZeroInitializable(const MemberPointerType *MPT) {
   return MPT->getPointeeType()->isFunctionType();
 }
 
+/// The Itanium ABI always places an offset to the complete object
+/// at entry -2 in the vtable.
+llvm::Value *ItaniumCXXABI::adjustToCompleteObject(CodeGenFunction &CGF,
+                                                   llvm::Value *ptr,
+                                                   QualType type) {
+  // Grab the vtable pointer as an intptr_t*.
+  llvm::Value *vtable = CGF.GetVTablePtr(ptr, CGF.IntPtrTy->getPointerTo());
+
+  // Track back to entry -2 and pull out the offset there.
+  llvm::Value *offsetPtr = 
+    CGF.Builder.CreateConstInBoundsGEP1_64(vtable, -2, "complete-offset.ptr");
+  llvm::LoadInst *offset = CGF.Builder.CreateLoad(offsetPtr);
+  offset->setAlignment(CGF.PointerAlignInBytes);
+
+  // Apply the offset.
+  ptr = CGF.Builder.CreateBitCast(ptr, CGF.Int8PtrTy);
+  return CGF.Builder.CreateInBoundsGEP(ptr, offset);
+}
+
 /// The generic ABI passes 'this', plus a VTT if it's initializing a
 /// base subobject.
 void ItaniumCXXABI::BuildConstructorSignature(const CXXConstructorDecl *Ctor,
@@ -796,54 +819,11 @@ void ARMCXXABI::EmitReturnFromThunk(CodeGenFunction &CGF,
 
 /************************** Array allocation cookies **************************/
 
-bool ItaniumCXXABI::NeedsArrayCookie(const CXXNewExpr *expr) {
-  // If the class's usual deallocation function takes two arguments,
-  // it needs a cookie.
-  if (expr->doesUsualArrayDeleteWantSize())
-    return true;
-
-  // Automatic Reference Counting:
-  //   We need an array cookie for pointers with strong or weak lifetime.
-  QualType AllocatedType = expr->getAllocatedType();
-  if (getContext().getLangOptions().ObjCAutoRefCount &&
-      AllocatedType->isObjCLifetimeType()) {
-    switch (AllocatedType.getObjCLifetime()) {
-    case Qualifiers::OCL_None:
-    case Qualifiers::OCL_ExplicitNone:
-    case Qualifiers::OCL_Autoreleasing:
-      return false;
-      
-    case Qualifiers::OCL_Strong:
-    case Qualifiers::OCL_Weak:
-      return true;
-    }
-  }
-
-  // Otherwise, if the class has a non-trivial destructor, it always
-  // needs a cookie.
-  const CXXRecordDecl *record =
-    AllocatedType->getBaseElementTypeUnsafe()->getAsCXXRecordDecl();
-  return (record && !record->hasTrivialDestructor());
-}
-
-bool ItaniumCXXABI::NeedsArrayCookie(const CXXDeleteExpr *expr,
-                                     QualType elementType) {
-  // If the class's usual deallocation function takes two arguments,
-  // it needs a cookie.
-  if (expr->doesUsualArrayDeleteWantSize())
-    return true;
-
-  return elementType.isDestructedType();
-}
-
-CharUnits ItaniumCXXABI::GetArrayCookieSize(const CXXNewExpr *expr) {
-  if (!NeedsArrayCookie(expr))
-    return CharUnits::Zero();
-  
-  // Padding is the maximum of sizeof(size_t) and alignof(elementType)
-  ASTContext &Ctx = getContext();
-  return std::max(Ctx.getTypeSizeInChars(Ctx.getSizeType()),
-                  Ctx.getTypeAlignInChars(expr->getAllocatedType()));
+CharUnits ItaniumCXXABI::getArrayCookieSizeImpl(QualType elementType) {
+  // The array cookie is a size_t; pad that up to the element alignment.
+  // The cookie is actually right-justified in that space.
+  return std::max(CharUnits::fromQuantity(CGM.SizeSizeInBytes),
+                  CGM.getContext().getTypeAlignInChars(elementType));
 }
 
 llvm::Value *ItaniumCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
@@ -851,7 +831,7 @@ llvm::Value *ItaniumCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
                                                   llvm::Value *NumElements,
                                                   const CXXNewExpr *expr,
                                                   QualType ElementType) {
-  assert(NeedsArrayCookie(expr));
+  assert(requiresArrayCookie(expr));
 
   unsigned AS = cast<llvm::PointerType>(NewPtr->getType())->getAddressSpace();
 
@@ -862,6 +842,7 @@ llvm::Value *ItaniumCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
   // The size of the cookie.
   CharUnits CookieSize =
     std::max(SizeSize, Ctx.getTypeAlignInChars(ElementType));
+  assert(CookieSize == getArrayCookieSizeImpl(ElementType));
 
   // Compute an offset to the cookie.
   llvm::Value *CookiePtr = NewPtr;
@@ -882,53 +863,25 @@ llvm::Value *ItaniumCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
                                                 CookieSize.getQuantity());  
 }
 
-void ItaniumCXXABI::ReadArrayCookie(CodeGenFunction &CGF,
-                                    llvm::Value *Ptr,
-                                    const CXXDeleteExpr *expr,
-                                    QualType ElementType,
-                                    llvm::Value *&NumElements,
-                                    llvm::Value *&AllocPtr,
-                                    CharUnits &CookieSize) {
-  // Derive a char* in the same address space as the pointer.
-  unsigned AS = cast<llvm::PointerType>(Ptr->getType())->getAddressSpace();
-  llvm::Type *CharPtrTy = CGF.Builder.getInt8Ty()->getPointerTo(AS);
+llvm::Value *ItaniumCXXABI::readArrayCookieImpl(CodeGenFunction &CGF,
+                                                llvm::Value *allocPtr,
+                                                CharUnits cookieSize) {
+  // The element size is right-justified in the cookie.
+  llvm::Value *numElementsPtr = allocPtr;
+  CharUnits numElementsOffset =
+    cookieSize - CharUnits::fromQuantity(CGF.SizeSizeInBytes);
+  if (!numElementsOffset.isZero())
+    numElementsPtr =
+      CGF.Builder.CreateConstInBoundsGEP1_64(numElementsPtr,
+                                             numElementsOffset.getQuantity());
 
-  // If we don't need an array cookie, bail out early.
-  if (!NeedsArrayCookie(expr, ElementType)) {
-    AllocPtr = CGF.Builder.CreateBitCast(Ptr, CharPtrTy);
-    NumElements = 0;
-    CookieSize = CharUnits::Zero();
-    return;
-  }
-
-  QualType SizeTy = getContext().getSizeType();
-  CharUnits SizeSize = getContext().getTypeSizeInChars(SizeTy);
-  llvm::Type *SizeLTy = CGF.ConvertType(SizeTy);
-  
-  CookieSize
-    = std::max(SizeSize, getContext().getTypeAlignInChars(ElementType));
-
-  CharUnits NumElementsOffset = CookieSize - SizeSize;
-
-  // Compute the allocated pointer.
-  AllocPtr = CGF.Builder.CreateBitCast(Ptr, CharPtrTy);
-  AllocPtr = CGF.Builder.CreateConstInBoundsGEP1_64(AllocPtr,
-                                                    -CookieSize.getQuantity());
-
-  llvm::Value *NumElementsPtr = AllocPtr;
-  if (!NumElementsOffset.isZero())
-    NumElementsPtr =
-      CGF.Builder.CreateConstInBoundsGEP1_64(NumElementsPtr,
-                                             NumElementsOffset.getQuantity());
-  NumElementsPtr = 
-    CGF.Builder.CreateBitCast(NumElementsPtr, SizeLTy->getPointerTo(AS));
-  NumElements = CGF.Builder.CreateLoad(NumElementsPtr);
+  unsigned AS = cast<llvm::PointerType>(allocPtr->getType())->getAddressSpace();
+  numElementsPtr = 
+    CGF.Builder.CreateBitCast(numElementsPtr, CGF.SizeTy->getPointerTo(AS));
+  return CGF.Builder.CreateLoad(numElementsPtr);
 }
 
-CharUnits ARMCXXABI::GetArrayCookieSize(const CXXNewExpr *expr) {
-  if (!NeedsArrayCookie(expr))
-    return CharUnits::Zero();
-
+CharUnits ARMCXXABI::getArrayCookieSizeImpl(QualType elementType) {
   // On ARM, the cookie is always:
   //   struct array_cookie {
   //     std::size_t element_size; // element_size != 0
@@ -936,7 +889,7 @@ CharUnits ARMCXXABI::GetArrayCookieSize(const CXXNewExpr *expr) {
   //   };
   // TODO: what should we do if the allocated type actually wants
   // greater alignment?
-  return getContext().getTypeSizeInChars(getContext().getSizeType()) * 2;
+  return CharUnits::fromQuantity(2 * CGM.SizeSizeInBytes);
 }
 
 llvm::Value *ARMCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
@@ -944,7 +897,7 @@ llvm::Value *ARMCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
                                               llvm::Value *NumElements,
                                               const CXXNewExpr *expr,
                                               QualType ElementType) {
-  assert(NeedsArrayCookie(expr));
+  assert(requiresArrayCookie(expr));
 
   // NewPtr is a char*.
 
@@ -975,44 +928,18 @@ llvm::Value *ARMCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
                                                 CookieSize.getQuantity());
 }
 
-void ARMCXXABI::ReadArrayCookie(CodeGenFunction &CGF,
-                                llvm::Value *Ptr,
-                                const CXXDeleteExpr *expr,
-                                QualType ElementType,
-                                llvm::Value *&NumElements,
-                                llvm::Value *&AllocPtr,
-                                CharUnits &CookieSize) {
-  // Derive a char* in the same address space as the pointer.
-  unsigned AS = cast<llvm::PointerType>(Ptr->getType())->getAddressSpace();
-  llvm::Type *CharPtrTy = CGF.Builder.getInt8Ty()->getPointerTo(AS);
+llvm::Value *ARMCXXABI::readArrayCookieImpl(CodeGenFunction &CGF,
+                                            llvm::Value *allocPtr,
+                                            CharUnits cookieSize) {
+  // The number of elements is at offset sizeof(size_t) relative to
+  // the allocated pointer.
+  llvm::Value *numElementsPtr
+    = CGF.Builder.CreateConstInBoundsGEP1_64(allocPtr, CGF.SizeSizeInBytes);
 
-  // If we don't need an array cookie, bail out early.
-  if (!NeedsArrayCookie(expr, ElementType)) {
-    AllocPtr = CGF.Builder.CreateBitCast(Ptr, CharPtrTy);
-    NumElements = 0;
-    CookieSize = CharUnits::Zero();
-    return;
-  }
-
-  QualType SizeTy = getContext().getSizeType();
-  CharUnits SizeSize = getContext().getTypeSizeInChars(SizeTy);
-  llvm::Type *SizeLTy = CGF.ConvertType(SizeTy);
-  
-  // The cookie size is always 2 * sizeof(size_t).
-  CookieSize = 2 * SizeSize;
-
-  // The allocated pointer is the input ptr, minus that amount.
-  AllocPtr = CGF.Builder.CreateBitCast(Ptr, CharPtrTy);
-  AllocPtr = CGF.Builder.CreateConstInBoundsGEP1_64(AllocPtr,
-                                               -CookieSize.getQuantity());
-
-  // The number of elements is at offset sizeof(size_t) relative to that.
-  llvm::Value *NumElementsPtr
-    = CGF.Builder.CreateConstInBoundsGEP1_64(AllocPtr,
-                                             SizeSize.getQuantity());
-  NumElementsPtr = 
-    CGF.Builder.CreateBitCast(NumElementsPtr, SizeLTy->getPointerTo(AS));
-  NumElements = CGF.Builder.CreateLoad(NumElementsPtr);
+  unsigned AS = cast<llvm::PointerType>(allocPtr->getType())->getAddressSpace();
+  numElementsPtr = 
+    CGF.Builder.CreateBitCast(numElementsPtr, CGF.SizeTy->getPointerTo(AS));
+  return CGF.Builder.CreateLoad(numElementsPtr);
 }
 
 /*********************** Static local initialization **************************/
@@ -1064,44 +991,53 @@ namespace {
 /// just special-case it at particular places.
 void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
                                     const VarDecl &D,
-                                    llvm::GlobalVariable *GV,
-                                    bool PerformInit) {
+                                    llvm::GlobalVariable *var,
+                                    bool shouldPerformInit) {
   CGBuilderTy &Builder = CGF.Builder;
 
   // We only need to use thread-safe statics for local variables;
   // global initialization is always single-threaded.
   bool threadsafe =
-    (getContext().getLangOptions().ThreadsafeStatics && D.isLocalVarDecl());
-
-  llvm::IntegerType *GuardTy;
+    (getContext().getLangOpts().ThreadsafeStatics && D.isLocalVarDecl());
 
   // If we have a global variable with internal linkage and thread-safe statics
   // are disabled, we can just let the guard variable be of type i8.
-  bool useInt8GuardVariable = !threadsafe && GV->hasInternalLinkage();
+  bool useInt8GuardVariable = !threadsafe && var->hasInternalLinkage();
+
+  llvm::IntegerType *guardTy;
   if (useInt8GuardVariable) {
-    GuardTy = CGF.Int8Ty;
+    guardTy = CGF.Int8Ty;
   } else {
     // Guard variables are 64 bits in the generic ABI and 32 bits on ARM.
-    GuardTy = (IsARM ? CGF.Int32Ty : CGF.Int64Ty);
+    guardTy = (IsARM ? CGF.Int32Ty : CGF.Int64Ty);
   }
-  llvm::PointerType *GuardPtrTy = GuardTy->getPointerTo();
+  llvm::PointerType *guardPtrTy = guardTy->getPointerTo();
 
-  // Create the guard variable.
-  SmallString<256> GuardVName;
-  llvm::raw_svector_ostream Out(GuardVName);
-  getMangleContext().mangleItaniumGuardVariable(&D, Out);
-  Out.flush();
+  // Create the guard variable if we don't already have it (as we
+  // might if we're double-emitting this function body).
+  llvm::GlobalVariable *guard = CGM.getStaticLocalDeclGuardAddress(&D);
+  if (!guard) {
+    // Mangle the name for the guard.
+    SmallString<256> guardName;
+    {
+      llvm::raw_svector_ostream out(guardName);
+      getMangleContext().mangleItaniumGuardVariable(&D, out);
+      out.flush();
+    }
 
-  // Just absorb linkage and visibility from the variable.
-  llvm::GlobalVariable *GuardVariable =
-    new llvm::GlobalVariable(CGM.getModule(), GuardTy,
-                             false, GV->getLinkage(),
-                             llvm::ConstantInt::get(GuardTy, 0),
-                             GuardVName.str());
-  GuardVariable->setVisibility(GV->getVisibility());
+    // Create the guard variable with a zero-initializer.
+    // Just absorb linkage and visibility from the guarded variable.
+    guard = new llvm::GlobalVariable(CGM.getModule(), guardTy,
+                                     false, var->getLinkage(),
+                                     llvm::ConstantInt::get(guardTy, 0),
+                                     guardName.str());
+    guard->setVisibility(var->getVisibility());
+
+    CGM.setStaticLocalDeclGuardAddress(&D, guard);
+  }
 
   // Test whether the variable has completed initialization.
-  llvm::Value *IsInitialized;
+  llvm::Value *isInitialized;
 
   // ARM C++ ABI 3.2.3.1:
   //   To support the potential use of initialization guard variables
@@ -1115,9 +1051,9 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
   //         ...
   //     }
   if (IsARM && !useInt8GuardVariable) {
-    llvm::Value *V = Builder.CreateLoad(GuardVariable);
+    llvm::Value *V = Builder.CreateLoad(guard);
     V = Builder.CreateAnd(V, Builder.getInt32(1));
-    IsInitialized = Builder.CreateIsNull(V, "guard.uninitialized");
+    isInitialized = Builder.CreateIsNull(V, "guard.uninitialized");
 
   // Itanium C++ ABI 3.3.2:
   //   The following is pseudo-code showing how these functions can be used:
@@ -1135,9 +1071,8 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
   //     }
   } else {
     // Load the first byte of the guard variable.
-    llvm::Type *PtrTy = Builder.getInt8PtrTy();
     llvm::LoadInst *LI = 
-      Builder.CreateLoad(Builder.CreateBitCast(GuardVariable, PtrTy));
+      Builder.CreateLoad(Builder.CreateBitCast(guard, CGM.Int8PtrTy));
     LI->setAlignment(1);
 
     // Itanium ABI:
@@ -1149,14 +1084,14 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
     if (threadsafe)
       LI->setAtomic(llvm::Acquire);
 
-    IsInitialized = Builder.CreateIsNull(LI, "guard.uninitialized");
+    isInitialized = Builder.CreateIsNull(LI, "guard.uninitialized");
   }
 
   llvm::BasicBlock *InitCheckBlock = CGF.createBasicBlock("init.check");
   llvm::BasicBlock *EndBlock = CGF.createBasicBlock("init.end");
 
   // Check if the first byte of the guard variable is zero.
-  Builder.CreateCondBr(IsInitialized, InitCheckBlock, EndBlock);
+  Builder.CreateCondBr(isInitialized, InitCheckBlock, EndBlock);
 
   CGF.EmitBlock(InitCheckBlock);
 
@@ -1164,7 +1099,7 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
   if (threadsafe) {    
     // Call __cxa_guard_acquire.
     llvm::Value *V
-      = Builder.CreateCall(getGuardAcquireFn(CGM, GuardPtrTy), GuardVariable);
+      = Builder.CreateCall(getGuardAcquireFn(CGM, guardPtrTy), guard);
                
     llvm::BasicBlock *InitBlock = CGF.createBasicBlock("init");
   
@@ -1172,23 +1107,80 @@ void ItaniumCXXABI::EmitGuardedInit(CodeGenFunction &CGF,
                          InitBlock, EndBlock);
   
     // Call __cxa_guard_abort along the exceptional edge.
-    CGF.EHStack.pushCleanup<CallGuardAbort>(EHCleanup, GuardVariable);
+    CGF.EHStack.pushCleanup<CallGuardAbort>(EHCleanup, guard);
     
     CGF.EmitBlock(InitBlock);
   }
 
   // Emit the initializer and add a global destructor if appropriate.
-  CGF.EmitCXXGlobalVarDeclInit(D, GV, PerformInit);
+  CGF.EmitCXXGlobalVarDeclInit(D, var, shouldPerformInit);
 
   if (threadsafe) {
     // Pop the guard-abort cleanup if we pushed one.
     CGF.PopCleanupBlock();
 
     // Call __cxa_guard_release.  This cannot throw.
-    Builder.CreateCall(getGuardReleaseFn(CGM, GuardPtrTy), GuardVariable);
+    Builder.CreateCall(getGuardReleaseFn(CGM, guardPtrTy), guard);
   } else {
-    Builder.CreateStore(llvm::ConstantInt::get(GuardTy, 1), GuardVariable);
+    Builder.CreateStore(llvm::ConstantInt::get(guardTy, 1), guard);
   }
 
   CGF.EmitBlock(EndBlock);
+}
+
+/// Register a global destructor using __cxa_atexit.
+static void emitGlobalDtorWithCXAAtExit(CodeGenFunction &CGF,
+                                        llvm::Constant *dtor,
+                                        llvm::Constant *addr) {
+  // We're assuming that the destructor function is something we can
+  // reasonably call with the default CC.  Go ahead and cast it to the
+  // right prototype.
+  llvm::Type *dtorTy =
+    llvm::FunctionType::get(CGF.VoidTy, CGF.Int8PtrTy, false)->getPointerTo();
+
+  // extern "C" int __cxa_atexit(void (*f)(void *), void *p, void *d);
+  llvm::Type *paramTys[] = { dtorTy, CGF.Int8PtrTy, CGF.Int8PtrTy };
+  llvm::FunctionType *atexitTy =
+    llvm::FunctionType::get(CGF.IntTy, paramTys, false);
+
+  // Fetch the actual function.
+  llvm::Constant *atexit =
+    CGF.CGM.CreateRuntimeFunction(atexitTy, "__cxa_atexit");
+  if (llvm::Function *fn = dyn_cast<llvm::Function>(atexit))
+    fn->setDoesNotThrow();
+
+  // Create a variable that binds the atexit to this shared object.
+  llvm::Constant *handle =
+    CGF.CGM.CreateRuntimeVariable(CGF.Int8Ty, "__dso_handle");
+
+  llvm::Value *args[] = {
+    llvm::ConstantExpr::getBitCast(dtor, dtorTy),
+    llvm::ConstantExpr::getBitCast(addr, CGF.Int8PtrTy),
+    handle
+  };
+  CGF.Builder.CreateCall(atexit, args)->setDoesNotThrow();
+}
+
+/// Register a global destructor as best as we know how.
+void ItaniumCXXABI::registerGlobalDtor(CodeGenFunction &CGF,
+                                       llvm::Constant *dtor,
+                                       llvm::Constant *addr) {
+  // Use __cxa_atexit if available.
+  if (CGM.getCodeGenOpts().CXAAtExit) {
+    return emitGlobalDtorWithCXAAtExit(CGF, dtor, addr);
+  }
+
+  // In Apple kexts, we want to add a global destructor entry.
+  // FIXME: shouldn't this be guarded by some variable?
+  if (CGM.getContext().getLangOpts().AppleKext) {
+    // Generate a global destructor entry.
+    return CGM.AddCXXDtorEntry(dtor, addr);
+  }
+
+  CGF.registerGlobalDtorWithAtExit(dtor, addr);
+}
+
+/// Generate and emit virtual tables for the given class.
+void ItaniumCXXABI::EmitVTables(const CXXRecordDecl *Class) {
+  CGM.getVTables().GenerateClassData(CGM.getVTableLinkage(Class), Class);
 }

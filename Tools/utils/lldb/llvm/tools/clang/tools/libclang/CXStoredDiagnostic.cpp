@@ -66,17 +66,17 @@ CXString CXStoredDiagnostic::getDiagnosticOption(CXString *Disable) const {
       *Disable = createCXString("-ferror-limit=0");
     return createCXString("-ferror-limit=");
   }
-  
-  bool EnabledByDefault;
-  if (DiagnosticIDs::isBuiltinExtensionDiag(ID, EnabledByDefault) &&
-      !EnabledByDefault)
-    return createCXString("-pedantic");
 
-  return createCXString("");  
+  return createCXString("");
 }
 
 unsigned CXStoredDiagnostic::getCategory() const {
   return DiagnosticIDs::getCategoryNumberForDiag(Diag.getID());
+}
+
+CXString CXStoredDiagnostic::getCategoryText() const {
+  unsigned catID = DiagnosticIDs::getCategoryNumberForDiag(Diag.getID());
+  return createCXString(DiagnosticIDs::getCategoryNameFromID(catID));
 }
 
 unsigned CXStoredDiagnostic::getNumRanges() const {

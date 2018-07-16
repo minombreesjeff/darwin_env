@@ -44,6 +44,11 @@ import os
 %}
 %include "./Python/python-typemaps.swig"
 
+/* C++ headers to be included. */
+%{
+#include <string>
+%}
+
 /* The liblldb header files to be included. */
 %{
 #include "lldb/lldb-public.h"
@@ -58,8 +63,10 @@ import os
 #include "lldb/API/SBCompileUnit.h"
 #include "lldb/API/SBData.h"
 #include "lldb/API/SBDebugger.h"
+#include "lldb/API/SBDeclaration.h"
 #include "lldb/API/SBError.h"
 #include "lldb/API/SBEvent.h"
+#include "lldb/API/SBExpressionOptions.h"
 #include "lldb/API/SBFileSpec.h"
 #include "lldb/API/SBFileSpecList.h"
 #include "lldb/API/SBFrame.h"
@@ -95,7 +102,7 @@ import os
 
 /* Various liblldb typedefs that SWIG needs to know about.  */
 #define __extension__ /* Undefine GCC keyword to make Swig happy when processing glibc's stdint.h. */
-%include <stdint.h>
+%include "stdint.i"
 %include "lldb/lldb-defines.h"
 %include "lldb/lldb-enumerations.h"
 %include "lldb/lldb-forward.h"
@@ -116,8 +123,10 @@ import os
 %include "./Python/interface/SBCompileUnit.i"
 %include "./Python/interface/SBData.i"
 %include "./Python/interface/SBDebugger.i"
+%include "./Python/interface/SBDeclaration.i"
 %include "./Python/interface/SBError.i"
 %include "./Python/interface/SBEvent.i"
+%include "./Python/interface/SBExpressionOptions.i"
 %include "./Python/interface/SBFileSpec.i"
 %include "./Python/interface/SBFileSpecList.i"
 %include "./Python/interface/SBFrame.i"

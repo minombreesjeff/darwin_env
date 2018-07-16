@@ -25,20 +25,18 @@ class ExprCommandCallFunctionTestCase(TestBase):
         self.buildDsym()
         self.call_function()
 
+    @expectedFailureLinux # bugzilla 14437
     @dwarf_test
     def test_with_dwarf(self):
         """Test calling std::String member function."""
-        self.buildDsym()
+        self.buildDwarf()
         self.call_function()
 
     def call_function(self):
         """Test calling std::String member function."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 

@@ -560,6 +560,9 @@ public:
     lldb::SBTypeList
     FindTypes (const char* type);
 
+    lldb::SBType
+    GetBasicType(lldb::BasicType type);
+
     lldb::SBSourceManager
     GetSourceManager ();
 
@@ -687,6 +690,9 @@ public:
     lldb::SBInstructionList
     GetInstructions (lldb::SBAddress base_addr, const void *buf, size_t size);
     
+    lldb::SBSymbolContextList
+    FindSymbols (const char *name, lldb::SymbolType type = eSymbolTypeAny);
+
     bool
     GetDescription (lldb::SBStream &description, lldb::DescriptionLevel description_level);
     

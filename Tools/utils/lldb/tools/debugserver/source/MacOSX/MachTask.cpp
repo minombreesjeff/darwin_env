@@ -23,6 +23,8 @@
 #include <mach/mach_vm.h>
 
 // C++ Includes
+#include <sstream>
+
 // Other libraries and framework includes
 // Project includes
 #include "CFUtils.h"
@@ -52,7 +54,6 @@ MachTask::MachTask(MachProcess *process) :
     m_exception_port (MACH_PORT_NULL)
 {
     memset(&m_exc_port_info, 0, sizeof(m_exc_port_info));
-
 }
 
 //----------------------------------------------------------------------
@@ -87,18 +88,18 @@ MachTask::Resume()
 {
     struct task_basic_info task_info;
     task_t task = TaskPort();
-	if (task == TASK_NULL)
-		return KERN_INVALID_ARGUMENT;
+    if (task == TASK_NULL)
+        return KERN_INVALID_ARGUMENT;
 
     DNBError err;
     err = BasicInfo(task, &task_info);
 
     if (err.Success())
     {
-		// task_resume isn't counted like task_suspend calls are, are, so if the 
-		// task is not suspended, don't try and resume it since it is already 
-		// running
-		if (task_info.suspend_count > 0)
+        // task_resume isn't counted like task_suspend calls are, are, so if the 
+        // task is not suspended, don't try and resume it since it is already 
+        // running
+        if (task_info.suspend_count > 0)
         {
             err = ::task_resume (task);
             if (DNBLogCheckLogBit(LOG_TASK) || err.Fail())
@@ -172,7 +173,7 @@ MachTask::ReadMemory (nub_addr_t addr, nub_size_t size, void *buf)
     {
         n = m_vm_memory.Read(task, addr, buf, size);
 
-        DNBLogThreadedIf(LOG_MEMORY, "MachTask::ReadMemory ( addr = 0x%8.8llx, size = %zu, buf = %p) => %zu bytes read", (uint64_t)addr, size, buf, n);
+        DNBLogThreadedIf(LOG_MEMORY, "MachTask::ReadMemory ( addr = 0x%8.8llx, size = %llu, buf = %p) => %llu bytes read", (uint64_t)addr, (uint64_t)size, buf, (uint64_t)n);
         if (DNBLogCheckLogBit(LOG_MEMORY_DATA_LONG) || (DNBLogCheckLogBit(LOG_MEMORY_DATA_SHORT) && size <= 8))
         {
             DNBDataRef data((uint8_t*)buf, n, false);
@@ -194,7 +195,7 @@ MachTask::WriteMemory (nub_addr_t addr, nub_size_t size, const void *buf)
     if (task != TASK_NULL)
     {
         n = m_vm_memory.Write(task, addr, buf, size);
-        DNBLogThreadedIf(LOG_MEMORY, "MachTask::WriteMemory ( addr = 0x%8.8llx, size = %zu, buf = %p) => %zu bytes written", (uint64_t)addr, size, buf, n);
+        DNBLogThreadedIf(LOG_MEMORY, "MachTask::WriteMemory ( addr = 0x%8.8llx, size = %llu, buf = %p) => %llu bytes written", (uint64_t)addr, (uint64_t)size, buf, (uint64_t)n);
         if (DNBLogCheckLogBit(LOG_MEMORY_DATA_LONG) || (DNBLogCheckLogBit(LOG_MEMORY_DATA_SHORT) && size <= 8))
         {
             DNBDataRef data((uint8_t*)buf, n, false);
@@ -224,6 +225,139 @@ MachTask::GetMemoryRegionInfo (nub_addr_t addr, DNBRegionInfo *region_info)
     return ret;
 }
 
+#define TIME_VALUE_TO_TIMEVAL(a, r) do {        \
+(r)->tv_sec = (a)->seconds;                     \
+(r)->tv_usec = (a)->microseconds;               \
+} while (0)
+
+// We should consider moving this into each MacThread.
+static void update_used_time(task_t task, int &num_threads, uint64_t **threads_id, uint64_t **threads_used_usec, struct timeval &current_used_time)
+{
+    kern_return_t kr;
+    thread_act_array_t threads;
+    mach_msg_type_number_t tcnt;
+    
+    kr = task_threads(task, &threads, &tcnt);
+    if (kr != KERN_SUCCESS)
+        return;
+    
+    num_threads = tcnt;
+    *threads_id = (uint64_t *)malloc(num_threads * sizeof(uint64_t));
+    *threads_used_usec = (uint64_t *)malloc(num_threads * sizeof(uint64_t));
+
+    for (int i = 0; i < tcnt; i++) {
+        thread_identifier_info_data_t identifier_info;
+        mach_msg_type_number_t count = THREAD_IDENTIFIER_INFO_COUNT;
+        kr = thread_info(threads[i], THREAD_IDENTIFIER_INFO, (thread_info_t)&identifier_info, &count);
+        if (kr != KERN_SUCCESS) continue;
+
+        thread_basic_info_data_t basic_info;
+        count = THREAD_BASIC_INFO_COUNT;
+        kr = thread_info(threads[i], THREAD_BASIC_INFO, (thread_info_t)&basic_info, &count);
+        if (kr != KERN_SUCCESS) continue;
+        
+        if ((basic_info.flags & TH_FLAGS_IDLE) == 0) {
+            (*threads_id)[i] = identifier_info.thread_id;
+
+            struct timeval tv;
+            struct timeval thread_tv;
+            TIME_VALUE_TO_TIMEVAL(&basic_info.user_time, &tv);
+            TIME_VALUE_TO_TIMEVAL(&basic_info.user_time, &thread_tv);
+            timeradd(&current_used_time, &tv, &current_used_time);
+            TIME_VALUE_TO_TIMEVAL(&basic_info.system_time, &tv);
+            timeradd(&thread_tv, &tv, &thread_tv);
+            timeradd(&current_used_time, &tv, &current_used_time);
+            uint64_t used_usec = thread_tv.tv_sec * 1000000ULL + thread_tv.tv_usec;
+            (*threads_used_usec)[i] = used_usec;
+        }
+        
+        kr = mach_port_deallocate(mach_task_self(), threads[i]);
+    }
+    kr = mach_vm_deallocate(mach_task_self(), (mach_vm_address_t)(uintptr_t)threads, tcnt * sizeof(*threads));
+}
+
+std::string
+MachTask::GetProfileData ()
+{
+    std::string result;
+    task_t task = TaskPort();
+    if (task == TASK_NULL)
+        return result;
+    
+    struct task_basic_info task_info;
+    DNBError err;
+    err = BasicInfo(task, &task_info);
+    
+    if (!err.Success())
+        return result;
+    
+    uint64_t elapsed_usec = 0;
+    uint64_t task_used_usec = 0;
+    int num_threads = 0;
+    uint64_t *threads_used_usec = NULL;
+    uint64_t *threads_id = NULL;
+
+    // Get current used time.
+    struct timeval current_used_time;
+    struct timeval tv;
+    TIME_VALUE_TO_TIMEVAL(&task_info.user_time, &current_used_time);
+    TIME_VALUE_TO_TIMEVAL(&task_info.system_time, &tv);
+    timeradd(&current_used_time, &tv, &current_used_time);
+    task_used_usec = current_used_time.tv_sec * 1000000ULL + current_used_time.tv_usec;
+    update_used_time(task, num_threads, &threads_id, &threads_used_usec, current_used_time);
+    
+    struct timeval current_elapsed_time;
+    int res = gettimeofday(&current_elapsed_time, NULL);
+    if (res == 0)
+    {
+        elapsed_usec = current_elapsed_time.tv_sec * 1000000ULL + current_elapsed_time.tv_usec;
+    }
+    
+    struct vm_statistics vm_stats;
+    uint64_t physical_memory;
+    mach_vm_size_t rprvt = 0;
+    mach_vm_size_t rsize = 0;
+    mach_vm_size_t vprvt = 0;
+    mach_vm_size_t vsize = 0;
+    mach_vm_size_t dirty_size = 0;
+    if (m_vm_memory.GetMemoryProfile(task, task_info, m_process->GetCPUType(), m_process->ProcessID(), vm_stats, physical_memory, rprvt, rsize, vprvt, vsize, dirty_size))
+    {
+        std::ostringstream profile_data_stream;
+        
+        profile_data_stream << "elapsed_usec:" << elapsed_usec << ';';
+        profile_data_stream << "task_used_usec:" << task_used_usec << ';';
+        
+        profile_data_stream << "threads_info:" << num_threads;
+        for (int i=0; i<num_threads; i++) {
+            profile_data_stream << ',' << threads_id[i];
+            profile_data_stream << ',' << threads_used_usec[i];
+        }
+        profile_data_stream << ';';
+        
+        profile_data_stream << "wired:" << vm_stats.wire_count * vm_page_size << ';';
+        profile_data_stream << "active:" << vm_stats.active_count * vm_page_size << ';';
+        profile_data_stream << "inactive:" << vm_stats.inactive_count * vm_page_size << ';';
+        uint64_t total_used_count = vm_stats.wire_count + vm_stats.inactive_count + vm_stats.active_count;
+        profile_data_stream << "used:" << total_used_count * vm_page_size << ';';
+        profile_data_stream << "free:" << vm_stats.free_count * vm_page_size << ';';
+        profile_data_stream << "total:" << physical_memory << ';';        
+        
+        profile_data_stream << "rprvt:" << rprvt << ';';
+        profile_data_stream << "rsize:" << rsize << ';';
+        profile_data_stream << "vprvt:" << vprvt << ';';
+        profile_data_stream << "vsize:" << vsize << ';';
+        profile_data_stream << "dirty:" << dirty_size << ';';
+        profile_data_stream << "end;";
+        
+        result = profile_data_stream.str();
+    }
+    
+    free(threads_id);
+    free(threads_used_usec);
+    
+    return result;
+}
+
 
 //----------------------------------------------------------------------
 // MachTask::TaskPortForProcessID
@@ -242,14 +376,14 @@ MachTask::TaskPortForProcessID (DNBError &err)
 task_t
 MachTask::TaskPortForProcessID (pid_t pid, DNBError &err, uint32_t num_retries, uint32_t usec_interval)
 {
-	if (pid != INVALID_NUB_PROCESS)
-	{
-		DNBError err;
-		mach_port_t task_self = mach_task_self ();	
-		task_t task = TASK_NULL;
-		for (uint32_t i=0; i<num_retries; i++)
-		{	
-			err = ::task_for_pid ( task_self, pid, &task);
+    if (pid != INVALID_NUB_PROCESS)
+    {
+        DNBError err;
+        mach_port_t task_self = mach_task_self ();  
+        task_t task = TASK_NULL;
+        for (uint32_t i=0; i<num_retries; i++)
+        {   
+            err = ::task_for_pid ( task_self, pid, &task);
 
             if (DNBLogCheckLogBit(LOG_TASK) || err.Fail())
             {
@@ -266,14 +400,14 @@ MachTask::TaskPortForProcessID (pid_t pid, DNBError &err, uint32_t num_retries, 
                 err.LogThreaded(str);
             }
 
-			if (err.Success())
-				return task;
+            if (err.Success())
+                return task;
 
-			// Sleep a bit and try again
-			::usleep (usec_interval);
-		}
-	}
-	return TASK_NULL;
+            // Sleep a bit and try again
+            ::usleep (usec_interval);
+        }
+    }
+    return TASK_NULL;
 }
 
 

@@ -371,11 +371,18 @@ DWARFCallFrameInfo::FDEToUnwindPlan (dw_offset_t offset, Address startaddr, Unwi
     {
         unwind_plan.SetSourceName ("eh_frame CFI");
         cie_offset = current_entry + 4 - cie_offset;
+        unwind_plan.SetUnwindPlanValidAtAllInstructions (eLazyBoolNo);
     }
     else
     {
         unwind_plan.SetSourceName ("DWARF CFI");
+        // In theory the debug_frame info should be valid at all call sites
+        // ("asynchronous unwind info" as it is sometimes called) but in practice
+        // gcc et al all emit call frame info for the prologue and call sites, but
+        // not for the epilogue or all the other locations during the function reliably.
+        unwind_plan.SetUnwindPlanValidAtAllInstructions (eLazyBoolNo);
     }
+    unwind_plan.SetSourcedFromCompiler (eLazyBoolYes);
 
     const CIE *cie = GetCIE (cie_offset);
     assert (cie != NULL);
@@ -407,6 +414,7 @@ DWARFCallFrameInfo::FDEToUnwindPlan (dw_offset_t offset, Address startaddr, Unwi
     UnwindPlan::RowSP row(cie_initial_row);
 
     unwind_plan.SetRegisterKind (m_reg_kind);
+    unwind_plan.SetReturnAddressRegister (cie->return_addr_reg_num);
 
     UnwindPlan::Row::RegisterLocation reg_location;
     while (m_cfi_data.ValidOffset(offset) && offset < end_offset)

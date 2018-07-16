@@ -85,6 +85,8 @@ namespace llvm {
     /// the value of the Latency field of the predecessor, however advanced
     /// models may provide additional information about specific edges.
     unsigned Latency;
+    /// Record MinLatency seperately from "expected" Latency.
+    unsigned MinLatency;
 
   public:
     /// SDep - Construct a null SDep. This is only for use by container
@@ -96,7 +98,7 @@ namespace llvm {
     SDep(SUnit *S, Kind kind, unsigned latency = 1, unsigned Reg = 0,
          bool isNormalMemory = false, bool isMustAlias = false,
          bool isArtificial = false)
-      : Dep(S, kind), Contents(), Latency(latency) {
+      : Dep(S, kind), Contents(), Latency(latency), MinLatency(latency) {
       switch (kind) {
       case Anti:
       case Output:
@@ -117,8 +119,9 @@ namespace llvm {
       }
     }
 
-    bool operator==(const SDep &Other) const {
-      if (Dep != Other.Dep || Latency != Other.Latency) return false;
+    /// Return true if the specified SDep is equivalent except for latency.
+    bool overlaps(const SDep &Other) const {
+      if (Dep != Other.Dep) return false;
       switch (Dep.getInt()) {
       case Data:
       case Anti:
@@ -131,6 +134,11 @@ namespace llvm {
                Contents.Order.isArtificial == Other.Contents.Order.isArtificial;
       }
       llvm_unreachable("Invalid dependency kind!");
+    }
+
+    bool operator==(const SDep &Other) const {
+      return overlaps(Other)
+        && Latency == Other.Latency && MinLatency == Other.MinLatency;
     }
 
     bool operator!=(const SDep &Other) const {
@@ -148,6 +156,18 @@ namespace llvm {
     /// setLatency - Set the latency for this edge.
     void setLatency(unsigned Lat) {
       Latency = Lat;
+    }
+
+    /// getMinLatency - Return the minimum latency for this edge. Minimum
+    /// latency is used for scheduling groups, while normal (expected) latency
+    /// is for instruction cost and critical path.
+    unsigned getMinLatency() const {
+      return MinLatency;
+    }
+
+    /// setMinLatency - Set the minimum latency for this edge.
+    void setMinLatency(unsigned Lat) {
+      MinLatency = Lat;
     }
 
     //// getSUnit - Return the SUnit to which this edge points.
@@ -272,6 +292,9 @@ namespace llvm {
     unsigned Depth;                     // Node depth.
     unsigned Height;                    // Node height.
   public:
+    unsigned TopReadyCycle; // Cycle relative to start when node is ready.
+    unsigned BotReadyCycle; // Cycle relative to end when node is ready.
+
     const TargetRegisterClass *CopyDstRC; // Is a special copy node if not null.
     const TargetRegisterClass *CopySrcRC;
 
@@ -287,7 +310,7 @@ namespace llvm {
         isScheduleHigh(false), isScheduleLow(false), isCloned(false),
         SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
-        CopyDstRC(NULL), CopySrcRC(NULL) {}
+        TopReadyCycle(0), BotReadyCycle(0), CopyDstRC(NULL), CopySrcRC(NULL) {}
 
     /// SUnit - Construct an SUnit for post-regalloc scheduling to represent
     /// a MachineInstr.
@@ -301,7 +324,7 @@ namespace llvm {
         isScheduleHigh(false), isScheduleLow(false), isCloned(false),
         SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
-        CopyDstRC(NULL), CopySrcRC(NULL) {}
+        TopReadyCycle(0), BotReadyCycle(0), CopyDstRC(NULL), CopySrcRC(NULL) {}
 
     /// SUnit - Construct a placeholder SUnit.
     SUnit()
@@ -314,7 +337,7 @@ namespace llvm {
         isScheduleHigh(false), isScheduleLow(false), isCloned(false),
         SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
-        CopyDstRC(NULL), CopySrcRC(NULL) {}
+        TopReadyCycle(0), BotReadyCycle(0), CopyDstRC(NULL), CopySrcRC(NULL) {}
 
     /// setNode - Assign the representative SDNode for this SUnit.
     /// This may be used during pre-regalloc scheduling.
@@ -408,6 +431,13 @@ namespace llvm {
         if (Succs[i].getSUnit() == N)
           return true;
       return false;
+    }
+
+    bool isTopReady() const {
+      return NumPredsLeft == 0;
+    }
+    bool isBottomReady() const {
+      return NumSuccsLeft == 0;
     }
 
     void dump(const ScheduleDAG *G) const;
@@ -539,22 +569,6 @@ namespace llvm {
     /// their state is consistent. Return the number of scheduled SUnits.
     unsigned VerifyScheduledDAG(bool isBottomUp);
 #endif
-
-  protected:
-    /// ComputeLatency - Compute node latency.
-    ///
-    virtual void computeLatency(SUnit *SU) = 0;
-
-    /// ComputeOperandLatency - Override dependence edge latency using
-    /// operand use/def information
-    ///
-    virtual void computeOperandLatency(SUnit *, SUnit *,
-                                       SDep&) const { }
-
-    /// ForceUnitLatencies - Return true if all scheduling edges should be given
-    /// a latency value of one.  The default is to return false; schedulers may
-    /// override this as needed.
-    virtual bool forceUnitLatencies() const { return false; }
 
   private:
     // Return the MCInstrDesc of this SDNode or NULL.

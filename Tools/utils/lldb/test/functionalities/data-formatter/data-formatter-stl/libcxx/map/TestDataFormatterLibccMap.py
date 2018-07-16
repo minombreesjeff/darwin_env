@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class LibcxxMapDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -60,7 +58,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
 
         self.expect('image list',substrs=['libc++.1.dylib','libc++abi.dylib'])
 
-        self.runCmd("frame variable ii -T")
+        self.runCmd("frame variable ii --show-types")
         
         self.runCmd("type summary add -x \"std::__1::map<\" --summary-string \"map has ${svar%#} items\" -e") 
         
@@ -120,6 +118,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                     substrs = ['first =',
                                'second =']);
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("ii").MightHaveChildren(), "ii.MightHaveChildren() says False for non empty!")
+
         # check that the expression parser does not make use of
         # synthetic children instead of running code
         # TOT clang has a fix for this, which makes the expression command here succeed
@@ -134,7 +135,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                     substrs = ['map has 0 items',
                                '{}'])
         
-        self.runCmd("frame variable si -T")
+        self.runCmd("frame variable si --show-types")
 
         self.expect('frame variable si',
                     substrs = ['map has 0 items',
@@ -182,6 +183,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                'first = \"three\"',
                                'second = 3'])
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("si").MightHaveChildren(), "si.MightHaveChildren() says False for non empty!")
+
         # check access-by-index
         self.expect("frame variable si[0]",
                     substrs = ['first = ', 'one',
@@ -202,7 +206,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '{}'])
 
         self.runCmd("n")
-        self.runCmd("frame variable is -T")
+        self.runCmd("frame variable is --show-types")
         
         self.expect('frame variable is',
                     substrs = ['map has 0 items',
@@ -240,6 +244,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                'second = \"!!!\"',
                                'first = 3'])
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("is").MightHaveChildren(), "is.MightHaveChildren() says False for non empty!")
+
         # check access-by-index
         self.expect("frame variable is[0]",
                     substrs = ['first = ',
@@ -260,7 +267,7 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '{}'])
 
         self.runCmd("n");self.runCmd("n");
-        self.runCmd("frame variable ss -T")
+        self.runCmd("frame variable ss --show-types")
         
         self.expect('frame variable ss',
                     substrs = ['map has 0 items',
@@ -292,6 +299,9 @@ class LibcxxMapDataFormatterTestCase(TestBase):
                                '[2] = ',
                                'second = \"cat\"',
                                'first = \"gatto\"'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("ss").MightHaveChildren(), "ss.MightHaveChildren() says False for non empty!")
 
         # check access-by-index
         self.expect("frame variable ss[2]",

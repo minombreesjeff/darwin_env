@@ -112,6 +112,21 @@ PathMappingList::Insert (const ConstString &path,
 }
 
 bool
+PathMappingList::Replace (const ConstString &path,
+                          const ConstString &replacement,
+                          uint32_t index,
+                          bool notify)
+{
+    iterator insert_iter;
+    if (index >= m_pairs.size())
+        return false;
+    m_pairs[index] = pair(path, replacement);
+    if (notify && m_callback)
+        m_callback (*this, m_callback_baton);
+    return true;
+}
+
+bool
 PathMappingList::Remove (off_t index, bool notify)
 {
     if (index >= m_pairs.size())
@@ -157,12 +172,17 @@ PathMappingList::Clear (bool notify)
 bool
 PathMappingList::RemapPath (const ConstString &path, ConstString &new_path) const
 {
+    const char *path_cstr = path.GetCString();
+    
+    if (!path_cstr)
+        return false;
+    
     const_iterator pos, end = m_pairs.end();
     for (pos = m_pairs.begin(); pos != end; ++pos)
     {
         const size_t prefixLen = pos->first.GetLength();
 
-        if (::strncmp (pos->first.GetCString(), path.GetCString(), prefixLen) == 0)
+        if (::strncmp (pos->first.GetCString(), path_cstr, prefixLen) == 0)
         {
             std::string new_path_str (pos->second.GetCString());
             new_path_str.append(path.GetCString() + prefixLen);

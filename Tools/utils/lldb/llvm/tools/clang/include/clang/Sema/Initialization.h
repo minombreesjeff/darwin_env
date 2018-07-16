@@ -15,6 +15,7 @@
 
 #include "clang/Sema/Ownership.h"
 #include "clang/Sema/Overload.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/Type.h"
 #include "clang/AST/UnresolvedSet.h"
 #include "clang/Basic/SourceLocation.h"
@@ -175,7 +176,7 @@ public:
   /// \brief Create the initialization entity for a parameter.
   static InitializedEntity InitializeParameter(ASTContext &Context,
                                                ParmVarDecl *Parm) {
-    bool Consumed = (Context.getLangOptions().ObjCAutoRefCount &&
+    bool Consumed = (Context.getLangOpts().ObjCAutoRefCount &&
                      Parm->hasAttr<NSConsumedAttr>());
 
     InitializedEntity Entity;
@@ -225,7 +226,9 @@ public:
   
   /// \brief Create the initialization entity for a temporary.
   static InitializedEntity InitializeTemporary(QualType Type) {
-    return InitializedEntity(EK_Temporary, SourceLocation(), Type);
+    InitializedEntity Result(EK_Temporary, SourceLocation(), Type);
+    Result.TypeInfo = 0;
+    return Result;
   }
 
   /// \brief Create the initialization entity for a temporary.
@@ -340,7 +343,7 @@ public:
   /// element, sets the element index.
   void setElementIndex(unsigned Index) {
     assert(getKind() == EK_ArrayElement || getKind() == EK_VectorElement ||
-           EK_ComplexElement);
+           getKind() == EK_ComplexElement);
     this->Index = Index;
   }
 
@@ -719,7 +722,9 @@ public:
     FK_PlaceholderType,
     /// \brief Failed to initialize a std::initializer_list because copy
     /// construction of some element failed.
-    FK_InitListElementCopyFailure
+    FK_InitListElementCopyFailure,
+    /// \brief List-copy-initialization chose an explicit constructor.
+    FK_ExplicitConstructor
   };
   
 private:
@@ -732,6 +737,9 @@ private:
   /// \brief The candidate set created when initialization failed.
   OverloadCandidateSet FailedCandidateSet;
 
+  /// \brief The incomplete type that caused a failure.
+  QualType FailedIncompleteType;
+  
   /// \brief Prints a follow-up note that highlights the location of
   /// the initialized entity, if it's remote.
   void PrintInitLocationNote(Sema &S, const InitializedEntity &Entity);
@@ -848,8 +856,8 @@ public:
   ///
   /// \param BaseType the base type to which we will be casting.
   ///
-  /// \param IsLValue true if the result of this cast will be treated as 
-  /// an lvalue.
+  /// \param Category Indicates whether the result will be treated as an
+  /// rvalue, an xvalue, or an lvalue.
   void AddDerivedToBaseCastStep(QualType BaseType,
                                 ExprValueKind Category);
      
@@ -858,9 +866,6 @@ public:
   /// \param BindingTemporary True if we are binding a reference to a temporary
   /// object (thereby extending its lifetime); false if we are binding to an
   /// lvalue or an lvalue treated as an rvalue.
-  ///
-  /// \param UnnecessaryCopy True if we should check for a copy
-  /// constructor for a completely unnecessary but
   void AddReferenceBindingStep(QualType T, bool BindingTemporary);
 
   /// \brief Add a new step that makes an extraneous copy of the input
@@ -896,9 +901,9 @@ public:
 
   /// \brief Add a constructor-initialization step.
   ///
-  /// \arg FromInitList The constructor call is syntactically an initializer
+  /// \param FromInitList The constructor call is syntactically an initializer
   /// list.
-  /// \arg AsInitList The constructor is called as an init list constructor.
+  /// \param AsInitList The constructor is called as an init list constructor.
   void AddConstructorInitializationStep(CXXConstructorDecl *Constructor,
                                         AccessSpecifier Access,
                                         QualType T,
@@ -947,6 +952,8 @@ public:
   void SetFailed(FailureKind Failure) {
     SequenceKind = FailedSequence;
     this->Failure = Failure;
+    assert((Failure != FK_Incomplete || !FailedIncompleteType.isNull()) &&
+           "Incomplete type failure requires a type!");
   }
   
   /// \brief Note that this initialization sequence failed due to failed
@@ -963,6 +970,13 @@ public:
   /// sequence failed due to a bad overload.
   OverloadingResult getFailedOverloadResult() const {
     return FailedOverloadResult;
+  }
+
+  /// \brief Note that this initialization sequence failed due to an
+  /// incomplete type.
+  void setIncompleteTypeFailure(QualType IncompleteType) {
+    FailedIncompleteType = IncompleteType;
+    SetFailed(FK_Incomplete);
   }
 
   /// \brief Determine why initialization failed.

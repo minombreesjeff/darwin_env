@@ -17,10 +17,6 @@
 #include "DNBDefs.h"
 #include <mach/thread_info.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define DNB_EXPORT __attribute__((visibility("default")))
 
 typedef bool (*DNBShouldCancelCallback) (void *);
@@ -67,6 +63,8 @@ nub_size_t      DNBProcessMemoryWrite   (nub_process_t pid, nub_addr_t addr, nub
 nub_addr_t      DNBProcessMemoryAllocate    (nub_process_t pid, nub_size_t size, uint32_t permissions) DNB_EXPORT;
 nub_bool_t      DNBProcessMemoryDeallocate  (nub_process_t pid, nub_addr_t addr) DNB_EXPORT;
 int             DNBProcessMemoryRegionInfo  (nub_process_t pid, nub_addr_t addr, DNBRegionInfo *region_info) DNB_EXPORT;
+std::string     DNBProcessGetProfileData (nub_process_t pid) DNB_EXPORT;
+nub_bool_t      DNBProcessSetAsyncEnableProfiling   (nub_process_t pid, nub_bool_t enable, uint64_t interval_usec) DNB_EXPORT;
 
 //----------------------------------------------------------------------
 // Process status
@@ -88,6 +86,7 @@ nub_bool_t      DNBProcessSetSharedLibraryInfoCallback  (nub_process_t pid, DNBC
 nub_addr_t      DNBProcessLookupAddress                 (nub_process_t pid, const char *name, const char *shlib) DNB_EXPORT;
 nub_size_t      DNBProcessGetAvailableSTDOUT            (nub_process_t pid, char *buf, nub_size_t buf_size) DNB_EXPORT;
 nub_size_t      DNBProcessGetAvailableSTDERR            (nub_process_t pid, char *buf, nub_size_t buf_size) DNB_EXPORT;
+nub_size_t      DNBProcessGetAvailableProfileData       (nub_process_t pid, char *buf, nub_size_t buf_size) DNB_EXPORT;
 nub_size_t      DNBProcessGetStopCount                  (nub_process_t pid) DNB_EXPORT;
 uint32_t        DNBProcessGetCPUType                    (nub_process_t pid) DNB_EXPORT; 
 
@@ -156,9 +155,5 @@ nub_size_t      DNBPrintf (nub_process_t pid, nub_thread_t tid, nub_addr_t addr,
 //----------------------------------------------------------------------
 const char *    DNBStateAsString (nub_state_t state) DNB_EXPORT;
 nub_bool_t      DNBResolveExecutablePath (const char *path, char *resolved_path, size_t resolved_path_size) DNB_EXPORT;
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

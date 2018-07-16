@@ -118,6 +118,59 @@ namespace lldb_private {
                            lldb::ModuleSP &module_sp,
                            const FileSpecList *module_search_paths_ptr);
 
+        
+        //------------------------------------------------------------------
+        /// Find a symbol file given a symbol file module specification.
+        ///
+        /// Each platform might have tricks to find symbol files for an
+        /// executable given information in a symbol file ModuleSpec. Some
+        /// platforms might also support symbol files that are bundles and
+        /// know how to extract the right symbol file given a bundle.
+        ///
+        /// @param[in] target
+        ///     The target in which we are trying to resolve the symbol file.
+        ///     The target has a list of modules that we might be able to
+        ///     use in order to help find the right symbol file. If the
+        ///     "m_file" or "m_platform_file" entries in the \a sym_spec
+        ///     are filled in, then we might be able to locate a module in
+        ///     the target, extract its UUID and locate a symbol file.
+        ///     If just the "m_uuid" is specified, then we might be able
+        ///     to find the module in the target that matches that UUID
+        ///     and pair the symbol file along with it. If just "m_symbol_file"
+        ///     is specified, we can use a variety of tricks to locate the
+        ///     symbols in an SDK, PDK, or other development kit location.
+        ///
+        /// @param[in] sym_spec
+        ///     A module spec that describes some information about the
+        ///     symbol file we are trying to resolve. The ModuleSpec might
+        ///     contain the following:
+        ///     m_file - A full or partial path to an executable from the
+        ///              target (might be empty).
+        ///     m_platform_file - Another executable hint that contains
+        ///                       the path to the file as known on the
+        ///                       local/remote platform.
+        ///     m_symbol_file - A full or partial path to a symbol file
+        ///                     or symbol bundle that should be used when
+        ///                     trying to resolve the symbol file.
+        ///     m_arch - The architecture we are looking for when resolving
+        ///              the symbol file.
+        ///     m_uuid - The UUID of the executable and symbol file. This
+        ///              can often be used to match up an exectuable with
+        ///              a symbol file, or resolve an symbol file in a
+        ///              symbol file bundle.
+        ///
+        /// @param[out] sym_file
+        ///     The resolved symbol file spec if the returned error
+        ///     indicates succes.
+        ///
+        /// @return
+        ///     Returns an error that describes success or failure.
+        //------------------------------------------------------------------
+        virtual Error
+        ResolveSymbolFile (Target &target,
+                           const ModuleSpec &sym_spec,
+                           FileSpec &sym_file);
+
         //------------------------------------------------------------------
         /// Resolves the FileSpec to a (possibly) remote path. Remote
         /// platforms must override this to resolve to a path on the remote
@@ -238,6 +291,15 @@ namespace lldb_private {
                  const UUID *uuid_ptr,
                  FileSpec &local_file);
 
+        //----------------------------------------------------------------------
+        // Locate the scripting resource given a module specification.
+        //
+        // Locating the file should happen only on the local computer or using
+        // the current computers global settings.
+        //----------------------------------------------------------------------
+        virtual FileSpec
+        LocateExecutableScriptingResource (const ModuleSpec &module_spec);
+        
         virtual Error
         GetSharedModule (const ModuleSpec &module_spec, 
                          lldb::ModuleSP &module_sp,
@@ -459,7 +521,10 @@ namespace lldb_private {
         {
             return false;
         }
-                
+        
+        virtual size_t
+        GetEnvironment (StringList &environment);
+        
     protected:
         bool m_is_host;
         // Set to true when we are able to actually set the OS version while 

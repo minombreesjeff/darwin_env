@@ -40,6 +40,7 @@ USEDLIBS = lldbAPI.a \
 	lldbPluginObjectContainerBSDArchive.a \
 	lldbPluginObjectFileELF.a \
 	lldbPluginObjectFilePECOFF.a \
+	lldbPluginOperatingSystemPython.a \
 	lldbPluginPlatformGDBServer.a \
 	lldbPluginProcessGDBRemote.a \
 	lldbPluginSymbolFileDWARF.a \
@@ -57,9 +58,7 @@ USEDLIBS = lldbAPI.a \
 	clangFrontend.a \
 	clangDriver.a \
 	clangEdit.a \
-	clangIndex.a \
 	clangLex.a \
-	clangRewrite.a \
 	clangParse.a \
 	clangSema.a \
 	clangSerialization.a \
@@ -86,9 +85,13 @@ ifeq ($(HOST_OS),Darwin)
 endif
 
 ifeq ($(HOST_OS),Linux)
-  USEDLIBS += lldbPluginProcessPOSIX.a \
+  USEDLIBS += lldbHostLinux.a \
               lldbPluginProcessLinux.a \
-              lldbHostLinux.a
+              lldbPluginProcessPOSIX.a \
+              lldbPluginDynamicLoaderMacOSX.a \
+              lldbPluginDynamicLoaderDarwinKernel.a \
+              lldbPluginOperatingSystemDarwinKernel.a
+
 endif
 
 ifeq ($(HOST_OS),FreeBSD)
@@ -112,6 +115,7 @@ ifeq ($(HOST_OS),Darwin)
 	LLVMLibsOptions += -framework Foundation -framework CoreFoundation
 	LLVMLibsOptions += -framework CoreServices -framework Carbon -framework Security
 	LLVMLibsOptions += -framework DebugSymbols $(PYTHON_BUILD_FLAGS) -lobjc
+	LLVMLibsOptions += -lxml2
 	ifneq ($(EXPORTED_SYMBOL_FILE),)
 		LLVMLibsOptions += -Wl,-exported_symbols_list -Wl,"$(EXPORTED_SYMBOL_FILE)"
 	endif

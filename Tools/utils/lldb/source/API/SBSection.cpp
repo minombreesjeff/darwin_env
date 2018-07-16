@@ -16,6 +16,7 @@
 #include "lldb/Core/Module.h"
 #include "lldb/Core/Section.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Symbol/ObjectFile.h"
 
 
 using namespace lldb;
@@ -263,7 +264,7 @@ SBSection::GetDescription (SBStream &description)
     if (section_sp)
     {
         const addr_t file_addr = section_sp->GetFileAddress();
-        strm.Printf ("[0x%16.16llx-0x%16.16llx) ", file_addr, file_addr + section_sp->GetByteSize());
+        strm.Printf ("[0x%16.16" PRIx64 "-0x%16.16" PRIx64 ") ", file_addr, file_addr + section_sp->GetByteSize());
         section_sp->DumpName(&strm);
     }
     else

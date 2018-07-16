@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class StdVectorDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class StdVectorDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -145,6 +143,9 @@ class StdVectorDataFormatterTestCase(TestBase):
         self.expect("expression numbers[6]", matching=False, error=True,
             substrs = ['1234567'])
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("numbers").MightHaveChildren(), "numbers.MightHaveChildren() says False for non empty!")
+
         # clear out the vector and see that we do the right thing once again
         self.runCmd("n")
 
@@ -205,6 +206,9 @@ class StdVectorDataFormatterTestCase(TestBase):
         # another way to check this)
         self.expect("expression strings[0]", matching=False, error=True,
                     substrs = ['goofy'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("strings").MightHaveChildren(), "strings.MightHaveChildren() says False for non empty!")
 
         self.runCmd("n")
 

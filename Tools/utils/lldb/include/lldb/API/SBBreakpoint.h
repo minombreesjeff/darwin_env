@@ -63,6 +63,15 @@ public:
 
     bool
     IsEnabled ();
+    
+    void
+    SetOneShot (bool one_shot);
+
+    bool
+    IsOneShot () const;
+    
+    bool
+    IsInternal ();
 
     uint32_t
     GetHitCount () const;

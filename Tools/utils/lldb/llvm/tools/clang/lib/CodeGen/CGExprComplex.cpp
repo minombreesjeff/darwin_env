@@ -111,8 +111,17 @@ public:
   }
 
   // l-values.
-  ComplexPairTy VisitDeclRefExpr(const Expr *E) { return EmitLoadOfLValue(E); }
-  ComplexPairTy VisitBlockDeclRefExpr(const Expr *E) { return EmitLoadOfLValue(E); }
+  ComplexPairTy VisitDeclRefExpr(DeclRefExpr *E) {
+    if (CodeGenFunction::ConstantEmission result = CGF.tryEmitAsConstant(E)) {
+      if (result.isReference())
+        return EmitLoadOfLValue(result.getReferenceLValue(CGF, E));
+
+      llvm::ConstantStruct *pair =
+        cast<llvm::ConstantStruct>(result.getValue());
+      return ComplexPairTy(pair->getOperand(0), pair->getOperand(1));
+    }
+    return EmitLoadOfLValue(E);
+  }
   ComplexPairTy VisitObjCIvarRefExpr(ObjCIvarRefExpr *E) {
     return EmitLoadOfLValue(E);
   }
@@ -418,6 +427,7 @@ ComplexPairTy ComplexExprEmitter::EmitCast(CastExpr::CastKind CK, Expr *Op,
   case CK_ARCReclaimReturnedObject:
   case CK_ARCExtendBlockObject:
   case CK_CopyAndAutoreleaseBlockObject:
+  case CK_BuiltinFnToFnPtr:
     llvm_unreachable("invalid cast kind for complex value");
 
   case CK_FloatingRealToComplex:
@@ -631,7 +641,7 @@ EmitCompoundAssign(const CompoundAssignOperator *E,
   LValue LV = EmitCompoundAssignLValue(E, Func, Val);
 
   // The result of an assignment in C is the assigned r-value.
-  if (!CGF.getContext().getLangOptions().CPlusPlus)
+  if (!CGF.getContext().getLangOpts().CPlusPlus)
     return Val;
 
   // If the lvalue is non-volatile, return the computed value of the assignment.
@@ -666,7 +676,7 @@ ComplexPairTy ComplexExprEmitter::VisitBinAssign(const BinaryOperator *E) {
   LValue LV = EmitBinAssignLValue(E, Val);
 
   // The result of an assignment in C is the assigned r-value.
-  if (!CGF.getContext().getLangOptions().CPlusPlus)
+  if (!CGF.getContext().getLangOpts().CPlusPlus)
     return Val;
 
   // If the lvalue is non-volatile, return the computed value of the assignment.

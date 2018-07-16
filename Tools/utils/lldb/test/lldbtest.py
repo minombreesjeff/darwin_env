@@ -32,6 +32,7 @@ $
 """
 
 import os, sys, traceback
+import os.path
 import re
 from subprocess import *
 import StringIO
@@ -89,6 +90,8 @@ BREAKPOINT_HIT_ONCE = "Breakpoint resolved with hit cout = 1"
 BREAKPOINT_HIT_TWICE = "Breakpoint resolved with hit cout = 2"
 
 BREAKPOINT_HIT_THRICE = "Breakpoint resolved with hit cout = 3"
+
+MISSING_EXPECTED_REGISTERS = "At least one expected register is unavailable."
 
 OBJECT_PRINTED_CORRECTLY = "Object printed correctly"
 
@@ -407,6 +410,42 @@ def expectedFailurei386(func):
             raise case._UnexpectedSuccess
     return wrapper
 
+def expectedFailureLinux(func):
+    """Decorate the item as a Linux only expectedFailure."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@expectedFailureLinux can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        platform = sys.platform
+        try:
+            func(*args, **kwargs)
+        except Exception:
+            if "linux" in platform:
+                raise case._ExpectedFailure(sys.exc_info())
+            else:
+                raise
+
+        if "linux" in platform:
+            raise case._UnexpectedSuccess
+    return wrapper
+
+def skipOnLinux(func):
+    """Decorate the item to skip tests that should be skipped on Linux."""
+    if isinstance(func, type) and issubclass(func, unittest2.TestCase):
+        raise Exception("@skipOnLinux can only be used to decorate a test method")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        from unittest2 import case
+        self = args[0]
+        platform = sys.platform
+        if "linux" in platform:
+            self.skipTest("skip on linux")
+        else:
+            func(*args, **kwargs)
+    return wrapper
+
 class Base(unittest2.TestCase):
     """
     Abstract base for performing lldb (see TestBase) or other generic tests (see
@@ -414,6 +453,7 @@ class Base(unittest2.TestCase):
     accomplish things.
     
     """
+
     # The concrete subclass should override this attribute.
     mydir = None
 
@@ -434,6 +474,7 @@ class Base(unittest2.TestCase):
         # Fail fast if 'mydir' attribute is not overridden.
         if not cls.mydir or len(cls.mydir) == 0:
             raise Exception("Subclasses must override the 'mydir' attribute.")
+
         # Save old working directory.
         cls.oldcwd = os.getcwd()
 
@@ -579,6 +620,12 @@ class Base(unittest2.TestCase):
 
         # See HideStdout(self).
         self.sys_stdout_hidden = False
+
+        # set environment variable names for finding shared libraries
+        if sys.platform.startswith("darwin"):
+            self.dylibPath = 'DYLD_LIBRARY_PATH'
+        elif sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):
+            self.dylibPath = 'LD_LIBRARY_PATH'
 
     def runHooks(self, child=None, child_prompt=None, use_cmd_api=False):
         """Perform the run hooks to bring lldb debugger to the desired state.
@@ -801,7 +848,7 @@ class Base(unittest2.TestCase):
                              os.environ["LLDB_SESSION_DIRNAME"])
         if not os.path.isdir(dname):
             os.mkdir(dname)
-        fname = os.path.join(dname, "%s-%s-%s-%s.log" % (prefix, self.getArchitecture(), self.getCompiler(), self.id()))
+        fname = os.path.join(dname, "%s-%s-%s-%s.log" % (prefix, self.getArchitecture(), "_".join(self.getCompiler().split('/')), self.id()))
         with open(fname, "w") as f:
             import datetime
             print >> f, "Session info generated @", datetime.datetime.now().ctime()
@@ -946,6 +993,30 @@ class TestBase(Base):
                 waitTime = float(os.environ["LLDB_TIME_WAIT_BETWEEN_TEST_CASES"])
             time.sleep(waitTime)
 
+    # Returns the list of categories to which this test case belongs
+    # by default, look for a ".categories" file, and read its contents
+    # if no such file exists, traverse the hierarchy - we guarantee
+    # a .categories to exist at the top level directory so we do not end up
+    # looping endlessly - subclasses are free to define their own categories
+    # in whatever way makes sense to them
+    def getCategories(self):
+        import inspect
+        import os.path
+        folder = inspect.getfile(self.__class__)
+        folder = os.path.dirname(folder)
+        while folder != '/':
+                categories_file_name = os.path.join(folder,".categories")
+                if os.path.exists(categories_file_name):
+                        categories_file = open(categories_file_name,'r')
+                        categories = categories_file.readline()
+                        categories_file.close()
+                        categories = str.replace(categories,'\n','')
+                        categories = str.replace(categories,'\r','')
+                        return categories.split(',')
+                else:
+                        folder = os.path.dirname(folder)
+                        continue
+
     def setUp(self):
         #import traceback
         #traceback.print_stack()
@@ -996,6 +1067,27 @@ class TestBase(Base):
         # Run global pre-flight code, if defined via the config file.
         if lldb.pre_flight:
             lldb.pre_flight(self)
+
+    # utility methods that tests can use to access the current objects
+    def target(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget()
+
+    def process(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget().GetProcess()
+
+    def thread(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget().GetProcess().GetSelectedThread()
+
+    def frame(self):
+        if not self.dbg:
+            raise Exception('Invalid debugger instance')
+        return self.dbg.GetSelectedTarget().GetProcess().GetSelectedThread().GetSelectedFrame()
 
     def tearDown(self):
         #import traceback
@@ -1077,6 +1169,49 @@ class TestBase(Base):
             self.assertTrue(self.res.Succeeded(),
                             msg if msg else CMD_MSG(cmd))
 
+    def match (self, str, patterns, msg=None, trace=False, error=False, matching=True, exe=True):
+        """run command in str, and match the result against regexp in patterns returning the match object for the first matching pattern
+
+        Otherwise, all the arguments have the same meanings as for the expect function"""
+
+        trace = (True if traceAlways else trace)
+
+        if exe:
+            # First run the command.  If we are expecting error, set check=False.
+            # Pass the assert message along since it provides more semantic info.
+            self.runCmd(str, msg=msg, trace = (True if trace else False), check = not error)
+
+            # Then compare the output against expected strings.
+            output = self.res.GetError() if error else self.res.GetOutput()
+
+            # If error is True, the API client expects the command to fail!
+            if error:
+                self.assertFalse(self.res.Succeeded(),
+                                 "Command '" + str + "' is expected to fail!")
+        else:
+            # No execution required, just compare str against the golden input.
+            output = str
+            with recording(self, trace) as sbuf:
+                print >> sbuf, "looking at:", output
+
+        # The heading says either "Expecting" or "Not expecting".
+        heading = "Expecting" if matching else "Not expecting"
+
+        for pattern in patterns:
+            # Match Objects always have a boolean value of True.
+            match_object = re.search(pattern, output)
+            matched = bool(match_object)
+            with recording(self, trace) as sbuf:
+                print >> sbuf, "%s pattern: %s" % (heading, pattern)
+                print >> sbuf, "Matched" if matched else "Not matched"
+            if matched:
+                break
+
+        self.assertTrue(matched if matching else not matched,
+                        msg if msg else EXP_MSG(str, exe))
+
+        return match_object        
+
     def expect(self, str, msg=None, patterns=None, startstr=None, endstr=None, substrs=None, trace=False, error=False, matching=True, exe=True):
         """
         Similar to runCmd; with additional expect style output matching ability.
@@ -1117,7 +1252,10 @@ class TestBase(Base):
                                  "Command '" + str + "' is expected to fail!")
         else:
             # No execution required, just compare str against the golden input.
-            output = str
+            if isinstance(str,lldb.SBCommandReturnObject):
+                output = str.GetOutput()
+            else:
+                output = str
             with recording(self, trace) as sbuf:
                 print >> sbuf, "looking at:", output
 

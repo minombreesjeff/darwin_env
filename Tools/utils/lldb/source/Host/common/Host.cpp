@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/Host/Host.h"
 #include "lldb/Core/ArchSpec.h"
 #include "lldb/Core/ConstString.h"
@@ -39,6 +41,7 @@
 #include <dispatch/dispatch.h>
 #include <libproc.h>
 #include <mach-o/dyld.h>
+#include <mach/mach_port.h>
 #include <sys/sysctl.h>
 
 
@@ -88,7 +91,7 @@ Host::StartMonitoringChildProcess
     info_ptr->monitor_signals = monitor_signals;
     
     char thread_name[256];
-    ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%i)>", pid);
+    ::snprintf (thread_name, sizeof(thread_name), "<lldb.host.wait4(pid=%" PRIu64 ")>", pid);
     thread = ThreadCreate (thread_name,
                            MonitorChildProcessThreadFunction,
                            info_ptr,
@@ -148,7 +151,7 @@ MonitorChildProcessThreadFunction (void *arg)
     {
         log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
         if (log)
-            log->Printf("%s ::wait_pid (pid = %i, &status, options = %i)...", function, pid, options);
+            log->Printf("%s ::wait_pid (pid = %" PRIu64 ", &status, options = %i)...", function, pid, options);
 
         // Wait for all child processes
         ::pthread_testcancel ();
@@ -197,7 +200,7 @@ MonitorChildProcessThreadFunction (void *arg)
 
                 log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS);
                 if (log)
-                    log->Printf ("%s ::waitpid (pid = %i, &status, options = %i) => pid = %i, status = 0x%8.8x (%s), signal = %i, exit_state = %i",
+                    log->Printf ("%s ::waitpid (pid = %" PRIu64 ", &status, options = %i) => pid = %" PRIu64 ", status = 0x%8.8x (%s), signal = %i, exit_state = %i",
                                  function,
                                  wait_pid,
                                  options,
@@ -331,6 +334,11 @@ Host::GetArchitecture (SystemDefaultArchitecture arch_kind)
         g_host_arch_32.Clear();
         g_host_arch_64.Clear();
 
+        // If the OS is Linux, "unknown" in the vendor slot isn't what we want
+        // for the default triple.  It's probably an artifact of config.guess.
+        if (triple.getOS() == llvm::Triple::Linux && triple.getVendor() == llvm::Triple::UnknownVendor)
+            triple.setVendorName("");
+
         switch (triple.getArch())
         {
         default:
@@ -339,9 +347,14 @@ Host::GetArchitecture (SystemDefaultArchitecture arch_kind)
             break;
 
         case llvm::Triple::x86_64:
+            g_host_arch_64.SetTriple(triple);
+            g_supports_64 = true;
+            g_host_arch_32.SetTriple(triple.get32BitArchVariant());
+            g_supports_32 = true;
+            break;
+
         case llvm::Triple::sparcv9:
         case llvm::Triple::ppc64:
-        case llvm::Triple::cellspu:
             g_host_arch_64.SetTriple(triple);
             g_supports_64 = true;
             break;
@@ -370,15 +383,9 @@ Host::GetVendorString()
     static ConstString g_vendor;
     if (!g_vendor)
     {
-#if defined (__APPLE__)
         const ArchSpec &host_arch = GetArchitecture (eSystemDefaultArchitecture);
         const llvm::StringRef &str_ref = host_arch.GetTriple().getVendorName();
         g_vendor.SetCStringWithLength(str_ref.data(), str_ref.size());
-#elif defined (__linux__)
-        g_vendor.SetCString("gnu");
-#elif defined (__FreeBSD__)
-        g_vendor.SetCString("freebsd");
-#endif
     }
     return g_vendor;
 }
@@ -389,15 +396,9 @@ Host::GetOSString()
     static ConstString g_os_string;
     if (!g_os_string)
     {
-#if defined (__APPLE__)
         const ArchSpec &host_arch = GetArchitecture (eSystemDefaultArchitecture);
         const llvm::StringRef &str_ref = host_arch.GetTriple().getOSName();
         g_os_string.SetCStringWithLength(str_ref.data(), str_ref.size());
-#elif defined (__linux__)
-        g_os_string.SetCString("linux");
-#elif defined (__FreeBSD__)
-        g_os_string.SetCString("freebsd");
-#endif
     }
     return g_os_string;
 }
@@ -424,7 +425,12 @@ lldb::tid_t
 Host::GetCurrentThreadID()
 {
 #if defined (__APPLE__)
-    return ::mach_thread_self();
+    // Calling "mach_port_deallocate()" bumps the reference count on the thread
+    // port, so we need to deallocate it. mach_task_self() doesn't bump the ref
+    // count.
+    thread_port_t thread_self = mach_thread_self();
+    mach_port_deallocate(mach_task_self(), thread_self);
+    return thread_self;
 #elif defined(__FreeBSD__)
     return lldb::tid_t(pthread_getthreadid_np());
 #else
@@ -1242,7 +1248,7 @@ Host::GetDummyTarget (lldb_private::Debugger &debugger)
         if (!arch.IsValid())
             arch = Host::GetArchitecture ();
         Error err = debugger.GetTargetList().CreateTarget(debugger, 
-                                                          FileSpec(), 
+                                                          NULL,
                                                           arch.GetTriple().getTriple().c_str(),
                                                           false, 
                                                           NULL, 
@@ -1300,19 +1306,31 @@ Host::RunShellCommand (const char *command,
                        int *status_ptr,
                        int *signo_ptr,
                        std::string *command_output_ptr,
-                       uint32_t timeout_sec)
+                       uint32_t timeout_sec,
+                       const char *shell)
 {
     Error error;
     ProcessLaunchInfo launch_info;
-    launch_info.SetShell("/bin/bash");
-    launch_info.GetArguments().AppendArgument(command);
-    const bool localhost = true;
-    const bool will_debug = false;
-    const bool first_arg_is_full_shell_command = true;
-    launch_info.ConvertArgumentsForLaunchingInShell (error,
-                                                     localhost,
-                                                     will_debug,
-                                                     first_arg_is_full_shell_command);
+    if (shell && shell[0])
+    {
+        // Run the command in a shell
+        launch_info.SetShell(shell);
+        launch_info.GetArguments().AppendArgument(command);
+        const bool localhost = true;
+        const bool will_debug = false;
+        const bool first_arg_is_full_shell_command = true;
+        launch_info.ConvertArgumentsForLaunchingInShell (error,
+                                                         localhost,
+                                                         will_debug,
+                                                         first_arg_is_full_shell_command);
+    }
+    else
+    {
+        // No shell, just run it
+        Args args (command);
+        const bool first_arg_is_executable = true;
+        launch_info.SetArguments(args, first_arg_is_executable);
+    }
     
     if (working_dir)
         launch_info.SetWorkingDirectory(working_dir);
@@ -1326,7 +1344,7 @@ Host::RunShellCommand (const char *command,
         output_file_path = ::tmpnam(output_file_path_buffer);
         launch_info.AppendSuppressFileAction (STDIN_FILENO, true, false);
         launch_info.AppendOpenFileAction(STDOUT_FILENO, output_file_path, false, true);
-        launch_info.AppendDuplicateFileAction(STDERR_FILENO, STDOUT_FILENO);
+        launch_info.AppendDuplicateFileAction(STDOUT_FILENO, STDERR_FILENO);
     }
     else
     {

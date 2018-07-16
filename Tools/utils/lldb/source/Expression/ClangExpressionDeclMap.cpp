@@ -13,6 +13,7 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/Decl.h"
 #include "lldb/lldb-private.h"
@@ -39,6 +40,7 @@
 #include "lldb/Symbol/Variable.h"
 #include "lldb/Symbol/VariableList.h"
 #include "lldb/Target/ExecutionContext.h"
+#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/RegisterContext.h"
 #include "lldb/Target/StackFrame.h"
@@ -116,12 +118,14 @@ ClangExpressionDeclMap::DidParse()
              ++entity_index)
         {
             ClangExpressionVariableSP var_sp(m_found_entities.GetVariableAtIndex(entity_index));
-            if (var_sp && 
-                var_sp->m_parser_vars.get() && 
-                var_sp->m_parser_vars->m_lldb_value)
+            if (var_sp)
+            {
+                if (var_sp->m_parser_vars.get() &&
+                    var_sp->m_parser_vars->m_lldb_value)
                 delete var_sp->m_parser_vars->m_lldb_value;
             
-            var_sp->DisableParserVars();
+                var_sp->DisableParserVars();
+            }
         }
         
         for (size_t pvar_index = 0, num_pvars = m_parser_vars->m_persistent_vars->GetSize();
@@ -300,9 +304,7 @@ ClangExpressionDeclMap::BuildCastVariable (const ConstString &name,
                            context);
     
     if (!user_type.GetOpaqueQualType())
-    {
-        lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_EXPRESSIONS));
-        
+    {        
         if (log)
             log->Printf("ClangExpressionDeclMap::BuildCastVariable - Couldn't export the type for a constant cast result");
         
@@ -479,6 +481,8 @@ ClangExpressionDeclMap::AddPersistentVariable
     
     if (!var_sp)
         return false;
+    
+    var_sp->m_frozen_sp->SetHasCompleteType();
     
     if (is_result)
         var_sp->m_flags |= ClangExpressionVariable::EVNeedsFreezeDry;
@@ -746,7 +750,7 @@ ClangExpressionDeclMap::GetFunctionAddress
 }
 
 addr_t
-ClangExpressionDeclMap::GetSymbolAddress (Target &target, const ConstString &name, lldb::SymbolType symbol_type)
+ClangExpressionDeclMap::GetSymbolAddress (Target &target, Process *process, const ConstString &name, lldb::SymbolType symbol_type)
 {
     SymbolContextList sc_list;
     
@@ -805,6 +809,16 @@ ClangExpressionDeclMap::GetSymbolAddress (Target &target, const ConstString &nam
         }
     }
     
+    if (symbol_load_addr == LLDB_INVALID_ADDRESS && process)
+    {
+        ObjCLanguageRuntime *runtime = process->GetObjCLanguageRuntime();
+        
+        if (runtime)
+        {
+            symbol_load_addr = runtime->LookupRuntimeSymbol(name);
+        }
+    }
+    
     return symbol_load_addr;
 }
 
@@ -816,7 +830,7 @@ ClangExpressionDeclMap::GetSymbolAddress (const ConstString &name, lldb::SymbolT
     if (!m_parser_vars->m_exe_ctx.GetTargetPtr())
         return false;
     
-    return GetSymbolAddress(m_parser_vars->m_exe_ctx.GetTargetRef(), name, symbol_type);
+    return GetSymbolAddress(m_parser_vars->m_exe_ctx.GetTargetRef(), m_parser_vars->m_exe_ctx.GetProcessPtr(), name, symbol_type);
 }
 
 // Interface for IRInterpreter
@@ -1080,8 +1094,13 @@ ClangExpressionDeclMap::LookupDecl (clang::NamedDecl *decl, ClangExpressionVaria
             Value ret;
             
             ret.SetContext(Value::eContextTypeRegisterInfo, reg_info);
-            if (!reg_value.GetScalarValue(ret.GetScalar()))
-                return Value();
+            if (reg_info->encoding == eEncodingVector) 
+			{
+                if (ret.SetVectorBytes((uint8_t *)reg_value.GetBytes(), reg_value.GetByteSize(), reg_value.GetByteOrder()))
+                    ret.SetScalarFromVector();
+            }
+            else if (!reg_value.GetScalarValue(ret.GetScalar()))
+				return Value();
             
             return ret;
         }
@@ -1455,7 +1474,7 @@ ClangExpressionDeclMap::DoMaterialize
         if (log)
             log->PutCString("Not bothering to allocate a struct because no arguments are needed");
         
-        m_material_vars->m_allocated_area = NULL;
+        m_material_vars->m_allocated_area = 0UL;
         
         return true;
     }
@@ -1480,7 +1499,7 @@ ClangExpressionDeclMap::DoMaterialize
         
         if (mem == LLDB_INVALID_ADDRESS)
         {
-            err.SetErrorStringWithFormat("Couldn't allocate 0x%llx bytes for materialized argument struct", 
+            err.SetErrorStringWithFormat("Couldn't allocate 0x%llx bytes for materialized argument struct",
                                          (unsigned long long)(m_struct_vars->m_struct_alignment + m_struct_vars->m_struct_size));
             return false;
         }
@@ -1501,6 +1520,12 @@ ClangExpressionDeclMap::DoMaterialize
         
         if (m_found_entities.ContainsVariable (member_sp))
         {
+            if (!member_sp->GetValueObject())
+            {
+                err.SetErrorString("Variable being materialized doesn't have a frozen version");
+                return false;
+            }
+            
             RegisterInfo *reg_info = member_sp->GetRegisterInfo ();
             if (reg_info)
             {
@@ -1658,7 +1683,7 @@ ClangExpressionDeclMap::DoMaterializeOnePersistentVariable
                 mem = var_sp->m_live_sp->GetValue().GetScalar().ULongLong();
                 
                 if (log)
-                    log->Printf("Dematerializing %s from 0x%llx", var_sp->GetName().GetCString(), (uint64_t)mem);
+                    log->Printf("Dematerializing %s from 0x%" PRIx64 " (size = %u)", var_sp->GetName().GetCString(), (uint64_t)mem, (unsigned)pvar_byte_size);
                 
                 // Read the contents of the spare memory area
                                 
@@ -1733,7 +1758,7 @@ ClangExpressionDeclMap::DoMaterializeOnePersistentVariable
             }
             
             if (log)
-                log->Printf("Allocated %s (0x%llx) sucessfully", var_sp->GetName().GetCString(), mem);
+                log->Printf("Allocated %s (0x%" PRIx64 ") sucessfully", var_sp->GetName().GetCString(), mem);
             
             // Put the location of the spare memory into the live data of the ValueObject.
             
@@ -1813,7 +1838,7 @@ ClangExpressionDeclMap::DoMaterializeOneVariable
     TypeFromUser type(expr_var->GetTypeFromUser());
     
     VariableSP &var(expr_var->m_parser_vars->m_lldb_var);
-    lldb_private::Symbol *sym(expr_var->m_parser_vars->m_lldb_sym);
+    const lldb_private::Symbol *symbol = expr_var->m_parser_vars->m_lldb_sym;
     
     bool is_reference(expr_var->m_flags & ClangExpressionVariable::EVTypeIsReference);
     
@@ -1824,9 +1849,9 @@ ClangExpressionDeclMap::DoMaterializeOneVariable
         location_value.reset(GetVariableValue(var,
                                               NULL));
     }
-    else if (sym)
+    else if (symbol)
     {
-        addr_t location_load_addr = GetSymbolAddress(*target, name, lldb::eSymbolTypeAny);
+        addr_t location_load_addr = GetSymbolAddress(*target, process, name, lldb::eSymbolTypeAny);
         
         if (location_load_addr == LLDB_INVALID_ADDRESS)
         {
@@ -2256,25 +2281,69 @@ ClangExpressionDeclMap::FindVariableInScope
     return lldb::VariableSP();
 }
 
-Symbol *
-ClangExpressionDeclMap::FindGlobalDataSymbol
-(
-    Target &target,
-    const ConstString &name
-)
+const Symbol *
+ClangExpressionDeclMap::FindGlobalDataSymbol (Target &target,
+                                              const ConstString &name)
 {
     SymbolContextList sc_list;
     
-    target.GetImages().FindSymbolsWithNameAndType(name, 
-                                                  eSymbolTypeData, 
-                                                  sc_list);
+    target.GetImages().FindSymbolsWithNameAndType(name, eSymbolTypeAny, sc_list);
     
-    if (sc_list.GetSize())
+    const uint32_t matches = sc_list.GetSize();
+    for (uint32_t i=0; i<matches; ++i)
     {
         SymbolContext sym_ctx;
-        sc_list.GetContextAtIndex(0, sym_ctx);
-        
-        return sym_ctx.symbol;
+        sc_list.GetContextAtIndex(i, sym_ctx);
+        if (sym_ctx.symbol)
+        {
+            const Symbol *symbol = sym_ctx.symbol;
+            const Address *sym_address = &symbol->GetAddress();
+            
+            if (sym_address && sym_address->IsValid())
+            {
+                switch (symbol->GetType())
+                {
+                    case eSymbolTypeData:
+                    case eSymbolTypeRuntime:
+                    case eSymbolTypeAbsolute:
+                    case eSymbolTypeObjCClass:
+                    case eSymbolTypeObjCMetaClass:
+                    case eSymbolTypeObjCIVar:
+                        if (symbol->GetDemangledNameIsSynthesized())
+                        {
+                            // If the demangled name was synthesized, then don't use it
+                            // for expressions. Only let the symbol match if the mangled
+                            // named matches for these symbols.
+                            if (symbol->GetMangled().GetMangledName() != name)
+                                break;
+                        }
+                        return symbol;
+
+                    case eSymbolTypeCode: // We already lookup functions elsewhere
+                    case eSymbolTypeVariable:
+                    case eSymbolTypeLocal:
+                    case eSymbolTypeParam:
+                    case eSymbolTypeTrampoline:
+                    case eSymbolTypeInvalid:
+                    case eSymbolTypeException:
+                    case eSymbolTypeSourceFile:
+                    case eSymbolTypeHeaderFile:
+                    case eSymbolTypeObjectFile:
+                    case eSymbolTypeCommonBlock:
+                    case eSymbolTypeBlock:
+                    case eSymbolTypeVariableType:
+                    case eSymbolTypeLineEntry:
+                    case eSymbolTypeLineHeader:
+                    case eSymbolTypeScopeBegin:
+                    case eSymbolTypeScopeEnd:
+                    case eSymbolTypeAdditional:
+                    case eSymbolTypeCompiler:
+                    case eSymbolTypeInstrumentation:
+                    case eSymbolTypeUndefined:
+                        break;
+                }
+            }
+        }
     }
     
     return NULL;
@@ -2456,34 +2525,83 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
             
             clang::CXXMethodDecl *method_decl = llvm::dyn_cast<clang::CXXMethodDecl>(decl_context);
             
-            if (!method_decl)
-                return;
-            
-            clang::CXXRecordDecl *class_decl = method_decl->getParent();
-            
-            QualType class_qual_type(class_decl->getTypeForDecl(), 0);
-            
-            TypeFromUser class_user_type (class_qual_type.getAsOpaquePtr(),
-                                          &class_decl->getASTContext());
-            
-            if (log)
+            if (method_decl)
             {
-                ASTDumper ast_dumper(class_qual_type);
-                log->Printf("  CEDM::FEVD[%u] Adding type for $__lldb_class: %s", current_id, ast_dumper.GetCString());
+            
+                clang::CXXRecordDecl *class_decl = method_decl->getParent();
+                
+                QualType class_qual_type(class_decl->getTypeForDecl(), 0);
+                
+                TypeFromUser class_user_type (class_qual_type.getAsOpaquePtr(),
+                                              &class_decl->getASTContext());
+                
+                if (log)
+                {
+                    ASTDumper ast_dumper(class_qual_type);
+                    log->Printf("  CEDM::FEVD[%u] Adding type for $__lldb_class: %s", current_id, ast_dumper.GetCString());
+                }
+                
+                AddOneType(context, class_user_type, current_id, true);
+                
+                if (method_decl->isInstance())
+                {
+                    // self is a pointer to the object
+                    
+                    QualType class_pointer_type = method_decl->getASTContext().getPointerType(class_qual_type);
+                    
+                    TypeFromUser self_user_type(class_pointer_type.getAsOpaquePtr(),
+                                                &method_decl->getASTContext());
+                    
+                    m_struct_vars->m_object_pointer_type = self_user_type;
+                }
             }
-            
-            AddOneType(context, class_user_type, current_id, true);
-            
-            if (method_decl->isInstance())
+            else
             {
-                // self is a pointer to the object
+                // This branch will get hit if we are executing code in the context of a function that
+                // claims to have an object pointer (through DW_AT_object_pointer?) but is not formally a
+                // method of the class.  In that case, just look up the "this" variable in the the current
+                // scope and use its type.
+                // FIXME: This code is formally correct, but clang doesn't currently emit DW_AT_object_pointer
+                // for C++ so it hasn't actually been tested.
                 
-                QualType class_pointer_type = method_decl->getASTContext().getPointerType(class_qual_type);
+                VariableList *vars = frame->GetVariableList(false);
                 
-                TypeFromUser self_user_type(class_pointer_type.getAsOpaquePtr(),
-                                            &method_decl->getASTContext());
+                lldb::VariableSP this_var = vars->FindVariable(ConstString("this"));
                 
-                m_struct_vars->m_object_pointer_type = self_user_type;
+                if (this_var &&
+                    this_var->IsInScope(frame) &&
+                    this_var->LocationIsValidForFrame (frame))
+                {
+                    Type *this_type = this_var->GetType();
+                    
+                    if (!this_type)
+                        return;
+                    
+                    QualType this_qual_type = QualType::getFromOpaquePtr(this_type->GetClangFullType());
+                    const PointerType *class_pointer_type = this_qual_type->getAs<PointerType>();
+                    
+                    if (class_pointer_type)
+                    {
+                        QualType class_type = class_pointer_type->getPointeeType();
+                        
+                        if (log)
+                        {
+                            ASTDumper ast_dumper(this_type->GetClangFullType());
+                            log->Printf("  FEVD[%u] Adding type for $__lldb_objc_class: %s", current_id, ast_dumper.GetCString());
+                        }
+                        
+                        TypeFromUser class_user_type (class_type.getAsOpaquePtr(),
+                                                        this_type->GetClangAST());
+                        AddOneType(context, class_user_type, current_id, false);
+                                    
+                                    
+                        TypeFromUser this_user_type(this_type->GetClangFullType(),
+                                                    this_type->GetClangAST());
+                        
+                        m_struct_vars->m_object_pointer_type = this_user_type;
+                        return;
+                    }
+                }
             }
             
             return;
@@ -2515,65 +2633,96 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
             
             clang::ObjCMethodDecl *method_decl = llvm::dyn_cast<clang::ObjCMethodDecl>(decl_context);
             
-            if (!method_decl)
-                return;
-
-            ObjCInterfaceDecl* self_interface = method_decl->getClassInterface();
-            
-            if (!self_interface)
-                return;
-            
-            const clang::Type *interface_type = self_interface->getTypeForDecl();
-                    
-            TypeFromUser class_user_type(QualType(interface_type, 0).getAsOpaquePtr(),
-                                         &method_decl->getASTContext());
-            
-            if (log)
+            if (method_decl)
             {
-                ASTDumper ast_dumper(interface_type);
-                log->Printf("  FEVD[%u] Adding type for $__lldb_objc_class: %s", current_id, ast_dumper.GetCString());
-            }
+
+                ObjCInterfaceDecl* self_interface = method_decl->getClassInterface();
                 
-            AddOneType(context, class_user_type, current_id, false);
-            
-#if 0
-            VariableList *vars = frame->GetVariableList(false);
-            
-            lldb::VariableSP self_var = vars->FindVariable(ConstString("self"));
-            
-            if (self_var &&
-                self_var->IsInScope(frame) && 
-                self_var->LocationIsValidForFrame (frame)) {
-                Type *self_type = self_var->GetType();
-                
-                if (!self_type)
+                if (!self_interface)
                     return;
                 
-                TypeFromUser self_user_type(self_type->GetClangFullType(),
-                                            self_type->GetClangAST());
-            }
-#endif
-            
-            if (method_decl->isInstanceMethod())
-            {
-                // self is a pointer to the object
+                const clang::Type *interface_type = self_interface->getTypeForDecl();
+                        
+                TypeFromUser class_user_type(QualType(interface_type, 0).getAsOpaquePtr(),
+                                             &method_decl->getASTContext());
                 
-                QualType class_pointer_type = method_decl->getASTContext().getObjCObjectPointerType(QualType(interface_type, 0));
-            
-                TypeFromUser self_user_type(class_pointer_type.getAsOpaquePtr(),
-                                            &method_decl->getASTContext());
-            
-                m_struct_vars->m_object_pointer_type = self_user_type;
+                if (log)
+                {
+                    ASTDumper ast_dumper(interface_type);
+                    log->Printf("  FEVD[%u] Adding type for $__lldb_objc_class: %s", current_id, ast_dumper.GetCString());
+                }
+                    
+                AddOneType(context, class_user_type, current_id, false);
+                                
+                if (method_decl->isInstanceMethod())
+                {
+                    // self is a pointer to the object
+                    
+                    QualType class_pointer_type = method_decl->getASTContext().getObjCObjectPointerType(QualType(interface_type, 0));
+                
+                    TypeFromUser self_user_type(class_pointer_type.getAsOpaquePtr(),
+                                                &method_decl->getASTContext());
+                
+                    m_struct_vars->m_object_pointer_type = self_user_type;
+                }
+                else
+                {
+                    // self is a Class pointer
+                    QualType class_type = method_decl->getASTContext().getObjCClassType();
+                    
+                    TypeFromUser self_user_type(class_type.getAsOpaquePtr(),
+                                                &method_decl->getASTContext());
+                    
+                    m_struct_vars->m_object_pointer_type = self_user_type;
+                }
+
+                return;
             }
             else
             {
-                // self is a Class pointer
-                QualType class_type = method_decl->getASTContext().getObjCClassType();
+                // This branch will get hit if we are executing code in the context of a function that
+                // claims to have an object pointer (through DW_AT_object_pointer?) but is not formally a
+                // method of the class.  In that case, just look up the "self" variable in the the current
+                // scope and use its type.
                 
-                TypeFromUser self_user_type(class_type.getAsOpaquePtr(),
-                                            &method_decl->getASTContext());
+                VariableList *vars = frame->GetVariableList(false);
                 
-                m_struct_vars->m_object_pointer_type = self_user_type;
+                lldb::VariableSP self_var = vars->FindVariable(ConstString("self"));
+                
+                if (self_var &&
+                    self_var->IsInScope(frame) && 
+                    self_var->LocationIsValidForFrame (frame))
+                {
+                    Type *self_type = self_var->GetType();
+                    
+                    if (!self_type)
+                        return;
+                    
+                    QualType self_qual_type = QualType::getFromOpaquePtr(self_type->GetClangFullType());
+                    const ObjCObjectPointerType *class_pointer_type = self_qual_type->getAs<ObjCObjectPointerType>();
+                    
+                    if (class_pointer_type)
+                    {
+                        QualType class_type = class_pointer_type->getPointeeType();
+                        
+                        if (log)
+                        {
+                            ASTDumper ast_dumper(self_type->GetClangFullType());
+                            log->Printf("  FEVD[%u] Adding type for $__lldb_objc_class: %s", current_id, ast_dumper.GetCString());
+                        }
+                        
+                        TypeFromUser class_user_type (class_type.getAsOpaquePtr(),
+                                                        self_type->GetClangAST());
+                        AddOneType(context, class_user_type, current_id, false);
+                                    
+                                    
+                        TypeFromUser self_user_type(self_type->GetClangFullType(),
+                                                    self_type->GetClangAST());
+                        
+                        m_struct_vars->m_object_pointer_type = self_user_type;
+                        return;
+                    }
+                }
             }
 
             return;
@@ -2652,12 +2801,13 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
         {
             valobj = frame->GetValueForVariableExpressionPath(name_unique_cstr, 
                                                               eNoDynamicValues, 
-                                                              StackFrame::eExpressionPathOptionCheckPtrVsMember,
+                                                              StackFrame::eExpressionPathOptionCheckPtrVsMember
+                                                              | StackFrame::eExpressionPathOptionsAllowDirectIVarAccess,
                                                               var,
                                                               err);
             
             // If we found a variable in scope, no need to pull up function names
-            if (err.Success() && var != NULL)
+            if (err.Success() && var)
             {
                 AddOneVariable(context, var, valobj, current_id);
                 context.m_found.variable = true;
@@ -2699,7 +2849,7 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
                                          append,
                                          sc_list);
             }
-            else if (!namespace_decl)
+            else if (target && !namespace_decl)
             {
                 const bool include_symbols = true;
                 
@@ -2772,7 +2922,7 @@ ClangExpressionDeclMap::FindExternalVisibleDecls (NameSearchContext &context,
                 // We couldn't find a non-symbol variable for this.  Now we'll hunt for a generic 
                 // data symbol, and -- if it is found -- treat it as a variable.
                 
-                Symbol *data_symbol = FindGlobalDataSymbol(*target, name);
+                const Symbol *data_symbol = FindGlobalDataSymbol(*target, name);
                 
                 if (data_symbol)
                 {
@@ -3038,7 +3188,7 @@ ClangExpressionDeclMap::AddOneVariable(NameSearchContext &context,
 
 void
 ClangExpressionDeclMap::AddOneGenericVariable(NameSearchContext &context, 
-                                              Symbol &symbol, 
+                                              const Symbol &symbol,
                                               unsigned int current_id)
 {
     assert(m_parser_vars.get());
@@ -3071,7 +3221,7 @@ ClangExpressionDeclMap::AddOneGenericVariable(NameSearchContext &context,
     
     std::auto_ptr<Value> symbol_location(new Value);
     
-    Address &symbol_address = symbol.GetAddress();
+    const Address &symbol_address = symbol.GetAddress();
     lldb::addr_t symbol_load_addr = symbol_address.GetLoadAddress(target);
     
     symbol_location->SetContext(Value::eContextTypeClangType, user_type.GetOpaqueQualType());
@@ -3135,7 +3285,7 @@ ClangExpressionDeclMap::ResolveUnknownTypes()
                 if (log)
                     log->Printf("ClangExpressionDeclMap::ResolveUnknownType - Couldn't import the type for a variable");
                 
-                return lldb::ClangExpressionVariableSP();
+                return (bool) lldb::ClangExpressionVariableSP();
             }
             
             TypeFromUser user_type(copied_type, scratch_ast_context);
@@ -3248,7 +3398,7 @@ ClangExpressionDeclMap::AddOneFunction (NameSearchContext &context,
             // We failed to copy the type we found
             if (log)
             {
-                log->Printf ("  Failed to import the function type '%s' {0x%8.8llx} into the expression parser AST contenxt",
+                log->Printf ("  Failed to import the function type '%s' {0x%8.8" PRIx64 "} into the expression parser AST contenxt",
                              fun_type->GetName().GetCString(), 
                              fun_type->GetID());
             }

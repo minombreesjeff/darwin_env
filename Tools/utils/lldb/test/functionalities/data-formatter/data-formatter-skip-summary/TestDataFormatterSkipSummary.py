@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class SkipSummaryDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,9 @@ class SkipSummaryDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d, locations = 1" %
-                        self.line)
+        #import lldbutil
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
+
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -74,7 +74,7 @@ class SkipSummaryDataFormatterTestCase(TestBase):
                        '}'])
 
         # Skip the default (should be 1) levels of summaries
-        self.expect('frame variable -Y',
+        self.expect('frame variable --no-summary-depth',
             substrs = ['(DeepData_1) data1 = {',
                        'm_child1 = 0x',
                        '}',
@@ -86,7 +86,7 @@ class SkipSummaryDataFormatterTestCase(TestBase):
                        '}'])
 
         # Now skip 2 levels of summaries
-        self.expect('frame variable -Y2',
+        self.expect('frame variable --no-summary-depth=2',
             substrs = ['(DeepData_1) data1 = {',
                        'm_child1 = 0x',
                        '}',
@@ -99,15 +99,15 @@ class SkipSummaryDataFormatterTestCase(TestBase):
                        '}'])
 
         # Check that no "Level 3" comes out
-        self.expect('frame variable data1.m_child1 -Y2', matching=False,
+        self.expect('frame variable data1.m_child1 --no-summary-depth=2', matching=False,
             substrs = ['Level 3'])
 
         # Now expand a pointer with 2 level of skipped summaries
-        self.expect('frame variable data1.m_child1 -Y2',
+        self.expect('frame variable data1.m_child1 --no-summary-depth=2',
                     substrs = ['(DeepData_2 *) data1.m_child1 = 0x'])
 
         # Deref and expand said pointer
-        self.expect('frame variable *data1.m_child1 -Y2',
+        self.expect('frame variable *data1.m_child1 --no-summary-depth=2',
                     substrs = ['(DeepData_2) *data1.m_child1 = {',
                                'm_child2 = {',
                                'm_child1 = 0x',
@@ -115,7 +115,7 @@ class SkipSummaryDataFormatterTestCase(TestBase):
                                '}'])
 
         # Expand an expression, skipping 2 layers of summaries
-        self.expect('frame variable data1.m_child1->m_child2 -Y2',
+        self.expect('frame variable data1.m_child1->m_child2 --no-summary-depth=2',
                 substrs = ['(DeepData_3) data1.m_child1->m_child2 = {',
                            'm_child2 = {',
                            'm_child1 = Level 5',
@@ -124,7 +124,7 @@ class SkipSummaryDataFormatterTestCase(TestBase):
                            '}'])
 
         # Expand same expression, skipping only 1 layer of summaries
-        self.expect('frame variable data1.m_child1->m_child2 -Y1',
+        self.expect('frame variable data1.m_child1->m_child2 --no-summary-depth=1',
                     substrs = ['(DeepData_3) data1.m_child1->m_child2 = {',
                                'm_child1 = 0x',
                                'Level 4',
@@ -134,7 +134,7 @@ class SkipSummaryDataFormatterTestCase(TestBase):
         # Bad debugging info on SnowLeopard gcc (Apple Inc. build 5666).
         # Skip the following tests if the condition is met.
         if self.getCompiler().endswith('gcc') and not self.getCompiler().endswith('llvm-gcc'):
-           import re, lldbutil
+           import re
            gcc_version_output = system([lldbutil.which(self.getCompiler()), "-v"])[1]
            #print "my output:", gcc_version_output
            for line in gcc_version_output.split(os.linesep):
@@ -148,14 +148,14 @@ class SkipSummaryDataFormatterTestCase(TestBase):
                        self.skipTest("rdar://problem/9804600 wrong namespace for std::string in debug info")
 
         # Expand same expression, skipping 3 layers of summaries
-        self.expect('frame variable data1.m_child1->m_child2 -T -Y3',
+        self.expect('frame variable data1.m_child1->m_child2 --show-types --no-summary-depth=3',
                     substrs = ['(DeepData_3) data1.m_child1->m_child2 = {',
                                'm_some_text = "Just a test"',
                                'm_child2 = {',
                                'm_some_text = "Just a test"'])
 
         # Expand within a standard string (might depend on the implementation of the C++ stdlib you use)
-        self.expect('frame variable data1.m_child1->m_child2.m_child1.m_child2 -Y2',
+        self.expect('frame variable data1.m_child1->m_child2.m_child1.m_child2 --no-summary-depth=2',
             substrs = ['(DeepData_5) data1.m_child1->m_child2.m_child1.m_child2 = {',
                        'm_some_text = {',
                        '_M_dataplus = {',
@@ -163,18 +163,18 @@ class SkipSummaryDataFormatterTestCase(TestBase):
                        '"Just a test"'])
 
         # Repeat the above, but only skip 1 level of summaries
-        self.expect('frame variable data1.m_child1->m_child2.m_child1.m_child2 -Y1',
+        self.expect('frame variable data1.m_child1->m_child2.m_child1.m_child2 --no-summary-depth=1',
                     substrs = ['(DeepData_5) data1.m_child1->m_child2.m_child1.m_child2 = {',
                                'm_some_text = "Just a test"',
                                '}'])
 
-        # Change summary and expand, first without -Y then with -Y
+        # Change summary and expand, first without --no-summary-depth then with --no-summary-depth
         self.runCmd("type summary add --summary-string \"${var.m_some_text}\" DeepData_5")
         
         self.expect('fr var data2.m_child4.m_child2.m_child2',
             substrs = ['(DeepData_5) data2.m_child4.m_child2.m_child2 = "Just a test"'])
 
-        self.expect('fr var data2.m_child4.m_child2.m_child2 -Y',
+        self.expect('fr var data2.m_child4.m_child2.m_child2 --no-summary-depth',
                     substrs = ['(DeepData_5) data2.m_child4.m_child2.m_child2 = {',
                                'm_some_text = "Just a test"',
                                '}'])

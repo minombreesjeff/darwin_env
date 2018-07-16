@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class DataFormatterDisablingTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class DataFormatterDisablingTestCase(TestBase):
         """Check that we can properly disable all data formatter categories."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -83,7 +81,7 @@ class DataFormatterDisablingTestCase(TestBase):
         self.expect('type category list', substrs = ['system is not enabled', 'gnu-libstdc++ is not enabled', 'AppKit is not enabled'])
         
         # now enable and check that we are back to normal
-        cleanup()
+        self.runCmd("type category enable *")
 
         self.expect('type category list', substrs = ['system is enabled', 'gnu-libstdc++ is enabled', 'AppKit is enabled'])
 

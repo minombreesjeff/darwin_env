@@ -133,14 +133,6 @@ isSafeToConvert(const RecordDecl *RD, CodeGenTypes &CGT,
   // when a class is translated, even though they aren't embedded by-value into
   // the class.
   if (const CXXRecordDecl *CRD = dyn_cast<CXXRecordDecl>(RD)) {
-    if (!CRD->hasDefinition() && CRD->hasExternalLexicalStorage()) {
-      ExternalASTSource *EAS = CRD->getASTContext().getExternalSource();
-      if (!EAS)
-        return false;
-      EAS->CompleteType(const_cast<CXXRecordDecl*>(CRD));
-      if (!CRD->hasDefinition())
-        return false;
-    }
     for (CXXRecordDecl::base_class_const_iterator I = CRD->bases_begin(),
          E = CRD->bases_end(); I != E; ++I)
       if (!isSafeToConvert(I->getType()->getAs<RecordType>()->getDecl(),
@@ -482,11 +474,11 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     // build it.
     const CGFunctionInfo *FI;
     if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(FT)) {
-      FI = &arrangeFunctionType(
+      FI = &arrangeFreeFunctionType(
                    CanQual<FunctionProtoType>::CreateUnsafe(QualType(FPT, 0)));
     } else {
       const FunctionNoProtoType *FNPT = cast<FunctionNoProtoType>(FT);
-      FI = &arrangeFunctionType(
+      FI = &arrangeFreeFunctionType(
                 CanQual<FunctionNoProtoType>::CreateUnsafe(QualType(FNPT, 0)));
     }
     
@@ -564,7 +556,7 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   }
 
   case Type::Atomic: {
-    ResultType = ConvertTypeForMem(cast<AtomicType>(Ty)->getValueType());
+    ResultType = ConvertType(cast<AtomicType>(Ty)->getValueType());
     break;
   }
   }
@@ -659,7 +651,7 @@ CodeGenTypes::getCGRecordLayout(const RecordDecl *RD) {
 
 bool CodeGenTypes::isZeroInitializable(QualType T) {
   // No need to check for member pointers when not compiling C++.
-  if (!Context.getLangOptions().CPlusPlus)
+  if (!Context.getLangOpts().CPlusPlus)
     return true;
   
   T = Context.getBaseElementType(T);

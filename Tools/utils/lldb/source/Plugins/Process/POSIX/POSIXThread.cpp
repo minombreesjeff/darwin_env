@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 #include <errno.h>
 
@@ -33,13 +35,13 @@ using namespace lldb;
 using namespace lldb_private;
 
 
-POSIXThread::POSIXThread(ProcessSP &process, lldb::tid_t tid)
+POSIXThread::POSIXThread(Process &process, lldb::tid_t tid)
     : Thread(process, tid),
       m_frame_ap(0)
 {
     LogSP log (ProcessPOSIXLog::GetLogIfAllCategoriesSet (POSIX_LOG_THREAD));
     if (log && log->GetMask().Test(POSIX_LOG_VERBOSE))
-        log->Printf ("POSIXThread::%s (tid = %i)", __FUNCTION__, tid);
+        log->Printf ("POSIXThread::%s (tid = %" PRIi64 ")", __FUNCTION__, tid);
 }
 
 POSIXThread::~POSIXThread()
@@ -146,11 +148,14 @@ POSIXThread::WillResume(lldb::StateType resume_state)
 {
     SetResumeState(resume_state);
 
-    ClearStackFrames();
+    if (!Thread::WillResume(resume_state))
+        return false;
+
     if (m_unwinder_ap.get())
         m_unwinder_ap->Clear();
+    Thread::ClearStackFrames();
 
-    return Thread::WillResume(resume_state);
+    return true;
 }
 
 bool
@@ -239,7 +244,7 @@ POSIXThread::BreakNotify(const ProcessMessage &message)
     assert(GetRegisterContext());
     lldb::addr_t pc = GetRegisterContext()->GetPC();
     if (log)
-        log->Printf ("POSIXThread::%s () PC=0x%8.8llx", __FUNCTION__, pc);
+        log->Printf ("POSIXThread::%s () PC=0x%8.8" PRIx64, __FUNCTION__, pc);
     lldb::BreakpointSiteSP bp_site(GetProcess()->GetBreakpointSiteList().FindByAddress(pc));
     assert(bp_site);
     lldb::break_id_t bp_id = bp_site->GetID();

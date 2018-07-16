@@ -501,11 +501,6 @@ those operations and the ARMv6 scalar versions.
 
 //===---------------------------------------------------------------------===//
 
-ARM::MOVCCr is commutable (by flipping the condition). But we need to implement
-ARMInstrInfo::commuteInstruction() to support it.
-
-//===---------------------------------------------------------------------===//
-
 Split out LDR (literal) from normal ARM LDR instruction. Also consider spliting
 LDR into imm12 and so_reg forms. This allows us to clean up some code. e.g.
 ARMLoadStoreOptimizer does not need to look at LDR (literal) and LDR (so_reg)
@@ -715,3 +710,24 @@ targets, e.g., PPC, that share this behavior, it would be best to implement
 this in a target-independent way: we should probably fold that (when using
 "undefined at zero" semantics) to set the "defined at zero" bit and have
 the code generator expand out the right code.
+
+
+//===---------------------------------------------------------------------===//
+
+Clean up the test/MC/ARM files to have more robust register choices.
+
+R0 should not be used as a register operand in the assembler tests as it's then
+not possible to distinguish between a correct encoding and a missing operand
+encoding, as zero is the default value for the binary encoder.
+e.g.,
+    add r0, r0  // bad
+    add r3, r5  // good
+
+Register operands should be distinct. That is, when the encoding does not
+require two syntactical operands to refer to the same register, two different
+registers should be used in the test so as to catch errors where the
+operands are swapped in the encoding.
+e.g.,
+    subs.w r1, r1, r1 // bad
+    subs.w r1, r2, r3 // good
+

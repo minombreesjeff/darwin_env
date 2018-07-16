@@ -296,12 +296,13 @@ public:
             return m_original.StartTranslationUnit(Consumer);
         }
         
-        uint64_t GetMetadata(uintptr_t object)
+        ClangASTMetadata *
+        GetMetadata(uintptr_t object)
         {
             return m_original.GetMetadata(object);
         }
         
-        void SetMetadata(uintptr_t object, uint64_t metadata)
+        void SetMetadata(uintptr_t object, ClangASTMetadata &metadata)
         {
             return m_original.SetMetadata(object, metadata);
         }
@@ -320,6 +321,20 @@ public:
     }
     
 protected:
+    //------------------------------------------------------------------
+    /// Look for the complete version of an Objective-C interface, and
+    /// return it if found.
+    ///
+    /// @param[in] interface_decl
+    ///     An ObjCInterfaceDecl that may not be the complete one.
+    ///
+    /// @return
+    ///     NULL if the complete interface couldn't be found;
+    ///     the complete interface otherwise.
+    //------------------------------------------------------------------
+    clang::ObjCInterfaceDecl *
+    GetCompleteObjCInterface (clang::ObjCInterfaceDecl *interface_decl);
+    
     //------------------------------------------------------------------
     /// Find all entities matching a given name in a given module,
     /// using a NameSearchContext to make Decls for them.

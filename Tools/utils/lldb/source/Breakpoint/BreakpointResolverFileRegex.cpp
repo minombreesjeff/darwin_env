@@ -17,6 +17,7 @@
 #include "lldb/Core/SourceManager.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/StreamString.h"
+#include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Target/Target.h"
 #include "lldb/lldb-private-log.h"
 
@@ -91,7 +92,7 @@ BreakpointResolverFileRegex::SearchCallback
                 }
                 else if (log)
                 {
-                    log->Printf ("Breakpoint at file address 0x%llx for %s:%d didn't pass filter.\n",
+                    log->Printf ("Breakpoint at file address 0x%" PRIx64 " for %s:%d didn't pass filter.\n",
                                  line_start.GetFileAddress(),
                                  cu_file_spec.GetFilename().AsCString("<Unknown>"),
                                  line_matches[i]);
@@ -100,7 +101,7 @@ BreakpointResolverFileRegex::SearchCallback
             else
             {
                 if (log)
-                    log->Printf ("error: Unable to set breakpoint at file address 0x%llx for %s:%d\n",
+                    log->Printf ("error: Unable to set breakpoint at file address 0x%" PRIx64 " for %s:%d\n",
                                  line_start.GetFileAddress(),
                                  cu_file_spec.GetFilename().AsCString("<Unknown>"),
                                  line_matches[i]);

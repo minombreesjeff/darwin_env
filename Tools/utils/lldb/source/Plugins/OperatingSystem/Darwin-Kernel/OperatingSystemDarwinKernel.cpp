@@ -189,10 +189,6 @@ OperatingSystemDarwinKernel::GetDynamicRegisterInfo ()
                     reg_info.kinds[eRegisterKindLLDB] = reg_num++;
                     m_register_info_ap->AddRegister (reg_info, reg_name, empty_name, gpr_name);
                 }
-                else
-                {
-                    printf ("not able to find register info for %s\n", reg_name.GetCString()); // REMOVE THIS printf before checkin!!!
-                }
             }
             
             m_register_info_ap->Finalize();
@@ -249,7 +245,7 @@ OperatingSystemDarwinKernel::UpdateThreadList (ThreadList &old_thread_list, Thre
 
         ThreadSP thread_sp (old_thread_list.FindThreadByID (tid, false));
         if (!thread_sp)
-            thread_sp.reset (new ThreadMemory (m_process->shared_from_this(), tid, valobj_sp));
+            thread_sp.reset (new ThreadMemory (*m_process, tid, valobj_sp));
 
         new_thread_list.AddThread(thread_sp);
 
@@ -272,7 +268,7 @@ OperatingSystemDarwinKernel::ThreadWasSelected (Thread *thread)
 }
 
 RegisterContextSP
-OperatingSystemDarwinKernel::CreateRegisterContextForThread (Thread *thread)
+OperatingSystemDarwinKernel::CreateRegisterContextForThread (Thread *thread, lldb::addr_t reg_data_addr)
 {
     ThreadMemory *generic_thread = (ThreadMemory *)thread;
     RegisterContextSP reg_ctx_sp;

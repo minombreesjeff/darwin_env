@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectDisassemble.h"
 
 // C Includes
@@ -14,16 +16,17 @@
 // Other libraries and framework includes
 // Project includes
 #include "lldb/Core/AddressRange.h"
+#include "lldb/Core/Disassembler.h"
+#include "lldb/Core/SourceManager.h"
 #include "lldb/Interpreter/Args.h"
 #include "lldb/Interpreter/CommandCompletions.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
-#include "lldb/Core/Disassembler.h"
 #include "lldb/Interpreter/Options.h"
-#include "lldb/Core/SourceManager.h"
-#include "lldb/Target/StackFrame.h"
+#include "lldb/Symbol/Function.h"
 #include "lldb/Symbol/Symbol.h"
 #include "lldb/Target/Process.h"
+#include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 
 #define DEFAULT_DISASM_BYTE_SIZE 32
@@ -58,7 +61,7 @@ CommandObjectDisassemble::CommandOptions::SetOptionValue (uint32_t option_idx, c
 {
     Error error;
 
-    char short_option = (char) m_getopt_table[option_idx].val;
+    const int short_option = m_getopt_table[option_idx].val;
 
     bool success;
     
@@ -245,7 +248,7 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
     const char *plugin_name = m_options.GetPluginName ();
     DisassemblerSP disassembler = Disassembler::FindPlugin(m_options.arch, plugin_name);
 
-    if (disassembler == NULL)
+    if (!disassembler)
     {
         if (plugin_name)
             result.AppendErrorWithFormat ("Unable to find Disassembler plug-in named '%s' that supports the '%s' architecture.\n", 
@@ -423,7 +426,7 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
             }
             else
             {
-                result.AppendErrorWithFormat ("Failed to disassemble memory at 0x%8.8llx.\n", m_options.start_addr);
+                result.AppendErrorWithFormat ("Failed to disassemble memory at 0x%8.8" PRIx64 ".\n", m_options.start_addr);
                 result.SetStatus (eReturnStatusFailed);            
             }
         }
@@ -469,7 +472,7 @@ CommandObjectDisassemble::DoExecute (Args& command, CommandReturnObject &result)
             }
             else
             {
-                result.AppendErrorWithFormat ("Failed to disassemble memory at 0x%8.8llx.\n", m_options.start_addr);
+                result.AppendErrorWithFormat ("Failed to disassemble memory at 0x%8.8" PRIx64 ".\n", m_options.start_addr);
                 result.SetStatus (eReturnStatusFailed);            
             }
         }

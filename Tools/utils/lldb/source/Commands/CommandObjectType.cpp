@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectType.h"
 
 // C Includes
@@ -209,7 +211,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success;
             
             switch (short_option)
@@ -374,7 +376,7 @@ private:
                         const char *option_value)
         {
             Error error;
-            const char short_option = (char) g_option_table[option_idx].short_option;
+            const int short_option = g_option_table[option_idx].short_option;
             bool success;
             
             switch (short_option)
@@ -742,7 +744,7 @@ CommandObjectTypeFormatList_LoopCallback (
 //-------------------------------------------------------------------------
 
 static const char *g_summary_addreader_instructions = "Enter your Python command(s). Type 'DONE' to end.\n"
-                                                       "def function (valobj,dict):";
+                                                       "def function (valobj,internal_dict):";
 
 class TypeScriptAddInputReader : public InputReaderEZ
 {
@@ -915,7 +917,7 @@ Error
 CommandObjectTypeSummaryAdd::CommandOptions::SetOptionValue (uint32_t option_idx, const char *option_arg)
 {
     Error error;
-    char short_option = (char) m_getopt_table[option_idx].val;
+    const int short_option = m_getopt_table[option_idx].val;
     bool success;
     
     switch (short_option)
@@ -1050,7 +1052,7 @@ CommandObjectTypeSummaryAdd::Execute_ScriptSummary (Args& command, CommandReturn
             return false;
         }
         
-        std::string code = ("     " + m_options.m_python_function + "(valobj,dict)");
+        std::string code = ("     " + m_options.m_python_function + "(valobj,internal_dict)");
         
         script_format.reset(new ScriptSummaryFormat(m_options.m_flags,
                                                     funct_name,
@@ -1417,7 +1419,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -1580,7 +1582,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -1724,7 +1726,7 @@ class CommandObjectTypeSummaryList : public CommandObjectParsed
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -1956,24 +1958,46 @@ protected:
             return false;
         }
         
-        for (int i = argc - 1; i >= 0; i--)
+        if (argc == 1 && strcmp(command.GetArgumentAtIndex(0),"*") == 0)
         {
-            const char* typeA = command.GetArgumentAtIndex(i);
-            ConstString typeCS(typeA);
-            
-            if (!typeCS)
+            // we want to make sure to enable "system" last and "default" first
+            DataVisualization::Categories::Enable(ConstString("default"), CategoryMap::First);
+            uint32_t num_categories = DataVisualization::Categories::GetCount();
+            for (uint32_t i = 0; i < num_categories; i++)
             {
-                result.AppendError("empty category name not allowed");
-                result.SetStatus(eReturnStatusFailed);
-                return false;
-            }
-            DataVisualization::Categories::Enable(typeCS);
-            lldb::TypeCategoryImplSP cate;
-            if (DataVisualization::Categories::GetCategory(typeCS, cate) && cate.get())
-            {
-                if (cate->GetCount() == 0)
+                lldb::TypeCategoryImplSP category_sp = DataVisualization::Categories::GetCategoryAtIndex(i);
+                if (category_sp)
                 {
-                    result.AppendWarning("empty category enabled (typo?)");
+                    if ( ::strcmp(category_sp->GetName(), "system") == 0 ||
+                         ::strcmp(category_sp->GetName(), "default") == 0 )
+                        continue;
+                    else
+                        DataVisualization::Categories::Enable(category_sp, CategoryMap::Default);
+                }
+            }
+            DataVisualization::Categories::Enable(ConstString("system"), CategoryMap::Last);
+        }
+        else
+        {
+            for (int i = argc - 1; i >= 0; i--)
+            {
+                const char* typeA = command.GetArgumentAtIndex(i);
+                ConstString typeCS(typeA);
+                
+                if (!typeCS)
+                {
+                    result.AppendError("empty category name not allowed");
+                    result.SetStatus(eReturnStatusFailed);
+                    return false;
+                }
+                DataVisualization::Categories::Enable(typeCS);
+                lldb::TypeCategoryImplSP cate;
+                if (DataVisualization::Categories::GetCategory(typeCS, cate) && cate.get())
+                {
+                    if (cate->GetCount() == 0)
+                    {
+                        result.AppendWarning("empty category enabled (typo?)");
+                    }
                 }
             }
         }
@@ -2265,7 +2289,7 @@ class CommandObjectTypeFilterList : public CommandObjectParsed
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -2479,7 +2503,7 @@ class CommandObjectTypeSynthList : public CommandObjectParsed
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -2677,7 +2701,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -2843,7 +2867,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -3010,7 +3034,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -3139,7 +3163,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             
             switch (short_option)
             {
@@ -3636,7 +3660,7 @@ private:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
             bool success;
             
             switch (short_option)
@@ -3799,9 +3823,9 @@ public:
                     "    int i;\n"
                     "} \n"
                     "Typing:\n"
-                    "type filter add --child a -- child g Foo\n"
+                    "type filter add --child a --child g Foo\n"
                     "frame variable a_foo\n"
-                    "will produce an output where only a and b are displayed\n"
+                    "will produce an output where only a and g are displayed\n"
                     "Other children of a_foo (b,c,d,e,f,h and i) are available by asking for them, as in:\n"
                     "frame variable a_foo.b a_foo.c ... a_foo.i\n"
                     "\n"

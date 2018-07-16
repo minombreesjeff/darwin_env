@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "PlatformRemoteGDBServer.h"
 
 // C Includes
@@ -368,10 +370,9 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
                 if (target == NULL)
                 {
                     TargetSP new_target_sp;
-                    FileSpec emptyFileSpec;
                     
                     error = debugger.GetTargetList().CreateTarget (debugger,
-                                                                   emptyFileSpec,
+                                                                   NULL,
                                                                    NULL, 
                                                                    false,
                                                                    NULL,
@@ -398,7 +399,7 @@ PlatformRemoteGDBServer::Attach (lldb_private::ProcessAttachInfo &attach_info,
                                                                 GetHostname (), 
                                                                 port);
                         assert (connect_url_len < sizeof(connect_url));
-                        error = process_sp->ConnectRemote (connect_url);
+                        error = process_sp->ConnectRemote (NULL, connect_url);
                         if (error.Success())
                             error = process_sp->Attach(attach_info);
                     }

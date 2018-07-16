@@ -13,6 +13,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclGroup.h"
 #include "llvm/ADT/DenseSet.h"
+#include <deque>
 
 namespace clang {
   class FileEntry;
@@ -24,8 +25,23 @@ namespace clang {
 
 namespace cxindex {
   class IndexingContext;
-  class ScratchAlloc;
   class AttrListInfo;
+
+class ScratchAlloc {
+  IndexingContext &IdxCtx;
+
+public:
+  explicit ScratchAlloc(IndexingContext &indexCtx);
+  ScratchAlloc(const ScratchAlloc &SA);
+
+  ~ScratchAlloc();
+
+  const char *toCStr(StringRef Str);
+  const char *copyCStr(StringRef Str);
+
+  template <typename T>
+  T *allocate();
+};
 
 struct EntityInfo : public CXIdxEntityInfo {
   const NamedDecl *Dcl;
@@ -228,16 +244,20 @@ struct IBOutletCollectionInfo : public AttrInfo {
 };
 
 class AttrListInfo {
+  ScratchAlloc SA;
+
   SmallVector<AttrInfo, 2> Attrs;
   SmallVector<IBOutletCollectionInfo, 2> IBCollAttrs;
   SmallVector<CXIdxAttrInfo *, 2> CXAttrs;
   unsigned ref_cnt;
 
+  AttrListInfo(const AttrListInfo &) LLVM_DELETED_FUNCTION;
+  void operator=(const AttrListInfo &) LLVM_DELETED_FUNCTION;
 public:
-  AttrListInfo(const Decl *D,
-               IndexingContext &IdxCtx,
-               ScratchAlloc &SA);
-  AttrListInfo(const AttrListInfo &other);
+  AttrListInfo(const Decl *D, IndexingContext &IdxCtx);
+
+  static IntrusiveRefCntPtr<AttrListInfo> create(const Decl *D,
+                                                 IndexingContext &IdxCtx);
 
   const CXIdxAttrInfo *const *getAttrs() const {
     if (CXAttrs.empty())
@@ -285,7 +305,7 @@ class IndexingContext {
 
   llvm::DenseSet<RefFileOccurence> RefFileOccurences;
 
-  SmallVector<DeclGroupRef, 8> TUDeclsInObjCContainer;
+  std::deque<DeclGroupRef> TUDeclsInObjCContainer;
   
   llvm::BumpPtrAllocator StrScratch;
   unsigned StrAdapterCount;
@@ -350,6 +370,8 @@ public:
     return IndexOptions & CXIndexOpt_IndexImplicitTemplateInstantiations;
   }
 
+  static bool isFunctionLocalDecl(const Decl *D);
+
   bool shouldAbort();
 
   bool hasDiagnosticCallback() const { return CB.diagnostic; }
@@ -359,6 +381,9 @@ public:
   void ppIncludedFile(SourceLocation hashLoc,
                       StringRef filename, const FileEntry *File,
                       bool isImport, bool isAngled);
+
+  void importedModule(const ImportDecl *ImportD);
+  void importedPCH(const FileEntry *File);
 
   void startedTranslationUnit();
 
@@ -431,7 +456,7 @@ public:
 
   bool isNotFromSourceFile(SourceLocation Loc) const;
 
-  void indexTopLevelDecl(Decl *D);
+  void indexTopLevelDecl(const Decl *D);
   void indexTUDeclsInObjCContainer();
   void indexDeclGroupRef(DeclGroupRef DG);
 
@@ -487,28 +512,23 @@ private:
   static bool shouldIgnoreIfImplicit(const Decl *D);
 };
 
-class ScratchAlloc {
-  IndexingContext &IdxCtx;
+inline ScratchAlloc::ScratchAlloc(IndexingContext &idxCtx) : IdxCtx(idxCtx) {
+  ++IdxCtx.StrAdapterCount;
+}
+inline ScratchAlloc::ScratchAlloc(const ScratchAlloc &SA) : IdxCtx(SA.IdxCtx) {
+  ++IdxCtx.StrAdapterCount;
+}
 
-public:
-  explicit ScratchAlloc(IndexingContext &indexCtx) : IdxCtx(indexCtx) {
-    ++IdxCtx.StrAdapterCount;
-  }
+inline ScratchAlloc::~ScratchAlloc() {
+  --IdxCtx.StrAdapterCount;
+  if (IdxCtx.StrAdapterCount == 0)
+    IdxCtx.StrScratch.Reset();
+}
 
-  ~ScratchAlloc() {
-    --IdxCtx.StrAdapterCount;
-    if (IdxCtx.StrAdapterCount == 0)
-      IdxCtx.StrScratch.Reset();
-  }
-
-  const char *toCStr(StringRef Str);
-  const char *copyCStr(StringRef Str);
-
-  template <typename T>
-  T *allocate() {
-    return IdxCtx.StrScratch.Allocate<T>();
-  }
-};
+template <typename T>
+inline T *ScratchAlloc::allocate() {
+  return IdxCtx.StrScratch.Allocate<T>();
+}
 
 }} // end clang::cxindex
 
@@ -527,10 +547,8 @@ namespace llvm {
     }
 
     static unsigned getHashValue(clang::cxindex::RefFileOccurence S) {
-      llvm::FoldingSetNodeID ID;
-      ID.AddPointer(S.File);
-      ID.AddPointer(S.Dcl);
-      return ID.ComputeHash();
+      typedef std::pair<const clang::FileEntry *, const clang::Decl *> PairTy;
+      return DenseMapInfo<PairTy>::getHashValue(PairTy(S.File, S.Dcl));
     }
 
     static bool isEqual(clang::cxindex::RefFileOccurence LHS,

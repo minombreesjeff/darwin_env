@@ -1,6 +1,7 @@
 CLANG_LEVEL := ../../..
 BUILT_SOURCES = \
 	DiagnosticAnalysisKinds.inc DiagnosticASTKinds.inc \
+	DiagnosticCommentKinds.inc \
 	DiagnosticCommonKinds.inc DiagnosticDriverKinds.inc \
 	DiagnosticFrontendKinds.inc DiagnosticLexKinds.inc \
 	DiagnosticParseKinds.inc DiagnosticSemaKinds.inc \
@@ -30,7 +31,7 @@ else
 CLANG_HAS_VERSION_PATCHLEVEL := 1
 endif
 
-$(ObjDir)/Diagnostic%Kinds.inc.tmp : Diagnostic.td Diagnostic%Kinds.td $(CLANG_TBLGEN) $(ObjDir)/.dir
+$(ObjDir)/Diagnostic%Kinds.inc.tmp : Diagnostic.td $(INPUT_TDS) $(CLANG_TBLGEN) $(ObjDir)/.dir
 	$(Echo) "Building Clang $(patsubst Diagnostic%Kinds.inc.tmp,%,$(@F)) diagnostic tables with tblgen"
 	$(Verb) $(ClangTableGen) -gen-clang-diags-defs -clang-component=$(patsubst Diagnostic%Kinds.inc.tmp,%,$(@F)) -o $(call SYSPATH, $@) $<
 

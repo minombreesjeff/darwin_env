@@ -398,11 +398,37 @@ public:
                     lldb::Format &format,
                     uint32_t *byte_size_ptr); // If non-NULL, then a byte size can precede the format character
 
+    static lldb::Encoding
+    StringToEncoding (const char *s,
+                      lldb::Encoding fail_value = lldb::eEncodingInvalid);
+
+    static uint32_t
+    StringToGenericRegister (const char *s);
+    
     static const char *
     StringToVersion (const char *s, uint32_t &major, uint32_t &minor, uint32_t &update);
 
     static const char *
     GetShellSafeArgument (const char *unsafe_arg, std::string &safe_arg);
+
+    // EncodeEscapeSequences will change the textual representation of common
+    // escape sequences like "\n" (two characters) into a single '\n'. It does
+    // this for all of the supported escaped sequences and for the \0ooo (octal)
+    // and \xXX (hex). The resulting "dst" string will contain the character
+    // versions of all supported escape sequences. The common supported escape
+    // sequences are: "\a", "\b", "\f", "\n", "\r", "\t", "\v", "\'", "\"", "\\".
+
+    static void
+    EncodeEscapeSequences (const char *src, std::string &dst);
+
+    // ExpandEscapeSequences will change a string of possibly non-printable
+    // characters and expand them into text. So '\n' will turn into two chracters
+    // like "\n" which is suitable for human reading. When a character is not
+    // printable and isn't one of the common in escape sequences listed in the
+    // help for EncodeEscapeSequences, then it will be encoded as octal. Printable
+    // characters are left alone.
+    static void
+    ExpandEscapedCharacters (const char *src, std::string &dst);
 
     // This one isn't really relevant to Arguments per se, but we're using the Args as a
     // general strings container, so...

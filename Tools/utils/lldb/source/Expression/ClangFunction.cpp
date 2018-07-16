@@ -66,9 +66,9 @@ ClangFunction::ClangFunction
     m_compiled (false),
     m_JITted (false)
 {
-    m_jit_process_sp = exe_scope.CalculateProcess();
+    m_jit_process_wp = lldb::ProcessWP(exe_scope.CalculateProcess());
     // Can't make a ClangFunction without a process.
-    assert (m_jit_process_sp);
+    assert (m_jit_process_wp.lock());
 }
 
 ClangFunction::ClangFunction
@@ -89,9 +89,9 @@ ClangFunction::ClangFunction
     m_compiled (false),
     m_JITted (false)
 {
-    m_jit_process_sp = exe_scope.CalculateProcess();
+    m_jit_process_wp = lldb::ProcessWP(exe_scope.CalculateProcess());
     // Can't make a ClangFunction without a process.
-    assert (m_jit_process_sp);
+    assert (m_jit_process_wp.lock());
 
     m_function_addr = m_function_ptr->GetAddressRange().GetBaseAddress();
     m_function_return_qual_type = m_function_ptr->GetReturnClangType();
@@ -186,7 +186,7 @@ ClangFunction::CompileFunction (Stream &errors)
         char arg_buf[32];
         args_buffer.append ("    ");
         args_buffer.append (type_name);
-        snprintf(arg_buf, 31, "arg_%zd", i);
+        snprintf(arg_buf, 31, "arg_%" PRIu64, (uint64_t)i);
         args_buffer.push_back (' ');
         args_buffer.append (arg_buf);
         args_buffer.append (";\n");
@@ -219,10 +219,19 @@ ClangFunction::CompileFunction (Stream &errors)
         log->Printf ("Expression: \n\n%s\n\n", m_wrapper_function_text.c_str());
         
     // Okay, now compile this expression
-        
-    m_parser.reset(new ClangExpressionParser(m_jit_process_sp.get(), *this));
     
-    num_errors = m_parser->Parse (errors);
+    lldb::ProcessSP jit_process_sp(m_jit_process_wp.lock());
+    if (jit_process_sp)
+    {
+        m_parser.reset(new ClangExpressionParser(jit_process_sp.get(), *this));
+        
+        num_errors = m_parser->Parse (errors);
+    }
+    else
+    {
+        errors.Printf("no process - unable to inject function");
+        num_errors = 1;
+    }
     
     m_compiled = (num_errors == 0);
     
@@ -239,8 +248,10 @@ ClangFunction::WriteFunctionWrapper (ExecutionContext &exe_ctx, Stream &errors)
 
     if (!process)
         return false;
-        
-    if (process != m_jit_process_sp.get())
+    
+    lldb::ProcessSP jit_process_sp(m_jit_process_wp.lock());
+    
+    if (process != jit_process_sp.get())
         return false;
     
     if (!m_compiled)
@@ -265,7 +276,7 @@ ClangFunction::WriteFunctionWrapper (ExecutionContext &exe_ctx, Stream &errors)
     if (!jit_error.Success())
         return false;
     if (process && m_jit_alloc != LLDB_INVALID_ADDRESS)
-        m_jit_process_sp = process->shared_from_this();
+        m_jit_process_wp = lldb::ProcessWP(process->shared_from_this());
 
     return true;
 }
@@ -302,7 +313,9 @@ ClangFunction::WriteFunctionArguments (ExecutionContext &exe_ctx,
     if (process == NULL)
         return return_value;
 
-    if (process != m_jit_process_sp.get())
+    lldb::ProcessSP jit_process_sp(m_jit_process_wp.lock());
+    
+    if (process != jit_process_sp.get())
         return false;
                 
     if (args_addr_ref == LLDB_INVALID_ADDRESS)
@@ -376,7 +389,7 @@ ClangFunction::InsertFunction (ExecutionContext &exe_ctx, lldb::addr_t &args_add
 
     lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_STEP));
     if (log)
-        log->Printf ("Call Address: 0x%llx Struct Address: 0x%llx.\n", m_jit_start_addr, args_addr_ref);
+        log->Printf ("Call Address: 0x%" PRIx64 " Struct Address: 0x%" PRIx64 ".\n", m_jit_start_addr, args_addr_ref);
         
     return true;
 }
@@ -426,7 +439,10 @@ ClangFunction::FetchFunctionResults (ExecutionContext &exe_ctx, lldb::addr_t arg
     
     if (process == NULL)
         return false;
-    if (process != m_jit_process_sp.get())
+
+    lldb::ProcessSP jit_process_sp(m_jit_process_wp.lock());
+    
+    if (process != jit_process_sp.get())
         return false;
                 
     Error error;
@@ -462,20 +478,20 @@ ClangFunction::ExecuteFunction(ExecutionContext &exe_ctx, Stream &errors, bool s
 {
     const bool try_all_threads = false;
     const bool discard_on_error = true;
-    return ExecuteFunction (exe_ctx, NULL, errors, stop_others, NULL, try_all_threads, discard_on_error, results);
+    return ExecuteFunction (exe_ctx, NULL, errors, stop_others, 0UL, try_all_threads, discard_on_error, results);
 }
 
 ExecutionResults
 ClangFunction::ExecuteFunction(
         ExecutionContext &exe_ctx, 
         Stream &errors, 
-        uint32_t single_thread_timeout_usec, 
+        uint32_t timeout_usec, 
         bool try_all_threads, 
         Value &results)
 {
     const bool stop_others = true;
     const bool discard_on_error = true;
-    return ExecuteFunction (exe_ctx, NULL, errors, stop_others, single_thread_timeout_usec, 
+    return ExecuteFunction (exe_ctx, NULL, errors, stop_others, timeout_usec,
                             try_all_threads, discard_on_error, results);
 }
 
@@ -488,7 +504,7 @@ ClangFunction::ExecuteFunction (
         bool stop_others,
         bool try_all_threads,
         bool discard_on_error,
-        uint32_t single_thread_timeout_usec,
+        uint32_t timeout_usec,
         Stream &errors,
         lldb::addr_t *this_arg)
 {
@@ -499,7 +515,7 @@ ClangFunction::ExecuteFunction (
                                                                                  stop_others, 
                                                                                  discard_on_error, 
                                                                                  this_arg));
-    if (call_plan_sp == NULL)
+    if (!call_plan_sp)
         return eExecutionSetupError;
     
     call_plan_sp->SetPrivate(true);
@@ -513,7 +529,7 @@ ClangFunction::ExecuteFunction (
                                                                       stop_others, 
                                                                       try_all_threads, 
                                                                       discard_on_error,
-                                                                      single_thread_timeout_usec, 
+                                                                      timeout_usec,
                                                                       errors);
     
     if (exe_ctx.GetProcessPtr())
@@ -528,7 +544,7 @@ ClangFunction::ExecuteFunction(
         lldb::addr_t *args_addr_ptr, 
         Stream &errors, 
         bool stop_others, 
-        uint32_t single_thread_timeout_usec, 
+        uint32_t timeout_usec, 
         bool try_all_threads,
         bool discard_on_error, 
         Value &results)
@@ -558,7 +574,7 @@ ClangFunction::ExecuteFunction(
                                                    stop_others, 
                                                    try_all_threads, 
                                                    discard_on_error, 
-                                                   single_thread_timeout_usec, 
+                                                   timeout_usec, 
                                                    errors);
 
     if (args_addr_ptr != NULL)

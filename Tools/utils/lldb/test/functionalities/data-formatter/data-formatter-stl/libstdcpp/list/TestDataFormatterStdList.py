@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class StdListDataFormatterTestCase(TestBase):
 
@@ -34,10 +35,7 @@ class StdListDataFormatterTestCase(TestBase):
         """Test that that file and class static variables display correctly."""
         self.runCmd("file a.out", CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.cpp -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.cpp', line = %d" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.cpp", self.line, num_expected_locations=-1)
 
         self.runCmd("run", RUN_SUCCEEDED)
 
@@ -58,7 +56,7 @@ class StdListDataFormatterTestCase(TestBase):
         # Execute the cleanup function during test case tear down.
         self.addTearDownHook(cleanup)
 
-        self.runCmd("frame variable numbers_list -T")
+        self.runCmd("frame variable numbers_list --show-types")
         #self.runCmd("type synth add std::int_list std::string_list int_list string_list -l StdListSynthProvider")
         self.runCmd("type summary add std::int_list std::string_list int_list string_list --summary-string \"list has ${svar%#} items\" -e")
         self.runCmd("type format add -f hex int")
@@ -134,6 +132,9 @@ class StdListDataFormatterTestCase(TestBase):
         self.expect("expression numbers_list[0]", matching=False, error=True,
                     substrs = ['0x12345678'])
 
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("numbers_list").MightHaveChildren(), "numbers_list.MightHaveChildren() says False for non empty!")
+
         self.runCmd("n")
             
         self.expect("frame variable numbers_list",
@@ -182,6 +183,9 @@ class StdListDataFormatterTestCase(TestBase):
         # but check that expression does not rely on us
         self.expect("expression text_list[0]", matching=False, error=True,
                     substrs = ['goofy'])
+
+        # check that MightHaveChildren() gets it right
+        self.assertTrue(self.frame().FindVariable("text_list").MightHaveChildren(), "text_list.MightHaveChildren() says False for non empty!")
 
 if __name__ == '__main__':
     import atexit

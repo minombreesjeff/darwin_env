@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectExpression.h"
 
 // C Includes
@@ -50,7 +52,9 @@ CommandObjectExpression::CommandOptions::~CommandOptions ()
 OptionDefinition
 CommandObjectExpression::CommandOptions::g_option_table[] =
 {
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "all-threads",        'a', required_argument, NULL, 0, eArgTypeBoolean,    "Should we run all threads if the execution doesn't complete on one thread."},
     { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "dynamic-value",      'd', required_argument, NULL, 0, eArgTypeBoolean,    "Upcast the value resulting from the expression to its dynamic type if available."},
+    { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "timeout",            't', required_argument, NULL, 0, eArgTypeUnsignedInteger,  "Timeout value for running the expression."},
     { LLDB_OPT_SET_1 | LLDB_OPT_SET_2, false, "unwind-on-error",    'u', required_argument, NULL, 0, eArgTypeBoolean,    "Clean up program state if the expression causes a crash, breakpoint hit or signal."},
     { LLDB_OPT_SET_2                 , false, "object-description", 'o', no_argument,       NULL, 0, eArgTypeNone,       "Print the object description of the value resulting from the expression."},
 };
@@ -69,7 +73,7 @@ CommandObjectExpression::CommandOptions::SetOptionValue (CommandInterpreter &int
 {
     Error error;
 
-    const char short_option = (char) g_option_table[option_idx].short_option;
+    const int short_option = g_option_table[option_idx].short_option;
 
     switch (short_option)
     {
@@ -80,8 +84,16 @@ CommandObjectExpression::CommandOptions::SetOptionValue (CommandInterpreter &int
       //}
       //break;
 
-    case 'o':
-        print_object = true;
+    case 'a':
+        {
+            bool success;
+            bool result;
+            result = Args::StringToBoolean(option_arg, true, &success);
+            if (!success)
+                error.SetErrorStringWithFormat("invalid all-threads value setting: \"%s\"", option_arg);
+            else
+                try_all_threads = result;
+        }
         break;
         
     case 'd':
@@ -98,6 +110,22 @@ CommandObjectExpression::CommandOptions::SetOptionValue (CommandInterpreter &int
                 else
                     use_dynamic = eLazyBoolNo;
             }
+        }
+        break;
+        
+    case 'o':
+        print_object = true;
+        break;
+        
+    case 't':
+        {
+            bool success;
+            uint32_t result;
+            result = Args::StringToUInt32(option_arg, 0, 0, &success);
+            if (success)
+                timeout = result;
+            else
+                error.SetErrorStringWithFormat ("invalid timeout setting \"%s\"", option_arg);
         }
         break;
         
@@ -125,6 +153,8 @@ CommandObjectExpression::CommandOptions::OptionParsingStarting (CommandInterpret
     unwind_on_error = true;
     show_types = true;
     show_summary = true;
+    try_all_threads = true;
+    timeout = 0;
 }
 
 const OptionDefinition*
@@ -136,7 +166,7 @@ CommandObjectExpression::CommandOptions::GetDefinitions ()
 CommandObjectExpression::CommandObjectExpression (CommandInterpreter &interpreter) :
     CommandObjectRaw (interpreter,
                       "expression",
-                      "Evaluate a C/ObjC/C++ expression in the current program context, using variables currently in scope.",
+                      "Evaluate a C/ObjC/C++ expression in the current program context, using user defined variables and variables currently in scope.",
                       NULL,
                       eFlagProcessMustBePaused),
     m_option_group (interpreter),
@@ -146,10 +176,24 @@ CommandObjectExpression::CommandObjectExpression (CommandInterpreter &interprete
     m_expr_lines ()
 {
   SetHelpLong(
-"Examples: \n\
+"Timeouts:\n\
+    If the expression can be evaluated statically (without runnning code) then it will be.\n\
+    Otherwise, by default the expression will run on the current thread with a short timeout:\n\
+    currently .25 seconds.  If it doesn't return in that time, the evaluation will be interrupted\n\
+    and resumed with all threads running.  You can use the -a option to disable retrying on all\n\
+    threads.  You can use the -t option to set a shorter timeout.\n\
+\n\
+User defined variables:\n\
+    You can define your own variables for convenience or to be used in subsequent expressions.\n\
+    You define them the same way you would define variables in C.  If the first character of \n\
+    your user defined variable is a $, then the variable's value will be available in future\n\
+    expressions, otherwise it will just be available in the current expression.\n\
+\n\
+Examples: \n\
 \n\
    expr my_struct->a = my_array[3] \n\
    expr -f bin -- (index * 8) + 5 \n\
+   expr unsigned int $foo = 5\n\
    expr char c[] = \"foo\"; c[0]\n");
 
     CommandArgumentEntry arg;
@@ -298,15 +342,18 @@ CommandObjectExpression::EvaluateExpression
             break;
         }
         
+        EvaluateExpressionOptions options;
+        options.SetCoerceToId(m_command_options.print_object)
+        .SetUnwindOnError(m_command_options.unwind_on_error)
+        .SetKeepInMemory(keep_in_memory)
+        .SetUseDynamic(use_dynamic)
+        .SetRunOthers(m_command_options.try_all_threads)
+        .SetTimeoutUsec(m_command_options.timeout);
+        
         exe_results = target->EvaluateExpression (expr, 
                                                   m_interpreter.GetExecutionContext().GetFramePtr(),
-                                                  eExecutionPolicyOnlyWhenNeeded,
-                                                  m_command_options.print_object,
-                                                  m_command_options.unwind_on_error,
-                                                  keep_in_memory, 
-                                                  use_dynamic, 
                                                   result_valobj_sp,
-                                                  0 /* no timeout */);
+                                                  options);
         
         if (exe_results == eExecutionInterrupted && !m_command_options.unwind_on_error)
         {
@@ -335,41 +382,49 @@ CommandObjectExpression::EvaluateExpression
                 }
             }
         }
-
+        
         if (result_valobj_sp)
         {
+            Format format = m_format_options.GetFormat();
+
             if (result_valobj_sp->GetError().Success())
             {
-                Format format = m_format_options.GetFormat();
-                if (format != eFormatDefault)
-                    result_valobj_sp->SetFormat (format);
+                if (format != eFormatVoid)
+                {
+                    if (format != eFormatDefault)
+                        result_valobj_sp->SetFormat (format);
 
-                ValueObject::DumpValueObjectOptions options;
-                options.SetMaximumPointerDepth(0)
-                .SetMaximumDepth(UINT32_MAX)
-                .SetShowLocation(false)
-                .SetShowTypes(m_command_options.show_types)
-                .SetUseObjectiveC(m_command_options.print_object)
-                .SetUseDynamicType(use_dynamic)
-                .SetScopeChecked(true)
-                .SetFlatOutput(false)
-                .SetUseSyntheticValue(true)
-                .SetIgnoreCap(false)
-                .SetFormat(format)
-                .SetSummary()
-                .SetShowSummary(!m_command_options.print_object);
-                
-                ValueObject::DumpValueObject (*(output_stream),
-                                              result_valobj_sp.get(),   // Variable object to dump
-                                              options);
-                if (result)
-                    result->SetStatus (eReturnStatusSuccessFinishResult);
+                    ValueObject::DumpValueObjectOptions options;
+                    options.SetMaximumPointerDepth(0)
+                    .SetMaximumDepth(UINT32_MAX)
+                    .SetShowLocation(false)
+                    .SetShowTypes(m_command_options.show_types)
+                    .SetUseObjectiveC(m_command_options.print_object)
+                    .SetUseDynamicType(use_dynamic)
+                    .SetScopeChecked(true)
+                    .SetFlatOutput(false)
+                    .SetUseSyntheticValue(true)
+                    .SetIgnoreCap(false)
+                    .SetFormat(format)
+                    .SetSummary()
+                    .SetShowSummary(!m_command_options.print_object)
+                    .SetHideRootType(m_command_options.print_object);
+                    
+                    ValueObject::DumpValueObject (*(output_stream),
+                                                  result_valobj_sp.get(),   // Variable object to dump
+                                                  options);
+                    if (result)
+                        result->SetStatus (eReturnStatusSuccessFinishResult);
+                }
             }
             else
             {
                 if (result_valobj_sp->GetError().GetError() == ClangUserExpression::kNoResult)
                 {
-                    error_stream->PutCString("<no result>\n");
+                    if (format != eFormatVoid && m_interpreter.GetDebugger().GetNotifyVoid())
+                    {
+                        error_stream->PutCString("(void)\n");
+                    }
                     
                     if (result)
                         result->SetStatus (eReturnStatusSuccessFinishResult);

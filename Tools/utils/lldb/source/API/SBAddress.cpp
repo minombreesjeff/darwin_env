@@ -119,10 +119,13 @@ SBAddress::GetLoadAddress (const SBTarget &target) const
 
     lldb::addr_t addr = LLDB_INVALID_ADDRESS;
     TargetSP target_sp (target.GetSP());
-    if (m_opaque_ap.get())
+    if (target_sp)
     {
-        Mutex::Locker api_locker (target_sp->GetAPIMutex());
-        addr = m_opaque_ap->GetLoadAddress (target_sp.get());
+        if (m_opaque_ap.get())
+        {
+            Mutex::Locker api_locker (target_sp->GetAPIMutex());
+            addr = m_opaque_ap->GetLoadAddress (target_sp.get());
+        }
     }
     
     if (log)
@@ -130,7 +133,7 @@ SBAddress::GetLoadAddress (const SBTarget &target) const
         if (addr == LLDB_INVALID_ADDRESS)
             log->Printf ("SBAddress::GetLoadAddress (SBTarget(%p)) => LLDB_INVALID_ADDRESS", target_sp.get());
         else
-            log->Printf ("SBAddress::GetLoadAddress (SBTarget(%p)) => 0x%llx", target_sp.get(), addr);
+            log->Printf ("SBAddress::GetLoadAddress (SBTarget(%p)) => 0x%" PRIx64, target_sp.get(), addr);
     }
 
     return addr;
@@ -182,7 +185,7 @@ lldb::addr_t
 SBAddress::GetOffset ()
 {
     if (m_opaque_ap.get())
-        m_opaque_ap->GetOffset();
+        return m_opaque_ap->GetOffset();
     return 0;
 }
 

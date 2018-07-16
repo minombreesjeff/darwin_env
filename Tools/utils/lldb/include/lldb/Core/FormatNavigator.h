@@ -25,6 +25,9 @@
 #include "lldb/Core/Log.h"
 #include "lldb/Core/RegularExpression.h"
 #include "lldb/Core/ValueObject.h"
+
+#include "lldb/Symbol/ClangASTContext.h"
+
 #include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
@@ -126,7 +129,7 @@ public:
         else
             entry->GetRevision() = 0;
 
-        Mutex::Locker(m_map_mutex);
+        Mutex::Locker locker(m_map_mutex);
         m_map[name] = entry;
         if (listener)
             listener->Changed();
@@ -135,7 +138,7 @@ public:
     bool
     Delete (KeyType name)
     {
-        Mutex::Locker(m_map_mutex);
+        Mutex::Locker locker(m_map_mutex);
         MapIterator iter = m_map.find(name);
         if (iter == m_map.end())
             return false;
@@ -148,7 +151,7 @@ public:
     void
     Clear ()
     {
-        Mutex::Locker(m_map_mutex);
+        Mutex::Locker locker(m_map_mutex);
         m_map.clear();
         if (listener)
             listener->Changed();
@@ -158,7 +161,7 @@ public:
     Get(KeyType name,
         ValueSP& entry)
     {
-        Mutex::Locker(m_map_mutex);
+        Mutex::Locker locker(m_map_mutex);
         MapIterator iter = m_map.find(name);
         if (iter == m_map.end())
             return false;
@@ -171,7 +174,7 @@ public:
     {
         if (callback)
         {
-            Mutex::Locker(m_map_mutex);
+            Mutex::Locker locker(m_map_mutex);
             MapIterator pos, end = m_map.end();
             for (pos = m_map.begin(); pos != end; pos++)
             {
@@ -191,7 +194,7 @@ public:
     ValueSP
     GetValueAtIndex (uint32_t index)
     {
-        Mutex::Locker(m_map_mutex);
+        Mutex::Locker locker(m_map_mutex);
         MapIterator iter = m_map.begin();
         MapIterator end = m_map.end();
         while (index > 0)
@@ -207,7 +210,7 @@ public:
     KeyType
     GetKeyAtIndex (uint32_t index)
     {
-        Mutex::Locker(m_map_mutex);
+        Mutex::Locker locker(m_map_mutex);
         MapIterator iter = m_map.begin();
         MapIterator end = m_map.end();
         while (index > 0)
@@ -425,13 +428,16 @@ protected:
     bool
     Get_Impl (ConstString key, MapValueType& value, lldb::RegularExpressionSP *dummy)
     {
+       const char* key_cstr = key.AsCString();
+       if (!key_cstr)
+           return false;
        Mutex& x_mutex = m_format_map.mutex();
        lldb_private::Mutex::Locker locker(x_mutex);
        MapIterator pos, end = m_format_map.map().end();
        for (pos = m_format_map.map().begin(); pos != end; pos++)
        {
            lldb::RegularExpressionSP regex = pos->first;
-           if (regex->Execute(key.AsCString()))
+           if (regex->Execute(key_cstr))
            {
                value = pos->second;
                return true;
@@ -470,18 +476,18 @@ protected:
         sstring.Printf("%s:%d",typeName.AsCString(),valobj.GetBitfieldBitSize());
         ConstString bitfieldname = ConstString(sstring.GetData());
         if (log)
-            log->Printf("appended bitfield info, final result is %s", bitfieldname.GetCString());
+            log->Printf("[Get_BitfieldMatch] appended bitfield info, final result is %s", bitfieldname.GetCString());
         if (Get(bitfieldname, entry))
         {
             if (log)
-                log->Printf("bitfield direct match found, returning");
+                log->Printf("[Get_BitfieldMatch] bitfield direct match found, returning");
             return true;
         }
         else
         {
             reason |= lldb_private::eFormatterChoiceCriterionStrippedBitField;
             if (log)
-                log->Printf("no bitfield direct match");
+                log->Printf("[Get_BitfieldMatch] no bitfield direct match");
             return false;
         }
     }
@@ -495,27 +501,27 @@ protected:
         if (runtime == NULL)
         {
             if (log)
-                log->Printf("no valid ObjC runtime, skipping dynamic");
+                log->Printf("[Get_ObjC] no valid ObjC runtime, skipping dynamic");
             return false;
         }
-        ObjCLanguageRuntime::ObjCISA isa = runtime->GetISA(valobj);
-        if (runtime->IsValidISA(isa) == false)
+        ObjCLanguageRuntime::ClassDescriptorSP objc_class_sp (runtime->GetClassDescriptor(valobj));
+        if (!objc_class_sp)
         {
             if (log)
-                log->Printf("invalid ISA, skipping dynamic");
+                log->Printf("[Get_ObjC] invalid ISA, skipping dynamic");
             return false;
         }
-        ConstString name = runtime->GetActualTypeName(isa);
+        ConstString name (objc_class_sp->GetClassName());
         if (log)
-            log->Printf("dynamic type inferred is %s - looking for direct dynamic match", name.GetCString());
+            log->Printf("[Get_ObjC] dynamic type inferred is %s - looking for direct dynamic match", name.GetCString());
         if (Get(name, entry))
         {
             if (log)
-                log->Printf("direct dynamic match found, returning");
+                log->Printf("[Get_ObjC] direct dynamic match found, returning");
             return true;
         }
         if (log)
-            log->Printf("no dynamic match");
+            log->Printf("[Get_ObjC] no dynamic match");
         return false;
     }
     
@@ -529,7 +535,7 @@ protected:
         if (type.isNull())
         {
             if (log)
-                log->Printf("type is NULL, returning");
+                log->Printf("[Get] type is NULL, returning");
             return false;
         }
 
@@ -538,7 +544,7 @@ protected:
         if (!typePtr)
         {
             if (log)
-                log->Printf("type is NULL, returning");
+                log->Printf("[Get] type is NULL, returning");
             return false;
         }
         ConstString typeName(ClangASTType::GetTypeNameForQualType(valobj.GetClangAST(), type).c_str());
@@ -550,7 +556,7 @@ protected:
         }
         
         if (log)
-            log->Printf("trying to get %s for VO name %s of type %s",
+            log->Printf("[Get] trying to get %s for VO name %s of type %s",
                         m_name.c_str(),
                         valobj.GetName().AsCString(),
                         typeName.AsCString());
@@ -558,28 +564,27 @@ protected:
         if (Get(typeName, entry))
         {
             if (log)
-                log->Printf("direct match found, returning");
+                log->Printf("[Get] direct match found, returning");
             return true;
         }
         if (log)
-            log->Printf("no direct match");
+            log->Printf("[Get] no direct match");
 
         // strip pointers and references and see if that helps
         if (typePtr->isReferenceType())
         {
             if (log)
-                log->Printf("stripping reference");
+                log->Printf("[Get] stripping reference");
             if (Get(valobj,type.getNonReferenceType(),entry, use_dynamic, reason) && !entry->SkipsReferences())
             {
                 reason |= lldb_private::eFormatterChoiceCriterionStrippedPointerReference;
                 return true;
             }
         }
-        
-        if (typePtr->isPointerType())
+        else if (typePtr->isPointerType())
         {
             if (log)
-                log->Printf("stripping pointer");
+                log->Printf("[Get] stripping pointer");
             clang::QualType pointee = typePtr->getPointeeType();
             if (Get(valobj, pointee, entry, use_dynamic, reason) && !entry->SkipsPointers())
             {
@@ -588,12 +593,18 @@ protected:
             }
         }
 
-        if (typePtr->isObjCObjectPointerType())
+        bool canBeObjCDynamic = ClangASTContext::IsPossibleDynamicType (valobj.GetClangAST(),
+                                                                        type.getAsOpaquePtr(),
+                                                                        NULL,
+                                                                        false, // no C++
+                                                                        true); // yes ObjC
+        
+        if (canBeObjCDynamic)
         {
             if (use_dynamic != lldb::eNoDynamicValues)
             {
                 if (log)
-                    log->Printf("allowed to figure out dynamic ObjC type");
+                    log->Printf("[Get] allowed to figure out dynamic ObjC type");
                 if (Get_ObjC(valobj,entry))
                 {
                     reason |= lldb_private::eFormatterChoiceCriterionDynamicObjCDiscovery;
@@ -601,7 +612,7 @@ protected:
                 }
             }
             if (log)
-                log->Printf("dynamic disabled or failed - stripping ObjC pointer");
+                log->Printf("[Get] dynamic disabled or failed - stripping ObjC pointer");
             clang::QualType pointee = typePtr->getPointeeType();
             if (Get(valobj, pointee, entry, use_dynamic, reason) && !entry->SkipsPointers())
             {
@@ -615,13 +626,32 @@ protected:
         if (type_tdef)
         {
             if (log)
-                log->Printf("stripping typedef");
+                log->Printf("[Get] stripping typedef");
             if ((Get(valobj, type_tdef->getDecl()->getUnderlyingType(), entry, use_dynamic, reason)) && entry->Cascades())
             {
                 reason |= lldb_private::eFormatterChoiceCriterionNavigatedTypedefs;
                 return true;
             }
         }
+        
+        // if all else fails, go to static type
+        if (valobj.IsDynamic())
+        {
+            if (log)
+                log->Printf("[Get] going to static value");
+            lldb::ValueObjectSP static_value_sp(valobj.GetStaticValue());
+            if (static_value_sp)
+            {
+                if (log)
+                    log->Printf("[Get] has a static value - actually use it");
+                if (Get(*static_value_sp.get(), clang::QualType::getFromOpaquePtr(static_value_sp->GetClangType()) , entry, use_dynamic, reason))
+                {
+                    reason |= lldb_private::eFormatterChoiceCriterionWentToStaticValue;
+                    return true;
+                }
+            }
+        }
+        
         return false;
     }
 };

@@ -7,22 +7,26 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 // C++ Includes
 #include <string>
 
 // Other libraries and framework includes
 // Project includes
+#include "lldb/lldb-private-log.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Breakpoint/BreakpointID.h"
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Log.h"
-#include "lldb/Target/Target.h"
-#include "lldb/Target/ThreadPlan.h"
-#include "lldb/Target/Process.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/StreamString.h"
-#include "lldb/lldb-private-log.h"
+#include "lldb/Symbol/CompileUnit.h"
+#include "lldb/Symbol/Symbol.h"
+#include "lldb/Target/Target.h"
+#include "lldb/Target/Process.h"
 #include "lldb/Target/Thread.h"
 #include "lldb/Target/ThreadSpec.h"
 
@@ -376,7 +380,7 @@ BreakpointLocation::ResolveBreakpointSite ()
     {
         LogSP log = lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_BREAKPOINTS);
         if (log)
-            log->Warning ("Tried to add breakpoint site at 0x%llx but it was already present.\n",
+            log->Warning ("Tried to add breakpoint site at 0x%" PRIx64 " but it was already present.\n",
                           m_address.GetOpcodeLoadAddress (&m_owner.GetTarget()));
         return false;
     }
@@ -408,13 +412,20 @@ void
 BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
 {
     SymbolContext sc;
-    s->Indent();
-    BreakpointID::GetCanonicalReference(s, m_owner.GetID(), GetID());
-
+    
+    // If the description level is "initial" then the breakpoint is printing out our initial state,
+    // and we should let it decide how it wants to print our label.
+    if (level != eDescriptionLevelInitial)
+    {
+        s->Indent();
+        BreakpointID::GetCanonicalReference(s, m_owner.GetID(), GetID());
+    }
+    
     if (level == lldb::eDescriptionLevelBrief)
         return;
 
-    s->PutCString(": ");
+    if (level != eDescriptionLevelInitial)
+        s->PutCString(": ");
 
     if (level == lldb::eDescriptionLevelVerbose)
         s->IndentMore();
@@ -423,7 +434,7 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
     {
         m_address.CalculateSymbolContext(&sc);
 
-        if (level == lldb::eDescriptionLevelFull)
+        if (level == lldb::eDescriptionLevelFull || level == eDescriptionLevelInitial)
         {
             s->PutCString("where = ");
             sc.DumpStopContext (s, m_owner.GetTarget().GetProcessSP().get(), m_address, false, true, false);
@@ -476,7 +487,11 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
         s->EOL();
         s->Indent();
     }
-    s->Printf ("%saddress = ", (level == lldb::eDescriptionLevelFull && m_address.IsSectionOffset()) ? ", " : "");
+    
+    if (m_address.IsSectionOffset() && (level == eDescriptionLevelFull || level == eDescriptionLevelInitial))
+        s->Printf (", ");
+    s->Printf ("address = ");
+    
     ExecutionContextScope *exe_scope = NULL;
     Target *target = &m_owner.GetTarget();
     if (target)
@@ -484,7 +499,10 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
     if (exe_scope == NULL)
         exe_scope = target;
 
-    m_address.Dump(s, exe_scope, Address::DumpStyleLoadAddress, Address::DumpStyleModuleWithFileAddress);
+    if (eDescriptionLevelInitial)
+        m_address.Dump(s, exe_scope, Address::DumpStyleLoadAddress, Address::DumpStyleFileAddress);
+    else
+        m_address.Dump(s, exe_scope, Address::DumpStyleLoadAddress, Address::DumpStyleModuleWithFileAddress);
 
     if (level == lldb::eDescriptionLevelVerbose)
     {
@@ -503,7 +521,7 @@ BreakpointLocation::GetDescription (Stream *s, lldb::DescriptionLevel level)
         }
         s->IndentLess();
     }
-    else
+    else if (level != eDescriptionLevelInitial)
     {
         s->Printf(", %sresolved, hit count = %u ",
                   (IsResolved() ? "" : "un"),
@@ -521,7 +539,7 @@ BreakpointLocation::Dump(Stream *s) const
     if (s == NULL)
         return;
 
-    s->Printf("BreakpointLocation %u: tid = %4.4llx  load addr = 0x%8.8llx  state = %s  type = %s breakpoint  "
+    s->Printf("BreakpointLocation %u: tid = %4.4" PRIx64 "  load addr = 0x%8.8" PRIx64 "  state = %s  type = %s breakpoint  "
               "hw_index = %i  hit_count = %-4u  ignore_count = %-4u",
               GetID(),
               GetOptionsNoCreate()->GetThreadSpecNoCreate()->GetTID(),

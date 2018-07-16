@@ -10,6 +10,7 @@
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
+#include "llvm/Support/raw_ostream.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Symbol/ClangASTContext.h"
@@ -60,15 +61,20 @@ ClangASTImporter::CopyDecl (clang::ASTContext *dst_ast,
 
             if (log)
             {
+                lldb::user_id_t user_id;
+                ClangASTMetadata *metadata = GetDeclMetadata(decl);
+                if (metadata)
+                    user_id = metadata->GetUserID();
+                
                 if (NamedDecl *named_decl = dyn_cast<NamedDecl>(decl))
-                    log->Printf("  [ClangASTImporter] WARNING: Failed to import a %s '%s', metadata 0x%llx",
+                    log->Printf("  [ClangASTImporter] WARNING: Failed to import a %s '%s', metadata 0x%" PRIx64,
                                 decl->getDeclKindName(),
                                 named_decl->getNameAsString().c_str(),
-                                GetDeclMetadata(decl));
+                                user_id);
                 else
-                    log->Printf("  [ClangASTImporter] WARNING: Failed to import a %s, metadata 0x%llx",
+                    log->Printf("  [ClangASTImporter] WARNING: Failed to import a %s, metadata 0x%" PRIx64,
                                 decl->getDeclKindName(),
-                                GetDeclMetadata(decl));
+                                user_id);
             }
         }
         
@@ -243,7 +249,7 @@ ClangASTImporter::CompleteObjCInterfaceDecl (clang::ObjCInterfaceDecl *interface
     return true;
 }
 
-uint64_t
+ClangASTMetadata *
 ClangASTImporter::GetDeclMetadata (const clang::Decl *decl)
 {
     DeclOrigin decl_origin = GetDeclOrigin(decl);
@@ -269,7 +275,27 @@ ClangASTImporter::GetDeclOrigin(const clang::Decl *decl)
         return DeclOrigin();
 }
 
-void 
+void
+ClangASTImporter::SetDeclOrigin (const clang::Decl *decl, clang::Decl *original_decl)
+{
+    ASTContextMetadataSP context_md = GetContextMetadata(&decl->getASTContext());
+    
+    OriginMap &origins = context_md->m_origins;
+    
+    OriginMap::iterator iter = origins.find(decl);
+    
+    if (iter != origins.end())
+    {
+        iter->second.decl = original_decl;
+        iter->second.ctx = &original_decl->getASTContext();
+    }
+    else
+    {
+        origins[decl] = DeclOrigin(&original_decl->getASTContext(), original_decl);
+    }
+}
+
+void
 ClangASTImporter::RegisterNamespaceMap(const clang::NamespaceDecl *decl, 
                                        NamespaceMapSP &namespace_map)
 {
@@ -296,6 +322,7 @@ ClangASTImporter::GetNamespaceMap(const clang::NamespaceDecl *decl)
 void 
 ClangASTImporter::BuildNamespaceMap(const clang::NamespaceDecl *decl)
 {
+    assert (decl);
     ASTContextMetadataSP context_md = GetContextMetadata(&decl->getASTContext());
 
     const DeclContext *parent_context = decl->getDeclContext();
@@ -429,6 +456,11 @@ clang::Decl
         
     if (log)
     {
+        lldb::user_id_t user_id;
+        ClangASTMetadata *metadata = m_master.GetDeclMetadata(from);
+        if (metadata)
+            user_id = metadata->GetUserID();
+        
         if (NamedDecl *from_named_decl = dyn_cast<clang::NamedDecl>(from))
         {
             std::string name_string;
@@ -436,20 +468,20 @@ clang::Decl
             from_named_decl->printName(name_stream);
             name_stream.flush();
             
-            log->Printf("    [ClangASTImporter] Imported (%sDecl*)%p, named %s (from (Decl*)%p), metadata 0x%llx",
+            log->Printf("    [ClangASTImporter] Imported (%sDecl*)%p, named %s (from (Decl*)%p), metadata 0x%" PRIx64,
                         from->getDeclKindName(),
                         to,
                         name_string.c_str(),
                         from,
-                        m_master.GetDeclMetadata(from));
+                        user_id);
         }
         else
         {
-            log->Printf("    [ClangASTImporter] Imported (%sDecl*)%p (from (Decl*)%p), metadata 0x%llx",
+            log->Printf("    [ClangASTImporter] Imported (%sDecl*)%p (from (Decl*)%p), metadata 0x%" PRIx64,
                         from->getDeclKindName(),
                         to,
                         from,
-                        m_master.GetDeclMetadata(from));
+                        user_id);
         }
     }
 
@@ -515,7 +547,8 @@ clang::Decl
         TagDecl *to_tag_decl = dyn_cast<TagDecl>(to);
         
         to_tag_decl->setHasExternalLexicalStorage();
-                        
+        to_tag_decl->setMustBuildLookupTable();
+                                
         if (log)
             log->Printf("    [ClangASTImporter] To is a TagDecl - attributes %s%s [%s->%s]",
                         (to_tag_decl->hasExternalLexicalStorage() ? " Lexical" : ""),

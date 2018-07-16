@@ -9,14 +9,14 @@
 
 #include "IndexingContext.h"
 
-#include "clang/AST/RecursiveASTVisitor.h"
+#include "RecursiveASTVisitor.h"
 
 using namespace clang;
 using namespace cxindex;
 
 namespace {
 
-class BodyIndexer : public RecursiveASTVisitor<BodyIndexer> {
+class BodyIndexer : public cxindex::RecursiveASTVisitor<BodyIndexer> {
   IndexingContext &IndexCtx;
   const NamedDecl *Parent;
   const DeclContext *ParentDC;
@@ -90,6 +90,12 @@ public:
     return true;
   }
 
+  bool VisitObjCProtocolExpr(ObjCProtocolExpr *E) {
+    IndexCtx.handleReference(E->getProtocol(), E->getProtocolIdLoc(),
+                             Parent, ParentDC, E, CXIdxEntityRef_Direct);
+    return true;
+  }
+
   bool VisitObjCBoxedExpr(ObjCBoxedExpr *E) {
     if (ObjCMethodDecl *MD = E->getBoxingMethod())
       IndexCtx.handleReference(MD, E->getLocStart(),
@@ -124,8 +130,20 @@ public:
   }
 
   bool VisitDeclStmt(DeclStmt *S) {
-    if (IndexCtx.shouldIndexFunctionLocalSymbols())
+    if (IndexCtx.shouldIndexFunctionLocalSymbols()) {
       IndexCtx.indexDeclGroupRef(S->getDeclGroup());
+      return true;
+    }
+
+    DeclGroupRef DG = S->getDeclGroup();
+    for (DeclGroupRef::iterator I = DG.begin(), E = DG.end(); I != E; ++I) {
+      const Decl *D = *I;
+      if (!D)
+        continue;
+      if (!IndexCtx.isFunctionLocalDecl(D))
+        IndexCtx.indexTopLevelDecl(D);
+    }
+
     return true;
   }
 

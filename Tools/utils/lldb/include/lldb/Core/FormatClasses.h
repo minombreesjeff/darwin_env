@@ -228,20 +228,20 @@ protected:
     ValueObject &m_backend;
 public:
     
-    SyntheticChildrenFrontEnd(ValueObject &backend) :
-    m_backend(backend)
+    SyntheticChildrenFrontEnd (ValueObject &backend) :
+        m_backend(backend)
     {}
     
     virtual
-    ~SyntheticChildrenFrontEnd()
+    ~SyntheticChildrenFrontEnd ()
     {
     }
     
     virtual uint32_t
-    CalculateNumChildren() = 0;
+    CalculateNumChildren () = 0;
     
     virtual lldb::ValueObjectSP
-    GetChildAtIndex (uint32_t idx, bool can_create) = 0;
+    GetChildAtIndex (uint32_t idx) = 0;
     
     virtual uint32_t
     GetIndexOfChildWithName (const ConstString &name) = 0;
@@ -252,7 +252,14 @@ public:
     // if =true, ValueObjectSyntheticFilter is allowed to use the children it fetched previously and cached
     // if =false, ValueObjectSyntheticFilter must throw away its cache, and query again for children
     virtual bool
-    Update() = 0;
+    Update () = 0;
+    
+    // if this function returns false, then CalculateNumChildren() MUST return 0 since UI frontends
+    // might validly decide not to inquire for children given a false return value from this call
+    // if it returns true, then CalculateNumChildren() can return any number >= 0 (0 being valid)
+    // it should if at all possible be more efficient than CalculateNumChildren()
+    virtual bool
+    MightHaveChildren () = 0;
     
     typedef STD_SHARED_PTR(SyntheticChildrenFrontEnd) SharedPointer;
     typedef std::auto_ptr<SyntheticChildrenFrontEnd> AutoPointer;
@@ -556,15 +563,21 @@ public:
         }
         
         virtual lldb::ValueObjectSP
-        GetChildAtIndex (uint32_t idx, bool can_create)
+        GetChildAtIndex (uint32_t idx)
         {
             if (idx >= filter->GetCount())
                 return lldb::ValueObjectSP();
-            return m_backend.GetSyntheticExpressionPathChild(filter->GetExpressionPathAtIndex(idx), can_create);
+            return m_backend.GetSyntheticExpressionPathChild(filter->GetExpressionPathAtIndex(idx), true);
         }
         
         virtual bool
         Update() { return false; }
+        
+        virtual bool
+        MightHaveChildren ()
+        {
+            return filter->GetCount() > 0;
+        }
         
         virtual uint32_t
         GetIndexOfChildWithName (const ConstString &name)
@@ -601,6 +614,42 @@ public:
 private:
     DISALLOW_COPY_AND_ASSIGN(TypeFilterImpl);
 };
+
+    class CXXSyntheticChildren : public SyntheticChildren
+    {
+    public:
+        typedef SyntheticChildrenFrontEnd* (*CreateFrontEndCallback) (CXXSyntheticChildren*, lldb::ValueObjectSP);
+    protected:
+        CreateFrontEndCallback m_create_callback;
+        std::string m_description;
+    public:
+        CXXSyntheticChildren(const SyntheticChildren::Flags& flags,
+                             const char* description,
+                             CreateFrontEndCallback callback) :
+        SyntheticChildren(flags),
+        m_create_callback(callback),
+        m_description(description ? description : "")
+        {
+        }
+        
+        bool
+        IsScripted()
+        {
+            return false;
+        }
+        
+        std::string
+        GetDescription();
+                
+        virtual SyntheticChildrenFrontEnd::AutoPointer
+        GetFrontEnd(ValueObject &backend)
+        {
+            return SyntheticChildrenFrontEnd::AutoPointer(m_create_callback(this, backend.GetSP()));
+        }
+        
+    private:
+        DISALLOW_COPY_AND_ASSIGN(CXXSyntheticChildren);
+    };
 
 #ifndef LLDB_DISABLE_PYTHON
 
@@ -680,7 +729,7 @@ public:
         }
         
         virtual lldb::ValueObjectSP
-        GetChildAtIndex (uint32_t idx, bool can_create);
+        GetChildAtIndex (uint32_t idx);
         
         virtual bool
         Update()
@@ -690,7 +739,16 @@ public:
             
             return m_interpreter->UpdateSynthProviderInstance(m_wrapper_sp);
         }
-                
+        
+        virtual bool
+        MightHaveChildren()
+        {
+            if (!m_wrapper_sp || m_interpreter == NULL)
+                return false;
+            
+            return m_interpreter->MightHaveChildrenSynthProviderInstance(m_wrapper_sp);
+        }
+        
         virtual uint32_t
         GetIndexOfChildWithName (const ConstString &name)
         {
@@ -887,12 +945,18 @@ public:
             return filter->GetCount();
         }
         
+        virtual bool
+        MightHaveChildren ()
+        {
+            return filter->GetCount() > 0;
+        }
+        
         virtual lldb::ValueObjectSP
-        GetChildAtIndex (uint32_t idx, bool can_create)
+        GetChildAtIndex (uint32_t idx)
         {
             if (idx >= filter->GetCount())
                 return lldb::ValueObjectSP();
-            return m_backend.GetSyntheticArrayMember(filter->GetRealIndexForIndex(idx), can_create);
+            return m_backend.GetSyntheticArrayMember(filter->GetRealIndexForIndex(idx), true);
         }
         
         virtual bool
@@ -1091,6 +1155,14 @@ public:
         uint32_t m_flags;
     };
     
+    typedef enum Type
+    {
+        eTypeUnknown,
+        eTypeString,
+        eTypeScript,
+        eTypeCallback
+    } Type;
+    
     TypeSummaryImpl (const TypeSummaryImpl::Flags& flags);
     
     bool
@@ -1205,6 +1277,9 @@ public:
     virtual bool
     IsScripted() = 0;
     
+    virtual Type
+    GetType () = 0;
+    
     uint32_t&
     GetRevision ()
     {
@@ -1265,8 +1340,88 @@ struct StringSummaryFormat : public TypeSummaryImpl
     }
 
     
+    virtual Type
+    GetType ()
+    {
+        return TypeSummaryImpl::eTypeString;
+    }
+    
 private:
     DISALLOW_COPY_AND_ASSIGN(StringSummaryFormat);
+};
+
+// summaries implemented via a C++ function
+struct CXXFunctionSummaryFormat : public TypeSummaryImpl
+{
+    
+    // we should convert these to SBValue and SBStream if we ever cross
+    // the boundary towards the external world
+    typedef bool (*Callback)(ValueObject& valobj,
+                             Stream& dest);
+    
+    
+    Callback m_impl;
+    std::string m_description;
+    
+    CXXFunctionSummaryFormat(const TypeSummaryImpl::Flags& flags,
+                             Callback impl,
+                             const char* description);
+    
+    Callback
+    GetBackendFunction () const
+    {
+        return m_impl;
+    }
+    
+    const char*
+    GetTextualInfo () const
+    {
+        return m_description.c_str();
+    }
+    
+    void
+    SetBackendFunction (Callback cb_func)
+    {
+        m_impl = cb_func;
+    }
+    
+    void
+    SetTextualInfo (const char* descr)
+    {
+        if (descr)
+            m_description.assign(descr);
+        else
+            m_description.clear();
+    }
+    
+    virtual
+    ~CXXFunctionSummaryFormat()
+    {
+    }
+    
+    virtual bool
+    FormatObject(ValueObject *valobj,
+                 std::string& dest);
+    
+    virtual std::string
+    GetDescription();
+    
+    virtual bool
+    IsScripted()
+    {
+        return false;
+    }
+    
+    virtual Type
+    GetType ()
+    {
+        return TypeSummaryImpl::eTypeCallback;
+    }
+    
+    typedef STD_SHARED_PTR(CXXFunctionSummaryFormat) SharedPointer;
+
+private:
+    DISALLOW_COPY_AND_ASSIGN(CXXFunctionSummaryFormat);
 };
     
 #ifndef LLDB_DISABLE_PYTHON
@@ -1329,6 +1484,12 @@ struct ScriptSummaryFormat : public TypeSummaryImpl
     IsScripted()
     {
         return true;
+    }
+    
+    virtual Type
+    GetType ()
+    {
+        return TypeSummaryImpl::eTypeScript;
     }
     
     typedef STD_SHARED_PTR(ScriptSummaryFormat) SharedPointer;

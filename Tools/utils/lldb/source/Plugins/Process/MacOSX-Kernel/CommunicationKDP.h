@@ -111,7 +111,7 @@ public:
     bool
     IsRunning() const
     {
-        return m_public_is_running.GetValue();
+        return m_is_running.GetValue();
     }
 
     //------------------------------------------------------------------
@@ -171,13 +171,27 @@ public:
                             uint32_t src_len,
                             lldb_private::Error &error);
 
+    bool
+    SendRawRequest (uint8_t command_byte,
+                    const void *src,
+                    uint32_t src_len,
+                    lldb_private::DataExtractor &reply,
+                    lldb_private::Error &error);
+
     uint32_t
     SendRequestReadRegisters (uint32_t cpu,
                               uint32_t flavor,
                               void *dst, 
                               uint32_t dst_size,
                               lldb_private::Error &error);
-    
+
+    uint32_t
+    SendRequestWriteRegisters (uint32_t cpu,
+                               uint32_t flavor,
+                               const void *src,
+                               uint32_t src_size,
+                               lldb_private::Error &error);
+
     const char *
     GetKernelVersion ();
     
@@ -206,9 +220,17 @@ public:
     uint32_t
     GetCPUSubtype ();
 
-    // If cpu_mask is zero, then we will resume all CPUs
+    lldb_private::UUID 
+    GetUUID ();
+
     bool
-    SendRequestResume (uint32_t cpu_mask = 0);
+    RemoteIsEFI ();
+
+    lldb::addr_t
+    GetLoadAddress ();
+
+    bool
+    SendRequestResume ();
 
     bool
     SendRequestSuspend ();
@@ -303,8 +325,7 @@ protected:
     lldb::ByteOrder m_byte_order;
     uint32_t m_packet_timeout;
     lldb_private::Mutex m_sequence_mutex;    // Restrict access to sending/receiving packets to a single thread at a time
-    lldb_private::Predicate<bool> m_public_is_running;
-    lldb_private::Predicate<bool> m_private_is_running;
+    lldb_private::Predicate<bool> m_is_running;
     uint32_t m_session_key;
     uint8_t m_request_sequence_id;
     uint8_t m_exception_sequence_id;

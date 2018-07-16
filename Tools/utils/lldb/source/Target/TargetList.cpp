@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 // C++ Includes
 // Other libraries and framework includes
@@ -14,6 +16,7 @@
 #include "lldb/Core/Broadcaster.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/Event.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/State.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
@@ -37,7 +40,7 @@ TargetList::GetStaticBroadcasterClass ()
 // TargetList constructor
 //----------------------------------------------------------------------
 TargetList::TargetList(Debugger &debugger) :
-    Broadcaster(&debugger, "TargetList"),
+    Broadcaster(&debugger, TargetList::GetStaticBroadcasterClass().AsCString()),
     m_target_list(),
     m_target_list_mutex (Mutex::eMutexTypeRecursive),
     m_selected_target_idx (0)
@@ -56,7 +59,7 @@ TargetList::~TargetList()
 
 Error
 TargetList::CreateTarget (Debugger &debugger,
-                          const FileSpec& file,
+                          const char *user_exe_path,
                           const char *triple_cstr,
                           bool get_dependent_files,
                           const OptionGroupPlatform *platform_options,
@@ -111,39 +114,25 @@ TargetList::CreateTarget (Debugger &debugger,
         platform_arch = arch;
 
     error = TargetList::CreateTarget (debugger,
-                                      file,
+                                      user_exe_path,
                                       platform_arch,
                                       get_dependent_files,
                                       platform_sp,
                                       target_sp);
-
-    if (target_sp)
-    {
-        if (file.GetDirectory())
-        {
-            FileSpec file_dir;
-            file_dir.GetDirectory() = file.GetDirectory();
-            target_sp->GetExecutableSearchPaths ().Append (file_dir);
-        }
-    }
     return error;
 }
 
 Error
-TargetList::CreateTarget
-(
-    Debugger &debugger,
-    const FileSpec& file,
-    const ArchSpec& specified_arch,
-    bool get_dependent_files,
-    PlatformSP &platform_sp,
-    TargetSP &target_sp
-)
+TargetList::CreateTarget (Debugger &debugger,
+                          const char *user_exe_path,
+                          const ArchSpec& specified_arch,
+                          bool get_dependent_files,
+                          PlatformSP &platform_sp,
+                          TargetSP &target_sp)
 {
     Timer scoped_timer (__PRETTY_FUNCTION__,
-                        "TargetList::CreateTarget (file = '%s/%s', arch = '%s')",
-                        file.GetDirectory().AsCString(),
-                        file.GetFilename().AsCString(),
+                        "TargetList::CreateTarget (file = '%s', arch = '%s')",
+                        user_exe_path,
                         specified_arch.GetArchitectureName());
     Error error;
 
@@ -167,12 +156,34 @@ TargetList::CreateTarget
 
     if (!arch.IsValid())
         arch = specified_arch;
-    
 
+    FileSpec file (user_exe_path, false);
+    bool user_exe_path_is_bundle = false;
+    char resolved_bundle_exe_path[PATH_MAX];
+    resolved_bundle_exe_path[0] = '\0';
     if (file)
     {
+        if (file.GetFileType() == FileSpec::eFileTypeDirectory)
+            user_exe_path_is_bundle = true;
+
+        if (file.IsRelativeToCurrentWorkingDirectory())
+        {
+            // Ignore paths that start with "./" and "../"
+            if (!((user_exe_path[0] == '.' && user_exe_path[1] == '/') ||
+                  (user_exe_path[0] == '.' && user_exe_path[1] == '.' && user_exe_path[2] == '/')))
+            {
+                char cwd[PATH_MAX];
+                if (getcwd (cwd, sizeof(cwd)))
+                {
+                    std::string cwd_user_exe_path (cwd);
+                    cwd_user_exe_path += '/';
+                    cwd_user_exe_path += user_exe_path;
+                    file.SetFile(cwd_user_exe_path.c_str(), false);
+                }
+            }
+        }
+
         ModuleSP exe_module_sp;
-        FileSpec resolved_file(file);
         if (platform_sp)
         {
             FileSpecList executable_search_paths (Target::GetDefaultExecutableSearchPaths());
@@ -205,6 +216,8 @@ TargetList::CreateTarget
             }
             target_sp.reset(new Target(debugger, arch, platform_sp));
             target_sp->SetExecutableModule (exe_module_sp, get_dependent_files);
+            if (user_exe_path_is_bundle)
+                exe_module_sp->GetFileSpec().GetPath(resolved_bundle_exe_path, sizeof(resolved_bundle_exe_path));
         }
     }
     else
@@ -216,11 +229,33 @@ TargetList::CreateTarget
 
     if (target_sp)
     {
-        target_sp->UpdateInstanceName();        
-
+        // Set argv0 with what the user typed, unless the user specified a
+        // directory. If the user specified a directory, then it is probably a
+        // bundle that was resolved and we need to use the resolved bundle path
+        if (user_exe_path)
+        {
+            // Use exactly what the user typed as the first argument when we exec or posix_spawn
+            if (user_exe_path_is_bundle && resolved_bundle_exe_path[0])
+            {
+                target_sp->SetArg0 (resolved_bundle_exe_path);
+            }
+            else
+            {
+                // Just use what the user typed
+                target_sp->SetArg0 (user_exe_path);
+            }
+        }
+        if (file.GetDirectory())
+        {
+            FileSpec file_dir;
+            file_dir.GetDirectory() = file.GetDirectory();
+            target_sp->GetExecutableSearchPaths ().Append (file_dir);
+        }
         Mutex::Locker locker(m_target_list_mutex);
         m_selected_target_idx = m_target_list.size();
         m_target_list.push_back(target_sp);
+        
+        
     }
 
     return error;

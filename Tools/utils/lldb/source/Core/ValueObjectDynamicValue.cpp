@@ -14,11 +14,13 @@
 // C++ Includes
 // Other libraries and framework includes
 // Project includes
+#include "lldb/Core/Log.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/ValueObjectList.h"
 #include "lldb/Core/Value.h"
 #include "lldb/Core/ValueObject.h"
 
+#include "lldb/Symbol/ClangASTType.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/Type.h"
@@ -31,111 +33,7 @@
 #include "lldb/Target/Target.h"
 #include "lldb/Target/Thread.h"
 
-
 using namespace lldb_private;
-
-lldb::ValueObjectSP
-ValueObjectCast::Create (ValueObject &parent, 
-                         const ConstString &name, 
-                         const ClangASTType &cast_type)
-{
-    ValueObjectCast *cast_valobj_ptr = new ValueObjectCast (parent, name, cast_type);
-    return cast_valobj_ptr->GetSP();
-}
-
-ValueObjectCast::ValueObjectCast
-(
-    ValueObject &parent, 
-    const ConstString &name, 
-    const ClangASTType &cast_type
-) :
-    ValueObject(parent),
-    m_cast_type (cast_type)
-{
-    SetName (name);
-    m_value.SetContext (Value::eContextTypeClangType, cast_type.GetOpaqueQualType());
-}
-
-ValueObjectCast::~ValueObjectCast()
-{
-}
-
-lldb::clang_type_t
-ValueObjectCast::GetClangTypeImpl ()
-{
-    return m_cast_type.GetOpaqueQualType();
-}
-
-uint32_t
-ValueObjectCast::CalculateNumChildren()
-{
-    return ClangASTContext::GetNumChildren (GetClangAST (), GetClangType(), true);
-}
-
-clang::ASTContext *
-ValueObjectCast::GetClangASTImpl ()
-{
-    return m_cast_type.GetASTContext();
-}
-
-size_t
-ValueObjectCast::GetByteSize()
-{
-    return m_value.GetValueByteSize(GetClangAST(), NULL);
-}
-
-lldb::ValueType
-ValueObjectCast::GetValueType() const
-{
-    // Let our parent answer global, local, argument, etc...
-    return m_parent->GetValueType();
-}
-
-bool
-ValueObjectCast::UpdateValue ()
-{
-    SetValueIsValid (false);
-    m_error.Clear();
-    
-    if (m_parent->UpdateValueIfNeeded(false))
-    {
-        Value old_value(m_value);
-        m_update_point.SetUpdated();
-        m_value = m_parent->GetValue();
-        m_value.SetContext (Value::eContextTypeClangType, GetClangType());
-        SetAddressTypeOfChildren(m_parent->GetAddressTypeOfChildren());
-        if (ClangASTContext::IsAggregateType (GetClangType()))
-        {
-            // this value object represents an aggregate type whose
-            // children have values, but this object does not. So we
-            // say we are changed if our location has changed.
-            SetValueDidChange (m_value.GetValueType() != old_value.GetValueType() || m_value.GetScalar() != old_value.GetScalar());
-        } 
-        ExecutionContext exe_ctx (GetExecutionContextRef());
-        m_error = m_value.GetValueAsData(&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
-        SetValueDidChange (m_parent->GetValueDidChange());
-        return true;
-    }
-    
-    // The dynamic value failed to get an error, pass the error along
-    if (m_error.Success() && m_parent->GetError().Fail())
-        m_error = m_parent->GetError();
-    SetValueIsValid (false);
-    return false;
-}
-
-
-
-bool
-ValueObjectCast::IsInScope ()
-{
-    return m_parent->IsInScope();
-}
-
-//----------------------------------------------------------------------
-
-
-
 
 ValueObjectDynamicValue::ValueObjectDynamicValue (ValueObject &parent, lldb::DynamicValueType use_dynamic) :
     ValueObject(parent),
@@ -280,6 +178,8 @@ ValueObjectDynamicValue::UpdateValue ()
     {
         if (m_type_sp)
             SetValueDidChange(true);
+        ClearDynamicTypeInformation();
+        m_type_sp.reset();
         m_value = m_parent->GetValue();
         m_error = m_value.GetValueAsData (&exe_ctx, GetClangAST(), m_data, 0, GetModule().get());
         return m_error.Success();
@@ -287,16 +187,25 @@ ValueObjectDynamicValue::UpdateValue ()
     
     Value old_value(m_value);
 
+    lldb::LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_TYPES));
+    
+    bool has_changed_type = false;
+    
     if (!m_type_sp)
     {
         m_type_sp = dynamic_type_sp;
+        has_changed_type = true;
     }
     else if (dynamic_type_sp != m_type_sp)
     {
         // We are another type, we need to tear down our children...
         m_type_sp = dynamic_type_sp;
         SetValueDidChange (true);
+        has_changed_type = true;
     }
+    
+    if (has_changed_type)
+        ClearDynamicTypeInformation ();
     
     if (!m_address.IsValid() || m_address != dynamic_address)
     {
@@ -326,6 +235,12 @@ ValueObjectDynamicValue::UpdateValue ()
     // because we aren't pointing to the LOCATION that stores the pointer to us, we're pointing to us...
     m_value.SetValueType(Value::eValueTypeScalar);
 
+    if (has_changed_type && log)
+        log->Printf("[%s %p] has a new dynamic type %s",
+                    GetName().GetCString(),
+                    this,
+                    GetTypeName().GetCString());
+    
     if (m_address.IsValid() && m_type_sp)
     {
         // The variable value is in the Scalar value inside the m_value.

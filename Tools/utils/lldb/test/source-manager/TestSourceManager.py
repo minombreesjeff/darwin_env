@@ -12,6 +12,7 @@ o test_modify_source_file_while_debugging:
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class SourceManagerTestCase(TestBase):
 
@@ -77,7 +78,7 @@ class SourceManagerTestCase(TestBase):
             patterns = ['=> %d.*Hello world' % self.line])
 
         # Boundary condition testings for SBStream().  LLDB should not crash!
-        stream.Printf(None)
+        stream.Print(None)
         stream.RedirectToFile(None, True)
 
     def move_and_then_display_source(self):
@@ -112,10 +113,7 @@ class SourceManagerTestCase(TestBase):
         exe = os.path.join(os.getcwd(), "a.out")
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
-        self.expect("breakpoint set -f main.c -l %d" % self.line,
-                    BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='main.c', line = %d, locations = 1" %
-                        self.line)
+        lldbutil.run_break_set_by_file_and_line (self, "main.c", self.line, num_expected_locations=1, loc_exact=True)
 
         self.runCmd("run", RUN_SUCCEEDED)
 

@@ -7,16 +7,25 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
+#include "lldb/Core/Error.h"
 #include "lldb/Core/Module.h"
 #include "lldb/Core/DataBuffer.h"
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/Log.h"
 #include "lldb/Core/ModuleList.h"
+#include "lldb/Core/ModuleSpec.h"
 #include "lldb/Core/RegularExpression.h"
+#include "lldb/Core/Section.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/Timer.h"
 #include "lldb/Host/Host.h"
+#include "lldb/Host/Symbols.h"
+#include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Interpreter/ScriptInterpreter.h"
 #include "lldb/lldb-private-log.h"
+#include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/ObjectFile.h"
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Symbol/SymbolVendor.h"
@@ -96,7 +105,7 @@ namespace lldb {
         Mutex::Locker locker (Module::GetAllocationModuleCollectionMutex());
         ModuleCollection &modules = GetModuleCollection();
         const size_t count = modules.size();
-        printf ("%s: %zu modules:\n", __PRETTY_FUNCTION__, count);
+        printf ("%s: %" PRIu64 " modules:\n", __PRETTY_FUNCTION__, (uint64_t)count);
         for (size_t i=0; i<count; ++i)
         {
             
@@ -114,7 +123,7 @@ namespace lldb {
 }
 
 #endif
-    
+
 Module::Module (const ModuleSpec &module_spec) :
     m_mutex (Mutex::eMutexTypeRecursive),
     m_mod_time (module_spec.GetFileSpec().GetModificationTime()),
@@ -143,7 +152,7 @@ Module::Module (const ModuleSpec &module_spec) :
         GetModuleCollection().push_back(this);
     }
     
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_OBJECT|LIBLLDB_LOG_MODULES));
     if (log)
         log->Printf ("%p Module::Module((%s) '%s/%s%s%s%s')",
                      this,
@@ -188,7 +197,7 @@ Module::Module(const FileSpec& file_spec,
 
     if (object_name)
         m_object_name = *object_name;
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_OBJECT|LIBLLDB_LOG_MODULES));
     if (log)
         log->Printf ("%p Module::Module((%s) '%s/%s%s%s%s')",
                      this,
@@ -208,10 +217,10 @@ Module::~Module()
         ModuleCollection &modules = GetModuleCollection();
         ModuleCollection::iterator end = modules.end();
         ModuleCollection::iterator pos = std::find(modules.begin(), end, this);
-        if (pos != end)
-            modules.erase(pos);
+        assert (pos != end);
+        modules.erase(pos);
     }
-    LogSP log(lldb_private::GetLogIfAllCategoriesSet (LIBLLDB_LOG_OBJECT));
+    LogSP log(lldb_private::GetLogIfAnyCategoriesSet (LIBLLDB_LOG_OBJECT|LIBLLDB_LOG_MODULES));
     if (log)
         log->Printf ("%p Module::~Module((%s) '%s/%s%s%s%s')",
                      this,
@@ -256,7 +265,7 @@ Module::GetMemoryObjectFile (const lldb::ProcessSP &process_sp, lldb::addr_t hea
                 if (m_objfile_sp)
                 {
                     StreamString s;
-                    s.Printf("0x%16.16llx", header_addr);
+                    s.Printf("0x%16.16" PRIx64, header_addr);
                     m_object_name.SetCString (s.GetData());
 
                     // Once we get the object file, update our module with the object file's
@@ -311,6 +320,22 @@ Module::GetClangASTContext ()
         if (objfile && objfile->GetArchitecture(object_arch))
         {
             m_did_init_ast = true;
+
+            // LLVM wants this to be set to iOS or MacOSX; if we're working on
+            // a bare-boards type image, change the triple for llvm's benefit.
+            if (object_arch.GetTriple().getVendor() == llvm::Triple::Apple 
+                && object_arch.GetTriple().getOS() == llvm::Triple::UnknownOS)
+            {
+                if (object_arch.GetTriple().getArch() == llvm::Triple::arm || 
+                    object_arch.GetTriple().getArch() == llvm::Triple::thumb)
+                {
+                    object_arch.GetTriple().setOS(llvm::Triple::IOS);
+                }
+                else
+                {
+                    object_arch.GetTriple().setOS(llvm::Triple::MacOSX);
+                }
+            }
             m_ast.SetArchitecture (object_arch);
         }
     }
@@ -406,7 +431,7 @@ bool
 Module::ResolveFileAddress (lldb::addr_t vm_addr, Address& so_addr)
 {
     Mutex::Locker locker (m_mutex);
-    Timer scoped_timer(__PRETTY_FUNCTION__, "Module::ResolveFileAddress (vm_addr = 0x%llx)", vm_addr);
+    Timer scoped_timer(__PRETTY_FUNCTION__, "Module::ResolveFileAddress (vm_addr = 0x%" PRIx64 ")", vm_addr);
     ObjectFile* ofile = GetObjectFile();
     if (ofile)
         return so_addr.ResolveAddressUsingFileSections(vm_addr, ofile->GetSectionList());
@@ -665,6 +690,19 @@ Module::FindTypesInNamespace (const SymbolContext& sc,
     return FindTypes_Impl(sc, type_name, namespace_decl, append, max_matches, type_list);
 }
 
+lldb::TypeSP
+Module::FindFirstType (const SymbolContext& sc,
+                       const ConstString &name,
+                       bool exact_match)
+{
+    TypeList type_list;
+    const uint32_t num_matches = FindTypes (sc, name, exact_match, 1, type_list);
+    if (num_matches)
+        return type_list.GetTypeAtIndex(0);
+    return TypeSP();
+}
+
+
 uint32_t
 Module::FindTypes (const SymbolContext& sc,
                    const ConstString &name,
@@ -677,7 +715,8 @@ Module::FindTypes (const SymbolContext& sc,
     std::string type_scope;
     std::string type_basename;
     const bool append = true;
-    if (Type::GetTypeScopeAndBasename (type_name_cstr, type_scope, type_basename))
+    TypeClass type_class = eTypeClassAny;
+    if (Type::GetTypeScopeAndBasename (type_name_cstr, type_scope, type_basename, type_class))
     {
         // Check if "name" starts with "::" which means the qualified type starts
         // from the root namespace and implies and exact match. The typenames we
@@ -692,14 +731,25 @@ Module::FindTypes (const SymbolContext& sc,
         ConstString type_basename_const_str (type_basename.c_str());
         if (FindTypes_Impl(sc, type_basename_const_str, NULL, append, max_matches, types))
         {
-            types.RemoveMismatchedTypes (type_scope, type_basename, exact_match);
+            types.RemoveMismatchedTypes (type_scope, type_basename, type_class, exact_match);
             num_matches = types.GetSize();
         }
     }
     else
     {
         // The type is not in a namespace/class scope, just search for it by basename
-        num_matches = FindTypes_Impl(sc, name, NULL, append, max_matches, types);
+        if (type_class != eTypeClassAny)
+        {
+            // The "type_name_cstr" will have been modified if we have a valid type class
+            // prefix (like "struct", "class", "union", "typedef" etc).
+            num_matches = FindTypes_Impl(sc, ConstString(type_name_cstr), NULL, append, max_matches, types);
+            types.RemoveMismatchedTypes (type_class);
+            num_matches = types.GetSize();
+        }
+        else
+        {
+            num_matches = FindTypes_Impl(sc, name, NULL, append, max_matches, types);
+        }
     }
     
     return num_matches;
@@ -1101,7 +1151,48 @@ Module::IsLoadedInTarget (Target *target)
     }
     return false;
 }
-bool 
+
+bool
+Module::LoadScriptingResourceInTarget (Target *target, Error& error)
+{
+    if (!target)
+    {
+        error.SetErrorString("invalid destination Target");
+        return false;
+    }
+    
+    PlatformSP platform_sp(target->GetPlatform());
+    
+    if (!platform_sp)
+    {
+        error.SetErrorString("invalid Platform");
+        return false;
+    }
+
+    ModuleSpec module_spec(GetFileSpec());
+    FileSpec scripting_fspec = platform_sp->LocateExecutableScriptingResource(module_spec);
+    Debugger &debugger(target->GetDebugger());
+    if (scripting_fspec && scripting_fspec.Exists())
+    {
+        ScriptInterpreter *script_interpreter = debugger.GetCommandInterpreter().GetScriptInterpreter();
+        if (script_interpreter)
+        {
+            StreamString scripting_stream;
+            scripting_fspec.Dump(&scripting_stream);
+            bool did_load = script_interpreter->LoadScriptingModule(scripting_stream.GetData(), false, true, error);
+            if (!did_load)
+                return false;
+        }
+        else
+        {
+            error.SetErrorString("invalid ScriptInterpreter");
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
 Module::SetArchitecture (const ArchSpec &new_arch)
 {
     if (!m_arch.IsValid())
@@ -1168,7 +1259,7 @@ Module::MatchesModuleSpec (const ModuleSpec &module_ref)
     const FileSpec &platform_file_spec = module_ref.GetPlatformFileSpec();
     if (platform_file_spec)
     {
-        if (!FileSpec::Equal (platform_file_spec, m_platform_file, platform_file_spec.GetDirectory()))
+        if (!FileSpec::Equal (platform_file_spec, GetPlatformFileSpec (), platform_file_spec.GetDirectory()))
             return false;
     }
     
@@ -1202,3 +1293,17 @@ Module::RemapSourceFile (const char *path, std::string &new_path) const
     return m_source_mappings.RemapPath(path, new_path);
 }
 
+uint32_t
+Module::GetVersion (uint32_t *versions, uint32_t num_versions)
+{
+    ObjectFile *obj_file = GetObjectFile();
+    if (obj_file)
+        return obj_file->GetVersion (versions, num_versions);
+        
+    if (versions && num_versions)
+    {
+        for (uint32_t i=0; i<num_versions; ++i)
+            versions[i] = UINT32_MAX;
+    }
+    return 0;
+}

@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectMemory.h"
 
 // C Includes
@@ -16,6 +18,7 @@
 #include "lldb/Core/DataBufferHeap.h"
 #include "lldb/Core/DataExtractor.h"
 #include "lldb/Core/Debugger.h"
+#include "lldb/Core/Module.h"
 #include "lldb/Core/StreamString.h"
 #include "lldb/Core/ValueObjectMemory.h"
 #include "lldb/Interpreter/Args.h"
@@ -25,7 +28,8 @@
 #include "lldb/Interpreter/OptionGroupFormat.h"
 #include "lldb/Interpreter/OptionGroupOutputFile.h"
 #include "lldb/Interpreter/OptionGroupValueObjectDisplay.h"
-#include "lldb/Symbol/ClangNamespaceDecl.h"
+#include "lldb/Interpreter/OptionValueString.h"
+#include "lldb/Symbol/TypeList.h"
 #include "lldb/Target/Process.h"
 #include "lldb/Target/StackFrame.h"
 
@@ -37,8 +41,10 @@ g_option_table[] =
 {
     { LLDB_OPT_SET_1, false, "num-per-line" ,'l', required_argument, NULL, 0, eArgTypeNumberPerLine ,"The number of items per line to display."},
     { LLDB_OPT_SET_2, false, "binary"       ,'b', no_argument      , NULL, 0, eArgTypeNone          ,"If true, memory will be saved as binary. If false, the memory is saved save as an ASCII dump that uses the format, size, count and number per line settings."},
-    { LLDB_OPT_SET_3, true , "view-as"      ,'t', required_argument, NULL, 0, eArgTypeNone          ,"The name of a type to view memory as."}, 
-    { LLDB_OPT_SET_4, false, "force"        ,'r', no_argument,       NULL, 0, eArgTypeNone          ,"Necessary if reading over 1024 bytes of memory."},
+    { LLDB_OPT_SET_3, true , "type"         ,'t', required_argument, NULL, 0, eArgTypeNone          ,"The name of a type to view memory as."}, 
+    { LLDB_OPT_SET_1|
+      LLDB_OPT_SET_2|
+      LLDB_OPT_SET_3, false, "force"        ,'r', no_argument,       NULL, 0, eArgTypeNone          ,"Necessary if reading over 1024 bytes of memory."},
 };
 
 
@@ -78,7 +84,7 @@ public:
                     const char *option_arg)
     {
         Error error;
-        char short_option = (char) g_option_table[option_idx].short_option;
+        const int short_option = g_option_table[option_idx].short_option;
         
         switch (short_option)
         {
@@ -144,7 +150,7 @@ public:
 
             case eFormatInstruction:
                 if (count_option_set)
-                    byte_size_value = target->GetArchitecture().GetMaximumOpcodeByteSize() * format_options.GetCountValue().GetCurrentValue();
+                    byte_size_value = target->GetArchitecture().GetMaximumOpcodeByteSize();
                 m_num_per_line = 1;
                 break;
 
@@ -186,7 +192,7 @@ public:
                 if (byte_size_option_set)
                 {
                     if (byte_size_value > 1)
-                        error.SetErrorStringWithFormat ("display format (bytes/bytes with ascii) conflicts with the specified byte size %llu\n"
+                        error.SetErrorStringWithFormat ("display format (bytes/bytes with ascii) conflicts with the specified byte size %" PRIu64 "\n"
                                                         "\tconsider using a different display format or don't specify the byte size",
                                                         byte_size_value.GetCurrentValue());
                 }
@@ -616,13 +622,13 @@ protected:
             }
             else if (end_addr <= addr)
             {
-                result.AppendErrorWithFormat("end address (0x%llx) must be greater that the start address (0x%llx).\n", end_addr, addr);
+                result.AppendErrorWithFormat("end address (0x%" PRIx64 ") must be greater that the start address (0x%" PRIx64 ").\n", end_addr, addr);
                 result.SetStatus(eReturnStatusFailed);
                 return false;
             }
             else if (m_format_options.GetCountValue().OptionWasSet())
             {
-                result.AppendErrorWithFormat("specify either the end address (0x%llx) or the count (--count %lu), not both.\n", end_addr, item_count);
+                result.AppendErrorWithFormat("specify either the end address (0x%" PRIx64 ") or the count (--count %lu), not both.\n", end_addr, item_count);
                 result.SetStatus(eReturnStatusFailed);
                 return false;
             }
@@ -654,14 +660,14 @@ protected:
                 }
                 else
                 {
-                    result.AppendErrorWithFormat("failed to read memory from 0x%llx.\n", addr);
+                    result.AppendErrorWithFormat("failed to read memory from 0x%" PRIx64 ".\n", addr);
                 }
                 result.SetStatus(eReturnStatusFailed);
                 return false;
             }
             
             if (bytes_read < total_byte_size)
-                result.AppendWarningWithFormat("Not all bytes (%lu/%lu) were able to be read from 0x%llx.\n", bytes_read, total_byte_size, addr);
+                result.AppendWarningWithFormat("Not all bytes (%lu/%lu) were able to be read from 0x%" PRIx64 ".\n", bytes_read, total_byte_size, addr);
             else
             {
                 m_next_addr = addr + bytes_read;
@@ -701,7 +707,7 @@ protected:
                     }
                     else 
                     {
-                        result.AppendErrorWithFormat("Failed to write %zu bytes to '%s'.\n", bytes_read, path);
+                        result.AppendErrorWithFormat("Failed to write %" PRIu64 " bytes to '%s'.\n", (uint64_t)bytes_read, path);
                         result.SetStatus(eReturnStatusFailed);
                         return false;
                     }
@@ -734,7 +740,7 @@ protected:
                 addr_t item_addr = addr + (i * item_byte_size);
                 Address address (item_addr);
                 StreamString name_strm;
-                name_strm.Printf ("0x%llx", item_addr);
+                name_strm.Printf ("0x%" PRIx64, item_addr);
                 ValueObjectSP valobj_sp (ValueObjectMemory::Create (exe_scope, 
                                                                     name_strm.GetString().c_str(), 
                                                                     address, 
@@ -857,7 +863,7 @@ public:
                         const char *option_arg)
         {
             Error error;
-            char short_option = (char) g_memory_write_option_table[option_idx].short_option;
+            const int short_option = g_memory_write_option_table[option_idx].short_option;
             
             switch (short_option)
             {
@@ -1040,18 +1046,18 @@ protected:
                     if (bytes_written == length)
                     {
                         // All bytes written
-                        result.GetOutputStream().Printf("%zu bytes were written to 0x%llx\n", bytes_written, addr);
+                        result.GetOutputStream().Printf("%" PRIu64 " bytes were written to 0x%" PRIx64 "\n", (uint64_t)bytes_written, addr);
                         result.SetStatus(eReturnStatusSuccessFinishResult);
                     }
                     else if (bytes_written > 0)
                     {
                         // Some byte written
-                        result.GetOutputStream().Printf("%zu bytes of %zu requested were written to 0x%llx\n", bytes_written, length, addr);
+                        result.GetOutputStream().Printf("%" PRIu64 " bytes of %" PRIu64 " requested were written to 0x%" PRIx64 "\n", (uint64_t)bytes_written, (uint64_t)length, addr);
                         result.SetStatus(eReturnStatusSuccessFinishResult);
                     }
                     else 
                     {
-                        result.AppendErrorWithFormat ("Memory write to 0x%llx failed: %s.\n", addr, error.AsCString());
+                        result.AppendErrorWithFormat ("Memory write to 0x%" PRIx64 " failed: %s.\n", addr, error.AsCString());
                         result.SetStatus(eReturnStatusFailed);
                     }
                 }
@@ -1108,6 +1114,7 @@ protected:
             case eFormatAddressInfo:
             case eFormatHexFloat:
             case eFormatInstruction:
+            case eFormatVoid:
                 result.AppendError("unsupported format for writing memory");
                 result.SetStatus(eReturnStatusFailed);
                 return false;
@@ -1115,6 +1122,7 @@ protected:
             case eFormatDefault:
             case eFormatBytes:
             case eFormatHex:
+            case eFormatHexUppercase:
             case eFormatPointer:
                 
                 // Decode hex bytes
@@ -1127,7 +1135,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value 0x%llx is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value 0x%" PRIx64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1155,7 +1163,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value 0x%llx is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value 0x%" PRIx64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1178,7 +1186,7 @@ protected:
                     }
                     else
                     {
-                        result.AppendErrorWithFormat ("Memory write to 0x%llx failed: %s.\n", addr, error.AsCString());
+                        result.AppendErrorWithFormat ("Memory write to 0x%" PRIx64 " failed: %s.\n", addr, error.AsCString());
                         result.SetStatus(eReturnStatusFailed);
                         return false;
                     }
@@ -1195,7 +1203,7 @@ protected:
                 }
                 else if (!SIntValueIsValidForSize (sval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value %lli is too large or small to fit in a %lu byte signed integer value.\n", sval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value %" PRIi64 " is too large or small to fit in a %lu byte signed integer value.\n", sval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1212,7 +1220,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value %llu is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value %" PRIu64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1229,7 +1237,7 @@ protected:
                 }
                 else if (!UIntValueIsValidForSize (uval64, item_byte_size))
                 {
-                    result.AppendErrorWithFormat ("Value %llo is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
+                    result.AppendErrorWithFormat ("Value %" PRIo64 " is too large to fit in a %lu byte unsigned integer value.\n", uval64, item_byte_size);
                     result.SetStatus(eReturnStatusFailed);
                     return false;
                 }
@@ -1245,7 +1253,7 @@ protected:
                 return true;
             else
             {
-                result.AppendErrorWithFormat ("Memory write to 0x%llx failed: %s.\n", addr, error.AsCString());
+                result.AppendErrorWithFormat ("Memory write to 0x%" PRIx64 " failed: %s.\n", addr, error.AsCString());
                 result.SetStatus(eReturnStatusFailed);
                 return false;
             }

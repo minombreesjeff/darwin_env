@@ -1,4 +1,5 @@
-"""Test that the 'warning: UUID mismatch detected ...' message is emitted."""
+"""Test that the 'warning: UUID mismatch detected ...' message is emitted if a
+dsym in vicinity of the executable does not match its UUID."""
 
 import os, time
 import unittest2
@@ -100,8 +101,7 @@ class UUIDMismatchWarningCase(TestBase):
                 print "\n\nContents of child_read.txt:"
                 print from_child
 
-            # Test that str_input completes to our patterns.
-            # If each pattern matches from_child, the completion mechanism works!
+            # Test that lldb emits the "UUID mismatch detected" message.
             self.expect(from_child, msg="UUID mismatch expected!", exe=False,
                 substrs = ['warning: UUID mismatch detected'])
 

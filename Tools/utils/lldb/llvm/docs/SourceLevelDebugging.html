@@ -4,7 +4,7 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   <title>Source Level Debugging with LLVM</title>
-  <link rel="stylesheet" href="llvm.css" type="text/css">
+  <link rel="stylesheet" href="_static/llvm.css" type="text/css">
 </head>
 <body>
 
@@ -76,10 +76,6 @@
     </ol>
   </li>
 </ul>
-</td>
-<td class="right">
-<img src="img/venusflytrap.jpg" alt="A leafy and green bug eater" width="247"
-height="369">
 </td>
 </tr></table>
 
@@ -425,7 +421,8 @@ height="369">
 
 <p>These descriptors provide debug information about globals variables.  The
 provide details such as name, type and where the variable is defined. All
-global variables are collected by named metadata <tt>!llvm.dbg.gv</tt>.</p>
+global variables are collected inside the named metadata
+<tt>!llvm.dbg.cu</tt>.</p>
 
 </div>
 
@@ -451,6 +448,7 @@ global variables are collected by named metadata <tt>!llvm.dbg.gv</tt>.</p>
   metadata, ;; Reference to type descriptor
   i1,       ;; True if the global is local to compile unit (static)
   i1,       ;; True if the global is defined in the compile unit (not extern)
+  i32,      ;; Line number where the scope of the subprogram begins
   i32,      ;; Virtuality, e.g. dwarf::DW_VIRTUALITY__virtual
   i32,      ;; Index into a virtual function
   metadata, ;; indicates which base type contains the vtable pointer for the
@@ -688,7 +686,8 @@ DW_TAG_inheritance      = 28
 <p>The members of enumeration types (tag = <tt>DW_TAG_enumeration_type</tt>) are
    <a href="#format_enumeration">enumerator descriptors</a>, each representing
    the definition of enumeration value for the set. All enumeration type
-   descriptors are collected by named metadata <tt>!llvm.dbg.enum</tt>.</p>
+   descriptors are collected inside the named metadata
+   <tt>!llvm.dbg.cu</tt>.</p>
 
 <p>The members of structure (tag = <tt>DW_TAG_structure_type</tt>) or union (tag
    = <tt>DW_TAG_union_type</tt>) types are any one of
@@ -1162,43 +1161,78 @@ int MyGlobal = 100;
 ;;
 ;; List of debug info of globals
 ;;
-!llvm.dbg.gv = !{!0}
+!llvm.dbg.cu = !{!0}
 
-;;
-;; Define the global variable descriptor.  Note the reference to the global
-;; variable anchor and the global variable itself.
-;;
+;; Define the compile unit.
 !0 = metadata !{
-  i32 524340,              ;; Tag
-  i32 0,                   ;; Unused
-  metadata !1,             ;; Context
-  metadata !"MyGlobal",    ;; Name
-  metadata !"MyGlobal",    ;; Display Name
-  metadata !"MyGlobal",    ;; Linkage Name
-  metadata !3,             ;; Compile Unit
-  i32 1,                   ;; Line Number
-  metadata !4,             ;; Type
-  i1 false,                ;; Is a local variable
-  i1 true,                 ;; Is this a definition
-  i32* @MyGlobal           ;; The global variable
+  i32 786449,                       ;; Tag
+  i32 0,                            ;; Context
+  i32 4,                            ;; Language
+  metadata !"foo.cpp",              ;; File
+  metadata !"/Volumes/Data/tmp",    ;; Directory
+  metadata !"clang version 3.1 ",   ;; Producer
+  i1 true,                          ;; Deprecated field
+  i1 false,                         ;; "isOptimized"?
+  metadata !"",                     ;; Flags
+  i32 0,                            ;; Runtime Version
+  metadata !1,                      ;; Enum Types
+  metadata !1,                      ;; Retained Types
+  metadata !1,                      ;; Subprograms
+  metadata !3                       ;; Global Variables
+} ; [ DW_TAG_compile_unit ]
+
+;; The Array of Global Variables
+!3 = metadata !{
+  metadata !4
+}
+
+!4 = metadata !{
+  metadata !5
 }
 
 ;;
-;; Define the basic type of 32 bit signed integer.  Note that since int is an
-;; intrinsic type the source file is NULL and line 0.
+;; Define the global variable itself.
 ;;
-!4 = metadata !{
-  i32 524324,              ;; Tag
-  metadata !1,             ;; Context
-  metadata !"int",         ;; Name
-  metadata !1,             ;; File
-  i32 0,                   ;; Line number
-  i64 32,                  ;; Size in Bits
-  i64 32,                  ;; Align in Bits
-  i64 0,                   ;; Offset in Bits
-  i32 0,                   ;; Flags
-  i32 5                    ;; Encoding
-}
+!5 = metadata !{
+  i32 786484,                        ;; Tag
+  i32 0,                             ;; Unused
+  null,                              ;; Unused
+  metadata !"MyGlobal",              ;; Name
+  metadata !"MyGlobal",              ;; Display Name
+  metadata !"",                      ;; Linkage Name
+  metadata !6,                       ;; File
+  i32 1,                             ;; Line
+  metadata !7,                       ;; Type
+  i32 0,                             ;; IsLocalToUnit
+  i32 1,                             ;; IsDefinition
+  i32* @MyGlobal                     ;; LLVM-IR Value
+} ; [ DW_TAG_variable ]
+
+;;
+;; Define the file
+;;
+!6 = metadata !{
+  i32 786473,                        ;; Tag
+  metadata !"foo.cpp",               ;; File
+  metadata !"/Volumes/Data/tmp",     ;; Directory
+  null                               ;; Unused
+} ; [ DW_TAG_file_type ]
+
+;;
+;; Define the type
+;;
+!7 = metadata !{
+  i32 786468,                         ;; Tag
+  null,                               ;; Unused
+  metadata !"int",                    ;; Name
+  null,                               ;; Unused
+  i32 0,                              ;; Line
+  i64 32,                             ;; Size in Bits
+  i64 32,                             ;; Align in Bits
+  i64 0,                              ;; Offset
+  i32 0,                              ;; Flags
+  i32 5                               ;; Encoding
+} ; [ DW_TAG_base_type ]
 
 </pre>
 </div>
@@ -2129,14 +2163,13 @@ The DWARF for this would be:
 
 </div>
 </div>
-</div>
 
-<div>
 <!-- ======================================================================= -->
 <h3>
   <a name="acceltable">Name Accelerator Tables</a>
 </h3>
 <!-- ======================================================================= -->
+<div>
 <!-- ======================================================================= -->
 <h4>
   <a name="acceltableintroduction">Introduction</a>
@@ -2679,7 +2712,7 @@ HashData[hash_data_count]
   has address attributes: DW_AT_low_pc, DW_AT_high_pc, DW_AT_ranges or
   DW_AT_entry_pc. It also contains DW_TAG_variable DIEs that have a DW_OP_addr
   in the location (global and static variables). All global and static variables
-  should be included, including those scoped withing functions and classes. For
+  should be included, including those scoped within functions and classes. For
   example using the following code:</p>
 <div class="doc_code">
 <pre>
@@ -2805,6 +2838,7 @@ int main ()
 </ul>
 </div>
 </div>
+</div>
 
 <!-- *********************************************************************** -->
 
@@ -2817,7 +2851,7 @@ int main ()
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org/">LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2012-03-06 01:22:03 -0800 (Tue, 06 Mar 2012) $
+  Last modified: $Date$
 </address>
 
 </body>

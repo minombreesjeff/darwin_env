@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 // C Includes
 #include <getopt.h>
 #include <cstdlib>
@@ -91,15 +93,6 @@ Args::~Args ()
 void
 Args::Dump (Stream *s)
 {
-//    int argc = GetArgumentCount();
-//
-//    arg_sstr_collection::const_iterator pos, begin = m_args.begin(), end = m_args.end();
-//    for (pos = m_args.begin(); pos != end; ++pos)
-//    {
-//        s->Indent();
-//        s->Printf("args[%zu]=%s\n", std::distance(begin, pos), pos->c_str());
-//    }
-//    s->EOL();
     const int argc = m_argv.size();
     for (int i=0; i<argc; ++i)
     {
@@ -634,13 +627,16 @@ Args::ParseOptions (Options &options)
     {
         if (long_options[i].flag == NULL)
         {
-            sstr << (char)long_options[i].val;
-            switch (long_options[i].has_arg)
+            if (isprint8(long_options[i].val))
             {
-            default:
-            case no_argument:                       break;
-            case required_argument: sstr << ':';    break;
-            case optional_argument: sstr << "::";   break;
+                sstr << (char)long_options[i].val;
+                switch (long_options[i].has_arg)
+                {
+                default:
+                case no_argument:                       break;
+                case required_argument: sstr << ':';    break;
+                case optional_argument: sstr << "::";   break;
+                }
             }
         }
     }
@@ -654,7 +650,10 @@ Args::ParseOptions (Options &options)
     while (1)
     {
         int long_options_index = -1;
-        val = ::getopt_long(GetArgumentCount(), GetArgumentVector(), sstr.GetData(), long_options,
+        val = ::getopt_long(GetArgumentCount(),
+                            GetArgumentVector(),
+                            sstr.GetData(),
+                            long_options,
                             &long_options_index);
         if (val == -1)
             break;
@@ -1007,6 +1006,60 @@ Args::StringToFormat
     return error;
 }
 
+lldb::Encoding
+Args::StringToEncoding (const char *s, lldb::Encoding fail_value)
+{
+    if (s && s[0])
+    {
+        if (strcmp(s, "uint") == 0)
+            return eEncodingUint;
+        else if (strcmp(s, "sint") == 0)
+            return eEncodingSint;
+        else if (strcmp(s, "ieee754") == 0)
+            return eEncodingIEEE754;
+        else if (strcmp(s, "vector") == 0)
+            return eEncodingVector;
+    }
+    return fail_value;
+}
+
+uint32_t
+Args::StringToGenericRegister (const char *s)
+{
+    if (s && s[0])
+    {
+        if (strcmp(s, "pc") == 0)
+            return LLDB_REGNUM_GENERIC_PC;
+        else if (strcmp(s, "sp") == 0)
+            return LLDB_REGNUM_GENERIC_SP;
+        else if (strcmp(s, "fp") == 0)
+            return LLDB_REGNUM_GENERIC_FP;
+        else if (strcmp(s, "ra") == 0)
+            return LLDB_REGNUM_GENERIC_RA;
+        else if (strcmp(s, "flags") == 0)
+            return LLDB_REGNUM_GENERIC_FLAGS;
+        else if (strncmp(s, "arg", 3) == 0)
+        {
+            if (s[3] && s[4] == '\0')
+            {
+                switch (s[3])
+                {
+                    case '1': return LLDB_REGNUM_GENERIC_ARG1;
+                    case '2': return LLDB_REGNUM_GENERIC_ARG2;
+                    case '3': return LLDB_REGNUM_GENERIC_ARG3;
+                    case '4': return LLDB_REGNUM_GENERIC_ARG4;
+                    case '5': return LLDB_REGNUM_GENERIC_ARG5;
+                    case '6': return LLDB_REGNUM_GENERIC_ARG6;
+                    case '7': return LLDB_REGNUM_GENERIC_ARG7;
+                    case '8': return LLDB_REGNUM_GENERIC_ARG8;
+                }
+            }
+        }
+    }
+    return LLDB_INVALID_REGNUM;
+}
+
+
 void
 Args::LongestCommonPrefix (std::string &common_prefix)
 {
@@ -1047,7 +1100,7 @@ Args::FindArgumentIndexForOption (struct option *long_options, int long_options_
 {
     char short_buffer[3];
     char long_buffer[255];
-    ::snprintf (short_buffer, sizeof (short_buffer), "-%c", (char) long_options[long_options_index].val);
+    ::snprintf (short_buffer, sizeof (short_buffer), "-%c", long_options[long_options_index].val);
     ::snprintf (long_buffer, sizeof (long_buffer),  "--%s", long_options[long_options_index].name);
     size_t end = GetArgumentCount ();
     size_t idx = 0;
@@ -1171,7 +1224,7 @@ Args::ParseAliasOptions (Options &options,
         if (long_options_index >= 0)
         {
             StreamString option_str;
-            option_str.Printf ("-%c", (char) val);
+            option_str.Printf ("-%c", val);
 
             switch (long_options[long_options_index].has_arg)
             {
@@ -1211,16 +1264,14 @@ Args::ParseAliasOptions (Options &options,
                 }
                 break;
             default:
-                result.AppendErrorWithFormat
-                ("error with options table; invalid value in has_arg field for option '%c'.\n",
-                 (char) val);
+                result.AppendErrorWithFormat ("error with options table; invalid value in has_arg field for option '%c'.\n", val);
                 result.SetStatus (eReturnStatusFailed);
                 break;
             }
         }
         else
         {
-            result.AppendErrorWithFormat ("Invalid option with value '%c'.\n", (char) val);
+            result.AppendErrorWithFormat ("Invalid option with value '%c'.\n", val);
             result.SetStatus (eReturnStatusFailed);
         }
 
@@ -1474,3 +1525,137 @@ Args::ParseArgsForCompletion
         
     }
 }
+
+void
+Args::EncodeEscapeSequences (const char *src, std::string &dst)
+{
+    dst.clear();
+    if (src)
+    {
+        for (const char *p = src; *p != '\0'; ++p)
+        {
+            size_t non_special_chars = ::strcspn (p, "\\");
+            if (non_special_chars > 0)
+            {
+                dst.append(p, non_special_chars);
+                p += non_special_chars;
+                if (*p == '\0')
+                    break;
+            }
+            
+            if (*p == '\\')
+            {
+                ++p; // skip the slash
+                switch (*p)
+                {
+                    case 'a' : dst.append(1, '\a'); break;
+                    case 'b' : dst.append(1, '\b'); break;
+                    case 'f' : dst.append(1, '\f'); break;
+                    case 'n' : dst.append(1, '\n'); break;
+                    case 'r' : dst.append(1, '\r'); break;
+                    case 't' : dst.append(1, '\t'); break;
+                    case 'v' : dst.append(1, '\v'); break;
+                    case '\\': dst.append(1, '\\'); break;
+                    case '\'': dst.append(1, '\''); break;
+                    case '"' : dst.append(1, '"'); break;
+                    case '0' :
+                        // 1 to 3 octal chars
+                    {
+                        // Make a string that can hold onto the initial zero char,
+                        // up to 3 octal digits, and a terminating NULL.
+                        char oct_str[5] = { '\0', '\0', '\0', '\0', '\0' };
+                        
+                        int i;
+                        for (i=0; (p[i] >= '0' && p[i] <= '7') && i<4; ++i)
+                            oct_str[i] = p[i];
+                        
+                        // We don't want to consume the last octal character since
+                        // the main for loop will do this for us, so we advance p by
+                        // one less than i (even if i is zero)
+                        p += i - 1;
+                        unsigned long octal_value = ::strtoul (oct_str, NULL, 8);
+                        if (octal_value <= UINT8_MAX)
+                        {
+                            const char octal_char = octal_value;
+                            dst.append(1, octal_char);
+                        }
+                    }
+                        break;
+                        
+                    case 'x':
+                        // hex number in the format
+                        if (isxdigit(p[1]))
+                        {
+                            ++p;    // Skip the 'x'
+                            
+                            // Make a string that can hold onto two hex chars plus a
+                            // NULL terminator
+                            char hex_str[3] = { *p, '\0', '\0' };
+                            if (isxdigit(p[1]))
+                            {
+                                ++p; // Skip the first of the two hex chars
+                                hex_str[1] = *p;
+                            }
+                            
+                            unsigned long hex_value = strtoul (hex_str, NULL, 16);
+                            if (hex_value <= UINT8_MAX)
+                                dst.append (1, (char)hex_value);
+                        }
+                        else
+                        {
+                            dst.append(1, 'x');
+                        }
+                        break;
+                        
+                    default:
+                        // Just desensitize any other character by just printing what
+                        // came after the '\'
+                        dst.append(1, *p);
+                        break;
+                        
+                }
+            }
+        }
+    }
+}
+
+
+void
+Args::ExpandEscapedCharacters (const char *src, std::string &dst)
+{
+    dst.clear();
+    if (src)
+    {
+        for (const char *p = src; *p != '\0'; ++p)
+        {
+            if (isprint8(*p))
+                dst.append(1, *p);
+            else
+            {
+                switch (*p)
+                {
+                    case '\a': dst.append("\\a"); break;
+                    case '\b': dst.append("\\b"); break;
+                    case '\f': dst.append("\\f"); break;
+                    case '\n': dst.append("\\n"); break;
+                    case '\r': dst.append("\\r"); break;
+                    case '\t': dst.append("\\t"); break;
+                    case '\v': dst.append("\\v"); break;
+                    case '\'': dst.append("\\'"); break;
+                    case '"': dst.append("\\\""); break;
+                    case '\\': dst.append("\\\\"); break;
+                    default:
+                        {
+                            // Just encode as octal
+                            dst.append("\\0");
+                            char octal_str[32];
+                            snprintf(octal_str, sizeof(octal_str), "%o", *p);
+                            dst.append(octal_str);
+                        }
+                        break;
+                }
+            }
+        }
+    }
+}
+

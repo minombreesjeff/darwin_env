@@ -66,7 +66,7 @@ public:
                        const StoreManager::InvalidatedSymbols *,
                        ArrayRef<const MemRegion *> ExplicitRegions,
                        ArrayRef<const MemRegion *> Regions,
-                       const CallOrObjCMessage *Call) const;
+                       const CallEvent *Call) const;
 
   typedef void (CStringChecker::*FnCheck)(CheckerContext &,
                                           const CallExpr *) const;
@@ -252,7 +252,7 @@ ProgramStateRef CStringChecker::checkNonNull(CheckerContext &C,
     BugReport *report = new BugReport(*BT, os.str(), N);
 
     report->addRange(S->getSourceRange());
-    report->addVisitor(bugreporter::getTrackNullOrUndefValueVisitor(N, S));
+    bugreporter::trackNullOrUndefValue(N, S, *report);
     C.EmitReport(report);
     return NULL;
   }
@@ -673,11 +673,11 @@ SVal CStringChecker::getCStringLengthForRegion(CheckerContext &C,
   }
   
   // Otherwise, get a new symbol and update the state.
-  unsigned Count = C.getCurrentBlockCount();
   SValBuilder &svalBuilder = C.getSValBuilder();
   QualType sizeTy = svalBuilder.getContext().getSizeType();
   SVal strLength = svalBuilder.getMetadataSymbolVal(CStringChecker::getTag(),
-                                                    MR, Ex, sizeTy, Count);
+                                                    MR, Ex, sizeTy,
+                                                    C.blockCount());
 
   if (!hypothetical)
     state = state->set<CStringLength>(MR, strLength);
@@ -826,15 +826,14 @@ ProgramStateRef CStringChecker::InvalidateBuffer(CheckerContext &C,
     }
 
     // Invalidate this region.
-    unsigned Count = C.getCurrentBlockCount();
     const LocationContext *LCtx = C.getPredecessor()->getLocationContext();
-    return state->invalidateRegions(R, E, Count, LCtx);
+    return state->invalidateRegions(R, E, C.blockCount(), LCtx);
   }
 
   // If we have a non-region value by chance, just remove the binding.
   // FIXME: is this necessary or correct? This handles the non-Region
   //  cases.  Is it ever valid to store to these?
-  return state->unbindLoc(*L);
+  return state->killBinding(*L);
 }
 
 bool CStringChecker::SummarizeRegion(raw_ostream &os, ASTContext &Ctx,
@@ -843,7 +842,7 @@ bool CStringChecker::SummarizeRegion(raw_ostream &os, ASTContext &Ctx,
 
   switch (MR->getKind()) {
   case MemRegion::FunctionTextRegionKind: {
-    const FunctionDecl *FD = cast<FunctionTextRegion>(MR)->getDecl();
+    const NamedDecl *FD = cast<FunctionTextRegion>(MR)->getDecl();
     if (FD)
       os << "the address of the function '" << *FD << '\'';
     else
@@ -900,9 +899,10 @@ void CStringChecker::evalCopyCommon(CheckerContext &C,
 
   // If the size is zero, there won't be any actual memory access, so
   // just bind the return value to the destination buffer and return.
-  if (stateZeroSize) {
+  if (stateZeroSize && !stateNonZeroSize) {
     stateZeroSize = stateZeroSize->BindExpr(CE, LCtx, destVal);
     C.addTransition(stateZeroSize);
+    return;
   }
 
   // If the size can be nonzero, we have to check the other arguments.
@@ -956,9 +956,8 @@ void CStringChecker::evalCopyCommon(CheckerContext &C,
       } else {
         // If we don't know how much we copied, we can at least
         // conjure a return value for later.
-        unsigned Count = C.getCurrentBlockCount();
-        SVal result =
-          C.getSValBuilder().getConjuredSymbolVal(NULL, CE, LCtx, Count);
+        SVal result = C.getSValBuilder().conjureSymbolVal(0, CE, LCtx,
+                                                          C.blockCount());
         state = state->BindExpr(CE, LCtx, result);
       }
 
@@ -981,6 +980,9 @@ void CStringChecker::evalCopyCommon(CheckerContext &C,
 
 
 void CStringChecker::evalMemcpy(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   // void *memcpy(void *restrict dst, const void *restrict src, size_t n);
   // The return value is the address of the destination buffer.
   const Expr *Dest = CE->getArg(0);
@@ -990,6 +992,9 @@ void CStringChecker::evalMemcpy(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalMempcpy(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   // void *mempcpy(void *restrict dst, const void *restrict src, size_t n);
   // The return value is a pointer to the byte following the last written byte.
   const Expr *Dest = CE->getArg(0);
@@ -999,6 +1004,9 @@ void CStringChecker::evalMempcpy(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalMemmove(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   // void *memmove(void *dst, const void *src, size_t n);
   // The return value is the address of the destination buffer.
   const Expr *Dest = CE->getArg(0);
@@ -1008,12 +1016,18 @@ void CStringChecker::evalMemmove(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalBcopy(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   // void bcopy(const void *src, void *dst, size_t n);
   evalCopyCommon(C, CE, C.getState(), 
                  CE->getArg(2), CE->getArg(1), CE->getArg(0));
 }
 
 void CStringChecker::evalMemcmp(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   // int memcmp(const void *s1, const void *s2, size_t n);
   CurrentFunctionDescription = "memory comparison function";
 
@@ -1077,8 +1091,7 @@ void CStringChecker::evalMemcmp(CheckerContext &C, const CallExpr *CE) const {
       state = CheckBufferAccess(C, state, Size, Left, Right);
       if (state) {
         // The return value is the comparison result, which we don't know.
-        unsigned Count = C.getCurrentBlockCount();
-        SVal CmpV = svalBuilder.getConjuredSymbolVal(NULL, CE, LCtx, Count);
+        SVal CmpV = svalBuilder.conjureSymbolVal(0, CE, LCtx, C.blockCount());
         state = state->BindExpr(CE, LCtx, CmpV);
         C.addTransition(state);
       }
@@ -1088,12 +1101,18 @@ void CStringChecker::evalMemcmp(CheckerContext &C, const CallExpr *CE) const {
 
 void CStringChecker::evalstrLength(CheckerContext &C,
                                    const CallExpr *CE) const {
+  if (CE->getNumArgs() < 1)
+    return;
+
   // size_t strlen(const char *s);
   evalstrLengthCommon(C, CE, /* IsStrnlen = */ false);
 }
 
 void CStringChecker::evalstrnLength(CheckerContext &C,
                                     const CallExpr *CE) const {
+  if (CE->getNumArgs() < 2)
+    return;
+
   // size_t strnlen(const char *s, size_t maxlen);
   evalstrLengthCommon(C, CE, /* IsStrnlen = */ true);
 }
@@ -1184,8 +1203,7 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
       // no guarantee the full string length will actually be returned.
       // All we know is the return value is the min of the string length
       // and the limit. This is better than nothing.
-      unsigned Count = C.getCurrentBlockCount();
-      result = C.getSValBuilder().getConjuredSymbolVal(NULL, CE, LCtx, Count);
+      result = C.getSValBuilder().conjureSymbolVal(0, CE, LCtx, C.blockCount());
       NonLoc *resultNL = cast<NonLoc>(&result);
 
       if (strLengthNL) {
@@ -1212,8 +1230,7 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
     // If we don't know the length of the string, conjure a return
     // value, so it can be used in constraints, at least.
     if (result.isUnknown()) {
-      unsigned Count = C.getCurrentBlockCount();
-      result = C.getSValBuilder().getConjuredSymbolVal(NULL, CE, LCtx, Count);
+      result = C.getSValBuilder().conjureSymbolVal(0, CE, LCtx, C.blockCount());
     }
   }
 
@@ -1224,6 +1241,9 @@ void CStringChecker::evalstrLengthCommon(CheckerContext &C, const CallExpr *CE,
 }
 
 void CStringChecker::evalStrcpy(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 2)
+    return;
+
   // char *strcpy(char *restrict dst, const char *restrict src);
   evalStrcpyCommon(C, CE, 
                    /* returnEnd = */ false, 
@@ -1232,6 +1252,9 @@ void CStringChecker::evalStrcpy(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalStrncpy(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   // char *strncpy(char *restrict dst, const char *restrict src, size_t n);
   evalStrcpyCommon(C, CE, 
                    /* returnEnd = */ false, 
@@ -1240,6 +1263,9 @@ void CStringChecker::evalStrncpy(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalStpcpy(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 2)
+    return;
+
   // char *stpcpy(char *restrict dst, const char *restrict src);
   evalStrcpyCommon(C, CE, 
                    /* returnEnd = */ true, 
@@ -1248,6 +1274,9 @@ void CStringChecker::evalStpcpy(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalStrcat(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 2)
+    return;
+
   //char *strcat(char *restrict s1, const char *restrict s2);
   evalStrcpyCommon(C, CE, 
                    /* returnEnd = */ false, 
@@ -1256,6 +1285,9 @@ void CStringChecker::evalStrcat(CheckerContext &C, const CallExpr *CE) const {
 }
 
 void CStringChecker::evalStrncat(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   //char *strncat(char *restrict s1, const char *restrict s2, size_t n);
   evalStrcpyCommon(C, CE, 
                    /* returnEnd = */ false, 
@@ -1366,6 +1398,24 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
         // For strncpy, this is just checking that lenVal <= sizeof(dst)
         // (Yes, strncpy and strncat differ in how they treat termination.
         // strncat ALWAYS terminates, but strncpy doesn't.)
+
+        // We need a special case for when the copy size is zero, in which
+        // case strncpy will do no work at all. Our bounds check uses n-1
+        // as the last element accessed, so n == 0 is problematic.
+        ProgramStateRef StateZeroSize, StateNonZeroSize;
+        llvm::tie(StateZeroSize, StateNonZeroSize) =
+          assumeZero(C, state, *lenValNL, sizeTy);
+
+        // If the size is known to be zero, we're done.
+        if (StateZeroSize && !StateNonZeroSize) {
+          StateZeroSize = StateZeroSize->BindExpr(CE, LCtx, DstVal);
+          C.addTransition(StateZeroSize);
+          return;
+        }
+
+        // Otherwise, go ahead and figure out the last element we'll touch.
+        // We don't record the non-zero assumption here because we can't
+        // be sure. We won't warn on a possible zero.
         NonLoc one = cast<NonLoc>(svalBuilder.makeIntVal(1, sizeTy));
         maxLastElementIndex = svalBuilder.evalBinOpNN(state, BO_Sub, *lenValNL,
                                                       one, sizeTy);
@@ -1557,8 +1607,7 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
   // If this is a stpcpy-style copy, but we were unable to check for a buffer
   // overflow, we still need a result. Conjure a return value.
   if (returnEnd && Result.isUnknown()) {
-    unsigned Count = C.getCurrentBlockCount();
-    Result = svalBuilder.getConjuredSymbolVal(NULL, CE, LCtx, Count);
+    Result = svalBuilder.conjureSymbolVal(0, CE, LCtx, C.blockCount());
   }
 
   // Set the return value.
@@ -1567,23 +1616,35 @@ void CStringChecker::evalStrcpyCommon(CheckerContext &C, const CallExpr *CE,
 }
 
 void CStringChecker::evalStrcmp(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 2)
+    return;
+
   //int strcmp(const char *s1, const char *s2);
   evalStrcmpCommon(C, CE, /* isBounded = */ false, /* ignoreCase = */ false);
 }
 
 void CStringChecker::evalStrncmp(CheckerContext &C, const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   //int strncmp(const char *s1, const char *s2, size_t n);
   evalStrcmpCommon(C, CE, /* isBounded = */ true, /* ignoreCase = */ false);
 }
 
 void CStringChecker::evalStrcasecmp(CheckerContext &C, 
                                     const CallExpr *CE) const {
+  if (CE->getNumArgs() < 2)
+    return;
+
   //int strcasecmp(const char *s1, const char *s2);
   evalStrcmpCommon(C, CE, /* isBounded = */ false, /* ignoreCase = */ true);
 }
 
 void CStringChecker::evalStrncasecmp(CheckerContext &C, 
                                      const CallExpr *CE) const {
+  if (CE->getNumArgs() < 3)
+    return;
+
   //int strncasecmp(const char *s1, const char *s2, size_t n);
   evalStrcmpCommon(C, CE, /* isBounded = */ true, /* ignoreCase = */ true);
 }
@@ -1703,8 +1764,7 @@ void CStringChecker::evalStrcmpCommon(CheckerContext &C, const CallExpr *CE,
 
   if (!canComputeResult) {
     // Conjure a symbolic value. It's the best we can do.
-    unsigned Count = C.getCurrentBlockCount();
-    SVal resultVal = svalBuilder.getConjuredSymbolVal(NULL, CE, LCtx, Count);
+    SVal resultVal = svalBuilder.conjureSymbolVal(0, CE, LCtx, C.blockCount());
     state = state->BindExpr(CE, LCtx, resultVal);
   }
 
@@ -1827,7 +1887,7 @@ CStringChecker::checkRegionChanges(ProgramStateRef state,
                                    const StoreManager::InvalidatedSymbols *,
                                    ArrayRef<const MemRegion *> ExplicitRegions,
                                    ArrayRef<const MemRegion *> Regions,
-                                   const CallOrObjCMessage *Call) const {
+                                   const CallEvent *Call) const {
   CStringLength::EntryMap Entries = state->get<CStringLength>();
   if (Entries.isEmpty())
     return state;

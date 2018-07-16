@@ -51,6 +51,9 @@ public:
     GetArgumentValues (lldb_private::Thread &thread,
                        lldb_private::ValueList &values) const;
     
+    virtual lldb_private::Error
+    SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueObjectSP &new_value);
+
 protected:
     virtual lldb::ValueObjectSP
     GetReturnValueObjectImpl (lldb_private::Thread &thread,
@@ -90,7 +93,13 @@ public:
         // Just make sure the address is a valid 32 bit address. 
         return pc <= UINT32_MAX;
     }
-    
+
+    virtual bool
+    FunctionCallsChangeCFA ()
+    {
+        return true;
+    }
+
     virtual const lldb_private::RegisterInfo *
     GetRegisterInfoArray (uint32_t &count);
 

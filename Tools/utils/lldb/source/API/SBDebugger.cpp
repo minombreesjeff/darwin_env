@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "lldb/API/SBDebugger.h"
 
 #include "lldb/lldb-private.h"
@@ -291,6 +293,20 @@ SBDebugger::GetErrorFileHandle ()
     return NULL;
 }
 
+void
+SBDebugger::SaveInputTerminalState()
+{
+    if (m_opaque_sp)
+        m_opaque_sp->SaveInputTerminalState();
+}
+
+void
+SBDebugger::RestoreInputTerminalState()
+{
+    if (m_opaque_sp)
+        m_opaque_sp->RestoreInputTerminalState();
+
+}
 SBCommandInterpreter
 SBDebugger::GetCommandInterpreter ()
 {
@@ -511,12 +527,11 @@ SBDebugger::CreateTarget (const char *filename,
     if (m_opaque_sp)
     {
         sb_error.Clear();
-        FileSpec filename_spec (filename, true);
         OptionGroupPlatform platform_options (false);
         platform_options.SetPlatformName (platform_name);
         
         sb_error.ref() = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
-                                                                    filename_spec, 
+                                                                    filename, 
                                                                     target_triple, 
                                                                     add_dependent_modules, 
                                                                     &platform_options,
@@ -554,11 +569,9 @@ SBDebugger::CreateTargetWithFileAndTargetTriple (const char *filename,
     TargetSP target_sp;
     if (m_opaque_sp)
     {
-        FileSpec file_spec (filename, true);
-        TargetSP target_sp;
         const bool add_dependent_modules = true;
         Error error (m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
-                                                                file_spec, 
+                                                                filename, 
                                                                 target_triple, 
                                                                 add_dependent_modules, 
                                                                 NULL,
@@ -585,12 +598,11 @@ SBDebugger::CreateTargetWithFileAndArch (const char *filename, const char *arch_
     TargetSP target_sp;
     if (m_opaque_sp)
     {
-        FileSpec file (filename, true);
         Error error;
         const bool add_dependent_modules = true;
 
-        error = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
-                                                           file, 
+        error = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp,
+                                                           filename, 
                                                            arch_cstr, 
                                                            add_dependent_modules, 
                                                            NULL, 
@@ -619,14 +631,13 @@ SBDebugger::CreateTarget (const char *filename)
     TargetSP target_sp;
     if (m_opaque_sp)
     {
-        FileSpec file (filename, true);
         ArchSpec arch = Target::GetDefaultArchitecture ();
         Error error;
         const bool add_dependent_modules = true;
 
         PlatformSP platform_sp(m_opaque_sp->GetPlatformList().GetSelectedPlatform());
         error = m_opaque_sp->GetTargetList().CreateTarget (*m_opaque_sp, 
-                                                           file, 
+                                                           filename, 
                                                            arch, 
                                                            add_dependent_modules, 
                                                            platform_sp,
@@ -794,13 +805,22 @@ SBDebugger::SetSelectedTarget (SBTarget &sb_target)
 }
 
 void
-SBDebugger::DispatchInput (void *baton, const void *data, size_t data_len)
+SBDebugger::DispatchInput (void* baton, const void *data, size_t data_len)
+{
+    DispatchInput (data,data_len);
+}
+
+void
+SBDebugger::DispatchInput (const void *data, size_t data_len)
 {
     LogSP log(GetLogIfAllCategoriesSet (LIBLLDB_LOG_API));
 
     if (log)
-        log->Printf ("SBDebugger(%p)::DispatchInput (baton=%p, data=\"%.*s\", size_t=%zu)", m_opaque_sp.get(),
-                     baton, (int) data_len, (const char *) data, data_len);
+        log->Printf ("SBDebugger(%p)::DispatchInput (data=\"%.*s\", size_t=%" PRIu64 ")",
+                     m_opaque_sp.get(),
+                     (int) data_len,
+                     (const char *) data,
+                     (uint64_t)data_len);
 
     if (m_opaque_sp)
         m_opaque_sp->DispatchInput ((const char *) data, data_len);
@@ -917,16 +937,23 @@ SBDebugger::GetInstanceName()
 SBError
 SBDebugger::SetInternalVariable (const char *var_name, const char *value, const char *debugger_instance_name)
 {
-    UserSettingsControllerSP root_settings_controller = Debugger::GetSettingsController();
-
-    Error err = root_settings_controller->SetVariable (var_name, 
-                                                       value, 
-                                                       eVarSetOperationAssign, 
-                                                       true,
-                                                       debugger_instance_name);
     SBError sb_error;
-    sb_error.SetError (err);
-
+    DebuggerSP debugger_sp(Debugger::FindDebuggerWithInstanceName (ConstString(debugger_instance_name)));
+    Error error;
+    if (debugger_sp)
+    {
+        ExecutionContext exe_ctx (debugger_sp->GetCommandInterpreter().GetExecutionContext());
+        error = debugger_sp->SetPropertyValue (&exe_ctx,
+                                               eVarSetOperationAssign,
+                                               var_name,
+                                               value);
+    }
+    else
+    {
+        error.SetErrorStringWithFormat ("invalid debugger instance name '%s'", debugger_instance_name);
+    }
+    if (error.Fail())
+        sb_error.SetError(error);
     return sb_error;
 }
 
@@ -934,25 +961,29 @@ SBStringList
 SBDebugger::GetInternalVariableValue (const char *var_name, const char *debugger_instance_name)
 {
     SBStringList ret_value;
-    SettableVariableType var_type;
-    Error err;
-
-    UserSettingsControllerSP root_settings_controller = Debugger::GetSettingsController();
-
-    StringList value = root_settings_controller->GetVariable (var_name, var_type, debugger_instance_name, err);
-    
-    if (err.Success())
+    DebuggerSP debugger_sp(Debugger::FindDebuggerWithInstanceName (ConstString(debugger_instance_name)));
+    Error error;
+    if (debugger_sp)
     {
-        for (unsigned i = 0; i != value.GetSize(); ++i)
-            ret_value.AppendString (value.GetStringAtIndex(i));
+        ExecutionContext exe_ctx (debugger_sp->GetCommandInterpreter().GetExecutionContext());
+        lldb::OptionValueSP value_sp (debugger_sp->GetPropertyValue (&exe_ctx,
+                                                                     var_name,
+                                                                     false,
+                                                                     error));
+        if (value_sp)
+        {
+            StreamString value_strm;
+            value_sp->DumpValue (&exe_ctx, value_strm, OptionValue::eDumpOptionValue);
+            const std::string &value_str = value_strm.GetString();
+            if (!value_str.empty())
+            {
+                StringList string_list;
+                string_list.SplitIntoLines(value_str.c_str(), value_str.size());
+                return SBStringList(&string_list);
+            }
+        }
     }
-    else
-    {
-        ret_value.AppendString (err.AsCString());
-    }
-
-
-    return ret_value;
+    return SBStringList();
 }
 
 uint32_t
@@ -1034,7 +1065,7 @@ SBDebugger::GetDescription (SBStream &description)
     {
         const char *name = m_opaque_sp->GetInstanceName().AsCString();
         user_id_t id = m_opaque_sp->GetID();
-        strm.Printf ("Debugger (instance: \"%s\", id: %llu)", name, id);
+        strm.Printf ("Debugger (instance: \"%s\", id: %" PRIu64 ")", name, id);
     }
     else
         strm.PutCString ("No value");

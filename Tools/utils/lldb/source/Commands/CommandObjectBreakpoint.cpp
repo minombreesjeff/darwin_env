@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lldb/lldb-python.h"
+
 #include "CommandObjectBreakpoint.h"
 #include "CommandObjectBreakpointCommand.h"
 
@@ -91,7 +93,6 @@ public:
             m_filenames (),
             m_line_num (0),
             m_column (0),
-            m_check_inlines (true),
             m_func_names (),
             m_func_name_type_mask (eFunctionNameTypeNone),
             m_func_regexp (),
@@ -104,9 +105,10 @@ public:
             m_thread_name(),
             m_queue_name(),
             m_catch_bp (false),
-            m_throw_bp (false),
+            m_throw_bp (true),
             m_language (eLanguageTypeUnknown),
-            m_skip_prologue (eLazyBoolCalculate)
+            m_skip_prologue (eLazyBoolCalculate),
+            m_one_shot (false)
         {
         }
 
@@ -118,7 +120,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -131,6 +133,11 @@ public:
                         error.SetErrorStringWithFormat ("invalid address string '%s'", option_arg);
                     break;
 
+                case 'b':
+                    m_func_names.push_back (option_arg);
+                    m_func_name_type_mask |= eFunctionNameTypeBase;
+                    break;
+
                 case 'C':
                     m_column = Args::StringToUInt32 (option_arg, 0);
                     break;
@@ -139,80 +146,6 @@ public:
                     m_condition.assign(option_arg);
                     break;
 
-                case 'f':
-                    m_filenames.AppendIfUnique (FileSpec(option_arg, false));
-                    break;
-
-                case 'l':
-                    m_line_num = Args::StringToUInt32 (option_arg, 0);
-                    break;
-
-                case 'b':
-                    m_func_names.push_back (option_arg);
-                    m_func_name_type_mask |= eFunctionNameTypeBase;
-                    break;
-
-                case 'n':
-                    m_func_names.push_back (option_arg);
-                    m_func_name_type_mask |= eFunctionNameTypeAuto;
-                    break;
-
-                case 'F':
-                    m_func_names.push_back (option_arg);
-                    m_func_name_type_mask |= eFunctionNameTypeFull;
-                    break;
-
-                case 'S':
-                    m_func_names.push_back (option_arg);
-                    m_func_name_type_mask |= eFunctionNameTypeSelector;
-                    break;
-
-                case 'M':
-                    m_func_names.push_back (option_arg);
-                    m_func_name_type_mask |= eFunctionNameTypeMethod;
-                    break;
-
-                case 'p':
-                    m_source_text_regexp.assign (option_arg);
-                    break;
-                    
-                case 'r':
-                    m_func_regexp.assign (option_arg);
-                    break;
-
-                case 's':
-                    {
-                        m_modules.AppendIfUnique (FileSpec (option_arg, false));
-                        break;
-                    }
-                case 'i':
-                {
-                    m_ignore_count = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
-                    if (m_ignore_count == UINT32_MAX)
-                       error.SetErrorStringWithFormat ("invalid ignore count '%s'", option_arg);
-                }
-                break;
-                case 't' :
-                {
-                    m_thread_id = Args::StringToUInt64(option_arg, LLDB_INVALID_THREAD_ID, 0);
-                    if (m_thread_id == LLDB_INVALID_THREAD_ID)
-                       error.SetErrorStringWithFormat ("invalid thread id string '%s'", option_arg);
-                }
-                break;
-                case 'T':
-                    m_thread_name.assign (option_arg);
-                    break;
-                case 'q':
-                    m_queue_name.assign (option_arg);
-                    break;
-                case 'x':
-                {
-                    m_thread_index = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
-                    if (m_thread_id == UINT32_MAX)
-                       error.SetErrorStringWithFormat ("invalid thread index string '%s'", option_arg);
-                    
-                }
-                break;
                 case 'E':
                 {
                     LanguageType language = LanguageRuntime::GetLanguageTypeFromString (option_arg);
@@ -241,14 +174,16 @@ public:
                     }
                 }
                 break;
-                case 'w':
-                {
-                    bool success;
-                    m_throw_bp = Args::StringToBoolean (option_arg, true, &success);
-                    if (!success)
-                        error.SetErrorStringWithFormat ("Invalid boolean value for on-throw option: '%s'", option_arg);
-                }
-                break;
+
+                case 'f':
+                    m_filenames.AppendIfUnique (FileSpec(option_arg, false));
+                    break;
+
+                case 'F':
+                    m_func_names.push_back (option_arg);
+                    m_func_name_type_mask |= eFunctionNameTypeFull;
+                    break;
+
                 case 'h':
                 {
                     bool success;
@@ -256,6 +191,15 @@ public:
                     if (!success)
                         error.SetErrorStringWithFormat ("Invalid boolean value for on-catch option: '%s'", option_arg);
                 }
+
+                case 'i':
+                {
+                    m_ignore_count = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
+                    if (m_ignore_count == UINT32_MAX)
+                       error.SetErrorStringWithFormat ("invalid ignore count '%s'", option_arg);
+                    break;
+                }
+
                 case 'K':
                 {
                     bool success;
@@ -270,6 +214,78 @@ public:
                         error.SetErrorStringWithFormat ("Invalid boolean value for skip prologue option: '%s'", option_arg);
                 }
                 break;
+
+                case 'l':
+                    m_line_num = Args::StringToUInt32 (option_arg, 0);
+                    break;
+
+                case 'M':
+                    m_func_names.push_back (option_arg);
+                    m_func_name_type_mask |= eFunctionNameTypeMethod;
+                    break;
+
+                case 'n':
+                    m_func_names.push_back (option_arg);
+                    m_func_name_type_mask |= eFunctionNameTypeAuto;
+                    break;
+
+                case 'o':
+                    m_one_shot = true;
+                    break;
+
+                case 'p':
+                    m_source_text_regexp.assign (option_arg);
+                    break;
+                    
+                case 'q':
+                    m_queue_name.assign (option_arg);
+                    break;
+
+                case 'r':
+                    m_func_regexp.assign (option_arg);
+                    break;
+
+                case 's':
+                {
+                    m_modules.AppendIfUnique (FileSpec (option_arg, false));
+                    break;
+                }
+                    
+                case 'S':
+                    m_func_names.push_back (option_arg);
+                    m_func_name_type_mask |= eFunctionNameTypeSelector;
+                    break;
+
+                case 't' :
+                {
+                    m_thread_id = Args::StringToUInt64(option_arg, LLDB_INVALID_THREAD_ID, 0);
+                    if (m_thread_id == LLDB_INVALID_THREAD_ID)
+                       error.SetErrorStringWithFormat ("invalid thread id string '%s'", option_arg);
+                }
+                break;
+
+                case 'T':
+                    m_thread_name.assign (option_arg);
+                    break;
+
+                case 'w':
+                {
+                    bool success;
+                    m_throw_bp = Args::StringToBoolean (option_arg, true, &success);
+                    if (!success)
+                        error.SetErrorStringWithFormat ("Invalid boolean value for on-throw option: '%s'", option_arg);
+                }
+                break;
+
+                case 'x':
+                {
+                    m_thread_index = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
+                    if (m_thread_id == UINT32_MAX)
+                       error.SetErrorStringWithFormat ("invalid thread index string '%s'", option_arg);
+                    
+                }
+                break;
+
                 default:
                     error.SetErrorStringWithFormat ("unrecognized option '%c'", short_option);
                     break;
@@ -285,19 +301,21 @@ public:
             m_line_num = 0;
             m_column = 0;
             m_func_names.clear();
-            m_func_name_type_mask = 0;
+            m_func_name_type_mask = eFunctionNameTypeNone;
             m_func_regexp.clear();
-            m_load_addr = LLDB_INVALID_ADDRESS;
+            m_source_text_regexp.clear();
             m_modules.Clear();
+            m_load_addr = LLDB_INVALID_ADDRESS;
             m_ignore_count = 0;
             m_thread_id = LLDB_INVALID_THREAD_ID;
             m_thread_index = UINT32_MAX;
             m_thread_name.clear();
             m_queue_name.clear();
-            m_language = eLanguageTypeUnknown;
             m_catch_bp = false;
             m_throw_bp = true;
+            m_language = eLanguageTypeUnknown;
             m_skip_prologue = eLazyBoolCalculate;
+            m_one_shot = false;
         }
     
         const OptionDefinition*
@@ -316,7 +334,6 @@ public:
         FileSpecList m_filenames;
         uint32_t m_line_num;
         uint32_t m_column;
-        bool m_check_inlines;
         std::vector<std::string> m_func_names;
         uint32_t m_func_name_type_mask;
         std::string m_func_regexp;
@@ -332,6 +349,7 @@ public:
         bool m_throw_bp;
         lldb::LanguageType m_language;
         LazyBool m_skip_prologue;
+        bool m_one_shot;
 
     };
 
@@ -398,11 +416,14 @@ protected:
                     }
                     else
                         file = m_options.m_filenames.GetFileSpecAtIndex(0);
-                        
+                    
+                    // Only check for inline functions if 
+                    LazyBool check_inlines = eLazyBoolCalculate;
+                    
                     bp = target->CreateBreakpoint (&(m_options.m_modules),
                                                    file,
                                                    m_options.m_line_num,
-                                                   m_options.m_check_inlines,
+                                                   check_inlines,
                                                    m_options.m_skip_prologue,
                                                    internal).get();
                 }
@@ -509,14 +530,15 @@ protected:
 
             if (!m_options.m_condition.empty())
                 bp->GetOptions()->SetCondition(m_options.m_condition.c_str());
+            
+            bp->SetOneShot (m_options.m_one_shot);
         }
         
         if (bp)
         {
             Stream &output_stream = result.GetOutputStream();
-            output_stream.Printf ("Breakpoint created: ");
-            bp->GetDescription(&output_stream, lldb::eDescriptionLevelBrief);
-            output_stream.EOL();
+            const bool show_locations = false;
+            bp->GetDescription(&output_stream, lldb::eDescriptionLevelInitial, show_locations);
             // Don't print out this warning for exception breakpoints.  They can get set before the target
             // is set, but we won't know how to actually set the breakpoint till we run.
             if (bp->GetNumLocations() == 0 && break_type != eSetTypeException)
@@ -589,6 +611,9 @@ CommandObjectBreakpointSet::CommandOptions::g_option_table[] =
 
     { LLDB_OPT_SET_ALL, false, "ignore-count", 'i', required_argument,   NULL, 0, eArgTypeCount,
         "Set the number of times this breakpoint is skipped before stopping." },
+
+    { LLDB_OPT_SET_ALL, false, "one-shot", 'o', no_argument,   NULL, 0, eArgTypeNone,
+        "The breakpoint is deleted the first time it stop causes a stop." },
 
     { LLDB_OPT_SET_ALL, false, "condition",    'c', required_argument, NULL, 0, eArgTypeExpression,
         "The breakpoint stops only if this condition expression evaluates to true."},
@@ -706,11 +731,13 @@ public:
             m_thread_name(),
             m_queue_name(),
             m_condition (),
+            m_one_shot (false),
             m_enable_passed (false),
             m_enable_value (false),
             m_name_passed (false),
             m_queue_passed (false),
-            m_condition_passed (false)
+            m_condition_passed (false),
+            m_one_shot_passed (false)
         {
         }
 
@@ -721,7 +748,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -745,6 +772,19 @@ public:
                     m_ignore_count = Args::StringToUInt32(option_arg, UINT32_MAX, 0);
                     if (m_ignore_count == UINT32_MAX)
                        error.SetErrorStringWithFormat ("invalid ignore count '%s'", option_arg);
+                }
+                break;
+                case 'o':
+                {
+                    bool value, success;
+                    value = Args::StringToBoolean(option_arg, false, &success);
+                    if (success)
+                    {
+                        m_one_shot_passed = true;
+                        m_one_shot = value;
+                    }
+                    else
+                        error.SetErrorStringWithFormat("invalid boolean value '%s' passed for -o option", option_arg);
                 }
                 break;
                 case 't' :
@@ -813,10 +853,12 @@ public:
             m_thread_name.clear();
             m_queue_name.clear();
             m_condition.clear();
+            m_one_shot = false;
             m_enable_passed = false;
             m_queue_passed = false;
             m_name_passed = false;
             m_condition_passed = false;
+            m_one_shot_passed = false;
         }
         
         const OptionDefinition*
@@ -840,11 +882,13 @@ public:
         std::string m_thread_name;
         std::string m_queue_name;
         std::string m_condition;
+        bool m_one_shot;
         bool m_enable_passed;
         bool m_enable_value;
         bool m_name_passed;
         bool m_queue_passed;
         bool m_condition_passed;
+        bool m_one_shot_passed;
 
     };
 
@@ -943,6 +987,7 @@ OptionDefinition
 CommandObjectBreakpointModify::CommandOptions::g_option_table[] =
 {
 { LLDB_OPT_SET_ALL, false, "ignore-count", 'i', required_argument, NULL, 0, eArgTypeCount, "Set the number of times this breakpoint is skipped before stopping." },
+{ LLDB_OPT_SET_ALL, false, "one-shot",     'o', required_argument, NULL, 0, eArgTypeBoolean, "The breakpoint is deleted the first time it stop causes a stop." },
 { LLDB_OPT_SET_ALL, false, "thread-index", 'x', required_argument, NULL, 0, eArgTypeThreadIndex, "The breakpoint stops only for the thread whose indeX matches this argument."},
 { LLDB_OPT_SET_ALL, false, "thread-id",    't', required_argument, NULL, 0, eArgTypeThreadID, "The breakpoint stops only for the thread whose TID matches this argument."},
 { LLDB_OPT_SET_ALL, false, "thread-name",  'T', required_argument, NULL, 0, eArgTypeThreadName, "The breakpoint stops only for the thread whose thread name matches this argument."},
@@ -950,7 +995,7 @@ CommandObjectBreakpointModify::CommandOptions::g_option_table[] =
 { LLDB_OPT_SET_ALL, false, "condition",    'c', required_argument, NULL, 0, eArgTypeExpression, "The breakpoint stops only if this condition expression evaluates to true."},
 { LLDB_OPT_SET_1,   false, "enable",       'e', no_argument,       NULL, 0, eArgTypeNone, "Enable the breakpoint."},
 { LLDB_OPT_SET_2,   false, "disable",      'd', no_argument,       NULL, 0, eArgTypeNone, "Disable the breakpoint."},
-{ 0,                false, NULL,            0 , 0,                 NULL, 0,    eArgTypeNone, NULL }
+{ 0,                false, NULL,            0 , 0,                 NULL, 0, eArgTypeNone, NULL }
 };
 
 //-------------------------------------------------------------------------
@@ -1210,7 +1255,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {
@@ -1398,7 +1443,7 @@ public:
         SetOptionValue (uint32_t option_idx, const char *option_arg)
         {
             Error error;
-            char short_option = (char) m_getopt_table[option_idx].val;
+            const int short_option = m_getopt_table[option_idx].val;
 
             switch (short_option)
             {

@@ -153,7 +153,7 @@ void
 UnwindPlan::Row::Clear ()
 {
     m_offset = 0;
-    m_cfa_reg_num = 0;
+    m_cfa_reg_num = LLDB_INVALID_REGNUM;
     m_cfa_offset = 0;
     m_register_locations.clear();
 }
@@ -164,15 +164,15 @@ UnwindPlan::Row::Dump (Stream& s, const UnwindPlan* unwind_plan, Thread* thread,
     const RegisterInfo *reg_info = unwind_plan->GetRegisterInfo (thread, GetCFARegister());
 
     if (base_addr != LLDB_INVALID_ADDRESS)
-        s.Printf ("0x%16.16llx: CFA=", base_addr + GetOffset());
+        s.Printf ("0x%16.16" PRIx64 ": CFA=", base_addr + GetOffset());
     else
-        s.Printf ("0x%8.8llx: CFA=", GetOffset());
+        s.Printf ("0x%8.8" PRIx64 ": CFA=", GetOffset());
             
     if (reg_info)
         s.Printf ("%s", reg_info->name);
     else
         s.Printf ("reg(%u)", GetCFARegister());
-    s.Printf ("%+3d =>", GetCFAOffset ());
+    s.Printf ("%+3d => ", GetCFAOffset ());
     for (collection::const_iterator idx = m_register_locations.begin (); idx != m_register_locations.end (); ++idx)
     {
         reg_info = unwind_plan->GetRegisterInfo (thread, idx->first);
@@ -189,7 +189,7 @@ UnwindPlan::Row::Dump (Stream& s, const UnwindPlan* unwind_plan, Thread* thread,
 
 UnwindPlan::Row::Row() :
     m_offset(0),
-    m_cfa_reg_num(0),
+    m_cfa_reg_num(LLDB_INVALID_REGNUM),
     m_cfa_offset(0),
     m_register_locations()
 {
@@ -399,21 +399,6 @@ UnwindPlan::Dump (Stream& s, Thread *thread, lldb::addr_t base_addr) const
         m_plan_valid_address_range.Dump (&s, target_sp.get(), Address::DumpStyleSectionNameOffset);
         s.EOL();
     }
-    else
-    {
-        s.PutCString ("No valid address range recorded for this UnwindPlan.\n");
-    }
-    s.Printf ("UnwindPlan register kind %d", m_register_kind);
-    switch (m_register_kind)
-    {
-        case eRegisterKindGCC:      s.PutCString (" [eRegisterKindGCC]"); break;
-        case eRegisterKindDWARF:    s.PutCString (" [eRegisterKindDWARF]"); break;
-        case eRegisterKindGeneric:  s.PutCString (" [eRegisterKindGeneric]"); break;
-        case eRegisterKindGDB:      s.PutCString (" [eRegisterKindGDB]"); break;
-        case eRegisterKindLLDB:     s.PutCString (" [eRegisterKindLLDB]"); break;
-        default: s.PutCString (" [eRegisterKind???]"); break; 
-    }
-    s.EOL();
     collection::const_iterator pos, begin = m_row_list.begin(), end = m_row_list.end();
     for (pos = begin; pos != end; ++pos)
     {

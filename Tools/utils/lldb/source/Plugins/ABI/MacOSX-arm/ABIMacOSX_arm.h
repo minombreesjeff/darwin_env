@@ -41,6 +41,9 @@ public:
     GetArgumentValues (lldb_private::Thread &thread,
                        lldb_private::ValueList &values) const;
     
+    virtual lldb_private::Error
+    SetReturnValueObject(lldb::StackFrameSP &frame_sp, lldb::ValueObjectSP &new_value);
+
 protected:
     virtual lldb::ValueObjectSP
     GetReturnValueObjectImpl (lldb_private::Thread &thread,
@@ -88,6 +91,12 @@ public:
         // ARM uses bit zero to signify a code address is thumb, so we must
         // strip bit zero in any code addresses.
         return pc & ~(lldb::addr_t)1;
+    }
+
+    virtual bool
+    FunctionCallsChangeCFA ()
+    {
+        return false;
     }
 
     virtual const lldb_private::RegisterInfo *

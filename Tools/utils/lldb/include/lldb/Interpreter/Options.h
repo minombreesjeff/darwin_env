@@ -25,6 +25,15 @@
 
 namespace lldb_private {
 
+  static inline bool
+  isprint8 (int ch)
+  {
+      if (ch & 0xffffff00u)
+          return false;
+      return isprint(ch);
+  }
+
+
 //----------------------------------------------------------------------
 /// @class Options Options.h "lldb/Interpreter/Options.h"
 /// @brief A command line option parsing protocol class.
@@ -296,7 +305,7 @@ public:
     
 protected:
     // This is a set of options expressed as indexes into the options table for this Option.
-    typedef std::set<char> OptionSet;
+    typedef std::set<int> OptionSet;
     typedef std::vector<OptionSet> OptionSetVector;
 
     CommandInterpreter &m_interpreter;

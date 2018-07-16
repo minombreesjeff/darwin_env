@@ -11,6 +11,8 @@
 #include <stddef.h>
 
 #include <bitset>
+#include <limits>
+#include <sstream>
 #include <string>
 
 #include "llvm/ADT/APFloat.h"
@@ -715,10 +717,10 @@ DataExtractor::GetMaxS64Bitfield (uint32_t *offset_ptr, uint32_t size, uint32_t 
     {
         if (bitfield_bit_offset > 0)
             sval64 >>= bitfield_bit_offset;
-        uint64_t bitfield_mask = ((1 << bitfield_bit_size) - 1);
+        uint64_t bitfield_mask = (((uint64_t)1) << bitfield_bit_size) - 1;
         sval64 &= bitfield_mask;
         // sign extend if needed
-        if (sval64 & (1 << (bitfield_bit_size - 1)))
+        if (sval64 & (((uint64_t)1) << (bitfield_bit_size - 1)))
             sval64 |= ~bitfield_mask;
     }
     return sval64;
@@ -1406,7 +1408,7 @@ DataExtractor::Dump (Stream *s,
                 s->EOL();
             }
             if (base_addr != LLDB_INVALID_ADDRESS)
-                s->Printf ("0x%8.8llx: ", (uint64_t)(base_addr + (offset - start_offset)));
+                s->Printf ("0x%8.8" PRIx64 ": ", (uint64_t)(base_addr + (offset - start_offset)));
             line_start_offset = offset;
         }
         else
@@ -1496,7 +1498,7 @@ DataExtractor::Dump (Stream *s,
                         if (item_byte_size == 1)
                             s->Printf ("\\x%2.2x", (uint8_t)ch); 
                         else
-                            s->Printf ("%llu", ch); 
+                            s->Printf ("%" PRIu64, ch);
                         break;
                     }
                 }
@@ -1514,7 +1516,7 @@ DataExtractor::Dump (Stream *s,
         case eFormatEnum:       // Print enum value as a signed integer when we don't get the enum type
         case eFormatDecimal:
             if (item_byte_size <= 8)
-                s->Printf ("%lld", GetMaxS64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
+                s->Printf ("%" PRId64, GetMaxS64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
             else
             {
                 const bool is_signed = true;
@@ -1525,7 +1527,7 @@ DataExtractor::Dump (Stream *s,
 
         case eFormatUnsigned:
             if (item_byte_size <= 8)
-                s->Printf ("%llu", GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
+                s->Printf ("%" PRIu64, GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
             else
             {
                 const bool is_signed = false;
@@ -1536,7 +1538,7 @@ DataExtractor::Dump (Stream *s,
 
         case eFormatOctal:
             if (item_byte_size <= 8)
-                s->Printf ("0%llo", GetMaxS64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
+                s->Printf ("0%" PRIo64, GetMaxS64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
             else
             {
                 const bool is_signed = false;
@@ -1630,8 +1632,8 @@ DataExtractor::Dump (Stream *s,
                 
                 if (complex_int_byte_size <= 8)
                 {
-                    s->Printf("%llu", GetMaxU64Bitfield(&offset, complex_int_byte_size, 0, 0));
-                    s->Printf(" + %llui", GetMaxU64Bitfield(&offset, complex_int_byte_size, 0, 0));
+                    s->Printf("%" PRIu64, GetMaxU64Bitfield(&offset, complex_int_byte_size, 0, 0));
+                    s->Printf(" + %" PRIu64 "i", GetMaxU64Bitfield(&offset, complex_int_byte_size, 0, 0));
                 }
                 else
                 {
@@ -1675,49 +1677,61 @@ DataExtractor::Dump (Stream *s,
         default:
         case eFormatDefault:
         case eFormatHex:
-            if (item_byte_size <= 8)
+        case eFormatHexUppercase:
             {
-                s->Printf("0x%*.*llx", 2 * item_byte_size, 2 * item_byte_size, GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
-            }
-            else
-            {
-                assert (item_bit_size == 0 && item_bit_offset == 0);
-                s->PutCString("0x");
-                const uint8_t *bytes = (const uint8_t* )GetData(&offset, item_byte_size);
-                if (bytes)
+                bool wantsuppercase  = (item_format == eFormatHexUppercase);
+                if (item_byte_size <= 8)
                 {
-                    uint32_t idx;
-                    if (m_byte_order == eByteOrderBig)
+                    s->Printf(wantsuppercase ? "0x%*.*" PRIX64 : "0x%*.*" PRIx64, 2 * item_byte_size, 2 * item_byte_size, GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset));
+                }
+                else
+                {
+                    assert (item_bit_size == 0 && item_bit_offset == 0);
+                    s->PutCString("0x");
+                    const uint8_t *bytes = (const uint8_t* )GetData(&offset, item_byte_size);
+                    if (bytes)
                     {
-                        for (idx = 0; idx < item_byte_size; ++idx)
-                            s->Printf("%2.2x", bytes[idx]);
-                    }
-                    else
-                    {
-                        for (idx = 0; idx < item_byte_size; ++idx)
-                            s->Printf("%2.2x", bytes[item_byte_size - 1 - idx]);
+                        uint32_t idx;
+                        if (m_byte_order == eByteOrderBig)
+                        {
+                            for (idx = 0; idx < item_byte_size; ++idx)
+                                s->Printf(wantsuppercase ? "%2.2X" : "%2.2x", bytes[idx]);
+                        }
+                        else
+                        {
+                            for (idx = 0; idx < item_byte_size; ++idx)
+                                s->Printf(wantsuppercase ? "%2.2X" : "%2.2x", bytes[item_byte_size - 1 - idx]);
+                        }
                     }
                 }
             }
             break;
 
         case eFormatFloat:
-            if (sizeof(float) == item_byte_size)
             {
-                s->Printf ("%g", GetFloat (&offset));
-            }
-            else if (sizeof(double) == item_byte_size)
-            {
-                s->Printf ("%lg", GetDouble(&offset));
-            }
-            else if (sizeof(long double) == item_byte_size)
-            {
-                s->Printf ("%Lg", GetLongDouble(&offset));
-            }
-            else
-            {
-                s->Printf("error: unsupported byte size (%u) for float format", item_byte_size);
-                return offset;
+                std::ostringstream ss;
+                if (item_byte_size == sizeof(float))
+                {
+                    ss.precision(std::numeric_limits<float>::digits10);
+                    ss << GetFloat(&offset);
+                } 
+                else if (item_byte_size == sizeof(double))
+                {
+                    ss.precision(std::numeric_limits<double>::digits10);
+                    ss << GetDouble(&offset);
+                }
+                else if (item_byte_size == sizeof(long double))
+                {
+                    ss.precision(std::numeric_limits<long double>::digits10);
+                    ss << GetLongDouble(&offset);
+                }
+                else
+                {
+                    s->Printf("error: unsupported byte size (%u) for float format", item_byte_size);
+                    return offset;
+                }
+                ss.flush();
+                s->Printf("%s", ss.str().c_str());
             }
             break;
 
@@ -1732,7 +1746,7 @@ DataExtractor::Dump (Stream *s,
         case eFormatAddressInfo:
             {
                 addr_t addr = GetMaxU64Bitfield(&offset, item_byte_size, item_bit_size, item_bit_offset);
-                s->Printf("0x%*.*llx", 2 * item_byte_size, 2 * item_byte_size, addr);
+                s->Printf("0x%*.*" PRIx64, 2 * item_byte_size, 2 * item_byte_size, addr);
                 if (exe_scope)
                 {
                     TargetSP target_sp (exe_scope->CalculateTarget());
@@ -1909,7 +1923,7 @@ DataExtractor::PutToLog
             }
             // Reset string offset and fill the current line string with address:
             if (base_addr != LLDB_INVALID_ADDRESS)
-                sstr.Printf("0x%8.8llx:", (uint64_t)(base_addr + (offset - start_offset)));
+                sstr.Printf("0x%8.8" PRIx64 ":", (uint64_t)(base_addr + (offset - start_offset)));
         }
 
         switch (type)
@@ -1924,10 +1938,10 @@ DataExtractor::PutToLog
                 break;
             case TypeUInt16:  sstr.Printf (format ? format : " %4.4x",       GetU16(&offset)); break;
             case TypeUInt32:  sstr.Printf (format ? format : " %8.8x",       GetU32(&offset)); break;
-            case TypeUInt64:  sstr.Printf (format ? format : " %16.16llx",   GetU64(&offset)); break;
-            case TypePointer: sstr.Printf (format ? format : " 0x%llx",      GetAddress(&offset)); break;
-            case TypeULEB128: sstr.Printf (format ? format : " 0x%llx",      GetULEB128(&offset)); break;
-            case TypeSLEB128: sstr.Printf (format ? format : " %lld",        GetSLEB128(&offset)); break;
+            case TypeUInt64:  sstr.Printf (format ? format : " %16.16" PRIx64,   GetU64(&offset)); break;
+            case TypePointer: sstr.Printf (format ? format : " 0x%" PRIx64,      GetAddress(&offset)); break;
+            case TypeULEB128: sstr.Printf (format ? format : " 0x%" PRIx64,      GetULEB128(&offset)); break;
+            case TypeSLEB128: sstr.Printf (format ? format : " %" PRId64,        GetSLEB128(&offset)); break;
         }
     }
 

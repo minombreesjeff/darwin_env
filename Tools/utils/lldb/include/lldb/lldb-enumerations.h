@@ -100,6 +100,7 @@ namespace lldb {
         eFormatDecimal,
         eFormatEnum,
         eFormatHex,
+        eFormatHexUppercase,
         eFormatFloat,
         eFormatOctal,
         eFormatOSType,          // OS character codes encoded into an integer 'PICT' 'text' etc...
@@ -124,6 +125,7 @@ namespace lldb {
         eFormatAddressInfo,         // Describe what an address points to (func + offset with file/line, symbol + offset, data, etc)
         eFormatHexFloat,            // ISO C99 hex float string
         eFormatInstruction,         // Disassemble an opcode
+        eFormatVoid,                // Do not print this
         kNumFormats
     } Format;
 
@@ -135,6 +137,7 @@ namespace lldb {
         eDescriptionLevelBrief = 0,
         eDescriptionLevelFull,
         eDescriptionLevelVerbose,
+        eDescriptionLevelInitial,
         kNumDescriptionLevels
     } DescriptionLevel;
 
@@ -173,6 +176,7 @@ namespace lldb {
         eStopReasonWatchpoint,
         eStopReasonSignal,
         eStopReasonException,
+        eStopReasonExec,        // Program was re-exec'ed
         eStopReasonPlanComplete
     } StopReason;
 
@@ -327,7 +331,8 @@ namespace lldb {
         eLanguageTypeObjC_plus_plus  = 0x0011,   ///< Objective-C++.
         eLanguageTypeUPC             = 0x0012,   ///< Unified Parallel C.
         eLanguageTypeD               = 0x0013,   ///< D.
-        eLanguageTypePython          = 0x0014    ///< Python.
+        eLanguageTypePython          = 0x0014,   ///< Python.
+        eNumLanguageTypes
     } LanguageType;
 
     typedef enum DynamicValueType
@@ -359,6 +364,7 @@ namespace lldb {
         eArgTypeClassName,
         eArgTypeCommandName,
         eArgTypeCount,
+        eArgTypeDirectoryName,
         eArgTypeEndAddress,
         eArgTypeExpression,
         eArgTypeExpressionPath,
@@ -368,6 +374,7 @@ namespace lldb {
         eArgTypeFrameIndex,
         eArgTypeFullName,
         eArgTypeFunctionName,
+        eArgTypeFunctionOrSymbol,
         eArgTypeGDBFormat,
         eArgTypeIndex,
         eArgTypeLanguage,
@@ -382,7 +389,6 @@ namespace lldb {
         eArgTypeOffset,
         eArgTypeOldPathPrefix,
         eArgTypeOneLiner,
-        eArgTypePath, 
         eArgTypePid,
         eArgTypePlugin,
         eArgTypeProcessName,
@@ -533,7 +539,10 @@ namespace lldb {
         eBasicTypeVoid = 1,
         eBasicTypeChar,
         eBasicTypeSignedChar,
+        eBasicTypeUnsignedChar,
         eBasicTypeWChar,
+        eBasicTypeSignedWChar,
+        eBasicTypeUnsignedWChar,
         eBasicTypeChar16,
         eBasicTypeChar32,
         eBasicTypeShort,
@@ -547,6 +556,7 @@ namespace lldb {
         eBasicTypeInt128,
         eBasicTypeUnsignedInt128,
         eBasicTypeBool,
+        eBasicTypeHalf,
         eBasicTypeFloat,
         eBasicTypeDouble,
         eBasicTypeLongDouble,
@@ -555,7 +565,9 @@ namespace lldb {
         eBasicTypeLongDoubleComplex,
         eBasicTypeObjCID,
         eBasicTypeObjCClass,
-        eBasicTypeObjCSel
+        eBasicTypeObjCSel,
+        eBasicTypeNullPtr,
+        eBasicTypeOther
     } BasicType;
 
     typedef enum TypeClass

@@ -68,14 +68,11 @@ MemoryCache::Flush (addr_t addr, size_t size)
     else
         num_cache_lines = (UINT64_MAX - first_cache_line_addr + 1)/cache_line_byte_size;
 
-    //printf ("MemoryCache::Flush (0x%16.16llx, %zu (0x%zx))\n", addr, size, size);
-
     uint32_t cache_idx = 0;
     for (addr_t curr_addr = first_cache_line_addr;
          cache_idx < num_cache_lines;
          curr_addr += cache_line_byte_size, ++cache_idx)
     {
-        //printf ("flushing: 0x%16.16llx\n", curr_addr); /// REMOVE THIS PRIOR TO CHECKIN!!!!
         BlockMap::iterator pos = m_cache.find (curr_addr);
         if (pos != m_cache.end())
             m_cache.erase(pos);
@@ -329,7 +326,7 @@ AllocatedBlock::ReserveBlock (uint32_t size)
     }
     LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
     if (log)
-        log->Printf ("AllocatedBlock::ReserveBlock (size = %u (0x%x)) => 0x%16.16llx", size, size, (uint64_t)addr);
+        log->Printf ("AllocatedBlock::ReserveBlock (size = %u (0x%x)) => 0x%16.16" PRIx64, size, size, (uint64_t)addr);
     return addr;
 }
 
@@ -346,7 +343,7 @@ AllocatedBlock::FreeBlock (addr_t addr)
     }
     LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS | LIBLLDB_LOG_VERBOSE));
     if (log)
-        log->Printf ("AllocatedBlock::FreeBlock (addr = 0x%16.16llx) => %i", (uint64_t)addr, success);
+        log->Printf ("AllocatedBlock::FreeBlock (addr = 0x%16.16" PRIx64 ") => %i", (uint64_t)addr, success);
     return success;
 }
 
@@ -393,7 +390,7 @@ AllocatedMemoryCache::AllocatePage (uint32_t byte_size,
     LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
     {
-        log->Printf ("Process::DoAllocateMemory (byte_size = 0x%8.8zx, permissions = %s) => 0x%16.16llx", 
+        log->Printf ("Process::DoAllocateMemory (byte_size = 0x%8.8zx, permissions = %s) => 0x%16.16" PRIx64,
                      page_byte_size, 
                      GetPermissionsAsCString(permissions), 
                      (uint64_t)addr);
@@ -431,7 +428,7 @@ AllocatedMemoryCache::AllocateMemory (size_t byte_size,
     }
     LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf ("AllocatedMemoryCache::AllocateMemory (byte_size = 0x%8.8zx, permissions = %s) => 0x%16.16llx", byte_size, GetPermissionsAsCString(permissions), (uint64_t)addr);
+        log->Printf ("AllocatedMemoryCache::AllocateMemory (byte_size = 0x%8.8zx, permissions = %s) => 0x%16.16" PRIx64, byte_size, GetPermissionsAsCString(permissions), (uint64_t)addr);
     return addr;
 }
 
@@ -452,7 +449,7 @@ AllocatedMemoryCache::DeallocateMemory (lldb::addr_t addr)
     }
     LogSP log (GetLogIfAllCategoriesSet (LIBLLDB_LOG_PROCESS));
     if (log)
-        log->Printf("AllocatedMemoryCache::DeallocateMemory (addr = 0x%16.16llx) => %i", (uint64_t)addr, success);
+        log->Printf("AllocatedMemoryCache::DeallocateMemory (addr = 0x%16.16" PRIx64 ") => %i", (uint64_t)addr, success);
     return success;
 }
 

@@ -6,6 +6,7 @@ import os, time
 import unittest2
 import lldb
 from lldbtest import *
+import lldbutil
 
 class WatchpointConditionCmdTestCase(TestBase):
 
@@ -32,6 +33,7 @@ class WatchpointConditionCmdTestCase(TestBase):
         self.setTearDownCleanup(dictionary=self.d)
         self.watchpoint_condition()
 
+    @expectedFailureLinux # bugzilla 14416
     @dwarf_test
     def test_watchpoint_cond_with_dwarf(self):
         """Test watchpoint condition."""
@@ -45,9 +47,7 @@ class WatchpointConditionCmdTestCase(TestBase):
         self.runCmd("file " + exe, CURRENT_EXECUTABLE_SET)
 
         # Add a breakpoint to set a watchpoint when stopped on the breakpoint.
-        self.expect("breakpoint set -l %d" % self.line, BREAKPOINT_CREATED,
-            startstr = "Breakpoint created: 1: file ='%s', line = %d, locations = 1" %
-                       (self.source, self.line))
+        lldbutil.run_break_set_by_file_and_line (self, None, self.line, num_expected_locations=1)
 
         # Run the program.
         self.runCmd("run", RUN_SUCCEEDED)
@@ -77,7 +77,7 @@ class WatchpointConditionCmdTestCase(TestBase):
         # The stop reason of the thread should be watchpoint.
         self.expect("thread backtrace", STOPPED_DUE_TO_WATCHPOINT,
             substrs = ['stop reason = watchpoint'])
-        self.expect("frame variable -g global",
+        self.expect("frame variable --show-globals global",
             substrs = ['(int32_t)', 'global = 5'])
 
         # Use the '-v' option to do verbose listing of the watchpoint.
