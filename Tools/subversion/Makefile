@@ -18,7 +18,8 @@ Patches        = build_get-py-info.py.diff \
                  Makefile.in.diff \
                  spawn.diff \
                  xcode.diff \
-                 swig.diff
+                 swig.diff \
+                 configure.noperlppc.diff
 
 Extra_Make_Flags = -j$(shell sysctl -n hw.activecpu)
 
