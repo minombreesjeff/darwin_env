@@ -25,6 +25,13 @@
 # include <config.h>
 #endif
 
+#if HAVE_STRING_H
+# include <string.h>
+#endif
+#if HAVE_STDLIB_H
+# include <stdlib.h>
+#endif
+
 #ifdef emacs
 # include "blockinput.h"
 #endif
@@ -81,6 +88,7 @@ typedef char *pointer;
    Callers below should use malloc.  */
 
 #  ifndef emacs
+#   undef malloc
 #   define malloc xmalloc
 #  endif
 extern pointer malloc ();
@@ -161,7 +169,7 @@ static header *last_alloca_header = NULL;	/* -> last alloca header.  */
    implementations of C, for example under Gould's UTX/32.  */
 
 pointer
-alloca (unsigned size)
+alloca (size_t size)
 {
   auto char probe;		/* Probes stack depth: */
   register char *depth = ADDRESS_FUNCTION (probe);
@@ -209,6 +217,9 @@ alloca (unsigned size)
   {
     register pointer new = malloc (sizeof (header) + size);
     /* Address of header.  */
+
+    if (new == 0)
+      abort();
 
     ((header *) new)->h.next = last_alloca_header;
     ((header *) new)->h.deep = depth;
