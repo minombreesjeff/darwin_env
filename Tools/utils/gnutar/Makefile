@@ -21,3 +21,5 @@ install-man:
 	rm -f "$(DSTROOT)/usr/lib/charset.alias"
 	rm -f "$(DSTROOT)/usr/share/info/dir"
 	rm -f "$(DSTROOT)/usr/share/locale/locale.alias"
+	mkdir -p "$(DSTROOT)/private/etc"
+	ln -s /usr/sbin/rmt "$(DSTROOT)/private/etc"

@@ -139,6 +139,8 @@ followed by the argument; single-letter options will consume
 successive command line arguments (see the
 .Sx EXAMPLES
 below).
+.Nm
+will properly handle option arguments passed either with or without a leading `=` (i.e. either --option=arg or --option arg).
 .Pp
 .Bl -tag -width "--preserve-permissions" -compact
 .It Fl -help
@@ -307,6 +309,10 @@ Has the effect of
 Don't strip leading
 .Ql /
 from file names.
+.It Fl -posix
+Instructs
+.Nm
+to create a POSIX compliant `tar' archive.
 .It Fl R
 .It Fl -block-number
 Show record number within archive with each message.
